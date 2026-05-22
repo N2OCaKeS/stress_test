@@ -4,7 +4,6 @@ GET /events требует platform_role=loging_admin → используем a
 POST /events принимает SERVICE_API_KEY → используем client + auth_headers.
 """
 
-import pytest
 from tests.conftest import make_event
 
 

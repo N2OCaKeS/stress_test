@@ -255,3 +255,216 @@ async def test_jwks_endpoint_returns_rsa_key(client):
     assert key["alg"] == "RS256"
     assert "n" in key
     assert "e" in key
+
+
+# ── Brute-force lockout via /docker/token ────────────────────────────────────
+# `/login` increments `failed_login_attempts` and sets `locked_until` after 5
+# misses, but `/docker/token` historically bypassed this — Argon2id ≈ 100 ms
+# per call was the only brute-force cap.  The fix routes password
+# authentication through `verify_password_with_lockout` (shared with `/login`).
+
+
+async def test_docker_token_locks_account_after_5_failed_attempts(
+    client, admin_token, user_a, dept_a, docker_registry_enabled,
+):
+    """5 wrong-password Docker token requests must lock the account."""
+    from sqlalchemy import select as sa_select
+    from src.models import User as UserModel
+
+    # 5 wrong attempts — must trigger lockout.
+    for _ in range(5):
+        resp = await client.get(
+            TOKEN_URL,
+            headers=_basic("t_user_a", "WrongPass!"),
+            params={"service": "registry.test"},
+        )
+        # Each attempt is 401 INVALID_CREDENTIALS until the threshold flips.
+        assert resp.status_code in (401, 429)
+
+    # 6th attempt — even with correct password — must be locked out.
+    # The active-lockout branch in `verify_password_with_lockout` raises
+    # AuthorizationError(ACCOUNT_TEMPORARILY_LOCKED, 429) BEFORE calling
+    # verify_password, so we use the right password to prove it's not a
+    # wrong-password 401.
+    resp = await client.get(
+        TOKEN_URL,
+        headers=_basic("t_user_a", "User1234!"),
+        params={"service": "registry.test"},
+    )
+    assert resp.status_code == 429
+    body = resp.json()
+    assert body["error_code"] == "ACCOUNT_TEMPORARILY_LOCKED"
+    assert body.get("details", {}).get("retry_after_seconds", 0) > 0
+
+
+async def test_docker_token_locked_user_cannot_login(
+    client, admin_token, user_a, dept_a, db, docker_registry_enabled,
+):
+    """A user locked by /login pipeline cannot bypass via /docker/token."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import update as sa_update
+    from src.models import User as UserModel
+
+    # Simulate a fresh lockout (set by /login earlier).
+    future = datetime.now(timezone.utc) + timedelta(minutes=15)
+    await db.execute(
+        sa_update(UserModel)
+        .where(UserModel.id == user_a.id)
+        .values(failed_login_attempts=5, locked_until=future)
+    )
+    await db.commit()
+
+    # Even with correct password, /docker/token must honour the lockout.
+    resp = await client.get(
+        TOKEN_URL,
+        headers=_basic("t_user_a", "User1234!"),
+        params={"service": "registry.test"},
+    )
+    assert resp.status_code == 429
+    assert resp.json()["error_code"] == "ACCOUNT_TEMPORARILY_LOCKED"
+
+
+async def test_docker_token_lockout_emits_audit_failure(
+    client, admin_token, user_a, dept_a, db, docker_registry_enabled, monkeypatch,
+):
+    """Когда `/docker/token` упирается в lockout — должен эмититься
+    `docker.token_issued status=failure reason=account_locked`. Иначе SOC
+    слеп на brute-force через docker auth (раньше `/login` корректно эмитил
+    `user.login failure / account_locked`, а `/docker/token` — ничего).
+    Симметрия с login-flow.
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import update as sa_update
+    from src.models import User as UserModel
+    from src.services import audit_service as _audit_service
+
+    captured: list[dict] = []
+
+    class _AsyncClient:
+        def __init__(self, *a, **k): ...
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): ...
+        async def post(self, url, json, headers):
+            captured.append(json)
+            class R:
+                status_code = 201
+            return R()
+
+    monkeypatch.setattr("src.services.audit_service.httpx.AsyncClient", _AsyncClient)
+
+    original_info = _audit_service.logger.info
+
+    def fake_info(msg, *args, **kwargs):
+        if isinstance(msg, str) and msg.startswith("audit_event_fallback") and args:
+            payload = args[0]
+            if isinstance(payload, dict):
+                captured.append(payload)
+                return
+        original_info(msg, *args, **kwargs)
+
+    monkeypatch.setattr(_audit_service.logger, "info", fake_info)
+    monkeypatch.setattr("src.services.audit_service.get_settings", lambda: type(
+        "S", (), {"logging_service_url": "http://test", "logging_service_api_key": "k"},
+    )())
+
+    # Сразу выставляем активный lockout, без подбора пароля.
+    future = datetime.now(timezone.utc) + timedelta(minutes=15)
+    await db.execute(
+        sa_update(UserModel)
+        .where(UserModel.id == user_a.id)
+        .values(failed_login_attempts=5, locked_until=future)
+    )
+    await db.commit()
+
+    resp = await client.get(
+        TOKEN_URL,
+        headers=_basic("t_user_a", "User1234!"),
+        params={"service": "registry.test"},
+    )
+    assert resp.status_code == 429
+    assert resp.json()["error_code"] == "ACCOUNT_TEMPORARILY_LOCKED"
+
+    locked_events = [
+        p for p in captured
+        if p.get("action") == "docker.token_issued"
+        and p.get("status") == "failure"
+        and (p.get("details") or {}).get("reason") == "account_locked"
+    ]
+    assert len(locked_events) >= 1, (
+        f"docker.token_issued failure/account_locked must be emitted; captured={captured}"
+    )
+    ev = locked_events[0]
+    assert ev["allowed"] is False
+    assert ev["actor_id"] == user_a.id
+    assert ev["details"]["username"] == "t_user_a"
+    assert ev["details"].get("retry_after_seconds") is not None
+
+
+async def test_docker_token_successful_login_resets_failed_attempts(
+    client, admin_token, user_a, dept_a, db, docker_registry_enabled,
+):
+    """A successful /docker/token call must clear `failed_login_attempts`
+    just like /login does — otherwise legitimate users get locked out from
+    pre-existing fail counters that should have been forgiven by success.
+    """
+    from sqlalchemy import update as sa_update, select as sa_select
+    from src.models import User as UserModel
+
+    # Capture id BEFORE any expire_all — `user_a` is a detached fixture row
+    # and re-reading `.id` after expire_all would trigger a fresh greenlet
+    # SELECT that doesn't play with the test session's nesting.
+    user_a_id = user_a.id
+
+    # Pre-seed 4 failed attempts (below threshold — not yet locked).
+    await db.execute(
+        sa_update(UserModel)
+        .where(UserModel.id == user_a_id)
+        .values(failed_login_attempts=4, locked_until=None)
+    )
+    await db.commit()
+
+    # Successful Docker token request — should reset the counter.
+    resp = await client.get(
+        TOKEN_URL,
+        headers=_basic("t_user_a", "User1234!"),
+        params={"service": "registry.test"},
+    )
+    assert resp.status_code == 200
+
+    # Re-read from DB (bypass identity map) to verify the reset persisted.
+    db.expire_all()
+    fresh = await db.scalar(sa_select(UserModel).where(UserModel.id == user_a_id))
+    assert fresh.failed_login_attempts == 0, (
+        f"counter not reset on success: got {fresh.failed_login_attempts}, expected 0"
+    )
+    assert fresh.locked_until is None
+
+
+async def test_docker_token_failed_attempt_increments_counter_in_db(
+    client, admin_token, user_a, dept_a, db, docker_registry_enabled,
+):
+    """Regression: each wrong-pw call must commit the counter increment,
+    so a brute-forcer that runs through 1000 sessions still hits the lockout
+    (the bug was that the increment used to live in a transaction that the
+    outer get_db() rolled back on raise → counter stayed at zero).
+    """
+    from sqlalchemy import select as sa_select
+    from src.models import User as UserModel
+
+    # Capture id BEFORE any HTTP traffic — see sibling test for rationale.
+    user_a_id = user_a.id
+
+    # 3 wrong attempts (below threshold so we observe the raw counter).
+    for _ in range(3):
+        await client.get(
+            TOKEN_URL,
+            headers=_basic("t_user_a", "WrongPass!"),
+            params={"service": "registry.test"},
+        )
+
+    db.expire_all()
+    fresh = await db.scalar(sa_select(UserModel).where(UserModel.id == user_a_id))
+    assert fresh.failed_login_attempts == 3, (
+        f"counter not persisted: got {fresh.failed_login_attempts}, expected 3"
+    )
+    assert fresh.locked_until is None

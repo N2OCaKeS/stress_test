@@ -1,4 +1,4 @@
-"""Logging configuration."""
+"""Настройка stdlib-логирования."""
 
 import logging
 

@@ -1,4 +1,4 @@
-"""Declarative base and model imports."""
+"""Declarative base для всех ORM-моделей сервиса."""
 
 from sqlalchemy.orm import DeclarativeBase
 

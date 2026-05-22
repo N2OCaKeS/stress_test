@@ -1,23 +1,10 @@
-"""Domain constants shared across the service."""
+"""Доменные константы, общие на весь сервис."""
 
 
-class ActorType:
-    USER = "user"
-    BOT = "bot"
-    SERVICE = "service"
-    ANONYMOUS = "anonymous"
-
-
-class EventStatus:
-    SUCCESS = "success"
-    FAILURE = "failure"
-    DENIED = "denied"
-
-
-class Severity:
-    # Routine reads and successful non-admin operations
-    INFO = "INFO"
-    # Failed auth, denied access, suspicious patterns
-    WARNING = "WARNING"
-    # Admin operations that change platform state or security posture
-    CRITICAL = "CRITICAL"
+# Сервисы, чей audit-журнал нельзя писать через внешний service-token
+# endpoint. `loging_service` — единственный сейчас, потому что retention
+# инвариант защищает только его. Сравнение идёт через
+# `utils.normalization.normalize_service_name` ДО `in`-проверки —
+# отбиваются варианты canonical-формы (case-fold, ZWSP-padding,
+# Unicode-confusables).
+RESERVED_SERVICE_NAMES: frozenset[str] = frozenset({"loging_service"})

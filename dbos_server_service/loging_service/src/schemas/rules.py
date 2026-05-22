@@ -6,8 +6,17 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 
-RuleEffect = Literal["SUPPRESS", "ALLOW", "OVERRIDE_SEVERITY"]
-RuleStatus = Literal["success", "failure", "denied"]
+# `DROP` принимается как входной alias к `SUPPRESS` (модель безопасности
+# §logging.3 называет эффект именно DROP). Внутри сервиса, в БД и в ответах
+# всегда хранится канонический `SUPPRESS` — alias нормализуется в
+# model_validator'ах ниже.
+RuleEffect = Literal["SUPPRESS", "DROP", "ALLOW", "OVERRIDE_SEVERITY"]
+# `warning` симметрично `EventCreate.status` — soft-mode гарды
+# (server_service::internal_service._check_target_department, audit от
+# internal-dept) пишут события со `status="warning"`. Без него
+# `match_status="warning"` в правиле отбивался валидатором, и админ не мог
+# создать SUPPRESS/OVERRIDE правило для warning-событий.
+RuleStatus = Literal["success", "failure", "denied", "warning"]
 RuleSeverity = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
@@ -27,7 +36,7 @@ class RuleCreate(BaseModel):
     match_severity: RuleSeverity | None = Field(default=None)
     match_allowed: bool | None = Field(default=None)
 
-    # Эффект
+    # Эффект. `DROP` принимается как alias к `SUPPRESS`.
     effect: RuleEffect
     effect_severity: RuleSeverity | None = Field(
         default=None,
@@ -36,6 +45,8 @@ class RuleCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validate_effect(self) -> "RuleCreate":
+        if self.effect == "DROP":
+            self.effect = "SUPPRESS"
         if self.effect == "OVERRIDE_SEVERITY" and not self.effect_severity:
             raise ValueError("effect_severity обязателен при effect=OVERRIDE_SEVERITY")
         if self.effect != "OVERRIDE_SEVERITY" and self.effect_severity:
@@ -55,6 +66,12 @@ class RuleUpdate(BaseModel):
     match_allowed: bool | None = Field(default=None)
     effect: RuleEffect | None = Field(default=None)
     effect_severity: RuleSeverity | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def _normalize_effect(self) -> "RuleUpdate":
+        if self.effect == "DROP":
+            self.effect = "SUPPRESS"
+        return self
 
 
 class RuleResponse(BaseModel):

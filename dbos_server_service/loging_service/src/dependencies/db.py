@@ -1,4 +1,4 @@
-"""Database session dependency."""
+"""Зависимость для DB-сессии."""
 
 from collections.abc import Generator
 

@@ -2,380 +2,159 @@
 
 Центральный сервис аутентификации и авторизации платформы DBOS Server Manager.
 
-Все остальные сервисы (`server_service`, `config_service`, `logging_service`) доверяют только `auth_service` в вопросах того, кто есть кто и что кому разрешено.
+Все остальные сервисы (`server_service`, `loging_service`, `config_service`) доверяют только `auth_service` в вопросах того, кто есть кто и что кому разрешено.
 
 ---
 
-## Оглавление
+## Что делает сервис
 
-- [Архитектура прав доступа](#архитектура-прав-доступа)
-- [Модели данных](#модели-данных)
-- [API — обзор эндпоинтов](#api--обзор-эндпоинтов)
-- [Токены](#токены)
-- [Интроспекция и проверка доступа](#интроспекция-и-проверка-доступа)
-- [Боты](#боты)
-- [Docker registry](#docker-registry)
-- [OAuth2](#oauth2)
-- [Запуск и развёртывание](#запуск-и-развёртывание)
+- Аутентификация пользователей (username/password → JWT + refresh).
+- Personal Access Tokens (`dbos_pat_…`) — долгосрочные токены пользователей.
+- Bot accounts + bot-tokens (`dbos_bot_…`) — service-accounts для автоматизации.
+- OAuth2 (authorization_code с PKCE + client_credentials).
+- Docker Registry token-auth (RS256 JWT).
+- Introspect токенов для других сервисов (`POST /authorization/introspect`).
+- Каталог ролей: platform-роли + service-роли в scope `(department, service)`.
 
 ---
 
-## Архитектура прав доступа
+## Архитектура
 
-### Уровни ролей
+Сервис разложен на 3 слоя:
 
-Система работает с двумя независимыми уровнями ролей:
-
-**Platform roles** — роли внутри `auth_service`, управляют административными возможностями:
-
-| Роль | Что может |
-|------|-----------|
-| `account_admin` | Создаёт/удаляет сервисы, отделы, пользователей любого отдела; выдаёт отделам доступ к сервисам; управляет группами. Не получает прикладных прав в других сервисах. |
-| `department_admin` | Создаёт и управляет пользователями только своего отдела. Может добавлять пользователей своего отдела в группы. |
-| *(нет роли)* | Обычный пользователь — только читает собственный профиль и токены. |
-
-**Service roles** — роли внутри конкретного прикладного сервиса. Определяются динамически для каждого сервиса. При создании сервиса автоматически создаётся роль `admin`. Примеры типичных ролей: `guest`, `reader`, `operator`, `admin`. Набор ролей управляется отдельно для каждого сервиса.
-
-### Как формируются эффективные права пользователя
-
-При логине (и при refresh) `auth_service` собирает итоговый набор прав из **трёх источников**:
-
-```
-Эффективные allowed_services = dept_services ∪ group_services
-Эффективные service_roles    = direct_roles  ∪ group_roles   (union per service)
+```text
+HTTP request
+  → src/api/v1/endpoints/*.py   (FastAPI routers — только request/response)
+  → src/services/*.py           (бизнес-логика, инварианты, аудит)
+  → src/repositories/*.py       (SQLAlchemy запросы)
+  → src/models/*.py             (ORM)
 ```
 
-1. **Отдел** — сервисы, доступ к которым явно выдан отделу пользователя.
-2. **Группы** — сервисы и роли, унаследованные через членство в группах.
-3. **Прямые назначения** — роли, назначенные пользователю персонально.
+Pydantic-схемы в `src/schemas/` — отдельная плоскость от ORM. Зависимости (`get_current_identity`, `require_account_admin`, `require_any_admin`, `require_service_token`, `get_db`) живут в `src/dependencies/`.
 
-Права **аддитивны**: группы и прямые назначения только расширяют доступ, но не сужают. Чтобы убрать доступ — нужно отозвать его явно.
+---
 
-`account_admin` всегда получает пустые `allowed_services` и `service_roles` — платформенный администратор не является пользователем прикладных сервисов.
+## Категории ролей
 
-### Identity Context — что встроено в токен
+Сервис различает 5 классов идентичностей. Чёткое деление нужно, чтобы платформенный администратор не превращался в дополнительные права в прикладных сервисах.
+
+### Platform-роли (`PlatformRole` enum)
+
+| Роль | Что может | `department_id` |
+|------|-----------|------|
+| `account_admin` | Глобальный платформенный администратор. Управляет сервисами, отделами, группами, OAuth2-клиентами, может банить/разбанить юзеров. **НЕ** получает прикладных service-ролей — `allowed_services` в introspect всегда пустой (`authorization_service.py:172`). | NULL разрешён |
+| `department_admin` | Администратор одного отдела. Управляет юзерами, ботами, группами, OAuth2-клиентами своего отдела. На чужой отдел — 404 / 403 (cross-dept enumeration prevention). | обязателен |
+| `loging_admin` | Полный доступ в `loging_service` (управление правилами severity/suppress + retention + чтение каталога аудита по всем отделам). В `auth_service` собственных прав не имеет. | NULL разрешён |
+| `loging_reader` | Read-only доступ в `loging_service` ко всем отделам (мониторинг, без управления правилами). В `auth_service` собственных прав не имеет. | обязателен |
+| service-role (отсутствие platform-роли) | Обычный юзер. Права — через прямые `UserServiceRole`, группы (`GroupServiceRole`) и `DepartmentServiceAccess`. | обязателен |
+
+Все четыре значения — `PlatformRole` enum (`core/constants.py`): `ACCOUNT_ADMIN`, `DEPARTMENT_ADMIN`, `LOGING_ADMIN`, `LOGING_READER`. Bit-flagged роли вроде `departments`/`group_admin` платформа не использует — управление этими сущностями завязано на `account_admin` (глобально) и `department_admin` (внутри своего отдела), см. таблицу выше.
+
+Допуск `NULL department_id` для `ACCOUNT_ADMIN`/`LOGING_ADMIN` — в `user_service.py:_platform_admins`. Для `LOGING_READER` и обычных юзеров отсутствие отдела → `MISSING_REQUIRED_FIELD` (`user_service.py:134`). Платформенные admin'ы могут иметь service-роли только для `LOGING_*` (бизнес-смысл — присматривать за loging_service), но guard'ы прикладных сервисов это игнорируют: `account_admin` bypass-ит action-матрицу `server_service`, остальные platform-роли там прав не получают.
+
+### Service-роли
+
+Динамические, определяются для каждой пары `(department, service)` через `ServiceRoleDefinition`. При создании платформенного сервиса автоматически создаётся системная роль `admin` (`is_system=True`, не удаляется).
+
+Эффективные права = `direct UserServiceRole ∪ GroupServiceRole`, INTERSECT с `DepartmentServiceAccess ∪ GroupServiceAccess`. Если отдел потерял доступ к сервису, роли пользователей для этого сервиса автоматически выпадают из effective view (`_merge_permissions` отбрасывает их без удаления из БД).
+
+---
+
+## Identity Context
 
 Каждый access token (JWT) содержит:
 
 ```json
 {
   "sub": "usr_abc123",
+  "actor_type": "user",
+  "iat": 1747000000,
+  "exp": 1747000600,
+  "iss": "auth_service",
+  "aud": "dbos-platform"
+}
+```
+
+**Чувствительные claims** (`is_banned`, `allowed_services`, `service_roles`, `platform_role`, `department_id`) в JWT **не лежат**. На каждом запросе `get_current_identity`/`introspect` перечитывает их из БД через `user_repo.get_by_id(sub)` + `collect_user_permissions`. Это позволяет немедленно отзывать доступ — забаненный юзер не пройдёт даже с валидной подписью свежего JWT.
+
+Полный identity отдаёт `GET /me` и `POST /authorization/introspect`:
+
+```json
+{
+  "user_id": "usr_abc123",
   "username": "ivanov",
   "department_id": "dep_xyz",
+  "department_name": "НТ",
   "platform_role": null,
   "allowed_services": ["config_service", "server_service"],
   "service_roles": {
     "config_service": ["reader", "operator"],
     "server_service": ["reader"]
-  }
+  },
+  "is_banned": false
 }
 ```
 
-Это же возвращает `/me` и `/authorization/introspect`.
+---
 
-### Инвариант: сервис → отдел → пользователь
+## Безопасность
 
-Прежде чем назначить роль пользователю на сервис, отдел пользователя **обязан** иметь доступ к этому сервису. Система проверяет это принудительно:
-
-```
-account_admin выдаёт сервис отделу
-    → department_admin или account_admin назначает роль пользователю
-    → при логине права собираются автоматически
-```
+- **Пароли** — Argon2id с OWASP 2023 параметрами (`time_cost=3, memory_cost=64 MiB, parallelism=4`).
+- **JWT** — короткоживущий (10 мин по умолчанию), `iat`/`exp`/`iss`/`aud` + leeway. Подписывается `SECRET_KEY` (HS256) или RSA (`DOCKER_RSA_PRIVATE_KEY`, RS256) для Docker-токенов. Чувствительные claims не лежат в payload.
+- **Refresh** — opaque random secret, в БД только SHA-256 hash. Ротация через `SessionRepository.rotate` (CAS на `previous_token_hash` + `token_generation`). Reuse детектируется и убивает всю сессию пользователя (kill-switch).
+- **PAT / bot-токены** — opaque, prefixed (`dbos_pat_…`, `dbos_bot_…`), только hash в БД, raw показывается один раз. `ban_user` revoke'ит все активные PAT и bot-токены owned-ботов пользователя.
+- **Lockout** — общий pipeline для `/login` и `/docker/token`: 5 неудач → 15 мин lockout, ответ 429 с `retry_after_seconds`. Inkrement через атомарный `UPDATE...RETURNING` с commit'ом до raise, иначе rollback откатил бы счётчик.
+- **dept-isolation** — `department_admin` видит и меняет только свой отдел. Cross-dept enumeration защищён 404'ом вместо 403 (нет ID oracle). `account_admin` cross-dept by design. `_merge_permissions` INTERSECT отбрасывает роли для сервисов, которые отдел больше не имеет.
+- **OAuth2** — PKCE опционален для confidential client'ов, обязателен для public; `redirect_uri` валидируется (https или http://localhost, без fragment); `response_type` ограничен `code` (implicit и hybrid запрещены); m2m JWT (`actor_type=oauth_client`) отбивается `require_user_context` guard'ом с user-facing endpoints.
+- **Rate-limit (slowapi)** — на `/login`, `/refresh`, `/docker/token`, `/authorization/introspect`.
+- **Security headers + CORS** — middleware вкручен (HSTS, X-Content-Type-Options, Referrer-Policy и т.д.).
+- **Service-to-service** — `/authorization/*` закрыты `SERVICE_API_KEY` + опциональный `X-Service-Identity` (soft / strict через `STRICT_SERVICE_IDENTITY`). `SERVICE_API_KEYS` JSON env даёт per-service ключи в дополнение к shared.
+- **Production-guards** — `_validate_production_secrets` отбивает `change-me`-substring placeholder'ы, требует длину секретов ≥32, обязательные `LOGGING_SERVICE_API_KEY`/`DOCKER_RSA_PRIVATE_KEY`, и https-схему для `LOGGING_SERVICE_URL` в prod.
+- **Identity TTL-кэш** — `get_current_identity` кэширует identity на короткий срок по Bearer-токену, чтобы не дёргать БД на каждом запросе. Кэш не маскирует revoke — TTL короче access TTL.
 
 ---
 
-## Модели данных
+## API — обзор
 
-### Пользователи и отделы
+Все endpoints под `/api/auth/v1/`. Полный каталог с примерами и error codes — в [API_ENDPOINTS.md](API_ENDPOINTS.md). Swagger: `http://localhost:8000/docs`.
 
-```
-Department
-  ├── users[]          ← User.department_id
-  └── service_access[] ← DepartmentServiceAccess (какие сервисы разрешены отделу)
+### Категории
 
-User
-  ├── platform_role    ← account_admin / department_admin / null
-  ├── service_roles[]  ← UserServiceRole (прямые назначения)
-  └── group_memberships[] ← UserGroupMembership
-```
+| Группа | Префикс | Назначение |
+|------|------|------|
+| auth | (root) | login, refresh, logout, me, health, ready |
+| users | `/users` | CRUD юзеров, роли, ban/unban, группы, permissions snapshot |
+| departments | `/departments` | отделы + grant/revoke service-access |
+| services | `/services` | регистр платформенных сервисов |
+| service_roles | `/departments/{dept_id}/services/{service_name}/roles` | `ServiceRoleDefinition` per (dept, service) + bulk assign/revoke |
+| tokens | `/tokens` | Personal Access Tokens |
+| bots | `/bots` | bot-accounts, bot-tokens, bot-service-roles |
+| groups | `/groups` | группы + члены + service-access + service-roles |
+| authorization | `/authorization` | introspect + service-access (service-to-service) |
+| oauth2 | `/oauth2` | OAuth2 clients + authorize + token |
+| docker | `/docker` | Docker Registry token-auth + per-dept config |
 
-### Сервисы и роли
+### Ключевые особенности
 
-```
-PlatformService
-  ├── role_definitions[] ← ServiceRoleDefinition (какие роли существуют)
-  │     └── при создании сервиса автоматически создаётся роль "admin"
-  └── department_access[] ← DepartmentServiceAccess
-
-ServiceRoleDefinition
-  └── при удалении роли — автоматически снимается у всех пользователей и групп
-```
-
-### Группы
-
-```
-UserGroup
-  ├── memberships[]    ← UserGroupMembership (кто входит)
-  ├── service_access[] ← GroupServiceAccess (к каким сервисам)
-  └── service_roles[]  ← GroupServiceRole (роли на сервисах)
-```
-
-Группы — это способ выдать одинаковый набор прав сразу многим пользователям, независимо от их отдела.
-
-### Токены
-
-| Тип | Префикс | Хранится | Назначение |
-|-----|---------|----------|------------|
-| JWT access | — | только в payload | Краткоживущий (минуты), встроен в запросы |
-| Refresh token | — | хэш в `sessions` | Ротация access-токенов |
-| PAT | `dbos_pat_` | хэш в `personal_access_tokens` | Долгосрочный токен пользователя |
-| Bot token | `dbos_bot_` | хэш в `bot_tokens` | Токен для автоматизации |
-
-Все непрозрачные токены (PAT, bot, refresh) хранятся **только в виде хэша**. Сырое значение возвращается один раз при создании и больше нигде не доступно.
+- **`POST /users/{id}/roles`** — replace-семантика для пары (user, service): новый список ролей полностью заменяет старый. Пустой список = снять все.
+- **`GET /users/{id}/permissions`** — полный снимок: прямые роли + группы (со всеми их service-access и service-roles) + effective view (merged + INTERSECT) + статус. Для админ-UI с указанием источника каждой роли.
+- **`/departments/{dept_id}/services/{service_name}/roles/{role}/assign|revoke`** — bulk-операции по списку `user_ids`.
+- **`/groups`** — может создавать `account_admin` (любой отдел) или `department_admin` (только свой). Group замкнута на department: член группы и сама группа всегда в одном отделе (`GROUP_DEPARTMENT_MISMATCH`).
+- **`/oauth2/clients`** — создание клиента: `account_admin` (любой отдел) или `department_admin` (свой отдел).
+- **`/docker/registry/{dept_id}`** (CRUD конфиг) — `account_admin` или `department_admin` своего отдела. PUT — replace, PATCH — частичный.
+- **`/docker/token`** — Basic auth (`username:password` / `username:dbos_pat_…` / `botname:dbos_bot_…`) → RS256 JWT со scope'ами `repository:<name>:pull/push`.
 
 ---
 
-## API — обзор эндпоинтов
-
-Все эндпоинты — `GET /api/auth/v1/...`. Swagger: `http://localhost:8000/docs`
-
-### Аутентификация
-
-| Метод | URL | Описание |
-|-------|-----|----------|
-| `POST` | `/login` | Логин по username/password → access + refresh токен |
-| `POST` | `/refresh` | Ротация refresh-токена → новый access + refresh |
-| `POST` | `/logout` | Отзыв refresh-токена |
-| `GET` | `/me` | Текущий identity context |
-| `GET` | `/health` | Liveness probe |
-| `GET` | `/ready` | Readiness probe (проверяет БД) |
-
-### Пользователи (`/users`)
-
-| Метод | URL | Кто может | Описание |
-|-------|-----|-----------|----------|
-| `POST` | `/users` | AnyAdmin | Создание пользователя; поддерживает `initial_roles` |
-| `PATCH` | `/users/{id}` | AnyAdmin | Обновление профиля |
-| `POST` | `/users/{id}/roles` | AnyAdmin | Назначение ролей на сервис |
-| `GET` | `/users/{id}/groups` | Сам пользователь / AnyAdmin | Группы пользователя |
-| `POST` | `/users/{id}/groups` | AnyAdmin | Добавить пользователя в группу |
-| `DELETE` | `/users/{id}/groups/{group_id}` | AnyAdmin | Убрать из группы |
-| `POST` | `/users/{id}/reset-password` | AnyAdmin | Сброс пароля |
-| `POST` | `/users/{id}/ban` | AccountAdmin | Бан пользователя |
-| `POST` | `/users/{id}/unban` | AccountAdmin | Разбан |
-
-При создании пользователя можно сразу задать роли:
-
-```json
-POST /users
-{
-  "username": "ivanov",
-  "password": "...",
-  "department_id": "dep_xyz",
-  "initial_roles": [
-    { "service_name": "config_service", "roles": ["reader", "operator"] }
-  ]
-}
-```
-
-### Отделы (`/departments`)
-
-| Метод | URL | Кто может | Описание |
-|-------|-----|-----------|----------|
-| `GET` | `/departments` | AnyAdmin | Список отделов |
-| `POST` | `/departments` | AccountAdmin | Создание отдела |
-| `POST` | `/departments/{id}/services` | AccountAdmin | Выдать отделу доступ к сервису |
-| `DELETE` | `/departments/{id}/services/{svc}` | AccountAdmin | Отозвать доступ |
-
-### Сервисы (`/services`)
-
-| Метод | URL | Кто может | Описание |
-|-------|-----|-----------|----------|
-| `GET` | `/services` | AccountAdmin | Список сервисов |
-| `POST` | `/services` | AccountAdmin | Создать сервис (автоматически создаёт роль `admin`) |
-| `DELETE` | `/services/{svc}` | AccountAdmin | Удалить сервис (деактивирует все роли, доступы) |
-
-### Роли сервиса (`/services/{svc}/roles`)
-
-Кто может управлять: `account_admin` **или** пользователь с ролью `admin` данного сервиса.
-
-| Метод | URL | Описание |
-|-------|-----|----------|
-| `GET` | `/services/{svc}/roles` | Список определённых ролей |
-| `POST` | `/services/{svc}/roles` | Создать новую роль |
-| `PATCH` | `/services/{svc}/roles/{role}` | Обновить описание роли |
-| `DELETE` | `/services/{svc}/roles/{role}` | Удалить роль → авто-отзыв у всех пользователей и групп |
-| `POST` | `/services/{svc}/roles/{role}/assign` | **Массовая** выдача роли пользователям |
-| `POST` | `/services/{svc}/roles/{role}/revoke` | **Массовый** отзыв роли |
-
-Массовое назначение:
-```json
-POST /services/config_service/roles/reader/assign
-{ "user_ids": ["usr_1", "usr_2", "usr_3"] }
-```
-
-### Группы (`/groups`)
-
-Кто может управлять группами: `account_admin`. Добавлять участников: `account_admin` или `department_admin` (только пользователей своего отдела).
-
-| Метод | URL | Описание |
-|-------|-----|----------|
-| `GET` | `/groups` | Список групп |
-| `POST` | `/groups` | Создать группу |
-| `PATCH` | `/groups/{id}` | Обновить группу |
-| `DELETE` | `/groups/{id}` | Удалить группу |
-| `GET/POST` | `/groups/{id}/members` | Список участников / добавить |
-| `DELETE` | `/groups/{id}/members/{user_id}` | Убрать участника |
-| `GET/POST` | `/groups/{id}/services` | Сервисы группы / выдать доступ |
-| `DELETE` | `/groups/{id}/services/{svc}` | Отозвать доступ к сервису |
-| `GET/POST` | `/groups/{id}/roles` | Роли группы / назначить роли на сервис |
-| `DELETE` | `/groups/{id}/roles/{svc}` | Снять все роли группы на сервис |
-
-Пример: выдать группе доступ к сервису и роль `operator`:
-```json
-POST /groups/grp_abc/services
-{ "service_name": "config_service" }
-
-POST /groups/grp_abc/roles
-{ "service_name": "config_service", "roles": ["operator"] }
-```
-
-### Personal Access Tokens (`/tokens`)
-
-| Метод | URL | Описание |
-|-------|-----|----------|
-| `GET` | `/tokens` | Свои PAT (без значений токенов) |
-| `POST` | `/tokens` | Создать PAT (значение возвращается один раз) |
-| `DELETE` | `/tokens/{id}` | Отозвать PAT |
-
-### Боты (`/bots`)
-
-| Метод | URL | Кто может | Описание |
-|-------|-----|-----------|----------|
-| `GET` | `/bots` | AccountAdmin / DeptAdmin | Список ботов (DeptAdmin видит только свой отдел) |
-| `POST` | `/bots` | AnyAdmin | Создать бота |
-| `POST` | `/bots/{id}/tokens` | AnyAdmin | Выпустить токен для бота |
-| `DELETE` | `/bots/{id}/tokens/{token_id}` | AnyAdmin | Отозвать токен бота |
-
-### Авторизация (`/authorization`)
-
-| Метод | URL | Описание |
-|-------|-----|----------|
-| `POST` | `/authorization/introspect` | Валидировать токен → вернуть identity context |
-| `POST` | `/authorization/service-access` | Проверить, есть ли у токена доступ к сервису |
-
-Интроспекция принимает JWT, PAT или bot-токен — возвращает единый формат.
-
----
-
-## Токены
-
-### Жизненный цикл JWT
-
-```
-POST /login → access_token (JWT, ~15 мин) + refresh_token (opaque)
-  ↓
-POST /refresh → новый access_token + новый refresh_token (ротация)
-  ↓
-POST /logout → отзыв refresh_token (invalidate сессии)
-```
-
-Повторное использование refresh-токена (reuse) расценивается как компрометация: все сессии пользователя принудительно закрываются.
-
-### PAT
-
-Используется там, где нужен долгосрочный токен (CI/CD, скрипты). Права PAT определяются правами пользователя на момент обращения — не на момент создания.
-
-### Bot tokens
-
-Боты привязаны к отделу, имеют собственный список `allowed_services`. Используются как пароль в Basic Auth для Docker registry.
-
----
-
-## Интроспекция и проверка доступа
-
-Все остальные сервисы платформы проверяют права через `auth_service`:
-
-```
-POST /authorization/introspect
-{ "token": "<jwt или pat или bot-token>" }
-
-→ {
-    "active": true,
-    "subject_type": "user",        // или "bot"
-    "sub": "usr_abc123",
-    "department_id": "dep_xyz",
-    "allowed_services": ["config_service"],
-    "service_roles": { "config_service": ["reader"] },
-    "exp": 1745000000
-  }
-```
-
-```
-POST /authorization/service-access
-{ "subject_token": "...", "service_name": "config_service" }
-
-→ { "allowed": true, "service_roles": ["reader"] }
-```
-
----
-
-## Боты
-
-Бот (`BotAccount`) — сервисная учётная запись, привязанная к отделу. Используется для автоматизации без привязки к конкретному человеку.
-
-- Бот имеет список `allowed_services`.
-- Бот может иметь несколько именованных токенов (`dbos_bot_...`).
-- Токен бота проходит интроспекцию и возвращает `subject_type: "bot"`.
-- Токен бота работает как пароль в Basic Auth для Docker registry.
-
----
-
-## Docker registry
-
-`auth_service` реализует протокол аутентификации Docker registry (Bearer token scheme):
-
-```
-GET /docker/token  (Basic Auth: username:password)
-  password = пароль пользователя | PAT | bot-token
-  
-→ { "token": "<RS256 JWT>", "access_token": "...", "expires_in": 300, "issued_at": "..." }
-```
-
-Права на pull/push определяются конфигурацией реестра отдела (`/docker/registry/{dept_id}`):
-- `pull_policy: "all"` — pull разрешён всем пользователям отдела.
-- `pull_policy: "restricted"` — pull только для явно указанных пользователей.
-- `push_user_ids` — только эти пользователи могут push.
-
-Публичный ключ для верификации токенов реестра:
-- `GET /docker/certs` — PEM
-- `GET /docker/jwks` — JWKS (RS256)
-
----
-
-## OAuth2
-
-`auth_service` поддерживает базовый OAuth2 для интеграции с внешними приложениями:
-
-| Grant type | Описание |
-|------------|----------|
-| `authorization_code` | Пользователь авторизует приложение через redirect |
-| `client_credentials` | Сервис-к-сервису (M2M) без участия пользователя |
-
-Управление клиентами: `POST /oauth2/clients` (AccountAdmin или DeptAdmin своего отдела).
-
----
-
-## Запуск и развёртывание
+## Запуск
 
 ### Локально (docker-compose)
 
 ```bash
 cd auth_service
 docker-compose up --build
-# API: http://localhost:8000
-# Docs: http://localhost:8000/docs
+# API:   http://localhost:8000
+# Docs:  http://localhost:8000/docs
 ```
 
 ### Напрямую (требуется PostgreSQL)
@@ -386,14 +165,25 @@ cp .env.example .env   # задать DATABASE_URL, SECRET_KEY и т.д.
 PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Переменные окружения
+### Переменные окружения (ключевые)
 
 | Переменная | Описание |
-|------------|----------|
+|------|------|
 | `DATABASE_URL` | `postgresql+psycopg://user:pass@host:5432/db` |
-| `SECRET_KEY` | Секрет для подписи JWT (≥32 символов) |
-| `ACCESS_TOKEN_TTL_MINUTES` | Время жизни access-токена (по умолчанию 15) |
-| `REFRESH_TOKEN_TTL_DAYS` | Время жизни refresh-токена (по умолчанию 14) |
+| `SECRET_KEY` | JWT подпись (≥32 символов, не `change-me` в prod) |
+| `ACCESS_TOKEN_TTL_MINUTES` | TTL access JWT (default 10) |
+| `REFRESH_TOKEN_TTL_DAYS` | TTL refresh (default 14) |
+| `JWT_AUDIENCE`, `JWT_ISSUER`, `JWT_LEEWAY_SECONDS` | hardening |
+| `DOCKER_RSA_PRIVATE_KEY` | PEM RSA для RS256 Docker JWT (обязателен в prod) |
+| `LOGGING_SERVICE_URL` | https в prod (https-guard) |
+| `LOGGING_SERVICE_API_KEY` | Bearer для loging_service (обязателен в prod) |
+| `SERVICE_API_KEY` | shared secret для introspect (обязателен в prod) |
+| `SERVICE_API_KEYS` | JSON env с per-service ключами (опционально, dual-mode) |
+| `STRICT_SERVICE_IDENTITY` | bool, default False — strict-режим `X-Service-Identity` |
+| `TRUSTED_PROXY_IPS` | CIDR list для XFF (default `[]`) |
+| `INITIAL_ADMIN_USERNAME/PASSWORD/EMAIL` | одноразовый bootstrap |
+
+Полный список — в `.env.example`.
 
 ### Миграции (Alembic)
 
@@ -407,29 +197,25 @@ PYTHONPATH=. alembic revision --autogenerate -m "описание"
 ### Тесты
 
 ```bash
-cd auth_service
-# Запуск всех тестов
-poetry run pytest
-
-# Конкретный файл
-poetry run pytest tests/groups/test_groups.py -v
-
-# С логами
-poetry run pytest -s --tb=short
+# Из корня dbos_server_service:
+make test-auth         # быстрые в Docker (TestClient + postgres-тест)
+make test-auth-e2e     # все, включая e2e (registry stack)
+make test-dev-auth     # быстрые в devcontainer
 ```
 
-Тесты используют реальную PostgreSQL (через SAVEPOINT-откат — каждый тест изолирован, схема пересоздаётся один раз на сессию). E2E тесты (`tests/e2e/`) требуют полного docker-compose стека.
+Тесты используют реальный PostgreSQL (через SAVEPOINT-откат — каждый тест изолирован, схема пересоздаётся один раз на сессию). E2E (`tests/e2e/`) требуют полного docker-compose стека с `registry:2` и `fetch-cert`.
 
 ### Kubernetes
 
-Манифесты в `k8s/`. Deployment: 2 реплики, readiness → `/api/auth/v1/ready`, liveness → `/api/auth/v1/health`. Секреты и конфиг инжектируются через `secretRef` / `configMapRef`.
+Манифесты в `k8s/`. Deployment: 2 реплики, readiness → `/api/auth/v1/ready`, liveness → `/api/auth/v1/health`. Секреты и конфиг — `secretRef` / `configMapRef`.
 
 ---
 
 ## Технологии
 
 - Python 3.12, FastAPI, SQLAlchemy 2.0 (async), psycopg3
-- PostgreSQL, Alembic
-- PyJWT, argon2-cffi, cryptography (RS256 для Docker registry)
+- PostgreSQL 16, Alembic
+- PyJWT, argon2-cffi, cryptography (RS256 для Docker JWT)
+- slowapi (rate-limit), pydantic-settings
 - pytest, pytest-asyncio, httpx
 - Docker, Kubernetes

@@ -205,13 +205,20 @@ class TestScopeAccess:
             push_entries = [a for a in access if "push" in a.get("actions", [])]
             assert len(push_entries) > 0
 
-    def test_push_denied_for_admin_not_in_push_list(self, registry_host, auth_base,
-                                                      e2e_docker_enabled):
-        """Admin is not in push_user_ids — push scope should be empty."""
-        resp = self._get_push_token(registry_host, auth_base, "e2e_admin", "E2eAdmin1234!")
+    def test_push_denied_for_user_not_in_push_list(self, registry_host, auth_base,
+                                                      e2e_docker_enabled, e2e_user_pull_only):
+        """Пользователь в e2e_dept, но не в push_user_ids — push scope пуст.
+
+        Раньше тест использовал e2e_admin (account_admin), но admin не привязан
+        к dept и не получает docker_token вообще (DOCKER_ACCESS_DENIED 403).
+        Корректнее — второй обычный пользователь того же отдела, которого нет
+        в `push_user_ids`."""
+        resp = self._get_push_token(
+            registry_host, auth_base,
+            "e2e_pull_only_user", "E2ePullOnly1234!",
+        )
         assert resp.status_code == 200
         access = self._decode_access(resp.json()["token"])
-        # No push access for admin who isn't in push_user_ids
         push_entries = [a for a in access if "push" in a.get("actions", [])]
         assert len(push_entries) == 0
 
@@ -224,7 +231,7 @@ class TestDisabledRegistry:
         """Disable docker for dept, then token request must return 403."""
         s, base = e2e_api
         # Disable
-        s.delete(f"{base}/api/auth/v1/docker/registry/{e2e_dept['id']}")
+        s.delete(f"{base}/api/auth/v1/docker/registry/{e2e_dept['department_id']}")
 
         r = requests.get(_v2_url(registry_host), timeout=5)
         params = _parse_www_authenticate(r.headers["WWW-Authenticate"])
@@ -235,7 +242,7 @@ class TestDisabledRegistry:
 
         # Re-enable so other tests still work
         s.put(
-            f"{base}/api/auth/v1/docker/registry/{e2e_dept['id']}",
+            f"{base}/api/auth/v1/docker/registry/{e2e_dept['department_id']}",
             json={"pull_policy": "all", "pull_user_ids": [],
                   "push_user_ids": [e2e_user["user_id"]]},
         )
@@ -289,7 +296,7 @@ class TestBotTokenAuth:
         s, base = e2e_api
         # Create bot in e2e_dept
         bot = s.post(f"{base}/api/auth/v1/bots",
-                     json={"name": "e2e_dock_bot", "department_id": e2e_dept["id"],
+                     json={"name": "e2e_dock_bot", "department_id": e2e_dept["department_id"],
                            "allowed_services": []}).json()
         bot_id = bot["bot_id"]
         tok = s.post(f"{base}/api/auth/v1/bots/{bot_id}/tokens",
@@ -306,7 +313,7 @@ class TestBotTokenAuth:
                                        e2e_docker_enabled, e2e_api, e2e_dept):
         s, base = e2e_api
         bot = s.post(f"{base}/api/auth/v1/bots",
-                     json={"name": "e2e_dock_bot_rev", "department_id": e2e_dept["id"],
+                     json={"name": "e2e_dock_bot_rev", "department_id": e2e_dept["department_id"],
                            "allowed_services": []}).json()
         bot_id = bot["bot_id"]
         tok_data = s.post(f"{base}/api/auth/v1/bots/{bot_id}/tokens",
@@ -375,7 +382,7 @@ class TestRestrictedPullPolicy:
         s, base = e2e_api
         # Enable restricted for e2e_user only
         s.put(
-            f"{base}/api/auth/v1/docker/registry/{e2e_dept['id']}",
+            f"{base}/api/auth/v1/docker/registry/{e2e_dept['department_id']}",
             json={"pull_policy": "restricted",
                   "pull_user_ids": [e2e_user["user_id"]],
                   "push_user_ids": [e2e_user["user_id"]]},
@@ -391,7 +398,7 @@ class TestRestrictedPullPolicy:
 
         # Restore pull_policy=all
         s.put(
-            f"{base}/api/auth/v1/docker/registry/{e2e_dept['id']}",
+            f"{base}/api/auth/v1/docker/registry/{e2e_dept['department_id']}",
             json={"pull_policy": "all", "pull_user_ids": [],
                   "push_user_ids": [e2e_user["user_id"]]},
         )

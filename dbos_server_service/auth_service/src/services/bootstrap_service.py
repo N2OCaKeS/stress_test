@@ -1,4 +1,9 @@
-"""One-time bootstrap: create initial account_admin from env vars."""
+"""One-time bootstrap: создаёт стартового account_admin из ENV.
+
+Запускается на старте. Если БД пуста — создаёт admin'а из
+`INITIAL_ADMIN_USERNAME/PASSWORD/EMAIL`. Если хоть один юзер уже есть —
+no-op (идемпотентно).
+"""
 
 import logging
 
@@ -13,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 async def bootstrap_admin(db: AsyncSession) -> None:
+    """Засеять начального account_admin'а если БД пуста."""
     settings = get_settings()
     if not settings.initial_admin_username or not settings.initial_admin_password:
         return

@@ -1,0 +1,193 @@
+<mxfile host="app.diagrams.net" modified="2026-05-15T00:00:00.000Z" version="24.0.0">
+  <diagram name="Взаимодействие сервисов" id="svc-map">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1380" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="DBOS Server Manager — карта взаимодействия сервисов" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="2320" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="auth_service — левая колонна, loging_service — правая. Все introspect-стрелки идут влево, audit-стрелки — вправо. Длинные пересекающие стрелки прокинуты по коридорам сверху и снизу backend-ряда." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontStyle=2;fontColor=#555555" vertex="1" parent="1">
+          <mxGeometry x="40" y="65" width="2320" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="actor" value="Пользователь /&#xa;администратор" style="shape=actor;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalLabelPosition=bottom" vertex="1" parent="1">
+          <mxGeometry x="60" y="140" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="cli" value="cli&#xa;&#xa;Консольный клиент&#xa;PAT в ~/.config/dbos&#xa;⛔ не начат" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" vertex="1" parent="1">
+          <mxGeometry x="200" y="120" width="420" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="web" value="web_settings&#xa;&#xa;Web UI администрирования&#xa;OAuth2/JWT через auth_service&#xa;⛔ не начат" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" vertex="1" parent="1">
+          <mxGeometry x="680" y="120" width="420" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="curl" value="curl / Postman&#xa;&#xa;Любой HTTP-клиент&#xa;Bearer-токен в заголовке&#xa;используется уже" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" vertex="1" parent="1">
+          <mxGeometry x="1160" y="120" width="420" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="extbot" value="внешний bot / интеграция&#xa;&#xa;Токен dbos_bot_…&#xa;Привязан к отделу + allowed_services&#xa;модель готова" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" vertex="1" parent="1">
+          <mxGeometry x="1640" y="120" width="420" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bus_bearer" value="Bearer-токен (JWT / PAT / bot-token) — выдаёт auth_service, принимает любой backend API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;fontStyle=1;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="60" y="260" width="2280" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_actor_cli" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=10" edge="1" parent="1" source="actor" target="cli">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cli_bus" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.15;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2" edge="1" parent="1" source="cli" target="bus_bearer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_web_bus" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.36;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2" edge="1" parent="1" source="web" target="bus_bearer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_curl_bus" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.58;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2" edge="1" parent="1" source="curl" target="bus_bearer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bot_bus" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.79;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2" edge="1" parent="1" source="extbot" target="bus_bearer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="auth" value="auth_service&#xa;&#xa;login, refresh, /me&#xa;/users, /departments, /services&#xa;/tokens (PAT), /bots&#xa;/authorization/introspect&#xa;/authorization/service-access&#xa;OAuth2 password flow&#xa;docker-registry token issuer&#xa;&#xa;БД: dev_auth (PG, 2 экз.)&#xa;Статус: ✅ 339/339 тестов" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;align=left;spacingLeft=12;verticalAlign=top;spacingTop=10" vertex="1" parent="1">
+          <mxGeometry x="60" y="370" width="440" height="540" as="geometry" />
+        </mxCell>
+
+        <mxCell id="server" value="server_service&#xa;&#xa;Servers CRUD&#xa;server_accounts, ipmi, disks&#xa;cpu_models, os_versions&#xa;entity_permissions (action-based)&#xa;POST /ipmi/power/{on,off,reboot}&#xa;/internal/* (для worker'а, PAT)&#xa;&#xa;БД: dev_server (PG, 2 экз.)&#xa;Статус: ⚠️ ядро работает" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;align=left;spacingLeft=12;verticalAlign=top;spacingTop=10" vertex="1" parent="1">
+          <mxGeometry x="660" y="370" width="460" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="config" value="config_service&#xa;&#xa;Хранение и выдача секретов.&#xa;Пока пароли живут в server_service&#xa;зашифрованными (AES-256-GCM).&#xa;&#xa;Статус: ⛔ отложен" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;fontStyle=1;align=left;spacingLeft=12;verticalAlign=top;spacingTop=10;dashed=1" vertex="1" parent="1">
+          <mxGeometry x="1280" y="370" width="460" height="220" as="geometry" />
+        </mxCell>
+
+        <mxCell id="logging" value="loging_service&#xa;&#xa;POST /events (ingest, SERVICE_API_KEY)&#xa;GET /events (для admin/reader)&#xa;правила severity/suppress&#xa;retention&#xa;&#xa;Read-auth — через introspect&#xa;Naming: &lt;object&gt;.&lt;verb&gt;&#xa;Severity: TRACE/DEBUG/INFO/&#xa;WARNING/ERROR/CRITICAL&#xa;&#xa;БД: dev_logging (PG, 2 экз.)&#xa;Статус: ✅ 295/296" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;align=left;spacingLeft=12;verticalAlign=top;spacingTop=10" vertex="1" parent="1">
+          <mxGeometry x="1900" y="370" width="440" height="540" as="geometry" />
+        </mxCell>
+
+        <mxCell id="worker" value="server_worker&#xa;&#xa;taskiq + Redis, без HTTP-API&#xa;Подбирает задачи из dev_server_worker.tasks&#xa;Handlers: power.{on,off,reboot,status},&#xa;inventory.sync, *_password.rotate, reinstall.start&#xa;Ходит за секретами в server_service /internal/* (PAT)&#xa;&#xa;БД: dev_server_worker (PG, 2 экз.)&#xa;Статус: ⚠️ mock iDRAC/SSH" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;align=left;spacingLeft=12;verticalAlign=top;spacingTop=10" vertex="1" parent="1">
+          <mxGeometry x="660" y="670" width="460" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="redis" value="Redis&#xa;брокер taskiq, kick-канал" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="1280" y="700" width="460" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_bus_auth" value="login / refresh / introspect-вход" style="endArrow=classic;html=1;exitX=0.1;exitY=1;entryX=0.5;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;fontSize=11" edge="1" parent="1" source="bus_bearer" target="auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bus_server" value="API server_service" style="endArrow=classic;html=1;exitX=0.37;exitY=1;entryX=0.5;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;fontSize=11" edge="1" parent="1" source="bus_bearer" target="server">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bus_config" value="(план)" style="endArrow=classic;html=1;exitX=0.63;exitY=1;entryX=0.5;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=11;dashed=1" edge="1" parent="1" source="bus_bearer" target="config">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bus_logging" value="GET /events (audit-просмотр)" style="endArrow=classic;html=1;exitX=0.91;exitY=1;entryX=0.5;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;fontSize=11" edge="1" parent="1" source="bus_bearer" target="logging">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_server_auth_intro" value="introspect" style="endArrow=classic;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.2;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;fontSize=11;strokeColor=#9673a6" edge="1" parent="1" source="server" target="auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_auth_intro" value="introspect (под bot-PAT)" style="endArrow=classic;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.75;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;fontSize=11;strokeColor=#9673a6" edge="1" parent="1" source="worker" target="auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_config_auth_intro" value="introspect (план)" style="endArrow=classic;html=1;exitX=0.15;exitY=0;entryX=0.7;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=11;strokeColor=#9673a6;dashed=1" edge="1" parent="1" source="config" target="auth">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1349" y="340" />
+              <mxPoint x="368" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_logging_auth_intro" value="introspect (read-auth)" style="endArrow=classic;html=1;exitX=0.1;exitY=0;entryX=0.5;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;fontSize=11;strokeColor=#9673a6" edge="1" parent="1" source="logging" target="auth">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1944" y="325" />
+              <mxPoint x="280" y="325" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_server_log_audit" value="audit POST /events" style="endArrow=classic;html=1;exitX=0.85;exitY=0;entryX=0.3;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;fontSize=11;strokeColor=#d79b00" edge="1" parent="1" source="server" target="logging">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1051" y="350" />
+              <mxPoint x="2032" y="350" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_auth_log_audit" value="audit POST /events" style="endArrow=classic;html=1;exitX=0.9;exitY=0;entryX=0.5;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;fontSize=11;strokeColor=#d79b00" edge="1" parent="1" source="auth" target="logging">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="456" y="335" />
+              <mxPoint x="2120" y="335" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_worker_log_audit" value="audit POST /events" style="endArrow=classic;html=1;exitX=1;exitY=0.2;entryX=0;entryY=0.55;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;fontSize=11;strokeColor=#d79b00" edge="1" parent="1" source="worker" target="logging">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1820" y="714" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_server_worker_kick" value="kick (taskiq)" style="endArrow=classic;html=1;exitX=0.35;exitY=1;entryX=0.35;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=11;dashed=1" edge="1" parent="1" source="server" target="worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_server_internal" value="GET /internal/.../credentials (PAT)&#xa;POST /internal/.../password/rotate" style="endArrow=classic;html=1;exitX=0.65;exitY=0;entryX=0.65;entryY=1;edgeStyle=orthogonalEdgeStyle;rounded=0;strokeWidth=2;fontSize=11" edge="1" parent="1" source="worker" target="server">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_server_db_worker" value="INSERT в dev_server_worker.tasks (cross-DB)" style="endArrow=classic;html=1;exitX=1;exitY=0.9;entryX=0;entryY=0.3;edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=11;dashed=1" edge="1" parent="1" source="server" target="worker">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1200" y="568" />
+              <mxPoint x="1200" y="736" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_server_redis" value="kick" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.25;edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=11;dashed=1" edge="1" parent="1" source="server" target="redis">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1200" y="480" />
+              <mxPoint x="1200" y="730" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_worker_redis" value="poll" style="endArrow=classic;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.75;edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=11;dashed=1" edge="1" parent="1" source="worker" target="redis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="idrac" value="iDRAC / iLO&#xa;Redfish (mock)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="660" y="950" width="140" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="ssh" value="SSH&#xa;inventory, chpasswd&#xa;(mock)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;align=center;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="820" y="950" width="140" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="pxe" value="PXE pipeline&#xa;reinstall (план)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;align=center;verticalAlign=middle;dashed=1" vertex="1" parent="1">
+          <mxGeometry x="980" y="950" width="140" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_worker_idrac" value="Redfish" style="endArrow=classic;html=1;exitX=0.15;exitY=1;entryX=0.5;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=10" edge="1" parent="1" source="worker" target="idrac">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_ssh" value="SSH" style="endArrow=classic;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=10" edge="1" parent="1" source="worker" target="ssh">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_pxe" value="PXE (план)" style="endArrow=classic;html=1;exitX=0.85;exitY=1;entryX=0.5;entryY=0;edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=10;dashed=1" edge="1" parent="1" source="worker" target="pxe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend" value="Легенда&#xa;━━ синхронный HTTP        ┄┄ очередь / событие / cross-DB        пунктирная рамка — компонент в плане&#xa;Фиолетовые стрелки — introspect к auth_service        Оранжевые стрелки — audit POST в loging_service" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;spacingLeft=10;verticalAlign=middle" vertex="1" parent="1">
+          <mxGeometry x="60" y="1130" width="2280" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="notes" value="Правила взаимодействия&#xa;&#xa;• Bearer-токен (JWT/PAT/bot-token) выдаёт только auth_service. Любой backend API принимает его в заголовке Authorization.&#xa;• На каждый защищённый запрос backend дёргает /authorization/introspect в auth_service (фиолетовые стрелки идут влево).&#xa;• Любое значимое действие пишется в loging_service через POST /events (оранжевые стрелки идут вправо), ingest — по SERVICE_API_KEY.&#xa;• server_service общается с server_worker асинхронно: INSERT в общую таблицу dev_server_worker.tasks (cross-DB) + kick через Redis (taskiq), обратно — synchronous HTTP по /internal/*.&#xa;• Внешние действия с железом (Redfish/SSH/PXE) идут только через server_worker.&#xa;• БД у каждого сервиса своя (dev_auth, dev_server, dev_server_worker, dev_logging) — на схеме не показаны для упрощения, упомянуты внутри блоков." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" vertex="1" parent="1">
+          <mxGeometry x="60" y="1220" width="2280" height="140" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

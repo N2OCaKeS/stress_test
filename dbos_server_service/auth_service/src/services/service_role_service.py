@@ -1,79 +1,152 @@
-"""Service role definition management workflows."""
+"""Бизнес-логика `ServiceRoleDefinition` (per-department scope: dept × service × role_name).
+
+Системные роли (`is_system=True`, например `admin`) защищены от модификации
+и удаления — снять их можно только сносом dept-service-access.
+"""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import PlatformRole
-from src.core.exceptions import AuthorizationError, ConflictError, NotFoundError
+from src.core.constants import PlatformRole, ServiceRole
+from src.core.exceptions import (
+    AuthorizationError,
+    ConflictError,
+    DomainValidationError,
+    NotFoundError,
+)
+from src.repositories.bot_roles import BotRoleRepository
+from src.repositories.departments import DepartmentRepository
 from src.repositories.groups import GroupRepository
 from src.repositories.roles import RoleRepository
 from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.services import ServiceRepository
+from src.repositories.users import UserRepository
 from src.schemas.auth import IdentityContext
 from src.schemas.service_roles import ServiceRoleResponse
 from src.services import audit_service
 
 
-def _check_can_manage(identity: IdentityContext, service_name: str) -> None:
-    """account_admin or user with 'admin' role on the service."""
+def _invalidate_identity_cache(user_id: str) -> None:
+    """Сбросить identity-кэш юзера после изменения сервисных ролей.
+    Lazy import, чтобы не тянуть `dependencies.auth` (audit-context, циклы).
+    """
+    try:
+        from src.dependencies.auth import invalidate_identity_cache_for_user
+        invalidate_identity_cache_for_user(user_id)
+    except ImportError:
+        pass
+
+
+def _check_can_manage(
+    identity: IdentityContext, department_id: str, service_name: str
+) -> None:
+    """Проверка прав на управление ролями в (department_id, service_name).
+
+    account_admin — везде. department_admin и любой носитель service-level
+    `admin`-роли — только в своём отделе, причём admin-role holder ограничен
+    тем сервисом, на котором у него `admin`.
+    """
     if identity.platform_role == PlatformRole.ACCOUNT_ADMIN:
         return
-    if "admin" in identity.service_roles.get(service_name, []):
+    if identity.department_id != department_id:
+        raise AuthorizationError(
+            error_code="DEPARTMENT_FORBIDDEN",
+            message="Cannot manage roles outside your own department",
+        )
+    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
+        return
+    if ServiceRole.ADMIN.value in identity.service_roles.get(service_name, []):
         return
     raise AuthorizationError(
         error_code="SERVICE_ROLE_MGMT_FORBIDDEN",
-        message=f"account_admin or '{service_name}' admin role required",
+        message=(
+            "account_admin, department_admin, or the service '" + service_name
+            + "' admin role required"
+        ),
     )
 
 
 def _to_response(obj) -> ServiceRoleResponse:
+    """ORM ServiceRoleDefinition → DTO."""
     return ServiceRoleResponse(
         id=obj.id,
+        department_id=obj.department_id,
         service_name=obj.service_name,
         role_name=obj.role_name,
         display_name=obj.display_name,
         description=obj.description,
         is_active=obj.is_active,
+        is_system=obj.is_system,
         created_at=obj.created_at,
         created_by=obj.created_by,
     )
 
 
+async def _require_dept_service_access(
+    db: AsyncSession, department_id: str, service_name: str
+) -> None:
+    """Пара (отдел, сервис) должна существовать и иметь active access."""
+    dept_repo = DepartmentRepository(db)
+    if await dept_repo.get_by_id(department_id) is None:
+        raise NotFoundError(
+            error_code="DEPARTMENT_NOT_FOUND",
+            message=f"Department '{department_id}' not found",
+        )
+    svc_repo = ServiceRepository(db)
+    if not await svc_repo.exists(service_name):
+        raise NotFoundError(
+            error_code="SERVICE_NOT_FOUND",
+            message=f"Service '{service_name}' not found",
+        )
+    if not await dept_repo.has_active_access(department_id, service_name):
+        raise DomainValidationError(
+            error_code="SERVICE_NOT_GRANTED_FOR_DEPARTMENT",
+            message=(
+                f"Department '{department_id}' has no active access to "
+                f"service '{service_name}'"
+            ),
+        )
+
+
 async def list_roles(
     db: AsyncSession,
     identity: IdentityContext,
+    department_id: str,
     service_name: str,
     request_id: str | None = None,
 ) -> list[ServiceRoleResponse]:
-    _check_can_manage(identity, service_name)
-    svc_repo = ServiceRepository(db)
-    if not await svc_repo.exists(service_name):
-        raise NotFoundError(error_code="SERVICE_NOT_FOUND", message=f"Service '{service_name}' not found")
+    """Список ролей в scope `(dept, service)`."""
+    _check_can_manage(identity, department_id, service_name)
+    await _require_dept_service_access(db, department_id, service_name)
     repo = ServiceRoleDefinitionRepository(db)
-    return [_to_response(r) for r in await repo.list_active(service_name)]
+    return [_to_response(r) for r in await repo.list_active(department_id, service_name)]
 
 
 async def create_role(
     db: AsyncSession,
     identity: IdentityContext,
+    department_id: str,
     service_name: str,
     role_name: str,
     display_name: str,
     description: str | None,
     request_id: str | None = None,
 ) -> ServiceRoleResponse:
-    _check_can_manage(identity, service_name)
-    svc_repo = ServiceRepository(db)
-    if not await svc_repo.exists(service_name):
-        raise NotFoundError(error_code="SERVICE_NOT_FOUND", message=f"Service '{service_name}' not found")
+    """Создать новое определение роли. Уникальность по (dept, service, role_name)."""
+    _check_can_manage(identity, department_id, service_name)
+    await _require_dept_service_access(db, department_id, service_name)
 
     repo = ServiceRoleDefinitionRepository(db)
-    if await repo.exists(service_name, role_name):
+    if await repo.exists(department_id, service_name, role_name):
         raise ConflictError(
             error_code="SERVICE_ROLE_ALREADY_EXISTS",
-            message=f"Role '{role_name}' already exists for service '{service_name}'",
+            message=(
+                f"Role '{role_name}' already exists for service '{service_name}' "
+                f"in department '{department_id}'"
+            ),
         )
 
     obj = await repo.create(
+        department_id=department_id,
         service_name=service_name,
         role_name=role_name,
         display_name=display_name,
@@ -82,9 +155,12 @@ async def create_role(
     )
     await db.commit()
     audit_service.emit(
-        "service_role.create", identity.user_id, target_id=service_name,
+        "service_role.create",
+        identity.user_id,
+        target_id=service_name,
         target_type="service_role",
         details={
+            "department_id": department_id,
             "service_name": service_name,
             "role_name": role_name,
             "display_name": display_name,
@@ -98,29 +174,49 @@ async def create_role(
 async def update_role(
     db: AsyncSession,
     identity: IdentityContext,
+    department_id: str,
     service_name: str,
     role_name: str,
     display_name: str | None,
     description: str | None,
     request_id: str | None = None,
 ) -> ServiceRoleResponse:
-    _check_can_manage(identity, service_name)
+    """Patch display_name/description. Системные роли (`is_system`) не трогаем."""
+    _check_can_manage(identity, department_id, service_name)
     repo = ServiceRoleDefinitionRepository(db)
-    obj = await repo.get(service_name, role_name)
+    obj = await repo.get(department_id, service_name, role_name)
     if obj is None:
         raise NotFoundError(
             error_code="SERVICE_ROLE_NOT_FOUND",
-            message=f"Role '{role_name}' not found for service '{service_name}'",
+            message=(
+                f"Role '{role_name}' not found for service '{service_name}' "
+                f"in department '{department_id}'"
+            ),
+        )
+    if obj.is_system:
+        raise AuthorizationError(
+            error_code="SERVICE_ROLE_SYSTEM_LOCKED",
+            message=f"Role '{role_name}' is system-managed and cannot be modified",
         )
     await repo.update(obj, display_name=display_name, description=description)
     await db.commit()
     audit_service.emit(
-        "service_role.update", identity.user_id, target_id=service_name,
+        "service_role.update",
+        identity.user_id,
+        target_id=service_name,
         target_type="service_role",
         details={
+            "department_id": department_id,
             "service_name": service_name,
             "role_name": role_name,
-            "changes": {k: v for k, v in {"display_name": display_name, "description": description}.items() if v is not None},
+            "changes": {
+                k: v
+                for k, v in {
+                    "display_name": display_name,
+                    "description": description,
+                }.items()
+                if v is not None
+            },
         },
         request_id=request_id,
     )
@@ -130,33 +226,52 @@ async def update_role(
 async def delete_role(
     db: AsyncSession,
     identity: IdentityContext,
+    department_id: str,
     service_name: str,
     role_name: str,
     request_id: str | None = None,
 ) -> None:
-    _check_can_manage(identity, service_name)
+    """Удалить роль (`is_system=True` — не трогаем). Каскадно отзывает её у юзеров/групп/ботов."""
+    _check_can_manage(identity, department_id, service_name)
     repo = ServiceRoleDefinitionRepository(db)
-    obj = await repo.get(service_name, role_name)
+    obj = await repo.get(department_id, service_name, role_name)
     if obj is None:
         raise NotFoundError(
             error_code="SERVICE_ROLE_NOT_FOUND",
-            message=f"Role '{role_name}' not found for service '{service_name}'",
+            message=(
+                f"Role '{role_name}' not found for service '{service_name}' "
+                f"in department '{department_id}'"
+            ),
+        )
+    if obj.is_system:
+        raise AuthorizationError(
+            error_code="SERVICE_ROLE_SYSTEM_LOCKED",
+            message=f"Role '{role_name}' is system-managed and cannot be deleted",
         )
     await repo.deactivate(obj)
-    # auto-revoke this role from all users and groups
     role_repo = RoleRepository(db)
-    await role_repo.deactivate_by_role_name(service_name, role_name)
+    await role_repo.deactivate_by_role_name_in_dept(department_id, service_name, role_name)
     group_repo = GroupRepository(db)
-    await group_repo.deactivate_roles_by_role_name(service_name, role_name)
+    await group_repo.deactivate_roles_by_role_name_in_dept(
+        department_id, service_name, role_name
+    )
+    bot_role_repo = BotRoleRepository(db)
+    await bot_role_repo.deactivate_by_role_name_in_dept(
+        department_id, service_name, role_name
+    )
     await db.commit()
     audit_service.emit(
-        "service_role.delete", identity.user_id, target_id=service_name,
+        "service_role.delete",
+        identity.user_id,
+        target_id=service_name,
         target_type="service_role",
         details={
+            "department_id": department_id,
             "service_name": service_name,
             "role_name": role_name,
             "auto_revoked_from_users": True,
             "auto_revoked_from_groups": True,
+            "auto_revoked_from_bots": True,
         },
         request_id=request_id,
     )
@@ -165,34 +280,52 @@ async def delete_role(
 async def bulk_assign(
     db: AsyncSession,
     identity: IdentityContext,
+    department_id: str,
     service_name: str,
     role_name: str,
     user_ids: list[str],
     request_id: str | None = None,
 ) -> None:
-    _check_can_manage(identity, service_name)
+    """Bulk-выдать роль списку юзеров. Юзеры обязательно из этого отдела."""
+    _check_can_manage(identity, department_id, service_name)
     repo = ServiceRoleDefinitionRepository(db)
-    if not await repo.exists(service_name, role_name):
-        raise NotFoundError(error_code="SERVICE_ROLE_NOT_FOUND",
-                            message=f"Role '{role_name}' not found for service '{service_name}'")
-    from src.repositories.departments import DepartmentRepository
-    from src.repositories.users import UserRepository
+    if not await repo.exists(department_id, service_name, role_name):
+        raise NotFoundError(
+            error_code="SERVICE_ROLE_NOT_FOUND",
+            message=(
+                f"Role '{role_name}' not found for service '{service_name}' "
+                f"in department '{department_id}'"
+            ),
+        )
+
     user_repo = UserRepository(db)
-    dept_repo = DepartmentRepository(db)
     role_repo = RoleRepository(db)
     for user_id in user_ids:
         user = await user_repo.get_by_id(user_id)
         if user is None:
-            raise NotFoundError(error_code="USER_NOT_FOUND", message=f"User '{user_id}' not found")
-        if not await dept_repo.has_active_access(user.department_id, service_name):
-            from src.core.exceptions import AuthorizationError as AE
-            raise AE(error_code="SERVICE_NOT_ALLOWED_FOR_DEPARTMENT",
-                     message=f"User '{user_id}' department has no access to '{service_name}'")
-    await role_repo.bulk_assign(user_ids, service_name, role_name, assigned_by=identity.user_id)
+            raise NotFoundError(
+                error_code="USER_NOT_FOUND", message=f"User '{user_id}' not found"
+            )
+        if user.department_id != department_id:
+            raise AuthorizationError(
+                error_code="USER_DEPARTMENT_MISMATCH",
+                message=(
+                    f"User '{user_id}' belongs to a different department "
+                    f"and cannot be granted roles in '{department_id}'"
+                ),
+            )
+    await role_repo.bulk_assign(
+        user_ids, service_name, role_name, assigned_by=identity.user_id
+    )
     await db.commit()
+    for user_id in user_ids:
+        _invalidate_identity_cache(user_id)
     audit_service.emit(
-        "service_role.bulk_assign", identity.user_id, target_id=service_name,
+        "service_role.bulk_assign",
+        identity.user_id,
+        target_id=service_name,
         details={
+            "department_id": department_id,
             "service_name": service_name,
             "role_name": role_name,
             "user_ids": list(user_ids),
@@ -205,18 +338,40 @@ async def bulk_assign(
 async def bulk_revoke(
     db: AsyncSession,
     identity: IdentityContext,
+    department_id: str,
     service_name: str,
     role_name: str,
     user_ids: list[str],
     request_id: str | None = None,
 ) -> None:
-    _check_can_manage(identity, service_name)
+    """Bulk-снять роль со списка юзеров. Юзеры обязательно из этого отдела."""
+    _check_can_manage(identity, department_id, service_name)
+    user_repo = UserRepository(db)
+    for user_id in user_ids:
+        user = await user_repo.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError(
+                error_code="USER_NOT_FOUND", message=f"User '{user_id}' not found"
+            )
+        if user.department_id != department_id:
+            raise AuthorizationError(
+                error_code="USER_DEPARTMENT_MISMATCH",
+                message=(
+                    f"User '{user_id}' belongs to a different department "
+                    f"and cannot be revoked from roles in '{department_id}'"
+                ),
+            )
     role_repo = RoleRepository(db)
     await role_repo.bulk_revoke(user_ids, service_name, role_name)
     await db.commit()
+    for user_id in user_ids:
+        _invalidate_identity_cache(user_id)
     audit_service.emit(
-        "service_role.bulk_revoke", identity.user_id, target_id=service_name,
+        "service_role.bulk_revoke",
+        identity.user_id,
+        target_id=service_name,
         details={
+            "department_id": department_id,
             "service_name": service_name,
             "role_name": role_name,
             "user_ids": list(user_ids),

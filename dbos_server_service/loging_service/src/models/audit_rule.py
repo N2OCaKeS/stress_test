@@ -1,13 +1,13 @@
-"""AuditRule ORM model — динамические правила фильтрации событий аудита.
+"""ORM-модель `AuditRule` — динамические правила фильтрации событий аудита.
 
-Правила применяются в порядке убывания priority (higher = first).
-Первое правило с эффектом SUPPRESS или ALLOW завершает цепочку.
-OVERRIDE_SEVERITY изменяет severity и продолжает вычисление.
+Правила применяются в порядке убывания `priority` (выше = первее).
+Первое правило с эффектом `SUPPRESS` или `ALLOW` завершает цепочку.
+`OVERRIDE_SEVERITY` меняет severity и продолжает вычисление.
 """
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -22,21 +22,21 @@ class AuditRule(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    # Правила с большим priority выполняются первыми
+    # Правила с большим `priority` выполняются первыми.
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
 
     # ── Критерии совпадения (None = любое значение) ───────────────────────────
     match_service: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # Поддерживает glob: "user.*", "http.*", "user.login"
+    # Поддерживает glob: `user.*`, `http.*`, `user.login`.
     match_action: Mapped[str | None] = mapped_column(String(128), nullable=True)
     match_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     match_severity: Mapped[str | None] = mapped_column(String(16), nullable=True)
     match_allowed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # ── Эффект ────────────────────────────────────────────────────────────────
-    # SUPPRESS         — не сохранять событие
-    # ALLOW            — сохранить немедленно, прекратить вычисление правил
-    # OVERRIDE_SEVERITY — изменить severity, продолжить вычисление
+    # `SUPPRESS`          — не сохранять событие.
+    # `ALLOW`             — сохранить немедленно, прервать вычисление правил.
+    # `OVERRIDE_SEVERITY` — изменить severity, продолжить.
     effect: Mapped[str] = mapped_column(String(32), nullable=False)
     effect_severity: Mapped[str | None] = mapped_column(String(16), nullable=True)
 

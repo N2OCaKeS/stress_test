@@ -1,9 +1,8 @@
-"""ServiceEvent repository — upsert and query registered service events."""
+"""Репозиторий `ServiceEvent` — upsert и query реестра событий сервисов."""
 
-import re
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import literal_column, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -16,41 +15,47 @@ def upsert_events(
     service: str,
     events: list[dict],
 ) -> tuple[int, int]:
-    """Upsert a batch of event definitions for *service*.
+    """Upsert батча определений событий для *service*.
 
-    Returns (added, updated) counts.
+    Возвращает (added, updated). Атомарен на уровне БД: каждый row идёт через
+    `INSERT … ON CONFLICT (service, action) DO UPDATE`, поэтому параллельные
+    upsert'ы одной (service, action) не падают `IntegrityError`. RETURNING
+    `xmax = 0` отличает свежий INSERT (xmax = 0) от UPDATE (xmax = xid) —
+    дёшево и не просит лишний SELECT для подсчёта.
     """
     if not events:
         return 0, 0
 
     now = datetime.now(timezone.utc)
-    existing = {
-        row.action: row
-        for row in db.execute(
-            select(ServiceEvent).where(ServiceEvent.service == service)
-        ).scalars()
-    }
-
     added = updated = 0
+
     for ev in events:
-        action = ev["action"]
-        if action in existing:
-            row = existing[action]
-            row.description = ev.get("description", row.description)
-            row.default_severity = ev.get("default_severity", row.default_severity)
-            row.updated_at = now
-            updated += 1
-        else:
-            db.add(ServiceEvent(
+        stmt = (
+            pg_insert(ServiceEvent)
+            .values(
                 id=service_event_id(),
                 service=service,
-                action=action,
+                action=ev["action"],
                 description=ev.get("description"),
                 default_severity=ev.get("default_severity"),
                 registered_at=now,
                 updated_at=now,
-            ))
+            )
+            .on_conflict_do_update(
+                index_elements=["service", "action"],
+                set_={
+                    "description": ev.get("description"),
+                    "default_severity": ev.get("default_severity"),
+                    "updated_at": now,
+                },
+            )
+            .returning(literal_column("(xmax = 0)").label("was_inserted"))
+        )
+        was_inserted = db.execute(stmt).scalar_one()
+        if was_inserted:
             added += 1
+        else:
+            updated += 1
 
     db.commit()
     return added, updated
@@ -85,10 +90,10 @@ def list_all(db: Session) -> list[ServiceEvent]:
 
 
 def action_is_registered(db: Session, match_action: str) -> bool:
-    """Return True if *match_action* matches at least one registered event.
+    """True, если *match_action* совпадает хотя бы с одним зарегистрированным событием.
 
-    Exact strings require an exact match.
-    Patterns containing '*' are matched via fnmatch against all registered actions.
+    Точные строки требуют точного совпадения. Паттерны со `*` проверяются
+    через `action_matches_pattern` против всех зарегистрированных action'ов.
     """
     if "*" in match_action:
         from src.services.rule_service import action_matches_pattern

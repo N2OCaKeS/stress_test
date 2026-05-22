@@ -25,6 +25,13 @@ spec:
                 name: logging-service-config
             - secretRef:
                 name: logging-service-secrets
+          env:
+            # Outbound bearer для POST /introspect в auth_service. На per-service
+            # SERVICE_API_KEYS режиме обязателен — production-guard в Settings
+            # отвергает запуск без него.
+            - name: INTROSPECT_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_INTROSPECT_SERVICE_API_KEY }
           readinessProbe:
             httpGet:
               path: /api/logging/v1/ready

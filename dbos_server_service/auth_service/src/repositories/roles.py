@@ -1,8 +1,9 @@
-"""Role assignment repository."""
+"""DAO для `UserServiceRole` — set/clear/list ролей юзера + bulk-операции."""
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.user import User
 from src.models.user_service_role import UserServiceRole
 from src.utils.ids import _new_id
 
@@ -32,6 +33,23 @@ class RoleRepository:
         for row in rows:
             result.setdefault(row.service_name, []).append(row.role)
         return result
+
+    async def list_active_assignments(self, user_id: str) -> list[UserServiceRole]:
+        """Return raw `UserServiceRole` rows (active only) for the user.
+
+        Used by `GET /users/{id}/permissions` where the UI needs
+        ``assigned_at`` / ``assigned_by`` per assignment — info that
+        :meth:`get_all_roles` strips when collapsing to
+        ``{service_name: [role, ...]}``. Active-only filter mirrors
+        :meth:`get_all_roles` so the two stay consistent.
+        """
+        rows = await self._db.scalars(
+            select(UserServiceRole).where(
+                UserServiceRole.user_id == user_id,
+                UserServiceRole.is_active.is_(True),
+            )
+        )
+        return list(rows)
 
     async def set_roles(
         self,
@@ -78,11 +96,69 @@ class RoleRepository:
             row.is_active = False
         await self._db.flush()
 
+    async def deactivate_all_for_user(self, user_id: str) -> int:
+        """Снять все service-роли с юзера. Возвращает count затронутых строк.
+
+        Используется при смене `department_id` — старые роли указывают на
+        сервисы прежнего отдела и их нельзя сохранять. `_merge_permissions`
+        INTERSECT уже отфильтровывает их из effective view, но физически
+        строки остаются в БД — это нарушает инвариант
+        «роль юзера ⊆ сервисы его отдела».
+        """
+        rows = await self._db.scalars(
+            select(UserServiceRole).where(
+                UserServiceRole.user_id == user_id,
+                UserServiceRole.is_active.is_(True),
+            )
+        )
+        count = 0
+        for row in rows:
+            row.is_active = False
+            count += 1
+        await self._db.flush()
+        return count
+
     async def deactivate_by_role_name(self, service_name: str, role_name: str) -> None:
         rows = await self._db.scalars(
             select(UserServiceRole).where(
                 UserServiceRole.service_name == service_name,
                 UserServiceRole.role == role_name,
+            )
+        )
+        for row in rows:
+            row.is_active = False
+        await self._db.flush()
+
+    async def deactivate_by_role_name_in_dept(
+        self, department_id: str, service_name: str, role_name: str
+    ) -> None:
+        """Deactivate user→role assignments only for users of the given department."""
+        rows = await self._db.scalars(
+            select(UserServiceRole)
+            .join(User, User.id == UserServiceRole.user_id)
+            .where(
+                User.department_id == department_id,
+                UserServiceRole.service_name == service_name,
+                UserServiceRole.role == role_name,
+            )
+        )
+        for row in rows:
+            row.is_active = False
+        await self._db.flush()
+
+    async def deactivate_all_in_dept_for_service(
+        self, department_id: str, service_name: str
+    ) -> None:
+        """Deactivate every role for every user of `department_id` in `service_name`.
+
+        Used when a department's access to a service is revoked.
+        """
+        rows = await self._db.scalars(
+            select(UserServiceRole)
+            .join(User, User.id == UserServiceRole.user_id)
+            .where(
+                User.department_id == department_id,
+                UserServiceRole.service_name == service_name,
             )
         )
         for row in rows:

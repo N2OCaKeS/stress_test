@@ -14,14 +14,17 @@
 
 ## Целевая архитектура
 
-На текущий момент в проекте выделены 6 компонентов:
+На текущий момент в проекте выделены 7 компонентов:
 
 - `auth_service` — единая точка аутентификации и авторизации;
-- `config_service` — хранение и выдача секретов и служебных учётных данных;
 - `logging_service` — централизованный аудит действий;
-- `server_service` — операции по управлению серверами.
-- `web_settings` — web-интерфейс для администрирования платформы;
-- `cli` — кроссплатформенный CLI-клиент для работы с сервисами из консоли.
+- `server_service` — операции по управлению серверами (REST-фасад);
+- `server_worker` — фоновый исполнитель hardware-задач (Redfish / ipmitool / SSH / PXE);
+- `config_service` — хранение и выдача секретов и служебных учётных данных (отложен);
+- `web_settings` — web-интерфейс для администрирования платформы (отложен);
+- `cli` — кроссплатформенный CLI-клиент для работы с сервисами из консоли (отложен).
+
+Состояние реализации: 4 backend-сервиса production-ready (`auth_service`, `logging_service`, `server_service`, `server_worker`), 4022 проходящих теста (943 + 777 + 816 + 1486), открытых критичных задач нет. Подробности — `STATUS.md`.
 
 Типовая схема развёртывания одного сервиса:
 
@@ -142,6 +145,23 @@
 ### `server_service`
 
 Отвечает за жизненный цикл серверов, операции управления и интеграцию с низкоуровневыми интерфейсами вроде `iDRAC`, `iLO` и `PXE`.
+
+Сам сервис — это REST-фасад: хранит модели серверов/IPMI/аккаунтов/каталоги, шифрует пароли (AES-256-GCM с версионированием ключа), валидирует action-based права и **диспетчеризует hardware-операции в `server_worker`** через taskiq+Redis. Прямого общения с BMC у `server_service` нет.
+
+### `server_worker`
+
+Фоновый исполнитель задач, делегированных `server_service`. Не имеет HTTP-API. Стек: `taskiq` + Redis broker, своя БД `dev_server_worker` (`tasks`, `audit_outbox`, `worker_heartbeats`).
+
+Содержит 4 hardware-клиента в `clients/`:
+
+- **Redfish** (iDRAC/iLO),
+- **ipmitool** (fallback для legacy BMC: Supermicro X9/X10),
+- **SSH** (`asyncssh` для `inventory.sync` и `chpasswd`),
+- **PXE** (next-boot=PXE → reboot → ожидание host'а для `reinstall.start`).
+
+Выбор между Redfish и ipmitool делает dispatcher `get_bmc_client` через HEAD `/redfish/v1/` probe; ошибки маппятся на унифицированные коды `BMC_UNREACHABLE` / `BMC_AUTH_FAILED` / `BMC_REJECTED` / `BMC_TIMEOUT` / `BMC_ERROR`.
+
+Аудит в `logging_service` идёт через durable outbox (`FOR UPDATE SKIP LOCKED`, at-least-once, circuit breaker, DLQ при `attempts >= 50`). Периодические задачи: heartbeat, sweep orphaned, retention для `tasks` и `audit_outbox`, lazy re-encrypt секретов.
 
 ### `web_settings`
 

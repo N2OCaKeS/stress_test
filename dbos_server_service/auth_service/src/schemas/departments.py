@@ -1,16 +1,18 @@
-"""Schemas for department management and service access."""
+"""Схемы для управления отделами и их доступом к сервисам."""
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DepartmentCreate(BaseModel):
-    name: str
-    display_name: str
+    """Тело `POST /departments`."""
+    name: str = Field(description="Машинно-читаемое имя отдела (уникально).")
+    display_name: str = Field(description="Человеческое название.")
 
 
 class DepartmentResponse(BaseModel):
+    """Отдел в ответе list/get эндпоинтов."""
     department_id: str
     name: str
     display_name: str
@@ -21,10 +23,12 @@ class DepartmentResponse(BaseModel):
 
 
 class GrantServiceAccessRequest(BaseModel):
-    service_name: str
+    """Тело `POST /departments/{department_id}/services`."""
+    service_name: str = Field(description="Сервис, к которому даём отделу access.")
 
 
 class ServiceAccessResponse(BaseModel):
+    """Ответ grant-эндпоинта — текущее состояние связи (dept, service)."""
     department_id: str
     service_name: str
     enabled: bool

@@ -1,4 +1,4 @@
-"""User-to-service role assignment model."""
+"""ORM-модель `UserServiceRole` — назначение service-роли пользователю."""
 
 from datetime import datetime
 

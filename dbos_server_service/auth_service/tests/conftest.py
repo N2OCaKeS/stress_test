@@ -39,6 +39,13 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("SECRET_KEY", "pytest-secret-key-at-least-32-characters-long")
 os.environ.setdefault("ACCESS_TOKEN_TTL_MINUTES", "10")
 os.environ.setdefault("REFRESH_TOKEN_TTL_DAYS", "14")
+os.environ.setdefault("SERVICE_API_KEY", "pytest-service-api-key-shared-secret")
+# identity-cache disabled по умолчанию в тестах. Существующие тесты
+# (`test_admin_guard_revalidate.py`) мутируют User-state прямым SQL'ом мимо
+# service-level invalidate-хуков, поэтому TTL>0 ломал бы их. Тесты,
+# проверяющие сам кэш (`test_p2_identity_ban_cache.py`), поднимают TTL через
+# `monkeypatch` внутри теста.
+os.environ.setdefault("IDENTITY_CACHE_TTL_SECONDS", "0")
 
 # ── Импорты приложения (после установки переменных окружения) ────────────────
 from src.core.security import hash_password  # noqa: E402
@@ -106,14 +113,61 @@ def _run_migrations() -> None:
     )
 
 
+def _seed_e2e_admin() -> None:
+    """Воссоздать e2e_admin в свежей БД (мы её только что ресетнули).
+
+    auth-service-e2e seed'ит этого юзера при своём старте, но `_reset_schema`
+    выше стёр БД, так что повторяем seed для совместимости e2e-тестов.
+    Идемпотентно — `seed_e2e.py` пропускает, если юзер уже есть."""
+    service_dir = os.path.dirname(os.path.dirname(__file__))
+    env = {
+        **os.environ,
+        "DATABASE_URL": TEST_DATABASE_URL,
+        "PYTHONPATH": ".",
+        "E2E_ADMIN_USERNAME": os.environ.get("E2E_ADMIN_USERNAME", "e2e_admin"),
+        "E2E_ADMIN_PASSWORD": os.environ.get("E2E_ADMIN_PASSWORD", "E2eAdmin1234!"),
+    }
+    subprocess.run(
+        ["python", "src/scripts/seed_e2e.py"],
+        cwd=service_dir, env=env, check=False, capture_output=True,
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _create_schema():
     """Ensure test DB exists, wipe schema, run migrations fresh."""
     _ensure_test_db_exists()
     _reset_schema()
     _run_migrations()
+    _seed_e2e_admin()
     yield
     _reset_schema()   # clean teardown so next session starts from scratch
+
+
+# ── Очистка module-level кэшей перед каждым тестом ──────────────────────────
+#
+# `dependencies.auth._identity_cache` — module-level TTL-кэш на ~5s.
+# Между тестами SAVEPOINT откатывает БД, но кэш остаётся: если тест A
+# залогинился как user_a и закэшировал identity, тест B с тем же токеном
+# (маловероятно, но возможно при `_login()` детерминированных фикстурах)
+# получит stale identity из кэша, ссылающуюся на объект из rollback'нутой
+# транзакции. Чистим явно перед каждым тестом.
+
+
+@pytest.fixture(autouse=True)
+def _clear_module_level_caches():
+    """Очистить identity-кэш перед каждым тестом."""
+    try:
+        from src.dependencies.auth import _identity_cache_clear
+        _identity_cache_clear()
+    except ImportError:
+        pass
+    yield
+    try:
+        from src.dependencies.auth import _identity_cache_clear
+        _identity_cache_clear()
+    except ImportError:
+        pass
 
 
 # ── Откат транзакции после каждого теста ─────────────────────────────────────
@@ -149,8 +203,50 @@ async def db():
 
 # ── FastAPI AsyncClient (HTTP-клиент для тестов) ─────────────────────────────
 
+class _AuthorizationHeaderInjectingTransport(ASGITransport):
+    """ASGI transport that auto-attaches SERVICE_API_KEY bearer header to
+    requests targeting /authorization/* endpoints, unless the test already
+    set an Authorization header explicitly.
+
+    Rationale: `/introspect` and `/service-access` are protected by
+    `require_service_token`. Without this injector every old test would
+    need a header rewrite. Tests that want to *probe* the guard (no header
+    or wrong header) override Authorization explicitly — that takes
+    priority and bypasses the injector.
+    """
+
+    async def handle_async_request(self, request):  # type: ignore[override]
+        path = request.url.path
+        # httpx Headers is case-insensitive; `__contains__` handles that.
+        if "/authorization/" in path and "authorization" not in request.headers:
+            request.headers["Authorization"] = (
+                f"Bearer {os.environ['SERVICE_API_KEY']}"
+            )
+        return await super().handle_async_request(request)
+
+
 @pytest_asyncio.fixture()
 async def client(db):
+    app = create_application()
+
+    async def _override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = _override_get_db
+    async with AsyncClient(
+        transport=_AuthorizationHeaderInjectingTransport(app=app),
+        base_url="http://test",
+    ) as c:
+        yield c
+
+
+@pytest_asyncio.fixture()
+async def raw_client(db):
+    """Same app, but WITHOUT the SERVICE_API_KEY injector.
+
+    Use this to probe the `/authorization/*` guard directly (no header,
+    wrong header, etc.). All other tests should use ``client``.
+    """
     app = create_application()
 
     async def _override_get_db():
@@ -188,32 +284,27 @@ async def _make_dept(db, name):
     return dept
 
 
-_DEFAULT_SERVICE_ROLES = ["admin", "operator", "reader", "guest"]
+_DEFAULT_SERVICE_ROLES = ["operator", "reader", "guest"]
 
 
 async def _make_service(db, name):
+    """Create a platform service. Role definitions are seeded per-department
+    when access is granted (see _grant_service)."""
     svc = PlatformService(service_name=name, display_name=name.title(), is_active=True)
     db.add(svc)
-    await db.flush()
-    for role_name in _DEFAULT_SERVICE_ROLES:
-        db.add(ServiceRoleDefinition(
-            id=service_role_def_id(),
-            service_name=name,
-            role_name=role_name,
-            display_name=role_name.title(),
-            is_active=True,
-        ))
     await db.flush()
     return svc
 
 
-async def _make_role_def(db, service_name, role_name, display_name=None):
+async def _make_role_def(db, department_id, service_name, role_name, display_name=None, is_system=False):
     obj = ServiceRoleDefinition(
         id=service_role_def_id(),
+        department_id=department_id,
         service_name=service_name,
         role_name=role_name,
         display_name=display_name or role_name.title(),
         is_active=True,
+        is_system=is_system,
     )
     db.add(obj)
     await db.flush()
@@ -221,11 +312,16 @@ async def _make_role_def(db, service_name, role_name, display_name=None):
 
 
 async def _grant_service(db, dept_id, service_name):
+    """Grant a department access to a service and seed the default role catalog
+    for that (department, service) pair: `admin` (system) + reader/operator/guest."""
     access = DepartmentServiceAccess(
         id=_new_id("dsa_"), department_id=dept_id,
         service_name=service_name, is_active=True,
     )
     db.add(access)
+    await _make_role_def(db, dept_id, service_name, "admin", display_name="Admin", is_system=True)
+    for role_name in _DEFAULT_SERVICE_ROLES:
+        await _make_role_def(db, dept_id, service_name, role_name)
     await db.flush()
     return access
 
@@ -325,6 +421,37 @@ async def dept_admin_b_token(client, dept_admin_b):
 @pytest_asyncio.fixture()
 async def user_b_token(client, user_b):
     return await _login(client, "t_user_b", "User1234!")
+
+
+# ── Фикстуры: service-to-service auth ────────────────────────────────────────
+
+@pytest.fixture()
+def service_auth_headers():
+    """Authorization header with SERVICE_API_KEY for /authorization/* endpoints.
+
+    Both /introspect and /service-access are guarded by `require_service_token`
+    (shared secret in `SERVICE_API_KEY`). Tests calling those endpoints must
+    pass this header.
+    """
+    return {"Authorization": f"Bearer {os.environ['SERVICE_API_KEY']}"}
+
+
+# ── Rate-limit reset (per-route limiter, slowapi) ─────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Сбрасывает per-IP rate-limit между тестами.
+
+    Все тесты идут с одного `127.0.0.1` через ASGITransport — без reset'а
+    счётчики slowapi сохранили бы состояние между кейсами и под нагрузкой
+    нескольких login-тестов начались бы случайные 429. Лимиты явно проверяются
+    только в `tests/middleware/test_rate_limit.py`.
+    """
+    from src.main import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()
 
 
 # ── Фикстуры: Docker registry ────────────────────────────────────────────────

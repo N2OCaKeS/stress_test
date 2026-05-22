@@ -1,1 +1,1 @@
-"""Core application modules."""
+"""Core: config, security, exceptions, logging, constants — общая инфраструктура."""

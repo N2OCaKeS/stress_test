@@ -1,4 +1,4 @@
-"""API v1 router."""
+"""API v1 — собираем все группы эндпоинтов."""
 
 from fastapi import APIRouter
 

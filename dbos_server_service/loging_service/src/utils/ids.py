@@ -1,4 +1,4 @@
-"""Prefixed ID generation."""
+"""Генерация ID с префиксами."""
 
 import uuid
 

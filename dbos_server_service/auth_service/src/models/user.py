@@ -1,4 +1,4 @@
-"""User model."""
+"""ORM-модель `User` — основная сущность юзера (username, password_hash, dept, platform_role, ban-поля)."""
 
 from datetime import datetime
 
@@ -20,7 +20,7 @@ class User(Base):
         String(64), ForeignKey("departments.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(String(32), default=UserStatus.ACTIVE, nullable=False)
-    # Auth-level role: account_admin / department_admin / null for regular users
+    # Auth-level роль: account_admin / department_admin / null для обычных юзеров
     platform_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

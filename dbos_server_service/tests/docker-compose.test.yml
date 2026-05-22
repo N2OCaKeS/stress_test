@@ -44,6 +44,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://logging_user:logging_password@logging-postgres:5432/logging_db_test
       SERVICE_API_KEY: test-logging-api-key
+      # loging_service делает introspect в auth_service для админ-endpoints —
+      # без этого все /events/*/rules возвращают 503 AUTH_SERVICE_NOT_CONFIGURED.
+      AUTH_SERVICE_URL: http://auth-service:8000
       APP_LOG_LEVEL: WARNING
     command: >
       sh -c "python -m alembic upgrade head &&

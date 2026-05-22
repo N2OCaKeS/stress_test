@@ -1,4 +1,4 @@
-"""Domain exception hierarchy."""
+"""Иерархия доменных исключений сервиса."""
 
 from dataclasses import dataclass, field
 
@@ -24,6 +24,11 @@ class AuthorizationError(AppException):
 @dataclass
 class NotFoundError(AppException):
     http_status: int = 404
+
+
+@dataclass
+class ConflictError(AppException):
+    http_status: int = 409
 
 
 @dataclass

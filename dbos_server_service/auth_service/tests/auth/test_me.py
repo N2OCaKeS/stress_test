@@ -43,9 +43,10 @@ async def test_me_with_invalid_token_returns_401(client, account_admin):
 
 async def test_me_with_truly_expired_jwt_returns_401(client, user_a):
     """JWT с exp в прошлом, но валидной подписью → 401 ACCESS_TOKEN_EXPIRED (плоский envelope)."""
+    # JWT_LEEWAY_SECONDS=10 → нужно уйти ЗА пределы leeway, чтобы decode упал.
     expired = create_access_token(
         {"sub": user_a.id, "username": user_a.username},
-        expires_delta=timedelta(seconds=-1),
+        expires_delta=timedelta(seconds=-30),
     )
     resp = await client.get(URL, headers={"Authorization": f"Bearer {expired}"})
     assert resp.status_code == 401

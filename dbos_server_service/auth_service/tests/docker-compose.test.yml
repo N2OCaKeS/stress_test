@@ -35,6 +35,11 @@ services:
       DOCKER_REGISTRY_SERVICE: docker-registry:5000
       DOCKER_REGISTRY_ISSUER: auth_service
       DOCKER_TOKEN_TTL_MINUTES: "5"
+      # Фиксированный RSA-ключ для подписи Docker JWT.
+      # Без него auth_service генерирует эфемерный ключ при каждом старте → если
+      # auth-service-e2e перезапускается после того как fetch-cert сохранил cert,
+      # registry rootcertbundle устаревает → "token signed by untrusted key".
+      DOCKER_RSA_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCwnW21JKCh6fGb\nyTdv1oJoDIs2Nq+uI5V4winGNtL6vTUB3u25PAZbDmdZ2Z6V7rn5DLQtzQz/xpYe\nFmQsXXmePGIRWULkRxA/No9uQZIMk7HMkuaET3cleOuJQrl+qONv8spbW5DrzEm2\ne0WPY0uRQHyh7rlP1tf3hWqTeYvc3IPn4UUzz14aApVlEZMXOnQJOUqVMk1aCvH3\ntKbCDSCxdGQmzzyt7FXdHDyG2GzI+8Zg5k0vKtm5DD8O43Nx/UJc4ReRSuk4dVao\namvQaw+osGN6HWpOrKS7j7HTjjwqqwUYEoV65AvVslRu5XbRfvF7dMQnLVHyJEti\n49yvrJKvAgMBAAECggEAH1VewFNmODOUDMpvDmVlL2aCUDT1iBSCETGJTcQuPBPT\nUqilTkaq7f6pMVSdgQYgcmHhmXqWgs5NlbrtPL28tOkLkP5gErXU2RIp8iqp6ZdO\nZPfu86xRfBFu4CQ5WpJF/3d4lSqylFLjBP/rwFuibXueYPBEaji4ig5ecRmQSbd+\nMFYx3hRYbjMimSBytFDWiSpMMx4jPeDy5CsAXh7dz0IJ2kHbYwZ/jTbXJyW/hqXI\nhuLItSMRp5AeG0WzKl0kwln6ShScH7RgOY7SgXVQPN2H36ZiQnbUTc7qWlPNvk/v\nLFaVyrI9D/Au4pfxu7UkteSp/xINrN9Mwp+7j/XbsQKBgQDVoG/GFFJPMnB78cvC\n9sN03opd8LWCIOfPkd3w1JEm4jdrHAIG1zM/GHlr6zuv6SsIwI6B59JySU14EO6b\n0x87N8l1ijYP2cvMD48Giy+lmaFKE2e/4aepN9mN/FE80haefciNB9T7w4g2FIK9\nZv5z1YlCunBGFkZwGObUBRDk2QKBgQDTpZrMHOhiJD00G6Qj/1w5+doG7Ctz1aKO\nU3px0v3nZmSldNhnNH+9+hvAB16AOpDMJK9B487iz1RDS6OhnBYVEjqa3uEaW/Fu\nSKU7CMaBxJmj9Gj1PtMHhaqOHW1kDXC4rcIHvt179DFpCsX5E7BTe79ts+YMhWGv\nTJ6jybtexwKBgGILFgF0xinu3k0kNf4uvpneoOZoWQV2EK3lJlUnWc7ct86CtjNp\nhO2KT//FoEkl3EhSB5V7TcyB8/oM21XM2WKWQfGeEx3HOY9X/K5mJuH71lhm+5DH\nAenZ5hESIj6ltRfcZrTDSW6a2OLpGu/OWy3SbQKhCnJAOuerphTcllpRAoGBAJUV\nThkBM+ANzt7pqZGByyE7kgzWRzVtAvhmbRXInfll8vdpexYXsPPNPcbiafrBRkXG\ngX1UTuMNUDmnCjhIjnWBRa7Z2I6MvWAF4/3VjJ7UMbV/8H7wJg5iZWV97RRRM1mj\na82w8Krjs/peEF4HNGlZ/dn0otOnEMw+mHCfJVD5AoGBAJa0NizsHqxNvyQbLKyP\nsFymPy25nJQFugMyxDMZp0pxTvxw3l/elF67kmTpbHVFwG3A7Orxcyyoyt8MKx2X\nQ5WLQ8GHgkJJeT3hwAGiv43m/BxSE50K5QRIn8ivZzWq4HO4CrgdwyC72NMWd8Sg\nLhbCfipbZhezQyKmRF9S1zV8\n-----END PRIVATE KEY-----"
       E2E_ADMIN_USERNAME: e2e_admin
       E2E_ADMIN_PASSWORD: E2eAdmin1234!
     # Run migrations, seed E2E admin, then start server
@@ -55,6 +60,9 @@ services:
   fetch-cert:
     profiles: ["e2e"]
     image: curlimages/curl:latest
+    # Volume /certs создаётся docker'ом от root; curlimages/curl работает
+    # от curl_user (uid=100) → curl exit 23 (Permission denied) на запись.
+    user: root
     volumes:
       - e2e-certs:/certs
     command: >
@@ -107,7 +115,14 @@ services:
     depends_on:
       test-postgres:
         condition: service_healthy
-      # docker-registry is only needed for -m e2e tests; activate via `--profile e2e`
+      # docker-registry / auth-service-e2e — нужны только под `--profile e2e`.
+      # docker compose сам пропустит условные зависимости, если профиль не активен.
+      auth-service-e2e:
+        condition: service_healthy
+        required: false
+      docker-registry:
+        condition: service_healthy
+        required: false
     # Bind tests/ and src/ for fast iteration (no rebuild on new test files).
     # Paths are relative to this compose file (auth_service/tests/).
     volumes:

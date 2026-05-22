@@ -1,1 +1,1 @@
-"""auth_service package."""
+"""Пакет auth_service. См. src/main.py — entrypoint FastAPI-приложения."""

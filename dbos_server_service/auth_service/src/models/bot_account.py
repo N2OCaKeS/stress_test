@@ -1,4 +1,9 @@
-"""Bot and service account model."""
+"""ORM-модель `BotAccount` — service-account внутри отдела.
+
+`allowed_services` ограничивает, к каким сервисам бот может получать токены.
+`created_by` хранит user_id создавшего — используется при ban'е юзера для
+каскадного revoke всех bot-токенов owned-ботов (см. `user_service.ban_user`).
+"""
 
 from datetime import datetime
 
@@ -36,4 +41,7 @@ class BotAccount(Base):
     department: Mapped["Department"] = relationship("Department", back_populates="bots")  # noqa: F821
     tokens: Mapped[list["BotToken"]] = relationship(  # noqa: F821
         "BotToken", back_populates="bot", cascade="all, delete-orphan"
+    )
+    service_roles: Mapped[list["BotServiceRole"]] = relationship(  # noqa: F821
+        "BotServiceRole", back_populates="bot", cascade="all, delete-orphan"
     )

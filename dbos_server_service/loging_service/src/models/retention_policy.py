@@ -1,4 +1,10 @@
-"""RetentionPolicy — configures how long audit events are kept per severity/service."""
+"""`RetentionPolicy` — срок хранения событий, опционально per severity / service.
+
+`severity` и `service` (миграция `g7b8c9d0e1f2`) — каждый row пишет одну
+комбинацию `(severity_i, service_j)` или NULL/NULL для глобальной
+политики. Cartesian expansion — на уровне `repositories::create_policy`
+(см. там).
+"""
 
 from datetime import datetime, timezone
 
@@ -18,7 +24,7 @@ class RetentionPolicy(Base):
 
     id: Mapped[str] = mapped_column(String(48), primary_key=True, default=_retention_policy_id)
 
-    # NULL = applies to all severities / services
+    # NULL = применяется ко всем severity / всем сервисам.
     severity: Mapped[str | None] = mapped_column(String(16), nullable=True)
     service: Mapped[str | None] = mapped_column(String(64), nullable=True)
 

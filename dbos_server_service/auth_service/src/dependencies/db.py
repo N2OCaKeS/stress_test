@@ -1,4 +1,4 @@
-"""Database session dependency."""
+"""Зависимость на DB-сессию для FastAPI Depends."""
 
 from collections.abc import AsyncGenerator
 
@@ -8,5 +8,6 @@ from src.db.session import AsyncSessionLocal
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Открыть AsyncSession на время запроса. Закрывается автоматически."""
     async with AsyncSessionLocal() as session:
         yield session

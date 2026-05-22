@@ -1,4 +1,4 @@
-"""Version 1 API router aggregation."""
+"""Сборка v1 API router'ов — auth, users, departments, services и т.д."""
 
 from fastapi import APIRouter
 

@@ -1,0 +1,145 @@
+<mxfile host="app.diagrams.net" modified="2026-05-15T00:00:00.000Z" version="24.0.0">
+  <diagram name="Модель прав" id="perm-model">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="2200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Модель прав DBOS Server Manager" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1620" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Источник истины о ролях — auth_service. Прикладные сервисы только читают права через /authorization/introspect" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontStyle=2;fontColor=#555555" vertex="1" parent="1">
+          <mxGeometry x="40" y="55" width="1620" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="layer1" value="1. Платформенный уровень (auth_service)" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;spacingLeft=12" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="780" height="430" as="geometry" />
+        </mxCell>
+        <mxCell id="acc_admin" value="account_admin&#xa;&#xa;• управляет всеми аккаунтами&#xa;• создаёт/удаляет сервисы платформы&#xa;• выдаёт отделу доступ к сервису&#xa;• может всё в auth_service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer1">
+          <mxGeometry x="20" y="50" width="260" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="dept_admin" value="department_admin&#xa;&#xa;• управляет пользователями своего отдела&#xa;• назначает сервис-роли в пределах отдела&#xa;• управляет каталогом ролей отдела&#xa;• НЕ создаёт сервисы и НЕ выдаёт доступ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer1">
+          <mxGeometry x="300" y="50" width="280" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="ordinary" value="обычный пользователь&#xa;&#xa;• принадлежит ровно одному отделу&#xa;• видит только сервисы своего отдела&#xa;• сервис-роли — только в пределах своего отдела" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer1">
+          <mxGeometry x="600" y="50" width="160" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dept_box" value="Department&#xa;(например &quot;НТ&quot;)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6" vertex="1" parent="layer1">
+          <mxGeometry x="40" y="220" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="dept_svc_access" value="DepartmentServiceAccess&#xa;&#xa;(department_id, service_name)&#xa;выдаёт только account_admin" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;verticalAlign=top;spacingTop=6;align=left;spacingLeft=8" vertex="1" parent="layer1">
+          <mxGeometry x="280" y="220" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="svc_box" value="PlatformService&#xa;(server_service, loging_service, …)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6" vertex="1" parent="layer1">
+          <mxGeometry x="560" y="220" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_dept_dsa" style="endArrow=open;html=1;rounded=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontSize=11" edge="1" parent="layer1" source="dept_box" target="dept_svc_access">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_dsa_svc" style="endArrow=open;html=1;rounded=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontSize=11" edge="1" parent="layer1" source="dept_svc_access" target="svc_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="invariant" value="Жёсткий инвариант:&#xa;если у отдела нет доступа к сервису —&#xa;пользователи этого отдела НЕ могут получить роли этого сервиса,&#xa;а вызовы их токенов в API сервиса отбрасываются." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontStyle=2;align=left;spacingLeft=10;verticalAlign=top;spacingTop=6" vertex="1" parent="layer1">
+          <mxGeometry x="40" y="320" width="720" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="layer2" value="2. Сервис-уровень (per service, scope = department)" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;align=left;spacingLeft=12" vertex="1" parent="1">
+          <mxGeometry x="840" y="100" width="820" height="430" as="geometry" />
+        </mxCell>
+        <mxCell id="role_guest" value="guest&#xa;&#xa;• только просмотр документации&#xa;• не видит данные" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer2">
+          <mxGeometry x="20" y="50" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="role_reader" value="reader&#xa;&#xa;• read-only внутри своего отдела&#xa;• видит только сущности отдела" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer2">
+          <mxGeometry x="210" y="50" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="role_operator" value="operator&#xa;&#xa;• читает и изменяет данные&#xa;• не управляет ролями&#xa;• ограничен зоной отдела" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer2">
+          <mxGeometry x="400" y="50" width="180" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="role_admin" value="admin (системная)&#xa;&#xa;• полный доступ внутри сервиса&#xa;• удаление сущностей — только тут&#xa;• автоматически создаётся при&#xa;  выдаче доступа отделу&#xa;• защищена is_system" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer2">
+          <mxGeometry x="590" y="50" width="210" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="custom_roles" value="Кастомные роли отдела&#xa;ServiceRoleDefinition(department_id, service_name, role_name, is_system=false)&#xa;Создаёт: department_admin своего отдела или носитель admin-роли в сервисе своего отдела.&#xa;Каскад: при удалении роли все UserServiceRole / GroupServiceRole / BotServiceRole деактивируются." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=6;fontStyle=2" vertex="1" parent="layer2">
+          <mxGeometry x="20" y="170" width="780" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="action_matrix" value="Action-based матрица (server_service)&#xa;&#xa;entity_permissions(entity_type, role, action) + whitelist ENTITY_ACTIONS&#xa;90 default grants на 4 системных роли × сущности (server, server_account, ipmi_controller, …).&#xa;Endpoint защищён require_action(entity, action), а не require_role.&#xa;Department-admin может донастраивать матрицу для своего отдела/сервиса." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=6" vertex="1" parent="layer2">
+          <mxGeometry x="20" y="260" width="780" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="layer3" value="3. Идентичности и токены" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;spacingLeft=12" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="1620" height="370" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ident_user" value="User&#xa;&#xa;• login + password (Argon2id)&#xa;• обязательный department_id&#xa;• может быть в нескольких группах&#xa;• несколько ролей на сервис → union прав" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer3">
+          <mxGeometry x="20" y="50" width="300" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ident_group" value="UserGroup&#xa;&#xa;• обязательный department_id&#xa;• имя уникально внутри отдела&#xa;• добавление чужого отдела →&#xa;  GROUP_DEPARTMENT_MISMATCH&#xa;• роли группы → роли всех её членов" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer3">
+          <mxGeometry x="340" y="50" width="300" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ident_bot" value="Bot (сервисная учётка)&#xa;&#xa;• свой department_id и allowed_services&#xa;• bot_service_roles (новая таблица)&#xa;• токен dbos_bot_…, хранится только hash&#xa;• используется server_worker'ом и интеграциями" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer3">
+          <mxGeometry x="660" y="50" width="300" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ident_pat" value="Personal Access Token (PAT)&#xa;&#xa;• префикс dbos_pat_… , показывается ОДИН раз&#xa;• в БД только хеш&#xa;• наследует роли владельца&#xa;• может быть отозван" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer3">
+          <mxGeometry x="980" y="50" width="300" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ident_apikey" value="SERVICE_API_KEY&#xa;&#xa;• межсервисный shared secret&#xa;• loging_service принимает ingest по нему&#xa;• docker-registry token issuer&#xa;• не связан с пользователем" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=left;spacingLeft=8;verticalAlign=top;spacingTop=6" vertex="1" parent="layer3">
+          <mxGeometry x="1300" y="50" width="300" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="token_flow" value="Жизненный цикл доступа&#xa;&#xa;1. POST /login (или /oauth/token, или PAT-header) → access JWT + refresh (opaque).&#xa;2. Access JWT содержит sub, department_id, allowed_services, service_roles.&#xa;3. Прикладной сервис на КАЖДЫЙ запрос дёргает auth_service POST /authorization/introspect.&#xa;4. introspect возвращает username, department, platform_role, is_banned, service_roles (отфильтрованные по effective_services).&#xa;5. Сервис применяет department-isolation + check action в entity_permissions.&#xa;6. Любое значимое действие (login, role-change, CRUD, internal-credentials) → POST /events в loging_service." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=6" vertex="1" parent="layer3">
+          <mxGeometry x="20" y="230" width="1580" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="layer4" value="4. Поток выдачи прав (sequence)" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;spacingLeft=12" vertex="1" parent="1">
+          <mxGeometry x="40" y="960" width="1620" height="320" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step1" value="Шаг 1&#xa;account_admin создаёт сервис&#xa;POST /services" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=center;verticalAlign=middle" vertex="1" parent="layer4">
+          <mxGeometry x="20" y="60" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step2" value="Шаг 2&#xa;account_admin выдаёт отделу доступ&#xa;POST /departments/{d}/services/{s}&#xa;⇒ автосоздание роли admin (is_system=true)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=center;verticalAlign=middle" vertex="1" parent="layer4">
+          <mxGeometry x="250" y="60" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step3" value="Шаг 3&#xa;department_admin создаёт юзеров&#xa;POST /users (department_id фиксирован)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;align=center;verticalAlign=middle" vertex="1" parent="layer4">
+          <mxGeometry x="520" y="60" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step4" value="Шаг 4&#xa;dept_admin / admin-сервиса заводит&#xa;кастомные роли отдела&#xa;POST /services/{s}/roles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;align=center;verticalAlign=middle" vertex="1" parent="layer4">
+          <mxGeometry x="790" y="60" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step5" value="Шаг 5&#xa;Назначение ролей пользователю/группе/боту&#xa;POST /users/{u}/service-roles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=center;verticalAlign=middle" vertex="1" parent="layer4">
+          <mxGeometry x="1060" y="60" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step6" value="Шаг 6&#xa;Прикладной сервис применяет права:&#xa;introspect → check_action → ответ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=center;verticalAlign=middle" vertex="1" parent="layer4">
+          <mxGeometry x="1330" y="60" width="270" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" style="endArrow=classic;html=1;fontSize=11;strokeColor=#6c8ebf;strokeWidth=2" edge="1" parent="layer4" source="step1" target="step2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23" style="endArrow=classic;html=1;fontSize=11;strokeColor=#6c8ebf;strokeWidth=2" edge="1" parent="layer4" source="step2" target="step3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e34" style="endArrow=classic;html=1;fontSize=11;strokeColor=#6c8ebf;strokeWidth=2" edge="1" parent="layer4" source="step3" target="step4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e45" style="endArrow=classic;html=1;fontSize=11;strokeColor=#6c8ebf;strokeWidth=2" edge="1" parent="layer4" source="step4" target="step5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e56" style="endArrow=classic;html=1;fontSize=11;strokeColor=#6c8ebf;strokeWidth=2" edge="1" parent="layer4" source="step5" target="step6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="revoke" value="Каскадная деактивация (при revoke department→service или удалении роли):&#xa;UserServiceRole, GroupServiceRole, BotServiceRole, выданные на эту пару (department, service) или эту роль — автоматически деактивируются.&#xa;Пользователь продолжает существовать, но не имеет прав на сервис до повторной выдачи." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontStyle=2;align=left;spacingLeft=10;verticalAlign=top;spacingTop=6" vertex="1" parent="layer4">
+          <mxGeometry x="20" y="170" width="1580" height="130" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

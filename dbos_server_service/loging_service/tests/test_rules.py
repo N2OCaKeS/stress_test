@@ -240,6 +240,70 @@ class TestAdminAudit:
         assert len(events) == 1
         assert events[0].severity == "CRITICAL"
 
+    def test_rule_create_audit_carries_username_and_department(self, admin_client, db):
+        """`_audit()` пробрасывает username и department_id из identity.
+
+        Без этого SIEM теряет атрибуцию: видит opaque `actor_id`, не имя
+        человека и не его отдел. `main.py::audit_access` это делает —
+        тут симметрия для admin-действий.
+        """
+        admin_client.post(RULES_URL, json=make_rule(name="audit-identity-fields"))
+        from src.models.audit_event import AuditEvent
+        from sqlalchemy import select
+        events = db.execute(
+            select(AuditEvent).where(AuditEvent.action == "logging_rule.create")
+        ).scalars().all()
+        assert len(events) == 1
+        assert events[0].username == "test_admin"
+        # `loging_admin` в ADMIN_IDENTITY фикстуре глобален → department_id=None;
+        # важно, что поле явно прокинуто (а не «забыто» в schema-defaults).
+        assert events[0].department_id is None
+
+    def test_rule_create_audit_with_scoped_admin_department(self, db, monkeypatch):
+        """Если у admin'а есть department_id — он попадает в audit-event."""
+        from src.dependencies.auth import require_admin, require_reader
+        from src.main import app
+        from src.dependencies.db import get_db
+        from fastapi.testclient import TestClient
+
+        scoped_identity = {
+            "user_id": "usr_dept_admin",
+            "username": "dept_admin_user",
+            "platform_role": "loging_admin",
+            "department_id": "dep_finance",
+            "allowed_services": [],
+            "service_roles": {},
+            "_dept_scope": "dep_finance",
+            "_loging_service_roles": [],
+        }
+        monkeypatch.setenv("SERVICE_API_KEY", "test-service-api-key")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+
+        def _override():
+            try:
+                yield db
+            finally:
+                pass
+
+        app.dependency_overrides[get_db] = _override
+        app.dependency_overrides[require_admin] = lambda: scoped_identity
+        app.dependency_overrides[require_reader] = lambda: scoped_identity
+        try:
+            with TestClient(app) as c:
+                c.post(RULES_URL, json=make_rule(name="scoped-audit-rule"))
+            from src.models.audit_event import AuditEvent
+            from sqlalchemy import select
+            events = db.execute(
+                select(AuditEvent).where(AuditEvent.action == "logging_rule.create")
+            ).scalars().all()
+            assert len(events) == 1
+            assert events[0].username == "dept_admin_user"
+            assert events[0].department_id == "dep_finance"
+        finally:
+            app.dependency_overrides.clear()
+            get_settings.cache_clear()
+
     def test_admin_audit_bypasses_suppress_rules(self, client, admin_client, auth_headers, db):
         """SUPPRESS на loging_service не подавляет admin-аудит."""
         # Добавляем правило подавить все события loging_service

@@ -1,18 +1,26 @@
-"""Bot and bot-token workflows."""
+"""Бизнес-логика ботов: CRUD bot accounts + выдача/отзыв bot-токенов + service-роли."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import PlatformRole
-from src.core.exceptions import AuthorizationError, ConflictError, NotFoundError
+from src.core.exceptions import (
+    AuthorizationError,
+    ConflictError,
+    DomainValidationError,
+    NotFoundError,
+)
 from src.core.security import generate_bot_token
+from src.repositories.bot_roles import BotRoleRepository
 from src.repositories.bot_tokens import BotTokenRepository
 from src.repositories.bots import BotRepository
 from src.repositories.departments import DepartmentRepository
+from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.services import ServiceRepository
 from src.repositories.users import UserRepository
 from src.schemas.bots import (
     BotCreate,
     BotResponse,
+    BotRoleResponse,
     BotTokenCreateResponse,
     BotTokenListItem,
     BotUpdate,
@@ -21,7 +29,7 @@ from src.services import audit_service
 
 
 async def _validate_bot_services(dept_repo: DepartmentRepository, department_id: str, requested: list[str]) -> None:
-    """Raise if any requested service is not accessible to the department."""
+    """Кидает AuthorizationError если запрошенный сервис недоступен отделу."""
     allowed = set(await dept_repo.list_active_services(department_id))
     forbidden = set(requested) - allowed
     if forbidden:
@@ -33,6 +41,7 @@ async def _validate_bot_services(dept_repo: DepartmentRepository, department_id:
 
 
 def _to_response(bot) -> BotResponse:
+    """ORM-бот → BotResponse DTO."""
     return BotResponse(
         bot_id=bot.id,
         name=bot.name,
@@ -52,6 +61,7 @@ async def create_bot(
     data: BotCreate,
     request_id: str | None = None,
 ) -> BotResponse:
+    """Создать бота. department_admin может создавать только в своём отделе."""
     user_repo = UserRepository(db)
     dept_repo = DepartmentRepository(db)
     bot_repo = BotRepository(db)
@@ -90,6 +100,7 @@ async def create_bot(
 
 
 async def list_bots(db: AsyncSession, actor_id: str, actor_role: str | None, department_id: str | None = None, request_id: str | None = None) -> list[BotResponse]:
+    """Список ботов с учётом scope-а смотрящего."""
     user_repo = UserRepository(db)
     bot_repo = BotRepository(db)
 
@@ -121,6 +132,7 @@ async def update_bot(
     data: BotUpdate,
     request_id: str | None = None,
 ) -> BotResponse:
+    """Patch бота. department_admin — только в своём отделе."""
     user_repo = UserRepository(db)
     bot_repo = BotRepository(db)
 
@@ -157,17 +169,31 @@ async def update_bot(
 async def create_bot_token(
     db: AsyncSession,
     actor_id: str,
+    actor_role: str | None,
     bot_id: str,
     name: str,
     expires_at=None,
     request_id: str | None = None,
 ) -> BotTokenCreateResponse:
+    """Создать новый bot-токен. Raw возвращается один раз — больше нигде не покажем."""
+    user_repo = UserRepository(db)
     bot_repo = BotRepository(db)
     token_repo = BotTokenRepository(db)
 
     bot = await bot_repo.get_by_id(bot_id)
     if bot is None:
         raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
+
+    actor = await user_repo.get_by_id(actor_id) if actor_id else None
+    _check_can_manage_bot_or_audit(
+        action="bot.token_create",
+        actor_id=actor_id,
+        actor_role=actor_role,
+        actor_dept_id=actor.department_id if actor else None,
+        bot=bot,
+        request_id=request_id,
+        extra_details={"token_name": name},
+    )
 
     if await token_repo.exists_name(bot_id, name):
         raise ConflictError(error_code="TOKEN_NAME_ALREADY_EXISTS", message=f"Token '{name}' already exists")
@@ -181,7 +207,7 @@ async def create_bot_token(
         expires_at=expires_at,
     )
     await db.commit()
-    # raw bot-token → sanitizer заменит на <TOKEN> (по эвристике dbos_bot_…)
+    # raw bot-токен в audit → sanitizer заменит на <TOKEN> по эвристике dbos_bot_…
     audit_service.emit(
         "bot.token_create", actor_id, target_id=token.id, target_type="bot_token",
         details={
@@ -197,7 +223,29 @@ async def create_bot_token(
     return BotTokenCreateResponse(token_id=token.id, token=raw, name=token.name, expires_at=token.expires_at)
 
 
-async def list_bot_tokens(db: AsyncSession, bot_id: str, actor_id: str | None = None, request_id: str | None = None) -> list[BotTokenListItem]:
+async def list_bot_tokens(
+    db: AsyncSession,
+    bot_id: str,
+    actor_id: str | None = None,
+    actor_role: str | None = None,
+    request_id: str | None = None,
+) -> list[BotTokenListItem]:
+    user_repo = UserRepository(db)
+    bot_repo = BotRepository(db)
+    bot = await bot_repo.get_by_id(bot_id)
+    if bot is None:
+        raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
+
+    actor = await user_repo.get_by_id(actor_id) if actor_id else None
+    _check_can_manage_bot_or_audit(
+        action="bot.token_list",
+        actor_id=actor_id,
+        actor_role=actor_role,
+        actor_dept_id=actor.department_id if actor else None,
+        bot=bot,
+        request_id=request_id,
+    )
+
     token_repo = BotTokenRepository(db)
     result = [
         BotTokenListItem(
@@ -219,13 +267,213 @@ async def list_bot_tokens(db: AsyncSession, bot_id: str, actor_id: str | None = 
     return result
 
 
+def _require_can_manage_bot(actor_role: str | None, actor_dept_id: str | None, bot) -> None:
+    """Гард: account_admin или department_admin отдела бота. Иначе AuthorizationError."""
+    if actor_role == PlatformRole.ACCOUNT_ADMIN:
+        return
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN and actor_dept_id == bot.department_id:
+        return
+    raise AuthorizationError(
+        error_code="BOT_ROLE_MGMT_FORBIDDEN",
+        message="account_admin or department_admin of the bot's department required",
+    )
+
+
+def _check_can_manage_bot_or_audit(
+    *,
+    action: str,
+    actor_id: str | None,
+    actor_role: str | None,
+    actor_dept_id: str | None,
+    bot,
+    request_id: str | None,
+    extra_details: dict | None = None,
+) -> None:
+    """То же, что `_require_can_manage_bot`, но эмитит `denied`-audit перед raise.
+
+    SIEM по `status="denied"` отличит cross-tenant попытку от 500 — без этого
+    `AuthorizationError` поднимался напрямую и денайды смешивались с server-error.
+    """
+    try:
+        _require_can_manage_bot(actor_role, actor_dept_id, bot)
+    except AuthorizationError:
+        details = {
+            "reason": "cross_tenant_bot",
+            "bot_id": bot.id,
+            "bot_department_id": bot.department_id,
+            "actor_department_id": actor_dept_id,
+        }
+        if extra_details:
+            details.update(extra_details)
+        audit_service.emit(
+            action, actor_id, status="denied", allowed=False,
+            target_id=bot.id, target_type="bot",
+            request_id=request_id, details=details,
+        )
+        raise
+
+
+async def list_bot_roles(
+    db: AsyncSession,
+    actor_id: str,
+    actor_role: str | None,
+    bot_id: str,
+    request_id: str | None = None,
+) -> list[BotRoleResponse]:
+    user_repo = UserRepository(db)
+    bot_repo = BotRepository(db)
+    bot = await bot_repo.get_by_id(bot_id)
+    if bot is None:
+        raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
+
+    actor = await user_repo.get_by_id(actor_id) if actor_id else None
+    _check_can_manage_bot_or_audit(
+        action="bot.roles_list",
+        actor_id=actor_id,
+        actor_role=actor_role,
+        actor_dept_id=actor.department_id if actor else None,
+        bot=bot,
+        request_id=request_id,
+    )
+
+    role_repo = BotRoleRepository(db)
+    roles_by_svc = await role_repo.get_all_roles(bot.id)
+    audit_service.emit(
+        "bot.roles_list", actor_id, target_id=bot_id, target_type="bot",
+        request_id=request_id,
+        details={"bot_name": bot.name, "service_count": len(roles_by_svc)},
+    )
+    return [BotRoleResponse(service_name=svc, roles=roles) for svc, roles in roles_by_svc.items()]
+
+
+async def assign_bot_roles(
+    db: AsyncSession,
+    actor_id: str,
+    actor_role: str | None,
+    bot_id: str,
+    service_name: str,
+    roles: list[str],
+    request_id: str | None = None,
+) -> BotRoleResponse:
+    user_repo = UserRepository(db)
+    bot_repo = BotRepository(db)
+    bot = await bot_repo.get_by_id(bot_id)
+    if bot is None:
+        raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
+
+    actor = await user_repo.get_by_id(actor_id) if actor_id else None
+    _check_can_manage_bot_or_audit(
+        action="bot.roles_assign",
+        actor_id=actor_id,
+        actor_role=actor_role,
+        actor_dept_id=actor.department_id if actor else None,
+        bot=bot,
+        request_id=request_id,
+        extra_details={"service_name": service_name, "roles": list(roles)},
+    )
+
+    dept_repo = DepartmentRepository(db)
+    if not await dept_repo.has_active_access(bot.department_id, service_name):
+        raise AuthorizationError(
+            error_code="SERVICE_NOT_ALLOWED_FOR_DEPARTMENT",
+            message=f"Service '{service_name}' is not allowed for the bot's department",
+            details={"service_name": service_name, "department_id": bot.department_id},
+        )
+    if service_name not in (bot.allowed_services or []):
+        raise AuthorizationError(
+            error_code="SERVICE_NOT_IN_BOT_ALLOWED",
+            message=f"Service '{service_name}' is not in the bot's allowed_services",
+            details={"service_name": service_name, "allowed_services": list(bot.allowed_services or [])},
+        )
+
+    role_def_repo = ServiceRoleDefinitionRepository(db)
+    for role in roles:
+        if not await role_def_repo.exists(bot.department_id, service_name, role):
+            raise DomainValidationError(
+                error_code="INVALID_SERVICE_ROLE",
+                message=(
+                    f"Role '{role}' is not defined for service '{service_name}' "
+                    f"in department '{bot.department_id}'"
+                ),
+                details={"service_name": service_name, "role": role},
+            )
+
+    role_repo = BotRoleRepository(db)
+    await role_repo.set_roles(bot_id, service_name, roles, assigned_by=actor_id)
+    await db.commit()
+    audit_service.emit(
+        "bot.roles_assign", actor_id, target_id=bot_id, target_type="bot",
+        details={
+            "bot_name": bot.name,
+            "department_id": bot.department_id,
+            "service_name": service_name,
+            "roles": list(roles),
+        },
+        request_id=request_id,
+    )
+    return BotRoleResponse(service_name=service_name, roles=roles)
+
+
+async def revoke_bot_roles(
+    db: AsyncSession,
+    actor_id: str,
+    actor_role: str | None,
+    bot_id: str,
+    service_name: str,
+    request_id: str | None = None,
+) -> None:
+    user_repo = UserRepository(db)
+    bot_repo = BotRepository(db)
+    bot = await bot_repo.get_by_id(bot_id)
+    if bot is None:
+        raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
+
+    actor = await user_repo.get_by_id(actor_id) if actor_id else None
+    _check_can_manage_bot_or_audit(
+        action="bot.roles_revoke",
+        actor_id=actor_id,
+        actor_role=actor_role,
+        actor_dept_id=actor.department_id if actor else None,
+        bot=bot,
+        request_id=request_id,
+        extra_details={"service_name": service_name},
+    )
+
+    role_repo = BotRoleRepository(db)
+    await role_repo.clear_roles_for_service(bot_id, service_name)
+    await db.commit()
+    audit_service.emit(
+        "bot.roles_revoke", actor_id, target_id=bot_id, target_type="bot",
+        details={"bot_name": bot.name, "service_name": service_name},
+        request_id=request_id,
+    )
+
+
 async def revoke_bot_token(
     db: AsyncSession,
     actor_id: str,
+    actor_role: str | None,
     bot_id: str,
     token_id: str,
     request_id: str | None = None,
 ) -> None:
+    user_repo = UserRepository(db)
+    bot_repo = BotRepository(db)
+    bot = await bot_repo.get_by_id(bot_id)
+    if bot is None:
+        raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
+
+    actor = await user_repo.get_by_id(actor_id) if actor_id else None
+    _check_can_manage_bot_or_audit(
+        action="bot.token_revoke",
+        actor_id=actor_id,
+        actor_role=actor_role,
+        actor_dept_id=actor.department_id if actor else None,
+        bot=bot,
+        request_id=request_id,
+        extra_details={"token_id": token_id},
+    )
+
     token_repo = BotTokenRepository(db)
     token = await token_repo.get_by_id(token_id)
 

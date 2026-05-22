@@ -1,5 +1,12 @@
-"""OAuth2 client management and token flow workflows."""
+"""OAuth2: CRUD клиентов + authorization_code flow + client_credentials grant.
 
+Поддерживаем RFC 6749 + RFC 7636 (PKCE). Implicit и hybrid сознательно отказаны
+(см. endpoints/oauth2.py для обоснования). PKCE опционален для confidential
+клиентов, обязателен для public (SPA/CLI).
+"""
+
+import base64
+import hashlib
 import hmac
 import secrets
 from datetime import timedelta
@@ -12,7 +19,6 @@ from src.core.exceptions import AuthenticationError, AuthorizationError, Conflic
 from src.core.security import create_access_token, hash_opaque_token
 from src.repositories.departments import DepartmentRepository
 from src.repositories.oauth_clients import OAuthClientRepository, OAuthCodeRepository
-from src.repositories.roles import RoleRepository
 from src.repositories.users import UserRepository
 from src.schemas.oauth import (
     OAuthClientCreate,
@@ -25,8 +31,14 @@ from src.utils.time import is_expired, utcnow
 
 _SECRET_PREFIX_LEN = 12
 
+# RFC 7636 §4.3: code_challenge_method ∈ {"S256", "plain"}. "plain" разрешён
+# спецификацией, но S256 обязателен для public client'ов — мы принимаем оба
+# на стороне сервера (валидируем method), решение оставляем за клиентом.
+_PKCE_METHODS = {"S256", "plain"}
+
 
 def _to_response(client) -> OAuthClientResponse:
+    """ORM-клиент → OAuthClientResponse DTO (без plaintext secret)."""
     return OAuthClientResponse(
         id=client.id,
         client_id=client.client_id,
@@ -48,6 +60,7 @@ async def create_client(
     data: OAuthClientCreate,
     request_id: str | None = None,
 ) -> OAuthClientCreatedResponse:
+    """Создать OAuth2-клиента. Plaintext secret возвращается один раз."""
     dept_repo = DepartmentRepository(db)
     client_repo = OAuthClientRepository(db)
     user_repo = UserRepository(db)
@@ -86,7 +99,7 @@ async def create_client(
         created_by=actor_id,
     )
     await db.commit()
-    # raw_secret попадёт в details — sanitizer заменит на <SECRET> по ключу client_secret
+    # raw_secret уходит в details — sanitizer заменит на <SECRET> по ключу client_secret
     audit_service.emit(
         "oauth_client.create", actor_id, target_id=client.id, target_type="oauth_client",
         request_id=request_id,
@@ -112,6 +125,7 @@ async def list_clients(
     department_id: str | None = None,
     request_id: str | None = None,
 ) -> list[OAuthClientResponse]:
+    """Список клиентов с учётом scope-а смотрящего."""
     client_repo = OAuthClientRepository(db)
     user_repo = UserRepository(db)
 
@@ -143,6 +157,7 @@ async def delete_client(
     client_db_id: str,
     request_id: str | None = None,
 ) -> None:
+    """Soft-delete клиента (`is_active=False`). История auth-кодов сохраняется."""
     client_repo = OAuthClientRepository(db)
     user_repo = UserRepository(db)
 
@@ -173,6 +188,27 @@ async def delete_client(
 
 # ── Authorization code flow ───────────────────────────────────────────────────
 
+def _verify_pkce(code_challenge: str, code_challenge_method: str, verifier: str) -> bool:
+    """Проверить PKCE-verifier против сохранённого challenge.
+
+    RFC 7636 §4.6:
+    * S256: BASE64URL-ENCODE(SHA256(ASCII(verifier))) == challenge (без `=`-padding).
+    * plain: verifier == challenge.
+
+    Сравнение через `hmac.compare_digest` — constant-time, защита от timing-oracle.
+    """
+    method = (code_challenge_method or "plain")
+    if method == "S256":
+        digest = hashlib.sha256(verifier.encode("ascii")).digest()
+        computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+        return hmac.compare_digest(computed, code_challenge)
+    if method == "plain":
+        return hmac.compare_digest(verifier, code_challenge)
+    # Unknown method сюда не должен доходить — `issue_authorization_code`
+    # режет method'ы вне `_PKCE_METHODS`. На всякий случай — отказ.
+    return False
+
+
 async def issue_authorization_code(
     db: AsyncSession,
     client_id: str,
@@ -180,8 +216,15 @@ async def issue_authorization_code(
     redirect_uri: str,
     scopes: list[str],
     request_id: str | None = None,
+    code_challenge: str | None = None,
+    code_challenge_method: str | None = None,
 ) -> str:
-    """Validate the client, then create and return a raw authorization code."""
+    """Валидировать клиента и выдать raw authorization code.
+
+    PKCE (RFC 7636): если задан `code_challenge` — сохраняем его вместе с
+    method'ом (default `plain`); на `/token` обмен потребует `code_verifier`.
+    Если challenge нет — допустимо (legacy confidential-client с client_secret).
+    """
     client_repo = OAuthClientRepository(db)
     client = await client_repo.get_by_client_id(client_id)
     if client is None or not client.is_active:
@@ -192,6 +235,21 @@ async def issue_authorization_code(
 
     if redirect_uri not in client.redirect_uris:
         raise AuthorizationError(error_code="REDIRECT_URI_MISMATCH", message="redirect_uri does not match registered URIs")
+
+    # PKCE-валидация (если клиент прислал challenge — method обязателен и из
+    # дозволенного множества; default по RFC 7636 §4.3 — "plain", но мы
+    # предпочитаем явный method, чтобы не было сюрпризов с downgrade).
+    pkce_challenge: str | None = None
+    pkce_method: str | None = None
+    if code_challenge:
+        method = code_challenge_method or "plain"
+        if method not in _PKCE_METHODS:
+            raise AuthorizationError(
+                error_code="PKCE_METHOD_INVALID",
+                message=f"code_challenge_method must be one of {sorted(_PKCE_METHODS)}",
+            )
+        pkce_challenge = code_challenge
+        pkce_method = method
 
     effective_scopes = [s for s in scopes if s in client.allowed_scopes]
 
@@ -208,6 +266,8 @@ async def issue_authorization_code(
         redirect_uri=redirect_uri,
         scopes=effective_scopes,
         expires_at=expires_at,
+        code_challenge=pkce_challenge,
+        code_challenge_method=pkce_method,
     )
     await db.commit()
     audit_service.emit(
@@ -224,6 +284,8 @@ async def issue_authorization_code(
             "requested_scopes": list(scopes),
             "granted_scopes": effective_scopes,
             "code_ttl_seconds": settings.oauth_code_ttl_seconds,
+            "pkce": pkce_method is not None,
+            "pkce_method": pkce_method,
         },
         request_id=request_id,
     )
@@ -237,8 +299,14 @@ async def exchange_code(
     code: str,
     redirect_uri: str,
     request_id: str | None = None,
+    code_verifier: str | None = None,
 ) -> OAuthTokenResponse:
-    """Exchange authorization code for an access token."""
+    """Обменять authorization code на access_token.
+
+    PKCE (RFC 7636 §4.6): если в выданном коде есть `code_challenge`, требуем
+    `code_verifier` в запросе и сверяем. Любая ошибка (missing verifier /
+    mismatch) — `401 INVALID_GRANT`.
+    """
     client_repo = OAuthClientRepository(db)
     client = await client_repo.get_by_client_id(client_id)
     if client is None or not client.is_active:
@@ -259,33 +327,66 @@ async def exchange_code(
     if auth_code.redirect_uri != redirect_uri:
         raise AuthorizationError(error_code="REDIRECT_URI_MISMATCH", message="redirect_uri mismatch")
 
-    role_repo = RoleRepository(db)
-    dept_repo = DepartmentRepository(db)
-    user_repo = UserRepository(db)
+    # PKCE-проверка (RFC 7636 §4.6). Если код выпускался с challenge —
+    # verifier обязателен и должен совпасть; ошибка → `INVALID_GRANT` (RFC 6749).
+    if auth_code.code_challenge is not None:
+        if not code_verifier:
+            raise AuthenticationError(
+                error_code="INVALID_GRANT",
+                message="code_verifier is required for this authorization code (PKCE)",
+            )
+        if not _verify_pkce(
+            auth_code.code_challenge,
+            auth_code.code_challenge_method or "plain",
+            code_verifier,
+        ):
+            raise AuthenticationError(
+                error_code="INVALID_GRANT",
+                message="code_verifier does not match code_challenge (PKCE)",
+            )
 
+    # CAS-consume (RFC 6749 §4.1.2 — "authorization code MUST be short-lived
+    # and single-use"). Идёт ПОСЛЕ всех валидаций (PKCE/redirect/expiry),
+    # чтобы legit-клиент с битым verifier'ом не сжёг свой код, и ДО работы по
+    # выписке JWT (role/dept lookup), иначе при гонке winner+loser потратят
+    # CPU зря. Детали — в `OAuthCodeRepository.mark_used`.
+    if not await code_repo.mark_used(auth_code):
+        # Кто-то уже consume'нул этот код параллельно (другой /token-запрос
+        # с тем же `code` пришёл первым). Не reuse-attack в строгом смысле —
+        # OAuth-replay: атакующий пытается обменять перехваченный код, пока
+        # legit-client тоже обменивает. RFC 6749 §5.2 → `invalid_grant`.
+        raise AuthenticationError(
+            error_code="INVALID_GRANT",
+            message="Authorization code is invalid or already used",
+        )
+
+    user_repo = UserRepository(db)
     user = await user_repo.get_by_id(auth_code.user_id)
     if user is None:
         raise AuthenticationError(error_code="OAUTH_USER_NOT_FOUND", message="User no longer exists")
 
-    allowed = await dept_repo.list_active_services(user.department_id) if user.department_id else []
-    roles = await role_repo.get_all_roles(user.id)
-    scoped_roles = {k: v for k, v in roles.items() if k in allowed and k in auth_code.scopes}
-
     settings = get_settings()
     ttl = timedelta(minutes=settings.access_token_ttl_minutes)
+    # `oauth_scopes` фиксирует ровно те scope'ы, которые юзер аппрувнул на
+    # /authorize → они выписаны клиенту в этом auth_code. При revalidate
+    # `authorization_service.introspect` пересекает live-права юзера с этим
+    # снапшотом, иначе токен с узким scope откроет полные права юзера
+    # (scope-creep). `None` отличает не-OAuth JWT от OAuth-с-пустыми-scopes
+    # (последнее = «вообще ничего»).
+    oauth_scopes = list(auth_code.scopes)
+    # Payload намеренно минимален: только `sub` + `actor_type` + OAuth-метки.
+    # Username/department/platform_role/allowed_services/service_roles
+    # пересчитываются introspect'ом из БД на каждый запрос — иначе JWT
+    # без подписи (`base64url`) раскрывает PII и привилегии юзера при утечке.
     access_token = create_access_token(
         payload={
             "sub": user.id,
-            "username": user.username,
-            "department_id": user.department_id,
-            "platform_role": user.platform_role,
-            "allowed_services": [s for s in allowed if s in auth_code.scopes],
-            "service_roles": scoped_roles,
+            "actor_type": "user",
             "oauth_client_id": client_id,
+            "oauth_scopes": oauth_scopes,
         },
         expires_delta=ttl,
     )
-    await code_repo.mark_used(auth_code)
     await db.commit()
     audit_service.emit(
         "oauth.code_exchanged",
@@ -318,7 +419,7 @@ async def client_credentials_token(
     client_secret: str,
     request_id: str | None = None,
 ) -> OAuthTokenResponse:
-    """Issue an access token for client_credentials grant (machine-to-machine)."""
+    """Выдать access_token по client_credentials grant (machine-to-machine, без user_id)."""
     client_repo = OAuthClientRepository(db)
     client = await client_repo.get_by_client_id(client_id)
     if client is None or not client.is_active:
@@ -338,7 +439,12 @@ async def client_credentials_token(
     ttl = timedelta(minutes=settings.access_token_ttl_minutes)
     access_token = create_access_token(
         payload={
+            # NOTE: `sub` для client_credentials JWT — это публичный client_id
+            # (`cli_*`), НЕ user_id. introspect диспатчит по `actor_type`:
+            # `oauth_client` → revalidate через OAuthClientRepository, не
+            # UserRepository (иначе introspect всегда промахивался бы).
             "sub": client.client_id,
+            "actor_type": "oauth_client",
             "department_id": client.department_id,
             "allowed_services": effective,
             "service_roles": {},

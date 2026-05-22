@@ -1,4 +1,8 @@
-"""Ban and lock model."""
+"""ORM-модель `Ban` — записи о банах юзеров (permanent/temporary).
+
+`is_active` (Boolean) — выключается через CAS `BanRepository.deactivate` при
+unban'е (operator-initiated либо auto после `expires_at`).
+"""
 
 from datetime import datetime
 

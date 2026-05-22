@@ -1,1 +1,1 @@
-"""Application service layer."""
+"""Слой бизнес-логики (services). Сюда ходят роутеры за use-case'ами."""

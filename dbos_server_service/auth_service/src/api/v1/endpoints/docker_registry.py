@@ -1,4 +1,4 @@
-"""Docker registry token auth + per-department configuration endpoints.
+"""Эндпоинты Docker Registry auth + per-department конфиг.
 
 Docker registry config.yml:
   auth:
@@ -31,6 +31,7 @@ router = APIRouter(prefix="/docker")
 
 
 def _parse_basic_auth(authorization: str | None) -> tuple[str, str]:
+    """Распарсить Basic Authorization header. Падает с AuthenticationError если что-то не так."""
     if not authorization or not authorization.lower().startswith("basic "):
         raise AuthenticationError(
             error_code="MISSING_CREDENTIALS",
@@ -44,12 +45,13 @@ def _parse_basic_auth(authorization: str | None) -> tuple[str, str]:
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Malformed Basic auth header")
 
 
-# ── Config management (dept_admin or account_admin) ───────────────────────────
+# ── Управление конфигом (dept_admin или account_admin) ───────────────────────
 
 @router.put(
     "/registry/{department_id}",
     response_model=DockerRegistryConfigResponse,
-    summary="Enable / replace Docker registry config for a department",
+    summary="Создать / заменить Docker registry конфиг отдела",
+    description="PUT — replace-семантика. Перезаписывает весь конфиг отдела.",
 )
 async def create_or_replace_registry_config(
     department_id: str,
@@ -58,6 +60,15 @@ async def create_or_replace_registry_config(
     identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> DockerRegistryConfigResponse:
+    """Включить или перезаписать Docker registry для отдела.
+
+    Что делает:
+        Создаёт или заменяет `DepartmentDockerRegistry`. После этого юзеры
+        отдела смогут получать scoped JWT через `/docker/token`.
+
+    Доступ:
+        account_admin или department_admin своего отдела.
+    """
     return await docker_registry_service.create_or_replace_config(
         db=db,
         actor_id=identity.user_id,
@@ -71,7 +82,8 @@ async def create_or_replace_registry_config(
 @router.patch(
     "/registry/{department_id}",
     response_model=DockerRegistryConfigResponse,
-    summary="Update Docker registry config for a department",
+    summary="Обновить Docker registry конфиг отдела",
+    description="PATCH — частичный update. Передавай только меняющиеся поля.",
 )
 async def update_registry_config(
     department_id: str,
@@ -80,6 +92,11 @@ async def update_registry_config(
     identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> DockerRegistryConfigResponse:
+    """Patch Docker registry конфига.
+
+    Доступ:
+        account_admin или department_admin своего отдела.
+    """
     return await docker_registry_service.update_config(
         db=db,
         actor_id=identity.user_id,
@@ -93,7 +110,7 @@ async def update_registry_config(
 @router.get(
     "/registry/{department_id}",
     response_model=DockerRegistryConfigResponse,
-    summary="Get Docker registry config for a department",
+    summary="Получить Docker registry конфиг отдела",
 )
 async def get_registry_config(
     department_id: str,
@@ -101,6 +118,11 @@ async def get_registry_config(
     identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> DockerRegistryConfigResponse:
+    """Текущий конфиг registry для отдела.
+
+    Доступ:
+        account_admin или department_admin своего отдела.
+    """
     return await docker_registry_service.get_config(
         db=db,
         department_id=department_id,
@@ -112,7 +134,8 @@ async def get_registry_config(
 @router.delete(
     "/registry/{department_id}",
     response_model=OkResponse,
-    summary="Disable Docker registry for a department",
+    summary="Отключить Docker registry для отдела",
+    description="Удаляет запись `DepartmentDockerRegistry`. Юзеры отдела перестанут получать scoped JWT.",
 )
 async def disable_registry(
     department_id: str,
@@ -120,6 +143,7 @@ async def disable_registry(
     identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
+    """Снести Docker registry конфиг отдела."""
     await docker_registry_service.delete_config(
         db=db,
         actor_id=identity.user_id,
@@ -136,6 +160,7 @@ async def disable_registry(
     "/token",
     response_model=DockerTokenResponse,
     summary="Docker registry token auth (Basic credentials → scoped JWT)",
+    description="Реализация Docker token auth protocol. Возвращает RS256-подписанный JWT с access-claims для запрошенного scope.",
 )
 async def docker_token(
     request: Request,
@@ -145,13 +170,22 @@ async def docker_token(
     account: str = Query(default=""),
     authorization: str | None = Header(default=None),
 ) -> DockerTokenResponse:
-    """
-    Called by Docker clients and the registry to obtain a scoped bearer token.
+    """Выдать Docker JWT по Basic credentials.
 
-    Auth options (via Basic auth header):
-    - `username:password` — standard credentials
-    - `username:dbos_pat_...` — Personal Access Token as password
-    - `botname:dbos_bot_...` — bot token as password
+    Что делает:
+        Парсит Basic auth (`username:password`), валидирует пароль через
+        тот же lockout-pipeline что и `/login` (5 неудачных → 15 мин
+        lockout, 429 + `retry_after_seconds`). При успехе строит RS256 JWT
+        со scope'ами `repository:<name>:pull/push`. Подпись — `DOCKER_RSA_PRIVATE_KEY`.
+
+    Варианты auth (через Basic):
+        * `username:password` — обычные кредлы юзера;
+        * `username:dbos_pat_…` — PAT как пароль;
+        * `botname:dbos_bot_…` — bot-токен как пароль.
+
+    Возможные ошибки:
+        * `MISSING_CREDENTIALS` / `INVALID_CREDENTIALS` (401).
+        * `ACCOUNT_TEMPORARILY_LOCKED` (429) — lockout после 5 неудач.
     """
     username, password = _parse_basic_auth(authorization)
     return await docker_registry_service.issue_token(
@@ -164,19 +198,18 @@ async def docker_token(
     )
 
 
-# ── Public key endpoints (for registry rootcertbundle configuration) ──────────
+# ── Public-key endpoints (для registry rootcertbundle) ──────────────────────
 
 @router.get(
     "/certs",
     response_class=PlainTextResponse,
-    summary="RSA public key in PEM format (use as Docker registry rootcertbundle)",
+    summary="RSA public key (PEM) — для Docker registry rootcertbundle",
     tags=["docker-registry"],
 )
 async def docker_public_key() -> str:
-    """
-    Returns the RSA public key used to sign Docker JWT tokens.
+    """RSA public key для верификации Docker JWT.
 
-    Save to a file and reference it in the Docker registry config:
+    Сохрани в файл и пропиши в registry config:
       auth.token.rootcertbundle: /path/to/this.pem
     """
     return get_public_key_pem()
@@ -184,9 +217,9 @@ async def docker_public_key() -> str:
 
 @router.get(
     "/jwks",
-    summary="JWKS endpoint — public keys for JWT verification",
+    summary="JWKS endpoint — public keys для JWT verification",
     tags=["docker-registry"],
 )
 async def docker_jwks() -> dict:
-    """JSON Web Key Set — can be used by JWT-aware tools to verify Docker tokens."""
+    """JSON Web Key Set — стандартный формат для JWT-aware инструментов."""
     return get_jwks()

@@ -1,11 +1,12 @@
-"""Schemas for the /services endpoints."""
+"""Схемы для эндпоинтов /services."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
-# ── Service summary (from audit_events) ──────────────────────────────────────
+# ── Сводка по сервису (из audit_events) ──────────────────────────────────────
 
 class ServiceInfo(BaseModel):
     service: str
@@ -18,30 +19,34 @@ class ServiceListResponse(BaseModel):
     total: int
 
 
-# ── Service event registry ────────────────────────────────────────────────────
+# ── Реестр событий сервиса ────────────────────────────────────────────────────
 
 class EventDefinition(BaseModel):
-    """A single event that a service declares it can emit."""
+    """Описание одного события, которое сервис заявляет, что может эмитить."""
 
     action: str = Field(
         max_length=128,
-        description="Dot-namespaced action name, e.g. 'user.login'",
+        description="Action в dot-namespace, напр. 'user.login'",
     )
     description: str | None = Field(
         default=None,
         max_length=256,
-        description="Human-readable description of when this event occurs",
+        description="Человекочитаемое описание: когда это событие происходит",
     )
-    default_severity: str | None = Field(
+    # Whitelist. Без него `default_severity="ROFL"` валидно проходит,
+    # потом всплывает в `_DEFAULT_SEVERITY` lookup'е как тихий no-op.
+    default_severity: Literal[
+        "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
+    ] | None = Field(
         default=None,
-        description="Suggested default severity (TRACE/DEBUG/INFO/WARNING/ERROR/CRITICAL)",
+        description="Дефолтная severity (TRACE/DEBUG/INFO/WARNING/ERROR/CRITICAL)",
     )
 
 
 class RegisterEventsRequest(BaseModel):
     events: list[EventDefinition] = Field(
         min_length=1,
-        description="Full list of events this service can emit",
+        description="Полный список событий, которые сервис может эмитить",
     )
 
 
@@ -53,10 +58,13 @@ class RegisterEventsResponse(BaseModel):
 
 
 class ServiceEventDetail(BaseModel):
-    """Registered event as stored in service_events table."""
+    """Зарегистрированное событие как оно хранится в `service_events`."""
 
     action: str
     description: str | None
+    # Хранение — `String(16)` (плюс legacy NULL'ы), а сам тип эхошен read-only.
+    # На read'е оставляем `str | None`: если в БД лежит legacy-значение от
+    # старого валидатора, не хочется ломать `GET /services/{svc}/events`.
     default_severity: str | None
     registered_at: datetime
     updated_at: datetime

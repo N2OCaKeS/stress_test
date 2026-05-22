@@ -1,6 +1,6 @@
 version: "3.9"
 
-# logging_service isolated test stack.
+# loging_service isolated test stack.
 #
 # Usage:
 #   docker compose -f docker-compose.test.yml run --rm test-runner   # all tests

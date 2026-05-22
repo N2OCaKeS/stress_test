@@ -1,1 +1,1 @@
-"""API endpoint modules."""
+"""Модули с API-эндпоинтами."""

@@ -31,7 +31,7 @@ _E2E_DEPT = "e2e_department"
 
 # ── Проверка доступности сервисов ────────────────────────────────────────────
 
-def _wait_http(url: str, timeout: int = 30) -> None:
+def _wait_http(url: str, timeout: int = 120) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -43,7 +43,7 @@ def _wait_http(url: str, timeout: int = 30) -> None:
     raise RuntimeError(f"Service not reachable at {url} after {timeout}s")
 
 
-def _wait_registry(host: str, timeout: int = 30) -> None:
+def _wait_registry(host: str, timeout: int = 120) -> None:
     """Ждать пока registry не вернёт 401 — это значит что он поднялся и авторизация настроена."""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -95,7 +95,7 @@ def e2e_api(e2e_admin_token):
 
 @pytest.fixture(scope="session")
 def e2e_dept(e2e_api):
-    """Создать тестовый отдел (идемпотентно)."""
+    """Создать тестовый отдел (идемпотентно). Возвращает dict с ключом `department_id`."""
     s, base = e2e_api
     r = s.post(f"{base}/api/auth/v1/departments",
                json={"name": _E2E_DEPT, "display_name": "E2E Department"})
@@ -111,9 +111,11 @@ def e2e_dept(e2e_api):
 def e2e_user(e2e_api, e2e_dept):
     """Создать (или переиспользовать) обычного пользователя в e2e_dept."""
     s, base = e2e_api
+    # DepartmentResponse использует ключ `department_id`, не `id`
+    dept_id = e2e_dept["department_id"]
     r = s.post(f"{base}/api/auth/v1/users",
                json={"username": _E2E_USER, "password": _E2E_USER_PW,
-                     "department_id": e2e_dept["id"]})
+                     "department_id": dept_id})
     assert r.status_code in (201, 409), f"create user failed: {r.text}"
     if r.status_code == 201:
         return r.json()
@@ -129,12 +131,36 @@ def e2e_user_token(e2e_user):
     return r.json()["access_token"]
 
 
+_E2E_USER_PULL_ONLY = "e2e_pull_only_user"
+_E2E_USER_PULL_ONLY_PW = "E2ePullOnly1234!"
+
+
+@pytest.fixture(scope="session")
+def e2e_user_pull_only(e2e_api, e2e_dept):
+    """Второй пользователь в e2e_dept — не входит в push_user_ids.
+
+    Используется для проверки что push-scope даётся избирательно.
+    Делать это через `e2e_admin` нельзя: account_admin не привязан к dept
+    и не может получить docker_token вообще (DOCKER_ACCESS_DENIED)."""
+    s, base = e2e_api
+    dept_id = e2e_dept["department_id"]
+    r = s.post(f"{base}/api/auth/v1/users",
+               json={"username": _E2E_USER_PULL_ONLY,
+                     "password": _E2E_USER_PULL_ONLY_PW,
+                     "department_id": dept_id})
+    assert r.status_code in (201, 409), f"create pull-only user failed: {r.text}"
+    if r.status_code == 201:
+        return r.json()
+    users = s.get(f"{base}/api/auth/v1/users").json()
+    return next(u for u in users if u["username"] == _E2E_USER_PULL_ONLY)
+
+
 @pytest.fixture(scope="session")
 def e2e_docker_enabled(e2e_api, e2e_dept, e2e_user):
     """Включить Docker registry для e2e_dept: pull_policy=all, пользователь в списке push."""
     s, base = e2e_api
     r = s.put(
-        f"{base}/api/auth/v1/docker/registry/{e2e_dept['id']}",
+        f"{base}/api/auth/v1/docker/registry/{e2e_dept['department_id']}",
         json={
             "pull_policy": "all",
             "pull_user_ids": [],

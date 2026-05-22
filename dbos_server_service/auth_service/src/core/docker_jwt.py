@@ -1,23 +1,24 @@
-"""Docker registry JWT helpers (RS256 preferred, HS256 fallback for dev).
+"""Docker registry JWT (RS256 предпочтительно, HS256 fallback только для dev).
 
-Setup for production:
-  1. Generate key pair:
+Настройка для production:
+  1. Сгенерить пару ключей:
        openssl genrsa -out docker_signing_key.pem 2048
        openssl rsa -in docker_signing_key.pem -pubout -out docker_signing_key.pub
-  2. Set DOCKER_RSA_PRIVATE_KEY env var (contents of .pem file, with \\n escaped).
-  3. Configure Docker registry (config.yml):
+  2. Выставить ENV `DOCKER_RSA_PRIVATE_KEY` (содержимое .pem, `\\n` escape'нуть).
+  3. Настроить Docker registry (config.yml):
        auth:
          token:
            realm:   https://<host>/api/auth/v1/docker/token
            service: <DOCKER_REGISTRY_SERVICE>
            issuer:  <DOCKER_REGISTRY_ISSUER>
            rootcertbundle: /path/to/docker_signing_key.pub
-  4. Fetch the public key from /api/auth/v1/docker/certs (PEM) or JWKS endpoint.
+  4. Public key можно забрать с `/api/auth/v1/docker/certs` (PEM) или JWKS.
 """
 
 import base64
 import datetime
 import hashlib
+import logging
 from functools import lru_cache
 
 import jwt
@@ -28,24 +29,36 @@ from cryptography.x509.oid import NameOID
 
 from src.core.config import get_settings
 
+logger = logging.getLogger(__name__)
+
 
 @lru_cache(maxsize=1)
 def _get_rsa_private_key():
-    """Load RSA private key from config, or generate a temporary one for dev."""
+    """RSA private key из конфига; для dev — эфемерный (regenerated на каждом restart).
+
+    Production guard в `Settings._validate_production_secrets` падает, если
+    `DOCKER_RSA_PRIVATE_KEY` не задан в проде. Здесь fallback срабатывает
+    только вне production, но логи кричат операторам, что токены не
+    переживут рестарт сервиса.
+    """
     settings = get_settings()
     if settings.docker_rsa_private_key:
         pem = settings.docker_rsa_private_key.encode()
         return serialization.load_pem_private_key(pem, password=None)
-    # Dev fallback: ephemeral key (regenerated on each restart — not for production)
+    logger.warning(
+        "Generated ephemeral RSA key for docker_jwt; tokens will not survive restart. "
+        "Set DOCKER_RSA_PRIVATE_KEY for production."
+    )
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
 def _get_rsa_public_key():
+    """Public key пары — берём из приватного, чтобы не дублировать загрузку."""
     return _get_rsa_private_key().public_key()
 
 
 def _key_id(public_key) -> str:
-    """Compute a stable kid from the public key DER hash (first 12 hex chars)."""
+    """Стабильный `kid` из SHA-256(DER public key), первые 12 hex-символов."""
     der = public_key.public_bytes(
         serialization.Encoding.DER,
         serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -54,7 +67,7 @@ def _key_id(public_key) -> str:
 
 
 def sign_docker_token(payload: dict) -> str:
-    """Sign a Docker JWT with RS256 (or HS256 in dev without a configured key)."""
+    """Подписать Docker JWT через RS256 (HS256 fallback в dev — Docker registry его не поймёт)."""
     settings = get_settings()
     private_key = _get_rsa_private_key()
     kid = _key_id(_get_rsa_public_key())
@@ -69,11 +82,11 @@ def sign_docker_token(payload: dict) -> str:
 
 @lru_cache(maxsize=1)
 def get_public_key_pem() -> str:
-    """Return a self-signed X.509 certificate in PEM format.
+    """Self-signed X.509 cert в PEM (cached на весь lifecycle процесса).
 
-    Docker registry rootcertbundle requires a certificate, not a bare public key.
-    The cert is derived from the same RSA key used to sign tokens, so the registry
-    can extract and use the public key for JWT verification.
+    Docker registry rootcertbundle требует certificate, не голый public key.
+    Cert строится из той же RSA-пары, что и подпись токенов, чтобы registry
+    мог извлечь public key и проверить JWT.
     """
     private_key = _get_rsa_private_key()
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -92,7 +105,7 @@ def get_public_key_pem() -> str:
 
 
 def get_jwks() -> dict:
-    """Return JWKS representation of the public key for token verification."""
+    """JWKS-представление public key (для JWT-aware клиентов, валидирующих токены)."""
     pub = _get_rsa_public_key()
     pub_numbers = pub.public_numbers()
     n_bytes = pub_numbers.n.to_bytes((pub_numbers.n.bit_length() + 7) // 8, "big")

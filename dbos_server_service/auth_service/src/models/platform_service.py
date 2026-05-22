@@ -1,4 +1,4 @@
-"""Platform service model."""
+"""ORM-модель `PlatformService` — регистр платформенных сервисов (`server_service`, `loging_service`...)."""
 
 from datetime import datetime
 
@@ -11,7 +11,7 @@ from src.db.base import Base
 class PlatformService(Base):
     __tablename__ = "platform_services"
 
-    # service_name is the natural business key used in all API URLs
+    # service_name — естественный business key, используется во всех API-URL
     service_name: Mapped[str] = mapped_column(String(128), primary_key=True)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1024), nullable=True)

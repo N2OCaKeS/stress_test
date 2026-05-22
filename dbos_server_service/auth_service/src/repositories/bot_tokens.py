@@ -1,4 +1,4 @@
-"""Bot token repository."""
+"""DAO для `BotToken` — CRUD + touch (`last_used_at`) + revoke."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

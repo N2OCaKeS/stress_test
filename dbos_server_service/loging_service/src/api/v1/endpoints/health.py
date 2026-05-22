@@ -1,4 +1,4 @@
-"""Health and readiness probes — no authentication required."""
+"""Liveness и readiness пробы. Без авторизации."""
 
 import sqlalchemy
 

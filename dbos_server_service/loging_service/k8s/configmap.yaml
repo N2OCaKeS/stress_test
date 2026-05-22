@@ -4,7 +4,7 @@ metadata:
   name: logging-service-config
   namespace: dbos
 data:
-  APP_NAME: "logging_service"
+  APP_NAME: "loging_service"
   APP_ENV: "production"
   APP_HOST: "0.0.0.0"
   APP_PORT: "8001"

@@ -1,7 +1,8 @@
-"""Canonical list of audit events emitted by auth_service.
+"""Канонический список audit-событий, которые эмитит auth_service.
 
-Sent to loging_service on startup via register_events().
-Any new events added here will be registered automatically on next restart.
+При старте отсылается в loging_service через `register_events()`. Новые
+события, добавленные сюда, автоматически зарегистрируются при следующем
+рестарте.
 """
 
 from src.core.config import get_settings
@@ -11,7 +12,8 @@ import httpx
 
 logger = logging.getLogger("audit")
 
-# Each entry: action, human description, default_severity (for success; failures default to WARNING/CRITICAL via loging_service rules)
+# Запись: action, human description, default_severity (для success; для failure
+# loging_service переопределит на WARNING/CRITICAL через свои правила)
 SERVICE_EVENTS = [
     # Startup
     {"action": "service.started", "description": "Service started up", "default_severity": "INFO"},
@@ -25,13 +27,18 @@ SERVICE_EVENTS = [
     {"action": "user.logout", "description": "User session termination", "default_severity": "INFO"},
     {"action": "user.me", "description": "Get current user identity", "default_severity": "INFO"},
     {"action": "token.refresh_reuse", "description": "Refresh token reuse detected (possible theft)", "default_severity": "CRITICAL"},
+    {"action": "token.refresh_race", "description": "Concurrent refresh-token rotation lost CAS (benign race, retry expected)", "default_severity": "INFO"},
     # Users
     {"action": "user.create", "description": "New user account created", "default_severity": "INFO"},
+    {"action": "user.list", "description": "User list retrieved (global or per-department)", "default_severity": "INFO"},
     {"action": "user.update", "description": "User profile updated", "default_severity": "INFO"},
     {"action": "user.roles_assign", "description": "Service roles assigned to user", "default_severity": "INFO"},
     {"action": "user.password_reset", "description": "User password reset", "default_severity": "CRITICAL"},
     {"action": "user.ban", "description": "User account banned", "default_severity": "CRITICAL"},
     {"action": "user.unban", "description": "User account unbanned", "default_severity": "CRITICAL"},
+    {"action": "user.ban_deactivated_via_status_change", "description": "Active ban deactivated as side-effect of PATCH /users/{id}/status", "default_severity": "WARNING"},
+    {"action": "user.permissions_view", "description": "User permissions snapshot retrieved (GET /users/{id}/permissions)", "default_severity": "INFO"},
+    {"action": "user.roles_purged_on_transfer", "description": "User service-roles purged after department transfer", "default_severity": "WARNING"},
     # Departments
     {"action": "department.create", "description": "New department created", "default_severity": "CRITICAL"},
     {"action": "department.list", "description": "Department list retrieved", "default_severity": "INFO"},
@@ -69,6 +76,9 @@ SERVICE_EVENTS = [
     {"action": "bot.token_create", "description": "Bot token created", "default_severity": "WARNING"},
     {"action": "bot.token_list", "description": "Bot token list retrieved", "default_severity": "INFO"},
     {"action": "bot.token_revoke", "description": "Bot token revoked", "default_severity": "WARNING"},
+    {"action": "bot.roles_assign", "description": "Bot service-roles assigned", "default_severity": "WARNING"},
+    {"action": "bot.roles_list", "description": "Bot service-roles retrieved", "default_severity": "INFO"},
+    {"action": "bot.roles_revoke", "description": "Bot service-roles revoked", "default_severity": "WARNING"},
     # OAuth2 clients
     {"action": "oauth_client.create", "description": "OAuth2 client registered", "default_severity": "CRITICAL"},
     {"action": "oauth_client.list", "description": "OAuth2 client list retrieved", "default_severity": "INFO"},
@@ -88,7 +98,12 @@ SERVICE_EVENTS = [
 
 
 def register_events() -> None:
-    """POST the full event list to loging_service. Called on startup in a background thread."""
+    """POST'ит полный список событий в loging_service.
+
+    Вызывается на startup в background-потоке. Если `LOGGING_SERVICE_URL` не
+    задан — пропускаем (dev-сценарий без logging-сервиса). HTTP-ошибки
+    логгируются как WARNING, но не валят процесс.
+    """
     settings = get_settings()
     logging_url = getattr(settings, "logging_service_url", None)
     api_key = getattr(settings, "logging_service_api_key", None)

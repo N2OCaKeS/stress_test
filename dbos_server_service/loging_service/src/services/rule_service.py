@@ -105,22 +105,21 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("logging_rule.update", "success"): "CRITICAL",
     ("logging_rule.delete", "success"): "CRITICAL",
     # Обращения к loging_service (все сохраняются без ротации)
-    ("logging.events_queried", "success"): "INFO",
-    ("logging.rules_read",     "success"): "INFO",
-    ("logging.rules_write",    "success"): "WARNING",
-    ("logging.services_read",  "success"): "INFO",
-    ("logging.admin_access",   "success"): "INFO",
-    ("http.access_denied",     "denied"):  "CRITICAL",
-    ("http.client_error",      "failure"): "WARNING",
-    ("http.server_error",      "failure"): "CRITICAL",
+    ("logging.events_queried",   "success"): "INFO",
+    ("logging.rules_read",       "success"): "INFO",
+    ("logging.rules_write",      "success"): "WARNING",
+    ("logging.services_read",    "success"): "INFO",
+    ("logging.admin_access",     "success"): "INFO",
+    ("logging.retention_write",  "success"): "WARNING",
+    ("logging.retention_sweep",  "success"): "INFO",
 }
 
 
 def action_matches_pattern(action: str, pattern: str) -> bool:
-    """Check if *action* matches *pattern*.
+    """Совпадает ли *action* с *pattern*.
 
-    '*' matches any non-empty sequence of characters within ONE dot-segment.
-    'user.*' matches 'user.login' but NOT 'user.login.extra'.
+    `*` совпадает с любой непустой последовательностью символов в ОДНОМ
+    dot-сегменте. `user.*` matchит `user.login`, но НЕ `user.login.extra`.
     """
     if "*" not in pattern:
         return action == pattern
@@ -162,12 +161,18 @@ class _RuleCache:
             try:
                 db_updated_at = rule_repo.get_max_updated_at(db)
                 if self._loaded_at is None or db_updated_at is None or db_updated_at > self._loaded_at:
-                    self._rules = rule_repo.get_active_sorted(db)
+                    fresh = rule_repo.get_active_sorted(db)
+                    # Отвязываем правила от этой сессии — иначе последующие
+                    # чтения (в других сессиях / после expire-on-commit)
+                    # триггерят refresh и роняют `DetachedInstanceError`.
+                    for rule in fresh:
+                        db.expunge(rule)
+                    self._rules = fresh
                 self._loaded_at = now
             except Exception:
                 if self._loaded_at is not None:
                     logger.error("RuleCache: DB reload failed — serving stale cache")
-                    self._loaded_at = now  # reset TTL to avoid hammering DB
+                    self._loaded_at = now  # сброс TTL чтобы не молотить БД
                 else:
                     raise
         return self._rules
@@ -209,7 +214,15 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
     2. Правила оцениваются по убыванию priority.
     Возвращает (возможно изменённый) payload для сохранения,
     или None — если событие должно быть подавлено.
+
+    Defence-in-depth: self-audit loging_service всегда обходит правила,
+    даже если кто-то по ошибке вызовет `record()` вместо `record_admin_action()`.
+    Закрывает «admin создал SUPPRESS match_service='loging_service' и отключил
+    весь собственный аудит».
     """
+    if payload.service == "loging_service":
+        return payload  # self-audit never suppressed, never overridden
+
     if payload.severity is None:
         payload = payload.model_copy(
             update={"severity": _resolve_default_severity(payload.action, payload.status)}

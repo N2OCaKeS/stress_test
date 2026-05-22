@@ -1,4 +1,4 @@
-"""User session and refresh token model."""
+"""ORM-модель `Session` — refresh-токен + previous_token_hash для reuse-detection (kill-switch)."""
 
 from datetime import datetime
 
@@ -16,12 +16,12 @@ class Session(Base):
         String(64), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     refresh_token_hash: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
-    # Stored during rotation so we can detect reuse of the previous token
+    # Сохраняется при ротации, чтобы детектить reuse предыдущего токена
     previous_token_hash: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
-    # Incremented on every successful refresh; used for reuse detection
+    # Инкрементится на каждом успешном refresh; используется для reuse-detection
     token_generation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # Flagged when an already-rotated refresh token is presented again
+    # Поднимается, если уже ротированный refresh подсунули ещё раз — kill-switch
     is_suspicious: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)

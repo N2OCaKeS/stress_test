@@ -1,4 +1,4 @@
-"""Bot account repository."""
+"""DAO для `BotAccount` — CRUD bot-accounts."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

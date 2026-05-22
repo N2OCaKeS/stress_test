@@ -1,4 +1,4 @@
-"""AuditRule repository."""
+"""Репозиторий `AuditRule`."""
 
 from datetime import datetime, timezone
 
@@ -10,7 +10,7 @@ from src.schemas.rules import RuleCreate, RuleUpdate
 
 
 def get_active_sorted(db: Session) -> list[AuditRule]:
-    """Все активные правила, упорядоченные по priority DESC."""
+    """Все активные правила, отсортированные по `priority DESC`."""
     stmt = (
         select(AuditRule)
         .where(AuditRule.is_active == True)  # noqa: E712

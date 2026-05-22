@@ -1,9 +1,10 @@
-"""Session repository."""
+"""DAO для `Session` — CRUD refresh-сессий + CAS rotate (reuse-detection)."""
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.session import Session
+from src.repositories._cas import atomic_transition
 from src.utils.ids import session_id
 from src.utils.time import utcnow
 
@@ -24,7 +25,7 @@ class SessionRepository:
         )
 
     async def get_by_token_hash(self, token_hash: str) -> Session | None:
-        """Lookup by current or previous token hash — used for reuse detection."""
+        """Lookup по current ИЛИ previous token-hash — для reuse-detection."""
         return await self._db.scalar(
             select(Session).where(
                 (Session.refresh_token_hash == token_hash) |
@@ -52,15 +53,55 @@ class SessionRepository:
         await self._db.flush()
         return sess
 
-    async def rotate(self, sess: Session, new_hash: str, new_expires_at) -> Session:
-        """Replace token hash and increment generation counter."""
-        sess.previous_token_hash = sess.refresh_token_hash
+    async def rotate(self, sess: Session, new_hash: str, new_expires_at) -> bool:
+        """Атомарная замена `refresh_token_hash` через CAS.
+
+        UPDATE матчит по `id` И ожидаемому текущему `refresh_token_hash`.
+        Если параллельный `/refresh` уже ротировал строку — WHERE не находит
+        её, `RETURNING` пуст, возвращаем `False`. Caller трактует это как
+        race (НЕ token-reuse attack: НЕ зовём `mark_suspicious` и
+        `revoke_all_for_user`).
+
+        Через общий `_cas.atomic_transition` (тот же CAS-шаблон, что и
+        в `BanRepository.deactivate` / `OAuthCodeRepository.mark_used`).
+
+        Возвращает `True` если caller выиграл ротацию, `False` если строка
+        с `refresh_token_hash` больше не совпадает с `sess.refresh_token_hash`
+        (кто-то ротировал первым). На success in-memory ORM-инстанс
+        синхронизируется, чтобы audit details (`sess.id`,
+        `sess.token_generation`) были корректны.
+        """
+        expected_hash = sess.refresh_token_hash
+        now = utcnow()
+        # `token_generation = Session.token_generation + 1` — это column-expr,
+        # `.values(**dict)` нормально его принимает.
+        won = await atomic_transition(
+            self._db,
+            Session,
+            id_column="id",
+            id_value=sess.id,
+            where_clause=and_(
+                Session.refresh_token_hash == expected_hash,
+                Session.is_active.is_(True),
+            ),
+            update_values={
+                "previous_token_hash": expected_hash,
+                "refresh_token_hash": new_hash,
+                "token_generation": Session.token_generation + 1,
+                "expires_at": new_expires_at,
+                "last_used_at": now,
+            },
+        )
+        if not won:
+            return False
+        # Синкаем ORM-инстанс с тем, что записали в БД — caller'ы (например
+        # `auth_service.refresh`) после возврата читают `sess.id` для audit.
+        sess.previous_token_hash = expected_hash
         sess.refresh_token_hash = new_hash
         sess.token_generation += 1
         sess.expires_at = new_expires_at
-        sess.last_used_at = utcnow()
-        await self._db.flush()
-        return sess
+        sess.last_used_at = now
+        return True
 
     async def revoke(self, sess: Session) -> None:
         sess.is_active = False

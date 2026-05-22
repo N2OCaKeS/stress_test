@@ -1,4 +1,4 @@
-"""Group-to-service role assignment model."""
+"""ORM-модель `GroupServiceRole` — назначение service-роли группе."""
 
 from datetime import datetime
 

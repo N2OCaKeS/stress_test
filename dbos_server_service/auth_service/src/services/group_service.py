@@ -1,4 +1,4 @@
-"""User group management workflows."""
+"""Бизнес-логика пользовательских групп: CRUD groups + членство + group service-access/role."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,14 +15,28 @@ from src.schemas.groups import (
 from src.services import audit_service
 
 
+def _invalidate_identity_cache(user_id: str) -> None:
+    """Сбросить identity-кэш юзера после изменения членства в группе.
+    Lazy import — `dependencies.auth` тянет audit-context, циклы.
+    """
+    try:
+        from src.dependencies.auth import invalidate_identity_cache_for_user
+        invalidate_identity_cache_for_user(user_id)
+    except ImportError:
+        pass
+
+
 def _require_admin(identity) -> None:
+    """Гард — требует account_admin. Жёсткий вариант, для глобальных операций."""
     if identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
         raise AuthorizationError(error_code="ROLE_REQUIRED", message="account_admin role required")
 
 
 def _grp_response(grp) -> GroupResponse:
+    """ORM-группа → GroupResponse DTO."""
     return GroupResponse(
         id=grp.id,
+        department_id=grp.department_id,
         name=grp.name,
         display_name=grp.display_name,
         description=grp.description,
@@ -35,25 +49,60 @@ def _grp_response(grp) -> GroupResponse:
 # ── Group CRUD ────────────────────────────────────────────────────────────────
 
 async def list_groups(db: AsyncSession, identity, request_id=None) -> list[GroupResponse]:
+    """Список активных групп. account_admin only."""
     _require_admin(identity)
     repo = GroupRepository(db)
     return [_grp_response(g) for g in await repo.list_active()]
 
 
 async def create_group(
-    db: AsyncSession, identity, name: str, display_name: str,
+    db: AsyncSession, identity, department_id: str, name: str, display_name: str,
     description: str | None, request_id=None,
 ) -> GroupResponse:
-    _require_admin(identity)
+    """Создать группу внутри отдела.
+
+    account_admin — любой отдел; department_admin — только свой.
+    """
+    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
+        if identity.department_id != department_id:
+            raise AuthorizationError(
+                error_code="DEPARTMENT_FORBIDDEN",
+                message="department_admin can only create groups in their own department",
+            )
+    elif identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
+        raise AuthorizationError(error_code="ROLE_REQUIRED", message="Admin role required")
+
+    from src.repositories.departments import DepartmentRepository
+    dept_repo = DepartmentRepository(db)
+    if await dept_repo.get_by_id(department_id) is None:
+        raise NotFoundError(
+            error_code="DEPARTMENT_NOT_FOUND",
+            message=f"Department '{department_id}' not found",
+        )
+
     repo = GroupRepository(db)
-    if await repo.get_by_name(name):
-        raise ConflictError(error_code="GROUP_ALREADY_EXISTS", message=f"Group '{name}' already exists")
-    grp = await repo.create(name, display_name, description, created_by=identity.user_id)
+    if await repo.get_by_name(department_id, name):
+        raise ConflictError(
+            error_code="GROUP_ALREADY_EXISTS",
+            message=f"Group '{name}' already exists in department '{department_id}'",
+        )
+    grp = await repo.create(
+        department_id=department_id,
+        name=name,
+        display_name=display_name,
+        description=description,
+        created_by=identity.user_id,
+    )
     await db.commit()
     audit_service.emit(
         "group.create", identity.user_id, target_id=grp.id, target_type="group",
         request_id=request_id,
-        details={"name": name, "display_name": display_name, "description": description},
+        details={
+            "department_id": department_id,
+            "name": name,
+            "display_name": display_name,
+            "description": description,
+        },
     )
     return _grp_response(grp)
 
@@ -127,12 +176,19 @@ async def add_member(db: AsyncSession, identity, group_id: str, user_id: str, re
     if user is None:
         raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
 
+    if user.department_id != grp.department_id:
+        raise AuthorizationError(
+            error_code="GROUP_DEPARTMENT_MISMATCH",
+            message=(
+                f"User '{user_id}' is in a different department from group '{grp.name}'"
+            ),
+        )
+
     if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(identity.user_id)
-        if actor and actor.department_id != user.department_id:
+        if identity.department_id != grp.department_id:
             raise AuthorizationError(
                 error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only add users from their own department",
+                message="department_admin can only manage groups in their own department",
             )
 
     if await repo.get_membership(group_id, user_id):
@@ -140,6 +196,7 @@ async def add_member(db: AsyncSession, identity, group_id: str, user_id: str, re
 
     m = await repo.add_member(group_id, user_id, added_by=identity.user_id)
     await db.commit()
+    _invalidate_identity_cache(user_id)
     audit_service.emit(
         "group.member_add", identity.user_id, target_id=group_id, target_type="group",
         details={
@@ -167,14 +224,15 @@ async def remove_member(db: AsyncSession, identity, group_id: str, user_id: str,
         raise NotFoundError(error_code="MEMBER_NOT_FOUND", message="User is not a member of this group")
 
     if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
-        user_repo = UserRepository(db)
-        user = await user_repo.get_by_id(user_id)
-        actor = await user_repo.get_by_id(identity.user_id)
-        if actor and user and actor.department_id != user.department_id:
-            raise AuthorizationError(error_code="DEPARTMENT_ACCESS_DENIED", message="Cannot remove user from outside your department")
+        if identity.department_id != grp.department_id:
+            raise AuthorizationError(
+                error_code="DEPARTMENT_ACCESS_DENIED",
+                message="department_admin can only manage groups in their own department",
+            )
 
     await repo.remove_member(m)
     await db.commit()
+    _invalidate_identity_cache(user_id)
     audit_service.emit(
         "group.member_remove", identity.user_id, target_id=group_id, target_type="group",
         details={"group_name": grp.name, "user_id": user_id},
@@ -183,9 +241,40 @@ async def remove_member(db: AsyncSession, identity, group_id: str, user_id: str,
 
 
 async def list_user_groups(db: AsyncSession, identity, user_id: str, request_id=None) -> list[UserGroupsResponse]:
-    if identity.platform_role not in (PlatformRole.ACCOUNT_ADMIN, PlatformRole.DEPARTMENT_ADMIN):
+    # ── Cross-department info-disclosure guard ──────────────────────────────
+    # `GET /users/{user_id}/groups` доступен любому залогиненному (свои),
+    # department_admin'у (юзер своего отдела) и account_admin (любой). Без
+    # dept-isolation department_admin'у dept_a достаточно пересчитать
+    # `usr_*` id'шки и прочитать memberships юзеров из чужих отделов —
+    # лик имён групп `prod_access`/`security_team`/etc. Зеркало
+    # `user_service.list_users_by_department`.
+    if identity.platform_role == PlatformRole.ACCOUNT_ADMIN:
+        # account_admin — cross-department by design.
+        pass
+    elif identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
+        # department_admin — только юзеры своего отдела. Self-inspection
+        # всегда разрешён (edge case: admin сам department-scoped, смотрит свою строку).
+        if identity.user_id != user_id:
+            user_repo = UserRepository(db)
+            target = await user_repo.get_by_id(user_id)
+            if target is None:
+                raise NotFoundError(
+                    error_code="USER_NOT_FOUND",
+                    message="User not found",
+                )
+            if target.department_id != identity.department_id:
+                raise AuthorizationError(
+                    error_code="DEPARTMENT_ACCESS_DENIED",
+                    message=(
+                        "department_admin can only view group memberships "
+                        "for users in their own department"
+                    ),
+                )
+    else:
+        # Обычный юзер видит только свои группы.
         if identity.user_id != user_id:
             raise AuthorizationError(error_code="ROLE_REQUIRED", message="Cannot view other user's groups")
+
     repo = GroupRepository(db)
     memberships = await repo.list_user_groups(user_id)
     result = []
@@ -313,15 +402,21 @@ async def assign_group_roles(
 
     role_def_repo = ServiceRoleDefinitionRepository(db)
     for role in roles:
-        if not await role_def_repo.exists(service_name, role):
+        if not await role_def_repo.exists(grp.department_id, service_name, role):
             from src.core.exceptions import DomainValidationError
             raise DomainValidationError(
                 error_code="INVALID_SERVICE_ROLE",
-                message=f"Role '{role}' is not defined for service '{service_name}'",
+                message=(
+                    f"Role '{role}' is not defined for service '{service_name}' "
+                    f"in department '{grp.department_id}'"
+                ),
             )
 
+    members_before = await repo.list_members(group_id)
     await repo.set_roles(group_id, service_name, roles, assigned_by=identity.user_id)
     await db.commit()
+    for m in members_before:
+        _invalidate_identity_cache(m.user_id)
     audit_service.emit(
         "group.roles_assign", identity.user_id, target_id=group_id,
         details={
@@ -342,8 +437,11 @@ async def revoke_group_roles(
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+    members_before = await repo.list_members(group_id)
     await repo.clear_roles_for_service(group_id, service_name)
     await db.commit()
+    for m in members_before:
+        _invalidate_identity_cache(m.user_id)
     audit_service.emit(
         "group.roles_revoke", identity.user_id, target_id=group_id,
         details={"group_name": grp.name, "service_name": service_name},

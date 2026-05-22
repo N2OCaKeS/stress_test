@@ -1,9 +1,10 @@
-"""Platform service registry workflows."""
+"""Регистр платформенных сервисов: CRUD `PlatformService`."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import ConflictError, NotFoundError
 from src.repositories.departments import DepartmentRepository
+from src.repositories.groups import GroupRepository
 from src.repositories.roles import RoleRepository
 from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.services import ServiceRepository
@@ -19,19 +20,14 @@ async def create_service(
     description: str | None,
     request_id: str | None = None,
 ) -> ServiceResponse:
+    """Зарегистрировать новый платформенный сервис."""
     repo = ServiceRepository(db)
     if await repo.exists(service_name):
         raise ConflictError(error_code="SERVICE_ALREADY_EXISTS", message=f"Service '{service_name}' already exists")
 
     svc = await repo.create(service_name, display_name, description)
-    role_def_repo = ServiceRoleDefinitionRepository(db)
-    await role_def_repo.create(
-        service_name=service_name,
-        role_name="admin",
-        display_name="Admin",
-        description="Full administrative access to the service",
-        created_by=actor_id,
-    )
+    # Role definitions сеются per-(department, service) при выдаче отделу
+    # access — здесь заранее ничего не создаём.
     await db.commit()
     audit_service.emit(
         "service.create", actor_id, target_id=service_name, target_type="service",
@@ -40,7 +36,6 @@ async def create_service(
             "service_name": service_name,
             "display_name": display_name,
             "description": description,
-            "auto_created_roles": ["admin"],
         },
     )
     return ServiceResponse(
@@ -58,6 +53,7 @@ async def delete_service(
     service_name: str,
     request_id: str | None = None,
 ) -> None:
+    """Снять сервис с регистрации. Каскадно ревокает все dept-access и роли."""
     svc_repo = ServiceRepository(db)
     dept_repo = DepartmentRepository(db)
     role_repo = RoleRepository(db)
@@ -74,6 +70,9 @@ async def delete_service(
     await role_repo.deactivate_all_for_service(service_name)
     role_def_repo = ServiceRoleDefinitionRepository(db)
     await role_def_repo.deactivate_all_for_service(service_name)
+    from src.repositories.bot_roles import BotRoleRepository
+    bot_role_repo = BotRoleRepository(db)
+    await bot_role_repo.deactivate_all_for_service(service_name)
     await svc_repo.deactivate(svc)
     await db.commit()
     audit_service.emit(
@@ -93,6 +92,7 @@ async def list_services(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> list[ServiceResponse]:
+    """Все активные сервисы."""
     repo = ServiceRepository(db)
     result = [
         ServiceResponse(

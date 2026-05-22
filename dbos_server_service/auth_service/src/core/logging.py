@@ -1,10 +1,10 @@
-"""Logging configuration and audit helpers."""
+"""Конфиг логирования."""
 
 import logging
 
 
 def configure_logging(log_level: str = "INFO") -> None:
-    """Configure a simple application-wide logging format."""
+    """Простой application-wide формат логов. Зовём один раз при старте."""
 
     logging.basicConfig(
         level=getattr(logging, log_level.upper(), logging.INFO),

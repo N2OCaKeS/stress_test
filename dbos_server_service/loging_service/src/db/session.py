@@ -1,4 +1,8 @@
-"""Database engine and session management."""
+"""DB engine и фабрика сессий.
+
+# HACK: `pool_size=10` / `max_overflow=20` хардкод без env-конфига. Не
+# критично сейчас, но для нагрузочной настройки имеет смысл вынести в ENV.
+"""
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

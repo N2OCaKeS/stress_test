@@ -1,10 +1,30 @@
 """Тесты: /api/logging/v1/services — реестр событий и статистика сервисов."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from tests.conftest import make_event, make_event_def
 
 SERVICES_URL = "/api/logging/v1/services"
 EVENTS_URL = "/api/logging/v1/events"
+
+
+def _mock_identity(identity_payload: dict):
+    """Mock introspect-response from auth_service.
+
+    Used by ``GET /services`` dept-scope tests which exercise the real
+    ``require_reader`` dependency (the ``admin_client`` fixture overrides
+    that dependency and would defeat the scope-leak invariant we're testing).
+    """
+    payload = dict(identity_payload)
+    payload.setdefault("active", True)
+    payload.setdefault("subject_type", "user")
+    if "user_id" in payload and "sub" not in payload:
+        payload["sub"] = payload.pop("user_id")
+    p = patch("src.dependencies.auth.httpx.post")
+    m = p.start()
+    m.return_value = MagicMock(status_code=200, json=lambda: payload)
+    return p
 
 
 # ── POST /services/{service}/events — регистрация событий ────────────────────
@@ -84,6 +104,239 @@ class TestRegisterEvents:
         r = client.post(f"{SERVICES_URL}/auth_service/events",
                         json={"events": [{"action": "a" * 129}]}, headers=auth_headers)
         assert r.status_code == 422
+
+
+# ── POST /services/{service}/events — reserved-service guard ────────────────
+
+
+class TestRegisterEventsReservedService:
+    """Внешний service-token endpoint не может регистрировать events
+    от имени ``loging_service``.
+
+    Симметрия с ``POST /events`` (см. ``test_ingest.py::TestIngestReservedService``):
+    держатель SERVICE_API_KEY иначе мог бы расширить каталог под
+    ``loging_service`` фейковыми action'ами и подстроить SUPPRESS-правила
+    под собственный аудит loging_service.
+    """
+
+    def test_canonical_loging_service_rejected(self, client, auth_headers):
+        r = client.post(
+            f"{SERVICES_URL}/loging_service/events",
+            json={"events": [make_event_def(action="audit.suppress")]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "RESERVED_SERVICE_NAME"
+
+    def test_mixed_case_loging_service_rejected(self, client, auth_headers):
+        """Обход case-sensitivity (LoGiNg_SeRvIcE / LOGING_SERVICE / ...) — тоже 403."""
+        for variant in ("LoGiNg_SeRvIcE", "LOGING_SERVICE", "Loging_Service"):
+            r = client.post(
+                f"{SERVICES_URL}/{variant}/events",
+                json={"events": [make_event_def(action="audit.suppress")]},
+                headers=auth_headers,
+            )
+            assert r.status_code == 403, f"variant {variant!r} not blocked"
+            assert r.json()["error_code"] == "RESERVED_SERVICE_NAME"
+
+    def test_other_service_names_still_accepted(self, client, auth_headers):
+        """Регрессия: легитимные сервисы продолжают регистрировать события без 403."""
+        r = client.post(
+            f"{SERVICES_URL}/auth_service/events",
+            json={"events": [make_event_def(action="user.login")]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["service"] == "auth_service"
+
+
+# ── POST /services/{service}/events — path-vs-identity guard ───────────────
+
+
+class TestRegisterEventsServiceIdentityGuard:
+    """``X-Service-Identity`` header must match the ``{service}`` path
+    parameter. Without this guard, a holder of the shared ``SERVICE_API_KEY``
+    claiming to be ``auth_service`` could overwrite ``server_service`` event
+    catalogue — cross-tenant audit-trail poisoning.
+
+    Per-service API keys (``SERVICE_API_KEYS`` JSON env, full mTLS) are a
+    follow-up; the header is informational today but the path comparison still
+    forces every internal caller to be consistent, and any attacker who forges
+    the header has to pick the right path too.
+    """
+
+    def test_matching_identity_accepted(self, client, auth_headers):
+        """``X-Service-Identity: auth_service`` + path ``auth_service`` → 200."""
+        headers = {**auth_headers, "X-Service-Identity": "auth_service"}
+        r = client.post(
+            f"{SERVICES_URL}/auth_service/events",
+            json={"events": [make_event_def(action="user.login")]},
+            headers=headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["service"] == "auth_service"
+
+    def test_mismatched_identity_rejected_with_403(self, client, auth_headers):
+        """``X-Service-Identity: auth_service`` + path ``server_service`` → 403."""
+        headers = {**auth_headers, "X-Service-Identity": "auth_service"}
+        r = client.post(
+            f"{SERVICES_URL}/server_service/events",
+            json={"events": [make_event_def(action="server.power_on")]},
+            headers=headers,
+        )
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "SERVICE_IDENTITY_PATH_MISMATCH"
+
+    def test_missing_identity_soft_mode_allowed(self, client, auth_headers):
+        """Без header — backward-compat (soft mode по умолчанию) → 200."""
+        r = client.post(
+            f"{SERVICES_URL}/auth_service/events",
+            json={"events": [make_event_def(action="user.login")]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+
+    def test_unknown_identity_soft_mode_with_matching_path_allowed(
+        self, client, auth_headers
+    ):
+        """Unknown identity (не в allow-list'е), но path тот же — в soft mode
+        warning + 200 (header informational). Цель — не сломать совместимость
+        с пока-не-добавленными сервисами; per-service keys сделают это
+        строже.
+        """
+        headers = {**auth_headers, "X-Service-Identity": "future_service"}
+        r = client.post(
+            f"{SERVICES_URL}/future_service/events",
+            json={"events": [make_event_def(action="future.event")]},
+            headers=headers,
+        )
+        # Soft mode: unknown identity is logged WARNING but request passes
+        # require_service_token. Path matches identity → no mismatch raise.
+        assert r.status_code == 200
+
+    def test_identity_case_and_whitespace_normalised(
+        self, client, auth_headers
+    ):
+        """``X-Service-Identity`` сравнивается через ``normalize_service_name``,
+        который lowercase-folding'ит обе стороны. Это симметрично с reserved-
+        service guard'ом для path'а в этом же endpoint'е (см.
+        ``TestRegisterEventsReservedServiceUnicodeBypass``) — обе стороны
+        проходят одну и ту же нормализацию.
+        """
+        # ``AUTH_SERVICE`` (uppercase) против path ``auth_service`` — после
+        # нормализации обе → ``auth_service`` → match → 200.
+        headers = {**auth_headers, "X-Service-Identity": "AUTH_SERVICE"}
+        r = client.post(
+            f"{SERVICES_URL}/auth_service/events",
+            json={"events": [make_event_def(action="user.login")]},
+            headers=headers,
+        )
+        assert r.status_code == 200
+
+    def test_strict_mode_missing_identity_rejected_with_401(
+        self, client, auth_headers, monkeypatch
+    ):
+        """STRICT_SERVICE_IDENTITY=true → отсутствие header'а → 401
+        ``MISSING_SERVICE_IDENTITY``. Используется после миграции всех
+        внутренних caller'ов.
+        """
+        monkeypatch.setenv("STRICT_SERVICE_IDENTITY", "true")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        try:
+            r = client.post(
+                f"{SERVICES_URL}/auth_service/events",
+                json={"events": [make_event_def(action="user.login")]},
+                headers=auth_headers,
+            )
+            assert r.status_code == 401
+            assert r.json()["error_code"] == "MISSING_SERVICE_IDENTITY"
+        finally:
+            get_settings.cache_clear()
+
+    def test_strict_mode_unknown_identity_rejected_with_401(
+        self, client, auth_headers, monkeypatch
+    ):
+        """STRICT_SERVICE_IDENTITY=true + unknown identity → 401
+        ``INVALID_SERVICE_IDENTITY``.
+        """
+        monkeypatch.setenv("STRICT_SERVICE_IDENTITY", "true")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        try:
+            headers = {**auth_headers, "X-Service-Identity": "random_garbage"}
+            r = client.post(
+                f"{SERVICES_URL}/auth_service/events",
+                json={"events": [make_event_def(action="user.login")]},
+                headers=headers,
+            )
+            assert r.status_code == 401
+            assert r.json()["error_code"] == "INVALID_SERVICE_IDENTITY"
+        finally:
+            get_settings.cache_clear()
+
+
+# ── POST /services/{service}/events — Unicode bypass guard ──────────────────
+
+
+class TestRegisterEventsReservedServiceUnicodeBypass:
+    """`endpoints/services.py` использовал ``.strip().lower()``
+    и пропускал Unicode-обходы reserved-service guard'а, тогда как
+    симметричный guard в ``POST /events`` уже шёл через
+    ``normalize_service_name`` (NFKC + invisibles strip + confusables fold +
+    lower).
+
+    Атакующий с SERVICE_API_KEY мог зарегистрировать events под
+    ``loging_service`` через path-параметр с кириллической ``о`` или ZWSP:
+    ``POST /services/lоging_service/events`` → ``service_events`` с raw
+    Unicode → дрейф каталога событий и фейковые actions для
+    SUPPRESS-правил поверх audit trail loging_service.
+
+    После фикса оба guard'а вызывают одну и ту же ``normalize_service_name``.
+    """
+
+    def test_cyrillic_confusable_rejected(self, client, auth_headers):
+        """``lоging_service`` с кириллической ``о`` (U+043E) → 403."""
+        # path-сегмент с кириллической 'о' (U+043E) вместо латинской 'o'
+        variant = "lоging_service"
+        r = client.post(
+            f"{SERVICES_URL}/{variant}/events",
+            json={"events": [make_event_def(action="audit.suppress")]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 403, f"variant {variant!r} not blocked"
+        assert r.json()["error_code"] == "RESERVED_SERVICE_NAME"
+
+    def test_zero_width_space_bypass_rejected(self, client, auth_headers):
+        """``loging_service`` + U+200B (ZWSP) → 403."""
+        variant = "loging_service​"  # trailing ZWSP U+200B
+        r = client.post(
+            f"{SERVICES_URL}/{variant}/events",
+            json={"events": [make_event_def(action="audit.suppress")]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 403, f"variant {variant!r} not blocked"
+        assert r.json()["error_code"] == "RESERVED_SERVICE_NAME"
+
+    def test_uppercase_canonical_still_rejected(self, client, auth_headers):
+        """Регрессия: ``LOGING_SERVICE`` (uppercase) → 403."""
+        r = client.post(
+            f"{SERVICES_URL}/LOGING_SERVICE/events",
+            json={"events": [make_event_def(action="audit.suppress")]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "RESERVED_SERVICE_NAME"
+
+    def test_legitimate_service_still_accepted(self, client, auth_headers):
+        """Регрессия: ``auth_service`` продолжает регистрировать события (200)."""
+        r = client.post(
+            f"{SERVICES_URL}/auth_service/events",
+            json={"events": [make_event_def(action="user.login")]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["service"] == "auth_service"
 
 
 # ── GET /services/{service}/events — просмотр реестра ────────────────────────
@@ -207,7 +460,10 @@ class TestRuleMatchActionValidation:
             "match_action": "user.unknown_action",
         })
         assert r.status_code == 422
-        assert "not registered" in r.json()["detail"].lower() or "not registered" in str(r.json()).lower()
+        body = r.json()
+        # AppException-envelope: `error_code` + `message`, не legacy `detail`.
+        assert body["error_code"] == "UNKNOWN_MATCH_ACTION"
+        assert "not registered" in body["message"].lower()
 
     def test_registered_exact_action_allowed(self, client, admin_client, auth_headers):
         client.post(f"{SERVICES_URL}/auth_service/events",
@@ -282,3 +538,287 @@ class TestRuleMatchActionValidation:
         assert se_repo.action_is_registered(db, "missing.*") is False
         assert se_repo.action_is_registered(db, "user.login") is True
         assert se_repo.action_is_registered(db, "user.unknown") is False
+
+
+# ── GET /services — scope-leak fix ──────────────────────────────────────────
+
+
+class TestListServicesDeptScope:
+    """A dept-scoped reader (loging_reader, department_admin, or a user with
+    ``reader/operator/admin`` role in ``loging_service``) must only see
+    services where their own department actually wrote audit events.
+
+    Pre-fix: ``GET /services`` returned the global ``GROUP BY service`` over
+    ``audit_events`` with **no** dept filter. A reader scoped to ``dep_a``
+    could read ``service=server_service, event_count=12345`` where the 12345
+    events actually came from ``dep_b`` — cross-department metadata leak.
+
+    The fix passes ``_dept_scope`` down into ``events_repo.list_services``;
+    when set, the aggregate ``COUNT/MAX(timestamp)`` is computed only over
+    events where ``department_id == _dept_scope``. Services that never
+    emitted an event for the reader's department disappear from the list.
+    """
+
+    def test_dept_reader_sees_only_own_department_services(
+        self, client, auth_headers
+    ):
+        """loging_reader in ``dep_a`` ingests one event into auth_service from
+        ``dep_a`` and two events into config_service from ``dep_b``. The
+        scoped reader sees only ``auth_service`` (1 event); ``config_service``
+        is invisible because no ``dep_a`` event ever landed in it.
+        """
+        # Ingest as if from auth_service / dep_a — one event.
+        r = client.post(
+            EVENTS_URL,
+            headers=auth_headers,
+            json=make_event(service="auth_service", department_id="dep_a"),
+        )
+        assert r.status_code == 201
+        # Ingest as if from config_service / dep_b — two events (no dep_a here).
+        for _ in range(2):
+            r = client.post(
+                EVENTS_URL,
+                headers=auth_headers,
+                json=make_event(service="config_service", department_id="dep_b"),
+            )
+            assert r.status_code == 201
+
+        # Reader scoped to dep_a calls GET /services.
+        p = _mock_identity({
+            "user_id": "u1",
+            "username": "lr_a",
+            "platform_role": "loging_reader",
+            "department_id": "dep_a",
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        services = {s["service"] for s in body["items"]}
+        # Only auth_service is visible — config_service has no dep_a events.
+        assert services == {"auth_service"}
+        # event_count reflects only dep_a's events (== 1, not 1+2).
+        assert body["items"][0]["event_count"] == 1
+
+    def test_dept_admin_sees_per_dept_event_count(self, client, auth_headers):
+        """Both ``dep_a`` and ``dep_b`` write into auth_service; each scoped
+        reader sees only the count of their own department's events, not
+        the cross-department total.
+        """
+        # 3 events from dep_a, 7 from dep_b — all in auth_service.
+        for _ in range(3):
+            client.post(EVENTS_URL, headers=auth_headers,
+                        json=make_event(service="auth_service", department_id="dep_a"))
+        for _ in range(7):
+            client.post(EVENTS_URL, headers=auth_headers,
+                        json=make_event(service="auth_service", department_id="dep_b"))
+
+        # department_admin of dep_a → event_count == 3 (NOT 10).
+        p = _mock_identity({
+            "user_id": "u_a",
+            "username": "da_a",
+            "platform_role": "department_admin",
+            "department_id": "dep_a",
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        assert body["items"][0]["service"] == "auth_service"
+        assert body["items"][0]["event_count"] == 3, (
+            "dep_a reader must not see dep_b's 7 events in the aggregate"
+        )
+
+        # department_admin of dep_b → event_count == 7 (NOT 10).
+        p = _mock_identity({
+            "user_id": "u_b",
+            "username": "da_b",
+            "platform_role": "department_admin",
+            "department_id": "dep_b",
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        assert body["items"][0]["event_count"] == 7
+
+    def test_service_role_reader_is_dept_scoped(self, client, auth_headers):
+        """User with ``service_roles={loging_service: [reader]}`` is also
+        dept-scoped (mirrors require_reader dept-scope logic for
+        non-platform_role users).
+        """
+        client.post(EVENTS_URL, headers=auth_headers,
+                    json=make_event(service="auth_service", department_id="dep_a"))
+        client.post(EVENTS_URL, headers=auth_headers,
+                    json=make_event(service="server_service", department_id="dep_b"))
+
+        p = _mock_identity({
+            "user_id": "u_sr",
+            "username": "sr_reader",
+            "platform_role": None,
+            "department_id": "dep_a",
+            "service_roles": {"loging_service": ["reader"]},
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        services = {s["service"] for s in r.json()["items"]}
+        # Only auth_service (dep_a) — server_service (dep_b) is hidden.
+        assert services == {"auth_service"}
+
+    def test_account_admin_sees_all_services_unscoped_regression(
+        self, client, auth_headers
+    ):
+        """Regression: account_admin (``_dept_scope=None``) keeps seeing the
+        global aggregate across all departments — the fix must NOT break
+        the unscoped path.
+        """
+        client.post(EVENTS_URL, headers=auth_headers,
+                    json=make_event(service="auth_service", department_id="dep_a"))
+        client.post(EVENTS_URL, headers=auth_headers,
+                    json=make_event(service="config_service", department_id="dep_b"))
+        client.post(EVENTS_URL, headers=auth_headers,
+                    json=make_event(service="server_service", department_id="dep_c"))
+
+        p = _mock_identity({
+            "user_id": "u_aa",
+            "username": "acc_admin",
+            "platform_role": "account_admin",
+            "department_id": None,
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 3
+        services = {s["service"] for s in body["items"]}
+        assert services == {"auth_service", "config_service", "server_service"}
+
+    def test_loging_admin_sees_all_services_unscoped_regression(
+        self, client, auth_headers
+    ):
+        """Regression: loging_admin (``_dept_scope=None``) keeps seeing the
+        global aggregate. ``admin_client`` fixture also covers this through
+        the dependency-override path, but here we exercise the real
+        ``require_reader`` to confirm symmetry.
+        """
+        client.post(EVENTS_URL, headers=auth_headers,
+                    json=make_event(service="auth_service", department_id="dep_a"))
+        client.post(EVENTS_URL, headers=auth_headers,
+                    json=make_event(service="config_service", department_id="dep_b"))
+
+        p = _mock_identity({
+            "user_id": "u_la",
+            "username": "log_admin",
+            "platform_role": "loging_admin",
+            "department_id": None,
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 2
+        services = {s["service"] for s in body["items"]}
+        assert services == {"auth_service", "config_service"}
+
+    def test_dept_reader_sees_empty_list_when_no_own_dept_events(
+        self, client, auth_headers
+    ):
+        """No event ever landed in dep_a → scoped reader gets an empty list,
+        not a leak of dep_b's services.
+        """
+        client.post(EVENTS_URL, headers=auth_headers,
+                    json=make_event(service="auth_service", department_id="dep_b"))
+        client.post(EVENTS_URL, headers=auth_headers,
+                    json=make_event(service="server_service", department_id="dep_b"))
+
+        p = _mock_identity({
+            "user_id": "u_dr",
+            "username": "dr_a",
+            "platform_role": "loging_reader",
+            "department_id": "dep_a",
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["items"] == []
+        assert body["total"] == 0
+
+    def test_repo_list_services_with_dept_scope_unit(self, db):
+        """Pin the repository contract directly: ``department_id`` argument
+        restricts the aggregate and ``department_id=None`` returns the legacy
+        global aggregate.
+        """
+        from src.repositories import events as events_repo
+        from src.models.audit_event import AuditEvent
+        from datetime import datetime, timezone
+        from src.utils.ids import audit_event_id
+
+        # 2 events for dep_a, 1 for dep_b in auth_service; 1 for dep_b only
+        # in config_service.
+        for dept in ("dep_a", "dep_a", "dep_b"):
+            db.add(AuditEvent(
+                id=audit_event_id(),
+                timestamp=datetime.now(timezone.utc),
+                received_at=datetime.now(timezone.utc),
+                service="auth_service",
+                action="user.login",
+                actor_type="user",
+                status="success",
+                allowed=True,
+                severity="INFO",
+                department_id=dept,
+            ))
+        db.add(AuditEvent(
+            id=audit_event_id(),
+            timestamp=datetime.now(timezone.utc),
+            received_at=datetime.now(timezone.utc),
+            service="config_service",
+            action="config.update",
+            actor_type="user",
+            status="success",
+            allowed=True,
+            severity="INFO",
+            department_id="dep_b",
+        ))
+        db.commit()
+
+        # Unscoped — sees both services with full counts.
+        all_rows = events_repo.list_services(db)
+        rows_by_svc = {r.service: r for r in all_rows}
+        assert rows_by_svc["auth_service"].event_count == 3
+        assert rows_by_svc["config_service"].event_count == 1
+
+        # Scoped to dep_a — only auth_service visible, count == 2.
+        dep_a_rows = events_repo.list_services(db, department_id="dep_a")
+        assert len(dep_a_rows) == 1
+        assert dep_a_rows[0].service == "auth_service"
+        assert dep_a_rows[0].event_count == 2
+
+        # Scoped to dep_b — both services visible, but counts reflect dep_b only.
+        dep_b_rows = events_repo.list_services(db, department_id="dep_b")
+        by_svc = {r.service: r for r in dep_b_rows}
+        assert set(by_svc.keys()) == {"auth_service", "config_service"}
+        assert by_svc["auth_service"].event_count == 1
+        assert by_svc["config_service"].event_count == 1
+
+        # Scoped to a department with no events — empty list.
+        dep_c_rows = events_repo.list_services(db, department_id="dep_c")
+        assert dep_c_rows == []

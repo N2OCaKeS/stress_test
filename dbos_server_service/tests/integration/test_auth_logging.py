@@ -145,10 +145,13 @@ class TestTokenAudit:
         logging_client: httpx.Client,
         admin_token: str,
     ):
+        import uuid
         since = datetime.now(timezone.utc)
+        # Имя PAT уникально per-user, integration stack не пересоздаёт БД —
+        # делаем имя уникальным, чтобы повторный прогон не падал на 409.
         r = auth_client.post(
             "/api/auth/v1/tokens",
-            json={"name": "integration-test-pat"},
+            json={"name": f"integration-test-pat-{uuid.uuid4().hex[:8]}"},
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert r.status_code == 201
@@ -386,11 +389,45 @@ class TestLoggingAdminWorkflow:
         auth_client: httpx.Client,
         admin_token: str,
     ):
-        """Пользователь с account_admin не имеет доступа к loging_service /events."""
-        r = auth_client.get(
-            f"http://localhost:8011/api/logging/v1/events",
+        """Обычный пользователь (без loging_*-ролей) не имеет доступа к /events.
+
+        Замечание: account_admin ИМЕЕТ доступ через `require_reader` —
+        отдельно проверяется ниже. Тут берём пользователя с department_id и
+        без service-роли в loging_service.
+        """
+        import uuid
+        import httpx as _httpx
+        from tests.integration.conftest import LOGGING_URL
+
+        # Создаём department + regular user (без loging_*).
+        dept_name = f"non_admin_dept_{uuid.uuid4().hex[:8]}"
+        dept_resp = auth_client.post(
+            "/api/auth/v1/departments",
             headers={"Authorization": f"Bearer {admin_token}"},
+            json={"name": dept_name, "display_name": dept_name},
         )
+        assert dept_resp.status_code == 201
+        dept_id = dept_resp.json()["department_id"]
+
+        username = f"regular_user_{uuid.uuid4().hex[:8]}"
+        password = "Regular1234!"
+        ur = auth_client.post(
+            "/api/auth/v1/users",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"username": username, "password": password, "department_id": dept_id},
+        )
+        assert ur.status_code == 201, ur.text
+
+        login = auth_client.post(
+            "/api/auth/v1/login", json={"username": username, "password": password},
+        )
+        regular_token = login.json()["access_token"]
+
+        with _httpx.Client(base_url=LOGGING_URL, timeout=10) as c:
+            r = c.get(
+                "/api/logging/v1/events",
+                headers={"Authorization": f"Bearer {regular_token}"},
+            )
         assert r.status_code == 403
         assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 

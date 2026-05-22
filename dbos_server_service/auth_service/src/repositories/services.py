@@ -1,4 +1,4 @@
-"""Platform service repository."""
+"""DAO для `PlatformService` — регистр платформенных сервисов."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

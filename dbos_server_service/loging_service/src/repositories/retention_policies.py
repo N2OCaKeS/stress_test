@@ -1,19 +1,38 @@
-"""RetentionPolicy repository — single global retention configuration."""
+"""Репозиторий `RetentionPolicy` — global или per-(severity, service) политики хранения.
+
+PUT без `severity_filter`/`service_filter` живёт в legacy-режиме: один row
+с NULL/NULL применяется ко всем событиям. PUT с filter'ами создаёт
+Cartesian product (одна строка на пару) — `apply_active` обрабатывает их
+как отдельные DELETE-проходы по соответствующим фильтрам.
+"""
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update as sa_update
 from sqlalchemy.orm import Session
 
 from src.models.audit_event import AuditEvent
 from src.models.retention_policy import RetentionPolicy
 from src.schemas.retention import RetentionPolicyCreate, RetentionPolicyUpdate
 
+# Lowercase каноническая форма — сравнение обязано быть case-insensitive,
+# чтобы `service='LoGiNg_SeRvIcE'` не обходил retention-исключение.
+#
+# Защита от Unicode-bypass'ов (zero-width chars, кириллические/греческие
+# confusables) форсится **на ingest** через
+# `utils.normalization.normalize_service_name` в `EventCreate.service`
+# pydantic-валидаторе: каждый свежезаписанный row уже в каноническом
+# ASCII-form, и сравнения `func.lower(...) != 'loging_service'` ниже
+# достаточно. Rows, записанные до того, как валидатор появился (legacy
+# ingest), не могут содержать Unicode-confusables — ingest-схема это
+# единственное pre-валидаторное место, где принимается внешний
+# service-name (внутренние записи `main.py::_emit_audit` →
+# `record_admin_action` хардкодят литерал `"loging_service"`).
 _PROTECTED_SERVICE = "loging_service"
 
 
 def get_active(db: Session) -> RetentionPolicy | None:
-    """Return the single active retention policy (most recently created)."""
+    """Возвращает единственную активную retention-политику (самую свежую)."""
     return db.execute(
         select(RetentionPolicy)
         .where(RetentionPolicy.is_active == True)  # noqa: E712
@@ -22,25 +41,67 @@ def get_active(db: Session) -> RetentionPolicy | None:
     ).scalar_one_or_none()
 
 
-def get_by_id(db: Session, policy_id: str) -> RetentionPolicy | None:
-    return db.get(RetentionPolicy, policy_id)
-
-
 def create(db: Session, payload: RetentionPolicyCreate) -> RetentionPolicy:
+    """Создаёт одну retention-политику (без severity/service-фильтров).
+
+    Wrap'ер вокруг `create_policy` для backward-compat (один row, NULL/NULL).
+    Возвращает «представительский» row, как делал старый код, — первый
+    созданный.
+    """
+    rows = create_policy(db, payload)
+    return rows[0]
+
+
+def create_policy(
+    db: Session, payload: RetentionPolicyCreate
+) -> list[RetentionPolicy]:
+    """Создаёт N×M retention-политик из Cartesian product (severity × service).
+
+    Если оба filter'а пусты — пишет один row с NULL/NULL (legacy-поведение,
+    применяется ко всем событиям). Иначе генерирует одну строку на каждую
+    пару (severity, service), где None обрабатывается как «все severity» или
+    «все сервисы» соответственно.
+
+    Возвращает список созданных строк в порядке вставки.
+    """
     now = datetime.now(timezone.utc)
-    policy = RetentionPolicy(
-        severity=None,
-        service=None,
-        retain_days=payload.retain_days,
-        description=payload.description,
-        is_active=payload.is_active,
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(policy)
+    severities = payload.severity_filter or [None]
+    services = payload.service_filter or [None]
+    created: list[RetentionPolicy] = []
+    for sev in severities:
+        for svc in services:
+            policy = RetentionPolicy(
+                severity=sev,
+                service=svc,
+                retain_days=payload.retain_days,
+                description=payload.description,
+                is_active=payload.is_active,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(policy)
+            created.append(policy)
     db.commit()
-    db.refresh(policy)
-    return policy
+    for p in created:
+        db.refresh(p)
+    return created
+
+
+def deactivate_all_active(db: Session) -> int:
+    """Помечает is_active=False у всех текущих активных политик.
+
+    Используется при PUT с filter'ами: новая filtered-политика заменяет
+    предыдущий набор (single global или предыдущий Cartesian). Возвращает
+    количество затронутых строк.
+    """
+    now = datetime.now(timezone.utc)
+    result = db.execute(
+        sa_update(RetentionPolicy)
+        .where(RetentionPolicy.is_active == True)  # noqa: E712
+        .values(is_active=False, updated_at=now)
+    )
+    db.commit()
+    return result.rowcount
 
 
 def update(db: Session, policy: RetentionPolicy, payload: RetentionPolicyUpdate) -> RetentionPolicy:
@@ -52,25 +113,54 @@ def update(db: Session, policy: RetentionPolicy, payload: RetentionPolicyUpdate)
     return policy
 
 
-def delete_policy(db: Session, policy: RetentionPolicy) -> None:
-    db.delete(policy)
-    db.commit()
+def list_active(db: Session) -> list[RetentionPolicy]:
+    """Все активные политики, отсортированные от свежих к старым.
+
+    Filter-режим создаёт несколько строк за один PUT — `get_active`
+    возвращает только первую (legacy contract). Здесь — полный набор для
+    применения в `apply_active`.
+    """
+    return list(
+        db.execute(
+            select(RetentionPolicy)
+            .where(RetentionPolicy.is_active == True)  # noqa: E712
+            .order_by(RetentionPolicy.created_at.desc())
+        ).scalars().all()
+    )
 
 
 def apply_active(db: Session) -> int:
-    """Delete all events older than retain_days, except loging_service events.
+    """Удаляет события старше `retain_days`, КРОМЕ событий `loging_service`.
 
-    Returns number of deleted events. Does nothing if no active policy exists.
+    Если активных политик с filter'ами несколько — каждая применяется
+    отдельным DELETE по своей (severity, service)-комбинации. NULL в
+    `severity`/`service` колонке = «все severity / все сервисы» (legacy
+    global-политика).
+
+    Возвращает суммарное количество удалённых событий по всем политикам.
     """
-    policy = get_active(db)
-    if not policy:
+    policies = list_active(db)
+    if not policies:
         return 0
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=policy.retain_days)
-    result = db.execute(
-        delete(AuditEvent)
-        .where(AuditEvent.timestamp < cutoff)
-        .where(AuditEvent.service != _PROTECTED_SERVICE)
-    )
+    now = datetime.now(timezone.utc)
+    total = 0
+    for policy in policies:
+        cutoff = now - timedelta(days=policy.retain_days)
+        stmt = (
+            delete(AuditEvent)
+            .where(AuditEvent.timestamp < cutoff)
+            # Case-insensitive гард: блокирует bypass через 'LoGiNg_SeRvIcE',
+            # 'LOGING_SERVICE' и т.п. (trailing whitespace — на ingest).
+            .where(func.lower(AuditEvent.service) != _PROTECTED_SERVICE)
+        )
+        if policy.severity is not None:
+            stmt = stmt.where(AuditEvent.severity == policy.severity)
+        if policy.service is not None:
+            stmt = stmt.where(
+                func.lower(AuditEvent.service) == policy.service.lower()
+            )
+        result = db.execute(stmt)
+        total += result.rowcount
     db.commit()
-    return result.rowcount
+    return total

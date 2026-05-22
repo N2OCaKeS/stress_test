@@ -1,4 +1,4 @@
-"""Top-level API router."""
+"""Корневой API-роутер. Всё под `/api/logging/v1/`."""
 
 from fastapi import APIRouter
 

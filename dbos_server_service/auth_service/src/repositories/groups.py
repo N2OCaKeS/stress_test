@@ -1,4 +1,4 @@
-"""User group repository."""
+"""DAO для `UserGroup` + membership + group-service-access/role."""
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,18 +19,30 @@ class GroupRepository:
     async def get(self, group_id_: str) -> UserGroup | None:
         return await self._db.get(UserGroup, group_id_)
 
-    async def get_by_name(self, name: str) -> UserGroup | None:
+    async def get_by_name(self, department_id: str, name: str) -> UserGroup | None:
         return await self._db.scalar(
-            select(UserGroup).where(UserGroup.name == name, UserGroup.is_active.is_(True))
+            select(UserGroup).where(
+                UserGroup.department_id == department_id,
+                UserGroup.name == name,
+                UserGroup.is_active.is_(True),
+            )
         )
 
     async def list_active(self) -> list[UserGroup]:
         result = await self._db.scalars(select(UserGroup).where(UserGroup.is_active.is_(True)))
         return list(result)
 
-    async def create(self, name: str, display_name: str, description: str | None, created_by: str | None) -> UserGroup:
+    async def create(
+        self,
+        department_id: str,
+        name: str,
+        display_name: str,
+        description: str | None,
+        created_by: str | None,
+    ) -> UserGroup:
         obj = UserGroup(
             id=group_id(),
+            department_id=department_id,
             name=name,
             display_name=display_name,
             description=description,
@@ -182,6 +194,39 @@ class GroupRepository:
             select(GroupServiceRole).where(
                 GroupServiceRole.service_name == service_name,
                 GroupServiceRole.role == role_name,
+            )
+        )
+        for row in rows:
+            row.is_active = False
+        await self._db.flush()
+
+    async def deactivate_roles_by_role_name_in_dept(
+        self, department_id: str, service_name: str, role_name: str
+    ) -> None:
+        """Deactivate (group, role) bindings only for groups in the given department."""
+        rows = await self._db.scalars(
+            select(GroupServiceRole)
+            .join(UserGroup, UserGroup.id == GroupServiceRole.group_id)
+            .where(
+                UserGroup.department_id == department_id,
+                GroupServiceRole.service_name == service_name,
+                GroupServiceRole.role == role_name,
+            )
+        )
+        for row in rows:
+            row.is_active = False
+        await self._db.flush()
+
+    async def deactivate_all_dept_service_roles(
+        self, department_id: str, service_name: str
+    ) -> None:
+        """Soft-delete every group→role binding for `service_name` in `department_id`."""
+        rows = await self._db.scalars(
+            select(GroupServiceRole)
+            .join(UserGroup, UserGroup.id == GroupServiceRole.group_id)
+            .where(
+                UserGroup.department_id == department_id,
+                GroupServiceRole.service_name == service_name,
             )
         )
         for row in rows:

@@ -1,20 +1,100 @@
-"""Schemas for OAuth2 client management and token flows."""
+"""Схемы для OAuth2 client management и token-flow."""
 
 from datetime import datetime
+from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, field_validator
+from pydantic_core import PydanticCustomError
+
+
+def _validate_redirect_uri(uri: str) -> str:
+    """RFC 6749 §3.1.2 / 8.1 — registered redirect_uris не должны содержать
+    fragment, и должны быть https (исключение — `http://localhost[:port]/...`
+    для локальной разработки native/CLI-клиентов).
+
+    Зачем:
+    * `http://` (non-localhost) → MITM в кластере перехватит code/state.
+    * fragment (`#...`) → fragment не отправляется на сервер; если auth-сервер
+      сделает `f"{uri}?code=..."` без strip'а fragment'а — клиент получит
+      странный URL, и некоторые SPA-route'ры могут отдать code как
+      fragment-route. Бан полностью, чтобы не гадать.
+    """
+    if not isinstance(uri, str) or not uri:
+        raise PydanticCustomError(
+            "redirect_uri_invalid",
+            "redirect_uri must be a non-empty string",
+        )
+
+    try:
+        parsed = urlparse(uri)
+    except Exception as exc:  # pragma: no cover — urlparse редко падает
+        raise PydanticCustomError(
+            "redirect_uri_invalid",
+            "redirect_uri is not a valid URL",
+        ) from exc
+
+    if parsed.fragment or "#" in uri:
+        # urlparse кладёт content после `#` в `parsed.fragment` — но
+        # дополнительно проверяем raw uri на случай если кто-то пропустит
+        # экранированный `%23` (он останется в path, не в fragment).
+        raise PydanticCustomError(
+            "redirect_uri_has_fragment",
+            "redirect_uri must not contain a fragment (#...)",
+        )
+
+    scheme = (parsed.scheme or "").lower()
+    hostname = (parsed.hostname or "").lower()
+
+    if scheme == "https":
+        return uri
+
+    if scheme == "http":
+        # localhost-исключение (RFC 8252 §7.3) — для нативных клиентов:
+        # `http://localhost`, `http://localhost:8080`, `http://127.0.0.1`,
+        # `http://[::1]`. Любой другой http — запрещаем.
+        if hostname in {"localhost", "127.0.0.1", "::1"}:
+            return uri
+        raise PydanticCustomError(
+            "redirect_uri_not_https",
+            "redirect_uri must use https:// (http:// allowed only for localhost)",
+        )
+
+    raise PydanticCustomError(
+        "redirect_uri_scheme_invalid",
+        "redirect_uri must use https:// (or http:// localhost)",
+    )
 
 
 class OAuthClientCreate(BaseModel):
-    name: str
-    description: str | None = None
-    department_id: str
-    redirect_uris: list[str] = Field(default_factory=list)
-    allowed_scopes: list[str] = Field(default_factory=list)
-    grant_types: list[str] = Field(default=["authorization_code"])
+    """Тело `POST /oauth2/clients` — регистрация OAuth2-клиента."""
+    name: str = Field(description="Человекочитаемое имя клиента.")
+    description: str | None = Field(default=None)
+    department_id: str = Field(description="Отдел, к которому привязываем клиента.")
+    redirect_uris: list[str] = Field(
+        default_factory=list,
+        description="Whitelist redirect_uri. Только https (или http://localhost для native).",
+    )
+    allowed_scopes: list[str] = Field(default_factory=list, description="Scope'ы, которые клиент может запросить.")
+    grant_types: list[str] = Field(
+        default=["authorization_code"],
+        description="Разрешённые grant'ы (`authorization_code`, `client_credentials`).",
+    )
+
+    @field_validator("redirect_uris")
+    @classmethod
+    def _validate_redirect_uris(cls, value: list[str]) -> list[str]:
+        """Каждый uri должен быть https (или localhost-http) и без fragment.
+
+        Связано с phishing-вектором (RFC 6749 §3.1.2 / RFC 8252 §7.3):
+        redirect через trusted auth.<org>-домен на http-URL под управлением
+        атакующего раньше проходил pydantic как есть.
+        """
+        return [_validate_redirect_uri(u) for u in value]
 
 
 class OAuthClientResponse(BaseModel):
+    """Клиент в ответе list/get эндпоинтов (без plaintext secret)."""
     id: str
     client_id: str
     department_id: str
@@ -28,32 +108,38 @@ class OAuthClientResponse(BaseModel):
 
 
 class OAuthClientCreatedResponse(OAuthClientResponse):
-    """Returned only on creation — includes the plaintext secret (shown once)."""
-    client_secret: str
+    """Возвращается только при создании — содержит plaintext secret (показ один раз)."""
+    client_secret: str = Field(description="Plaintext client_secret. Сохрани сейчас — больше не покажем.")
 
 
 # ── Authorization code flow ───────────────────────────────────────────────────
 
-class OAuthAuthorizeRequest(BaseModel):
-    response_type: str = "code"
-    client_id: str
-    redirect_uri: str
-    scope: str = ""
-    state: str | None = None
-
-
 class OAuthTokenRequest(BaseModel):
-    grant_type: str
-    # authorization_code fields
-    code: str | None = None
-    redirect_uri: str | None = None
+    """Тело `POST /oauth2/token`."""
+    # `Literal` обязательный — Pydantic v2 вернёт 422 если поле отсутствует
+    # или значение вне списка. Раньше `str | None` маскировало bad grant в
+    # тихий fallback-путь.
+    grant_type: Literal["authorization_code", "refresh_token", "client_credentials"] = Field(
+        description='`authorization_code`, `refresh_token` или `client_credentials`.',
+    )
+    # поля authorization_code grant
+    code: str | None = Field(default=None, description="Authorization code (для authorization_code grant).")
+    redirect_uri: str | None = Field(default=None, description="Тот же redirect_uri, что был на /authorize.")
     client_id: str | None = None
     client_secret: str | None = None
-    # client_credentials fields (client_id/secret same as above)
+    # RFC 7636 PKCE — обмен кода требует verifier, если на /authorize был
+    # передан code_challenge. Поле общее на authorization_code; для
+    # client_credentials игнорируется.
+    code_verifier: str | None = Field(
+        default=None,
+        description="PKCE verifier. Обязателен, если code был выдан с code_challenge.",
+    )
+    # client_credentials поля (client_id/secret те же, что выше)
 
 
 class OAuthTokenResponse(BaseModel):
+    """Ответ token-эндпойнта — access_token и метаданные."""
     access_token: str
     token_type: str = "Bearer"
-    expires_in: int
+    expires_in: int = Field(description="TTL access_token в секундах.")
     scope: str = ""

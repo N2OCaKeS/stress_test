@@ -1,14 +1,17 @@
-"""Personal access token workflows."""
+"""Personal Access Tokens (PAT): создание, листинг, revoke."""
+
+from datetime import timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import AuthorizationError, ConflictError, NotFoundError
+from src.core.exceptions import AuthorizationError, ConflictError, DomainValidationError, NotFoundError
 from src.core.security import generate_pat
 from src.repositories.departments import DepartmentRepository
 from src.repositories.tokens import TokenRepository
+from src.repositories.users import UserRepository
 from src.schemas.tokens import PATCreateResponse, PATListItem
 from src.services import audit_service
-from src.utils.time import is_expired
+from src.utils.time import is_expired, utcnow
 
 
 async def create_pat(
@@ -19,8 +22,43 @@ async def create_pat(
     expires_at=None,
     request_id: str | None = None,
 ) -> PATCreateResponse:
+    """Создать PAT. Raw возвращается один раз — больше нигде не показываем.
+
+    Валидации:
+    * `allowed_services ⊆ dept.allowed_services` — нельзя выдать PAT scope-нутый
+      на сервис, к которому отдел юзера не имеет access. Иначе юзер мог бы
+      минтить токены под чужие сервисы и подгонять под cross-tenant scope.
+    * `expires_at > now()` — мёртвый токен с ttl в прошлом мусорит БД.
+      account_admin без отдела — пропускаем dept-чек (у них нет dept).
+    """
     token_repo = TokenRepository(db)
     dept_repo = DepartmentRepository(db)
+    user_repo = UserRepository(db)
+
+    if expires_at is not None:
+        exp_dt = (
+            expires_at if expires_at.tzinfo is not None
+            else expires_at.replace(tzinfo=timezone.utc)
+        )
+        if exp_dt <= utcnow():
+            raise DomainValidationError(
+                error_code="INVALID_TOKEN_EXPIRY",
+                message="expires_at must be in the future",
+                details={"expires_at": exp_dt.isoformat()},
+            )
+
+    if allowed_services:
+        actor = await user_repo.get_by_id(actor_id)
+        # account_admin без dept — глобальный scope, не проверяем.
+        if actor is not None and actor.department_id:
+            dept_services = set(await dept_repo.list_active_services(actor.department_id))
+            forbidden = sorted(set(allowed_services) - dept_services)
+            if forbidden:
+                raise DomainValidationError(
+                    error_code="SERVICE_NOT_ALLOWED_FOR_DEPARTMENT",
+                    message="PAT cannot scope to services the department has no access to",
+                    details={"forbidden_services": forbidden},
+                )
 
     if await token_repo.exists_name(actor_id, name):
         raise ConflictError(error_code="TOKEN_NAME_ALREADY_EXISTS", message=f"Token '{name}' already exists")
@@ -35,7 +73,7 @@ async def create_pat(
         expires_at=expires_at,
     )
     await db.commit()
-    # raw PAT передаётся в details — sanitizer заменит на <TOKEN> (по эвристике dbos_pat_…).
+    # raw PAT уходит в details — sanitizer заменит на <TOKEN> по эвристике dbos_pat_…
     audit_service.emit(
         "pat.create", actor_id, target_id=pat.id, target_type="pat",
         request_id=request_id,
@@ -51,6 +89,7 @@ async def create_pat(
 
 
 async def list_pats(db: AsyncSession, actor_id: str, request_id: str | None = None) -> list[PATListItem]:
+    """Свои PAT — только метаданные."""
     token_repo = TokenRepository(db)
     result = [
         PATListItem(
@@ -78,6 +117,7 @@ async def revoke_pat(
     token_id: str,
     request_id: str | None = None,
 ) -> None:
+    """Отозвать свой PAT. Чужие — `TOKEN_NOT_FOUND` (а не 403, чтобы не было oracle)."""
     token_repo = TokenRepository(db)
     pat = await token_repo.get_by_id(token_id)
 

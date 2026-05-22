@@ -1,4 +1,4 @@
-"""Bot token model."""
+"""ORM-модель `BotToken` — opaque-токен бота (raw показывается один раз, в БД hash + префикс)."""
 
 from datetime import datetime
 

@@ -1,7 +1,7 @@
-"""Seed an initial account_admin for E2E tests.
+"""Засеять начального account_admin'а для E2E-тестов.
 
-Run once after `alembic upgrade head` inside the auth-service-e2e container.
-Idempotent — skips if the user already exists.
+Запускается один раз после `alembic upgrade head` внутри auth-service-e2e
+контейнера. Идемпотентен — если юзер уже есть, скипает.
 """
 
 import os
@@ -20,6 +20,7 @@ ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "E2eAdmin1234!")
 
 
 def seed() -> None:
+    """Создать E2E admin'а если ещё нет."""
     settings = get_settings()
     engine = create_engine(settings.database_url)
     with Session(engine) as db:

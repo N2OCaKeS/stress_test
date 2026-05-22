@@ -281,13 +281,18 @@ async def test_authorization_code_cannot_be_reused(client, admin_token, user_a_t
 
 
 async def test_unsupported_grant_type_returns_error(client):
+    """`grant_type='implicit'` не в Literal — Pydantic v2 отбивает на схеме (422).
+
+    Раньше схема пропускала любую строку, и `UNSUPPORTED_GRANT_TYPE` поднимал
+    endpoint. Сейчас Literal-валидация ловит bad-grant до handler'а.
+    """
     resp = await client.post(TOKEN_URL, json={
         "grant_type": "implicit",
         "client_id": "any",
         "client_secret": "any",
     })
     assert resp.status_code == 422
-    assert resp.json()["error_code"] == "UNSUPPORTED_GRANT_TYPE"
+    assert resp.json()["error_code"] == "VALIDATION_ERROR"
 
 
 # ── Authorize: дополнительные пути ────────────────────────────────────────────

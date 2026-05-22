@@ -1,201 +1,150 @@
 # Справочник событий аудита
 
-Все события отправляются из `auth_service` в `logging_service`.  
-Уровень важности (`severity`) вычисляется автоматически в `audit_service.py`  
-по таблице ниже — если не указан явно при вызове `emit()`.
+Документ покрывает две стороны контракта `loging_service`:
 
-## Уровни важности (от минимального к максимальному)
+1. **Что сервис принимает** — схема `EventCreate` для `POST /api/logging/v1/events`. Сюда попадают события от любого сервиса-источника (`auth_service`, `server_service`, `server_worker`, `config_service`).
+2. **Что сервис эмитит сам** — 10 собственных событий `logging.*` / `logging_rule.*`.
 
-| Уровень | Типичное применение |
-|---------|---------------------|
-| `TRACE` | Зарезервирован для отладки, не используется в коде |
-| `DEBUG` | Зарезервирован для диагностики, не используется в коде |
-| `INFO` | Успешные операции чтения, список, получение данных |
-| `WARNING` | Операции создания/управления ботами, токенами; мягкие нарушения доступа |
-| `ERROR` | Доступен для переопределения через правила; в коде не назначается по умолчанию |
-| `CRITICAL` | Критические операции безопасности: сброс пароля, бан, выдача OAuth-клиентов; ошибки аутентификации |
-
-Логика по умолчанию (код → `_DEFAULT_SEVERITY` в `audit_service.py`):
-
-- Каждая пара `(action, status)` имеет явное значение в таблице ниже
-- Для неизвестных действий: `status=failure|denied` → `WARNING`, иначе → `INFO`
-
-Правила аудита (`/api/logging/v1/rules`) позволяют переопределить severity
-или подавить любую группу событий без изменения кода.
+Severity вычисляется автоматически в `src/services/rule_service.py::_DEFAULT_SEVERITY` по таблице `(action, status) → severity`, если поле не указано явно при ingest'е. Правила (`OVERRIDE_SEVERITY` / `SUPPRESS` / `ALLOW`) могут переопределить или подавить любую группу событий без деплоя.
 
 ---
 
-## Соглашение об именовании действий
+## Схема EventCreate (что сервис принимает)
 
-Все действия используют формат `<object>.<verb>`, например:
+`POST /api/logging/v1/events`. Body — JSON, заголовки `Authorization: Bearer <SERVICE_API_KEY>` + `X-Service-Identity: <service>`.
+
+| Поле | Тип | Обязательное | Описание |
+|---|---|---|---|
+| `timestamp` | `datetime` (ISO 8601 с tz) | да | Когда событие произошло у источника. Любая tz, хранится в UTC. Naive — допустим, помечается UTC. |
+| `service` | `str` (≤ 64) | да | Сервис-источник. Должен совпадать с `X-Service-Identity` (на path-эндпоинтах). |
+| `action` | `str` (≤ 128) | да | Имя action в формате `<object>.<verb>`. Реестр — `service_events`. |
+| `actor_id` | `str` (≤ 48) | нет | ID пользователя/бота/сервиса, выполнившего action. |
+| `actor_type` | `Literal["user","bot","service","anonymous","oauth_client"]` | нет (default `"user"`) | Тип actor'а. |
+| `username` | `str` (≤ 128) | нет | Human-readable username для SIEM. |
+| `department_id` | `str` (≤ 48) | нет | ID департамента, к которому относится actor. Используется для dept-scope на чтении. |
+| `target_id` | `str` (≤ 48) | нет | ID объекта, над которым выполнялся action. |
+| `target_type` | `str` (≤ 64) | нет | Тип объекта (`user`, `server`, `rule`, `oauth_client`, …). |
+| `status` | `Literal["success","failure","denied","warning"]` | да | Исход action'а. `warning` — для soft-mode гардов: операция прошла (`allowed=True`), но что-то пахнет (missing header, dept mismatch без strict-fail). |
+| `allowed` | `bool` | да | Было ли действие разрешено политикой доступа. |
+| `severity` | `Literal["TRACE","DEBUG","INFO","WARNING","ERROR","CRITICAL"] \| None` | нет | Если `None` — берётся из `_DEFAULT_SEVERITY`. |
+| `request_id` | `str` (≤ 64, `^[A-Za-z0-9_\-]+$`) | нет | Корреляция с HTTP-запросом. |
+| `idempotency_key` | `str` (≤ 128) | нет | Outbox-retry safe: повторный POST с тем же `(service, idempotency_key)` вернёт 201 с прежним `event_id`. |
+| `details` | `dict` (JSONB) | нет (default `{}`) | Структурированные детали. Размер ≤ 64 KB, глубина ≤ 10. Reserved-keys (`actor_id`, `actor_type`) запрещены на любой глубине — чтобы держатель `SERVICE_API_KEY` не shadow'ил identity actor'а через `details`. NUL-byte в строках банится. Прогоняется через redaction-слой перед записью. |
+
+Ответ ingest'а: `201 {id: "log_<hex>", received_at: <UTC datetime>}` или `204 No Content` если SUPPRESS-правило отбросило событие.
+
+---
+
+## Уровни важности
+
+Шесть уровней (по 1.txt §logging.2), от минимального к максимальному:
+
+| Уровень | Типичное применение |
+|---|---|
+| `TRACE` | Зарезервирован для отладки, в коде по умолчанию не назначается |
+| `DEBUG` | Зарезервирован для диагностики, в коде по умолчанию не назначается |
+| `INFO` | Успешные операции чтения, list, получение данных |
+| `WARNING` | Создание/управление ботами и токенами; мягкие нарушения доступа; rules CRUD по умолчанию |
+| `ERROR` | Доступен для переопределения через правила; в коде по умолчанию не назначается |
+| `CRITICAL` | Сброс пароля, ban, выдача OAuth-клиентов; ошибки аутентификации; admin update/delete |
+
+Логика дефолта:
+
+- Каждая пара `(action, status)` имеет явное значение в `_DEFAULT_SEVERITY` (`src/services/rule_service.py`).
+- Для неизвестных action'ов: `status` ∈ {`failure`, `denied`} → `WARNING`, иначе → `INFO`.
+
+---
+
+## Соглашение об именовании action'ов
+
+Формат `<object>.<verb>`. Составные имена объектов остаются в одном сегменте: `service_role`, `oauth_client`, `docker_registry`, `logging_rule`.
+
+Примеры:
 - `user.create`, `user.ban`, `user.password_reset`
 - `pat.create`, `pat.revoke`
 - `bot.token_create`, `bot.token_revoke`
 - `group.service_grant`, `group.roles_assign`
+- HTTP middleware: `http.access_denied`, `http.client_error`, `http.server_error`
 
-Исключения — составные объекты в одном сегменте: `service_role`, `oauth_client`, `docker_registry`.
+Полный список событий, которые `auth_service` отправляет в `loging_service`, — в `dbos_server_service/auth_service/AUDIT_EVENTS.md`.
 
 ---
 
-## HTTP-уровень (middleware, все эндпоинты кроме /health и /ready)
+## События, которые `loging_service` эмитит сам
+
+Десять собственных событий. Все они идут через `record_admin_action()` (для admin CRUD) или `_emit_audit()` (для HTTP middleware), **минуя rule engine** — SUPPRESS-правило не подавит self-audit.
+
+### HTTP middleware (`logging.*`)
+
+Эмитятся на любой запрос (кроме `/health` и `/ready`) в `src/main.py::audit_access`. `action` определяется по `method + path` (`_action_for_path`).
+
+| action | status | severity | Когда возникает | target_type |
+|---|---|---|---|---|
+| `logging.events_queried` | `success` | INFO | `GET /api/logging/v1/events` (любой фильтр) | `audit_event` |
+| `logging.rules_read` | `success` | INFO | `GET /api/logging/v1/rules` или `GET /rules/{id}` | `audit_rule` |
+| `logging.rules_write` | `success` | WARNING | `POST/PATCH/DELETE /api/logging/v1/rules*` (поверх `logging_rule.*`) | `audit_rule` |
+| `logging.services_read` | `success` | INFO | `GET /api/logging/v1/services` или `GET /services/{svc}/events` | `service_event` |
+| `logging.admin_access` | `success` | INFO | Любой admin-endpoint без явного маппинга в `_action_for_path` | — |
+| `logging.retention_write` | `success` | WARNING | `PUT/DELETE /api/logging/v1/retention` — изменение или отключение политики хранения | `retention_policy` |
+| `logging.retention_sweep` | `success` | INFO | Фоновый retention-цикл в 00:00 MSK после успешного `apply_active` | `audit_event` |
+
+При не-2xx ответе action из `_action_for_path` подменяется на одно из:
 
 | action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
+|---|---|---|---|
 | `http.access_denied` | `denied` | CRITICAL | HTTP 401 или 403 |
 | `http.client_error` | `failure` | WARNING | HTTP 4xx (кроме 401/403) |
 | `http.server_error` | `failure` | CRITICAL | HTTP 5xx |
 
----
+Details: `{method, path, status_code, ip}` + при ошибке `error_code` если AppException.
 
-## Аутентификация и сессии
+### Admin actions (`logging_rule.*`)
 
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `user.login` | `success` | INFO | Успешный вход |
-| `user.login` | `failure` | CRITICAL | Неверный пароль, пользователь не найден, аккаунт заблокирован, забанен |
-| `user.refresh` | `success` | INFO | Успешное обновление access-токена |
-| `user.logout` | `success` | INFO | Выход из системы |
-| `user.me` | `success` | INFO | Запрос информации о текущем пользователе |
-| `token.refresh_reuse` | `failure` | CRITICAL | Повторное использование уже использованного refresh-токена |
+Эмитятся в `src/api/v1/endpoints/rules.py::_audit` через `record_admin_action()`. Поля `actor_id`, `actor_type`, `username`, `department_id` берутся из identity (JWT introspect ответа).
 
----
+| action | status | severity | Когда возникает | target_type |
+|---|---|---|---|---|
+| `logging_rule.create` | `success` | WARNING | `POST /api/logging/v1/rules` | `audit_rule` |
+| `logging_rule.update` | `success` | CRITICAL | `PATCH /api/logging/v1/rules/{id}` | `audit_rule` |
+| `logging_rule.delete` | `success` | CRITICAL | `DELETE /api/logging/v1/rules/{id}` | `audit_rule` |
 
-## Пользователи
+Details:
+- `create`: `{rule_id, rule_name}`.
+- `update`: `{rule_id, changes: <PATCH-payload, exclude_unset>}`.
+- `delete`: `{rule_id, rule_name}`.
 
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `user.create` | `success` | INFO | Создание пользователя |
-| `user.update` | `success` | INFO | Обновление данных пользователя |
-| `user.roles_assign` | `success` | INFO | Назначение сервисных ролей пользователю |
-| `user.password_reset` | `success` | CRITICAL | Сброс пароля пользователя |
-| `user.ban` | `success` | CRITICAL | Блокировка пользователя |
-| `user.unban` | `success` | CRITICAL | Разблокировка пользователя |
+### Retention CRUD и sweep (`logging.retention_*`)
 
----
+Эмитятся в `src/api/v1/endpoints/retention.py::_audit` (PUT/DELETE) и
+в `src/main.py::_retention_loop` (фоновый sweep). Идут через
+`record_admin_action()`, минуя rule engine.
 
-## Отделы
+Details:
 
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `department.create` | `success` | CRITICAL | Создание отдела |
-| `department.list` | `success` | INFO | Просмотр списка отделов |
-| `department.service_grant` | `success` | CRITICAL | Выдача отделу доступа к сервису |
-| `department.service_revoke` | `success` | CRITICAL | Отзыв доступа отдела к сервису |
+- `logging.retention_write` (PUT/DELETE): `{old: <snapshot|null>, new: <snapshot|null>}`,
+  где snapshot — `{id, retain_days, description, is_active}` или `null`.
+- `logging.retention_sweep`: `{deleted_count, retain_days, run_date_msk}`.
 
 ---
 
-## Группы
+## События от других сервисов
 
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `group.create` | `success` | INFO | Создание группы |
-| `group.update` | `success` | INFO | Обновление группы |
-| `group.delete` | `success` | CRITICAL | Удаление группы |
-| `group.member_add` | `success` | WARNING | Добавление пользователя в группу |
-| `group.member_remove` | `success` | WARNING | Удаление пользователя из группы |
-| `group.service_grant` | `success` | CRITICAL | Выдача группе доступа к сервису |
-| `group.service_revoke` | `success` | CRITICAL | Отзыв доступа группы к сервису |
-| `group.roles_assign` | `success` | CRITICAL | Назначение ролей группе |
-| `group.roles_revoke` | `success` | CRITICAL | Отзыв ролей у группы |
+`loging_service` принимает события от всех сервисов платформы. Каждый источник ведёт свой `AUDIT_EVENTS.md` со списком action'ов и default severity:
+
+- `auth_service` — самый крупный писатель. Полный список — в `dbos_server_service/auth_service/AUDIT_EVENTS.md` (user/department/group/service_role/pat/bot/oauth_client/docker_registry/token/http).
+- `server_service`, `server_worker`, `config_service` — см. их собственные `AUDIT_EVENTS.md`.
+
+`loging_service` не валидирует `action` против чьего-либо whitelist'а на ingest'е — реестр `service_events` нужен только для правил (нельзя завести правило на незарегистрированный action). Зарегистрированные action'ы появляются при первом `POST /services/{service}/events` от источника.
 
 ---
 
-## Платформенные сервисы
+## Изменение severity через правила
 
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `service.create` | `success` | CRITICAL | Регистрация нового сервиса на платформе |
-| `service.delete` | `success` | CRITICAL | Удаление сервиса с платформы |
-| `service.list` | `success` | INFO | Просмотр списка сервисов |
-
----
-
-## Роли сервисов
-
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `service_role.create` | `success` | INFO | Создание определения роли для сервиса |
-| `service_role.update` | `success` | INFO | Обновление определения роли |
-| `service_role.delete` | `success` | CRITICAL | Удаление определения роли |
-| `service_role.bulk_assign` | `success` | INFO | Массовое назначение роли пользователям |
-| `service_role.bulk_revoke` | `success` | INFO | Массовый отзыв роли у пользователей |
-
----
-
-## Личные токены доступа (PAT)
-
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `pat.create` | `success` | INFO | Создание Personal Access Token |
-| `pat.list` | `success` | INFO | Просмотр списка PAT |
-| `pat.revoke` | `success` | WARNING | Отзыв Personal Access Token |
-
----
-
-## Боты
-
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `bot.create` | `success` | WARNING | Создание сервисного бота |
-| `bot.list` | `success` | INFO | Просмотр списка ботов |
-| `bot.update` | `success` | WARNING | Обновление данных бота |
-| `bot.token_create` | `success` | WARNING | Создание токена для бота |
-| `bot.token_list` | `success` | INFO | Просмотр списка токенов бота |
-| `bot.token_revoke` | `success` | WARNING | Отзыв токена бота |
-
----
-
-## OAuth2-клиенты
-
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `oauth_client.create` | `success` | CRITICAL | Регистрация OAuth2-клиента |
-| `oauth_client.list` | `success` | INFO | Просмотр списка OAuth2-клиентов |
-| `oauth_client.delete` | `success` | CRITICAL | Удаление OAuth2-клиента |
-| `oauth.authorization_code_issued` | `success` | INFO | Выдача authorization code |
-| `oauth.code_exchanged` | `success` | INFO | Обмен code на токен |
-| `oauth.client_credentials_token` | `success` | INFO | Выдача токена по client_credentials |
-
----
-
-## Интроспекция токенов
-
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `token.introspect` | `success` | INFO | Успешная проверка токена (access, PAT, bot) |
-| `token.introspect` | `failure` | CRITICAL | Токен истёк, неактивен, или бот отключён |
-
----
-
-## Проверка доступа к сервису
-
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `service.access_check` | `success` | INFO | Успешная проверка доступа к сервису |
-| `service.access_check` | `denied` | WARNING | Доступ к сервису запрещён |
-
----
-
-## Docker Registry
-
-| action | status | severity | Когда возникает |
-|--------|--------|----------|-----------------|
-| `docker_registry.configure` | `success` | CRITICAL | Включение/настройка registry для отдела |
-| `docker_registry.update` | `success` | CRITICAL | Обновление настроек registry |
-| `docker_registry.get_config` | `success` | INFO | Просмотр настроек registry |
-| `docker_registry.disable` | `success` | CRITICAL | Отключение registry для отдела |
-| `docker.token_issued` | `success` | INFO | Выдача JWT-токена для Docker registry |
-
----
-
-## Изменение уровней важности через правила
-
-Уровни в таблице выше — значения **по умолчанию** из кода.  
-Чтобы изменить без деплоя, создайте правило через API:
+Значения по умолчанию из `_DEFAULT_SEVERITY` переопределяются правилами без деплоя:
 
 ```http
 POST /api/logging/v1/rules
-Authorization: Bearer <SERVICE_API_KEY>
+Authorization: Bearer <admin-jwt>
 
 {
   "name": "escalate-pat-creation",
@@ -206,12 +155,13 @@ Authorization: Bearer <SERVICE_API_KEY>
 }
 ```
 
-Поддерживаемые эффекты:
-- `OVERRIDE_SEVERITY` + `effect_severity` — изменить уровень важности
-- `SUPPRESS` — не сохранять событие вообще
-- `ALLOW` — сохранить немедленно (используется для исключений из SUPPRESS-правил)
+Эффекты:
+- `OVERRIDE_SEVERITY` + `effect_severity` — изменить уровень, цепочка продолжается.
+- `SUPPRESS` — не сохранять событие (эндпоинт вернёт 204).
+- `ALLOW` — сохранить и прервать цепочку (escape hatch из SUPPRESS-правил).
 
-Доступные значения `effect_severity`: `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+> В 1.txt §logging.3 эффект «отбросить событие» назван `DROP`. В коде, БД и API он называется `SUPPRESS`. Это рассинхрон документации с реализацией; каноническое имя — `SUPPRESS`.
 
-Критерии совпадения: `match_service`, `match_action` (поддерживает glob `user.*`),
-`match_status`, `match_severity`, `match_allowed`.
+Доступные значения `effect_severity`: `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
+
+Критерии совпадения: `match_service`, `match_action` (glob `user.*` — одна точка), `match_status`, `match_severity`, `match_allowed`. `None` = «любое».

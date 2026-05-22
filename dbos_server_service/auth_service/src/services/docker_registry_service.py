@@ -1,6 +1,6 @@
-"""Docker registry token auth + per-department configuration.
+"""Docker registry token auth + per-department конфиг.
 
-Reference: https://distribution.github.io/distribution/spec/auth/token/
+Документация протокола: https://distribution.github.io/distribution/spec/auth/token/
 
 Docker registry config.yml:
   auth:
@@ -15,9 +15,9 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import BOT_TOKEN_PREFIX, PAT_PREFIX
+from src.core.constants import BOT_TOKEN_PREFIX, PAT_PREFIX, PlatformRole
 from src.core.exceptions import AuthenticationError, AuthorizationError, ConflictError, NotFoundError
-from src.core.security import hash_opaque_token, verify_password
+from src.core.security import hash_opaque_token
 from src.core.config import get_settings
 from src.models.department_docker_registry import PULL_POLICY_ALL, PULL_POLICY_RESTRICTED
 from src.repositories.bots import BotRepository
@@ -38,6 +38,7 @@ from src.core.docker_jwt import sign_docker_token
 
 
 def _cfg_to_response(cfg) -> DockerRegistryConfigResponse:
+    """ORM DepartmentDockerRegistry → DTO."""
     return DockerRegistryConfigResponse(
         department_id=cfg.department_id,
         is_enabled=cfg.is_enabled,
@@ -59,7 +60,7 @@ async def create_or_replace_config(
     data: DockerRegistryConfigCreate,
     request_id: str | None = None,
 ) -> DockerRegistryConfigResponse:
-    from src.core.constants import PlatformRole
+    """Создать или заменить Docker registry конфиг отдела."""
     user_repo = UserRepository(db)
     dept_repo = DepartmentRepository(db)
     docker_repo = DockerRegistryRepository(db)
@@ -125,7 +126,7 @@ async def update_config(
     data: DockerRegistryConfigUpdate,
     request_id: str | None = None,
 ) -> DockerRegistryConfigResponse:
-    from src.core.constants import PlatformRole
+    """Patch конфига. Поля можно передавать частично."""
     user_repo = UserRepository(db)
     docker_repo = DockerRegistryRepository(db)
 
@@ -170,6 +171,7 @@ async def update_config(
 
 
 async def get_config(db: AsyncSession, department_id: str, actor_id: str | None = None, request_id: str | None = None) -> DockerRegistryConfigResponse:
+    """Текущий конфиг registry для отдела."""
     docker_repo = DockerRegistryRepository(db)
     cfg = await docker_repo.get_by_department(department_id)
     if cfg is None:
@@ -198,7 +200,7 @@ async def delete_config(
     department_id: str,
     request_id: str | None = None,
 ) -> None:
-    from src.core.constants import PlatformRole
+    """Отключить registry для отдела (soft, `is_enabled=False`)."""
     user_repo = UserRepository(db)
     docker_repo = DockerRegistryRepository(db)
 
@@ -229,6 +231,7 @@ async def delete_config(
 # ── Token issuance ────────────────────────────────────────────────────────────
 
 def _parse_scope(scope_str: str) -> list[dict]:
+    """Распарсить Docker scope-строку `repository:foo/bar:pull,push` в структурный формат."""
     entries = []
     for part in scope_str.split():
         segments = part.split(":")
@@ -241,7 +244,7 @@ def _parse_scope(scope_str: str) -> list[dict]:
 
 
 async def _authenticate_subject(db: AsyncSession, username: str, password: str):
-    """Authenticate via password, PAT, or bot token. Returns (subject_id, department_id)."""
+    """Аутентификация через пароль / PAT / bot-токен. Возвращает (subject_id, department_id)."""
     user_repo = UserRepository(db)
     token_repo = TokenRepository(db)
     bot_token_repo = BotTokenRepository(db)
@@ -264,15 +267,35 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid credentials")
 
     user = await user_repo.get_by_username(username)
-    if user is None or not verify_password(password, user.password_hash):
+    if user is None:
+        # Не раскрываем существование юзера — та же ошибка, что и при wrong-pw.
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid credentials")
     if user.status != "active":
+        # Отбиваем BANNED / BLOCKED / inactive ДО Argon2id verify — экономим
+        # CPU и держим ту же generic-ошибку, чтобы не палить состояние аккаунта
+        # через Docker auth (зеркало `/login`, где USER_BANNED / USER_BLOCKED
+        # уходит только в user-facing JSON-login, не в Docker Basic-auth канал).
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Account is not active")
+
+    # ── Brute-force lockout pipeline ──────────────────────────────────────────
+    # `/login` инкрементит `failed_login_attempts` и ставит `locked_until`
+    # после 5 промахов; `/docker/token` исторически звал голый
+    # `verify_password` и в lockout не участвовал. Atttacker'у со знанием
+    # username хватило бы долбить `/docker/token` мимо per-user lockout
+    # (Argon2id ~100ms был единственным тормозом).
+    #
+    # Общий helper `verify_password_with_lockout` (в `services/auth_service.py`)
+    # гоняет тот же pipeline, что и `/login`: active-lockout → 429
+    # ACCOUNT_TEMPORARILY_LOCKED ДО verify_password, failed verify → атомарный
+    # инкремент + commit, на 5-й failure → lockout. Lazy import — чтобы
+    # сохранить acyclic import-graph.
+    from src.services.auth_service import verify_password_with_lockout
+    await verify_password_with_lockout(db, user, password)
     return user.id, user.department_id
 
 
 def _resolve_actions(cfg, subject_id: str, requested_actions: list[str]) -> list[str]:
-    """Return the subset of requested actions the subject is actually allowed."""
+    """Подмножество запрошенных actions, на которые у субъекта реально есть права."""
     allowed = []
 
     if "pull" in requested_actions:
@@ -296,8 +319,77 @@ async def issue_token(
     scope: str,
     request_id: str | None = None,
 ) -> DockerTokenResponse:
+    """Выдать scoped Docker JWT (RS256, TTL ~5 мин) с access-claims по запрошенному scope."""
     settings = get_settings()
-    subject_id, department_id = await _authenticate_subject(db, username, password)
+    try:
+        subject_id, department_id = await _authenticate_subject(db, username, password)
+    except AuthorizationError as exc:
+        # Симметрия с `/login`: lockout-кейс должен оставлять audit-след,
+        # иначе SOC слеп на brute-force через docker auth (на /login-канале
+        # ACCOUNT_TEMPORARILY_LOCKED эмитится отдельно). Лезем в users по
+        # username best-effort — он может быть PAT/bot-токеном, тогда
+        # _authenticate_subject не доходит до этой ветки.
+        if exc.error_code == "ACCOUNT_TEMPORARILY_LOCKED":
+            actor_id = None
+            try:
+                user = await UserRepository(db).get_by_username(username)
+                if user is not None:
+                    actor_id = user.id
+            except Exception:
+                pass
+            audit_service.emit(
+                "docker.token_issued",
+                actor_id,
+                target_id=service or settings.docker_registry_service,
+                target_type="docker_registry",
+                status="failure",
+                allowed=False,
+                details={
+                    "reason": "account_locked",
+                    "username": username,
+                    "service": service or settings.docker_registry_service,
+                    "requested_scope": scope,
+                    "retry_after_seconds": exc.details.get("retry_after_seconds"),
+                },
+                request_id=request_id,
+            )
+        raise
+    except AuthenticationError as exc:
+        # Зеркало lockout-ветки: brute-force через PAT/bot/пароль виден SOC
+        # как поток `docker.token_issued failure`. Subject_type помечает
+        # источник, чтобы отделить PAT-перебор от password-перебора.
+        if password.startswith(PAT_PREFIX):
+            subject_type = "pat"
+        elif password.startswith(BOT_TOKEN_PREFIX):
+            subject_type = "bot_token"
+        else:
+            subject_type = "password"
+        actor_id = None
+        if subject_type == "password":
+            try:
+                user = await UserRepository(db).get_by_username(username)
+                if user is not None:
+                    actor_id = user.id
+            except Exception:
+                pass
+        audit_service.emit(
+            "docker.token_issued",
+            actor_id,
+            target_id=service or settings.docker_registry_service,
+            target_type="docker_registry",
+            status="failure",
+            allowed=False,
+            details={
+                "reason": "invalid_credentials",
+                "subject_type": subject_type,
+                "username": username,
+                "service": service or settings.docker_registry_service,
+                "requested_scope": scope,
+                "error_code": exc.error_code,
+            },
+            request_id=request_id,
+        )
+        raise
 
     docker_repo = DockerRegistryRepository(db)
     cfg = await docker_repo.get_by_department(department_id)
@@ -329,7 +421,6 @@ async def issue_token(
         "access": allowed_access,
     })
 
-    from src.services import audit_service
     audit_service.emit(
         "docker.token_issued",
         subject_id,

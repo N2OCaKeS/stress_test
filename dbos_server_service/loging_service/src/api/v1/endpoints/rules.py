@@ -1,15 +1,21 @@
-"""Audit rule management endpoints. Requires platform_role=loging_admin.
+"""Управление правилами аудита. Требует `platform_role=loging_admin`.
 
-All create/update/delete actions are recorded unconditionally (bypass_rules)
-so an admin can never accidentally suppress their own audit trail.
+Все действия create/update/delete пишутся в audit безусловно (минуя rule
+engine, см. `record_admin_action`), чтобы админ не мог случайно — или
+намеренно — заглушить собственный аудит.
 """
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from src.core.exceptions import (
+    ConflictError,
+    DomainValidationError,
+    NotFoundError,
+)
 from src.dependencies.auth import AdminIdentity, ReaderIdentity, require_admin
 from src.dependencies.db import get_db
 from src.repositories import rules as rule_repo
@@ -24,12 +30,25 @@ router = APIRouter()
 def _get_or_404(db: Session, rule_id: str):
     rule = rule_repo.get_by_id(db, rule_id)
     if not rule:
-        raise HTTPException(status_code=404, detail=f"Правило '{rule_id}' не найдено")
+        raise NotFoundError(
+            error_code="RULE_NOT_FOUND",
+            message=f"Rule '{rule_id}' not found",
+            details={"rule_id": rule_id},
+        )
     return rule
 
 
 def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
-    """Record an admin action unconditionally (bypasses suppression rules)."""
+    """Пишет admin-действие безусловно (минуя SUPPRESS-правила).
+
+    `actor_type` идёт из identity (`_fetch_identity` пробрасывает
+    `subject_type` от auth_service introspect). Поля нет → fallback `"user"`.
+
+    `username` и `department_id` пробрасываются для симметрии с
+    `main.py::audit_access` — без них SIEM видит только opaque `actor_id`
+    и не может атрибутировать `logging_rule.*` к человеку/отделу.
+    """
+    actor_type = identity.get("actor_type") or "user"
     event_service.record_admin_action(
         db,
         EventCreate(
@@ -37,7 +56,9 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
             service="loging_service",
             action=action,
             actor_id=identity.get("user_id"),
-            actor_type="user",
+            actor_type=actor_type,
+            username=identity.get("username"),
+            department_id=identity.get("department_id"),
             status="success",
             allowed=True,
             severity=None,
@@ -46,7 +67,19 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
     )
 
 
-@router.get("", response_model=RuleListResponse, summary="Список всех правил аудита")
+@router.get(
+    "",
+    response_model=RuleListResponse,
+    summary="Список всех правил аудита",
+    description=(
+        "Постранично отдаёт правила, отсортированные по `priority DESC`.\n\n"
+        "**Доступ:** `loging_admin` / `account_admin` (без scope), либо "
+        "`loging_reader` / `department_admin` / service-роль в `loging_service`. "
+        "Правила глобальны — dept-scope здесь не применяется.\n\n"
+        "**Связано:** `POST /rules` — создать правило; `GET /services/{svc}/events` — "
+        "список action'ов, доступных для `match_action`."
+    ),
+)
 def list_rules(
     identity: ReaderIdentity,
     db: Session = Depends(get_db),
@@ -62,7 +95,16 @@ def list_rules(
     )
 
 
-@router.get("/{rule_id}", response_model=RuleResponse, summary="Получить правило по ID")
+@router.get(
+    "/{rule_id}",
+    response_model=RuleResponse,
+    summary="Получить правило по ID",
+    description=(
+        "**Доступ:** read-роли (`loging_admin` / `account_admin` / `loging_reader` / "
+        "`department_admin` / service-роли в `loging_service`).\n\n"
+        "**Возможные ошибки:** 404 — правила с таким ID нет."
+    ),
+)
 def get_rule(rule_id: str, identity: ReaderIdentity, db: Session = Depends(get_db)) -> RuleResponse:
     return RuleResponse.model_validate(_get_or_404(db, rule_id))
 
@@ -72,6 +114,23 @@ def get_rule(rule_id: str, identity: ReaderIdentity, db: Session = Depends(get_d
     response_model=RuleResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Создать правило аудита",
+    description=(
+        "Создаёт правило фильтрации. Эффекты: `SUPPRESS` (дроп события), "
+        "`ALLOW` (записать и не применять правила ниже), `OVERRIDE_SEVERITY` "
+        "(поменять severity, продолжить цепочку).\n\n"
+        "`match_action` принимает точное имя action или glob с одной звёздочкой "
+        "на сегмент: `user.*` совпадает с `user.login`, но не с "
+        "`user.login.extra`. Точное `match_action` валидируется против реестра "
+        "`service_events` — нельзя завести правило на action, которого никто не "
+        "регистрировал (но только если реестр непустой).\n\n"
+        "**Доступ:** `platform_role=loging_admin`.\n\n"
+        "**Возможные ошибки:**\n"
+        "- 409 — правило с таким `name` уже существует (UNIQUE constraint);\n"
+        "- 422 — невалидный effect_severity (см. правило про OVERRIDE_SEVERITY) "
+        "либо неизвестный `match_action`.\n\n"
+        "**Связано:** изменение правил сбрасывает in-memory кеш "
+        "(`rule_service.invalidate_cache`)."
+    ),
     dependencies=[Depends(require_admin)],
 )
 def create_rule(
@@ -84,16 +143,32 @@ def create_rule(
         rule = rule_repo.create(db, payload)
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=409, detail=f"Правило с именем '{payload.name}' уже существует"
+        raise ConflictError(
+            error_code="RULE_NAME_CONFLICT",
+            message=f"Rule with name '{payload.name}' already exists",
+            details={"name": payload.name},
         )
     rule_service.invalidate_cache()
     _audit(db, identity, "logging_rule.create", {"rule_id": rule.id, "rule_name": rule.name})
     return RuleResponse.model_validate(rule)
 
 
-@router.patch("/{rule_id}", response_model=RuleResponse, summary="Обновить правило",
-              dependencies=[Depends(require_admin)])
+@router.patch(
+    "/{rule_id}",
+    response_model=RuleResponse,
+    summary="Обновить правило",
+    description=(
+        "Partial-update: меняет только переданные поля. После обновления "
+        "сбрасывает in-memory кеш rule engine.\n\n"
+        "**Доступ:** `platform_role=loging_admin`.\n\n"
+        "**Возможные ошибки:**\n"
+        "- 404 — правила с таким ID нет;\n"
+        "- 409 — переименование конфликтует с существующим именем;\n"
+        "- 422 — нарушение invariant'а effect ↔ effect_severity, либо "
+        "неизвестный `match_action`."
+    ),
+    dependencies=[Depends(require_admin)],
+)
 def update_rule(
     rule_id: str,
     payload: RuleUpdate,
@@ -109,28 +184,40 @@ def update_rule(
         else rule.effect_severity
     )
     if new_effect == "OVERRIDE_SEVERITY" and not new_effect_severity:
-        raise HTTPException(
-            status_code=422, detail="effect_severity обязателен при effect=OVERRIDE_SEVERITY"
+        raise DomainValidationError(
+            error_code="EFFECT_SEVERITY_REQUIRED",
+            message="effect_severity is required when effect=OVERRIDE_SEVERITY",
         )
     if new_effect != "OVERRIDE_SEVERITY" and new_effect_severity:
-        raise HTTPException(
-            status_code=422,
-            detail="effect_severity используется только с effect=OVERRIDE_SEVERITY",
+        raise DomainValidationError(
+            error_code="EFFECT_SEVERITY_NOT_ALLOWED",
+            message="effect_severity is only valid with effect=OVERRIDE_SEVERITY",
         )
     try:
         updated = rule_repo.update(db, rule, payload)
     except IntegrityError:
         db.rollback()
-        raise HTTPException(
-            status_code=409, detail=f"Правило с именем '{payload.name}' уже существует"
+        raise ConflictError(
+            error_code="RULE_NAME_CONFLICT",
+            message=f"Rule with name '{payload.name}' already exists",
+            details={"name": payload.name},
         )
     rule_service.invalidate_cache()
     _audit(db, identity, "logging_rule.update", {"rule_id": rule_id, "changes": payload.model_dump(exclude_unset=True)})
     return RuleResponse.model_validate(updated)
 
 
-@router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить правило",
-               dependencies=[Depends(require_admin)])
+@router.delete(
+    "/{rule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить правило",
+    description=(
+        "Полностью удаляет правило и сбрасывает кеш rule engine.\n\n"
+        "**Доступ:** `platform_role=loging_admin`.\n\n"
+        "**Возможные ошибки:** 404 — правила с таким ID нет."
+    ),
+    dependencies=[Depends(require_admin)],
+)
 def delete_rule(
     rule_id: str,
     identity: AdminIdentity,
@@ -147,11 +234,12 @@ def _validate_match_action(match_action: str | None, db: Session) -> None:
         return
     if not se_repo.action_is_registered(db, match_action):
         if se_repo.list_all(db):
-            raise HTTPException(
-                status_code=422,
-                detail=(
+            raise DomainValidationError(
+                error_code="UNKNOWN_MATCH_ACTION",
+                message=(
                     f"Action '{match_action}' is not registered by any service. "
-                    "Use GET /services/{{service}}/events to see available actions, "
+                    "Use GET /services/{service}/events to see available actions, "
                     "or use a glob pattern (e.g. 'user.*')."
                 ),
+                details={"match_action": match_action},
             )

@@ -1,4 +1,4 @@
-"""Group-to-service access grant model."""
+"""ORM-модель `GroupServiceAccess` — связь «группа имеет access к сервису»."""
 
 from datetime import datetime
 

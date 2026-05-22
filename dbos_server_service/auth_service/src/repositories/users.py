@@ -1,4 +1,6 @@
-"""User repository."""
+"""DAO для `User` — CRUD + lockout-helpers (atomic increment/reset)."""
+
+from datetime import datetime
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,14 +60,44 @@ class UserRepository:
         await self._db.flush()
         return user
 
-    async def increment_failed_attempts(self, user: User) -> None:
-        user.failed_login_attempts += 1
-        await self._db.flush()
+    async def increment_failed_attempts(self, user: User) -> int:
+        """Атомарный инкремент `failed_login_attempts`, возвращает новое значение.
+
+        Через `UPDATE ... RETURNING` — concurrent login'ы не гонкуются на
+        stale in-memory счётчике. ORM-инстанс синхронизируется in-place,
+        caller'ы могут продолжать использовать `user.failed_login_attempts`.
+        """
+        stmt = (
+            update(User)
+            .where(User.id == user.id)
+            .values(failed_login_attempts=User.failed_login_attempts + 1)
+            .returning(User.failed_login_attempts)
+        )
+        new_value = await self._db.scalar(stmt)
+        if new_value is not None:
+            user.failed_login_attempts = new_value
+        return new_value if new_value is not None else user.failed_login_attempts
+
+    async def set_locked_until(self, user: User, locked_until: datetime) -> None:
+        """Записать `locked_until` через явный UPDATE (без rollback-сюрпризов)."""
+        stmt = (
+            update(User)
+            .where(User.id == user.id)
+            .values(locked_until=locked_until)
+        )
+        await self._db.execute(stmt)
+        user.locked_until = locked_until
 
     async def reset_failed_attempts(self, user: User) -> None:
+        """Атомарно очистить `failed_login_attempts` и `locked_until` (после успешного login'а)."""
+        stmt = (
+            update(User)
+            .where(User.id == user.id)
+            .values(failed_login_attempts=0, locked_until=None)
+        )
+        await self._db.execute(stmt)
         user.failed_login_attempts = 0
         user.locked_until = None
-        await self._db.flush()
 
     async def exists_username(self, username: str) -> bool:
         return await self._db.scalar(

@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import update
 
 from src.core.security import create_access_token, hash_opaque_token
@@ -44,11 +45,35 @@ async def test_account_admin_jwt_has_no_services(client, admin_token):
     assert resp.json()["allowed_services"] == []
 
 
+async def test_jwt_returns_username(client, user_a, user_a_token):
+    resp = await client.post(INTROSPECT_URL, json={"token": user_a_token})
+    assert resp.json()["username"] == user_a.username
+
+
+async def test_jwt_returns_platform_role_for_admin(client, admin_token):
+    resp = await client.post(INTROSPECT_URL, json={"token": admin_token})
+    assert resp.json()["platform_role"] == "account_admin"
+
+
+async def test_jwt_returns_platform_role_null_for_user(client, user_a_token):
+    resp = await client.post(INTROSPECT_URL, json={"token": user_a_token})
+    assert resp.json()["platform_role"] is None
+
+
+async def test_jwt_returns_is_banned_false_by_default(client, user_a_token):
+    resp = await client.post(INTROSPECT_URL, json={"token": user_a_token})
+    assert resp.json()["is_banned"] is False
+
+
 async def test_expired_jwt_is_inactive(client, user_a):
-    """Валидно подписанный JWT с exp в прошлом → active=false."""
+    """Валидно подписанный JWT с exp в прошлом → active=false.
+
+    Дельта берётся с запасом > `JWT_LEEWAY_SECONDS` (default 10s), иначе
+    decode пускает токен как ещё-не-протухший в пределах clock-skew.
+    """
     expired = create_access_token(
         {"sub": user_a.id, "username": user_a.username},
-        expires_delta=timedelta(seconds=-1),
+        expires_delta=timedelta(minutes=-5),
     )
     resp = await client.post(INTROSPECT_URL, json={"token": expired})
     assert resp.status_code == 200
@@ -63,6 +88,15 @@ async def test_pat_is_active(client, user_a_token):
     resp = await client.post(INTROSPECT_URL, json={"token": raw})
     assert resp.json()["active"] is True
     assert resp.json()["subject_type"] == "user"
+
+
+async def test_pat_returns_username_and_platform_role(client, user_a, user_a_token):
+    raw = (await client.post(TOKENS_URL, headers={"Authorization": f"Bearer {user_a_token}"},
+                              json={"name": "intr_pat_with_fields", "allowed_services": []})).json()["token"]
+    body = (await client.post(INTROSPECT_URL, json={"token": raw})).json()
+    assert body["username"] == user_a.username
+    assert body["platform_role"] is None
+    assert body["is_banned"] is False
 
 
 async def test_expired_pat_is_inactive(client, user_a_token, db):

@@ -1,4 +1,4 @@
-"""User-to-group membership model."""
+"""ORM-модель `UserGroupMembership` — связь «юзер состоит в группе»."""
 
 from datetime import datetime
 

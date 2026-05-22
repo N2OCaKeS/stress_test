@@ -1,4 +1,8 @@
-"""Department-to-service access model."""
+"""ORM-модель `DepartmentServiceAccess` — связь «отдел имеет access к сервису».
+
+Сюда же `revoked_at`/`revoked_by` для soft-revoke. Уникальность по
+`(department_id, service_name)` — одна активная связь на пару.
+"""
 
 from datetime import datetime
 

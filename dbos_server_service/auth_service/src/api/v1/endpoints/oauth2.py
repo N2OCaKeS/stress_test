@@ -1,4 +1,4 @@
-"""OAuth2 client management and token/authorize endpoints."""
+"""Эндпоинты OAuth2: client management и authorize/token flow."""
 
 from urllib.parse import quote
 
@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AnyAdmin, CurrentIdentity
+from src.core.exceptions import DomainValidationError
+from src.dependencies.auth import AnyAdmin, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
 from src.schemas.oauth import (
@@ -20,16 +21,40 @@ from src.services import oauth_service
 
 router = APIRouter(prefix="/oauth2")
 
+# RFC 6749 §3.1.1 + §4.1.2.1: только `code` flow (authorization code grant).
+# Implicit (`token`) и hybrid (`id_token`/`code id_token`) flow не реализованы
+# и СОЗНАТЕЛЬНО отказаны: implicit отдаёт access_token прямо в URL fragment
+# (history-leak / referer-leak), id_token подразумевает OIDC, который мы не
+# делаем. Любой неизвестный response_type → 400 `unsupported_response_type`
+# (RFC 6749 §4.1.2.1).
+_SUPPORTED_RESPONSE_TYPES: frozenset[str] = frozenset({"code"})
 
-# ── Client management ─────────────────────────────────────────────────────────
 
-@router.post("/clients", response_model=OAuthClientCreatedResponse, status_code=201)
+# ── Управление клиентами ─────────────────────────────────────────────────────
+
+@router.post(
+    "/clients",
+    response_model=OAuthClientCreatedResponse,
+    status_code=201,
+    summary="Создать OAuth2-клиента",
+    description="Возвращает client_secret один раз. В БД лежит хэш.",
+)
 async def create_client(
     body: OAuthClientCreate,
     request: Request,
     identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> OAuthClientCreatedResponse:
+    """Регистрация OAuth2 клиента.
+
+    Что делает:
+        Создаёт `OAuthClient` + генерит client_secret. Plaintext secret
+        возвращается ровно один раз. Все redirect_uris должны быть https
+        (или http://localhost для нативных клиентов).
+
+    Доступ:
+        account_admin (любой отдел) или department_admin (только свой).
+    """
     return await oauth_service.create_client(
         db=db,
         actor_id=identity.user_id,
@@ -39,13 +64,19 @@ async def create_client(
     )
 
 
-@router.get("/clients", response_model=list[OAuthClientResponse])
+@router.get(
+    "/clients",
+    response_model=list[OAuthClientResponse],
+    summary="Список OAuth2-клиентов",
+    description="Опциональный фильтр по `department_id`.",
+)
 async def list_clients(
     request: Request,
     identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
     department_id: str | None = Query(default=None),
 ) -> list[OAuthClientResponse]:
+    """Список клиентов с учётом scope-а смотрящего."""
     return await oauth_service.list_clients(
         db=db,
         actor_id=identity.user_id,
@@ -55,13 +86,19 @@ async def list_clients(
     )
 
 
-@router.delete("/clients/{client_id}", response_model=OkResponse)
+@router.delete(
+    "/clients/{client_id}",
+    response_model=OkResponse,
+    summary="Удалить OAuth2-клиента",
+    description="Каскадно убивает все authorization codes и issued токены клиента.",
+)
 async def delete_client(
     client_id: str,
     request: Request,
     identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
+    """Снести OAuth2-клиента."""
     await oauth_service.delete_client(
         db=db,
         actor_id=identity.user_id,
@@ -74,18 +111,59 @@ async def delete_client(
 
 # ── Authorization code flow ───────────────────────────────────────────────────
 
-@router.get("/authorize")
+@router.get(
+    "/authorize",
+    summary="OAuth2 authorize endpoint (authorization code flow)",
+    description="Выдаёт authorization code и редиректит на redirect_uri. PKCE опционален для confidential, обязателен для public client'ов.",
+)
 async def authorize(
     request: Request,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     client_id: str = Query(...),
     redirect_uri: str = Query(...),
     scope: str = Query(default=""),
-    state: str | None = Query(default=None),
+    state: str | None = Query(default=None, max_length=2048),
     response_type: str = Query(default="code"),
+    code_challenge: str | None = Query(default=None),
+    code_challenge_method: str | None = Query(default=None),
 ):
-    """Issue an authorization code and redirect to redirect_uri."""
+    """Выдать authorization code и редиректнуть на redirect_uri.
+
+    Что делает:
+        Создаёт `OAuthAuthorizationCode` (TTL = `OAUTH_CODE_TTL_SECONDS`,
+        default 300), редиректит 302 на `redirect_uri?code=…&state=…`.
+        Поддерживает PKCE (RFC 7636) через `code_challenge` + метод.
+
+    Доступ:
+        Любой залогиненный юзер. m2m-JWT (`actor_type=oauth_client`)
+        отбивается `require_user_context` guard'ом.
+
+    PKCE (RFC 7636):
+        `code_challenge` + `code_challenge_method` опциональны — для public
+        client'ов (SPA/CLI) требуются обязательно, для confidential client'ов
+        с client_secret допустимо legacy-поведение.
+
+    response_type:
+        Валидируется по `_SUPPORTED_RESPONSE_TYPES`: ровно `code`. Implicit
+        (`token`) и hybrid (`id_token`, `code id_token`) flow запрещены — они
+        либо отдают access_token через URL fragment (history-leak /
+        referer-leak), либо требуют OIDC, который мы не реализуем.
+
+    Возможные ошибки:
+        * `UNSUPPORTED_RESPONSE_TYPE` (400) — не `code`.
+        * `INVALID_REDIRECT_URI` (400) — uri не в whitelist'е клиента.
+        * `INVALID_CLIENT` (400) — нет такого client_id или он отключён.
+    """
+    if response_type not in _SUPPORTED_RESPONSE_TYPES:
+        raise DomainValidationError(
+            http_status=400,
+            error_code="UNSUPPORTED_RESPONSE_TYPE",
+            message=(
+                f"response_type '{response_type}' is not supported; "
+                f"only 'code' is allowed"
+            ),
+        )
     scopes = scope.split() if scope else []
     code = await oauth_service.issue_authorization_code(
         db=db,
@@ -94,6 +172,8 @@ async def authorize(
         redirect_uri=redirect_uri,
         scopes=scopes,
         request_id=getattr(request.state, "request_id", None),
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
     )
     location = f"{redirect_uri}?code={code}"
     if state:
@@ -101,13 +181,29 @@ async def authorize(
     return RedirectResponse(url=location, status_code=302)
 
 
-@router.post("/token", response_model=OAuthTokenResponse)
+@router.post(
+    "/token",
+    response_model=OAuthTokenResponse,
+    summary="OAuth2 token endpoint",
+    description="Обмен authorization code → access_token, либо client_credentials grant.",
+)
 async def token(
     body: OAuthTokenRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> OAuthTokenResponse:
-    """Exchange authorization code or issue client_credentials token."""
+    """Получить access_token.
+
+    Что делает:
+        Поддерживает `authorization_code` (с PKCE) и `client_credentials`
+        (m2m, без user_id). Authorization code разовый (`mark_used` через
+        CAS), reuse отбивается с убийством issued-токена.
+
+    Возможные ошибки:
+        * `INVALID_GRANT` — code не найден/истёк/уже использован.
+        * `INVALID_CLIENT` — неверный client_id/secret.
+        * `UNSUPPORTED_GRANT_TYPE` — не `authorization_code` и не `client_credentials`.
+    """
     request_id = getattr(request.state, "request_id", None)
     if body.grant_type == "authorization_code":
         return await oauth_service.exchange_code(
@@ -117,6 +213,7 @@ async def token(
             code=body.code or "",
             redirect_uri=body.redirect_uri or "",
             request_id=request_id,
+            code_verifier=body.code_verifier,
         )
     if body.grant_type == "client_credentials":
         return await oauth_service.client_credentials_token(
@@ -125,7 +222,6 @@ async def token(
             client_secret=body.client_secret or "",
             request_id=request_id,
         )
-    from src.core.exceptions import DomainValidationError
     raise DomainValidationError(
         error_code="UNSUPPORTED_GRANT_TYPE",
         message=f"grant_type '{body.grant_type}' is not supported",

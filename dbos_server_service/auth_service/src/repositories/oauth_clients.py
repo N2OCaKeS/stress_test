@@ -1,4 +1,4 @@
-"""OAuth2 client and authorization code repository."""
+"""DAO для `OAuthClient` + `OAuthAuthorizationCode` — CRUD клиентов и CAS mark_used кодов."""
 
 import secrets
 
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.oauth_authorization_code import OAuthAuthorizationCode
 from src.models.oauth_client import OAuthClient
+from src.repositories._cas import atomic_transition
 from src.utils.ids import oauth_client_id, oauth_code_id
 from src.utils.time import utcnow
 
@@ -99,6 +100,8 @@ class OAuthCodeRepository:
         redirect_uri: str,
         scopes: list[str],
         expires_at,
+        code_challenge: str | None = None,
+        code_challenge_method: str | None = None,
     ) -> OAuthAuthorizationCode:
         code = OAuthAuthorizationCode(
             id=oauth_code_id(),
@@ -108,11 +111,49 @@ class OAuthCodeRepository:
             redirect_uri=redirect_uri,
             scopes=scopes,
             expires_at=expires_at,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
         )
         self._db.add(code)
         await self._db.flush()
         return code
 
-    async def mark_used(self, code: OAuthAuthorizationCode) -> None:
-        code.used_at = utcnow()
-        await self._db.flush()
+    async def mark_used(self, code: OAuthAuthorizationCode) -> bool:
+        """Atomically mark this authorization code as used (compare-and-swap).
+
+        Two parallel ``exchange_code`` calls with the same ``code`` would both
+        see ``used_at IS NULL`` in :meth:`get_by_hash` and, before this fix,
+        both happily proceeded to issue a JWT — classic OAuth code-replay.
+
+        Same CAS shape as :class:`BanRepository.deactivate` and
+        :class:`SessionRepository.rotate` (общий helper —
+        :func:`src.repositories._cas.atomic_transition`): один
+        ``UPDATE … WHERE id = :id AND used_at IS NULL RETURNING id``
+        даёт ровно одному из N concurrent worker'ов «выиграть» — Postgres
+        сам сериализует row-level lock. Winner получает non-empty
+        ``RETURNING`` и эмитит JWT; losers возвращают ``False`` и caller
+        бросает ``INVALID_GRANT``.
+
+        Returns
+        -------
+        bool
+            ``True`` if this caller transitioned the row (``used_at`` was
+            ``NULL``, now set to ``now``), ``False`` if another worker already
+            consumed the code (or the row no longer exists).
+        """
+        now = utcnow()
+        won = await atomic_transition(
+            self._db,
+            OAuthAuthorizationCode,
+            id_column="id",
+            id_value=code.id,
+            where_clause=OAuthAuthorizationCode.used_at.is_(None),
+            update_values={"used_at": now},
+        )
+        if not won:
+            return False
+        # Keep in-memory ORM-instance in sync with the row we just wrote —
+        # audit-detail building in `exchange_code` may inspect this object
+        # downstream.
+        code.used_at = now
+        return True

@@ -1,4 +1,4 @@
-"""Department repository."""
+"""DAO для `Department` + `DepartmentServiceAccess` — CRUD отделов и grant/revoke к сервисам."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

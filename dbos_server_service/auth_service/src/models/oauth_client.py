@@ -1,4 +1,4 @@
-"""OAuth2 client model (per-department application credentials)."""
+"""ORM-модель `OAuthClient` — per-department application credentials для OAuth2."""
 
 from datetime import datetime
 
@@ -23,7 +23,7 @@ class OAuthClient(Base):
     description: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     redirect_uris: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     allowed_scopes: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
-    # Supported grant types: authorization_code, client_credentials
+    # Поддерживаемые grant types: authorization_code, client_credentials
     grant_types: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

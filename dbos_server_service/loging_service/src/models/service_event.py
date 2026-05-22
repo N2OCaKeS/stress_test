@@ -1,4 +1,4 @@
-"""ServiceEvent — registry of events a service can emit."""
+"""`ServiceEvent` — реестр action'ов, которые сервис умеет эмитить."""
 
 from datetime import datetime, timezone
 

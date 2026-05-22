@@ -13,6 +13,27 @@
 
 import os
 
+TEST_DATABASE_URL = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+psycopg://app_user:app_password@postgres:5432/test_logging",
+)
+
+TEST_API_KEY = "test-service-api-key"
+
+# `RETENTION_LOOP_ENABLED=false` ОБЯЗАН быть выставлен ДО первого
+# `from src.*` import'а: `src.main.create_application()` снимает
+# `get_settings()` snapshot и проверяет флаг в lifespan'е. Без override
+# retention daemon тикает на каждом TestClient'е, бьётся в module-level
+# `SessionLocal` (binds to default `DATABASE_URL=localhost:5432`, не
+# TEST_DATABASE_URL) и спамит `Retention cleanup failed: connection
+# refused` на каждом setup'е под MSK hour=0.
+#
+# DATABASE_URL отдельно НЕ подменяем — audit middleware self-audit-вызовы
+# тоже бьются в localhost:5432, но тесты вокруг audit-эмита намеренно
+# инспектируют SessionLocal через monkeypatch, и подмена DATABASE_URL
+# ломала бы их предположения о fixture-сегрегации БД.
+os.environ.setdefault("RETENTION_LOOP_ENABLED", "false")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -22,13 +43,6 @@ from src.db.base import Base
 from src.dependencies.auth import require_admin, require_reader
 from src.dependencies.db import get_db
 from src.main import app
-
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+psycopg://app_user:app_password@postgres:5432/test_logging",
-)
-
-TEST_API_KEY = "test-service-api-key"
 
 ADMIN_IDENTITY = {
     "user_id": "usr_test_admin",
@@ -89,13 +103,29 @@ def TestSessionLocal(test_engine):
     return sessionmaker(bind=test_engine, autocommit=False, autoflush=False)
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Сбрасывает per-IP rate-limit между тестами.
+
+    Все тесты идут с одного `127.0.0.1` через ASGITransport — без reset'а
+    счётчики slowapi накапливались бы между кейсами, и при достаточном числе
+    ingest-вызовов до теста возникали бы случайные 429. Явные проверки лимита —
+    в `tests/test_rate_limit.py`.
+    """
+    from src.main import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
 @pytest.fixture()
 def db(TestSessionLocal) -> Session:
     """Session с чистыми таблицами перед каждым тестом."""
     from src.services import rule_service
     session = TestSessionLocal()
     session.execute(text(
-        "TRUNCATE TABLE audit_events, audit_rules, service_events RESTART IDENTITY CASCADE"
+        "TRUNCATE TABLE audit_events, audit_rules, service_events, retention_policies RESTART IDENTITY CASCADE"
     ))
     session.commit()
     rule_service.invalidate_cache()
@@ -120,7 +150,14 @@ def _db_override(db: Session):
 
 @pytest.fixture()
 def client(db, monkeypatch):
-    """TestClient c аутентификацией по SERVICE_API_KEY (для сервисов)."""
+    """TestClient c аутентификацией по SERVICE_API_KEY (для сервисов).
+
+    Forces the pooled ``_introspect_client`` to ``None`` after lifespan
+    startup so existing tests that ``patch("src.dependencies.auth.httpx.post")``
+    still intercept the introspect call via the per-call fallback path. The
+    dedicated pool-behaviour tests in ``tests/dependencies/test_auth_pool.py``
+    install their own pooled ``AsyncClient`` with ``MockTransport``.
+    """
     monkeypatch.setenv("SERVICE_API_KEY", TEST_API_KEY)
     # Установить фиктивный URL — это нужно чтобы require_admin доходил до httpx.get,
     # а не возвращал 503 AUTH_SERVICE_NOT_CONFIGURED ещё до вызова.
@@ -130,7 +167,19 @@ def client(db, monkeypatch):
 
     app.dependency_overrides[get_db] = _db_override(db)
     with TestClient(app) as c:
-        yield c
+        # After lifespan startup, the pooled AsyncClient is initialised with
+        # base_url=http://auth-test:8000. Tests in this suite mock the
+        # FALLBACK path (sync httpx.post) — force the pool back to None so
+        # those mocks are honoured. The pooled path is exercised explicitly
+        # by ``tests/dependencies/test_auth_pool.py``.
+        from src.dependencies import auth as _auth_deps
+        _pool = _auth_deps._introspect_client
+        _auth_deps._introspect_client = None
+        try:
+            yield c
+        finally:
+            # Restore so lifespan-shutdown can close the original client.
+            _auth_deps._introspect_client = _pool
     app.dependency_overrides.clear()
     get_settings.cache_clear()
 

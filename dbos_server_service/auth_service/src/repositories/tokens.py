@@ -1,4 +1,6 @@
-"""Personal access token repository."""
+"""DAO для `PersonalAccessToken` — CRUD + touch + revoke (включая bulk при ban'е)."""
+
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,11 +63,26 @@ class TokenRepository:
         await self._db.flush()
         return pat
 
-    async def revoke(self, pat: PersonalAccessToken) -> None:
+    async def revoke(self, pat: PersonalAccessToken, reason: str | None = "user") -> None:
+        """Отозвать PAT.
+
+        `reason` пишется в `revoked_reason`: "user" (юзер сам через
+        DELETE /tokens/{id}), "ban" (bulk при ban'е), "admin_reset"
+        (password-reset cascade) и т.д. По нему `unban_user` находит именно
+        ban-revoked PAT'ы для реактивации.
+        """
         pat.revoked_at = utcnow()
+        pat.revoked_reason = reason
         await self._db.flush()
 
-    async def revoke_all_for_user(self, user_id: str) -> None:
+    async def revoke_all_for_user(
+        self, user_id: str, reason: str | None = "user"
+    ) -> int:
+        """Bulk-revoke всех активных PAT юзера.
+
+        Возвращает count затронутых строк (использует ``unban_user`` для
+        cap'а количества реактиваций).
+        """
         now = utcnow()
         result = await self._db.scalars(
             select(PersonalAccessToken).where(
@@ -73,9 +90,50 @@ class TokenRepository:
                 PersonalAccessToken.revoked_at.is_(None),
             )
         )
+        count = 0
         for pat in result:
             pat.revoked_at = now
+            pat.revoked_reason = reason
+            count += 1
         await self._db.flush()
+        return count
+
+    async def reactivate_ban_revoked(
+        self, user_id: str, since: datetime | None = None
+    ) -> int:
+        """Реактивировать PAT, revoke'нутые последним ban'ом.
+
+        Критерии:
+          * `user_id` совпадает;
+          * `revoked_reason == "ban"` — отделяет от "user"/"admin_reset"
+            и от legacy без reason;
+          * `revoked_at > since` — если задан (timestamp последнего ban'а),
+            отбрасывает PAT'ы предыдущих ban'ов. Окно «ban → юзер создал
+            ещё PAT → второй ban → unban» возвращает только последние.
+
+        Одним UPDATE ставим `revoked_at=NULL`, `revoked_reason=NULL`. CAS не
+        нужен — мы уже под exclusive lock'ом unban'а, параллельных ban-worker'ов
+        на этом юзере не будет.
+        """
+        from sqlalchemy import update as _update
+
+        conds = [
+            PersonalAccessToken.user_id == user_id,
+            PersonalAccessToken.revoked_reason == "ban",
+        ]
+        if since is not None:
+            conds.append(PersonalAccessToken.revoked_at > since)
+
+        stmt = (
+            _update(PersonalAccessToken)
+            .where(*conds)
+            .values(revoked_at=None, revoked_reason=None)
+            .returning(PersonalAccessToken.id)
+        )
+        rows = await self._db.scalars(stmt)
+        ids = list(rows)
+        await self._db.flush()
+        return len(ids)
 
     async def touch(self, pat: PersonalAccessToken) -> None:
         pat.last_used_at = utcnow()

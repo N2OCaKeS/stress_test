@@ -1,4 +1,4 @@
-"""Department model."""
+"""ORM-модель `Department` — отдел/подразделение. Все «привязки к отделу» каскадятся отсюда."""
 
 from datetime import datetime
 
@@ -28,6 +28,12 @@ class Department(Base):
     users: Mapped[list["User"]] = relationship("User", back_populates="department")  # noqa: F821
     service_access: Mapped[list["DepartmentServiceAccess"]] = relationship(  # noqa: F821
         "DepartmentServiceAccess", back_populates="department"
+    )
+    role_definitions: Mapped[list["ServiceRoleDefinition"]] = relationship(  # noqa: F821
+        "ServiceRoleDefinition", back_populates="department", cascade="all, delete-orphan"
+    )
+    user_groups: Mapped[list["UserGroup"]] = relationship(  # noqa: F821
+        "UserGroup", back_populates="department", cascade="all, delete-orphan"
     )
     bots: Mapped[list["BotAccount"]] = relationship("BotAccount", back_populates="department")  # noqa: F821
     oauth_clients: Mapped[list["OAuthClient"]] = relationship("OAuthClient", back_populates="department")  # noqa: F821

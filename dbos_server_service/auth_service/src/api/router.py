@@ -1,4 +1,4 @@
-"""Root API router aggregation."""
+"""Корневой API-router. Подключает все v1-эндпоинты под `/auth/v1`."""
 
 from fastapi import APIRouter
 

@@ -1,11 +1,11 @@
 version: "3.9"
 
 services:
-  logging_service:
+  loging_service:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: logging_service
+    container_name: loging_service
     environment:
       APP_ENV: local
       APP_HOST: 0.0.0.0

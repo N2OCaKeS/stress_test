@@ -1,9 +1,10 @@
-"""Business logic for audit event ingestion and querying."""
+"""Бизнес-логика приёма и чтения событий аудита."""
 
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from src.core.exceptions import AppException
 from src.models.audit_event import AuditEvent
 from src.repositories import events as event_repo
 from src.schemas.events import EventCreate, EventListResponse, EventDetail
@@ -36,8 +37,23 @@ def record_admin_action(db: Session, payload: EventCreate) -> AuditEvent:
     """Сохраняет событие администратора loging_service, минуя правила (нельзя подавить).
 
     severity назначается из _DEFAULT_SEVERITY если не задан явно.
+
+    Технический guard от рефакторинга: функция обходит `apply_rules`, поэтому
+    любой `payload.service != "loging_service"` превратил бы её в универсальный
+    bypass правил для чужих сервисов. Используем `AppException(500)` (а не
+    `assert`), чтобы invariant сохранялся даже под `python -O`, и чтобы FastAPI
+    отдал стандартизованный 500-ответ через `app_exception_handler`.
     """
     from src.services.rule_service import _resolve_default_severity
+    if payload.service != "loging_service":
+        raise AppException(
+            error_code="ADMIN_AUDIT_WRONG_SERVICE",
+            message=(
+                "record_admin_action only for self-audit "
+                f"(service must be 'loging_service', got {payload.service!r})"
+            ),
+            http_status=500,
+        )
     payload = _redact_payload(payload)
     if payload.severity is None:
         payload = payload.model_copy(

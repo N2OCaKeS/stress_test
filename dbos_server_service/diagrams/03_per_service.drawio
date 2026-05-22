@@ -1,0 +1,371 @@
+<mxfile host="65bd71144e">
+    <diagram name="auth_service" id="svc-auth">
+        <mxGraphModel dx="1688" dy="822" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="2400" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="t" value="auth_service — внутреннее устройство" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" parent="1" vertex="1">
+                    <mxGeometry x="40" y="20" width="1620" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2" value="Назначение: единая точка аутентификации и авторизации. Хранит всех пользователей, отделы, сервисы платформы, роли и токены." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontStyle=2;fontColor=#555555" parent="1" vertex="1">
+                    <mxGeometry x="40" y="55" width="1620" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_api" value="Слой API (FastAPI, префикс /api/auth/v1)" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="100" width="1620" height="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_auth" value="auth (без префикса)&#xa;• POST /login — выдача access + refresh&#xa;• POST /refresh — обновление пары&#xa;• POST /logout — отзыв refresh&#xa;• GET /me — текущая идентичность&#xa;• GET /health, /ready&#xa;Ответ на /me и introspect — канонический объект с user_id, department_id, allowed_services, service_roles." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_api" vertex="1">
+                    <mxGeometry x="20" y="50" width="370" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_users" value="/users, /departments&#xa;• CRUD пользователей и отделов&#xa;• ban/unban, смена пароля&#xa;• управление группами&#xa;• назначение/снятие сервис-ролей&#xa;Department-isolation: dept_admin видит только свой отдел." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_api" vertex="1">
+                    <mxGeometry x="410" y="50" width="370" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_services" value="/services, /services/{s}/roles,&#xa;/departments/{d}/services/{s}&#xa;• Создание/удаление сервиса платформы (account_admin)&#xa;• Выдача отделу доступа к сервису → автосеед роли admin (is_system)&#xa;• Каталог per-department ролей сервиса" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_api" vertex="1">
+                    <mxGeometry x="800" y="50" width="370" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_tokens_bots" value="/tokens (PAT), /bots, /bots/{id}/roles&#xa;• Personal Access Tokens — выдача, отзыв, список&#xa;• Bots — создание сервисных учёток, allowed_services&#xa;• bot_service_roles — назначение ролей боту&#xa;• OAuth2 password flow + docker-registry token issuer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_api" vertex="1">
+                    <mxGeometry x="1190" y="50" width="410" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_authz" value="/authorization/introspect (главная точка интеграции)&#xa;• Принимает любой Bearer (JWT / PAT / bot-token), возвращает канонический IntrospectResponse&#xa;• Поля: user_id, username, department_id, department_name, platform_role, is_banned, allowed_services, service_roles (отфильтрованные по effective_services)&#xa;• Используется ВСЕМИ прикладными сервисами на каждый защищённый запрос — заменяет локальный декод JWT." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;fontStyle=1" parent="l_api" vertex="1">
+                    <mxGeometry x="20" y="230" width="1580" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_svc" value="Слой services / бизнес-логика" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="510" width="1620" height="250" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_auth_logic" value="auth_service.py&#xa;Argon2id для паролей.&#xa;Issue JWT (короткий) + refresh (opaque).&#xa;Refresh хранится только в виде хеша." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="20" y="50" width="300" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_authz_logic" value="authorization_service.py&#xa;Сборка introspect-ответа.&#xa;Расчёт effective_services = пересечение&#xa;allowed_services пользователя и&#xa;department_service_access его отдела." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="340" y="50" width="300" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_role" value="role_service.py&#xa;Per-department каталог ролей.&#xa;Создание/удаление role-definitions&#xa;с проверкой is_system.&#xa;Каскадная деактивация назначений." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="660" y="50" width="300" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_token" value="token_service.py&#xa;PAT и bot-токены — opaque,&#xa;префиксированные (dbos_pat_, dbos_bot_).&#xa;Хранится только хеш, показывается ОДИН раз.&#xa;Revoke ставит revoked_at." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="980" y="50" width="300" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_audit" value="audit_service.py&#xa;Публикация событий в loging_service.&#xa;Default severity на пары&#xa;(action, status) — таблица _DEFAULT_SEVERITY.&#xa;Naming: &lt;object&gt;.&lt;verb&gt;." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="1300" y="50" width="300" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_db" value="Слой данных (PostgreSQL — dev_auth)" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="790" width="1620" height="430" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_user" value="users&#xa;id PK, username UNQ, password_hash,&#xa;department_id FK NOT NULL,&#xa;platform_role enum, is_banned, is_active" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="20" y="50" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_dept" value="departments&#xa;id PK, name UNQ, description" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="340" y="50" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_svc" value="platform_services&#xa;name PK, display_name, description,&#xa;is_active" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="660" y="50" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_dsa" value="department_service_access&#xa;(department_id, service_name) PK,&#xa;granted_by, granted_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="980" y="50" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_rdef" value="service_role_definitions&#xa;(department_id, service_name, role_name) PK,&#xa;description, is_system, created_by" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="1300" y="50" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_usr_role" value="user_service_roles&#xa;(user_id, department_id, service_name, role_name) PK,&#xa;is_active, granted_by, granted_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="20" y="170" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_group" value="user_groups&#xa;id PK, name + department_id UNQ,&#xa;department_id FK NOT NULL" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="340" y="170" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_group_member" value="user_group_members&#xa;(group_id, user_id) PK&#xa;invariant: user.department_id = group.department_id" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="660" y="170" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_group_role" value="group_service_roles&#xa;(group_id, service_name, role_name) PK,&#xa;is_active" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="980" y="170" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_pat" value="personal_access_tokens&#xa;id PK, user_id, name, token_hash UNQ,&#xa;created_at, last_used_at, revoked_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="1300" y="170" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_bot" value="bots&#xa;id PK, name, department_id,&#xa;allowed_services array, is_active" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="20" y="290" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_bot_token" value="bot_tokens&#xa;id PK, bot_id, token_hash UNQ,&#xa;revoked_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="340" y="290" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_bot_role" value="bot_service_roles&#xa;(bot_id, service_name, role_name) PK,&#xa;валидация по каталогу (bot.dept, service)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="660" y="290" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_refresh" value="refresh_tokens&#xa;id PK, user_id, token_hash UNQ,&#xa;expires_at, revoked_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="980" y="290" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_oauth" value="oauth_clients&#xa;client_id PK, client_secret_hash,&#xa;allowed_grant_types" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="1300" y="290" width="300" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="notes_auth" value="Ключевые инварианты auth_service:&#xa;• login пользователя НЕ работает, если department_id у юзера отсутствует или департамент деактивирован.&#xa;• PAT/bot-token показывается клиенту ОДИН раз при создании, в БД хранится только хеш.&#xa;• service_roles в introspect фильтруются по effective_services — нельзя вернуть роль для сервиса, к которому у отдела нет доступа.&#xa;• Назначение роли на пользователя проходит через role-definition: нет definition (dept, service, role) — назначить нельзя.&#xa;• Revoke department→service деактивирует все user/group/bot_service_roles по этой паре одной транзакцией." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="1" vertex="1">
+                    <mxGeometry x="40" y="1250" width="1620" height="170" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram name="loging_service" id="svc-log">
+        <mxGraphModel dx="1688" dy="822" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1800" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="t" value="loging_service — внутреннее устройство" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" parent="1" vertex="1">
+                    <mxGeometry x="40" y="20" width="1620" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2" value="Назначение: централизованный неизменяемый аудит действий, источник истины для расследований инцидентов." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontStyle=2;fontColor=#555555" parent="1" vertex="1">
+                    <mxGeometry x="40" y="55" width="1620" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_api" value="Слой API (FastAPI, префикс /api/logging/v1)" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="100" width="1620" height="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_ingest" value="POST /events — ingest&#xa;&#xa;• Авторизация: X-Service-API-Key (per-service shared secret)&#xa;• Принимает event: {action, status, severity?, service, user_id?, target?, request_id, timestamp, details}&#xa;• Прогоняет через rules engine: подставляет severity, может suppress&#xa;• Health-check события отфильтрованы&#xa;• Возвращает 201 c присвоенным event_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_api" vertex="1">
+                    <mxGeometry x="20" y="50" width="510" height="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_read" value="GET /events — чтение и поиск&#xa;&#xa;• Авторизация: Bearer → /authorization/introspect к auth_service&#xa;• Доступ: account_admin, department_admin, loging_admin/reader,&#xa;  per-service roles с правом read_audit&#xa;• Фильтры: service, action, severity, user_id, department, time range&#xa;• Pagination через cursor&#xa;• Department-isolation для не-admin&#39;ов" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_api" vertex="1">
+                    <mxGeometry x="550" y="50" width="510" height="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_rules" value="/rules, /retention — конфигурация&#xa;&#xa;• CRUD правил matching/severity/suppress (loging_admin)&#xa;• CRUD retention-policies (loging_admin)&#xa;• Кеш правил в памяти процесса с инвалидацией при изменении&#xa;• GET /health, /ready" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_api" vertex="1">
+                    <mxGeometry x="1080" y="50" width="510" height="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_svc" value="Слой services / бизнес-логика" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="450" width="1620" height="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_ingest" value="ingest_service.py&#xa;Валидация payload, прогон через rules,&#xa;запись в events с присвоенным event_id." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="20" y="50" width="370" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_rule_cache" value="_RuleCache.get()&#xa;In-memory кеш правил.&#xa;Правила expunge-ятся после загрузки,&#xa;чтобы не падать при чтении&#xa;из другой сессии (фикс DetachedInstanceError)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="410" y="50" width="370" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_retention" value="retention_service.py&#xa;Периодическая чистка по retention-policies.&#xa;По плану: cron в 00:00 MSK." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="800" y="50" width="370" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_authz_client" value="auth_client.py&#xa;HTTP-клиент к auth_service: introspect&#xa;на каждый запрос чтения.&#xa;TTL-кеш introspect — план." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="1190" y="50" width="400" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_db" value="Слой данных (PostgreSQL — dev_logging)" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="700" width="1620" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_events" value="events&#xa;id PK, timestamp, service, action,&#xa;status, severity, user_id, username,&#xa;department_id, target (jsonb), request_id,&#xa;details (jsonb), source_ip&#xa;Индексы: (service, timestamp), (action, status), (user_id, timestamp), gin(details)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="20" y="50" width="510" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_rules" value="rules&#xa;id PK, match_service, match_action,&#xa;match_status, set_severity, suppress&#xa;is_active, priority&#xa;Применяются в порядке priority.&#xa;Первый matched — задаёт severity или suppress." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="550" y="50" width="510" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_retention" value="retention_policies&#xa;id PK, match_service, match_severity,&#xa;keep_days, is_active&#xa;Default policy: keep_days=365, severity≥INFO." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="1080" y="50" width="510" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="severity_box" value="Иерархия severity (определена в auth_service.audit_service._DEFAULT_SEVERITY):&#xa;TRACE &lt; DEBUG &lt; INFO &lt; WARNING &lt; ERROR &lt; CRITICAL&#xa;&#xa;Naming событий: &lt;object&gt;.&lt;verb&gt;. Примеры: user.create, user.ban, pat.revoke, bot.token_create, group.roles_assign, service_role.create, http.forbidden.&#xa;Полный каталог пар (action, status) → severity — в AUDIT_EVENTS.md." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="1" vertex="1">
+                    <mxGeometry x="40" y="1010" width="1620" height="130" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram name="server_service" id="svc-server">
+        <mxGraphModel dx="1688" dy="822" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="2200" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="t" value="server_service — внутреннее устройство" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" parent="1" vertex="1">
+                    <mxGeometry x="40" y="20" width="1820" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2" value="Назначение: жизненный цикл серверов — реестр, аккаунты, секреты, операции питания. Низкоуровневые действия делегируются server_worker." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontStyle=2;fontColor=#555555" parent="1" vertex="1">
+                    <mxGeometry x="40" y="55" width="1820" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_api" value="Слой API (FastAPI, префикс /api/server/v1)" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="100" width="1820" height="430" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_servers" value="/servers — основной CRUD&#xa;• GET /servers — list с фильтром по department&#xa;• POST /servers — создание&#xa;• GET/PUT/DELETE /servers/{id}&#xa;• Проверки: action=read/create/update/delete для entity=server&#xa;• Department-isolation: не-admin видит только свой отдел&#xa;• Conflict detection по hostname/IP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_api" vertex="1">
+                    <mxGeometry x="20" y="50" width="430" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_power" value="/servers/{id}/ipmi/power/{on|off|reboot}&#xa;• Проверка action=power_on/off/reboot&#xa;• Создаёт строку в dev_server_worker.tasks (cross-DB INSERT)&#xa;• kick в Redis (taskiq)&#xa;• Возвращает 202 { task_id }&#xa;• Реальное действие — на server_worker (mock iDRAC)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_api" vertex="1">
+                    <mxGeometry x="470" y="50" width="430" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_internal" value="/internal/* (скрыты из swagger, только для worker&#39;а)&#xa;• GET /internal/servers/{id}/ipmi/credentials — расшифровка IPMI-пароля&#xa;• GET /internal/servers/{id}/accounts/{aid}/password — расшифровка пароля аккаунта&#xa;• POST /internal/servers/{id}/accounts/{aid}/password/rotate — приём нового plaintext&#xa;Авторизация: PAT бота-воркера, audit обязателен." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;fontStyle=1" parent="l_api" vertex="1">
+                    <mxGeometry x="920" y="50" width="430" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_perm" value="/permissions, /roles — управление доступом сервиса&#xa;• GET /permissions — list всех (entity, role, action)&#xa;• GET /permissions/{entity_type}&#xa;• PUT/DELETE /permissions/{e}/{role}/{action}&#xa;• GET/POST /roles — forward в auth_service&#xa;• Валидация (entity, action) против ENTITY_ACTIONS whitelist" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_api" vertex="1">
+                    <mxGeometry x="1370" y="50" width="430" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="ep_stubs" value="Заглушки 501 (TODO): /server_accounts, /server_disks, /cpu_models, /os_versions, /installed_packages, /inventory (sync + probe),&#xa;/servers/{id}/busy/{acquire|release}, /servers/{id}/os_sync, /servers/{id}/power/status, /boot_order, /pxe_once, /reinstall, /servers/{id}/ipmi/rotate_credentials.&#xa;Поле has_sudo=true в server_account будет требовать отдельный action GRANT_SUDO." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;dashed=1" parent="l_api" vertex="1">
+                    <mxGeometry x="20" y="250" width="1780" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_svc" value="Слой services / бизнес-логика" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="560" width="1820" height="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_server" value="server_service.py&#xa;Бизнес-логика CRUD серверов.&#xa;Department-isolation и conflict detection.&#xa;Использует repository для БД." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="20" y="50" width="350" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_secrets" value="secrets_service.py&#xa;AES-256-GCM, self-contained token:&#xa;v&lt;key_version&gt;$&lt;nonce&gt;$&lt;ciphertext&gt;&#xa;Ротация мастер-ключа по версии,&#xa;БД не перешифровывается целиком.&#xa;План: переезд на ГОСТ-Кузнечик MGM." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="390" y="50" width="350" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_worker_client" value="worker_client.py&#xa;Bridge к server_worker:&#xa;• INSERT в dev_server_worker.tasks (cross-DB)&#xa;• taskiq stubs для kicker&#39;а в Redis&#xa;• Возвращает task_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="760" y="50" width="350" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_perm" value="permission_service.py&#xa;Action-based матрица: entity_permissions&#xa;(entity_type, role, action).&#xa;90 default grants × 4 системные роли.&#xa;Whitelist в core/constants.ENTITY_ACTIONS.&#xa;require_action() — основной gate." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="1130" y="50" width="350" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="svc_auth_dep" value="dependencies/auth.py&#xa;На каждый запрос дёргает&#xa;auth_service /authorization/introspect&#xa;и кладёт identity в Request.state.&#xa;TODO: TTL-кеш ~30 сек." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_svc" vertex="1">
+                    <mxGeometry x="1500" y="50" width="300" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_db" value="Слой данных (PostgreSQL — dev_server)" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="830" width="1820" height="460" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_srv" value="servers&#xa;id PK, hostname UNQ, ip_mgmt,&#xa;department_id NOT NULL, os_version_id FK,&#xa;is_busy, busy_owner_user_id,&#xa;power_state cached, last_seen_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="20" y="50" width="350" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_srv_acc" value="server_accounts&#xa;id PK, server_id FK, username,&#xa;password_ciphertext, has_sudo bool,&#xa;rotated_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="390" y="50" width="350" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_ipmi" value="ipmi_controllers&#xa;id PK, server_id FK UNQ, address,&#xa;username, password_ciphertext, model" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="760" y="50" width="350" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_disk" value="server_disks&#xa;id PK, server_id FK, size_gb,&#xa;model, is_system_disk&#xa;UNQ (server_id, is_system_disk=true)&#xa;— один системный на сервер" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="1130" y="50" width="350" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_cpu" value="cpu_models&#xa;id PK, vendor, name, cores, threads" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="1500" y="50" width="300" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_os" value="os_versions&#xa;id PK, name (Astra Linux SE x.y),&#xa;kernel, build" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="20" y="200" width="350" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_pkg" value="server_installed_packages&#xa;id PK, server_id FK, name, version,&#xa;source_repo, scanned_at" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="390" y="200" width="350" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="m_ent_perm" value="entity_permissions (ядро ACL сервиса)&#xa;(entity_type, role, action) PK,&#xa;granted_by, granted_at&#xa;Заполняется default-миграцией, можно менять через PUT /permissions." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;fontStyle=1;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_db" vertex="1">
+                    <mxGeometry x="760" y="200" width="720" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="actions_box" value="ENTITY_ACTIONS whitelist (выдержка)&#xa;&#xa;server          → read, create, update, delete, busy_acquire, busy_release, power_on, power_off, power_reboot, power_status, inventory_trigger, os_sync&#xa;server_account  → read, create, update, delete, view_password, rotate_password, grant_sudo&#xa;ipmi_controller → read, configure, view_credentials, rotate_credentials&#xa;server_disk     → read, create, update, delete&#xa;cpu_model       → read, create, update, delete&#xa;os_version      → read, create, update, delete&#xa;installed_package → read, ingest, delete&#xa;permission      → read, grant, revoke" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;fontFamily=Courier New" parent="l_db" vertex="1">
+                    <mxGeometry x="20" y="330" width="1780" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="notes_server" value="Ключевые свойства server_service:&#xa;• Все пароли (server_accounts, ipmi_controllers) хранятся только в зашифрованном виде. Версия ключа — в префиксе токена, ротация без перешифровки всей БД.&#xa;• Авторизация — не &quot;роль X имеет право Y&quot;, а &quot;роль X может делать action A над entity E&quot;. Это позволяет department_admin&#39;у создавать кастомные роли с точным набором действий.&#xa;• Питание сервером управляется только асинхронно через worker. API всегда возвращает 202 + task_id, статус задачи смотреть через server_worker (план: добавить proxy-endpoint).&#xa;• Internal endpoints доступны только сервисным учёткам (PAT бота-воркера). В swagger не светятся, secrets в логах не пишутся." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="1" vertex="1">
+                    <mxGeometry x="40" y="1320" width="1820" height="170" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram name="server_worker" id="svc-worker">
+        <mxGraphModel dx="1688" dy="822" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="2000" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="t" value="server_worker — внутреннее устройство" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" parent="1" vertex="1">
+                    <mxGeometry x="40" y="20" width="1620" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2" value="Назначение: исполнитель долгих и низкоуровневых операций над железом. HTTP-API не имеет, общается через очередь, БД и исходящие вызовы." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontStyle=2;fontColor=#555555" parent="1" vertex="1">
+                    <mxGeometry x="40" y="55" width="1620" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_in" value="Источник работы" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="100" width="780" height="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="in_db" value="dev_server_worker.tasks&#xa;&#xa;Заполняется server_service через cross-DB INSERT.&#xa;Поля: id, task_kind, target_server_id,&#xa;payload jsonb, status, attempt, max_attempts,&#xa;result jsonb, started_at, completed_at, idempotency_key" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_in" vertex="1">
+                    <mxGeometry x="20" y="50" width="360" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="in_redis" value="Redis (taskiq broker)&#xa;&#xa;kick-канал на task_id.&#xa;Worker слушает, читает row из tasks,&#xa;подбирает в соответствии с task_kind.&#xa;Без kick — на периодическом scan&#xa;(сейчас kick-only)." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_in" vertex="1">
+                    <mxGeometry x="400" y="50" width="360" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_run" value="Runner и обработчики задач" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="840" y="100" width="820" height="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="runner" value="_runner.run_task(task)&#xa;&#xa;1. mark_running (UPDATE status + started_at)&#xa;2. подбор handler по task_kind&#xa;3. impl(task.payload) — возвращает result&#xa;4. mark_succeeded/failed + completed_at&#xa;5. audit POST /events в loging_service&#xa;&#xa;TODO: back-off retry, idempotency check, graceful shutdown." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;fontStyle=1" parent="l_run" vertex="1">
+                    <mxGeometry x="20" y="50" width="360" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="handlers" value="Handlers (8 видов задач)&#xa;&#xa;power.on / power.off / power.reboot / power.status&#xa;inventory.sync&#xa;account.rotate_password&#xa;ipmi.rotate_password&#xa;reinstall.start" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_run" vertex="1">
+                    <mxGeometry x="400" y="50" width="380" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_clients" value="Внешние клиенты worker&#39;а" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="370" width="1620" height="300" as="geometry"/>
+                </mxCell>
+                <mxCell id="cli_server" value="server_service_client.py&#xa;&#xa;HTTP к server_service под PAT воркера.&#xa;• GET /internal/servers/{id}/ipmi/credentials&#xa;• GET /internal/servers/{id}/accounts/{aid}/password&#xa;• POST /internal/.../password/rotate&#xa;• POST /servers/{id}/inventory/sync (план)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_clients" vertex="1">
+                    <mxGeometry x="20" y="50" width="380" height="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="cli_audit" value="audit_client.py&#xa;&#xa;POST /events в loging_service под SERVICE_API_KEY.&#xa;Шлёт событие после каждой задачи:&#xa;{ action: &quot;power.reboot&quot;, status: &quot;ok|fail&quot;,&#xa;  service: &quot;server_worker&quot;, target: { server_id },&#xa;  details: { task_id, duration_ms, … } }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_clients" vertex="1">
+                    <mxGeometry x="420" y="50" width="380" height="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="cli_idrac" value="idrac_client.py (mock)&#xa;&#xa;Имитирует Redfish: задержка + псевдо-ответ.&#xa;План — sushy / прямой httpx к&#xa;/redfish/v1/Systems/.../Actions/ComputerSystem.Reset.&#xa;Для серверов без Redfish — raw IPMI (freeipmi/pyghmi)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_clients" vertex="1">
+                    <mxGeometry x="820" y="50" width="380" height="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="cli_ssh" value="ssh_client.py (mock)&#xa;&#xa;Имитирует SSH-сессию и команды:&#xa;inventory сбор фактов, chpasswd, lsblk, dmidecode.&#xa;План — asyncssh.&#xa;PXE/reinstall pipeline ещё не реализован." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_clients" vertex="1">
+                    <mxGeometry x="1220" y="50" width="380" height="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="l_flow" value="End-to-end поток одной задачи (на примере power.reboot)" style="swimlane;fontSize=14;fontStyle=1;startSize=30;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=12" parent="1" vertex="1">
+                    <mxGeometry x="40" y="700" width="1620" height="500" as="geometry"/>
+                </mxCell>
+                <mxCell id="f1" value="1. admin → server_service&#xa;POST /servers/{id}/ipmi/power/reboot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_flow" vertex="1">
+                    <mxGeometry x="20" y="60" width="320" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="f2" value="2. server_service: introspect → check action=power_reboot&#xa;Если ok — INSERT row в dev_server_worker.tasks&#xa;(status=queued, task_kind=power.reboot)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_flow" vertex="1">
+                    <mxGeometry x="360" y="60" width="380" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="f3" value="3. server_service: kick в Redis (taskiq),&#xa;ответ клиенту: 202 { task_id }" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_flow" vertex="1">
+                    <mxGeometry x="760" y="60" width="320" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="f4" value="4. server_worker подобрал task_id&#xa;runner.mark_running()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_flow" vertex="1">
+                    <mxGeometry x="1100" y="60" width="280" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="f5" value="5. worker → server_service&#xa;GET /internal/servers/{id}/ipmi/credentials&#xa;(под PAT) → {address, username, password_plaintext}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_flow" vertex="1">
+                    <mxGeometry x="20" y="170" width="360" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="f6" value="6. worker → iDRAC (mock сейчас)&#xa;Redfish ComputerSystem.Reset / power_reboot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_flow" vertex="1">
+                    <mxGeometry x="400" y="170" width="340" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="f7" value="7. worker: runner.mark_succeeded()&#xa;UPDATE tasks SET status=succeeded, completed_at, result" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_flow" vertex="1">
+                    <mxGeometry x="760" y="170" width="340" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="f8" value="8. worker → loging_service&#xa;POST /events action=power.reboot status=ok&#xa;(SERVICE_API_KEY)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_flow" vertex="1">
+                    <mxGeometry x="1120" y="170" width="320" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" style="endArrow=classic;html=1;strokeWidth=2;fontSize=11" parent="l_flow" source="f1" target="f2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" style="endArrow=classic;html=1;strokeWidth=2;fontSize=11" parent="l_flow" source="f2" target="f3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" style="endArrow=classic;html=1;strokeWidth=2;fontSize=11" parent="l_flow" source="f3" target="f4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" style="endArrow=classic;html=1;strokeWidth=2;fontSize=11" parent="l_flow" source="f4" target="f5" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1240" y="155"/>
+                            <mxPoint x="200" y="155"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e5" style="endArrow=classic;html=1;strokeWidth=2;fontSize=11" parent="l_flow" source="f5" target="f6" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" style="endArrow=classic;html=1;strokeWidth=2;fontSize=11" parent="l_flow" source="f6" target="f7" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7" style="endArrow=classic;html=1;strokeWidth=2;fontSize=11" parent="l_flow" source="f7" target="f8" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="todo" value="TODO worker&#39;а (по приоритету)&#xa;&#xa;• Реальный Redfish-клиент (sushy/httpx) вместо mock.&#xa;• Raw IPMI fallback (freeipmi/pyghmi) для серверов без Redfish.&#xa;• SSH-клиент (asyncssh) для inventory.sync и chpasswd.&#xa;• PXE-pipeline reinstall: set next-boot=PXE → reboot → wait host → post-install hook.&#xa;• Inventory feedback: POST /servers/{id}/inventory/sync в server_service после inventory.sync.&#xa;• ipmi.rotate_password — сохранение нового ciphertext обратно в server_service.&#xa;• Retry с back-off (поля attempt/max_attempts уже есть, runner не использует).&#xa;• Idempotency check на idempotency_key.&#xa;• Graceful shutdown: SIGTERM → дождаться running.&#xa;• Периодика через taskiq.scheduler: power.status всем серверам отдела + полный inventory.sync." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="l_flow" vertex="1">
+                    <mxGeometry x="20" y="280" width="1580" height="200" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram name="config / web / cli (план)" id="svc-stubs">
+        <mxGraphModel dx="1688" dy="822" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1200" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="t" value="Отложенные компоненты — config_service, web_settings, cli" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" parent="1" vertex="1">
+                    <mxGeometry x="40" y="20" width="1620" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2" value="Все три компонента — на стадии README. Описание ниже фиксирует роль и точку интеграции; реализация — следующая фаза." style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontStyle=2;fontColor=#555555" parent="1" vertex="1">
+                    <mxGeometry x="40" y="55" width="1620" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="b_cfg" value="config_service&#xa;&#xa;Назначение: безопасное хранение и выдача секретов, токенов, служебных логинов/паролей.&#xa;Сейчас (compromise): пароли живут в server_service зашифрованными (AES-256-GCM, key version в префиксе токена).&#xa;Когда взлетит: server_service делегирует хранение в config_service, оставит у себя только идентификаторы (secret_ref).&#xa;Авторизация: introspect к auth_service. Каждая выдача секрета — audit-событие.&#xa;Статус: ⛔ не начат (отложен — пароли пока в server_service)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;dashed=1" parent="1" vertex="1">
+                    <mxGeometry x="40" y="100" width="520" height="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="b_web" value="web_settings&#xa;&#xa;Назначение: web-интерфейс администрирования платформы.&#xa;Технологии (план): SPA (React/Vue) + backend-for-frontend на FastAPI (опционально) либо прямые вызовы из браузера.&#xa;Авторизация: OAuth2 password flow или Authorization Code в auth_service, далее JWT.&#xa;Функции UI: пользователи и отделы, выдача сервис-доступов, ролей, серверы, audit-просмотр, графики.&#xa;Свой источник данных НЕ имеет — обёртка над API backend-сервисов.&#xa;Статус: ⛔ не начат." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;dashed=1" parent="1" vertex="1">
+                    <mxGeometry x="580" y="100" width="520" height="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="b_cli" value="cli&#xa;&#xa;Назначение: кроссплатформенный консольный клиент к backend-сервисам.&#xa;Сценарии: автоматизация (CI, скрипты), быстрые действия администратора, локальная диагностика.&#xa;Авторизация: PAT-токен (dbos_pat_…), хранится в ~/.config/dbos/ или подобной локации.&#xa;Команды (план): dbos servers list, dbos server power on &lt;id&gt;, dbos role grant, dbos audit tail, dbos token issue.&#xa;Свой источник данных НЕ имеет — обёртка над API backend-сервисов.&#xa;Статус: ⛔ не начат." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8;dashed=1" parent="1" vertex="1">
+                    <mxGeometry x="1120" y="100" width="520" height="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="shared" value="Общее для всех трёх клиентских компонентов&#xa;&#xa;• Не являются источником данных — только проксируют запросы к backend.&#xa;• Используют ту же модель прав, что и обычный пользователь: department + сервис-роли.&#xa;• Для cli и web_settings — единая точка получения identity: POST /authorization/introspect в auth_service.&#xa;• Любая запись (создание, удаление, выдача роли) попадает в loging_service через тот сервис, который её обрабатывает." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;spacingLeft=10;verticalAlign=top;spacingTop=8" parent="1" vertex="1">
+                    <mxGeometry x="40" y="450" width="1600" height="180" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

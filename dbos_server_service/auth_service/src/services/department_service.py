@@ -1,10 +1,13 @@
-"""Department management and service access workflows."""
+"""Бизнес-логика отделов: CRUD departments + grant/revoke access к сервисам."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import ConflictError, NotFoundError
+from src.repositories.bot_roles import BotRoleRepository
 from src.repositories.departments import DepartmentRepository
+from src.repositories.groups import GroupRepository
 from src.repositories.roles import RoleRepository
+from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.services import ServiceRepository
 from src.schemas.departments import DepartmentResponse, ServiceAccessResponse
 from src.services import audit_service
@@ -17,6 +20,7 @@ async def create_department(
     display_name: str,
     request_id: str | None = None,
 ) -> DepartmentResponse:
+    """Создать отдел. Уникальность по `name`."""
     repo = DepartmentRepository(db)
     if await repo.get_by_name(name):
         raise ConflictError(error_code="DEPARTMENT_ALREADY_EXISTS", message=f"Department '{name}' already exists")
@@ -36,6 +40,7 @@ async def list_departments(
     actor_id: str | None = None,
     request_id: str | None = None,
 ) -> list[DepartmentResponse]:
+    """Все отделы."""
     repo = DepartmentRepository(db)
     result = [
         DepartmentResponse(department_id=d.id, name=d.name, display_name=d.display_name, is_active=d.is_active, created_at=d.created_at)
@@ -56,6 +61,7 @@ async def grant_service_access(
     service_name: str,
     request_id: str | None = None,
 ) -> ServiceAccessResponse:
+    """Выдать отделу access к сервису + засеять system-роль `admin` в новом scope."""
     dept_repo = DepartmentRepository(db)
     svc_repo = ServiceRepository(db)
 
@@ -79,6 +85,10 @@ async def grant_service_access(
     else:
         await dept_repo.grant_access(department_id, service_name, granted_by=actor_id)
 
+    # Засеять (или реактивировать) системную роль `admin` для пары (dept, service).
+    role_def_repo = ServiceRoleDefinitionRepository(db)
+    await role_def_repo.seed_system_admin(department_id, service_name, actor_id)
+
     await db.commit()
     audit_service.emit(
         "department.service_grant", actor_id, target_id=department_id, target_type="department",
@@ -99,6 +109,7 @@ async def revoke_service_access(
     service_name: str,
     request_id: str | None = None,
 ) -> None:
+    """Отозвать access отдела + каскадно деактивировать все зависящие роли."""
     dept_repo = DepartmentRepository(db)
     role_repo = RoleRepository(db)
 
@@ -107,9 +118,21 @@ async def revoke_service_access(
         raise NotFoundError(error_code="SERVICE_NOT_FOUND", message="Service access not found")
 
     await dept_repo.revoke_access(access, revoked_by=actor_id)
+
+    # Каскадно сносим всё, что зависело от пары (dept, service): role
+    # definitions (включая системный `admin`), user→role assignments, и
+    # group→role bindings для групп этого отдела.
+    role_def_repo = ServiceRoleDefinitionRepository(db)
+    await role_def_repo.deactivate_all_for_dept_service(department_id, service_name)
+    await role_repo.deactivate_all_in_dept_for_service(department_id, service_name)
+    group_repo = GroupRepository(db)
+    await group_repo.deactivate_all_dept_service_roles(department_id, service_name)
+    bot_role_repo = BotRoleRepository(db)
+    await bot_role_repo.deactivate_all_in_dept_for_service(department_id, service_name)
+
     await db.commit()
     audit_service.emit(
         "department.service_revoke", actor_id, target_id=department_id, target_type="department",
-        details={"service_name": service_name},
+        details={"service_name": service_name, "cascade_deactivated_roles": True},
         request_id=request_id,
     )

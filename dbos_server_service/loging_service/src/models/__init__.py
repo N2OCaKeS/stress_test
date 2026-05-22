@@ -1,4 +1,4 @@
-"""ORM models package — import all models so Alembic can discover them."""
+"""ORM-модели — импортируем все, чтобы Alembic их видел."""
 
 from src.models.audit_event import AuditEvent
 from src.models.audit_rule import AuditRule

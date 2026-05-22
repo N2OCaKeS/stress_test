@@ -1,4 +1,4 @@
-"""Department Docker registry config repository."""
+"""DAO для `DepartmentDockerRegistry` — per-department конфиг Docker registry."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

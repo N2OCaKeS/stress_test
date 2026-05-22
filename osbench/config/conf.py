@@ -12,8 +12,9 @@ SUBSYSTEM_RESULTS = f"{RESULTS_MAIN_DIR}/subsystem_results.json"
 # UNIXBENCH                                                                     #
 #################################################################################
 RESULT_UB_NAME = "unixbench_results.json"
+# Потоки - [4, 8, 16]
 LOW_CONC = 4
-HIGH_CONC = 25
+HIGH_CONC = 17
 STEP = 8
 
 # Регулярные выражения для парсинга результатов каждого теста

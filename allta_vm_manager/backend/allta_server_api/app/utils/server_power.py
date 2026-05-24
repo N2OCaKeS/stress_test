@@ -1,3 +1,4 @@
+import os
 import subprocess, logging
 import redfish
 
@@ -12,22 +13,47 @@ class ILOController:
         self.address = server.admin_panel_ip
         self.login = server.admin_panel_user
         self.password = server.admin_panel_pass
-        self.no_fprint = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-        self.old_mode_key = '-oKexAlgorithms=+diffie-hellman-group1-sha1 -oHostKeyAlgorithms=+ssh-rsa,ssh-dss -oPubkeyAcceptedAlgorithms=+ssh-rsa'
-        self.ssh_command = f'sshpass -p "{self.password}" ssh {self.no_fprint} {self.old_mode_key} -l {self.login} {self.address}'
 
-    def set_boot_order(self):        
+    def _ssh_args(self, remote_cmd: str) -> list[str]:
+        # sshpass -e читает пароль из переменной окружения SSHPASS,
+        # поэтому спецсимволы ($, ", \) никогда не попадают в shell.
+        return [
+            "sshpass", "-e",
+            "ssh",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-oKexAlgorithms=+diffie-hellman-group1-sha1",
+            "-oHostKeyAlgorithms=+ssh-rsa,ssh-dss",
+            "-oPubkeyAcceptedAlgorithms=+ssh-rsa",
+            "-l", self.login,
+            self.address,
+            remote_cmd,
+        ]
+
+    def _run(self, remote_cmd: str) -> subprocess.CompletedProcess:
+        env = {**os.environ, "SSHPASS": self.password}
+        return subprocess.run(
+            self._ssh_args(remote_cmd),
+            env=env,
+            shell=False,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+    def set_boot_order(self):
         try:
             show_config = 'show /system1/bootconfig1/oemhp_uefibootsource'
             set_new_config = 'set /system1/bootconfig1/oemhp_uefibootsource{} bootorder=1'
             for i in range(0, self.slot_count + 1, 1):
-                answer = __cmd(f'{self.ssh_command} {show_config}{i}')
+                answer = self._run(f'{show_config}{i}').stdout
                 if self.boot_type in answer and i == 1:
                     logging.debug(f'\033[93m{self.boot_type} загрузка уже в приоритете, настройка не требуется\033[0m\n')
                     break
                 elif self.boot_type in answer and i != 1:
                     logging.debug(f'\033[93m{answer}\033[0m')
-                    result = __cmd(f'{self.ssh_command} {set_new_config}'.format(i))
+                    result = self._run(set_new_config.format(i)).stdout
                     if 'Bootorder being set' in result:
                         logging.debug(f'\033[92mПриоритет загрузки успешно изменен на {self.boot_type}\033[0m\n')
                     break
@@ -35,13 +61,13 @@ class ILOController:
             logging.error(f'Type:{type(e).__name__}, \nMessage:{str(e)}')
 
     def power_on(self):
-        subprocess.run(f"{self.ssh_command} power on", shell=True, check=False)
+        return self._run("power on")
 
     def power_off(self):
-        subprocess.run(f"{self.ssh_command} power off hard", shell=True, check=False)
+        return self._run("power off hard")
 
     def reboot(self):
-        subprocess.run(f"{self.ssh_command} reset /system1", shell=True, check=False)
+        return self._run("reset /system1")
 
 class IDRACController:
     def __init__(self, server: PhysicalServer):

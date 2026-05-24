@@ -83,6 +83,6 @@ def reboot_server(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
     service = ServerPowerService(server=server)
-    service.set_boot_order()
+    service.reboot()
 
     return server

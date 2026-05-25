@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "server-worker"
+version = "0.1.0"
+description = "DBOS server_worker — async task runner for iDRAC/iLO/PXE/inventory operations"
+authors = []
+readme = "README.md"
+packages = [{ include = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+taskiq = "0.11.18"
+taskiq-redis = "1.1.0"
+sqlalchemy = "2.0.40"
+psycopg = { version = "3.2.6", extras = ["binary"] }
+pydantic = "2.11.3"
+pydantic-settings = "2.8.1"
+alembic = "1.15.2"
+httpx = "0.28.1"
+asyncssh = "2.23.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "9.0.3"
+pytest-asyncio = "^1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short -q"
+asyncio_mode = "auto"

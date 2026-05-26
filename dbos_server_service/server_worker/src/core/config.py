@@ -194,6 +194,22 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── SSH host-key verification ────────────────────────────────────────
+    # `True` (дефолт) — SshClient отказывается соединяться без known_hosts:
+    # `asyncssh.connect(known_hosts=None)` принимает любой host-key без
+    # проверки, что открывает MITM при inventory-sync и rotate_password
+    # (подменённый SSH-сервер уведёт новый пароль). Отключать только в
+    # dev/test-стендах, где management-сеть доверенная и known_hosts ещё
+    # негде взять. Env-имя сохранено прежним (`SSH_STRICT_HOST_KEY_CHECKING`).
+    ssh_strict_host_key_checking: bool = Field(
+        default=True,
+        description=(
+            "Require a known_hosts file for SSH connections. True (default) "
+            "refuses accept-any-host connections — protects inventory/rotate "
+            "from MITM. Set false only in trusted dev/test networks."
+        ),
+    )
+
     # ── Background master-key rotation ───────────────────────────────────
     # Periodic task `secrets.reencrypt_lazy` зовёт server_service
     # `/internal/secrets/migration_status` + `/reencrypt_batch`. Активна
@@ -201,13 +217,20 @@ class Settings(BaseSettings):
     # power/SSH/inventory задачами за DB-write'ы и CPU. Дефолт интервала
     # 300s — re-encrypt latency-некритичен, но и не хочется ждать сутки
     # после bump'а активной версии ключа.
+    # Дефолт намеренно `False`: без явного `SECRETS_REENCRYPT_ENABLED=true`
+    # worker не дёргает `/internal/secrets/reencrypt_batch`. При `True` он
+    # начал бы периодическую re-encryption с первого старта, даже когда
+    # миграция ключа не запланирована — а при копировании prod-манифеста в
+    # dev/staging (где `/internal/secrets/*` недостижим или ключ другой) это
+    # включалось бы неожиданно. Включать осознанно на время миграции ключа.
+    # Симметрично другим prod-guard-настройкам (secure-by-default).
     secrets_reencrypt_enabled: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Toggle the background secret re-encryption periodic task. "
-            "Disable in tests / dev stacks where the migration endpoints "
-            "aren't reachable. Default True — production worker должен "
-            "доедать миграцию автоматически."
+            "Default False — enable explicitly (SECRETS_REENCRYPT_ENABLED=true) "
+            "only while a master-key migration is in progress, so it never "
+            "fires unexpectedly when a prod manifest is copied to dev/staging."
         ),
     )
     secrets_reencrypt_interval_seconds: float = Field(
@@ -352,6 +375,26 @@ class Settings(BaseSettings):
                     f"(got scheme={scheme!r}, host={host!r}); plain http "
                     "exposes worker traffic to MITM/sniff in the cluster"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _require_ssh_strict_host_key_in_prod(self) -> "Settings":
+        """В production запрещаем accept-any-host SSH.
+
+        `SSH_STRICT_HOST_KEY_CHECKING=false` отключает проверку host-key —
+        любой подменённый SSH-сервер в management-сети уведёт ротируемый
+        пароль или отравит inventory. В проде это недопустимо; в non-prod
+        отключение разрешено (dev/test-стенды без known_hosts).
+        """
+        if (
+            self.app_env.lower() == "production"
+            and not self.ssh_strict_host_key_checking
+        ):
+            raise ValueError(
+                "SSH_STRICT_HOST_KEY_CHECKING must stay true in production "
+                "(false accepts any host key — MITM on inventory / password "
+                "rotation in the management network)."
+            )
         return self
 
 

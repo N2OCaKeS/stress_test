@@ -36,6 +36,11 @@ def _make_settings(monkeypatch: pytest.MonkeyPatch, **overrides: str):
     # ключа. Тесты, которые специально проверяют этот guard, перекрывают
     # значение через `overrides`.
     monkeypatch.setenv("LOGGING_SERVICE_API_KEY", "dummy-test-key")
+    # conftest выставляет SSH_STRICT_HOST_KEY_CHECKING=false для accept-any
+    # SSH-моков; здесь возвращаем secure-дефолт, иначе production-тесты
+    # ловят `_require_ssh_strict_host_key_in_prod`. Тест этого guard'а сам
+    # перекрывает значение через overrides.
+    monkeypatch.setenv("SSH_STRICT_HOST_KEY_CHECKING", "true")
     for key, value in overrides.items():
         monkeypatch.setenv(key, value)
 
@@ -241,3 +246,48 @@ class TestLoggingApiKeyRequiredInProduction:
             LOGGING_SERVICE_API_KEY="",
         )
         assert s.logging_service_api_key == ""
+
+
+class TestSshStrictHostKeyRequiredInProduction:
+    """Production-guard: accept-any-host SSH (`SSH_STRICT_HOST_KEY_CHECKING=
+    false`) недопустим в проде — подменённый SSH-сервер уведёт ротируемый
+    пароль или отравит inventory."""
+
+    def test_production_rejects_disabled_strict(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with pytest.raises(ValueError, match="SSH_STRICT_HOST_KEY_CHECKING"):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="production",
+                REDIS_URL="redis://:pw@redis:6379/0",
+                SSH_STRICT_HOST_KEY_CHECKING="false",
+            )
+
+    def test_production_accepts_strict_enabled(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        s = _make_settings(
+            monkeypatch,
+            APP_ENV="production",
+            REDIS_URL="redis://:pw@redis:6379/0",
+            SSH_STRICT_HOST_KEY_CHECKING="true",
+        )
+        assert s.ssh_strict_host_key_checking is True
+
+    @pytest.mark.parametrize("env", ["local", "dev", "test", "staging"])
+    def test_non_production_allows_disabled_strict(
+        self, monkeypatch: pytest.MonkeyPatch, env: str
+    ) -> None:
+        s = _make_settings(
+            monkeypatch,
+            APP_ENV=env,
+            SSH_STRICT_HOST_KEY_CHECKING="false",
+        )
+        assert s.ssh_strict_host_key_checking is False
+
+    def test_default_is_strict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Без явного env — secure default (True). overrides пустые, но
+        # _make_settings выставляет true; проверяем поле Settings напрямую.
+        from src.core.config import Settings
+        assert Settings.model_fields["ssh_strict_host_key_checking"].default is True

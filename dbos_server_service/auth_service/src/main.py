@@ -84,6 +84,11 @@ _RATE_LIMITED_PATHS_FACTORY = {
     # должен попадать под тот же лимит чтобы атакующий не обходил `/login`-rate
     # через `/token` form-call'ом.
     "POST /api/auth/v1/token": "login_rate_limit",
+    # OAuth2 token endpoint (authorization_code + client_credentials grant).
+    # client_credentials проверяет только client_secret через compare_digest,
+    # без per-client lockout — без per-IP лимита атакующий с известным
+    # client_id перебирает секрет без ограничений. Тот же login-лимит.
+    "POST /api/auth/v1/oauth2/token": "login_rate_limit",
     "POST /api/auth/v1/refresh": "refresh_rate_limit",
     "GET /api/auth/v1/docker/token": "docker_token_rate_limit",
     # M2M-call часто, но не безудержно — закрываем от scan/brute по введённым
@@ -266,15 +271,16 @@ def create_application() -> FastAPI:
         else:
             action, emit_status = "http.server_error", "failure"
 
-        # context уже выставлен внешним middleware — emit() сам подхватит actor/ua/ip
-        asyncio.ensure_future(
-            asyncio.to_thread(
-                audit_service.emit,
-                action,
-                status=emit_status,
-                allowed=False,
-                details=details,
-            )
+        # context уже выставлен внешним middleware — emit() сам подхватит actor/ua/ip.
+        # Зовём emit напрямую в текущем event-loop'е (НЕ через asyncio.to_thread):
+        # в worker-потоке нет running loop'а, emit ловил бы RuntimeError и уходил
+        # в sync-fallback без HTTP-доставки — 4xx/5xx не доезжали бы до
+        # loging_service. В loop'е emit сам планирует доставку через create_task.
+        audit_service.emit(
+            action,
+            status=emit_status,
+            allowed=False,
+            details=details,
         )
         return response
 

@@ -1,11 +1,8 @@
 """Интеграция: HTTP-запрос → middleware заполняет audit_context → emit подхватывает.
 
 Запросы идут через AsyncClient + ASGITransport (in-process), audit_service.emit
-перехватывается через monkeypatch httpx.post в audit_service.
+перехватывается через monkeypatch httpx.AsyncClient в audit_service.
 """
-
-import logging
-from unittest.mock import patch
 
 import pytest
 
@@ -14,17 +11,15 @@ from src.services import audit_service
 
 @pytest.fixture()
 def capture_audit_payloads(monkeypatch):
-    """Перехватывает payload из emit() и через async-путь (AsyncClient в
-    in-process FastAPI лупе), и через sync-fallback (worker-поток без loop'а).
+    """Перехватывает payload из emit() через async-путь.
 
-    Sync-fallback больше не делает blocking httpx.post — он пишет payload в
-    `logger.info('audit_event_fallback ...')`. Поэтому подменяем и
-    AsyncClient (для login/refresh — emit из async handler'а), и logger.info
-    (для middleware `audit_access`, который зовёт emit через
-    `asyncio.to_thread` без running loop).
+    И emit из async handler'ов (login/refresh/user.create), и emit из
+    middleware `audit_access` (http.*) идут одним путём: в running event-loop'е
+    `emit` планирует доставку через `loop.create_task(_send_to_logging_service)`,
+    которая постит в `httpx.AsyncClient` (здесь подменён на mock). Middleware
+    больше НЕ использует `asyncio.to_thread`, поэтому sync-fallback не
+    задействуется — отдельно перехватывать `logger.info` не нужно.
     """
-    from src.services import audit_service as _audit_service
-
     captured: list[dict] = []
 
     class _AsyncClient:
@@ -41,18 +36,6 @@ def capture_audit_payloads(monkeypatch):
             return R()
 
     monkeypatch.setattr("src.services.audit_service.httpx.AsyncClient", _AsyncClient)
-
-    original_info = _audit_service.logger.info
-
-    def fake_info(msg, *args, **kwargs):
-        if isinstance(msg, str) and msg.startswith("audit_event_fallback") and args:
-            payload = args[0]
-            if isinstance(payload, dict):
-                captured.append(payload)
-                return
-        original_info(msg, *args, **kwargs)
-
-    monkeypatch.setattr(_audit_service.logger, "info", fake_info)
     monkeypatch.setattr("src.services.audit_service.get_settings", lambda: type(
         "S", (), {"logging_service_url": "http://test", "logging_service_api_key": "k"},
     )())
@@ -150,8 +133,14 @@ class TestAuthenticatedRequestContext:
     async def test_http_access_denied_event_for_401(
         self, client, capture_audit_payloads
     ):
+        import asyncio
+
         r = await client.get("/api/auth/v1/me")  # без Bearer
         assert r.status_code == 401
+
+        # middleware шлёт http-audit через loop.create_task — дренируем
+        # запланированную доставку перед проверкой.
+        await asyncio.sleep(0)
 
         # middleware audit_access должен сэмитить http.access_denied
         denied = [p for p in capture_audit_payloads

@@ -137,6 +137,13 @@ class Settings(BaseSettings):
         default=False, alias="RATE_LIMIT_HEADERS_ENABLED"
     )
 
+    # Включает `Strict-Transport-Security` на всех ответах. Только за
+    # https-фронтом — иначе HTTP-клиенты получают header и ломаются на
+    # rebound'е. Симметрично auth_service.
+    security_hsts_enabled: bool = Field(
+        default=False, alias="SECURITY_HSTS_ENABLED"
+    )
+
     # Strict-mode для валидации `X-Service-Identity` на service-token
     # эндпоинтах. Симметрично с auth_service:
     #
@@ -263,6 +270,34 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "INTROSPECT_SERVICE_API_KEY must be set when SERVICE_API_KEYS "
                     "(per-service mode) is configured in production"
+                )
+
+            # Коллизия introspect-ключа с любым ingest-ключом убивает
+            # key-separation, ради которой per-service mode и существует.
+            # Если оператор скопировал, например, ключ auth_service и в
+            # INTROSPECT_SERVICE_API_KEY — утёкший ingest-ключ auth_service
+            # сразу даёт право дёргать /introspect от имени loging_service.
+            # Ловим это на старте, а не в post-mortem.
+            if (
+                self.service_api_keys
+                and self.introspect_service_api_key
+                and self.introspect_service_api_key in self.service_api_keys.values()
+            ):
+                raise ValueError(
+                    "INTROSPECT_SERVICE_API_KEY must be distinct from all "
+                    "SERVICE_API_KEYS values; reusing an ingest key for introspect "
+                    "breaks the per-service key-separation invariant"
+                )
+
+            # AUTH_SERVICE_URL обязателен в проде. Без него admin/reader-
+            # эндпоинты не падают на старте, но `_fetch_identity` на каждом
+            # запросе бросает 503 AUTH_SERVICE_NOT_CONFIGURED — pod выглядит
+            # живым, а все JWT-защищённые ручки молча отдают 503. Fail-fast
+            # на старте лучше, чем загадочный runtime-503.
+            if not self.auth_service_url:
+                raise ValueError(
+                    "AUTH_SERVICE_URL must be set in production — required for "
+                    "JWT introspection on admin/reader endpoints"
                 )
 
             # ── AUTH_SERVICE_URL https-only гард ─────────────────────────

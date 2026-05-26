@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
@@ -97,9 +98,44 @@ limiter = Limiter(
 from src.api.router import api_router  # noqa: E402 — см. ordering note выше
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Базовые security headers (HSTS опционально, X-Frame-Options, CSP).
+
+    HSTS включается только при `SECURITY_HSTS_ENABLED=true` — за http-фронтом
+    он сломает rebound. Зеркалит auth_service.
+    """
+
+    def __init__(self, app, *, hsts_enabled: bool):
+        super().__init__(app)
+        self._hsts_enabled = hsts_enabled
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        # CSP для JSON-API минимальный — disallow всё лишнее. Swagger UI
+        # на /docs (dev-only) тянет свои inline-скрипты, но `frame-ancestors
+        # 'none'` парный с X-Frame-Options прикрывает clickjacking.
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'none'; frame-ancestors 'none'",
+        )
+        if self._hsts_enabled:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=63072000; includeSubDomains",
+            )
+        return response
+
+
 def create_application() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.app_log_level)
+
+    _is_prod = settings.app_env == "production"
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -172,9 +208,12 @@ def create_application() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        # В проде Swagger/OpenAPI скрыты: persistAuthorization кладёт
+        # SERVICE_API_KEY в localStorage браузера, а сам OpenAPI раскрывает
+        # схемы и error-codes. Зеркалит auth_service.
+        docs_url=None if _is_prod else "/docs",
+        redoc_url=None if _is_prod else "/redoc",
+        openapi_url=None if _is_prod else "/openapi.json",
         debug=settings.app_debug,
         swagger_ui_parameters={"persistAuthorization": True},
         lifespan=lifespan,
@@ -268,9 +307,17 @@ def create_application() -> FastAPI:
         if path in _SKIP_AUDIT_PATHS:
             return response
 
-        # Скипаем POST от сервисов (ingest событий, регистрация событий).
+        # POST от сервисов (ingest событий, регистрация событий): успешный
+        # приём НЕ аудитируем — это осознанный anti-amplification (loging не
+        # должен писать audit-событие на каждое принятое событие, иначе
+        # рекурсия/усиление). Но auth-провалы (401/403) на этих путях
+        # пропускать нельзя: иначе перебор SERVICE_API_KEY не оставляет следа
+        # ни в журнале, ни у SOC. Проваленный ingest аудитируется ниже как
+        # обычный http.access_denied (actor_id=None), не как ingest-событие —
+        # петли не создаёт.
         if request.method == "POST" and path.startswith(_INGEST_PREFIXES):
-            return response
+            if status_code not in (401, 403):
+                return response
 
         identity = getattr(request.state, "auth_identity", None)
         actor_id = identity.get("user_id") if identity else None
@@ -379,6 +426,14 @@ def create_application() -> FastAPI:
                         },
                     )
         return await call_next(request)
+
+    # SecurityHeadersMiddleware регистрируем последним → outermost слой.
+    # Так заголовки попадают на КАЖДЫЙ ответ, включая 413 от
+    # `limit_body_size` и 429 от rate-limit, а не только на route-ответы.
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        hsts_enabled=settings.security_hsts_enabled,
+    )
 
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException):

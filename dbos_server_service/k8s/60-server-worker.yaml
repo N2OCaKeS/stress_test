@@ -7,9 +7,10 @@ data:
   APP_ENV: production
   WORKER_LOG_LEVEL: INFO
   # Cluster-internal URLs соседних сервисов.
-  AUTH_SERVICE_URL: http://auth-service:8000
-  LOGGING_SERVICE_URL: http://logging-service:8001
-  SERVER_SERVICE_URL: http://server-service:8002
+  # https требует TLS-термирования в кластере — см. README про cluster-internal TLS.
+  AUTH_SERVICE_URL: https://auth-service:8000
+  LOGGING_SERVICE_URL: https://logging-service:8001
+  SERVER_SERVICE_URL: https://server-service:8002
   # ── Redfish / BMC ────────────────────────────────────────────────────────
   # Slot iDRAC root-account для rotate-password. Dell = 2, HPE = 1, SMC = 3.
   IPMI_USER_ID: "2"

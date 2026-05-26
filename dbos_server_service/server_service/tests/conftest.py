@@ -23,7 +23,7 @@ os.environ.setdefault(
     os.environ.get("TEST_DATABASE_URL", "postgresql+psycopg://app_user:app_password@postgres:5432/server_db_test"),
 )
 os.environ.setdefault("SERVER_ENCRYPTION_KEY", "test-server-encryption-key-do-not-use-anywhere-else")
-os.environ.setdefault("SERVER_ENCRYPTION_KEY_VERSION", "1")
+os.environ.setdefault("SERVER_ENCRYPTION_KEY_VERSION", "2")
 # Тестовый stable HKDF salt — 32 hex (16 байт). В production/staging пустой
 # `HKDF_SALT_HEX` отбивается Settings, в dev/test/local допустим (fallback из
 # secrets_service подхватится сам). Здесь выставляем явно, чтобы прогон тестов

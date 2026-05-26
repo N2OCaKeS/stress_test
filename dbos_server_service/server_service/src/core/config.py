@@ -102,10 +102,13 @@ class Settings(BaseSettings):
     )
     server_encryption_key_version: int = Field(
         default=2,
+        ge=2,
         description=(
             "Активная версия ключа, которая пишется в новые ciphertext'ы (формат `v<N>$...`). "
             "Версия 1 использовала legacy одношаговый SHA-256 и оставлена только для "
-            "расшифровки старых ciphertext'ов; версия >= 2 — HKDF-SHA256."
+            "расшифровки старых ciphertext'ов; версия >= 2 — HKDF-SHA256. Запрет на v1 "
+            "касается только НОВОЙ записи: legacy v1-ciphertext'ы расшифровываются по "
+            "версии из их префикса (ключи SERVER_ENCRYPTION_KEY__vN остаются доступны)."
         ),
     )
     hkdf_salt_hex: str = Field(
@@ -289,6 +292,69 @@ class Settings(BaseSettings):
                     "Anonymous Redis exposes the taskiq queue to RPUSH from "
                     "any co-located container."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _require_min_key_version_in_prod(self) -> "Settings":
+        """В production/staging активная версия ключа обязана быть >= 2.
+
+        Версия 1 — legacy одношаговый SHA-256 без HKDF-salt и без итераций.
+        Поле `server_encryption_key_version` уже ограничено `ge=2` на уровне
+        Field, так что v1 не пройдёт ни в одном окружении; этот guard —
+        defense-in-depth для prod/staging с явным сообщением. Расшифровка
+        старых v1-ciphertext'ов при этом сохраняется: их версия читается из
+        префикса самого ciphertext'а, а не из этого поля.
+        """
+        if self.app_env.lower() in {"production", "staging"} and self.server_encryption_key_version < 2:
+            raise ValueError(
+                "SERVER_ENCRYPTION_KEY_VERSION must be >= 2 in "
+                f"{self.app_env} (v1 uses legacy SHA-256 without HKDF; "
+                "new writes under v1 are forbidden)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_service_api_key_in_prod(self) -> "Settings":
+        """В production/staging `SERVICE_API_KEY` обязан быть непустым.
+
+        Пустой ключ → introspect-вызовы уходят с `Authorization: Bearer `
+        (пустой bearer), auth_service отвечает 401, и сервис деградирует до
+        вечных 503 — но это всплывает только в рантайме. Ловим на старте,
+        симметрично `_require_redis_auth_in_prod`. В dev/test/local пустой
+        ключ допустим (introspect замокан / auth_service не используется).
+        """
+        if self.app_env.lower() in {"production", "staging"} and not self.service_api_key:
+            raise ValueError(
+                f"SERVICE_API_KEY must be set in {self.app_env}; "
+                "an empty key makes every introspect call to auth_service "
+                "fail with 401"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_https_logging_url_in_prod(self) -> "Settings":
+        """В production/staging `LOGGING_SERVICE_URL` должен быть https://.
+
+        Зеркало `_require_https_auth_url_in_prod`. Audit-события несут
+        actor_id/username/IP/action/department_id — на plain http в кластере
+        любой sniff/MITM в network namespace перехватит security-чувствительные
+        события (rotate_password, view_credentials, power_on, ban) или подменит
+        их. Localhost — исключение для devcontainer / port-forward. Пустой URL
+        (удалённый аудит отключён) проверку пропускает.
+        """
+        if self.app_env.lower() not in {"production", "staging"}:
+            return self
+        if not self.logging_service_url:
+            return self
+        parsed = urlparse(self.logging_service_url)
+        scheme = (parsed.scheme or "").lower()
+        host = (parsed.hostname or "").lower()
+        if scheme == "http" and host not in _LOCAL_HOSTS:
+            raise ValueError(
+                "LOGGING_SERVICE_URL must use https:// in "
+                f"{self.app_env} (got scheme={scheme!r}, host={host!r}); "
+                "audit events carry actor PII and security-sensitive data"
+            )
         return self
 
     @model_validator(mode="after")

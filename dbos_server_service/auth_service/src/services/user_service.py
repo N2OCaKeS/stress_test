@@ -129,6 +129,17 @@ async def create_user(
         if actor and actor.department_id != department_id:
             raise AuthorizationError(error_code="DEPARTMENT_ACCESS_DENIED", message="department_admin can only create users in their own department")
 
+    # Только account_admin раздаёт платформенные роли. Без этой проверки
+    # department_admin мог бы создать юзера с platform_role=account_admin и
+    # подняться до полного доступа к платформе. Поле приходит уже валидным
+    # enum'ом (PlatformRole), так что достаточно отбить любой не-None у
+    # не-account_admin'а.
+    if actor_role != PlatformRole.ACCOUNT_ADMIN and platform_role is not None:
+        raise AuthorizationError(
+            error_code="PLATFORM_ROLE_ASSIGNMENT_DENIED",
+            message="Only account_admin can assign platform roles",
+        )
+
     from src.core.constants import PlatformRole as PR
     _platform_admins = {PR.ACCOUNT_ADMIN, PR.LOGING_ADMIN}
     if platform_role not in _platform_admins and not department_id:

@@ -28,6 +28,7 @@ from src.main import limiter
 LOGIN_URL = "/api/auth/v1/login"
 REFRESH_URL = "/api/auth/v1/refresh"
 DOCKER_TOKEN_URL = "/api/auth/v1/docker/token"
+OAUTH2_TOKEN_URL = "/api/auth/v1/oauth2/token"
 HEALTH_URL = "/api/auth/v1/health"
 
 
@@ -204,6 +205,37 @@ class TestDockerTokenRateLimit:
             headers={"Authorization": _basic_auth("nobody", "wrong")},
         )
         assert resp.status_code == 429
+
+
+# ── /oauth2/token rate limit ─────────────────────────────────────────────────
+
+
+class TestOAuth2TokenRateLimit:
+    async def test_oauth2_token_uses_login_limit(self):
+        """oauth2/token делит login_rate_limit — отдельной настройки нет."""
+        from src.core.config import get_settings
+        assert get_settings().login_rate_limit == "10/minute"
+
+    async def test_oauth2_token_429_after_exceeding_limit(
+        self, tight_login_limit, client
+    ):
+        """С тайтлимитом 3/minute: 4-й /oauth2/token → 429.
+
+        Закрывает brute-force `client_secret` через client_credentials grant:
+        compare_digest без per-client lockout, перебор секрета ограничивается
+        только этим per-IP лимитом.
+        """
+        body = {
+            "grant_type": "client_credentials",
+            "client_id": "cli_nonexistent",
+            "client_secret": "wrong",
+        }
+        for _ in range(3):
+            resp = await client.post(OAUTH2_TOKEN_URL, json=body)
+            assert resp.status_code != 429, f"premature 429: {resp.status_code} {resp.text}"
+
+        resp = await client.post(OAUTH2_TOKEN_URL, json=body)
+        assert resp.status_code == 429, f"expected 429, got {resp.status_code}: {resp.text}"
 
 
 # ── Health не лимитируется ───────────────────────────────────────────────────

@@ -100,12 +100,11 @@ class TestMigrationStatusShape:
         await db.flush()
         await db.commit()
 
-        # Bump active to v2 if not already (default тестов = 1, мы хотим v2
-        # чтобы записанный v1 стал legacy).
+        # Активная версия должна быть v2 (default тестов), чтобы записанный
+        # v1-токен стал legacy и попал в remaining-счётчик миграции.
         settings = get_settings()
         if settings.server_encryption_key_version == 1:
-            # Тестовый conftest хардкодит v=1 → пропустим: трюк не сработает.
-            pytest.skip("conftest forces v1 as active; cannot verify remaining>0 here")
+            pytest.skip("active version is v1; cannot verify remaining>0 here")
 
         resp = await client.get(
             f"{BASE}/migration_status", headers=_hdr(worker_pat_token)

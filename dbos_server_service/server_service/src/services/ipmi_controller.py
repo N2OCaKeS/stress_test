@@ -96,7 +96,7 @@ async def create_controller(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на создании IPMI-контроллера: %s", exc.orig)
+        logger.warning("IntegrityError на создании IPMI-контроллера: %s", type(exc.orig).__name__)
         audit_service.emit(
             "ipmi_controller.create",
             target_type="ipmi_controller",
@@ -247,7 +247,7 @@ async def update_controller(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на обновлении IPMI %s: %s", server_id, exc.orig)
+        logger.warning("IntegrityError на обновлении IPMI %s: %s", server_id, type(exc.orig).__name__)
         audit_service.emit(
             "ipmi_controller.update",
             target_id=obj.id, target_type="ipmi_controller",

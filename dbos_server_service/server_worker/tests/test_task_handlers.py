@@ -534,7 +534,10 @@ class TestIpmiRotate:
         # тот же пароль ушёл в BMC PATCH
         assert fake_rf.rotate_calls == [(2, new_password)]  # default user_id=2
         assert t.result["server_id"] == "srv_1"
-        assert t.result["ipmi_host"] == "https://bmc.test"
+        # IP/endpoint BMC наружу не уходит — в result только controller_id.
+        assert t.result["controller_id"] == "ipm_1"
+        assert "ipmi_host" not in t.result
+        assert "endpoint_url" not in t.result
         assert t.result["user_id"] == 2
         assert t.result["controller_rotated"] is True
         assert t.result["password_rotated_at"] == "2026-05-21T10:00:00Z"

@@ -9,6 +9,8 @@
 
 from datetime import datetime, timezone
 
+import pytest
+
 from tests.conftest import make_event
 
 
@@ -587,3 +589,132 @@ class TestPendingAuditTasksDrain:
                 break
             time.sleep(0.05)
         assert len(events) >= 1, f"audit event не записался — task потерялась? Pending={len(__import__('src.main', fromlist=['_pending_audit_tasks'])._pending_audit_tasks)}"
+
+
+# ── Security headers ──────────────────────────────────────────────────────────
+
+
+class TestSecurityHeaders:
+    """SecurityHeadersMiddleware ставит X-Frame-Options / X-Content-Type-Options /
+    Referrer-Policy / CSP на каждом ответе. HSTS — только при явном флаге.
+    """
+
+    def test_headers_present_on_health(self, client):
+        r = client.get("/api/logging/v1/health")
+        assert r.headers.get("X-Frame-Options") == "DENY"
+        assert r.headers.get("X-Content-Type-Options") == "nosniff"
+        assert r.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+        csp = r.headers.get("Content-Security-Policy", "")
+        assert "frame-ancestors 'none'" in csp
+
+    def test_headers_present_on_error_response(self, client):
+        # 401 от require_admin — заголовки должны быть и здесь (outermost слой).
+        r = client.get("/api/logging/v1/rules")
+        assert r.status_code == 401
+        assert r.headers.get("X-Frame-Options") == "DENY"
+        assert r.headers.get("X-Content-Type-Options") == "nosniff"
+
+    def test_hsts_off_by_default(self, client):
+        r = client.get("/api/logging/v1/health")
+        assert "Strict-Transport-Security" not in r.headers
+
+
+# ── Docs hidden in production ────────────────────────────────────────────────
+
+
+class TestDocsHiddenInProduction:
+    """`/docs`, `/redoc`, `/openapi.json` отдаются только вне production.
+
+    В проде Swagger с persistAuthorization кладёт SERVICE_API_KEY в localStorage,
+    а OpenAPI раскрывает схемы и error-codes — закрываем как в auth_service.
+    """
+
+    @staticmethod
+    def _build_app(monkeypatch, app_env: str):
+        monkeypatch.setenv("APP_ENV", app_env)
+        if app_env == "production":
+            # production-guard требует реальные секреты + AUTH_SERVICE_URL.
+            monkeypatch.setenv("SERVICE_API_KEY", "real-secret-xyz-1234567890")
+            monkeypatch.setenv("APP_DEBUG", "false")
+            monkeypatch.setenv("AUTH_SERVICE_URL", "https://auth.example.com")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        try:
+            from src.main import create_application
+            return create_application()
+        finally:
+            get_settings.cache_clear()
+
+    def test_docs_disabled_in_production(self, monkeypatch):
+        app = self._build_app(monkeypatch, "production")
+        assert app.docs_url is None
+        assert app.redoc_url is None
+        assert app.openapi_url is None
+
+    @pytest.mark.parametrize("app_env", ["local", "development", "test"])
+    def test_docs_enabled_outside_production(self, monkeypatch, app_env):
+        app = self._build_app(monkeypatch, app_env)
+        assert app.docs_url == "/docs"
+        assert app.redoc_url == "/redoc"
+        assert app.openapi_url == "/openapi.json"
+
+
+# ── Ingest auth-failure auditing (brute-force visibility) ─────────────────────
+
+
+class TestIngestAuthFailureAudited:
+    """Успешный ingest НЕ аудитируется (anti-amplification), но 401/403 на
+    ingest-путях ДОЛЖНЫ оставлять след http.access_denied — иначе перебор
+    SERVICE_API_KEY невидим для SOC.
+    """
+
+    def test_wrong_key_on_events_is_audited(self, client, db, TestSessionLocal, monkeypatch):
+        import src.db.session as session_module
+        monkeypatch.setattr(session_module, "SessionLocal", TestSessionLocal)
+
+        from src.models.audit_event import AuditEvent
+        from sqlalchemy import select
+        import time
+
+        r = client.post(
+            "/api/logging/v1/events",
+            json=make_event(),
+            headers={"Authorization": "Bearer wrong-key"},
+        )
+        assert r.status_code == 401
+
+        events = []
+        for _ in range(20):
+            events = db.execute(
+                select(AuditEvent).where(AuditEvent.action == "http.access_denied")
+            ).scalars().all()
+            if events:
+                break
+            time.sleep(0.05)
+        assert len(events) >= 1, "401 на ingest должен писаться как http.access_denied"
+        ev = events[0]
+        assert ev.status == "denied"
+        assert ev.allowed is False
+        assert ev.details.get("path") == "/api/logging/v1/events"
+
+    def test_successful_ingest_not_audited(self, client, auth_headers, db, TestSessionLocal, monkeypatch):
+        import src.db.session as session_module
+        monkeypatch.setattr(session_module, "SessionLocal", TestSessionLocal)
+
+        from src.models.audit_event import AuditEvent
+        from sqlalchemy import select
+        import time
+
+        r = client.post(
+            "/api/logging/v1/events", json=make_event(), headers=auth_headers
+        )
+        assert r.status_code == 201
+
+        # Дать грейс на потенциальный (нежелательный) audit-task.
+        time.sleep(0.2)
+        # Никакого http.* события от успешного ingest'а быть не должно —
+        # иначе loging аудирует собственный приём (amplification/рекурсия).
+        http_events = db.execute(
+            select(AuditEvent).where(AuditEvent.action.like("http.%"))
+        ).scalars().all()
+        assert http_events == [], "успешный ingest не должен порождать http.* audit"

@@ -8,8 +8,10 @@ data:
   APP_HOST: 0.0.0.0
   APP_PORT: "8001"
   APP_LOG_LEVEL: INFO
-  # URL auth_service внутри namespace — для проверки Bearer JWT
-  AUTH_SERVICE_URL: http://auth-service:8000
+  # URL auth_service внутри namespace — для проверки Bearer JWT.
+  # https внутри кластера требует TLS-термирования (mesh-mTLS / sidecar /
+  # TLS на самих сервисах) — см. README, раздел про cluster-internal TLS.
+  AUTH_SERVICE_URL: https://auth-service:8000
 
 ---
 apiVersion: apps/v1

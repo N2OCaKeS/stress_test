@@ -8,12 +8,14 @@
 Клиент строится поверх `asyncio.create_subprocess_exec`:
 
 * argv формируется списком — ни одного shell-метасимвола в командной строке;
-* `password` передаётся через `-P <pwd>` argv (а не stdin), потому что
-  legacy ipmitool 1.8.18 не умеет stdin-prompt и `-E`-переменную не на всех
-  билдах читает корректно — это компромисс между совместимостью и тем, что
-  пароль будет виден в `ps` на BMC-хосте на время вызова;
-* `argv_safe` в `IpmitoolError` и в логах — копия argv с маскированным
-  значением после `-P`, чтобы пароль не утёк в `task.last_error`, в
+* `password` НЕ кладётся в argv: ipmitool читает его из переменной
+  окружения `IPMI_PASSWORD` по флагу `-E`. На Linux argv процесса читается
+  через `/proc/<pid>/cmdline` любым процессом с тем же UID, поэтому `-P <pwd>`
+  засветил бы BMC-пароль в `ps` на время вызова. Env дочернего процесса
+  таким образом не виден;
+* `argv_safe` в `IpmitoolError` и в логах — копия argv (пароля в нём больше
+  нет, но для пароля при `user set password` он подставляется в argv и
+  маскируется), чтобы пароль не утёк в `task.last_error`, в
   `audit.details.error` и в stdout publisher'а.
 
 Все методы async и не блокируют event loop: subprocess'ом управляет asyncio,
@@ -31,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Final, Literal
@@ -40,6 +43,10 @@ logger = logging.getLogger(__name__)
 # Стандартный путь к ipmitool на Astra/Debian/Ubuntu. Если в проде ipmitool
 # поставят в /opt/... — можно вынести в settings, пока константа.
 _IPMITOOL_BIN: Final[str] = "ipmitool"
+
+# Имя env-переменной, из которой ipmitool читает пароль по флагу `-E`.
+# Так пароль не попадает в argv (а значит и в /proc/<pid>/cmdline и `ps`).
+_IPMI_PASSWORD_ENV: Final[str] = "IPMI_PASSWORD"
 
 # Таймаут по умолчанию: ipmitool с lanplus обычно отвечает за 1-3 секунды,
 # 30s — широкий запас под флапающие BMC. На реальных мёртвых контроллерах
@@ -67,8 +74,10 @@ class IpmitoolError(Exception):
     возвращает специфичные коды, обычно 1 на любую ошибку).
     `stderr` — текст stderr, уже прошедший через redact (если в нём попался
     `-P <pwd>` или URL-credentials).
-    `argv_safe` — список аргументов с маскированным паролем (`***`) на
-    позиции после `-P`. Используется в audit-details и логах.
+    `argv_safe` — список аргументов с маскированным паролем (`***`). BMC-пароль
+    в argv не попадает (передаётся через env), но `user set password <id>
+    <newpass>` несёт новый пароль последним positional-аргументом — он
+    маскируется. Используется в audit-details и логах.
 
     Класс — exception, помеченный `@dataclass`, чтобы `repr` был
     воспроизводимым (полезно для теста "no plaintext in error").
@@ -96,15 +105,19 @@ class IpmitoolTimeout(IpmitoolError):
 
 
 def _mask_password_in_argv(argv: list[str]) -> list[str]:
-    """Вернуть копию `argv` с маскированным значением после `-P`.
+    """Вернуть копию `argv` с маскированным паролем.
 
-    Также маскируется password, который мог попасть как часть команды
+    BMC-пароль в argv больше не кладётся (передаётся через env по `-E`),
+    но `-P <pwd>` могла бы прийти из чужого argv (например, из stderr
+    ipmitool, который сам себя логирует) — поэтому ветку оставляем.
+
+    Также маскируется password, который попадает как часть команды
     `user set password <id> <newpass>` — последний аргумент в такой
     команде. Идентифицируем по последовательности `user set password`.
     """
     safe = list(argv)
 
-    # `-P <pwd>` — стандартная форма ipmitool для BMC-пароля.
+    # `-P <pwd>` — на случай, если пароль попал в argv из стороннего источника.
     for i, arg in enumerate(safe):
         if arg == "-P" and i + 1 < len(safe):
             safe[i + 1] = "***"
@@ -228,7 +241,11 @@ class IpmitoolClient:
     # ── internal ──────────────────────────────────────────────────────────
 
     def _base_args(self) -> list[str]:
-        """Базовый префикс argv: -H <host> -p <port> -I <iface> -U <user> -P <pass>.
+        """Базовый префикс argv: -H <host> -p <port> -I <iface> -U <user> -E.
+
+        Пароль не кладётся в argv — флаг `-E` говорит ipmitool взять его из
+        env-переменной `IPMI_PASSWORD` (см. `_run`). Это убирает пароль из
+        `/proc/<pid>/cmdline` и `ps`.
 
         Возвращается каждый раз новым списком — caller'ы (и
         `_mask_password_in_argv`) дописывают/мутируют свою копию.
@@ -238,7 +255,7 @@ class IpmitoolClient:
             "-p", str(self.port),
             "-I", self.interface,
             "-U", self.username,
-            "-P", self._password,
+            "-E",
         ]
 
     async def _run(self, sub_args: list[str]) -> tuple[int, str, str]:
@@ -254,11 +271,16 @@ class IpmitoolClient:
 
         logger.debug("Running ipmitool: %s", " ".join(argv_safe))
 
+        # Пароль передаётся ребёнку через env (флаг `-E` его читает), а не
+        # через argv — иначе он виден в `/proc/<pid>/cmdline`.
+        child_env = {**os.environ, _IPMI_PASSWORD_ENV: self._password}
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 *argv,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=child_env,
             )
         except FileNotFoundError as exc:
             # ipmitool не установлен в контейнере. Считаем "network-level"

@@ -11,8 +11,9 @@ data:
   APP_DEBUG: "false"
   ACCESS_TOKEN_TTL_MINUTES: "10"
   REFRESH_TOKEN_TTL_DAYS: "14"
-  # URL logging_service внутри namespace
-  LOGGING_SERVICE_URL: http://logging-service:8001
+  # URL logging_service внутри namespace.
+  # https требует TLS-термирования в кластере — см. README про cluster-internal TLS.
+  LOGGING_SERVICE_URL: https://logging-service:8001
   # Docker registry token-flow
   DOCKER_REGISTRY_ISSUER: auth_service
   DOCKER_TOKEN_TTL_MINUTES: "5"

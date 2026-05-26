@@ -222,6 +222,7 @@ make test-worker
 | `IPMI_USER_ID` | `2` | дефолтный Redfish account slot (`/Managers/<m>/Accounts/<n>`). Dell iDRAC root=2, HPE iLO=1, Supermicro=3. Per-host override через payload |
 | `REDFISH_VERIFY_TLS` | `false` | iDRAC ships self-signed cert — `true` только когда BMC получили cert от внутреннего CA |
 | `REDFISH_TIMEOUT_SECONDS` | `30.0` | per-request timeout для Redfish-вызовов |
+| `SSH_STRICT_HOST_KEY_CHECKING` | `true` | строгая проверка SSH host-key для inventory/rotate. `true` (дефолт) — без known_hosts соединение отклоняется (`SSH_STRICT_NO_HOST_KEY`), защита от MITM в management-сети. Выключать (`false`) только в доверенных dev/test-сетях; в production validator не даёт его выключить |
 | `PXE_HOST` | `""` | hostname/IP PXE-TFTP сервера. Пусто → `reinstall.start` падает с `PXE_NOT_CONFIGURED` |
 | `PXE_SSH_USERNAME` | `""` | SSH-user для PXE-host'а (service-account, не root) |
 | `PXE_SSH_PASSWORD` | `""` | SSH-пароль PXE-host'а (в проде через k8s Secret) |
@@ -235,6 +236,6 @@ make test-worker
 
 | ENV | Default | Назначение |
 |---|---|---|
-| `SECRETS_REENCRYPT_ENABLED` | `true` | включает periodic `secrets.reencrypt_lazy` (5-минутный тик). В тестах/dev стеках, где `/internal/secrets/*` недостижим, выключить |
+| `SECRETS_REENCRYPT_ENABLED` | `false` | включает periodic `secrets.reencrypt_lazy` (5-минутный тик). Дефолт `false` — включать осознанно (`true`) только на время миграции master-ключа, чтобы тик не сработал неожиданно при копировании prod-манифеста в dev/staging, где `/internal/secrets/*` недостижим |
 | `SECRETS_REENCRYPT_INTERVAL_SECONDS` | `300.0` | cooldown между тиками (≥1.0). Не путать с cron-расписанием самого periodic'а — это hot-loop guard внутри handler'а |
 | `SECRETS_REENCRYPT_BATCH_SIZE` | `100` | размер `reencrypt_batch` запроса в server_service. Worker не делает несколько батчей за тик — high-priority задачи должны успевать прорваться между ними |

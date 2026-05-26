@@ -50,13 +50,15 @@ logger = logging.getLogger(__name__)
 #
 # Для `account.rotate_password` ключи result: `server_id`, `account_id`,
 # `rotated_at` — все безопасны.
-# Для `ipmi.rotate_password`: `server_id`, `ipmi_host`, `user_id`,
-# `password_rotated_at`, `controller_rotated` — host/user_id публичные
-# (есть в `ipmi_controllers`-таблице), `password_rotated_at` — тайминг.
+# Для `ipmi.rotate_password`: `server_id`, `controller_id`, `user_id`,
+# `password_rotated_at`, `controller_rotated`. IP/endpoint_url BMC сюда НЕ
+# кладём — он раскрывал бы топологию management-сети в долгоживущих
+# audit-логах. Оператор по `controller_id` достанет endpoint из
+# server_service, когда реально нужно.
 AUDIT_SAFE_FIELDS_ACCOUNT_ROTATE: set[str] = {"server_id", "account_id", "rotated_at"}
 AUDIT_SAFE_FIELDS_IPMI_ROTATE: set[str] = {
     "server_id",
-    "ipmi_host",
+    "controller_id",
     "user_id",
     "password_rotated_at",
     "controller_rotated",
@@ -179,8 +181,9 @@ async def ipmi_rotate_password(task_id: str) -> None:
     `target_department_id`, опционально `user_id` (override default из
     `IPMI_USER_ID` env).
 
-    Возвращает: `{server_id, ipmi_host, user_id, password_rotated_at,
-    controller_rotated: True}`. Plaintext-пароль НЕ возвращается.
+    Возвращает: `{server_id, controller_id, user_id, password_rotated_at,
+    controller_rotated: True}`. Plaintext-пароль и IP/endpoint BMC НЕ
+    возвращаются (топология management-сети наружу не уходит).
 
     Возможные ошибки: `CredentialFetchError(IPMI_CREDENTIALS_UNAVAILABLE
     | IPMI_ROTATE_REJECTED | SERVER_SERVICE_UNREACHABLE)`,
@@ -224,7 +227,7 @@ async def ipmi_rotate_password(task_id: str) -> None:
 
         return {
             "server_id": server_id,
-            "ipmi_host": creds.get("endpoint_url"),
+            "controller_id": controller_id,
             "user_id": user_id,
             "password_rotated_at": confirmation.get("rotated_at"),
             "controller_rotated": True,

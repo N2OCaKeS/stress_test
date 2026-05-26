@@ -89,6 +89,7 @@ fail) middleware **не блокирует** — пропускает дальш
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import Request
@@ -103,6 +104,8 @@ from src.core.exceptions import AppException
 # на оригинал, и patch остаётся незамеченным.
 from src.dependencies import auth as auth_deps
 from src.services import audit_service
+
+logger = logging.getLogger(__name__)
 
 # Платформенные роли, которым **запрещён любой доступ** к бизнес-плоскости
 # server_service. По §7 модели account_admin/loging_admin создаются без
@@ -182,6 +185,30 @@ def _build_forbidden_response(request: Request, role: PlatformRole) -> JSONRespo
     )
 
 
+def _build_unavailable_response(request: Request) -> JSONResponse:
+    """503-envelope, когда introspect-ответ не парсится в IdentityContext.
+
+    Совместим по shape с ``app_exception_handler`` / ``ServiceUnavailableError``.
+    Используется на fail-closed-пути: если introspect вернул `active=true`, но
+    с неизвестным `platform_role` (rolling deploy auth_service впереди нас) —
+    мы НЕ выдаём доступ, а отвечаем 503, иначе guard пробивает наверх 500.
+    """
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "service_unavailable",
+            "error_code": "AUTH_SERVICE_UNAVAILABLE",
+            "message": (
+                "Could not parse identity from auth_service introspect "
+                "response; refusing access (fail-closed)."
+            ),
+            "details": {},
+            "request_id": getattr(request.state, "request_id", None),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
 async def platform_admin_guard(request: Request, call_next):
     """ASGI middleware: блокирует platform-admin'ов на ВСЁМ server_service.
 
@@ -237,7 +264,19 @@ async def platform_admin_guard(request: Request, call_next):
         # ACCESS_TOKEN_INVALID. Не наша забота.
         return await call_next(request)
 
-    identity = auth_deps._to_identity(body)
+    try:
+        identity = auth_deps._to_identity(body)
+    except Exception:  # noqa: BLE001 — fail-closed на неизвестной схеме identity
+        # introspect отдал active=true, но тело не легло в IdentityContext —
+        # чаще всего неизвестный `platform_role` (auth_service выкатили раньше
+        # нас). Раньше ValidationError пробивала наверх как 500 на каждом
+        # запросе таких пользователей. Не fail-open: доступ не выдаём, отвечаем
+        # 503 — пусть оператор увидит несовместимость деплоев.
+        logger.warning(
+            "platform_admin_guard: cannot parse identity from introspect "
+            "response (active token, unknown shape); responding 503"
+        )
+        return _build_unavailable_response(request)
     role = identity.platform_role
     if role not in BLOCKED_PLATFORM_ROLES:
         # Обычные пользователи, department_admin, worker_bot (через PAT —

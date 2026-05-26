@@ -14,8 +14,10 @@
 from __future__ import annotations
 
 import base64
+import os
 
 import pytest
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pydantic import ValidationError
 
 from src.core.exceptions import AppException
@@ -25,6 +27,20 @@ from src.services import secrets_service
 # Фиксированный AAD для тестов, не проверяющих swap-attack семантику —
 # нам важно только round-trip / KDF / валидация, а не привязка к строке.
 _TEST_AAD = b"test-aad-fixed"
+
+
+def _craft_v1_token(plaintext: str, master_key: str, *, aad: bytes) -> str:
+    """Собрать legacy v1-ciphertext напрямую, минуя `encrypt()`.
+
+    Активная запись под v1 запрещена (`server_encryption_key_version` ограничен
+    `ge=2`), но исторические v1-токены обязаны оставаться расшифровываемыми.
+    Тесты back-compat'а строят такой токен через legacy-KDF + сырой AES-GCM,
+    как если бы его написала старая версия сервиса.
+    """
+    key = secrets_service._derive_key_legacy(master_key)
+    nonce = os.urandom(secrets_service._NONCE_BYTES)
+    ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode("utf-8"), aad)
+    return f"v1${secrets_service._b64e(nonce)}${secrets_service._b64e(ciphertext)}"
 
 
 # ── Round-trip ────────────────────────────────────────────────────────────────
@@ -118,7 +134,7 @@ class TestDecryptInputValidation:
         # Версия и формат правильные, но base64 для nonce невалидный — крипто-движок
         # упадёт с InvalidTag/ValueError, что попадает в общий except → DECRYPT_FAILED.
         with pytest.raises(AppException) as exc:
-            secrets_service.decrypt("v1$!!!$@@@", aad=_TEST_AAD)
+            secrets_service.decrypt("v2$!!!$@@@", aad=_TEST_AAD)
         assert exc.value.error_code == "DECRYPT_FAILED"
 
 
@@ -163,17 +179,16 @@ class TestKeyVersioning:
         assert exc.value.details.get("env") == "SERVER_ENCRYPTION_KEY__v99"
 
     def test_legacy_key_used_when_active_version_bumped(self, monkeypatch):
-        """Симуляция ротации: шифруем под v1, потом меняем активную версию на v2
-        и убеждаемся что старый токен всё ещё дешифруется через legacy env."""
-        # Запоминаем текущий активный ключ как legacy v1.
+        """Симуляция ротации: исторический v1-токен всё ещё дешифруется через
+        legacy env после того, как активная версия стала v2."""
         from src.core.config import get_settings
-        original_v1_key = get_settings().server_encryption_key
-        original_v1_version = get_settings().server_encryption_key_version
-        assert original_v1_version == 1
 
-        token = secrets_service.encrypt("legacy-payload", aad=_TEST_AAD)
+        # Исторический v1-токен, написанный старым ключом (новая запись под v1
+        # запрещена, поэтому собираем токен напрямую через legacy-KDF).
+        original_v1_key = "legacy-v1-master-key-padded-to-32-chars"
+        token = _craft_v1_token("legacy-payload", original_v1_key, aad=_TEST_AAD)
 
-        # Имитируем bump активной версии до 2 + новый активный ключ.
+        # Активная версия — v2 (по умолчанию), новый активный ключ.
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY", "fresh-v2-master-key-padded-to-32-chars")
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY_VERSION", "2")
         # Прежний v1 теперь должен читаться из legacy env.
@@ -267,17 +282,17 @@ class TestKDFDispatch:
 
     def test_v1_token_still_decryptable_after_kdf_upgrade(self, monkeypatch):
         """Cross-KDF back-compat: a v1 (legacy) ciphertext stays readable when
-        the active version is bumped to v2 (HKDF) as long as the original
-        master is still available under SERVER_ENCRYPTION_KEY__v1."""
+        the active version is v2 (HKDF) as long as the original master is still
+        available under SERVER_ENCRYPTION_KEY__v1."""
         from src.core.config import get_settings
 
-        # Step 1: write a v1 (legacy SHA-256) token under the current active key.
-        original_key = get_settings().server_encryption_key
-        assert get_settings().server_encryption_key_version == 1
-        token_v1 = secrets_service.encrypt("historical-secret", aad=_TEST_AAD)
+        # Step 1: a historical v1 (legacy SHA-256) token. New writes under v1
+        # are forbidden, so the token is crafted directly via the legacy KDF.
+        original_key = "historical-v1-master-key-padded-32xx"
+        token_v1 = _craft_v1_token("historical-secret", original_key, aad=_TEST_AAD)
         assert token_v1.startswith("v1$")
 
-        # Step 2: rotate — active is now v2 (HKDF), v1 master moves to legacy env.
+        # Step 2: active is v2 (HKDF), v1 master lives under legacy env.
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY", "fresh-active-key-for-v2-hkdf-aaaaaa")
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY_VERSION", "2")
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY__v1", original_key)
@@ -359,10 +374,9 @@ class TestKeyMinLengthValidator:
         assert settings.server_encryption_key == long_key
 
     def test_default_active_version_is_v2(self, monkeypatch):
-        # New deployments must default to HKDF (v2) — encrypting with v1
-        # would silently fall back to the legacy single-pass SHA-256 path.
-        # conftest exports SERVER_ENCRYPTION_KEY_VERSION=1 for back-compat
-        # coverage, so we clear it here to inspect the bare field default.
+        # New deployments must default to HKDF (v2) — v1 (legacy single-pass
+        # SHA-256) is no longer a valid active version. Clear the env override
+        # to inspect the bare field default.
         monkeypatch.delenv("SERVER_ENCRYPTION_KEY_VERSION", raising=False)
         settings = self._build_settings()
         assert settings.server_encryption_key_version == 2

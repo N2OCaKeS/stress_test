@@ -15,16 +15,18 @@
   '%{NAME} %{VERSION}\\n' '<pattern>'`.
 * Иначе — `SshError(error_code="NO_PACKAGE_MANAGER")`.
 
-Pattern — shell glob (`htop`, `linux-image*`), валидация на стороне
-server_service'а (regex `[A-Za-z0-9._\\-+*?\\[\\]]+`). asyncssh.run
-запускает команду через `/bin/sh -c`, поэтому pattern мы оборачиваем
-в одиночные кавычки и проверяем, что в нём нет `'`, иначе break-out
-из кавычек.
+Pattern — shell glob (`htop`, `linux-image*`). asyncssh.run запускает
+команду через `/bin/sh -c`, поэтому pattern оборачивается в одиночные
+кавычки. Перед подстановкой worker сам валидирует его по allow-list'у
+`[A-Za-z0-9._\\-+*?\\[\\]]+` (`_PATTERN_RE`) — это defence-in-depth, не
+полагаемся на то, что server_service отсёк `'`/`$`/`;` и прочие
+метасимволы, через которые можно вырваться из кавычек.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 
 from src.clients.ssh import SshClient, SshError
 from src.main import broker
@@ -39,12 +41,23 @@ logger = logging.getLogger(__name__)
 # API. То же решение, что в `tasks/inventory.py::AUDIT_SAFE_FIELDS`.
 AUDIT_SAFE_FIELDS: set[str] = {"server_id", "pattern", "count", "package_manager"}
 
+# Локальный allow-list символов для glob-pattern перед подстановкой в
+# shell-команду. Принимаем только то, что нужно dpkg-query/rpm glob'у:
+# буквы, цифры, точка, подчёркивание, дефис, плюс и сами glob-метасимволы
+# `* ? [ ]`. Кавычка `'`, `$`, `;`, `\`, backtick, пробелы, перевод строки
+# не проходят — это закрывает break-out из одиночных кавычек и shell-
+# инъекцию. defence-in-depth: не полагаемся на валидацию server_service.
+# Тот же класс символов заявлен в docstring модуля и в server_service.
+_PATTERN_RE = re.compile(r"^[A-Za-z0-9._\-+*?\[\]]+$")
+
 
 def _build_command(package_manager: str, pattern: str) -> str:
     """Собрать shell-команду под выбранный package manager.
 
-    Pattern оборачивается в одинарные кавычки — внутри не должно быть `'`,
-    это уже отвалидировано на server_service'е (allow-list символов).
+    Pattern оборачивается в одинарные кавычки. Перед подстановкой он
+    обязан пройти `_PATTERN_RE` (caller валидирует) — внутри не может быть
+    `'`/`$`/`;` и прочих метасимволов, поэтому break-out из кавычек
+    невозможен.
     """
     if package_manager == "dpkg":
         return (
@@ -143,6 +156,19 @@ async def installed_packages_list(task_id: str) -> None:
         pattern = payload.get("pattern", "*")
         account_id = payload.get("account_id")
         target_dept = payload.get("target_department_id")
+
+        # Defence-in-depth: pattern уходит в shell-команду (asyncssh.run
+        # через /bin/sh -c). Проверяем локально, не доверяя валидации
+        # server_service — отклоняем кавычки/$/;/метасимволы до подстановки.
+        if not isinstance(pattern, str) or not _PATTERN_RE.match(pattern):
+            raise SshError(
+                error_code="INVALID_PATTERN",
+                host=str(payload.get("ssh_host") or server_id),
+                message=(
+                    f"pattern {pattern!r} contains characters disallowed "
+                    "for a package glob (only [A-Za-z0-9._-+*?[]] allowed)"
+                ),
+            )
 
         if account_id:
             creds = await server_service_client.fetch_account_password(

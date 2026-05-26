@@ -32,6 +32,9 @@ def _make_settings(monkeypatch: pytest.MonkeyPatch, **overrides: str):
         "SERVER_ENCRYPTION_KEY",
         "test-server-encryption-key-do-not-use-anywhere-else",
     )
+    # Непустой по умолчанию, чтобы prod-тесты других guard'ов не падали на
+    # `_require_service_api_key_in_prod`. Тесты этого guard'а явно его сбрасывают.
+    monkeypatch.setenv("SERVICE_API_KEY", "test-service-api-key")
     for key, value in overrides.items():
         monkeypatch.setenv(key, value)
 
@@ -145,3 +148,167 @@ class TestProductionRequiresHttpsAuthUrl:
         url = "https://auth-service.cluster.svc:8000"
         s = _make_settings(monkeypatch, APP_ENV="production", AUTH_SERVICE_URL=url)
         assert s.auth_service_url == url
+
+
+class TestProductionRequiresHttpsLoggingUrl:
+    """В production/staging `LOGGING_SERVICE_URL` обязан быть https:// (не localhost).
+
+    Audit-события несут actor PII + security-sensitive действия; plain http в
+    кластере открывает их на sniff/MITM. Зеркало AUTH_SERVICE_URL-guard'а.
+    """
+
+    def test_production_rejects_http_logging_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        with pytest.raises(ValueError, match="LOGGING_SERVICE_URL must use https"):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="production",
+                AUTH_SERVICE_URL="https://auth.prod.svc:8000",
+                LOGGING_SERVICE_URL="http://logging.cluster.svc:8001",
+            )
+
+    def test_staging_rejects_http_logging_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        with pytest.raises(ValueError, match="LOGGING_SERVICE_URL must use https"):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="staging",
+                AUTH_SERVICE_URL="https://auth.prod.svc:8000",
+                LOGGING_SERVICE_URL="http://logging.cluster.svc:8001",
+            )
+
+    def test_production_accepts_https_logging_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        url = "https://logging.cluster.svc:8001"
+        s = _make_settings(
+            monkeypatch,
+            APP_ENV="production",
+            AUTH_SERVICE_URL="https://auth.prod.svc:8000",
+            LOGGING_SERVICE_URL=url,
+        )
+        assert s.logging_service_url == url
+
+    def test_production_empty_logging_url_skips_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Пустой `LOGGING_SERVICE_URL` (удалённый аудит отключён) — ок."""
+        s = _make_settings(
+            monkeypatch,
+            APP_ENV="production",
+            AUTH_SERVICE_URL="https://auth.prod.svc:8000",
+            LOGGING_SERVICE_URL="",
+        )
+        assert s.logging_service_url == ""
+
+    def test_production_localhost_logging_http_allowed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Localhost (devcontainer / port-forward) — исключение из guard'а."""
+        url = "http://localhost:8001"
+        s = _make_settings(
+            monkeypatch,
+            APP_ENV="production",
+            AUTH_SERVICE_URL="https://auth.prod.svc:8000",
+            LOGGING_SERVICE_URL=url,
+        )
+        assert s.logging_service_url == url
+
+    @pytest.mark.parametrize("env", ["local", "dev", "test"])
+    def test_dev_envs_accept_http_logging_url(
+        self, monkeypatch: pytest.MonkeyPatch, env: str
+    ) -> None:
+        url = "http://logging.cluster.svc:8001"
+        s = _make_settings(monkeypatch, APP_ENV=env, LOGGING_SERVICE_URL=url)
+        assert s.logging_service_url == url
+
+
+class TestProductionRequiresServiceApiKey:
+    """В production/staging `SERVICE_API_KEY` обязан быть непустым.
+
+    Пустой ключ → introspect уходит с пустым bearer, auth_service отвечает 401,
+    сервис деградирует до вечных 503. Ловим на старте.
+    """
+
+    def test_production_rejects_empty_service_api_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with pytest.raises(ValueError, match="SERVICE_API_KEY must be set"):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="production",
+                AUTH_SERVICE_URL="https://auth.prod.svc:8000",
+                SERVICE_API_KEY="",
+            )
+
+    def test_staging_rejects_empty_service_api_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with pytest.raises(ValueError, match="SERVICE_API_KEY must be set"):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="staging",
+                AUTH_SERVICE_URL="https://auth.prod.svc:8000",
+                SERVICE_API_KEY="",
+            )
+
+    def test_production_accepts_nonempty_service_api_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        s = _make_settings(
+            monkeypatch,
+            APP_ENV="production",
+            AUTH_SERVICE_URL="https://auth.prod.svc:8000",
+            SERVICE_API_KEY="prod-shared-secret",
+        )
+        assert s.service_api_key == "prod-shared-secret"
+
+    @pytest.mark.parametrize("env", ["local", "dev", "test"])
+    def test_dev_envs_accept_empty_service_api_key(
+        self, monkeypatch: pytest.MonkeyPatch, env: str
+    ) -> None:
+        s = _make_settings(monkeypatch, APP_ENV=env, SERVICE_API_KEY="")
+        assert s.service_api_key == ""
+
+
+class TestEncryptionKeyVersionFloor:
+    """`SERVER_ENCRYPTION_KEY_VERSION` < 2 запрещён.
+
+    v1 — legacy SHA-256 без HKDF; новая запись под v1 закрыта. Поле ограничено
+    `ge=2` (любое окружение), плюс явный prod/staging guard для понятного
+    сообщения. Расшифровка исторических v1-ciphertext'ов сохраняется отдельно
+    (версия читается из префикса самого токена).
+    """
+
+    def test_v1_rejected_in_any_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="local",
+                SERVER_ENCRYPTION_KEY_VERSION="1",
+            )
+
+    def test_v1_rejected_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            _make_settings(
+                monkeypatch,
+                APP_ENV="production",
+                AUTH_SERVICE_URL="https://auth.prod.svc:8000",
+                SERVER_ENCRYPTION_KEY_VERSION="1",
+            )
+
+    def test_v2_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        s = _make_settings(
+            monkeypatch,
+            APP_ENV="local",
+            SERVER_ENCRYPTION_KEY_VERSION="2",
+        )
+        assert s.server_encryption_key_version == 2
+
+    def test_v3_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        s = _make_settings(
+            monkeypatch,
+            APP_ENV="local",
+            SERVER_ENCRYPTION_KEY_VERSION="3",
+        )
+        assert s.server_encryption_key_version == 3

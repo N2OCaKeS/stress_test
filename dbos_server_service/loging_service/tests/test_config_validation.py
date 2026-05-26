@@ -82,6 +82,8 @@ class TestProductionGuard:
                 "APP_ENV": "production",
                 "SERVICE_API_KEY": "real-secret-xyz-1234567890",
                 "APP_DEBUG": "false",
+                # AUTH_SERVICE_URL обязателен в проде (см. TestAuthServiceUrlRequired).
+                "AUTH_SERVICE_URL": "https://auth.example.com",
             },
         )
         assert s.app_env == "production"
@@ -182,20 +184,6 @@ class TestAuthServiceUrlHttpsGuard:
         )
         assert s.auth_service_url == "https://auth.example.com"
 
-    def test_production_no_auth_url_accepted(self, monkeypatch):
-        """AUTH_SERVICE_URL может быть пустым — `_fetch_identity` отдельно
-        вернёт 503 AUTH_SERVICE_NOT_CONFIGURED, но Settings-validator
-        не должен валиться на отсутствующем URL."""
-        s = _load_settings_fresh(
-            monkeypatch,
-            {
-                "APP_ENV": "production",
-                "SERVICE_API_KEY": self._PROD_KEY,
-                "APP_DEBUG": "false",
-            },
-        )
-        assert s.auth_service_url is None
-
     def test_non_prod_http_remote_accepted(self, monkeypatch):
         """В dev/test/local plain http:// разрешён (docker-compose сценарии)."""
         for env in ("local", "development", "test"):
@@ -260,9 +248,10 @@ class TestIntrospectTlsVerifyProductionGuard:
         )
         assert s.introspect_tls_verify is False
 
-    def test_prod_no_auth_url_verify_false_accepted(self, monkeypatch):
-        """Без AUTH_SERVICE_URL guard'у нечего проверять — verify=False допустим
-        (introspect-вызовы всё равно вернут 503 AUTH_SERVICE_NOT_CONFIGURED).
+    def test_prod_http_localhost_verify_false_accepted(self, monkeypatch):
+        """Plain-http localhost AUTH_SERVICE_URL: нет https-remote для MITM →
+        verify=False допустим. https-only гард пропускает localhost, а
+        verify-гард срабатывает только на https-remote — на http он молчит.
         """
         s = _load_settings_fresh(
             monkeypatch,
@@ -270,6 +259,7 @@ class TestIntrospectTlsVerifyProductionGuard:
                 "APP_ENV": "production",
                 "SERVICE_API_KEY": self._PROD_KEY,
                 "APP_DEBUG": "false",
+                "AUTH_SERVICE_URL": "http://localhost:8000",
                 "INTROSPECT_TLS_VERIFY": "false",
             },
         )
@@ -322,6 +312,9 @@ class TestIntrospectServiceApiKeyProductionGuard:
             "APP_DEBUG": "false",
             "SERVICE_API_KEYS": service_api_keys,
             "INTROSPECT_SERVICE_API_KEY": introspect_key,
+            # AUTH_SERVICE_URL обязателен в проде; задаём, чтобы success-кейсы
+            # не валились на отдельном (AUTH_SERVICE_URL) guard'е.
+            "AUTH_SERVICE_URL": "https://auth.example.com",
         }
         if should_fail:
             with pytest.raises(ValidationError) as excinfo:
@@ -344,3 +337,105 @@ class TestIntrospectServiceApiKeyProductionGuard:
                 },
             )
             assert s.introspect_service_api_key == ""
+
+
+class TestAuthServiceUrlRequiredInProduction:
+    """В production AUTH_SERVICE_URL обязателен. Без него admin/reader-ручки
+    не падают на старте, но `_fetch_identity` отдаёт 503 на каждом запросе —
+    pod выглядит живым, а JWT-эндпоинты молча недоступны. Fail-fast на старте.
+    """
+
+    _PROD_KEY = "real-secret-xyz-1234567890"
+
+    def test_production_without_auth_url_rejected(self, monkeypatch):
+        with pytest.raises(ValidationError) as excinfo:
+            _load_settings_fresh(
+                monkeypatch,
+                {
+                    "APP_ENV": "production",
+                    "SERVICE_API_KEY": self._PROD_KEY,
+                    "APP_DEBUG": "false",
+                },
+            )
+        assert "AUTH_SERVICE_URL" in str(excinfo.value)
+
+    def test_production_with_https_auth_url_accepted(self, monkeypatch):
+        s = _load_settings_fresh(
+            monkeypatch,
+            {
+                "APP_ENV": "production",
+                "SERVICE_API_KEY": self._PROD_KEY,
+                "APP_DEBUG": "false",
+                "AUTH_SERVICE_URL": "https://auth.example.com",
+            },
+        )
+        assert s.auth_service_url == "https://auth.example.com"
+
+    def test_non_prod_without_auth_url_accepted(self, monkeypatch):
+        """Вне production AUTH_SERVICE_URL остаётся опциональным."""
+        for app_env in ("local", "development", "test"):
+            s = _load_settings_fresh(
+                monkeypatch,
+                {
+                    "APP_ENV": app_env,
+                    "SERVICE_API_KEY": self._PROD_KEY,
+                },
+            )
+            assert s.auth_service_url is None, f"failed for APP_ENV={app_env}"
+
+
+class TestIntrospectKeyCollisionGuard:
+    """В production INTROSPECT_SERVICE_API_KEY не должен совпадать ни с одним
+    значением SERVICE_API_KEYS — иначе утёкший ingest-ключ сразу открывает
+    /introspect от имени loging_service (нарушение key-separation).
+    """
+
+    _PROD_KEY = "real-secret-xyz-1234567890"
+    _AUTH_URL = "https://auth.example.com"
+    _PER_SERVICE_KEYS = (
+        '{"auth_service":"k-auth-1234567890","server_service":"k-srv-1234567890"}'
+    )
+
+    def test_collision_with_ingest_key_rejected(self, monkeypatch):
+        with pytest.raises(ValidationError) as excinfo:
+            _load_settings_fresh(
+                monkeypatch,
+                {
+                    "APP_ENV": "production",
+                    "SERVICE_API_KEY": self._PROD_KEY,
+                    "APP_DEBUG": "false",
+                    "AUTH_SERVICE_URL": self._AUTH_URL,
+                    "SERVICE_API_KEYS": self._PER_SERVICE_KEYS,
+                    # совпадает с SERVICE_API_KEYS["auth_service"]
+                    "INTROSPECT_SERVICE_API_KEY": "k-auth-1234567890",
+                },
+            )
+        assert "INTROSPECT_SERVICE_API_KEY" in str(excinfo.value)
+        assert "distinct" in str(excinfo.value)
+
+    def test_distinct_introspect_key_accepted(self, monkeypatch):
+        s = _load_settings_fresh(
+            monkeypatch,
+            {
+                "APP_ENV": "production",
+                "SERVICE_API_KEY": self._PROD_KEY,
+                "APP_DEBUG": "false",
+                "AUTH_SERVICE_URL": self._AUTH_URL,
+                "SERVICE_API_KEYS": self._PER_SERVICE_KEYS,
+                "INTROSPECT_SERVICE_API_KEY": "introspect-only-key-9876",
+            },
+        )
+        assert s.introspect_service_api_key == "introspect-only-key-9876"
+
+    def test_collision_not_enforced_outside_production(self, monkeypatch):
+        """Вне production гард не активируется — dev-стенды могут шарить ключ."""
+        for app_env in ("local", "development", "test"):
+            s = _load_settings_fresh(
+                monkeypatch,
+                {
+                    "APP_ENV": app_env,
+                    "SERVICE_API_KEYS": self._PER_SERVICE_KEYS,
+                    "INTROSPECT_SERVICE_API_KEY": "k-auth-1234567890",
+                },
+            )
+            assert s.introspect_service_api_key == "k-auth-1234567890"

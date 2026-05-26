@@ -218,7 +218,7 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 | `AUTH_SERVICE_URL` | базовый URL для introspect; в prod/staging обязан быть https |
 | `AUTH_REQUEST_TIMEOUT_SECONDS` | default 3.0 |
 | `SERVER_ENCRYPTION_KEY` | master-ключ, обязательный, `min_length=32` |
-| `SERVER_ENCRYPTION_KEY_VERSION` | default 1 |
+| `SERVER_ENCRYPTION_KEY_VERSION` | активная версия для новой записи; default 2 (HKDF), минимум 2 — v1 (legacy SHA-256) только для расшифровки старых ciphertext'ов |
 | `SERVER_ENCRYPTION_KEY__vN` | legacy ключи под версию N |
 | `SERVER_WORKER_DATABASE_URL` | cross-DB INSERT в `dev_server_worker.tasks` |
 | `SERVER_WORKER_REDIS_URL` | taskiq publish |

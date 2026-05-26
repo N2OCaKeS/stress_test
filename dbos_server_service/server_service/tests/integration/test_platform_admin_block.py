@@ -464,3 +464,44 @@ class TestAccountAdminPureBlocking:
         resp = await client.get(f"{BASE}/servers", headers=_hdr(token))
         assert resp.status_code == 403
         assert resp.json()["error_code"] == "PLATFORM_ADMIN_BUSINESS_DATA_DENIED"
+
+
+# ── 11. Неизвестный platform_role (rolling deploy) → 503, не 500 ────────────
+
+
+class TestUnknownPlatformRoleFailsClosed:
+    """Если auth_service выкатили впереди server_service и introspect вернул
+    ``active=true`` с неизвестным ``platform_role`` (например, новая роль
+    ``super_admin``), ``_to_identity`` не ложится в ``IdentityContext``-enum.
+
+    Раньше ValidationError пробивала наверх как 500 на каждом запросе таких
+    пользователей. Теперь guard ловит её и отвечает 503 fail-closed — доступ
+    к бизнес-данным НЕ выдаётся.
+    """
+
+    async def test_unknown_platform_role_returns_503(self, client, make_token):
+        token = make_token(
+            platform_role="super_admin",  # роль вне PlatformRole-enum
+            department_id="dep_a",
+            allowed_services=["server_service"],
+        )
+        resp = await client.get(f"{BASE}/servers", headers=_hdr(token))
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["error_code"] == "AUTH_SERVICE_UNAVAILABLE"
+        # request_id обязан быть в envelope (выставлен outer middleware'ом).
+        assert body["request_id"] is not None
+
+    async def test_unknown_platform_role_does_not_emit_block_audit(
+        self, client, make_token, captured_emits,
+    ):
+        """503-путь не эмитит ``http.platform_admin_blocked`` — это не блок
+        platform-admin'а, а отказ из-за нераспознанной identity."""
+        token = make_token(
+            platform_role="super_admin",
+            department_id="dep_a",
+            allowed_services=["server_service"],
+        )
+        resp = await client.get(f"{BASE}/servers", headers=_hdr(token))
+        assert resp.status_code == 503
+        assert _events(captured_emits, "http.platform_admin_blocked") == []

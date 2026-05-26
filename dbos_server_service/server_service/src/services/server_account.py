@@ -137,7 +137,7 @@ async def create_account(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на создании аккаунта: %s", exc.orig)
+        logger.warning("IntegrityError на создании аккаунта: %s", type(exc.orig).__name__)
         audit_service.emit(
             "server_account.create",
             target_type="server_account",
@@ -284,7 +284,7 @@ async def update_account(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на обновлении аккаунта %s: %s", account_id, exc.orig)
+        logger.warning("IntegrityError на обновлении аккаунта %s: %s", account_id, type(exc.orig).__name__)
         audit_service.emit(
             "server_account.update",
             target_id=account_id, target_type="server_account",

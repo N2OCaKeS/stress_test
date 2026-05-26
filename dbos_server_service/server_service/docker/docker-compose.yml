@@ -12,7 +12,7 @@ services:
       APP_PORT: 8002
       DATABASE_URL: postgresql+psycopg://server_user:server_password@server_postgres:5432/server_db
       SERVER_ENCRYPTION_KEY: dev-server-encryption-key-do-not-use-in-prod
-      SERVER_ENCRYPTION_KEY_VERSION: "1"
+      SERVER_ENCRYPTION_KEY_VERSION: "2"
     ports:
       - "8002:8002"
     volumes:

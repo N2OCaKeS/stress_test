@@ -158,7 +158,7 @@ async def create_server(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на создании сервера: %s", exc.orig)
+        logger.warning("IntegrityError на создании сервера: %s", type(exc.orig).__name__)
         audit_service.emit(
             "server.create",
             target_id=data["id"],
@@ -231,7 +231,7 @@ async def update_server(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на обновлении сервера %s: %s", server_id, exc.orig)
+        logger.warning("IntegrityError на обновлении сервера %s: %s", server_id, type(exc.orig).__name__)
         audit_service.emit(
             "server.update",
             target_id=server_id,
@@ -534,7 +534,7 @@ async def update_os_version(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на обновлении os_version_id для %s: %s", server_id, exc.orig)
+        logger.warning("IntegrityError на обновлении os_version_id для %s: %s", server_id, type(exc.orig).__name__)
         audit_service.emit(
             "server.update_os_version",
             target_id=server_id, target_type="server",

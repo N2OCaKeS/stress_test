@@ -119,7 +119,7 @@ class TestChassisPowerStatus:
 
         assert "unrecognized" in exc_info.value.message.lower()
 
-    async def test_nonzero_exit_raises_with_masked_password(self, monkeypatch):
+    async def test_nonzero_exit_raises_without_password_in_argv(self, monkeypatch):
         proc = _make_fake_process(
             returncode=1,
             stderr=b"Error: Unable to establish IPMI v2 / RMCP+ session\n",
@@ -132,8 +132,10 @@ class TestChassisPowerStatus:
 
         err = exc_info.value
         assert err.returncode == 1
+        # Пароль читается из env по `-E`, в argv его нет — утечь нечему.
         assert "topsecret123" not in " ".join(err.argv_safe)
-        assert "***" in err.argv_safe
+        assert "-E" in err.argv_safe
+        assert "-P" not in err.argv_safe
 
 
 # ── chassis_power_action ─────────────────────────────────────────────────────
@@ -313,7 +315,23 @@ class TestBaseArgs:
         assert "-p" in argv and "6230" in argv
         assert "-I" in argv and "lan" in argv
         assert "-U" in argv and "operator" in argv
-        assert "-P" in argv and "pw" in argv
+        # Пароль читается из env по `-E`, а не передаётся в argv через `-P`.
+        assert "-E" in argv
+        assert "-P" not in argv
+        assert "pw" not in argv
+
+    async def test_password_passed_through_env_not_argv(self, monkeypatch):
+        proc = _make_fake_process(returncode=0, stdout=b"Chassis Power is on\n")
+        calls = _patch_subprocess(monkeypatch, proc)
+
+        client = IpmitoolClient("10.0.0.5", "ADMIN", "TOP-SECRET-PW")
+        await client.chassis_power_status()
+
+        argv, kwargs = calls[0]
+        # Пароль не светится в argv (== /proc/<pid>/cmdline).
+        assert "TOP-SECRET-PW" not in argv
+        # Передан дочернему процессу через env по флагу `-E`.
+        assert kwargs["env"]["IPMI_PASSWORD"] == "TOP-SECRET-PW"
 
 
 # ── _mask_password_in_argv ───────────────────────────────────────────────────

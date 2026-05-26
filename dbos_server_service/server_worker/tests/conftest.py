@@ -26,6 +26,11 @@ os.environ.setdefault("SERVER_SERVICE_URL", "http://not-used")
 os.environ.setdefault("AUTH_SERVICE_URL", "http://not-used")
 os.environ.setdefault("LOGGING_SERVICE_URL", "http://not-used")
 os.environ.setdefault("WORKER_BOT_TOKEN", "dummy-test-token")
+# Test stands have no known_hosts file and talk to mocked SSH — disable
+# strict host-key checking so the real SshClient.connect path under test
+# doesn't refuse the accept-any connections the mocks rely on. Production
+# keeps the secure default (True), enforced by the config validator.
+os.environ.setdefault("SSH_STRICT_HOST_KEY_CHECKING", "false")
 
 import pytest
 import pytest_asyncio

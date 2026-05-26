@@ -161,13 +161,21 @@ class TestSshClientLifecycle:
         assert exc_info.value.error_code == "SSH_CONNECT_FAILED"
 
     async def test_strict_host_key_checking_blocks_no_known_hosts(self, monkeypatch):
-        monkeypatch.setenv("SSH_STRICT_HOST_KEY_CHECKING", "true")
+        # Strict — дефолт; без known_hosts соединение должно быть отклонено.
+        monkeypatch.setattr(ssh_mod, "_is_strict_mode", lambda: True)
         with pytest.raises(SshError) as exc_info:
             await SshClient("h", "u", "p", known_hosts=None).connect()
         assert exc_info.value.error_code == "SSH_STRICT_NO_HOST_KEY"
 
-    async def test_strict_host_key_checking_off_by_default(self, monkeypatch):
-        monkeypatch.delenv("SSH_STRICT_HOST_KEY_CHECKING", raising=False)
+    async def test_strict_is_default_in_settings(self):
+        # Безопасный дефолт: поле Settings включает strict-режим, даже когда
+        # env не задан (тестовый conftest выставляет false для accept-any-моков).
+        from src.core.config import Settings
+        assert Settings.model_fields["ssh_strict_host_key_checking"].default is True
+
+    async def test_strict_host_key_checking_can_be_disabled(self, monkeypatch):
+        # Явное отключение (dev/test) — accept-any снова разрешён.
+        monkeypatch.setattr(ssh_mod, "_is_strict_mode", lambda: False)
         connect_mock = AsyncMock(return_value=_make_fake_conn())
         monkeypatch.setattr(asyncssh, "connect", connect_mock)
         await SshClient("h", "u", "p", known_hosts=None).connect()

@@ -112,11 +112,20 @@ async def app_with_env(monkeypatch):
         # Очищаем кэш get_settings, чтобы новый Settings() подхватил env-переменные.
         config_module.get_settings.cache_clear()
         monkeypatch.setenv("APP_ENV", env)
-        # В production/staging Settings-валидатор требует https AUTH_SERVICE_URL —
-        # подставляем фейковый https, чтобы конструктор не упал. К самому openapi-
-        # guard'у URL отношения не имеет.
+        # В production/staging Settings-валидаторы требуют набор непустых
+        # секретов (https AUTH_SERVICE_URL, непустой SERVICE_API_KEY, HKDF-salt,
+        # encryption-key v2). Подставляем их, чтобы конструктор не упал на
+        # security-гардах. К самому openapi-guard'у эти значения отношения не
+        # имеют — он смотрит только на APP_ENV.
         if env.lower() in {"production", "staging"}:
             monkeypatch.setenv("AUTH_SERVICE_URL", "https://auth.prod.svc:8000")
+            monkeypatch.setenv("SERVICE_API_KEY", "prod-service-key-not-default")
+            monkeypatch.setenv("SERVER_ENCRYPTION_KEY_VERSION", "2")
+            monkeypatch.setenv("HKDF_SALT_HEX", "deadbeefcafebabe0011223344556677")
+            monkeypatch.setenv(
+                "SERVER_ENCRYPTION_KEY",
+                "test-server-encryption-key-do-not-use-anywhere-else",
+            )
         app = _build_fresh_app()
         return app
 

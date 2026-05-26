@@ -648,7 +648,7 @@ class TestRevealPassword:
         await db.execute(
             update(ServerAccount)
             .where(ServerAccount.id == acc.id)
-            .values(password_encrypted="v1$AAAAAAAAAAAAAAAA$BBBBBBBBBBBBBBBBBBBBBB")
+            .values(password_encrypted="v2$AAAAAAAAAAAAAAAA$BBBBBBBBBBBBBBBBBBBBBB")
         )
         await db.flush()
         resp = await client.post(

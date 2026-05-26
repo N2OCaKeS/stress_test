@@ -149,7 +149,7 @@ class TestRevealCredentials:
         await db.execute(
             update(IpmiController)
             .where(IpmiController.id == ctrl.id)
-            .values(password_encrypted="v1$AAAAAAAAAAAAAAAA$BBBBBBBBBBBBBBBBBBBBBB")
+            .values(password_encrypted="v2$AAAAAAAAAAAAAAAA$BBBBBBBBBBBBBBBBBBBBBB")
         )
         await db.flush()
         resp = await client.post(

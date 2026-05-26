@@ -8,14 +8,16 @@ data:
   APP_HOST: 0.0.0.0
   APP_PORT: "8002"
   APP_LOG_LEVEL: INFO
-  # Cluster-internal URLs соседних сервисов
-  AUTH_SERVICE_URL: http://auth-service:8000
-  LOGGING_SERVICE_URL: http://logging-service:8001
+  # Cluster-internal URLs соседних сервисов.
+  # https требует TLS-термирования в кластере — см. README про cluster-internal TLS.
+  AUTH_SERVICE_URL: https://auth-service:8000
+  LOGGING_SERVICE_URL: https://logging-service:8001
   # Worker-coupling: DSN базы server_worker (для INSERT в tasks) + Redis broker.
   # Worker и server_service пишут/читают одну и ту же taskiq-очередь.
   SERVER_WORKER_DATABASE_URL: postgresql+psycopg://$(WORKER_DB_USER):$(WORKER_DB_PASSWORD)@worker-postgres:5432/worker_db
-  # Кэширование TLS-introspect к auth_service. На внутрикластерном http
-  # без TLS значение игнорируется; включай при https.
+  # Проверка TLS-сертификата при introspect к auth_service. При https
+  # внутри кластера держи "true", если auth-service отдаёт доверенный
+  # (mesh/CA) сертификат; временно "false" допустимо только для self-signed.
   INTROSPECT_TLS_VERIFY: "true"
   # Internal endpoints (worker → server_service): требовать
   # `X-Target-Department-Id` от caller'а. В проде ОБЯЗАТЕЛЬНО true.

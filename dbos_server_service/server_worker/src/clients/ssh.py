@@ -15,11 +15,13 @@
   caller передаёт `client_keys` — поддерживаем key-based; для
   inventory это будущая фича (worker подкладывает свой ключ через
   k8s secret).
-* `known_hosts=None` — accept-any-host на первом коннекте. Это TOFU-
-  модель: регистрация fingerprint в server_service — будущая фича.
-  В production режиме поведение управляется env
-  `SSH_STRICT_HOST_KEY_CHECKING=true` — тогда `known_hosts` обязан быть
-  прокинут caller'ом (иначе `SshError(error_code='SSH_STRICT_NO_HOST_KEY')`).
+* host-key проверка управляется настройкой `SSH_STRICT_HOST_KEY_CHECKING`
+  (`Settings.ssh_strict_host_key_checking`, дефолт `True`). При strict-режиме
+  `known_hosts` обязан быть прокинут caller'ом, иначе соединение отклоняется
+  (`SshError(error_code='SSH_STRICT_NO_HOST_KEY')`) — `known_hosts=None`
+  у asyncssh означает «принять любой host-key без проверки», что открывает
+  MITM. Отключать (`false`) можно только в доверенных dev/test-сетях, где
+  known_hosts ещё негде взять; в production validator не даёт его выключить.
 * `timeout=30` — общий cap на коннект + handshake. Реальный inventory
   занимает 2-5 секунд на современном железе; 30s — щедрый запас под
   laggy uplink.
@@ -50,11 +52,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 
 import asyncssh
+
+from src.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -105,13 +108,13 @@ _STRICT_ENV = "SSH_STRICT_HOST_KEY_CHECKING"
 
 
 def _is_strict_mode() -> bool:
-    """Production-toggle для строгой проверки known_hosts.
+    """Strict-проверка known_hosts (дефолт True, см. `Settings`).
 
-    Без env — accept-any (TOFU). С `true|1|yes` — отказ соединяться
-    при пустом `known_hosts` (см. `SshClient.__init__`).
+    `True` — отказ соединяться при пустом `known_hosts` (см.
+    `SshClient.connect`); `False` — accept-any (только доверенные dev/test).
+    Управляется env `SSH_STRICT_HOST_KEY_CHECKING` через `Settings`.
     """
-    val = os.environ.get(_STRICT_ENV, "").strip().lower()
-    return val in {"true", "1", "yes", "on"}
+    return get_settings().ssh_strict_host_key_checking
 
 
 # Валидация login'а перед передачей в chpasswd. Принимаем только
@@ -173,8 +176,8 @@ class SshClient:
         Решение по host-key:
 
         * `known_hosts=<path>` → asyncssh валидирует fingerprint;
-        * `known_hosts=None` без strict → accept-any (TOFU);
-        * `known_hosts=None` со strict → отказ, SshError.
+        * `known_hosts=None` со strict (дефолт) → отказ, SshError;
+        * `known_hosts=None` без strict → accept-any (только dev/test).
         """
         if self._conn is not None:
             return

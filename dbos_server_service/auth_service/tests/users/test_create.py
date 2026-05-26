@@ -56,6 +56,38 @@ async def test_dept_admin_b_cannot_create_user_in_dept_a(client, dept_admin_b_to
     assert resp.status_code == 403
 
 
+# ── Platform-role escalation guard ──────────────────────────────────────────
+
+
+async def test_dept_admin_cannot_create_account_admin(client, dept_admin_a_token, dept_a):
+    """department_admin не может присвоить platform_role=account_admin → 403."""
+    resp = await client.post(URL, headers={"Authorization": f"Bearer {dept_admin_a_token}"}, json={
+        "username": "escalated_admin", "password": "Pass1234!",
+        "department_id": dept_a.id, "platform_role": "account_admin",
+    })
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "PLATFORM_ROLE_ASSIGNMENT_DENIED"
+
+
+async def test_dept_admin_cannot_assign_loging_admin(client, dept_admin_a_token, dept_a):
+    """department_admin не может присвоить и другие платформенные роли."""
+    resp = await client.post(URL, headers={"Authorization": f"Bearer {dept_admin_a_token}"}, json={
+        "username": "escalated_logadmin", "password": "Pass1234!",
+        "department_id": dept_a.id, "platform_role": "loging_admin",
+    })
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "PLATFORM_ROLE_ASSIGNMENT_DENIED"
+
+
+async def test_dept_admin_creates_plain_user_without_platform_role(client, dept_admin_a_token, dept_a):
+    """Обычное создание юзера department_admin'ом (без platform_role) работает."""
+    resp = await client.post(URL, headers={"Authorization": f"Bearer {dept_admin_a_token}"}, json={
+        "username": "plain_user_ok", "password": "Pass1234!", "department_id": dept_a.id,
+    })
+    assert resp.status_code == 201
+    assert resp.json()["platform_role"] is None
+
+
 # ── Error cases ───────────────────────────────────────────────────────────────
 
 async def test_duplicate_username_returns_409(client, admin_token, dept_a, user_a):

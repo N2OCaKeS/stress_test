@@ -70,6 +70,31 @@ class TestBuildCommand:
         assert exc.value.error_code == "NO_PACKAGE_MANAGER"
 
 
+class TestPatternValidation:
+    @pytest.mark.parametrize("pattern", [
+        "htop", "linux-image*", "lib*.dev", "foo_bar", "a.b.c", "pkg+extra",
+        "py3[0-9]", "*",
+    ])
+    def test_accepts_legit_globs(self, pattern):
+        assert installed_packages._PATTERN_RE.match(pattern)
+
+    @pytest.mark.parametrize("pattern", [
+        "a'; id >/tmp/pwned; echo '",  # quote break-out
+        "$(reboot)",                    # command substitution
+        "`id`",                         # backtick
+        "foo; rm -rf /",               # statement separator
+        "foo bar",                      # whitespace
+        "foo\nbar",                     # newline
+        "foo|cat",                      # pipe
+        "foo>out",                      # redirect
+        "foo&bar",                      # background / and
+        "foo$VAR",                      # var expansion
+        "",                             # empty
+    ])
+    def test_rejects_injection(self, pattern):
+        assert not installed_packages._PATTERN_RE.match(pattern)
+
+
 # ── Task-handler через run_task ─────────────────────────────────────────────
 
 
@@ -266,6 +291,43 @@ class TestInstalledPackagesTask:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         assert t.last_error and "PACKAGE_QUERY_FAILED" in t.last_error
+
+    async def test_injection_pattern_rejected_before_ssh(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """pattern с shell-метасимволами → task FAILED, SSH не открывается."""
+        from sqlalchemy import update
+        from src.db.session import AsyncSessionLocal
+        from src.models import Task
+
+        fake = _FakeSshClient(host="srv1.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        monkeypatch.setattr(
+            "src.tasks.installed_packages.SshClient",
+            _make_fake_client_class(fake),
+        )
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv1",
+            payload={
+                "server_id": "srv1",
+                "pattern": "a'; touch /tmp/pwned; echo '",
+                "ssh_host": "srv1.example",
+            },
+        )
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Task).where(Task.id == tid).values(max_attempts=1)
+            )
+            await session.commit()
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert t.last_error and "INVALID_PATTERN" in t.last_error
+        # SSH-команды не выполнялись — валидация до подключения.
+        assert fake.commands == []
 
     async def test_ssh_connect_failure_propagates_to_failed(
         self, make_task, fetch_task, captured_audit, monkeypatch,

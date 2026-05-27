@@ -196,6 +196,10 @@ def _build_broker() -> ListQueueBroker:
     async def _account_deprovision(task_id: str) -> None:  # noqa: ARG001
         return None
 
+    @broker.task("server.prepare")
+    async def _server_prepare(task_id: str) -> None:  # noqa: ARG001
+        return None
+
     _task_stubs = {
         "power.on": _power_on,
         "power.off": _power_off,
@@ -210,6 +214,7 @@ def _build_broker() -> ListQueueBroker:
         "account.provision": _account_provision,
         "account.update_on_host": _account_update_on_host,
         "account.deprovision": _account_deprovision,
+        "server.prepare": _server_prepare,
     }
     _worker_broker = broker
     return broker

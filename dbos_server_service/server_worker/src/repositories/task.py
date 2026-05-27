@@ -85,6 +85,30 @@ async def mark_running(
     return task
 
 
+async def scrub_payload_keys(db: AsyncSession, task_id: str, keys: list[str]) -> None:
+    """Удалить заданные ключи из персистентного `tasks.payload`.
+
+    Используется для одноразовых bootstrap-кред (`server.prepare`): креды
+    приходят в payload через cross-DB dispatch-канал, и handler стирает их
+    из строки сразу после чтения, чтобы plaintext не оставался в БД воркера
+    после исполнения. Перечитываем актуальный payload и переписываем без
+    указанных ключей. Идемпотентно — отсутствующие ключи пропускаются.
+    """
+    task = await get_by_id(db, task_id)
+    if task is None or not task.payload:
+        return
+    payload = dict(task.payload)
+    changed = False
+    for key in keys:
+        if key in payload:
+            del payload[key]
+            changed = True
+    if changed:
+        await db.execute(
+            update(Task).where(Task.id == task_id).values(payload=payload)
+        )
+
+
 async def mark_succeeded(db: AsyncSession, task: Task, result: dict | None) -> Task:
     """Terminal success: status=SUCCEEDED, сохранить result, completed_at=now."""
     task.status = TaskStatus.SUCCEEDED

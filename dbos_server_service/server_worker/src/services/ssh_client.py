@@ -261,6 +261,42 @@ async def delete_user(
     return {"deleted": True}
 
 
+async def bootstrap_management_user(
+    credentials: dict,
+    server_id: str,
+    *,
+    management_user: str,
+    public_key: str,
+) -> dict:
+    """Онбординг управления: завести управляющего пользователя и положить ключ.
+
+    `credentials` — одноразовые bootstrap-креды (`{login, password, host?,
+    port?, known_hosts?}`): под ними SSH-сессия password-auth заходит на ещё
+    не управляемый сервер. После prepare управление идёт под `management_user`
+    по ключу, исходный пароль больше не нужен и нигде не сохраняется.
+
+    Idempotent: повторный prepare не падает на уже заведённом юзере / уже
+    добавленном ключе. Возврат — `{prepared: True, management_user}`.
+    Ошибки — `SshError`.
+    """
+    host = _extract_host(credentials, server_id)
+    username = credentials.get("login") or credentials.get("username") or "root"
+    password = credentials.get("password")
+    port = _extract_port(credentials)
+    known_hosts = credentials.get("known_hosts")
+
+    logger.info("ssh prepare management user %s on %s as %s", management_user, host, username)
+    async with SshClient(
+        host=host,
+        username=username,
+        password=password,
+        port=port,
+        known_hosts=known_hosts,
+    ) as ssh:
+        await ssh.bootstrap_management_user(management_user, public_key)
+    return {"prepared": True, "management_user": management_user}
+
+
 def _parse_size_to_gb(size_str: str) -> int:
     """Сконвертировать `lsblk SIZE` ("500G", "1.8T", "256M") в гигабайты.
 
@@ -587,6 +623,7 @@ __all__ = [
     "provision_user",
     "modify_user",
     "delete_user",
+    "bootstrap_management_user",
     "inventory_facts_to_payload",
     "os_users_facts_to_payload",
     "SshError",

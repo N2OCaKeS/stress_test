@@ -27,6 +27,7 @@ class TaskKind(StrEnum):
     ACCOUNT_PROVISION = "account.provision"
     ACCOUNT_UPDATE_ON_HOST = "account.update_on_host"
     ACCOUNT_DEPROVISION = "account.deprovision"
+    SERVER_PREPARE = "server.prepare"
     IPMI_ROTATE_PASSWORD = "ipmi.rotate_password"
 
 

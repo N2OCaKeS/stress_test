@@ -118,6 +118,9 @@ class Action(StrEnum):
     POWER_STATUS = "power_status"
     INVENTORY_TRIGGER = "inventory_trigger"
     INVENTORY_SUBMIT = "inventory_submit"
+    # worker_bot callback после бутстрапа управления (prepare): помечает
+    # сервер подготовленным. Узкий least-privilege грант, без CRUD над сервером.
+    PREPARE_CALLBACK = "prepare_callback"
 
     # Sensitive: показ расшифрованного секрета. Держатель `view_password` /
     # `view_credentials` получает plaintext (в base64) прямо в GET-карточке —
@@ -148,6 +151,8 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.OS_SYNC,
         Action.POWER_ON, Action.POWER_OFF, Action.POWER_REBOOT, Action.POWER_STATUS,
         Action.INVENTORY_TRIGGER, Action.INVENTORY_SUBMIT,
+        # worker_bot подтверждает завершение бутстрапа управления — callback-only.
+        Action.PREPARE_CALLBACK,
     }),
     EntityType.SERVER_ACCOUNT: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,

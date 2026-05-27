@@ -210,6 +210,45 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Management user / bootstrap (prepare) ────────────────────────────
+    # Бутстрап управления (#14): задача `server.prepare` заходит на сервер
+    # под одноразовыми bootstrap-кредами (password-auth), заводит системного
+    # управляющего пользователя DBOS, кладёт ему публичный ключ и даёт sudo.
+    # Дальше все управляющие сессии должны идти по этому ключу без исходного
+    # пароля.
+    ssh_management_user: str = Field(
+        default="dbos",
+        description=(
+            "System user the worker creates on `server.prepare` to manage the "
+            "host afterwards. Gets sudo and the management public key in its "
+            "authorized_keys."
+        ),
+    )
+    # Публичный ключ кладём в authorized_keys управляющего пользователя.
+    # Дефолт пустой — без него prepare откажется работать (нечего класть);
+    # сам ключ задаётся через env / k8s secret, в коде не хардкодится.
+    ssh_management_public_key: str = Field(
+        default="",
+        description=(
+            "OpenSSH public key (e.g. 'ssh-ed25519 AAAA... dbos') appended to "
+            "the management user's authorized_keys during `server.prepare`. "
+            "Empty disables prepare (nothing to install)."
+        ),
+    )
+    # Путь к приватному ключу для последующих management-сессий. На него в
+    # будущем переключатся provision/rotate/inventory вместо self-сессии под
+    # самим аккаунтом (см. follow-up). В коде не хранится — путь к файлу из
+    # mounted k8s secret.
+    ssh_management_private_key_path: str = Field(
+        default="",
+        description=(
+            "Path to the management private key file (mounted secret) used "
+            "for key-based management sessions after `server.prepare`. Empty "
+            "in dev/test; provision/rotate still use self password-auth until "
+            "they migrate to the management session."
+        ),
+    )
+
     # ── Background master-key rotation ───────────────────────────────────
     # Periodic task `secrets.reencrypt_lazy` зовёт server_service
     # `/internal/secrets/migration_status` + `/reencrypt_batch`. Активна

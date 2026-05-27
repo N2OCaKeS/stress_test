@@ -51,7 +51,11 @@ from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import server_account as account_repo
-from src.schemas.server import ServerPowerStatusDispatchResponse
+from src.schemas.server import (
+    ServerPowerStatusDispatchResponse,
+    ServerPrepareRequest,
+    ServerPrepareResponse,
+)
 from src.schemas.server_account import (
     AccountProvisionDispatchResponse,
     AccountRotateDispatchResponse,
@@ -435,6 +439,70 @@ async def inventory_sync_dispatch(
         task_kind="inventory.sync",
         require_ipmi=False,
     )
+
+
+# ── /servers/{id}/prepare — bootstrap управления (онбординг) ────────────────
+
+
+@router_servers.post(
+    "/prepare",
+    response_model=ServerPrepareResponse,
+    status_code=202,
+    summary="Бутстрап управления сервером через worker (202)",
+    description=(
+        "Публикует задачу `server.prepare` в taskiq-broker. В теле — bootstrap-"
+        "креды (логин и пароль в base64, симметрия с reveal-картами). "
+        "server_service декодирует их и прокидывает воркеру через cross-DB "
+        "dispatch-канал; воркер заходит на сервер под ними по SSH, заводит "
+        "системного управляющего пользователя DBOS, даёт ему sudo и кладёт "
+        "публичный ключ управления — дальше управление по ключу без исходного "
+        "пароля.\n\n"
+        "Bootstrap-креды одноразовые и НЕ хранятся персистентно: воркер стирает "
+        "их из task-payload сразу после чтения. По завершении воркер POST'ит "
+        "callback `/internal/.../prepared` — server_service помечает сервер "
+        "`is_managed`.\n\n"
+        "Идемпотентно: повторный prepare не падает, если управляющий "
+        "пользователь и ключ уже есть.\n\n"
+        "Доступ: `(server, *, update)` — бутстрап это management-операция над "
+        "сервером; отдельного action не заводим. Аудит — CRITICAL."
+    ),
+    responses={
+        202: {"description": "Задача принята, возвращается task_id."},
+        403: {"description": "Нет роли с `update` либо чужой department."},
+        404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        422: {"description": "Битый base64 в username_b64 / password_b64."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def server_prepare_dispatch(
+    server_id: str,
+    body: ServerPrepareRequest,
+    identity: CurrentIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> ServerPrepareResponse:
+    """Ставит `server.prepare` (бутстрап управления) в очередь worker'а.
+
+    Доступ: `(server, *, update)`. Битый base64 в теле → 422 (валидатор схемы
+    срабатывает до этого хендлера). Связано:
+    `server_worker/src/tasks/prepare.py::server_prepare`.
+    """
+    # base64 уже провалидирован схемой; декодируем plaintext для воркера.
+    # Креды в payload — одноразовые, воркер стирает их из строки после чтения.
+    result = await _dispatch_for_server(
+        db=db, identity=identity, request=request,
+        server_id=server_id,
+        action=Action.UPDATE,
+        audit_action="server.prepare",
+        task_kind="server.prepare",
+        require_ipmi=False,
+        extra_payload={
+            "bootstrap_login": body.username(),
+            "bootstrap_password": body.password(),
+        },
+    )
+    return ServerPrepareResponse(**result)
 
 
 # ── /server-accounts/{id}/rotate — admin-initiated worker rotation ──────────

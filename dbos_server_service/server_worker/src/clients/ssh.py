@@ -504,6 +504,80 @@ class SshClient:
                 message=f"userdel exit code {rc}",
             )
 
+    async def bootstrap_management_user(
+        self, management_user: str, public_key: str,
+    ) -> None:
+        """Завести управляющего пользователя DBOS и положить ему публичный ключ.
+
+        Бутстрап-онбординг (`server.prepare`): сессия идёт под bootstrap-кредами
+        (password-auth), под которыми мы заходим на ещё не управляемый сервер.
+        Здесь мы:
+
+        1. `useradd -m -s /bin/bash -G sudo <management_user>` (idempotent —
+           уже существующий пользователь синхронизируется как usermod,
+           пароль не трогаем, ключ ниже всё равно доложим);
+        2. создаём `~/.ssh` с правами 700 и `authorized_keys` 600;
+        3. дописываем `public_key` в authorized_keys, если его там ещё нет.
+
+        Повторный prepare не падает: useradd на existing → usermod, а ключ
+        добавляется только при отсутствии (grep по точному совпадению строки).
+
+        Пароль управляющему пользователю не ставим — управление дальше идёт по
+        ключу. `public_key` — аргумент для безопасной записи через here-doc на
+        stdin (не подставляется в командную строку, чтобы спецсимволы ключа /
+        комментария не ломали shell).
+        """
+        self._validate_login(management_user)
+        if not public_key or not public_key.strip():
+            raise SshError(
+                error_code="SSH_INVALID_ARG",
+                host=self.host,
+                cmd_sanitized="prepare authorized_keys",
+                message="management public key is empty",
+            )
+        key_line = public_key.strip()
+        if "\n" in key_line or "\r" in key_line:
+            raise SshError(
+                error_code="SSH_INVALID_ARG",
+                host=self.host,
+                cmd_sanitized="prepare authorized_keys",
+                message="management public key must be a single line",
+            )
+
+        # 1. Управляющий пользователь — заводим idempotent'но, с sudo.
+        await self.create_user(
+            management_user, groups=["sudo"], has_sudo=True, shell="/bin/bash",
+        )
+
+        # 2-3. ~/.ssh + authorized_keys и дозапись ключа. Делаем одной
+        # sudo-командой через bash, чтобы не плодить раунд-трипы. Путь к home
+        # резолвим через `getent passwd` внутри bash (домашняя директория
+        # управляющего юзера). `grep -qxF` проверяет точное совпадение строки —
+        # без него повторный prepare дублировал бы ключ.
+        rc, _out, stderr = await self.run(
+            f"bash -c 'set -e; "
+            f"home=$(getent passwd {management_user} | cut -d: -f6); "
+            'mkdir -p "$home/.ssh"; '
+            'touch "$home/.ssh/authorized_keys"; '
+            "key=$(cat); "
+            'grep -qxF "$key" "$home/.ssh/authorized_keys" || '
+            'printf "%s\\n" "$key" >> "$home/.ssh/authorized_keys"; '
+            f'chown -R {management_user}: "$home/.ssh"; '
+            'chmod 700 "$home/.ssh"; '
+            'chmod 600 "$home/.ssh/authorized_keys"\'',
+            sudo=True,
+            stdin_payload=f"{key_line}\n",
+        )
+        if rc != 0:
+            raise SshError(
+                error_code="SSH_PREPARE_FAILED",
+                host=self.host,
+                cmd_sanitized=f"prepare authorized_keys <{management_user}>",
+                returncode=rc,
+                stderr=stderr.strip(),
+                message=f"authorized_keys setup exit code {rc}",
+            )
+
     def _validate_login(self, login: str) -> None:
         """Отбить login с символами вне POSIX-набора до подстановки в команду."""
         if not _LOGIN_RE.match(login):

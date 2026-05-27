@@ -329,6 +329,53 @@ async def submit_provision_status(
         return {}
 
 
+async def submit_prepared(
+    server_id: str,
+    management_user: str,
+    target_department_id: str | None = None,
+) -> dict:
+    """Сообщить server_service, что бутстрап управления сервера завершён.
+
+    Финал `server.prepare` task'а: управляющий пользователь заведён и
+    публичный ключ положен. server_service помечает сервер подготовленным
+    (`is_managed=True`, `prepared_at`, management_user).
+
+    Возвращает: `{ok, is_managed, prepared_at}` от
+    `POST /api/server/v1/internal/servers/{id}/prepared`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `PREPARE_STATUS_REJECTED` — server_service вернул не 2xx.
+    """
+    settings = get_settings()
+    url = (
+        f"{settings.server_service_url.rstrip('/')}"
+        f"/api/server/v1/internal/servers/{server_id}/prepared"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
+            response = await client.post(
+                url,
+                headers=_headers(target_department_id),
+                json={"management_user": management_user},
+            )
+    except httpx.HTTPError as exc:
+        raise CredentialFetchError(
+            error_code="SERVER_SERVICE_UNREACHABLE",
+            message=f"Failed to call server_service: {type(exc).__name__}",
+        ) from exc
+    if response.status_code >= 300:
+        raise CredentialFetchError(
+            error_code="PREPARE_STATUS_REJECTED",
+            message=f"server_service returned {response.status_code}",
+            details={"server_id": server_id, "status_code": response.status_code},
+        )
+    try:
+        return response.json()
+    except ValueError:
+        return {}
+
+
 async def fetch_secrets_migration_status() -> dict:
     """Запросить сводку по постепенной ротации мастер-ключа.
 

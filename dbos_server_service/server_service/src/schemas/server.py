@@ -1,5 +1,7 @@
 """Pydantic-схемы запроса/ответа для эндпоинтов /servers."""
 
+import base64
+import binascii
 from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
 
@@ -8,6 +10,24 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from src.core.constants import IpmiKind
 from src.core.password_policy import validate_password
 from src.schemas.disk import DiskResponse, DiskSpec
+
+
+def _decode_b64(value: str, field_name: str) -> str:
+    """Декодировать base64-строку в UTF-8. Битый вход → ValueError (→ 422).
+
+    Симметрия с reveal-картой аккаунта/IPMI, где plaintext отдаётся в
+    `password_b64` через `base64.b64encode`. Здесь обратное направление:
+    клиент шлёт креды в base64, мы декодируем на стороне server_service и
+    прокидываем plaintext воркеру через internal-канал.
+    """
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError(f"{field_name} is not valid base64") from exc
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{field_name} does not decode to UTF-8") from exc
 
 
 class ServerIpmiCreate(BaseModel):
@@ -183,6 +203,9 @@ class ServerResponse(BaseModel):
     ram_total_mb: int | None = Field(default=None, description="RAM в МБ.")
     network_interface_name: str | None = Field(default=None, description="Имя сетевого интерфейса.")
     decommissioned_at: datetime | None = Field(default=None, description="Когда сервер выведен из эксплуатации.")
+    is_managed: bool = Field(default=False, description="Прошёл ли сервер бутстрап управления (prepare).")
+    management_user: str | None = Field(default=None, description="Имя управляющего пользователя DBOS (после prepare).")
+    prepared_at: datetime | None = Field(default=None, description="Когда сервер подготовлен к управлению (prepare callback).")
     storage: list[DiskResponse] = Field(default_factory=list, description="Диски сервера (slot/size_gb/is_system/model).")
     created_at: datetime = Field(description="Когда карточка создана.")
     updated_at: datetime = Field(description="Когда карточка изменена в последний раз.")
@@ -215,3 +238,75 @@ class ServerTaskDispatchResponse(BaseModel):
 
 # Legacy alias — старые endpoint'ы и тесты импортируют исторический имя.
 ServerPowerStatusDispatchResponse = ServerTaskDispatchResponse
+
+
+class ServerPrepareRequest(BaseModel):
+    """Тело POST /servers/{id}/prepare — bootstrap-креды для онбординга.
+
+    Логин и пароль приходят в base64 (симметрия с reveal-картами, где
+    plaintext отдаётся в `password_b64`). server_service декодирует их на
+    приёме и прокидывает воркеру через internal-канал. Креды одноразовые —
+    они НЕ хранятся: воркер заходит под ними по SSH, заводит управляющего
+    пользователя DBOS и кладёт ему публичный ключ, после чего исходный
+    пароль больше не нужен.
+    """
+
+    username_b64: str = Field(
+        ..., min_length=1,
+        description="Логин bootstrap-аккаунта в base64 (UTF-8 после декода).",
+    )
+    password_b64: str = Field(
+        ..., min_length=1,
+        description="Пароль bootstrap-аккаунта в base64 (UTF-8 после декода).",
+    )
+
+    @field_validator("username_b64")
+    @classmethod
+    def _check_username_b64(cls, value: str) -> str:
+        _decode_b64(value, "username_b64")
+        return value
+
+    @field_validator("password_b64")
+    @classmethod
+    def _check_password_b64(cls, value: str) -> str:
+        _decode_b64(value, "password_b64")
+        return value
+
+    def username(self) -> str:
+        """Декодированный логин (валидность уже проверена валидатором)."""
+        return _decode_b64(self.username_b64, "username_b64")
+
+    def password(self) -> str:
+        """Декодированный пароль (валидность уже проверена валидатором)."""
+        return _decode_b64(self.password_b64, "password_b64")
+
+
+class ServerPrepareResponse(BaseModel):
+    """Ответ на dispatch `server.prepare` — task_id онбординг-задачи."""
+
+    task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+    status: str = Field(description="Статус: queued.")
+
+
+class ServerPrepareCallbackRequest(BaseModel):
+    """Тело POST /internal/servers/{id}/prepared — callback воркера.
+
+    Воркер сообщает, что онбординг завершён: управляющий пользователь заведён
+    и публичный ключ положен. server_service помечает сервер подготовленным
+    (`is_managed=True`, `prepared_at`, имя управляющего юзера).
+    """
+
+    management_user: str = Field(
+        ..., min_length=1, max_length=64,
+        description="Имя заведённого управляющего пользователя DBOS.",
+    )
+
+
+class ServerPrepareCallbackResponse(BaseModel):
+    """Подтверждение записи prepared-callback'а."""
+
+    ok: bool = True
+    is_managed: bool = Field(description="Текущее значение флага управляемости.")
+    prepared_at: str | None = Field(
+        default=None, description="ISO-8601 UTC момент подготовки.",
+    )

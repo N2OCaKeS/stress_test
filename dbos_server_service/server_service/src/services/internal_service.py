@@ -48,6 +48,7 @@ from src.schemas.internal import (
     ProvisionStatusRequest,
     UsersInventoryCallbackRequest,
 )
+from src.schemas.server import ServerPrepareCallbackRequest
 from src.services import audit_service, permissions, secrets_service
 from src.utils.ids import os_version_id, server_account_id, server_disk_id
 
@@ -724,6 +725,80 @@ async def record_provision_status(
         },
     )
     return {"ok": True, "present_on_server": payload.present}
+
+
+async def record_server_prepared(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    payload: ServerPrepareCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Зафиксировать завершение бутстрапа управления сервером (callback worker'а).
+
+    Право: `(server, *, prepare_callback)` — узкий грант worker_bot'а.
+
+    Помечает сервер подготовленным: `is_managed=True`, `prepared_at=now`,
+    `management_user=<имя>`. Идемпотентно: повторный callback просто
+    переписывает те же поля. Аудит — CRITICAL.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.prepared",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+
+    server = await server_repo.get_by_id(db, server_id)
+    if server is None:
+        audit_service.emit(
+            "server.prepared",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+
+    _check_target_department(
+        audit_action="server.prepared",
+        target_id=server_id,
+        target_type="server",
+        server_department_id=server.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
+
+    prepared_at = datetime.now(timezone.utc)
+    await server_repo.update(db, server, {
+        "is_managed": True,
+        "management_user": payload.management_user,
+        "prepared_at": prepared_at,
+    })
+    await db.commit()
+
+    audit_service.emit(
+        "server.prepared",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "management_user": payload.management_user,
+            "prepared_at": prepared_at.isoformat(),
+            "department_id": server.department_id,
+        },
+    )
+    return {
+        "ok": True,
+        "is_managed": True,
+        "prepared_at": prepared_at.isoformat(),
+    }
 
 
 async def record_ipmi_credentials_rotated(

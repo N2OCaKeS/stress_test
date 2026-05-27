@@ -33,6 +33,10 @@ from src.schemas.internal import (
     UsersInventoryCallbackRequest,
     UsersInventoryCallbackResponse,
 )
+from src.schemas.server import (
+    ServerPrepareCallbackRequest,
+    ServerPrepareCallbackResponse,
+)
 from src.services import internal_service
 
 router = APIRouter(prefix="/internal", include_in_schema=False)
@@ -216,6 +220,33 @@ async def record_provision_status(
         target_department_id=x_target_department_id,
     )
     return ProvisionStatusResponse(**data)
+
+
+@router.post(
+    "/servers/{server_id}/prepared",
+    response_model=ServerPrepareCallbackResponse,
+)
+async def record_server_prepared(
+    server_id: str,
+    body: ServerPrepareCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> ServerPrepareCallbackResponse:
+    """Worker сообщает, что бутстрап управления сервера завершён.
+
+    server_service помечает сервер подготовленным: `is_managed=True`,
+    `prepared_at=now`, `management_user=<имя>`.
+
+    Доступ: `(server, *, prepare_callback)`. Worker_bot роль (seed).
+
+    Аудит: `server.prepared` (CRITICAL).
+    """
+    data = await internal_service.record_server_prepared(
+        db, identity, server_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return ServerPrepareCallbackResponse(**data)
 
 
 @router.post(

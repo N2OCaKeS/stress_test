@@ -5,5 +5,6 @@ from src.tasks import (  # noqa: F401
     inventory,
     passwords,
     power,
+    prepare,
     users,
 )

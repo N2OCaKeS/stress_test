@@ -31,6 +31,27 @@ from src.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+def apply_session_hints(credentials: dict, payload: dict) -> dict:
+    """Прокинуть в credentials признаки управляющей сессии из task-payload.
+
+    server_service кладёт в payload `is_managed` (прошёл ли сервер prepare) и
+    `management_user`. На их основе `_build_session` выбирает сессию: ключевую
+    под управляющим пользователем для подготовленного сервера либо self-сессию
+    под самим аккаунтом для остальных. Приватный ключ берётся из worker-конфига,
+    по сети не передаётся.
+
+    Если в payload полей нет (старый dispatch, например inventory.sync до
+    проброса hints на стороне server_service) — credentials остаются как есть,
+    выбор сессии падает на self-поведение.
+    """
+    if payload.get("is_managed"):
+        credentials["is_managed"] = True
+        management_user = payload.get("management_user")
+        if management_user:
+            credentials["management_user"] = management_user
+    return credentials
+
+
 def _extract_host(credentials: dict, server_id: str) -> str:
     """Достать хост из credentials. Несколько fallback'ов:
 
@@ -135,21 +156,14 @@ async def collect_inventory(credentials: dict, server_id: str) -> dict:
     Ошибки: `SshError` пробрасывается наверх, `_runner` ловит и
     помечает task'у failed / pending-for-retry. Connect / auth /
     timeout — отдельные `error_code`'ы.
-    """
-    host = _extract_host(credentials, server_id)
-    username = credentials.get("login") or credentials.get("username") or "root"
-    password = credentials.get("password")
-    port = _extract_port(credentials)
-    known_hosts = credentials.get("known_hosts")
 
-    logger.info("ssh inventory on %s as %s", host, username)
-    async with SshClient(
-        host=host,
-        username=username,
-        password=password,
-        port=port,
-        known_hosts=known_hosts,
-    ) as ssh:
+    На управляемом сервере (`credentials['is_managed']`) сессия идёт под
+    управляющим пользователем по ключу; иначе — под самим аккаунтом. Сбор
+    inventory sudo не требует, но единый выбор сессии важен: после prepare
+    self-аккаунт может уже не иметь рабочего пароля.
+    """
+    logger.info("ssh inventory on %s", _extract_host(credentials, server_id))
+    async with _build_session(credentials, server_id) as ssh:
         return await ssh.get_inventory()
 
 
@@ -635,6 +649,7 @@ def os_users_facts_to_payload(facts: dict) -> dict:
 
 
 __all__ = [
+    "apply_session_hints",
     "collect_inventory",
     "collect_os_users",
     "set_account_password",

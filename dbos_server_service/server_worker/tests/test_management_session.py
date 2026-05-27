@@ -16,8 +16,9 @@ import pytest
 from src.clients.ssh import SshError
 from src.core.config import get_settings
 from src.core.constants import TaskStatus
+from src.core.exceptions import CredentialFetchError
 from src.services import ssh_client
-from src.tasks import passwords, users
+from src.tasks import inventory, passwords, users
 
 
 def _run_result(stdout="", stderr="", rc=0):
@@ -104,6 +105,27 @@ class TestBuildSession:
 def _fetch_creds(login="ops"):
     async def _f(server_id, account_id, target_department_id=None):
         return {"login": login, "password": "sess-pwd", "host": "10.0.0.5"}
+    return _f
+
+
+def _fetch_spy(login="ops", *, has_password=True):
+    """fetch_account_password-замена со счётчиком вызовов.
+
+    `has_password=False` имитирует discovered-аккаунт — server_service отдаёт
+    404 `ACCOUNT_HAS_NO_PASSWORD`, фасад поднимает CredentialFetchError.
+    """
+    calls: list[tuple] = []
+
+    async def _f(server_id, account_id, target_department_id=None):
+        calls.append((server_id, account_id, target_department_id))
+        if not has_password:
+            raise CredentialFetchError(
+                error_code="ACCOUNT_PASSWORD_UNAVAILABLE",
+                message="server_service returned 404",
+            )
+        return {"login": login, "password": "sess-pwd", "host": "10.0.0.5"}
+
+    _f.calls = calls
     return _f
 
 
@@ -327,3 +349,258 @@ class TestUsersInventoryUsesManagementSession:
         assert t.status == TaskStatus.SUCCEEDED
         assert connect_mock.await_args.kwargs["username"] == "dbos"
         assert connect_mock.await_args.kwargs["client_keys"] == [mgmt_key]
+
+
+def _inventory_conn():
+    """SSHClientConnection-like mock c canned-результатами inventory-команд."""
+    return _conn([
+        _run_result("srv-01\n"),
+        _run_result("Linux srv-01 5.15.0-91-generic\n"),
+        _run_result('{"lscpu":[{"field":"Architecture:","data":"x86_64"}]}'),
+        _run_result('{"blockdevices":[{"name":"sda","size":"500G","type":"disk"}]}'),
+        _run_result('NAME="Astra Linux"\nVERSION_ID="1.7"\n'),
+        _run_result('00:00.0 "Host bridge" "Intel"\n'),
+    ])
+
+
+class TestInventorySyncUsesManagementSession:
+    async def test_managed_inventory_connects_as_management_user_no_fetch(
+        self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
+    ):
+        tid = await make_task(
+            task_kind="inventory.sync", target_server_id="srv_inv_m",
+            payload={
+                "server_id": "srv_inv_m", "account_id": "acc_inv",
+                "is_managed": True, "management_user": "dbos",
+            },
+        )
+        spy = _fetch_spy("ops")
+        monkeypatch.setattr(
+            "src.tasks.inventory.server_service_client.fetch_account_password", spy,
+        )
+        connect_mock = AsyncMock(return_value=_inventory_conn())
+        monkeypatch.setattr(asyncssh, "connect", connect_mock)
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.inventory.server_service_client.submit_inventory_facts", fake_submit,
+        )
+
+        await inventory.inventory_sync.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # На управляемом сервере fetch ради auth не дёргается.
+        assert spy.calls == []
+        connect_kwargs = connect_mock.await_args.kwargs
+        assert connect_kwargs["username"] == "dbos"
+        assert connect_kwargs["password"] is None
+        assert connect_kwargs["client_keys"] == [mgmt_key]
+
+    async def test_unmanaged_inventory_keeps_self_session(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        tid = await make_task(
+            task_kind="inventory.sync", target_server_id="srv_inv_u",
+            payload={"server_id": "srv_inv_u", "account_id": "acc_inv"},
+        )
+        spy = _fetch_spy("ops")
+        monkeypatch.setattr(
+            "src.tasks.inventory.server_service_client.fetch_account_password", spy,
+        )
+        connect_mock = AsyncMock(return_value=_inventory_conn())
+        monkeypatch.setattr(asyncssh, "connect", connect_mock)
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.inventory.server_service_client.submit_inventory_facts", fake_submit,
+        )
+
+        await inventory.inventory_sync.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # На неуправляемом сервере self-сессия требует login+password из fetch.
+        assert len(spy.calls) == 1
+        connect_kwargs = connect_mock.await_args.kwargs
+        assert connect_kwargs["username"] == "ops"
+        assert connect_kwargs["password"] == "sess-pwd"
+        assert connect_kwargs["client_keys"] is None
+
+
+class TestManagedSkipsFetchForAuth:
+    async def test_managed_deprovision_does_not_fetch(
+        self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
+    ):
+        tid = await make_task(
+            task_kind="account.deprovision", target_server_id="srv_d_nf",
+            payload={
+                "server_id": "srv_d_nf", "account_id": "acc_d", "login": "ops",
+                "is_managed": True, "management_user": "dbos",
+            },
+        )
+        spy = _fetch_spy("ops")
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password", spy,
+        )
+        conn = _conn([
+            _run_result("ops:x:1001:1001::/home/ops:/bin/bash", "", 0),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_deprovision.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert spy.calls == []
+
+    async def test_managed_update_does_not_fetch(
+        self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
+    ):
+        tid = await make_task(
+            task_kind="account.update_on_host", target_server_id="srv_u_nf",
+            payload={
+                "server_id": "srv_u_nf", "account_id": "acc_u", "login": "ops",
+                "has_sudo": True, "unix_groups": ["devs"], "shell": "/bin/bash",
+                "is_managed": True, "management_user": "dbos",
+            },
+        )
+        spy = _fetch_spy("ops")
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password", spy,
+        )
+        # usermod-путь: user_exists (getent) → usermod groups → usermod shell.
+        conn = _conn([
+            _run_result("ops:x:1001:1001::/home/ops:/bin/bash", "", 0),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_update_on_host.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert spy.calls == []
+
+    async def test_managed_rotate_with_payload_login_does_not_fetch(
+        self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
+    ):
+        tid = await make_task(
+            task_kind="account.rotate_password", target_server_id="srv_r_nf",
+            payload={
+                "server_id": "srv_r_nf", "account_id": "acc_r", "login": "appuser",
+                "is_managed": True, "management_user": "dbos",
+            },
+        )
+        spy = _fetch_spy("appuser")
+        monkeypatch.setattr(
+            "src.tasks.passwords.server_service_client.fetch_account_password", spy,
+        )
+        conn = _conn([_run_result("", "", 0)])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(server_id, account_id, new_password, target_department_id=None):
+            return {"rotated_at": "2026-05-27T00:00:00Z"}
+        monkeypatch.setattr(
+            "src.tasks.passwords.server_service_client.submit_rotated_password", fake_submit,
+        )
+
+        await passwords.account_rotate_password.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # login есть в payload → fetch не нужен, discovered-аккаунт ротируется.
+        assert spy.calls == []
+
+
+class TestManagedDiscoveredAccountProvision:
+    async def test_managed_provision_no_password_skips_chpasswd(
+        self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
+    ):
+        tid = await make_task(
+            task_kind="account.provision", target_server_id="srv_disc",
+            payload={
+                "server_id": "srv_disc", "account_id": "acc_disc", "login": "ops",
+                "is_managed": True, "management_user": "dbos",
+            },
+        )
+        # discovered-аккаунт: пароля нет → fetch отдаёт 404.
+        spy = _fetch_spy("ops", has_password=False)
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password", spy,
+        )
+        # getent (not found) → useradd. chpasswd НЕ должен вызываться.
+        conn = _conn([
+            _run_result("", "", 2),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_provision.original_func(tid)
+
+        t = await fetch_task(tid)
+        # Задача НЕ падает, хотя пароля нет — шаг chpasswd пропущен.
+        assert t.status == TaskStatus.SUCCEEDED
+        # Best-effort fetch ради пароля сделан один раз и вернул 404.
+        assert len(spy.calls) == 1
+        # Только две команды: getent + useradd, без chpasswd.
+        assert conn.run.await_count == 2
+
+    async def test_managed_provision_with_password_sets_it(
+        self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
+    ):
+        tid = await make_task(
+            task_kind="account.provision", target_server_id="srv_pw",
+            payload={
+                "server_id": "srv_pw", "account_id": "acc_pw", "login": "ops",
+                "is_managed": True, "management_user": "dbos",
+            },
+        )
+        spy = _fetch_spy("ops", has_password=True)
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password", spy,
+        )
+        # getent (not found) → useradd → chpasswd.
+        conn = _conn([
+            _run_result("", "", 2),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status", fake_submit,
+        )
+
+        await users.account_provision.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # На managed login из payload, пароль тянем best-effort для chpasswd.
+        assert len(spy.calls) == 1
+        assert conn.run.await_count == 3

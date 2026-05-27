@@ -25,21 +25,59 @@ from src.tasks._runner import run_task
 logger = logging.getLogger(__name__)
 
 
-def _apply_session_hints(creds: dict, payload: dict) -> dict:
-    """Прокинуть в creds признаки управляющей сессии из task-payload.
+async def _account_creds(
+    payload: dict, server_id: str, account_id: str, target_dept: str | None,
+) -> dict:
+    """Собрать credentials для привилегированной операции над аккаунтом.
 
-    server_service кладёт в payload `is_managed` (прошёл ли сервер prepare) и
-    `management_user`. На их основе ssh-фасад выбирает сессию: ключевую под
-    управляющим пользователем для подготовленного сервера либо self-сессию под
-    самим аккаунтом для остальных. Приватный ключ берётся из worker-конфига,
-    по сети не передаётся.
+    На не управляемом сервере сессия идёт под самим аккаунтом по паролю, поэтому
+    пароль обязателен — тянем его из server_service, при отказе задача падает
+    (без пароля на SSH не зайти).
+
+    На управляемом сервере аутентификация по ключу под управляющим
+    пользователем, пароль аккаунта для входа не нужен. `login` берём из payload
+    (его кладёт server_service для provision/update/deprovision), пароль не
+    запрашиваем — у discovered-аккаунта его может не быть вовсе.
     """
-    if payload.get("is_managed"):
-        creds["is_managed"] = True
-        management_user = payload.get("management_user")
-        if management_user:
-            creds["management_user"] = management_user
+    login = payload.get("login")
+    if payload.get("is_managed") and login:
+        creds = {"login": login}
+    else:
+        # Self-сессия (или managed без login в payload — fallback на старое
+        # поведение): пароль обязателен для входа под аккаунтом.
+        creds = await server_service_client.fetch_account_password(
+            server_id, account_id, target_dept,
+        )
+    ssh_client.apply_session_hints(creds, payload)
     return creds
+
+
+async def _fetch_password_to_set(
+    server_id: str, account_id: str, target_dept: str | None,
+) -> str | None:
+    """Best-effort пароль аккаунта, чтобы выставить его на боксе (managed).
+
+    На управляемом сервере вход по ключу, пароль нужен только чтобы прописать
+    его пользователю. У discovered-аккаунта пароля нет — server_service вернёт
+    `ACCOUNT_PASSWORD_UNAVAILABLE`, тогда возвращаем `None` и шаг chpasswd
+    пропускается. Транспортная ошибка пробрасывается (это уже не штатное
+    «пароля нет», а недоступность сервиса).
+    """
+    try:
+        creds = await server_service_client.fetch_account_password(
+            server_id, account_id, target_dept,
+        )
+    except CredentialFetchError as exc:
+        if exc.error_code == "ACCOUNT_PASSWORD_UNAVAILABLE":
+            logger.info(
+                "managed provision server_id=%s account_id=%s: no stored "
+                "password, skipping chpasswd",
+                server_id,
+                account_id,
+            )
+            return None
+        raise
+    return creds.get("password")
 
 
 # Whitelist для audit details.result. Сами логины/группы/home — потенциально
@@ -67,14 +105,18 @@ async def users_inventory(task_id: str) -> None:
         server_id = payload["server_id"]
         account_id = payload.get("account_id")
         target_dept = payload.get("target_department_id")
+        is_managed = bool(payload.get("is_managed"))
 
-        if account_id:
+        # На управляемом сервере сессия идёт по ключу под управляющим
+        # пользователем — пароль аккаунта не нужен (его может и не быть у
+        # discovered-аккаунта). Тянем только когда сессия пойдёт под аккаунтом.
+        if account_id and not is_managed:
             creds = await server_service_client.fetch_account_password(
                 server_id, account_id, target_dept,
             )
         else:
             creds = {"login": payload.get("ssh_login", "root")}
-        _apply_session_hints(creds, payload)
+        ssh_client.apply_session_hints(creds, payload)
 
         facts = await ssh_client.collect_os_users(creds, server_id)
         users_payload = ssh_client.os_users_facts_to_payload(facts)
@@ -121,12 +163,18 @@ AUDIT_SAFE_FIELDS_PROVISION: set[str] = {
 async def account_provision(task_id: str) -> None:
     """Завести OS-пользователя на сервере (`useradd`) и подтвердить статус.
 
-    Поток: `fetch_account_password` (login + расшифрованный общий пароль) →
-    `ssh_client.provision_user` (useradd + chpasswd, groups/sudo/shell/home из
-    payload) → `submit_provision_status(present=True)`.
+    Поток: собираем сессию (`_account_creds`) → `ssh_client.provision_user`
+    (useradd + опц. chpasswd, groups/sudo/shell/home из payload) →
+    `submit_provision_status(present=True)`.
+
+    На управляемом сервере вход по ключу: пароль для аутентификации не нужен,
+    `login` берём из payload. Пароль тянем best-effort только чтобы выставить
+    его пользователю; у discovered-аккаунта пароля нет — заводим без смены
+    пароля. На не управляемом сервере пароль обязателен (self-сессия).
 
     Параметры: `task_id`. Payload — `server_id`, `account_id`, `login`,
-    `has_sudo`, `unix_groups`, `shell`, `home_dir`, опц. `target_department_id`.
+    `has_sudo`, `unix_groups`, `shell`, `home_dir`, опц. `target_department_id`,
+    `is_managed`, `management_user`.
 
     Idempotent: уже существующий пользователь синхронизируется, не падает.
 
@@ -138,14 +186,19 @@ async def account_provision(task_id: str) -> None:
         account_id = payload["account_id"]
         target_dept = payload.get("target_department_id")
 
-        creds = await server_service_client.fetch_account_password(
-            server_id, account_id, target_dept,
-        )
-        _apply_session_hints(creds, payload)
+        creds = await _account_creds(payload, server_id, account_id, target_dept)
+        # На управляемом сервере пароль для входа не нужен (ключ), но если у
+        # аккаунта есть хранимый пароль — ставим его на боксе. Тянем best-effort:
+        # discovered-аккаунт без пароля заводим без смены пароля, не падаем.
+        new_password = creds.get("password")
+        if payload.get("is_managed") and new_password is None:
+            new_password = await _fetch_password_to_set(
+                server_id, account_id, target_dept,
+            )
         await ssh_client.provision_user(
             creds, server_id,
             login=creds["login"],
-            new_password=creds.get("password"),
+            new_password=new_password,
             groups=payload.get("unix_groups") or [],
             has_sudo=bool(payload.get("has_sudo")),
             shell=payload.get("shell"),
@@ -174,9 +227,10 @@ async def account_provision(task_id: str) -> None:
 async def account_update_on_host(task_id: str) -> None:
     """Синхронизировать атрибуты OS-пользователя на сервере (`usermod`).
 
-    Поток: `fetch_account_password` (нужен login + management-сессия) →
-    `ssh_client.modify_user` (usermod groups/sudo/shell) →
-    `submit_provision_status(present=True)`. Пароль не меняется.
+    Поток: собираем сессию (`_account_creds`) → `ssh_client.modify_user`
+    (usermod groups/sudo/shell) → `submit_provision_status(present=True)`.
+    Пароль не меняется, поэтому на управляемом сервере он не запрашивается
+    вовсе — `login` берётся из payload.
 
     Параметры/payload — как у `account_provision`.
 
@@ -188,10 +242,7 @@ async def account_update_on_host(task_id: str) -> None:
         account_id = payload["account_id"]
         target_dept = payload.get("target_department_id")
 
-        creds = await server_service_client.fetch_account_password(
-            server_id, account_id, target_dept,
-        )
-        _apply_session_hints(creds, payload)
+        creds = await _account_creds(payload, server_id, account_id, target_dept)
         await ssh_client.modify_user(
             creds, server_id,
             login=creds["login"],
@@ -222,9 +273,10 @@ async def account_update_on_host(task_id: str) -> None:
 async def account_deprovision(task_id: str) -> None:
     """Удалить OS-пользователя с сервера (`userdel`) и подтвердить статус.
 
-    Поток: `fetch_account_password` (нужен login + management-сессия) →
-    `ssh_client.delete_user` (userdel, опц. --remove) →
-    `submit_provision_status(present=False)`.
+    Поток: собираем сессию (`_account_creds`) → `ssh_client.delete_user`
+    (userdel, опц. --remove) → `submit_provision_status(present=False)`.
+    Пароль не меняется — на управляемом сервере он не запрашивается, `login`
+    берётся из payload.
 
     Параметры: `task_id`. Payload — `server_id`, `account_id`, `login`,
     опц. `remove_home`, `target_department_id`.
@@ -240,10 +292,7 @@ async def account_deprovision(task_id: str) -> None:
         target_dept = payload.get("target_department_id")
         remove_home = bool(payload.get("remove_home"))
 
-        creds = await server_service_client.fetch_account_password(
-            server_id, account_id, target_dept,
-        )
-        _apply_session_hints(creds, payload)
+        creds = await _account_creds(payload, server_id, account_id, target_dept)
         await ssh_client.delete_user(
             creds, server_id, login=creds["login"], remove_home=remove_home,
         )

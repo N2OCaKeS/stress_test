@@ -38,13 +38,15 @@ AUDIT_SAFE_FIELDS: set[str] = {"server_id", "submit_status"}
 async def inventory_sync(task_id: str) -> None:
     """Собрать inventory сервера по SSH.
 
-    Что делает: если в payload есть `account_id` — тянет пароль аккаунта
-    через server_service, иначе использует дефолтный логин из
-    `payload.ssh_login` (или `root`). Далее `ssh_client.collect_inventory`
-    отдаёт OS/kernel/packages/disks. Результат — `{server_id, facts}`.
+    Что делает: на не управляемом сервере, если в payload есть `account_id`,
+    тянет пароль аккаунта через server_service, иначе использует дефолтный
+    логин из `payload.ssh_login` (или `root`). На управляемом сервере
+    (`is_managed`) вход по ключу под управляющим пользователем — пароль
+    аккаунта не запрашивается. Далее `ssh_client.collect_inventory` отдаёт
+    OS/kernel/cpu/disks. Результат — `{server_id, facts}`.
 
     Параметры: `task_id`. Payload — `server_id`, опционально `account_id`,
-    `ssh_login`, `target_department_id`.
+    `ssh_login`, `target_department_id`, `is_managed`, `management_user`.
 
     Возвращает: `{server_id, facts}` — в audit уходит только `server_id`
     (см. AUDIT_SAFE_FIELDS).
@@ -58,13 +60,19 @@ async def inventory_sync(task_id: str) -> None:
         server_id = payload["server_id"]
         account_id = payload.get("account_id")
         target_dept = payload.get("target_department_id")
+        is_managed = bool(payload.get("is_managed"))
 
-        if account_id:
+        # На управляемом сервере аутентификация идёт по ключу под управляющим
+        # пользователем — пароль аккаунта для сессии не нужен, и его может не
+        # быть вовсе (discovered-аккаунт). Тянем пароль только когда сессия
+        # реально пойдёт под самим аккаунтом.
+        if account_id and not is_managed:
             creds = await server_service_client.fetch_account_password(
                 server_id, account_id, target_dept,
             )
         else:
             creds = {"login": payload.get("ssh_login", "root")}
+        ssh_client.apply_session_hints(creds, payload)
 
         facts = await ssh_client.collect_inventory(creds, server_id)
         # Маппинг raw facts → flat schema для server_service. См.

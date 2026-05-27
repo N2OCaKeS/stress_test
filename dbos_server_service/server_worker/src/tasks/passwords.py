@@ -118,13 +118,18 @@ def _build_redfish_client(creds: dict) -> RedfishClient:
 async def account_rotate_password(task_id: str) -> None:
     """Ротировать пароль аккаунта на сервере (Linux user).
 
-    Что делает: тянет текущий логин из server_service → генерим новый
-    пароль → `ssh_client.set_account_password` (`chpasswd`) → отдаём
-    новый пароль обратно в server_service через `submit_rotated_password`,
-    тот шифрует и сохраняет.
+    Что делает: определяет логин (из payload на управляемом сервере либо через
+    fetch на self-сессии) → генерим новый пароль → `ssh_client.set_account_password`
+    (`chpasswd`) → отдаём новый пароль обратно в server_service через
+    `submit_rotated_password`, тот шифрует и сохраняет.
+
+    На управляемом сервере смену пароля делаем под управляющим пользователем по
+    ключу с sudo; пароль аккаунта для входа не нужен, поэтому если `login` есть в
+    payload — fetch не выполняется (это позволяет ротировать и discovered-аккаунт
+    без хранимого пароля).
 
     Параметры: `task_id`. Payload — `server_id`, `account_id`, опционально
-    `target_department_id`.
+    `login`, `target_department_id`, `is_managed`, `management_user`.
 
     Возвращает: `{server_id, account_id, rotated_at}`. В audit уходит
     только эта тройка (см. AUDIT_SAFE_FIELDS_ACCOUNT_ROTATE) — plaintext
@@ -142,16 +147,20 @@ async def account_rotate_password(task_id: str) -> None:
         # cross-check). См. модуль docstring `server_service.internal_service`.
         target_dept = payload.get("target_department_id")
 
-        creds = await server_service_client.fetch_account_password(
-            server_id, account_id, target_dept,
-        )
-        # На подготовленном сервере смену пароля чужого аккаунта делаем под
-        # управляющим пользователем по ключу с sudo, а не self-сессией.
-        if payload.get("is_managed"):
-            creds["is_managed"] = True
-            management_user = payload.get("management_user")
-            if management_user:
-                creds["management_user"] = management_user
+        # На управляемом сервере вход по ключу под управляющим пользователем,
+        # пароль аккаунта для аутентификации не нужен. `login` берём из payload,
+        # если server_service его положил, иначе тянем через fetch. У discovered-
+        # аккаунта пароля нет (fetch вернул бы 404), но login из payload снимает
+        # необходимость в нём. На не управляемом сервере self-сессия требует
+        # пароль — fetch обязателен.
+        login = payload.get("login")
+        if payload.get("is_managed") and login:
+            creds: dict = {"login": login}
+        else:
+            creds = await server_service_client.fetch_account_password(
+                server_id, account_id, target_dept,
+            )
+        ssh_client.apply_session_hints(creds, payload)
         new_password = _generate_password()
         await ssh_client.set_account_password(creds, server_id, creds["login"], new_password)
         confirmation = await server_service_client.submit_rotated_password(

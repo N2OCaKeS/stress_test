@@ -64,6 +64,7 @@ from src.schemas.server_account import (
 from src.services import audit_service, permissions, worker_client
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
+from src.utils.ids import _new_id  # type: ignore[attr-defined]
 
 logger = logging.getLogger(__name__)
 
@@ -493,7 +494,14 @@ async def server_prepare_dispatch(
     `server_worker/src/tasks/prepare.py::server_prepare`.
     """
     # base64 уже провалидирован схемой; декодируем plaintext для воркера.
-    # Креды в payload — одноразовые, воркер стирает их из строки после чтения.
+    # Креды НЕ кладём в task-payload (иначе plaintext осел бы в worker-БД).
+    # Пишем их в Redis под одноразовый ключ с TTL, в payload — только ссылка.
+    # Воркер читает креды по ссылке на каждой попытке, TTL чистит их сам.
+    creds_key = worker_client.prepare_creds_key(_new_id("pcd_"))
+    await worker_client.store_prepare_creds(
+        creds_key,
+        {"bootstrap_login": body.username(), "bootstrap_password": body.password()},
+    )
     result = await _dispatch_for_server(
         db=db, identity=identity, request=request,
         server_id=server_id,
@@ -501,10 +509,7 @@ async def server_prepare_dispatch(
         audit_action="server.prepare",
         task_kind="server.prepare",
         require_ipmi=False,
-        extra_payload={
-            "bootstrap_login": body.username(),
-            "bootstrap_password": body.password(),
-        },
+        extra_payload={"bootstrap_creds_key": creds_key},
     )
     return ServerPrepareResponse(**result)
 

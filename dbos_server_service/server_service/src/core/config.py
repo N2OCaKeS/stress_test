@@ -131,6 +131,18 @@ class Settings(BaseSettings):
         default="",
         description="Redis URL, используемый как taskiq broker для публикации задач server_worker'у. Пусто = dispatch отключён.",
     )
+    prepare_creds_ttl_seconds: int = Field(
+        default=900,
+        ge=1,
+        description=(
+            "Время жизни bootstrap-кред в Redis при dispatch `server.prepare`. "
+            "Креды кладутся под ключ `dbos:prepare_creds:<task_id>` с этим TTL, "
+            "в task-payload едет только ссылка на ключ. Воркер читает креды на "
+            "каждой попытке, пока ключ жив (TTL подстраховывает retry и чистит "
+            "креды без явного удаления). 15 минут — запас на несколько retry с "
+            "back-off, после чего повторный prepare требует заново прислать креды."
+        ),
+    )
     logging_service_url: str = Field(
         default="",
         description=(

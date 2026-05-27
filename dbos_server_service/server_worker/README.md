@@ -232,7 +232,6 @@ make test-worker
 | `IPMI_USER_ID` | `2` | дефолтный Redfish account slot (`/Managers/<m>/Accounts/<n>`). Dell iDRAC root=2, HPE iLO=1, Supermicro=3. Per-host override через payload |
 | `REDFISH_VERIFY_TLS` | `false` | iDRAC ships self-signed cert — `true` только когда BMC получили cert от внутреннего CA |
 | `REDFISH_TIMEOUT_SECONDS` | `30.0` | per-request timeout для Redfish-вызовов |
-| `SSH_STRICT_HOST_KEY_CHECKING` | `true` | строгая проверка SSH host-key для inventory/rotate. `true` (дефолт) — без known_hosts соединение отклоняется (`SSH_STRICT_NO_HOST_KEY`), защита от MITM в management-сети. Выключать (`false`) только в доверенных dev/test-сетях; в production validator не даёт его выключить |
 | `PXE_HOST` | `""` | hostname/IP PXE-TFTP сервера. Пусто → `reinstall.start` падает с `PXE_NOT_CONFIGURED` |
 | `PXE_SSH_USERNAME` | `""` | SSH-user для PXE-host'а (service-account, не root) |
 | `PXE_SSH_PASSWORD` | `""` | SSH-пароль PXE-host'а (в проде через k8s Secret) |

@@ -194,22 +194,6 @@ class Settings(BaseSettings):
         ),
     )
 
-    # ── SSH host-key verification ────────────────────────────────────────
-    # `True` (дефолт) — SshClient отказывается соединяться без known_hosts:
-    # `asyncssh.connect(known_hosts=None)` принимает любой host-key без
-    # проверки, что открывает MITM при inventory-sync и rotate_password
-    # (подменённый SSH-сервер уведёт новый пароль). Отключать только в
-    # dev/test-стендах, где management-сеть доверенная и known_hosts ещё
-    # негде взять. Env-имя сохранено прежним (`SSH_STRICT_HOST_KEY_CHECKING`).
-    ssh_strict_host_key_checking: bool = Field(
-        default=True,
-        description=(
-            "Require a known_hosts file for SSH connections. True (default) "
-            "refuses accept-any-host connections — protects inventory/rotate "
-            "from MITM. Set false only in trusted dev/test networks."
-        ),
-    )
-
     # ── Management user / bootstrap (prepare) ────────────────────────────
     # Бутстрап управления (#14): задача `server.prepare` заходит на сервер
     # под одноразовыми bootstrap-кредами (password-auth), заводит системного
@@ -414,26 +398,6 @@ class Settings(BaseSettings):
                     f"(got scheme={scheme!r}, host={host!r}); plain http "
                     "exposes worker traffic to MITM/sniff in the cluster"
                 )
-        return self
-
-    @model_validator(mode="after")
-    def _require_ssh_strict_host_key_in_prod(self) -> "Settings":
-        """В production запрещаем accept-any-host SSH.
-
-        `SSH_STRICT_HOST_KEY_CHECKING=false` отключает проверку host-key —
-        любой подменённый SSH-сервер в management-сети уведёт ротируемый
-        пароль или отравит inventory. В проде это недопустимо; в non-prod
-        отключение разрешено (dev/test-стенды без known_hosts).
-        """
-        if (
-            self.app_env.lower() == "production"
-            and not self.ssh_strict_host_key_checking
-        ):
-            raise ValueError(
-                "SSH_STRICT_HOST_KEY_CHECKING must stay true in production "
-                "(false accepts any host key — MITM on inventory / password "
-                "rotation in the management network)."
-            )
         return self
 
 

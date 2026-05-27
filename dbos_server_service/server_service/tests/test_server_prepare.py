@@ -35,20 +35,36 @@ def _b64(value: str) -> str:
 
 @pytest.fixture
 def captured_dispatch(monkeypatch):
-    """Перехват worker_client.dispatch_task из endpoints/worker_dispatch.py."""
+    """Перехват worker_client.dispatch_task из endpoints/worker_dispatch.py.
+
+    Возвращает список dispatch-вызовов. Каждый элемент дополнительно несёт
+    `stored_creds` — креды, которые prepare положил бы в Redis под ключ из
+    payload (мокаем `store_prepare_creds`, чтобы тест не ходил в Redis).
+    """
     calls: list[dict] = []
+    stored: dict[str, dict] = {}
+
+    async def fake_store(creds_key, creds):
+        stored[creds_key] = creds
 
     async def fake_dispatch(*, task_kind, target_server_id, payload,
                             created_by, request_id,
                             target_resource_id=None, idempotency_key=None):
+        creds_key = payload.get("bootstrap_creds_key")
         calls.append({
             "task_kind": task_kind,
             "target_server_id": target_server_id,
             "payload": payload,
+            "stored_creds": stored.get(creds_key) if creds_key else None,
         })
         return f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
 
     import src.services.worker_client as worker_mod
+    monkeypatch.setattr(worker_mod, "store_prepare_creds", fake_store)
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.store_prepare_creds",
+        fake_store,
+    )
     monkeypatch.setattr(worker_mod, "dispatch_task", fake_dispatch)
     monkeypatch.setattr(
         "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
@@ -77,10 +93,17 @@ class TestPrepareDispatch:
         assert len(captured_dispatch) == 1
         call = captured_dispatch[0]
         assert call["task_kind"] == "server.prepare"
-        # base64 декодирован, plaintext в payload для воркера.
-        assert call["payload"]["bootstrap_login"] == "bootadmin"
-        assert call["payload"]["bootstrap_password"] == "Boot1234"
+        # Plaintext-кред в payload НЕТ — только ссылка на Redis-ключ.
+        assert "bootstrap_login" not in call["payload"]
+        assert "bootstrap_password" not in call["payload"]
+        creds_key = call["payload"]["bootstrap_creds_key"]
+        assert creds_key.startswith("dbos:prepare_creds:")
         assert call["payload"]["target_department_id"] == "dep_a"
+        # base64 декодирован и креды ушли в Redis-store под этот ключ.
+        assert call["stored_creds"] == {
+            "bootstrap_login": "bootadmin",
+            "bootstrap_password": "Boot1234",
+        }
 
     async def test_reader_cannot_prepare(
         self, client, reader_token_a, make_server, captured_dispatch,

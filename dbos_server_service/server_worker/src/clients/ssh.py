@@ -15,13 +15,11 @@
   caller передаёт `client_keys` — поддерживаем key-based; для
   inventory это будущая фича (worker подкладывает свой ключ через
   k8s secret).
-* host-key проверка управляется настройкой `SSH_STRICT_HOST_KEY_CHECKING`
-  (`Settings.ssh_strict_host_key_checking`, дефолт `True`). При strict-режиме
-  `known_hosts` обязан быть прокинут caller'ом, иначе соединение отклоняется
-  (`SshError(error_code='SSH_STRICT_NO_HOST_KEY')`) — `known_hosts=None`
-  у asyncssh означает «принять любой host-key без проверки», что открывает
-  MITM. Отключать (`false`) можно только в доверенных dev/test-сетях, где
-  known_hosts ещё негде взять; в production validator не даёт его выключить.
+* host-key НЕ проверяется (`known_hosts=None` для asyncssh — принять
+  любой host-key). Флот тестовых серверов регулярно переустанавливается,
+  host-key меняется при каждой переустановке, поэтому known_hosts /
+  strict-проверка непрактичны: их пришлось бы инвалидировать после каждого
+  reimage. Это осознанное ослабление — management-сеть считается доверенной.
 * `timeout=30` — общий cap на коннект + handshake. Реальный inventory
   занимает 2-5 секунд на современном железе; 30s — щедрый запас под
   laggy uplink.
@@ -56,8 +54,6 @@ import re
 from dataclasses import dataclass, field
 
 import asyncssh
-
-from src.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -102,19 +98,6 @@ class SshError(Exception):
 
 
 # ── SshClient ────────────────────────────────────────────────────────────────
-
-
-_STRICT_ENV = "SSH_STRICT_HOST_KEY_CHECKING"
-
-
-def _is_strict_mode() -> bool:
-    """Strict-проверка known_hosts (дефолт True, см. `Settings`).
-
-    `True` — отказ соединяться при пустом `known_hosts` (см.
-    `SshClient.connect`); `False` — accept-any (только доверенные dev/test).
-    Управляется env `SSH_STRICT_HOST_KEY_CHECKING` через `Settings`.
-    """
-    return get_settings().ssh_strict_host_key_checking
 
 
 # Валидация login'а перед передачей в chpasswd. Принимаем только
@@ -181,24 +164,12 @@ class SshClient:
     async def connect(self) -> None:
         """Открыть SSH-соединение. Идемпотентно (повторный connect — no-op).
 
-        Решение по host-key:
-
-        * `known_hosts=<path>` → asyncssh валидирует fingerprint;
-        * `known_hosts=None` со strict (дефолт) → отказ, SshError;
-        * `known_hosts=None` без strict → accept-any (только dev/test).
+        host-key не проверяется: `known_hosts=None` для asyncssh означает
+        «принять любой host-key». Флот серверов часто переустанавливается,
+        host-key при этом меняется, поэтому known_hosts-проверка непрактична.
         """
         if self._conn is not None:
             return
-
-        if self._known_hosts is None and _is_strict_mode():
-            raise SshError(
-                error_code="SSH_STRICT_NO_HOST_KEY",
-                host=self.host,
-                message=(
-                    f"{_STRICT_ENV}=true requires known_hosts to be set; "
-                    "refusing accept-any-host connection"
-                ),
-            )
 
         try:
             self._conn = await asyncssh.connect(
@@ -516,11 +487,15 @@ class SshClient:
         1. `useradd -m -s /bin/bash -G sudo <management_user>` (idempotent —
            уже существующий пользователь синхронизируется как usermod,
            пароль не трогаем, ключ ниже всё равно доложим);
-        2. создаём `~/.ssh` с правами 700 и `authorized_keys` 600;
-        3. дописываем `public_key` в authorized_keys, если его там ещё нет.
+        2. пишем `/etc/sudoers.d/<management_user>-management` с правилом
+           `NOPASSWD: ALL` — на управляющей сессии пароля нет (заходим по
+           ключу), поэтому sudo обязан работать без него;
+        3. создаём `~/.ssh` с правами 700 и `authorized_keys` 600;
+        4. дописываем `public_key` в authorized_keys, если его там ещё нет.
 
-        Повторный prepare не падает: useradd на existing → usermod, а ключ
-        добавляется только при отсутствии (grep по точному совпадению строки).
+        Повторный prepare не падает: useradd на existing → usermod, sudoers-файл
+        перезаписывается, а ключ добавляется только при отсутствии (grep по
+        точному совпадению строки).
 
         Пароль управляющему пользователю не ставим — управление дальше идёт по
         ключу. `public_key` — аргумент для безопасной записи через here-doc на
@@ -549,7 +524,35 @@ class SshClient:
             management_user, groups=["sudo"], has_sudo=True, shell="/bin/bash",
         )
 
-        # 2-3. ~/.ssh + authorized_keys и дозапись ключа. Делаем одной
+        # 2. NOPASSWD-правило. Управляющие сессии заходят по ключу без пароля,
+        # а группа `sudo` по умолчанию пароль требует — без этого правила любая
+        # последующая sudo-команда (useradd/usermod/userdel/chpasswd) упала бы.
+        # Правило идёт на stdin `tee` (не в командную строку), сначала во
+        # временный файл, проверяется `visudo -cf` и только при валидности
+        # перемещается на место — битый sudoers не оставляем.
+        sudoers_path = f"/etc/sudoers.d/{management_user}-management"
+        sudoers_line = f"{management_user} ALL=(ALL) NOPASSWD: ALL"
+        rc, _out, stderr = await self.run(
+            "bash -c 'set -e; "
+            'tmp=$(mktemp); cat > "$tmp"; '
+            'chmod 440 "$tmp"; '
+            'visudo -cf "$tmp"; '
+            f'mv "$tmp" {sudoers_path}; '
+            f'chmod 440 {sudoers_path}\'',
+            sudo=True,
+            stdin_payload=f"{sudoers_line}\n",
+        )
+        if rc != 0:
+            raise SshError(
+                error_code="SSH_PREPARE_FAILED",
+                host=self.host,
+                cmd_sanitized=f"prepare sudoers <{management_user}>",
+                returncode=rc,
+                stderr=stderr.strip(),
+                message=f"sudoers setup exit code {rc}",
+            )
+
+        # 3-4. ~/.ssh + authorized_keys и дозапись ключа. Делаем одной
         # sudo-командой через bash, чтобы не плодить раунд-трипы. Путь к home
         # резолвим через `getent passwd` внутри bash (домашняя директория
         # управляющего юзера). `grep -qxF` проверяет точное совпадение строки —

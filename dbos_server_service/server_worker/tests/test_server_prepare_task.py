@@ -1,10 +1,12 @@
 """Тесты бутстрапа управления сервером (#14).
 
 * `SshClient.bootstrap_management_user` — useradd управляющего юзера + sudo,
-  установка authorized_keys, идемпотентность (повтор не дублирует), отбой
-  пустого/multiline-ключа;
-* end-to-end handler `server.prepare`: read bootstrap-creds → scrub из payload →
-  SSH bootstrap → submit_prepared callback; bootstrap-креды не в audit.
+  NOPASSWD-sudoers, установка authorized_keys, идемпотентность (повтор не
+  дублирует), отбой пустого/multiline-ключа;
+* end-to-end handler `server.prepare`: read bootstrap-creds из Redis (по
+  ссылке-ключу из payload) → SSH bootstrap → submit_prepared callback →
+  delete creds; bootstrap-креды не в payload и не в audit; retry с живым TTL
+  работает; истёкший ключ → SSH_BOOTSTRAP_CREDS_MISSING.
 """
 
 from __future__ import annotations
@@ -13,11 +15,23 @@ from unittest.mock import AsyncMock, MagicMock
 
 import asyncssh
 import pytest
+from sqlalchemy import update
 
 from src.clients.ssh import SshClient, SshError
 from src.core.config import get_settings
 from src.core.constants import TaskStatus
-from src.tasks import prepare
+from src.db.session import AsyncSessionLocal
+from src.models import Task
+from src.tasks import _runner, prepare
+
+
+async def _force_terminal(tid: str) -> None:
+    """max_attempts=1 → следующий exception в _impl сразу даёт FAILED."""
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            update(Task).where(Task.id == tid).values(max_attempts=1)
+        )
+        await session.commit()
 
 
 def _run_result(stdout="", stderr="", rc=0):
@@ -39,17 +53,23 @@ def _conn(run_results):
 _PUBKEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc dbos"
 
 
+# Полная последовательность SSH-команд bootstrap'а: getent (проверка
+# существования юзера) → useradd → sudoers (NOPASSWD) → authorized_keys bash.
+def _bootstrap_seq(getent_rc=2):
+    return [
+        _run_result("", "", getent_rc),  # getent passwd <user>
+        _run_result("", "", 0),          # useradd
+        _run_result("", "", 0),          # sudoers tee/visudo/mv
+        _run_result("", "", 0),          # authorized_keys bash
+    ]
+
+
 # ── SshClient.bootstrap_management_user ──────────────────────────────────────
 
 
 class TestBootstrapManagementUser:
-    async def test_useradd_and_authorized_keys(self, monkeypatch):
-        # getent (not found rc=2) → useradd (rc=0) → authorized_keys bash (rc=0)
-        conn = _conn([
-            _run_result("", "", 2),
-            _run_result("", "", 0),
-            _run_result("", "", 0),
-        ])
+    async def test_useradd_sudoers_and_authorized_keys(self, monkeypatch):
+        conn = _conn(_bootstrap_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async with SshClient("h", "boot", "boot-pwd") as ssh:
             await ssh.bootstrap_management_user("dbos", _PUBKEY)
@@ -58,17 +78,32 @@ class TestBootstrapManagementUser:
         assert "useradd" in useradd_cmd
         assert "dbos" in useradd_cmd
         assert "-G sudo" in useradd_cmd
-        keys_cmd = conn.run.await_args_list[2].args[0]
+
+        sudoers_cmd = conn.run.await_args_list[2].args[0]
+        assert "/etc/sudoers.d/dbos-management" in sudoers_cmd
+        assert "visudo -cf" in sudoers_cmd
+        # NOPASSWD-правило едет на stdin, не в командную строку.
+        sudoers_stdin = conn.run.await_args_list[2].kwargs["input"]
+        assert "dbos ALL=(ALL) NOPASSWD: ALL" in sudoers_stdin
+
+        keys_cmd = conn.run.await_args_list[3].args[0]
         assert "authorized_keys" in keys_cmd
         assert "grep -qxF" in keys_cmd
 
+    async def test_sudoers_uses_management_user_name(self, monkeypatch):
+        # Имя юзера не хардкодится — берётся из аргумента.
+        conn = _conn(_bootstrap_seq())
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            await ssh.bootstrap_management_user("ctl", _PUBKEY)
+        sudoers_cmd = conn.run.await_args_list[2].args[0]
+        assert "/etc/sudoers.d/ctl-management" in sudoers_cmd
+        sudoers_stdin = conn.run.await_args_list[2].kwargs["input"]
+        assert "ctl ALL=(ALL) NOPASSWD: ALL" in sudoers_stdin
+
     async def test_idempotent_existing_user(self, monkeypatch):
-        # getent (found rc=0) → usermod (sync) → authorized_keys bash (rc=0)
-        conn = _conn([
-            _run_result("dbos:x:1100:1100::/home/dbos:/bin/bash", "", 0),
-            _run_result("", "", 0),
-            _run_result("", "", 0),
-        ])
+        # getent (found rc=0) → usermod (sync) → sudoers → authorized_keys bash
+        conn = _conn(_bootstrap_seq(getent_rc=0))
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async with SshClient("h", "boot", "boot-pwd") as ssh:
             # уже существующий пользователь — не падаем.
@@ -90,10 +125,24 @@ class TestBootstrapManagementUser:
                 await ssh.bootstrap_management_user("dbos", "key-a\nkey-b")
         assert ei.value.error_code == "SSH_INVALID_ARG"
 
-    async def test_authorized_keys_failure_raises(self, monkeypatch):
-        # getent (not found) → useradd (rc=0) → bash authorized_keys (rc=1)
+    async def test_sudoers_failure_raises(self, monkeypatch):
+        # getent (not found) → useradd (rc=0) → sudoers (rc=1, visudo отбил)
         conn = _conn([
             _run_result("", "", 2),
+            _run_result("", "", 0),
+            _run_result("", "invalid sudoers", 1),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async with SshClient("h", "boot", "boot-pwd") as ssh:
+            with pytest.raises(SshError) as ei:
+                await ssh.bootstrap_management_user("dbos", _PUBKEY)
+        assert ei.value.error_code == "SSH_PREPARE_FAILED"
+
+    async def test_authorized_keys_failure_raises(self, monkeypatch):
+        # getent → useradd → sudoers → bash authorized_keys (rc=1)
+        conn = _conn([
+            _run_result("", "", 2),
+            _run_result("", "", 0),
             _run_result("", "", 0),
             _run_result("", "permission denied", 1),
         ])
@@ -107,32 +156,61 @@ class TestBootstrapManagementUser:
 # ── Handler: server.prepare ──────────────────────────────────────────────────
 
 
+def _mock_creds(monkeypatch, creds: dict | None):
+    """Подменить чтение/удаление bootstrap-кред из Redis на in-memory.
+
+    `creds=None` имитирует истёкший / отсутствующий ключ → handler должен
+    поднять SSH_BOOTSTRAP_CREDS_MISSING.
+    """
+    read_calls: list[str] = []
+    delete_calls: list[str] = []
+
+    async def fake_read(creds_key):
+        read_calls.append(creds_key)
+        if creds is None:
+            raise SshError(
+                error_code="SSH_BOOTSTRAP_CREDS_MISSING",
+                host="",
+                message="missing or expired",
+            )
+        return creds
+
+    async def fake_delete(creds_key):
+        delete_calls.append(creds_key)
+
+    monkeypatch.setattr(prepare, "_read_bootstrap_creds", fake_read)
+    monkeypatch.setattr(prepare, "_delete_bootstrap_creds", fake_delete)
+    return read_calls, delete_calls
+
+
+def _set_mgmt_env(monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("SSH_MANAGEMENT_USER", "dbos")
+    monkeypatch.setenv("SSH_MANAGEMENT_PUBLIC_KEY", _PUBKEY)
+    get_settings.cache_clear()
+
+
 class TestPrepareHandler:
     async def test_bootstrap_and_submit(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):
-        get_settings.cache_clear()
-        monkeypatch.setenv("SSH_MANAGEMENT_USER", "dbos")
-        monkeypatch.setenv("SSH_MANAGEMENT_PUBLIC_KEY", _PUBKEY)
-        get_settings.cache_clear()
+        _set_mgmt_env(monkeypatch)
+        _, delete_calls = _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
 
         tid = await make_task(
             task_kind="server.prepare", target_server_id="srv_prep1",
             payload={
                 "server_id": "srv_prep1",
-                "bootstrap_login": "bootadmin",
-                "bootstrap_password": "Boot1234",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_x",
                 "host": "10.0.0.7",
                 "target_department_id": "dep_a",
             },
         )
 
-        # getent (not found) → useradd → authorized_keys bash
-        conn = _conn([
-            _run_result("", "", 2),
-            _run_result("", "", 0),
-            _run_result("", "", 0),
-        ])
+        conn = _conn(_bootstrap_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
         submit_calls = []
@@ -150,30 +228,28 @@ class TestPrepareHandler:
         assert t.result["management_user"] == "dbos"
         assert t.result["prepared"] is True
         assert submit_calls == [("srv_prep1", "dbos", "dep_a")]
+        # Креды удалены из Redis после успеха.
+        assert delete_calls == ["dbos:prepare_creds:pcd_x"]
 
         get_settings.cache_clear()
 
-    async def test_bootstrap_creds_scrubbed_from_payload(
+    async def test_bootstrap_creds_not_in_payload(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):
-        get_settings.cache_clear()
-        monkeypatch.setenv("SSH_MANAGEMENT_USER", "dbos")
-        monkeypatch.setenv("SSH_MANAGEMENT_PUBLIC_KEY", _PUBKEY)
-        get_settings.cache_clear()
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
 
         tid = await make_task(
             task_kind="server.prepare", target_server_id="srv_prep2",
             payload={
                 "server_id": "srv_prep2",
-                "bootstrap_login": "bootadmin",
-                "bootstrap_password": "Boot1234",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_y",
             },
         )
-        conn = _conn([
-            _run_result("", "", 2),
-            _run_result("", "", 0),
-            _run_result("", "", 0),
-        ])
+        conn = _conn(_bootstrap_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async def fake_submit(*a, **kw):
             return {"ok": True}
@@ -184,35 +260,144 @@ class TestPrepareHandler:
         await prepare.server_prepare.original_func(tid)
 
         t = await fetch_task(tid)
-        # Одноразовые креды стёрты из персистентной payload.
+        # Plaintext-кред в payload нет — только ссылка на Redis-ключ.
         assert "bootstrap_login" not in (t.payload or {})
         assert "bootstrap_password" not in (t.payload or {})
-        # server_id остаётся.
+        assert t.payload["bootstrap_creds_key"] == "dbos:prepare_creds:pcd_y"
         assert t.payload["server_id"] == "srv_prep2"
+
+        get_settings.cache_clear()
+
+    async def test_retry_with_live_ttl_finds_creds(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        # Креды читаются из Redis на каждой попытке — повтор находит их, пока
+        # жив TTL (в отличие от старого scrub-перед-SSH, который ломал retry:
+        # вторая попытка заходила под root без пароля). Первая попытка падает
+        # транзиентно на connect (re-queue), вторая — успех.
+        _set_mgmt_env(monkeypatch)
+        read_calls, _ = _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
+
+        async def noop(*a, **kw):
+            pass
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prep_retry",
+            payload={
+                "server_id": "srv_prep_retry",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_r",
+            },
+        )
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        # Попытка 1: транзиентный сбой SSH-connect → mark_pending_for_retry.
+        monkeypatch.setattr(
+            asyncssh, "connect",
+            AsyncMock(side_effect=asyncssh.ConnectionLost("reset")),
+        )
+        await prepare.server_prepare.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.QUEUED  # re-queued, не FAILED
+
+        # Попытка 2: connect успешен → SUCCEEDED. Креды снова прочитаны из Redis.
+        conn2 = _conn(_bootstrap_seq())
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn2))
+        await prepare.server_prepare.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+
+        assert read_calls == [
+            "dbos:prepare_creds:pcd_r",
+            "dbos:prepare_creds:pcd_r",
+        ]
+        get_settings.cache_clear()
+
+    async def test_expired_ttl_fails_with_creds_missing(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(monkeypatch, None)  # ключа в Redis нет / истёк
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prep_exp",
+            payload={
+                "server_id": "srv_prep_exp",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_e",
+            },
+        )
+        await _force_terminal(tid)
+
+        async def noop(*a, **kw):
+            pass
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+        # SSH connect не должен даже вызваться — падаем на чтении кред.
+        monkeypatch.setattr(
+            asyncssh, "connect",
+            AsyncMock(side_effect=AssertionError("connect must not be called")),
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert "SSH_BOOTSTRAP_CREDS_MISSING" in (t.last_error or "")
+
+        get_settings.cache_clear()
+
+    async def test_missing_creds_key_in_payload_fails(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(monkeypatch, {"bootstrap_login": "x", "bootstrap_password": "y"})
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prep_nokey",
+            payload={"server_id": "srv_prep_nokey"},
+        )
+        await _force_terminal(tid)
+
+        async def noop(*a, **kw):
+            pass
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+        monkeypatch.setattr(
+            asyncssh, "connect",
+            AsyncMock(side_effect=AssertionError("connect must not be called")),
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert "SSH_BOOTSTRAP_CREDS_MISSING" in (t.last_error or "")
 
         get_settings.cache_clear()
 
     async def test_bootstrap_password_not_in_audit(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):
-        get_settings.cache_clear()
-        monkeypatch.setenv("SSH_MANAGEMENT_USER", "dbos")
-        monkeypatch.setenv("SSH_MANAGEMENT_PUBLIC_KEY", _PUBKEY)
-        get_settings.cache_clear()
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
 
         tid = await make_task(
             task_kind="server.prepare", target_server_id="srv_prep3",
             payload={
                 "server_id": "srv_prep3",
-                "bootstrap_login": "bootadmin",
-                "bootstrap_password": "Boot1234",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_z",
             },
         )
-        conn = _conn([
-            _run_result("", "", 2),
-            _run_result("", "", 0),
-            _run_result("", "", 0),
-        ])
+        conn = _conn(_bootstrap_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async def fake_submit(*a, **kw):
             return {"ok": True}

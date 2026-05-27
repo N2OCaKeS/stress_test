@@ -30,6 +30,7 @@ poller в worker'е) — нужна миграция и изменения в wo
 import asyncio
 import json
 
+import redis.asyncio as aioredis
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -38,6 +39,16 @@ from taskiq_redis import ListQueueBroker
 from src.core.config import get_settings
 from src.core.exceptions import ConflictError, ServiceUnavailableError
 from src.utils.ids import _new_id  # type: ignore[attr-defined]
+
+# Префикс Redis-ключа для одноразовых bootstrap-кред prepare'а. Креды лежат
+# под `dbos:prepare_creds:<task_id>` с TTL — в task-payload едет только ссылка
+# на ключ, plaintext в персистентную worker-БД не попадает.
+PREPARE_CREDS_KEY_PREFIX = "dbos:prepare_creds:"
+
+
+def prepare_creds_key(task_id_value: str) -> str:
+    """Redis-ключ для bootstrap-кред конкретной prepare-задачи."""
+    return f"{PREPARE_CREDS_KEY_PREFIX}{task_id_value}"
 
 
 def task_id() -> str:
@@ -326,6 +337,33 @@ async def _delete_task_row(task_id_to_delete: str) -> None:
     except Exception:  # noqa: BLE001
         # best-effort rollback — оригинальная ошибка важнее
         pass
+
+
+async def store_prepare_creds(creds_key: str, creds: dict) -> None:
+    """Положить bootstrap-креды в Redis под ключ `creds_key` с TTL.
+
+    Сами креды (login/password plaintext) в task-payload не попадают — туда
+    едет только `creds_key`. TTL задаётся `PREPARE_CREDS_TTL_SECONDS`; по его
+    истечении ключ исчезает сам, что подчищает креды без явного удаления и
+    ограничивает окно их жизни.
+
+    Переиспользуем тот же Redis, что и taskiq-broker (`SERVER_WORKER_REDIS_URL`).
+    При незаданном URL — `ServiceUnavailableError(WORKER_REDIS_NOT_CONFIGURED)`,
+    как и остальной dispatch.
+    """
+    settings = get_settings()
+    if not settings.server_worker_redis_url:
+        raise ServiceUnavailableError(
+            error_code="WORKER_REDIS_NOT_CONFIGURED",
+            message="SERVER_WORKER_REDIS_URL is not set",
+        )
+    client = aioredis.from_url(settings.server_worker_redis_url)
+    try:
+        await client.set(
+            creds_key, json.dumps(creds), ex=settings.prepare_creds_ttl_seconds,
+        )
+    finally:
+        await client.aclose()
 
 
 async def dispatch_task(

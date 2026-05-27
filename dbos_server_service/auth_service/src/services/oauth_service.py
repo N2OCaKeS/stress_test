@@ -437,17 +437,21 @@ async def client_credentials_token(
 
     settings = get_settings()
     ttl = timedelta(minutes=settings.access_token_ttl_minutes)
+    # Payload минимален как у user-JWT: только `sub` + `actor_type` + client-id.
+    # department_id/allowed_services/service_roles намеренно НЕ кладём — JWT
+    # подписан, но не зашифрован, base64url-decode без ключа раскрыл бы
+    # принадлежность отделу и список доступных сервисов. introspect пересчитывает
+    # их из БД (`_introspect_oauth_client_jwt`: INTERSECT dept-services с
+    # allowed_scopes), поэтому в токене они не нужны и опасны.
+    #
+    # `sub` для client_credentials JWT — это публичный client_id (`cli_*`), НЕ
+    # user_id. introspect диспатчит по `actor_type`: `oauth_client` →
+    # revalidate через OAuthClientRepository, не UserRepository (иначе introspect
+    # всегда промахивался бы).
     access_token = create_access_token(
         payload={
-            # NOTE: `sub` для client_credentials JWT — это публичный client_id
-            # (`cli_*`), НЕ user_id. introspect диспатчит по `actor_type`:
-            # `oauth_client` → revalidate через OAuthClientRepository, не
-            # UserRepository (иначе introspect всегда промахивался бы).
             "sub": client.client_id,
             "actor_type": "oauth_client",
-            "department_id": client.department_id,
-            "allowed_services": effective,
-            "service_roles": {},
             "oauth_client_id": client_id,
         },
         expires_delta=ttl,

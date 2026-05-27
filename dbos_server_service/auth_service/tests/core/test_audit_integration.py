@@ -6,7 +6,6 @@
 
 import pytest
 
-from src.services import audit_service
 
 
 @pytest.fixture()
@@ -150,6 +149,55 @@ class TestAuthenticatedRequestContext:
         assert ev["status"] == "denied"
         assert ev["allowed"] is False
         assert ev["details"]["status_code"] == 401
+
+    async def test_http_access_denied_401_carries_ip_and_ua(
+        self, client, capture_audit_payloads, trust_loopback,
+    ):
+        """Анонимный 401: actor_id может быть None, но ip/ua обязаны попасть в
+        событие — иначе SIEM не видит источник brute-force'а."""
+        import asyncio
+
+        r = await client.get(
+            "/api/auth/v1/me",  # без Bearer → 401
+            headers={"User-Agent": "scanner/9.9",
+                     "X-Forwarded-For": "203.0.113.7, 10.0.0.1"},
+        )
+        assert r.status_code == 401
+        await asyncio.sleep(0)
+
+        denied = [p for p in capture_audit_payloads
+                  if p["action"] == "http.access_denied"]
+        assert len(denied) == 1
+        ev = denied[0]
+        assert ev["details"].get("ip") == "203.0.113.7"
+        assert ev["details"].get("user_agent") == "scanner/9.9"
+
+    async def test_http_access_denied_403_carries_actor_ip_ua(
+        self, client, user_a, user_a_token, capture_audit_payloads, trust_loopback,
+    ):
+        """403 аутентифицированного юзера: событие несёт actor_id + ip + ua.
+        Обычный юзер на POST /users (требует account_admin) → 403."""
+        import asyncio
+
+        capture_audit_payloads.clear()
+        r = await client.post(
+            "/api/auth/v1/users",
+            headers={"Authorization": f"Bearer {user_a_token}",
+                     "User-Agent": "cli/3.1",
+                     "X-Forwarded-For": "198.51.100.5, 10.0.0.1"},
+            json={"username": "nope", "password": "Pass1234!"},
+        )
+        assert r.status_code == 403, r.text
+        await asyncio.sleep(0)
+
+        denied = [p for p in capture_audit_payloads
+                  if p["action"] == "http.access_denied"]
+        assert len(denied) == 1
+        ev = denied[0]
+        assert ev["actor_id"] == user_a.id
+        assert ev["details"].get("ip") == "198.51.100.5"
+        assert ev["details"].get("user_agent") == "cli/3.1"
+        assert ev["details"]["status_code"] == 403
 
 
 # ── Details ВСЕГДА содержат контекст действия + пароли/токены маскируются ────

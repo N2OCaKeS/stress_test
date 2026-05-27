@@ -217,6 +217,47 @@ def create_application() -> FastAPI:
             allow_headers=["*"],
         )
 
+    # Регистрируется ПЕРВЫМ из `@app.middleware("http")` → становится innermost
+    # (Starlette стакает в обратном порядке), сразу над роутером. Это важно:
+    # `audit_access` эмитит http.*-событие ПОСЛЕ возврата из `call_next`, и к
+    # этому моменту audit_context должен быть ещё жив. Если бы `audit_access`
+    # стоял снаружи `attach_request_id_and_context`, тот успевал бы сбросить
+    # контекст в своём finally до emit'а — actor/ip/ua терялись бы.
+    @app.middleware("http")
+    async def audit_access(request: Request, call_next):
+        """Логирование HTTP-ответов 4xx/5xx в audit. Health-paths игнорируются."""
+        response = await call_next(request)
+        path = request.url.path
+        if path in _HEALTH_PATHS:
+            return response
+        status_code = response.status_code
+        if status_code < 400:
+            return response
+
+        details = {"method": request.method, "path": path, "status_code": status_code}
+
+        if status_code in (401, 403):
+            action, emit_status = "http.access_denied", "denied"
+        elif status_code < 500:
+            action, emit_status = "http.client_error", "failure"
+        else:
+            action, emit_status = "http.server_error", "failure"
+
+        # audit_context жив: этот middleware вложен в attach_request_id_and_context,
+        # чей finally (reset) сработает только после нашего возврата. Поэтому
+        # emit подхватит actor/username/ip/ua/request_id из контекста.
+        # Зовём emit напрямую в текущем event-loop'е (НЕ через asyncio.to_thread):
+        # в worker-потоке нет running loop'а, emit ловил бы RuntimeError и уходил
+        # в sync-fallback без HTTP-доставки — 4xx/5xx не доезжали бы до
+        # loging_service. В loop'е emit сам планирует доставку через create_task.
+        audit_service.emit(
+            action,
+            status=emit_status,
+            allowed=False,
+            details=details,
+        )
+        return response
+
     @app.middleware("http")
     async def attach_request_id_and_context(request: Request, call_next):
         """Поставить request_id + audit_context для всего запроса."""
@@ -249,39 +290,6 @@ def create_application() -> FastAPI:
         finally:
             audit_context.reset_context(token)
         response.headers["X-Request-ID"] = request_id
-        return response
-
-    @app.middleware("http")
-    async def audit_access(request: Request, call_next):
-        """Логирование HTTP-ответов 4xx/5xx в audit. Health-paths игнорируются."""
-        response = await call_next(request)
-        path = request.url.path
-        if path in _HEALTH_PATHS:
-            return response
-        status_code = response.status_code
-        if status_code < 400:
-            return response
-
-        details = {"method": request.method, "path": path, "status_code": status_code}
-
-        if status_code in (401, 403):
-            action, emit_status = "http.access_denied", "denied"
-        elif status_code < 500:
-            action, emit_status = "http.client_error", "failure"
-        else:
-            action, emit_status = "http.server_error", "failure"
-
-        # context уже выставлен внешним middleware — emit() сам подхватит actor/ua/ip.
-        # Зовём emit напрямую в текущем event-loop'е (НЕ через asyncio.to_thread):
-        # в worker-потоке нет running loop'а, emit ловил бы RuntimeError и уходил
-        # в sync-fallback без HTTP-доставки — 4xx/5xx не доезжали бы до
-        # loging_service. В loop'е emit сам планирует доставку через create_task.
-        audit_service.emit(
-            action,
-            status=emit_status,
-            allowed=False,
-            details=details,
-        )
         return response
 
     # Распарсенные `RateLimitItem`-объекты per route, один раз при сборке

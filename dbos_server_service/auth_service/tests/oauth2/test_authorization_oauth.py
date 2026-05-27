@@ -84,6 +84,28 @@ class TestActorTypeInPayload:
         assert payload.get("actor_type") == "user"
         assert payload["sub"].startswith("usr_")
 
+    async def test_client_credentials_jwt_payload_has_no_sensitive_claims(
+        self, client, admin_token, dept_a_with_service, service_x
+    ):
+        """cc-JWT payload минимален: ни department_id, ни allowed_services, ни
+        service_roles — иначе base64url-decode без ключа раскрыл бы привязку к
+        отделу и список доступных сервисов. introspect берёт их из БД."""
+        created = await _create_m2m_client(
+            client, admin_token, dept_a_with_service.id,
+            name="cc_minimal_payload",
+            scopes=[service_x.service_name],
+        )
+        token = await _issue_cc_token(client, created["client_id"], created["client_secret"])
+        payload = _decode_unverified(token)
+
+        assert "department_id" not in payload
+        assert "allowed_services" not in payload
+        assert "service_roles" not in payload
+        # Минимум остаётся: sub + actor_type + стандартные claims.
+        assert payload["sub"] == created["client_id"]
+        assert payload["actor_type"] == "oauth_client"
+        assert {"iat", "exp", "iss", "aud"} <= set(payload)
+
 
 # ── 2. introspect: happy path ─────────────────────────────────────────────────
 

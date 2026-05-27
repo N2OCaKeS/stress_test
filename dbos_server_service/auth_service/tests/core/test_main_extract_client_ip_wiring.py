@@ -21,6 +21,7 @@ allow-list `Settings.trusted_proxy_ips`, а НЕ старый наивный XFF
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 
 import pytest
@@ -36,29 +37,29 @@ from src.main import create_application
 
 @pytest.fixture()
 def capture_audit_payloads(monkeypatch) -> list[dict]:
-    """Собирает все payload, которые `audit_service.emit` пытается отправить.
+    """Собирает payload, которые `audit_service.emit` отправляет в loging_service.
 
-    Sync-fallback теперь дропает HTTP-вызов и пишет payload в
-    `logger.info('audit_event_fallback ...')` (раньше была blocking httpx.post,
-    которая под недоступным loging_service DoS'ила thread-pool). Async-путь
-    нас не интересует — middleware `audit_access` всё равно гонит emit через
-    `asyncio.to_thread`, и `emit` оказывается в потоке без running loop.
+    middleware `audit_access` вложен в context-middleware и эмитит прямо в
+    running event-loop'е через `loop.create_task(_send_to_logging_service)`,
+    которая постит в `httpx.AsyncClient` (здесь подменён на mock). Контекст
+    (actor/ip/ua) жив на момент emit'а, поэтому попадает в payload.
     """
-    from src.services import audit_service as _audit_service
-
     captured: list[dict] = []
 
-    original_info = _audit_service.logger.info
+    class _AsyncClient:
+        def __init__(self, *a, **k):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            pass
+        async def post(self, url, json, headers):
+            captured.append(json)
+            class R:
+                status_code = 201
+            return R()
 
-    def fake_info(msg, *args, **kwargs):
-        if isinstance(msg, str) and msg.startswith("audit_event_fallback") and args:
-            payload = args[0]
-            if isinstance(payload, dict):
-                captured.append(payload)
-                return
-        original_info(msg, *args, **kwargs)
-
-    monkeypatch.setattr(_audit_service.logger, "info", fake_info)
+    monkeypatch.setattr("src.services.audit_service.httpx.AsyncClient", _AsyncClient)
     monkeypatch.setattr(
         "src.services.audit_service.get_settings",
         lambda: type("S", (), {
@@ -101,15 +102,6 @@ def _build_client(fake_client_host: str) -> AsyncClient:
 # ── Тесты ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason="audit_access middleware шлёт emit через asyncio.to_thread — "
-    "contextvar audit_context не пробрасывается в worker-thread, ip из "
-    "AuditContext в emit-payload не попадает. Helper extract_client_ip "
-    "unit-покрыт в test_audit_context.py, wiring в main.py — code-review. "
-    "Чинится либо synchronous emit, либо явным copy_context().run() при "
-    "to_thread, либо передачей ip аргументом details на caller-side.",
-    strict=False,
-)
 class TestMainExtractsClientIpViaHelper:
     """Прямые свидетельства: middleware вызывает `extract_client_ip` helper,
     а не старый наивный парсер из main.py."""
@@ -126,7 +118,9 @@ class TestMainExtractsClientIpViaHelper:
                 "/api/auth/v1/me",  # без Authorization → 401
                 headers={"X-Forwarded-For": "1.2.3.4, 5.6.7.8"},
             )
-        assert r.status_code == 401
+            assert r.status_code == 401
+            # emit планирует доставку через loop.create_task — дренируем.
+            await asyncio.sleep(0)
 
         denied = [p for p in capture_audit_payloads
                   if p["action"] == "http.access_denied"]
@@ -151,7 +145,8 @@ class TestMainExtractsClientIpViaHelper:
                 "/api/auth/v1/me",
                 headers={"X-Forwarded-For": "198.51.100.7, 10.0.0.1"},
             )
-        assert r.status_code == 401
+            assert r.status_code == 401
+            await asyncio.sleep(0)
 
         denied = [p for p in capture_audit_payloads
                   if p["action"] == "http.access_denied"]
@@ -171,7 +166,8 @@ class TestMainExtractsClientIpViaHelper:
             fake_client_host="198.51.100.99"
         ) as ac:
             r = await ac.get("/api/auth/v1/me")
-        assert r.status_code == 401
+            assert r.status_code == 401
+            await asyncio.sleep(0)
 
         denied = [p for p in capture_audit_payloads
                   if p["action"] == "http.access_denied"]

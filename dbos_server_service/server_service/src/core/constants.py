@@ -130,6 +130,9 @@ class Action(StrEnum):
 
     # Server-account specific
     GRANT_SUDO = "grant_sudo"
+    # worker_bot callback после useradd/usermod/userdel на боксе — узкий
+    # least-privilege грант, без CRUD над аккаунтами.
+    PROVISION_ON_HOST = "provision_on_host"
 
     # Управление permission-матрицей (entity_permissions rows)
     PERMISSION_GRANT = "permission_grant"
@@ -153,6 +156,9 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         # worker_bot пушит результат инвентаризации пользователей обратно
         # через internal callback — узкий least-privilege грант, без CRUD.
         Action.INVENTORY_SUBMIT,
+        # worker_bot подтверждает результат useradd/usermod/userdel на боксе —
+        # тоже callback-only, без CRUD.
+        Action.PROVISION_ON_HOST,
     }),
     EntityType.OS_VERSION: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,

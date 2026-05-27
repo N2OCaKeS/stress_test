@@ -283,12 +283,13 @@ class TestWorkerBotGrantsGlobalSeedPreserved:
 
         Set: 4 initial grants (view/rotate credentials, view/rotate password)
         plus 2 callback grants (server:inventory_submit для hardware-инвентаризации
-        и server_account:inventory_submit для инвентаризации OS-пользователей).
+        и server_account:inventory_submit для инвентаризации OS-пользователей)
+        плюс server_account:provision_on_host для статус-callback'а useradd/usermod/userdel.
         """
         rows = (await db.execute(
             select(EntityPermission).where(EntityPermission.role == "worker_bot")
         )).scalars().all()
-        assert len(rows) == 6
+        assert len(rows) == 7
         for r in rows:
             assert r.department_id is None, (
                 f"worker_bot grant {(r.entity_type, r.action)} must be system-wide"
@@ -301,6 +302,7 @@ class TestWorkerBotGrantsGlobalSeedPreserved:
             ("ipmi_controller", "rotate_credentials"),
             ("server", "inventory_submit"),
             ("server_account", "inventory_submit"),
+            ("server_account", "provision_on_host"),
         }
         got = {(r.entity_type, r.action) for r in rows}
         assert got == expected

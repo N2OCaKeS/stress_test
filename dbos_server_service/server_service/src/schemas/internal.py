@@ -122,6 +122,35 @@ class UsersInventoryCallbackResponse(BaseModel):
     drifted: int = Field(default=0, description="Сколько привязок помечено отсутствующими (drift).")
 
 
+# ── OS-user provision callback ──────────────────────────────────────────────
+
+class ProvisionStatusRequest(BaseModel):
+    """Тело POST /internal/servers/{id}/accounts/{aid}/provision_status.
+
+    Worker сообщает результат useradd/usermod/userdel на боксе. server_service
+    обновляет `present_on_server` на связке (аккаунт ↔ сервер): provision/update
+    → True, deprovision → False. `present` несёт целевое состояние явно, чтобы
+    приёмная сторона не выводила его из operation (контракт остаётся явным).
+    """
+
+    operation: str = Field(
+        ...,
+        pattern=r"^(provision|update|deprovision)$",
+        description="provision (useradd) / update (usermod) / deprovision (userdel).",
+    )
+    present: bool = Field(
+        ...,
+        description="Целевое состояние присутствия после операции: True — пользователь на боксе есть, False — удалён.",
+    )
+
+
+class ProvisionStatusResponse(BaseModel):
+    """Подтверждение записи provision-callback'а."""
+
+    ok: bool = True
+    present_on_server: bool = Field(description="Записанное в связке состояние присутствия.")
+
+
 # ── IPMI credentials_rotated callback ───────────────────────────────────────
 
 class IpmiCredentialsRotatedRequest(BaseModel):

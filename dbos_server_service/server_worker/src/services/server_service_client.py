@@ -273,6 +273,62 @@ async def submit_users_inventory(
         return {}
 
 
+async def submit_provision_status(
+    server_id: str,
+    account_id: str,
+    operation: str,
+    present: bool,
+    target_department_id: str | None = None,
+) -> dict:
+    """Сообщить server_service результат useradd/usermod/userdel на боксе.
+
+    Финал `account.provision` / `account.update_on_host` / `account.deprovision`
+    task'ов. server_service обновляет `present_on_server` на связке аккаунт ↔
+    сервер: provision/update → True, deprovision → False.
+
+    `operation` — `provision` / `update` / `deprovision`. `present` — целевое
+    состояние присутствия (передаём явно, не выводим на приёмной стороне).
+
+    Возвращает: `{ok, present_on_server}` от
+    `POST /api/server/v1/internal/servers/{id}/accounts/{aid}/provision_status`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `PROVISION_STATUS_REJECTED` — server_service вернул не 2xx.
+    """
+    settings = get_settings()
+    url = (
+        f"{settings.server_service_url.rstrip('/')}"
+        f"/api/server/v1/internal/servers/{server_id}/accounts/{account_id}/provision_status"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
+            response = await client.post(
+                url,
+                headers=_headers(target_department_id),
+                json={"operation": operation, "present": present},
+            )
+    except httpx.HTTPError as exc:
+        raise CredentialFetchError(
+            error_code="SERVER_SERVICE_UNREACHABLE",
+            message=f"Failed to call server_service: {type(exc).__name__}",
+        ) from exc
+    if response.status_code >= 300:
+        raise CredentialFetchError(
+            error_code="PROVISION_STATUS_REJECTED",
+            message=f"server_service returned {response.status_code}",
+            details={
+                "server_id": server_id,
+                "account_id": account_id,
+                "status_code": response.status_code,
+            },
+        )
+    try:
+        return response.json()
+    except ValueError:
+        return {}
+
+
 async def fetch_secrets_migration_status() -> dict:
     """Запросить сводку по постепенной ротации мастер-ключа.
 

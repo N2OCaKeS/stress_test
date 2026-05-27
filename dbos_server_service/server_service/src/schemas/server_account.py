@@ -222,3 +222,17 @@ class AccountRotateDispatchResponse(BaseModel):
     mode: str = Field(description="single | all.")
     status: str = Field(default="queued", description="Статус постановки в очередь.")
     tasks: list[AccountRotateTask] = Field(description="Per-server задачи ротации.")
+
+
+class AccountProvisionDispatchResponse(BaseModel):
+    """Ответ worker-dispatch provision/update/deprovision OS-пользователя.
+
+    `operation` — `provision` (useradd), `update` (usermod) или
+    `deprovision` (userdel). `server_id` — сервер, на котором применяется
+    операция (один из привязанных). `task_id` — id поставленной задачи.
+    """
+
+    operation: str = Field(description="provision | update | deprovision.")
+    server_id: str = Field(description="Сервер, на котором применяется операция.")
+    task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+    status: str = Field(default="queued", description="Статус постановки в очередь.")

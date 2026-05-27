@@ -151,6 +151,116 @@ async def set_account_password(
     return {"rotated": True}
 
 
+async def provision_user(
+    credentials: dict,
+    server_id: str,
+    *,
+    login: str,
+    new_password: str | None = None,
+    groups: list[str] | None = None,
+    has_sudo: bool = False,
+    shell: str | None = None,
+    home_dir: str | None = None,
+) -> dict:
+    """Завести OS-пользователя `login` на удалённом хосте (`useradd`).
+
+    `credentials` — те же поля, что у `set_account_password` (login/password
+    SSH-сессии + host/port/known_hosts). Сессия идёт под management-аккаунтом
+    (creds['login']), а заводим — `login` (как при ротации чужого пароля).
+
+    Idempotent: уже существующий пользователь синхронизируется, не падает.
+
+    Возврат — `{provisioned: True}`. Ошибки — `SshError`.
+    """
+    host = _extract_host(credentials, server_id)
+    username = credentials.get("login") or credentials.get("username") or "root"
+    password = credentials.get("password")
+    port = _extract_port(credentials)
+    known_hosts = credentials.get("known_hosts")
+
+    logger.info("ssh useradd %s on %s as %s", login, host, username)
+    async with SshClient(
+        host=host,
+        username=username,
+        password=password,
+        port=port,
+        known_hosts=known_hosts,
+    ) as ssh:
+        await ssh.create_user(
+            login,
+            new_password=new_password,
+            groups=groups,
+            has_sudo=has_sudo,
+            shell=shell,
+            home_dir=home_dir,
+        )
+    return {"provisioned": True}
+
+
+async def modify_user(
+    credentials: dict,
+    server_id: str,
+    *,
+    login: str,
+    groups: list[str] | None = None,
+    has_sudo: bool = False,
+    shell: str | None = None,
+) -> dict:
+    """Синхронизировать атрибуты пользователя `login` (`usermod`).
+
+    Меняет shell и состав групп (sudo доклеивается при `has_sudo`). Пароль не
+    трогает. Возврат — `{modified: True}`. Ошибки — `SshError`.
+    """
+    host = _extract_host(credentials, server_id)
+    username = credentials.get("login") or credentials.get("username") or "root"
+    password = credentials.get("password")
+    port = _extract_port(credentials)
+    known_hosts = credentials.get("known_hosts")
+
+    logger.info("ssh usermod %s on %s as %s", login, host, username)
+    async with SshClient(
+        host=host,
+        username=username,
+        password=password,
+        port=port,
+        known_hosts=known_hosts,
+    ) as ssh:
+        await ssh.modify_user(
+            login, groups=groups, has_sudo=has_sudo, shell=shell,
+        )
+    return {"modified": True}
+
+
+async def delete_user(
+    credentials: dict,
+    server_id: str,
+    *,
+    login: str,
+    remove_home: bool = False,
+) -> dict:
+    """Удалить пользователя `login` на удалённом хосте (`userdel`).
+
+    Idempotent: отсутствующий пользователь — не ошибка. `remove_home=True`
+    сносит home. Возврат — `{deleted: True}`. Ошибки — `SshError`.
+    """
+    host = _extract_host(credentials, server_id)
+    username = credentials.get("login") or credentials.get("username") or "root"
+    password = credentials.get("password")
+    port = _extract_port(credentials)
+    known_hosts = credentials.get("known_hosts")
+
+    logger.info("ssh userdel %s on %s as %s", login, host, username)
+    async with SshClient(
+        host=host,
+        username=username,
+        password=password,
+        port=port,
+        known_hosts=known_hosts,
+    ) as ssh:
+        await ssh.delete_user(login, remove_home=remove_home)
+    return {"deleted": True}
+
+
 def _parse_size_to_gb(size_str: str) -> int:
     """Сконвертировать `lsblk SIZE` ("500G", "1.8T", "256M") в гигабайты.
 
@@ -474,6 +584,9 @@ __all__ = [
     "collect_inventory",
     "collect_os_users",
     "set_account_password",
+    "provision_user",
+    "modify_user",
+    "delete_user",
     "inventory_facts_to_payload",
     "os_users_facts_to_payload",
     "SshError",

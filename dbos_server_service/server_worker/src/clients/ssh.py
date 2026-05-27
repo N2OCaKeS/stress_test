@@ -129,6 +129,14 @@ def _is_strict_mode() -> bool:
 # pattern — меняй в обоих местах и обнови тесты.
 _LOGIN_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
 
+# Имя Unix-группы — тот же POSIX-набор, что и login.
+_GROUP_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
+
+# Путь shell'а / home-директории для useradd/usermod. Аргумент команды, не
+# stdin, поэтому набор строже: буквы, цифры, `/`, `.`, `_`, `-`. Без пробелов
+# и shell-метасимволов — защита от инъекции.
+_PATH_RE = re.compile(r"^[A-Za-z0-9/._\-]+$")
+
 
 class SshClient:
     """Wrapper над `asyncssh.connect` с тремя бизнес-операциями.
@@ -355,6 +363,194 @@ class SshClient:
                 stderr=stderr_clean,
                 message=f"chpasswd exit code {rc}",
             )
+
+    # ── OS-user lifecycle: useradd / usermod / userdel ───────────────────
+
+    async def user_exists(self, login: str) -> bool:
+        """True если пользователь с таким login'ом есть в passwd-базе.
+
+        `getent passwd <login>` возвращает rc=0 если пользователь найден,
+        rc=2 если нет. Используется для idempotency: provision не падает на
+        уже-существующем, deprovision — на отсутствующем.
+        """
+        if not _LOGIN_RE.match(login):
+            raise SshError(
+                error_code="SSH_INVALID_LOGIN",
+                host=self.host,
+                cmd_sanitized="getent passwd",
+                message=f"login {login!r} contains disallowed characters",
+            )
+        rc, _out, _err = await self.run(f"getent passwd {login}")
+        return rc == 0
+
+    async def create_user(
+        self,
+        login: str,
+        *,
+        new_password: str | None = None,
+        groups: list[str] | None = None,
+        has_sudo: bool = False,
+        shell: str | None = None,
+        home_dir: str | None = None,
+    ) -> None:
+        """Завести OS-пользователя через `useradd` + опционально задать пароль.
+
+        Idempotent: если пользователь уже существует — выходим без ошибки
+        (provision повторяемо). Иначе собираем `useradd` с `-m` (создать home),
+        `-s <shell>`, `-d <home>`, `-G <groups>` (sudo-группа доклеивается при
+        `has_sudo`). После create'а, если задан `new_password`, ставим его
+        через `chpasswd` (тот же путь, что `set_password`).
+
+        Безопасность: все аргументы (login/shell/home/groups) валидируются
+        regex'ами до подстановки в команду — это защита от shell-инъекции.
+        `new_password` идёт только на stdin chpasswd, в командную строку и в
+        `cmd_sanitized` исключений не попадает.
+        """
+        self._validate_login(login)
+        if await self.user_exists(login):
+            # Уже на месте — ничего не делаем, но при наличии пароля/атрибутов
+            # синхронизируем их (как usermod), чтобы повтор был осмысленным.
+            await self.modify_user(
+                login, groups=groups, has_sudo=has_sudo, shell=shell,
+            )
+            if new_password is not None:
+                await self.set_password(login, new_password)
+            return
+
+        opts = ["-m"]
+        if shell is not None:
+            opts += ["-s", self._safe_path(shell, "shell")]
+        if home_dir is not None:
+            opts += ["-d", self._safe_path(home_dir, "home_dir")]
+        group_set = self._resolve_groups(groups, has_sudo)
+        if group_set:
+            opts += ["-G", ",".join(group_set)]
+
+        rc, _out, stderr = await self.run(
+            f"useradd {' '.join(opts)} {login}", sudo=True,
+        )
+        if rc != 0:
+            raise SshError(
+                error_code="SSH_USERADD_FAILED",
+                host=self.host,
+                cmd_sanitized=f"useradd <{login}>",
+                returncode=rc,
+                stderr=stderr.strip(),
+                message=f"useradd exit code {rc}",
+            )
+        if new_password is not None:
+            await self.set_password(login, new_password)
+
+    async def modify_user(
+        self,
+        login: str,
+        *,
+        groups: list[str] | None = None,
+        has_sudo: bool = False,
+        shell: str | None = None,
+    ) -> None:
+        """Синхронизировать атрибуты пользователя через `usermod`.
+
+        Меняет login shell (`-s`) и состав дополнительных групп (`-G`, с
+        перезаписью — флаг без `-a`, чтобы убрать выпавшие из аккаунта группы).
+        Пароль здесь не трогаем — для пароля есть `set_password`. Если нечего
+        менять (нет ни shell, ни групп, ни sudo) — no-op.
+        """
+        self._validate_login(login)
+        opts: list[str] = []
+        if shell is not None:
+            opts += ["-s", self._safe_path(shell, "shell")]
+        group_set = self._resolve_groups(groups, has_sudo)
+        if group_set:
+            opts += ["-G", ",".join(group_set)]
+        if not opts:
+            return
+        rc, _out, stderr = await self.run(
+            f"usermod {' '.join(opts)} {login}", sudo=True,
+        )
+        if rc != 0:
+            raise SshError(
+                error_code="SSH_USERMOD_FAILED",
+                host=self.host,
+                cmd_sanitized=f"usermod <{login}>",
+                returncode=rc,
+                stderr=stderr.strip(),
+                message=f"usermod exit code {rc}",
+            )
+
+    async def delete_user(self, login: str, *, remove_home: bool = False) -> None:
+        """Удалить OS-пользователя через `userdel`.
+
+        Idempotent: если пользователя нет — выходим без ошибки (deprovision
+        повторяемо). `remove_home=True` добавляет `--remove` (снести home +
+        mail spool). userdel может вернуть rc=6 «user does not exist» при гонке
+        — трактуем как успех.
+        """
+        self._validate_login(login)
+        if not await self.user_exists(login):
+            return
+        flag = "--remove " if remove_home else ""
+        rc, _out, stderr = await self.run(
+            f"userdel {flag}{login}", sudo=True,
+        )
+        # rc=6 — «user does not exist», для idempotency это успех.
+        if rc not in (0, 6):
+            raise SshError(
+                error_code="SSH_USERDEL_FAILED",
+                host=self.host,
+                cmd_sanitized=f"userdel <{login}>",
+                returncode=rc,
+                stderr=stderr.strip(),
+                message=f"userdel exit code {rc}",
+            )
+
+    def _validate_login(self, login: str) -> None:
+        """Отбить login с символами вне POSIX-набора до подстановки в команду."""
+        if not _LOGIN_RE.match(login):
+            raise SshError(
+                error_code="SSH_INVALID_LOGIN",
+                host=self.host,
+                cmd_sanitized="useradd/usermod/userdel",
+                message=f"login {login!r} contains disallowed characters",
+            )
+
+    def _safe_path(self, value: str, field: str) -> str:
+        """Провалидировать путь/shell перед подстановкой в команду.
+
+        Принимаем только безопасный набор (буквы/цифры/`/._-`), без пробелов
+        и shell-метасимволов — это аргумент команды, не stdin.
+        """
+        if not _PATH_RE.match(value):
+            raise SshError(
+                error_code="SSH_INVALID_ARG",
+                host=self.host,
+                cmd_sanitized=f"useradd/usermod {field}",
+                message=f"{field} {value!r} contains disallowed characters",
+            )
+        return value
+
+    def _resolve_groups(
+        self, groups: list[str] | None, has_sudo: bool,
+    ) -> list[str]:
+        """Собрать и провалидировать набор групп, доклеив sudo при `has_sudo`.
+
+        Имена групп — тот же POSIX-набор, что и login. `has_sudo` добавляет
+        `sudo` (если её ещё нет). Порядок стабильный, дубли убираем.
+        """
+        result: list[str] = []
+        for g in groups or []:
+            if not _GROUP_RE.match(g):
+                raise SshError(
+                    error_code="SSH_INVALID_ARG",
+                    host=self.host,
+                    cmd_sanitized="useradd/usermod -G",
+                    message=f"group {g!r} contains disallowed characters",
+                )
+            if g not in result:
+                result.append(g)
+        if has_sudo and "sudo" not in result:
+            result.append("sudo")
+        return result
 
     # ── Inventory: structured facts ──────────────────────────────────────
 

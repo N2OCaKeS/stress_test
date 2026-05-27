@@ -199,12 +199,14 @@ class TestWorkerBotForbiddenPermissionMatrix:
 # ── Permission-matrix регрессия: грант worker_bot реально появился в БД ──────
 
 class TestWorkerBotGrantsLandedInDb:
-    """Проверяет, что seed-миграции оставили worker_bot ровно 6 строк
+    """Проверяет, что seed-миграции оставили worker_bot ровно 7 строк
     в `entity_permissions`:
 
     * 4 secret-access (view/rotate password + view/rotate IPMI credentials);
-    * 2 callback — server:inventory_submit (hardware-инвентаризация) и
-      server_account:inventory_submit (инвентаризация OS-пользователей).
+    * 2 inventory callback — server:inventory_submit (hardware) и
+      server_account:inventory_submit (OS-пользователи);
+    * 1 provision callback — server_account:provision_on_host (useradd/
+      usermod/userdel статус).
     """
 
     async def test_admin_can_see_worker_bot_grants_in_listing(
@@ -227,6 +229,7 @@ class TestWorkerBotGrantsLandedInDb:
             ("ipmi_controller", "rotate_credentials"),
             ("server", "inventory_submit"),
             ("server_account", "inventory_submit"),
+            ("server_account", "provision_on_host"),
         }, f"worker_bot grants in DB ≠ expected: {pairs}"
 
     async def test_total_grant_count_includes_worker_bot(
@@ -240,9 +243,9 @@ class TestWorkerBotGrantsLandedInDb:
         assert resp.status_code == 200
         rows = resp.json()
         wb_rows = [r for r in rows if r["role"] == "worker_bot"]
-        assert len(wb_rows) == 6, (
-            f"expected 6 worker_bot grants (4 secret-access + 2 inventory_submit), "
-            f"got {len(wb_rows)}"
+        assert len(wb_rows) == 7, (
+            f"expected 7 worker_bot grants (4 secret-access + 2 inventory_submit "
+            f"+ 1 provision_on_host), got {len(wb_rows)}"
         )
         # Sanity: total count ≥ baseline + worker_bot.
         assert len(rows) >= len(wb_rows), "list_permissions returned too few rows"

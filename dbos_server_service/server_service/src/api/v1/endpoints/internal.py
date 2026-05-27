@@ -28,6 +28,8 @@ from src.schemas.internal import (
     IpmiCredentialsRotatedResponse,
     PasswordRotateRequest,
     PasswordRotateResponse,
+    ProvisionStatusRequest,
+    ProvisionStatusResponse,
     UsersInventoryCallbackRequest,
     UsersInventoryCallbackResponse,
 )
@@ -186,6 +188,34 @@ async def receive_users_inventory(
         target_department_id=x_target_department_id,
     )
     return UsersInventoryCallbackResponse(**data)
+
+
+@router.post(
+    "/servers/{server_id}/accounts/{account_id}/provision_status",
+    response_model=ProvisionStatusResponse,
+)
+async def record_provision_status(
+    server_id: str,
+    account_id: str,
+    body: ProvisionStatusRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> ProvisionStatusResponse:
+    """Worker сообщает результат useradd/usermod/userdel на боксе.
+
+    server_service обновляет `present_on_server` на связке аккаунт ↔ сервер:
+    provision/update → True, deprovision → False.
+
+    Доступ: `(server_account, *, provision_on_host)`. Worker_bot роль (seed).
+
+    Аудит: `server_account.provision_status` (INFO).
+    """
+    data = await internal_service.record_provision_status(
+        db, identity, server_id, account_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return ProvisionStatusResponse(**data)
 
 
 @router.post(

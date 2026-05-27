@@ -184,6 +184,18 @@ def _build_broker() -> ListQueueBroker:
     async def _users_inventory(task_id: str) -> None:  # noqa: ARG001
         return None
 
+    @broker.task("account.provision")
+    async def _account_provision(task_id: str) -> None:  # noqa: ARG001
+        return None
+
+    @broker.task("account.update_on_host")
+    async def _account_update_on_host(task_id: str) -> None:  # noqa: ARG001
+        return None
+
+    @broker.task("account.deprovision")
+    async def _account_deprovision(task_id: str) -> None:  # noqa: ARG001
+        return None
+
     _task_stubs = {
         "power.on": _power_on,
         "power.off": _power_off,
@@ -195,6 +207,9 @@ def _build_broker() -> ListQueueBroker:
         "ipmi.rotate_password": _ipmi_rotate,
         "installed_packages.list": _installed_packages_list,
         "users.inventory": _users_inventory,
+        "account.provision": _account_provision,
+        "account.update_on_host": _account_update_on_host,
+        "account.deprovision": _account_deprovision,
     }
     _worker_broker = broker
     return broker

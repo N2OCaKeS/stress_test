@@ -89,3 +89,156 @@ async def users_inventory(task_id: str) -> None:
         impl=_impl,
         audit_safe_fields=AUDIT_SAFE_FIELDS,
     )
+
+
+# Whitelist для audit details.result у provision/update/deprovision. Login и
+# server_id — не секрет; пароль и состав групп в audit не уходят.
+AUDIT_SAFE_FIELDS_PROVISION: set[str] = {
+    "server_id", "account_id", "operation", "present_on_server",
+}
+
+
+@broker.task("account.provision")
+async def account_provision(task_id: str) -> None:
+    """Завести OS-пользователя на сервере (`useradd`) и подтвердить статус.
+
+    Поток: `fetch_account_password` (login + расшифрованный общий пароль) →
+    `ssh_client.provision_user` (useradd + chpasswd, groups/sudo/shell/home из
+    payload) → `submit_provision_status(present=True)`.
+
+    Параметры: `task_id`. Payload — `server_id`, `account_id`, `login`,
+    `has_sudo`, `unix_groups`, `shell`, `home_dir`, опц. `target_department_id`.
+
+    Idempotent: уже существующий пользователь синхронизируется, не падает.
+
+    Возвращает: `{server_id, account_id, operation, present_on_server}`.
+    Связано с: `server_account.provision` audit action.
+    """
+    async def _impl(payload: dict) -> dict:
+        server_id = payload["server_id"]
+        account_id = payload["account_id"]
+        target_dept = payload.get("target_department_id")
+
+        creds = await server_service_client.fetch_account_password(
+            server_id, account_id, target_dept,
+        )
+        await ssh_client.provision_user(
+            creds, server_id,
+            login=creds["login"],
+            new_password=creds.get("password"),
+            groups=payload.get("unix_groups") or [],
+            has_sudo=bool(payload.get("has_sudo")),
+            shell=payload.get("shell"),
+            home_dir=payload.get("home_dir"),
+        )
+        await server_service_client.submit_provision_status(
+            server_id, account_id, "provision", True, target_dept,
+        )
+        return {
+            "server_id": server_id,
+            "account_id": account_id,
+            "operation": "provision",
+            "present_on_server": True,
+        }
+
+    await run_task(
+        task_id,
+        audit_action="server_account.provision",
+        audit_target_type="server_account",
+        impl=_impl,
+        audit_safe_fields=AUDIT_SAFE_FIELDS_PROVISION,
+    )
+
+
+@broker.task("account.update_on_host")
+async def account_update_on_host(task_id: str) -> None:
+    """Синхронизировать атрибуты OS-пользователя на сервере (`usermod`).
+
+    Поток: `fetch_account_password` (нужен login + management-сессия) →
+    `ssh_client.modify_user` (usermod groups/sudo/shell) →
+    `submit_provision_status(present=True)`. Пароль не меняется.
+
+    Параметры/payload — как у `account_provision`.
+
+    Возвращает: `{server_id, account_id, operation, present_on_server}`.
+    Связано с: `server_account.update_on_host` audit action.
+    """
+    async def _impl(payload: dict) -> dict:
+        server_id = payload["server_id"]
+        account_id = payload["account_id"]
+        target_dept = payload.get("target_department_id")
+
+        creds = await server_service_client.fetch_account_password(
+            server_id, account_id, target_dept,
+        )
+        await ssh_client.modify_user(
+            creds, server_id,
+            login=creds["login"],
+            groups=payload.get("unix_groups") or [],
+            has_sudo=bool(payload.get("has_sudo")),
+            shell=payload.get("shell"),
+        )
+        await server_service_client.submit_provision_status(
+            server_id, account_id, "update", True, target_dept,
+        )
+        return {
+            "server_id": server_id,
+            "account_id": account_id,
+            "operation": "update",
+            "present_on_server": True,
+        }
+
+    await run_task(
+        task_id,
+        audit_action="server_account.update_on_host",
+        audit_target_type="server_account",
+        impl=_impl,
+        audit_safe_fields=AUDIT_SAFE_FIELDS_PROVISION,
+    )
+
+
+@broker.task("account.deprovision")
+async def account_deprovision(task_id: str) -> None:
+    """Удалить OS-пользователя с сервера (`userdel`) и подтвердить статус.
+
+    Поток: `fetch_account_password` (нужен login + management-сессия) →
+    `ssh_client.delete_user` (userdel, опц. --remove) →
+    `submit_provision_status(present=False)`.
+
+    Параметры: `task_id`. Payload — `server_id`, `account_id`, `login`,
+    опц. `remove_home`, `target_department_id`.
+
+    Idempotent: отсутствующий пользователь — не ошибка.
+
+    Возвращает: `{server_id, account_id, operation, present_on_server}`.
+    Связано с: `server_account.deprovision` audit action.
+    """
+    async def _impl(payload: dict) -> dict:
+        server_id = payload["server_id"]
+        account_id = payload["account_id"]
+        target_dept = payload.get("target_department_id")
+        remove_home = bool(payload.get("remove_home"))
+
+        creds = await server_service_client.fetch_account_password(
+            server_id, account_id, target_dept,
+        )
+        await ssh_client.delete_user(
+            creds, server_id, login=creds["login"], remove_home=remove_home,
+        )
+        await server_service_client.submit_provision_status(
+            server_id, account_id, "deprovision", False, target_dept,
+        )
+        return {
+            "server_id": server_id,
+            "account_id": account_id,
+            "operation": "deprovision",
+            "present_on_server": False,
+        }
+
+    await run_task(
+        task_id,
+        audit_action="server_account.deprovision",
+        audit_target_type="server_account",
+        impl=_impl,
+        audit_safe_fields=AUDIT_SAFE_FIELDS_PROVISION,
+    )

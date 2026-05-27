@@ -491,6 +491,9 @@ async def make_account(db):
         login: str = "root",
         password: str | None = "account-plaintext-pwd",
         has_sudo: bool = False,
+        shell: str | None = None,
+        home_dir: str | None = None,
+        unix_groups: list[str] | None = None,
     ) -> ServerAccount:
         ids = list(server_ids) if server_ids is not None else []
         if server_id is not None:
@@ -510,6 +513,9 @@ async def make_account(db):
                 aad=secrets_service.aad_for_server_account_password(acc_id),
             ) if password else None,
             has_sudo=has_sudo,
+            shell=shell,
+            home_dir=home_dir,
+            unix_groups=list(unix_groups) if unix_groups is not None else [],
         )
         db.add(acc)
         await db.flush()

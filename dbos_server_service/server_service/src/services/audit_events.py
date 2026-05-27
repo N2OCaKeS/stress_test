@@ -49,6 +49,7 @@ SERVICE_EVENTS = [
     # Worker → server_service callbacks (write-direction internal API)
     {"action": "server.inventory_received", "description": "Inventory facts received from worker (hardware probe callback)", "default_severity": "INFO"},
     {"action": "server_account.users_inventory_received", "description": "OS-user inventory received from worker and reconciled against server_accounts (callback)", "default_severity": "INFO"},
+    {"action": "server_account.provision_status", "description": "OS-user provision/update/deprovision result received from worker, present_on_server updated (callback)", "default_severity": "INFO"},
     {"action": "ipmi_controller.credentials_rotated_callback", "description": "Worker confirmed IPMI credentials rotation (callback after worker-side encrypt)", "default_severity": "WARNING"},
     # Постепенная фоновая ротация мастер-ключа (зовётся server_worker'ом)
     {"action": "secrets.reencrypt_batch", "description": "Background secret re-encryption batch processed (called by server_worker periodic task)", "default_severity": "INFO"},
@@ -90,6 +91,9 @@ SERVICE_EVENTS = [
     {"action": "server.inventory_sync", "description": "Inventory-sync (SSH-probe) dispatched to worker", "default_severity": "INFO"},
     {"action": "server_account.users_inventory", "description": "OS-user inventory (SSH getent) dispatched to worker", "default_severity": "INFO"},
     {"action": "server_account.rotate_password_dispatch", "description": "Server account password rotation dispatched to worker (SSH apply + storage round-trip)", "default_severity": "CRITICAL"},
+    {"action": "server_account.provision", "description": "OS-user provision (useradd) dispatched to worker", "default_severity": "WARNING"},
+    {"action": "server_account.update_on_host", "description": "OS-user attribute sync (usermod) dispatched to worker", "default_severity": "INFO"},
+    {"action": "server_account.deprovision", "description": "OS-user deprovision (userdel) dispatched to worker", "default_severity": "WARNING"},
     {"action": "ipmi_controller.rotate_dispatch", "description": "IPMI controller password rotation dispatched to worker (currently safety-guarded: worker fails fast until storage round-trip exists)", "default_severity": "CRITICAL"},
     # Busy-lease, OS-sync — пользовательский CRUD над servers.busy_state / os_version_id
     {"action": "server.acquire", "description": "Server acquired (busy_state set to busy) for a test/lease", "default_severity": "INFO"},

@@ -24,6 +24,9 @@ class TaskKind(StrEnum):
     INVENTORY_SYNC = "inventory.sync"
     USERS_INVENTORY = "users.inventory"
     ACCOUNT_ROTATE_PASSWORD = "account.rotate_password"
+    ACCOUNT_PROVISION = "account.provision"
+    ACCOUNT_UPDATE_ON_HOST = "account.update_on_host"
+    ACCOUNT_DEPROVISION = "account.deprovision"
     IPMI_ROTATE_PASSWORD = "ipmi.rotate_password"
 
 

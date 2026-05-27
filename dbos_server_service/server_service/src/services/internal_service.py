@@ -45,6 +45,7 @@ from src.schemas.identity import IdentityContext
 from src.schemas.internal import (
     InventoryCallbackRequest,
     IpmiCredentialsRotatedRequest,
+    ProvisionStatusRequest,
     UsersInventoryCallbackRequest,
 )
 from src.services import audit_service, permissions, secrets_service
@@ -650,6 +651,79 @@ async def receive_users_inventory(
         },
     )
     return {"ok": True, "created": created, "updated": updated, "drifted": drifted}
+
+
+async def record_provision_status(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    account_id: str,
+    payload: ProvisionStatusRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Зафиксировать результат useradd/usermod/userdel на боксе (callback worker'а).
+
+    Право: `(server_account, *, provision_on_host)` — узкий грант worker_bot'а.
+
+    Обновляет `present_on_server` на связке аккаунт ↔ сервер: provision/update
+    → True, deprovision → False. `last_inventory_at` не трогается — это не
+    инвентаризация. Аккаунт обязан быть привязан к серверу, иначе 404.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.PROVISION_ON_HOST,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server_account.provision_status",
+            target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "server_id": server_id},
+        )
+        raise
+
+    account = await account_repo.get_by_id(db, account_id)
+    link = await account_repo.get_link(db, account_id, server_id)
+    if account is None or link is None:
+        audit_service.emit(
+            "server_account.provision_status",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "account_not_found", "server_id": server_id},
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND",
+            message="Server account not found on this server",
+        )
+
+    server = await server_repo.get_by_id(db, server_id)
+    server_department_id = server.department_id if server is not None else None
+    _check_target_department(
+        audit_action="server_account.provision_status",
+        target_id=account_id,
+        target_type="server_account",
+        server_department_id=server_department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        extra_details={"server_id": server_id},
+    )
+
+    await account_repo.set_link_presence(db, link, present=payload.present)
+    await db.commit()
+
+    audit_service.emit(
+        "server_account.provision_status",
+        target_id=account_id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "server_id": server_id,
+            "login": account.login,
+            "operation": payload.operation,
+            "present_on_server": payload.present,
+            "department_id": server_department_id,
+        },
+    )
+    return {"ok": True, "present_on_server": payload.present}
 
 
 async def record_ipmi_credentials_rotated(

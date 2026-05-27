@@ -53,6 +53,7 @@ from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import server_account as account_repo
 from src.schemas.server import ServerPowerStatusDispatchResponse
 from src.schemas.server_account import (
+    AccountProvisionDispatchResponse,
     AccountRotateDispatchResponse,
     AccountRotateTask,
 )
@@ -194,6 +195,148 @@ async def _dispatch_for_server(
         },
     )
     return {"task_id": task_id, "status": "queued"}
+
+
+async def _dispatch_account_on_host(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    account_id: str,
+    server_id: str,
+    action: str,
+    audit_action: str,
+    task_kind: str,
+    operation: str,
+    extra_payload: dict | None = None,
+) -> dict:
+    """Общая логика per-server provision/update/deprovision OS-пользователя.
+
+    Порядок проверок зеркалит `account_rotate_password_dispatch`: permission
+    ДО visibility (иначе enumeration), затем dept-isolated lookup аккаунта,
+    проверка что `server_id` среди привязанных, decommissioned-gate, dispatch.
+
+    Operation триггерится разными CRUD-действиями на `server_account`:
+    provision → `create`, update → `update`, deprovision → `delete`.
+    worker_bot широкого CRUD не получает — только callback `provision_on_host`.
+    """
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=account_id,
+        target_type="server_account",
+        extra_details={"server_id": server_id, "operation": operation},
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, action,
+        )
+
+    account = await account_repo.get_by_id(db, account_id)
+    if account is None or account.department_id != identity.department_id:
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={"reason": "not_found_or_cross_dept", "operation": operation},
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND", message="Server account not found",
+        )
+
+    if server_id not in account_repo.linked_server_ids(account):
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={
+                "reason": "server_not_linked",
+                "server_id": server_id,
+                "operation": operation,
+            },
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND",
+            message="Server account not found on this server",
+        )
+
+    server = await server_svc.load_visible_server(db, identity, server_id)
+    if server.status == ServerStatus.DECOMMISSIONED:
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "decommissioned",
+                "server_id": server.id,
+                "operation": operation,
+                "department_id": server.department_id,
+            },
+        )
+        raise ConflictError(
+            error_code="SERVER_DECOMMISSIONED",
+            message="Server is decommissioned and cannot accept worker operations",
+        )
+
+    idempotency_key = request.headers.get("Idempotency-Key") or None
+    # Non-secret атрибуты аккаунта едут в payload — воркеру не нужен отдельный
+    # read карточки, пароль он тянет через internal view_password endpoint.
+    payload: dict = {
+        "server_id": server.id,
+        "account_id": account_id,
+        "target_department_id": server.department_id,
+        "login": account.login,
+        "has_sudo": account.has_sudo,
+        "unix_groups": list(account.unix_groups),
+        "shell": account.shell,
+        "home_dir": account.home_dir,
+    }
+    if extra_payload:
+        payload.update(extra_payload)
+    try:
+        task_id = await worker_client.dispatch_task(
+            task_kind=task_kind,
+            target_server_id=server.id,
+            target_resource_id=account_id,
+            payload=payload,
+            created_by=identity.user_id,
+            request_id=getattr(request.state, "request_id", None),
+            idempotency_key=idempotency_key,
+        )
+    except ConflictError:
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "idempotent_conflict",
+                "task_kind": task_kind,
+                "server_id": server.id,
+                "operation": operation,
+                "department_id": server.department_id,
+            },
+        )
+        raise
+    except ServiceUnavailableError:
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "worker_unreachable",
+                "task_kind": task_kind,
+                "server_id": server.id,
+                "operation": operation,
+                "department_id": server.department_id,
+            },
+        )
+        raise
+    audit_service.emit(
+        audit_action, target_id=account_id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "task_id": task_id,
+            "task_kind": task_kind,
+            "server_id": server.id,
+            "operation": operation,
+            "login": account.login,
+            "department_id": server.department_id,
+        },
+    )
+    return {"operation": operation, "server_id": server.id, "task_id": task_id, "status": "queued"}
 
 
 # ── /servers/{id}/power/status — live BMC-probe через worker ────────────────
@@ -475,6 +618,158 @@ async def account_rotate_password_dispatch(
         status="queued",
         tasks=[AccountRotateTask(**t) for t in tasks],
     )
+
+
+# ── /server-accounts/{id}/provision|update_on_host|deprovision ──────────────
+
+
+@router_accounts.post(
+    "/provision",
+    response_model=AccountProvisionDispatchResponse,
+    summary="Завести OS-пользователя на сервере через worker (useradd)",
+    status_code=202,
+    description=(
+        "Публикует задачу `account.provision`. Worker заходит на сервер по SSH "
+        "и выполняет `useradd` (логин из аккаунта, пароль — расшифрованный общий "
+        "секрет, sudo/группы/shell/home — из аккаунта), затем POST'ит статус в "
+        "`/internal/.../provision_status` (server_service ставит "
+        "`present_on_server=True`).\n\n"
+        "Параметр `server_id` (query) обязателен и должен быть среди привязанных "
+        "к аккаунту серверов. Идемпотентно: если пользователь на боксе уже есть "
+        "— worker не падает.\n\n"
+        "Триггер гейтится `(server_account, *, create)` — создание OS-пользователя "
+        "на боксе семантически близко к созданию аккаунта."
+    ),
+    responses={
+        202: {"description": "Задача принята, возвращается task_id."},
+        403: {"description": "Нет роли с `create` либо чужой department."},
+        404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def account_provision_dispatch(
+    account_id: str,
+    identity: CurrentIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    server_id: str = Query(
+        ..., description="Привязанный сервер, на котором завести пользователя.",
+    ),
+) -> AccountProvisionDispatchResponse:
+    """Ставит `account.provision` (useradd) в очередь worker'а.
+
+    Доступ: `(server_account, *, create)`. Связано:
+    `server_worker/src/tasks/users.py::account_provision`.
+    """
+    result = await _dispatch_account_on_host(
+        db=db, identity=identity, request=request,
+        account_id=account_id, server_id=server_id,
+        action=Action.CREATE,
+        audit_action="server_account.provision",
+        task_kind="account.provision",
+        operation="provision",
+    )
+    return AccountProvisionDispatchResponse(**result)
+
+
+@router_accounts.post(
+    "/update_on_host",
+    response_model=AccountProvisionDispatchResponse,
+    summary="Синхронизировать атрибуты OS-пользователя на сервере (usermod)",
+    status_code=202,
+    description=(
+        "Публикует задачу `account.update_on_host`. Worker выполняет `usermod` "
+        "— синхронизирует sudo/группы/shell аккаунта на боксе, затем POST'ит "
+        "статус в `/internal/.../provision_status` (`present_on_server=True`).\n\n"
+        "`server_id` (query) обязателен и должен быть привязан. Идемпотентно. "
+        "Пароль этой операцией не меняется — для пароля есть `/rotate`.\n\n"
+        "Триггер гейтится `(server_account, *, update)`."
+    ),
+    responses={
+        202: {"description": "Задача принята, возвращается task_id."},
+        403: {"description": "Нет роли с `update` либо чужой department."},
+        404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def account_update_on_host_dispatch(
+    account_id: str,
+    identity: CurrentIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    server_id: str = Query(
+        ..., description="Привязанный сервер, на котором синхронизировать атрибуты.",
+    ),
+) -> AccountProvisionDispatchResponse:
+    """Ставит `account.update_on_host` (usermod) в очередь worker'а.
+
+    Доступ: `(server_account, *, update)`. Связано:
+    `server_worker/src/tasks/users.py::account_update_on_host`.
+    """
+    result = await _dispatch_account_on_host(
+        db=db, identity=identity, request=request,
+        account_id=account_id, server_id=server_id,
+        action=Action.UPDATE,
+        audit_action="server_account.update_on_host",
+        task_kind="account.update_on_host",
+        operation="update",
+    )
+    return AccountProvisionDispatchResponse(**result)
+
+
+@router_accounts.post(
+    "/deprovision",
+    response_model=AccountProvisionDispatchResponse,
+    summary="Удалить OS-пользователя с сервера через worker (userdel)",
+    status_code=202,
+    description=(
+        "Публикует задачу `account.deprovision`. Worker выполняет `userdel` "
+        "(опционально `--remove` для удаления home), затем POST'ит статус в "
+        "`/internal/.../provision_status` (`present_on_server=False`).\n\n"
+        "`server_id` (query) обязателен и должен быть привязан. `remove_home` "
+        "(query, дефолт false) — удалять ли home-директорию. Идемпотентно: "
+        "если пользователя на боксе уже нет — worker не падает. Связку "
+        "аккаунт ↔ сервер эта операция НЕ снимает (для отвязки — `/servers`).\n\n"
+        "Триггер гейтится `(server_account, *, delete)`."
+    ),
+    responses={
+        202: {"description": "Задача принята, возвращается task_id."},
+        403: {"description": "Нет роли с `delete` либо чужой department."},
+        404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        503: {"description": "Worker недоступен."},
+    },
+)
+async def account_deprovision_dispatch(
+    account_id: str,
+    identity: CurrentIdentity,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    server_id: str = Query(
+        ..., description="Привязанный сервер, с которого удалить пользователя.",
+    ),
+    remove_home: bool = Query(
+        default=False,
+        description="Удалять ли home-директорию (`userdel --remove`).",
+    ),
+) -> AccountProvisionDispatchResponse:
+    """Ставит `account.deprovision` (userdel) в очередь worker'а.
+
+    Доступ: `(server_account, *, delete)`. Связано:
+    `server_worker/src/tasks/users.py::account_deprovision`.
+    """
+    result = await _dispatch_account_on_host(
+        db=db, identity=identity, request=request,
+        account_id=account_id, server_id=server_id,
+        action=Action.DELETE,
+        audit_action="server_account.deprovision",
+        task_kind="account.deprovision",
+        operation="deprovision",
+        extra_payload={"remove_home": remove_home},
+    )
+    return AccountProvisionDispatchResponse(**result)
 
 
 # ── /ipmi-controllers/{id}/rotate ───────────────────────────────────────────

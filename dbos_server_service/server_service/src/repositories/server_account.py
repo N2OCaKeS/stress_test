@@ -206,6 +206,23 @@ async def mark_link_inventoried(
     return link
 
 
+async def set_link_presence(
+    db: AsyncSession,
+    link: ServerAccountServer,
+    *,
+    present: bool,
+) -> ServerAccountServer:
+    """Проставить связке только `present_on_server`.
+
+    В отличие от `mark_link_inventoried`, `last_inventory_at` не трогается —
+    provision/deprovision это не инвентаризация, а целевое изменение состояния
+    OS-пользователя на боксе.
+    """
+    link.present_on_server = present
+    await db.flush()
+    return link
+
+
 async def update_password(
     db: AsyncSession, account: ServerAccount, password_encrypted: str
 ) -> ServerAccount:

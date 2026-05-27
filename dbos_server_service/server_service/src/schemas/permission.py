@@ -57,3 +57,28 @@ class EffectiveActionsResponse(BaseModel):
 
     entity_type: str = Field(description="Тип сущности.")
     actions: list[str] = Field(description="Union actions, разрешённых caller'у на этом entity_type.")
+
+
+class CatalogAction(BaseModel):
+    """Действие в каталоге прав: имя, описание и флаги чувствительности."""
+
+    action: str = Field(description="Имя действия.")
+    description: str = Field(description="Человеческое описание действия.")
+    sensitive: bool = Field(description="Чувствительное действие (аудит CRITICAL).")
+    worker_only: bool = Field(description="Служебный callback воркера; людям обычно не выдаётся.")
+
+
+class CatalogEntity(BaseModel):
+    """Сущность каталога прав с описанием и набором её действий."""
+
+    entity_type: str = Field(description="Тип сущности.")
+    description: str = Field(description="Человеческое описание сущности.")
+    actions: list[CatalogAction] = Field(description="Действия, доступные для этой сущности.")
+
+
+class PermissionDescribedResponse(PermissionResponse):
+    """Строка матрицы, обогащённая описаниями из каталога (`describe=true`)."""
+
+    entity_description: str = Field(description="Человеческое описание сущности грантa.")
+    action_description: str = Field(description="Человеческое описание действия грантa.")
+    sensitive: bool = Field(description="Чувствительное ли действие грантa.")

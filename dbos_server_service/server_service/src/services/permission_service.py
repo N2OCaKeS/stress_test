@@ -26,7 +26,13 @@ denied.
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, EntityType, is_valid_action
+from src.core.constants import Action, EntityType, ENTITY_ACTIONS, is_valid_action
+from src.core.permission_catalog import (
+    ACTION_DESCRIPTIONS,
+    ENTITY_DESCRIPTIONS,
+    SENSITIVE_ACTIONS,
+    WORKER_CALLBACK_ACTIONS,
+)
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -111,10 +117,72 @@ def _resolve_target_department_id(
     return actor_dept
 
 
-async def list_all(db: AsyncSession, identity: IdentityContext) -> list[EntityPermission]:
-    """Список всех grants. Требует `view` на entity `permission`."""
+async def list_all(
+    db: AsyncSession,
+    identity: IdentityContext,
+    *,
+    role: str | None = None,
+) -> list[EntityPermission]:
+    """Список grants. Требует `view` на entity `permission`.
+
+    `role` сужает выборку до грантов одной роли (срез матрицы для UI/ИБ).
+    """
     await permissions.require_action(db, identity, EntityType.PERMISSION, Action.VIEW)
+    if role is not None:
+        return await repo.list_for_role(db, role)
     return await repo.list_all(db)
+
+
+async def get_catalog(
+    db: AsyncSession, identity: IdentityContext
+) -> list[dict]:
+    """Каталог сущностей и действий с описаниями. Требует `view` на `permission`.
+
+    Состав берётся из `ENTITY_ACTIONS`, описания — из `permission_catalog`.
+    Read-only справочник для UI и ИБ-обзора; данные матрицы не затрагивает.
+    """
+    await permissions.require_action(db, identity, EntityType.PERMISSION, Action.VIEW)
+    return build_catalog()
+
+
+def build_catalog() -> list[dict]:
+    """Собрать каталог сущностей и действий из `ENTITY_ACTIONS` + описаний.
+
+    Действия каждой сущности упорядочены по их объявлению в `Action`, чтобы
+    порядок в выдаче был стабилен. Без авторизации — её делает `get_catalog`.
+    """
+    action_order = {a.value: i for i, a in enumerate(Action)}
+    catalog: list[dict] = []
+    for entity_type in EntityType:
+        actions = ENTITY_ACTIONS.get(entity_type, frozenset())
+        catalog.append({
+            "entity_type": entity_type.value,
+            "description": ENTITY_DESCRIPTIONS[entity_type],
+            "actions": [
+                {
+                    "action": action,
+                    "description": ACTION_DESCRIPTIONS[action],
+                    "sensitive": action in SENSITIVE_ACTIONS,
+                    "worker_only": action in WORKER_CALLBACK_ACTIONS,
+                }
+                for action in sorted(actions, key=lambda a: action_order.get(a, 999))
+            ],
+        })
+    return catalog
+
+
+def describe_row(row: EntityPermission) -> dict:
+    """Поля-обогащение строки матрицы описаниями каталога.
+
+    Описания могут отсутствовать для entity/action, выпиленных follow-on
+    миграциями (строка-сирота в БД) — тогда отдаём пустую строку и
+    `sensitive=False`, чтобы не ронять выдачу всей матрицы.
+    """
+    return {
+        "entity_description": ENTITY_DESCRIPTIONS.get(row.entity_type, ""),
+        "action_description": ACTION_DESCRIPTIONS.get(row.action, ""),
+        "sensitive": row.action in SENSITIVE_ACTIONS,
+    }
 
 
 async def list_for_entity(

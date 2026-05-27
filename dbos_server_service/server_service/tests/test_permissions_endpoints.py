@@ -222,3 +222,120 @@ class TestDepartmentAdminFullCycle:
         assert grant.status_code == 200
         rev = await client.delete(f"{BASE}/server/guest/view", headers=_hdr(admin_token))
         assert rev.status_code == 200
+
+
+# ── GET /catalog ─────────────────────────────────────────────────────────────
+
+class TestCatalog:
+    async def test_returns_all_entities(self, client, admin_token):
+        from src.core.constants import EntityType
+        resp = await client.get(f"{BASE}/catalog", headers=_hdr(admin_token))
+        assert resp.status_code == 200
+        body = resp.json()
+        got = {e["entity_type"] for e in body}
+        assert got == {e.value for e in EntityType}
+
+    async def test_actions_match_entity_actions(self, client, admin_token):
+        from src.core.constants import ENTITY_ACTIONS
+        resp = await client.get(f"{BASE}/catalog", headers=_hdr(admin_token))
+        body = resp.json()
+        for entity in body:
+            actions = {a["action"] for a in entity["actions"]}
+            assert actions == set(ENTITY_ACTIONS[entity["entity_type"]])
+
+    async def test_descriptions_nonempty(self, client, admin_token):
+        resp = await client.get(f"{BASE}/catalog", headers=_hdr(admin_token))
+        for entity in resp.json():
+            assert entity["description"].strip()
+            for action in entity["actions"]:
+                assert action["description"].strip()
+
+    async def test_sensitive_and_worker_flags(self, client, admin_token):
+        resp = await client.get(f"{BASE}/catalog", headers=_hdr(admin_token))
+        flat = {
+            (e["entity_type"], a["action"]): a
+            for e in resp.json() for a in e["actions"]
+        }
+        assert flat[("server_account", "view_password")]["sensitive"] is True
+        assert flat[("server_account", "view_password")]["worker_only"] is False
+        assert flat[("server", "inventory_submit")]["worker_only"] is True
+        assert flat[("server", "inventory_submit")]["sensitive"] is False
+        assert flat[("server", "view")]["sensitive"] is False
+        assert flat[("server", "view")]["worker_only"] is False
+
+    async def test_operator_can_view_catalog(self, client, operator_token_a):
+        """operator имеет view на permission → доступ к каталогу есть."""
+        resp = await client.get(f"{BASE}/catalog", headers=_hdr(operator_token_a))
+        assert resp.status_code == 200
+
+    async def test_guest_forbidden(self, client, guest_token_a):
+        resp = await client.get(f"{BASE}/catalog", headers=_hdr(guest_token_a))
+        assert resp.status_code == 403
+        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+
+    async def test_no_token_401(self, client):
+        resp = await client.get(f"{BASE}/catalog")
+        assert resp.status_code == 401
+
+    async def test_catalog_not_treated_as_entity_type(self, client, admin_token):
+        """`/catalog` не должен матчиться как `/{entity_type}` → не 422."""
+        resp = await client.get(f"{BASE}/catalog", headers=_hdr(admin_token))
+        assert resp.status_code == 200
+
+
+# ── GET / with role filter + describe ────────────────────────────────────────
+
+class TestMatrixByRole:
+    async def test_role_filter_returns_only_that_role(self, client, admin_token):
+        resp = await client.get(f"{BASE}?role=reader", headers=_hdr(admin_token))
+        assert resp.status_code == 200
+        rows = resp.json()
+        assert rows  # reader has seeded grants
+        assert all(r["role"] == "reader" for r in rows)
+
+    async def test_role_filter_unknown_role_empty(self, client, admin_token):
+        resp = await client.get(f"{BASE}?role=no_such_role", headers=_hdr(admin_token))
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    async def test_no_params_keeps_legacy_shape(self, client, admin_token):
+        """Без describe строки не содержат полей-обогащений."""
+        resp = await client.get(BASE, headers=_hdr(admin_token))
+        assert resp.status_code == 200
+        row = resp.json()[0]
+        assert "entity_description" not in row
+        assert "action_description" not in row
+        assert "sensitive" not in row
+
+    async def test_describe_adds_descriptions(self, client, admin_token):
+        resp = await client.get(f"{BASE}?describe=true", headers=_hdr(admin_token))
+        assert resp.status_code == 200
+        rows = resp.json()
+        for r in rows:
+            assert "entity_description" in r
+            assert "action_description" in r
+            assert "sensitive" in r
+
+    async def test_describe_sensitive_flag_correct(self, client, admin_token):
+        """worker_bot имеет seeded view_password/view_credentials — sensitive=True."""
+        resp = await client.get(
+            f"{BASE}?role=worker_bot&describe=true", headers=_hdr(admin_token)
+        )
+        rows = resp.json()
+        vp = [r for r in rows if r["action"] == "view_password"]
+        assert vp and all(r["sensitive"] is True for r in vp)
+
+    async def test_role_and_describe_combined(self, client, admin_token):
+        resp = await client.get(
+            f"{BASE}?role=reader&describe=true", headers=_hdr(admin_token)
+        )
+        assert resp.status_code == 200
+        rows = resp.json()
+        assert all(r["role"] == "reader" for r in rows)
+        assert all("action_description" in r for r in rows)
+
+    async def test_guest_forbidden_with_params(self, client, guest_token_a):
+        resp = await client.get(
+            f"{BASE}?role=admin&describe=true", headers=_hdr(guest_token_a)
+        )
+        assert resp.status_code == 403

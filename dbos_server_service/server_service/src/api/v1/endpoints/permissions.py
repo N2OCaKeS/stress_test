@@ -15,7 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
-from src.schemas.permission import PermissionGrant, PermissionResponse
+from src.schemas.permission import (
+    CatalogEntity,
+    PermissionDescribedResponse,
+    PermissionGrant,
+    PermissionResponse,
+)
 from src.services import permission_service
 
 router = APIRouter(prefix="/permissions")
@@ -23,13 +28,15 @@ router = APIRouter(prefix="/permissions")
 
 @router.get(
     "",
-    response_model=list[PermissionResponse],
-    summary="Список всех записей entity_permissions",
+    response_model=list[PermissionResponse] | list[PermissionDescribedResponse],
+    summary="Список записей entity_permissions",
     description=(
-        "Возвращает всю матрицу grants — без фильтрации по entity_type/role. "
-        "Используется UI-админкой для отрисовки таблицы прав. Доступ: "
-        "`(permission, *, view)` (department_admin своего отдела или "
-        "сервисная роль `admin` своего отдела)."
+        "Возвращает матрицу grants. Используется UI-админкой для отрисовки "
+        "таблицы прав. Опциональный `role=<role>` сужает выдачу до грантов "
+        "одной роли; `describe=true` обогащает каждую строку описаниями "
+        "сущности/действия и флагом `sensitive` из каталога. Без параметров "
+        "формат прежний. Доступ: `(permission, *, view)` (department_admin "
+        "своего отдела или сервисная роль `admin` своего отдела)."
     ),
     responses={
         403: {"description": "Нет роли с `view` на permission либо platform-админ заблокирован middleware'ом."},
@@ -37,20 +44,67 @@ router = APIRouter(prefix="/permissions")
 )
 async def list_permissions(
     identity: CurrentIdentity,
+    role: str | None = Query(
+        default=None,
+        max_length=64,
+        description="Сузить выдачу до грантов одной роли. None → вся матрица.",
+    ),
+    describe: bool = Query(
+        default=False,
+        description="Обогатить каждую строку описаниями из каталога.",
+    ),
     db: AsyncSession = Depends(get_db),
-) -> list[PermissionResponse]:
+) -> list[PermissionResponse] | list[PermissionDescribedResponse]:
     """
-    Что делает: SELECT по всей таблице `entity_permissions`, упорядоченный
-    по `(entity_type, role, action, system_first)`.
+    Что делает: SELECT по таблице `entity_permissions` (опц. WHERE role=:role),
+    упорядоченный по `(entity_type, role, action, system_first)`.
 
     Доступ: `(permission, *, view)`. Platform-админы отбиваются
     middleware'ом до endpoint'а (403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED).
 
     Связано: `services/permission_service.py::list_all`,
-    `repositories/entity_permission.py::list_all`.
+    `repositories/entity_permission.py::list_all` / `list_for_role`.
     """
-    rows = await permission_service.list_all(db, identity)
+    rows = await permission_service.list_all(db, identity, role=role)
+    if describe:
+        return [
+            PermissionDescribedResponse.model_validate(
+                {**PermissionResponse.model_validate(r).model_dump(), **permission_service.describe_row(r)}
+            )
+            for r in rows
+        ]
     return [PermissionResponse.model_validate(r) for r in rows]
+
+
+@router.get(
+    "/catalog",
+    response_model=list[CatalogEntity],
+    summary="Каталог сущностей и действий с описаниями",
+    description=(
+        "Read-only справочник: все сущности матрицы и их действия с "
+        "человеческими описаниями, флагами `sensitive` (аудит CRITICAL) и "
+        "`worker_only` (служебный callback воркера). Состав берётся из "
+        "`ENTITY_ACTIONS`. Доступ: `(permission, *, view)` — как у "
+        "GET /permissions; публичным не является."
+    ),
+    responses={
+        403: {"description": "Нет роли с `view` на permission либо platform-админ заблокирован middleware'ом."},
+    },
+)
+async def permissions_catalog(
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> list[CatalogEntity]:
+    """
+    Что делает: собирает каталог из `core/constants.ENTITY_ACTIONS` +
+    `core/permission_catalog` (описания, sensitive/worker_only флаги). Матрицу
+    в БД не читает — данные статичны, гейт нужен лишь чтобы не светить состав
+    гостям.
+
+    Доступ: `(permission, *, view)`. Platform-админы блокируются middleware'ом.
+    """
+    entities = await permission_service.get_catalog(db, identity)
+    return [CatalogEntity.model_validate(e) for e in entities]
 
 
 @router.get(

@@ -19,13 +19,13 @@ class BenchmarkAggregator:
         'kernel': {
             'unixbench': ['syscall'],
             'lmbench': ['lat_syscall', 'lat_ctx', 'lat_sig'],
-            'perf': ['sched', 'epoll']  # sched pipe, sched messaging, epoll wait, epoll ctl
+            'perf': ['sched', 'epoll', 'futex']  # sched pipe, sched messaging, epoll wait, epoll ctl, futex hash, futex wake, futex requeue
         },
         # Процессы и IPC
         'processes_ipc': {
             'unixbench': ['execl', 'pipe', 'context1', 'spawn'],
             'lmbench': ['lat_pipe', 'bw_pipe', 'lat_proc'],
-            'perf': ['futex']  # futex hash, futex wake, futex requeue
+            'perf': []  
         },
         # Файловая система
         'filesystem': {
@@ -111,24 +111,41 @@ class BenchmarkAggregator:
         return self.data['perf_bench']
     
     def extract_fs_mark_results(self):
-        """Извлекает результаты fs_mark (берем максимальные значения)"""
+        """
+        Извлекает результаты fs_mark с группировкой по количеству файлов
+        """
         if self.data['fs_mark'] is None:
             return {}
         
         fs_data = self.data['fs_mark']
         results = {}
         
-        # Берем максимальные значения из всех итераций
-        for key in ['speed', 'create_avg', 'write_avg', 'fsync_avg']:
-            if key in fs_data:
-                values = list(fs_data[key].values())
-                results[key] = {
-                    'value': max(values),
-                    'unit': 'ops/sec' if key == 'speed' else 'microseconds',
-                    'max_value': max(values),
-                    'min_value': min(values),
-                    'avg_value': sum(values) / len(values)
-                }
+        metric_keys = ['speed', 'app_overhead', 'create_avg', 'write_avg', 
+                       'fsync_avg', 'sync_avg', 'close_avg', 'unlink_avg']
+        
+        # Собираем все уникальные значения количества файлов
+        all_f_counts = set()
+        for key in metric_keys:
+            if key in fs_data and isinstance(fs_data[key], dict):
+                all_f_counts.update(fs_data[key].keys())
+        
+        # Группируем результаты по количеству файлов
+        for f_count in sorted(all_f_counts, key=int): 
+            group_key = f"{f_count}_files"
+            results[group_key] = {}
+            
+            for key in metric_keys:
+                if key in fs_data:
+                    if isinstance(fs_data[key], dict) and f_count in fs_data[key]:
+                        results[group_key][key] = {
+                            'value': fs_data[key][f_count],
+                            'unit': 'ops/sec' if key == 'speed' else 'microseconds'
+                        }
+                    elif not isinstance(fs_data[key], dict):
+                        results[group_key][key] = {
+                            'value': fs_data[key],
+                            'unit': 'ops/sec' if key == 'speed' else 'microseconds'
+                        }
         
         return results
     
@@ -160,18 +177,17 @@ class BenchmarkAggregator:
                     subsystem_results[test_name] = test_data
             
             # Perf тесты
-            for test_name in tests.get('perf', []):
-                if test_name in perf_results:
-                    perf_data = perf_results[test_name]
+            for test_name, test_data in perf_results.items():
+                test_subsystem = self._get_subsystem_for_test('perf bench', test_name)
+                if test_subsystem == subsystem:
                     subsystem_results[test_name] = {
-                        'value': perf_data['value'],
-                        'unit': perf_data['unit']
+                        'value': test_data['value'],
+                        'unit': test_data['unit']
                     }
             
             # fs_mark тесты
-            for test_name in tests.get('fs_mark', []):
-                if test_name in fs_results:
-                    subsystem_results[test_name] = fs_results[test_name]
+            for test_name, test_data in fs_results.items():
+                subsystem_results[test_name] = test_data
             
             table_data.append({
                 'subsystem': subsystem,
@@ -240,8 +256,10 @@ class BenchmarkAggregator:
                 for lm_test in tests.get('lmbench', []):
                     if lm_test in test_name:
                         return subsystem
-            elif source == 'perf bench' and test_name in tests.get('perf', []):
-                return subsystem
+            elif source == 'perf bench':
+                for perf_test in tests.get('perf', []):
+                    if perf_test in test_name:  
+                        return subsystem
             elif source == 'fs_mark' and test_name in tests.get('fs_mark', []):
                 return subsystem
         return 'other'

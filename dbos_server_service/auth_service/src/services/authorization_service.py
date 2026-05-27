@@ -14,13 +14,12 @@ from src.repositories.bot_tokens import BotTokenRepository
 from src.repositories.bots import BotRepository
 from src.repositories.departments import DepartmentRepository
 from src.repositories.oauth_clients import OAuthClientRepository
-from src.repositories.roles import RoleRepository
 from src.repositories.tokens import TokenRepository
 from src.repositories.users import UserRepository
 from src.schemas.authorization import IntrospectResponse, ServiceAccessResponse
 from src.services import audit_service
 from src.services.auth_service import collect_user_permissions
-from src.utils.time import is_expired, utcnow
+from src.utils.time import is_expired
 
 
 async def _introspect_oauth_client_jwt(
@@ -239,8 +238,6 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
             return IntrospectResponse(active=False)
         await token_repo.touch(pat)
         user_repo = UserRepository(db)
-        role_repo = RoleRepository(db)
-        dept_repo = DepartmentRepository(db)
         user = await user_repo.get_by_id(pat.user_id)
         if user is None:
             audit_service.emit(
@@ -280,10 +277,18 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
                 request_id=request_id,
             )
             return IntrospectResponse(active=False)
-        allowed = await dept_repo.list_active_services(user.department_id)
-        effective_services = [s for s in pat.allowed_services if s in allowed]
-        roles = await role_repo.get_all_roles(user.id)
-        effective_roles = {k: v for k, v in roles.items() if k in effective_services}
+        # Effective view юзера revalidate'им из БД через тот же путь, что и
+        # JWT-ветка: collect_user_permissions учитывает dept-access И
+        # group-derived service-access (group_services + group_roles). Без этого
+        # PAT не видел бы сервисы, доступные юзеру только через группу —
+        # асимметрия с JWT того же юзера. PAT по-прежнему ограничен своим
+        # allowed_services (subset прав юзера, не расширение).
+        allowed_services_full, service_roles_full = await collect_user_permissions(db, user)
+        allowed_set = set(allowed_services_full)
+        effective_services = [s for s in pat.allowed_services if s in allowed_set]
+        effective_roles = {
+            k: v for k, v in service_roles_full.items() if k in effective_services
+        }
         await db.commit()
         audit_service.emit(
             "token.introspect",

@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.router import api_router
 from src.core.config import get_settings
@@ -49,6 +50,39 @@ _HEALTH_PATHS = {"/api/server/v1/health", "/api/server/v1/ready"}
 def _is_health_path(path: str) -> bool:
     """True если path относится к health/ready (исключён из rate-limit'а)."""
     return path in _HEALTH_PATHS
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Базовые security headers (HSTS опционально, X-Frame-Options, CSP).
+
+    HSTS включается только при `SECURITY_HSTS_ENABLED=true` — за http-фронтом
+    он сломает rebound. Зеркалит auth_service / loging_service.
+    """
+
+    def __init__(self, app, *, hsts_enabled: bool):
+        super().__init__(app)
+        self._hsts_enabled = hsts_enabled
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        # CSP для JSON-API минимальный — disallow всё лишнее. Swagger UI на
+        # /docs (dev-only) тянет свои inline-скрипты, но `frame-ancestors
+        # 'none'` парный с X-Frame-Options прикрывает clickjacking.
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'none'; frame-ancestors 'none'",
+        )
+        if self._hsts_enabled:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=63072000; includeSubDomains",
+            )
+        return response
 
 
 def _rate_limit_exceeded_response(request: Request, exc: RateLimitExceeded) -> JSONResponse:
@@ -333,6 +367,14 @@ def create_application() -> FastAPI:
             except RateLimitExceeded as exc:
                 return _rate_limit_exceeded_response(request, exc)
         return await call_next(request)
+
+    # SecurityHeadersMiddleware регистрируем последним → outermost слой.
+    # Так заголовки попадают на КАЖДЫЙ ответ, включая 429 от rate-limit и
+    # 422 от валидации, а не только на route-ответы.
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        hsts_enabled=settings.security_hsts_enabled,
+    )
 
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException):

@@ -59,6 +59,7 @@ from src.schemas.server import (
 from src.schemas.server_account import (
     AccountProvisionDispatchResponse,
     AccountRotateDispatchResponse,
+    AccountRotateSkipped,
     AccountRotateTask,
 )
 from src.services import audit_service, permissions, worker_client
@@ -636,19 +637,24 @@ async def server_prepare_dispatch(
         "Пароль общий на все привязанные серверы.\n\n"
         "Два режима:\n"
         "* **точечная** — query `server_id=<srv>` указывает один из "
-        "привязанных серверов; задача ставится только на него;\n"
+        "привязанных серверов; задача ставится только на него. Списанный "
+        "сервер или idempotent-конфликт → 409;\n"
         "* **массовая** — без `server_id`; задача ставится на каждый "
-        "привязанный сервер (по таске на сервер).\n\n"
+        "привязанный сервер (по таске на сервер). Списанные серверы и "
+        "уже-в-очереди (idempotent) пропускаются и попадают в `skipped`, "
+        "остальные обрабатываются — один битый сервер не валит весь батч. "
+        "Если списаны ВСЕ привязанные серверы → 409. Глобальная "
+        "недоступность воркера (redis down) отбивает весь запрос 503.\n\n"
         "В отличие от `/server-accounts/{id}/rotate_password` (user-facing, "
         "меняет только запись в БД без apply'я) — этот dispatch обновляет "
         "пароль end-to-end. Plaintext клиенту не возвращается."
     ),
     responses={
-        202: {"description": "Задача(и) приняты, возвращается список task_id."},
+        202: {"description": "Задача(и) приняты; tasks + skipped в теле ответа."},
         403: {"description": "Нет роли с `rotate_password` либо чужой department."},
         404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
-        503: {"description": "Worker недоступен."},
+        409: {"description": "SERVER_DECOMMISSIONED (точечно либо все списаны) / TASK_IDEMPOTENT_CONFLICT (точечно)."},
+        503: {"description": "Worker недоступен (redis down / не сконфигурён)."},
     },
 )
 async def account_rotate_password_dispatch(
@@ -724,26 +730,60 @@ async def account_rotate_password_dispatch(
         mode = "all"
 
     idempotency_key = request.headers.get("Idempotency-Key") or None
-    tasks: list[dict] = []
+    request_id = getattr(request.state, "request_id", None)
+
+    # Пред-флайт: грузим все целевые серверы и раскладываем на пригодные к
+    # dispatch'у и decommissioned. Делаем это ДО первой постановки задачи —
+    # в массовом режиме один списанный сервер не должен валить весь батч,
+    # оставляя задачи 1..K-1 уже опубликованными в Redis без итогового аудита.
+    dispatchable: list = []
+    skipped: list[dict] = []
     for sid in target_ids:
         server = await server_svc.load_visible_server(db, identity, sid)
         if server.status == ServerStatus.DECOMMISSIONED:
-            audit_service.emit(
-                audit_action, target_id=account_id, target_type="server_account",
-                status="failure", allowed=True,
-                details={
-                    "reason": "decommissioned",
-                    "server_id": server.id,
-                    "department_id": server.department_id,
-                },
-            )
-            raise ConflictError(
-                error_code="SERVER_DECOMMISSIONED",
-                message="Server is decommissioned, password rotation via worker not allowed",
-            )
+            if mode == "single":
+                # Точечная ротация на единственный явно указанный сервер —
+                # списанность это hard-fail, отбиваем 409 как раньше.
+                audit_service.emit(
+                    audit_action, target_id=account_id, target_type="server_account",
+                    status="failure", allowed=True,
+                    details={
+                        "reason": "decommissioned",
+                        "server_id": server.id,
+                        "department_id": server.department_id,
+                    },
+                )
+                raise ConflictError(
+                    error_code="SERVER_DECOMMISSIONED",
+                    message="Server is decommissioned, password rotation via worker not allowed",
+                )
+            skipped.append({"server_id": server.id, "reason": "decommissioned"})
+            continue
+        dispatchable.append(server)
+
+    # Все привязанные серверы списаны — ставить нечего, ведём себя как
+    # точечный decommissioned-кейс (массовая ротация по пустому множеству
+    # пригодных — это 409, а не «успешно поставлено 0 задач»).
+    if not dispatchable:
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "all_targets_decommissioned",
+                "server_ids": [s["server_id"] for s in skipped],
+                "department_id": account.department_id,
+            },
+        )
+        raise ConflictError(
+            error_code="SERVER_DECOMMISSIONED",
+            message="All linked servers are decommissioned; password rotation via worker not allowed",
+        )
+
+    tasks: list[dict] = []
+    for server in dispatchable:
         # Per-server idempotency-key суффикс — иначе один Idempotency-Key на
         # массовую ротацию схлопнул бы все серверы в одну задачу.
-        per_server_key = f"{idempotency_key}:{sid}" if idempotency_key else None
+        per_server_key = f"{idempotency_key}:{server.id}" if idempotency_key else None
         payload = {
             "server_id": server.id,
             "account_id": account_id,
@@ -760,10 +800,14 @@ async def account_rotate_password_dispatch(
                 target_resource_id=account_id,
                 payload=payload,
                 created_by=identity.user_id,
-                request_id=getattr(request.state, "request_id", None),
+                request_id=request_id,
                 idempotency_key=per_server_key,
             )
         except ConflictError:
+            # Idempotent-конфликт — per-server: на этот сервер уже стоит
+            # идентичная задача. В точечном режиме это hard-fail (единственная
+            # цель), в массовом — пропускаем сервер и продолжаем батч, чтобы
+            # один уже-в-очереди сервер не отменял остальные.
             audit_service.emit(
                 audit_action, target_id=account_id, target_type="server_account",
                 status="failure", allowed=True,
@@ -774,8 +818,14 @@ async def account_rotate_password_dispatch(
                     "department_id": server.department_id,
                 },
             )
-            raise
+            if mode == "single":
+                raise
+            skipped.append({"server_id": server.id, "reason": "idempotent_conflict"})
+            continue
         except ServiceUnavailableError:
+            # Воркер недоступен глобально (redis down / не сконфигурён) — не
+            # per-server проблема: продолжать батч смысла нет, каждый
+            # следующий сервер упадёт идентично. Отбиваем весь запрос.
             audit_service.emit(
                 audit_action, target_id=account_id, target_type="server_account",
                 status="failure", allowed=True,
@@ -789,6 +839,9 @@ async def account_rotate_password_dispatch(
             raise
         tasks.append({"server_id": server.id, "task_id": task_id})
 
+    # Агрегированный итог: эмитим всегда, даже при частичных пропусках, чтобы
+    # частичное применение массовой ротации было видно в SIEM (а не только
+    # per-server failure упавшего сервера).
     audit_service.emit(
         audit_action, target_id=account_id, target_type="server_account",
         status="success", allowed=True,
@@ -796,7 +849,10 @@ async def account_rotate_password_dispatch(
             "mode": mode,
             "task_kind": "account.rotate_password",
             "task_ids": [t["task_id"] for t in tasks],
-            "server_ids": target_ids,
+            "server_ids": [t["server_id"] for t in tasks],
+            "dispatched": len(tasks),
+            "skipped": skipped,
+            "skipped_count": len(skipped),
             "login": account.login,
             "department_id": account.department_id,
         },
@@ -805,6 +861,7 @@ async def account_rotate_password_dispatch(
         mode=mode,
         status="queued",
         tasks=[AccountRotateTask(**t) for t in tasks],
+        skipped=[AccountRotateSkipped(**s) for s in skipped],
     )
 
 

@@ -212,16 +212,35 @@ class AccountRotateTask(BaseModel):
     task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
 
 
+class AccountRotateSkipped(BaseModel):
+    """Сервер, на который задача не поставлена (пропуск при массовой ротации)."""
+
+    server_id: str = Field(description="Сервер, для которого dispatch не выполнен.")
+    reason: str = Field(
+        description=(
+            "Причина пропуска: decommissioned | idempotent_conflict | "
+            "worker_unreachable."
+        )
+    )
+
+
 class AccountRotateDispatchResponse(BaseModel):
     """Ответ worker-dispatch ротации аккаунта.
 
     `mode` — `single` (точечная, один сервер) или `all` (массовая, все
-    привязанные). `tasks` — по одной задаче на затронутый сервер.
+    привязанные). `tasks` — по одной задаче на успешно поставленный сервер.
+    `skipped` — серверы, на которые задача не поставлена (decommissioned или
+    отбита воркером); при массовой ротации один битый сервер не валит весь
+    батч.
     """
 
     mode: str = Field(description="single | all.")
     status: str = Field(default="queued", description="Статус постановки в очередь.")
     tasks: list[AccountRotateTask] = Field(description="Per-server задачи ротации.")
+    skipped: list[AccountRotateSkipped] = Field(
+        default_factory=list,
+        description="Серверы, пропущенные при массовой ротации.",
+    )
 
 
 class AccountProvisionDispatchResponse(BaseModel):

@@ -691,3 +691,161 @@ class TestAccountRotateModes:
         assert len(captured_dispatch) == 2
         keys = {c["idempotency_key"] for c in captured_dispatch}
         assert keys == {f"mass-1:{srv1.id}", f"mass-1:{srv2.id}"}
+
+
+class TestMassRotatePartialTolerance:
+    """Массовая ротация: один битый сервер не валит весь батч."""
+
+    async def test_one_decommissioned_others_dispatched(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch, db,
+    ):
+        """Списанный сервер пропускается, на остальные задачи ставятся."""
+        from src.core.constants import ServerStatus
+
+        good1 = await make_server(department_id="dep_a")
+        dead = await make_server(department_id="dep_a")
+        good2 = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_ids=[good1.id, dead.id, good2.id], login="ops",
+        )
+        dead.status = ServerStatus.DECOMMISSIONED
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        body = resp.json()
+        assert body["mode"] == "all"
+        # Задачи только на живые серверы.
+        assert {t["server_id"] for t in body["tasks"]} == {good1.id, good2.id}
+        assert len(captured_dispatch) == 2
+        assert {c["target_server_id"] for c in captured_dispatch} == {good1.id, good2.id}
+        # Списанный — в skipped.
+        assert body["skipped"] == [{"server_id": dead.id, "reason": "decommissioned"}]
+
+    async def test_aggregated_success_audit_with_skips(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch, captured_emits, db,
+    ):
+        """Агрегированный success-аудит эмитится даже при частичном пропуске."""
+        from src.core.constants import ServerStatus
+
+        good = await make_server(department_id="dep_a")
+        dead = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[good.id, dead.id], login="ops")
+        dead.status = ServerStatus.DECOMMISSIONED
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+
+        successes = [
+            e for e in _events(captured_emits, "server_account.rotate_password_dispatch")
+            if e.get("status") == "success"
+        ]
+        assert len(successes) == 1
+        ev = successes[0]
+        assert ev["details"]["mode"] == "all"
+        assert ev["details"]["dispatched"] == 1
+        assert ev["details"]["skipped_count"] == 1
+        assert ev["details"]["server_ids"] == [good.id]
+        assert ev["details"]["skipped"] == [
+            {"server_id": dead.id, "reason": "decommissioned"}
+        ]
+
+    async def test_all_decommissioned_returns_409(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch, db,
+    ):
+        """Если списаны все привязанные серверы — нечего ставить, 409."""
+        from src.core.constants import ServerStatus
+
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[srv1.id, srv2.id], login="ops")
+        srv1.status = ServerStatus.DECOMMISSIONED
+        srv2.status = ServerStatus.DECOMMISSIONED
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 409
+        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert captured_dispatch == []
+
+    async def test_idempotent_conflict_skips_one_server(
+        self, client, operator_token_a, make_server, make_account,
+        captured_emits, monkeypatch, db,
+    ):
+        """Idempotent-конфликт на одном сервере пропускается, остальные идут."""
+        from src.core.exceptions import ConflictError
+
+        good = await make_server(department_id="dep_a")
+        busy = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[good.id, busy.id], login="ops")
+
+        async def selective(*, target_server_id, **kwargs):
+            if target_server_id == busy.id:
+                raise ConflictError(
+                    error_code="TASK_IDEMPOTENT_CONFLICT",
+                    message="already queued",
+                )
+            return "tsk_ok"
+
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            selective,
+        )
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        body = resp.json()
+        assert [t["server_id"] for t in body["tasks"]] == [good.id]
+        assert body["skipped"] == [
+            {"server_id": busy.id, "reason": "idempotent_conflict"}
+        ]
+        successes = [
+            e for e in _events(captured_emits, "server_account.rotate_password_dispatch")
+            if e.get("status") == "success"
+        ]
+        assert len(successes) == 1
+        assert successes[0]["details"]["dispatched"] == 1
+        assert successes[0]["details"]["skipped_count"] == 1
+
+    async def test_worker_unreachable_aborts_whole_batch(
+        self, client, operator_token_a, make_server, make_account,
+        monkeypatch, db,
+    ):
+        """Глобальная недоступность воркера отбивает весь массовый запрос 503."""
+        from src.core.exceptions import ServiceUnavailableError
+
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[srv1.id, srv2.id], login="ops")
+
+        async def boom(**_kwargs):
+            raise ServiceUnavailableError(
+                error_code="WORKER_REDIS_NOT_CONFIGURED",
+                message="redis env missing",
+            )
+
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 503
+        assert resp.json()["error_code"] == "WORKER_REDIS_NOT_CONFIGURED"

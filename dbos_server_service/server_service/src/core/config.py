@@ -171,6 +171,16 @@ class Settings(BaseSettings):
             "/ready) исключены из ограничения."
         ),
     )
+    security_hsts_enabled: bool = Field(
+        default=False,
+        alias="SECURITY_HSTS_ENABLED",
+        description=(
+            "Включает `Strict-Transport-Security` на всех ответах. Только за "
+            "https-фронтом — иначе HTTP-клиенты получают header и ломаются на "
+            "rebound'е. Прочие защитные заголовки (X-Frame-Options, CSP, "
+            "X-Content-Type-Options, Referrer-Policy) ставятся всегда."
+        ),
+    )
     internal_require_dept_header: bool = Field(
         default=True,
         description=(

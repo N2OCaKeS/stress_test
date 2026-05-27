@@ -1,8 +1,9 @@
 """Process-local state для task runner'а.
 
 Держит in-memory набор `task_id` — текущих *работающих* в этом worker'е
-impl-функций. Поднимается в `_runner.run_task` (sentinel-add сразу после
-mark_running) и опускается в finally при выходе из impl — независимо от
+impl-функций. Поднимается в `_runner.run_task` ДО commit'а mark_running
+(чтобы SIGTERM-drain видел задачу сразу, как только её row станет
+`running` в БД) и опускается в finally при выходе из impl — независимо от
 happy/failure/retry.
 
 Graceful shutdown:
@@ -101,25 +102,37 @@ def _reset_worker_id_for_tests() -> None:
     _RESOLVED_WORKER_ID = None
 
 
-@contextmanager
-def track_running_task(task_id: str) -> Iterator[None]:
-    """Context manager: add task_id при enter, discard при exit.
+def register_running_task(task_id: str) -> None:
+    """Пометить task_id как running в этом процессе.
 
-    Использование в `_runner.run_task`:
-
-        with track_running_task(task_id):
-            ...  # impl + mark_succeeded/failed/pending
-
-    Гарантирует discard даже при exception в impl или mark_*. Если
-    runner упадёт до `add` (например, mark_running CAS отказал) —
-    задача в множество не попадает, что корректно: shutdown-drain её
-    не пытается mark_failed-ить дважды.
+    Зовётся в `_runner.run_task` ДО commit'а mark_running. Парность с
+    `unregister_running_task` обеспечивает caller через try/finally.
+    Если runner так и не дошёл до register (например, mark_running CAS
+    отказал) — задача в множество не попадает, что корректно: drain её
+    не пытается финализировать.
     """
     RUNNING_TASKS.add(task_id)
+
+
+def unregister_running_task(task_id: str) -> None:
+    """Снять пометку running. Идемпотентна — двойной discard безопасен
+    (drain мог уже убрать id при shutdown-таймауте)."""
+    RUNNING_TASKS.discard(task_id)
+
+
+@contextmanager
+def track_running_task(task_id: str) -> Iterator[None]:
+    """Context manager поверх register/unregister: add при enter, discard
+    при exit.
+
+    Гарантирует discard даже при exception в теле. Если caller упадёт до
+    `add` — задача в множество не попадает, drain её не финализирует.
+    """
+    register_running_task(task_id)
     try:
         yield
     finally:
-        RUNNING_TASKS.discard(task_id)
+        unregister_running_task(task_id)
 
 
 def reset_for_tests() -> None:

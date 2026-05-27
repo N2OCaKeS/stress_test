@@ -26,12 +26,11 @@ from __future__ import annotations
 import asyncio
 import uuid
 
-import pytest
 from sqlalchemy import select
 
 from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
-from src.models import AuditOutbox, Task
+from src.models import AuditOutbox
 from src.repositories import task as task_repo
 
 
@@ -561,7 +560,6 @@ class TestGracefulShutdownDrain:
         переводят в QUEUED для retry следующим worker'ом."""
         from src.main import _drain_running_tasks
         from src.tasks._runner_state import RUNNING_TASKS
-        from src.core import config
         from taskiq import TaskiqState
 
         # Создаём task в RUNNING state с attempt=1, max_attempts=3.
@@ -763,3 +761,199 @@ class TestSchedulerHeartbeatLabel:
         else:
             # fallback — это уже raw coroutine.
             await system_heartbeat()
+
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ retry-task strong-ref (защита от GC fire-and-forget)                     ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+
+class TestScheduleRetryStrongRef:
+    """`_schedule_retry` должна держать сильную ссылку на фоновую task'у.
+
+    Регрессия: `asyncio.create_task(...)` без сохранения handle — event
+    loop держит лишь weakref, на длинном back-off (20s+) GC мог собрать
+    task'у до её пробуждения → in-process re-kick молча не происходил.
+    Фикс: модульный set `_RETRY_TASKS` + `add_done_callback(discard)`.
+    """
+
+    async def test_retry_task_held_in_module_set_until_done(self, monkeypatch):
+        """Пока retry-task спит на back-off, её handle лежит в _RETRY_TASKS;
+        после завершения done-callback его снимает."""
+        from src.tasks import _runner
+
+        _runner._RETRY_TASKS.clear()
+
+        release = asyncio.Event()
+
+        async def fake_sleep(_delay):
+            # Держим task в «спящем» состоянии до явного release.
+            await release.wait()
+
+        kicked = []
+
+        class FakeKicker:
+            async def kiq(self, *args, **kwargs):
+                kicked.append(args)
+
+        class FakeTask:
+            def kicker(self):
+                return FakeKicker()
+
+        from src import main
+        monkeypatch.setattr(main.broker, "find_task", lambda kind: FakeTask())
+        monkeypatch.setattr(_runner.asyncio, "sleep", fake_sleep)
+
+        await _runner._schedule_retry("power.on", "tsk_ref", 1, delay=20.0)
+
+        # Handle сохранён, на него есть сильная ссылка из set'а.
+        assert len(_runner._RETRY_TASKS) == 1
+        held = next(iter(_runner._RETRY_TASKS))
+        assert held.get_name() == "retry_tsk_ref"
+        assert not held.done()
+
+        # Пробуждаем — task доходит до kiq и завершается.
+        release.set()
+        await held
+
+        # done-callback снял ссылку.
+        assert held not in _runner._RETRY_TASKS
+        assert len(_runner._RETRY_TASKS) == 0
+        assert len(kicked) == 1
+
+    async def test_retry_task_discarded_even_on_error(self, monkeypatch):
+        """Если delayed-kick падает внутри (broker бросил) — handle всё
+        равно снимается по done-callback (set не течёт)."""
+        from src.tasks import _runner
+
+        _runner._RETRY_TASKS.clear()
+
+        async def fake_sleep(_delay):
+            return
+
+        def boom_find(_kind):
+            raise RuntimeError("broker down")
+
+        from src import main
+        monkeypatch.setattr(main.broker, "find_task", boom_find)
+        monkeypatch.setattr(_runner.asyncio, "sleep", fake_sleep)
+
+        await _runner._schedule_retry("power.on", "tsk_err", 1, delay=1.0)
+        assert len(_runner._RETRY_TASKS) == 1
+        held = next(iter(_runner._RETRY_TASKS))
+
+        # _delayed_kick глотает Exception (fire-and-forget), но task всё
+        # равно завершится — done-callback должен снять ссылку.
+        await held
+        assert held not in _runner._RETRY_TASKS
+        assert len(_runner._RETRY_TASKS) == 0
+
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ RUNNING_TASKS регистрация до commit'а mark_running (drain-окно)          ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+
+class TestRunningTaskRegisteredBeforeCommit:
+    """`run_task` должна класть task_id в RUNNING_TASKS ДО commit'а
+    mark_running.
+
+    Регрессия: регистрация шла ПОСЛЕ закрытия session 1 → в узком окне
+    «commit прошёл, impl ещё не начат» SIGTERM-drain не видел задачу в
+    RUNNING_TASKS и она зависала `running` навсегда (до orphan-sweep'а).
+    """
+
+    async def test_id_present_in_running_tasks_at_commit_time(
+        self, make_task, fetch_task, monkeypatch,
+    ):
+        """В момент commit'а mark_running task_id уже в RUNNING_TASKS."""
+        from src.tasks import _runner
+        from src.tasks._runner_state import RUNNING_TASKS
+        from src.db import session as session_mod
+
+        tid = await make_task(task_kind="power.on")
+
+        observed: dict[str, bool] = {}
+
+        # Оборачиваем AsyncSession.commit чтобы поймать членство в множестве
+        # ровно на первом commit'е (это commit session 1 — mark_running).
+        real_commit = session_mod.AsyncSession.commit
+        first_seen = []
+
+        async def spy_commit(self):
+            if not first_seen:
+                first_seen.append(True)
+                observed["in_set_before_first_commit"] = tid in RUNNING_TASKS
+            return await real_commit(self)
+
+        monkeypatch.setattr(session_mod.AsyncSession, "commit", spy_commit)
+
+        async def impl(_):
+            # На входе в impl задача тоже должна быть в множестве.
+            observed["in_set_during_impl"] = tid in RUNNING_TASKS
+            return {"power_state": "on"}
+
+        await _runner.run_task(tid, audit_action="server.power_on", impl=impl)
+
+        assert observed.get("in_set_before_first_commit") is True
+        assert observed.get("in_set_during_impl") is True
+
+        # После терминального статуса множество очищено (нет утечки).
+        assert tid not in RUNNING_TASKS
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+
+    async def test_drain_in_window_sees_task_and_finalizes(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Симулируем drain в окне «mark_running закоммичен, impl висит»:
+        задача уже в RUNNING_TASKS, drain её видит и переводит в QUEUED."""
+        from src.tasks import _runner
+        from src.tasks._runner_state import RUNNING_TASKS
+        from src.main import _drain_running_tasks
+        from src.main import _settings as main_settings
+        from taskiq import TaskiqState
+
+        tid = await make_task(task_kind="power.on")
+
+        impl_entered = asyncio.Event()
+        let_impl_finish = asyncio.Event()
+
+        async def hanging_impl(_):
+            impl_entered.set()
+            # Висим, пока drain не отработает.
+            await let_impl_finish.wait()
+            return {"power_state": "on"}
+
+        runner_coro = asyncio.create_task(
+            _runner.run_task(tid, audit_action="server.power_on", impl=hanging_impl)
+        )
+
+        # Ждём, пока impl стартует — к этому моменту mark_running закоммичен
+        # и task_id уже зарегистрирован.
+        await asyncio.wait_for(impl_entered.wait(), timeout=5.0)
+        assert tid in RUNNING_TASKS
+
+        # БД уже видит running.
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.RUNNING
+
+        # Запускаем drain с коротким таймаутом — он должен увидеть задачу.
+        monkeypatch.setattr(main_settings, "worker_shutdown_timeout_seconds", 0.5)
+        await _drain_running_tasks(TaskiqState())
+
+        # Drain финализировал задачу (attempt=1 < max=3 → QUEUED для retry).
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.QUEUED
+        assert "worker_shutdown" in (t.last_error or "")
+        assert tid not in RUNNING_TASKS
+
+        # Отпускаем impl — run_task попытается mark_succeeded на уже-QUEUED
+        # row'е (get_by_id вернёт row, mark_succeeded перепишет статус).
+        # Нас интересует, что drain отработал в окне; финализацию runner'а
+        # просто дожидаемся без падения.
+        let_impl_finish.set()
+        await runner_coro
+
+        # Регистрация снята после завершения runner'а в любом случае.
+        assert tid not in RUNNING_TASKS

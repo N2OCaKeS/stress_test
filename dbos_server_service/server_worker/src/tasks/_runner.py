@@ -67,11 +67,14 @@ import logging
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
-from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.repositories import task as task_repo
 from src.services import audit_outbox_publisher
-from src.tasks._runner_state import get_worker_id, track_running_task
+from src.tasks._runner_state import (
+    get_worker_id,
+    register_running_task,
+    unregister_running_task,
+)
 from src.utils.redaction import redact_error_message
 
 logger = logging.getLogger(__name__)
@@ -80,6 +83,12 @@ logger = logging.getLogger(__name__)
 # (5 минут). Для max_attempts=3 фактические паузы: 10s, 20s.
 _RETRY_BASE_DELAY_SECONDS = 10.0
 _RETRY_MAX_DELAY_SECONDS = 300.0
+
+# Сильные ссылки на фоновые retry-таски. `asyncio.create_task` сам по себе
+# держит на task только weakref через event loop, поэтому на длинном back-off
+# (20с+) сборщик может собрать задачу до того, как она проснётся и сделает
+# re-kick. Кладём handle сюда на время жизни и снимаем по done-callback.
+_RETRY_TASKS: set[asyncio.Task] = set()
 
 
 def _filter_result_for_audit(
@@ -221,12 +230,27 @@ async def run_task(
         # Текущий attempt (после инкремента в mark_running) — нужен для
         # retry decision.
         current_attempt = task.attempt
-        await session.commit()
+
+        # Регистрируем task в process-local state ДО commit'а mark_running.
+        # Иначе между commit'ом (row уже `running` в БД) и входом в impl
+        # есть окно, где SIGTERM-drain не видит задачу в RUNNING_TASKS и
+        # она зависает `running` до orphan-sweep'а. add до commit'а — drain
+        # увидит её в любом случае; discard гарантируем finally ниже
+        # (он же отрабатывает, если сам commit бросит исключение).
+        register_running_task(task_id)
+        try:
+            await session.commit()
+        except Exception:
+            # commit упал — row не стал `running`, снимаем преждевременную
+            # регистрацию и пробрасываем дальше (taskiq зачтёт фейл task'и).
+            unregister_running_task(task_id)
+            raise
 
     # ── impl: бизнес-логика out-of-transaction ──────────────────────────
-    # Регистрируем task как running в process-local state — graceful
-    # shutdown увидит её и сможет mark_pending/mark_failed при таймауте.
-    with track_running_task(task_id):
+    # Задача уже в RUNNING_TASKS (см. выше). finally снимает регистрацию
+    # независимо от happy/failure/retry — graceful shutdown к этому моменту
+    # либо уже финализировал её, либо больше не должен трогать.
+    try:
         try:
             result = await impl(payload_for_impl)
         except Exception as exc:  # noqa: BLE001 — surface error verbatim into DB
@@ -345,6 +369,8 @@ async def run_task(
             await success_session.commit()
 
         await _safe_flush_outbox()
+    finally:
+        unregister_running_task(task_id)
 
 
 def _compute_backoff_delay(attempt: int) -> float:
@@ -436,7 +462,9 @@ async def _schedule_retry(
                 redacted,
             )
 
-    asyncio.create_task(_delayed_kick(), name=f"retry_{task_id}")
+    retry_task = asyncio.create_task(_delayed_kick(), name=f"retry_{task_id}")
+    _RETRY_TASKS.add(retry_task)
+    retry_task.add_done_callback(_RETRY_TASKS.discard)
 
 
 async def _safe_flush_outbox() -> None:

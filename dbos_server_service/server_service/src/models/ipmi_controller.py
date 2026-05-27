@@ -21,12 +21,6 @@ class IpmiController(Base):
         nullable=False,
     )
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
-    # Vendor BMC: idrac / ilo / ipmi_generic. Определяет конкретные
-    # Redfish-paths (`/Managers/<vendor-id>`). NOT NULL с default
-    # `ipmi_generic`, чтобы существующие записи в БД не ломались.
-    bmc_vendor: Mapped[str] = mapped_column(
-        String(32), nullable=False, server_default="ipmi_generic"
-    )
     endpoint_url: Mapped[str] = mapped_column(String(512), nullable=False)
     username: Mapped[str] = mapped_column(String(128), nullable=False)
     # Формат secrets_service: `v<key>$<nonce>$<ciphertext>`.

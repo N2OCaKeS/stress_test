@@ -126,7 +126,6 @@ async def _insert_ipmi(
         "id": controller_id,
         "server_id": server_id,
         "kind": spec.kind.value,
-        "bmc_vendor": spec.bmc_vendor.value,
         "endpoint_url": spec.endpoint_url,
         "username": spec.username,
         "password_encrypted": encrypted,
@@ -275,7 +274,6 @@ async def create_server(
             details={
                 "server_id": ipmi_obj.server_id,
                 "kind": ipmi_obj.kind,
-                "bmc_vendor": ipmi_obj.bmc_vendor,
                 "endpoint_url": ipmi_obj.endpoint_url,
                 "department_id": obj.department_id,
             },

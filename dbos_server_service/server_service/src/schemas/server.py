@@ -5,7 +5,7 @@ from ipaddress import IPv4Address, IPv6Address
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from src.core.constants import BmcVendor, IpmiKind
+from src.core.constants import IpmiKind
 from src.core.password_policy import validate_password
 from src.schemas.disk import DiskResponse, DiskSpec
 
@@ -19,13 +19,6 @@ class ServerIpmiCreate(BaseModel):
     """
 
     kind: IpmiKind = Field(..., description="Тип BMC: idrac / ilo / ipmi / redfish.")
-    bmc_vendor: BmcVendor = Field(
-        default=BmcVendor.IPMI_GENERIC,
-        description=(
-            "Vendor BMC: idrac (Dell), ilo (HP), ipmi_generic (default). "
-            "Определяет конкретные Redfish-paths (`/Managers/<vendor-id>`)."
-        ),
-    )
     endpoint_url: str = Field(
         ..., min_length=1, max_length=512,
         description="HTTPS URL Redfish API или IPMI host[:port].",

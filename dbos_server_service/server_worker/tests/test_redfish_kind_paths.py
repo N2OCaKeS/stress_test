@@ -1,10 +1,10 @@
-"""Unit-тесты vendor-aware Redfish manager-paths.
+"""Unit-тесты kind-aware Redfish manager-paths.
 
 Покрытие:
 
-* `resolve_manager_id(bmc_vendor)` — мэппинг vendor → manager-id-segment.
+* `resolve_manager_id(kind)` — мэппинг kind → manager-id-segment.
 * `RedfishClient(manager_id="...")` — explicit path для iDRAC и iLO,
-  PATCH-target адресует правильный `/Managers/<vendor-id>/Accounts/<n>`.
+  PATCH-target адресует правильный `/Managers/<kind-id>/Accounts/<n>`.
 * `RedfishClient(manager_id="")` — discovery через коллекцию
   `/redfish/v1/Managers`, берётся первый Member, кэшируется.
 * discovery edge-case'ы: пустой `Members`, отсутствующий `@odata.id`,
@@ -15,13 +15,11 @@ HTTP-слой — `httpx.MockTransport`. Никакого реального BMC
 
 from __future__ import annotations
 
-import json
-
 import httpx
 import pytest
 
 from src.clients.redfish import (
-    VENDOR_MANAGER_IDS,
+    KIND_MANAGER_IDS,
     RedfishClient,
     RedfishError,
     resolve_manager_id,
@@ -60,25 +58,28 @@ class TestResolveManagerId:
     def test_ilo_returns_1(self):
         assert resolve_manager_id("ilo") == "1"
 
-    def test_ipmi_generic_returns_empty(self):
-        assert resolve_manager_id("ipmi_generic") == ""
+    def test_ipmi_returns_empty(self):
+        assert resolve_manager_id("ipmi") == ""
+
+    def test_redfish_returns_empty(self):
+        assert resolve_manager_id("redfish") == ""
 
     def test_unknown_returns_empty(self):
-        """Любой неизвестный vendor → discovery, не падаем."""
+        """Любой неизвестный kind → discovery, не падаем."""
         assert resolve_manager_id("hpe_xyz") == ""
 
     def test_none_returns_empty(self):
         assert resolve_manager_id(None) == ""
 
-    def test_mapping_keys_are_full_vendor_set(self):
-        """Защита от расхождения со схемой server_service.BmcVendor."""
-        assert set(VENDOR_MANAGER_IDS.keys()) == {"idrac", "ilo", "ipmi_generic"}
+    def test_mapping_keys_are_explicit_kinds(self):
+        """Явный manager-path только для idrac/ilo; остальные kind — discovery."""
+        assert set(KIND_MANAGER_IDS.keys()) == {"idrac", "ilo"}
 
 
-# ── PATCH manager-path по vendor ─────────────────────────────────────────────
+# ── PATCH manager-path по kind ───────────────────────────────────────────────
 
 
-class TestRotateUserPasswordPerVendor:
+class TestRotateUserPasswordPerKind:
     async def test_idrac_path(self):
         """iDRAC → PATCH /redfish/v1/Managers/iDRAC.Embedded.1/Accounts/2."""
         captured: dict = {}
@@ -189,12 +190,12 @@ class TestManagersDiscovery:
                 await c.rotate_user_password(1, "x")
 
 
-# ── get_bmc_client пропускает bmc_vendor в RedfishClient ────────────────────
+# ── get_bmc_client пропускает kind в RedfishClient ──────────────────────────
 
 
-class TestGetBmcClientForwardsVendor:
-    async def test_idrac_vendor_uses_embedded_path(self, monkeypatch):
-        """`get_bmc_client(bmc_vendor='idrac')` → клиент с iDRAC.Embedded.1."""
+class TestGetBmcClientForwardsKind:
+    async def test_idrac_kind_uses_embedded_path(self, monkeypatch):
+        """`get_bmc_client(kind='idrac')` → клиент с iDRAC.Embedded.1."""
         from src.clients import get_bmc_client
 
         async def fake_probe(host: str, *, scheme: str = "https") -> bool:
@@ -205,7 +206,7 @@ class TestGetBmcClientForwardsVendor:
             host="bmc.test",
             username="u",
             password="p",
-            bmc_vendor="idrac",
+            kind="idrac",
         )
         try:
             assert isinstance(client, RedfishClient)
@@ -213,7 +214,7 @@ class TestGetBmcClientForwardsVendor:
         finally:
             await client.aclose()
 
-    async def test_ilo_vendor_uses_one_path(self, monkeypatch):
+    async def test_ilo_kind_uses_one_path(self, monkeypatch):
         from src.clients import get_bmc_client
 
         async def fake_probe(host: str, *, scheme: str = "https") -> bool:
@@ -224,14 +225,14 @@ class TestGetBmcClientForwardsVendor:
             host="bmc.test",
             username="u",
             password="p",
-            bmc_vendor="ilo",
+            kind="ilo",
         )
         try:
             assert client._manager_id == "1"
         finally:
             await client.aclose()
 
-    async def test_ipmi_generic_uses_empty_for_discovery(self, monkeypatch):
+    async def test_ipmi_kind_uses_empty_for_discovery(self, monkeypatch):
         from src.clients import get_bmc_client
 
         async def fake_probe(host: str, *, scheme: str = "https") -> bool:
@@ -242,15 +243,15 @@ class TestGetBmcClientForwardsVendor:
             host="bmc.test",
             username="u",
             password="p",
-            bmc_vendor="ipmi_generic",
+            kind="ipmi",
         )
         try:
             assert client._manager_id == ""
         finally:
             await client.aclose()
 
-    async def test_no_vendor_keeps_default(self, monkeypatch):
-        """Legacy-path без vendor: клиент получает default iDRAC."""
+    async def test_no_kind_keeps_default(self, monkeypatch):
+        """Legacy-path без kind: клиент получает default iDRAC."""
         from src.clients import get_bmc_client
 
         async def fake_probe(host: str, *, scheme: str = "https") -> bool:
@@ -268,11 +269,11 @@ class TestGetBmcClientForwardsVendor:
             await client.aclose()
 
 
-# ── _bmc_helpers.get_bmc передаёт vendor из creds ───────────────────────────
+# ── _bmc_helpers.get_bmc передаёт kind из creds ─────────────────────────────
 
 
 class TestBmcHelperGetBmc:
-    async def test_get_bmc_forwards_vendor_from_creds(self, monkeypatch):
+    async def test_get_bmc_forwards_kind_from_creds(self, monkeypatch):
         from src.tasks import _bmc_helpers
 
         captured: dict = {}
@@ -286,14 +287,14 @@ class TestBmcHelperGetBmc:
             "endpoint_url": "https://bmc.test",
             "username": "u",
             "password": "p",
-            "bmc_vendor": "ilo",
+            "kind": "ilo",
         })
-        assert captured["bmc_vendor"] == "ilo"
+        assert captured["kind"] == "ilo"
         # host извлекается из endpoint_url
         assert captured["host"] == "bmc.test"
 
-    async def test_get_bmc_legacy_creds_without_vendor(self, monkeypatch):
-        """Старые creds без поля bmc_vendor → передаём None, без падения."""
+    async def test_get_bmc_legacy_creds_without_kind(self, monkeypatch):
+        """Старые creds без поля kind → передаём None, без падения."""
         from src.tasks import _bmc_helpers
 
         captured: dict = {}
@@ -308,4 +309,4 @@ class TestBmcHelperGetBmc:
             "username": "u",
             "password": "p",
         })
-        assert captured["bmc_vendor"] is None
+        assert captured["kind"] is None

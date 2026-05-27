@@ -459,7 +459,8 @@ class TestDispatchAuditOnSuccess:
         assert len(successes) == 1
         ev = successes[0]
         assert ev["target_id"] == acc.id
-        assert ev["details"]["server_id"] == srv.id
+        assert ev["details"]["mode"] == "all"
+        assert ev["details"]["server_ids"] == [srv.id]
         assert ev["details"]["login"] == "dba"
 
     async def test_ipmi_rotate_success_audit(
@@ -588,3 +589,85 @@ class TestDispatchAuditOnWorkerFailure:
         assert len(failures) == 1
         assert failures[0]["details"]["reason"] == "worker_unreachable"
         assert failures[0]["details"]["task_kind"] == "ipmi.rotate_password"
+
+
+# ── M2M ротация: точечная (один сервер) vs массовая (все) ───────────────────
+
+
+class TestAccountRotateModes:
+    """`/server-accounts/{id}/rotate` — точечная (?server_id=) и массовая."""
+
+    async def test_mass_dispatches_per_linked_server(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[srv1.id, srv2.id], login="ops")
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        body = resp.json()
+        assert body["mode"] == "all"
+        assert {t["server_id"] for t in body["tasks"]} == {srv1.id, srv2.id}
+        # По задаче на каждый привязанный сервер.
+        assert len(captured_dispatch) == 2
+        assert {c["target_server_id"] for c in captured_dispatch} == {srv1.id, srv2.id}
+        for c in captured_dispatch:
+            assert c["task_kind"] == "account.rotate_password"
+            assert c["target_resource_id"] == acc.id
+
+    async def test_targeted_dispatches_single_server(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[srv1.id, srv2.id], login="ops")
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers=_hdr(operator_token_a),
+            params={"server_id": srv2.id},
+        )
+        assert resp.status_code == 202, resp.text
+        body = resp.json()
+        assert body["mode"] == "single"
+        assert [t["server_id"] for t in body["tasks"]] == [srv2.id]
+        assert len(captured_dispatch) == 1
+        assert captured_dispatch[0]["target_server_id"] == srv2.id
+        assert captured_dispatch[0]["payload"]["server_id"] == srv2.id
+
+    async def test_targeted_unlinked_server_404(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        srv1 = await make_server(department_id="dep_a")
+        other = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv1.id, login="ops")
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers=_hdr(operator_token_a),
+            params={"server_id": other.id},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        assert captured_dispatch == []
+
+    async def test_mass_idempotency_key_split_per_server(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        """Один Idempotency-Key не должен схлопнуть массовую ротацию в одну задачу."""
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[srv1.id, srv2.id], login="ops")
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": "mass-1"},
+        )
+        assert resp.status_code == 202
+        assert len(captured_dispatch) == 2
+        keys = {c["idempotency_key"] for c in captured_dispatch}
+        assert keys == {f"mass-1:{srv1.id}", f"mass-1:{srv2.id}"}

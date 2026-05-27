@@ -1,26 +1,81 @@
-"""Модель ServerAccount — локальный OS-аккаунт с зашифрованным паролем."""
+"""Модель ServerAccount — OS-аккаунт с зашифрованным паролем.
+
+Аккаунт привязывается к набору серверов через join-таблицу
+`server_account_servers` (many-to-many). Пароль — общий для всех привязанных
+серверов и хранится прямо на строке аккаунта (одна «личность» — один секрет).
+"""
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db.base import Base
 
 
-class ServerAccount(Base):
-    """OS-аккаунт на сервере. Пароль хранится в формате secrets_service token."""
+class ServerAccountServer(Base):
+    """Связка аккаунт ↔ сервер.
 
-    __tablename__ = "server_accounts"
+    Логин аккаунта уникален в пределах сервера — нельзя завести двух
+    root'ов на одной машине. Это держит инвариант, который раньше давал
+    UNIQUE(server_id, login) на самой строке аккаунта; теперь он на join'е.
+    """
+
+    __tablename__ = "server_account_servers"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("server_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     server_id: Mapped[str] = mapped_column(
         String(64),
         ForeignKey("servers.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
+    # Денормализованная копия login'а аккаунта — нужна для constraint
+    # «один логин на сервер». Держится в sync с ServerAccount.login сервисным
+    # слоем (login аккаунта неизменяем после создания).
+    login: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "server_id", name="uq_account_server"),
+        UniqueConstraint("server_id", "login", name="uq_server_login"),
+    )
+
+    account: Mapped["ServerAccount"] = relationship(
+        "ServerAccount", back_populates="server_links"
+    )
+    server: Mapped["Server"] = relationship(  # noqa: F821
+        "Server", back_populates="account_links"
+    )
+
+
+class ServerAccount(Base):
+    """OS-аккаунт. Пароль хранится в формате secrets_service token и общий
+    на все привязанные серверы."""
+
+    __tablename__ = "server_accounts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # Department владельца аккаунта. Все привязанные серверы обязаны быть в
+    # этом же department'е (enforce при линковке).
+    department_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     login: Mapped[str] = mapped_column(String(128), nullable=False)
     # Формат: `v<key>$<nonce>$<ciphertext>` (см. secrets_service.py).
     password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -44,11 +99,9 @@ class ServerAccount(Base):
     )
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    __table_args__ = (
-        # Один логин на один сервер — нельзя завести двух root'ов.
-        UniqueConstraint("server_id", "login", name="uq_server_account_login"),
-    )
-
-    server: Mapped["Server"] = relationship(  # noqa: F821
-        "Server", back_populates="accounts"
+    server_links: Mapped[list["ServerAccountServer"]] = relationship(
+        "ServerAccountServer",
+        back_populates="account",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )

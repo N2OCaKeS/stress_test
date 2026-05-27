@@ -10,13 +10,6 @@ class IpmiCredentialsResponse(BaseModel):
 
     controller_id: str = Field(description="ID контроллера в таблице ipmi_controllers (нужен worker'у для credentials_rotated callback'а).")
     kind: str = Field(description="Тип BMC: idrac / ilo / ipmi / redfish.")
-    bmc_vendor: str = Field(
-        default="ipmi_generic",
-        description=(
-            "Vendor BMC (idrac / ilo / ipmi_generic) — нужен worker'у для "
-            "выбора корректных Redfish-paths (/Managers/<vendor-id>)."
-        ),
-    )
     endpoint_url: str = Field(description="HTTPS URL Redfish API или IPMI host:port.")
     username: str = Field(description="Логин IPMI-аккаунта.")
     password: str = Field(description="Расшифрованный IPMI-пароль (plaintext, только worker'у).")

@@ -38,21 +38,6 @@ class IpmiKind(StrEnum):
     REDFISH = "redfish"
 
 
-class BmcVendor(StrEnum):
-    """Vendor BMC — определяет конкретные Redfish-paths (Managers/<id>).
-
-    iDRAC (Dell) использует `iDRAC.Embedded.1` как Manager id, iLO (HP) — `1`.
-    `ipmi_generic` означает «вендор неизвестен либо нестандартен» —
-    Redfish-клиент сначала спрашивает коллекцию `/Managers` и берёт первый.
-    Поле ортогонально `kind` (idrac/ilo/ipmi/redfish): kind фиксирует
-    транспорт/протокол, vendor — конкретный диалект Redfish paths.
-    """
-
-    IDRAC = "idrac"
-    ILO = "ilo"
-    IPMI_GENERIC = "ipmi_generic"
-
-
 class IpmiProbeStatus(StrEnum):
     """Результат последнего probe BMC."""
 

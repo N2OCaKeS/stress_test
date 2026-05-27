@@ -473,20 +473,37 @@ async def make_ipmi(db):
 
 @pytest_asyncio.fixture
 async def make_account(db):
-    """Создаёт server_account с (опционально) зашифрованным паролем."""
-    from src.models import ServerAccount
+    """Создаёт server_account (M2M) с (опционально) зашифрованным паролем.
+
+    Аккаунт привязывается к одному или нескольким серверам. Принимает либо
+    `server_id=` (один сервер), либо `server_ids=` (список). `department_id`
+    аккаунта берётся из первого сервера.
+    """
+    from sqlalchemy import select
+
+    from src.models import Server, ServerAccount, ServerAccountServer
     from src.services import secrets_service
     from src.utils.ids import _new_id
 
     async def _factory(
-        *, server_id: str, login: str = "root",
+        *, server_id: str | None = None,
+        server_ids: list[str] | None = None,
+        login: str = "root",
         password: str | None = "account-plaintext-pwd",
         has_sudo: bool = False,
     ) -> ServerAccount:
+        ids = list(server_ids) if server_ids is not None else []
+        if server_id is not None:
+            ids.append(server_id)
+        if not ids:
+            raise ValueError("make_account requires server_id or server_ids")
+        srv = (await db.execute(
+            select(Server).where(Server.id == ids[0])
+        )).scalar_one()
         acc_id = _new_id("acc_")
         acc = ServerAccount(
             id=acc_id,
-            server_id=server_id,
+            department_id=srv.department_id,
             login=login,
             password_encrypted=secrets_service.encrypt(
                 password,
@@ -496,6 +513,15 @@ async def make_account(db):
         )
         db.add(acc)
         await db.flush()
+        for sid in ids:
+            db.add(ServerAccountServer(
+                id=_new_id("acs_"),
+                account_id=acc_id,
+                server_id=sid,
+                login=login,
+            ))
+        await db.flush()
+        await db.refresh(acc)
         return acc
 
     return _factory

@@ -85,7 +85,6 @@ async def create_controller(
         "id": controller_id,
         "server_id": server_id,
         "kind": payload.kind.value,
-        "bmc_vendor": payload.bmc_vendor.value,
         "endpoint_url": payload.endpoint_url,
         "username": payload.username,
         "password_encrypted": encrypted,
@@ -115,7 +114,6 @@ async def create_controller(
         details={
             "server_id": obj.server_id,
             "kind": obj.kind,
-            "bmc_vendor": obj.bmc_vendor,
             "endpoint_url": obj.endpoint_url,
             "department_id": server.department_id,
         },
@@ -279,10 +277,6 @@ async def update_controller(
         "server_id": obj.server_id,
         "department_id": server.department_id,
     }
-    # Если меняли bmc_vendor — публикуем новое значение в audit details
-    # (vendor — структурное поле, аналогично kind, не секрет).
-    if "bmc_vendor" in changes:
-        audit_details["bmc_vendor"] = obj.bmc_vendor
     audit_service.emit(
         "ipmi_controller.update",
         target_id=obj.id, target_type="ipmi_controller",

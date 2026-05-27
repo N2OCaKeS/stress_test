@@ -121,7 +121,7 @@ async def get_bmc_client(
     prefer: Literal["redfish", "ipmitool"] = "redfish",
     ipmitool_port: int = 623,
     ipmitool_interface: str = "lanplus",
-    bmc_vendor: str | None = None,
+    kind: str | None = None,
 ):
     """Подбор BMC-клиента: probe Redfish, fallback на ipmitool.
 
@@ -129,11 +129,11 @@ async def get_bmc_client(
     возвращаем `RedfishClient`, иначе `IpmitoolClient`.
 
     `prefer="ipmitool"` — сразу возвращаем `IpmitoolClient`, не делая
-    probe'а. Полезно, если оператор знает заранее (через `bmc_kind` в
+    probe'а. Полезно, если оператор знает заранее (через `kind` в
     `ipmi_controllers`-таблице server_service), что Redfish недоступен.
 
-    `bmc_vendor` — vendor BMC из `ipmi_controllers.bmc_vendor`
-    (`idrac`/`ilo`/`ipmi_generic`). Используется для подбора Manager-id
+    `kind` — тип BMC из `ipmi_controllers.kind`
+    (`idrac`/`ilo`/`ipmi`/`redfish`). Используется для подбора Manager-id
     Redfish-пути. Если не передан — RedfishClient берёт default (iDRAC).
     """
     if prefer == "ipmitool":
@@ -147,10 +147,10 @@ async def get_bmc_client(
 
     if await _probe_redfish(host):
         kwargs: dict = {"host": host, "username": username, "password": password}
-        if bmc_vendor:
-            manager_id = resolve_manager_id(bmc_vendor)
-            # Пустой '' для ipmi_generic → discovery через /Managers
-            # внутри клиента; явный non-empty (idrac/ilo) — прямой path.
+        if kind:
+            manager_id = resolve_manager_id(kind)
+            # Пустой '' для generic-kind (ipmi/redfish) → discovery через
+            # /Managers внутри клиента; явный non-empty (idrac/ilo) — прямой path.
             kwargs["manager_id"] = manager_id
         return RedfishClient(**kwargs)
 

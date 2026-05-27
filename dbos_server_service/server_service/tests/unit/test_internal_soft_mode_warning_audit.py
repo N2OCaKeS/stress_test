@@ -43,8 +43,13 @@ def _stub_account_repo(monkeypatch, *, server_id: str, account_id: str, has_pass
         account.password_rotated_at = datetime.now(timezone.utc)
         return account
 
+    async def is_linked(db, aid, sid):
+        # M2M: аккаунт привязан к серверу, если совпадают оба id.
+        return aid == target_account_id and sid == target_server_id
+
     monkeypatch.setattr(internal_service.account_repo, "get_by_id", get_by_id)
     monkeypatch.setattr(internal_service.account_repo, "update_password", update_password)
+    monkeypatch.setattr(internal_service.account_repo, "is_linked", is_linked)
 
 
 def _stub_permissions_ok(monkeypatch):

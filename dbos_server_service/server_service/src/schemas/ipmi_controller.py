@@ -10,7 +10,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.core.constants import BmcVendor, IpmiKind
+from src.core.constants import IpmiKind
 from src.core.password_policy import validate_password
 
 
@@ -18,13 +18,6 @@ class IpmiControllerCreate(BaseModel):
     """Тело POST /servers/{server_id}/ipmi — регистрация BMC для сервера."""
 
     kind: IpmiKind = Field(..., description="Тип BMC: idrac / ilo / ipmi / redfish.")
-    bmc_vendor: BmcVendor = Field(
-        default=BmcVendor.IPMI_GENERIC,
-        description=(
-            "Vendor BMC: idrac (Dell), ilo (HP), ipmi_generic (default). "
-            "Определяет конкретные Redfish-paths (`/Managers/<vendor-id>`)."
-        ),
-    )
     endpoint_url: str = Field(
         ..., min_length=1, max_length=512,
         description="HTTPS URL Redfish API или IPMI host[:port].",
@@ -57,10 +50,6 @@ class IpmiControllerUpdate(BaseModel):
     """
 
     kind: IpmiKind | None = Field(default=None, description="Сменить тип BMC.")
-    bmc_vendor: BmcVendor | None = Field(
-        default=None,
-        description="Сменить vendor BMC (idrac / ilo / ipmi_generic).",
-    )
     endpoint_url: str | None = Field(
         default=None, min_length=1, max_length=512,
         description="Сменить endpoint URL.",
@@ -85,7 +74,6 @@ class IpmiControllerResponse(BaseModel):
     id: str = Field(description="IPMI controller ID (prefix ipm_).")
     server_id: str = Field(description="FK на servers.id.")
     kind: str = Field(description="Тип BMC: idrac / ilo / ipmi / redfish.")
-    bmc_vendor: str = Field(description="Vendor BMC: idrac / ilo / ipmi_generic.")
     endpoint_url: str = Field(description="HTTPS URL Redfish или IPMI host[:port].")
     username: str = Field(description="Логин IPMI-аккаунта.")
     password_rotated_at: datetime | None = Field(
@@ -154,7 +142,6 @@ class IpmiCredentialsViewResponse(BaseModel):
     id: str = Field(description="IPMI controller ID.")
     server_id: str = Field(description="ID сервера, к которому привязан BMC.")
     kind: str = Field(description="Тип BMC.")
-    bmc_vendor: str = Field(description="Vendor BMC: idrac / ilo / ipmi_generic.")
     endpoint_url: str = Field(description="BMC endpoint URL.")
     username: str = Field(description="BMC login.")
     password_rotated_at: datetime | None = Field(

@@ -60,26 +60,25 @@ _DEFAULT_MANAGER_ID = "iDRAC.Embedded.1"
 # `System.Embedded.1`. Берём `1` как наиболее переносимый.
 _DEFAULT_SYSTEM_ID = "1"
 
-# Per-vendor manager-id маппинг. iDRAC использует embedded slot,
-# HP iLO держит manager под номером `1`. `ipmi_generic` оставляет
+# Per-kind manager-id маппинг. iDRAC использует embedded slot, HP iLO
+# держит manager под номером `1`. Остальные kind (ipmi / redfish) оставляют
 # manager_id="" — клиент сделает discovery через коллекцию /Managers.
-VENDOR_MANAGER_IDS: dict[str, str] = {
+KIND_MANAGER_IDS: dict[str, str] = {
     "idrac": "iDRAC.Embedded.1",
     "ilo": "1",
-    "ipmi_generic": "",
 }
 
 
-def resolve_manager_id(bmc_vendor: str | None) -> str:
-    """Подобрать Manager-id Redfish-path по vendor BMC.
+def resolve_manager_id(kind: str | None) -> str:
+    """Подобрать Manager-id Redfish-path по типу BMC (`kind`).
 
-    Пустая строка ('') для `ipmi_generic` или unknown vendor сигнализирует
-    клиенту, что нужно сделать discovery через коллекцию `/redfish/v1/Managers`
-    перед использованием Manager-эндпоинтов.
+    Пустая строка ('') для generic-kind (ipmi / redfish) или неизвестного
+    значения сигнализирует клиенту, что нужно сделать discovery через
+    коллекцию `/redfish/v1/Managers` перед использованием Manager-эндпоинтов.
     """
-    if not bmc_vendor:
+    if not kind:
         return ""
-    return VENDOR_MANAGER_IDS.get(bmc_vendor, "")
+    return KIND_MANAGER_IDS.get(kind, "")
 
 
 class RedfishError(Exception):
@@ -256,8 +255,8 @@ class RedfishClient:
     async def _resolve_manager_id(self) -> str:
         """Discovery Manager-id через коллекцию /redfish/v1/Managers.
 
-        Используется, когда конструктор получил `manager_id=""` (vendor
-        `ipmi_generic`): спрашиваем коллекцию и берём первый элемент.
+        Используется, когда конструктор получил `manager_id=""` (generic-kind
+        ipmi / redfish): спрашиваем коллекцию и берём первый элемент.
         Результат кэшируется в `self._manager_id` — повторного round-trip'а
         для последующих вызовов не будет.
 

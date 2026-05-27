@@ -1,11 +1,15 @@
-"""Use cases для server_accounts — CRUD + rotate_password.
+"""Use cases для server_accounts — CRUD + rotate_password + M2M-линковка.
 
-Карточка аккаунта доступна по `view`. Если вызывающий вдобавок держит
-`view_password`, тот же GET доносит расшифрованный пароль в base64 — отдельной
-reveal-ручки нет. Internal endpoint (`internal_service`) для worker'а остаётся.
+Аккаунт привязан к набору серверов (many-to-many через
+`server_account_servers`). Пароль — общий на все привязанные серверы и
+хранится на строке аккаунта. Карточка аккаунта доступна по `view`. Если
+вызывающий вдобавок держит `view_password`, тот же GET доносит расшифрованный
+пароль в base64 — отдельной reveal-ручки нет. Internal endpoint
+(`internal_service`) для worker'а остаётся.
 
 Visibility-check (cross-department) скрывает чужие аккаунты за 404, чтобы
-не выдавать факт существования. Симметрично с `services/server.py`.
+не выдавать факт существования. Аккаунт видим, если его `department_id`
+совпадает с caller'ом. Симметрично с `services/server.py`.
 """
 
 import base64
@@ -22,10 +26,13 @@ from src.core.exceptions import (
     NotFoundError,
 )
 from src.models import Server, ServerAccount
-from src.repositories import server as server_repo
 from src.repositories import server_account as repo
 from src.schemas.identity import IdentityContext
-from src.schemas.server_account import ServerAccountCreate, ServerAccountUpdate
+from src.schemas.server_account import (
+    ServerAccountCreate,
+    ServerAccountServersUpdate,
+    ServerAccountUpdate,
+)
 from src.services import audit_service, permissions, secrets_service
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.services.server import load_visible_server
@@ -38,20 +45,21 @@ async def _load_account_visible(
     db: AsyncSession,
     identity: IdentityContext,
     account_id: str,
-) -> tuple[ServerAccount, Server]:
-    """SELECT аккаунта + его сервера + dept-isolation. 404 во всех ambiguity-ветках."""
+) -> ServerAccount:
+    """SELECT аккаунта + dept-isolation. 404 во всех ambiguity-ветках.
+
+    Видимость теперь строится на `account.department_id` (аккаунт может
+    жить сразу на нескольких серверах одного отдела), а не на одиночном
+    server'е.
+    """
     account = await repo.get_by_id(db, account_id)
     if account is None:
         raise NotFoundError(error_code="ACCOUNT_NOT_FOUND", message="Server account not found")
-    server = await server_repo.get_by_id(db, account.server_id)
-    if server is None:
-        # Не должно случаться (FK CASCADE), но обрабатываем как 404 на всякий случай.
-        raise NotFoundError(error_code="ACCOUNT_NOT_FOUND", message="Server account not found")
-    if identity.department_id != server.department_id:
+    if identity.department_id != account.department_id:
         # Скрываем существование аккаунта чужого dept за тем же 404, что и
         # для несуществующего id — иначе по разнице ответов утечёт enumeration.
         raise NotFoundError(error_code="ACCOUNT_NOT_FOUND", message="Server account not found")
-    return account, server
+    return account
 
 
 def _generate_password() -> str:
@@ -59,40 +67,64 @@ def _generate_password() -> str:
     return secrets.token_urlsafe(32)
 
 
+async def _resolve_same_dept_servers(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_ids: list[str],
+    audit_action: str,
+) -> list[Server]:
+    """Подгрузить все серверы из списка с dept-isolation.
+
+    Любой server чужого/несуществующего dept'а → 404 (скрываем факт
+    существования). На вход уже идёт дедуплицированный список.
+    """
+    servers: list[Server] = []
+    for sid in server_ids:
+        try:
+            srv = await load_visible_server(db, identity, sid)
+        except NotFoundError:
+            audit_service.emit(
+                audit_action,
+                target_type="server_account",
+                status="denied", allowed=False,
+                details={"reason": "server_not_found_or_cross_dept", "server_id": sid},
+            )
+            raise
+        servers.append(srv)
+    return servers
+
+
 async def create_account(
     db: AsyncSession,
     identity: IdentityContext,
     payload: ServerAccountCreate,
 ) -> ServerAccount:
-    """INSERT нового аккаунта.
+    """INSERT нового аккаунта + привязка к списку серверов.
 
     Порядок проверок:
       1. CREATE permission.
-      2. Server существует + dept caller'а совпадает (иначе 404 — скрываем
-         факт существования чужого сервера).
+      2. Каждый сервер из `server_ids` существует + dept caller'а совпадает
+         (иначе 404 — скрываем факт существования чужого сервера).
       3. has_sudo=True → дополнительно требует GRANT_SUDO action.
       4. Шифруем password (переданный или сгенерированный).
-      5. INSERT + commit. UNIQUE(server_id, login) → 409 ACCOUNT_DUPLICATE.
+      5. INSERT аккаунта + связок. UNIQUE(server_id, login) на join →
+         409 ACCOUNT_DUPLICATE (login занят на одном из серверов).
     """
     with emit_denied_on_authz_error(
         "server_account.create",
         target_type="server_account",
-        extra_details={"server_id": payload.server_id},
+        extra_details={"server_ids": payload.server_ids},
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.CREATE
         )
 
-    try:
-        server = await load_visible_server(db, identity, payload.server_id)
-    except NotFoundError:
-        audit_service.emit(
-            "server_account.create",
-            target_type="server_account",
-            status="denied", allowed=False,
-            details={"reason": "server_not_found_or_cross_dept", "server_id": payload.server_id},
-        )
-        raise
+    servers = await _resolve_same_dept_servers(
+        db, identity, payload.server_ids, "server_account.create"
+    )
+    # Все серверы из одного отдела (caller'а) — department аккаунта берём
+    # из caller'а; load_visible_server уже гарантировал совпадение.
+    department_id = identity.department_id
 
     if payload.has_sudo:
         try:
@@ -106,7 +138,7 @@ async def create_account(
                 status="denied", allowed=False,
                 details={
                     "reason": "grant_sudo_denied",
-                    "server_id": payload.server_id,
+                    "server_ids": payload.server_ids,
                     "login": payload.login,
                 },
             )
@@ -120,7 +152,7 @@ async def create_account(
     )
     data = {
         "id": account_id,
-        "server_id": payload.server_id,
+        "department_id": department_id,
         "login": payload.login,
         "password_encrypted": encrypted,
         "has_sudo": payload.has_sudo,
@@ -132,7 +164,7 @@ async def create_account(
         "created_by": identity.user_id,
     }
     try:
-        obj = await repo.create(db, data)
+        obj = await repo.create(db, data, [s.id for s in servers])
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -143,14 +175,14 @@ async def create_account(
             status="failure", allowed=True,
             details={
                 "reason": "duplicate",
-                "server_id": payload.server_id,
+                "server_ids": payload.server_ids,
                 "login": payload.login,
             },
         )
         raise ConflictError(
             error_code="ACCOUNT_DUPLICATE",
-            message="Account with this login already exists on this server",
-            details={"hint": "уникальный ключ (server_id, login)"},
+            message="Account with this login already exists on one of the servers",
+            details={"hint": "уникальный ключ (server_id, login) на join-таблице"},
         ) from exc
     await db.refresh(obj)
     audit_service.emit(
@@ -158,10 +190,10 @@ async def create_account(
         target_id=obj.id, target_type="server_account",
         status="success", allowed=True,
         details={
-            "server_id": obj.server_id,
+            "server_ids": [s.id for s in servers],
             "login": obj.login,
             "has_sudo": obj.has_sudo,
-            "department_id": server.department_id,
+            "department_id": department_id,
         },
     )
     return obj
@@ -193,7 +225,7 @@ async def get_account(
                 db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
             )
     try:
-        account, server = await _load_account_visible(db, identity, account_id)
+        account = await _load_account_visible(db, identity, account_id)
     except NotFoundError:
         audit_service.emit(
             "server_account.view",
@@ -206,7 +238,7 @@ async def get_account(
     if not has_password_action:
         return account, None
 
-    return account, _reveal_account_password(account, server)
+    return account, _reveal_account_password(account)
 
 
 async def list_accounts(
@@ -216,7 +248,7 @@ async def list_accounts(
     limit: int,
     offset: int,
 ) -> tuple[list[ServerAccount], int]:
-    """List + count для одного сервера. Cross-dept сервер скрыт за 404."""
+    """List + count привязанных к серверу аккаунтов. Cross-dept сервер скрыт за 404."""
     with emit_denied_on_authz_error(
         "server_account.list",
         target_type="server_account",
@@ -250,6 +282,7 @@ async def update_account(
 
     `has_sudo=True` дополнительно требует GRANT_SUDO. Изменение пароля
     через PATCH не предусмотрено — только через `/rotate_password`.
+    Привязка серверов — через `/servers` под-операции.
     """
     with emit_denied_on_authz_error(
         "server_account.update",
@@ -260,7 +293,7 @@ async def update_account(
             db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
         )
     try:
-        obj, server = await _load_account_visible(db, identity, account_id)
+        obj = await _load_account_visible(db, identity, account_id)
     except NotFoundError:
         audit_service.emit(
             "server_account.update",
@@ -316,8 +349,131 @@ async def update_account(
         status="success", allowed=True,
         details={
             "fields": list(changes.keys()),
-            "server_id": obj.server_id,
-            "department_id": server.department_id,
+            "department_id": obj.department_id,
+        },
+    )
+    return obj
+
+
+async def link_servers(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    payload: ServerAccountServersUpdate,
+) -> ServerAccount:
+    """Привязать аккаунт к дополнительным серверам.
+
+    Линковка гейтится `update`. Все новые серверы обязаны быть в том же
+    department'е, что и аккаунт (cross-dept → 404, как при create). Если
+    login уже занят на одном из серверов другим аккаунтом — 409.
+    """
+    with emit_denied_on_authz_error(
+        "server_account.link_servers",
+        target_id=account_id,
+        target_type="server_account",
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
+        )
+    try:
+        obj = await _load_account_visible(db, identity, account_id)
+    except NotFoundError:
+        audit_service.emit(
+            "server_account.link_servers",
+            target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={"reason": "not_found_or_cross_dept"},
+        )
+        raise
+
+    await _resolve_same_dept_servers(
+        db, identity, payload.server_ids, "server_account.link_servers"
+    )
+
+    try:
+        await repo.add_servers(db, obj, payload.server_ids)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        logger.warning("IntegrityError на линковке аккаунта %s: %s", account_id, type(exc.orig).__name__)
+        audit_service.emit(
+            "server_account.link_servers",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "duplicate", "server_ids": payload.server_ids},
+        )
+        raise ConflictError(
+            error_code="ACCOUNT_DUPLICATE",
+            message="Account login already exists on one of the target servers",
+        ) from exc
+    await db.refresh(obj)
+    audit_service.emit(
+        "server_account.link_servers",
+        target_id=obj.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "server_ids": payload.server_ids,
+            "department_id": obj.department_id,
+        },
+    )
+    return obj
+
+
+async def unlink_servers(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+    payload: ServerAccountServersUpdate,
+) -> ServerAccount:
+    """Отвязать аккаунт от серверов.
+
+    Отвязка гейтится `update`. Нельзя снять последнюю связку — аккаунт всегда
+    живёт хотя бы на одном сервере (иначе → 409 ACCOUNT_NO_SERVERS).
+    """
+    with emit_denied_on_authz_error(
+        "server_account.unlink_servers",
+        target_id=account_id,
+        target_type="server_account",
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
+        )
+    try:
+        obj = await _load_account_visible(db, identity, account_id)
+    except NotFoundError:
+        audit_service.emit(
+            "server_account.unlink_servers",
+            target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={"reason": "not_found_or_cross_dept"},
+        )
+        raise
+
+    current = set(repo.linked_server_ids(obj))
+    remaining = current - set(payload.server_ids)
+    if not remaining:
+        audit_service.emit(
+            "server_account.unlink_servers",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "would_orphan_account", "server_ids": payload.server_ids},
+        )
+        raise ConflictError(
+            error_code="ACCOUNT_NO_SERVERS",
+            message="Cannot unlink the last server — account must stay on at least one",
+        )
+
+    removed = await repo.remove_servers(db, obj, payload.server_ids)
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "server_account.unlink_servers",
+        target_id=obj.id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "server_ids": payload.server_ids,
+            "removed": removed,
+            "department_id": obj.department_id,
         },
     )
     return obj
@@ -328,7 +484,7 @@ async def delete_account(
     identity: IdentityContext,
     account_id: str,
 ) -> None:
-    """Hard-delete аккаунта."""
+    """Hard-delete аккаунта (связки уходят каскадом)."""
     with emit_denied_on_authz_error(
         "server_account.delete",
         target_id=account_id,
@@ -338,7 +494,7 @@ async def delete_account(
             db, identity, EntityType.SERVER_ACCOUNT, Action.DELETE
         )
     try:
-        obj, server = await _load_account_visible(db, identity, account_id)
+        obj = await _load_account_visible(db, identity, account_id)
     except NotFoundError:
         audit_service.emit(
             "server_account.delete",
@@ -347,8 +503,9 @@ async def delete_account(
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
-    server_id = obj.server_id
     login = obj.login
+    server_ids = repo.linked_server_ids(obj)
+    department_id = obj.department_id
     await repo.delete(db, obj)
     await db.commit()
     audit_service.emit(
@@ -356,9 +513,9 @@ async def delete_account(
         target_id=account_id, target_type="server_account",
         status="success", allowed=True,
         details={
-            "server_id": server_id,
+            "server_ids": server_ids,
             "login": login,
-            "department_id": server.department_id,
+            "department_id": department_id,
         },
     )
 
@@ -369,17 +526,15 @@ async def rotate_password(
     account_id: str,
     new_password: str | None = None,
 ) -> ServerAccount:
-    """User-инициированная ротация пароля. Новый пароль НЕ возвращается клиенту.
+    """User-инициированная ротация общего пароля. Новый пароль НЕ возвращается клиенту.
+
+    Пароль общий на все привязанные серверы — эта ручка меняет ciphertext в
+    БД без SSH-apply'я. Для apply'я на конкретный сервер или на все — см.
+    worker-dispatch (`/rotate` точечный/массовый).
 
     Если `new_password` передан — он уже прошёл парольную политику на схеме
     (`ServerAccountRotateRequest`) и сохраняется как есть. Если нет —
     генерируем серверной стороной (`secrets.token_urlsafe(32)`).
-
-    Worker-callback path (`internal.rotate_account_password`) принимает уже
-    готовый password от worker'а (после SSH-apply). Этот же путь — для
-    случая, когда пароль надо сгенерить и сохранить локально (например,
-    реакция на компрометацию, без apply'я на хост). Различимы по
-    `details.reason` в audit-event'е.
     """
     with emit_denied_on_authz_error(
         "server_account.rotate_password",
@@ -390,7 +545,7 @@ async def rotate_password(
             db, identity, EntityType.SERVER_ACCOUNT, Action.ROTATE_PASSWORD
         )
     try:
-        obj, server = await _load_account_visible(db, identity, account_id)
+        obj = await _load_account_visible(db, identity, account_id)
     except NotFoundError:
         audit_service.emit(
             "server_account.rotate_password",
@@ -412,9 +567,8 @@ async def rotate_password(
         target_id=updated.id, target_type="server_account",
         status="success", allowed=True,
         details={
-            "server_id": updated.server_id,
             "login": updated.login,
-            "department_id": server.department_id,
+            "department_id": updated.department_id,
             "reason": "user_provided" if new_password is not None else "user_initiated",
             "rotated_at": updated.password_rotated_at.isoformat() if updated.password_rotated_at else None,
         },
@@ -422,7 +576,7 @@ async def rotate_password(
     return updated
 
 
-def _reveal_account_password(account: ServerAccount, server: Server) -> str | None:
+def _reveal_account_password(account: ServerAccount) -> str | None:
     """Расшифровать пароль аккаунта в base64 и записать аудит раскрытия.
 
     Вызывается из `get_account` только после успешной проверки `view_password`,
@@ -438,8 +592,7 @@ def _reveal_account_password(account: ServerAccount, server: Server) -> str | No
             status="failure", allowed=True,
             details={
                 "reason": "no_password_stored",
-                "server_id": account.server_id,
-                "department_id": server.department_id,
+                "department_id": account.department_id,
             },
         )
         return None
@@ -456,8 +609,7 @@ def _reveal_account_password(account: ServerAccount, server: Server) -> str | No
             status="failure", allowed=True,
             details={
                 "reason": "decrypt_failed",
-                "server_id": account.server_id,
-                "department_id": server.department_id,
+                "department_id": account.department_id,
             },
         )
         raise
@@ -467,9 +619,8 @@ def _reveal_account_password(account: ServerAccount, server: Server) -> str | No
         target_id=account.id, target_type="server_account",
         status="success", allowed=True,
         details={
-            "server_id": account.server_id,
             "login": account.login,
-            "department_id": server.department_id,
+            "department_id": account.department_id,
         },
     )
     return base64.b64encode(plain.encode("utf-8")).decode("ascii")

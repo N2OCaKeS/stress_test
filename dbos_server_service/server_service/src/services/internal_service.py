@@ -218,7 +218,6 @@ async def fetch_ipmi_credentials(
     return {
         "controller_id": ctrl.id,
         "kind": ctrl.kind,
-        "bmc_vendor": ctrl.bmc_vendor,
         "endpoint_url": ctrl.endpoint_url,
         "username": ctrl.username,
         "password": plain,
@@ -246,7 +245,7 @@ async def fetch_account_password(
         )
         raise
     account = await account_repo.get_by_id(db, account_id)
-    if account is None or account.server_id != server_id:
+    if account is None or not await account_repo.is_linked(db, account_id, server_id):
         audit_service.emit(
             "server_account.view_password",
             target_id=account_id, target_type="server_account",
@@ -335,7 +334,7 @@ async def rotate_account_password(
         )
         raise
     account = await account_repo.get_by_id(db, account_id)
-    if account is None or account.server_id != server_id:
+    if account is None or not await account_repo.is_linked(db, account_id, server_id):
         audit_service.emit(
             "server_account.rotate_password",
             target_id=account_id, target_type="server_account",

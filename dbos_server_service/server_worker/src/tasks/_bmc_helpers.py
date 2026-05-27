@@ -41,7 +41,7 @@ async def get_bmc(creds: dict, *, prefer: str = "redfish"):
     fallback на ipmitool.
 
     `creds` — dict с ключами `endpoint_url`, `username`, `password` и
-    опционально `bmc_vendor` (`idrac`/`ilo`/`ipmi_generic`, отдаётся
+    опционально `kind` (`idrac`/`ilo`/`ipmi`/`redfish`, отдаётся
     `server_service_client.fetch_ipmi_credentials`). Для legacy-payload'ов
     без поля fallback — `None`, RedfishClient берёт iDRAC default.
     """
@@ -50,7 +50,7 @@ async def get_bmc(creds: dict, *, prefer: str = "redfish"):
         username=creds["username"],
         password=creds["password"],
         prefer=prefer,
-        bmc_vendor=creds.get("bmc_vendor"),
+        kind=creds.get("kind"),
     )
 
 

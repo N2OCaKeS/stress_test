@@ -41,7 +41,7 @@ class TestCreateAccount:
             BASE,
             headers=_hdr(admin_token),
             json={
-                "server_id": srv.id,
+                "server_ids": [srv.id],
                 "login": "root",
                 "password": "s3cret-explicit",
             },
@@ -49,7 +49,7 @@ class TestCreateAccount:
         assert resp.status_code == 201
         body = resp.json()
         assert body["login"] == "root"
-        assert body["server_id"] == srv.id
+        assert body["server_ids"] == [srv.id]
         # Пароль никогда не должен утекать наружу.
         assert "password" not in body
         assert "password_encrypted" not in body
@@ -67,7 +67,7 @@ class TestCreateAccount:
         resp = await client.post(
             BASE,
             headers=_hdr(operator_token_a),
-            json={"server_id": srv.id, "login": "deploy"},
+            json={"server_ids": [srv.id], "login": "deploy"},
         )
         assert resp.status_code == 201
         account_id = resp.json()["id"]
@@ -89,7 +89,7 @@ class TestCreateAccount:
         resp = await client.post(
             BASE,
             headers=_hdr(reader_token_a),
-            json={"server_id": srv.id, "login": "root"},
+            json={"server_ids": [srv.id], "login": "root"},
         )
         assert resp.status_code == 403
         assert resp.json()["error_code"] == "PERMISSION_DENIED"
@@ -99,7 +99,7 @@ class TestCreateAccount:
         resp = await client.post(
             BASE,
             headers=_hdr(guest_token_a),
-            json={"server_id": srv.id, "login": "root"},
+            json={"server_ids": [srv.id], "login": "root"},
         )
         assert resp.status_code == 403
 
@@ -107,7 +107,7 @@ class TestCreateAccount:
         srv = await make_server(department_id="dep_a")
         resp = await client.post(
             BASE,
-            json={"server_id": srv.id, "login": "root"},
+            json={"server_ids": [srv.id], "login": "root"},
         )
         assert resp.status_code == 401
 
@@ -119,7 +119,7 @@ class TestCreateAccount:
         resp = await client.post(
             BASE,
             headers=_hdr(operator_token_a),
-            json={"server_id": srv.id, "login": "root"},
+            json={"server_ids": [srv.id], "login": "root"},
         )
         assert resp.status_code == 404
         assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
@@ -132,7 +132,7 @@ class TestCreateAccount:
         resp = await client.post(
             BASE,
             headers=_hdr(operator_token_a),
-            json={"server_id": srv.id, "login": "rooty", "has_sudo": True},
+            json={"server_ids": [srv.id], "login": "rooty", "has_sudo": True},
         )
         assert resp.status_code == 403
         assert resp.json()["error_code"] == "PERMISSION_DENIED"
@@ -144,7 +144,7 @@ class TestCreateAccount:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_role_token_a),
-            json={"server_id": srv.id, "login": "rooty", "has_sudo": True},
+            json={"server_ids": [srv.id], "login": "rooty", "has_sudo": True},
         )
         assert resp.status_code == 201
         assert resp.json()["has_sudo"] is True
@@ -157,7 +157,7 @@ class TestCreateAccount:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_id": srv.id, "login": "root"},
+            json={"server_ids": [srv.id], "login": "root"},
         )
         assert resp.status_code == 409
         assert resp.json()["error_code"] == "ACCOUNT_DUPLICATE"
@@ -168,7 +168,7 @@ class TestCreateAccount:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_id": "srv_ghost", "login": "root"},
+            json={"server_ids": ["srv_ghost"], "login": "root"},
         )
         assert resp.status_code == 404
 
@@ -179,7 +179,7 @@ class TestCreateAccount:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_id": srv.id, "login": "root"},
+            json={"server_ids": [srv.id], "login": "root"},
         )
         assert resp.status_code == 201
 
@@ -204,7 +204,7 @@ class TestCreateAccount:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_id": srv.id, "login": bad_login},
+            json={"server_ids": [srv.id], "login": bad_login},
         )
         assert resp.status_code == 422
 
@@ -587,7 +587,7 @@ class TestPasswordPolicy:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_id": srv.id, "login": "root", "password": bad_password},
+            json={"server_ids": [srv.id], "login": "root", "password": bad_password},
         )
         assert resp.status_code == 422
 
@@ -598,7 +598,7 @@ class TestPasswordPolicy:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_id": srv.id, "login": "root", "password": "valid-pass-9"},
+            json={"server_ids": [srv.id], "login": "root", "password": "valid-pass-9"},
         )
         assert resp.status_code == 201
 
@@ -610,7 +610,7 @@ class TestPasswordPolicy:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_id": srv.id, "login": "deploy"},
+            json={"server_ids": [srv.id], "login": "deploy"},
         )
         assert resp.status_code == 201
 
@@ -804,3 +804,209 @@ class TestGetAccountPassword:
         resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(reader_token_a))
         assert resp.status_code == 200
         assert resp.json()["password_b64"] is None
+
+
+# ── M2M: аккаунт на нескольких серверах ──────────────────────────────────────
+
+class TestMultiServerCreate:
+    """create со списком server_ids — аккаунт привязан сразу к нескольким серверам."""
+
+    async def test_create_links_multiple_servers(
+        self, client, admin_token, make_server,
+    ):
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_token),
+            json={"server_ids": [srv1.id, srv2.id], "login": "shared", "password": "shared-pwd-9"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert set(body["server_ids"]) == {srv1.id, srv2.id}
+        # Виден в листинге обоих серверов.
+        for srv in (srv1, srv2):
+            lst = await client.get(BASE, headers=_hdr(admin_token), params={"server_id": srv.id})
+            assert "shared" in {a["login"] for a in lst.json()["items"]}
+
+    async def test_create_dedupes_repeated_server_ids(
+        self, client, admin_token, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_token),
+            json={"server_ids": [srv.id, srv.id], "login": "dd", "password": "valid-pass-9"},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["server_ids"] == [srv.id]
+
+    async def test_create_empty_server_ids_rejected(
+        self, client, admin_token,
+    ):
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_token),
+            json={"server_ids": [], "login": "x"},
+        )
+        assert resp.status_code == 422
+
+    async def test_create_cross_dept_server_in_list_404(
+        self, client, operator_token_a, make_server,
+    ):
+        """Если хоть один сервер чужого dept — 404, аккаунт не создаётся."""
+        srv_a = await make_server(department_id="dep_a")
+        srv_b = await make_server(department_id="dep_b")
+        resp = await client.post(
+            BASE,
+            headers=_hdr(operator_token_a),
+            json={"server_ids": [srv_a.id, srv_b.id], "login": "mixed"},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+
+    async def test_login_unique_per_server_across_accounts(
+        self, client, admin_token, make_server, make_account,
+    ):
+        """Два аккаунта с одинаковым login на одном сервере — 409 (инвариант)."""
+        srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="root")
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_token),
+            json={"server_ids": [srv.id], "login": "root"},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["error_code"] == "ACCOUNT_DUPLICATE"
+
+    async def test_same_login_different_servers_allowed(
+        self, client, admin_token, make_server,
+    ):
+        """Один login на разных серверах — ок (это разные машины)."""
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        r1 = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json={"server_ids": [srv1.id], "login": "root"},
+        )
+        r2 = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json={"server_ids": [srv2.id], "login": "root"},
+        )
+        assert r1.status_code == 201
+        assert r2.status_code == 201
+
+
+class TestLinkUnlinkServers:
+    """POST/DELETE /server-accounts/{id}/servers."""
+
+    async def test_link_adds_server(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv1.id, login="ops")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/servers",
+            headers=_hdr(operator_token_a),
+            json={"server_ids": [srv2.id]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert set(resp.json()["server_ids"]) == {srv1.id, srv2.id}
+
+    async def test_link_is_idempotent(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/servers",
+            headers=_hdr(operator_token_a),
+            json={"server_ids": [srv.id]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["server_ids"] == [srv.id]
+
+    async def test_link_cross_dept_server_404(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv_a = await make_server(department_id="dep_a")
+        srv_b = await make_server(department_id="dep_b")
+        acc = await make_account(server_id=srv_a.id, login="ops")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/servers",
+            headers=_hdr(operator_token_a),
+            json={"server_ids": [srv_b.id]},
+        )
+        assert resp.status_code == 404
+
+    async def test_link_login_taken_on_target_409(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        # На srv2 уже есть root от другого аккаунта.
+        await make_account(server_id=srv2.id, login="root")
+        acc = await make_account(server_id=srv1.id, login="root")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/servers",
+            headers=_hdr(operator_token_a),
+            json={"server_ids": [srv2.id]},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["error_code"] == "ACCOUNT_DUPLICATE"
+
+    async def test_reader_cannot_link(
+        self, client, reader_token_a, make_server, make_account,
+    ):
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv1.id)
+        resp = await client.post(
+            f"{BASE}/{acc.id}/servers",
+            headers=_hdr(reader_token_a),
+            json={"server_ids": [srv2.id]},
+        )
+        assert resp.status_code == 403
+
+    async def test_unlink_removes_server(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[srv1.id, srv2.id], login="ops")
+        resp = await client.request(
+            "DELETE",
+            f"{BASE}/{acc.id}/servers",
+            headers=_hdr(operator_token_a),
+            json={"server_ids": [srv2.id]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["server_ids"] == [srv1.id]
+
+    async def test_unlink_last_server_409(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops")
+        resp = await client.request(
+            "DELETE",
+            f"{BASE}/{acc.id}/servers",
+            headers=_hdr(operator_token_a),
+            json={"server_ids": [srv.id]},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["error_code"] == "ACCOUNT_NO_SERVERS"
+
+    async def test_unlink_cross_dept_account_404(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_b")
+        acc = await make_account(server_id=srv.id)
+        resp = await client.request(
+            "DELETE",
+            f"{BASE}/{acc.id}/servers",
+            headers=_hdr(operator_token_a),
+            json={"server_ids": [srv.id]},
+        )
+        assert resp.status_code == 404

@@ -204,33 +204,18 @@ class TestGetControllerCredentials:
         assert resp.status_code == 200
         assert resp.json()["password_b64"] is None
 
-    @pytest.mark.parametrize("kind,vendor", [
-        ("idrac", "idrac"),
-        ("ilo", "ilo"),
-        ("ipmi", "ipmi_generic"),
-        ("redfish", "ipmi_generic"),
-    ])
-    async def test_vendor_variants_same_shape(
-        self, client, admin_role_token_a, make_server, make_ipmi, db, kind, vendor,
+    @pytest.mark.parametrize("kind", ["idrac", "ilo", "ipmi", "redfish"])
+    async def test_kind_variants_same_shape(
+        self, client, admin_role_token_a, make_server, make_ipmi, kind,
     ):
-        """password_b64 в карточке не зависит от vendor/kind BMC."""
-        from sqlalchemy import update
-
-        from src.models import IpmiController
-
+        """password_b64 в карточке не зависит от kind BMC."""
         srv = await make_server(department_id="dep_a")
-        ctrl = await make_ipmi(
+        await make_ipmi(
             server_id=srv.id, kind=kind, username=f"u_{kind}",
-            password=f"pw_for_{vendor}",
+            password=f"pw_for_{kind}",
         )
-        await db.execute(
-            update(IpmiController)
-            .where(IpmiController.id == ctrl.id)
-            .values(bmc_vendor=vendor)
-        )
-        await db.flush()
         resp = await client.get(_ipmi_url(srv.id), headers=_hdr(admin_role_token_a))
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["username"] == f"u_{kind}"
-        assert base64.b64decode(body["password_b64"]).decode() == f"pw_for_{vendor}"
+        assert base64.b64decode(body["password_b64"]).decode() == f"pw_for_{kind}"

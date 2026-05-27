@@ -65,28 +65,6 @@ class TestCreateServerWithIpmi:
         assert body["endpoint_url"] == "https://idrac.example.com"
         assert body["username"] == "ipmi_admin"
 
-    async def test_bmc_vendor_defaults_when_omitted(self, client, admin_token):
-        resp = await client.post(
-            BASE, headers=_hdr(admin_token),
-            json=_payload(hostname="ipmi-default-vendor", ip_address="10.20.20.21",
-                          ipmi=_ipmi_block()),
-        )
-        assert resp.status_code == 201
-        srv_id = resp.json()["id"]
-        get_ipmi = await client.get(f"{BASE}/{srv_id}/ipmi", headers=_hdr(admin_token))
-        assert get_ipmi.json()["bmc_vendor"] == "ipmi_generic"
-
-    async def test_explicit_bmc_vendor_persisted(self, client, admin_token):
-        resp = await client.post(
-            BASE, headers=_hdr(admin_token),
-            json=_payload(hostname="ipmi-dell", ip_address="10.20.20.22",
-                          ipmi=_ipmi_block(bmc_vendor="idrac")),
-        )
-        assert resp.status_code == 201
-        srv_id = resp.json()["id"]
-        get_ipmi = await client.get(f"{BASE}/{srv_id}/ipmi", headers=_hdr(admin_token))
-        assert get_ipmi.json()["bmc_vendor"] == "idrac"
-
     async def test_password_is_encrypted_in_db(self, client, admin_token, db):
         from sqlalchemy import select
 
@@ -225,7 +203,7 @@ class TestAuditEmission:
         resp = await client.post(
             BASE, headers=_hdr(admin_token),
             json=_payload(hostname="audit-ipmi", ip_address="10.20.20.50",
-                          ipmi=_ipmi_block(bmc_vendor="idrac")),
+                          ipmi=_ipmi_block()),
         )
         assert resp.status_code == 201
         srv_id = resp.json()["id"]
@@ -246,7 +224,6 @@ class TestAuditEmission:
         assert ev["allowed"] is True
         assert ev["details"]["server_id"] == srv_id
         assert ev["details"]["kind"] == "idrac"
-        assert ev["details"]["bmc_vendor"] == "idrac"
         assert ev["details"]["department_id"] == "dep_a"
 
     async def test_create_without_ipmi_emits_no_ipmi_event(

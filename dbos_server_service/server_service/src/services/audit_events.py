@@ -56,6 +56,8 @@ SERVICE_EVENTS = [
     {"action": "server_account.view", "description": "Server account viewed (emitted on denied: cross-dept / nonexistent)", "default_severity": "INFO"},
     {"action": "server_account.list", "description": "Server accounts listed (emitted on denied)", "default_severity": "INFO"},
     {"action": "server_account.update", "description": "Server account updated", "default_severity": "INFO"},
+    {"action": "server_account.link_servers", "description": "Server account linked to additional servers", "default_severity": "INFO"},
+    {"action": "server_account.unlink_servers", "description": "Server account unlinked from servers", "default_severity": "INFO"},
     {"action": "server_account.delete", "description": "Server account deleted", "default_severity": "CRITICAL"},
     # Управление матрицей прав
     {"action": "permission.grant", "description": "entity_permission row granted", "default_severity": "CRITICAL"},
@@ -64,7 +66,7 @@ SERVICE_EVENTS = [
     {"action": "ipmi_controller.create", "description": "IPMI controller registered for a server", "default_severity": "CRITICAL"},
     {"action": "ipmi_controller.view", "description": "IPMI controller card viewed (emitted on denied: cross-dept / nonexistent / not registered)", "default_severity": "INFO"},
     {"action": "ipmi_controller.list", "description": "IPMI controllers listed (emitted on denied)", "default_severity": "INFO"},
-    {"action": "ipmi_controller.update", "description": "IPMI controller updated (kind/bmc_vendor/endpoint/username)", "default_severity": "INFO"},
+    {"action": "ipmi_controller.update", "description": "IPMI controller updated (kind/endpoint/username)", "default_severity": "INFO"},
     {"action": "ipmi_controller.delete", "description": "IPMI controller deleted", "default_severity": "CRITICAL"},
     {"action": "ipmi_controller.rotate_credentials", "description": "IPMI controller password rotated", "default_severity": "CRITICAL"},
     # Disks — CRUD (привязаны к серверу, dept-isolation через сервер-родитель)

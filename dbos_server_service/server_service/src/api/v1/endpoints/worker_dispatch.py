@@ -37,7 +37,7 @@ SSH-apply). Дисптачи через `worker_client`:
 
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import Action, EntityType, ServerStatus
@@ -52,6 +52,10 @@ from src.dependencies.db import get_db
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import server_account as account_repo
 from src.schemas.server import ServerPowerStatusDispatchResponse
+from src.schemas.server_account import (
+    AccountRotateDispatchResponse,
+    AccountRotateTask,
+)
 from src.services import audit_service, permissions, worker_client
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
@@ -295,20 +299,27 @@ async def inventory_sync_dispatch(
 
 @router_accounts.post(
     "/rotate",
-    summary="Ротация пароля аккаунта через worker (SSH apply + storage)",
+    response_model=AccountRotateDispatchResponse,
+    summary="Ротация общего пароля аккаунта через worker (SSH apply + storage)",
     status_code=202,
     description=(
-        "Публикует задачу `account.rotate_password`. Worker сгенерит новый "
+        "Публикует задачи `account.rotate_password`. Worker сгенерит новый "
         "пароль, применит через SSH (`chpasswd`) и POST'нет обратно в "
         "server_service internal endpoint, который зашифрует и сохранит. "
+        "Пароль общий на все привязанные серверы.\n\n"
+        "Два режима:\n"
+        "* **точечная** — query `server_id=<srv>` указывает один из "
+        "привязанных серверов; задача ставится только на него;\n"
+        "* **массовая** — без `server_id`; задача ставится на каждый "
+        "привязанный сервер (по таске на сервер).\n\n"
         "В отличие от `/server-accounts/{id}/rotate_password` (user-facing, "
-        "меняет только запись в БД без apply'я на сервер) — этот dispatch "
-        "обновляет пароль end-to-end. Plaintext клиенту не возвращается."
+        "меняет только запись в БД без apply'я) — этот dispatch обновляет "
+        "пароль end-to-end. Plaintext клиенту не возвращается."
     ),
     responses={
-        202: {"description": "Задача принята, возвращается task_id."},
+        202: {"description": "Задача(и) приняты, возвращается список task_id."},
         403: {"description": "Нет роли с `rotate_password` либо чужой department."},
-        404: {"description": "Аккаунт не найден / чужой dept (скрыто за 404)."},
+        404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
         409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
         503: {"description": "Worker недоступен."},
     },
@@ -318,8 +329,15 @@ async def account_rotate_password_dispatch(
     identity: CurrentIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Ставит `account.rotate_password` в очередь worker'а.
+    server_id: str | None = Query(
+        default=None,
+        description=(
+            "Точечная ротация: применить новый пароль только на этот "
+            "привязанный сервер. Опущен — массовая ротация на все серверы."
+        ),
+    ),
+) -> AccountRotateDispatchResponse:
+    """Ставит `account.rotate_password` в очередь worker'а — точечно или массово.
 
     Доступ: `(server_account, *, rotate_password)`. Cross-dept аккаунты
     скрыты за 404 ровно как в user-facing rotate (см.
@@ -343,12 +361,11 @@ async def account_rotate_password_dispatch(
             db, identity, EntityType.SERVER_ACCOUNT, Action.ROTATE_PASSWORD,
         )
 
-    # Visibility-check: подгружаем аккаунт и его сервер, dept должен совпасть
-    # с caller'ом. Любая ambiguity (нет аккаунта, нет сервера, чужой dept)
-    # → одинаковая 404 ACCOUNT_NOT_FOUND, иначе по разнице ответов утечёт
-    # cross-dept enumeration.
+    # Visibility-check: аккаунт виден, если его department совпадает с
+    # caller'ом. Любая ambiguity (нет аккаунта, чужой dept) → одинаковая
+    # 404 ACCOUNT_NOT_FOUND, иначе по разнице ответов утечёт enumeration.
     account = await account_repo.get_by_id(db, account_id)
-    if account is None:
+    if account is None or account.department_id != identity.department_id:
         audit_service.emit(
             audit_action, target_id=account_id, target_type="server_account",
             status="denied", allowed=False,
@@ -357,89 +374,107 @@ async def account_rotate_password_dispatch(
         raise NotFoundError(
             error_code="ACCOUNT_NOT_FOUND", message="Server account not found",
         )
-    # Используем load_visible_server для consolidated dept-isolation (404 на
-    # cross-dept), но перерапиваем 404 в ACCOUNT_NOT_FOUND — иначе по
-    # error_code (SERVER_NOT_FOUND vs ACCOUNT_NOT_FOUND) утечёт, что
-    # запрашиваемый account_id ссылается на чужой сервер.
-    try:
-        server = await server_svc.load_visible_server(db, identity, account.server_id)
-    except NotFoundError as exc:
-        audit_service.emit(
-            audit_action, target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
-            details={"reason": "not_found_or_cross_dept"},
-        )
-        raise NotFoundError(
-            error_code="ACCOUNT_NOT_FOUND", message="Server account not found",
-        ) from exc
 
-    if server.status == ServerStatus.DECOMMISSIONED:
-        audit_service.emit(
-            audit_action, target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={
-                "reason": "decommissioned",
-                "server_id": server.id,
-                "department_id": server.department_id,
-            },
-        )
-        raise ConflictError(
-            error_code="SERVER_DECOMMISSIONED",
-            message="Server is decommissioned, password rotation via worker not allowed",
-        )
+    linked_ids = account_repo.linked_server_ids(account)
+
+    # Точечная: server_id обязан быть среди привязанных. Чужой/неизвестный →
+    # 404 ACCOUNT_NOT_FOUND (не раскрываем, привязан ли он к другому аккаунту).
+    if server_id is not None:
+        if server_id not in linked_ids:
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="denied", allowed=False,
+                details={"reason": "server_not_linked", "server_id": server_id},
+            )
+            raise NotFoundError(
+                error_code="ACCOUNT_NOT_FOUND",
+                message="Server account not found on this server",
+            )
+        target_ids = [server_id]
+        mode = "single"
+    else:
+        target_ids = linked_ids
+        mode = "all"
 
     idempotency_key = request.headers.get("Idempotency-Key") or None
-    payload = {
-        "server_id": server.id,
-        "account_id": account_id,
-        "target_department_id": server.department_id,
-    }
-    try:
-        task_id = await worker_client.dispatch_task(
-            task_kind="account.rotate_password",
-            target_server_id=server.id,
-            target_resource_id=account_id,
-            payload=payload,
-            created_by=identity.user_id,
-            request_id=getattr(request.state, "request_id", None),
-            idempotency_key=idempotency_key,
-        )
-    except ConflictError:
-        audit_service.emit(
-            audit_action, target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={
-                "reason": "idempotent_conflict",
-                "task_kind": "account.rotate_password",
-                "server_id": server.id,
-                "department_id": server.department_id,
-            },
-        )
-        raise
-    except ServiceUnavailableError:
-        audit_service.emit(
-            audit_action, target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={
-                "reason": "worker_unreachable",
-                "task_kind": "account.rotate_password",
-                "server_id": server.id,
-                "department_id": server.department_id,
-            },
-        )
-        raise
+    tasks: list[dict] = []
+    for sid in target_ids:
+        server = await server_svc.load_visible_server(db, identity, sid)
+        if server.status == ServerStatus.DECOMMISSIONED:
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "decommissioned",
+                    "server_id": server.id,
+                    "department_id": server.department_id,
+                },
+            )
+            raise ConflictError(
+                error_code="SERVER_DECOMMISSIONED",
+                message="Server is decommissioned, password rotation via worker not allowed",
+            )
+        # Per-server idempotency-key суффикс — иначе один Idempotency-Key на
+        # массовую ротацию схлопнул бы все серверы в одну задачу.
+        per_server_key = f"{idempotency_key}:{sid}" if idempotency_key else None
+        payload = {
+            "server_id": server.id,
+            "account_id": account_id,
+            "target_department_id": server.department_id,
+        }
+        try:
+            task_id = await worker_client.dispatch_task(
+                task_kind="account.rotate_password",
+                target_server_id=server.id,
+                target_resource_id=account_id,
+                payload=payload,
+                created_by=identity.user_id,
+                request_id=getattr(request.state, "request_id", None),
+                idempotency_key=per_server_key,
+            )
+        except ConflictError:
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "idempotent_conflict",
+                    "task_kind": "account.rotate_password",
+                    "server_id": server.id,
+                    "department_id": server.department_id,
+                },
+            )
+            raise
+        except ServiceUnavailableError:
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "worker_unreachable",
+                    "task_kind": "account.rotate_password",
+                    "server_id": server.id,
+                    "department_id": server.department_id,
+                },
+            )
+            raise
+        tasks.append({"server_id": server.id, "task_id": task_id})
+
     audit_service.emit(
         audit_action, target_id=account_id, target_type="server_account",
         status="success", allowed=True,
         details={
-            "task_id": task_id,
+            "mode": mode,
             "task_kind": "account.rotate_password",
-            "server_id": server.id,
+            "task_ids": [t["task_id"] for t in tasks],
+            "server_ids": target_ids,
             "login": account.login,
-            "department_id": server.department_id,
+            "department_id": account.department_id,
         },
     )
-    return {"task_id": task_id, "status": "queued"}
+    return AccountRotateDispatchResponse(
+        mode=mode,
+        status="queued",
+        tasks=[AccountRotateTask(**t) for t in tasks],
+    )
 
 
 # ── /ipmi-controllers/{id}/rotate ───────────────────────────────────────────

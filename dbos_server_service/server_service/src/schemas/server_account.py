@@ -1,8 +1,10 @@
 """Pydantic-схемы для эндпоинтов /server-accounts.
 
-На write принимаем `password` опционально (если не задан — генерим серверной
-стороной). В GET-карточке `password_b64` отдаётся только держателю action
-`view_password`; для остальных поле остаётся `None`.
+Аккаунт может быть привязан сразу к нескольким серверам (`server_ids`).
+Пароль — общий на все привязанные серверы. На write принимаем `password`
+опционально (если не задан — генерим серверной стороной). В GET-карточке
+`password_b64` отдаётся только держателю action `view_password`; для
+остальных поле остаётся `None`.
 """
 
 from datetime import datetime
@@ -13,9 +15,17 @@ from src.core.password_policy import validate_password
 
 
 class ServerAccountCreate(BaseModel):
-    """Тело POST /server-accounts. Логин уникален в рамках сервера."""
+    """Тело POST /server-accounts. Логин уникален в рамках каждого сервера."""
 
-    server_id: str = Field(..., description="FK на servers.id — сервер, для которого создаётся аккаунт.")
+    server_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Список серверов, к которым привязывается аккаунт (≥1). Все "
+            "серверы обязаны принадлежать тому же department'у, что и "
+            "вызывающий."
+        ),
+    )
     # Regex держим в sync с `server_worker/src/clients/ssh.py::_LOGIN_RE` —
     # там идёт повторная валидация перед `chpasswd`, чтобы воркер не зависел
     # от того, дошёл ли request через эту схему. Если меняешь pattern —
@@ -57,6 +67,19 @@ class ServerAccountCreate(BaseModel):
         default=None, max_length=256, description="Путь home-директории."
     )
 
+    @field_validator("server_ids")
+    @classmethod
+    def _dedupe_server_ids(cls, value: list[str]) -> list[str]:
+        # Сохраняем порядок, убираем дубли — иначе два одинаковых server_id
+        # в одном запросе упёрлись бы в uq_account_server на середине вставки.
+        seen: set[str] = set()
+        out: list[str] = []
+        for sid in value:
+            if sid not in seen:
+                seen.add(sid)
+                out.append(sid)
+        return out
+
     @field_validator("password")
     @classmethod
     def _check_password_policy(cls, value: str | None) -> str | None:
@@ -66,7 +89,8 @@ class ServerAccountCreate(BaseModel):
 
 
 class ServerAccountUpdate(BaseModel):
-    """Тело PATCH /server-accounts/{id}. Пароль через `rotate_password`."""
+    """Тело PATCH /server-accounts/{id}. Пароль через `rotate_password`,
+    привязка серверов — через `/servers` под-операции."""
 
     has_sudo: bool | None = Field(default=None, description="Сменить sudo-флаг (требует `grant_sudo`).")
     unix_groups: list[str] | None = Field(default=None, description="Перезаписать список групп.")
@@ -76,19 +100,46 @@ class ServerAccountUpdate(BaseModel):
     is_active: bool | None = Field(default=None, description="Отключить/включить аккаунт.")
 
 
+class ServerAccountServersUpdate(BaseModel):
+    """Тело POST/DELETE /server-accounts/{id}/servers — линковка/отвязка.
+
+    Привязываемые серверы обязаны быть в том же department'е, что и аккаунт.
+    Отвязать последний сервер нельзя — аккаунт всегда живёт хотя бы на одном.
+    """
+
+    server_ids: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Серверы для привязки/отвязки (≥1).",
+    )
+
+    @field_validator("server_ids")
+    @classmethod
+    def _dedupe_server_ids(cls, value: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for sid in value:
+            if sid not in seen:
+                seen.add(sid)
+                out.append(sid)
+        return out
+
+
 class ServerAccountResponse(BaseModel):
     """Карточка аккаунта в ответе.
 
-    `password_b64` заполняется только когда вызывающий держит action
-    `view_password` — тогда это base64(plaintext). У вызывающего без
-    `view_password` (только `view`) поле остаётся `None`. Сырого
-    `password_encrypted` в ответе нет никогда.
+    `server_ids` — список всех привязанных серверов. `password_b64`
+    заполняется только когда вызывающий держит action `view_password` —
+    тогда это base64(plaintext). У вызывающего без `view_password` (только
+    `view`) поле остаётся `None`. Сырого `password_encrypted` в ответе нет
+    никогда.
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: str = Field(description="Account ID (prefix acc_).")
-    server_id: str = Field(description="FK на server.")
+    server_ids: list[str] = Field(description="Привязанные серверы.")
+    department_id: str = Field(description="Department владельца аккаунта.")
     login: str = Field(description="OS-логин.")
     has_sudo: bool = Field(description="Есть ли sudo.")
     unix_groups: list[str] = Field(description="Unix-группы.")
@@ -145,3 +196,22 @@ class ServerAccountRotateResponse(BaseModel):
     id: str = Field(description="Account ID.")
     login: str = Field(description="OS-логин.")
     rotated_at: datetime = Field(description="UTC timestamp ротации.")
+
+
+class AccountRotateTask(BaseModel):
+    """Одна per-server задача ротации в ответе worker-dispatch'а."""
+
+    server_id: str = Field(description="Сервер, на котором применяется новый пароль.")
+    task_id: str = Field(description="ID задачи воркера (prefix tsk_).")
+
+
+class AccountRotateDispatchResponse(BaseModel):
+    """Ответ worker-dispatch ротации аккаунта.
+
+    `mode` — `single` (точечная, один сервер) или `all` (массовая, все
+    привязанные). `tasks` — по одной задаче на затронутый сервер.
+    """
+
+    mode: str = Field(description="single | all.")
+    status: str = Field(default="queued", description="Статус постановки в очередь.")
+    tasks: list[AccountRotateTask] = Field(description="Per-server задачи ротации.")

@@ -4,7 +4,7 @@ from src.models.entity_permission import EntityPermission
 from src.models.ipmi_controller import IpmiController
 from src.models.os_version import OsVersion
 from src.models.server import Server
-from src.models.server_account import ServerAccount
+from src.models.server_account import ServerAccount, ServerAccountServer
 from src.models.server_disk import ServerDisk
 
 __all__ = [
@@ -13,5 +13,6 @@ __all__ = [
     "OsVersion",
     "Server",
     "ServerAccount",
+    "ServerAccountServer",
     "ServerDisk",
 ]

@@ -76,8 +76,8 @@ class Server(Base):
     os_version: Mapped["OsVersion | None"] = relationship(  # noqa: F821
         "OsVersion", back_populates="servers"
     )
-    accounts: Mapped[list["ServerAccount"]] = relationship(  # noqa: F821
-        "ServerAccount", back_populates="server", cascade="all, delete-orphan"
+    account_links: Mapped[list["ServerAccountServer"]] = relationship(  # noqa: F821
+        "ServerAccountServer", back_populates="server", cascade="all, delete-orphan"
     )
     ipmi_controller: Mapped["IpmiController | None"] = relationship(  # noqa: F821
         "IpmiController",

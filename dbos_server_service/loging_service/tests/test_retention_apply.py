@@ -167,3 +167,53 @@ class TestEmptyDb:
         repo.create(db, RetentionPolicyCreate(retain_days=30))
         db.commit()
         assert apply_active(db) == 0
+
+
+# ── Chunked DELETE ───────────────────────────────────────────────────────────
+
+class TestChunkedSweep:
+    """Sweep удаляет всё за несколько чанков, не одним мега-DELETE'ом.
+
+    Маленький chunk_size заставляет цикл крутиться > 1 раза — проверяем, что
+    суммарно удаляется всё подходящее и ничего лишнего не остаётся.
+    """
+
+    def test_multiple_chunks_delete_everything(self, db):
+        repo.create(db, RetentionPolicyCreate(retain_days=30))
+        for _ in range(25):
+            _add_event(db, service="auth_service", days_ago=100)
+        # одно молодое, чтобы убедиться, что чанкинг не задевает свежие
+        fresh = _add_event(db, service="auth_service", days_ago=5)
+        db.commit()
+
+        deleted = apply_active(db, chunk_size=10)
+        assert deleted == 25
+        remaining = _ids(db)
+        assert remaining == {fresh}
+
+    def test_chunk_boundary_exact_multiple(self, db):
+        """Когда число строк кратно chunk_size — последний чанк удаляет 0 и
+        цикл корректно завершается (не зацикливается)."""
+        repo.create(db, RetentionPolicyCreate(retain_days=30))
+        for _ in range(20):
+            _add_event(db, service="auth_service", days_ago=100)
+        db.commit()
+
+        deleted = apply_active(db, chunk_size=10)
+        assert deleted == 20
+        assert _ids(db) == set()
+
+    def test_chunked_respects_protection(self, db):
+        """Чанкинг не должен задеть loging_service-события."""
+        repo.create(db, RetentionPolicyCreate(retain_days=30))
+        protected = [
+            _add_event(db, service="loging_service", days_ago=100)
+            for _ in range(5)
+        ]
+        for _ in range(15):
+            _add_event(db, service="auth_service", days_ago=100)
+        db.commit()
+
+        deleted = apply_active(db, chunk_size=4)
+        assert deleted == 15
+        assert _ids(db) == set(protected)

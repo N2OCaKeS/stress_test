@@ -38,7 +38,11 @@ class TestUnscopedReaders:
         p = _mock_identity(client, {"user_id": "u1", "username": "aa",
                                      "platform_role": "account_admin", "department_id": None})
         try:
-            r = client.get(EVENTS_URL, headers={"Authorization": "Bearer t"})
+            r = client.get(
+                EVENTS_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"include_total": "true"},
+            )
         finally:
             p.stop()
         assert r.status_code == 200
@@ -57,7 +61,11 @@ class TestDeptScopedReaders:
         p = _mock_identity(client, {"user_id": "u1", "username": "lr",
                                      "platform_role": "loging_reader", "department_id": "dep_a"})
         try:
-            r = client.get(EVENTS_URL, headers={"Authorization": "Bearer t"})
+            r = client.get(
+                EVENTS_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"include_total": "true"},
+            )
         finally:
             p.stop()
         assert r.status_code == 200
@@ -72,7 +80,11 @@ class TestDeptScopedReaders:
         p = _mock_identity(client, {"user_id": "u1", "username": "da",
                                      "platform_role": "department_admin", "department_id": "dep_b"})
         try:
-            r = client.get(EVENTS_URL, headers={"Authorization": "Bearer t"})
+            r = client.get(
+                EVENTS_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"include_total": "true"},
+            )
         finally:
             p.stop()
         assert r.status_code == 200
@@ -119,7 +131,11 @@ class TestServiceRoleReaders:
             "service_roles": {"loging_service": ["reader"]},
         })
         try:
-            r = client.get(EVENTS_URL, headers={"Authorization": "Bearer t"})
+            r = client.get(
+                EVENTS_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"include_total": "true"},
+            )
         finally:
             p.stop()
         assert r.status_code == 200

@@ -129,13 +129,31 @@ def list_active(db: Session) -> list[RetentionPolicy]:
     )
 
 
-def apply_active(db: Session) -> int:
+# Размер чанка для retention-DELETE. Один большой DELETE на миллионы строк
+# держал бы row-locks на всю выборку, раздувал WAL и тормозил конкурентный
+# ingest-INSERT. Чанкуем по этому размеру и коммитим каждый чанк — autovacuum
+# успевает чистить dead tuples между коммитами, а транзакция остаётся короткой.
+_SWEEP_CHUNK_SIZE = 10_000
+
+
+def apply_active(db: Session, *, chunk_size: int = _SWEEP_CHUNK_SIZE) -> int:
     """Удаляет события старше `retain_days`, КРОМЕ событий `loging_service`.
 
     Если активных политик с filter'ами несколько — каждая применяется
-    отдельным DELETE по своей (severity, service)-комбинации. NULL в
+    отдельным набором DELETE по своей (severity, service)-комбинации. NULL в
     `severity`/`service` колонке = «все severity / все сервисы» (legacy
     global-политика).
+
+    DELETE идёт чанками по `chunk_size` строк с коммитом на каждый чанк —
+    на append-only журнале в миллионы строк один безлимитный DELETE держал бы
+    блокировки и раздувал WAL, тормозя ingest. Цикл по политике крутится, пока
+    очередной чанк удаляет полную пачку (есть что чистить дальше).
+
+    Кросс-репликовая защита (один sweep за раз) обеспечивается session-level
+    `pg_try_advisory_lock` в `main._retention_loop` — он переживает
+    per-chunk коммиты, потому что advisory-lock привязан к сессии, а не к
+    транзакции. Здесь дополнительного лока нет, чтобы прямой вызов
+    `apply_active` (тесты, ручной прогон) не конфликтовал с daemon'ом.
 
     Возвращает суммарное количество удалённых событий по всем политикам.
     """
@@ -147,20 +165,31 @@ def apply_active(db: Session) -> int:
     total = 0
     for policy in policies:
         cutoff = now - timedelta(days=policy.retain_days)
-        stmt = (
-            delete(AuditEvent)
-            .where(AuditEvent.timestamp < cutoff)
+        # Подзапрос отбирает id'ы под удаление пачкой; основной DELETE бьёт
+        # ровно по этим первичным ключам. `IN (SELECT ... LIMIT n)` —
+        # переносимый способ ограничить DELETE размером пачки.
+        id_select = select(AuditEvent.id).where(
+            AuditEvent.timestamp < cutoff,
             # Case-insensitive гард: блокирует bypass через 'LoGiNg_SeRvIcE',
             # 'LOGING_SERVICE' и т.п. (trailing whitespace — на ingest).
-            .where(func.lower(AuditEvent.service) != _PROTECTED_SERVICE)
+            func.lower(AuditEvent.service) != _PROTECTED_SERVICE,
         )
         if policy.severity is not None:
-            stmt = stmt.where(AuditEvent.severity == policy.severity)
+            id_select = id_select.where(AuditEvent.severity == policy.severity)
         if policy.service is not None:
-            stmt = stmt.where(
+            id_select = id_select.where(
                 func.lower(AuditEvent.service) == policy.service.lower()
             )
-        result = db.execute(stmt)
-        total += result.rowcount
-    db.commit()
+        id_select = id_select.limit(chunk_size)
+
+        while True:
+            stmt = delete(AuditEvent).where(
+                AuditEvent.id.in_(id_select.scalar_subquery())
+            )
+            result = db.execute(stmt)
+            db.commit()
+            deleted = result.rowcount
+            total += deleted
+            if deleted < chunk_size:
+                break
     return total

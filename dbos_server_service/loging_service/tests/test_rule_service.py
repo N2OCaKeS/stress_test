@@ -118,6 +118,28 @@ class TestResolveDefaultSeverity:
     def test_token_refresh_reuse(self):
         assert _resolve_default_severity("token.refresh_reuse", "failure") == "CRITICAL"
 
+    # Управление серверами и OS-учётками (server_service / server_worker).
+    def test_server_prepare_critical(self):
+        assert _resolve_default_severity("server.prepare", "success") == "CRITICAL"
+        assert _resolve_default_severity("server.prepare", "failure") == "CRITICAL"
+
+    def test_server_prepared_critical(self):
+        assert _resolve_default_severity("server.prepared", "success") == "CRITICAL"
+        assert _resolve_default_severity("server.prepared", "failure") == "CRITICAL"
+
+    def test_server_account_provision_critical(self):
+        assert _resolve_default_severity("server_account.provision", "success") == "CRITICAL"
+        assert _resolve_default_severity("server_account.provision", "failure") == "CRITICAL"
+
+    def test_server_account_update_on_host_info(self):
+        assert _resolve_default_severity("server_account.update_on_host", "success") == "INFO"
+
+    def test_server_account_deprovision_warning(self):
+        assert _resolve_default_severity("server_account.deprovision", "success") == "WARNING"
+
+    def test_server_account_drift_detected_warning(self):
+        assert _resolve_default_severity("server_account.drift_detected", "success") == "WARNING"
+
 
 # ── apply_rules — severity resolution ────────────────────────────────────────
 

@@ -93,6 +93,109 @@ class TestRateLimitIngest:
         assert resp.json()["error_code"] == "RATE_LIMIT_EXCEEDED"
 
 
+class TestIngestRateLimitPerServiceIdentity:
+    """`POST /events` ключует rate-limit по `X-Service-Identity`, не по IP.
+
+    За k8s ingress весь ingest приходит с одного IP — общий per-IP bucket дал бы
+    одному флудящему сервису выжать бюджет остальных. Bucket'ы независимы между
+    identity'ями, с fallback на IP при отсутствии header'а.
+    """
+
+    def test_different_identities_have_independent_buckets(
+        self, client, auth_headers, monkeypatch
+    ):
+        monkeypatch.setenv("INGEST_RATE_LIMIT", "2/minute")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        from src.main import limiter
+        limiter.reset()
+
+        headers_auth = {**auth_headers, "X-Service-Identity": "auth_service"}
+        headers_server = {**auth_headers, "X-Service-Identity": "server_service"}
+
+        # Выжимаем бюджет auth_service.
+        for i in range(2):
+            r = client.post(
+                "/api/logging/v1/events", json=make_event(), headers=headers_auth
+            )
+            assert r.status_code == 201, f"auth #{i} got {r.status_code}: {r.text}"
+        # 3-й от auth_service — 429.
+        r = client.post(
+            "/api/logging/v1/events", json=make_event(), headers=headers_auth
+        )
+        assert r.status_code == 429
+
+        # server_service не тронут — его bucket независим.
+        for i in range(2):
+            r = client.post(
+                "/api/logging/v1/events",
+                json=make_event(service="server_service"),
+                headers=headers_server,
+            )
+            assert r.status_code == 201, (
+                f"server #{i} got {r.status_code}: {r.text}"
+            )
+
+    def test_same_identity_shares_bucket(self, client, auth_headers, monkeypatch):
+        monkeypatch.setenv("INGEST_RATE_LIMIT", "2/minute")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        from src.main import limiter
+        limiter.reset()
+
+        headers = {**auth_headers, "X-Service-Identity": "auth_service"}
+        for i in range(2):
+            r = client.post(
+                "/api/logging/v1/events", json=make_event(), headers=headers
+            )
+            assert r.status_code == 201, f"#{i} got {r.status_code}: {r.text}"
+        r = client.post(
+            "/api/logging/v1/events", json=make_event(), headers=headers
+        )
+        assert r.status_code == 429
+
+    def test_normalized_identity_shares_bucket(
+        self, client, auth_headers, monkeypatch
+    ):
+        """`AUTH_SERVICE` и `auth_service` → один bucket (нельзя обойти casing'ом)."""
+        monkeypatch.setenv("INGEST_RATE_LIMIT", "2/minute")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        from src.main import limiter
+        limiter.reset()
+
+        lower = {**auth_headers, "X-Service-Identity": "auth_service"}
+        upper = {**auth_headers, "X-Service-Identity": "AUTH_SERVICE"}
+
+        r = client.post("/api/logging/v1/events", json=make_event(), headers=lower)
+        assert r.status_code == 201
+        r = client.post("/api/logging/v1/events", json=make_event(), headers=upper)
+        assert r.status_code == 201
+        # 3-й (тот же нормализованный bucket) — 429.
+        r = client.post("/api/logging/v1/events", json=make_event(), headers=lower)
+        assert r.status_code == 429
+
+    def test_missing_identity_falls_back_to_ip(
+        self, client, auth_headers, monkeypatch
+    ):
+        """Без header'а (legacy single-key) — fallback на per-IP, лимит работает."""
+        monkeypatch.setenv("INGEST_RATE_LIMIT", "2/minute")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        from src.main import limiter
+        limiter.reset()
+
+        for i in range(2):
+            r = client.post(
+                "/api/logging/v1/events", json=make_event(), headers=auth_headers
+            )
+            assert r.status_code == 201, f"#{i} got {r.status_code}: {r.text}"
+        r = client.post(
+            "/api/logging/v1/events", json=make_event(), headers=auth_headers
+        )
+        assert r.status_code == 429
+
+
 class TestRateLimitDoesNotAffectHealth:
     """Health probes (`/health`, `/ready`) НЕ должны попадать под лимит.
 

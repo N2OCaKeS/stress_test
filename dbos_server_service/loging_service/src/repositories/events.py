@@ -125,7 +125,19 @@ def query(
     to_time: datetime | None = None,
     limit: int = 100,
     offset: int = 0,
-) -> tuple[list[AuditEvent], int]:
+    include_total: bool = False,
+) -> tuple[list[AuditEvent], int | None, bool]:
+    """Постранично достаёт события + признак `has_more` без обязательного COUNT.
+
+    На append-only журнале в миллионы строк COUNT(*) по широкому фильтру —
+    второй полный проход на каждый read. Поэтому total считается только когда
+    `include_total=True` (явный запрос точного числа для дашборда/пагинатора).
+    В остальных случаях возвращаем `None` и определяем «есть ли ещё страница»
+    через выборку `limit + 1` строк — один scan вместо двух.
+
+    Возвращает `(events, total, has_more)`, где `total` равен None при
+    `include_total=False`.
+    """
     stmt = select(AuditEvent)
     count_stmt = select(func.count()).select_from(AuditEvent)
 
@@ -147,12 +159,18 @@ def query(
         stmt = stmt.where(f)
         count_stmt = count_stmt.where(f)
 
-    total = db.execute(count_stmt).scalar_one()
-    events = db.execute(
-        stmt.order_by(AuditEvent.timestamp.desc()).offset(offset).limit(limit)
+    total = db.execute(count_stmt).scalar_one() if include_total else None
+
+    # Берём на одну строку больше запрошенного лимита — лишняя строка говорит,
+    # что за текущей страницей есть ещё данные. Её саму в выдачу не отдаём.
+    rows = db.execute(
+        stmt.order_by(AuditEvent.timestamp.desc()).offset(offset).limit(limit + 1)
     ).scalars().all()
 
-    return list(events), total
+    has_more = len(rows) > limit
+    events = list(rows[:limit])
+
+    return events, total, has_more
 
 
 def list_services(db: Session, *, department_id: str | None = None) -> list:

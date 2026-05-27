@@ -59,13 +59,15 @@ _RATE_LIMIT_EXEMPT_PATHS = {
 
 
 def _rate_limit_key(request: Request) -> str:
-    """Key-функция для SlowAPI-лимитера.
+    """Дефолтная key-функция SlowAPI-лимитера.
 
-    Для ingest-эндпоинтов возвращает client IP, для health/token — uuid-based
-    unique-ключ, чтобы они не копили counts ни в каком общем bucket'е.
-    Per-service keying (читать `payload.service` и привязывать bucket к
-    конкретному клиенту) — планируемый follow-up; пока у нас только shared
-    `SERVICE_API_KEY`, и per-IP — единственный безопасный выбор.
+    Для health/token возвращает uuid-based unique-ключ, чтобы они не копили
+    counts ни в каком общем bucket'е. Для всего остального — client IP.
+    Ingest-канал (`POST /events`) и batch-канал
+    (`POST /services/{service}/events`) переопределяют key_func на
+    per-service-identity (`X-Service-Identity`) прямо в декораторах — за k8s
+    ingress общий per-IP bucket позволил бы одному сервису выжать бюджет
+    остальных.
     """
     if request.url.path in _RATE_LIMIT_EXEMPT_PATHS:
         # Unique-ключ на каждый запрос → никогда не коллизит с чужим bucket'ом.

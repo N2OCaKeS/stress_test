@@ -40,7 +40,7 @@ class TestTimeRangeEdge:
         _ingest(client, auth_headers, timestamp=ts)
         resp = admin_client.get(
             "/api/logging/v1/events",
-            params={"from_time": ts, "to_time": ts},
+            params={"from_time": ts, "to_time": ts, "include_total": "true"},
         )
         assert resp.status_code == 200
         assert resp.json()["total"] >= 1
@@ -69,6 +69,7 @@ class TestCombinedFilters:
                 "department_id": "dep_a",
                 "from_time": "2026-04-19T09:00:00Z",
                 "to_time": "2026-04-19T12:00:00Z",
+                "include_total": "true",
             },
         )
         assert resp.status_code == 200
@@ -95,9 +96,12 @@ class TestPaginationBounds:
     def test_limit_one_works(self, client, admin_client, auth_headers):
         _ingest(client, auth_headers)
         _ingest(client, auth_headers)
-        body = admin_client.get("/api/logging/v1/events", params={"limit": 1}).json()
+        body = admin_client.get(
+            "/api/logging/v1/events", params={"limit": 1, "include_total": "true"}
+        ).json()
         assert len(body["items"]) == 1
         assert body["total"] >= 2
+        assert body["has_more"] is True
 
 
 # ── Invalid filter values ────────────────────────────────────────────────────

@@ -113,7 +113,7 @@ class TestRuleApplication:
         assert client.post(EVENTS_URL, headers=auth_headers,
                            json=make_event(action="user.login")).status_code == 204
         assert admin_client.get(
-            EVENTS_URL, params={"action": "user.login"}
+            EVENTS_URL, params={"action": "user.login", "include_total": "true"}
         ).json()["total"] == 0
 
     def test_suppress_does_not_affect_other_actions(self, client, admin_client, auth_headers):

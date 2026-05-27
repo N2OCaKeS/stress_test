@@ -73,8 +73,9 @@ def query(
     to_time: datetime | None = None,
     limit: int = 100,
     offset: int = 0,
+    include_total: bool = False,
 ) -> EventListResponse:
-    events, total = event_repo.query(
+    events, total, has_more = event_repo.query(
         db,
         department_id=department_id,
         service=service,
@@ -84,10 +85,12 @@ def query(
         to_time=to_time,
         limit=limit,
         offset=offset,
+        include_total=include_total,
     )
     return EventListResponse(
         items=[EventDetail.model_validate(e) for e in events],
         total=total,
+        has_more=has_more,
         limit=limit,
         offset=offset,
     )

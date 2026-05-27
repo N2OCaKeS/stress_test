@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from src.core.config import get_settings
@@ -29,6 +30,29 @@ from src.main import limiter  # noqa: E402
 router = APIRouter()
 
 _MAX_LIMIT = 1000
+
+
+def _ingest_rate_limit_key(request: Request) -> str:
+    """Key-функция для rate-limit на `POST /events`.
+
+    В k8s весь ingest идёт через один ingress-pod — per-IP key дал бы общий
+    bucket на все сервисы, и один флудящий сервис выжимал бы бюджет
+    остальных. Поэтому ключуемся по идентичности сервиса из заголовка
+    `X-Service-Identity` (его шлёт каждый внутренний caller), с fallback на IP
+    для legacy single-key deploy без header'а. Симметрично
+    `_register_events_rate_limit_key` для batch-канала
+    `POST /services/{service}/events`.
+
+    `normalize_service_name` приводит identity к канонической форме (NFKC +
+    invisibles strip + confusables fold + lower), чтобы Unicode-варианты не
+    обходили лимит ротацией casing'а.
+    """
+    raw_identity = request.headers.get("X-Service-Identity")
+    if raw_identity:
+        normalized = normalize_service_name(raw_identity)
+        if normalized:
+            return f"svc:{normalized}"
+    return f"ip:{get_remote_address(request)}"
 
 
 @router.post(
@@ -52,8 +76,9 @@ _MAX_LIMIT = 1000
         "- 413 `PAYLOAD_TOO_LARGE` — body больше `MAX_REQUEST_BODY_BYTES`.\n"
         "- 422 `VALIDATION_ERROR` — невалидный payload "
         "(глубина `details` > 10, NUL-байты, shadow-keys, кривой `request_id`).\n"
-        "- 429 `RATE_LIMIT_EXCEEDED` — превышен per-IP лимит "
-        "(`INGEST_RATE_LIMIT`, по умолчанию 100/min).\n\n"
+        "- 429 `RATE_LIMIT_EXCEEDED` — превышен лимит на сервис-идентичность "
+        "(`X-Service-Identity`, fallback на IP; `INGEST_RATE_LIMIT`, по "
+        "умолчанию 100/min).\n\n"
         "**Связано:** `POST /services/{service}/events` — регистрация каталога "
         "action'ов; `GET /events` — чтение записанных событий."
     ),
@@ -62,16 +87,23 @@ _MAX_LIMIT = 1000
         204: {"description": "Событие подавлено правилом аудита (SUPPRESS)"},
         413: {"description": "Тело запроса превышает лимит размера"},
         422: {"description": "Невалидный payload — см. `error_code` в envelope"},
-        429: {"description": "Превышен per-IP rate-limit на ingest"},
+        429: {"description": "Превышен rate-limit на ingest (per-service-identity)"},
     },
     dependencies=[Depends(require_service_token)],
 )
-# Per-IP rate-limit закрывает сценарий «утёк SERVICE_API_KEY → DB flood»
-# (~3000 ev/s, ~10 GB/h → распухание таблицы за 1-2 ч). Строка лимита читается
-# из settings в момент вычисления декоратора; `get_settings` кеширован.
-# slowapi требует `request: Request` как настоящий параметр (не через Depends)
-# в сигнатуре эндпоинта — иначе не находит limiter middleware state.
-@limiter.limit(lambda: get_settings().ingest_rate_limit)
+# Rate-limit закрывает сценарий «утёк SERVICE_API_KEY → DB flood»
+# (~3000 ev/s, ~10 GB/h → распухание таблицы за 1-2 ч). Bucket'ы независимы
+# между сервисами (`key_func=_ingest_rate_limit_key` ключует по
+# `X-Service-Identity`) — компрометация ключа одного сервиса не выжимает
+# бюджет остальных, как было бы при общем per-IP bucket'е за k8s ingress.
+# Строка лимита читается из settings в момент вычисления декоратора;
+# `get_settings` кеширован. slowapi требует `request: Request` как настоящий
+# параметр (не через Depends) в сигнатуре эндпоинта — иначе не находит limiter
+# middleware state.
+@limiter.limit(
+    lambda: get_settings().ingest_rate_limit,
+    key_func=_ingest_rate_limit_key,
+)
 def create_event(
     request: Request,
     response: Response,
@@ -85,11 +117,12 @@ def create_event(
     # (см. `slowapi.extension.Limiter._inject_headers`, строка 381). FastAPI
     # сам подкладывает параметр; headers, выставленные на нём, доходят до
     # финального ответа.
-    # Per-service идентификация пока не реализована: shared
-    # SERVICE_API_KEY не привязывает caller'а к конкретному `service=`. До
-    # этого момента хотя бы блокируем внешнее impersonation сервисов с
-    # retention-инвариантом — иначе любой держатель ключа мог бы навсегда
-    # запечь произвольные события в audit-журнал.
+    # Rate-limit ключуется по `X-Service-Identity` (см.
+    # `_ingest_rate_limit_key`), но shared SERVICE_API_KEY всё равно не
+    # привязывает caller'а к конкретному `service=` в payload'е — header можно
+    # подделать. Поэтому здесь дополнительно блокируем внешнее impersonation
+    # сервисов с retention-инвариантом: иначе любой держатель ключа мог бы
+    # навсегда запечь произвольные события в audit-журнал.
     #
     # pydantic-валидатор в `EventCreate.service` уже прогоняет
     # `normalize_service_name`, так что `payload.service` уже в канонической
@@ -134,7 +167,10 @@ def create_event(
         "**Связано:** `POST /events` — приём событий; `GET /services` — реестр "
         "сервисов, когда-либо писавших события."
     ),
-    response_description="Постранично: items + total + limit + offset",
+    response_description=(
+        "Постранично: items + has_more + limit + offset. Поле total заполнено "
+        "только при `include_total=true`, иначе null."
+    ),
 )
 def list_events(
     identity: ReaderIdentity,
@@ -147,6 +183,14 @@ def list_events(
     to_time: datetime | None = Query(default=None, description="Конец диапазона времени (ISO 8601)"),
     limit: int = Query(default=100, ge=1, le=_MAX_LIMIT),
     offset: int = Query(default=0, ge=0),
+    include_total: bool = Query(
+        default=False,
+        description=(
+            "Считать точное число событий под фильтр (COUNT по журналу). "
+            "По умолчанию выключено — total не считается (поле `total` = null), "
+            "а признак следующей страницы отдаётся через `has_more`."
+        ),
+    ),
 ) -> EventListResponse:
     # Dept-scope: если пользователь ограничен отделом — форсим его scope.
     dept_scope = identity.get("_dept_scope")
@@ -169,4 +213,5 @@ def list_events(
         to_time=to_time,
         limit=limit,
         offset=offset,
+        include_total=include_total,
     )

@@ -398,9 +398,17 @@ class EventDetail(BaseModel):
 
 
 class EventListResponse(BaseModel):
-    """Постраничный список событий аудита."""
+    """Постраничный список событий аудита.
+
+    `total` заполняется только когда запрос пришёл с `include_total=true` —
+    точный COUNT по журналу в миллионы строк дорог, поэтому по умолчанию он
+    не считается и поле равно `null`. Для навигации по страницам используйте
+    `has_more`: он определяется выборкой одной лишней строки и не требует
+    второго прохода по таблице.
+    """
 
     items: list[EventDetail]
-    total: int
+    total: int | None = None
+    has_more: bool = False
     limit: int
     offset: int

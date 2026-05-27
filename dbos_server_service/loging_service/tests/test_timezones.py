@@ -84,6 +84,7 @@ class TestTimestampFilterTimezones:
         r = admin_client.get(EVENTS_URL, params={
             "from_time": "2026-04-19T14:00:00+03:00",
             "to_time": "2026-04-19T16:00:00+03:00",
+            "include_total": "true",
         })
         assert r.status_code == 200
         assert r.json()["total"] == 1

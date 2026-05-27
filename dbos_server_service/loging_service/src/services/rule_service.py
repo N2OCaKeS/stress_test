@@ -104,6 +104,17 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("logging_rule.create", "success"): "WARNING",
     ("logging_rule.update", "success"): "CRITICAL",
     ("logging_rule.delete", "success"): "CRITICAL",
+    # Управление серверами (server_service / server_worker)
+    ("server.prepare", "success"): "CRITICAL",
+    ("server.prepare", "failure"): "CRITICAL",
+    ("server.prepared", "success"): "CRITICAL",
+    ("server.prepared", "failure"): "CRITICAL",
+    # Сервисные OS-учётки на хостах
+    ("server_account.provision", "success"): "CRITICAL",
+    ("server_account.provision", "failure"): "CRITICAL",
+    ("server_account.update_on_host", "success"): "INFO",
+    ("server_account.deprovision", "success"): "WARNING",
+    ("server_account.drift_detected", "success"): "WARNING",
     # Обращения к loging_service (все сохраняются без ротации)
     ("logging.events_queried",   "success"): "INFO",
     ("logging.rules_read",       "success"): "INFO",

@@ -24,35 +24,20 @@ TCP+TLS handshake на каждый запрос и истощил FD-пул с 
 Pooled client ставит потолок на исходящие соединения и амортизирует
 TLS-handshake между запросами.
 
-### TTL-кэш introspect
+### Без кэша introspect
 
-`platform_admin_guard` middleware и endpoint dependency
-`get_current_identity` оба зовут `_introspect(token)` per request — это
-+1 outbound roundtrip per non-public path (double introspect). На 500 RPS
-без кэша = 1000 introspect/sec в auth_service.
+Результат introspect намеренно НЕ кэшируется. Отозванный/забаненный
+PAT или bot-токен должен переставать работать в тот же момент, без окна
+в несколько секунд. Поэтому и `platform_admin_guard` middleware, и
+endpoint dependency `get_current_identity` зовут свежий `_introspect(token)`
+на каждом запросе. Пул соединений (`_introspect_client`) остаётся — он
+про амортизацию TCP+TLS, а не про кэш ответов.
 
-Module-level TTL-кэш ``_identity_cache: dict[token_hash, (body, expires_at)]``
-с TTL=5 секунд (короткий, чтобы ban/revoke подхватывались за ~5s, при
-рекомендуемых ~30s revalidate'ах из external docs всё ещё в SLA).
-Cache key — ``sha256(token).hexdigest()`` (не сам токен, чтобы plaintext-
-bearer не лежал в памяти процесса). Кэшируем **только** валидные
-positive-ответы (``body.get("active")`` истинно) — отрицательные не имеет
-смысла кэшировать, ban'нутый/expired токен 401 отбивается быстрее повторным
-introspect'ом (или может попасть в hot-reset через retry клиента).
-
-Оба caller'а (middleware + endpoint dep) идут через
-``_get_or_cache_introspect(token)`` → cache hit ровно один introspect
-на токен в окне 5s. После expiry — fresh introspect, новые roles/ban'ы
-подхватываются.
-
-Кэш — per-process, in-memory; multi-worker uvicorn → каждый процесс свой.
-В тестах ``conftest._patch_introspect`` подменяет ``_introspect`` на
-fake (ниже кэш-слоя), поэтому существующие тесты ничего не знают про
-кэш — он включён только для production-пути через настоящий httpx-вызов.
+Цена: на non-public path два introspect-roundtrip'а на один запрос
+(middleware + endpoint dep), и под нагрузкой это прямая нагрузка на
+auth_service. Это сознательный размен в пользу немедленного revoke.
 """
 
-import hashlib
-import time
 from typing import Annotated
 
 import httpx
@@ -82,21 +67,6 @@ _MIN_TOKEN_LENGTH = 20
 # * `dbos_bot_` — токен bot-аккаунта
 _VALID_TOKEN_PREFIXES = ("eyJ", "dbos_pat_", "dbos_bot_")
 
-# TTL кэша introspect (секунды). 5 — компромисс: ban/revoke подхватываются
-# за ~5s (рекомендуемые external SLAs — 30s revalidate, мы укладываемся),
-# а под нагрузкой 500 RPS на один токен — 1 introspect / 5 сек вместо 1000/сек.
-_INTROSPECT_CACHE_TTL_SECONDS = 5.0
-
-# Module-level кэш: token-hash → (body_dict, expires_at_monotonic).
-# Хэшируем SHA-256 потому что:
-#   * не хотим держать plaintext bearer в памяти процесса (heap dump / coredump
-#     при сбое — токены становятся доступны при post-mortem);
-#   * key должен быть стабильно сравним и достаточно широк, чтобы избежать
-#     коллизий между разными PAT'ами.
-# `monotonic()` — устойчиво к NTP-skew (не падаем при отрицательных дельтах).
-_identity_cache: dict[str, tuple[dict, float]] = {}
-
-
 def _is_token_shape_valid(token: str) -> bool:
     """Дёшево фильтруем bearer-мусор ДО HTTP-вызова в auth_service.
 
@@ -110,58 +80,13 @@ def _is_token_shape_valid(token: str) -> bool:
     return token.startswith(_VALID_TOKEN_PREFIXES)
 
 
-def _token_cache_key(token: str) -> str:
-    """SHA-256 hex digest токена — стабильный key для `_identity_cache`."""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
 def _clear_introspect_cache() -> None:
-    """Сбросить TTL-кэш. Используется в тестах + при shutdown lifespan'а.
+    """No-op. Кэша introspect больше нет (отзыв токена действует мгновенно).
 
-    Production-код кэш не дёргает напрямую — `_get_or_cache_introspect`
-    сам управляет lifecycle'ом записей через expiry.
+    Оставлено для совместимости с lifespan-shutdown и тестами, которые
+    раньше сбрасывали TTL-кэш между прогонами.
     """
-    _identity_cache.clear()
-
-
-async def _get_or_cache_introspect(token: str) -> dict:
-    """Cache-aware wrapper над `_introspect`.
-
-    Алгоритм:
-
-    1. Проверить кэш по ``sha256(token)``. Если запись есть и не expired —
-       вернуть body из кэша.
-    2. Иначе вызвать ``_introspect(token)`` (с polling-pool'ом + bearer-shape
-       pre-check'ом + auth_service-roundtrip).
-    3. Кэшировать **только positive** результаты (``body["active"]``
-       истинно). Negative результаты (``active=False``) не кэшируем —
-       это позволяет hot-revoke restart'нуть кэш через invalidation на
-       стороне auth_service (token регенерируется → новый hash, старый
-       lazy-evict'нется по TTL).
-    4. Expiry — `monotonic() + TTL`. Stale-записи удаляются лениво при
-       следующем lookup'е (без background eviction'а — кэш на несколько
-       тысяч tokens умещается в RAM без проблем).
-
-    Caller'ы (middleware platform_admin_guard + endpoint dep
-    get_current_identity) поднимают исключения `_introspect`'а ровно так
-    же, как и без кэша — мы не глотаем 401/503, они просачиваются
-    наверх без cache-side-effect'ов.
-    """
-    key = _token_cache_key(token)
-    now = time.monotonic()
-
-    cached = _identity_cache.get(key)
-    if cached is not None:
-        body, expires_at = cached
-        if expires_at > now:
-            return body
-        # Stale — лениво evict'аем, чтобы не разрастаться при долгом uptime.
-        _identity_cache.pop(key, None)
-
-    body = await _introspect(token)
-    if body.get("active"):
-        _identity_cache[key] = (body, now + _INTROSPECT_CACHE_TTL_SECONDS)
-    return body
+    return None
 
 
 # Module-level pooled client. Инициализируется в `main.lifespan` startup,
@@ -283,10 +208,11 @@ async def get_current_identity(request: Request) -> IdentityContext:
             message="Missing bearer token",
         )
 
-    # Идём через TTL-кэш (5s) — middleware platform_admin_guard уже сделал
-    # `_introspect` на этом же request'е, мы переиспользуем body, экономим
-    # outbound HTTP-roundtrip. См. ``_get_or_cache_introspect`` docstring.
-    body = await _get_or_cache_introspect(token)
+    # Свежий introspect на каждом запросе — отозванный/забаненный токен
+    # перестаёт работать немедленно. middleware platform_admin_guard уже
+    # сделал свой introspect на этом же request'е; повторный roundtrip —
+    # сознательная цена за мгновенный revoke (см. docstring модуля).
+    body = await _introspect(token)
     if not body.get("active"):
         raise AuthenticationError(
             error_code="ACCESS_TOKEN_INVALID",

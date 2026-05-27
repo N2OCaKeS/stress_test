@@ -10,8 +10,8 @@ pooled ``_audit_client`` мог быть уже закрыт к моменту, 
 Текущий контракт shutdown'а:
 
 1. Closing order — `_introspect_client` → **drain audit tasks** →
-   `_audit_client` → `_clear_introspect_cache()`. `_audit_client`
-   закрывается ПОСЛЕДНИМ (после drain'а).
+   `_audit_client` → `_clear_introspect_cache()` (no-op, кэша больше нет).
+   `_audit_client` закрывается ПОСЛЕДНИМ (после drain'а).
 2. ``_drain_pending_audit_tasks()`` итерирует по
    ``audit_service._pending_audit_tasks`` (set in-flight task'ов) и ждёт
    их завершения с таймаутом ``_AUDIT_DRAIN_TIMEOUT_SECONDS = 2.0``.
@@ -240,13 +240,14 @@ async def test_lifespan_closes_audit_client_after_drain(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_lifespan_clears_introspect_cache_on_shutdown(monkeypatch):
-    """`_clear_introspect_cache()` вызывается в финале shutdown'а.
+async def test_lifespan_completes_clean_shutdown(monkeypatch):
+    """Lifespan shutdown отрабатывает без ошибок (closing-order контракт).
 
-    Это нужно для тестов между прогонами + для повторного TestClient-старта.
+    Кэша introspect больше нет — `_clear_introspect_cache()` стал no-op'ом,
+    но остаётся в финале shutdown'а для совместимости. Проверяем, что
+    startup/shutdown цикл проходит чисто.
     """
     from src.core import config as config_mod
-    from src.dependencies import auth as auth_dep
     from src.main import create_application
 
     monkeypatch.setenv("LOGGING_SERVICE_URL", "http://logging.test.local")
@@ -256,14 +257,6 @@ async def test_lifespan_clears_introspect_cache_on_shutdown(monkeypatch):
         return None
     monkeypatch.setattr("src.main._run_startup_audit_sequence", _noop_startup)
 
-    # Поставим что-то в кэш
-    auth_dep._identity_cache["stale_key"] = ({"active": True}, 1e30)
-
     app = create_application()
     async with app.router.lifespan_context(app):
-        # На startup кэш ещё не должен быть тронут — он чистится только на shutdown.
-        assert "stale_key" in auth_dep._identity_cache
-
-    # После shutdown — кэш сброшен.
-    assert "stale_key" not in auth_dep._identity_cache
-    assert auth_dep._identity_cache == {}
+        pass

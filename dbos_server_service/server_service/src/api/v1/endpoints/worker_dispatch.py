@@ -157,7 +157,14 @@ async def _dispatch_for_server(
 
     # 5. Dispatch + audit.
     idempotency_key = request.headers.get("Idempotency-Key") or None
-    payload: dict = {"server_id": server_id, "target_department_id": server.department_id}
+    payload: dict = {
+        "server_id": server_id,
+        "target_department_id": server.department_id,
+        # На подготовленном сервере worker заходит под управляющим пользователем
+        # по ключу с sudo; inventory.sync собирает факты под ним вместо self-сессии.
+        "is_managed": server.is_managed,
+        "management_user": server.management_user,
+    }
     if extra_payload:
         payload.update(extra_payload)
     try:
@@ -788,6 +795,9 @@ async def account_rotate_password_dispatch(
             "server_id": server.id,
             "account_id": account_id,
             "target_department_id": server.department_id,
+            # login едет в payload — worker ротирует пароль управляемого/
+            # discovered-аккаунта без отдельного read карточки.
+            "login": account.login,
             # На подготовленном сервере worker применит chpasswd под управляющим
             # пользователем по ключу с sudo вместо self-сессии под аккаунтом.
             "is_managed": server.is_managed,

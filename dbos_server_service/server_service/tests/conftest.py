@@ -157,11 +157,9 @@ def _identity_body(
 def _patch_introspect(monkeypatch):
     """Перехватывает `_introspect` чтобы тесты работали без auth_service.
 
-    `_get_or_cache_introspect` оборачивает `_introspect` TTL-кэшем (5s).
-    Между тестами кэш должен сбрасываться — иначе токены с одинаковыми
-    `tok_<uuid>`-префиксами могут попасть в cache от предыдущего теста
-    (uuid4 гарантирует уникальность, но belt-and-braces: clear на
-    enter/exit держит middleware/endpoint paths детерминированными).
+    Кэша introspect больше нет — каждый запрос идёт свежим `_introspect`.
+    `_clear_introspect_cache()` остался no-op'ом для совместимости; зовём
+    его на enter/exit, чтобы не зависеть от деталей реализации.
     """
     from src.dependencies import auth as _auth_mod
 

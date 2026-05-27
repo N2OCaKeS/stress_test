@@ -77,9 +77,9 @@ Middleware регистрируется **после** ``attach_request_id_and_c
 
 Поэтому: middleware **не дублирует** introspect — он ставит его раньше,
 а endpoint-уровень всё равно дёрнет ``CurrentIdentity`` отдельно. Это
-не оптимально по сети, но **корректно** (без кэша). TTL-кэш introspect
-давно намечен в TODO (``services/server_service.md`` секция «Depends»);
-когда он появится — оба пути его подхватят без изменений здесь.
+не оптимально по сети (два roundtrip'а на запрос), но **корректно** и
+без кэша: отозванный токен перестаёт работать немедленно, без окна
+жизни в памяти процесса.
 
 В случае любой ошибки introspect (``AuthenticationError`` / network
 fail) middleware **не блокирует** — пропускает дальше. Endpoint-уровень
@@ -241,12 +241,12 @@ async def platform_admin_guard(request: Request, call_next):
         # CurrentIdentity дальше отобьёт его 401 если bearer обязателен.
         return await call_next(request)
 
-    # Introspect через TTL-кэш. Раньше middleware и endpoint dep оба
-    # звали `_introspect` — на 500 RPS это 1000 introspect'ов/сек на один
-    # токен. Теперь оба пути идут через `_get_or_cache_introspect(token)`
-    # (TTL 5s) — один outbound roundtrip на токен в окне 5s.
+    # Свежий introspect на каждом запросе — отозванный токен перестаёт
+    # работать немедленно. Endpoint-уровень `CurrentIdentity` сделает свой
+    # introspect отдельно; второй roundtrip — сознательная цена за
+    # мгновенный revoke.
     try:
-        body = await auth_deps._get_or_cache_introspect(token)
+        body = await auth_deps._introspect(token)
     except AppException:
         # 401 (INVALID_TOKEN_FORMAT) / 503 (AUTH_SERVICE_*) / любые наши
         # AppException-исключения — не маскируем под platform-admin блок,

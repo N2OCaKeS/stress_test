@@ -126,6 +126,8 @@ class TestPowerStatusDispatch:
         assert call["payload"] == {
             "server_id": srv.id,
             "target_department_id": "dep_a",
+            "is_managed": False,
+            "management_user": None,
         }
 
     async def test_reader_cannot_dispatch_power_status(
@@ -210,6 +212,8 @@ class TestInventorySyncDispatch:
         assert call["payload"] == {
             "server_id": srv.id,
             "target_department_id": "dep_a",
+            "is_managed": False,
+            "management_user": None,
         }
 
     async def test_reader_cannot_trigger_inventory(
@@ -267,6 +271,7 @@ class TestAccountRotateDispatch:
             "server_id": srv.id,
             "account_id": acc.id,
             "target_department_id": "dep_a",
+            "login": "appuser",
             "is_managed": False,
             "management_user": None,
         }

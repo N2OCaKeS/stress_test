@@ -127,7 +127,6 @@ class TestWorkerBotForbiddenActions:
         ("ipmi_controller", "view"),
         # CRUD катaлогов
         ("os_version", "create"),
-        ("disk", "create"),
     ])
     def test_forbidden_action_not_in_worker_bot_grants(self, worker_bot_seed, forbidden):
         got = set(worker_bot_seed.WORKER_BOT_GRANTS)

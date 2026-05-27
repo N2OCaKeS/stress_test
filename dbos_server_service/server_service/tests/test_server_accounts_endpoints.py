@@ -518,83 +518,81 @@ class TestRotatePassword:
         assert resp.status_code == 404
 
 
-# ── POST /{id}/reveal-password ──────────────────────────────────────────────
+# ── GET /{id} — раскрытие пароля через view_password ────────────────────────
 
-class TestRevealPassword:
-    """Расшифровка пароля в base64 для UI/CLI.
+class TestGetAccountPassword:
+    """Градуированное раскрытие пароля через обычный GET карточки.
 
-    По дефолту имеют доступ только `admin` и `operator`. Сам plaintext
-    в audit details никогда не пишется — `redaction` затирает password-like
-    ключи, а наш emit и так не передаёт plaintext в `details`.
+    Держатель `view_password` (по дефолту только `admin` + `worker_bot`)
+    получает `password_b64`; reader/operator с `view`, но без `view_password`,
+    — карточку без пароля (`null`). Plaintext в audit details не пишется.
     """
 
-    async def test_operator_reveals(
-        self, client, operator_token_a, make_server, make_account,
-    ):
-        import base64
-
-        srv = await make_server(department_id="dep_a")
-        acc = await make_account(server_id=srv.id, password="reveal-me-please")
-        resp = await client.post(
-            f"{BASE}/{acc.id}/reveal-password",
-            headers=_hdr(operator_token_a),
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert set(body.keys()) == {"password_b64"}
-        decoded = base64.b64decode(body["password_b64"]).decode("utf-8")
-        assert decoded == "reveal-me-please"
-        # Plaintext не должен утечь в незакодированном виде в response.
-        assert "reveal-me-please" not in body["password_b64"]
-
-    async def test_admin_reveals(
+    async def test_admin_with_view_password_sees_password(
         self, client, admin_role_token_a, make_server, make_account,
     ):
         import base64
 
         srv = await make_server(department_id="dep_a")
-        acc = await make_account(server_id=srv.id, password="admin-pass-42")
-        resp = await client.post(
-            f"{BASE}/{acc.id}/reveal-password",
-            headers=_hdr(admin_role_token_a),
-        )
+        acc = await make_account(server_id=srv.id, password="reveal-me-please")
+        resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["password_b64"] is not None
+        decoded = base64.b64decode(body["password_b64"]).decode("utf-8")
+        assert decoded == "reveal-me-please"
+        # Plaintext не должен утечь в незакодированном виде.
+        assert "reveal-me-please" not in body["password_b64"]
+        # password_encrypted наружу не отдаётся.
+        assert "password_encrypted" not in body
+
+    async def test_worker_bot_with_view_password_sees_password(
+        self, client, worker_bot_token_a, make_server, make_account,
+    ):
+        import base64
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="worker-sees-this")
+        resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(worker_bot_token_a))
         assert resp.status_code == 200
         decoded = base64.b64decode(resp.json()["password_b64"]).decode("utf-8")
-        assert decoded == "admin-pass-42"
+        assert decoded == "worker-sees-this"
 
-    async def test_reader_cannot_reveal(
+    async def test_operator_with_only_view_gets_no_password(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        """operator держит `view`, но не `view_password` — карточка без пароля."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="hidden-from-operator")
+        resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(operator_token_a))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["login"] == "root"
+        assert body["password_b64"] is None
+        assert "hidden-from-operator" not in resp.text
+
+    async def test_reader_with_only_view_gets_no_password(
         self, client, reader_token_a, make_server, make_account,
     ):
         srv = await make_server(department_id="dep_a")
-        acc = await make_account(server_id=srv.id)
-        resp = await client.post(
-            f"{BASE}/{acc.id}/reveal-password",
-            headers=_hdr(reader_token_a),
-        )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        acc = await make_account(server_id=srv.id, password="hidden-from-reader")
+        resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(reader_token_a))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["password_b64"] is None
+        assert "hidden-from-reader" not in resp.text
 
-    async def test_cross_dept_returns_404_hidden(
-        self, client, operator_token_a, make_server, make_account,
+    async def test_account_without_stored_password_returns_null(
+        self, client, admin_role_token_a, make_server, make_account,
     ):
-        srv = await make_server(department_id="dep_b")
-        acc = await make_account(server_id=srv.id, password="other-dept-secret")
-        resp = await client.post(
-            f"{BASE}/{acc.id}/reveal-password",
-            headers=_hdr(operator_token_a),
-        )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password=None)
+        resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200
+        assert resp.json()["password_b64"] is None
 
-    async def test_nonexistent_returns_404(self, client, operator_token_a):
-        resp = await client.post(
-            f"{BASE}/acc_ghost/reveal-password",
-            headers=_hdr(operator_token_a),
-        )
-        assert resp.status_code == 404
-
-    async def test_audit_emit_on_success(
-        self, client, operator_token_a, make_server, make_account, monkeypatch,
+    async def test_audit_emit_on_reveal_success(
+        self, client, admin_role_token_a, make_server, make_account, monkeypatch,
     ):
         """`server_account.password_revealed` пишется со status=success."""
         captured: list[dict] = []
@@ -610,10 +608,7 @@ class TestRevealPassword:
 
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id, password="audit-me")
-        resp = await client.post(
-            f"{BASE}/{acc.id}/reveal-password",
-            headers=_hdr(operator_token_a),
-        )
+        resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
         assert resp.status_code == 200
 
         reveals = [
@@ -626,17 +621,38 @@ class TestRevealPassword:
         assert emit["target_id"] == acc.id
         assert emit["target_type"] == "server_account"
         assert emit["allowed"] is True
-        # Plaintext в details не должен утечь даже под redaction'ом — мы и не
-        # кладём его, проверяем явно.
         details = emit.get("details") or {}
         assert "audit-me" not in str(details)
         assert details.get("department_id") == "dep_a"
         assert details.get("login") == acc.login
 
-    async def test_broken_encrypted_password_returns_500(
-        self, client, operator_token_a, make_server, make_account, db,
+    async def test_no_reveal_audit_when_only_view(
+        self, client, reader_token_a, make_server, make_account, monkeypatch,
     ):
-        """Сломанный ciphertext → AppException DECRYPT_FAILED (http 500)."""
+        """reader без view_password не должен триггерить password_revealed."""
+        captured: list[dict] = []
+
+        def fake_emit(action, actor_id=None, **kwargs):
+            captured.append({"action": action, "actor_id": actor_id, **kwargs})
+
+        import src.services.audit_service as audit_mod
+        monkeypatch.setattr(audit_mod, "emit", fake_emit)
+        monkeypatch.setattr(
+            "src.services.server_account.audit_service.emit", fake_emit,
+        )
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="not-revealed")
+        resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(reader_token_a))
+        assert resp.status_code == 200
+        assert not [
+            e for e in captured if e["action"] == "server_account.password_revealed"
+        ]
+
+    async def test_broken_encrypted_password_returns_500(
+        self, client, admin_role_token_a, make_server, make_account, db,
+    ):
+        """Сломанный ciphertext + view_password → DECRYPT_FAILED (http 500)."""
         from sqlalchemy import update
 
         from src.models import ServerAccount
@@ -651,9 +667,26 @@ class TestRevealPassword:
             .values(password_encrypted="v2$AAAAAAAAAAAAAAAA$BBBBBBBBBBBBBBBBBBBBBB")
         )
         await db.flush()
-        resp = await client.post(
-            f"{BASE}/{acc.id}/reveal-password",
-            headers=_hdr(operator_token_a),
-        )
+        resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
         assert resp.status_code == 500
         assert resp.json()["error_code"] == "DECRYPT_FAILED"
+
+    async def test_broken_ciphertext_invisible_to_reader(
+        self, client, reader_token_a, make_server, make_account, db,
+    ):
+        """reader без view_password не декодирует — даже битый ciphertext не 500."""
+        from sqlalchemy import update
+
+        from src.models import ServerAccount
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="will-be-broken")
+        await db.execute(
+            update(ServerAccount)
+            .where(ServerAccount.id == acc.id)
+            .values(password_encrypted="v2$AAAAAAAAAAAAAAAA$BBBBBBBBBBBBBBBBBBBBBB")
+        )
+        await db.flush()
+        resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(reader_token_a))
+        assert resp.status_code == 200
+        assert resp.json()["password_b64"] is None

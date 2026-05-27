@@ -14,8 +14,10 @@ from src.core.exceptions import (
     DomainValidationError,
     NotFoundError,
 )
-from src.models import Server
+from src.models import Server, ServerDisk
 from src.repositories import server as repo
+from src.repositories import server_disk as disk_repo
+from src.schemas.disk import DiskSpec
 from src.schemas.identity import IdentityContext
 from src.schemas.server import (
     ServerAcquireRequest,
@@ -25,7 +27,7 @@ from src.schemas.server import (
 )
 from src.services import audit_service, permissions
 from src.services.audit_helpers import emit_denied_on_authz_error
-from src.utils.ids import server_id as new_id
+from src.utils.ids import server_disk_id, server_id as new_id
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,45 @@ async def load_visible_server(
         raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
     _ensure_visible(identity, obj)
     return obj
+
+
+async def load_storage(db: AsyncSession, server_id: str) -> list[ServerDisk]:
+    """Диски сервера для раздела `storage` в ответе. Порядок — по слоту."""
+    return await disk_repo.list_all_for_server(db, server_id)
+
+
+async def _sync_storage(
+    db: AsyncSession, server_id: str, disks: list[DiskSpec],
+) -> None:
+    """Привести строки `server_disks` к переданному набору (full replace).
+
+    Слот спецификации ложится в `device_name`. Существующие диски, которых нет
+    в новом наборе, удаляются; совпадающие по слоту — обновляются; новые —
+    вставляются. commit делает caller (диски пишутся в одной транзакции с
+    сервером). UNIQUE(server_id, device_name) и partial-unique на is_system
+    держат инварианты на уровне БД.
+    """
+    existing = {d.device_name: d for d in await disk_repo.list_all_for_server(db, server_id)}
+    wanted_slots = {d.slot for d in disks}
+    for slot, row in existing.items():
+        if slot not in wanted_slots:
+            await disk_repo.delete(db, row)
+    for spec in disks:
+        row = existing.get(spec.slot)
+        changes = {
+            "size_gb": spec.size_gb,
+            "model": spec.model,
+            "is_system": spec.is_system,
+        }
+        if row is not None:
+            await disk_repo.update(db, row, changes)
+        else:
+            await disk_repo.create(db, {
+                "id": server_disk_id(),
+                "server_id": server_id,
+                "device_name": spec.slot,
+                **changes,
+            })
 
 
 async def list_servers(
@@ -150,11 +191,13 @@ async def create_server(
             error_code="DEPARTMENT_ISOLATION",
             message="Cannot create a server in a different department",
         )
-    data = payload.model_dump(mode="json")
+    data = payload.model_dump(mode="json", exclude={"storage"})
     data["id"] = new_id()
     data["created_by"] = identity.user_id
     try:
         obj = await repo.create(db, data)
+        if payload.storage:
+            await _sync_storage(db, obj.id, payload.storage)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -169,7 +212,7 @@ async def create_server(
         )
         raise ConflictError(
             error_code="SERVER_DUPLICATE",
-            message="Server with this hostname, IP or serial_number already exists",
+            message="Server with this hostname, IP, serial_number or disk slot already exists",
             details={"hint": _DUPLICATE_HINT},
         ) from exc
     await db.refresh(obj)
@@ -224,10 +267,20 @@ async def update_server(
         )
         raise
     changes = payload.model_dump(exclude_unset=True, mode="json")
-    if not changes:
+    # storage синхронизируется отдельно (full-replace дочерних строк), а не
+    # пишется как колонка в `servers`. `None`/не прислано → диски не трогаем.
+    sync_storage = "storage" in changes
+    changes.pop("storage", None)
+    if not changes and not sync_storage:
         return obj
+    audit_fields = list(changes.keys())
+    if sync_storage:
+        audit_fields.append("storage")
     try:
-        await repo.update(db, obj, changes)
+        if changes:
+            await repo.update(db, obj, changes)
+        if sync_storage:
+            await _sync_storage(db, obj.id, payload.storage or [])
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -238,11 +291,11 @@ async def update_server(
             target_type="server",
             status="failure",
             allowed=True,
-            details={"reason": "duplicate", "fields": list(changes.keys())},
+            details={"reason": "duplicate", "fields": audit_fields},
         )
         raise ConflictError(
             error_code="SERVER_DUPLICATE",
-            message="Update collides with an existing server (hostname/IP/serial_number)",
+            message="Update collides with an existing server (hostname/IP/serial_number/disk slot)",
             details={"hint": _DUPLICATE_HINT},
         ) from exc
     await db.refresh(obj)
@@ -252,7 +305,7 @@ async def update_server(
         target_type="server",
         status="success",
         allowed=True,
-        details={"fields": list(changes.keys()), "department_id": obj.department_id},
+        details={"fields": audit_fields, "department_id": obj.department_id},
     )
     return obj
 

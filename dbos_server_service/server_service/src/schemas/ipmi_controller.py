@@ -1,8 +1,9 @@
 """Pydantic-схемы для эндпоинтов /servers/{server_id}/ipmi.
 
-`password` принимаем только на write (Create / RotateCredentials). В response'ах
-plaintext'а нет — только `password_rotated_at`. Расшифрованные credentials
-для worker'а отдаются отдельным internal-endpoint'ом.
+`password` принимаем только на write (Create / RotateCredentials). В GET-карточке
+`password_b64` отдаётся только держателю action `view_credentials`; для остальных
+поле остаётся `None`. Расшифрованные credentials для worker'а отдаются и через
+эту же карточку (worker_bot держит `view_credentials`).
 """
 
 from datetime import datetime
@@ -64,7 +65,13 @@ class IpmiControllerUpdate(BaseModel):
 
 
 class IpmiControllerResponse(BaseModel):
-    """Карточка контроллера в ответе. БЕЗ password/encrypted-token."""
+    """Карточка контроллера в ответе.
+
+    `password_b64` заполняется только когда вызывающий держит action
+    `view_credentials` — тогда это base64(plaintext BMC-пароля). Без
+    `view_credentials` (только `view`) поле остаётся `None`. Сырого
+    `password_encrypted` в ответе нет никогда.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -76,6 +83,14 @@ class IpmiControllerResponse(BaseModel):
     username: str = Field(description="Логин IPMI-аккаунта.")
     password_rotated_at: datetime | None = Field(
         default=None, description="UTC момент последней ротации пароля.",
+    )
+    password_b64: str | None = Field(
+        default=None,
+        description=(
+            "Base64-encoded plaintext BMC-пароля. Присутствует только если "
+            "вызывающий держит action `view_credentials`; иначе `null`. "
+            "Декодируется стандартным base64.b64decode перед использованием."
+        ),
     )
     last_probed_at: datetime | None = Field(
         default=None, description="UTC момент последнего успешного probe BMC.",
@@ -129,21 +144,6 @@ class IpmiCredentialsViewResponse(BaseModel):
     username: str = Field(description="BMC login.")
     password_rotated_at: datetime | None = Field(
         default=None, description="Когда пароль ротейтился в последний раз (UTC).",
-    )
-
-
-class IpmiCredentialsRevealResponse(BaseModel):
-    """Ответ на reveal-credentials — login plaintext + пароль в base64.
-
-    `login` отдаётся в открытом виде, потому что worker всё равно видит его
-    в metadata-эндпоинте (`view_credentials`) — никакой дополнительной защиты
-    не даёт. `password_b64` — base64-encoded plaintext, симметрия с
-    `server_accounts/{id}/reveal-password`.
-    """
-
-    login: str = Field(description="Логин BMC в открытом виде.")
-    password_b64: str = Field(
-        description="base64(utf-8 plaintext пароля BMC).",
     )
 
 

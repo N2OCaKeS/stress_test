@@ -1,9 +1,8 @@
-"""Use cases для server_accounts — CRUD + rotate_password + reveal_password.
+"""Use cases для server_accounts — CRUD + rotate_password.
 
-`view_password` остаётся в `internal_service` (worker-only). `reveal_password`
-— user-facing endpoint, отдающий plaintext в base64 (UI/CLI хранят пароли в
-менеджере секретов или показывают пользователю). Default — только
-admin/operator.
+Карточка аккаунта доступна по `view`. Если вызывающий вдобавок держит
+`view_password`, тот же GET доносит расшифрованный пароль в base64 — отдельной
+reveal-ручки нет. Internal endpoint (`internal_service`) для worker'а остаётся.
 
 Visibility-check (cross-department) скрывает чужие аккаунты за 404, чтобы
 не выдавать факт существования. Симметрично с `services/server.py`.
@@ -172,18 +171,29 @@ async def get_account(
     db: AsyncSession,
     identity: IdentityContext,
     account_id: str,
-) -> ServerAccount:
-    """SELECT по PK + dept-isolation."""
+) -> tuple[ServerAccount, str | None]:
+    """SELECT по PK + dept-isolation, опционально с расшифрованным паролем.
+
+    Карточка доступна по `view` или `view_password`: держателю `view_password`
+    голый `view` не нужен (так worker_bot, у которого только secret-access,
+    тоже читает карточку с паролем). Второй элемент кортежа — base64(plaintext)
+    при наличии `view_password`, иначе `None`. Раскрытие пароля пишет отдельный
+    CRITICAL-аудит `server_account.password_revealed`.
+    """
+    has_password_action = await permissions.has_action(
+        db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW_PASSWORD
+    )
     with emit_denied_on_authz_error(
         "server_account.view",
         target_id=account_id,
         target_type="server_account",
     ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
-        )
+        if not has_password_action:
+            await permissions.require_action(
+                db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
+            )
     try:
-        account, _server = await _load_account_visible(db, identity, account_id)
+        account, server = await _load_account_visible(db, identity, account_id)
     except NotFoundError:
         audit_service.emit(
             "server_account.view",
@@ -192,7 +202,11 @@ async def get_account(
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
-    return account
+
+    if not has_password_action:
+        return account, None
+
+    return account, _reveal_account_password(account, server)
 
 
 async def list_accounts(
@@ -403,47 +417,15 @@ async def rotate_password(
     return updated
 
 
-async def reveal_password(
-    db: AsyncSession,
-    identity: IdentityContext,
-    account_id: str,
-) -> str:
-    """Расшифровать пароль аккаунта и вернуть его base64-encoded.
+def _reveal_account_password(account: ServerAccount, server: Server) -> str | None:
+    """Расшифровать пароль аккаунта в base64 и записать аудит раскрытия.
 
-    Порядок проверок:
-      1. Visibility (cross-dept — 404, скрываем существование).
-      2. Permission `reveal_password` — по дефолту только admin/operator
-         (отдельно от worker-only `view_password`).
-      3. `secrets_service.decrypt` с правильным aad. При сломанном
-         ciphertext поднимается `AppException(DECRYPT_FAILED, http_status=500)`
-         — пробрасываем как есть, дополнительно эмитим failure-audit.
-      4. На успех — audit `server_account.password_revealed`
-         (severity WARNING — чувствительная операция).
+    Вызывается из `get_account` только после успешной проверки `view_password`,
+    поэтому permission тут уже не проверяется. Возвращает `None`, если у
+    аккаунта нет сохранённого пароля (карточка всё равно отдаётся без пароля).
+    Раскрытие пишет CRITICAL-аудит `server_account.password_revealed`;
+    сломанный ciphertext поднимает `DECRYPT_FAILED` (500) + failure-аудит.
     """
-    try:
-        account, server = await _load_account_visible(db, identity, account_id)
-    except NotFoundError:
-        audit_service.emit(
-            "server_account.password_revealed",
-            target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
-            details={"reason": "not_found_or_cross_dept"},
-        )
-        raise
-
-    with emit_denied_on_authz_error(
-        "server_account.password_revealed",
-        target_id=account_id,
-        target_type="server_account",
-        extra_details={
-            "server_id": account.server_id,
-            "department_id": server.department_id,
-        },
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.REVEAL_PASSWORD
-        )
-
     if account.password_encrypted is None:
         audit_service.emit(
             "server_account.password_revealed",
@@ -455,10 +437,7 @@ async def reveal_password(
                 "department_id": server.department_id,
             },
         )
-        raise NotFoundError(
-            error_code="ACCOUNT_HAS_NO_PASSWORD",
-            message="Account has no stored password",
-        )
+        return None
 
     try:
         plain = secrets_service.decrypt(

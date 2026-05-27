@@ -3,7 +3,19 @@
 from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from src.schemas.disk import DiskResponse, DiskSpec
+
+
+def _validate_storage(disks: list[DiskSpec]) -> list[DiskSpec]:
+    """Запретить дубли слотов и больше одного системного диска в одном теле."""
+    slots = [d.slot for d in disks]
+    if len(slots) != len(set(slots)):
+        raise ValueError("duplicate disk slot in storage")
+    if sum(1 for d in disks if d.is_system) > 1:
+        raise ValueError("at most one system disk is allowed in storage")
+    return disks
 
 
 class ServerCreate(BaseModel):
@@ -26,6 +38,15 @@ class ServerCreate(BaseModel):
     serial_number: str | None = Field(default=None, max_length=128, description="Серийный номер железа. UNIQUE в БД, если задан.")
     asset_tag: str | None = Field(default=None, max_length=128, description="Инвентарный номер (бирка).")
     location: str | None = Field(default=None, max_length=256, description="Физическое расположение (DC/стойка/юнит).")
+    storage: list[DiskSpec] = Field(
+        default_factory=list,
+        description="Диски сервера: набор слотов (system/disk1/diskN) с размером в ГБ и флагом системного.",
+    )
+
+    @model_validator(mode="after")
+    def _check_storage(self) -> "ServerCreate":
+        _validate_storage(self.storage)
+        return self
 
 
 class ServerUpdate(BaseModel):
@@ -46,6 +67,19 @@ class ServerUpdate(BaseModel):
     serial_number: str | None = Field(default=None, description="Сменить serial_number (UNIQUE).")
     asset_tag: str | None = Field(default=None, description="Сменить инвентарный номер.")
     location: str | None = Field(default=None, description="Сменить физическое расположение.")
+    storage: list[DiskSpec] | None = Field(
+        default=None,
+        description=(
+            "Полная замена набора дисков. `null` (поле не прислано) — диски не "
+            "трогаются; `[]` — все диски удаляются; список — синхронизация под него."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _check_storage(self) -> "ServerUpdate":
+        if self.storage is not None:
+            _validate_storage(self.storage)
+        return self
 
 
 class ServerAcquireRequest(BaseModel):
@@ -108,9 +142,21 @@ class ServerResponse(BaseModel):
     ram_total_mb: int | None = Field(default=None, description="RAM в МБ.")
     network_interface_name: str | None = Field(default=None, description="Имя сетевого интерфейса.")
     decommissioned_at: datetime | None = Field(default=None, description="Когда сервер выведен из эксплуатации.")
+    storage: list[DiskResponse] = Field(default_factory=list, description="Диски сервера (slot/size_gb/is_system/model).")
     created_at: datetime = Field(description="Когда карточка создана.")
     updated_at: datetime = Field(description="Когда карточка изменена в последний раз.")
     created_by: str | None = Field(default=None, description="user_id, создавший карточку.")
+
+    @classmethod
+    def from_server(cls, server, disks) -> "ServerResponse":
+        """Собрать карточку из ORM-сервера + явно загруженного списка дисков.
+
+        Диски передаются отдельно, а не через lazy-relationship — async-сессия
+        не подгружает их автоматически при сериализации.
+        """
+        resp = cls.model_validate(server)
+        resp.storage = [DiskResponse.from_orm_disk(d) for d in disks]
+        return resp
 
 
 class ServerTaskDispatchResponse(BaseModel):

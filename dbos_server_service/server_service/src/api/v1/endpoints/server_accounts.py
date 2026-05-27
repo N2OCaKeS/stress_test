@@ -1,12 +1,10 @@
-"""CRUD аккаунтов сервера + rotate_password + reveal_password.
+"""CRUD аккаунтов сервера + rotate_password.
 
-`view_password` сюда НЕ выведен — расшифрованный пароль для worker'а
-по-прежнему отдаётся только через `internal/.../password`
-(см. `endpoints/internal.py`).
-
-`reveal_password` — отдельный пользовательский endpoint, возвращающий
-plaintext в base64 для UI/CLI. Default — admin/operator, separate action
-от worker-only `view_password`.
+GET карточки доступен по `view` или `view_password`. Держателю action
+`view_password` тот же GET доносит расшифрованный пароль в `password_b64`;
+остальным поле приходит `null`. Отдельной reveal-ручки нет. Расшифрованный
+пароль для worker'а параллельно по-прежнему отдаётся через
+`internal/.../password` (см. `endpoints/internal.py`).
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -16,7 +14,6 @@ from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
 from src.schemas.server_account import (
-    RevealPasswordResponse,
     ServerAccountCreate,
     ServerAccountResponse,
     ServerAccountRotateResponse,
@@ -91,14 +88,17 @@ async def list_accounts(
 @router.get(
     "/{account_id}",
     response_model=ServerAccountResponse,
-    summary="Получить карточку аккаунта (без plaintext-пароля)",
+    summary="Получить карточку аккаунта (с паролем при наличии view_password)",
     description=(
-        "Не возвращает `password_encrypted` и тем более plaintext. "
-        "Для пароля worker'у — отдельный internal endpoint."
+        "Карточка доступна по `view` или `view_password`. Если у вызывающего "
+        "есть `view_password`, поле `password_b64` несёт base64(plaintext); "
+        "иначе оно `null`. Сырого `password_encrypted` в ответе нет никогда. "
+        "Раскрытие пароля пишет CRITICAL audit `server_account.password_revealed`."
     ),
     responses={
-        403: {"description": "Нет роли с `view`."},
+        403: {"description": "Нет роли ни с `view`, ни с `view_password`."},
         404: {"description": "Аккаунт не найден или чужой dept (скрыто за 404)."},
+        500: {"description": "DECRYPT_FAILED — сломанный ciphertext (только при view_password)."},
     },
 )
 async def get_account(
@@ -106,9 +106,11 @@ async def get_account(
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountResponse:
-    """Get-эндпоинт. Доступ: `(server_account, *, view)`."""
-    obj = await svc.get_account(db, identity, account_id)
-    return ServerAccountResponse.model_validate(obj)
+    """Get-эндпоинт. Доступ: `view` или `view_password`; пароль — при `view_password`."""
+    obj, password_b64 = await svc.get_account(db, identity, account_id)
+    resp = ServerAccountResponse.model_validate(obj)
+    resp.password_b64 = password_b64
+    return resp
 
 
 @router.patch(
@@ -187,31 +189,3 @@ async def rotate_password(
         login=obj.login,
         rotated_at=obj.password_rotated_at,
     )
-
-
-@router.post(
-    "/{account_id}/reveal-password",
-    response_model=RevealPasswordResponse,
-    summary="Расшифровать пароль аккаунта (base64)",
-    description=(
-        "Возвращает текущий plaintext-пароль аккаунта в base64-encoded "
-        "форме (`password_b64`). Plain-эквивалент того, что получает "
-        "server_worker через internal endpoint, но проверяется по "
-        "отдельному user-facing action `reveal_password` (по дефолту "
-        "только `operator`/`admin`). Каждое раскрытие пишет аудит "
-        "`server_account.password_revealed` с severity WARNING."
-    ),
-    responses={
-        403: {"description": "Нет роли с `reveal_password`."},
-        404: {"description": "Аккаунт не найден / чужой dept / нет сохранённого пароля."},
-        500: {"description": "DECRYPT_FAILED — сломанный ciphertext или неверный ключ."},
-    },
-)
-async def reveal_password(
-    account_id: str,
-    identity: CurrentIdentity,
-    db: AsyncSession = Depends(get_db),
-) -> RevealPasswordResponse:
-    """Reveal-эндпоинт. Доступ: `(server_account, *, reveal_password)`. Аудит — WARNING."""
-    password_b64 = await svc.reveal_password(db, identity, account_id)
-    return RevealPasswordResponse(password_b64=password_b64)

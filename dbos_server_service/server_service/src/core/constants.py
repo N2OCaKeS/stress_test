@@ -29,14 +29,6 @@ class PowerState(StrEnum):
     UNKNOWN = "unknown"
 
 
-class DiskKind(StrEnum):
-    """Тип физического носителя."""
-
-    HDD = "hdd"
-    SSD = "ssd"
-    NVME = "nvme"
-
-
 class IpmiKind(StrEnum):
     """Тип BMC. idrac — Dell, ilo — HPE, redfish — стандартизованный REST."""
 
@@ -101,7 +93,6 @@ class EntityType(StrEnum):
     SERVER_ACCOUNT = "server_account"
     OS_VERSION = "os_version"
     IPMI_CONTROLLER = "ipmi_controller"
-    DISK = "disk"
     # Самоуправление матрицей прав: view списка / grant / revoke. Управление
     # service-ролями (создание/удаление имён ролей) живёт только в auth_service —
     # server_service сюда не лезет, мы только наполняем матрицу actions для них.
@@ -132,19 +123,14 @@ class Action(StrEnum):
     INVENTORY_TRIGGER = "inventory_trigger"
     INVENTORY_SUBMIT = "inventory_submit"
 
-    # Sensitive: показ расшифрованного секрета
+    # Sensitive: показ расшифрованного секрета. Держатель `view_password` /
+    # `view_credentials` получает plaintext (в base64) прямо в GET-карточке —
+    # отдельной reveal-ручки нет. Тот же action использует worker через
+    # internal endpoint.
     VIEW_PASSWORD = "view_password"
     ROTATE_PASSWORD = "rotate_password"
-    # User-facing reveal: тот же plaintext-пароль, что worker получает через
-    # internal `view_password`, но отдаётся в UI/CLI в base64 ради безопасной
-    # передачи бинарных символов. Default — только admin/operator.
-    REVEAL_PASSWORD = "reveal_password"
     VIEW_CREDENTIALS = "view_credentials"
     ROTATE_CREDENTIALS = "rotate_credentials"
-    # User-facing reveal: plaintext IPMI/BMC password + plain login для UI/CLI.
-    # Пароль кодируется в base64 ради безопасной передачи бинарных символов.
-    # Дефолт — admin/operator (как `server_account.reveal_password`).
-    REVEAL_CREDENTIALS = "reveal_credentials"
 
     # Server-account specific
     GRANT_SUDO = "grant_sudo"
@@ -166,7 +152,7 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     }),
     EntityType.SERVER_ACCOUNT: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
-        Action.VIEW_PASSWORD, Action.ROTATE_PASSWORD, Action.REVEAL_PASSWORD,
+        Action.VIEW_PASSWORD, Action.ROTATE_PASSWORD,
         Action.GRANT_SUDO,
     }),
     EntityType.OS_VERSION: frozenset({
@@ -175,10 +161,6 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     EntityType.IPMI_CONTROLLER: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
         Action.VIEW_CREDENTIALS, Action.ROTATE_CREDENTIALS,
-        Action.REVEAL_CREDENTIALS,
-    }),
-    EntityType.DISK: frozenset({
-        Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
     }),
     EntityType.PERMISSION: frozenset({
         Action.VIEW, Action.PERMISSION_GRANT, Action.PERMISSION_REVOKE,

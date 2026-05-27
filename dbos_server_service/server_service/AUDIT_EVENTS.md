@@ -87,10 +87,10 @@ worker дёргает после реальной работы.
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
 | `server_account.view_password` | WARNING | GET `/internal/servers/{id}/accounts/{aid}/password` — расшифрован и отдан plaintext | `server_account` | `server_id`, `account_id`, `department_id` |
-| `server_account.password_revealed` | WARNING | POST `/api/server/v1/server-accounts/{id}/reveal-password` — user-facing раскрытие plaintext'а в base64 для UI/CLI (services/server_account.reveal_password) | `server_account` | `server_id`, `login`, `department_id`. denied/failure: `reason in {permission_denied, not_found_or_cross_dept, no_password_stored, decrypt_failed}` |
+| `server_account.password_revealed` | CRITICAL | GET `/api/server/v1/server-accounts/{id}` вызывающим с `view_password` — пароль расшифрован и доставлен в `password_b64` (services/server_account.get_account → _reveal_account_password) | `server_account` | `server_id`, `login`, `department_id`. failure: `reason in {no_password_stored, decrypt_failed}` |
 | `server_account.rotate_password` | CRITICAL | (a) POST `/api/server/v1/server-accounts/{id}/rotate_password` — user-initiated ротация записи в БД без SSH apply (services/server_account.py); (b) POST `/internal/servers/{id}/accounts/{aid}/password/rotate` — worker положил новый ciphertext после SSH apply (internal_service) | `server_account` | `server_id`, `login`, `rotated_at`; для (a) дополнительно `department_id`, `reason=user_initiated`. denied/failure: `reason in {permission_denied, not_found_or_cross_dept, account_not_found}` |
 | `ipmi_controller.view_credentials` | WARNING | GET `/internal/servers/{id}/ipmi/credentials` — расшифрованы IPMI-creds | `ipmi_controller` | `server_id`, `department_id` |
-| `ipmi_controller.credentials_revealed` | WARNING | POST `/api/server/v1/ipmi-controllers/{id}/reveal-credentials` — user-facing раскрытие BMC-логина и base64(password) для UI/CLI (services/ipmi_controller.reveal_credentials) | `ipmi_controller` | `server_id`, `username`, `department_id`. denied/failure: `reason in {permission_denied, not_found_or_cross_dept, decrypt_failed}` |
+| `ipmi_controller.credentials_revealed` | CRITICAL | GET `/api/server/v1/servers/{id}/ipmi` вызывающим с `view_credentials` — BMC-пароль расшифрован и доставлен в `password_b64` (services/ipmi_controller.get_controller → _reveal_controller_password) | `ipmi_controller` | `server_id`, `username`, `department_id`. failure: `reason in {no_password_stored, decrypt_failed}` |
 
 ---
 
@@ -214,7 +214,8 @@ dispatch-событие, server_worker (`tasks/installed_packages.py`) —
 ## SIEM-rules (рекомендуемые)
 
 - `action=http.platform_admin_blocked` — попытка `account_admin`/`loging_admin` тронуть business data. Должен срабатывать редко (любое срабатывание — расследование).
-- `action in {server_account.view_password, server_account.password_revealed, ipmi_controller.view_credentials, ipmi_controller.credentials_revealed} AND severity=WARNING` — каждое раскрытие секрета. Кросс-чекать с request_id worker-job'ы и (для `*_revealed`) с identity актёра (user/UI vs worker_bot).
+- `action in {server_account.view_password, ipmi_controller.view_credentials}` (WARNING) — раскрытие секрета worker'у через `/internal/*`. Кросс-чекать с request_id worker-job'ы.
+- `action in {server_account.password_revealed, ipmi_controller.credentials_revealed}` (CRITICAL) — пользователь раскрыл пароль через GET-карточку (держатель `view_password` / `view_credentials`). Кросс-чекать с identity актёра (user/UI vs worker_bot).
 - `action=permission.grant OR permission.revoke` — любое изменение матрицы прав. (Управление каталогом service-ролей переехало в auth_service — соответствующее SIEM-правило живёт там.)
 - `action=server.power_* AND status=denied, reason=not_found_or_cross_dept` — cross-dept probe.
 - `action=internal.dept_header_missing` — если есть в проде, значит `INTERNAL_REQUIRE_DEPT_HEADER` случайно выключен или worker сломался.

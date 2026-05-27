@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
@@ -357,7 +358,7 @@ def create_application() -> FastAPI:
                 "error": "validation_error",
                 "error_code": "VALIDATION_ERROR",
                 "message": "Request validation failed",
-                "details": {"errors": exc.errors()},
+                "details": {"errors": jsonable_encoder(exc.errors())},
                 "request_id": getattr(request.state, "request_id", None),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },

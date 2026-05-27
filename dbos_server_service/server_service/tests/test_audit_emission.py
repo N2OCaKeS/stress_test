@@ -721,12 +721,13 @@ class TestStub501NotAudited:
         endpoint'а не доходит, auth-dep отбивает раньше — поведение должно
         остаться прежним.
         """
-        resp = await client.get(f"{BASE}/os-versions")
+        resp = await client.get(f"{BASE}/servers")
         assert resp.status_code == 401
 
         denied = _events(captured_emits, "http.access_denied")
         assert len(denied) == 1, (
-            f"анонимный stub должен эмитить http.access_denied: {captured_emits}"
+            f"анонимный запрос на закрытый endpoint должен эмитить "
+            f"http.access_denied: {captured_emits}"
         )
         assert denied[0]["status"] == "denied"
         assert denied[0]["details"]["status_code"] == 401

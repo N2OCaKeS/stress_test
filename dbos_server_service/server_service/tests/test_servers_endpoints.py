@@ -615,3 +615,158 @@ class TestServerCpuFields:
         assert body["cpu_cores"] == 8
         assert body["cpu_threads"] == 8
         assert body["cpu_frequency_ghz"] == 1.3
+
+
+# ── storage внутри сервера ──────────────────────────────────────────────────
+
+class TestServerStorage:
+    """Диски управляются только через карточку сервера (раздел `storage`)."""
+
+    @staticmethod
+    def _payload(**overrides):
+        data = {
+            "hostname": "storehost",
+            "ip_address": "10.30.30.1",
+            "department_id": "dep_a",
+        }
+        data.update(overrides)
+        return data
+
+    async def test_create_with_storage_returns_disks(self, client, admin_token):
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(storage=[
+                {"slot": "system", "size_gb": 500, "model": "SSD-A"},
+                {"slot": "disk1", "size_gb": 1000},
+            ]),
+        )
+        assert resp.status_code == 201
+        storage = {d["slot"]: d for d in resp.json()["storage"]}
+        assert set(storage) == {"system", "disk1"}
+        assert storage["system"]["size_gb"] == 500
+        assert storage["system"]["is_system"] is True
+        assert storage["system"]["model"] == "SSD-A"
+        assert storage["disk1"]["is_system"] is False
+        assert all("kind" not in d for d in resp.json()["storage"])
+        assert all(d["id"].startswith("dsk_") for d in resp.json()["storage"])
+
+    async def test_create_without_storage_is_empty(self, client, admin_token):
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(hostname="nostore", ip_address="10.30.30.2"),
+        )
+        assert resp.status_code == 201
+        assert resp.json()["storage"] == []
+
+    async def test_get_returns_storage(self, client, admin_token):
+        created = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(hostname="getstore", ip_address="10.30.30.3", storage=[
+                {"slot": "system", "size_gb": 256},
+            ]),
+        )
+        srv_id = created.json()["id"]
+        resp = await client.get(f"{BASE}/{srv_id}", headers=_hdr(admin_token))
+        assert resp.status_code == 200
+        storage = resp.json()["storage"]
+        assert len(storage) == 1
+        assert storage[0]["slot"] == "system"
+        assert storage[0]["size_gb"] == 256
+        assert storage[0]["is_system"] is True
+
+    async def test_update_replaces_storage(self, client, admin_token):
+        created = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(hostname="upd", ip_address="10.30.30.4", storage=[
+                {"slot": "system", "size_gb": 100},
+                {"slot": "disk1", "size_gb": 200},
+            ]),
+        )
+        srv_id = created.json()["id"]
+        resp = await client.patch(
+            f"{BASE}/{srv_id}", headers=_hdr(admin_token),
+            json={"storage": [
+                {"slot": "system", "size_gb": 100},
+                {"slot": "disk2", "size_gb": 4000},
+            ]},
+        )
+        assert resp.status_code == 200
+        slots = {d["slot"]: d for d in resp.json()["storage"]}
+        assert set(slots) == {"system", "disk2"}
+        assert slots["disk2"]["size_gb"] == 4000
+
+    async def test_update_empty_storage_clears_disks(self, client, admin_token):
+        created = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(hostname="clr", ip_address="10.30.30.5", storage=[
+                {"slot": "system", "size_gb": 100},
+            ]),
+        )
+        srv_id = created.json()["id"]
+        resp = await client.patch(
+            f"{BASE}/{srv_id}", headers=_hdr(admin_token),
+            json={"storage": []},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["storage"] == []
+
+    async def test_update_without_storage_keeps_disks(self, client, admin_token):
+        created = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(hostname="keep", ip_address="10.30.30.6", storage=[
+                {"slot": "system", "size_gb": 100},
+            ]),
+        )
+        srv_id = created.json()["id"]
+        resp = await client.patch(
+            f"{BASE}/{srv_id}", headers=_hdr(admin_token),
+            json={"display_name": "Renamed"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["display_name"] == "Renamed"
+        assert len(resp.json()["storage"]) == 1
+
+    async def test_two_system_disks_rejected(self, client, admin_token):
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(hostname="twosys", ip_address="10.30.30.7", storage=[
+                {"slot": "disk1", "size_gb": 1, "is_system": True},
+                {"slot": "disk2", "size_gb": 2, "is_system": True},
+            ]),
+        )
+        assert resp.status_code == 422
+
+    async def test_duplicate_slot_rejected(self, client, admin_token):
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(hostname="dupslot", ip_address="10.30.30.8", storage=[
+                {"slot": "disk1", "size_gb": 1},
+                {"slot": "disk1", "size_gb": 2},
+            ]),
+        )
+        assert resp.status_code == 422
+
+    async def test_no_disk_endpoint(self, client, admin_token, make_server):
+        """Отдельного CRUD-endpoint'а дисков больше нет."""
+        srv = await make_server(department_id="dep_a")
+        resp = await client.get(f"{BASE}/{srv.id}/disks", headers=_hdr(admin_token))
+        assert resp.status_code == 404
+
+    async def test_storage_persisted_in_db(self, client, admin_token, db):
+        from src.models import ServerDisk
+        from sqlalchemy import select
+
+        created = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(hostname="dbcheck", ip_address="10.30.30.9", storage=[
+                {"slot": "system", "size_gb": 333},
+            ]),
+        )
+        srv_id = created.json()["id"]
+        rows = (await db.execute(
+            select(ServerDisk).where(ServerDisk.server_id == srv_id)
+        )).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].device_name == "system"
+        assert rows[0].size_gb == 333
+        assert rows[0].is_system is True

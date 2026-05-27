@@ -1,15 +1,13 @@
-"""ServerDisk-репозиторий — сырой CRUD против таблицы `server_disks`."""
+"""ServerDisk-репозиторий — сырой CRUD против таблицы `server_disks`.
 
-from sqlalchemy import func, select
+Диски управляются только через карточку сервера (раздел `storage`), поэтому
+наружу выставлены list/sync-примитивы, а не пагинируемый CRUD.
+"""
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import ServerDisk
-
-
-async def get_by_id(db: AsyncSession, disk_id: str) -> ServerDisk | None:
-    """SELECT по PK. Visibility-check (через server) делает service-layer."""
-    stmt = select(ServerDisk).where(ServerDisk.id == disk_id)
-    return (await db.execute(stmt)).scalar_one_or_none()
 
 
 async def get_by_server_and_device(
@@ -27,24 +25,14 @@ async def get_by_server_and_device(
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-async def list_for_server(
-    db: AsyncSession, server_id: str, limit: int = 100, offset: int = 0,
-) -> list[ServerDisk]:
-    """Список дисков одного сервера, упорядочен по created_at DESC."""
+async def list_all_for_server(db: AsyncSession, server_id: str) -> list[ServerDisk]:
+    """Все диски сервера, упорядоченные по device_name (стабильный порядок storage)."""
     stmt = (
         select(ServerDisk)
         .where(ServerDisk.server_id == server_id)
-        .order_by(ServerDisk.created_at.desc())
-        .limit(limit)
-        .offset(offset)
+        .order_by(ServerDisk.device_name.asc())
     )
     return list((await db.execute(stmt)).scalars())
-
-
-async def count_for_server(db: AsyncSession, server_id: str) -> int:
-    """COUNT для пагинации."""
-    stmt = select(func.count(ServerDisk.id)).where(ServerDisk.server_id == server_id)
-    return int((await db.execute(stmt)).scalar_one())
 
 
 async def create(db: AsyncSession, data: dict) -> ServerDisk:

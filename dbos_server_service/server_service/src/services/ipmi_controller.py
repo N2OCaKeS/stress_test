@@ -1,13 +1,12 @@
-"""Use cases для ipmi_controllers — CRUD + rotate_credentials + reveal_credentials.
+"""Use cases для ipmi_controllers — CRUD + rotate_credentials.
 
 Связь servers↔ipmi_controllers 1:1 (UNIQUE на server_id). Поэтому все
 эндпоинты идут через {server_id}, без отдельного controller_id в URL —
 controller всегда однозначно резолвится через server.
 
-Reveal-эндпоинт (`reveal_credentials`) принимает controller_id напрямую и
-ищет по PK — симметрия с `server_accounts/{id}/reveal-password`. Возвращает
-plain login + base64(password); права отделены от worker-only
-`view_credentials` (см. constants.Action.REVEAL_CREDENTIALS).
+Карточка контроллера доступна по `view`. Если вызывающий держит
+`view_credentials`, тот же GET доносит расшифрованный BMC-пароль в base64 —
+отдельной reveal-ручки нет.
 
 Department-isolation скрывает cross-dept-сервер за 404 (`SERVER_NOT_FOUND`)
 и при наличии контроллера — `IPMI_NOT_FOUND` для контроллера. Это
@@ -128,23 +127,33 @@ async def get_controller(
     db: AsyncSession,
     identity: IdentityContext,
     server_id: str,
-) -> IpmiController:
+) -> tuple[IpmiController, str | None]:
     """SELECT IPMI-контроллера по server_id + visibility-check.
+
+    Карточка доступна по `view` или `view_credentials`: держателю
+    `view_credentials` голый `view` не нужен (так worker_bot читает креды).
+    Второй элемент кортежа — base64(plaintext BMC-пароля) при наличии
+    `view_credentials`, иначе `None`. Раскрытие пишет CRITICAL-аудит
+    `ipmi_controller.credentials_revealed`.
 
     Возвращает 404 IPMI_NOT_FOUND если сервер видим, но контроллер не зарегистрирован.
     Cross-dept или non-existent server → 404 SERVER_NOT_FOUND.
     """
+    has_credentials_action = await permissions.has_action(
+        db, identity, EntityType.IPMI_CONTROLLER, Action.VIEW_CREDENTIALS
+    )
     with emit_denied_on_authz_error(
         "ipmi_controller.view",
         target_id=server_id,
         target_type="ipmi_controller",
         extra_details={"server_id": server_id},
     ):
-        await permissions.require_action(
-            db, identity, EntityType.IPMI_CONTROLLER, Action.VIEW
-        )
+        if not has_credentials_action:
+            await permissions.require_action(
+                db, identity, EntityType.IPMI_CONTROLLER, Action.VIEW
+            )
     try:
-        await load_visible_server(db, identity, server_id)
+        server = await load_visible_server(db, identity, server_id)
     except NotFoundError:
         audit_service.emit(
             "ipmi_controller.view",
@@ -165,7 +174,13 @@ async def get_controller(
             error_code="IPMI_NOT_FOUND",
             message="No IPMI controller is registered for this server",
         )
-    return obj
+
+    if not await permissions.has_action(
+        db, identity, EntityType.IPMI_CONTROLLER, Action.VIEW_CREDENTIALS
+    ):
+        return obj, None
+
+    return obj, _reveal_controller_password(obj, server.department_id)
 
 
 async def list_controllers(
@@ -407,64 +422,32 @@ async def rotate_credentials(
     return updated
 
 
-async def reveal_credentials(
-    db: AsyncSession,
-    identity: IdentityContext,
-    controller_id: str,
-) -> tuple[str, str]:
-    """Расшифровать BMC-пароль и вернуть `(login, base64(plain_password))`.
+def _reveal_controller_password(
+    obj: IpmiController,
+    department_id: str | None,
+) -> str | None:
+    """Расшифровать BMC-пароль в base64 и записать аудит раскрытия.
 
-    Симметрия с `server_account.reveal_password`. Порядок проверок:
-
-      1. SELECT controller по PK; если не найден или сервер чужого dept —
-         404 IPMI_CONTROLLER_NOT_FOUND (без разницы между ambiguity-ветками,
-         иначе утечёт enumeration).
-      2. Permission `reveal_credentials` — дефолт admin/operator.
-      3. `secrets_service.decrypt` с `aad_for_ipmi_credential(id)`. На
-         сломанном ciphertext поднимается `AppException(DECRYPT_FAILED,
-         500)` — пробрасываем + failure-audit.
-      4. На success — `ipmi_controller.credentials_revealed` WARNING.
+    Вызывается из `get_controller` только после успешной проверки
+    `view_credentials`, поэтому permission тут уже не проверяется. Возвращает
+    `None`, если у контроллера нет сохранённого пароля. Раскрытие пишет
+    CRITICAL-аудит `ipmi_controller.credentials_revealed`; сломанный
+    ciphertext поднимает `DECRYPT_FAILED` (500) + failure-аудит.
     """
     audit_action = "ipmi_controller.credentials_revealed"
 
-    obj = await repo.get_by_id(db, controller_id)
-    if obj is None:
+    if obj.password_encrypted is None:
         audit_service.emit(
             audit_action,
-            target_id=controller_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
-            details={"reason": "not_found_or_cross_dept"},
+            target_id=obj.id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={
+                "reason": "no_password_stored",
+                "server_id": obj.server_id,
+                "department_id": department_id,
+            },
         )
-        raise NotFoundError(
-            error_code="IPMI_CONTROLLER_NOT_FOUND",
-            message="IPMI controller not found",
-        )
-    try:
-        server = await load_visible_server(db, identity, obj.server_id)
-    except NotFoundError as exc:
-        audit_service.emit(
-            audit_action,
-            target_id=controller_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
-            details={"reason": "not_found_or_cross_dept"},
-        )
-        raise NotFoundError(
-            error_code="IPMI_CONTROLLER_NOT_FOUND",
-            message="IPMI controller not found",
-        ) from exc
-
-    with emit_denied_on_authz_error(
-        audit_action,
-        target_id=controller_id,
-        target_type="ipmi_controller",
-        extra_details={
-            "server_id": obj.server_id,
-            "department_id": server.department_id,
-        },
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.IPMI_CONTROLLER, Action.REVEAL_CREDENTIALS,
-        )
+        return None
 
     try:
         plain = secrets_service.decrypt(
@@ -479,7 +462,7 @@ async def reveal_credentials(
             details={
                 "reason": "decrypt_failed",
                 "server_id": obj.server_id,
-                "department_id": server.department_id,
+                "department_id": department_id,
             },
         )
         raise
@@ -491,7 +474,7 @@ async def reveal_credentials(
         details={
             "server_id": obj.server_id,
             "username": obj.username,
-            "department_id": server.department_id,
+            "department_id": department_id,
         },
     )
-    return obj.username, base64.b64encode(plain.encode("utf-8")).decode("ascii")
+    return base64.b64encode(plain.encode("utf-8")).decode("ascii")

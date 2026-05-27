@@ -128,7 +128,7 @@ class TestInventoryCallback:
         assert {d.device_name for d in disks} == {"sda", "sdb"}
         sda = next(d for d in disks if d.device_name == "sda")
         assert sda.is_system is True
-        assert sda.size_bytes == 500 * 1024**3
+        assert sda.size_gb == 500
 
     async def test_inventory_second_call_updates_existing_disks(
         self, client, admin_role_token_a, make_server, db, dept_a,
@@ -167,7 +167,7 @@ class TestInventoryCallback:
             select(ServerDisk).where(ServerDisk.server_id == srv.id)
         )).scalars().all()
         assert len(disks) == 1
-        assert disks[0].size_bytes == 200 * 1024**3
+        assert disks[0].size_gb == 200
         assert disks[0].model == "BIGGER"
 
     async def test_worker_bot_can_callback_inventory(

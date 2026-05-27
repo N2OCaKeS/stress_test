@@ -33,10 +33,11 @@ class TestListAll:
         assert resp.status_code == 200
         rows = resp.json()
         # Baseline (831ba55543e9) + позднее: drop boot_order/pxe/reinstall
-        # (b8d4e3f9a712) убирает 5 admin server-action'ов и 1 worker_bot row,
-        # ipmi.reveal_credentials добавляет 2 (admin + operator). Структурно:
-        # worker_bot — 5 строк (4 secret-access + inventory_submit), admin
-        # строго больше, общая сумма ≥ обоих.
+        # (b8d4e3f9a712) убирает 5 admin server-action'ов и 1 worker_bot row;
+        # reveal_* гранты сняты (c3f9b1a8d420), пароль теперь раскрывается
+        # через view_password / view_credentials. Структурно: worker_bot —
+        # 5 строк (4 secret-access + inventory_submit), admin строго больше,
+        # общая сумма ≥ обоих.
         admin_grants = [r for r in rows if r["role"] == "admin"]
         worker_bot_grants = [r for r in rows if r["role"] == "worker_bot"]
         assert len(worker_bot_grants) == 5
@@ -91,9 +92,9 @@ class TestListForEntity:
         """После удаления всех grants по entity — 200 + []."""
         from src.models import EntityPermission
         from sqlalchemy import delete
-        await db.execute(delete(EntityPermission).where(EntityPermission.entity_type == "disk"))
+        await db.execute(delete(EntityPermission).where(EntityPermission.entity_type == "os_version"))
         await db.commit()
-        resp = await client.get(f"{BASE}/disk", headers=_hdr(admin_token))
+        resp = await client.get(f"{BASE}/os_version", headers=_hdr(admin_token))
         assert resp.status_code == 200
         assert resp.json() == []
 

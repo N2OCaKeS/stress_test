@@ -95,7 +95,8 @@ HTTP запрос
 - `f1234abc56e7_split_reinstall_status_action.py` — отделение worker callback'а: вводит `(server, reinstall_status_submit)`. Полностью обнуляется миграцией `b8d4e3f9a712` (вместе с удалением reinstall-pipeline'а).
 - `a1b2c3d4e5f6_remove_service_role_entity.py` — выпил `service_role` entity из матрицы. Управление каталогом service-ролей (create/delete role-names) переехало в `auth_service` полностью, `server_service` сам реестр не редактирует. Самоуправление матрицей привязано к новой entity `permission` (view / permission_grant / permission_revoke).
 - `b6f3a91d27e8_drop_cpu_models_inline_cpu_fields.py` — выпил каталог-таблицу `cpu_models` и FK `servers.cpu_id`. CPU-данные хранятся плоско в `servers`: `cpu_brand` / `cpu_model` / `cpu_cores` / `cpu_threads` / `cpu_frequency_ghz`. Обновляются inventory probe'ом или вручную через `PATCH /servers/{id}`. Гранты на `cpu_model`-entity тоже подчищаются.
-- `b8d4e3f9a712_ipmi_reveal_and_drop_bootorder_reinstall.py` — добавляет `(ipmi_controller, reveal_credentials)` для admin/operator (новый user-facing endpoint `POST /ipmi-controllers/{id}/reveal-credentials`); удаляет все гранты на boot_order/pxe_boot/reinstall_start/reinstall_status_submit (соответствующие endpoint'ы и worker-task'и сняты целиком).
+- `b8d4e3f9a712_ipmi_reveal_and_drop_bootorder_reinstall.py` — удаляет все гранты на boot_order/pxe_boot/reinstall_start/reinstall_status_submit (соответствующие endpoint'ы и worker-task'и сняты целиком). Reveal-гранты, которые эта миграция тоже добавляла, позже сняты в `c3f9b1a8d420`.
+- `c3f9b1a8d420_merge_reveal_into_view_secrets.py` — снимает осиротевшие `(server_account, reveal_password)` / `(ipmi_controller, reveal_credentials)`. Отдельные reveal-endpoint'ы убраны; пароль теперь приходит прямо в GET-карточке аккаунта/IPMI, если вызывающий держит `view_password` / `view_credentials`.
 
 ## Что в stub'ах (501 NOT_IMPLEMENTED)
 
@@ -106,8 +107,8 @@ HTTP запрос
 
 Реализованы (раньше — stub):
 
-- `server_accounts` CRUD + `view_password` (worker-only, internal) / `rotate_password` / `reveal-password` (user-facing, base64-encoded plaintext под отдельным action `reveal_password`)
-- `ipmi_controllers` CRUD + `view_credentials` / `rotate_credentials` / `reveal-credentials` (user-facing, login plain + base64 password под action `reveal_credentials`)
+- `server_accounts` CRUD + `rotate_password`. GET карточки отдаёт `password_b64` (base64 plaintext), если вызывающий держит `view_password` — отдельной reveal-ручки нет. Тот же `view_password` использует worker через internal endpoint.
+- `ipmi_controllers` CRUD + `rotate_credentials`. GET карточки отдаёт `password_b64`, если вызывающий держит `view_credentials`.
 - `server_disks` CRUD
 - `os_versions` CRUD
 - `installed_packages` live-listing через SSH worker (без БД-таблицы — каждый запрос идёт `dpkg-query`/`rpm -qa` на сервере)
@@ -159,9 +160,12 @@ Worker-task'и, зарегистрированные в брокере, с кл�
    блокируется (у него есть `department_id`, но в server_service у него
    нет сервисных ролей → 403 PERMISSION_DENIED от матрицы).
 
-6. **Раскрытие plaintext-кредов** — только через `/internal/*` для worker'а.
-   Каждое раскрытие пишет audit WARNING (`server_account.view_password`,
-   `ipmi_controller.view_credentials`).
+6. **Раскрытие plaintext-кредов** — для worker'а через `/internal/*` (audit
+   WARNING `server_account.view_password` / `ipmi_controller.view_credentials`),
+   для пользователя — прямо в GET-карточке аккаунта/IPMI при наличии
+   `view_password` / `view_credentials` (audit CRITICAL
+   `server_account.password_revealed` / `ipmi_controller.credentials_revealed`).
+   Вызывающий с одним `view` получает карточку без `password_b64`.
 
 7. **Worker — least-privilege.** Роль `worker_bot` имеет ровно 4 grants
    (`view_password`/`rotate_password` на server_account, `view_credentials`/

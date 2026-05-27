@@ -1,60 +1,70 @@
-"""Pydantic-схемы для эндпоинтов /servers/{server_id}/disks.
+"""Pydantic-схемы дисков сервера.
 
-Диски привязаны к серверу — изоляция отделов идёт транзитом через
-visibility-check сервера-родителя. См. `services/disk_service.py`.
+Диски живут только внутри карточки сервера (раздел `storage`) — отдельного
+CRUD-endpoint'а нет. `DiskSpec` приходит в `ServerCreate`/`ServerUpdate`,
+`DiskResponse` отдаётся в `ServerResponse.storage`.
 """
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+# Слот системного диска. Один на сервер — инвариант держит partial-unique индекс.
+SYSTEM_SLOT = "system"
 
 
-class DiskCreate(BaseModel):
-    """Тело POST /servers/{server_id}/disks. `server_id` — из path."""
+class DiskSpec(BaseModel):
+    """Один диск в разделе `storage` сервера.
 
-    device_name: str = Field(
+    `slot` — логическое имя устройства (`system`, `disk1`, `diskN`), оно же
+    ложится в `server_disks.device_name`. Слот `system` всегда системный;
+    для остальных системность задаётся флагом `is_system`.
+    """
+
+    slot: str = Field(
         ..., min_length=1, max_length=64,
-        description="Имя устройства в OS (sda, nvme0n1, ...). UNIQUE в рамках сервера.",
+        description="Слот диска: system / disk1 / diskN. Уникален в рамках сервера.",
     )
-    size_bytes: int = Field(
-        ..., ge=0, description="Размер диска в байтах (от lsblk/smartctl).",
-    )
-    kind: str | None = Field(
-        default=None, max_length=32,
-        description="Тип носителя: hdd / ssd / nvme. Free-form, без constraint'а на enum.",
+    size_gb: int = Field(
+        ..., ge=0, description="Размер диска в гигабайтах.",
     )
     model: str | None = Field(
         default=None, max_length=256, description="Модель диска (Samsung SSD 970 EVO, ...).",
     )
     is_system: bool = Field(
         default=False,
-        description="Системный диск (root). Не более одного на сервер (partial unique).",
+        description="Системный диск (root). Не более одного на сервер. Слот `system` системный всегда.",
     )
 
-
-class DiskUpdate(BaseModel):
-    """Тело PATCH /servers/{server_id}/disks/{disk_id}. Все поля опциональны."""
-
-    device_name: str | None = Field(
-        default=None, min_length=1, max_length=64, description="Сменить имя устройства.",
-    )
-    size_bytes: int | None = Field(default=None, ge=0, description="Обновить размер.")
-    kind: str | None = Field(default=None, max_length=32, description="Сменить тип.")
-    model: str | None = Field(default=None, max_length=256, description="Сменить модель.")
-    is_system: bool | None = Field(default=None, description="Пометить как системный.")
+    @model_validator(mode="after")
+    def _system_slot_is_system(self) -> "DiskSpec":
+        if self.slot == SYSTEM_SLOT:
+            object.__setattr__(self, "is_system", True)
+        return self
 
 
 class DiskResponse(BaseModel):
-    """Карточка диска в ответе."""
+    """Карточка диска внутри `ServerResponse.storage`."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: str = Field(description="Disk ID (prefix dsk_).")
-    server_id: str = Field(description="FK на servers.id.")
-    device_name: str = Field(description="Имя устройства.")
-    size_bytes: int = Field(description="Размер в байтах.")
-    kind: str | None = Field(default=None, description="Тип носителя.")
+    slot: str = Field(description="Слот диска (он же device_name).")
+    size_gb: int = Field(description="Размер в гигабайтах.")
     model: str | None = Field(default=None, description="Модель диска.")
     is_system: bool = Field(description="Системный диск.")
     created_at: datetime = Field(description="Когда запись создана.")
     updated_at: datetime = Field(description="Когда запись изменена.")
+
+    @classmethod
+    def from_orm_disk(cls, disk) -> "DiskResponse":
+        """Собрать ответ из ORM-строки `ServerDisk` (slot == device_name)."""
+        return cls(
+            id=disk.id,
+            slot=disk.device_name,
+            size_gb=disk.size_gb,
+            model=disk.model,
+            is_system=disk.is_system,
+            created_at=disk.created_at,
+            updated_at=disk.updated_at,
+        )

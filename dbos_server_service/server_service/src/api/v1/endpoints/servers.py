@@ -60,8 +60,12 @@ async def list_servers(
     Связано: `services/server.py::list_servers`, `repositories/server.py::list_in_departments`.
     """
     items, total = await svc.list_servers(db, identity, limit=limit, offset=offset)
+    cards = [
+        ServerResponse.from_server(i, await svc.load_storage(db, i.id))
+        for i in items
+    ]
     return PaginatedResponse[ServerResponse](
-        items=[ServerResponse.model_validate(i) for i in items],
+        items=cards,
         total=total,
         limit=limit,
         offset=offset,
@@ -108,7 +112,7 @@ async def create_server(
     Аудит: `server.create` (success/denied/failure).
     """
     obj = await svc.create_server(db, identity, body)
-    return ServerResponse.model_validate(obj)
+    return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
 
 
 @router.get(
@@ -149,7 +153,7 @@ async def get_server(
     есть, но dept не совпал).
     """
     obj = await svc.get_server(db, identity, server_id)
-    return ServerResponse.model_validate(obj)
+    return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
 
 
 @router.patch(
@@ -187,7 +191,7 @@ async def update_server(
     Аудит: `server.update` (success/denied/failure).
     """
     obj = await svc.update_server(db, identity, server_id, body)
-    return ServerResponse.model_validate(obj)
+    return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
 
 
 @router.delete(
@@ -265,7 +269,7 @@ async def acquire_server(
     """
     payload = body if body is not None else ServerAcquireRequest()
     obj = await svc.acquire_server(db, identity, server_id, payload)
-    return ServerResponse.model_validate(obj)
+    return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
 
 
 @router.delete(
@@ -302,7 +306,7 @@ async def release_server(
     Аудит: `server.release` (success/denied/failure).
     """
     obj = await svc.release_server(db, identity, server_id)
-    return ServerResponse.model_validate(obj)
+    return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
 
 
 # ── Ручной OS-sync (без inventory probe) ────────────────────────────────────
@@ -343,4 +347,4 @@ async def update_os_version(
     Аудит: `server.update_os_version` (success/denied/failure).
     """
     obj = await svc.update_os_version(db, identity, server_id, body)
-    return ServerResponse.model_validate(obj)
+    return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))

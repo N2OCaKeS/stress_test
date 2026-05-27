@@ -1,11 +1,11 @@
-"""IPMI / iDRAC / iLO / Redfish — CRUD + rotate_credentials + reveal + power.
+"""IPMI / iDRAC / iLO / Redfish — CRUD + rotate_credentials + power.
 
 CRUD ходит через `services/ipmi_controller.py`, power — через
 `worker_client.dispatch_task`. Связь servers↔ipmi_controllers 1:1
 (UNIQUE на server_id), поэтому в URL `{server_id}` достаточно — controller
-резолвится однозначно. Reveal-эндпоинт принимает `controller_id` напрямую
-(симметрия с `server_accounts/{id}/reveal-password`) и живёт под отдельным
-`/ipmi-controllers/{controller_id}/reveal-credentials` префиксом.
+резолвится однозначно. GET карточки доступен по `view` или `view_credentials`;
+держателю action `view_credentials` тот же GET доносит расшифрованный пароль
+в `password_b64`.
 """
 
 from fastapi import APIRouter, Depends, Request
@@ -26,7 +26,6 @@ from src.schemas.ipmi_controller import (
     IpmiControllerCreate,
     IpmiControllerResponse,
     IpmiControllerUpdate,
-    IpmiCredentialsRevealResponse,
     IpmiCredentialsRotateRequest,
     IpmiCredentialsRotateResponse,
     IpmiCredentialsViewResponse,
@@ -48,10 +47,6 @@ _POWER_ACTION_TO_AUDIT = {
 router = APIRouter(prefix="/servers/{server_id}/ipmi")
 # Отдельный router для list — без server_id в prefix'е.
 list_router = APIRouter(prefix="/ipmi_controllers")
-# Reveal-эндпоинт берёт controller_id напрямую (симметрия с reveal-password
-# для server_accounts). Префикс — общий с `worker_dispatch.router_ipmi`,
-# но точки не пересекаются (`/rotate` vs `/reveal-credentials`).
-reveal_router = APIRouter(prefix="/ipmi-controllers/{controller_id}")
 
 
 async def _dispatch_power(
@@ -275,15 +270,18 @@ async def create_controller(
 @router.get(
     "",
     response_model=IpmiControllerResponse,
-    summary="Карточка IPMI-контроллера сервера",
+    summary="Карточка IPMI-контроллера (с паролем при наличии view_credentials)",
     description=(
-        "Возвращает kind/endpoint_url/username (без plaintext-пароля). "
-        "Cross-dept сервер скрыт за 404 SERVER_NOT_FOUND. Сервер без "
-        "контроллера → 404 IPMI_NOT_FOUND."
+        "Возвращает kind/endpoint_url/username. Если у вызывающего есть "
+        "`view_credentials`, поле `password_b64` несёт base64(plaintext); "
+        "иначе оно `null`. Cross-dept сервер скрыт за 404 SERVER_NOT_FOUND. "
+        "Сервер без контроллера → 404 IPMI_NOT_FOUND. Раскрытие пароля пишет "
+        "CRITICAL audit `ipmi_controller.credentials_revealed`."
     ),
     responses={
-        403: {"description": "Нет `view`."},
+        403: {"description": "Нет ни `view`, ни `view_credentials`."},
         404: {"description": "Сервер не найден / чужой dept, либо контроллер не зарегистрирован."},
+        500: {"description": "DECRYPT_FAILED — сломанный ciphertext (только при view_credentials)."},
     },
 )
 async def get_controller(
@@ -291,9 +289,11 @@ async def get_controller(
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> IpmiControllerResponse:
-    """Get-эндпоинт. Доступ: `(ipmi_controller, *, view)`."""
-    obj = await ipmi_svc.get_controller(db, identity, server_id)
-    return IpmiControllerResponse.model_validate(obj)
+    """Get-эндпоинт. Доступ: `(ipmi_controller, *, view)`; пароль — при `view_credentials`."""
+    obj, password_b64 = await ipmi_svc.get_controller(db, identity, server_id)
+    resp = IpmiControllerResponse.model_validate(obj)
+    resp.password_b64 = password_b64
+    return resp
 
 
 @router.patch(
@@ -626,35 +626,3 @@ async def power_reboot(
         db=db, identity=identity, request=request, server_id=server_id,
         action=Action.POWER_REBOOT, task_kind="power.reboot",
     )
-
-
-# ── Reveal credentials (user-facing, plain login + base64 password) ─────────
-
-
-@reveal_router.post(
-    "/reveal-credentials",
-    response_model=IpmiCredentialsRevealResponse,
-    summary="Расшифровать BMC-логин/пароль (base64) — для UI/CLI",
-    description=(
-        "Возвращает текущие IPMI-credentials в виде `{login, password_b64}` "
-        "(login — plaintext, пароль — base64-encoded plaintext для безопасной "
-        "передачи бинарных символов). Симметрия с `server-accounts/{id}/"
-        "reveal-password`. Доступ: `(ipmi_controller, *, reveal_credentials)` — "
-        "default admin/operator. Каждое раскрытие пишет аудит "
-        "`ipmi_controller.credentials_revealed` WARNING."
-    ),
-    responses={
-        200: {"description": "Login + base64(password)."},
-        403: {"description": "Нет роли с `reveal_credentials`."},
-        404: {"description": "Контроллер не найден / чужой dept (404 IPMI_CONTROLLER_NOT_FOUND)."},
-        500: {"description": "DECRYPT_FAILED — сломанный ciphertext или неверный ключ."},
-    },
-)
-async def reveal_credentials(
-    controller_id: str,
-    identity: CurrentIdentity,
-    db: AsyncSession = Depends(get_db),
-) -> IpmiCredentialsRevealResponse:
-    """Reveal-эндпоинт. Доступ: `(ipmi_controller, *, reveal_credentials)`. Аудит — WARNING."""
-    login, password_b64 = await ipmi_svc.reveal_credentials(db, identity, controller_id)
-    return IpmiCredentialsRevealResponse(login=login, password_b64=password_b64)

@@ -425,10 +425,9 @@ async def _upsert_disks(
         existing = await disk_repo.get_by_server_and_device(
             db, server_id, item.name,
         )
-        size_bytes = int(item.size_gb) * 1024 * 1024 * 1024
         if existing is not None:
             await disk_repo.update(db, existing, {
-                "size_bytes": size_bytes,
+                "size_gb": item.size_gb,
                 "model": item.model,
                 "is_system": item.is_system,
             })
@@ -437,7 +436,7 @@ async def _upsert_disks(
                 "id": server_disk_id(),
                 "server_id": server_id,
                 "device_name": item.name,
-                "size_bytes": size_bytes,
+                "size_gb": item.size_gb,
                 "model": item.model,
                 "is_system": item.is_system,
             })

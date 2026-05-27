@@ -1,8 +1,10 @@
 """Use cases для OS-версий — глобальный каталог.
 
-Read доступен всем носителям view, CRUD — admin. Удаление версии, на
-которую ссылается хоть один сервер (`servers.os_version_id`), отбивается
-IntegrityError от FK ondelete=RESTRICT → 409 OS_VERSION_IN_USE.
+Read (list + get по id + get по имени) публичный: без identity, без
+проверки прав и без аудита — каталог ОС открыт на чтение всем.
+Запись (create/update/delete) остаётся под матрицей прав. Удаление
+версии, на которую ссылается хоть один сервер (`servers.os_version_id`),
+отбивается IntegrityError от FK ondelete=RESTRICT → 409 OS_VERSION_IN_USE.
 """
 
 import logging
@@ -74,28 +76,25 @@ async def create_os_version(
 
 async def get_os_version(
     db: AsyncSession,
-    identity: IdentityContext,
     os_version_id: str,
 ) -> OsVersion:
-    """SELECT OS-версии по PK."""
-    try:
-        await permissions.require_action(db, identity, EntityType.OS_VERSION, Action.VIEW)
-    except AuthorizationError:
-        audit_service.emit(
-            "os_version.view",
-            target_id=os_version_id, target_type="os_version",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
+    """SELECT OS-версии по PK. Публичный read — без auth и без аудита."""
     obj = await repo.get_by_id(db, os_version_id)
     if obj is None:
-        audit_service.emit(
-            "os_version.view",
-            target_id=os_version_id, target_type="os_version",
-            status="denied", allowed=False,
-            details={"reason": "not_found"},
+        raise NotFoundError(
+            error_code="OS_VERSION_NOT_FOUND",
+            message="OS version not found",
         )
+    return obj
+
+
+async def get_os_version_by_name(
+    db: AsyncSession,
+    name: str,
+) -> OsVersion:
+    """SELECT OS-версии по UNIQUE name. Публичный read — без auth и без аудита."""
+    obj = await repo.get_by_name(db, name)
+    if obj is None:
         raise NotFoundError(
             error_code="OS_VERSION_NOT_FOUND",
             message="OS version not found",
@@ -105,21 +104,10 @@ async def get_os_version(
 
 async def list_os_versions(
     db: AsyncSession,
-    identity: IdentityContext,
     limit: int,
     offset: int,
 ) -> tuple[list[OsVersion], int]:
-    """List + count полного каталога."""
-    try:
-        await permissions.require_action(db, identity, EntityType.OS_VERSION, Action.VIEW)
-    except AuthorizationError:
-        audit_service.emit(
-            "os_version.list",
-            target_type="os_version",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
+    """List + count полного каталога. Публичный read — без auth и без аудита."""
     items = await repo.list_all(db, limit=limit, offset=offset)
     total = await repo.count_all(db)
     return items, total

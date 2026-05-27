@@ -41,9 +41,9 @@ SERVICE_EVENTS = [
     {"action": "server.power_status", "description": "Server power state live-probed via worker (Redfish/ipmitool)", "default_severity": "INFO"},
     # Sensitive: показ расшифрованных секретов (internal endpoints для worker'а)
     {"action": "ipmi_controller.view_credentials", "description": "Decrypted IPMI credentials revealed (internal)", "default_severity": "WARNING"},
-    {"action": "ipmi_controller.credentials_revealed", "description": "Decrypted IPMI credentials revealed to user (login + base64 password) via /reveal-credentials", "default_severity": "WARNING"},
+    {"action": "ipmi_controller.credentials_revealed", "description": "Decrypted IPMI password revealed to user (base64) via GET ipmi card with view_credentials", "default_severity": "CRITICAL"},
     {"action": "server_account.view_password", "description": "Decrypted server account password revealed (internal)", "default_severity": "WARNING"},
-    {"action": "server_account.password_revealed", "description": "Decrypted server account password revealed to user (base64) via /reveal-password", "default_severity": "WARNING"},
+    {"action": "server_account.password_revealed", "description": "Decrypted server account password revealed to user (base64) via GET account card with view_password", "default_severity": "CRITICAL"},
     {"action": "server_account.rotate_password", "description": "Server account password rotated", "default_severity": "CRITICAL"},
     {"action": "internal.dept_header_missing", "description": "Internal endpoint called without X-Target-Department-Id header (soft mode bypassed server lookup)", "default_severity": "WARNING"},
     # Worker → server_service callbacks (write-direction internal API)

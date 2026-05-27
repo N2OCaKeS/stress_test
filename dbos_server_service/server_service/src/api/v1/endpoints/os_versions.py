@@ -1,4 +1,8 @@
-"""CRUD каталога OS-версий. Каталог глобальный, без dept-привязки."""
+"""CRUD каталога OS-версий. Каталог глобальный, без dept-привязки.
+
+Чтение (list / get по id / get по имени) публичное — без auth и без
+аудита. Запись (create/update/delete) остаётся под матрицей прав.
+"""
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,28 +20,39 @@ router = APIRouter(prefix="/os-versions")
     "",
     response_model=PaginatedResponse[OsVersionResponse],
     summary="Список OS-версий в каталоге",
-    description=(
-        "Глобальный каталог OS-версий. Read доступен всем носителям "
-        "`(os_version, *, view)`."
-    ),
-    responses={
-        403: {"description": "Нет роли с `view`."},
-    },
+    description="Глобальный каталог OS-версий. Публичный read — без авторизации.",
 )
 async def list_os_versions(
-    identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> PaginatedResponse[OsVersionResponse]:
-    """List OS-версий. Доступ: `(os_version, *, view)`."""
-    items, total = await svc.list_os_versions(db, identity, limit=limit, offset=offset)
+    """List OS-версий. Публичный, без авторизации."""
+    items, total = await svc.list_os_versions(db, limit=limit, offset=offset)
     return PaginatedResponse[OsVersionResponse](
         items=[OsVersionResponse.model_validate(i) for i in items],
         total=total,
         limit=limit,
         offset=offset,
     )
+
+
+@router.get(
+    "/by-name/{name}",
+    response_model=OsVersionResponse,
+    summary="Получить OS-версию по имени",
+    description="Карточка версии по UNIQUE-имени. Публичный read — без авторизации.",
+    responses={
+        404: {"description": "Версия не найдена."},
+    },
+)
+async def get_os_version_by_name(
+    name: str,
+    db: AsyncSession = Depends(get_db),
+) -> OsVersionResponse:
+    """Get OS-версии по имени. Публичный, без авторизации."""
+    obj = await svc.get_os_version_by_name(db, name)
+    return OsVersionResponse.model_validate(obj)
 
 
 @router.post(
@@ -68,19 +83,17 @@ async def create_os_version(
     "/{os_version_id}",
     response_model=OsVersionResponse,
     summary="Получить OS-версию",
-    description="Карточка версии.",
+    description="Карточка версии. Публичный read — без авторизации.",
     responses={
-        403: {"description": "Нет роли с `view`."},
         404: {"description": "Версия не найдена."},
     },
 )
 async def get_os_version(
     os_version_id: str,
-    identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> OsVersionResponse:
-    """Get OS-версии. Доступ: `(os_version, *, view)`."""
-    obj = await svc.get_os_version(db, identity, os_version_id)
+    """Get OS-версии по id. Публичный, без авторизации."""
+    obj = await svc.get_os_version(db, os_version_id)
     return OsVersionResponse.model_validate(obj)
 
 

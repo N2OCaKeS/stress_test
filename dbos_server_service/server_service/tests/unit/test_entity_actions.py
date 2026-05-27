@@ -175,10 +175,11 @@ class TestDefaultGrants:
         """Любая пара (entity_type, action) в seed должна быть в whitelist —
         кроме сущностей и actions, выпиленных follow-on миграциями
         (`cpu_model` удалена `b6f3a91d27e8`; boot_order/pxe_boot/reinstall_*
-        удалены `b8d4e3f9a712`). Их seed-строки удаляются на upgrade-step'е
-        соответствующей миграции, но в baseline-снимке остаются.
+        удалены `b8d4e3f9a712`; `disk` удалена `a7d2c4e8f0b1`). Их seed-строки
+        удаляются на upgrade-step'е соответствующей миграции, но в
+        baseline-снимке остаются.
         """
-        removed_entities = {"cpu_model"}
+        removed_entities = {"cpu_model", "disk"}
         removed_actions_server = {
             "boot_order_view", "boot_order_set",
             "pxe_boot", "reinstall_start",

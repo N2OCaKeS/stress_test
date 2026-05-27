@@ -9,7 +9,11 @@ from src.db.base import Base
 
 
 class ServerDisk(Base):
-    """Диск сервера: device_name, тип (hdd/ssd/nvme), модель, флаг системного."""
+    """Диск сервера: device_name, размер в гигабайтах, модель, флаг системного.
+
+    Управляется только через карточку сервера (раздел `storage`) — отдельного
+    CRUD-endpoint'а у дисков нет, изоляция отделов идёт через сервер-родитель.
+    """
 
     __tablename__ = "server_disks"
 
@@ -21,8 +25,7 @@ class ServerDisk(Base):
         index=True,
     )
     device_name: Mapped[str] = mapped_column(String(64), nullable=False)
-    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    size_gb: Mapped[int] = mapped_column(BigInteger, nullable=False)
     model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

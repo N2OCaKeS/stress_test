@@ -1,7 +1,8 @@
 """Pydantic-схемы для эндпоинтов /server-accounts.
 
-Пароли наружу не отдаём ни в одном response'е. На write — принимаем
-`password` опционально (если не задан, генерим серверной стороной).
+На write принимаем `password` опционально (если не задан — генерим серверной
+стороной). В GET-карточке `password_b64` отдаётся только держателю action
+`view_password`; для остальных поле остаётся `None`.
 """
 
 from datetime import datetime
@@ -67,7 +68,13 @@ class ServerAccountUpdate(BaseModel):
 
 
 class ServerAccountResponse(BaseModel):
-    """Карточка аккаунта в ответе. БЕЗ password/encrypted-token."""
+    """Карточка аккаунта в ответе.
+
+    `password_b64` заполняется только когда вызывающий держит action
+    `view_password` — тогда это base64(plaintext). У вызывающего без
+    `view_password` (только `view`) поле остаётся `None`. Сырого
+    `password_encrypted` в ответе нет никогда.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -83,6 +90,14 @@ class ServerAccountResponse(BaseModel):
     password_rotated_at: datetime | None = Field(
         default=None, description="Когда последний раз ротировался пароль."
     )
+    password_b64: str | None = Field(
+        default=None,
+        description=(
+            "Base64-encoded plaintext-пароль. Присутствует только если "
+            "вызывающий держит action `view_password`; иначе `null`. "
+            "Декодируется стандартным base64.b64decode перед использованием."
+        ),
+    )
     created_at: datetime = Field(description="Когда аккаунт создан.")
     updated_at: datetime = Field(description="Когда последний раз изменён.")
     created_by: str | None = Field(default=None, description="user_id, создавший аккаунт.")
@@ -94,19 +109,3 @@ class ServerAccountRotateResponse(BaseModel):
     id: str = Field(description="Account ID.")
     login: str = Field(description="OS-логин.")
     rotated_at: datetime = Field(description="UTC timestamp ротации.")
-
-
-class RevealPasswordResponse(BaseModel):
-    """Ответ на reveal-password — plaintext-пароль в base64.
-
-    Сам plaintext возвращается base64-encoded (standard b64), чтобы не
-    зависеть от транспортного слоя в отношении бинарных байт. UI/CLI
-    декодирует обратно непосредственно перед показом/использованием.
-    """
-
-    password_b64: str = Field(
-        description=(
-            "Base64-encoded plaintext-пароль OS-аккаунта. Получатель обязан "
-            "декодировать через стандартный base64.b64decode перед выводом."
-        ),
-    )

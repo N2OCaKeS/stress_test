@@ -367,8 +367,13 @@ async def rotate_password(
     db: AsyncSession,
     identity: IdentityContext,
     account_id: str,
+    new_password: str | None = None,
 ) -> ServerAccount:
     """User-инициированная ротация пароля. Новый пароль НЕ возвращается клиенту.
+
+    Если `new_password` передан — он уже прошёл парольную политику на схеме
+    (`ServerAccountRotateRequest`) и сохраняется как есть. Если нет —
+    генерируем серверной стороной (`secrets.token_urlsafe(32)`).
 
     Worker-callback path (`internal.rotate_account_password`) принимает уже
     готовый password от worker'а (после SSH-apply). Этот же путь — для
@@ -394,9 +399,9 @@ async def rotate_password(
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
-    new_password = _generate_password()
+    plaintext = new_password if new_password is not None else _generate_password()
     encrypted = secrets_service.encrypt(
-        new_password,
+        plaintext,
         aad=secrets_service.aad_for_server_account_password(obj.id),
     )
     updated = await repo.update_password(db, obj, encrypted)
@@ -410,7 +415,7 @@ async def rotate_password(
             "server_id": updated.server_id,
             "login": updated.login,
             "department_id": server.department_id,
-            "reason": "user_initiated",
+            "reason": "user_provided" if new_password is not None else "user_initiated",
             "rotated_at": updated.password_rotated_at.isoformat() if updated.password_rotated_at else None,
         },
     )

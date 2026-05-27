@@ -3,9 +3,49 @@
 from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from src.core.constants import BmcVendor, IpmiKind
+from src.core.password_policy import validate_password
 from src.schemas.disk import DiskResponse, DiskSpec
+
+
+class ServerIpmiCreate(BaseModel):
+    """IPMI-блок, вкладываемый в `ServerCreate`.
+
+    Те же поля, что у обычной регистрации контроллера, но без `server_id` —
+    он подставляется автоматически из создаваемого сервера. Контроллер пишется
+    в той же транзакции, что и сервер (атомарно).
+    """
+
+    kind: IpmiKind = Field(..., description="Тип BMC: idrac / ilo / ipmi / redfish.")
+    bmc_vendor: BmcVendor = Field(
+        default=BmcVendor.IPMI_GENERIC,
+        description=(
+            "Vendor BMC: idrac (Dell), ilo (HP), ipmi_generic (default). "
+            "Определяет конкретные Redfish-paths (`/Managers/<vendor-id>`)."
+        ),
+    )
+    endpoint_url: str = Field(
+        ..., min_length=1, max_length=512,
+        description="HTTPS URL Redfish API или IPMI host[:port].",
+    )
+    username: str = Field(
+        ..., min_length=1, max_length=128,
+        description="Логин IPMI/iDRAC/iLO-аккаунта.",
+    )
+    password: str = Field(
+        ..., min_length=1, max_length=512,
+        description=(
+            "Plaintext пароля BMC. Шифруется через `secrets_service.encrypt()` "
+            "ДО записи в БД, в ответе не возвращается."
+        ),
+    )
+
+    @field_validator("password")
+    @classmethod
+    def _check_password_policy(cls, value: str) -> str:
+        return validate_password(value)
 
 
 def _validate_storage(disks: list[DiskSpec]) -> list[DiskSpec]:
@@ -41,6 +81,14 @@ class ServerCreate(BaseModel):
     storage: list[DiskSpec] = Field(
         default_factory=list,
         description="Диски сервера: набор слотов (system/disk1/diskN) с размером в ГБ и флагом системного.",
+    )
+    ipmi: ServerIpmiCreate | None = Field(
+        default=None,
+        description=(
+            "Опциональный BMC-контроллер. Если передан — создаётся атомарно "
+            "вместе с сервером (тот же server_id). Управлять им дальше можно "
+            "через отдельные /servers/{id}/ipmi-эндпоинты."
+        ),
     )
 
     @model_validator(mode="after")

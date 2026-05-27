@@ -80,7 +80,9 @@ async def list_servers(
     description=(
         "Создаёт карточку сервера. `department_id` обязан совпадать со своим, "
         "иначе 403 DEPARTMENT_ISOLATION. Конфликт по "
-        "`hostname`/`ip_address`/`serial_number` → 409 SERVER_DUPLICATE."
+        "`hostname`/`ip_address`/`serial_number` → 409 SERVER_DUPLICATE. "
+        "Опциональный блок `ipmi` создаёт BMC-контроллер атомарно вместе с "
+        "сервером — дальше им управляют через /servers/{id}/ipmi-эндпоинты."
     ),
     response_description="Созданная карточка сервера.",
     responses={

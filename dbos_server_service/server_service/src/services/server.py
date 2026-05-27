@@ -14,7 +14,8 @@ from src.core.exceptions import (
     DomainValidationError,
     NotFoundError,
 )
-from src.models import Server, ServerDisk
+from src.models import IpmiController, Server, ServerDisk
+from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import server as repo
 from src.repositories import server_disk as disk_repo
 from src.schemas.disk import DiskSpec
@@ -22,12 +23,13 @@ from src.schemas.identity import IdentityContext
 from src.schemas.server import (
     ServerAcquireRequest,
     ServerCreate,
+    ServerIpmiCreate,
     ServerOsVersionUpdate,
     ServerUpdate,
 )
-from src.services import audit_service, permissions
+from src.services import audit_service, permissions, secrets_service
 from src.services.audit_helpers import emit_denied_on_authz_error
-from src.utils.ids import server_disk_id, server_id as new_id
+from src.utils.ids import ipmi_controller_id, server_disk_id, server_id as new_id
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +107,32 @@ async def _sync_storage(
             })
 
 
+async def _insert_ipmi(
+    db: AsyncSession, server_id: str, spec: ServerIpmiCreate,
+) -> IpmiController:
+    """Записать BMC-контроллер для только что созданного сервера.
+
+    Inline, а не вызов `ipmi_controller.create_controller`: тот делает свой
+    permission-check, visibility-load и собственный commit, поэтому в общей
+    транзакции с сервером его не переиспользовать. Шифрование пароля и AAD —
+    тот же паттерн, что в обычном create. commit делает caller.
+    """
+    controller_id = ipmi_controller_id()
+    encrypted = secrets_service.encrypt(
+        spec.password,
+        aad=secrets_service.aad_for_ipmi_credential(controller_id),
+    )
+    return await ipmi_repo.create(db, {
+        "id": controller_id,
+        "server_id": server_id,
+        "kind": spec.kind.value,
+        "bmc_vendor": spec.bmc_vendor.value,
+        "endpoint_url": spec.endpoint_url,
+        "username": spec.username,
+        "password_encrypted": encrypted,
+    })
+
+
 async def list_servers(
     db: AsyncSession,
     identity: IdentityContext,
@@ -177,6 +205,12 @@ async def create_server(
 
     Caller обязан указывать свой department_id, иначе DEPARTMENT_ISOLATION.
     UNIQUE-конфликт (hostname/ip/serial_number) → SERVER_DUPLICATE 409.
+
+    Если в теле есть блок `ipmi`, контроллер пишется в той же транзакции, что
+    и сервер: либо создаётся всё, либо ничего. Битый IPMI (например, дубль
+    server_id) откатывает и сервер. Право на сервер (`server.create`) покрывает
+    и создание вложенного контроллера — отдельный `ipmi_controller.create`
+    grant тут не требуется, операция идёт под одним server-create.
     """
     await permissions.require_action(db, identity, EntityType.SERVER, Action.CREATE)
     if payload.department_id != identity.department_id:
@@ -191,13 +225,16 @@ async def create_server(
             error_code="DEPARTMENT_ISOLATION",
             message="Cannot create a server in a different department",
         )
-    data = payload.model_dump(mode="json", exclude={"storage"})
+    data = payload.model_dump(mode="json", exclude={"storage", "ipmi"})
     data["id"] = new_id()
     data["created_by"] = identity.user_id
+    ipmi_obj: IpmiController | None = None
     try:
         obj = await repo.create(db, data)
         if payload.storage:
             await _sync_storage(db, obj.id, payload.storage)
+        if payload.ipmi is not None:
+            ipmi_obj = await _insert_ipmi(db, obj.id, payload.ipmi)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -227,6 +264,22 @@ async def create_server(
             "department_id": obj.department_id,
         },
     )
+    if ipmi_obj is not None:
+        await db.refresh(ipmi_obj)
+        audit_service.emit(
+            "ipmi_controller.create",
+            target_id=ipmi_obj.id,
+            target_type="ipmi_controller",
+            status="success",
+            allowed=True,
+            details={
+                "server_id": ipmi_obj.server_id,
+                "kind": ipmi_obj.kind,
+                "bmc_vendor": ipmi_obj.bmc_vendor,
+                "endpoint_url": ipmi_obj.endpoint_url,
+                "department_id": obj.department_id,
+            },
+        )
     return obj
 
 

@@ -34,7 +34,7 @@ class TestCreateWithVendor:
                 "bmc_vendor": "idrac",
                 "endpoint_url": "https://idrac.example.com",
                 "username": "root",
-                "password": "Calvin",
+                "password": "Calvin01",
             },
         )
         assert resp.status_code == 201, resp.text
@@ -51,7 +51,7 @@ class TestCreateWithVendor:
                 "bmc_vendor": "ilo",
                 "endpoint_url": "https://ilo.example.com",
                 "username": "admin",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 201, resp.text
@@ -70,7 +70,7 @@ class TestCreateWithVendor:
                 "bmc_vendor": "ipmi_generic",
                 "endpoint_url": "https://bmc.example.com",
                 "username": "u",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 201, resp.text
@@ -89,7 +89,7 @@ class TestCreateWithVendor:
                 "kind": "ipmi",
                 "endpoint_url": "https://bmc.example.com",
                 "username": "u",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 201, resp.text
@@ -108,7 +108,7 @@ class TestCreateWithVendor:
                 "bmc_vendor": "hpe_xyz",
                 "endpoint_url": "https://x",
                 "username": "u",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 422

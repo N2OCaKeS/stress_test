@@ -45,7 +45,7 @@ class TestCreateController:
                 "kind": "idrac",
                 "endpoint_url": "https://idrac.example.com",
                 "username": "ipmi_admin",
-                "password": "plain-secret-pw",
+                "password": "plain-secret-pw1",
             },
         )
         assert resp.status_code == 201
@@ -68,7 +68,7 @@ class TestCreateController:
                 "kind": "redfish",
                 "endpoint_url": "https://redfish.example.com",
                 "username": "u",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 201
@@ -113,7 +113,7 @@ class TestCreateController:
                 "kind": "ipmi",
                 "endpoint_url": "https://x",
                 "username": "u",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 403
@@ -127,7 +127,7 @@ class TestCreateController:
                 "kind": "ipmi",
                 "endpoint_url": "https://x",
                 "username": "u",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 403
@@ -141,7 +141,7 @@ class TestCreateController:
                 "kind": "idrac",
                 "endpoint_url": "https://x",
                 "username": "u",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 404
@@ -157,7 +157,7 @@ class TestCreateController:
                 "kind": "redfish",
                 "endpoint_url": "https://other.example.com",
                 "username": "another",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 409
@@ -167,7 +167,7 @@ class TestCreateController:
         srv = await make_server(department_id="dep_a")
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi",
-            json={"kind": "idrac", "endpoint_url": "x", "username": "u", "password": "p"},
+            json={"kind": "idrac", "endpoint_url": "x", "username": "u", "password": "bmc-pass-1"},
         )
         assert resp.status_code == 401
 
@@ -448,7 +448,7 @@ class TestRotateCredentials:
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
             headers=_hdr(worker_bot_token_a),
-            json={"password": "applied-by-worker-via-redfish"},
+            json={"password": "applied-by-worker-via-redfish-1"},
         )
         assert resp.status_code == 200
 
@@ -502,6 +502,112 @@ class TestRotateCredentials:
         assert resp.json().get("error_code") == "IPMI_NOT_FOUND"
 
 
+# ── Парольная политика на create / rotate ────────────────────────────────────
+
+
+class TestPasswordPolicy:
+    """IPMI create и credentials/rotate с ручным паролем гейтятся политикой."""
+
+    @pytest.mark.parametrize(
+        "bad_password",
+        ["short1", "nodigitshere", "12345678", "ab12"],
+        ids=["too_short", "no_digit", "no_letter", "short_no_min"],
+    )
+    async def test_create_rejects_weak_password(
+        self, client, admin_token, make_server, bad_password,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/ipmi",
+            headers=_hdr(admin_token),
+            json={
+                "kind": "idrac",
+                "endpoint_url": "https://idrac.example.com",
+                "username": "u",
+                "password": bad_password,
+            },
+        )
+        assert resp.status_code == 422
+
+    async def test_create_accepts_compliant_password(
+        self, client, admin_token, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/ipmi",
+            headers=_hdr(admin_token),
+            json={
+                "kind": "idrac",
+                "endpoint_url": "https://idrac.example.com",
+                "username": "u",
+                "password": "valid-pass-9",
+            },
+        )
+        assert resp.status_code == 201
+
+    @pytest.mark.parametrize(
+        "bad_password",
+        ["short1", "nodigitshere", "12345678"],
+        ids=["too_short", "no_digit", "no_letter"],
+    )
+    async def test_rotate_rejects_weak_password(
+        self, client, admin_token, make_server, make_ipmi, bad_password,
+    ):
+        srv = await make_server(department_id="dep_a")
+        await make_ipmi(server_id=srv.id)
+        resp = await client.post(
+            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
+            headers=_hdr(admin_token),
+            json={"password": bad_password},
+        )
+        assert resp.status_code == 422
+
+    async def test_rotate_accepts_compliant_password(
+        self, client, admin_token, make_server, make_ipmi, db,
+    ):
+        from src.models import IpmiController
+        from sqlalchemy import select
+
+        srv = await make_server(department_id="dep_a")
+        await make_ipmi(server_id=srv.id)
+        resp = await client.post(
+            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
+            headers=_hdr(admin_token),
+            json={"password": "manual-rotate-7"},
+        )
+        assert resp.status_code == 200
+        row = (
+            await db.execute(
+                select(IpmiController).where(IpmiController.server_id == srv.id)
+            )
+        ).scalar_one()
+        assert secrets_service.decrypt(
+            row.password_encrypted,
+            aad=secrets_service.aad_for_ipmi_credential(row.id),
+        ) == "manual-rotate-7"
+
+    async def test_rotate_without_body_generates(
+        self, client, admin_token, make_server, make_ipmi, db,
+    ):
+        from src.models import IpmiController
+        from sqlalchemy import select
+
+        srv = await make_server(department_id="dep_a")
+        ctrl = await make_ipmi(server_id=srv.id, password="initial-secret-1")
+        original_encrypted = ctrl.password_encrypted
+        resp = await client.post(
+            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
+            headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200
+        row = (
+            await db.execute(
+                select(IpmiController).where(IpmiController.server_id == srv.id)
+            )
+        ).scalar_one()
+        assert row.password_encrypted != original_encrypted
+
+
 # ── Audit emission ───────────────────────────────────────────────────────────
 
 
@@ -537,7 +643,7 @@ class TestAuditEmission:
                 "kind": "idrac",
                 "endpoint_url": "https://x",
                 "username": "u",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 201
@@ -564,7 +670,7 @@ class TestAuditEmission:
                 "kind": "idrac",
                 "endpoint_url": "x",
                 "username": "u",
-                "password": "p",
+                "password": "bmc-pass-1",
             },
         )
         assert resp.status_code == 403
@@ -625,7 +731,7 @@ class TestAuditEmission:
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
             headers=_hdr(admin_token),
-            json={"password": "applied"},
+            json={"password": "applied-pw-1"},
         )
         assert resp.status_code == 200
         events = [

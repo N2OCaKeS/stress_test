@@ -8,9 +8,10 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.constants import BmcVendor, IpmiKind
+from src.core.password_policy import validate_password
 
 
 class IpmiControllerCreate(BaseModel):
@@ -33,12 +34,18 @@ class IpmiControllerCreate(BaseModel):
         description="Логин IPMI/iDRAC/iLO-аккаунта.",
     )
     password: str = Field(
-        ..., min_length=1, max_length=512,
+        ..., max_length=512,
         description=(
             "Plaintext пароля. Шифруется через `secrets_service.encrypt()` ДО "
-            "записи в БД, в ответе не возвращается."
+            "записи в БД, в ответе не возвращается. Действует политика: "
+            "минимум 8 символов, буквы и цифры."
         ),
     )
+
+    @field_validator("password")
+    @classmethod
+    def _check_password_policy(cls, value: str) -> str:
+        return validate_password(value)
 
 
 class IpmiControllerUpdate(BaseModel):
@@ -111,13 +118,21 @@ class IpmiCredentialsRotateRequest(BaseModel):
     """
 
     password: str | None = Field(
-        default=None, min_length=1, max_length=512,
+        default=None, max_length=512,
         description=(
             "Plaintext нового пароля (например, callback от worker'а после "
             "успешного применения через Redfish/IPMI-tool). Если пуст — "
-            "сервер сгенерирует случайный."
+            "сервер сгенерирует случайный. При ручном вводе действует "
+            "политика: минимум 8 символов, буквы и цифры."
         ),
     )
+
+    @field_validator("password")
+    @classmethod
+    def _check_password_policy(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_password(value)
 
 
 class IpmiCredentialsRotateResponse(BaseModel):

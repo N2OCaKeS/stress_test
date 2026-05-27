@@ -16,6 +16,7 @@ from src.schemas.common import OkResponse, PaginatedResponse
 from src.schemas.server_account import (
     ServerAccountCreate,
     ServerAccountResponse,
+    ServerAccountRotateRequest,
     ServerAccountRotateResponse,
     ServerAccountUpdate,
 )
@@ -166,24 +167,29 @@ async def delete_account(
     response_model=ServerAccountRotateResponse,
     summary="Ротация пароля (user-initiated)",
     description=(
-        "Генерит новый пароль через `secrets.token_urlsafe(32)`, шифрует и "
-        "сохраняет. Plaintext в ответ НЕ возвращается — забрать его сможет "
-        "только worker через internal-endpoint при следующем SSH-apply'е. "
-        "Параллельный worker-callback path (`internal/.../password/rotate`) "
-        "продолжает работать."
+        "Принимает опциональный `password` в body. Если передан — проходит "
+        "политику (минимум 8 символов, буквы и цифры) и сохраняется; если "
+        "нет — генерит новый через `secrets.token_urlsafe(32)`. Plaintext в "
+        "ответ НЕ возвращается — забрать его сможет только worker через "
+        "internal-endpoint при следующем SSH-apply'е. Параллельный "
+        "worker-callback path (`internal/.../password/rotate`) продолжает "
+        "работать."
     ),
     responses={
         403: {"description": "Нет `rotate_password`."},
         404: {"description": "Аккаунт не найден / чужой dept."},
+        422: {"description": "Переданный пароль не проходит политику."},
     },
 )
 async def rotate_password(
     account_id: str,
     identity: CurrentIdentity,
+    body: ServerAccountRotateRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountRotateResponse:
     """Rotate-эндпоинт. Доступ: `(server_account, *, rotate_password)`. Аудит — CRITICAL."""
-    obj = await svc.rotate_password(db, identity, account_id)
+    new_password = body.password if body is not None else None
+    obj = await svc.rotate_password(db, identity, account_id, new_password)
     return ServerAccountRotateResponse(
         id=obj.id,
         login=obj.login,

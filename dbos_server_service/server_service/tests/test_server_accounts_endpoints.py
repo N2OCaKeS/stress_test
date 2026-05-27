@@ -517,6 +517,120 @@ class TestRotatePassword:
         )
         assert resp.status_code == 404
 
+    async def test_manual_password_is_applied(
+        self, client, operator_token_a, make_server, make_account, db,
+    ):
+        """Переданный в body пароль (проходящий политику) сохраняется как есть."""
+        from src.models import ServerAccount
+        from src.services import secrets_service
+        from sqlalchemy import select
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="old-secret1")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/rotate_password",
+            headers=_hdr(operator_token_a),
+            json={"password": "manual-rotate-7"},
+        )
+        assert resp.status_code == 200
+        assert "manual-rotate-7" not in resp.text
+
+        row = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc.id)
+        )).scalar_one()
+        assert secrets_service.decrypt(
+            row.password_encrypted,
+            aad=secrets_service.aad_for_server_account_password(row.id),
+        ) == "manual-rotate-7"
+
+    async def test_no_body_falls_back_to_generation(
+        self, client, operator_token_a, make_server, make_account, db,
+    ):
+        """Без body (и без password) пароль генерится сервером."""
+        from src.models import ServerAccount
+        from src.services import secrets_service
+        from sqlalchemy import select
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="old-secret1")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/rotate_password",
+            headers=_hdr(operator_token_a),
+            json={},
+        )
+        assert resp.status_code == 200
+        row = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc.id)
+        )).scalar_one()
+        generated = secrets_service.decrypt(
+            row.password_encrypted,
+            aad=secrets_service.aad_for_server_account_password(row.id),
+        )
+        assert generated != "old-secret1"
+        assert len(generated) >= 16
+
+
+# ── Парольная политика на create / rotate ────────────────────────────────────
+
+class TestPasswordPolicy:
+    """create и rotate с ручным паролем гейтятся политикой: ≥8, буквы и цифры."""
+
+    @pytest.mark.parametrize(
+        "bad_password",
+        ["short1", "nodigitshere", "12345678", "ab12"],
+        ids=["too_short", "no_digit", "no_letter", "short_no_min"],
+    )
+    async def test_create_rejects_weak_password(
+        self, client, admin_token, make_server, bad_password,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_token),
+            json={"server_id": srv.id, "login": "root", "password": bad_password},
+        )
+        assert resp.status_code == 422
+
+    async def test_create_accepts_compliant_password(
+        self, client, admin_token, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_token),
+            json={"server_id": srv.id, "login": "root", "password": "valid-pass-9"},
+        )
+        assert resp.status_code == 201
+
+    async def test_create_without_password_skips_policy(
+        self, client, admin_token, make_server,
+    ):
+        """Без password политика не применяется — сервер генерит сам."""
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_token),
+            json={"server_id": srv.id, "login": "deploy"},
+        )
+        assert resp.status_code == 201
+
+    @pytest.mark.parametrize(
+        "bad_password",
+        ["short1", "nodigitshere", "12345678"],
+        ids=["too_short", "no_digit", "no_letter"],
+    )
+    async def test_rotate_rejects_weak_password(
+        self, client, operator_token_a, make_server, make_account, bad_password,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id)
+        resp = await client.post(
+            f"{BASE}/{acc.id}/rotate_password",
+            headers=_hdr(operator_token_a),
+            json={"password": bad_password},
+        )
+        assert resp.status_code == 422
+
 
 # ── GET /{id} — раскрытие пароля через view_password ────────────────────────
 

@@ -7,7 +7,9 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from src.core.password_policy import validate_password
 
 
 class ServerAccountCreate(BaseModel):
@@ -31,11 +33,11 @@ class ServerAccountCreate(BaseModel):
     )
     password: str | None = Field(
         default=None,
-        min_length=1,
         max_length=512,
         description=(
             "Plaintext пароля. Если не передан — сервер сгенерирует "
-            "`secrets.token_urlsafe(32)`."
+            "`secrets.token_urlsafe(32)`. При ручном вводе действует "
+            "политика: минимум 8 символов, буквы и цифры."
         ),
     )
     has_sudo: bool = Field(
@@ -54,6 +56,13 @@ class ServerAccountCreate(BaseModel):
     home_dir: str | None = Field(
         default=None, max_length=256, description="Путь home-директории."
     )
+
+    @field_validator("password")
+    @classmethod
+    def _check_password_policy(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_password(value)
 
 
 class ServerAccountUpdate(BaseModel):
@@ -101,6 +110,33 @@ class ServerAccountResponse(BaseModel):
     created_at: datetime = Field(description="Когда аккаунт создан.")
     updated_at: datetime = Field(description="Когда последний раз изменён.")
     created_by: str | None = Field(default=None, description="user_id, создавший аккаунт.")
+
+
+class ServerAccountRotateRequest(BaseModel):
+    """Тело POST /server-accounts/{id}/rotate_password.
+
+    `password` опционален: если передан — проходит политику (минимум 8
+    символов, буквы и цифры) и используется как новый пароль; если нет —
+    сервер генерирует `secrets.token_urlsafe(32)`. Plaintext в ответ не
+    возвращается ни в одном случае.
+    """
+
+    password: str | None = Field(
+        default=None,
+        max_length=512,
+        description=(
+            "Plaintext нового пароля. Если пуст — сервер сгенерирует "
+            "случайный. При ручном вводе действует политика: минимум 8 "
+            "символов, буквы и цифры."
+        ),
+    )
+
+    @field_validator("password")
+    @classmethod
+    def _check_password_policy(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_password(value)
 
 
 class ServerAccountRotateResponse(BaseModel):

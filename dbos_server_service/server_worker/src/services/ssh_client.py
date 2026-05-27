@@ -21,10 +21,12 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import Any
 
 from src.clients.ssh import SshClient, SshError
+from src.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,69 @@ def _extract_port(credentials: dict) -> int:
         return int(port)
     except (TypeError, ValueError):
         return 22
+
+
+def _build_session(credentials: dict, server_id: str) -> SshClient:
+    """Собрать `SshClient` под привилегированную операцию.
+
+    Две сессии в зависимости от того, прошёл ли сервер `prepare`:
+
+    * **управляемый** (`credentials['is_managed']` истинно) — заходим под
+      управляющим пользователем (`management_user`, из payload или дефолтного
+      `SSH_MANAGEMENT_USER`) по приватному ключу (`SSH_MANAGEMENT_PRIVATE_KEY_PATH`).
+      Пароль аккаунта в сессию не идёт; sudo на ключевой сессии работает
+      через настроенный во время prepare доступ управляющего пользователя.
+    * **не управляемый** — старое поведение: сессия под самим аккаунтом
+      (`login` + `password`), как было до онбординга.
+
+    Если сервер помечен управляемым, но управляющий ключ в конфиге не задан —
+    поднимаем понятный `SshError(SSH_MANAGEMENT_KEY_MISSING)`, не падая внутри
+    asyncssh с невнятным сообщением.
+    """
+    host = _extract_host(credentials, server_id)
+    port = _extract_port(credentials)
+    known_hosts = credentials.get("known_hosts")
+
+    if credentials.get("is_managed"):
+        settings = get_settings()
+        key_path = settings.ssh_management_private_key_path
+        if not key_path:
+            raise SshError(
+                error_code="SSH_MANAGEMENT_KEY_MISSING",
+                host=host,
+                message=(
+                    "server is managed but SSH_MANAGEMENT_PRIVATE_KEY_PATH is "
+                    "not configured on the worker"
+                ),
+            )
+        if not os.path.isfile(key_path):
+            raise SshError(
+                error_code="SSH_MANAGEMENT_KEY_MISSING",
+                host=host,
+                message="management private key file not found at configured path",
+            )
+        management_user = (
+            credentials.get("management_user") or settings.ssh_management_user
+        )
+        logger.info("ssh management session on %s as %s (key)", host, management_user)
+        return SshClient(
+            host=host,
+            username=management_user,
+            password=None,
+            port=port,
+            known_hosts=known_hosts,
+            client_keys=[key_path],
+        )
+
+    username = credentials.get("login") or credentials.get("username") or "root"
+    password = credentials.get("password")
+    return SshClient(
+        host=host,
+        username=username,
+        password=password,
+        port=port,
+        known_hosts=known_hosts,
+    )
 
 
 async def collect_inventory(credentials: dict, server_id: str) -> dict:
@@ -99,21 +164,12 @@ async def collect_os_users(credentials: dict, server_id: str) -> dict:
     Парсинг и UID-фильтр делает `os_users_facts_to_payload`.
 
     Ошибки: `SshError` пробрасывается наверх, `_runner` ловит.
-    """
-    host = _extract_host(credentials, server_id)
-    username = credentials.get("login") or credentials.get("username") or "root"
-    password = credentials.get("password")
-    port = _extract_port(credentials)
-    known_hosts = credentials.get("known_hosts")
 
-    logger.info("ssh user inventory on %s as %s", host, username)
-    async with SshClient(
-        host=host,
-        username=username,
-        password=password,
-        port=port,
-        known_hosts=known_hosts,
-    ) as ssh:
+    На управляемом сервере (`credentials['is_managed']`) сессия идёт под
+    управляющим пользователем по ключу; иначе — под самим аккаунтом.
+    """
+    logger.info("ssh user inventory on %s", _extract_host(credentials, server_id))
+    async with _build_session(credentials, server_id) as ssh:
         return await ssh.get_os_users()
 
 
@@ -132,21 +188,13 @@ async def set_account_password(
 
     Ошибки: `SshError` пробрасывается. Connection / auth / chpasswd
     failure — разные `error_code`'ы.
-    """
-    host = _extract_host(credentials, server_id)
-    username = credentials.get("login") or credentials.get("username") or "root"
-    password = credentials.get("password")
-    port = _extract_port(credentials)
-    known_hosts = credentials.get("known_hosts")
 
-    logger.info("ssh chpasswd %s on %s as %s", login, host, username)
-    async with SshClient(
-        host=host,
-        username=username,
-        password=password,
-        port=port,
-        known_hosts=known_hosts,
-    ) as ssh:
+    На управляемом сервере (`credentials['is_managed']`) сессия идёт под
+    управляющим пользователем по ключу (chpasswd через sudo); иначе — под
+    самим аккаунтом по паролю.
+    """
+    logger.info("ssh chpasswd %s on %s", login, _extract_host(credentials, server_id))
+    async with _build_session(credentials, server_id) as ssh:
         await ssh.set_password(login, new_password)
     return {"rotated": True}
 
@@ -164,28 +212,17 @@ async def provision_user(
 ) -> dict:
     """Завести OS-пользователя `login` на удалённом хосте (`useradd`).
 
-    `credentials` — те же поля, что у `set_account_password` (login/password
-    SSH-сессии + host/port/known_hosts). Сессия идёт под management-аккаунтом
-    (creds['login']), а заводим — `login` (как при ротации чужого пароля).
+    `credentials` — те же поля, что у `set_account_password` (host/port/
+    known_hosts + login/password для self-сессии). На управляемом сервере
+    (`credentials['is_managed']`) сессия идёт под управляющим пользователем по
+    ключу с sudo; иначе — под самим аккаунтом. Заводим всегда `login`.
 
     Idempotent: уже существующий пользователь синхронизируется, не падает.
 
     Возврат — `{provisioned: True}`. Ошибки — `SshError`.
     """
-    host = _extract_host(credentials, server_id)
-    username = credentials.get("login") or credentials.get("username") or "root"
-    password = credentials.get("password")
-    port = _extract_port(credentials)
-    known_hosts = credentials.get("known_hosts")
-
-    logger.info("ssh useradd %s on %s as %s", login, host, username)
-    async with SshClient(
-        host=host,
-        username=username,
-        password=password,
-        port=port,
-        known_hosts=known_hosts,
-    ) as ssh:
+    logger.info("ssh useradd %s on %s", login, _extract_host(credentials, server_id))
+    async with _build_session(credentials, server_id) as ssh:
         await ssh.create_user(
             login,
             new_password=new_password,
@@ -209,22 +246,12 @@ async def modify_user(
     """Синхронизировать атрибуты пользователя `login` (`usermod`).
 
     Меняет shell и состав групп (sudo доклеивается при `has_sudo`). Пароль не
-    трогает. Возврат — `{modified: True}`. Ошибки — `SshError`.
+    трогает. На управляемом сервере (`credentials['is_managed']`) сессия идёт
+    под управляющим пользователем по ключу с sudo; иначе — под самим аккаунтом.
+    Возврат — `{modified: True}`. Ошибки — `SshError`.
     """
-    host = _extract_host(credentials, server_id)
-    username = credentials.get("login") or credentials.get("username") or "root"
-    password = credentials.get("password")
-    port = _extract_port(credentials)
-    known_hosts = credentials.get("known_hosts")
-
-    logger.info("ssh usermod %s on %s as %s", login, host, username)
-    async with SshClient(
-        host=host,
-        username=username,
-        password=password,
-        port=port,
-        known_hosts=known_hosts,
-    ) as ssh:
+    logger.info("ssh usermod %s on %s", login, _extract_host(credentials, server_id))
+    async with _build_session(credentials, server_id) as ssh:
         await ssh.modify_user(
             login, groups=groups, has_sudo=has_sudo, shell=shell,
         )
@@ -241,22 +268,13 @@ async def delete_user(
     """Удалить пользователя `login` на удалённом хосте (`userdel`).
 
     Idempotent: отсутствующий пользователь — не ошибка. `remove_home=True`
-    сносит home. Возврат — `{deleted: True}`. Ошибки — `SshError`.
+    сносит home. На управляемом сервере (`credentials['is_managed']`) сессия
+    идёт под управляющим пользователем по ключу с sudo; иначе — под самим
+    аккаунтом (нельзя удалить юзера, под которым залогинен — для этого и нужен
+    управляющий пользователь). Возврат — `{deleted: True}`. Ошибки — `SshError`.
     """
-    host = _extract_host(credentials, server_id)
-    username = credentials.get("login") or credentials.get("username") or "root"
-    password = credentials.get("password")
-    port = _extract_port(credentials)
-    known_hosts = credentials.get("known_hosts")
-
-    logger.info("ssh userdel %s on %s as %s", login, host, username)
-    async with SshClient(
-        host=host,
-        username=username,
-        password=password,
-        port=port,
-        known_hosts=known_hosts,
-    ) as ssh:
+    logger.info("ssh userdel %s on %s", login, _extract_host(credentials, server_id))
+    async with _build_session(credentials, server_id) as ssh:
         await ssh.delete_user(login, remove_home=remove_home)
     return {"deleted": True}
 

@@ -90,6 +90,68 @@ class TestCreateOsVersion:
         assert resp2.json()["error_code"] == "OS_VERSION_DUPLICATE"
 
 
+# ── Валидация repositories ────────────────────────────────────────────────────
+
+class TestRepositoriesValidation:
+    @pytest.mark.parametrize("bad_repo", [
+        "ftp://repo.example.org/a",
+        "not-a-url",
+        "repo.example.org/a",
+        "https://",
+        "",
+        "javascript:alert(1)",
+    ])
+    async def test_create_rejects_invalid_repo_url(
+        self, client, admin_role_token_a, bad_repo,
+    ):
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json=_payload(name="osv-bad-repo", repositories=[bad_repo]),
+        )
+        assert resp.status_code == 422, resp.text
+
+    async def test_create_rejects_too_many_repos(self, client, admin_role_token_a):
+        repos = [f"https://repo.example.org/{i}" for i in range(65)]
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json=_payload(name="osv-too-many", repositories=repos),
+        )
+        assert resp.status_code == 422, resp.text
+
+    async def test_create_rejects_overlong_repo_url(self, client, admin_role_token_a):
+        long_url = "https://repo.example.org/" + "a" * 2100
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json=_payload(name="osv-long", repositories=[long_url]),
+        )
+        assert resp.status_code == 422, resp.text
+
+    async def test_create_accepts_http_and_https(self, client, admin_role_token_a):
+        repos = ["http://repo.example.org/a", "https://repo.example.org/b"]
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json=_payload(name="osv-good-repos", repositories=repos),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["repositories"] == repos
+
+    async def test_update_rejects_invalid_repo_url(self, client, admin_role_token_a):
+        created = await client.post(
+            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-upd-bad"),
+        )
+        ov_id = created.json()["id"]
+        resp = await client.patch(
+            f"{BASE}/{ov_id}",
+            headers=_hdr(admin_role_token_a),
+            json={"repositories": ["ftp://repo.example.org/x"]},
+        )
+        assert resp.status_code == 422, resp.text
+
+
 # ── GET (list) — публичный ────────────────────────────────────────────────────
 
 class TestListOsVersions:

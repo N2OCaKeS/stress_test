@@ -291,3 +291,62 @@ class TestProvisionStatusCallback:
             json={"operation": "frobnicate", "present": True},
         )
         assert resp.status_code == 422
+
+
+# ── Management-session hints in dispatch payload ─────────────────────────────
+
+
+class TestManagementSessionPayload:
+    """is_managed/management_user пробрасываются в payload задачи.
+
+    Worker по ним выбирает сессию: подготовленный сервер → управляющий
+    пользователь по ключу; иначе → self-сессия под аккаунтом.
+    """
+
+    async def test_managed_server_propagates_hints(
+        self, client, operator_token_a, make_server, make_account, captured_dispatch, db,
+    ):
+        srv = await make_server(department_id="dep_a")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
+        acc = await make_account(server_id=srv.id, login="ops", password="pw1")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/provision?server_id={srv.id}",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        payload = captured_dispatch[0]["payload"]
+        assert payload["is_managed"] is True
+        assert payload["management_user"] == "dbos"
+
+    async def test_unmanaged_server_defaults_hints(
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password="pw1")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/provision?server_id={srv.id}",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        payload = captured_dispatch[0]["payload"]
+        assert payload["is_managed"] is False
+        assert payload["management_user"] is None
+
+    async def test_deprovision_propagates_hints(
+        self, client, admin_role_token_a, make_server, make_account, captured_dispatch, db,
+    ):
+        srv = await make_server(department_id="dep_a")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
+        acc = await make_account(server_id=srv.id, login="ops", password="pw1")
+        resp = await client.post(
+            f"{BASE}/{acc.id}/deprovision?server_id={srv.id}",
+            headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        payload = captured_dispatch[0]["payload"]
+        assert payload["is_managed"] is True
+        assert payload["management_user"] == "dbos"

@@ -99,6 +99,8 @@ class TestConstantsMigrationSync:
                 "boot_order_view", "boot_order_set",
                 "pxe_boot", "reinstall_start", "reinstall_status_submit",
             },
+            # `view` снят миграцией c1a9f2b7e4d8 — чтение каталога стало публичным.
+            "os_version": {"view"},
         }
         for entity_type, actions in ENTITY_ACTIONS.items():
             migration_actions = set(seed._ALL_ACTIONS[entity_type])
@@ -175,20 +177,23 @@ class TestDefaultGrants:
         """Любая пара (entity_type, action) в seed должна быть в whitelist —
         кроме сущностей и actions, выпиленных follow-on миграциями
         (`cpu_model` удалена `b6f3a91d27e8`; boot_order/pxe_boot/reinstall_*
-        удалены `b8d4e3f9a712`; `disk` удалена `a7d2c4e8f0b1`). Их seed-строки
-        удаляются на upgrade-step'е соответствующей миграции, но в
-        baseline-снимке остаются.
+        удалены `b8d4e3f9a712`; `disk` удалена `a7d2c4e8f0b1`;
+        `os_version.view` снят `c1a9f2b7e4d8`). Их seed-строки удаляются на
+        upgrade-step'е соответствующей миграции, но в baseline-снимке остаются.
         """
         removed_entities = {"cpu_model", "disk"}
-        removed_actions_server = {
-            "boot_order_view", "boot_order_set",
-            "pxe_boot", "reinstall_start",
+        removed_actions = {
+            "server": {
+                "boot_order_view", "boot_order_set",
+                "pxe_boot", "reinstall_start",
+            },
+            "os_version": {"view"},
         }
         invalid = []
         for entity, role, action in seed._grants():
             if entity in removed_entities:
                 continue
-            if entity == "server" and action in removed_actions_server:
+            if action in removed_actions.get(entity, set()):
                 continue
             if not is_valid_action(entity, action):
                 invalid.append((entity, role, action))

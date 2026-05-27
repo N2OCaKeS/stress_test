@@ -165,8 +165,10 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         # тоже callback-only, без CRUD.
         Action.PROVISION_ON_HOST,
     }),
+    # Чтение каталога публичное (без auth) — view-грант осиротел и снят
+    # миграцией c1a9f2b7e4d8; под матрицей остаётся только запись.
     EntityType.OS_VERSION: frozenset({
-        Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
+        Action.CREATE, Action.UPDATE, Action.DELETE,
     }),
     EntityType.IPMI_CONTROLLER: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,

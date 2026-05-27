@@ -218,7 +218,14 @@ async def trigger_users_inventory(
             message="Server is decommissioned and cannot be inventoried",
         )
     idempotency_key = request.headers.get("Idempotency-Key") or None
-    payload = {"server_id": server_id, "target_department_id": server.department_id}
+    payload = {
+        "server_id": server_id,
+        "target_department_id": server.department_id,
+        # Подготовленный сервер инвентаризируется под управляющим пользователем
+        # по ключу; иначе — под дефолтным/переданным аккаунтом.
+        "is_managed": server.is_managed,
+        "management_user": server.management_user,
+    }
     try:
         task_id = await worker_client.dispatch_task(
             task_kind="users.inventory",

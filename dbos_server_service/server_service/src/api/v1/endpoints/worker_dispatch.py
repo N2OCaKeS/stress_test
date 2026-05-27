@@ -289,6 +289,10 @@ async def _dispatch_account_on_host(
         "unix_groups": list(account.unix_groups),
         "shell": account.shell,
         "home_dir": account.home_dir,
+        # Если сервер прошёл prepare — worker зайдёт под управляющим
+        # пользователем по ключу с sudo, а не self-сессией под аккаунтом.
+        "is_managed": server.is_managed,
+        "management_user": server.management_user,
     }
     if extra_payload:
         payload.update(extra_payload)
@@ -632,6 +636,10 @@ async def account_rotate_password_dispatch(
             "server_id": server.id,
             "account_id": account_id,
             "target_department_id": server.department_id,
+            # На подготовленном сервере worker применит chpasswd под управляющим
+            # пользователем по ключу с sudo вместо self-сессии под аккаунтом.
+            "is_managed": server.is_managed,
+            "management_user": server.management_user,
         }
         try:
             task_id = await worker_client.dispatch_task(

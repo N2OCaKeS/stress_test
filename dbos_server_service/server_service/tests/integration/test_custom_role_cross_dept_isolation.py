@@ -79,7 +79,7 @@ class TestCrossDeptIsolation:
     async def test_dept_b_user_with_same_role_name_does_not_get_dept_a_grant(
         self,
         client, db,
-        dept_admin_token_a, make_token, dept_a, dept_b,
+        dept_admin_token_a, dept_a, dept_b,
     ):
         """The exploit scenario: dept_A admin grants (server, delete) to
         ``my_custom_role``. A dept_B user happens to also carry the
@@ -94,28 +94,9 @@ class TestCrossDeptIsolation:
         assert grant.status_code == 200
         assert grant.json()["department_id"] == dept_a
 
-        # Step 2 — dept_B user with same role-name name.
-        dept_b_user_token = make_token(
-            department_id=dept_b,
-            service_roles={"server_service": ["my_custom_role"]},
-        )
-
-        # Step 3 — checking has_action on the SERVER entity for DELETE,
-        #          via a real endpoint that uses ``require_action``. We use
-        #          /permissions (which requires permission.view) as a
-        #          surrogate: dept_B user with only `my_custom_role` and NO
-        #          per-dept grant on (permission, view) should get 403.
-        #          That confirms repo.has_action does not match cross-dept rows.
-        from src.dependencies.auth import SERVICE_NAME
-        from src.schemas.identity import IdentityContext
-        identity_b = IdentityContext(
-            user_id="usr_b",
-            username="user_b",
-            department_id=dept_b,
-            allowed_services=[SERVICE_NAME],
-            service_roles={"server_service": ["my_custom_role"]},
-        )
-        # Direct repo check — the lowest level, no endpoint indirection.
+        # Step 2 — a dept_B user carrying the same role-name MUST NOT inherit
+        #          the dept_A grant. Checked at the repo level (has_action),
+        #          the lowest layer with no endpoint indirection.
         leak = await repo.has_action(
             db, "server", ["my_custom_role"], "delete",
             department_id=dept_b,

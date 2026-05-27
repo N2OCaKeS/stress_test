@@ -267,7 +267,27 @@ class TestAccountRotateDispatch:
             "server_id": srv.id,
             "account_id": acc.id,
             "target_department_id": "dep_a",
+            "is_managed": False,
+            "management_user": None,
         }
+
+    async def test_managed_server_propagates_session_hints(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch, db,
+    ):
+        srv = await make_server(department_id="dep_a")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
+        acc = await make_account(server_id=srv.id, login="appuser")
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        payload = captured_dispatch[0]["payload"]
+        assert payload["is_managed"] is True
+        assert payload["management_user"] == "dbos"
 
     async def test_reader_cannot_rotate(
         self, client, reader_token_a, make_server, make_account,

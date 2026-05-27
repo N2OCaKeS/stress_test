@@ -99,7 +99,24 @@ class TestUsersInventoryTrigger:
         assert captured_dispatch[0]["payload"] == {
             "server_id": srv.id,
             "target_department_id": "dep_a",
+            "is_managed": False,
+            "management_user": None,
         }
+
+    async def test_managed_server_propagates_session_hints(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
+    ):
+        srv = await make_server(department_id="dep_a")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
+        resp = await client.post(
+            f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        payload = captured_dispatch[0]["payload"]
+        assert payload["is_managed"] is True
+        assert payload["management_user"] == "dbos"
 
     async def test_reader_cannot_trigger(
         self, client, reader_token_a, make_server, captured_dispatch,

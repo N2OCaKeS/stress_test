@@ -7,6 +7,8 @@ Async task runner для `server_service`-операций с длинным с�
 - Periodic power/status polling через BMC
 - Ротация паролей серверных аккаунтов и IPMI
 - Live installed-packages listing через SSH
+- Инвентаризация OS-пользователей (`getent`) и реальный CRUD на боксе (useradd/usermod/userdel)
+- Бутстрап управления сервером (`prepare`): заводит управляющего пользователя + кладёт SSH-ключ
 
 ## Stack
 
@@ -28,14 +30,15 @@ Worker слушает taskiq-очередь в Redis. Без AUTH'а любой 
 
 ## Worker_bot PAT — least-privilege
 
-Worker ходит в server_service не как глобальный admin. Seed выдаёт ему role `worker_bot` с 4 entity-grant'ами:
+Worker ходит в server_service не как глобальный admin. Seed выдаёт ему role `worker_bot` с 8 entity-grant'ами:
 
 | Сущность | Action'ы |
 |---|---|
-| `server_account` | `view_password`, `rotate_password` |
+| `server_account` | `view_password`, `rotate_password`, `inventory_submit`, `provision_on_host` |
 | `ipmi_controller` | `view_credentials`, `rotate_credentials` |
+| `server` | `inventory_submit`, `prepare_callback` |
 
-Никаких `power.{on,off,reboot}`, `server.delete`, `permission.grant`. Эскалация компрометированного worker-PAT ограничена этим scope'ом. Гранты лендит миграция `43cf9cfef9e1_seed_worker_bot_entity_permissions.py` в server_service.
+Первые 4 (secret-access) — расшифровка/приём ротации паролей; остальные 4 — узкие callback-гранты под инвентаризацию (hardware + OS-пользователи), provision/deprovision OS-пользователя и подтверждение `prepare`-бутстрапа. Никаких `power.{on,off,reboot}`, `server.delete`, `permission.grant`, CRUD. Эскалация компрометированного worker-PAT ограничена этим scope'ом. Гранты лендят миграции `43cf9cfef9e1` (secret-access), `b7e2c9a14f63`, `c4f7d9b2a1e8`, `d1f4a8c7b3e9` в server_service.
 
 ## Running locally (as part of the dev stack)
 
@@ -84,6 +87,8 @@ src/
     inventory.py                # inventory.{sync,probe} + callback inventory_received
     passwords.py                # account.rotate_password (real SSH), ipmi.rotate_password (real BMC)
     installed_packages.py       # installed_packages.list (live SSH dpkg-query/rpm -qa)
+    users.py                    # users.inventory (getent) + account.provision/update_on_host/deprovision (useradd/usermod/userdel)
+    prepare.py                  # server.prepare (bootstrap управляющего пользователя + SSH-ключ)
   # secrets.reencrypt_lazy зарегистрирован напрямую в main.py через broker.task — отдельного файла tasks/secrets.py пока нет
   utils/
     ids.py                      # tsk_* generator
@@ -103,6 +108,11 @@ src/
 | `account.rotate_password` | `server_account.password_rotate` | real SSH `chpasswd` + callback `credentials_rotated_callback` с зашифрованным ciphertext |
 | `ipmi.rotate_password` | `ipmi_controller.password_rotate` | real: storage-first → BMC через Redfish с fallback на ipmitool + callback `ipmi_credentials_rotated_callback` |
 | `installed_packages.list` | `installed_packages.list` | real SSH `dpkg-query` / `rpm -qa` через `asyncssh` |
+| `users.inventory` | `server_account.users_inventory` | real SSH `getent passwd`/`getent group` → парс OS-пользователей → callback `submit_users_inventory` |
+| `account.provision` | `server_account.provision` | real SSH `useradd` (idempotent) → callback `submit_provision_status(present=True)` |
+| `account.update_on_host` | `server_account.update_on_host` | real SSH `usermod` (sudo/группы/shell) → callback `submit_provision_status(present=True)` |
+| `account.deprovision` | `server_account.deprovision` | real SSH `userdel` (idempotent) → callback `submit_provision_status(present=False)` |
+| `server.prepare` | `server.prepare` | real SSH: заводит управляющего пользователя `dbos` + `authorized_keys` → callback `submit_prepared` |
 
 Все handler'ы обёрнуты в `_runner.run_task(task_id, audit_action, audit_target_type, impl)`. 2-session pattern: mark_running CAS → impl → terminal status + audit outbox в одной транзакции.
 
@@ -231,6 +241,14 @@ make test-worker
 | `REINSTALL_TIMEOUT_SECONDS` | `1800.0` | максимум сколько `reinstall.start` ждёт pipeline до `mark_failed` |
 | `REINSTALL_POLL_INTERVAL_SECONDS` | `30.0` | sleep между health-check probe'ами в reinstall-wait цикле |
 | `REINSTALL_DEFAULT_OS_IMAGE_URL` | `""` | fallback `os_image` URL, если в payload не пришёл |
+
+### Management-SSH (prepare / онбординг)
+
+| ENV | Default | Назначение |
+|---|---|---|
+| `SSH_MANAGEMENT_USER` | `dbos` | имя управляющего пользователя, которого заводит `server.prepare` на боксе |
+| `SSH_MANAGEMENT_PUBLIC_KEY` | `""` | публичный SSH-ключ в `authorized_keys` управляющего пользователя. Пусто → `prepare` отказывается (`SSH_INVALID_ARG`), нечего класть |
+| `SSH_MANAGEMENT_PRIVATE_KEY_PATH` | `""` | путь к приватному ключу для будущих management-сессий (mounted secret). Сам ключ в коде не хардкодится |
 
 ### Master-key re-encryption (background)
 

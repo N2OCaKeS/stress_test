@@ -84,10 +84,9 @@ SERVICE_EVENTS = [
     # action: dispatch'ер `POST /servers/{id}/installed-packages` + worker-task
     # `installed_packages.list` (обе стороны эмитят с одинаковым action-name).
     {"action": "installed_packages.list", "description": "Installed packages live-listed via worker (SSH dpkg-query/rpm -qa)", "default_severity": "INFO"},
-    # OS versions — глобальный каталог
+    # OS versions — глобальный каталог. Чтение публичное (без auth, без аудита),
+    # поэтому view/list-событий нет — только запись.
     {"action": "os_version.create", "description": "OS version catalog entry created", "default_severity": "INFO"},
-    {"action": "os_version.view", "description": "OS version viewed (emitted on denied)", "default_severity": "INFO"},
-    {"action": "os_version.list", "description": "OS versions listed (emitted on denied)", "default_severity": "INFO"},
     {"action": "os_version.update", "description": "OS version updated", "default_severity": "INFO"},
     {"action": "os_version.delete", "description": "OS version deleted", "default_severity": "WARNING"},
     # Worker-dispatch endpoints (см. endpoints/worker_dispatch.py).

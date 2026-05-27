@@ -59,6 +59,7 @@ Source-of-truth — `src/services/audit_events.py::SERVICE_EVENTS`.
 | `server.power_status` | INFO | POST `/servers/{id}/power/status` — dispatch live BMC-probe `power.status` | `server` | `task_id`, `task_kind=power.status`, `department_id`. denied/failure: как у других power-операций |
 | `server.inventory_sync` | INFO | dispatch `inventory.sync` (SSH-probe) | `server` | `task_id`, `task_kind=inventory.sync` |
 | `server.inventory_probe` | INFO | dispatch lightweight inventory probe (быстрый ping без полного sync'а) | `server` | `task_id`, `task_kind=inventory.probe` |
+| `server.prepare` | CRITICAL | POST `/servers/{id}/prepare` — dispatch бутстрапа управления (`server.prepare`: useradd management-user + authorized_keys) | `server` | `task_id`, `task_kind=server.prepare`, `department_id` |
 | `server.power_status_cached` | INFO | GET `/ipmi/power` — кэшированный `power_state` из БД без BMC-probe | `server` | `department_id`, `power_state`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server.acquire` | INFO | POST `/servers/{id}/busy` — успех захвата (busy_state → busy) | `server` | `department_id`, `purpose`, `lease_until`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, decommissioned, already_busy}` |
 | `server.release` | INFO | DELETE `/servers/{id}/busy` — успех освобождения (busy_state → free) | `server` | `department_id`, `previous_user_id`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, not_busy, race_already_free}` |
@@ -74,6 +75,9 @@ worker дёргает после реальной работы.
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
 | `server.inventory_received` | INFO | POST `/internal/servers/{id}/inventory` — worker отдал hardware-facts после `inventory.sync` | `server` | `server_id`, `department_id`, `cpu_brand`, `cpu_model`, `os_version`, `disks`. denied: `reason=permission_denied` |
+| `server.prepared` | CRITICAL | POST `/internal/servers/{id}/prepared` — worker подтвердил завершение бутстрапа управления (callback помечает `is_managed`) | `server` | `server_id`, `department_id`. denied/failure: `reason in {permission_denied, server_not_found, actor_department_mismatch}` |
+| `server_account.users_inventory_received` | INFO | POST `/internal/servers/{id}/users-inventory` — worker отдал OS-user-инвентаризацию, reconcile против `server_accounts` (callback) | `server_account` | `server_id`, `department_id`, число найденных/связанных пользователей |
+| `server_account.provision_status` | INFO | POST `/internal/servers/{id}/accounts/{aid}/provision-status` — worker отдал результат useradd/usermod/userdel, обновлён `present_on_server` (callback) | `server_account` | `server_id`, `account_id`, `department_id`, `operation`, `present_on_server` |
 | `ipmi_controller.credentials_rotated_callback` | WARNING | POST `/internal/ipmi-controllers/{id}/credentials_rotated` — worker подтвердил ротацию (отдал plaintext, server_service зашифровал) | `ipmi_controller` | `server_id`, `controller_id`, `department_id` |
 | `secrets.reencrypt_batch` | INFO | POST `/internal/secrets/reencrypt_batch` — фоновая ротация мастер-ключа (`processed=0 ∧ errors>0` → status=failure для эскалации severity) | `secret` | `limit`, `processed`, `errors` |
 
@@ -102,6 +106,10 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
 | `server_account.rotate_password_dispatch` | CRITICAL | POST `/api/server/v1/server-accounts/{id}/rotate` — dispatch SSH-rotation task | `server_account` | `task_id`, `task_kind=account.rotate_password` |
+| `server_account.provision` | WARNING | POST `/api/server/v1/server-accounts/{id}/provision` — dispatch useradd на боксе | `server_account` | `task_id`, `task_kind=account.provision` |
+| `server_account.update_on_host` | INFO | POST `/api/server/v1/server-accounts/{id}/update-on-host` — dispatch usermod (синк атрибутов) | `server_account` | `task_id`, `task_kind=account.update_on_host` |
+| `server_account.deprovision` | WARNING | POST `/api/server/v1/server-accounts/{id}/deprovision` — dispatch userdel | `server_account` | `task_id`, `task_kind=account.deprovision` |
+| `server_account.users_inventory` | INFO | POST `/api/server/v1/servers/{id}/users-inventory` — dispatch инвентаризации OS-пользователей (SSH getent) | `server` | `task_id`, `task_kind=account.users_inventory` |
 | `ipmi_controller.rotate_dispatch` | CRITICAL | POST `/api/server/v1/ipmi-controllers/{id}/rotate` — dispatch BMC-rotation (currently safety-guarded; worker fails fast пока storage round-trip не реализован) | `ipmi_controller` | `task_id`, `task_kind=ipmi.rotate_password` |
 
 ---
@@ -145,6 +153,8 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | `server_account.view` | INFO | denied на GET (cross-dept / nonexistent) — success на read не аудитим (шум) | `server_account` | `reason in {permission_denied, cross_department}` |
 | `server_account.list` | INFO | denied на GET list (success — by design не аудитится) | `server_account` | `reason=permission_denied` |
 | `server_account.update` | INFO | PATCH — изменение метаданных (login/unix_groups/sudo) | `server_account` | поля diff'а (whitelist) |
+| `server_account.link_servers` | INFO | POST `/server-accounts/{id}/servers` — привязка аккаунта к дополнительным серверам | `server_account` | `server_ids`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
+| `server_account.unlink_servers` | INFO | DELETE `/server-accounts/{id}/servers` — отвязка от серверов | `server_account` | `server_ids`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server_account.delete` | CRITICAL | hard-delete | `server_account` | `server_id`, `login` |
 
 ---
@@ -177,11 +187,12 @@ Public endpoint'ы, через которые user (обычно admin) запу
 
 ## OS versions — глобальный каталог
 
+Чтение каталога (`list` / `get` по id / по имени) — публичное (без auth) и
+без аудита, поэтому `view`/`list`-событий нет. Под аудитом только запись.
+
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
 | `os_version.create` | INFO | INSERT в `os_versions` | `os_version` | `name` |
-| `os_version.view` | INFO | denied на GET | `os_version` | `reason=permission_denied` |
-| `os_version.list` | INFO | denied на GET list | `os_version` | `reason=permission_denied` |
 | `os_version.update` | INFO | PATCH | `os_version` | поля diff'а |
 | `os_version.delete` | WARNING | DELETE | `os_version` | `name` |
 

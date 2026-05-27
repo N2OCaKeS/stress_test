@@ -24,6 +24,24 @@ from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
 
+
+def _apply_session_hints(creds: dict, payload: dict) -> dict:
+    """Прокинуть в creds признаки управляющей сессии из task-payload.
+
+    server_service кладёт в payload `is_managed` (прошёл ли сервер prepare) и
+    `management_user`. На их основе ssh-фасад выбирает сессию: ключевую под
+    управляющим пользователем для подготовленного сервера либо self-сессию под
+    самим аккаунтом для остальных. Приватный ключ берётся из worker-конфига,
+    по сети не передаётся.
+    """
+    if payload.get("is_managed"):
+        creds["is_managed"] = True
+        management_user = payload.get("management_user")
+        if management_user:
+            creds["management_user"] = management_user
+    return creds
+
+
 # Whitelist для audit details.result. Сами логины/группы/home — потенциально
 # чувствительный inventory, в audit кладём только счётчики и server_id.
 # Полный список доступен админу через `Task.result`.
@@ -56,6 +74,7 @@ async def users_inventory(task_id: str) -> None:
             )
         else:
             creds = {"login": payload.get("ssh_login", "root")}
+        _apply_session_hints(creds, payload)
 
         facts = await ssh_client.collect_os_users(creds, server_id)
         users_payload = ssh_client.os_users_facts_to_payload(facts)
@@ -122,6 +141,7 @@ async def account_provision(task_id: str) -> None:
         creds = await server_service_client.fetch_account_password(
             server_id, account_id, target_dept,
         )
+        _apply_session_hints(creds, payload)
         await ssh_client.provision_user(
             creds, server_id,
             login=creds["login"],
@@ -171,6 +191,7 @@ async def account_update_on_host(task_id: str) -> None:
         creds = await server_service_client.fetch_account_password(
             server_id, account_id, target_dept,
         )
+        _apply_session_hints(creds, payload)
         await ssh_client.modify_user(
             creds, server_id,
             login=creds["login"],
@@ -222,6 +243,7 @@ async def account_deprovision(task_id: str) -> None:
         creds = await server_service_client.fetch_account_password(
             server_id, account_id, target_dept,
         )
+        _apply_session_hints(creds, payload)
         await ssh_client.delete_user(
             creds, server_id, login=creds["login"], remove_home=remove_home,
         )

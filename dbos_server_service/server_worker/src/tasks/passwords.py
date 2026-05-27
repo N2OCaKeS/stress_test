@@ -38,7 +38,6 @@ from src.main import broker
 from src.services import server_service_client, ssh_client
 from src.tasks._bmc_errors import dispatch_rotate_user_password, wrap_bmc_error
 from src.tasks._bmc_helpers import aclose_bmc as _aclose_bmc
-from src.tasks._bmc_helpers import extract_bmc_host as _extract_bmc_host
 from src.tasks._bmc_helpers import get_bmc as _get_bmc
 from src.tasks._runner import run_task
 
@@ -146,6 +145,13 @@ async def account_rotate_password(task_id: str) -> None:
         creds = await server_service_client.fetch_account_password(
             server_id, account_id, target_dept,
         )
+        # На подготовленном сервере смену пароля чужого аккаунта делаем под
+        # управляющим пользователем по ключу с sudo, а не self-сессией.
+        if payload.get("is_managed"):
+            creds["is_managed"] = True
+            management_user = payload.get("management_user")
+            if management_user:
+                creds["management_user"] = management_user
         new_password = _generate_password()
         await ssh_client.set_account_password(creds, server_id, creds["login"], new_password)
         confirmation = await server_service_client.submit_rotated_password(

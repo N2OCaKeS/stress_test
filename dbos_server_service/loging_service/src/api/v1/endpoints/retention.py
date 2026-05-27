@@ -1,6 +1,11 @@
-"""Retention-политика: глобальная настройка срока хранения логов.
+"""Retention-политика: настройка срока хранения логов.
 
-Активная политика всего одна и применяется ко ВСЕМ событиям аудита.
+Без фильтров активна одна глобальная политика, применяемая ко ВСЕМ
+событиям аудита. С `severity_filter`/`service_filter` активным становится
+набор строк (одна на пару severity×service). PUT и DELETE работают со
+ВСЕМ активным набором сразу — `PUT` гасит прежний набор и ставит новый,
+`DELETE` гасит весь набор целиком.
+
 События `loging_service` НИКОГДА не удаляются (защищены от ротации —
 безопасностный инвариант, см. `repositories/retention_policies.py::apply_active`).
 
@@ -25,7 +30,6 @@ from src.schemas.events import EventCreate
 from src.schemas.retention import (
     RetentionPolicyCreate,
     RetentionPolicyResponse,
-    RetentionPolicyUpdate,
 )
 from src.services import event_service
 
@@ -110,30 +114,14 @@ def set_policy(
 ) -> RetentionPolicyResponse:
     existing = repo.get_active(db)
     old_snapshot = _snapshot(existing)
-    has_filters = bool(payload.severity_filter or payload.service_filter)
 
-    # Filter-режим: ALL текущие active политики сбрасываем + создаём свежий
-    # Cartesian. Это единственная семантика «PUT replaces». Single-row update
-    # путь оставлен для backward-compat без фильтров — не плодим N rows на
-    # повторных PUT без фильтров.
-    if has_filters:
-        repo.deactivate_all_active(db)
-        created = repo.create_policy(db, payload)
-        new_snapshot = _snapshot(created[0])
-        _audit(db, identity, {"old": old_snapshot, "new": new_snapshot})
-        return RetentionPolicyResponse.model_validate(created[0])
-
-    if existing:
-        updated = repo.update(db, existing, RetentionPolicyUpdate(
-            retain_days=payload.retain_days,
-            description=payload.description,
-            is_active=payload.is_active,
-        ))
-        _audit(db, identity, {"old": old_snapshot, "new": _snapshot(updated)})
-        return RetentionPolicyResponse.model_validate(updated)
-    policy = repo.create(db, payload)
-    _audit(db, identity, {"old": None, "new": _snapshot(policy)})
-    return RetentionPolicyResponse.model_validate(policy)
+    # PUT replaces: гасим весь прежний активный набор (одна global-строка
+    # либо предыдущий Cartesian) и пишем новый. Иначе сброс фильтров оставил
+    # бы старые узкие предикаты активными рядом с новой политикой.
+    repo.deactivate_all_active(db)
+    created = repo.create_policy(db, payload)
+    _audit(db, identity, {"old": old_snapshot, "new": _snapshot(created[0])})
+    return RetentionPolicyResponse.model_validate(created[0])
 
 
 @router.delete(
@@ -141,8 +129,10 @@ def set_policy(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Отключить retention (хранить события вечно)",
     description=(
-        "Idempotent: помечает активную политику `is_active=false`. Если "
-        "активной нет — ничего не делает, 204 всё равно.\n\n"
+        "Idempotent: помечает `is_active=false` у ВСЕХ активных политик. "
+        "При filtered-режиме активным может быть набор строк (severity×service) "
+        "— гасятся все сразу, чтобы фоновая ротация полностью остановилась. "
+        "Если активных нет — ничего не делает, 204 всё равно.\n\n"
         "**Доступ:** `platform_role=loging_admin`."
     ),
 )
@@ -150,14 +140,15 @@ def disable_policy(
     identity: AdminIdentity,
     db: Session = Depends(get_db),
 ) -> None:
-    policy = repo.get_active(db)
-    if policy:
-        old_snapshot = _snapshot(policy)
-        updated = repo.update(db, policy, RetentionPolicyUpdate(is_active=False))
-        _audit(db, identity, {"old": old_snapshot, "new": _snapshot(updated)})
-    else:
-        # Idempotent no-op: всё равно фиксируем попытку, чтобы SOC видел
-        # факт обращения admin'а к retention-эндпоинту.
-        _audit(db, identity, {"old": None, "new": None})
+    old_snapshot = _snapshot(repo.get_active(db))
+    deactivated = repo.deactivate_all_active(db)
+    # old_snapshot — представительская строка набора (самая свежая); при
+    # пустой системе None. deactivated_count показывает SOC реальный размер
+    # погашенного набора (1 для global, N×M для filtered).
+    _audit(
+        db,
+        identity,
+        {"old": old_snapshot, "new": None, "deactivated_count": deactivated},
+    )
 
 

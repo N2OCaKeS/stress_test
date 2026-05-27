@@ -39,13 +39,18 @@ class TestSetPolicy:
         assert "id" in body
         assert "created_at" in body
 
-    def test_replaces_existing_policy(self, admin_client):
-        first = admin_client.put(URL, json={"retain_days": 30}).json()
+    def test_replaces_existing_policy(self, admin_client, db):
+        admin_client.put(URL, json={"retain_days": 30})
         second = admin_client.put(URL, json={"retain_days": 90, "description": "expanded"}).json()
-        # При PUT существующая политика обновляется, а не дублируется
-        assert second["id"] == first["id"]
+        # PUT гасит прежний набор и создаёт новый: активной остаётся ровно
+        # одна global-строка с новыми параметрами, старая деактивирована.
         assert second["retain_days"] == 90
         assert second["description"] == "expanded"
+        from src.models.retention_policy import RetentionPolicy
+        active = db.query(RetentionPolicy).filter_by(is_active=True).all()
+        assert len(active) == 1
+        assert active[0].id == second["id"]
+        assert active[0].retain_days == 90
 
     def test_below_minimum_returns_422(self, admin_client):
         # retain_days < 30 (минимум по схеме)
@@ -81,6 +86,27 @@ class TestDisablePolicy:
         # Идемпотентность: DELETE на пустой системе тоже 204
         r = admin_client.delete(URL)
         assert r.status_code == 204
+
+    def test_delete_deactivates_entire_cartesian_set(self, admin_client, db):
+        # filtered-политика раскрывается в N×M активных строк; DELETE обязан
+        # погасить ВЕСЬ набор, иначе фоновая ротация продолжит чистить события
+        # по оставшимся узким предикатам.
+        admin_client.put(
+            URL,
+            json={
+                "retain_days": 45,
+                "severity_filter": ["INFO", "WARNING"],
+                "service_filter": ["auth_service", "server_service"],
+            },
+        )
+        from src.models.retention_policy import RetentionPolicy
+        assert db.query(RetentionPolicy).filter_by(is_active=True).count() == 4
+
+        r = admin_client.delete(URL)
+        assert r.status_code == 204
+        assert db.query(RetentionPolicy).filter_by(is_active=True).count() == 0
+        # GET тоже подтверждает, что активной политики не осталось.
+        assert admin_client.get(URL).json() is None
 
 
 # ── Авторизация: ВСЕ роуты под require_admin (router-level) ───────────────────
@@ -237,6 +263,50 @@ class TestFilteredPolicy:
         assert active[0].severity == "ERROR"
         assert len(inactive) == 1
         assert inactive[0].severity is None
+
+    def test_global_put_replaces_filtered_set(self, admin_client, db):
+        # filtered-набор (N×M строк) → PUT без фильтров. Должна остаться РОВНО
+        # одна global-строка; узкие предикаты погашены, иначе «сброс на
+        # глобальную политику» не работал бы.
+        admin_client.put(
+            URL,
+            json={
+                "retain_days": 45,
+                "severity_filter": ["INFO", "WARNING"],
+                "service_filter": ["auth_service", "server_service"],
+            },
+        )
+        from src.models.retention_policy import RetentionPolicy
+        assert db.query(RetentionPolicy).filter_by(is_active=True).count() == 4
+
+        body = admin_client.put(URL, json={"retain_days": 30}).json()
+        assert body["retain_days"] == 30
+        active = db.query(RetentionPolicy).filter_by(is_active=True).all()
+        assert len(active) == 1
+        assert active[0].severity is None
+        assert active[0].service is None
+        assert active[0].retain_days == 30
+        # Прежний Cartesian-набор деактивирован, не удалён.
+        assert db.query(RetentionPolicy).filter_by(is_active=False).count() == 4
+
+    def test_filtered_put_replaces_previous_filtered_set(self, admin_client, db):
+        # filtered → filtered: новый набор полностью заменяет прежний, старые
+        # пары не остаются активными рядом с новыми.
+        admin_client.put(
+            URL,
+            json={"retain_days": 45, "severity_filter": ["INFO", "WARNING"]},
+        )
+        from src.models.retention_policy import RetentionPolicy
+        assert db.query(RetentionPolicy).filter_by(is_active=True).count() == 2
+
+        admin_client.put(
+            URL,
+            json={"retain_days": 60, "severity_filter": ["ERROR"]},
+        )
+        active = db.query(RetentionPolicy).filter_by(is_active=True).all()
+        assert len(active) == 1
+        assert active[0].severity == "ERROR"
+        assert active[0].retain_days == 60
 
     def test_apply_active_honours_severity_filter(self, db):
         """`apply_active` удаляет только rows нужного severity."""

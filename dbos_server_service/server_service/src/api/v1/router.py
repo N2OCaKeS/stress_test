@@ -8,6 +8,7 @@ from src.api.v1.endpoints.ipmi import router as ipmi_router
 from src.api.v1.endpoints.installed_packages import router as installed_packages_router
 from src.api.v1.endpoints.internal import router as internal_router
 from src.api.v1.endpoints.inventory import router as inventory_router
+from src.api.v1.endpoints.inventory import users_router as users_inventory_router
 from src.api.v1.endpoints.os_versions import router as os_versions_router
 from src.api.v1.endpoints.permissions import router as permissions_router
 from src.api.v1.endpoints.secrets_migration import router as secrets_migration_router
@@ -27,6 +28,7 @@ router.include_router(ipmi_router, tags=["ipmi"])
 router.include_router(ipmi_list_router, tags=["ipmi"])
 router.include_router(installed_packages_router, tags=["installed-packages"])
 router.include_router(inventory_router, tags=["inventory"])
+router.include_router(users_inventory_router, tags=["server-accounts"])
 router.include_router(os_versions_router, tags=["os-versions"])
 router.include_router(permissions_router, tags=["permissions"])
 # Worker-dispatch endpoints: power.status / inventory.sync + admin-initiated

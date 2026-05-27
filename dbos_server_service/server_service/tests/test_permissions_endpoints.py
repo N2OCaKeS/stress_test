@@ -36,11 +36,12 @@ class TestListAll:
         # (b8d4e3f9a712) убирает 5 admin server-action'ов и 1 worker_bot row;
         # reveal_* гранты сняты (c3f9b1a8d420), пароль теперь раскрывается
         # через view_password / view_credentials. Структурно: worker_bot —
-        # 5 строк (4 secret-access + inventory_submit), admin строго больше,
-        # общая сумма ≥ обоих.
+        # 6 строк (4 secret-access + server.inventory_submit +
+        # server_account.inventory_submit для user-инвентаризации), admin
+        # строго больше, общая сумма ≥ обоих.
         admin_grants = [r for r in rows if r["role"] == "admin"]
         worker_bot_grants = [r for r in rows if r["role"] == "worker_bot"]
-        assert len(worker_bot_grants) == 5
+        assert len(worker_bot_grants) == 6
         assert len(admin_grants) > len(worker_bot_grants)
         assert len(rows) >= len(admin_grants) + len(worker_bot_grants)
 

@@ -10,11 +10,11 @@ from src.core.constants import TaskKind, TaskStatus
 # ── TaskKind ─────────────────────────────────────────────────────────────────
 
 class TestTaskKind:
-    def test_all_seven_kinds_present(self):
+    def test_all_kinds_present(self):
         kinds = {tk.value for tk in TaskKind}
         assert kinds == {
             "power.on", "power.off", "power.reboot", "power.status",
-            "inventory.sync",
+            "inventory.sync", "users.inventory",
             "account.rotate_password", "ipmi.rotate_password",
         }
 

@@ -282,14 +282,13 @@ class TestWorkerBotGrantsGlobalSeedPreserved:
         contract regardless of which department the bot belongs to.
 
         Set: 4 initial grants (view/rotate credentials, view/rotate password)
-        plus 1 callback grant (server:inventory_submit). После удаления
-        reinstall-функционала (`b8d4e3f9a712`) reinstall_status_submit
-        больше не существует.
+        plus 2 callback grants (server:inventory_submit для hardware-инвентаризации
+        и server_account:inventory_submit для инвентаризации OS-пользователей).
         """
         rows = (await db.execute(
             select(EntityPermission).where(EntityPermission.role == "worker_bot")
         )).scalars().all()
-        assert len(rows) == 5
+        assert len(rows) == 6
         for r in rows:
             assert r.department_id is None, (
                 f"worker_bot grant {(r.entity_type, r.action)} must be system-wide"
@@ -301,6 +300,7 @@ class TestWorkerBotGrantsGlobalSeedPreserved:
             ("ipmi_controller", "view_credentials"),
             ("ipmi_controller", "rotate_credentials"),
             ("server", "inventory_submit"),
+            ("server_account", "inventory_submit"),
         }
         got = {(r.entity_type, r.action) for r in rows}
         assert got == expected

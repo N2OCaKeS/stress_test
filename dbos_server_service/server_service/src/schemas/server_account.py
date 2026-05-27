@@ -141,6 +141,13 @@ class ServerAccountResponse(BaseModel):
     server_ids: list[str] = Field(description="Привязанные серверы.")
     department_id: str = Field(description="Department владельца аккаунта.")
     login: str = Field(description="OS-логин.")
+    source: str = Field(
+        default="managed",
+        description=(
+            "Происхождение: `managed` (заведён через API, пароль известен) "
+            "или `discovered` (найден инвентаризацией, пароля у API нет)."
+        ),
+    )
     has_sudo: bool = Field(description="Есть ли sudo.")
     unix_groups: list[str] = Field(description="Unix-группы.")
     linked_user_id: str | None = Field(default=None, description="FK на platform user.")

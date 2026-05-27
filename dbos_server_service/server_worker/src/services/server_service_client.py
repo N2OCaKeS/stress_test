@@ -223,6 +223,56 @@ async def submit_inventory_facts(
         return {}
 
 
+async def submit_users_inventory(
+    server_id: str,
+    users_payload: dict,
+    target_department_id: str | None = None,
+) -> dict:
+    """Отдать список найденных OS-пользователей обратно в server_service.
+
+    Финал `users.inventory` task'а. server_service reconcile'ит список
+    против привязанных к серверу `server_accounts`: создаёт discovered,
+    обновляет существующие, помечает drift.
+
+    `users_payload` — `{"users": [{login, uid, shell, home_dir,
+    unix_groups, has_sudo}, ...]}` под `UsersInventoryCallbackRequest`.
+
+    Возвращает: `{ok, created, updated, drifted}` от
+    `POST /api/server/v1/internal/servers/{id}/users/inventory`.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport (timeout/connect).
+      * `USERS_INVENTORY_SUBMIT_REJECTED` — server_service вернул не 2xx.
+    """
+    settings = get_settings()
+    url = (
+        f"{settings.server_service_url.rstrip('/')}"
+        f"/api/server/v1/internal/servers/{server_id}/users/inventory"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
+            response = await client.post(
+                url,
+                headers=_headers(target_department_id),
+                json=users_payload,
+            )
+    except httpx.HTTPError as exc:
+        raise CredentialFetchError(
+            error_code="SERVER_SERVICE_UNREACHABLE",
+            message=f"Failed to call server_service: {type(exc).__name__}",
+        ) from exc
+    if response.status_code >= 300:
+        raise CredentialFetchError(
+            error_code="USERS_INVENTORY_SUBMIT_REJECTED",
+            message=f"server_service returned {response.status_code}",
+            details={"server_id": server_id, "status_code": response.status_code},
+        )
+    try:
+        return response.json()
+    except ValueError:
+        return {}
+
+
 async def fetch_secrets_migration_status() -> dict:
     """Запросить сводку по постепенной ротации мастер-ключа.
 

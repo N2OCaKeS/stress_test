@@ -77,6 +77,51 @@ class InventoryCallbackResponse(BaseModel):
     disks_upserted: int = Field(default=0, description="Сколько disk-записей upsert'нуто (INSERT + UPDATE).")
 
 
+# ── OS-user inventory callback ──────────────────────────────────────────────
+
+class InventoryUserItem(BaseModel):
+    """Один OS-пользователь, найденный на сервере (getent passwd + доп.данные).
+
+    Системные пользователи (UID < UID_MIN из /etc/login.defs) отфильтрованы
+    воркером — сюда приходят только «человеческие» / прикладные аккаунты.
+    """
+
+    login: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._\-]+$",
+        description="Имя пользователя (поле 1 из getent passwd).",
+    )
+    uid: int = Field(..., ge=0, description="UID пользователя.")
+    shell: str | None = Field(default=None, max_length=64, description="Login shell.")
+    home_dir: str | None = Field(default=None, max_length=256, description="Home-директория.")
+    unix_groups: list[str] = Field(
+        default_factory=list, description="Список групп (getent group)."
+    )
+    has_sudo: bool = Field(
+        default=False, description="Состоит в sudo/admin-группе либо есть запись в sudoers."
+    )
+
+
+class UsersInventoryCallbackRequest(BaseModel):
+    """Тело POST /internal/servers/{id}/users/inventory — worker отдаёт
+    список реальных OS-пользователей сервера."""
+
+    users: list[InventoryUserItem] = Field(
+        default_factory=list, description="Найденные пользователи (без системных)."
+    )
+
+
+class UsersInventoryCallbackResponse(BaseModel):
+    """Сводка reconcile инвентаризации пользователей."""
+
+    ok: bool = True
+    created: int = Field(default=0, description="Сколько discovered-аккаунтов заведено.")
+    updated: int = Field(default=0, description="Сколько существующих обновлено.")
+    drifted: int = Field(default=0, description="Сколько привязок помечено отсутствующими (drift).")
+
+
 # ── IPMI credentials_rotated callback ───────────────────────────────────────
 
 class IpmiCredentialsRotatedRequest(BaseModel):

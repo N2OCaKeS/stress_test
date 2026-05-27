@@ -45,9 +45,10 @@ from src.schemas.identity import IdentityContext
 from src.schemas.internal import (
     InventoryCallbackRequest,
     IpmiCredentialsRotatedRequest,
+    UsersInventoryCallbackRequest,
 )
 from src.services import audit_service, permissions, secrets_service
-from src.utils.ids import os_version_id, server_disk_id
+from src.utils.ids import os_version_id, server_account_id, server_disk_id
 
 
 def _check_target_department(
@@ -526,6 +527,129 @@ async def receive_inventory(
         "os_version_id": os_id_resolved,
         "disks_upserted": disks_count,
     }
+
+
+async def receive_users_inventory(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    payload: UsersInventoryCallbackRequest,
+    target_department_id: str | None = None,
+) -> dict:
+    """Принять список реальных OS-пользователей от worker'а и reconcile'ить
+    его против привязанных к серверу `server_accounts`.
+
+    Право: `(server_account, *, inventory_submit)` — узкий грант worker_bot'а.
+
+    Reconcile (для инвентаризуемого сервера X):
+
+      * найден на X, нет привязанного аккаунта → создать discovered-аккаунт
+        (без пароля, `source=discovered`, `department_id` = dept сервера X),
+        привязать к X;
+      * есть и там, и в API → обновить метаданные (sudo, группы, shell, home),
+        пометить связку present + свежий `last_inventory_at`;
+      * привязан в API, но не найден на сервере → пометить связку
+        `present_on_server=False` (drift), запись НЕ удаляем.
+    """
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.INVENTORY_SUBMIT,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server_account.users_inventory_received",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+
+    server = await server_repo.get_by_id(db, server_id)
+    if server is None:
+        audit_service.emit(
+            "server_account.users_inventory_received",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+
+    _check_target_department(
+        audit_action="server_account.users_inventory_received",
+        target_id=server_id,
+        target_type="server",
+        server_department_id=server.department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
+
+    # Снимок текущих связок сервера + login'ов, найденных на боксе.
+    links = await account_repo.list_links_for_server(db, server_id)
+    seen_logins = {item.login for item in payload.users}
+
+    created = 0
+    updated = 0
+    drifted = 0
+
+    for item in payload.users:
+        existing = await account_repo.get_account_on_server_by_login(
+            db, server_id, item.login,
+        )
+        if existing is None:
+            account_id = server_account_id()
+            await account_repo.create_discovered(
+                db,
+                {
+                    "id": account_id,
+                    "department_id": server.department_id,
+                    "login": item.login,
+                    "password_encrypted": None,
+                    "source": "discovered",
+                    "has_sudo": item.has_sudo,
+                    "unix_groups": list(item.unix_groups),
+                    "shell": item.shell,
+                    "home_dir": item.home_dir,
+                    "is_active": True,
+                    "created_by": identity.user_id,
+                },
+                server_id,
+            )
+            created += 1
+        else:
+            await account_repo.update(db, existing, {
+                "has_sudo": item.has_sudo,
+                "unix_groups": list(item.unix_groups),
+                "shell": item.shell,
+                "home_dir": item.home_dir,
+            })
+            link = await account_repo.get_link(db, existing.id, server_id)
+            if link is not None:
+                await account_repo.mark_link_inventoried(db, link, present=True)
+            updated += 1
+
+    # Привязанные в API, но не найденные на сервере — drift.
+    for link in links:
+        if link.login not in seen_logins:
+            await account_repo.mark_link_inventoried(db, link, present=False)
+            drifted += 1
+
+    await db.commit()
+
+    audit_service.emit(
+        "server_account.users_inventory_received",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "created": created,
+            "updated": updated,
+            "drifted": drifted,
+            "found": len(payload.users),
+            "department_id": server.department_id,
+        },
+    )
+    return {"ok": True, "created": created, "updated": updated, "drifted": drifted}
 
 
 async def record_ipmi_credentials_rotated(

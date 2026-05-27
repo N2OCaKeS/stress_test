@@ -49,6 +49,18 @@ class ServerAccountServer(Base):
     # «один логин на сервер». Держится в sync с ServerAccount.login сервисным
     # слоем (login аккаунта неизменяем после создания).
     login: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Последняя успешная инвентаризация пользователей именно на этом сервере.
+    # Хранится на связке, а не на аккаунте: один аккаунт может жить на N
+    # серверах, и каждый сканируется независимо.
+    last_inventory_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # True, пока пользователь реально присутствует на сервере. Инвентаризация
+    # сбрасывает его в False, если аккаунт привязан, но на боксе уже нет —
+    # это «дрейф», запись не удаляем молча.
+    present_on_server: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -77,6 +89,10 @@ class ServerAccount(Base):
     # этом же department'е (enforce при линковке).
     department_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     login: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Происхождение аккаунта: `managed` — заведён через API (с паролем),
+    # `discovered` — найден инвентаризацией на сервере (пароль API неизвестен,
+    # password_encrypted = NULL до ручной ротации).
+    source: Mapped[str] = mapped_column(String(16), default="managed", nullable=False)
     # Формат: `v<key>$<nonce>$<ciphertext>` (см. secrets_service.py).
     password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -28,6 +28,8 @@ from src.schemas.internal import (
     IpmiCredentialsRotatedResponse,
     PasswordRotateRequest,
     PasswordRotateResponse,
+    UsersInventoryCallbackRequest,
+    UsersInventoryCallbackResponse,
 )
 from src.services import internal_service
 
@@ -156,6 +158,34 @@ async def receive_inventory(
         target_department_id=x_target_department_id,
     )
     return InventoryCallbackResponse(**data)
+
+
+@router.post(
+    "/servers/{server_id}/users/inventory",
+    response_model=UsersInventoryCallbackResponse,
+)
+async def receive_users_inventory(
+    server_id: str,
+    body: UsersInventoryCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    x_target_department_id: str | None = _TargetDeptHeader,
+) -> UsersInventoryCallbackResponse:
+    """Worker отдаёт список реальных OS-пользователей после `users.inventory`.
+
+    server_service reconcile'ит его против привязанных к серверу
+    `server_accounts`: создаёт discovered-аккаунты для новых, обновляет
+    метаданные существующих, помечает drift у пропавших.
+
+    Доступ: `(server_account, *, inventory_submit)`. Worker_bot роль (seed).
+
+    Аудит: `server_account.users_inventory_received` (INFO).
+    """
+    data = await internal_service.receive_users_inventory(
+        db, identity, server_id, body,
+        target_department_id=x_target_department_id,
+    )
+    return UsersInventoryCallbackResponse(**data)
 
 
 @router.post(

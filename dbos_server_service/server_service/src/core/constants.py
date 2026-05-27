@@ -46,6 +46,17 @@ class IpmiProbeStatus(StrEnum):
     AUTH_FAILED = "auth_failed"
 
 
+class AccountSource(StrEnum):
+    """Происхождение OS-аккаунта.
+
+    `managed` — заведён оператором через API (пароль известен и хранится).
+    `discovered` — найден инвентаризацией на сервере; пароль API неизвестен.
+    """
+
+    MANAGED = "managed"
+    DISCOVERED = "discovered"
+
+
 class ServiceRole(StrEnum):
     """Встроенные service-роли. Кастомные роли (через auth_service) ссылаются
     по имени (free-form string) — эти константы только seeded defaults."""
@@ -139,6 +150,9 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
         Action.VIEW_PASSWORD, Action.ROTATE_PASSWORD,
         Action.GRANT_SUDO,
+        # worker_bot пушит результат инвентаризации пользователей обратно
+        # через internal callback — узкий least-privilege грант, без CRUD.
+        Action.INVENTORY_SUBMIT,
     }),
     EntityType.OS_VERSION: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,

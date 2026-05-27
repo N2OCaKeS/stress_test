@@ -180,6 +180,10 @@ def _build_broker() -> ListQueueBroker:
     async def _installed_packages_list(task_id: str) -> None:  # noqa: ARG001
         return None
 
+    @broker.task("users.inventory")
+    async def _users_inventory(task_id: str) -> None:  # noqa: ARG001
+        return None
+
     _task_stubs = {
         "power.on": _power_on,
         "power.off": _power_off,
@@ -190,6 +194,7 @@ def _build_broker() -> ListQueueBroker:
         "account.rotate_password": _account_rotate,
         "ipmi.rotate_password": _ipmi_rotate,
         "installed_packages.list": _installed_packages_list,
+        "users.inventory": _users_inventory,
     }
     _worker_broker = broker
     return broker

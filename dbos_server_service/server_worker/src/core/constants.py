@@ -22,6 +22,7 @@ class TaskKind(StrEnum):
     POWER_REBOOT = "power.reboot"
     POWER_STATUS = "power.status"
     INVENTORY_SYNC = "inventory.sync"
+    USERS_INVENTORY = "users.inventory"
     ACCOUNT_ROTATE_PASSWORD = "account.rotate_password"
     IPMI_ROTATE_PASSWORD = "ipmi.rotate_password"
 

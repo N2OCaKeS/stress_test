@@ -128,6 +128,84 @@ async def is_linked(db: AsyncSession, account_id: str, server_id: str) -> bool:
     return (await db.execute(stmt)).first() is not None
 
 
+async def get_link(
+    db: AsyncSession, account_id: str, server_id: str
+) -> ServerAccountServer | None:
+    """Связка аккаунта с сервером (или None)."""
+    stmt = select(ServerAccountServer).where(
+        ServerAccountServer.account_id == account_id,
+        ServerAccountServer.server_id == server_id,
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def list_links_for_server(
+    db: AsyncSession, server_id: str
+) -> list[ServerAccountServer]:
+    """Все связки сервера (для reconcile инвентаризации)."""
+    stmt = select(ServerAccountServer).where(
+        ServerAccountServer.server_id == server_id
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def get_account_on_server_by_login(
+    db: AsyncSession, server_id: str, login: str
+) -> ServerAccount | None:
+    """Аккаунт с данным login'ом, привязанный к конкретному серверу.
+
+    Инвариант `uq_server_login` гарантирует, что на одном сервере login
+    уникален, поэтому возвращаем не более одной строки.
+    """
+    stmt = (
+        select(ServerAccount)
+        .join(ServerAccountServer, ServerAccountServer.account_id == ServerAccount.id)
+        .where(
+            ServerAccountServer.server_id == server_id,
+            ServerAccountServer.login == login,
+        )
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def create_discovered(
+    db: AsyncSession, data: dict, server_id: str
+) -> ServerAccount:
+    """INSERT аккаунта, обнаруженного инвентаризацией (без пароля), + связка.
+
+    Связка сразу помечается присутствующей и со свежим `last_inventory_at`.
+    commit — на caller'е.
+    """
+    obj = ServerAccount(**data)
+    db.add(obj)
+    await db.flush()
+    db.add(
+        ServerAccountServer(
+            id=server_account_server_id(),
+            account_id=obj.id,
+            server_id=server_id,
+            login=obj.login,
+            present_on_server=True,
+            last_inventory_at=datetime.now(timezone.utc),
+        )
+    )
+    await db.flush()
+    return obj
+
+
+async def mark_link_inventoried(
+    db: AsyncSession,
+    link: ServerAccountServer,
+    *,
+    present: bool,
+) -> ServerAccountServer:
+    """Проставить связке `present_on_server` + `last_inventory_at = now`."""
+    link.present_on_server = present
+    link.last_inventory_at = datetime.now(timezone.utc)
+    await db.flush()
+    return link
+
+
 async def update_password(
     db: AsyncSession, account: ServerAccount, password_encrypted: str
 ) -> ServerAccount:

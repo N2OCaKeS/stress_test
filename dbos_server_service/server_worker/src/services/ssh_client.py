@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from src.clients.ssh import SshClient, SshError
@@ -85,6 +86,35 @@ async def collect_inventory(credentials: dict, server_id: str) -> dict:
         known_hosts=known_hosts,
     ) as ssh:
         return await ssh.get_inventory()
+
+
+async def collect_os_users(credentials: dict, server_id: str) -> dict:
+    """Снять список OS-пользователей сервера по SSH.
+
+    `credentials` — `{login, password, host?, port?, known_hosts?}` от
+    `server_service_client.fetch_account_password` (плюс SSH-поля, если есть).
+
+    Возврат — то, что отдал `SshClient.get_os_users`: dict с ключами
+    `passwd`, `group`, `login_defs` (каждый — `_capture_text`-результат).
+    Парсинг и UID-фильтр делает `os_users_facts_to_payload`.
+
+    Ошибки: `SshError` пробрасывается наверх, `_runner` ловит.
+    """
+    host = _extract_host(credentials, server_id)
+    username = credentials.get("login") or credentials.get("username") or "root"
+    password = credentials.get("password")
+    port = _extract_port(credentials)
+    known_hosts = credentials.get("known_hosts")
+
+    logger.info("ssh user inventory on %s as %s", host, username)
+    async with SshClient(
+        host=host,
+        username=username,
+        password=password,
+        port=port,
+        known_hosts=known_hosts,
+    ) as ssh:
+        return await ssh.get_os_users()
 
 
 async def set_account_password(
@@ -333,9 +363,118 @@ def inventory_facts_to_payload(facts: dict) -> dict:
     }
 
 
+# ── OS-user inventory parsing ────────────────────────────────────────────────
+
+# Дефолтный UID_MIN на случай, если /etc/login.defs недоступен или не содержит
+# строки. Debian/Astra используют 1000; берём его как разумный fallback.
+_DEFAULT_UID_MIN = 1000
+
+# Группы, членство в которых считаем эквивалентом sudo-прав. astra-se может
+# использовать `astra-admin`, но базовый набор — sudo/wheel/admin.
+_SUDO_GROUPS = frozenset({"sudo", "wheel", "admin", "root"})
+
+# Login совпадает с тем же POSIX-набором, что и server_service-схема — иначе
+# мусорная строка getent (с `:`/пробелами) не пройдёт callback-валидацию и
+# уронит весь reconcile. Фильтруем такие записи здесь.
+_USER_LOGIN_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
+
+
+def _parse_uid_min(login_defs_block: Any) -> int:
+    """Достать UID_MIN из `cat /etc/login.defs`. Fallback — `_DEFAULT_UID_MIN`."""
+    if not isinstance(login_defs_block, dict):
+        return _DEFAULT_UID_MIN
+    text = login_defs_block.get("stdout") or ""
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == "UID_MIN":
+            try:
+                return int(parts[1])
+            except ValueError:
+                return _DEFAULT_UID_MIN
+    return _DEFAULT_UID_MIN
+
+
+def _parse_groups(group_block: Any) -> dict[str, set[str]]:
+    """`getent group` → `{login: {group_name, ...}}`.
+
+    Формат строки: `name:passwd:gid:member1,member2`. Возвращаем обратный
+    индекс «логин → набор групп», чтобы определить sudo-членство.
+    """
+    user_groups: dict[str, set[str]] = {}
+    if not isinstance(group_block, dict):
+        return user_groups
+    text = group_block.get("stdout") or ""
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        fields = line.split(":")
+        if len(fields) < 4:
+            continue
+        group_name = fields[0]
+        members = [m for m in fields[3].split(",") if m]
+        for member in members:
+            user_groups.setdefault(member, set()).add(group_name)
+    return user_groups
+
+
+def os_users_facts_to_payload(facts: dict) -> dict:
+    """Сконвертировать `SshClient.get_os_users()` в payload
+    `UsersInventoryCallbackRequest` server_service'а.
+
+    Парсит `getent passwd`, отфильтровывает системных по `UID >= UID_MIN` из
+    `/etc/login.defs`, доклеивает группы (`getent group`) и помечает sudo по
+    членству в sudo/wheel/admin-группе либо по primary-группе из passwd.
+
+    Возврат — `{"users": [{login, uid, shell, home_dir, unix_groups,
+    has_sudo}, ...]}`. Записи с непроходящим по regex login'ом пропускаются.
+    """
+    uid_min = _parse_uid_min(facts.get("login_defs"))
+    user_groups = _parse_groups(facts.get("group"))
+
+    passwd_block = facts.get("passwd")
+    text = passwd_block.get("stdout") if isinstance(passwd_block, dict) else ""
+    users: list[dict] = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        fields = line.split(":")
+        if len(fields) < 7:
+            continue
+        login = fields[0]
+        try:
+            uid = int(fields[2])
+        except ValueError:
+            continue
+        # nobody (обычно 65534) — тоже системный, отсекаем по верхней границе.
+        if uid < uid_min or uid >= 65534:
+            continue
+        if not _USER_LOGIN_RE.match(login):
+            continue
+        home_dir = fields[5] or None
+        shell = fields[6] or None
+        groups = sorted(user_groups.get(login, set()))
+        has_sudo = bool(set(groups) & _SUDO_GROUPS)
+        users.append({
+            "login": login,
+            "uid": uid,
+            "shell": shell,
+            "home_dir": home_dir,
+            "unix_groups": groups,
+            "has_sudo": has_sudo,
+        })
+    return {"users": users}
+
+
 __all__ = [
     "collect_inventory",
+    "collect_os_users",
     "set_account_password",
     "inventory_facts_to_payload",
+    "os_users_facts_to_payload",
     "SshError",
 ]

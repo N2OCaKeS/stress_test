@@ -408,6 +408,31 @@ class SshClient:
 
         return facts
 
+    # ── User inventory: getent passwd / group / sudoers ─────────────────
+
+    async def get_os_users(self) -> dict:
+        """Собрать список реальных OS-пользователей сервера.
+
+        Команды:
+
+        * `getent passwd` — все пользователи (`login:x:uid:gid:gecos:home:shell`);
+        * `getent group` — группы для определения sudo-членства;
+        * `getent /etc/login.defs UID_MIN` через `cat` — порог системных UID;
+        * `sudo -l -U <login>` тут НЕ делаем (дорого и требует root): sudo
+          определяем по членству в `sudo`/`wheel`/`admin`-группах.
+
+        Возврат — dict с ключами `passwd`, `group`, `login_defs`. Каждый блок —
+        результат `_capture_text` (`{stdout, returncode}` либо `{error}`).
+        Парсинг и UID-фильтр — на стороне `services/ssh_client.py`.
+        """
+        facts: dict = {}
+        facts["passwd"] = await self._capture_text("getent passwd")
+        facts["group"] = await self._capture_text("getent group")
+        # login.defs читаем целиком — UID_MIN/UID_MAX парсятся на стороне
+        # facts-маппера. Если файла нет — fallback на дефолтный UID_MIN.
+        facts["login_defs"] = await self._capture_text("cat /etc/login.defs")
+        return facts
+
     async def _capture_text(self, command: str) -> dict:
         """Запустить команду, вернуть `{stdout, stderr, returncode}` либо
         `{error: ..., returncode}` при non-zero. Не raise'ит — caller

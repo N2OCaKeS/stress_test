@@ -39,6 +39,7 @@ def _to_response(obj: ServerAccount, password_b64: str | None = None) -> ServerA
         server_ids=account_repo.linked_server_ids(obj),
         department_id=obj.department_id,
         login=obj.login,
+        source=obj.source,
         has_sudo=obj.has_sudo,
         unix_groups=list(obj.unix_groups),
         linked_user_id=obj.linked_user_id,

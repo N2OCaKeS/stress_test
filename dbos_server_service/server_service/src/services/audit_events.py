@@ -52,6 +52,7 @@ SERVICE_EVENTS = [
     # Worker → server_service callbacks (write-direction internal API)
     {"action": "server.inventory_received", "description": "Inventory facts received from worker (hardware probe callback)", "default_severity": "INFO"},
     {"action": "server_account.users_inventory_received", "description": "OS-user inventory received from worker and reconciled against server_accounts (callback)", "default_severity": "INFO"},
+    {"action": "server_account.drift_detected", "description": "Inventory found OS-user state on a box diverging from the DB (attributes / presence / unknown login). DB is source of truth and is NOT overwritten — only link presence is updated", "default_severity": "WARNING"},
     {"action": "server_account.provision_status", "description": "OS-user provision/update/deprovision result received from worker, present_on_server updated (callback)", "default_severity": "INFO"},
     {"action": "ipmi_controller.credentials_rotated_callback", "description": "Worker confirmed IPMI credentials rotation (callback after worker-side encrypt)", "default_severity": "WARNING"},
     # Постепенная фоновая ротация мастер-ключа (зовётся server_worker'ом)

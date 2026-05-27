@@ -30,6 +30,32 @@ def _hdr(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+@pytest.fixture
+def captured_dispatch(monkeypatch):
+    """Перехват worker_client.dispatch_task для fan-out'а на PATCH'е."""
+    calls: list[dict] = []
+
+    async def fake_dispatch(*, task_kind, target_server_id, payload,
+                            created_by, request_id,
+                            target_resource_id=None, idempotency_key=None):
+        calls.append({
+            "task_kind": task_kind,
+            "target_server_id": target_server_id,
+            "target_resource_id": target_resource_id,
+            "payload": payload,
+            "idempotency_key": idempotency_key,
+        })
+        return f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
+
+    import src.services.worker_client as worker_mod
+    monkeypatch.setattr(worker_mod, "dispatch_task", fake_dispatch)
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+        fake_dispatch,
+    )
+    return calls
+
+
 # ── POST / (create) ──────────────────────────────────────────────────────────
 
 class TestCreateAccount:
@@ -408,6 +434,94 @@ class TestUpdateAccount:
         )
         assert resp.status_code == 200
         assert resp.json()["has_sudo"] is False
+
+
+# ── PATCH /{id} fan-out → update_on_host ─────────────────────────────────────
+
+class TestUpdateAccountFanout:
+    async def test_managed_attr_edit_fans_out_to_all_present_servers(
+        self, client, admin_role_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        srv_a = await make_server(department_id="dep_a")
+        srv_b = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_ids=[srv_a.id, srv_b.id], login="shared", has_sudo=False,
+        )
+        resp = await client.patch(
+            f"{BASE}/{acc.id}",
+            headers=_hdr(admin_role_token_a),
+            json={"has_sudo": True, "unix_groups": ["sudo"]},
+        )
+        assert resp.status_code == 200, resp.text
+        # Диспатч update_on_host ушёл на ОБА привязанных сервера.
+        assert len(captured_dispatch) == 2
+        assert {c["task_kind"] for c in captured_dispatch} == {"account.update_on_host"}
+        assert {c["target_server_id"] for c in captured_dispatch} == {srv_a.id, srv_b.id}
+        for c in captured_dispatch:
+            assert c["payload"]["has_sudo"] is True
+            assert c["payload"]["unix_groups"] == ["sudo"]
+            assert c["target_resource_id"] == acc.id
+
+    async def test_metadata_only_edit_no_fanout(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        # linked_user_id / is_active — не OS-управляемые поля, fan-out не нужен.
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="meta")
+        resp = await client.patch(
+            f"{BASE}/{acc.id}",
+            headers=_hdr(operator_token_a),
+            json={"is_active": False},
+        )
+        assert resp.status_code == 200, resp.text
+        assert captured_dispatch == []
+
+    async def test_empty_update_no_fanout(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="noop")
+        resp = await client.patch(
+            f"{BASE}/{acc.id}", headers=_hdr(operator_token_a), json={},
+        )
+        assert resp.status_code == 200
+        assert captured_dispatch == []
+
+    async def test_fanout_skips_absent_links(
+        self, client, admin_role_token_a, make_server, make_account, db,
+        captured_dispatch,
+    ):
+        from sqlalchemy import select
+
+        from src.models import ServerAccountServer
+
+        srv_present = await make_server(department_id="dep_a")
+        srv_absent = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_ids=[srv_present.id, srv_absent.id], login="partial",
+        )
+        # Аккаунт ушёл с одного из боксов (present_on_server=False).
+        link = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+                ServerAccountServer.server_id == srv_absent.id,
+            )
+        )).scalar_one()
+        link.present_on_server = False
+        await db.commit()
+
+        resp = await client.patch(
+            f"{BASE}/{acc.id}",
+            headers=_hdr(admin_role_token_a),
+            json={"shell": "/bin/zsh"},
+        )
+        assert resp.status_code == 200, resp.text
+        # Только сервер с present-связкой получил задачу.
+        assert len(captured_dispatch) == 1
+        assert captured_dispatch[0]["target_server_id"] == srv_present.id
 
 
 # ── DELETE /{id} ─────────────────────────────────────────────────────────────

@@ -531,6 +531,33 @@ async def receive_inventory(
     }
 
 
+# Атрибуты OS-пользователя, чьё расхождение бокса с БД считается дрейфом.
+_DRIFT_ATTRS = ("has_sudo", "unix_groups", "shell", "home_dir")
+
+
+def _account_attr_drift(account, item) -> dict:
+    """Сравнить атрибуты бокса (`item`) с записью в БД (`account`).
+
+    БД — источник истины: возвращаем поля, по которым бокс разошёлся, в виде
+    `{field: {"expected": <БД>, "found": <бокс>}}`. Группы сравниваем как
+    множества — порядок и дубли в выводе getent не значимы. Пустой dict —
+    расхождений нет.
+    """
+    diff: dict = {}
+    if bool(account.has_sudo) != bool(item.has_sudo):
+        diff["has_sudo"] = {"expected": account.has_sudo, "found": item.has_sudo}
+    if set(account.unix_groups or []) != set(item.unix_groups or []):
+        diff["unix_groups"] = {
+            "expected": list(account.unix_groups or []),
+            "found": list(item.unix_groups or []),
+        }
+    if account.shell != item.shell:
+        diff["shell"] = {"expected": account.shell, "found": item.shell}
+    if account.home_dir != item.home_dir:
+        diff["home_dir"] = {"expected": account.home_dir, "found": item.home_dir}
+    return diff
+
+
 async def receive_users_inventory(
     db: AsyncSession,
     identity: IdentityContext,
@@ -543,15 +570,21 @@ async def receive_users_inventory(
 
     Право: `(server_account, *, inventory_submit)` — узкий грант worker_bot'а.
 
+    Модель shared/M2M: один аккаунт держит одинаковые атрибуты на всех
+    привязанных серверах, истина — БД. Инвентаризация фиксирует факт-состояние
+    бокса, но НЕ перетирает поля аккаунта — расхождение поднимает WARNING-аудит
+    `server_account.drift_detected`, чтобы оператор разобрался вручную.
+
     Reconcile (для инвентаризуемого сервера X):
 
       * найден на X, нет привязанного аккаунта → создать discovered-аккаунт
         (без пароля, `source=discovered`, `department_id` = dept сервера X),
-        привязать к X;
-      * есть и там, и в API → обновить метаданные (sudo, группы, shell, home),
-        пометить связку present + свежий `last_inventory_at`;
-      * привязан в API, но не найден на сервере → пометить связку
-        `present_on_server=False` (drift), запись НЕ удаляем.
+        привязать к X; это drift-сигнал (на боксе живёт неуправляемый юзер);
+      * есть и там, и в API → пометить связку present + свежий
+        `last_inventory_at`; если атрибуты бокса разошлись с БД — drift, поля
+        аккаунта НЕ трогаем;
+      * привязан в API, но не найден на сервере → drift + пометить связку
+        `present_on_server=False`, запись НЕ удаляем.
     """
     try:
         await permissions.require_action(
@@ -592,8 +625,10 @@ async def receive_users_inventory(
     seen_logins = {item.login for item in payload.users}
 
     created = 0
-    updated = 0
+    present = 0
     drifted = 0
+    # Дрейф эмитим после commit'а — события best-effort, в транзакцию не входят.
+    drift_emits: list[dict] = []
 
     for item in payload.users:
         existing = await account_repo.get_account_on_server_by_login(
@@ -619,25 +654,57 @@ async def receive_users_inventory(
                 server_id,
             )
             created += 1
-        else:
-            await account_repo.update(db, existing, {
-                "has_sudo": item.has_sudo,
-                "unix_groups": list(item.unix_groups),
-                "shell": item.shell,
-                "home_dir": item.home_dir,
+            drifted += 1
+            drift_emits.append({
+                "login": item.login,
+                "drift": "unknown_login",
             })
+        else:
+            # БД — истина: атрибуты аккаунта НЕ перетираем, только presence.
+            diff = _account_attr_drift(existing, item)
             link = await account_repo.get_link(db, existing.id, server_id)
             if link is not None:
                 await account_repo.mark_link_inventoried(db, link, present=True)
-            updated += 1
+            present += 1
+            if diff:
+                drifted += 1
+                drift_emits.append({
+                    "login": item.login,
+                    "drift": "attributes",
+                    "fields": sorted(diff.keys()),
+                    "diff": diff,
+                })
 
     # Привязанные в API, но не найденные на сервере — drift.
     for link in links:
         if link.login not in seen_logins:
             await account_repo.mark_link_inventoried(db, link, present=False)
             drifted += 1
+            drift_emits.append({
+                "login": link.login,
+                "drift": "missing_on_box",
+            })
 
     await db.commit()
+
+    for emit in drift_emits:
+        details = {
+            "server_id": server_id,
+            "login": emit["login"],
+            "drift": emit["drift"],
+            "department_id": server.department_id,
+        }
+        if "fields" in emit:
+            details["fields"] = emit["fields"]
+        if "diff" in emit:
+            details["expected"] = {f: v["expected"] for f, v in emit["diff"].items()}
+            details["found"] = {f: v["found"] for f, v in emit["diff"].items()}
+        audit_service.emit(
+            "server_account.drift_detected",
+            target_id=server_id, target_type="server",
+            status="warning", allowed=True,
+            details=details,
+        )
 
     audit_service.emit(
         "server_account.users_inventory_received",
@@ -645,13 +712,13 @@ async def receive_users_inventory(
         status="success", allowed=True,
         details={
             "created": created,
-            "updated": updated,
+            "present": present,
             "drifted": drifted,
             "found": len(payload.users),
             "department_id": server.department_id,
         },
     )
-    return {"ok": True, "created": created, "updated": updated, "drifted": drifted}
+    return {"ok": True, "created": created, "present": present, "drifted": drifted}
 
 
 async def record_provision_status(

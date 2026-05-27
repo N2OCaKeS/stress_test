@@ -4,7 +4,8 @@
 * `POST /servers/{id}/users/inventory` (user-trigger) — 202 + task_id,
   permissions/visibility, decommissioned;
 * `POST /internal/servers/{id}/users/inventory` (worker callback) — reconcile:
-  create discovered / update existing / mark drift; права (worker_bot может,
+  create discovered (drift) / confirm present / warn-on-drift по атрибутам
+  (БД не перетирается) / mark missing (drift); права (worker_bot может,
   reader нет); discovered-аккаунт без пароля.
 """
 
@@ -176,7 +177,7 @@ class TestUsersInventoryTrigger:
 @pytest.mark.usefixtures("soft_dept_mode")
 class TestUsersInventoryReconcile:
     async def test_creates_discovered_account(
-        self, client, worker_bot_token_a, make_server, db, dept_a,
+        self, client, worker_bot_token_a, make_server, db, dept_a, captured_emits,
     ):
         srv = await make_server(department_id=dept_a)
         payload = {"users": [
@@ -190,8 +191,14 @@ class TestUsersInventoryReconcile:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["created"] == 1
-        assert body["updated"] == 0
-        assert body["drifted"] == 0
+        assert body["present"] == 0
+        # Юзер на боксе без аккаунта в БД — drift-сигнал.
+        assert body["drifted"] == 1
+        drift = _events(captured_emits, "server_account.drift_detected")
+        assert len(drift) == 1
+        assert drift[0]["details"]["drift"] == "unknown_login"
+        assert drift[0]["details"]["login"] == "ops"
+        assert drift[0]["status"] == "warning"
 
         await db.commit()
         acc = (await db.execute(
@@ -210,11 +217,16 @@ class TestUsersInventoryReconcile:
         assert link.present_on_server is True
         assert link.last_inventory_at is not None
 
-    async def test_updates_existing_metadata(
+    async def test_attribute_drift_warns_and_keeps_db(
         self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+        captured_emits,
     ):
         srv = await make_server(department_id=dept_a)
-        acc = await make_account(server_id=srv.id, login="postgres", has_sudo=False)
+        acc = await make_account(
+            server_id=srv.id, login="postgres", has_sudo=False,
+            shell="/bin/bash", home_dir="/home/postgres", unix_groups=["postgres"],
+        )
+        # На боксе атрибуты разошлись с БД — БД истина, поля НЕ перетираем.
         payload = {"users": [
             {"login": "postgres", "uid": 1100, "shell": "/bin/sh",
              "home_dir": "/var/lib/postgresql", "unix_groups": ["wheel"],
@@ -225,19 +237,70 @@ class TestUsersInventoryReconcile:
             headers=_hdr(worker_bot_token_a), json=payload,
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["updated"] == 1
-        assert resp.json()["created"] == 0
+        body = resp.json()
+        assert body["present"] == 1
+        assert body["created"] == 0
+        assert body["drifted"] == 1
+
+        drift = _events(captured_emits, "server_account.drift_detected")
+        assert len(drift) == 1
+        d = drift[0]["details"]
+        assert d["drift"] == "attributes"
+        assert d["login"] == "postgres"
+        assert set(d["fields"]) == {"has_sudo", "unix_groups", "shell", "home_dir"}
+        assert d["expected"]["has_sudo"] is False
+        assert d["found"]["has_sudo"] is True
+        assert d["expected"]["shell"] == "/bin/bash"
+        assert d["found"]["shell"] == "/bin/sh"
+        assert drift[0]["status"] == "warning"
 
         await db.commit()
         refreshed = (await db.execute(
             select(ServerAccount).where(ServerAccount.id == acc.id)
         )).scalar_one()
-        assert refreshed.has_sudo is True
-        assert refreshed.shell == "/bin/sh"
-        assert refreshed.home_dir == "/var/lib/postgresql"
-        # managed-аккаунт не теряет пароль при обновлении метаданных.
+        # БД НЕ перетёрта — целевое состояние сохранено.
+        assert refreshed.has_sudo is False
+        assert refreshed.shell == "/bin/bash"
+        assert refreshed.home_dir == "/home/postgres"
+        assert refreshed.unix_groups == ["postgres"]
         assert refreshed.password_encrypted is not None
         assert refreshed.source == "managed"
+        # Связка помечена present + свежий last_inventory_at.
+        link = (await db.execute(
+            select(ServerAccountServer).where(
+                ServerAccountServer.account_id == acc.id,
+                ServerAccountServer.server_id == srv.id,
+            )
+        )).scalar_one()
+        assert link.present_on_server is True
+        assert link.last_inventory_at is not None
+
+    async def test_matching_attributes_no_drift(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+        captured_emits,
+    ):
+        srv = await make_server(department_id=dept_a)
+        acc = await make_account(
+            server_id=srv.id, login="app", has_sudo=True,
+            shell="/bin/bash", home_dir="/home/app", unix_groups=["sudo", "app"],
+        )
+        # Бокс совпадает с БД (группы как множество) — present без drift.
+        payload = {"users": [
+            {"login": "app", "uid": 1200, "shell": "/bin/bash",
+             "home_dir": "/home/app", "unix_groups": ["app", "sudo"],
+             "has_sudo": True},
+        ]}
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["present"] == 1
+        assert body["drifted"] == 0
+        assert _events(captured_emits, "server_account.drift_detected") == []
+
+        await db.commit()
         link = (await db.execute(
             select(ServerAccountServer).where(
                 ServerAccountServer.account_id == acc.id,
@@ -249,6 +312,7 @@ class TestUsersInventoryReconcile:
 
     async def test_missing_account_marked_drift(
         self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+        captured_emits,
     ):
         srv = await make_server(department_id=dept_a)
         acc = await make_account(server_id=srv.id, login="ghost")
@@ -259,6 +323,12 @@ class TestUsersInventoryReconcile:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["drifted"] == 1
+
+        drift = _events(captured_emits, "server_account.drift_detected")
+        assert len(drift) == 1
+        assert drift[0]["details"]["drift"] == "missing_on_box"
+        assert drift[0]["details"]["login"] == "ghost"
+        assert drift[0]["status"] == "warning"
 
         await db.commit()
         # Аккаунт НЕ удалён, связка помечена отсутствующей.
@@ -275,15 +345,17 @@ class TestUsersInventoryReconcile:
         )).scalar_one_or_none()
         assert still_there is not None
 
-    async def test_mixed_create_update_drift(
+    async def test_mixed_create_present_drift(
         self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+        captured_emits,
     ):
         srv = await make_server(department_id=dept_a)
+        # keep: атрибуты бокса совпадут с дефолтами аккаунта → present без drift.
         await make_account(server_id=srv.id, login="keep")
         await make_account(server_id=srv.id, login="gone")
         payload = {"users": [
-            {"login": "keep", "uid": 1001},   # update
-            {"login": "fresh", "uid": 1002},  # create
+            {"login": "keep", "uid": 1001},   # present, без drift
+            {"login": "fresh", "uid": 1002},  # discovered → drift
         ]}
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/users/inventory",
@@ -291,8 +363,12 @@ class TestUsersInventoryReconcile:
         )
         body = resp.json()
         assert body["created"] == 1
-        assert body["updated"] == 1
-        assert body["drifted"] == 1
+        assert body["present"] == 1
+        # fresh (unknown_login) + gone (missing_on_box) — два drift-сигнала.
+        assert body["drifted"] == 2
+        drift = _events(captured_emits, "server_account.drift_detected")
+        kinds = {(e["details"]["login"], e["details"]["drift"]) for e in drift}
+        assert kinds == {("fresh", "unknown_login"), ("gone", "missing_on_box")}
 
     async def test_reader_cannot_submit(
         self, client, reader_token_a, make_server, dept_a,

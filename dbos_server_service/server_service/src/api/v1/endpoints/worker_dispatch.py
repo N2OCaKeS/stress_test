@@ -348,6 +348,113 @@ async def _dispatch_account_on_host(
     return {"operation": operation, "server_id": server.id, "task_id": task_id, "status": "queued"}
 
 
+async def fanout_update_on_host(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    account,
+) -> list[dict]:
+    """Разослать `account.update_on_host` (usermod) на все серверы аккаунта.
+
+    Зовётся после PATCH'а управляемых атрибутов (`has_sudo`/`unix_groups`/
+    `shell`) — синхронизирует уже сохранённое в БД состояние на боксы.
+
+    Best-effort и неблокирующее: правка аккаунта уже закоммичена, fan-out —
+    побочный эффект. Серверы без подтверждённого присутствия аккаунта
+    (`present_on_server=False`) пропускаем — usermod на боксе, где юзера нет,
+    упал бы. Списанные серверы пропускаем. Недоступность worker'а на отдельном
+    сервере не валит остальные диспатчи и не валит ответ PATCH'а — она уходит
+    в audit и в `skipped`.
+
+    Возвращает список поставленных задач `{server_id, task_id}`.
+    """
+    audit_action = "server_account.update_on_host"
+    idempotency_key = request.headers.get("Idempotency-Key") or None
+    request_id = getattr(request.state, "request_id", None)
+
+    target_links = [
+        link for link in account.server_links if link.present_on_server
+    ]
+
+    tasks: list[dict] = []
+    for link in target_links:
+        try:
+            server = await server_svc.load_visible_server(db, identity, link.server_id)
+        except NotFoundError:
+            continue
+        if server.status == ServerStatus.DECOMMISSIONED:
+            audit_service.emit(
+                audit_action, target_id=account.id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "decommissioned",
+                    "server_id": server.id,
+                    "operation": "update",
+                    "source": "edit_fanout",
+                    "department_id": server.department_id,
+                },
+            )
+            continue
+        per_server_key = f"{idempotency_key}:{server.id}" if idempotency_key else None
+        payload = {
+            "server_id": server.id,
+            "account_id": account.id,
+            "target_department_id": server.department_id,
+            "login": account.login,
+            "has_sudo": account.has_sudo,
+            "unix_groups": list(account.unix_groups),
+            "shell": account.shell,
+            "home_dir": account.home_dir,
+            "is_managed": server.is_managed,
+            "management_user": server.management_user,
+        }
+        try:
+            task_id = await worker_client.dispatch_task(
+                task_kind="account.update_on_host",
+                target_server_id=server.id,
+                target_resource_id=account.id,
+                payload=payload,
+                created_by=identity.user_id,
+                request_id=request_id,
+                idempotency_key=per_server_key,
+            )
+        except (ConflictError, ServiceUnavailableError) as exc:
+            reason = (
+                "idempotent_conflict"
+                if isinstance(exc, ConflictError)
+                else "worker_unreachable"
+            )
+            audit_service.emit(
+                audit_action, target_id=account.id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": reason,
+                    "task_kind": "account.update_on_host",
+                    "server_id": server.id,
+                    "operation": "update",
+                    "source": "edit_fanout",
+                    "department_id": server.department_id,
+                },
+            )
+            continue
+        audit_service.emit(
+            audit_action, target_id=account.id, target_type="server_account",
+            status="success", allowed=True,
+            details={
+                "task_id": task_id,
+                "task_kind": "account.update_on_host",
+                "server_id": server.id,
+                "operation": "update",
+                "login": account.login,
+                "source": "edit_fanout",
+                "department_id": server.department_id,
+            },
+        )
+        tasks.append({"server_id": server.id, "task_id": task_id})
+    return tasks
+
+
 # ── /servers/{id}/power/status — live BMC-probe через worker ────────────────
 
 

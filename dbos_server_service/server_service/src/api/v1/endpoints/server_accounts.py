@@ -11,9 +11,10 @@ GET карточки доступен по `view` или `view_password`. Дер
 `POST/DELETE /server-accounts/{id}/servers` (гейтятся `update`).
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.endpoints.worker_dispatch import fanout_update_on_host
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.models import ServerAccount
@@ -144,6 +145,13 @@ async def get_account(
     return _to_response(obj, password_b64)
 
 
+# Поля, которые worker применяет на боксе через usermod — их правка
+# триггерит fan-out `update_on_host` на привязанные серверы. `home_dir`/
+# `is_active`/`linked_user_id` остаются только в БД: modify_user на воркере
+# usermod'ит группы/sudo/shell, дом-каталог и метаданные не двигает.
+_OS_MANAGED_FIELDS = {"has_sudo", "unix_groups", "shell"}
+
+
 @router.patch(
     "/{account_id}",
     response_model=ServerAccountResponse,
@@ -152,7 +160,9 @@ async def get_account(
         "Частичное обновление (PATCH). Смена пароля — отдельный endpoint "
         "`/rotate_password`. Привязка/отвязка серверов — `/servers`. Подъём "
         "`has_sudo=False → True` требует action `grant_sudo` (admin-only). "
-        "Снятие sudo допустимо обычным `update`."
+        "Снятие sudo допустимо обычным `update`. При изменении OS-управляемых "
+        "атрибутов (`has_sudo`/`unix_groups`/`shell`) правка рассылается "
+        "`update_on_host` на все серверы, где аккаунт присутствует."
     ),
     responses={
         403: {"description": "Нет `update` (или `grant_sudo` при подъёме has_sudo)."},
@@ -163,10 +173,21 @@ async def update_account(
     account_id: str,
     body: ServerAccountUpdate,
     identity: CurrentIdentity,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountResponse:
-    """Update-эндпоинт. Доступ: `(server_account, *, update)`."""
+    """Update-эндпоинт. Доступ: `(server_account, *, update)`.
+
+    Если PATCH задел OS-управляемые атрибуты (`has_sudo`/`unix_groups`/`shell`),
+    после сохранения рассылаем `account.update_on_host` на все серверы, где
+    аккаунт присутствует — синк правки на боксы (см. `fanout_update_on_host`).
+    """
+    changed_fields = set(body.model_dump(exclude_unset=True).keys())
     obj = await svc.update_account(db, identity, account_id, body)
+    if changed_fields & _OS_MANAGED_FIELDS:
+        await fanout_update_on_host(
+            db=db, identity=identity, request=request, account=obj,
+        )
     return _to_response(obj)
 
 

@@ -117,9 +117,9 @@ class UsersInventoryCallbackResponse(BaseModel):
     """Сводка reconcile инвентаризации пользователей."""
 
     ok: bool = True
-    created: int = Field(default=0, description="Сколько discovered-аккаунтов заведено.")
-    updated: int = Field(default=0, description="Сколько существующих обновлено.")
-    drifted: int = Field(default=0, description="Сколько привязок помечено отсутствующими (drift).")
+    created: int = Field(default=0, description="Сколько discovered-аккаунтов заведено (каждый — drift-сигнал).")
+    present: int = Field(default=0, description="Сколько существующих аккаунтов подтверждено на боксе (present_on_server=True).")
+    drifted: int = Field(default=0, description="Сколько drift-сигналов поднято: расхождение атрибутов + привязки, отсутствующие на боксе.")
 
 
 # ── OS-user provision callback ──────────────────────────────────────────────

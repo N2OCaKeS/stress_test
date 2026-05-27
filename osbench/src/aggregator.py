@@ -120,32 +120,23 @@ class BenchmarkAggregator:
         fs_data = self.data['fs_mark']
         results = {}
         
+        file_count_map = fs_data.get('file_count', {})
+        
         metric_keys = ['speed', 'app_overhead', 'create_avg', 'write_avg', 
-                       'fsync_avg', 'sync_avg', 'close_avg', 'unlink_avg']
+                    'fsync_avg', 'sync_avg', 'close_avg', 'unlink_avg']
         
-        # Собираем все уникальные значения количества файлов
-        all_f_counts = set()
-        for key in metric_keys:
-            if key in fs_data and isinstance(fs_data[key], dict):
-                all_f_counts.update(fs_data[key].keys())
-        
-        # Группируем результаты по количеству файлов
-        for f_count in sorted(all_f_counts, key=int): 
-            group_key = f"{f_count}_files"
+        # Группируем по количеству файлов
+        for iter_key, file_count in file_count_map.items():
+            group_key = f"{file_count}_files"
             results[group_key] = {}
             
-            for key in metric_keys:
-                if key in fs_data:
-                    if isinstance(fs_data[key], dict) and f_count in fs_data[key]:
-                        results[group_key][key] = {
-                            'value': fs_data[key][f_count],
-                            'unit': 'ops/sec' if key == 'speed' else 'microseconds'
-                        }
-                    elif not isinstance(fs_data[key], dict):
-                        results[group_key][key] = {
-                            'value': fs_data[key],
-                            'unit': 'ops/sec' if key == 'speed' else 'microseconds'
-                        }
+            for metric in metric_keys:
+                if metric in fs_data and iter_key in fs_data[metric]:
+                    value = fs_data[metric][iter_key]
+                    results[group_key][metric] = {
+                        'value': value,
+                        'unit': 'ops/sec' if metric == 'speed' else 'microseconds'
+                    }
         
         return results
     
@@ -187,7 +178,8 @@ class BenchmarkAggregator:
             
             # fs_mark тесты
             for test_name, test_data in fs_results.items():
-                subsystem_results[test_name] = test_data
+                if subsystem == 'filesystem':
+                    subsystem_results[test_name] = test_data
             
             table_data.append({
                 'subsystem': subsystem,
@@ -217,7 +209,7 @@ class BenchmarkAggregator:
                     'unit': test_data['unit']
                 })
         
-        # LMbench, Perf, fs_mark 
+        # LMbench результаты
         for test_name, test_data in lm_results.items():
             rows.append({
                 'source': 'LMbench',
@@ -227,6 +219,7 @@ class BenchmarkAggregator:
                 'unit': test_data['unit']
             })
         
+        # Perf результаты
         for test_name, test_data in perf_results.items():
             rows.append({
                 'source': 'perf bench',
@@ -236,14 +229,18 @@ class BenchmarkAggregator:
                 'unit': test_data['unit']
             })
         
+        # fs_mark результаты 
         for test_name, test_data in fs_results.items():
-            rows.append({
-                'source': 'fs_mark',
-                'test_name': f'fs_mark_{test_name}',
-                'subsystem': self._get_subsystem_for_test('fs_mark', test_name),
-                'value': test_data['value'],
-                'unit': test_data['unit']
-            })
+            # test_name = "240000_files"
+            # test_data = {"speed": {...}, "create_avg": {...}, ...}
+            for metric_name, metric_data in test_data.items():
+                rows.append({
+                    'source': 'fs_mark',
+                    'test_name': f"{test_name}_{metric_name}",
+                    'subsystem': self._get_subsystem_for_test('fs_mark', metric_name),
+                    'value': metric_data['value'],
+                    'unit': metric_data['unit']
+                })
         
         return pd.DataFrame(rows)
     
@@ -260,8 +257,9 @@ class BenchmarkAggregator:
                 for perf_test in tests.get('perf', []):
                     if perf_test in test_name:  
                         return subsystem
-            elif source == 'fs_mark' and test_name in tests.get('fs_mark', []):
-                return subsystem
+            elif source == 'fs_mark':
+                if test_name in tests.get('fs_mark', []):
+                    return subsystem
         return 'other'
     
     def print_summary(self):
@@ -296,6 +294,16 @@ class BenchmarkAggregator:
                             log.info(f"    {copies} копий: {value:>15,.2f} {unit}")
                         else:
                             log.info(f"    {copies} копий: {value:>15.4f} {unit}")
+                elif isinstance(test_data, dict) and all(isinstance(v, dict) and 'value' in v for v in test_data.values()):
+                    # fs_mark - группировка по файлам
+                    log.info(f"\n  {test_name}:")
+                    for metric_name, metric_data in test_data.items():
+                        value = metric_data['value']
+                        unit = metric_data['unit']
+                        if value > 1000:
+                            log.info(f"    {metric_name:20}: {value:>15,.2f} {unit}")
+                        else:
+                            log.info(f"    {metric_name:20}: {value:>15.4f} {unit}")
                 else:
                     # Другие тесты
                     value = test_data['value']

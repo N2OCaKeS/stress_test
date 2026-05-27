@@ -154,12 +154,13 @@ slowapi per-IP, default 500/min, health bypass, 429 не публикует http
 - `hypothesis`-инварианты на ASCII / full-Unicode / случайные байты: round-trip, nonce unique across encrypts, любой bit-flip ciphertext → InvalidTag.
 - Migration endpoints (`POST /secrets/reencrypt-batch`): `TestMigrationStatusAuth/Shape`, `TestReencryptBatchAuth/Contract/AuditStatus` — батч пере-шифровывает old-version secrets под новый ключ, идемпотентность, аудит.
 
-### `unit/test_introspect_cache.py`, `unit/test_introspect_client_pool.py`, `unit/test_introspect_pool_config.py`, `unit/test_introspect_service_key.py`
+### `unit/test_introspect_no_cache.py`, `unit/test_introspect_client_pool.py`, `unit/test_introspect_pool_config.py`, `unit/test_introspect_service_key.py`
 
-Кеш introspect-ответов (5 sec TTL):
+Introspect без кэша ответов (свежий вызов на каждый запрос):
 
-- `test_same_token_30_requests_one_introspect` — кеш-hit.
-- `test_cache_expires_after_ttl`, `test_different_tokens_different_cache_slots`, `test_middleware_then_endpoint_dep_one_introspect`, `test_negative_response_not_cached`, `test_token_cache_key_uses_sha256` (не plaintext в качестве ключа), `test_clear_cache_helper`, `test_introspect_exception_not_cached`.
+- `test_get_current_identity_introspects_every_request` — N запросов → N introspect'ов (нет кэш-hit'ов).
+- `test_revoked_token_rejected_immediately` — токен, ставший `active=False`, отбивается на следующем же запросе (нет 5s-окна).
+- `test_platform_admin_guard_introspects_every_request` — middleware тоже зовёт свежий introspect.
 
 Pool: pooled `AsyncClient` для introspect вместо per-call (закрывает slowloris-подобную нагрузку на auth_service), shape-валидация токена до round-trip (отбивает мусор без сетевого запроса), service-API-key header даже при пустом ключе.
 
@@ -249,7 +250,7 @@ Audit-событие `dept_header_missing` эмитится в soft-mode ког�
 - **Тестовая БД** — `server_db_test` в контейнере `server-tests-test-postgres-1`. Схема пересоздаётся раз на сессию (`DROP SCHEMA public CASCADE` → `alembic upgrade head` через subprocess).
 - **Изоляция тестов** — внешняя транзакция + SAVEPOINT, откатывается на teardown каждого теста (как в `auth_service`). `await db.commit()` внутри сервиса не сохраняется между тестами.
 - **`AsyncClient`** — `httpx.AsyncClient(transport=ASGITransport(app=app))` поверх свежего FastAPI-приложения с подменённой зависимостью `get_db` → тестовая сессия.
-- **Mock introspect** — `monkeypatch` на `src.dependencies.auth._introspect`. Перед каждым тестом cleared, после — тоже. Кеш introspect (`_get_or_cache_introspect`) clear'ится в обе стороны.
+- **Mock introspect** — `monkeypatch` на `src.dependencies.auth._introspect`. Кэша ответов нет — каждый запрос идёт через свежий (замоканный) introspect.
 - **Reset rate-limiter** — `app.state.limiter.reset()` between tests, чтобы 168+ запросов в подряд не отбивались 429.
 - **Token factory** — `make_token(platform_role=..., department_id=..., service_roles=..., allowed_services=...)` собирает identity-body и регистрирует его под уникальным `tok_<uuid>`.
 - **Готовые токены**:

@@ -8,9 +8,9 @@
 
 - **Ingest.** `POST /api/logging/v1/events` принимает структурированные события от сервисов-источников по `Authorization: Bearer <SERVICE_API_KEY>` + `X-Service-Identity: <service>`. Валидирует payload, нормализует Unicode, прогоняет через redaction-слой и rule engine.
 - **Rule engine.** Цепочка правил на каждом событии: `OVERRIDE_SEVERITY` меняет уровень, `SUPPRESS` отбрасывает событие до записи, `ALLOW` сохраняет и прерывает цепочку. Match по `service`, `action` (glob `user.*`), `status`, `severity`, `allowed`. Реализация — `src/services/rule_service.py`.
-- **Retention.** Per-severity / per-service политики в `retention_policies`. Фоновый sweep раз в сутки в 00:00 MSK; advisory-lock защищает от двойного срабатывания в multi-replica. События самого `loging_service` ретеншном никогда не удаляются.
+- **Retention.** Per-severity / per-service политики в `retention_policies`. Фоновый sweep раз в сутки в 00:00 MSK; advisory-lock защищает от двойного срабатывания в multi-replica; DELETE чанкуется (commit на чанк), чтобы не лочить огромные выборки. `PUT` и `DELETE /retention` работают со ВСЕМ активным набором (при filtered-режиме это N×M строк). События самого `loging_service` ретеншном никогда не удаляются.
 - **Storage.** Append-only таблица `audit_events`; партиционирование/ротация снаружи, средствами Postgres.
-- **Read API.** `GET /events`, `GET /rules`, `GET /services`, `GET /retention` — для admin/reader. Dept-скоуп применяется автоматически для не-глобальных ролей.
+- **Read API.** `GET /events`, `GET /rules`, `GET /services`, `GET /retention` — для admin/reader. Dept-скоуп применяется автоматически для не-глобальных ролей. На `GET /events` точный `total` считается только при `?include_total=true` (иначе `total=null`, признак следующей страницы — `has_more`).
 
 ## Архитектура
 
@@ -40,6 +40,8 @@
 
 Шесть уровней: `TRACE` < `DEBUG` < `INFO` < `WARNING` < `ERROR` < `CRITICAL`. Назначаются автоматически по таблице `(action, status) → severity` в `src/services/rule_service.py::_DEFAULT_SEVERITY`. Для неизвестных action'ов: `status ∈ {failure, denied}` → `WARNING`, иначе `INFO`. Правила `OVERRIDE_SEVERITY` переопределяют без деплоя.
 
+Дефолты для server-действий: `server.prepare` / `server.prepared` и `server_account.provision` (и success, и failure) → `CRITICAL`; `server_account.update_on_host` → `INFO`; `server_account.deprovision` и `server_account.drift_detected` → `WARNING`. Для `server_account.provision` каталог `_DEFAULT_SEVERITY` строже (CRITICAL), чем `default_severity` в самом `server_service` (WARNING) — расхождение известно, источник истины по severity-каталогу не зафиксирован.
+
 Подробный справочник — `AUDIT_EVENTS.md`.
 
 ## Rule engine
@@ -67,8 +69,10 @@ Match-полей пять: `match_service`, `match_action` (glob с одной �
 
 - `RetentionPolicyCreate` принимает `retain_days` + опциональные `severity_filter: list[Severity] | None` и `service_filter: list[str] | None`. Repository пишет Cartesian (N×M строк) — одна row на каждую пару `(severity_i, service_j)`. Без фильтров — глобальная семантика (один row `NULL`/`NULL`).
 - `RetentionPolicyUpdate` фильтр-полей не принимает: для смены filter'ов делается full re-PUT (осознанный trade-off).
+- `PUT /retention` — replace-семантика: сначала деактивируется ВЕСЬ прежний активный набор (`deactivate_all_active`), затем пишется новый. Так сброс фильтров не оставляет старые узкие предикаты активными рядом с новой политикой. Unfiltered-PUT поверх существующей политики создаёт новую строку (новый `id`), а не in-place update.
+- `DELETE /retention` (idempotent, 204) деактивирует ВЕСЬ активный набор — «отключить retention» гасит все активные строки (для filtered это N×M), чтобы фоновая ротация полностью остановилась. Self-audit несёт `deactivated_count` — реальный размер погашенного набора.
 
-Daemon-thread (`src/main.py::_retention_loop`) считает время до следующего MSK 00:00 без `sleep(86400)`-дрейфа, берёт Postgres advisory-lock и итерирует активные политики — каждая выдаёт свой `DELETE` с предикатами. Инвариант: события `service='loging_service'` не удаляются никогда, даже если в фильтре пытаются их таргетировать (гард `_PROTECTED_SERVICE` в `apply_active`).
+Daemon-thread (`src/main.py::_retention_loop`) считает время до следующего MSK 00:00 без `sleep(86400)`-дрейфа, берёт Postgres advisory-lock и итерирует активные политики — каждая выдаёт свой `DELETE` с предикатами. DELETE чанкуется (`DELETE ... WHERE id IN (SELECT ... LIMIT chunk)` с commit'ом на чанк), чтобы не держать row-locks на миллионы строк и не тормозить ingest. Инвариант: события `service='loging_service'` не удаляются никогда, даже если в фильтре пытаются их таргетировать (гард `_PROTECTED_SERVICE` в `apply_active`).
 
 После успешного sweep'а сервис эмитит self-audit событие `logging.retention_sweep` с `{deleted_count, retain_days, run_date_msk}`.
 
@@ -86,7 +90,7 @@ Daemon-thread (`src/main.py::_retention_loop`) считает время до с
 - **HTTPS guard для introspect.** `AUTH_SERVICE_URL` валидируется на https в prod (`APP_ENV=production`), localhost-исключение для devcontainer. В prod + https-remote (non-loopback) запрещено `INTROSPECT_TLS_VERIFY=false` — fail-fast на старте. Пустой `INTROSPECT_SERVICE_API_KEY` при непустом `SERVICE_API_KEYS` тоже отбивается на старте.
 - **Idempotency.** `EventCreate.idempotency_key` (≤ 128 символов, opaque-токен в body) + partial UNIQUE `(service, idempotency_key) WHERE idempotency_key IS NOT NULL`. Repository делает `pg_insert(...).on_conflict_do_nothing(...)` и возвращает канонический row — outbox-retry safe: повторный POST с тем же ключом возвращает 201 с прежним `event_id` и `received_at`.
 - **Redaction.** На стороне `loging_service` `event_service.record()` и `record_admin_action()` ещё раз прогоняют `details` через `utils/redaction.redact()` — defense-in-depth. Маскируются по имени ключа (`password`, `token`, `api_key`, `secret`, `credential`, …) и по форме значения (JWT-like, argon2/bcrypt-хэши).
-- **Rate-limit на ingest.** `100/minute` per-IP (slowapi) + отдельный bucket per-service по `X-Service-Identity`. `headers_enabled=False` — `X-RateLimit-Remaining` не утекает атакующему.
+- **Rate-limit на ingest.** `POST /events` ключуется per-service-identity (`X-Service-Identity`, нормализованный, с fallback на IP при отсутствии header'а), бюджет `INGEST_RATE_LIMIT` (`100/minute` по умолчанию). За k8s ingress общий per-IP bucket позволял одному сервису выжать бюджет остальных — теперь bucket'ы независимы. `headers_enabled=False` — `X-RateLimit-Remaining` не утекает атакующему.
 - **Bypass-guard для self-audit.** `record_admin_action()` для собственных CRUD-операций пишет минуя `apply_rules` — нельзя выключить аудит rules/retention через SUPPRESS-правило.
 
 ## События, которые сервис эмитит сам

@@ -112,11 +112,24 @@ src/
 | `account.provision` | `server_account.provision` | real SSH `useradd` (idempotent) → callback `submit_provision_status(present=True)` |
 | `account.update_on_host` | `server_account.update_on_host` | real SSH `usermod` (sudo/группы/shell) → callback `submit_provision_status(present=True)` |
 | `account.deprovision` | `server_account.deprovision` | real SSH `userdel` (idempotent) → callback `submit_provision_status(present=False)` |
-| `server.prepare` | `server.prepare` | real SSH: заводит управляющего пользователя `dbos` + `authorized_keys` → callback `submit_prepared` |
+| `server.prepare` | `server.prepare` | real SSH: заводит управляющего пользователя `dbos` + NOPASSWD-sudoers (`/etc/sudoers.d/<user>-management`, валидируется `visudo -cf`) + `authorized_keys` → callback `submit_prepared`. Bootstrap-креды читаются из ephemeral Redis по ссылке из payload (`bootstrap_creds_key`); нет ключа / истёк TTL → `SSH_BOOTSTRAP_CREDS_MISSING` (FAILED) |
 
 Все handler'ы обёрнуты в `_runner.run_task(task_id, audit_action, audit_target_type, impl)`. 2-session pattern: mark_running CAS → impl → terminal status + audit outbox в одной транзакции.
 
 **`_bmc_helpers.extract_bmc_host`** — общий хелпер для power/passwords handler'ов: режет `scheme://`, port и trailing slash из `endpoint_url` так, чтобы dispatcher не получил `https://https://...` при HEAD-probe. Раньше дублировался копипастой в `power.py` и `passwords.py`.
+
+## SSH-сессии: management vs self
+
+Все SSH-таски (`inventory.sync`, `users.inventory`, `account.provision`/`update_on_host`/`deprovision`, `account.rotate_password`) выбирают сессию через `ssh_client._build_session` по признаку `is_managed`, который server_service кладёт в payload вместе с `management_user`:
+
+- **managed-сервер** (`prepare` уже прошёл) — заходим управляющим пользователем (`management_user` из payload, иначе дефолтный `SSH_MANAGEMENT_USER`=`dbos`) по приватному ключу `SSH_MANAGEMENT_PRIVATE_KEY_PATH`, `password=None`, привилегированные команды через `sudo` (NOPASSWD-sudoers ставится при бутстрапе). Сервер managed, а ключ не сконфигурен / файла нет → `SSH_MANAGEMENT_KEY_MISSING` ещё до `asyncssh.connect`.
+- **не-managed** — self-сессия под самим аккаунтом (`login` + пароль), как раньше.
+
+`apply_session_hints` копирует `is_managed`/`management_user` из payload в creds; если server_service их не прислал — фолбэк на self-сессию.
+
+На managed-сервере **пароль аккаунта для аутентификации не запрашивается** (вход по ключу): `account.update_on_host`/`deprovision` не делают `fetch_account_password` вовсе; `account.provision` тянет пароль best-effort только чтобы выставить его на боксе, а discovered-/passwordless-аккаунт (`fetch` отдал 404) проходит без `chpasswd` — задача завершается SUCCEEDED, не FAILED.
+
+**Host-key verification для server-SSH выключена.** Тестовый флот периодически переустанавливается, host-key меняется при каждом reimage, поэтому `known_hosts`/strict непрактичны; management-сеть считается доверенной. Env `SSH_STRICT_HOST_KEY_CHECKING` / `SSH_STRICT_NO_HOST_KEY` больше нет (старые значения в .env игнорируются).
 
 ## Audit outbox — at-least-once
 
@@ -134,8 +147,9 @@ src/
 
 - `mark_running` — CAS `UPDATE tasks SET status='running', attempt=attempt+1 WHERE id=:id AND status='queued' RETURNING id`. При rejection — audit `duplicate_dispatch`, impl не вызывается. Защищает от повторного enqueue и race двух worker'ов.
 - При failure `_runner` решает retry vs terminal по `attempt < max_attempts`:
-  - retry → `mark_pending_for_retry` (status='queued', `scheduled_retry_at = now() + back-off`) + `_schedule_retry` (fire-and-forget `asyncio.sleep` + `broker.find_task.kicker().kiq`);
+  - retry → `mark_pending_for_retry` (status='queued', `scheduled_retry_at = now() + back-off`) + `_schedule_retry` (`asyncio.sleep` + `broker.find_task.kicker().kiq`). Хендл retry-таски держится сильной ссылкой в модульном `_RETRY_TASKS` (снимается done-callback'ом) — иначе GC мог бы убить fire-and-forget task'у на длинном back-off;
   - exhausted → `mark_failed`.
+- `register_running_task(task_id)` вызывается **до** commit'а `mark_running` (внутри той же сессии): как только row стал `running` в БД, его id уже в `RUNNING_TASKS`, поэтому drain при SIGTERM не пропускает задачу в окне «commit прошёл, impl ещё не стартовал». Если commit упадёт, преждевременная регистрация снимается.
 - **Durable**: `scheduled_retry_at` пишется в DB **до** sleep'а. При WORKER_STARTUP хук `_recover_scheduled_retries` SELECT'ит `scheduled_retry_at <= now()` через `FOR UPDATE SKIP LOCKED` и re-kick'ает — даже если worker умер во время back-off sleep'а, retry не теряется.
 - Back-off: `min(10s * 2^(attempt-1), 300s)`. Для `max_attempts=3` это 10s → 20s.
 
@@ -245,9 +259,11 @@ make test-worker
 
 | ENV | Default | Назначение |
 |---|---|---|
-| `SSH_MANAGEMENT_USER` | `dbos` | имя управляющего пользователя, которого заводит `server.prepare` на боксе |
+| `SSH_MANAGEMENT_USER` | `dbos` | имя управляющего пользователя, которого заводит `server.prepare` на боксе и под которым идут management-сессии для managed-серверов |
 | `SSH_MANAGEMENT_PUBLIC_KEY` | `""` | публичный SSH-ключ в `authorized_keys` управляющего пользователя. Пусто → `prepare` отказывается (`SSH_INVALID_ARG`), нечего класть |
-| `SSH_MANAGEMENT_PRIVATE_KEY_PATH` | `""` | путь к приватному ключу для будущих management-сессий (mounted secret). Сам ключ в коде не хардкодится |
+| `SSH_MANAGEMENT_PRIVATE_KEY_PATH` | `""` | путь к приватному ключу для management-сессий managed-серверов (mounted secret). Сам ключ в коде не хардкодится. Сервер managed, но ключ не задан / файла нет → `SSH_MANAGEMENT_KEY_MISSING` |
+
+Bootstrap-креды `prepare` worker читает из Redis (тот же `REDIS_URL`, что и broker) по ссылке `bootstrap_creds_key` из payload — ключ `dbos:prepare_creds:<task_id>`. TTL ключа выставляет server_service (его env `PREPARE_CREDS_TTL_SECONDS`, default 900s); пока TTL жив, retry работает, по истечении — `SSH_BOOTSTRAP_CREDS_MISSING`. Plaintext в `tasks.payload` не оседает.
 
 ### Master-key re-encryption (background)
 

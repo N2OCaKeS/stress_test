@@ -55,7 +55,7 @@ URL-префикс: `/api/server/v1/`. Порт по умолчанию: `8002`.
 
 ```
 HTTP запрос
-  → middleware: rate_limit → platform_admin_guard → attach_request_id → audit_access
+  → middleware: security_headers → rate_limit → platform_admin_guard → attach_request_id → audit_access
   → src/api/v1/endpoints/*.py   (FastAPI роутеры; только request/response)
   → src/services/*.py           (бизнес-логика: server, secrets, permissions, audit, worker_client, …)
   → src/repositories/*.py       (SQLAlchemy запросы)
@@ -71,7 +71,7 @@ HTTP запрос
 | `api/v1/endpoints/` | servers, ipmi, accounts, installed_packages (live SSH-probe, без БД), inventory (hardware + OS-users), os-versions, permissions, health, internal, worker_dispatch, secrets_migration |
 | `core/` | `config.py` (pydantic-settings), `constants.py` (`ENTITY_ACTIONS`, `Action`, `EntityType`, `ServerStatus`), `exceptions.py` (`AppException` + envelope handler) |
 | `db/` | `session.py`, `base.py`, миграции Alembic в `migrations/versions/` |
-| `dependencies/` | `auth.py` (introspect + TTL-cache 5s), `db.py` (AsyncSession) |
+| `dependencies/` | `auth.py` (introspect на каждый запрос, без кэша; пул только под TCP/TLS), `db.py` (AsyncSession) |
 | `middleware/` | `platform_admin_guard.py` — блокирует platform-админов от business endpoint'ов |
 | `models/` | 7 ORM-таблиц (см. ниже) |
 | `repositories/` | server, server_account (+ server_account_servers join), ipmi_controller, server_disk, entity_permission |
@@ -123,7 +123,7 @@ HTTP запрос
 - `ipmi_controllers` CRUD + `rotate_credentials`. IPMI можно создать вместе с сервером (вложенный `ipmi`-блок в `POST /servers`) или отдельным `POST /servers/{id}/ipmi`. GET карточки отдаёт `password_b64`, если вызывающий держит `view_credentials`. Пароль на create/rotate — под той же политикой.
 - `server_disks` — только через вложенный `storage` сервера (слоты `system`/`disk1`/`diskN`, `size_gb`, `is_system`). Отдельного disks-endpoint'а нет.
 - `os_versions` — write-CRUD под матрицей; чтение каталога (list / get по id / get по имени) — публичное, без auth. Поле `repositories` (список URL).
-- OS-пользователи на боксе — инвентаризация (`POST /servers/{id}/users/inventory` → worker `getent` → reconcile, поля `source` / `last_inventory_at` / `present_on_server`) и реальный CRUD на ОС (`provision` / `update_on_host` / `deprovision` → worker `useradd`/`usermod`/`userdel`).
+- OS-пользователи на боксе — инвентаризация (`POST /servers/{id}/users/inventory` → worker `getent` → reconcile, поля `source` / `last_inventory_at` / `present_on_server`) и реальный CRUD на ОС (`provision` / `update_on_host` / `deprovision` → worker `useradd`/`usermod`/`userdel`). Reconcile работает **warn-on-drift**: БД — источник истины по атрибутам аккаунта (`has_sudo`/`unix_groups`/`shell`/`home_dir`), расхождение с боксом не перетирает поля, а пишет audit `server_account.drift_detected` (WARNING); обновляется только presence связки (`present_on_server`). Версия ОС сервера наоборот синкается box→DB. PATCH управляемых атрибутов аккаунта (`has_sudo`/`unix_groups`/`shell`) делает fan-out `account.update_on_host` на **все** привязанные серверы (best-effort, неблокирующее, пропускает `present_on_server=False` и списанные).
 - `prepare` — бутстрап управления: `POST /servers/{id}/prepare` (bootstrap-креды в base64) → worker заводит управляющего пользователя `dbos` + кладёт management SSH-ключ; на сервере выставляются `is_managed` / `management_user` / `prepared_at`.
 - `installed_packages` live-listing через SSH worker (без БД-таблицы — каждый запрос идёт `dpkg-query`/`rpm -qa` на сервере)
 
@@ -156,10 +156,12 @@ Worker-task'и, зарегистрированные в брокере, с кл�
    валидируется на старте: `min_length=32`.
 
 2. **Доступ к сервису — только через JWT от auth_service.** Сам JWT
-   сервис не выпускает. Каждый запрос идёт через introspect-dependency
-   с TTL-кэшем 5s. `AUTH_SERVICE_URL` валидируется в config: в
-   `APP_ENV in {production, staging}` обязан быть `https://` (исключение —
-   localhost для dev).
+   сервис не выпускает. Каждый запрос валидируется свежим introspect'ом —
+   кэша ответов нет, поэтому отозванный токен / бан / смена роли перестают
+   действовать немедленно, без окна ожидания. HTTP-пул переиспользуется,
+   но только под TCP/TLS, не под ответы. `AUTH_SERVICE_URL` валидируется в
+   config: в `APP_ENV in {production, staging}` обязан быть `https://`
+   (исключение — localhost для dev).
 
 3. **Action-based матрица.** Права не "роль → набор", а тройка
    `(entity_type, role, action)` в `entity_permissions`. Whitelist
@@ -214,6 +216,11 @@ Worker-task'и, зарегистрированные в брокере, с кл�
    slowloris-защита. `X-Forwarded-For` принимается только от
    `trusted_proxy_ips` allow-list (default `[]`). 429 не порождает audit
    (anti-amplification). Health/Ready исключены из audit и rate-limit'а.
+   `SecurityHeadersMiddleware` ставит на каждый ответ (включая 429/422/401)
+   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+   `Referrer-Policy: strict-origin-when-cross-origin` и CSP
+   `default-src 'none'; frame-ancestors 'none'`; HSTS добавляется только при
+   `SECURITY_HSTS_ENABLED=true` (за https-фронтом). Регистрируется outermost.
 
 9. **Ротация мастер-ключа шифрования.** Версии ключа живут одновременно
    (`SERVER_ENCRYPTION_KEY__vN`): новый шифрует, старый — расшифровывает
@@ -249,7 +256,9 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 | `SERVER_ENCRYPTION_KEY_VERSION` | активная версия для новой записи; default 2 (HKDF), минимум 2 — v1 (legacy SHA-256) только для расшифровки старых ciphertext'ов |
 | `SERVER_ENCRYPTION_KEY__vN` | legacy ключи под версию N |
 | `SERVER_WORKER_DATABASE_URL` | cross-DB INSERT в `dev_server_worker.tasks` |
-| `SERVER_WORKER_REDIS_URL` | taskiq publish |
+| `SERVER_WORKER_REDIS_URL` | taskiq publish (он же хранит ephemeral bootstrap-креды prepare) |
+| `PREPARE_CREDS_TTL_SECONDS` | TTL bootstrap-кред prepare в Redis (ключ `dbos:prepare_creds:<task_id>`); default 900 |
+| `SECURITY_HSTS_ENABLED` | включает `Strict-Transport-Security` на всех ответах; default `False` (только за https-фронтом) |
 | `LOGGING_SERVICE_URL` | endpoint loging_service'а |
 | `LOGGING_SERVICE_API_KEY` | ingest-ключ для аудита |
 | `INTERNAL_REQUIRE_DEPT_HEADER` | default `True`; soft mode (`False`) — только для dev/test |
@@ -274,7 +283,7 @@ make test-dev-server     # в devcontainer
   `test_audit_emission.py`, `test_worker_bot_least_privilege.py`,
   `test_worker_bot_grants.py`, `test_rate_limit.py`,
   `test_introspect_*.py`, `test_stub_envelope_and_openapi.py`,
-  `test_platform_admin_block.py` и др.
+  `test_platform_admin_block.py`, `test_security_headers.py` и др.
 - `tests/unit/` — `test_secrets_service.py`, `test_secrets_hypothesis.py`,
   `test_entity_actions.py`, `test_permissions.py`, `test_schemas_server.py`,
   `test_worker_client_dispatch.py`, `test_worker_client_broker_lock.py`,
@@ -282,10 +291,11 @@ make test-dev-server     # в devcontainer
   `test_internal_soft_mode_warning_audit.py`.
 
 Что покрыто: audit emission на всех ~222 точках, worker_bot least-privilege,
-rate-limit, introspect pool + TTL-кэш, stub envelope+OpenAPI, dispatch_task
+rate-limit, introspect без кэша (свежий вызов на каждый запрос, revoked-токен
+отбивается немедленно), security headers, stub envelope+OpenAPI, dispatch_task
 idempotency + zombie rollback, broker_lock concurrency, platform_admin_guard
 middleware, https-guard для AUTH_SERVICE_URL в prod, startup audit
-lifecycle.
+lifecycle, массовая ротация с per-server-tolerance.
 
 Что НЕ покрыто реальной интеграцией: cross-DB INSERT в
 `dev_server_worker.tasks` (mocked), httpx-вызовы к auth_service (introspect

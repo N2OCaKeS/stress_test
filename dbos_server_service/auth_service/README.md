@@ -77,6 +77,8 @@ Pydantic-схемы в `src/schemas/` — отдельная плоскость 
 
 **Чувствительные claims** (`is_banned`, `allowed_services`, `service_roles`, `platform_role`, `department_id`) в JWT **не лежат**. На каждом запросе `get_current_identity`/`introspect` перечитывает их из БД через `user_repo.get_by_id(sub)` + `collect_user_permissions`. Это позволяет немедленно отзывать доступ — забаненный юзер не пройдёт даже с валидной подписью свежего JWT.
 
+`client_credentials`-JWT (m2m, `actor_type=oauth_client`) минимизирован симметрично user-JWT: в payload только `sub` (= `client_id`), `actor_type` и `oauth_client_id` плюс стандартные `iat`/`exp`/`iss`/`aud`. `department_id`/`allowed_services`/`service_roles` в payload не кладутся — эффективный `scope` уходит в OAuth-ответ и audit, а права клиентские сервисы перечитывают через introspect.
+
 Полный identity отдаёт `GET /me` и `POST /authorization/introspect`:
 
 ```json
@@ -95,6 +97,8 @@ Pydantic-схемы в `src/schemas/` — отдельная плоскость 
 }
 ```
 
+Для всех типов субъектов (user-JWT, PAT, bot) `allowed_services`/`service_roles` собираются единым `collect_user_permissions` — учитывается как прямой dept-access, так и сервисы, доступные через группы. PAT при introspect видит group-derived service access симметрично user-JWT и `/me`; собственный scope PAT (`allowed_services`) при этом только сужается до реально доступного юзеру набора, прав не добавляет.
+
 ---
 
 ## Безопасность
@@ -110,13 +114,16 @@ Pydantic-схемы в `src/schemas/` — отдельная плоскость 
 - **Security headers + CORS** — middleware вкручен (HSTS, X-Content-Type-Options, Referrer-Policy и т.д.).
 - **Service-to-service** — `/authorization/*` закрыты `SERVICE_API_KEY` + опциональный `X-Service-Identity` (soft / strict через `STRICT_SERVICE_IDENTITY`). `SERVICE_API_KEYS` JSON env даёт per-service ключи в дополнение к shared.
 - **Production-guards** — `_validate_production_secrets` отбивает `change-me`-substring placeholder'ы, требует длину секретов ≥32, обязательные `LOGGING_SERVICE_API_KEY`/`DOCKER_RSA_PRIVATE_KEY`, и https-схему для `LOGGING_SERVICE_URL` в prod.
-- **Identity TTL-кэш** — `get_current_identity` кэширует identity на короткий срок по Bearer-токену, чтобы не дёргать БД на каждом запросе. Кэш не маскирует revoke — TTL короче access TTL.
+- **Identity TTL-кэш** — `get_current_identity` кэширует identity на короткий срок по Bearer-токену, чтобы не дёргать БД на каждом запросе. Кэш не маскирует revoke — TTL короче access TTL. Кэш bounded (LRU-вытеснение по `maxsize`), не растёт безгранично.
+- **Audit на HTTP-исходах** — `http.access_denied`/`http.client_error`/`http.server_error` несут actor_id/username/ip/ua/request_id (middleware-порядок выставлен так, что контекст жив на момент emit). Rate-limit 429 при этом не плодит `http.client_error`.
 
 ---
 
 ## API — обзор
 
 Все endpoints под `/api/auth/v1/`. Полный каталог с примерами и error codes — в [API_ENDPOINTS.md](API_ENDPOINTS.md). Swagger: `http://localhost:8000/docs`.
+
+List-эндпоинты `GET /users`, `/users/department/{id}`, `/bots`, `/groups` пагинируются query-параметрами `limit` (default 50, max 200) и `offset`; тело остаётся списком, полное число записей — в заголовке `X-Total-Count`.
 
 ### Категории
 

@@ -41,6 +41,18 @@
 - `X-Request-ID` — корелляционный ID (генерируется middleware если не передан).
 - `Retry-After` — на `429`.
 - `WWW-Authenticate` — на `401` для bearer auth.
+- `X-Total-Count` — полное число записей (без учёта `limit`/`offset`) на list-эндпоинтах с пагинацией.
+
+### Пагинация
+
+List-эндпоинты `GET /users`, `GET /users/department/{department_id}`, `GET /bots`, `GET /groups` принимают query-параметры:
+
+| Параметр | Тип | Default | Диапазон |
+|---|---|---|---|
+| `limit` | int | `50` | `1..200` (вне диапазона → 422) |
+| `offset` | int | `0` | `>= 0` (отрицательный → 422) |
+
+Тело ответа остаётся плоским списком (`list[...]`); полное число записей под текущий scope/фильтр отдаётся в заголовке `X-Total-Count`. Для `GET /users/department/{department_id}` total считается в рамках отдела. Дефолтный `limit=50` отдаёт малые наборы целиком; для больших — клиент листает через `offset`.
 
 ### Lockout (защита от brute-force)
 
@@ -122,11 +134,11 @@ OAuth2 Password flow для Swagger UI. `include_in_schema=False`. Логика 
 
 ### `GET /users`
 
-Auth: `account_admin`. Response: `list[UserResponse]`.
+Auth: `account_admin`. Пагинация (`limit`/`offset`, см. общие правила). Response: `list[UserResponse]` + заголовок `X-Total-Count`.
 
 ### `GET /users/department/{department_id}`
 
-Auth: AnyAdmin. `account_admin` — любой отдел; `department_admin` — только свой (иначе 404, чтобы не было ID oracle).
+Auth: AnyAdmin. `account_admin` — любой отдел; `department_admin` — только свой (иначе 404, чтобы не было ID oracle). Пагинация (`limit`/`offset`); `X-Total-Count` считается в рамках отдела.
 
 Errors: `DEPARTMENT_NOT_FOUND` (404).
 
@@ -147,9 +159,9 @@ Auth: AnyAdmin. Body:
 }
 ```
 
-`department_id` обязателен для всех, кроме `account_admin`. `department_admin` может создавать только в своём отделе и **не** account_admin.
+`department_id` обязателен для всех, кроме `account_admin`. `department_admin` может создавать только в своём отделе и **не** account_admin. Назначать любую `platform_role` может только `account_admin`.
 
-Errors: `USERNAME_TAKEN` (409), `DEPARTMENT_NOT_FOUND` (404), `PERMISSION_DENIED` (403).
+Errors: `USERNAME_TAKEN` (409), `DEPARTMENT_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin создаёт в чужом отделе, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin пытается выдать `platform_role`.
 
 ### `PATCH /users/{user_id}`
 
@@ -361,7 +373,7 @@ Errors: `BOT_NAME_TAKEN` (409), `DEPARTMENT_NOT_FOUND` (404).
 
 ### `GET /bots`
 
-Auth: AnyAdmin. `account_admin` — все; `department_admin` — только свой отдел.
+Auth: AnyAdmin. `account_admin` — все; `department_admin` — только свой отдел. Пагинация (`limit`/`offset`, см. общие правила) + `X-Total-Count`.
 
 ### `PATCH /bots/{bot_id}`
 
@@ -414,7 +426,7 @@ Auth: AnyAdmin. Снимает все `BotServiceRole` для пары (bot, ser
 
 ### `GET /groups`
 
-Auth: Bearer. `account_admin` — все; `department_admin` / regular — только свой scope.
+Auth: Bearer. `account_admin` — все; `department_admin` / regular — только свой scope. Пагинация (`limit`/`offset`, см. общие правила) + `X-Total-Count`.
 
 ### `POST /groups`
 
@@ -507,6 +519,8 @@ Response (`IntrospectResponse`):
 ```
 
 `active=false` при невалидном/истёкшем/отозванном токене (остальные поля None / пустые). Чувствительные поля (`is_banned`, `allowed_services`, `service_roles`) — свежее чтение из БД, не из JWT payload.
+
+Для всех трёх типов субъектов `allowed_services`/`service_roles` собираются единым путём (`collect_user_permissions`) — учитываются как прямой dept-access, так и сервисы, доступные юзеру через группы. PAT даёт пересечение собственного scope (`allowed_services`) с реально доступным юзеру набором (dept ∪ группы), симметрично user-JWT и `/me`; права PAT при этом не расширяются.
 
 Errors: 401 при отсутствии/неверном `SERVICE_API_KEY` или `X-Service-Identity` (в strict-режиме); 429 при rate-limit.
 
@@ -730,6 +744,7 @@ Auth: public. Response: JWKS (RS256).
 - `SERVICE_ROLE_ALREADY_ASSIGNED`, `SERVICE_ROLE_NOT_FOUND`, `SERVICE_ROLE_CONFLICT`
 - `DEPARTMENT_MISMATCH`, `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT`
 - `CANNOT_ASSIGN_SERVICE`, `CANNOT_ASSIGN_ROLE`
+- `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — назначить `platform_role` пытается не `account_admin` (на `POST /users`).
 - `BAN_ALREADY_ACTIVE`, `BAN_NOT_FOUND`, `NOT_BANNED`, `UNBAN_FORBIDDEN`
 
 ### Groups

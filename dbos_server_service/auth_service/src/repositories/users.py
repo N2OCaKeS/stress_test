@@ -22,15 +22,48 @@ class UserRepository:
     async def get_by_email(self, email: str) -> User | None:
         return await self._db.scalar(select(User).where(User.email == email))
 
-    async def list_all(self) -> list[User]:
-        result = await self._db.scalars(select(User).where(User.is_active.is_(True)))
+    async def list_all(self, limit: int | None = None, offset: int = 0) -> list[User]:
+        stmt = (
+            select(User)
+            .where(User.is_active.is_(True))
+            .order_by(User.created_at, User.id)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit).offset(offset)
+        result = await self._db.scalars(stmt)
         return list(result)
 
-    async def list_by_department(self, department_id: str) -> list[User]:
-        result = await self._db.scalars(
-            select(User).where(User.department_id == department_id, User.is_active.is_(True))
+    async def list_by_department(
+        self, department_id: str, limit: int | None = None, offset: int = 0
+    ) -> list[User]:
+        stmt = (
+            select(User)
+            .where(User.department_id == department_id, User.is_active.is_(True))
+            .order_by(User.created_at, User.id)
         )
+        if limit is not None:
+            stmt = stmt.limit(limit).offset(offset)
+        result = await self._db.scalars(stmt)
         return list(result)
+
+    async def list_by_ids(self, user_ids: list[str]) -> list[User]:
+        """Batch-выборка юзеров по списку id. Пустой список — пустой результат."""
+        if not user_ids:
+            return []
+        result = await self._db.scalars(select(User).where(User.id.in_(user_ids)))
+        return list(result)
+
+    async def count_active(self) -> int:
+        return await self._db.scalar(
+            select(func.count()).select_from(User).where(User.is_active.is_(True))
+        ) or 0
+
+    async def count_by_department(self, department_id: str) -> int:
+        return await self._db.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.department_id == department_id, User.is_active.is_(True))
+        ) or 0
 
     async def create(
         self,

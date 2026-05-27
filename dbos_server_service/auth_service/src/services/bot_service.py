@@ -26,6 +26,7 @@ from src.schemas.bots import (
     BotUpdate,
 )
 from src.services import audit_service
+from src.utils.pagination import PaginationParams
 
 
 async def _validate_bot_services(dept_repo: DepartmentRepository, department_id: str, requested: list[str]) -> None:
@@ -99,29 +100,52 @@ async def create_bot(
     return _to_response(bot)
 
 
-async def list_bots(db: AsyncSession, actor_id: str, actor_role: str | None, department_id: str | None = None, request_id: str | None = None) -> list[BotResponse]:
-    """Список ботов с учётом scope-а смотрящего."""
+async def list_bots(
+    db: AsyncSession,
+    actor_id: str,
+    actor_role: str | None,
+    department_id: str | None = None,
+    pagination: PaginationParams | None = None,
+    request_id: str | None = None,
+) -> tuple[list[BotResponse], int]:
+    """Список ботов с учётом scope-а смотрящего (страница).
+
+    Возвращает `(страница, total)`. `total` считается в рамках того же
+    scope-фильтра, что и сама страница.
+    """
+    pagination = pagination or PaginationParams()
     user_repo = UserRepository(db)
     bot_repo = BotRepository(db)
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
         actor = await user_repo.get_by_id(actor_id)
         dept_id = actor.department_id if actor else None
-        bots = await bot_repo.list_by_department(dept_id) if dept_id else []
+        if dept_id:
+            bots = await bot_repo.list_by_department(
+                dept_id, limit=pagination.limit, offset=pagination.offset
+            )
+            total = await bot_repo.count_by_department(dept_id)
+        else:
+            bots, total = [], 0
     elif department_id:
-        bots = await bot_repo.list_by_department(department_id)
+        bots = await bot_repo.list_by_department(
+            department_id, limit=pagination.limit, offset=pagination.offset
+        )
+        total = await bot_repo.count_by_department(department_id)
     else:
-        bots = await bot_repo.list_all()
+        bots = await bot_repo.list_all(limit=pagination.limit, offset=pagination.offset)
+        total = await bot_repo.count_all()
 
     audit_service.emit(
         "bot.list", actor_id, status="success", allowed=True, request_id=request_id,
         details={
             "count": len(bots),
+            "total": total,
             "filter_department_id": department_id,
             "scope": "department" if (actor_role == PlatformRole.DEPARTMENT_ADMIN or department_id) else "all",
         },
     )
-    return [_to_response(b) for b in bots]
+    return [_to_response(b) for b in bots], total
 
 
 async def update_bot(

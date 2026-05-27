@@ -28,6 +28,7 @@ from src.schemas.users import (
 )
 from src.services import audit_service
 from src.services.auth_service import collect_user_permissions
+from src.utils.pagination import PaginationParams
 from src.utils.time import utcnow
 
 
@@ -62,18 +63,24 @@ def _to_response(user, dept_name: str | None) -> UserResponse:
 async def list_users(
     db: AsyncSession,
     actor_id: str,
+    pagination: PaginationParams | None = None,
     request_id: str | None = None,
-) -> list[UserResponse]:
-    """Глобальный список юзеров. account_admin only."""
+) -> tuple[list[UserResponse], int]:
+    """Глобальный список юзеров (страница). account_admin only.
+
+    Возвращает `(страница, total)` — `total` идёт в `X-Total-Count`.
+    """
+    pagination = pagination or PaginationParams()
     user_repo = UserRepository(db)
     dept_repo = DepartmentRepository(db)
-    users = await user_repo.list_all()
+    users = await user_repo.list_all(limit=pagination.limit, offset=pagination.offset)
+    total = await user_repo.count_active()
     dept_names = {d.id: d.display_name for d in await dept_repo.list_all()}
     audit_service.emit(
         "user.list", actor_id, status="success", request_id=request_id,
-        details={"count": len(users), "scope": "all"},
+        details={"count": len(users), "total": total, "scope": "all"},
     )
-    return [_to_response(u, dept_names.get(u.department_id)) for u in users]
+    return [_to_response(u, dept_names.get(u.department_id)) for u in users], total
 
 
 async def list_users_by_department(
@@ -81,9 +88,11 @@ async def list_users_by_department(
     actor_id: str,
     actor_role: str | None,
     department_id: str,
+    pagination: PaginationParams | None = None,
     request_id: str | None = None,
-) -> list[UserResponse]:
-    """Юзеры одного отдела. department_admin — только свой; account_admin — любой."""
+) -> tuple[list[UserResponse], int]:
+    """Юзеры одного отдела (страница). department_admin — только свой; account_admin — любой."""
+    pagination = pagination or PaginationParams()
     user_repo = UserRepository(db)
     dept_repo = DepartmentRepository(db)
 
@@ -99,13 +108,21 @@ async def list_users_by_department(
                 message="department_admin can only view users in their own department",
             )
 
-    users = await user_repo.list_by_department(department_id)
+    users = await user_repo.list_by_department(
+        department_id, limit=pagination.limit, offset=pagination.offset
+    )
+    total = await user_repo.count_by_department(department_id)
     audit_service.emit(
         "user.list", actor_id, status="success",
-        details={"department_id": department_id, "count": len(users), "scope": "department"},
+        details={
+            "department_id": department_id,
+            "count": len(users),
+            "total": total,
+            "scope": "department",
+        },
         request_id=request_id,
     )
-    return [_to_response(u, dept.display_name) for u in users]
+    return [_to_response(u, dept.display_name) for u in users], total
 
 
 async def create_user(
@@ -603,14 +620,12 @@ async def ban_user(
     # ── Bot tokens revoke ────────────────────────────────────────────────────
     # `BotAccount.created_by` — единственная user→bot связь в текущей схеме.
     # Если `created_by` пуст (бот старый или сделан account_admin'ом без UI)
-    # — бот в выборку не попадает.
-    owned_bots = [b for b in await bot_repo.list_all() if b.created_by == user_id]
-    revoked_bot_tokens = 0
-    for bot in owned_bots:
-        for token in await bot_token_repo.list_for_bot(bot.id):
-            if token.revoked_at is None:
-                await bot_token_repo.revoke(token)
-                revoked_bot_tokens += 1
+    # — бот в выборку не попадает. Выбираем ботов узко по `created_by` и
+    # отзываем их токены одним bulk-UPDATE вместо per-bot/per-token цикла.
+    owned_bots = await bot_repo.list_by_creator(user_id)
+    revoked_bot_tokens = await bot_token_repo.revoke_all_for_bots(
+        [bot.id for bot in owned_bots]
+    )
 
     pending_audit = {
         "action": "user.ban",
@@ -955,17 +970,25 @@ async def get_user_permissions(
     direct_service_roles.sort(key=lambda r: (r.service_name, r.role_name))
 
     # Groups + per-group services/roles. Каждая membership → группа → её
-    # service_accesses (active) + service_roles (active).
+    # service_accesses (active) + service_roles (active). Группы, их access и
+    # роли тянем тремя batch-выборками по списку group_id, а не 3 запросами
+    # на каждую группу.
     memberships = await group_repo.list_user_groups(target.id)
+    member_group_ids = [m.group_id for m in memberships]
+    active_groups_by_id = {
+        g.id: g for g in await group_repo.list_active_by_ids(member_group_ids)
+    }
+    access_by_group = await group_repo.list_service_access_for_groups(member_group_ids)
+    roles_by_group = await group_repo.list_roles_for_groups(member_group_ids)
     groups: list[UserGroupWithRolesEntry] = []
     for m in memberships:
-        grp = await group_repo.get(m.group_id)
-        if grp is None or not grp.is_active:
+        grp = active_groups_by_id.get(m.group_id)
+        if grp is None:
             # Stale membership на soft-deleted группу — скип. UI не должен
             # видеть «призрак» удалённой группы.
             continue
-        access_list = await group_repo.list_service_access(grp.id)
-        role_rows = await group_repo.list_roles(grp.id)
+        access_list = access_by_group.get(grp.id, [])
+        role_rows = roles_by_group.get(grp.id, [])
         groups.append(
             UserGroupWithRolesEntry(
                 group_id=grp.id,

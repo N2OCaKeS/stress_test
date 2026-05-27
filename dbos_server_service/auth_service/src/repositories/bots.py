@@ -1,6 +1,6 @@
 """DAO для `BotAccount` — CRUD bot-accounts."""
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.bot_account import BotAccount
@@ -14,15 +14,49 @@ class BotRepository:
     async def get_by_id(self, bid: str) -> BotAccount | None:
         return await self._db.get(BotAccount, bid)
 
-    async def list_by_department(self, department_id: str) -> list[BotAccount]:
+    async def list_by_department(
+        self, department_id: str, limit: int | None = None, offset: int = 0
+    ) -> list[BotAccount]:
+        stmt = (
+            select(BotAccount)
+            .where(BotAccount.department_id == department_id)
+            .order_by(BotAccount.created_at, BotAccount.id)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit).offset(offset)
+        result = await self._db.scalars(stmt)
+        return list(result)
+
+    async def list_all(
+        self, limit: int | None = None, offset: int = 0
+    ) -> list[BotAccount]:
+        stmt = select(BotAccount).order_by(BotAccount.created_at, BotAccount.id)
+        if limit is not None:
+            stmt = stmt.limit(limit).offset(offset)
+        result = await self._db.scalars(stmt)
+        return list(result)
+
+    async def list_by_creator(self, creator_id: str) -> list[BotAccount]:
+        """Боты, созданные конкретным юзером (`created_by`).
+
+        Узкая выборка для ban'а — без full scan таблицы `bot_accounts`.
+        """
         result = await self._db.scalars(
-            select(BotAccount).where(BotAccount.department_id == department_id)
+            select(BotAccount).where(BotAccount.created_by == creator_id)
         )
         return list(result)
 
-    async def list_all(self) -> list[BotAccount]:
-        result = await self._db.scalars(select(BotAccount))
-        return list(result)
+    async def count_all(self) -> int:
+        return await self._db.scalar(
+            select(func.count()).select_from(BotAccount)
+        ) or 0
+
+    async def count_by_department(self, department_id: str) -> int:
+        return await self._db.scalar(
+            select(func.count())
+            .select_from(BotAccount)
+            .where(BotAccount.department_id == department_id)
+        ) or 0
 
     async def create(
         self,

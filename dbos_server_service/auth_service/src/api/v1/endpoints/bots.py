@@ -1,10 +1,11 @@
 """Эндпоинты ботов и service-account'ов."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import AnyAdmin
 from src.dependencies.db import get_db
+from src.utils.pagination import PaginationParams, pagination_params
 from src.schemas.bots import (
     BotCreate,
     BotResponse,
@@ -64,16 +65,25 @@ async def create_bot(
 )
 async def list_bots(
     request: Request,
+    response: Response,
     identity: AnyAdmin,
+    pagination: PaginationParams = Depends(pagination_params),
     db: AsyncSession = Depends(get_db),
 ) -> list[BotResponse]:
-    """Список ботов с учётом scope-а смотрящего."""
-    return await bot_service.list_bots(
+    """Список ботов с учётом scope-а смотрящего.
+
+    Пагинация:
+        Query-параметры `limit`/`offset`; общее число — в `X-Total-Count`.
+    """
+    items, total = await bot_service.list_bots(
         db=db,
         actor_id=identity.user_id,
         actor_role=identity.platform_role,
+        pagination=pagination,
         request_id=getattr(request.state, "request_id", None),
     )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.patch(

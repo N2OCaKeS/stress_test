@@ -19,6 +19,7 @@ import hashlib
 import logging
 import secrets
 import time
+from collections import OrderedDict
 from typing import Annotated
 
 from fastapi import Depends, Request, Security
@@ -223,11 +224,15 @@ async def get_current_identity(
 
 
 # ── TTL-cache для identity ───────────────────────────────────────────────────
-# Module-level dict — один процесс на pod, GIL даёт thread-safety dict ops.
-# Key = sha256(token) — heap-dump-safe. Value = (IdentityContext, expires_at).
-# TTL=5s — окно burst'а одной UI-сессии, но недостаточно для долгого
-# stale-доступа забаненного. Размер не ограничен; типичный pod держит ~10K
-# live JWT — приемлемо. LRU добавим, если когда-то припрёт.
+# Module-level OrderedDict — один процесс на pod, GIL даёт thread-safety для
+# атомарных dict-операций. Key = sha256(token) — heap-dump-safe. Value =
+# (IdentityContext, expires_at). TTL=5s — окно burst'а одной UI-сессии, но
+# недостаточно для долгого stale-доступа забаненного.
+#
+# Размер ограничен `_IDENTITY_CACHE_MAXSIZE`: при превышении вытесняем самый
+# старый по вставке (LRU-ish — мы re-insert'им запись при cache hit, см.
+# `_identity_cache_get`). Без cap'а burst коротко-живущих токенов (PAT/bot
+# per-request) гнал бы кэш в неограниченный рост → OOM pod'а.
 
 # TTL=5s по умолчанию; читается из Settings (env `IDENTITY_CACHE_TTL_SECONDS`).
 # 0 / отрицательное — disable (тесты, мутирующие User прямым SQL'ом мимо
@@ -235,7 +240,11 @@ async def get_current_identity(
 # на процесс, отдельная переменная нужна, чтобы тесты могли monkeypatch'ить
 # её на лету без сброса `lru_cache(get_settings)`.
 _IDENTITY_CACHE_TTL_SECONDS: float = float(get_settings().identity_cache_ttl_seconds)
-_identity_cache: dict[str, tuple[IdentityContext, float]] = {}
+# Потолок числа entries. Каждая запись — небольшой кортеж + строка-ключ;
+# 50k уверенно покрывает live-JWT крупного pod'а, оставаясь под контролем по
+# памяти. При превышении — eviction самого старого.
+_IDENTITY_CACHE_MAXSIZE: int = 50_000
+_identity_cache: "OrderedDict[str, tuple[IdentityContext, float]]" = OrderedDict()
 
 
 def _token_cache_key(token: str) -> str:
@@ -265,20 +274,25 @@ def _identity_cache_get(token: str) -> IdentityContext | None:
         # бесконечно для коротко-живущих токенов.
         _identity_cache.pop(key, None)
         return None
+    # Cache hit — двигаем запись в конец, чтобы eviction выбрасывал реально
+    # давно не используемые токены, а не недавно прочитанные.
+    _identity_cache.move_to_end(key)
     return identity
 
 
 def _identity_cache_put(token: str, identity: IdentityContext) -> None:
     """Положить identity в кэш с expires_at = now + TTL.
 
-    TTL<=0 → no-op (кэш disabled).
+    TTL<=0 → no-op (кэш disabled). При переполнении `_IDENTITY_CACHE_MAXSIZE`
+    вытесняем самые старые записи.
     """
     if _IDENTITY_CACHE_TTL_SECONDS <= 0:
         return
-    _identity_cache[_token_cache_key(token)] = (
-        identity,
-        time.time() + _IDENTITY_CACHE_TTL_SECONDS,
-    )
+    key = _token_cache_key(token)
+    _identity_cache[key] = (identity, time.time() + _IDENTITY_CACHE_TTL_SECONDS)
+    _identity_cache.move_to_end(key)
+    while len(_identity_cache) > _IDENTITY_CACHE_MAXSIZE:
+        _identity_cache.popitem(last=False)
 
 
 def _identity_cache_clear() -> None:

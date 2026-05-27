@@ -1,10 +1,11 @@
 """Эндпоинты управления пользовательскими группами."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import AnyAdmin, CurrentUserIdentity
 from src.dependencies.db import get_db
+from src.utils.pagination import PaginationParams, pagination_params
 from src.schemas.common import OkResponse
 from src.schemas.groups import (
     GroupCreate, GroupResponse, GroupRoleAssignRequest, GroupRoleResponse,
@@ -27,10 +28,23 @@ groups_router = APIRouter(prefix="/groups")
     description="account_admin видит все. department_admin/обычный юзер — только свои.",
 )
 async def list_groups(
-    request: Request, identity: CurrentUserIdentity, db: AsyncSession = Depends(get_db),
+    request: Request,
+    response: Response,
+    identity: CurrentUserIdentity,
+    pagination: PaginationParams = Depends(pagination_params),
+    db: AsyncSession = Depends(get_db),
 ) -> list[GroupResponse]:
-    """Список групп с учётом scope-а смотрящего."""
-    return await group_service.list_groups(db, identity, request_id=getattr(request.state, "request_id", None))
+    """Список групп с учётом scope-а смотрящего.
+
+    Пагинация:
+        Query-параметры `limit`/`offset`; общее число — в `X-Total-Count`.
+    """
+    items, total = await group_service.list_groups(
+        db, identity, pagination=pagination,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @groups_router.post(

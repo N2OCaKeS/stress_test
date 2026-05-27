@@ -1,10 +1,11 @@
 """Эндпоинты CRUD пользователей и управления ролями/группами."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import AccountAdmin, AnyAdmin, CurrentUserIdentity
 from src.dependencies.db import get_db
+from src.utils.pagination import PaginationParams, pagination_params
 from src.schemas.common import OkResponse
 from src.schemas.groups import UserGroupsResponse
 from src.schemas.users import (
@@ -30,7 +31,9 @@ router = APIRouter(prefix="/users")
 )
 async def list_users(
     request: Request,
+    response: Response,
     identity: AccountAdmin,
+    pagination: PaginationParams = Depends(pagination_params),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserResponse]:
     """Глобальный список юзеров.
@@ -38,12 +41,19 @@ async def list_users(
     Доступ:
         Только account_admin. Department_admin использует
         `/users/department/{department_id}`.
+
+    Пагинация:
+        Query-параметры `limit`/`offset`. Полное число записей — в заголовке
+        `X-Total-Count`.
     """
-    return await user_service.list_users(
+    items, total = await user_service.list_users(
         db=db,
         actor_id=identity.user_id,
+        pagination=pagination,
         request_id=getattr(request.state, "request_id", None),
     )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get(
@@ -55,7 +65,9 @@ async def list_users(
 async def list_users_by_department(
     department_id: str,
     request: Request,
+    response: Response,
     identity: AnyAdmin,
+    pagination: PaginationParams = Depends(pagination_params),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserResponse]:
     """Юзеры одного отдела.
@@ -64,17 +76,23 @@ async def list_users_by_department(
         * account_admin — любой отдел;
         * department_admin — только свой (иначе 404, чтобы не было ID-oracle).
 
+    Пагинация:
+        Query-параметры `limit`/`offset`; общее число — в `X-Total-Count`.
+
     Возможные ошибки:
         * `DEPARTMENT_NOT_FOUND` (404) — нет такого отдела, либо
           department_admin попросил чужой.
     """
-    return await user_service.list_users_by_department(
+    items, total = await user_service.list_users_by_department(
         db=db,
         actor_id=identity.user_id,
         actor_role=identity.platform_role,
         department_id=department_id,
+        pagination=pagination,
         request_id=getattr(request.state, "request_id", None),
     )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.post(

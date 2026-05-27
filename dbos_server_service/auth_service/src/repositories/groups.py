@@ -1,6 +1,6 @@
 """DAO для `UserGroup` + membership + group-service-access/role."""
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.group_service_access import GroupServiceAccess
@@ -28,8 +28,36 @@ class GroupRepository:
             )
         )
 
-    async def list_active(self) -> list[UserGroup]:
-        result = await self._db.scalars(select(UserGroup).where(UserGroup.is_active.is_(True)))
+    async def list_active(
+        self, limit: int | None = None, offset: int = 0
+    ) -> list[UserGroup]:
+        stmt = (
+            select(UserGroup)
+            .where(UserGroup.is_active.is_(True))
+            .order_by(UserGroup.created_at, UserGroup.id)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit).offset(offset)
+        result = await self._db.scalars(stmt)
+        return list(result)
+
+    async def count_active(self) -> int:
+        return await self._db.scalar(
+            select(func.count())
+            .select_from(UserGroup)
+            .where(UserGroup.is_active.is_(True))
+        ) or 0
+
+    async def list_active_by_ids(self, group_ids: list[str]) -> list[UserGroup]:
+        """Batch-выборка активных групп по id. Stale/soft-deleted отбрасываются."""
+        if not group_ids:
+            return []
+        result = await self._db.scalars(
+            select(UserGroup).where(
+                UserGroup.id.in_(group_ids),
+                UserGroup.is_active.is_(True),
+            )
+        )
         return list(result)
 
     async def create(
@@ -119,6 +147,26 @@ class GroupRepository:
         )
         return list(result)
 
+    async def list_service_access_for_groups(
+        self, group_ids: list[str]
+    ) -> dict[str, list[GroupServiceAccess]]:
+        """Активный service-access по списку групп, сгруппированный по group_id.
+
+        Один IN-запрос вместо per-group `list_service_access`.
+        """
+        if not group_ids:
+            return {}
+        rows = await self._db.scalars(
+            select(GroupServiceAccess).where(
+                GroupServiceAccess.group_id.in_(group_ids),
+                GroupServiceAccess.is_active.is_(True),
+            )
+        )
+        out: dict[str, list[GroupServiceAccess]] = {}
+        for row in rows:
+            out.setdefault(row.group_id, []).append(row)
+        return out
+
     async def grant_service(self, group_id_: str, service_name: str, granted_by: str | None) -> GroupServiceAccess:
         obj = GroupServiceAccess(
             id=group_service_access_id(),
@@ -160,6 +208,26 @@ class GroupRepository:
             )
         )
         return list(result)
+
+    async def list_roles_for_groups(
+        self, group_ids: list[str]
+    ) -> dict[str, list[GroupServiceRole]]:
+        """Активные service-роли по списку групп, сгруппированные по group_id.
+
+        Один IN-запрос вместо per-group `list_roles`.
+        """
+        if not group_ids:
+            return {}
+        rows = await self._db.scalars(
+            select(GroupServiceRole).where(
+                GroupServiceRole.group_id.in_(group_ids),
+                GroupServiceRole.is_active.is_(True),
+            )
+        )
+        out: dict[str, list[GroupServiceRole]] = {}
+        for row in rows:
+            out.setdefault(row.group_id, []).append(row)
+        return out
 
     async def set_roles(
         self, group_id_: str, service_name: str, roles: list[str], assigned_by: str | None

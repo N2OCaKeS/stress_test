@@ -13,6 +13,7 @@ from src.schemas.groups import (
     MemberResponse, UserGroupsResponse,
 )
 from src.services import audit_service
+from src.utils.pagination import PaginationParams
 
 
 def _invalidate_identity_cache(user_id: str) -> None:
@@ -48,11 +49,19 @@ def _grp_response(grp) -> GroupResponse:
 
 # ── Group CRUD ────────────────────────────────────────────────────────────────
 
-async def list_groups(db: AsyncSession, identity, request_id=None) -> list[GroupResponse]:
-    """Список активных групп. account_admin only."""
+async def list_groups(
+    db: AsyncSession, identity, pagination: PaginationParams | None = None, request_id=None
+) -> tuple[list[GroupResponse], int]:
+    """Список активных групп (страница). account_admin only.
+
+    Возвращает `(страница, total)` — `total` идёт в `X-Total-Count`.
+    """
     _require_admin(identity)
+    pagination = pagination or PaginationParams()
     repo = GroupRepository(db)
-    return [_grp_response(g) for g in await repo.list_active()]
+    groups = await repo.list_active(limit=pagination.limit, offset=pagination.offset)
+    total = await repo.count_active()
+    return [_grp_response(g) for g in groups], total
 
 
 async def create_group(
@@ -154,9 +163,12 @@ async def list_members(db: AsyncSession, identity, group_id: str, request_id=Non
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
     user_repo = UserRepository(db)
     members = await repo.list_members(group_id)
+    users_by_id = {
+        u.id: u for u in await user_repo.list_by_ids([m.user_id for m in members])
+    }
     result = []
     for m in members:
-        user = await user_repo.get_by_id(m.user_id)
+        user = users_by_id.get(m.user_id)
         if user:
             result.append(MemberResponse(user_id=user.id, username=user.username, added_at=m.added_at))
     return result
@@ -277,10 +289,14 @@ async def list_user_groups(db: AsyncSession, identity, user_id: str, request_id=
 
     repo = GroupRepository(db)
     memberships = await repo.list_user_groups(user_id)
+    groups_by_id = {
+        g.id: g
+        for g in await repo.list_active_by_ids([m.group_id for m in memberships])
+    }
     result = []
     for m in memberships:
-        grp = await repo.get(m.group_id)
-        if grp and grp.is_active:
+        grp = groups_by_id.get(m.group_id)
+        if grp:
             result.append(UserGroupsResponse(
                 group_id=grp.id,
                 group_name=grp.name,

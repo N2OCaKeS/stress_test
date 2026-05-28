@@ -183,10 +183,6 @@ def _build_broker() -> ListQueueBroker:
     async def _ipmi_rotate(task_id: str) -> None:  # noqa: ARG001
         return None
 
-    @broker.task("inventory.probe")
-    async def _inventory_probe(task_id: str) -> None:  # noqa: ARG001
-        return None
-
     @broker.task("installed_packages.list")
     async def _installed_packages_list(task_id: str) -> None:  # noqa: ARG001
         return None
@@ -217,7 +213,6 @@ def _build_broker() -> ListQueueBroker:
         "power.reboot": _power_reboot,
         "power.status": _power_status,
         "inventory.sync": _inventory_sync,
-        "inventory.probe": _inventory_probe,
         "account.rotate_password": _account_rotate,
         "ipmi.rotate_password": _ipmi_rotate,
         "installed_packages.list": _installed_packages_list,

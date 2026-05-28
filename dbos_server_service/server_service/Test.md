@@ -80,17 +80,13 @@ Strict-mode (`INTERNAL_REQUIRE_DEPT_HEADER=true`, default в проде) тре�
 
 ### `test_internal_callbacks.py` — worker→server_service callbacks
 
-Воркер пушит результаты обратно: `TestInventoryCallback` (inventory probe пишет CPU/disks/packages/os), `TestIpmiCredentialsRotatedCallback`, `TestReinstallStatusCallback`, `TestCallbackDeptHeaderStrict`, `TestNewCallbacksHiddenFromOpenAPI`.
+Воркер пушит результаты обратно: `TestInventoryCallback` (inventory.sync пишет CPU/disks/packages/os), `TestIpmiCredentialsRotatedCallback`, `TestReinstallStatusCallback`, `TestCallbackDeptHeaderStrict`, `TestNewCallbacksHiddenFromOpenAPI`.
 
 ### `test_worker_task_dispatch_endpoints.py` — dispatch worker-задач
 
 Классы: `TestPowerStatusDispatch`, `TestInventorySyncDispatch`, `TestReinstallDispatch`, `TestAccountRotateDispatch`, `TestIpmiControllerRotateDispatch`, `TestDispatchAuditOnSuccess`, `TestDispatchAuditOnWorkerFailure`.
 
 Front-controller над taskiq: PATH→kind mapping, валидация payload, rollback transaction при kiq-ошибке (см. `unit/test_worker_client_dispatch.py`), audit на успех и на failure отдельной парой.
-
-### `test_inventory_probe.py` — inventory-probe API
-
-`TestInventoryProbeDispatch` (диспатч в воркер), `TestInventoryProbePermissions` (action `inventory_probe` через матрицу), `TestInventoryProbeBusinessRules` (нельзя на DECOMMISSIONED, нужен IPMI), `TestInventoryProbeAudit`.
 
 ### CRUD-словари инвентаря
 

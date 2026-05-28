@@ -601,7 +601,7 @@ async def update_os_version(
     server_id: str,
     payload: ServerOsVersionUpdate,
 ) -> Server:
-    """Ручной апдейт `os_version_id` сервера (не через inventory probe).
+    """Ручной апдейт `os_version_id` сервера (не через inventory sync).
 
     Полезно для admin/operator'а, когда железо физически переустановили без
     участия worker'а или надо быстро сменить версию вручную. FK os_version_id →

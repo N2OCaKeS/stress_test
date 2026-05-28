@@ -448,8 +448,8 @@ class TestServerCpuFields:
     отдельная таблица `cpu_models` с FK `servers.cpu_id` — выпиленная
     миграцией `b6f3a91d27e8_drop_cpu_models_inline_cpu_fields`.
 
-    Поля обновляются inventory probe'ом (через `/internal/servers/{id}/
-    inventory`) или вручную через `POST /servers` / `PATCH /servers/{id}`.
+    Поля обновляются `inventory.sync` callback'ом (через `/internal/servers/
+    {id}/inventory`) или вручную через `POST /servers` / `PATCH /servers/{id}`.
     """
 
     @staticmethod

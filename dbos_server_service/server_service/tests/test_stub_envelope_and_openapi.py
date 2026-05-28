@@ -28,9 +28,8 @@ def _hdr(token: str) -> dict[str, str]:
 # Список stub-эндпоинтов. Изначально было 41 (4 endpoint-файла полностью
 # stub'нутые), затем 7 (после реализации disks/os_versions/
 # installed_packages CRUD и ipmi power/boot/reinstall dispatch). Сейчас
-# 0 — последние 7 закрыты: user-facing view_credentials / cached power /
-# live boot-order GET в ipmi.py, acquire/release/os-sync в servers.py,
-# lightweight inventory probe в inventory.py.
+# 0 — последние закрыты: user-facing view_credentials / cached power /
+# live boot-order GET в ipmi.py, acquire/release/os-sync в servers.py.
 STUB_ENDPOINTS: list[tuple[str, str]] = []
 
 

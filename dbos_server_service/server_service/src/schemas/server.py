@@ -227,9 +227,9 @@ class ServerTaskDispatchResponse(BaseModel):
     """Стандартный ответ на dispatch worker-task'и (`{task_id, status}`).
 
     Используется live BMC-probe (`POST /servers/{id}/power/status` →
-    `power.status`) и lightweight inventory-probe (`POST /servers/{id}/
-    inventory/probe` → `inventory.probe`). Структура одинаковая, поэтому
-    держим одну общую схему вместо per-task-kind дубликатов.
+    `power.status`), full inventory-sync (`POST /servers/{id}/inventory/sync`
+    → `inventory.sync`) и остальными dispatch'ами. Структура одинаковая,
+    поэтому держим одну общую схему вместо per-task-kind дубликатов.
     """
 
     task_id: str = Field(description="ID задачи воркера (prefix tsk_).")

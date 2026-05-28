@@ -311,18 +311,19 @@ async def release_server(
     return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
 
 
-# ── Ручной OS-sync (без inventory probe) ────────────────────────────────────
+# ── Ручной OS-sync (без inventory sync) ─────────────────────────────────────
 
 
 @router.post(
     "/{server_id}/os-sync",
     response_model=ServerResponse,
-    summary="Сменить os_version_id вручную (без inventory probe)",
+    summary="Сменить os_version_id вручную (без inventory sync)",
     description=(
         "Прямое выставление `servers.os_version_id` + `os_last_synced_at=now()`. "
         "Полезно admin/operator'у когда железо переустановили без worker'а или "
-        "нужен быстрый ручной фикс. Inventory-probe (`POST /inventory/probe` → "
-        "worker) — отдельный flow. `os_version_id=null` сбрасывает версию. "
+        "нужен быстрый ручной фикс. Hardware-inventory sync "
+        "(`POST /inventory/sync` → worker) — отдельный flow. "
+        "`os_version_id=null` сбрасывает версию. "
         "Невалидный id → 422 `INVALID_OS_VERSION`."
     ),
     responses={

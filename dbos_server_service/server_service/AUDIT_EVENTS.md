@@ -58,12 +58,11 @@ Source-of-truth — `src/services/audit_events.py::SERVICE_EVENTS`.
 | `server.power_reboot` | WARNING | dispatch `power.reboot` | `server` | как `power_on` |
 | `server.power_status` | INFO | POST `/servers/{id}/power/status` — dispatch live BMC-probe `power.status` | `server` | `task_id`, `task_kind=power.status`, `department_id`. denied/failure: как у других power-операций |
 | `server.inventory_sync` | INFO | dispatch `inventory.sync` (SSH-probe) | `server` | `task_id`, `task_kind=inventory.sync` |
-| `server.inventory_probe` | INFO | dispatch lightweight inventory probe (быстрый ping без полного sync'а) | `server` | `task_id`, `task_kind=inventory.probe` |
 | `server.prepare` | CRITICAL | POST `/servers/{id}/prepare` — dispatch бутстрапа управления (`server.prepare`: useradd management-user + authorized_keys) | `server` | `task_id`, `task_kind=server.prepare`, `department_id` |
 | `server.power_status_cached` | INFO | GET `/ipmi/power` — кэшированный `power_state` из БД без BMC-probe | `server` | `department_id`, `power_state`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server.acquire` | INFO | POST `/servers/{id}/busy` — успех захвата (busy_state → busy) | `server` | `department_id`, `purpose`, `lease_until`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, decommissioned, already_busy}` |
 | `server.release` | INFO | DELETE `/servers/{id}/busy` — успех освобождения (busy_state → free) | `server` | `department_id`, `previous_user_id`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, not_busy, race_already_free}` |
-| `server.update_os_version` | INFO | POST `/servers/{id}/os-sync` — ручной апдейт `os_version_id` без inventory probe | `server` | `department_id`, `previous_os_version_id`, `new_os_version_id`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, invalid_os_version}` |
+| `server.update_os_version` | INFO | POST `/servers/{id}/os-sync` — ручной апдейт `os_version_id` без inventory sync | `server` | `department_id`, `previous_os_version_id`, `new_os_version_id`. denied/failure: `reason in {not_found_or_cross_dept, permission_denied, invalid_os_version}` |
 
 ---
 
@@ -107,7 +106,7 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
 | `server_account.rotate_password_dispatch` | CRITICAL | POST `/api/server/v1/server-accounts/{id}/rotate` — dispatch SSH-rotation task. Эмитится один агрегированный success на запрос (даже при частичных пропусках в массовом режиме); per-server-фейлы (idempotent-конфликт) идут отдельными failure-эмитами, worker-unreachable отбивает весь батч | `server_account` | success: `mode`, `task_kind=account.rotate_password`, `task_ids`, `server_ids` (только реально поставленные), `dispatched`, `skipped` (список `{server_id, reason}`), `skipped_count`, `login`, `department_id` |
-| `server_account.provision` | WARNING | POST `/api/server/v1/server-accounts/{id}/provision` — dispatch useradd на боксе | `server_account` | `task_id`, `task_kind=account.provision` |
+| `server_account.provision` | CRITICAL | POST `/api/server/v1/server-accounts/{id}/provision` — dispatch useradd на боксе (открывает SSH-доступ → CRITICAL) | `server_account` | `task_id`, `task_kind=account.provision` |
 | `server_account.update_on_host` | INFO | POST `/api/server/v1/server-accounts/{id}/update-on-host` — dispatch usermod (синк атрибутов) | `server_account` | `task_id`, `task_kind=account.update_on_host` |
 | `server_account.deprovision` | WARNING | POST `/api/server/v1/server-accounts/{id}/deprovision` — dispatch userdel | `server_account` | `task_id`, `task_kind=account.deprovision` |
 | `server_account.users_inventory` | INFO | POST `/api/server/v1/servers/{id}/users-inventory` — dispatch инвентаризации OS-пользователей (SSH getent) | `server` | `task_id`, `task_kind=account.users_inventory` |
@@ -171,18 +170,6 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | `ipmi_controller.delete` | CRITICAL | hard-delete | `ipmi_controller` | `server_id`, `kind` |
 | `ipmi_controller.rotate_credentials` | CRITICAL | direct PATCH (legacy) — currently не используется в пользу dispatch+callback | `ipmi_controller` | `server_id` |
 | `ipmi_controller.view_credentials_meta` | INFO | GET `/ipmi/credentials` — метаданные controller'а без plaintext-пароля (kind/endpoint_url/username/last_probed_at) | `ipmi_controller` | `server_id`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept, not_registered}` |
-
----
-
-## Disks — CRUD
-
-| action | default_severity | эмитится при | target_type | детали |
-|---|---|---|---|---|
-| `disk.create` | INFO | INSERT в `server_disks` | `disk` | `server_id`, `device_name`, `kind`, `size_bytes` |
-| `disk.view` | INFO | denied на GET (cross-dept / nonexistent) | `disk` | `reason` |
-| `disk.list` | INFO | denied на GET list | `disk` | `reason=permission_denied` |
-| `disk.update` | INFO | PATCH | `disk` | поля diff'а |
-| `disk.delete` | WARNING | DELETE | `disk` | `server_id`, `device_name` |
 
 ---
 

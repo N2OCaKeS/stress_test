@@ -75,12 +75,6 @@ SERVICE_EVENTS = [
     {"action": "ipmi_controller.update", "description": "IPMI controller updated (kind/endpoint/username)", "default_severity": "INFO"},
     {"action": "ipmi_controller.delete", "description": "IPMI controller deleted", "default_severity": "CRITICAL"},
     {"action": "ipmi_controller.rotate_credentials", "description": "IPMI controller password rotated", "default_severity": "CRITICAL"},
-    # Disks — CRUD (привязаны к серверу, dept-isolation через сервер-родитель)
-    {"action": "disk.create", "description": "Server disk record created", "default_severity": "INFO"},
-    {"action": "disk.view", "description": "Server disk viewed (emitted on denied: cross-dept / nonexistent)", "default_severity": "INFO"},
-    {"action": "disk.list", "description": "Server disks listed (emitted on denied)", "default_severity": "INFO"},
-    {"action": "disk.update", "description": "Server disk updated", "default_severity": "INFO"},
-    {"action": "disk.delete", "description": "Server disk deleted", "default_severity": "WARNING"},
     # Installed packages — live SSH-probe через worker (без БД). Единственный
     # action: dispatch'ер `POST /servers/{id}/installed-packages` + worker-task
     # `installed_packages.list` (обе стороны эмитят с одинаковым action-name).
@@ -94,7 +88,7 @@ SERVICE_EVENTS = [
     {"action": "server.inventory_sync", "description": "Inventory-sync (SSH-probe) dispatched to worker", "default_severity": "INFO"},
     {"action": "server_account.users_inventory", "description": "OS-user inventory (SSH getent) dispatched to worker", "default_severity": "INFO"},
     {"action": "server_account.rotate_password_dispatch", "description": "Server account password rotation dispatched to worker (SSH apply + storage round-trip)", "default_severity": "CRITICAL"},
-    {"action": "server_account.provision", "description": "OS-user provision (useradd) dispatched to worker", "default_severity": "WARNING"},
+    {"action": "server_account.provision", "description": "OS-user provision (useradd) dispatched to worker", "default_severity": "CRITICAL"},
     {"action": "server_account.update_on_host", "description": "OS-user attribute sync (usermod) dispatched to worker", "default_severity": "INFO"},
     {"action": "server_account.deprovision", "description": "OS-user deprovision (userdel) dispatched to worker", "default_severity": "WARNING"},
     {"action": "ipmi_controller.rotate_dispatch", "description": "IPMI controller password rotation dispatched to worker (currently safety-guarded: worker fails fast until storage round-trip exists)", "default_severity": "CRITICAL"},
@@ -105,8 +99,6 @@ SERVICE_EVENTS = [
     # Read-only IPMI views (user-facing)
     {"action": "ipmi_controller.view_credentials_meta", "description": "IPMI credentials metadata viewed (no plaintext password)", "default_severity": "INFO"},
     {"action": "server.power_status_cached", "description": "Cached power_state viewed from server row (no live probe)", "default_severity": "INFO"},
-    # Inventory probe (lightweight ping vs full inventory.sync)
-    {"action": "server.inventory_probe", "description": "Lightweight inventory probe dispatched to worker", "default_severity": "INFO"},
 ]
 
 

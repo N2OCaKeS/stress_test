@@ -5,9 +5,12 @@ Self-contained token-формат::
     v<key_version>$<base64url_nonce>$<base64url_ciphertext>
 
 `SERVER_ENCRYPTION_KEY` — активный мастер-ключ; старые версии читаются из
-`SERVER_ENCRYPTION_KEY__v<N>` env-переменных. Сейчас в качестве алгоритма
-используется AES-256-GCM как placeholder под полноценный ГОСТ-Кузнечик MGM —
-wire-формат не меняется, алгоритм можно заменить без re-encrypt'а.
+`SERVER_ENCRYPTION_KEY__v<N>` env-переменных. Алгоритм — AES-256-GCM:
+AEAD с 96-битным nonce, 128-битным auth-tag и AAD-binding'ом
+ciphertext'а к owner-row (см. секцию «Associated data» ниже). KDF —
+HKDF-SHA256 поверх мастер-ключа. Wire-формат version-prefix'нут, поэтому
+схема ключей и алгоритм при необходимости заменяются без re-encrypt'а
+существующих строк.
 
 Key derivation
 --------------

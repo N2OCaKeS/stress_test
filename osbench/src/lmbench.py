@@ -11,9 +11,7 @@ from config.conf import (
     RESULTS_MAIN_DIR,
     RESULT_LMBENCH_NAME,
     RESULTS_STATUS,
-    LOW_CONC,
-    HIGH_CONC,
-    STEP
+    ITERATIONS_COUNT
 )
 
 
@@ -22,10 +20,7 @@ class LMBench(Test):
     LMbench
     """
     def __init__(self,
-                 report_filename=None,
-                 low_concurrency=LOW_CONC,
-                 high_concurrency=HIGH_CONC,
-                 step=STEP):
+                 report_filename=None):
         
         self.test_success = False
         self.lmbench_dir = f"{MAIN_DIR}/benchmarks/LMbench/lmbench"
@@ -38,22 +33,17 @@ class LMBench(Test):
         makedirs(self.results_dir, exist_ok=True)
         makedirs(self.test_dir, exist_ok=True)
 
-        self.low_concurrency = low_concurrency
-        self.high_concurrency = high_concurrency
-        self.step = step
-        self.concurrency = [self.low_concurrency] + list(range(self.step, self.high_concurrency, self.step))
-
         if report_filename is None:
             self._report_filename = f"{MAIN_DIR}/benchmarks/LMbench/lmbench/"
         else:
             self._report_filename = report_filename
 
-    def run_test(self, test_name, concur, args):
+    def run_test(self, test_name, args):
         """
         Запуск отдельного теста
         """
         if args:
-            cmd = f"{self.bin_path}/lmbench -P {concur} {test_name} {args}".strip()
+            cmd = f"{self.bin_path}/{test_name} {args}".strip()
         else:
             cmd = f"{self.bin_path}/{test_name}".strip()
 
@@ -61,7 +51,7 @@ class LMBench(Test):
 
         with open(self.results_file, 'a') as f:
             f.write(f"\n{'='*60}\n")
-            f.write(f"Test: {test_name} {args} (concurrency={concur})\n")
+            f.write(f"Test: {test_name} {args}\n")
             f.write(f"{'='*60}\n")
             f.write(result)
             f.write(f"\n{'='*60}\n\n")
@@ -79,6 +69,7 @@ class LMBench(Test):
         log.warning("Это НЕ ошибки, а нормальное поведение бенчмарка")
         log.warning("=" * 60)
         status_code_dict = {}
+        iterations = ITERATIONS_COUNT
         
         log.info(f"Создание тестового файла: {self.test_file}")
         system.leave_command(f"dd if=/dev/zero of={self.test_file} bs=1M count=100", returncode=True)
@@ -116,17 +107,26 @@ class LMBench(Test):
             f.write(f"Started: {system.leave_command('date', returncode=True)[0]}\n")
             f.write(f"{'='*60}\n\n")
 
-        for concur in self.concurrency:
-            log.info(f"Запуск LMbench с {concur} параллельными потоками")
+        for iteration in range(1, iterations + 1):
+            log.info(f"Запуск итерации {iteration}/{iterations}")
+            
             for test_name, args in tests:
-                log.info(f"Running {test_name} {concur} {args}...")
-                output, code = self.run_test(test_name, concur, args)
-                key = f"{test_name}_{args}_{concur}"
+                log.info(f"Running {test_name} {args} (iter {iteration})...")
+                output, code = self.run_test(test_name, args)
+                key = f"{test_name}_{args}_{iteration}"
                 status_code_dict[key] = code
-
+                
+                # Сохраняем вывод в файл с указанием итерации
+                with open(self.results_file, 'a') as f:
+                    f.write(f"\n{'='*60}\n")
+                    f.write(f"Test: {test_name} {args} (iteration={iteration})\n")
+                    f.write(f"{'='*60}\n")
+                    f.write(output)
+                    f.write(f"\n{'='*60}\n\n")
+                
                 self.writer.wrs(cl=self.__class__,
                                 method=self.start_test.__name__,
-                                test=f"{test_name} {concur} {args}",
+                                test=f"{test_name} {args} (iter {iteration})",
                                 status=code)
 
         if all(code for code in status_code_dict.values()):
@@ -145,58 +145,58 @@ class LMBench(Test):
     @status_check
     def get_results(self):
         """
-        Получить результаты и сохранить в JSON
+        Получить результаты и сохранить в JSON с группировкой по итерациям
         """
-
         if not self.test_success:
             log.critical(f"{Colors.RED}LMbench: тесты не были успешно завершены, сбор результатов пропущен{Colors.RESET}")
             return True, False
         
         log.info("Сохранение результатов LMbench")
         
-        # Проверяем существование файла с результатами
         if not Path(self.results_file).exists():
             log.error(f"Файл с результатами не найден: {self.results_file}")
             return True, False
         
         try:
             with open(self.results_file, 'r') as f:
-                content  = f.read()
+                content = f.read()
             
             makedirs(RESULTS_MAIN_DIR, exist_ok=True)
             
-            # Результаты с группировкой по concurrency
-            results_by_concurrency = {str(concur): {} for concur in self.concurrency}
+            # Результаты с группировкой по итерациям
+            results_by_iteration = {}
             test_blocks = re.findall(r'Test: (.+?)\n=+\n(.*?)\n=+', content, re.DOTALL)
             
             for test_block_name, result_text in test_blocks:
                 test_block_name = test_block_name.strip()
                 
-                concur_match = re.search(r'concurrency[=:](\d+)', test_block_name, re.IGNORECASE)
+                iter_match = re.search(r'iteration[=:](\d+)', test_block_name, re.IGNORECASE)
                 
-                if concur_match:
-                    concur = concur_match.group(1)
-                    clean_test_name = re.sub(r'\s*\(concurrency[=:]\d+\)', '', test_block_name).strip()
+                if iter_match:
+                    iteration = iter_match.group(1)
+                    clean_test_name = re.sub(r'\s*\(iteration[=:]\d+\)', '', test_block_name).strip()
                     if 'bw_file_rd' in clean_test_name:
                         clean_test_name = 'bw_file_rd'
                 else:
-                    log.warning(f"Не удалось определить concurrency для теста: {test_block_name}")
+                    log.warning(f"Не удалось определить iteration для теста: {test_block_name}")
                     continue
                 
-                # Парсим значение в зависимости от типа теста
                 parsed_value = self._parse_test_value(clean_test_name, result_text)
                 
                 if parsed_value:
-                    results_by_concurrency[concur][clean_test_name] = parsed_value
+                    if iteration not in results_by_iteration:
+                        results_by_iteration[iteration] = {}
+                    results_by_iteration[iteration][clean_test_name] = parsed_value
             
             json_path = f"{RESULTS_MAIN_DIR}/{RESULT_LMBENCH_NAME}"
             with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump(results_by_concurrency, f, indent=4, ensure_ascii=False)
+                json.dump(results_by_iteration, f, indent=4, ensure_ascii=False)
             
             log.info(f"LMbench: результаты сохранены в {json_path}")
-            log.info(f"Собрано результатов для {len(results_by_concurrency)} уровней concurrency")
+            log.info(f"Собрано результатов для {len(results_by_iteration)} итераций")
             
-            return True, True 
+            return True, True
+            
         except Exception as e:
             log.critical(f"LMbench: ошибка при сохранении результатов: {e}")
             import traceback

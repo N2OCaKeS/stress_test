@@ -15,6 +15,8 @@ SUBSYSTEM_RESULTS = f"{RESULTS_MAIN_DIR}/subsystem_results.json"
 LOW_CONC = 4
 HIGH_CONC = 17
 STEP = 8
+CONCURRENCY = [LOW_CONC] + list(range(STEP, HIGH_CONC, STEP))
+CONCURRENCY_LEN = len(CONCURRENCY)
 
 
 
@@ -86,6 +88,7 @@ INODE_COUNT = '-N 1100000'
 # LMBench                                                                       #
 #################################################################################
 RESULT_LMBENCH_NAME = "lmbench_results.json"
+ITERATIONS_COUNT = CONCURRENCY_LEN
 
 
 

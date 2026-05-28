@@ -7,9 +7,6 @@ from os import chdir, path, listdir, makedirs
 from lib import Test, system, status_check, Writer
 from osb_logger import log, Colors
 from config.conf import (
-    LOW_CONC,
-    HIGH_CONC,
-    STEP,
     MAIN_DIR,
     TEST_MEASURE,
     REGEXP_OVERALL_SCORE,
@@ -17,7 +14,8 @@ from config.conf import (
     REGEXP_PARSERS,
     RESULTS_MAIN_DIR,
     RESULT_UB_NAME,
-    RESULTS_STATUS
+    RESULTS_STATUS,
+    CONCURRENCY
 )
 
 
@@ -206,10 +204,7 @@ class UnixBench(Test, UnixBenchParser):
 
     def __init__(self,
                  report_dir=None, 
-                 report_filename=None,
-                 low_concurrency=LOW_CONC,
-                 high_concurrency=HIGH_CONC,
-                 step=STEP):
+                 report_filename=None):
         
         if report_dir is None:
             self._report_dir = f"{MAIN_DIR}/benchmarks/UnixBench/byte-unixbench/UnixBench/results"
@@ -222,9 +217,6 @@ class UnixBench(Test, UnixBenchParser):
 
         UnixBenchParser.__init__(self, self._report_dir, self._report_filename)
 
-        self.low_concurrency = low_concurrency
-        self.high_concurrency = high_concurrency
-        self.step = step
     
     def get_report_dir(self):
         return self._report_dir
@@ -238,8 +230,7 @@ class UnixBench(Test, UnixBenchParser):
 
         log.info("Запуск UnixBench")
         ub_dir = f"{MAIN_DIR}/benchmarks/UnixBench/byte-unixbench/UnixBench/"
-        concurrency = [self.low_concurrency] + list(range(self.step, self.high_concurrency, self.step))
-        run_cmd_args = ' '.join(f"-c {c}" for c in concurrency)
+        run_cmd_args = ' '.join(f"-c {c}" for c in CONCURRENCY)
 
         chdir(ub_dir)
         system.leave_command("sudo chmod +x Run", returncode=True)

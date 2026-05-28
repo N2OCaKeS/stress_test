@@ -11,9 +11,7 @@ from config.conf import (
     RESULTS_MAIN_DIR,
     RESULT_PERF_BENCH_NAME,
     RESULTS_STATUS,
-    LOW_CONC,
-    HIGH_CONC,
-    STEP
+    CONCURRENCY
 )
 
 
@@ -22,21 +20,13 @@ class PerfBench(Test):
     Perf Bench
     """
     def __init__(self,
-                 report_filename=None,
-                 low_concurrency=LOW_CONC,
-                 high_concurrency=HIGH_CONC,
-                 step=STEP):
+                 report_filename=None):
         
         self.test_success = False
         self.results_dir = f"{RESULTS_MAIN_DIR}"
         self.results_file = f"{self.results_dir}/perf_bench_result.txt"
         self.writer = Writer(file_name=RESULTS_STATUS)
         makedirs(self.results_dir, exist_ok=True)
-
-        self.low_concurrency = low_concurrency
-        self.high_concurrency = high_concurrency
-        self.step = step
-        self.concurrency = [self.low_concurrency] + list(range(self.step, self.high_concurrency, self.step))
 
         if report_filename is None:
             self._report_filename = f"{RESULTS_MAIN_DIR}/perf_bench_results.json"
@@ -46,16 +36,18 @@ class PerfBench(Test):
     def run_perf_test(self, test_args: str, concur: int) -> tuple:
         """
         Запуск отдельного теста perf bench с указанной параллельностью
-        
-        Args:
-            test_args: аргументы для perf bench (например, "sched pipe")
-            concur: количество параллельных потоков
-        
-        Returns:
-            (output, success): вывод команды и статус успеха
         """
-        # Не все тесты perf bench поддерживают флаг -p для параллельности, например "memcpy"
-        cmd = f"perf bench {test_args} -p {concur}"
+        if "sched messaging" in test_args:
+            cmd = f"perf bench {test_args} -p {concur}"
+        elif "sched pipe" in test_args:
+            cmd = f"perf bench {test_args} -T"  
+        elif "futex" in test_args:
+            cmd = f"perf bench {test_args} -t {concur}"
+        elif "epoll" in test_args:
+            cmd = f"perf bench {test_args} -t {concur}"
+        else:
+            cmd = f"perf bench {test_args}"
+        
         result, code = system.leave_command(cmd, returncode=True)
         return result, code
 
@@ -92,7 +84,7 @@ class PerfBench(Test):
             f.write(f"Started: {system.leave_command('date', returncode=True)[0]}\n")
             f.write(f"{'='*60}\n\n")
         
-        for concur in self.concurrency:
+        for concur in CONCURRENCY:
             log.info(f"Запуск Perf Bench с {concur} параллельными потоками")
             for display_name, test_args in tests:
                 log.info(f"Running: {display_name} (concurrency={concur})...")
@@ -149,7 +141,7 @@ class PerfBench(Test):
             makedirs(RESULTS_MAIN_DIR, exist_ok=True)
             
             # Результаты с группировкой по concurrency
-            results_by_concurrency = {str(concur): {} for concur in self.concurrency}
+            results_by_concurrency = {str(concur): {} for concur in CONCURRENCY}
             test_blocks = re.findall(r'Test: (.+?)\n=+\n(.*?)\n=+', content, re.DOTALL)
             
             for test_block_name, result_text in test_blocks:
@@ -193,17 +185,29 @@ class PerfBench(Test):
         """
         # sched pipe и sched messaging
         if 'sched' in test_name:
-            # Ищем время выполнения в секундах
+            match = re.search(r'Total time:\s*([\d\.]+)\s*\[sec\]', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "seconds"}
+            numbers = re.findall(r'([\d\.]+)\s+\[sec\]', result_text)
+            if numbers:
+                return {"value": float(numbers[0]), "unit": "seconds"}
             match = re.search(r'Time:\s*([\d\.]+)\s*seconds', result_text)
             if match:
                 return {"value": float(match.group(1)), "unit": "seconds"}
-            # Альтернативный парсинг
             numbers = re.findall(r'([\d\.]+)\s+seconds', result_text)
             if numbers:
                 return {"value": float(numbers[0]), "unit": "seconds"}
         
-        # futex hash (ops/sec)
+        # futex hash (ops/sec) - берем первое значение потока или среднее
         elif 'futex hash' in test_name:
+            # Ищем значение для thread 0
+            match = re.search(r'\[\s*thread\s+0\]\s+.*?\s+(\d+)\s+ops/sec', result_text, re.DOTALL)
+            if match:
+                return {"value": float(match.group(1)), "unit": "ops/sec"}
+            # Ищем среднее значение
+            match = re.search(r'Averaged\s+(\d+)\s+operations/sec', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "ops/sec"}
             match = re.search(r'([\d,]+)\s+ops/sec', result_text)
             if match:
                 value = match.group(1).replace(',', '')
@@ -214,6 +218,13 @@ class PerfBench(Test):
         
         # futex wake и futex requeue (миллисекунды)
         elif 'futex wake' in test_name or 'futex requeue' in test_name:
+            # Ищем среднее значение
+            match = re.search(r'Wokeup\s+\d+\s+of\s+\d+\s+threads\sin\s+([\d\.]+)\s+ms', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "milliseconds"}
+            match = re.search(r'Requeued\s+\d+\s+of\s+\d+\s+threads\sin\s+([\d\.]+)\s+ms', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "milliseconds"}
             match = re.search(r'([\d\.]+)\s+milliseconds', result_text)
             if match:
                 return {"value": float(match.group(1)), "unit": "milliseconds"}
@@ -223,6 +234,14 @@ class PerfBench(Test):
         
         # epoll wait и epoll ctl (ops/sec или operations/sec)
         elif 'epoll' in test_name:
+            # Для epoll wait
+            match = re.search(r'\[\s*thread\s+0\]\s+.*?\s+(\d+)\s+ops/sec', result_text, re.DOTALL)
+            if match:
+                return {"value": float(match.group(1)), "unit": "operations/sec"}
+            # Для epoll ctl - берем ADD operations
+            match = re.search(r'Averaged\s+(\d+)\s+ADD\s+operations', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "operations/sec"}
             match = re.search(r'([\d,]+)\s+(?:ops|operations)/sec', result_text)
             if match:
                 value = match.group(1).replace(',', '')

@@ -957,3 +957,176 @@ class TestRunningTaskRegisteredBeforeCommit:
 
         # Регистрация снята после завершения runner'а в любом случае.
         assert tid not in RUNNING_TASKS
+
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ Drain выставляет scheduled_retry_at → recovery подбирает                ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+
+class TestDrainSetsScheduledRetryAt:
+    """`_drain_running_tasks` при retry-исходе должен ставить
+    `scheduled_retry_at`, иначе `_recover_scheduled_retries` на следующем
+    старте worker'а не подберёт задачу (фильтр `IS NOT NULL`)."""
+
+    async def test_drain_retry_path_sets_scheduled_retry_at(
+        self, fetch_task, monkeypatch,
+    ):
+        """attempt < max_attempts → mark_pending_for_retry + scheduled_retry_at = now()."""
+        from datetime import datetime, timezone
+        from src.main import _drain_running_tasks
+        from src.tasks._runner_state import RUNNING_TASKS
+        from taskiq import TaskiqState
+
+        tid = _new_id()
+        async with AsyncSessionLocal() as session:
+            await task_repo.create(session, {
+                "id": tid,
+                "task_kind": "power.on",
+                "target_server_id": "srv_drain1",
+                "payload": {},
+                "status": TaskStatus.RUNNING,
+                "attempt": 1,
+                "max_attempts": 3,
+            })
+            await session.commit()
+
+        RUNNING_TASKS.add(tid)
+
+        from src.main import _settings as main_settings
+        monkeypatch.setattr(main_settings, "worker_shutdown_timeout_seconds", 0.2)
+
+        before = datetime.now(timezone.utc)
+        await _drain_running_tasks(TaskiqState())
+        after = datetime.now(timezone.utc)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.QUEUED
+        assert t.scheduled_retry_at is not None
+        # scheduled_retry_at должен попасть в окно [before, after] — это
+        # «немедленный» retry, без back-off (worker всё равно перезапускается).
+        sra = t.scheduled_retry_at
+        if sra.tzinfo is None:
+            sra = sra.replace(tzinfo=timezone.utc)
+        assert before <= sra <= after
+
+    async def test_recovery_picks_up_drained_task(self, fetch_task, monkeypatch):
+        """E2E: drain → перезапуск (зов _recover_scheduled_retries) → kiq."""
+        from src.main import (
+            _drain_running_tasks,
+            _recover_scheduled_retries,
+            broker,
+        )
+        from src.tasks._runner_state import RUNNING_TASKS
+        from taskiq import TaskiqState
+
+        tid = _new_id()
+        async with AsyncSessionLocal() as session:
+            await task_repo.create(session, {
+                "id": tid,
+                "task_kind": "power.on",
+                "target_server_id": "srv_drain2",
+                "payload": {},
+                "status": TaskStatus.RUNNING,
+                "attempt": 1,
+                "max_attempts": 3,
+            })
+            await session.commit()
+        RUNNING_TASKS.add(tid)
+
+        from src.main import _settings as main_settings
+        monkeypatch.setattr(main_settings, "worker_shutdown_timeout_seconds", 0.2)
+        await _drain_running_tasks(TaskiqState())
+
+        # «Перезапуск» — startup-hook видит scheduled_retry_at <= now и kiq'ает.
+        kicked: list[str] = []
+
+        class FakeKicker:
+            async def kiq(self, task_id, *args, **kwargs):
+                kicked.append(task_id)
+
+        class FakeTask:
+            def kicker(self):
+                return FakeKicker()
+
+        monkeypatch.setattr(broker, "find_task", lambda kind: FakeTask())
+        await _recover_scheduled_retries(TaskiqState())
+
+        assert tid in kicked
+
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║ Drain race-окно: id в RUNNING_TASKS, но status=QUEUED                   ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+
+class TestDrainRaceWindowQueuedRow:
+    """Окно «register_running_task() выполнен, mark_running.commit() ещё нет»:
+    drain видит id в RUNNING_TASKS, в БД row.status='queued'. Старая логика
+    делала `continue` (status != RUNNING) и оставляла task'у без
+    scheduled_retry_at — никто бы её не подобрал."""
+
+    async def test_queued_row_in_running_tasks_is_finalized(
+        self, fetch_task, monkeypatch,
+    ):
+        from src.main import _drain_running_tasks
+        from src.tasks._runner_state import RUNNING_TASKS
+        from taskiq import TaskiqState
+
+        tid = _new_id()
+        async with AsyncSessionLocal() as session:
+            await task_repo.create(session, {
+                "id": tid,
+                "task_kind": "power.on",
+                "target_server_id": "srv_race",
+                "payload": {},
+                # Имитируем pre-commit окно: row ещё queued.
+                "status": TaskStatus.QUEUED,
+                "attempt": 0,
+                "max_attempts": 3,
+            })
+            await session.commit()
+        RUNNING_TASKS.add(tid)
+
+        from src.main import _settings as main_settings
+        monkeypatch.setattr(main_settings, "worker_shutdown_timeout_seconds", 0.2)
+        await _drain_running_tasks(TaskiqState())
+
+        t = await fetch_task(tid)
+        # Drain финализировал — статус остался QUEUED, но теперь со scheduled_retry_at.
+        assert t.status == TaskStatus.QUEUED
+        assert t.scheduled_retry_at is not None
+        assert "worker_shutdown" in (t.last_error or "")
+        assert tid not in RUNNING_TASKS
+
+    async def test_terminal_row_in_running_tasks_is_skipped(
+        self, fetch_task, monkeypatch,
+    ):
+        """Если row уже SUCCEEDED/FAILED — drain не должен её трогать."""
+        from src.main import _drain_running_tasks
+        from src.tasks._runner_state import RUNNING_TASKS
+        from taskiq import TaskiqState
+
+        tid = _new_id()
+        async with AsyncSessionLocal() as session:
+            await task_repo.create(session, {
+                "id": tid,
+                "task_kind": "power.on",
+                "target_server_id": "srv_race2",
+                "payload": {},
+                "status": TaskStatus.SUCCEEDED,
+                "attempt": 1,
+                "max_attempts": 3,
+                "result": {"power_state": "on"},
+            })
+            await session.commit()
+        RUNNING_TASKS.add(tid)
+
+        from src.main import _settings as main_settings
+        monkeypatch.setattr(main_settings, "worker_shutdown_timeout_seconds", 0.2)
+        await _drain_running_tasks(TaskiqState())
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.scheduled_retry_at is None
+        assert tid not in RUNNING_TASKS

@@ -80,6 +80,20 @@ def _extract_port(credentials: dict) -> int:
         return 22
 
 
+def build_session(credentials: dict, server_id: str) -> SshClient:
+    """Публичный alias для `_build_session` — для handler'ов, которые не
+    делают штатный inventory / chpasswd через готовый ssh_client.*-вызов,
+    а сами выполняют свои команды поверх сессии (например,
+    `installed_packages.list` с pattern-specific dpkg-query/rpm-call'ами).
+
+    Возвращает context-manager `SshClient`. На управляемом сервере (после
+    prepare) — ключевая сессия под `management_user`; иначе — self-сессия
+    под аккаунтом по паролю. Caller обязан предварительно прогнать
+    `credentials` через `apply_session_hints(creds, payload)`.
+    """
+    return _build_session(credentials, server_id)
+
+
 def _build_session(credentials: dict, server_id: str) -> SshClient:
     """Собрать `SshClient` под привилегированную операцию.
 
@@ -650,6 +664,7 @@ def os_users_facts_to_payload(facts: dict) -> dict:
 
 __all__ = [
     "apply_session_hints",
+    "build_session",
     "collect_inventory",
     "collect_os_users",
     "set_account_password",

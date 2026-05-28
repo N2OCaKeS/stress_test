@@ -164,6 +164,8 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
     на `status='running' AND started_at < now()-15m`).
     """
     # Локальный импорт, как везде — иначе циклический.
+    from datetime import datetime, timezone
+
     from src.repositories import task as task_repo
     from src.tasks._runner_state import RUNNING_TASKS
     from src.db.session import AsyncSessionLocal
@@ -208,16 +210,31 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                 fresh = await task_repo.get_by_id(session, tid)
                 if fresh is None:
                     continue
-                if fresh.status != TaskStatus.RUNNING:
-                    # Кто-то уже сменил статус (concurrent finish) — пропустить.
+                # Terminal статусы (SUCCEEDED/FAILED/CANCELLED) — задача
+                # уже закрыта другой ветвью, drain'у тут делать нечего.
+                # А вот RUNNING и QUEUED обрабатываем одинаково: id попал в
+                # RUNNING_TASKS, значит handler ещё в impl-ветке. QUEUED
+                # возможен в окне «register_running_task() выполнен, но
+                # commit mark_running ещё не прошёл» (см. _runner.run_task)
+                # — без этой обработки задача застряла бы queued без
+                # scheduled_retry_at и никто бы её не подобрал.
+                if fresh.status not in (TaskStatus.RUNNING, TaskStatus.QUEUED):
                     continue
 
                 error_message = "worker_shutdown: terminated by SIGTERM/shutdown event"
 
                 # Retry vs terminal — то же правило, что в `_runner`.
+                # scheduled_retry_at = now() — следующий стартующий worker
+                # подхватит row через `_recover_scheduled_retries` (он
+                # фильтрует по `scheduled_retry_at IS NOT NULL AND <= now()`).
+                # Без timestamp'а recovery её не увидит, и задача висит
+                # queued до orphan-sweep'а или ручного вмешательства.
                 if fresh.attempt < fresh.max_attempts:
                     await task_repo.mark_pending_for_retry(
-                        session, fresh, error_message
+                        session,
+                        fresh,
+                        error_message,
+                        scheduled_retry_at=datetime.now(timezone.utc),
                     )
                     audit_severity = "WARNING"
                     will_retry = True

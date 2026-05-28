@@ -127,14 +127,23 @@ class _FakeSshClient:
         return (127, "", f"sh: {command}: not found")
 
 
-def _make_fake_client_class(prepared: _FakeSshClient):
-    """Возвращает class-like callable, который при __init__ отдаёт prepared
-    инстанс. Через monkeypatch заменяет реальный SshClient.
+def _patch_build_session(monkeypatch, prepared: _FakeSshClient) -> list:
+    """Подменяет `ssh_client.build_session` так, чтобы он отдавал prepared
+    fake-client и записывал, под какие creds его звали.
+
+    Возвращает список захваченных (creds, server_id) — тесты сверяют выбор
+    сессии (self vs management) через содержимое payload.
     """
-    class _Factory:
-        def __new__(cls, *args, **kwargs):  # noqa: ARG003
-            return prepared
-    return _Factory
+    calls: list[tuple[dict, str]] = []
+
+    def _fake_build(creds: dict, server_id: str):
+        calls.append((dict(creds), server_id))
+        return prepared
+
+    monkeypatch.setattr(
+        "src.tasks.installed_packages.ssh_client.build_session", _fake_build
+    )
+    return calls
 
 
 class TestInstalledPackagesTask:
@@ -142,10 +151,7 @@ class TestInstalledPackagesTask:
         fake = _FakeSshClient(host="srv1.example")
         fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
         fake.set_response("dpkg-query -W", 0, "htop 3.0.5-7\nvim 9.0\n")
-        monkeypatch.setattr(
-            "src.tasks.installed_packages.SshClient",
-            _make_fake_client_class(fake),
-        )
+        _patch_build_session(monkeypatch, fake)
 
         tid = await make_task(
             task_kind="installed_packages.list",
@@ -178,10 +184,7 @@ class TestInstalledPackagesTask:
         fake.set_response("command -v dpkg-query", 1, "")
         fake.set_response("command -v rpm", 0, "/usr/bin/rpm\n")
         fake.set_response("rpm -qa", 0, "openssl 3.0.2\nbash 5.1.16\n")
-        monkeypatch.setattr(
-            "src.tasks.installed_packages.SshClient",
-            _make_fake_client_class(fake),
-        )
+        _patch_build_session(monkeypatch, fake)
 
         tid = await make_task(
             task_kind="installed_packages.list",
@@ -208,10 +211,7 @@ class TestInstalledPackagesTask:
         fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
         # rc=1, stdout пустой, stderr пустой — empty result.
         fake.set_response("dpkg-query -W", 1, "", "")
-        monkeypatch.setattr(
-            "src.tasks.installed_packages.SshClient",
-            _make_fake_client_class(fake),
-        )
+        _patch_build_session(monkeypatch, fake)
 
         tid = await make_task(
             task_kind="installed_packages.list",
@@ -236,10 +236,7 @@ class TestInstalledPackagesTask:
         fake = _FakeSshClient(host="srv1.example")
         fake.set_response("command -v dpkg-query", 1, "")
         fake.set_response("command -v rpm", 1, "")
-        monkeypatch.setattr(
-            "src.tasks.installed_packages.SshClient",
-            _make_fake_client_class(fake),
-        )
+        _patch_build_session(monkeypatch, fake)
 
         tid = await make_task(
             task_kind="installed_packages.list",
@@ -271,10 +268,7 @@ class TestInstalledPackagesTask:
             "dpkg-query -W", 2, "",
             "dpkg: error: failed to open package info file",
         )
-        monkeypatch.setattr(
-            "src.tasks.installed_packages.SshClient",
-            _make_fake_client_class(fake),
-        )
+        _patch_build_session(monkeypatch, fake)
 
         tid = await make_task(
             task_kind="installed_packages.list",
@@ -302,10 +296,7 @@ class TestInstalledPackagesTask:
 
         fake = _FakeSshClient(host="srv1.example")
         fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
-        monkeypatch.setattr(
-            "src.tasks.installed_packages.SshClient",
-            _make_fake_client_class(fake),
-        )
+        _patch_build_session(monkeypatch, fake)
 
         tid = await make_task(
             task_kind="installed_packages.list",
@@ -339,8 +330,7 @@ class TestInstalledPackagesTask:
         from src.models import Task
 
         class _BoomClient:
-            def __init__(self, *args, **kwargs):
-                self.host = kwargs.get("host", "")
+            host = ""
 
             async def __aenter__(self):
                 raise SshError(
@@ -352,9 +342,11 @@ class TestInstalledPackagesTask:
             async def __aexit__(self, *args):
                 return None
 
+        def _boom_build(creds, server_id):
+            return _BoomClient()
+
         monkeypatch.setattr(
-            "src.tasks.installed_packages.SshClient",
-            _BoomClient,
+            "src.tasks.installed_packages.ssh_client.build_session", _boom_build,
         )
         tid = await make_task(
             task_kind="installed_packages.list",
@@ -371,3 +363,94 @@ class TestInstalledPackagesTask:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         assert t.last_error and "SSH_AUTH_FAILED" in t.last_error
+
+    async def test_managed_server_uses_session_hints_and_skips_password_fetch(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """На managed-сервере handler не должен дёргать fetch_account_password
+        ради пароля (его может вовсе не быть у discovered-аккаунта).
+        Сессия собирается через ssh_client.build_session с is_managed/
+        management_user в creds — управляющая ключевая сессия.
+        """
+        fake = _FakeSshClient(host="srv_m.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        fake.set_response("dpkg-query -W", 0, "htop 3.0.5-7\n")
+        captured_creds = _patch_build_session(monkeypatch, fake)
+
+        fetch_calls: list = []
+
+        async def _spy(server_id, account_id, target_department_id=None):
+            fetch_calls.append((server_id, account_id, target_department_id))
+            return {"login": "ops", "password": "p"}
+
+        monkeypatch.setattr(
+            "src.tasks.installed_packages.server_service_client.fetch_account_password",
+            _spy,
+        )
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv_m",
+            payload={
+                "server_id": "srv_m",
+                "pattern": "htop",
+                "ssh_host": "srv_m.example",
+                "account_id": "acc_discovered",
+                "is_managed": True,
+                "management_user": "dbos",
+            },
+        )
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # На managed fetch не дёргается — пароль не нужен для управляющей сессии.
+        assert fetch_calls == []
+        # build_session получил creds с is_managed/management_user hints.
+        assert captured_creds, "build_session must be called"
+        creds, server_id = captured_creds[0]
+        assert server_id == "srv_m"
+        assert creds.get("is_managed") is True
+        assert creds.get("management_user") == "dbos"
+
+    async def test_managed_without_account_id_uses_default_login(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Managed без account_id в payload — fallback на ssh_login,
+        fetch_account_password не зовётся. Сессия по-прежнему ключевая."""
+        fake = _FakeSshClient(host="srv_m2.example")
+        fake.set_response("command -v dpkg-query", 0, "/usr/bin/dpkg-query\n")
+        fake.set_response("dpkg-query -W", 0, "vim 9.0\n")
+        captured_creds = _patch_build_session(monkeypatch, fake)
+
+        fetch_calls: list = []
+
+        async def _spy(server_id, account_id, target_department_id=None):
+            fetch_calls.append((server_id, account_id, target_department_id))
+            return {"login": "ops", "password": "p"}
+
+        monkeypatch.setattr(
+            "src.tasks.installed_packages.server_service_client.fetch_account_password",
+            _spy,
+        )
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv_m2",
+            payload={
+                "server_id": "srv_m2",
+                "pattern": "vim",
+                "ssh_host": "srv_m2.example",
+                "is_managed": True,
+                "management_user": "dbos",
+            },
+        )
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # Нет account_id → fetch не дёргался.
+        assert fetch_calls == []
+        creds, _ = captured_creds[0]
+        assert creds.get("is_managed") is True
+        assert creds.get("management_user") == "dbos"

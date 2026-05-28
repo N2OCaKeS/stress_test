@@ -30,7 +30,7 @@ import re
 
 from src.clients.ssh import SshClient, SshError
 from src.main import broker
-from src.services import server_service_client
+from src.services import server_service_client, ssh_client
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
@@ -156,6 +156,7 @@ async def installed_packages_list(task_id: str) -> None:
         pattern = payload.get("pattern", "*")
         account_id = payload.get("account_id")
         target_dept = payload.get("target_department_id")
+        is_managed = bool(payload.get("is_managed"))
 
         # Defence-in-depth: pattern уходит в shell-команду (asyncssh.run
         # через /bin/sh -c). Проверяем локально, не доверяя валидации
@@ -170,35 +171,28 @@ async def installed_packages_list(task_id: str) -> None:
                 ),
             )
 
-        if account_id:
+        # На управляемом сервере вход по ключу под management_user — пароль
+        # аккаунта не нужен (и его может не быть у discovered-аккаунта).
+        # Тянем пароль только если сессия реально пойдёт под самим аккаунтом
+        # (тот же паттерн, что в inventory.sync / users.inventory).
+        if account_id and not is_managed:
             creds = await server_service_client.fetch_account_password(
                 server_id, account_id, target_dept,
             )
         else:
-            # Дефолтный fallback — root без пароля (для dev/test stand'ов,
-            # где worker ходит по ключу через k8s-secret). Совместимо с
-            # `inventory.sync`-flow.
             creds = {"login": payload.get("ssh_login", "root")}
 
-        # ssh_host из payload — server_service кладёт туда `server.ip_address`,
-        # `_extract_host` в фасаде берёт из `host`/`ssh_host`/server_id.
+        # ssh_host из payload — server_service кладёт туда server.ip_address.
         if "ssh_host" in payload and "host" not in creds:
             creds["host"] = payload["ssh_host"]
 
-        host = creds.get("host") or creds.get("ssh_host") or server_id
-        username = creds.get("login") or creds.get("username") or "root"
-        password = creds.get("password")
-        port = int(creds.get("port") or creds.get("ssh_port") or 22)
-        known_hosts = creds.get("known_hosts")
+        # is_managed/management_user из payload влияют на выбор сессии —
+        # пропускаем их через apply_session_hints.
+        ssh_client.apply_session_hints(creds, payload)
 
+        host = creds.get("host") or creds.get("ssh_host") or server_id
         logger.info("installed_packages.list on %s pattern=%s", host, pattern)
-        async with SshClient(
-            host=host,
-            username=username,
-            password=password,
-            port=port,
-            known_hosts=known_hosts,
-        ) as ssh:
+        async with ssh_client.build_session(creds, server_id) as ssh:
             package_manager = await _detect_package_manager(ssh)
             cmd = _build_command(package_manager, pattern)
             rc, stdout, stderr = await ssh.run(cmd)

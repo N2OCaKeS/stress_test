@@ -12,7 +12,6 @@ from src.core.exceptions import (
     AuthorizationError,
     DomainValidationError,
     NotFoundError,
-    ServiceUnavailableError,
 )
 from src.dependencies import auth as auth_dep
 
@@ -26,7 +25,6 @@ class TestExceptionStatuses:
         (AuthorizationError, 403),
         (NotFoundError, 404),
         (DomainValidationError, 422),
-        (ServiceUnavailableError, 503),
     ])
     def test_default_http_status(self, cls, expected: int):
         exc = cls(error_code="X", message="m")

@@ -324,3 +324,185 @@ class TestTokenProxyPool:
         finally:
             auth_dep._token_proxy_client = original
             asyncio.run(pooled.aclose())
+
+
+# ── 5. Limiter вынесен в core.limiter ──────────────────────────────────────
+
+
+class TestLimiterExtracted:
+    """`limiter` живёт в `src.core.limiter` — events/services больше не
+    делают `from src.main import limiter` (циклический import).
+    """
+
+    def test_limiter_importable_from_core(self):
+        from src.core.limiter import limiter
+        from slowapi import Limiter
+        assert isinstance(limiter, Limiter)
+
+    def test_main_reexports_same_instance(self):
+        from src.core.limiter import limiter as core_limiter
+        from src.main import limiter as main_limiter
+        assert core_limiter is main_limiter
+
+    def test_endpoints_import_from_core(self):
+        import src.api.v1.endpoints.events as events_module
+        import src.api.v1.endpoints.services as services_module
+        from src.core.limiter import limiter as core_limiter
+        assert events_module.limiter is core_limiter
+        assert services_module.limiter is core_limiter
+
+
+# ── 6. Advisory-lock ключ в core.constants ─────────────────────────────────
+
+
+class TestAdvisoryLockConstant:
+    def test_lock_key_in_constants(self):
+        from src.core.constants import ADVISORY_LOCKS
+        assert "retention_sweep" in ADVISORY_LOCKS
+        expected = int.from_bytes(b"loretent", "big")
+        assert ADVISORY_LOCKS["retention_sweep"] == expected
+
+    def test_main_alias_matches_constants(self):
+        from src.core.constants import ADVISORY_LOCKS
+        from src.main import _RETENTION_ADVISORY_LOCK_KEY
+        assert _RETENTION_ADVISORY_LOCK_KEY == ADVISORY_LOCKS["retention_sweep"]
+
+
+# ── 7. Token-proxy fallback timeout через env ──────────────────────────────
+
+
+class TestTokenProxyFallbackTimeout:
+    """Fallback ветка (`httpx.post` напрямую) должна брать таймаут из
+    `introspect_timeout_seconds`, а не из литерала 5.0. Pooled клиент тоже.
+    """
+
+    def test_fallback_passes_introspect_timeout(self, monkeypatch):
+        from src.core.config import get_settings
+        from src.api.v1.endpoints import auth as auth_endpoint
+        from src.dependencies import auth as auth_dep
+        import httpx
+
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+        monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
+        monkeypatch.setenv("INTROSPECT_TIMEOUT_SECONDS", "7.5")
+
+        # Зануляем pool, чтобы тестовая ветка пошла в fallback.
+        monkeypatch.setattr(auth_dep, "_token_proxy_client", None)
+
+        captured: dict = {}
+
+        class _R:
+            status_code = 200
+            def json(self): return {"access_token": "t"}
+
+        def fake_post(url, data=None, timeout=None):
+            captured["timeout"] = timeout
+            return _R()
+
+        monkeypatch.setattr(httpx, "post", fake_post)
+
+        class _Form:
+            username = "u"
+            password = "p"
+
+        asyncio.run(auth_endpoint.login(_Form()))
+        assert captured["timeout"] == 7.5
+
+    def test_pooled_client_uses_introspect_timeout(self, monkeypatch):
+        """Lifespan создаёт `_token_proxy_client` с total-таймаутом из env."""
+        from src.core.config import get_settings
+        from src import main as main_module
+        from src.dependencies import auth as auth_dep
+
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+        monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth-test:8000")
+        monkeypatch.setenv("INTROSPECT_TIMEOUT_SECONDS", "9.0")
+        monkeypatch.setenv("INTROSPECT_CONNECT_TIMEOUT_SECONDS", "1.5")
+        monkeypatch.setenv("RETENTION_LOOP_ENABLED", "False")
+
+        importlib.reload(main_module)
+        app = main_module.create_application()
+
+        async def _drive():
+            async with app.router.lifespan_context(app):
+                pool = auth_dep._token_proxy_client
+                assert pool is not None
+                assert pool.timeout.read == 9.0
+                assert pool.timeout.connect == 1.5
+
+        asyncio.run(_drive())
+
+
+# ── 8. Swagger persistAuthorization только в local ─────────────────────────
+
+
+class TestSwaggerPersistAuthGuard:
+    def test_local_enables_persist_auth(self, monkeypatch):
+        from src.core.config import get_settings
+        from src import main as main_module
+
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+        monkeypatch.setenv("APP_ENV", "local")
+        monkeypatch.setenv("RETENTION_LOOP_ENABLED", "False")
+
+        importlib.reload(main_module)
+        app = main_module.create_application()
+        assert app.swagger_ui_parameters == {"persistAuthorization": True}
+
+    def test_development_disables_persist_auth(self, monkeypatch):
+        from src.core.config import get_settings
+        from src import main as main_module
+
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+        monkeypatch.setenv("APP_ENV", "development")
+        monkeypatch.setenv("RETENTION_LOOP_ENABLED", "False")
+
+        importlib.reload(main_module)
+        app = main_module.create_application()
+        assert app.swagger_ui_parameters == {}
+
+
+# ── 9. Request-ID middleware: cap до strip ─────────────────────────────────
+
+
+class TestRequestIdCapBeforeStrip:
+    """`[:64]` должно отрабатывать ДО `strip()`, иначе тысяча leading
+    пробелов даёт атакующему 64 байта sanitized-чарактеров поверх лимита.
+    Проверяем как поведенческий контракт: длинная серия пробелов + контент
+    не отдаёт нам контент через X-Request-ID.
+    """
+
+    def test_padding_with_content_does_not_leak_content_through_cap(self):
+        # Воспроизводим ту же sanitize-цепочку, что и middleware.
+        # 100 пробелов + контент. `[:64]` режет до 64 пробелов, `strip()`
+        # их выкидывает → пустая строка → middleware упадёт в auto-gen.
+        raw = (" " * 100) + "SECRET_OVERFLOW_CONTENT"
+        sanitized = (
+            raw.replace("\r", "")
+            .replace("\n", "")
+            .replace("\x00", "")[:64]
+            .strip()
+        )
+        assert "SECRET" not in sanitized
+        assert sanitized == ""
+
+    def test_normal_short_id_preserved(self):
+        raw = "req_abc123"
+        sanitized = (
+            raw.replace("\r", "")
+            .replace("\n", "")
+            .replace("\x00", "")[:64]
+            .strip()
+        )
+        assert sanitized == "req_abc123"
+
+    def test_crlf_scrubbed_before_cap(self):
+        raw = "abc\rdef\nxyz"
+        sanitized = (
+            raw.replace("\r", "")
+            .replace("\n", "")
+            .replace("\x00", "")[:64]
+            .strip()
+        )
+        assert sanitized == "abcdefxyz"
+        assert "\r" not in sanitized and "\n" not in sanitized

@@ -34,8 +34,3 @@ class ConflictError(AppException):
 @dataclass
 class DomainValidationError(AppException):
     http_status: int = 422
-
-
-@dataclass
-class ServiceUnavailableError(AppException):
-    http_status: int = 503

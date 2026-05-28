@@ -18,13 +18,14 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.api.router import api_router
 from src.core.config import get_settings
+from src.core.constants import ADVISORY_LOCKS
 from src.core.exceptions import AppException
+from src.core.limiter import limiter
 from src.core.logging import configure_logging
 from src.dependencies import auth as auth_deps
 
@@ -43,61 +44,6 @@ _AUDIT_DRAIN_TIMEOUT_SECONDS = 2.0
 # RFC 9110 разрешает только ASCII `0-9`. fullmatch гарантирует, что после
 # strip'а строка состоит из этих цифр и ничего больше.
 _CONTENT_LENGTH_RE = re.compile(r"\d+")
-
-
-# Пути, которые НИКОГДА не должны попадать под rate-limit:
-#   * `/health` и `/ready` — Kubernetes-пробы; throttling их флапает под;
-#   * `/token` — login администратора; troughtled на стороне auth_service.
-# Этот guard читает `_rate_limit_key`, который короткозамыкается в
-# unique-per-request ключ для этих путей; вместе с per-key counter slowapi
-# это делает их фактически unlimited.
-_RATE_LIMIT_EXEMPT_PATHS = {
-    "/api/logging/v1/health",
-    "/api/logging/v1/ready",
-    "/api/logging/v1/token",
-}
-
-
-def _rate_limit_key(request: Request) -> str:
-    """Дефолтная key-функция SlowAPI-лимитера.
-
-    Для health/token возвращает uuid-based unique-ключ, чтобы они не копили
-    counts ни в каком общем bucket'е. Для всего остального — client IP.
-    Ingest-канал (`POST /events`) и batch-канал
-    (`POST /services/{service}/events`) переопределяют key_func на
-    per-service-identity (`X-Service-Identity`) прямо в декораторах — за k8s
-    ingress общий per-IP bucket позволил бы одному сервису выжать бюджет
-    остальных.
-    """
-    if request.url.path in _RATE_LIMIT_EXEMPT_PATHS:
-        # Unique-ключ на каждый запрос → никогда не коллизит с чужим bucket'ом.
-        return f"exempt:{uuid.uuid4().hex}"
-    return get_remote_address(request)
-
-
-# Module-level limiter, чтобы декораторы (`@limiter.limit(...)`) могли на него
-# ссылаться. `app.state.limiter` должен указывать на этот же инстанс, иначе
-# middleware его не найдёт.
-#
-# ВАЖНО: эта строка ОБЯЗАНА быть ДО `from src.api.router import api_router`
-# ниже, потому что `endpoints/events.py` делает `from src.main import
-# limiter` для прикрутки декоратора. Без этого порядка Python увидит
-# полу-инициализированный `src.main` без `limiter`-атрибута и поднимет
-# `ImportError`.
-#
-# `headers_enabled` по умолчанию off — `X-RateLimit-Remaining` утекает
-# атакующему live feedback его rate-counter'а, и тот burst'ит под лимит,
-# не словив 429. Включается `RATE_LIMIT_HEADERS_ENABLED=true` для отладки.
-# Дефолт slowapi-Limiter'а тоже `False`, но явное чтение из settings даёт
-# хук под
-# env-override был очевидным.
-limiter = Limiter(
-    key_func=_rate_limit_key,
-    default_limits=[],  # применяются только явные `@limiter.limit` декораторы
-    headers_enabled=get_settings().rate_limit_headers_enabled,
-)
-
-from src.api.router import api_router  # noqa: E402 — см. ordering note выше
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -184,11 +130,13 @@ def create_application() -> FastAPI:
             )
             # Pooled клиент для `POST /token` swagger-логина. Лимиты скромнее
             # introspect'а — логины редкие, а одна полу-висящая connection
-            # не должна забирать pool-slot у hot-path introspect'а.
+            # не должна забирать pool-slot у hot-path introspect'а. Бюджет
+            # делим с introspect'ом — параметры аутентификации (Argon2id
+            # + lockout) живут за тем же auth_service, отдельный SLA не нужен.
             auth_deps._token_proxy_client = httpx.AsyncClient(
                 base_url=base,
                 timeout=httpx.Timeout(
-                    5.0,
+                    live_settings.introspect_timeout_seconds,
                     connect=live_settings.introspect_connect_timeout_seconds,
                 ),
                 limits=httpx.Limits(
@@ -228,6 +176,14 @@ def create_application() -> FastAPI:
             if token_client is not None:
                 await token_client.aclose()
 
+    # `persistAuthorization` держит SERVICE_API_KEY / Bearer-токен в
+    # localStorage браузера между перезагрузками /docs. В development/test
+    # окружениях это тоже нежелательно — общий браузер на shared dev-стенде
+    # сольёт токен следующему пользователю. Включаем только под `app_env=local`,
+    # где разработчик сидит за своей машиной и /docs у него один на host.
+    _swagger_params = (
+        {"persistAuthorization": True} if settings.app_env == "local" else {}
+    )
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
@@ -238,7 +194,7 @@ def create_application() -> FastAPI:
         redoc_url=None if _is_prod else "/redoc",
         openapi_url=None if _is_prod else "/openapi.json",
         debug=settings.app_debug,
-        swagger_ui_parameters={"persistAuthorization": True},
+        swagger_ui_parameters=_swagger_params,
         lifespan=lifespan,
     )
 
@@ -288,15 +244,17 @@ def create_application() -> FastAPI:
         # charset, но middleware видит header на КАЖДОМ запросе (health,
         # token, admin), не только на десериализованных `EventCreate`.
         # Cheap path: убираем CR/LF/NUL (splittable header-терминаторы),
-        # cap 64 символа, пустое после strip'а → автогенерируемый id.
+        # cap до 64 символов от сырых байтов, потом strip — чтобы padding
+        # из тысячи пробелов не съедал budget. Пустое после strip'а →
+        # автогенерируемый id.
         raw_request_id = request.headers.get("X-Request-ID")
         request_id: str | None = None
         if raw_request_id is not None:
             sanitized = (
                 raw_request_id.replace("\r", "")
                 .replace("\n", "")
-                .replace("\x00", "")
-                .strip()[:64]
+                .replace("\x00", "")[:64]
+                .strip()
             )
             if sanitized:
                 request_id = sanitized
@@ -551,15 +509,10 @@ def create_application() -> FastAPI:
     return app
 
 
-# Стабильный 64-bit ключ для `pg_advisory_lock`. Hash литерала
-# `"loging_service.retention"` — `pg_try_advisory_lock(bigint)` ждёт
-# именно signed bigint. Под multi-replica только один держатель ключа
-# выполняет cleanup; остальные пропускают итерацию.
-#
-# Конкретное число — `int.from_bytes(b"loretent", "big")` (8 байт ASCII),
-# фиксировано чтобы все replica'ы и человек-debugger могли проверить lock
-# в `pg_locks` по одному и тому же значению.
-_RETENTION_ADVISORY_LOCK_KEY: int = int.from_bytes(b"loretent", "big")
+# Backward-compat alias: `tests/test_hardening.py` импортирует константу
+# именем `_RETENTION_ADVISORY_LOCK_KEY`. Сам ключ живёт в
+# `core.constants.ADVISORY_LOCKS["retention_sweep"]`.
+_RETENTION_ADVISORY_LOCK_KEY: int = ADVISORY_LOCKS["retention_sweep"]
 
 
 def _build_retention_sweep_details(

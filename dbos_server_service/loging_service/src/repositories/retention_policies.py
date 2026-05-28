@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.models.audit_event import AuditEvent
 from src.models.retention_policy import RetentionPolicy
-from src.schemas.retention import RetentionPolicyCreate, RetentionPolicyUpdate
+from src.schemas.retention import RetentionPolicyCreate
 
 # Lowercase каноническая форма — сравнение обязано быть case-insensitive,
 # чтобы `service='LoGiNg_SeRvIcE'` не обходил retention-исключение.
@@ -102,15 +102,6 @@ def deactivate_all_active(db: Session) -> int:
     )
     db.commit()
     return result.rowcount
-
-
-def update(db: Session, policy: RetentionPolicy, payload: RetentionPolicyUpdate) -> RetentionPolicy:
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(policy, field, value)
-    policy.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(policy)
-    return policy
 
 
 def list_active(db: Session) -> list[RetentionPolicy]:

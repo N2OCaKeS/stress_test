@@ -28,10 +28,10 @@ from src.schemas.services import (
 )
 from src.utils.normalization import normalize_service_name
 
-# Импортируется после FastAPI-импортов, чтобы отсутствующая slowapi-зависимость
-# падала отчётливее. Сам инстанс лимитера живёт в `src.main` (см.
-# `app.state.limiter`); здесь он нужен только для декоратора.
-from src.main import limiter  # noqa: E402
+# Лимитер вынесен в `core.limiter` ради разрыва цикла import'ов
+# (`src.main` собирает routers, эти routers импортили `src.main`).
+# `app.state.limiter` указывает на тот же инстанс.
+from src.core.limiter import limiter
 
 router = APIRouter()
 

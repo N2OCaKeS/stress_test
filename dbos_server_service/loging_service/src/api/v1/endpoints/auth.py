@@ -49,11 +49,12 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         else:
             # Fallback на per-call sync httpx. Здесь нет event-loop'а pool'а,
             # поэтому идём через sync API — это же поведение тесты ожидают,
-            # когда патчат `httpx.post`.
+            # когда патчат `httpx.post`. Таймаут берём общий с introspect'ом,
+            # чтобы fallback и pool не расходились по бюджету.
             resp = httpx.post(
                 f"{settings.auth_service_url}{_TOKEN_PATH}",
                 data=data,
-                timeout=5.0,
+                timeout=settings.introspect_timeout_seconds,
             )
     except Exception as exc:
         # Детальная ошибка (включая внутренний hostname / URL, который

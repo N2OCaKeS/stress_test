@@ -135,8 +135,15 @@ async def delete_group(db: AsyncSession, identity, group_id: str, request_id=Non
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+    # Снимаем кэш до commit'а, чтобы списать членов до deactivate (после
+    # deactivate группа сама не используется в `_merge_permissions`, но
+    # group_services и group_roles остаются на ней — без сброса юзеры
+    # увидят их до TTL).
+    members_before = await repo.list_members(group_id)
     await repo.deactivate(grp)
     await db.commit()
+    for m in members_before:
+        _invalidate_identity_cache(m.user_id)
     audit_service.emit(
         "group.delete", identity.user_id, target_id=group_id, target_type="group",
         request_id=request_id,
@@ -441,19 +448,23 @@ async def grant_service_to_group(
     if existing and existing.is_active:
         raise ConflictError(error_code="GROUP_SERVICE_ALREADY_GRANTED",
                             message=f"Group already has access to '{service_name}'")
+    reactivated = bool(existing and not existing.is_active)
     if existing:
         existing.is_active = True
         await db.flush()
         obj = existing
     else:
         obj = await repo.grant_service(group_id, service_name, granted_by=identity.user_id)
+    members_before = await repo.list_members(group_id)
     await db.commit()
+    for m in members_before:
+        _invalidate_identity_cache(m.user_id)
     audit_service.emit(
         "group.service_grant", identity.user_id, target_id=group_id,
         details={
             "group_name": grp.name,
             "service_name": service_name,
-            "reactivated": bool(existing and existing is obj),
+            "reactivated": reactivated,
         },
         request_id=request_id,
     )
@@ -475,8 +486,11 @@ async def revoke_service_from_group(
     if access is None or not access.is_active:
         raise NotFoundError(error_code="GROUP_SERVICE_NOT_FOUND",
                             message=f"Group does not have access to '{service_name}'")
+    members_before = await repo.list_members(group_id)
     await repo.revoke_service(access)
     await db.commit()
+    for m in members_before:
+        _invalidate_identity_cache(m.user_id)
     audit_service.emit(
         "group.service_revoke", identity.user_id, target_id=group_id,
         details={"group_name": grp.name, "service_name": service_name},

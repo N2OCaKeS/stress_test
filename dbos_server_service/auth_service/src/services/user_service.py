@@ -270,6 +270,19 @@ async def update_user(
     # BANNED → ACTIVE уже покрыт через `unban_user` ниже — здесь только → BLOCKED.
     pending_ban_deactivation_audit: dict | None = None
     if new_status is not None and new_status != current_status:
+        # ACTIVE↔BANNED разрешено только account_admin'у. POST /users/{id}/ban
+        # и /unban защищены `AccountAdmin`-guard'ом; PATCH /users/{id} идёт
+        # под `AnyAdmin` — без явной проверки department_admin мог бы
+        # забанить/разбанить юзера через `status`-поле в обход guard'а.
+        status_change_is_ban = new_status == UserStatus.BANNED
+        status_change_is_unban = (
+            new_status == UserStatus.ACTIVE and current_status == UserStatus.BANNED
+        )
+        if (status_change_is_ban or status_change_is_unban) and actor_role != PlatformRole.ACCOUNT_ADMIN:
+            raise AuthorizationError(
+                error_code="STATUS_CHANGE_REQUIRES_ACCOUNT_ADMIN",
+                message="Only account_admin can ban or unban users via status change",
+            )
         if new_status == UserStatus.BANNED:
             # Делегируем — `ban_user(commit=False)` подготавливает изменения
             # (status, is_active, Ban-record, revoke sessions) и возвращает
@@ -548,6 +561,9 @@ async def reset_password(
     await session_repo.revoke_all_for_user(user_id)
     await token_repo.revoke_all_for_user(user_id)
     await db.commit()
+    # Сессии и PAT'ы юзера сняты — identity-кэш может ещё нести `is_active=True`
+    # и пускать ранее закэшированный access-token до TTL. Сбрасываем сразу.
+    _invalidate_identity_cache(user_id)
     # new_password → sanitizer заменит на <PASSWORD>
     audit_service.emit(
         "user.password_reset", actor_id, target_id=user_id, target_type="user",
@@ -801,6 +817,14 @@ async def auto_unban_if_expired(
         return True
 
     await user_repo.update(user, status=UserStatus.ACTIVE, is_active=True)
+    # Симметрия с manual `unban_user`: реактивируем PAT'ы, отозванные именно
+    # этим ban'ом (`revoked_reason="ban"` И `revoked_at >= ban.banned_at`).
+    # До фикса auto-unban оставлял PAT'ы revoked, а manual unban воскрешал —
+    # разница в поведении между двумя путями того же lifecycle-перехода.
+    token_repo = TokenRepository(db)
+    pat_reactivated = await token_repo.reactivate_ban_revoked(
+        user.id, since=ban.banned_at,
+    )
     await db.commit()
     audit_service.emit(
         "user.unban", None, target_id=user.id, target_type="user",
@@ -811,6 +835,7 @@ async def auto_unban_if_expired(
             "reason": "ban_expired",
             "source": "auto",
             "expires_at": expires_at_aware.isoformat(),
+            "pat_reactivated": pat_reactivated,
         },
         request_id=request_id,
     )

@@ -461,3 +461,74 @@ async def test_assign_group_roles_without_group_service_access_returns_403(
     )
     assert resp.status_code == 403
     assert resp.json()["error_code"] == "GROUP_SERVICE_ACCESS_REQUIRED"
+
+
+# ── group_service.{grant,revoke}_service_to_group, delete_group: invalidate cache ──
+
+
+async def test_grant_service_to_group_invalidates_member_cache(
+    client, admin_token, user_a, dept_a_with_service, service_x, monkeypatch,
+):
+    """После grant сервиса группе identity-cache всех членов сбрасывается."""
+    group_id = (await _create_group(client, admin_token, dept_a_with_service.id,
+                                     name="grant_cache_grp")).json()["id"]
+    await client.post(f"{GROUPS_URL}/{group_id}/members",
+                       headers={"Authorization": f"Bearer {admin_token}"},
+                       json={"user_id": user_a.id})
+
+    invalidated: list[str] = []
+    monkeypatch.setattr(
+        "src.services.group_service._invalidate_identity_cache",
+        lambda uid: invalidated.append(uid),
+    )
+
+    resp = await client.post(f"{GROUPS_URL}/{group_id}/services",
+                              headers={"Authorization": f"Bearer {admin_token}"},
+                              json={"service_name": service_x.service_name})
+    assert resp.status_code == 201
+    assert user_a.id in invalidated
+
+
+async def test_revoke_service_from_group_invalidates_member_cache(
+    client, admin_token, user_a, dept_a_with_service, service_x, monkeypatch,
+):
+    group_id = (await _create_group(client, admin_token, dept_a_with_service.id,
+                                     name="revoke_cache_grp")).json()["id"]
+    await client.post(f"{GROUPS_URL}/{group_id}/members",
+                       headers={"Authorization": f"Bearer {admin_token}"},
+                       json={"user_id": user_a.id})
+    await client.post(f"{GROUPS_URL}/{group_id}/services",
+                       headers={"Authorization": f"Bearer {admin_token}"},
+                       json={"service_name": service_x.service_name})
+
+    invalidated: list[str] = []
+    monkeypatch.setattr(
+        "src.services.group_service._invalidate_identity_cache",
+        lambda uid: invalidated.append(uid),
+    )
+
+    resp = await client.delete(f"{GROUPS_URL}/{group_id}/services/{service_x.service_name}",
+                                headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 200
+    assert user_a.id in invalidated
+
+
+async def test_delete_group_invalidates_member_cache(
+    client, admin_token, user_a, dept_a_with_service, monkeypatch,
+):
+    group_id = (await _create_group(client, admin_token, dept_a_with_service.id,
+                                     name="delete_cache_grp")).json()["id"]
+    await client.post(f"{GROUPS_URL}/{group_id}/members",
+                       headers={"Authorization": f"Bearer {admin_token}"},
+                       json={"user_id": user_a.id})
+
+    invalidated: list[str] = []
+    monkeypatch.setattr(
+        "src.services.group_service._invalidate_identity_cache",
+        lambda uid: invalidated.append(uid),
+    )
+
+    resp = await client.delete(f"{GROUPS_URL}/{group_id}",
+                                headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 200
+    assert user_a.id in invalidated

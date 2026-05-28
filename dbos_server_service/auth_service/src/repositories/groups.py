@@ -362,8 +362,12 @@ class GroupRepository:
 
     async def deactivate_all_dept_service_roles(
         self, department_id: str, service_name: str
-    ) -> None:
-        """Soft-delete every group→role binding for `service_name` in `department_id`."""
+    ) -> list[str]:
+        """Soft-delete every group→role binding for `service_name` in `department_id`.
+
+        Возвращает список group_id, у которых был активный binding —
+        caller достаёт по нему членов группы и сбрасывает identity-кэш.
+        """
         rows = await self._db.scalars(
             select(GroupServiceRole)
             .join(UserGroup, UserGroup.id == GroupServiceRole.group_id)
@@ -372,9 +376,13 @@ class GroupRepository:
                 GroupServiceRole.service_name == service_name,
             )
         )
+        affected_groups: set[str] = set()
         for row in rows:
+            if row.is_active:
+                affected_groups.add(row.group_id)
             row.is_active = False
         await self._db.flush()
+        return list(affected_groups)
 
     async def _group_ids_for_user(self, user_id: str) -> list[str]:
         rows = await self._db.scalars(

@@ -569,3 +569,52 @@ class TestPatchDepartmentTransferPurgesRoles:
         assert purged_events == [], (
             f"purge-audit не должен эмититься без смены dept, got {purged_events}"
         )
+
+
+# ── PATCH status ACTIVE↔BANNED требует account_admin ─────────────────────────
+#
+# PATCH /users/{id} ходит под `AnyAdmin` (account_admin или department_admin),
+# но POST /users/{id}/ban и /unban — только под `AccountAdmin`. Без явной
+# проверки на смену status="banned"/"active" department_admin мог бы
+# банить/анбанить юзеров своего отдела через PATCH в обход guard'а.
+
+
+async def test_dept_admin_cannot_ban_via_patch_status(client, dept_admin_a_token, user_a):
+    """department_admin не может выставить status=banned через PATCH /users/{id}."""
+    resp = await _patch(client, dept_admin_a_token, user_a.id, {"status": "banned"})
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["error_code"] == "STATUS_CHANGE_REQUIRES_ACCOUNT_ADMIN"
+
+
+async def test_dept_admin_cannot_unban_via_patch_status(
+    client, admin_token, dept_admin_a_token, user_a,
+):
+    """department_admin не может выставить status=active при текущем BANNED через PATCH."""
+    pre = await _patch(client, admin_token, user_a.id, {"status": "banned"})
+    assert pre.status_code == 200
+
+    resp = await _patch(client, dept_admin_a_token, user_a.id, {"status": "active"})
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["error_code"] == "STATUS_CHANGE_REQUIRES_ACCOUNT_ADMIN"
+
+
+async def test_dept_admin_can_set_blocked_via_patch_status(
+    client, dept_admin_a_token, user_a, db,
+):
+    """BLOCKED не lifecycle-критичный (не ban) — department_admin может."""
+    resp = await _patch(client, dept_admin_a_token, user_a.id, {"status": "blocked"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "blocked"
+    await db.refresh(user_a)
+    assert user_a.status == UserStatus.BLOCKED
+
+
+async def test_account_admin_can_ban_via_patch_status(client, admin_token, user_a, db):
+    """account_admin путь — должен остаться разрешённым (регрессия)."""
+    resp = await _patch(client, admin_token, user_a.id, {"status": "banned"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "banned"
+    await db.refresh(user_a)
+    assert user_a.status == UserStatus.BANNED

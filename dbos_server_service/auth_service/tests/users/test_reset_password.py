@@ -98,3 +98,30 @@ async def test_account_admin_can_reset_any_user(client, admin_token, user_b):
         json={"new_password": "NewPass1234!"},
     )
     assert resp.status_code == 200
+
+
+# ── reset_password должен сбрасывать identity-cache юзера ────────────────────
+
+
+async def test_reset_password_invalidates_identity_cache(
+    client, admin_token, user_a, monkeypatch,
+):
+    """Identity-cache юзера сбрасывается сразу после reset, не по TTL."""
+    invalidated: list[str] = []
+
+    def _spy(uid):
+        invalidated.append(uid)
+
+    monkeypatch.setattr(
+        "src.services.user_service._invalidate_identity_cache", _spy
+    )
+
+    resp = await client.post(
+        URL_TPL.format(user_id=user_a.id),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"new_password": "NewPass1234!"},
+    )
+    assert resp.status_code == 200
+    assert user_a.id in invalidated, (
+        f"identity-cache юзера должен быть сброшен, got {invalidated}"
+    )

@@ -157,10 +157,12 @@ class RoleRepository:
 
     async def deactivate_all_in_dept_for_service(
         self, department_id: str, service_name: str
-    ) -> None:
+    ) -> list[str]:
         """Deactivate every role for every user of `department_id` in `service_name`.
 
-        Used when a department's access to a service is revoked.
+        Used when a department's access to a service is revoked. Возвращает
+        список user_id, у которых хотя бы одна роль реально была снята —
+        caller использует его, чтобы сбросить identity-кэш этих юзеров.
         """
         rows = await self._db.scalars(
             select(UserServiceRole)
@@ -170,9 +172,13 @@ class RoleRepository:
                 UserServiceRole.service_name == service_name,
             )
         )
+        affected: set[str] = set()
         for row in rows:
+            if row.is_active:
+                affected.add(row.user_id)
             row.is_active = False
         await self._db.flush()
+        return list(affected)
 
     async def bulk_assign(
         self, user_ids: list[str], service_name: str, role_name: str, assigned_by: str | None

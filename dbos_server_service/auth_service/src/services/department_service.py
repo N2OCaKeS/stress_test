@@ -11,6 +11,7 @@ from src.repositories.service_role_definitions import ServiceRoleDefinitionRepos
 from src.repositories.services import ServiceRepository
 from src.schemas.departments import DepartmentResponse, ServiceAccessResponse
 from src.services import audit_service
+from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 
 
 async def create_department(
@@ -77,6 +78,11 @@ async def grant_service_access(
     if existing and existing.is_active:
         raise ConflictError(error_code="SERVICE_ALREADY_GRANTED", message="Department already has access to this service")
 
+    # Считаем `reactivated` ДО мутации `is_active=True`. Иначе SOC не
+    # отличит первой выдачи от реактивации revoked access (severity
+    # `department.service_grant` = CRITICAL).
+    reactivated = bool(existing and not existing.is_active)
+
     if existing and not existing.is_active:
         existing.is_active = True
         existing.revoked_at = None
@@ -95,7 +101,7 @@ async def grant_service_access(
         details={
             "department_name": dept.display_name,
             "service_name": service_name,
-            "reactivated": bool(existing and not existing.is_active),
+            "reactivated": reactivated,
         },
         request_id=request_id,
     )
@@ -124,15 +130,35 @@ async def revoke_service_access(
     # group→role bindings для групп этого отдела.
     role_def_repo = ServiceRoleDefinitionRepository(db)
     await role_def_repo.deactivate_all_for_dept_service(department_id, service_name)
-    await role_repo.deactivate_all_in_dept_for_service(department_id, service_name)
+    affected_direct_user_ids = await role_repo.deactivate_all_in_dept_for_service(
+        department_id, service_name,
+    )
     group_repo = GroupRepository(db)
-    await group_repo.deactivate_all_dept_service_roles(department_id, service_name)
+    affected_group_ids = await group_repo.deactivate_all_dept_service_roles(
+        department_id, service_name,
+    )
     bot_role_repo = BotRoleRepository(db)
     await bot_role_repo.deactivate_all_in_dept_for_service(department_id, service_name)
 
+    # Собираем юзеров, которым нужен cache-invalidation: прямые носители роли
+    # + члены групп, у которых сняли group→role binding. Без сброса они до
+    # TTL=5s могли бы продолжать обращаться к сервису, у которого отдел уже
+    # не имеет доступа — `_merge_permissions` INTERSECT-инвариант нарушался.
+    affected_user_ids: set[str] = set(affected_direct_user_ids)
+    if affected_group_ids:
+        affected_user_ids.update(
+            await group_repo.list_member_user_ids(affected_group_ids)
+        )
+
     await db.commit()
+    for uid in affected_user_ids:
+        _invalidate_identity_cache(uid)
     audit_service.emit(
         "department.service_revoke", actor_id, target_id=department_id, target_type="department",
-        details={"service_name": service_name, "cascade_deactivated_roles": True},
+        details={
+            "service_name": service_name,
+            "cascade_deactivated_roles": True,
+            "affected_user_count": len(affected_user_ids),
+        },
         request_id=request_id,
     )

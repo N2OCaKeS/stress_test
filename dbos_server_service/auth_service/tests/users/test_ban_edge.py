@@ -632,3 +632,54 @@ class TestBanRequestValidators:
         assert ban is not None
         assert ban.ban_type == "temporary"
         assert ban.expires_at is not None
+
+
+# ── auto_unban должен симметрично с manual unban реактивировать PAT'ы ─────────
+
+
+class TestAutoUnbanReactivatesPat:
+    async def test_auto_unban_reactivates_ban_revoked_pat(
+        self, client, admin_token, user_a, user_a_token, db,
+    ):
+        """До фикса auto-unban оставлял PAT'ы revoked (manual unban — реактивировал).
+
+        Сценарий: юзер получает temporary ban → PAT отзывается с
+        `revoked_reason="ban"` → expires_at истекает → следующий login
+        запускает auto-unban → PAT должен снова стать `active=True`.
+        """
+        TOKENS_URL = "/api/auth/v1/tokens"
+        INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
+
+        raw = (await client.post(
+            TOKENS_URL,
+            headers={"Authorization": f"Bearer {user_a_token}"},
+            json={"name": "auto_unban_pat", "allowed_services": []},
+        )).json()["token"]
+
+        future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+        await client.post(
+            f"{USERS_URL}/{user_a.id}/ban",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"ban_type": "temporary", "reason": "auto-unban-pat", "expires_at": future},
+        )
+
+        # PAT после ban'а — `active=False`.
+        post_ban = await client.post(INTROSPECT_URL, json={"token": raw})
+        assert post_ban.json()["active"] is False
+
+        # Сдвигаем expires_at в прошлое — следующий login триггерит auto-unban.
+        past = datetime.now(timezone.utc) - timedelta(seconds=5)
+        await db.execute(
+            update(Ban).where(Ban.user_id == user_a.id).values(expires_at=past)
+        )
+        await db.commit()
+
+        login = await client.post(
+            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+        )
+        assert login.status_code == 200
+
+        # PAT снова `active=True` — симметрия с manual unban.
+        post_unban = await client.post(INTROSPECT_URL, json={"token": raw})
+        assert post_unban.status_code == 200
+        assert post_unban.json()["active"] is True

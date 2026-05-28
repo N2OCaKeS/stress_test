@@ -571,15 +571,30 @@ def make_bot(auth_client: httpx.Client, admin_token: str):
             body["department_id"] = department_id
         if allowed_services is not None:
             body["allowed_services"] = allowed_services
-        if service_roles is not None:
-            body["service_roles"] = service_roles
+        # service_roles в POST /bots не принимается (BotCreate extra=forbid).
+        # Назначаем отдельным POST /bots/{id}/roles после создания.
         r = auth_client.post(
             "/api/auth/v1/bots",
             json=body,
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert r.status_code in (200, 201), f"make_bot failed: {r.status_code} {r.text}"
-        return r.json()
+        data = r.json()
+        bot_id = data.get("bot_id") or data.get("id")
+        if service_roles and bot_id:
+            for entry in service_roles:
+                rr = auth_client.post(
+                    f"/api/auth/v1/bots/{bot_id}/roles",
+                    json={
+                        "service_name": entry["service_name"],
+                        "roles": entry["roles"],
+                    },
+                    headers={"Authorization": f"Bearer {admin_token}"},
+                )
+                assert rr.status_code in (200, 201), (
+                    f"assign_bot_roles failed: {rr.status_code} {rr.text}"
+                )
+        return data
 
     return _make
 

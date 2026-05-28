@@ -516,16 +516,6 @@ class TestPrepareHappyPath:
 
 class TestPrepareNegativePaths:
 
-    @pytest.mark.xfail(
-        reason=(
-            "service-side gap: cross-dept POST /prepare возвращает корректный "
-            "404, но `server.prepare` denied-audit не записывается в "
-            "audit_events (поллинг 15s не находит запись). Endpoint должен "
-            "emit'ить denied-event перед 404, см. "
-            "server_service/.../worker_dispatch.py::_dispatch_for_server reason='not_found_or_cross_dept'."
-        ),
-        strict=False,
-    )
     def test_cross_dept_user_gets_404_and_denied_audit(
         self,
         server_client: httpx.Client,

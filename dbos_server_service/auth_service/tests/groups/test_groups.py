@@ -12,6 +12,16 @@ async def _create_group(client, token, department_id, name="test_group", display
     )
 
 
+async def _grant_group_service(client, token, group_id, service_name):
+    """Выдать группе доступ к сервису. Префикс для тестов group-roles: без
+    выданного `GroupServiceAccess` сервис теперь отбивает assign_group_roles."""
+    return await client.post(
+        f"{GROUPS_URL}/{group_id}/services",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"service_name": service_name},
+    )
+
+
 # ── Group CRUD ────────────────────────────────────────────────────────────────
 
 async def test_admin_creates_group(client, admin_token, dept_a):
@@ -172,8 +182,8 @@ async def test_dept_admin_cannot_add_other_dept_user(
 
 # ── Group service access ──────────────────────────────────────────────────────
 
-async def test_admin_grants_service_to_group(client, admin_token, dept_a, service_x):
-    group_id = (await _create_group(client, admin_token, dept_a.id, name="svc_access_grp")).json()["id"]
+async def test_admin_grants_service_to_group(client, admin_token, dept_a_with_service, service_x):
+    group_id = (await _create_group(client, admin_token, dept_a_with_service.id, name="svc_access_grp")).json()["id"]
     resp = await client.post(f"{GROUPS_URL}/{group_id}/services",
                               headers={"Authorization": f"Bearer {admin_token}"},
                               json={"service_name": service_x.service_name})
@@ -182,8 +192,8 @@ async def test_admin_grants_service_to_group(client, admin_token, dept_a, servic
     assert resp.json()["is_active"] is True
 
 
-async def test_duplicate_service_grant_returns_409(client, admin_token, dept_a, service_x):
-    group_id = (await _create_group(client, admin_token, dept_a.id, name="dup_svc_grp")).json()["id"]
+async def test_duplicate_service_grant_returns_409(client, admin_token, dept_a_with_service, service_x):
+    group_id = (await _create_group(client, admin_token, dept_a_with_service.id, name="dup_svc_grp")).json()["id"]
     await client.post(f"{GROUPS_URL}/{group_id}/services",
                        headers={"Authorization": f"Bearer {admin_token}"},
                        json={"service_name": service_x.service_name})
@@ -194,8 +204,8 @@ async def test_duplicate_service_grant_returns_409(client, admin_token, dept_a, 
     assert resp.json()["error_code"] == "GROUP_SERVICE_ALREADY_GRANTED"
 
 
-async def test_admin_revokes_service_from_group(client, admin_token, dept_a, service_x):
-    group_id = (await _create_group(client, admin_token, dept_a.id, name="revoke_svc_grp")).json()["id"]
+async def test_admin_revokes_service_from_group(client, admin_token, dept_a_with_service, service_x):
+    group_id = (await _create_group(client, admin_token, dept_a_with_service.id, name="revoke_svc_grp")).json()["id"]
     await client.post(f"{GROUPS_URL}/{group_id}/services",
                        headers={"Authorization": f"Bearer {admin_token}"},
                        json={"service_name": service_x.service_name})
@@ -208,6 +218,7 @@ async def test_admin_revokes_service_from_group(client, admin_token, dept_a, ser
 
 async def test_admin_assigns_roles_to_group(client, admin_token, dept_a_with_service, service_x):
     group_id = (await _create_group(client, admin_token, dept_a_with_service.id, name="role_grp")).json()["id"]
+    await _grant_group_service(client, admin_token, group_id, service_x.service_name)
     resp = await client.post(f"{GROUPS_URL}/{group_id}/roles",
                               headers={"Authorization": f"Bearer {admin_token}"},
                               json={"service_name": service_x.service_name, "roles": ["reader"]})
@@ -217,6 +228,7 @@ async def test_admin_assigns_roles_to_group(client, admin_token, dept_a_with_ser
 
 async def test_assign_invalid_role_to_group_returns_422(client, admin_token, dept_a_with_service, service_x):
     group_id = (await _create_group(client, admin_token, dept_a_with_service.id, name="bad_role_grp")).json()["id"]
+    await _grant_group_service(client, admin_token, group_id, service_x.service_name)
     resp = await client.post(f"{GROUPS_URL}/{group_id}/roles",
                               headers={"Authorization": f"Bearer {admin_token}"},
                               json={"service_name": service_x.service_name, "roles": ["nonexistent"]})
@@ -226,6 +238,7 @@ async def test_assign_invalid_role_to_group_returns_422(client, admin_token, dep
 
 async def test_group_roles_visible_in_list(client, admin_token, dept_a_with_service, service_x):
     group_id = (await _create_group(client, admin_token, dept_a_with_service.id, name="list_roles_grp")).json()["id"]
+    await _grant_group_service(client, admin_token, group_id, service_x.service_name)
     await client.post(f"{GROUPS_URL}/{group_id}/roles",
                        headers={"Authorization": f"Bearer {admin_token}"},
                        json={"service_name": service_x.service_name, "roles": ["operator"]})
@@ -238,6 +251,7 @@ async def test_group_roles_visible_in_list(client, admin_token, dept_a_with_serv
 
 async def test_revoke_group_roles(client, admin_token, dept_a_with_service, service_x):
     group_id = (await _create_group(client, admin_token, dept_a_with_service.id, name="revoke_roles_grp")).json()["id"]
+    await _grant_group_service(client, admin_token, group_id, service_x.service_name)
     await client.post(f"{GROUPS_URL}/{group_id}/roles",
                        headers={"Authorization": f"Bearer {admin_token}"},
                        json={"service_name": service_x.service_name, "roles": ["reader"]})
@@ -413,3 +427,37 @@ async def test_remove_member_invalidates_identity_cache(
     )
     assert resp.status_code == 200
     assert user_a.id in invalidated
+
+
+# ── Dept-level access checks for group_service / group_roles ─────────────────
+
+async def test_grant_service_to_group_without_dept_access_returns_403(
+    client, admin_token, dept_a, service_x,
+):
+    """Сервис существует, но у отдела нет активного `DepartmentServiceAccess` —
+    `POST /groups/{id}/services` должен отбиваться, иначе группа расширяет
+    scope сервисов своего отдела (см. `_merge_permissions`)."""
+    group_id = (await _create_group(client, admin_token, dept_a.id, name="no_dept_svc_grp")).json()["id"]
+    resp = await client.post(
+        f"{GROUPS_URL}/{group_id}/services",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"service_name": service_x.service_name},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "SERVICE_NOT_ALLOWED_FOR_DEPARTMENT"
+
+
+async def test_assign_group_roles_without_group_service_access_returns_403(
+    client, admin_token, dept_a_with_service, service_x,
+):
+    """Сервис выдан отделу, но не выдан конкретной группе (нет
+    `GroupServiceAccess`) — назначать роли нельзя, иначе они засветятся в
+    `GET /users/{id}/permissions` без эффекта."""
+    group_id = (await _create_group(client, admin_token, dept_a_with_service.id, name="no_grp_svc")).json()["id"]
+    resp = await client.post(
+        f"{GROUPS_URL}/{group_id}/roles",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"service_name": service_x.service_name, "roles": ["reader"]},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "GROUP_SERVICE_ACCESS_REQUIRED"

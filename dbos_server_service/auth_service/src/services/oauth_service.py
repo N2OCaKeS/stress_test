@@ -419,7 +419,14 @@ async def client_credentials_token(
     client_secret: str,
     request_id: str | None = None,
 ) -> OAuthTokenResponse:
-    """Выдать access_token по client_credentials grant (machine-to-machine, без user_id)."""
+    """Выдать access_token по client_credentials grant (machine-to-machine, без user_id).
+
+    No state mutated: функция чисто read — клиентских counter'ов вроде
+    `last_token_issued_at` или per-request тротлинга в `OAuthClient` нет,
+    поэтому `db.commit()` не нужен (в отличие от `exchange_code`). Если в
+    будущем добавится usage-tracking — обязательно положить `await db.commit()`
+    перед `return`, иначе update уйдёт в rollback через `get_db()`.
+    """
     client_repo = OAuthClientRepository(db)
     client = await client_repo.get_by_client_id(client_id)
     if client is None or not client.is_active:

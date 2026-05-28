@@ -182,9 +182,26 @@ def create_application() -> FastAPI:
         try:
             yield
         finally:
-            # Закрываем audit-pool при shutdown. Обнуляем ссылку ДО aclose(),
-            # чтобы новые in-flight emit'ы пошли по fallback per-call (а не в
-            # закрывающийся клиент).
+            # Закрываем audit-pool при shutdown. Сначала дожидаемся уже
+            # стартовавших emit-тасок (`_EMIT_TASKS`): без drain'а гонка —
+            # таска уже выполнила `client = _audit_client` и ушла в await,
+            # а shutdown тем временем zeros'ит ссылку и закрывает клиент.
+            # Результат — `httpx.ClientClosedError` и потерянное событие.
+            # Таймаут 2с симметричен `audit_outbox` drain'у воркера.
+            pending = list(audit_service._EMIT_TASKS)
+            if pending:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*pending, return_exceptions=True),
+                        timeout=2.0,
+                    )
+                except asyncio.TimeoutError:
+                    # Под timeout остаётся часть тасок — потеряем их,
+                    # но не подвешиваем shutdown. Лог в audit-канал.
+                    pass
+
+            # Обнуляем ссылку только после drain'а. Любые emit'ы, попавшие
+            # сюда после этой строки, пойдут per-call fallback'ом.
             audit_pool = audit_service._audit_client
             audit_service._audit_client = None
             if audit_pool is not None:

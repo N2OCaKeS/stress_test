@@ -131,8 +131,13 @@ class RoleRepository:
 
     async def deactivate_by_role_name_in_dept(
         self, department_id: str, service_name: str, role_name: str
-    ) -> None:
-        """Deactivate user→role assignments only for users of the given department."""
+    ) -> list[str]:
+        """Deactivate user→role assignments only for users of the given department.
+
+        Возвращает список user_id, у которых роль действительно была снята —
+        нужен caller'у (`service_role_service.delete_role`) чтобы сбросить
+        identity-кэш этих юзеров и не дать им до TTL увидеть удалённую роль.
+        """
         rows = await self._db.scalars(
             select(UserServiceRole)
             .join(User, User.id == UserServiceRole.user_id)
@@ -142,9 +147,13 @@ class RoleRepository:
                 UserServiceRole.role == role_name,
             )
         )
+        affected: list[str] = []
         for row in rows:
+            if row.is_active:
+                affected.append(row.user_id)
             row.is_active = False
         await self._db.flush()
+        return affected
 
     async def deactivate_all_in_dept_for_service(
         self, department_id: str, service_name: str

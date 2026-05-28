@@ -326,8 +326,12 @@ class GroupRepository:
 
     async def deactivate_roles_by_role_name_in_dept(
         self, department_id: str, service_name: str, role_name: str
-    ) -> None:
-        """Deactivate (group, role) bindings only for groups in the given department."""
+    ) -> list[str]:
+        """Deactivate (group, role) bindings only for groups in the given department.
+
+        Возвращает group_id затронутых групп — caller использует это, чтобы
+        прокинуть identity-cache-invalidate по всем юзерам-членам.
+        """
         rows = await self._db.scalars(
             select(GroupServiceRole)
             .join(UserGroup, UserGroup.id == GroupServiceRole.group_id)
@@ -337,9 +341,24 @@ class GroupRepository:
                 GroupServiceRole.role == role_name,
             )
         )
+        affected: list[str] = []
         for row in rows:
+            if row.is_active:
+                affected.append(row.group_id)
             row.is_active = False
         await self._db.flush()
+        return affected
+
+    async def list_member_user_ids(self, group_ids: list[str]) -> list[str]:
+        """Уникальные user_id всех мемберов перечисленных групп."""
+        if not group_ids:
+            return []
+        rows = await self._db.scalars(
+            select(UserGroupMembership.user_id)
+            .where(UserGroupMembership.group_id.in_(group_ids))
+            .distinct()
+        )
+        return list(rows)
 
     async def deactivate_all_dept_service_roles(
         self, department_id: str, service_name: str

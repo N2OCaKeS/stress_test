@@ -222,6 +222,60 @@ async def test_lifespan_skips_audit_pool_when_logging_url_empty(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_lifespan_shutdown_drains_inflight_emit_tasks(monkeypatch):
+    """`lifespan.finally` обязан дождаться `_EMIT_TASKS` ДО `aclose()` пула.
+
+    Без drain'а гонка: emit-таска прочитала `_audit_client` и ушла в `await
+    client.post(...)`; shutdown тем временем закрывает клиент и
+    `httpx.ClientClosedError` рушит таску → событие потеряно. Тест
+    подсовывает медленную emit-таску в `_EMIT_TASKS` и убеждается, что к
+    моменту выхода из lifespan она завершена.
+    """
+    import asyncio as _asyncio
+
+    from src.core import config as config_mod
+    from src.main import create_application
+
+    monkeypatch.setenv("LOGGING_SERVICE_URL", "http://logging.test.local")
+    monkeypatch.setenv("LOGGING_SERVICE_API_KEY", "test-key")
+    config_mod.get_settings.cache_clear()
+
+    monkeypatch.setattr("src.main._startup_sequence", lambda: None)
+
+    async def _noop_bootstrap(db):
+        return None
+    monkeypatch.setattr("src.main.bootstrap_admin", _noop_bootstrap)
+
+    async def _empty_db():
+        if False:
+            yield None
+    monkeypatch.setattr("src.main.get_db", _empty_db)
+
+    audit_service._audit_client = None
+    audit_service._EMIT_TASKS.clear()
+
+    app = create_application()
+    completed = {"done": False}
+
+    async with app.router.lifespan_context(app):
+        # Имитируем уже-стартовавшую emit-таску: она «отправляется» в loging
+        # и в этот момент shutdown решает закрыть пул. До фикса pool.aclose()
+        # успел бы пройти, и `client.post` упал бы с ClientClosedError.
+        async def _slow_emit():
+            await _asyncio.sleep(0.1)
+            completed["done"] = True
+
+        task = _asyncio.create_task(_slow_emit())
+        audit_service._EMIT_TASKS.add(task)
+        task.add_done_callback(audit_service._EMIT_TASKS.discard)
+
+    # После выхода из lifespan-context shutdown должен был дождаться таски.
+    assert completed["done"] is True, (
+        "shutdown не дренировал in-flight emit-таску до aclose()"
+    )
+
+
+@pytest.mark.asyncio
 async def test_parallel_emits_share_one_pooled_client(monkeypatch):
     """30 параллельных emit'ов используют один pool, не создают 30 клиентов.
 

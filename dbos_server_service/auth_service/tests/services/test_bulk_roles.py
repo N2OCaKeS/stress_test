@@ -192,3 +192,85 @@ async def test_bulk_revoke_invalidates_identity_cache(
     )
     assert resp.status_code == 200
     assert user_a.id in invalidated
+
+
+# ── delete_role: identity-cache invalidate для всех затронутых юзеров ─────────
+
+async def test_delete_role_invalidates_identity_cache_for_direct_assignees(
+    client, admin_token, user_a, dept_a_with_service, service_x, db, monkeypatch,
+):
+    """`DELETE /service-roles/.../<role>` каскадно отзывает роль у юзеров — и
+    обязан сбросить им identity-кэш. Иначе в окне до TTL юзер видит
+    удалённую роль через `/me`/introspect (cache hit), хотя в БД её уже нет.
+    """
+    from tests.conftest import _assign_role
+    await _assign_role(db, user_a.id, service_x.service_name, "guest")
+
+    invalidated: list[str] = []
+    from src.dependencies import auth as deps_auth_mod
+    original = deps_auth_mod.invalidate_identity_cache_for_user
+
+    def spy(user_id: str) -> int:
+        invalidated.append(user_id)
+        return original(user_id)
+
+    monkeypatch.setattr(deps_auth_mod, "invalidate_identity_cache_for_user", spy)
+
+    del_resp = await client.delete(
+        f"{_roles_url(dept_a_with_service.id, service_x.service_name)}/guest",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert del_resp.status_code == 200
+    assert user_a.id in invalidated
+
+
+async def test_delete_role_invalidates_identity_cache_for_group_members(
+    client, admin_token, user_a, dept_a_with_service, service_x, monkeypatch,
+):
+    """Роль выдана через `GroupServiceRole` — после `service_role.delete`
+    юзеры-члены группы тоже должны получить cache-invalidate (group-binding
+    деактивирован)."""
+    GROUPS_URL = "/api/auth/v1/groups"
+    grp = (await client.post(
+        GROUPS_URL,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "department_id": dept_a_with_service.id,
+            "name": "drop_role_grp",
+            "display_name": "Drop role",
+        },
+    )).json()
+    group_id = grp["id"]
+
+    await client.post(
+        f"{GROUPS_URL}/{group_id}/members",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"user_id": user_a.id},
+    )
+    await client.post(
+        f"{GROUPS_URL}/{group_id}/services",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"service_name": service_x.service_name},
+    )
+    await client.post(
+        f"{GROUPS_URL}/{group_id}/roles",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"service_name": service_x.service_name, "roles": ["guest"]},
+    )
+
+    invalidated: list[str] = []
+    from src.dependencies import auth as deps_auth_mod
+    original = deps_auth_mod.invalidate_identity_cache_for_user
+
+    def spy(user_id: str) -> int:
+        invalidated.append(user_id)
+        return original(user_id)
+
+    monkeypatch.setattr(deps_auth_mod, "invalidate_identity_cache_for_user", spy)
+
+    del_resp = await client.delete(
+        f"{_roles_url(dept_a_with_service.id, service_x.service_name)}/guest",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert del_resp.status_code == 200
+    assert user_a.id in invalidated

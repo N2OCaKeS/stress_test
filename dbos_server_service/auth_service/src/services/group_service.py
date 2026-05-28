@@ -423,6 +423,20 @@ async def grant_service_to_group(
     if not await svc_repo.exists(service_name):
         raise NotFoundError(error_code="SERVICE_NOT_FOUND", message=f"Service '{service_name}' not found")
 
+    # Группа не может расширять scope сервисов своего отдела. Без этой
+    # проверки account_admin'у достаточно `POST /groups/{id}/services` чтобы
+    # подсунуть членам группы доступ к сервису, не выданному отделу — и
+    # `_merge_permissions` склеит `group_services` в `allowed_services` юзера.
+    # Симметрично `bot_service.assign_bot_roles` и `user_service.assign_roles`.
+    from src.repositories.departments import DepartmentRepository
+    dept_repo = DepartmentRepository(db)
+    if not await dept_repo.has_active_access(grp.department_id, service_name):
+        raise AuthorizationError(
+            error_code="SERVICE_NOT_ALLOWED_FOR_DEPARTMENT",
+            message=f"Service '{service_name}' is not allowed for the group's department",
+            details={"service_name": service_name, "department_id": grp.department_id},
+        )
+
     existing = await repo.get_service_access(group_id, service_name)
     if existing and existing.is_active:
         raise ConflictError(error_code="GROUP_SERVICE_ALREADY_GRANTED",
@@ -500,6 +514,22 @@ async def assign_group_roles(
     svc_repo = ServiceRepository(db)
     if not await svc_repo.exists(service_name):
         raise NotFoundError(error_code="SERVICE_NOT_FOUND", message=f"Service '{service_name}' not found")
+
+    # Без активного `GroupServiceAccess` назначаемые роли — мёртвые: они не
+    # попадут в effective_services (INTERSECT в `_merge_permissions`
+    # выкинет их), но засветятся в `GET /users/{id}/permissions` и собьют UI.
+    # Хуже того, если позже выдать GroupServiceAccess — роли «материализуются»
+    # неожиданно. Требуем grant до assign.
+    access = await repo.get_service_access(group_id, service_name)
+    if access is None or not access.is_active:
+        raise AuthorizationError(
+            error_code="GROUP_SERVICE_ACCESS_REQUIRED",
+            message=(
+                f"Group does not have access to service '{service_name}'; "
+                f"grant the service first"
+            ),
+            details={"service_name": service_name, "group_id": group_id},
+        )
 
     role_def_repo = ServiceRoleDefinitionRepository(db)
     for role in roles:

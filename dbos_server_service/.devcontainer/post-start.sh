@@ -10,7 +10,7 @@ if command -v pg_isready >/dev/null 2>&1; then
   done
 fi
 
-for service_dir in auth_service config_service logging_service server_service; do
+for service_dir in auth_service loging_service server_service server_worker; do
   if [[ -f "${service_dir}/alembic.ini" ]]; then
     echo "Applying Alembic migrations for ${service_dir}..."
     (

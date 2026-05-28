@@ -60,7 +60,7 @@ DEV     = docker compose -f docker-compose.dev.yml
 K8S     = kubectl -n dbos
 
 # ── Dev-параметры (devcontainer postgres) ─────────────────────────────────────
-_DEV_PG         = postgresql+psycopg://app_user:app_password@postgres:5432в
+_DEV_PG         = postgresql+psycopg://app_user:app_password@postgres:5432
 _DEV_AUTH_DB    = $(_DEV_PG)/dev_auth
 _DEV_LOG_DB     = $(_DEV_PG)/dev_logging
 _DEV_SERVER_DB  = $(_DEV_PG)/dev_server

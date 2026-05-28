@@ -396,16 +396,14 @@ def main() -> None:
         ok(f"  токен: {b2.get('token', '')[:40]}…")
 
     # ── server_worker service user + PAT ─────────────────────────────────────
-    # Worker аутентифицируется как обычный пользователь (а не bot) потому что
-    # service_roles для bot-ов в auth_service сейчас не поддерживаются. PAT
-    # живёт пока не отозван, что подходит для долгоиграющего воркера.
+    # Worker аутентифицируется PAT'ом обычного пользователя: токен живёт
+    # пока не отозван, что удобно для долгоиграющего процесса.
     #
     # Роль `worker_bot` (а НЕ `admin`!) — least-privilege scope: только
     # view_password/rotate_password на server_account и
     # view_credentials/rotate_credentials на ipmi_controller. Никаких
     # power.{on,off,reboot}, server.delete, permission_grant, role_create.
     # Гранты сидятся миграцией `43cf9cfef9e1` в server_service.
-    # Раньше воркер сидился с глобальным admin-PAT — теперь scope сужен.
     section("Сервисный аккаунт server_worker")
     s, b = post(auth, "/api/auth/v1/users", {
         "username": "server_worker_user",

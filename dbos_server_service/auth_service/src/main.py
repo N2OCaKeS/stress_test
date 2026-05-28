@@ -27,6 +27,11 @@ from src.services.bootstrap_service import bootstrap_admin
 
 _HEALTH_PATHS = {"/api/auth/v1/health", "/api/auth/v1/ready"}
 
+# Сильные ссылки на startup-таски (`_startup_sequence` в фоне). Без этого
+# `asyncio.ensure_future` держит только weakref через loop, GC может собрать
+# task до её завершения, и `register_events` молча не доедет до loging_service.
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
 
 def _rate_limit_key_func(request: Request) -> str:
     """slowapi key: реальный client IP с учётом trusted-proxy allow-list.
@@ -171,7 +176,9 @@ def create_application() -> FastAPI:
 
         # FIXME: fire-and-forget без ожидания — если loging_service лежит
         # на старте, события не зарегистрируются до рестарта.
-        asyncio.ensure_future(asyncio.to_thread(_startup_sequence))
+        _startup_task = asyncio.ensure_future(asyncio.to_thread(_startup_sequence))
+        _BACKGROUND_TASKS.add(_startup_task)
+        _startup_task.add_done_callback(_BACKGROUND_TASKS.discard)
         try:
             yield
         finally:

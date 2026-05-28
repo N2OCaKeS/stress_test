@@ -50,6 +50,12 @@ _audit_client: httpx.AsyncClient | None = None
 
 _EVENTS_PATH = "/api/logging/v1/events"
 
+# Сильные ссылки на in-flight emit-таски. `asyncio.create_task` сам по себе
+# держит на task только weakref через event loop — под нагрузкой GC может
+# собрать корутину до того, как она отправит payload в loging_service. Кладём
+# handle сюда на время жизни, снимаем по done-callback.
+_EMIT_TASKS: set[asyncio.Task] = set()
+
 
 async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> None:
     """Async-отправка одного payload'а в loging_service.
@@ -157,7 +163,9 @@ def emit(
     if logging_url and api_key:
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(_send_to_logging_service(payload, logging_url, api_key))
+            task = loop.create_task(_send_to_logging_service(payload, logging_url, api_key))
+            _EMIT_TASKS.add(task)
+            task.add_done_callback(_EMIT_TASKS.discard)
         except RuntimeError:
             # Sync-контекст (worker-поток через asyncio.to_thread, скрипт без
             # loop'а, ранний import). Блокирующий httpx.post тут опасен —

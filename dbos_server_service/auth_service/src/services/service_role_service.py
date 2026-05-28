@@ -23,17 +23,7 @@ from src.repositories.users import UserRepository
 from src.schemas.auth import IdentityContext
 from src.schemas.service_roles import ServiceRoleResponse
 from src.services import audit_service
-
-
-def _invalidate_identity_cache(user_id: str) -> None:
-    """Сбросить identity-кэш юзера после изменения сервисных ролей.
-    Lazy import, чтобы не тянуть `dependencies.auth` (audit-context, циклы).
-    """
-    try:
-        from src.dependencies.auth import invalidate_identity_cache_for_user
-        invalidate_identity_cache_for_user(user_id)
-    except ImportError:
-        pass
+from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 
 
 def _check_can_manage(

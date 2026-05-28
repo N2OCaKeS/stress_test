@@ -14,18 +14,8 @@ from src.schemas.groups import (
     MemberResponse, UserGroupsResponse,
 )
 from src.services import audit_service
+from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 from src.utils.pagination import PaginationParams
-
-
-def _invalidate_identity_cache(user_id: str) -> None:
-    """Сбросить identity-кэш юзера после изменения членства в группе.
-    Lazy import — `dependencies.auth` тянет audit-context, циклы.
-    """
-    try:
-        from src.dependencies.auth import invalidate_identity_cache_for_user
-        invalidate_identity_cache_for_user(user_id)
-    except ImportError:
-        pass
 
 
 def _require_admin(identity) -> None:

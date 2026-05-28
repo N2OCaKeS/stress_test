@@ -51,6 +51,11 @@ class BotStatus(StrEnum):
 PAT_PREFIX = "dbos_pat_"
 BOT_TOKEN_PREFIX = "dbos_bot_"
 
+# Сколько символов raw-токена кладём в `token_prefix`-колонку для быстрого
+# lookup'а до проверки SHA-256 (хватает на `dbos_pat_` / `dbos_bot_` + три
+# первых символа secret'а).
+TOKEN_PREFIX_LEN = 12
+
 
 # ── Service identity allow-list (mTLS-partial) ───────────────────────────────
 # Соседние сервисы (loging_service, server_service, config_service) ходят в наш

@@ -27,22 +27,10 @@ from src.schemas.users import (
     UserResponse,
 )
 from src.services import audit_service
+from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 from src.services.auth_service import collect_user_permissions
 from src.utils.pagination import PaginationParams
 from src.utils.time import utcnow
-
-
-def _invalidate_identity_cache(user_id: str) -> None:
-    """Сбросить identity-кэш юзера после privilege-changing операции
-    (ban/unban/demote/department-move). Lazy import — `dependencies.auth`
-    тянет audit-context, циклы.
-    """
-    try:
-        from src.dependencies.auth import invalidate_identity_cache_for_user
-        invalidate_identity_cache_for_user(user_id)
-    except ImportError:
-        # Кэша ещё нет (test-импорт или ранний bootstrap) — invalidate нечего.
-        pass
 
 
 def _to_response(user, dept_name: str | None) -> UserResponse:

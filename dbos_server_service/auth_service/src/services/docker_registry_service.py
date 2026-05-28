@@ -32,7 +32,7 @@ from src.schemas.docker_registry import (
     DockerRegistryConfigUpdate,
     DockerTokenResponse,
 )
-from src.services import audit_service
+from src.services import _lockout, audit_service
 from src.utils.time import is_expired, utcnow
 from src.core.docker_jwt import sign_docker_token
 
@@ -254,7 +254,15 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
         pat = await token_repo.get_active_by_hash(hash_opaque_token(password))
         if pat and not (pat.expires_at and is_expired(pat.expires_at)):
             user = await user_repo.get_by_id(pat.user_id)
-            if user and user.status == "active":
+            # `is_active` — boolean колонка, отражает result `status == ACTIVE`
+            # (BANNED / BLOCKED / inactive выставляют False). Сравнение через
+            # строку `user.status == "active"` ломается, если когда-то добавим
+            # ещё один статус (`pending`/`archived`); is_active — единая точка.
+            if user and user.is_active:
+                # PAT валидный, но если у юзера активен password-lockout —
+                # рубим и docker-auth: иначе атакующий, скомпрометировавший
+                # PAT, обходит per-user 429 после 5 неуспешных password-логинов.
+                _lockout.assert_not_locked(user)
                 return user.id, user.department_id
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid credentials")
 

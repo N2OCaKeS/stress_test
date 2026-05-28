@@ -76,9 +76,9 @@ class OAuthClientCreate(BaseModel):
         description="Whitelist redirect_uri. Только https (или http://localhost для native).",
     )
     allowed_scopes: list[str] = Field(default_factory=list, description="Scope'ы, которые клиент может запросить.")
-    grant_types: list[str] = Field(
+    grant_types: list[Literal["authorization_code", "client_credentials", "refresh_token"]] = Field(
         default=["authorization_code"],
-        description="Разрешённые grant'ы (`authorization_code`, `client_credentials`).",
+        description="Разрешённые grant'ы (`authorization_code`, `client_credentials`, `refresh_token`).",
     )
 
     @field_validator("redirect_uris")

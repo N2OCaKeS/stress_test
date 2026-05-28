@@ -240,10 +240,10 @@ async def get_current_identity(
 # на процесс, отдельная переменная нужна, чтобы тесты могли monkeypatch'ить
 # её на лету без сброса `lru_cache(get_settings)`.
 _IDENTITY_CACHE_TTL_SECONDS: float = float(get_settings().identity_cache_ttl_seconds)
-# Потолок числа entries. Каждая запись — небольшой кортеж + строка-ключ;
-# 50k уверенно покрывает live-JWT крупного pod'а, оставаясь под контролем по
-# памяти. При превышении — eviction самого старого.
-_IDENTITY_CACHE_MAXSIZE: int = 50_000
+# Потолок числа entries. Каждая запись — небольшой кортеж + строка-ключ.
+# Читается из Settings (env `IDENTITY_CACHE_MAXSIZE`); под burst'ом коротко-
+# живущих токенов без cap'а кэш растёт без границ → OOM pod'а.
+_IDENTITY_CACHE_MAXSIZE: int = int(get_settings().identity_cache_maxsize)
 _identity_cache: "OrderedDict[str, tuple[IdentityContext, float]]" = OrderedDict()
 
 

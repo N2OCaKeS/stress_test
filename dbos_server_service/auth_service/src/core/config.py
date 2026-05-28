@@ -69,6 +69,16 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Потолок числа entries в `dependencies/auth._identity_cache`. Под
+    # burst'ом коротко-живущих токенов (PAT/bot per-request) без cap'а
+    # кэш растёт без границ → OOM pod'а. 50k уверенно покрывает live-JWT
+    # крупного pod'а при разумном размере записи.
+    identity_cache_maxsize: int = Field(
+        default=50_000,
+        alias="IDENTITY_CACHE_MAXSIZE",
+        description="Максимум entries в identity-кэше до eviction.",
+    )
+
     # JWT audience / issuer / clock-skew tolerance.
     #
     # `aud` и `iss` сохраняются в каждом access-токене (`create_access_token`)

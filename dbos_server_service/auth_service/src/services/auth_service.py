@@ -1,6 +1,7 @@
 """Workflow аутентификации и сессий: login / refresh / logout / get_identity."""
 
 from datetime import timedelta
+from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,11 +26,17 @@ from src.utils.time import expires_at, is_expired
 # Dummy Argon2id hash для timing-equalisation при login несуществующего
 # юзера. Argon2id verify ~100ms; без этого вызова unknown-user отбивается
 # мгновенно, known-user уходит на полный Argon2 → username enumeration по
-# таймингу. Хэш генерится один раз при импорте под фиксированным секретом
-# (значение не важно, важна валидная argon2id-форма с нашими параметрами,
-# чтобы verify сделал реальную работу, а не упал на InvalidHashError).
+# таймингу. Значение не важно, важна валидная argon2id-форма с нашими
+# параметрами, чтобы verify сделал реальную работу, а не упал на
+# InvalidHashError. Argon2id `hash_password` стоит ~100ms — на import
+# модуля под `pytest --collect-only` и при FastAPI cold start это
+# заметно, поэтому считаем lazy при первом вызове `_dummy_password_hash`.
 from src.core.security import hash_password as _hash_password
-_DUMMY_PASSWORD_HASH = _hash_password("__never_match_sentinel__")
+
+
+@lru_cache(maxsize=1)
+def _dummy_password_hash() -> str:
+    return _hash_password("__never_match_sentinel__")
 
 
 async def verify_password_with_lockout(
@@ -282,7 +289,7 @@ async def login(
     if user is None:
         # Жжём Argon2id на dummy-хэше — timing симметричен случаю «юзер есть,
         # пароль неверный». Иначе по latency можно было перебирать username'ы.
-        verify_password(password, _DUMMY_PASSWORD_HASH)
+        verify_password(password, _dummy_password_hash())
         audit_service.emit("user.login", None, status="failure", allowed=False, details={"username": username, "reason": "user_not_found"}, request_id=request_id)
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid username or password")
 
@@ -295,9 +302,13 @@ async def login(
     if user.status == UserStatus.BANNED:
         from src.services import user_service
         if await user_service.auto_unban_if_expired(db, user, request_id=request_id):
-            # Ban deactivated, user.status/is_active уже обновлены в auto_unban;
-            # перечитываем ORM-инстанс на случай stale state.
-            await db.refresh(user)
+            # Ban deactivated. Полный SELECT через get_by_id, а не db.refresh —
+            # при CAS-miss победитель закоммитил в другой сессии, refresh
+            # текущей identity-map'нутой записи может вернуть устаревший
+            # status. get_by_id вытаскивает свежее состояние из БД.
+            reloaded = await user_repo.get_by_id(user.id)
+            if reloaded is not None:
+                user = reloaded
         else:
             audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "banned", "username": user.username}, request_id=request_id)
             raise AuthorizationError(error_code="USER_BANNED", message="User is banned")

@@ -876,7 +876,6 @@ async def get_user_permissions(
     dept_repo = DepartmentRepository(db)
     role_repo = RoleRepository(db)
     group_repo = GroupRepository(db)
-    role_def_repo = ServiceRoleDefinitionRepository(db)
 
     # ── Step 1: access guard ──────────────────────────────────────────────
     is_account_admin = identity.platform_role == PlatformRole.ACCOUNT_ADMIN
@@ -1022,10 +1021,6 @@ async def get_user_permissions(
     service_roles = {
         svc: sorted(roles) for svc, roles in service_roles.items()
     }
-
-    # `role_def_repo` пока не нужен, но оставлен — v2 endpoint'а может
-    # включать display_name'ы ролей из `service_role_definitions`.
-    del role_def_repo  # explicit suppression — see comment above.
 
     # ── Step 3: emit success audit + return ────────────────────────────────
     audit_service.emit(

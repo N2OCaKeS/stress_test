@@ -217,3 +217,187 @@ class TestChunkedSweep:
         deleted = apply_active(db, chunk_size=4)
         assert deleted == 15
         assert _ids(db) == set(protected)
+
+
+# ── Overlapping policies — счёт уникальных удалений ──────────────────────────
+
+def _add_event_sev(db, *, service: str, severity: str, days_ago: int) -> str:
+    import uuid
+    ev = AuditEvent(
+        id=f"log_{uuid.uuid4().hex[:16]}",
+        timestamp=datetime.now(timezone.utc) - timedelta(days=days_ago),
+        service=service,
+        action="x.y",
+        actor_id=None,
+        actor_type="service",
+        status="success",
+        allowed=True,
+        severity=severity,
+        details={},
+    )
+    db.add(ev)
+    db.flush()
+    return ev.id
+
+
+class TestOverlappingPolicies:
+    """Когда событие подпадает под несколько политик — total = число
+    УНИКАЛЬНЫХ удалённых строк, а не сумма policy-rowcount'ов."""
+
+    def test_global_plus_filtered_does_not_double_count(self, db):
+        # Global: всё, retain_days=30. Filtered: CRITICAL+auth_service, retain_days=30.
+        # CRITICAL-события auth_service подпадают под обе политики; total
+        # должен считать их один раз.
+        repo.create(db, RetentionPolicyCreate(retain_days=30))
+        repo.create_policy(
+            db,
+            RetentionPolicyCreate(
+                retain_days=30,
+                severity_filter=["CRITICAL"],
+                service_filter=["auth_service"],
+            ),
+        )
+        # 3 CRITICAL auth_service events (под обе политики)
+        for _ in range(3):
+            _add_event_sev(db, service="auth_service", severity="CRITICAL", days_ago=100)
+        # 2 INFO auth_service event (только под global)
+        for _ in range(2):
+            _add_event_sev(db, service="auth_service", severity="INFO", days_ago=100)
+        db.commit()
+
+        deleted = apply_active(db)
+        # Уникально удалено ровно 5 строк, не 5+3=8.
+        assert deleted == 5
+        assert _ids(db) == set()
+
+    def test_overlapping_with_different_retain_days(self, db):
+        # Filtered short: retain=30 для CRITICAL/auth_service.
+        # Filtered long: retain=365 для всех CRITICAL.
+        # Событие 100 дней назад CRITICAL/auth_service подпадает под первую
+        # (deleteable), но НЕ под вторую — должно быть удалено по первой,
+        # и счётчик его учитывает один раз.
+        repo.create_policy(
+            db,
+            RetentionPolicyCreate(
+                retain_days=30,
+                severity_filter=["CRITICAL"],
+                service_filter=["auth_service"],
+            ),
+        )
+        repo.create_policy(
+            db,
+            RetentionPolicyCreate(
+                retain_days=365,
+                severity_filter=["CRITICAL"],
+            ),
+        )
+        target = _add_event_sev(
+            db, service="auth_service", severity="CRITICAL", days_ago=100
+        )
+        # CRITICAL/other_service @100d — под вторую не попадает (нужно 365d),
+        # под первую тоже нет (service mismatch) → не удаляется.
+        kept = _add_event_sev(
+            db, service="server_service", severity="CRITICAL", days_ago=100
+        )
+        db.commit()
+
+        deleted = apply_active(db)
+        assert deleted == 1
+        assert target not in _ids(db)
+        assert kept in _ids(db)
+
+    def test_self_audit_details_filtered_set_honest(self, db):
+        """Self-audit под filter-режимом — массив `policies` + min/max
+        `retain_days`. НЕ единый «представительский» `retain_days`,
+        который врал под filtered-set."""
+        from src.main import _build_retention_sweep_details
+        from src.repositories.retention_policies import list_active
+
+        repo.create_policy(
+            db,
+            RetentionPolicyCreate(
+                retain_days=30,
+                severity_filter=["CRITICAL"],
+            ),
+        )
+        repo.create_policy(
+            db,
+            RetentionPolicyCreate(
+                retain_days=60,
+                severity_filter=["INFO"],
+            ),
+        )
+        snapshot = list_active(db)
+        details = _build_retention_sweep_details(
+            deleted=7, snapshot=snapshot, run_date_msk="2026-05-28"
+        )
+        assert details["deleted_count"] == 7
+        assert details["run_date_msk"] == "2026-05-28"
+        # legacy «representative» поле отсутствует — иначе SOC увидит одно
+        # число при двух разных политиках.
+        assert "retain_days" not in details
+        assert details["min_retain_days"] == 30
+        assert details["max_retain_days"] == 60
+        retain_days_in_array = sorted(p["retain_days"] for p in details["policies"])
+        assert retain_days_in_array == [30, 60]
+        severities = sorted(p["severity"] for p in details["policies"])
+        assert severities == ["CRITICAL", "INFO"]
+
+    def test_self_audit_details_empty_snapshot(self, db):
+        """Race: snapshot пуст, deleted=0 — детали не должны падать и не
+        несут min/max (некорректно было бы выдать min(пустого) → exception)."""
+        from src.main import _build_retention_sweep_details
+
+        details = _build_retention_sweep_details(
+            deleted=0, snapshot=[], run_date_msk="2026-05-28"
+        )
+        assert details == {
+            "deleted_count": 0,
+            "run_date_msk": "2026-05-28",
+            "policies": [],
+        }
+
+    def test_self_audit_details_single_global_policy(self, db):
+        """Один global-row: массив `policies` всё равно есть, min==max."""
+        from src.main import _build_retention_sweep_details
+        from src.repositories.retention_policies import list_active
+
+        repo.create(db, RetentionPolicyCreate(retain_days=90))
+        snapshot = list_active(db)
+        details = _build_retention_sweep_details(
+            deleted=3, snapshot=snapshot, run_date_msk="2026-05-28"
+        )
+        assert details["deleted_count"] == 3
+        assert details["min_retain_days"] == 90
+        assert details["max_retain_days"] == 90
+        assert len(details["policies"]) == 1
+        assert details["policies"][0]["retain_days"] == 90
+        assert details["policies"][0]["severity"] is None
+        assert details["policies"][0]["service"] is None
+
+    def test_overlap_unique_count_with_chunking(self, db):
+        """Чанкование сохраняется при OR-комбинации: маленький chunk_size →
+        несколько проходов, total = уникальные удалённые."""
+        repo.create(db, RetentionPolicyCreate(retain_days=30))
+        repo.create_policy(
+            db,
+            RetentionPolicyCreate(
+                retain_days=30,
+                severity_filter=["CRITICAL"],
+                service_filter=["auth_service"],
+            ),
+        )
+        # 25 CRITICAL/auth_service — под обе политики.
+        for _ in range(25):
+            _add_event_sev(
+                db, service="auth_service", severity="CRITICAL", days_ago=100
+            )
+        # 1 свежее, не должно тронуться.
+        fresh = _add_event_sev(
+            db, service="auth_service", severity="INFO", days_ago=5
+        )
+        db.commit()
+
+        deleted = apply_active(db, chunk_size=7)
+        assert deleted == 25
+        assert _ids(db) == {fresh}

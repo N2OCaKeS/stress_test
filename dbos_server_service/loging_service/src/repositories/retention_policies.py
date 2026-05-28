@@ -8,7 +8,7 @@ Cartesian product (одна строка на пару) — `apply_active` об�
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, select, update as sa_update
+from sqlalchemy import and_, delete, func, or_, select, update as sa_update
 from sqlalchemy.orm import Session
 
 from src.models.audit_event import AuditEvent
@@ -139,15 +139,23 @@ _SWEEP_CHUNK_SIZE = 10_000
 def apply_active(db: Session, *, chunk_size: int = _SWEEP_CHUNK_SIZE) -> int:
     """Удаляет события старше `retain_days`, КРОМЕ событий `loging_service`.
 
-    Если активных политик с filter'ами несколько — каждая применяется
-    отдельным набором DELETE по своей (severity, service)-комбинации. NULL в
-    `severity`/`service` колонке = «все severity / все сервисы» (legacy
-    global-политика).
+    Активные политики комбинируются в одно OR-выражение: событие подлежит
+    удалению, если попадает под предикат **хотя бы одной** политики. Это
+    даёт честный счёт уникально удалённых строк — N-pass подход суммировал
+    rowcount каждой политики и недосчитывал, когда события подпадали под
+    несколько (вторая политика видела rowcount=0 на уже снесённых первой).
+
+    Предикат одной политики:
+        timestamp < now - retain_days
+        AND (severity IS NULL OR event.severity = severity)
+        AND (service  IS NULL OR lower(event.service) = lower(service))
+
+    NULL в `severity`/`service` колонке = «все severity / все сервисы»
+    (legacy global-политика).
 
     DELETE идёт чанками по `chunk_size` строк с коммитом на каждый чанк —
     на append-only журнале в миллионы строк один безлимитный DELETE держал бы
-    блокировки и раздувал WAL, тормозя ingest. Цикл по политике крутится, пока
-    очередной чанк удаляет полную пачку (есть что чистить дальше).
+    блокировки и раздувал WAL, тормозя ingest.
 
     Кросс-репликовая защита (один sweep за раз) обеспечивается session-level
     `pg_try_advisory_lock` в `main._retention_loop` — он переживает
@@ -155,41 +163,47 @@ def apply_active(db: Session, *, chunk_size: int = _SWEEP_CHUNK_SIZE) -> int:
     транзакции. Здесь дополнительного лока нет, чтобы прямой вызов
     `apply_active` (тесты, ручной прогон) не конфликтовал с daemon'ом.
 
-    Возвращает суммарное количество удалённых событий по всем политикам.
+    Возвращает количество уникально удалённых событий.
     """
     policies = list_active(db)
     if not policies:
         return 0
 
     now = datetime.now(timezone.utc)
-    total = 0
+    policy_predicates = []
     for policy in policies:
         cutoff = now - timedelta(days=policy.retain_days)
-        # Подзапрос отбирает id'ы под удаление пачкой; основной DELETE бьёт
-        # ровно по этим первичным ключам. `IN (SELECT ... LIMIT n)` —
-        # переносимый способ ограничить DELETE размером пачки.
-        id_select = select(AuditEvent.id).where(
-            AuditEvent.timestamp < cutoff,
+        clauses = [AuditEvent.timestamp < cutoff]
+        if policy.severity is not None:
+            clauses.append(AuditEvent.severity == policy.severity)
+        if policy.service is not None:
+            clauses.append(
+                func.lower(AuditEvent.service) == policy.service.lower()
+            )
+        policy_predicates.append(and_(*clauses))
+
+    # Один OR на все политики — событие удаляется, если попадает под любую.
+    match_any = or_(*policy_predicates)
+    id_select = (
+        select(AuditEvent.id)
+        .where(
+            match_any,
             # Case-insensitive гард: блокирует bypass через 'LoGiNg_SeRvIcE',
             # 'LOGING_SERVICE' и т.п. (trailing whitespace — на ingest).
             func.lower(AuditEvent.service) != _PROTECTED_SERVICE,
         )
-        if policy.severity is not None:
-            id_select = id_select.where(AuditEvent.severity == policy.severity)
-        if policy.service is not None:
-            id_select = id_select.where(
-                func.lower(AuditEvent.service) == policy.service.lower()
-            )
-        id_select = id_select.limit(chunk_size)
+        .limit(chunk_size)
+    )
 
-        while True:
-            stmt = delete(AuditEvent).where(
-                AuditEvent.id.in_(id_select.scalar_subquery())
-            )
-            result = db.execute(stmt)
-            db.commit()
-            deleted = result.rowcount
-            total += deleted
-            if deleted < chunk_size:
-                break
+    total = 0
+    while True:
+        stmt = delete(AuditEvent).where(
+            AuditEvent.id.in_(id_select.scalar_subquery())
+        )
+        result = db.execute(stmt)
+        db.commit()
+        deleted = result.rowcount
+        total += deleted
+        if deleted < chunk_size:
+            break
     return total

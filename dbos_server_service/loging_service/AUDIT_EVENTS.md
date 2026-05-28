@@ -123,7 +123,7 @@ Details:
 
 - `logging.retention_write` (PUT/DELETE): `{old: <snapshot|null>, new: <snapshot|null>}`,
   где snapshot — `{id, retain_days, description, is_active}` или `null`.
-- `logging.retention_sweep`: `{deleted_count, retain_days, run_date_msk}`.
+- `logging.retention_sweep`: `{deleted_count, run_date_msk, policies: [{id, retain_days, severity, service}, ...], min_retain_days, max_retain_days}`. Под filter-режимом активных политик может быть несколько с разными `retain_days` — массив `policies` несёт полный snapshot, `min_retain_days`/`max_retain_days` дают границы. Поля `min/max` опускаются, если на момент запуска sweep'а активных политик нет.
 
 ---
 

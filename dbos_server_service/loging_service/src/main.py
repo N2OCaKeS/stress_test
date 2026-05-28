@@ -562,6 +562,38 @@ def create_application() -> FastAPI:
 _RETENTION_ADVISORY_LOCK_KEY: int = int.from_bytes(b"loretent", "big")
 
 
+def _build_retention_sweep_details(
+    *, deleted: int, snapshot: list, run_date_msk: str
+) -> dict:
+    """Собирает `details` для `logging.retention_sweep` self-audit.
+
+    `snapshot` — список активных `RetentionPolicy`-объектов, снятый ДО
+    `apply_active` (иначе concurrent admin-DELETE даст пустой snapshot при
+    ненулевом deleted_count). Под filter-режим политик может быть несколько
+    с разными `retain_days` — кладём массив + min/max, чтобы SOC видел
+    честный набор, а не одну «представительскую» политику.
+    """
+    policies_details = [
+        {
+            "id": p.id,
+            "retain_days": p.retain_days,
+            "severity": p.severity,
+            "service": p.service,
+        }
+        for p in snapshot
+    ]
+    details: dict = {
+        "deleted_count": int(deleted),
+        "run_date_msk": run_date_msk,
+        "policies": policies_details,
+    }
+    if snapshot:
+        retain_values = [p.retain_days for p in snapshot]
+        details["min_retain_days"] = min(retain_values)
+        details["max_retain_days"] = max(retain_values)
+    return details
+
+
 def _retention_loop() -> None:
     """Фоновый тред: применяет retention-политику раз в сутки в 00:00 MSK (UTC+3).
 
@@ -608,6 +640,11 @@ def _retention_loop() -> None:
                         )
                         last_run = today
                     else:
+                        # Снимаем snapshot активных политик ДО sweep'а: иначе
+                        # concurrent admin-DELETE между apply_active и сбором
+                        # деталей даст deleted_count>0 при пустом списке политик.
+                        from src.repositories.retention_policies import list_active
+                        snapshot = list_active(db)
                         try:
                             deleted = apply_active(db)
                             logger.info(
@@ -615,15 +652,18 @@ def _retention_loop() -> None:
                                 today, deleted,
                             )
                             # Self-audit факта sweep'а: compliance требует
-                            # запись «событие удалено». Берётся фактический
-                            # `retain_days` активной политики (если её нет —
-                            # apply_active вернул 0 без работы).
+                            # запись «событие удалено». Под filter-режим
+                            # активных политик может быть несколько с разными
+                            # retain_days — пишем массив + min/max, чтобы SOC
+                            # видел честную картину, а не одну «представительскую».
                             try:
-                                from src.repositories.retention_policies import get_active
                                 from src.schemas.events import EventCreate
                                 from src.services.event_service import record_admin_action
-                                policy = get_active(db)
-                                retain_days = policy.retain_days if policy else None
+                                details = _build_retention_sweep_details(
+                                    deleted=deleted,
+                                    snapshot=snapshot,
+                                    run_date_msk=today.isoformat(),
+                                )
                                 record_admin_action(
                                     db,
                                     EventCreate(
@@ -636,11 +676,7 @@ def _retention_loop() -> None:
                                         status="success",
                                         allowed=True,
                                         severity=None,
-                                        details={
-                                            "deleted_count": int(deleted),
-                                            "retain_days": retain_days,
-                                            "run_date_msk": today.isoformat(),
-                                        },
+                                        details=details,
                                     ),
                                 )
                             except Exception as audit_exc:

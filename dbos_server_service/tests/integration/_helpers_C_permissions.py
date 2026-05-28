@@ -549,7 +549,7 @@ def _os_create(client, tok, ctx):
 def _os_update(client, tok, ctx):
     return client.patch(
         f"/api/server/v1/os-versions/{ctx['os_version_id']}",
-        json={"display_name": "Updated"},
+        json={"description": "Updated by sweep"},
         headers=auth_header(tok),
     )
 

@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from tests.integration._helpers_I_oauth import SERVICE_API_KEY
 from tests.integration.conftest import wait_for_event
 
 
@@ -150,8 +151,14 @@ class TestBotLifecycleAudit:
         ).json()["token"]
 
         since = datetime.now(timezone.utc)
+        # introspect — service-to-service, нужен SERVICE_API_KEY + X-Service-Identity.
         intr = auth_client.post(
-            "/api/auth/v1/authorization/introspect", json={"token": raw},
+            "/api/auth/v1/authorization/introspect",
+            json={"token": raw},
+            headers={
+                "Authorization": f"Bearer {SERVICE_API_KEY}",
+                "X-Service-Identity": "loging_service",
+            },
         )
         assert intr.status_code == 200
         body = intr.json()

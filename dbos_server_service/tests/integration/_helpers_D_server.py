@@ -333,7 +333,7 @@ def poll_audit_event(
         clauses.append("severity = :severity")
         params["severity"] = severity
     sql = text(
-        "SELECT id, action, status, severity, actor_id, target_id, "
+        "SELECT id, action, status, allowed, severity, actor_id, target_id, "
         "target_type, department_id, details, timestamp "
         "FROM audit_events WHERE " + " AND ".join(clauses) +
         " ORDER BY timestamp DESC LIMIT 1"

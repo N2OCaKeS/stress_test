@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
-from tests.integration.conftest import wait_for_event
+from tests.integration.conftest import ADMIN_PASSWORD, ADMIN_USERNAME, wait_for_event
 
 RULES_URL = "/api/logging/v1/rules"
 SERVICES_URL = "/api/logging/v1/services"
@@ -193,9 +193,12 @@ class TestClientErrorAudit:
         admin_token: str,
     ):
         since = datetime.now(timezone.utc)
+        # `ban_type=permanent` валиден по схеме → доходит до user-lookup,
+        # который возвращает 404 USER_NOT_FOUND. Любой невалидный ban_type
+        # отлавливался бы pydantic-валидатором и давал 422 раньше handler'а.
         r = auth_client.post(
             "/api/auth/v1/users/usr_nonexistent/ban",
-            json={"ban_type": "manual"},
+            json={"ban_type": "permanent"},
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert r.status_code == 404
@@ -289,7 +292,7 @@ class TestLoggingAdminWorkflow:
         try:
             auth_client.post(
                 "/api/auth/v1/login",
-                json={"username": "e2e_admin", "password": "E2eAdmin1234!"},
+                json={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD},
             )
             event = wait_for_event(
                 logging_client,

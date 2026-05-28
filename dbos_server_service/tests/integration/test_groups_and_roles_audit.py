@@ -266,6 +266,13 @@ class TestGroupAudit:
             headers={"Authorization": f"Bearer {admin_token}"},
             json={"department_id": dept_id, "name": f"roles_grp_{u}", "display_name": "RG"},
         ).json()
+        # Группе нужен доступ к сервису до назначения per-service ролей.
+        gs = auth_client.post(
+            f"/api/auth/v1/groups/{gr['id']}/services",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"service_name": svc},
+        )
+        assert gs.status_code in (201, 409), gs.text
 
         since = datetime.now(timezone.utc)
         r = auth_client.post(

@@ -2,11 +2,19 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BotCreate(BaseModel):
-    """Тело `POST /bots` — создание service-account."""
+    """Тело `POST /bots` — создание service-account.
+
+    `extra="forbid"` стоит точечно: остальные схемы в auth permissive,
+    но конкретно тут раньше пропускали `service_roles` через тело и
+    тихо его теряли (роль не назначалась, а 201 уходил). Лучше явно
+    422, чем молчаливый дроп.
+    """
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=256, description="Имя бота (уникально внутри отдела).")
     department_id: str = Field(description="ID отдела, к которому привязываем бота.")
     allowed_services: list[str] = Field(

@@ -327,20 +327,16 @@ from src import tasks  # noqa: E402, F401
 # Запускается на каждой replica при старте; защищён `with_for_update
 # (skip_locked)` — если две replica'и стартуют одновременно, одна и та же
 # row не подхватится дважды.
-@broker.on_event(TaskiqEvents.WORKER_STARTUP)
-async def _recover_scheduled_retries(state: TaskiqState) -> None:
-    """Поднять «потерянные» при крэше retry-планы.
+async def _recover_due_scheduled_retries_once() -> None:
+    """Один проход recovery: SELECT due-row'ы и kiq каждой.
 
-    Сценарий: worker A на attempt=1 упал во время `asyncio.sleep(10s)`
-    back-off'а. Task в DB: status='queued', scheduled_retry_at = T+10s.
-    Worker B стартует через 30s → видит row → kiq → retry поехал.
-
-    Concurrent-startup защита: SELECT идёт с `FOR UPDATE SKIP LOCKED`,
-    session держится открытой до конца kiq-loop'а и commit'ится после.
-    Если две replica'и стартуют одновременно, второй SELECT просто
-    пропустит row'ы, заблокированные первой. Без SKIP LOCKED обе делают
-    kiq на одни и те же row'ы — CAS на `mark_running` отбивает дубль
-    consumer'а, но Redis-очередь успевает раздуться лишними сообщениями.
+    Общая логика для startup-хука (`_recover_scheduled_retries`) и
+    periodic-task'и (`tasks_recover_scheduled_retries`). Без этого фикс
+    P0-2 был бы дубликатом кода: startup поднимает потерянные при крэше
+    retry-планы, periodic — потерянные в долгоживущем процессе
+    (asyncio.create_task GC'нулся, `_RETRY_TASKS` set теряет ссылку,
+    `_delayed_kick` ловит CancelledError при чужой отмене и re-raise'ит
+    без re-kick'а).
     """
     from src.db.session import AsyncSessionLocal
     from src.repositories import task as task_repo
@@ -382,12 +378,12 @@ async def _recover_scheduled_retries(state: TaskiqState) -> None:
                         t.task_kind,
                         redacted,
                     )
-            # commit ПОСЛЕ kiq-loop'а: row-level lock'и держатся до commit'а,
+            # commit ПОСЛЕ kiq-loop'а: row-level lock'и держатся до commit'а;
             # после него вторая replica увидит row'ы свободными (но статусы
-            # уже изменятся, как только consumer подхватит kiq, и `mark_running`
+            # уже изменятся как только consumer подхватит kiq, и `mark_running`
             # CAS отобьёт повторную попытку).
             await session.commit()
-    except Exception as exc:  # noqa: BLE001 — startup-hook не должен падать
+    except Exception as exc:  # noqa: BLE001 — recovery не должна крэшить хост
         redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
         logger.warning(
             "scheduled_retries recovery: SELECT failed: %s",
@@ -400,6 +396,24 @@ async def _recover_scheduled_retries(state: TaskiqState) -> None:
         recovered,
         len(due),
     )
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _recover_scheduled_retries(state: TaskiqState) -> None:
+    """Поднять «потерянные» при крэше retry-планы.
+
+    Сценарий: worker A на attempt=1 упал во время `asyncio.sleep(10s)`
+    back-off'а. Task в DB: status='queued', scheduled_retry_at = T+10s.
+    Worker B стартует через 30s → видит row → kiq → retry поехал.
+
+    Concurrent-startup защита: SELECT идёт с `FOR UPDATE SKIP LOCKED`,
+    session держится открытой до конца kiq-loop'а и commit'ится после.
+    Если две replica'и стартуют одновременно, второй SELECT просто
+    пропустит row'ы, заблокированные первой. Без SKIP LOCKED обе делают
+    kiq на одни и те же row'ы — CAS на `mark_running` отбивает дубль
+    consumer'а, но Redis-очередь успевает раздуться лишними сообщениями.
+    """
+    await _recover_due_scheduled_retries_once()
 
 
 # ── Scheduler skeleton ──────────────────────────────────────────────────────
@@ -495,6 +509,27 @@ async def worker_heartbeat() -> None:
             wid,
             redacted,
         )
+
+
+@broker.task(
+    "tasks.recover_scheduled_retries",
+    schedule=[{"cron": "*/1 * * * *"}] if _settings.scheduler_enabled else [],
+)
+async def tasks_recover_scheduled_retries() -> None:
+    """Periodic recovery «зависших» retry-row'ов.
+
+    Закрывает дыру startup-only `_recover_scheduled_retries`: если worker
+    долго живёт, а фоновая `_RETRY_TASKS`-task'а молча отменилась (GC,
+    ошибка event loop, или чужой `task.cancel()` в taskiq), row остаётся
+    `status='queued' AND scheduled_retry_at <= now()` навсегда — sweep'у
+    она невидима (он смотрит только `status='running'`), startup-recovery
+    отработал давно. Минутный cron подбирает такие row'ы и re-kick'ает.
+
+    `with_for_update(skip_locked=True)` в `list_due_scheduled_retries`
+    защищает от concurrent-replica дубликата kiq'а; CAS `mark_running`
+    дополнительно отбивает повторный consume.
+    """
+    await _recover_due_scheduled_retries_once()
 
 
 @broker.task(

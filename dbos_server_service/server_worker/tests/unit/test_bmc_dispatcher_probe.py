@@ -24,6 +24,7 @@ from src.clients import (
     RedfishClient,
     _is_tls_error,
     _probe_redfish,
+    _probe_redfish_cascade,
     get_bmc_client,
 )
 from src.core.config import get_settings
@@ -258,6 +259,127 @@ class TestGetBmcClientFallback:
 
         assert ok is True
         assert captured["verify"] is False
+
+
+# ── _probe_redfish_cascade ──────────────────────────────────────────────────
+
+
+class TestProbeCascade:
+    """Каскадный probe: https-verify → https-no-verify → http → ipmitool.
+
+    Покрывает архитектурный инвариант из обсидиана (`bmc-no-cache.md`):
+    при отказе верхнего уровня пробуем следующий, без кеширования
+    результата (каждый вызов начинает с верхней ступени).
+    """
+
+    async def test_cascade_stops_at_first_success(self, monkeypatch):
+        """https-verify ответил — http и https-no-verify не дёргаются."""
+        _force_verify_tls(monkeypatch, True)
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            "src.clients.httpx.AsyncClient",
+            _make_fake_client(captured, status_code=200),
+        )
+
+        ok = await _probe_redfish_cascade("bmc.example.com")
+
+        assert ok is True
+        # Первый успешный шаг — verify=True.
+        assert captured["verify"] is True
+
+    async def test_cascade_falls_through_to_http_when_tls_fails(self, monkeypatch):
+        """https-verify падает TLS-fail'ом, https-no-verify тоже refused,
+        plain HTTP отвечает 200 — каскад успешен."""
+        _force_verify_tls(monkeypatch, True)
+
+        # Подсчёт схем, которые видел probe — для проверки порядка.
+        calls: list[tuple[str, bool]] = []
+
+        class _Resp:
+            def __init__(self, code: int) -> None:
+                self.status_code = code
+
+        class _FakeAsyncClient:
+            def __init__(self, **kwargs: Any) -> None:
+                self._verify = kwargs.get("verify")
+
+            async def __aenter__(self) -> "_FakeAsyncClient":
+                return self
+
+            async def __aexit__(self, *exc: Any) -> None:
+                return None
+
+            async def head(self, url: str) -> _Resp:
+                scheme = "https" if url.startswith("https") else "http"
+                calls.append((scheme, bool(self._verify)))
+                if scheme == "https" and self._verify is True:
+                    # https-verify → TLS error.
+                    err = httpx.ConnectError("cert fail")
+                    err.__cause__ = ssl.SSLCertVerificationError("self-signed")
+                    raise err
+                if scheme == "https" and self._verify is False:
+                    # https-no-verify → connection refused.
+                    raise httpx.ConnectError("refused")
+                # plain http → 200.
+                return _Resp(200)
+
+        monkeypatch.setattr("src.clients.httpx.AsyncClient", _FakeAsyncClient)
+
+        ok = await _probe_redfish_cascade("bmc.example.com")
+
+        assert ok is True
+        # Каскад прошёл https-verify → https-no-verify → http.
+        assert calls == [
+            ("https", True),
+            ("https", False),
+            ("http", True),  # http-probe ставит verify=True по умолчанию (no-op для http)
+        ]
+
+    async def test_cascade_all_fail_returns_false(self, monkeypatch):
+        """Все три уровня недоступны — return False, caller уходит на ipmitool."""
+        _force_verify_tls(monkeypatch, True)
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            "src.clients.httpx.AsyncClient",
+            _make_fake_client(captured, raise_exc=httpx.ConnectError("down")),
+        )
+
+        ok = await _probe_redfish_cascade("dead.example.com")
+        assert ok is False
+
+    async def test_cascade_skips_no_verify_when_settings_verify_false(self, monkeypatch):
+        """settings.verify=False — первый шаг уже без verify, второй
+        (https-no-verify) пропускаем, чтобы не делать лишний HEAD."""
+        _force_verify_tls(monkeypatch, False)
+
+        calls: list[bool] = []
+
+        class _Resp:
+            def __init__(self, code: int) -> None:
+                self.status_code = code
+
+        class _FakeAsyncClient:
+            def __init__(self, **kwargs: Any) -> None:
+                self._verify = kwargs.get("verify")
+
+            async def __aenter__(self) -> "_FakeAsyncClient":
+                return self
+
+            async def __aexit__(self, *exc: Any) -> None:
+                return None
+
+            async def head(self, url: str) -> _Resp:
+                calls.append(bool(self._verify))
+                # Возвращаем 404 — probe считает «недоступен».
+                return _Resp(404)
+
+        monkeypatch.setattr("src.clients.httpx.AsyncClient", _FakeAsyncClient)
+
+        ok = await _probe_redfish_cascade("bmc.example.com")
+        assert ok is False
+        # Должны увидеть: https с verify=False (settings), затем http с verify=True.
+        # Никакого «и https-verify, и https-no-verify» — без дубля.
+        assert calls == [False, True]
 
 
 # ── _is_tls_error helper coverage ───────────────────────────────────────────

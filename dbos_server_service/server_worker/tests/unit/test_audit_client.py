@@ -126,6 +126,25 @@ class TestAuditPayload:
         payload = settings_stub.captured[0]["json"]
         assert "details" not in payload
 
+    async def test_explicit_timestamp_kwarg_preserved(self, settings_stub):
+        """Если caller передал timestamp — он попадает в payload как есть.
+
+        Сценарий: publisher разворачивает outbox-row.payload как kwargs;
+        timestamp положен `enqueue_audit` в момент enqueue (event-time).
+        Если loging лежал и publisher довозит через час, audit указывает
+        реальное время события, а не публикации.
+        """
+        event_time = "2025-01-15T10:00:00+00:00"
+        await audit_client.emit("x.y", timestamp=event_time)
+        payload = settings_stub.captured[0]["json"]
+        assert payload["timestamp"] == event_time
+
+    async def test_no_timestamp_kwarg_falls_back_to_now(self, settings_stub):
+        """Без timestamp — берём now() (legacy путь, прямой emit без outbox)."""
+        await audit_client.emit("x.y")
+        payload = settings_stub.captured[0]["json"]
+        datetime.fromisoformat(payload["timestamp"])
+
 
 # ── Auth header ──────────────────────────────────────────────────────────────
 

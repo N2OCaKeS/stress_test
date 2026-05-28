@@ -180,7 +180,15 @@ async def enqueue_audit(
 
     `payload` — уже подготовленный dict с ключами, совпадающими с
     параметрами `audit_client.emit()` (action + остальные kwargs).
+
+    Если caller не положил `timestamp` — фиксируем его прямо сейчас (event-
+    time). Publisher прокинет его в `audit_client.emit` как kwarg, и emit
+    не перегенерирует timestamp на момент publish. При задержках доставки
+    (loging лежал, breaker open) loging_service получит реальное время
+    события, а не время post'а.
     """
+    if "timestamp" not in payload:
+        payload = {**payload, "timestamp": datetime.now(timezone.utc).isoformat()}
     row = AuditOutbox(task_id=task_id, payload=payload)
     db.add(row)
     await db.flush()

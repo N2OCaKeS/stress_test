@@ -49,6 +49,19 @@ AUDIT_SAFE_FIELDS: set[str] = {"server_id", "management_user", "prepared"}
 # случай смены id-фабрики.
 _BOOTSTRAP_KEY_RE = re.compile(r"^dbos:prepare_creds:[A-Za-z0-9_\-]{1,128}$")
 
+# Маркер «SSH-bootstrap уже отработал успешно» в Redis. Закрывает race:
+# bootstrap_management_user прошёл, submit_prepared упал (network к
+# server_service лёг), retry приходит позже когда TTL bootstrap-ключа уже
+# истёк → без маркера мы валим прогресс с SSH_BOOTSTRAP_CREDS_MISSING,
+# хотя хост фактически готов. С маркером retry пропускает SSH-шаг и идёт
+# сразу на submit_prepared (он идемпотентен на стороне server_service).
+#
+# TTL маркера крупно больше суммарного back-off retry'я (exponential base
+# 10s × до max_attempts) — оператор успеет либо завершить retry, либо
+# увидеть зависшее «prepare без callback» и поднять issue.
+_PREPARED_MARKER_PREFIX = "dbos:prepared_marker:"
+_PREPARED_MARKER_TTL_SECONDS = 3600
+
 
 async def _read_bootstrap_creds(creds_key: str) -> dict:
     """Прочитать bootstrap-креды из Redis по ключу-ссылке из payload.
@@ -74,6 +87,55 @@ async def _read_bootstrap_creds(creds_key: str) -> dict:
             ),
         )
     return json.loads(raw)
+
+
+async def _mark_bootstrap_succeeded(task_id: str) -> None:
+    """Записать маркер «SSH-bootstrap отработал» в Redis с TTL.
+
+    Ставится сразу после успешного `bootstrap_management_user`. На retry'е
+    `_impl` смотрит этот маркер и пропускает SSH-этап (он идемпотентен,
+    но требует bootstrap-кред, которые могут истечь по TTL раньше, чем
+    retry дойдёт). Маркер живёт `_PREPARED_MARKER_TTL_SECONDS` — за это
+    время retry либо доделает callback, либо оператор поднимет сервер
+    руками. Ошибки глушим — best-effort оптимизация, без маркера retry
+    отработает как раньше через cred'ы.
+    """
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        try:
+            await client.set(
+                _PREPARED_MARKER_PREFIX + task_id, "1",
+                ex=_PREPARED_MARKER_TTL_SECONDS,
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("failed to set prepared marker", exc_info=True)
+    finally:
+        await client.aclose()
+
+
+async def _read_bootstrap_succeeded(task_id: str) -> bool:
+    """Проверить, отработал ли SSH-bootstrap для этой task'и ранее."""
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        raw = await client.get(_PREPARED_MARKER_PREFIX + task_id)
+    finally:
+        await client.aclose()
+    return raw is not None
+
+
+async def _delete_bootstrap_succeeded(task_id: str) -> None:
+    """Снять маркер после успешного `submit_prepared` — best-effort cleanup."""
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        try:
+            await client.delete(_PREPARED_MARKER_PREFIX + task_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("failed to delete prepared marker", exc_info=True)
+    finally:
+        await client.aclose()
 
 
 async def _delete_bootstrap_creds(creds_key: str) -> None:
@@ -117,47 +179,67 @@ async def server_prepare(task_id: str) -> None:
         server_id = payload["server_id"]
         target_dept = payload.get("target_department_id")
         creds_key = payload.get("bootstrap_creds_key")
-        if not creds_key:
-            raise SshError(
-                error_code="SSH_BOOTSTRAP_CREDS_MISSING",
-                host="",
-                message="payload has no bootstrap_creds_key reference",
-            )
-        if not isinstance(creds_key, str) or not _BOOTSTRAP_KEY_RE.fullmatch(creds_key):
-            # Не доверяем строке из payload: если очередь скомпрометирована,
-            # произвольный ключ дал бы читателю Redis любые значения.
-            raise SshError(
-                error_code="SSH_BOOTSTRAP_CREDS_MISSING",
-                host="",
-                message="bootstrap_creds_key has unexpected format",
-            )
-
-        # Читаем одноразовые креды из Redis на каждой попытке — пока жив TTL,
-        # retry работает; истёк → SSH_BOOTSTRAP_CREDS_MISSING.
-        bootstrap = await _read_bootstrap_creds(creds_key)
-
         settings = get_settings()
         management_user = settings.ssh_management_user
         public_key = settings.ssh_management_public_key
 
-        creds = {
-            "login": bootstrap.get("bootstrap_login"),
-            "password": bootstrap.get("bootstrap_password"),
-        }
-        # `apply_session_hints` доклеивает host/ssh_port из payload и (для
-        # consistency) is_managed/management_user — на prepare последние
-        # ничего не меняют, потому что bootstrap_management_user открывает
-        # password-сессию напрямую через SshClient.
-        ssh_client.apply_session_hints(creds, payload)
-        await ssh_client.bootstrap_management_user(
-            creds, server_id,
-            management_user=management_user,
-            public_key=public_key,
-        )
+        # Если предыдущая попытка прошла SSH-bootstrap, но упала на
+        # submit_prepared (network к server_service лежал) — на текущем
+        # retry'е SSH-этап пропускаем. Иначе при истёкшем TTL bootstrap-
+        # ключа мы валим прогресс с SSH_BOOTSTRAP_CREDS_MISSING, хотя
+        # хост фактически готов. submit_prepared идемпотентен на стороне
+        # server_service — повторный вызов безопасен.
+        already_bootstrapped = await _read_bootstrap_succeeded(task_id)
+
+        if not already_bootstrapped:
+            if not creds_key:
+                raise SshError(
+                    error_code="SSH_BOOTSTRAP_CREDS_MISSING",
+                    host="",
+                    message="payload has no bootstrap_creds_key reference",
+                )
+            if not isinstance(creds_key, str) or not _BOOTSTRAP_KEY_RE.fullmatch(creds_key):
+                # Не доверяем строке из payload: если очередь
+                # скомпрометирована, произвольный ключ дал бы читателю
+                # Redis любые значения.
+                raise SshError(
+                    error_code="SSH_BOOTSTRAP_CREDS_MISSING",
+                    host="",
+                    message="bootstrap_creds_key has unexpected format",
+                )
+
+            # Читаем одноразовые креды из Redis. Пока жив TTL — retry
+            # работает; истёк → SSH_BOOTSTRAP_CREDS_MISSING.
+            bootstrap = await _read_bootstrap_creds(creds_key)
+
+            creds = {
+                "login": bootstrap.get("bootstrap_login"),
+                "password": bootstrap.get("bootstrap_password"),
+            }
+            # `apply_session_hints` доклеивает host/ssh_port из payload и
+            # (для consistency) is_managed/management_user — на prepare
+            # последние ничего не меняют, потому что
+            # bootstrap_management_user открывает password-сессию напрямую
+            # через SshClient.
+            ssh_client.apply_session_hints(creds, payload)
+            await ssh_client.bootstrap_management_user(
+                creds, server_id,
+                management_user=management_user,
+                public_key=public_key,
+            )
+            # Маркер ставим ДО callback'а — если callback упадёт, retry
+            # увидит маркер и пропустит SSH-шаг, даже если TTL bootstrap-
+            # кред истёк.
+            await _mark_bootstrap_succeeded(task_id)
+
         await server_service_client.submit_prepared(
             server_id, management_user, target_dept,
         )
-        await _delete_bootstrap_creds(creds_key)
+        # Cleanup лучше делать только при наличии актуального creds_key —
+        # на retry'е через маркер он уже мог быть удалён, либо TTL стёр.
+        if creds_key and isinstance(creds_key, str) and _BOOTSTRAP_KEY_RE.fullmatch(creds_key):
+            await _delete_bootstrap_creds(creds_key)
+        await _delete_bootstrap_succeeded(task_id)
         return {
             "server_id": server_id,
             "management_user": management_user,

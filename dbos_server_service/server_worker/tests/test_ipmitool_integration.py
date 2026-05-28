@@ -512,6 +512,74 @@ class TestIpmiRotatePasswordIpmitool:
         # Пароль не в audit
         assert captured["pwd"] not in str(captured_audit)
 
+    async def test_retry_reuses_stashed_password(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Retry IPMI rotate использует ТОТ ЖЕ пароль, что и первая попытка.
+
+        Сценарий бага: при retry'е `_impl` запускался заново, генерил новый
+        `secrets.token_urlsafe(24)`, перезаписывал storage. Если BMC принял
+        попытку 1, но ответ не дошёл, попытка 2 ставила другой пароль и в
+        storage, и в BMC. Финальный fail оставлял в storage пароль, который
+        НИКОГДА не подтверждался на BMC.
+
+        Здесь моделируем «попытка 1 уже отработала, stash в Redis есть»:
+        предзаполняем stash вручную, дёргаем handler, видим что
+        `submit_rotated_ipmi_password` приходит с тем же паролем — генерации
+        нового не произошло.
+        """
+        from src.tasks import passwords
+
+        tid = await make_task(
+            task_kind="ipmi.rotate_password",
+            target_server_id="srv_1",
+            payload={"server_id": "srv_1"},
+        )
+        _force_ipmitool(monkeypatch)
+        _patch_creds(monkeypatch, "passwords")
+
+        stashed_pwd = "stashed_password_from_attempt_1"
+        await passwords._store_ipmi_rotate_password(tid, stashed_pwd)
+
+        submit_calls: list[str] = []
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None):
+            submit_calls.append(new_password)
+            return {"rotated_at": "x"}
+        monkeypatch.setattr(
+            "src.tasks.passwords.server_service_client.submit_rotated_ipmi_password",
+            fake_submit,
+        )
+
+        proc = _make_fake_process(returncode=0)
+        _patch_subprocess(monkeypatch, proc)
+
+        await passwords.ipmi_rotate_password.original_func(tid)
+
+        # submit получил пароль из stash'а, не новый CSPRNG.
+        assert submit_calls == [stashed_pwd]
+
+        # После успеха stash вычищен.
+        assert await passwords._read_ipmi_rotate_password(tid) is None
+
+    async def test_stash_helpers_roundtrip(self, monkeypatch):
+        """Базовый roundtrip Redis-stash'а пароля ротации: write → read → delete."""
+        from src.tasks import passwords
+
+        # Используем task_id-fake, не пересекающийся с реальными task'ами.
+        fake_tid = "tsk_stash_roundtrip_test"
+
+        # На всякий случай чистим, если предыдущий прогон оставил ключ.
+        await passwords._delete_ipmi_rotate_password(fake_tid)
+
+        # Изначально ключа нет.
+        assert await passwords._read_ipmi_rotate_password(fake_tid) is None
+
+        await passwords._store_ipmi_rotate_password(fake_tid, "secret_42")
+        assert await passwords._read_ipmi_rotate_password(fake_tid) == "secret_42"
+
+        await passwords._delete_ipmi_rotate_password(fake_tid)
+        assert await passwords._read_ipmi_rotate_password(fake_tid) is None
+
 
 # ── unit tests для wrap_ipmitool_error ───────────────────────────────────────
 

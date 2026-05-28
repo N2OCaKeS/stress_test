@@ -31,6 +31,8 @@ import secrets
 import string
 from datetime import datetime, timezone
 
+import redis.asyncio as aioredis
+
 from src.clients.ipmitool import IpmitoolError
 from src.clients.redfish import RedfishError
 from src.core.config import get_settings
@@ -73,6 +75,75 @@ _PASSWORD_PUNCT = "!@#$%^&*"
 _PASSWORD_ALPHABET = (
     string.ascii_lowercase + string.ascii_uppercase + string.digits + _PASSWORD_PUNCT
 )
+
+
+# TTL для in-flight IPMI rotate-пароля в Redis. Покрывает суммарное окно
+# back-off'а exponential retry'я (`_compute_backoff_delay` capped 300s) с
+# запасом на сетевые тормоза. По истечении TTL `mark_failed` уже отработал —
+# storage хранит «висящий» пароль, оператор повторяет rotate, который
+# сгенерит новый ключ и попадёт в обычный happy-path.
+_IPMI_ROTATE_PASSWORD_TTL_SECONDS = 1800
+
+# Префикс ключа задаём явный — отделяет от bootstrap-creds в Redis-namespace.
+_IPMI_ROTATE_KEY_PREFIX = "dbos:ipmi_rotate_pw:"
+
+
+async def _read_ipmi_rotate_password(task_id: str) -> str | None:
+    """Достать ранее сгенерированный пароль ротации из Redis.
+
+    Возвращает plaintext или None, если ключа нет (первая попытка либо TTL
+    истёк). Фикс P1: при retry'е IPMI rotate `_impl` запускается заново —
+    без stash'а каждая попытка генерила бы новый пароль и перезаписывала
+    storage, рассинхронизируя storage с реальным BMC при transient-fail'ах.
+    """
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        raw = await client.get(_IPMI_ROTATE_KEY_PREFIX + task_id)
+    finally:
+        await client.aclose()
+    if raw is None:
+        return None
+    return raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+
+
+async def _store_ipmi_rotate_password(task_id: str, password: str) -> None:
+    """Сохранить in-flight пароль ротации в Redis с TTL.
+
+    Кладём ПЕРЕД `submit_rotated_ipmi_password`: даже если transient
+    network-fail отвалит после POST'а storage, следующий retry достанет
+    ТОТ ЖЕ пароль из Redis и подтвердит state. Без stash'а worker
+    сгенерил бы новый и перезаписал storage очередным ciphertext'ом,
+    оставляя BMC потенциально на старом пароле.
+    """
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        await client.set(
+            _IPMI_ROTATE_KEY_PREFIX + task_id,
+            password,
+            ex=_IPMI_ROTATE_PASSWORD_TTL_SECONDS,
+        )
+    finally:
+        await client.aclose()
+
+
+async def _delete_ipmi_rotate_password(task_id: str) -> None:
+    """Дропнуть in-flight ключ после успешного завершения ротации.
+
+    TTL подстрахует, явный DELETE минимизирует окно жизни plaintext'а в
+    Redis. Ошибки глушим — это посмертный cleanup, неуспех не должен
+    провалить и без того happy-path задачу.
+    """
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        try:
+            await client.delete(_IPMI_ROTATE_KEY_PREFIX + task_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("failed to delete in-flight ipmi rotate password", exc_info=True)
+    finally:
+        await client.aclose()
 
 
 def _generate_password() -> str:
@@ -200,16 +271,34 @@ async def ipmi_rotate_password(task_id: str) -> None:
         creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
         controller_id = creds["controller_id"]
 
-        # CSPRNG-пароль: 24 байта ≈ 32-символьный URL-safe string. Лимит
-        # iDRAC9 — 40 символов, влезает с запасом. token_urlsafe в отличие
-        # от _generate_password не гарантирует «все 4 класса», но iDRAC
-        # принимает любой ASCII; PAM-чек тут не применим, BMC не часть OS.
-        new_password = secrets.token_urlsafe(24)
+        # Один и тот же пароль на все попытки одной dispatch'и. При retry'е
+        # `_impl` запускается заново; без stash'а мы бы каждый раз генерили
+        # новый ключ → перезаписывали storage чужим plaintext'ом → при
+        # финальном `mark_failed` storage хранит пароль, который НИКОГДА не
+        # доехал до BMC. С Redis-stash'ем все retry'и видят тот же пароль:
+        # storage синхронен сам с собой, BMC либо принял его, либо нет —
+        # повторный rotate генерит новый ключ и заходит в обычный happy-
+        # path.
+        stashed_password = await _read_ipmi_rotate_password(task_id)
+        if stashed_password is None:
+            # CSPRNG-пароль: 24 байта ≈ 32-символьный URL-safe string. Лимит
+            # iDRAC9 — 40 символов, влезает с запасом. token_urlsafe не
+            # гарантирует «все 4 класса», но iDRAC принимает любой ASCII;
+            # PAM-чек тут не применим, BMC не часть OS.
+            new_password = secrets.token_urlsafe(24)
+            # Stash ДО `submit_rotated_ipmi_password`: даже если POST'нём
+            # plaintext, а потом упадём transient'ом до того, как retry
+            # дойдёт сюда — Redis уже знает «текущий in-flight пароль».
+            await _store_ipmi_rotate_password(task_id, new_password)
+        else:
+            new_password = stashed_password
         rotated_at = datetime.now(timezone.utc).isoformat()
 
         # ── STORAGE-FIRST: commit plaintext в server_service до BMC ───
         # server_service сам шифрует и сохраняет ciphertext; worker
-        # не держит SERVER_ENCRYPTION_KEY.
+        # не держит SERVER_ENCRYPTION_KEY. На retry'е этот POST идемпотентен
+        # на уровне ciphertext'а — server_service просто перешифровывает
+        # тот же plaintext.
         confirmation = await server_service_client.submit_rotated_ipmi_password(
             controller_id, new_password, rotated_at, target_dept,
         )
@@ -223,6 +312,10 @@ async def ipmi_rotate_password(task_id: str) -> None:
                 raise wrap_bmc_error("ipmi_rotate_password", exc) from exc
         finally:
             await _aclose_bmc(client)
+
+        # Успех — больше не нужен stash. TTL подстрахует, но явный DELETE
+        # сокращает окно жизни plaintext'а в Redis.
+        await _delete_ipmi_rotate_password(task_id)
 
         return {
             "server_id": server_id,

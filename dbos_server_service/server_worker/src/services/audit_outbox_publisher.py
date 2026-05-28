@@ -304,6 +304,28 @@ def _select_unpublished(limit: int):
     )
 
 
+def _select_unpublished_excluding(limit: int, exclude_ids: list[int]):
+    """То же что `_select_unpublished`, но с exclude по id'шникам.
+
+    Per-row flush требует пропускать row'ы, которые мы УЖЕ пробовали
+    опубликовать в этом проходе и которые остались unpublished (5xx /
+    transport). Без exclude'а такая row на следующей итерации того же
+    `_flush_outbox_once` снова попадёт в SELECT (она по-прежнему
+    unpublished), и мы будем долбить тот же неработающий канал 5 раз
+    подряд вместо того, чтобы дать шанс соседним row'ам.
+    """
+    stmt = (
+        select(AuditOutbox)
+        .where(AuditOutbox.published_at.is_(None))
+        .order_by(AuditOutbox.created_at.asc())
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+    )
+    if exclude_ids:
+        stmt = stmt.where(AuditOutbox.id.notin_(exclude_ids))
+    return stmt
+
+
 async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
     """Внутренний single-pass: возвращает `(published, audit_emit_errors)`.
 
@@ -311,27 +333,53 @@ async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
     отдельный счётчик `AuditEmitError`'ов — это нужно `run_publisher_loop`
     для circuit breaker'а (он не должен реагировать на программные баги,
     только на сигналы про недоступность loging_service).
+
+    Per-row commit:
+
+    Раньше SELECT FOR UPDATE SKIP LOCKED брал `limit` row'ов и держал
+    lock на всех до финального commit'а сессии. Один медленный
+    `_publish_one` (HTTP timeout 5s × 5 row'ов = 25s) держал четыре
+    быстрых row'а в hostage-state — другие replica'и обходили их по
+    skip-locked, но «горячая» партиция выглядела залоченной 25 секунд.
+
+    Сейчас обрабатываем по одной row за итерацию: SELECT LIMIT 1 →
+    `_publish_one` → commit → release lock → повторить до `limit` раз.
+    Это режет blast-radius медленного запроса до одной row, выигрыш в
+    lock-fairness и предсказуемости latency остальных replica'ей.
+    Throughput не страдает заметно — узкое горло всё равно HTTP к
+    loging_service, не Postgres-commit'ы.
     """
     published = 0
     audit_emit_errors = 0
-    async with AsyncSessionLocal() as session:
-        # SELECT, _publish_one (UPDATE row.published_at + flush) и
-        # финальный commit() ниже — всё в одной транзакции одной сессии.
-        # `with_for_update(skip_locked=True)` стартует tx неявно и держит
-        # lock до commit'а.
-        stmt = _select_unpublished(limit)
-        result = await session.execute(stmt)
-        rows = list(result.scalars().all())
-        for row in rows:
+    # Row'ы, которые мы уже пытались опубликовать в этом проходе и
+    # которые остались unpublished (5xx/transport). Без exclude'а они
+    # снова бы попадали в SELECT по `published_at IS NULL`, и одна и та
+    # же неработающая row пожирала бы весь `limit`. Background loop их
+    # подхватит на следующем тике.
+    failed_ids: list[int] = []
+    for _ in range(limit):
+        async with AsyncSessionLocal() as session:
+            stmt = _select_unpublished_excluding(1, failed_ids)
+            result = await session.execute(stmt)
+            row = result.scalars().first()
+            if row is None:
+                # Очередь пуста (либо все оставшиеся row'ы в `failed_ids`) —
+                # выходим, не нужно бить лишний SELECT.
+                break
+            row_id = row.id
             ok, audit_emit_error = await _publish_one(session, row)
             if ok:
                 published += 1
+            else:
+                # Row осталась unpublished — не SELECT'им её повторно в
+                # этом проходе.
+                failed_ids.append(row_id)
             if audit_emit_error:
                 audit_emit_errors += 1
-        # commit ПОСЛЕ всех UPDATE'ов published_at — иначе skip-locked
-        # инвариант сломан (другой replica увидит unpublished-строку,
-        # которую мы уже отправили, до того как мы её пометим).
-        await session.commit()
+            # commit отпускает SKIP LOCKED-lock этой одной row'и сразу,
+            # не дожидаясь обработки остальных. Другая replica может
+            # подхватить следующую row'ю в тот же момент.
+            await session.commit()
     return published, audit_emit_errors
 
 

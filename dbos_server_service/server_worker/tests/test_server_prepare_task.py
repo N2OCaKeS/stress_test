@@ -353,6 +353,60 @@ class TestPrepareHandler:
 
         get_settings.cache_clear()
 
+    async def test_retry_after_bootstrap_skips_ssh_when_creds_expired(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Race-fix: SSH-bootstrap прошёл, submit_prepared упал, ключ
+        bootstrap-кред истёк по TTL → retry должен использовать маркер
+        и пойти СРАЗУ в submit_prepared, не дёргая SSH.
+
+        Без фикса: handler читал creds → SSH_BOOTSTRAP_CREDS_MISSING →
+        FAILED, хотя сервер фактически готов. С фиксом: маркер «bootstrap
+        отработал» в Redis сигналит, что SSH-этап можно пропустить.
+        """
+        _set_mgmt_env(monkeypatch)
+        # На «попытке 2» кредов нет — TTL истёк.
+        _mock_creds(monkeypatch, None)
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prep_marker",
+            payload={
+                "server_id": "srv_prep_marker",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_marker",
+            },
+        )
+
+        async def noop(*a, **kw):
+            pass
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+
+        # Имитируем что попытка 1 уже отработала SSH — ставим маркер вручную.
+        await prepare._mark_bootstrap_succeeded(tid)
+
+        # SSH connect не должен вызываться — маркер пропускает шаг.
+        monkeypatch.setattr(
+            asyncssh, "connect",
+            AsyncMock(side_effect=AssertionError("ssh must not be called on retry after bootstrap")),
+        )
+
+        submit_calls = []
+        async def fake_submit(server_id, management_user, target_department_id=None):
+            submit_calls.append((server_id, management_user))
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert submit_calls == [("srv_prep_marker", "dbos")]
+        # Маркер вычищен после успеха.
+        assert await prepare._read_bootstrap_succeeded(tid) is False
+
+        get_settings.cache_clear()
+
     async def test_missing_creds_key_in_payload_fails(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):

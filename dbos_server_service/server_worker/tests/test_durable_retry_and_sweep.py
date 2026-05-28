@@ -339,6 +339,62 @@ class TestRecoverScheduledRetries:
 
         assert kicked == [tid]
 
+    async def test_periodic_recovery_kiqs_due_tasks(self, monkeypatch):
+        """`tasks.recover_scheduled_retries` (минутный cron) делает то же
+        самое, что и startup-recovery: SELECT due-row'ы и kiq.
+
+        Сценарий: worker долго живёт, `_RETRY_TASKS`-task была GC'нута или
+        отменена чужим cancel'ом до того, как back-off отработал. Row
+        осталась `status='queued' AND scheduled_retry_at <= now()`,
+        sweep её не видит (он по running). Без periodic'а задача висит
+        до рестарта.
+        """
+        from src.main import broker, tasks_recover_scheduled_retries
+
+        now = datetime.now(timezone.utc)
+        due_id = _new_id()
+        future_id = _new_id()
+        async with AsyncSessionLocal() as session:
+            await task_repo.create(session, {
+                "id": due_id,
+                "task_kind": "power.on",
+                "target_server_id": "srv_test",
+                "payload": {},
+                "status": TaskStatus.QUEUED,
+                "attempt": 1,
+                "max_attempts": 3,
+                "scheduled_retry_at": now - timedelta(seconds=10),
+            })
+            await task_repo.create(session, {
+                "id": future_id,
+                "task_kind": "power.on",
+                "target_server_id": "srv_test",
+                "payload": {},
+                "status": TaskStatus.QUEUED,
+                "attempt": 1,
+                "max_attempts": 3,
+                "scheduled_retry_at": now + timedelta(hours=1),
+            })
+            await session.commit()
+
+        kicked = []
+
+        class FakeKicker:
+            async def kiq(self, task_id, *args, **kwargs):
+                kicked.append(task_id)
+
+        class FakeTask:
+            def kicker(self):
+                return FakeKicker()
+
+        monkeypatch.setattr(broker, "find_task", lambda kind: FakeTask())
+
+        # Periodic-task в taskiq декорирован `@broker.task` — вытаскиваем
+        # сырую функцию через `.original_func`, не дёргаем kiq.
+        await tasks_recover_scheduled_retries.original_func()
+
+        assert kicked == [due_id]
+
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║ Cross-replica orphan sweep                                               ║

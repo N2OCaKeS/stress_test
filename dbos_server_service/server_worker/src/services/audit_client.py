@@ -90,6 +90,7 @@ async def emit(
     severity: str | None = None,
     details: dict | None = None,
     request_id: str | None = None,
+    timestamp: str | None = None,
 ) -> None:
     """Отправить audit-событие в loging_service.
 
@@ -114,7 +115,13 @@ async def emit(
         "allowed": allowed,
         "actor_type": actor_type,
         "service": "server_worker",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        # timestamp может прийти kwarg'ом из outbox-payload (его кладёт
+        # `enqueue_audit` в момент enqueue — это event-time, а не publish-time).
+        # Если publisher решил довезти событие через час, hour-late timestamp
+        # ввёл бы оператора в заблуждение при расследовании инцидента. Если
+        # caller вызвал emit напрямую без timestamp (legacy путь / тесты) —
+        # берём now() как раньше.
+        "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
     }
     if actor_id is not None:
         payload["actor_id"] = actor_id

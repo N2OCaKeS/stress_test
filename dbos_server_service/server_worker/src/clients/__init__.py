@@ -61,28 +61,28 @@ def _is_tls_error(exc: BaseException) -> bool:
 
 
 async def _probe_redfish(host: str, *, scheme: str = "https") -> bool:
-    """Быстрая проверка наличия Redfish на BMC.
+    """Одна попытка HEAD `/redfish/v1/` с заданными scheme и verify.
 
-    HEAD `/redfish/v1/` без auth — Redfish-сервисный корень публичен по
-    спецификации DMTF и не требует креденшалов. 200/401/403 означают, что
-    Redfish обслуживается; connection-refused / timeout / 404 — что нет.
+    Возвращает True если корень Redfish ответил 200/401/403/405 (есть и
+    обслуживается). False — connection-refused / timeout / 404 / TLS-fail
+    при verify=True.
 
-    TLS-валидация управляется через `Settings.redfish_verify_tls`
-    (env `REDFISH_VERIFY_TLS`), как и у полноценного `RedfishClient`.
-    Default — `verify=True`: без валидации MITM может вернуть HTTP 200
-    на HEAD-probe и принудить dispatcher выбрать Redfish-транспорт там,
-    где реальный BMC отвечает только через ipmitool.
+    HEAD без auth — Redfish-сервисный корень публичен по спецификации
+    DMTF и не требует креденшалов.
 
-    `verify=False` допустим для dev/test (iDRAC out-of-box идёт с
-    self-signed cert); при таком режиме поднимаем warning и продолжаем.
+    TLS-валидация управляется через `Settings.redfish_verify_tls` (env
+    `REDFISH_VERIFY_TLS`), как и у полноценного `RedfishClient`. Default —
+    `verify=True`: без валидации MITM может вернуть HTTP 200 на HEAD и
+    принудить dispatcher выбрать Redfish-транспорт там, где реальный BMC
+    отвечает только через ipmitool.
 
     Fail-closed на SSL-ошибке при `verify=True`: считаем, что Redfish
-    недоступен, и даём dispatcher'у уйти на ipmitool вместо того, чтобы
-    разговаривать с непроверенным эндпоинтом.
+    недоступен, и даём cascade'у попробовать следующий шаг
+    (https-no-verify → http → ipmitool).
     """
     settings = get_settings()
     verify = settings.redfish_verify_tls
-    if not verify:
+    if scheme == "https" and not verify:
         logger.warning(
             "Redfish probe to %s runs with verify=False (REDFISH_VERIFY_TLS=false); "
             "MITM-able. Acceptable only in dev/test.",
@@ -91,26 +91,91 @@ async def _probe_redfish(host: str, *, scheme: str = "https") -> bool:
     url = f"{scheme}://{host}{_REDFISH_PROBE_PATH}"
     try:
         async with httpx.AsyncClient(
-            verify=verify,
+            verify=verify if scheme == "https" else True,
             timeout=_REDFISH_PROBE_TIMEOUT_SECONDS,
         ) as client:
             resp = await client.head(url)
     except (httpx.HTTPError, OSError) as exc:
-        if verify and _is_tls_error(exc):
-            # Fail-closed: cert не прошёл валидацию — Redfish-эндпоинт
-            # подозрительный, идём на ipmitool.
+        if scheme == "https" and verify and _is_tls_error(exc):
+            # Cert не прошёл валидацию — пусть cascade попробует следующий
+            # шаг (verify=False либо HTTP). Здесь возвращаем False, выбор
+            # стратегии — у `_probe_redfish_cascade`.
             logger.warning(
                 "Redfish probe to %s failed TLS verification (%s); "
-                "treating Redfish as unavailable, falling back to ipmitool.",
+                "will try lower-security probes in cascade.",
                 host,
                 exc.__class__.__name__,
             )
             return False
-        logger.info("Redfish probe failed for %s: %s", host, exc.__class__.__name__)
+        logger.info("Redfish probe failed for %s scheme=%s: %s", host, scheme, exc.__class__.__name__)
         return False
-    # 200 — корень доступен; 401/403/405 — Redfish есть, но требует auth
-    # либо не поддерживает HEAD; 404 — Redfish отсутствует.
     return resp.status_code in {200, 401, 403, 405}
+
+
+async def _probe_redfish_cascade(host: str) -> bool:
+    """Каскадный probe BMC: https-verify → https-no-verify → http.
+
+    Архитектурный порядок: сначала самый защищённый канал (TLS + verify),
+    при fail'е спускаемся на следующий уровень. На каждой ступени
+    отдельный HEAD-запрос, БЕЗ кеширования: следующий вызов опять начнёт
+    с верхней ступени. Это сознательно — BMC может ответить иначе через
+    минуту (apply сертификата, обновление firmware, network-route change),
+    и кэш бы залип на прошлом ответе.
+
+    Возвращает True если ХОТЯ БЫ один уровень увидел Redfish. False если
+    все три провалились — caller уйдёт на ipmitool.
+
+    Lowering security level каскадно логируется на WARNING, чтобы оператор
+    видел в журнале «BMC ответил только через http» — это сигнал
+    обновить firmware / выписать cert.
+    """
+    settings = get_settings()
+    verify = settings.redfish_verify_tls
+
+    # 1) https + текущая verify-настройка. Самый защищённый канал, который
+    # настроен в окружении: prod — verify=True, dev/staging с self-signed
+    # iDRAC — verify=False (но всё равно поверх TLS).
+    if await _probe_redfish(host, scheme="https"):
+        return True
+
+    # 2) https без verify — fallback на случай self-signed cert'а. Имеет
+    # смысл только если settings.verify=True (иначе шаг 1 уже это сделал).
+    if verify:
+        # Временно отключим verify через локальный probe-вызов: переиспользуем
+        # _probe_redfish с подменой settings — самый честный способ — сделать
+        # отдельный httpx-запрос здесь, чтобы не плодить лишний state.
+        url = f"https://{host}{_REDFISH_PROBE_PATH}"
+        try:
+            async with httpx.AsyncClient(
+                verify=False,
+                timeout=_REDFISH_PROBE_TIMEOUT_SECONDS,
+            ) as client:
+                resp = await client.head(url)
+            if resp.status_code in {200, 401, 403, 405}:
+                logger.warning(
+                    "Redfish probe to %s succeeded only with verify=False "
+                    "(self-signed cert?); transport will use TLS without "
+                    "certificate validation.",
+                    host,
+                )
+                return True
+        except (httpx.HTTPError, OSError) as exc:
+            logger.info(
+                "Redfish probe https-no-verify failed for %s: %s",
+                host, exc.__class__.__name__,
+            )
+
+    # 3) Plain HTTP — legacy BMC (старые Supermicro, эмуляторы) без TLS.
+    if await _probe_redfish(host, scheme="http"):
+        logger.warning(
+            "Redfish probe to %s succeeded only via plain HTTP; BMC has no "
+            "TLS, traffic is unencrypted. Acceptable only on isolated "
+            "management VLAN.",
+            host,
+        )
+        return True
+
+    return False
 
 
 async def get_bmc_client(
@@ -145,7 +210,7 @@ async def get_bmc_client(
             interface=ipmitool_interface,
         )
 
-    if await _probe_redfish(host):
+    if await _probe_redfish_cascade(host):
         kwargs: dict = {"host": host, "username": username, "password": password}
         if kind:
             manager_id = resolve_manager_id(kind)

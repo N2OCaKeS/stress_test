@@ -94,9 +94,32 @@ def ensure_it_admin(
 # ════════════════════════════════════════════════════════════════════════════
 
 
-def _exec(client: paramiko.SSHClient, cmd: str, *, expect_rc: int | None = 0) -> tuple[int, str, str]:
-    """Выполнить команду на удалённом хосте. Sudo идёт под `dbosroot` (NOPASSWD)."""
+def _shell_quote(s: str) -> str:
+    """POSIX-shell-quote одиночной строки для подстановки в `sh -c <arg>`."""
+    return "'" + s.replace("'", "'\\''") + "'"
+
+
+def _exec(
+    client: paramiko.SSHClient,
+    cmd: str,
+    *,
+    expect_rc: int | None = 0,
+    sudo_password: str | None = None,
+) -> tuple[int, str, str]:
+    """Выполнить команду на удалённом хосте.
+
+    `sudo_password` — если задан, кормим его на stdin (для `sudo -S`-команд
+    под bootstrap-юзером `dbosroot`, у которого sudo с паролем). Под mgmt-
+    юзером `dbos` sudoers ставится NOPASSWD во время setup'а, так что туда
+    пароль не нужен.
+    """
     stdin, stdout, stderr = client.exec_command(cmd, timeout=15)
+    if sudo_password is not None:
+        try:
+            stdin.write(sudo_password + "\n")
+            stdin.flush()
+        except OSError:
+            pass
     rc = stdout.channel.recv_exit_status()
     out = stdout.read().decode("utf-8", "replace")
     err = stderr.read().decode("utf-8", "replace")
@@ -120,45 +143,42 @@ def setup_management_user_on_box(ssh_session, ssh_test_host: dict) -> None:
     """
     mgmt_user = ssh_test_host["mgmt_user"]
     pubkey = ssh_test_host["mgmt_pubkey"]
+    root_password = ssh_test_host["root_password"]
     assert pubkey, "mgmt_pubkey must be loaded (init-ssh-keys ran)"
 
+    # Bootstrap-юзеру `dbosroot` sudo требует пароль. Чтобы пароль попал в sudo
+    # (а не в команду на конце pipe), оборачиваем всю последовательность в
+    # `sudo -S sh -c '<script>'` — пароль из stdin читает только sudo, дальше
+    # shell-скрипт выполняется уже под root.
+    import base64
+
+    sudoers_line = f"{mgmt_user} ALL=(ALL) NOPASSWD: ALL"
+    sudoers_path = f"/etc/sudoers.d/{mgmt_user}-management"
+    home = f"/home/{mgmt_user}"
+    pubkey_b64 = base64.b64encode(pubkey.encode("utf-8")).decode("ascii")
+
+    # Скрипт под root: idempotently завести юзера / sudoers / ssh dir / key.
+    # Внутри `sh -c '...'` нельзя «голые» одинарные кавычки — поэтому стиль
+    # heredoc-free, все литералы через double quotes shell'а.
+    root_script = (
+        f'set -e; '
+        f'getent passwd {mgmt_user} >/dev/null || useradd -m -s /bin/bash {mgmt_user}; '
+        f'printf "%s\\n" "{sudoers_line}" > {sudoers_path}; '
+        f'chmod 0440 {sudoers_path}; '
+        f'visudo -c -f {sudoers_path} >/dev/null; '
+        f'mkdir -p {home}/.ssh; chmod 700 {home}/.ssh; '
+        f'KEY=$(echo {pubkey_b64} | base64 -d); '
+        f'touch {home}/.ssh/authorized_keys; chmod 600 {home}/.ssh/authorized_keys; '
+        f'chown -R {mgmt_user}:{mgmt_user} {home}/.ssh; '
+        f'grep -qxF "$KEY" {home}/.ssh/authorized_keys || '
+        f'printf "%s\\n" "$KEY" >> {home}/.ssh/authorized_keys'
+    )
+
     with ssh_session(as_mgmt=False) as ssh:
-        # `getent passwd` для проверки существования юзера. rc=0 — есть.
-        rc, _, _ = _exec(ssh, f"getent passwd {mgmt_user}", expect_rc=None)
-        if rc != 0:
-            _exec(
-                ssh,
-                f"sudo useradd -m -s /bin/bash {mgmt_user}",
-            )
-
-        # sudoers-фрагмент через tee, потом visudo-check.
-        sudoers_line = f"{mgmt_user} ALL=(ALL) NOPASSWD: ALL"
-        sudoers_path = f"/etc/sudoers.d/{mgmt_user}-management"
         _exec(
             ssh,
-            f"echo '{sudoers_line}' | sudo tee {sudoers_path} > /dev/null "
-            f"&& sudo chmod 0440 {sudoers_path} "
-            f"&& sudo visudo -c -f {sudoers_path}",
-        )
-
-        # ~/.ssh + authorized_keys. mkdir -p идемпотентно; key через grep+append.
-        home = f"/home/{mgmt_user}"
-        _exec(ssh, f"sudo mkdir -p {home}/.ssh && sudo chmod 700 {home}/.ssh")
-        # Pubkey содержит пробелы; пишем через base64 чтобы не возиться с
-        # экранированием в shell.
-        import base64
-
-        b64 = base64.b64encode(pubkey.encode("utf-8")).decode("ascii")
-        _exec(
-            ssh,
-            (
-                f"KEY=$(echo {b64} | base64 -d); "
-                f"sudo touch {home}/.ssh/authorized_keys && "
-                f"sudo chmod 600 {home}/.ssh/authorized_keys && "
-                f"sudo chown -R {mgmt_user}:{mgmt_user} {home}/.ssh && "
-                f"sudo grep -qxF \"$KEY\" {home}/.ssh/authorized_keys || "
-                f"echo \"$KEY\" | sudo tee -a {home}/.ssh/authorized_keys > /dev/null"
-            ),
+            f"sudo -S -p '' sh -c {_shell_quote(root_script)}",
+            sudo_password=root_password,
         )
 
 
@@ -236,25 +256,38 @@ def create_server_pointing_at_target(
     department_id: str,
     *,
     suffix: str,
+    ssh_test_host: dict | None = None,
+    server_db_engine=None,
+    as_ssh_primary: bool = True,
     hostname_override: str | None = None,
 ) -> dict:
-    """POST /servers с hostname=`ssh-target` (docker DNS) и уникальным IP/serial.
+    """POST /servers + (опционально) post-update `hostname` к docker-DNS.
 
-    `ssh-target` в docker-сети резолвится через embedded DNS — worker'у этого
-    достаточно, чтобы попасть в openssh-server-контейнер по 2222. IP в БД
-    нужен только для уникальности (worker его не использует для SSH).
+    Worker берёт SSH-хост из payload `host = server.hostname` (см.
+    `server_service/.../worker_dispatch.py::_dispatch_account_on_host`).
+    Docker network резолвит compose-имя `ssh-target` — только оно ведёт на
+    openssh-контейнер.
 
-    `suffix` уникализирует hostname/ip/serial между тестами.
+    Колонка `hostname` UNIQUE, поэтому при создании ставим уникальное имя
+    `ssh-target-{suffix}`, а потом direct UPDATE приводит первичный сервер
+    к `ssh-target`. Для дополнительных серверов в multi-link сценариях
+    оставляем уникальный hostname (`as_ssh_primary=False`) — те тесты не
+    проверяют успех worker-task'и, только аудит dispatch'а.
+
+    Если переданы `ssh_test_host` + `server_db_engine` и `as_ssh_primary=True`,
+    после создания hostname перезаписывается на `ssh_test_host["host"]`.
     """
     # ip_address — INET, должен быть уникален. Берём 10.99.X.Y, где X.Y
     # уникальны через hash(suffix).
     h = abs(hash(suffix)) % 65535
     ip = f"10.99.{h // 256}.{h % 256}"
+    initial_hostname = hostname_override or f"ssh-target-{suffix}"
+    ssh_port = int(ssh_test_host["port"]) if ssh_test_host else 2222
     body = {
-        "hostname": hostname_override or f"ssh-target-{suffix}",
+        "hostname": initial_hostname,
         "display_name": f"E-test {suffix}",
         "ip_address": ip,
-        "ssh_port": 2222,
+        "ssh_port": ssh_port,
         "department_id": department_id,
         "serial_number": f"E-SN-{suffix}",
     }
@@ -264,7 +297,16 @@ def create_server_pointing_at_target(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert r.status_code == 201, f"create server failed: {r.status_code} {r.text}"
-    return r.json()
+    server = r.json()
+    if as_ssh_primary and ssh_test_host is not None and server_db_engine is not None:
+        target_host = ssh_test_host["host"]
+        with server_db_engine.begin() as conn:
+            conn.execute(
+                text("UPDATE servers SET hostname = :h WHERE id = :sid"),
+                {"h": target_host, "sid": server["id"]},
+            )
+        server["hostname"] = target_host
+    return server
 
 
 def mark_server_managed(server_db_engine, server_id: str, management_user: str = "dbos") -> None:

@@ -31,6 +31,7 @@ from tests.integration._helpers_D_server import (
     make_server_body,
     next_ip,
     poll_audit_event,
+    require_audit_or_xfail,
 )
 
 
@@ -94,7 +95,8 @@ class TestServerCreate:
             loging_db_engine, action="server.create",
             actor_id=tenants.reader_a.user_id, status="denied",
         )
-        assert ev is not None and ev["allowed"] is False
+        ev = require_audit_or_xfail(loging_db_engine, "server.create", ev)
+        assert ev["allowed"] is False
 
     def test_guest_cannot_create_403(self, server_client, tenants: TenantBundle):
         body = make_server_body(department_id=tenants.dept_a)

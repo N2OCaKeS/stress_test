@@ -44,9 +44,11 @@ def find_department_id(auth_client: httpx.Client, admin_token: str, name: str) -
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     r.raise_for_status()
-    items = r.json().get("items") or r.json()
-    if isinstance(items, dict):
-        items = items.get("items") or []
+    body = r.json()
+    if isinstance(body, dict):
+        items = body.get("items") or []
+    else:
+        items = body or []
     for d in items:
         if d.get("name") == name:
             return d.get("department_id") or d["id"]
@@ -120,27 +122,60 @@ def create_test_server(
     *,
     dept_id: str,
     hostname: str = "ssh-target",
-    ip_address: str = "10.99.0.10",
+    ip_address: str | None = None,
     ssh_port: int = 2222,
+    server_db_engine=None,
+    point_at_ssh_target: bool = False,
 ) -> dict:
-    """Зарегистрировать сервер с hostname=ssh-target.
+    """Зарегистрировать сервер. Поведение:
 
-    Уникальные suffix'ы добавляем к hostname/ip/serial — между тестами
-    state не зачищается (см. `reset_state` для зачистки, если нужно).
+    * по умолчанию hostname получает уникальный суффикс (UNIQUE-constraint
+      сервиса не даёт два сервера с одинаковым именем) — годится для
+      тестов API-контракта;
+    * если `point_at_ssh_target=True` + переданы `server_db_engine` и
+      `ssh_test_host`-хост в `hostname`, то после успешного create мы
+      прямым UPDATE в БД ставим hostname в исходное `ssh_test_host["host"]`,
+      чтобы worker по docker-DNS попал на `ssh-target` (UNIQUE-конфликт
+      исключается за счёт `reset_state` перед каждым тестом).
     """
     u = _u()
+    # IP уникальный в 10.99.x.y; первый октет fixed, остальные — из uuid hex.
+    if ip_address is None:
+        a = int(u[0:2], 16)
+        b = int(u[2:4], 16)
+        c = int(u[4:6], 16) or 1
+        ip_address = f"10.99.{a}.{b if b != 0 else c}"
+    unique_hostname = f"{hostname}-{u}"
     r = server_client.post(
         "/api/server/v1/servers",
         headers={"Authorization": f"Bearer {token}"},
         json={
-            "hostname": f"{hostname}-{u}",
+            "hostname": unique_hostname,
             "ip_address": ip_address,
             "ssh_port": ssh_port,
             "department_id": dept_id,
         },
     )
     assert r.status_code == 201, f"create_test_server failed: {r.status_code} {r.text}"
-    return r.json()
+    srv = r.json()
+    if point_at_ssh_target and server_db_engine is not None:
+        # UNIQUE-constraint на hostname блокирует второй сервер с именем
+        # `ssh-target`. Подвинем существующего держателя на уникальный
+        # суффикс (если он есть), потом UPDATE'нем наш hostname.
+        with server_db_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE servers SET hostname = hostname || '-released-' || "
+                    ":u WHERE hostname = :h AND id <> :sid"
+                ),
+                {"h": hostname, "u": u, "sid": srv["id"]},
+            )
+            conn.execute(
+                text("UPDATE servers SET hostname = :h WHERE id = :sid"),
+                {"h": hostname, "sid": srv["id"]},
+            )
+        srv["hostname"] = hostname
+    return srv
 
 
 # ── Task polling ──────────────────────────────────────────────────────────────
@@ -161,7 +196,7 @@ def wait_task_status(
         with worker_db_engine.connect() as conn:
             row = conn.execute(
                 text(
-                    "SELECT id, status, attempts, last_error, payload, "
+                    "SELECT id, status, attempt AS attempts, last_error, payload, "
                     "       task_kind, target_server_id, result "
                     "FROM tasks WHERE id = :tid"
                 ),
@@ -180,7 +215,7 @@ def fetch_task(worker_db_engine, task_id: str) -> dict | None:
     with worker_db_engine.connect() as conn:
         row = conn.execute(
             text(
-                "SELECT id, status, attempts, payload, last_error, result "
+                "SELECT id, status, attempt AS attempts, payload, last_error, result "
                 "FROM tasks WHERE id = :tid"
             ),
             {"tid": task_id},

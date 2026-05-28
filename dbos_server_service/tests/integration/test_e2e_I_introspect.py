@@ -43,7 +43,13 @@ def _create_bot_with_token(
     allowed_services: list[str],
     service_roles: list[dict] | None = None,
 ) -> tuple[dict, str, str]:
-    """Создать бота + выписать ему один bot-token. Вернуть (bot, token_id, token_plaintext)."""
+    """Создать бота + выписать ему один bot-token. Вернуть (bot, token_id, token_plaintext).
+
+    `BotCreate` принимает только метаданные (name/department/allowed_services);
+    роли вешаем отдельным `POST /bots/{id}/roles` (replace-семантика по сервису).
+    Каждую роль предварительно регистрируем в `ServiceRoleDefinition` — авто
+    сеется только `admin`.
+    """
     bot_resp = auth_client.post(
         BOTS_URL,
         headers={"Authorization": f"Bearer {admin_token}"},
@@ -51,12 +57,26 @@ def _create_bot_with_token(
             "name": f"bot_{short_id()}",
             "department_id": department_id,
             "allowed_services": allowed_services,
-            "service_roles": service_roles or [],
         },
     )
     assert bot_resp.status_code in (200, 201), bot_resp.text
     bot = bot_resp.json()
     bot_id = bot.get("bot_id") or bot.get("id")
+
+    from tests.integration._helpers_I_oauth import ensure_service_role
+    for entry in service_roles or []:
+        svc = entry["service_name"]
+        for role in entry["roles"]:
+            ensure_service_role(
+                auth_client, admin_token,
+                department_id=department_id, service_name=svc, role_name=role,
+            )
+        rr = auth_client.post(
+            f"{BOTS_URL}/{bot_id}/roles",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"service_name": svc, "roles": entry["roles"]},
+        )
+        assert rr.status_code in (200, 201), f"assign bot roles: {rr.status_code} {rr.text}"
 
     tok_resp = auth_client.post(
         f"{BOTS_URL}/{bot_id}/tokens",

@@ -35,6 +35,7 @@ from tests.integration._helpers_D_server import (
     expect_audit_event,
     make_account_body,
     poll_audit_event,
+    server_service_audit_wired,
 )
 
 
@@ -392,7 +393,9 @@ class TestServerAccountLinkUnlink:
             headers=tenants.admin_a.headers(),
         )
         acct_id = created.json()["id"]
-        r = server_client.delete(
+        # httpx.Client.delete() doesn't accept `json=`; use request() to ship body.
+        r = server_client.request(
+            "DELETE",
             f"{_SA}/{acct_id}/servers",
             json={"server_ids": [s2["id"]]},
             headers=tenants.admin_a.headers(),
@@ -407,7 +410,8 @@ class TestServerAccountLinkUnlink:
             headers=tenants.admin_a.headers(),
         )
         acct_id = created.json()["id"]
-        r = server_client.delete(
+        r = server_client.request(
+            "DELETE",
             f"{_SA}/{acct_id}/servers",
             json={"server_ids": [s1["id"]]},
             headers=tenants.admin_a.headers(),

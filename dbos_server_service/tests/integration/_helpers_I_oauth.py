@@ -108,6 +108,33 @@ def grant_service_to_department(
     )
 
 
+def ensure_service_role(
+    auth_client: httpx.Client,
+    admin_token: str,
+    *,
+    department_id: str,
+    service_name: str,
+    role_name: str,
+) -> None:
+    """Идемпотентно создать `ServiceRoleDefinition` в scope (dept, service, role).
+
+    Платформа авто-сеет только `admin` (`is_system=True`). Остальные «системные»
+    имена (`reader`, `operator`, `guest`) — обычные кастомные роли, их надо
+    зарегистрировать перед тем, как назначать юзеру/боту.
+    """
+    if role_name == "admin":
+        return  # уже засеяна автоматически при grant_service_to_department
+    r = auth_client.post(
+        f"{DEPARTMENTS_URL}/{department_id}/services/{service_name}/roles",
+        headers=_admin_headers(admin_token),
+        json={"role_name": role_name, "display_name": role_name.title()},
+    )
+    # 201 — создали; 409 — уже была.
+    assert r.status_code in (201, 409), (
+        f"ensure_service_role failed: {r.status_code} {r.text}"
+    )
+
+
 # ── OAuth2 client / authorization code ──────────────────────────────────────
 
 def create_oauth_client(
@@ -272,9 +299,17 @@ def make_user_in_dept(
     user = r.json()
     user["_password"] = password
     user.setdefault("username", body["username"])
+    # `UserResponse` отдаёт `user_id`; в тестах исторически обращаемся через
+    # `user["id"]` — добавим алиас, чтобы не размазывать `.get("user_id") or .get("id")`
+    # по всем кластерным тестам.
+    if "id" not in user and "user_id" in user:
+        user["id"] = user["user_id"]
     if services_with_roles:
         for svc, roles in services_with_roles.items():
-            assign_service_roles(auth_client, admin_token, user["id"], svc, roles)
+            assign_service_roles(
+                auth_client, admin_token, user["id"], svc, roles,
+                department_id=department_id,
+            )
     return user
 
 
@@ -284,8 +319,21 @@ def assign_service_roles(
     user_id: str,
     service_name: str,
     roles: list[str],
+    *,
+    department_id: str | None = None,
 ) -> None:
-    """Назначить юзеру service-роли (через bulk_assign endpoint)."""
+    """Назначить юзеру service-роли (через bulk_assign endpoint).
+
+    Если `department_id` задан — перед назначением идемпотентно регистрируем
+    каждую роль в `ServiceRoleDefinition`. Платформа авто-сеет только `admin`;
+    `reader`/`operator`/`guest` требуют явного create.
+    """
+    if department_id is not None:
+        for role in roles:
+            ensure_service_role(
+                auth_client, admin_token,
+                department_id=department_id, service_name=service_name, role_name=role,
+            )
     r = auth_client.post(
         f"{USERS_URL}/{user_id}/roles",
         headers=_admin_headers(admin_token),
@@ -305,7 +353,7 @@ def ban_user(auth_client: httpx.Client, admin_token: str, user_id: str) -> None:
     r = auth_client.post(
         f"{USERS_URL}/{user_id}/ban",
         headers=_admin_headers(admin_token),
-        json={"ban_type": "manual", "reason": "test"},
+        json={"ban_type": "permanent", "reason": "test"},
     )
     assert r.status_code == 200, f"ban_user failed: {r.status_code} {r.text}"
 

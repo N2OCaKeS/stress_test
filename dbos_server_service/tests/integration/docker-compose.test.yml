@@ -104,6 +104,7 @@ services:
       SERVICE_API_KEY: test-logging-api-key
       AUTH_SERVICE_URL: http://auth-service:8000
       APP_LOG_LEVEL: WARNING
+      INGEST_RATE_LIMIT: 100000/minute
     command: >
       sh -c "python -m alembic upgrade head &&
              exec uvicorn src.main:app --host 0.0.0.0 --port 8001"
@@ -163,6 +164,7 @@ services:
       DATABASE_URL: postgresql+psycopg://app_user:app_password@test-postgres:5432/server_db_test
       AUTH_SERVICE_URL: http://auth-service:8000
       LOGGING_SERVICE_URL: http://logging-service:8001
+      LOGGING_SERVICE_API_KEY: test-logging-api-key
       SERVICE_API_KEY: test-logging-api-key
       SERVER_ENCRYPTION_KEY: test-server-encryption-key-do-not-use-anywhere-else
       SERVER_ENCRYPTION_KEY_VERSION: "2"

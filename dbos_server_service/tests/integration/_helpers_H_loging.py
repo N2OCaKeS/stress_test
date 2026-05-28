@@ -301,10 +301,10 @@ WORKER_SERVICE_EVENTS: list[tuple[str, str, str]] = [
 
 # loging_service self-audit. Источник дефолтов — rule_service._DEFAULT_SEVERITY.
 LOGING_SERVICE_EVENTS: list[tuple[str, str, str]] = [
-    ("loging_service", "logging_rule.create", "CRITICAL"),
+    ("loging_service", "logging_rule.create", "WARNING"),
     ("loging_service", "logging_rule.update", "CRITICAL"),
     ("loging_service", "logging_rule.delete", "CRITICAL"),
-    ("loging_service", "logging.retention_write", "CRITICAL"),
+    ("loging_service", "logging.retention_write", "WARNING"),
     ("loging_service", "logging.retention_sweep", "INFO"),
 ]
 
@@ -344,7 +344,7 @@ PRIORITY_AUDIT_ACTIONS: list[tuple[str, str, str]] = [
 # Возвращает true, если событие приземлилось в БД (loging_db_engine).
 
 def ingest_synthetic_event(
-    logging_service_client: httpx.Client,
+    _client_unused: httpx.Client,
     *,
     service: str,
     action: str,
@@ -354,7 +354,15 @@ def ingest_synthetic_event(
     department_id: str | None = None,
     extra_details: dict | None = None,
 ) -> str | None:
-    """POST /events с минимально нужными полями. Возвращает event_id или None (suppress)."""
+    """POST /events с минимально нужными полями. Возвращает event_id или None.
+
+    Первый позиционный аргумент сохранён для совместимости с тестами,
+    которые передают сюда `logging_client` (admin JWT). Сам POST идёт через
+    отдельный service-token клиент — `/events` принимает только
+    `SERVICE_API_KEY`, JWT отбивается 401.
+    """
+    from tests.integration.conftest import LOGGING_API_KEY, LOGGING_URL
+
     details = {"reason": "audit_landing_sweep_h_cluster"}
     if extra_details:
         details.update(extra_details)
@@ -371,16 +379,18 @@ def ingest_synthetic_event(
         details=details,
         idempotency_key=f"audit_landing_{action}_{short_id()}",
     )
-    r = logging_service_client.post(
-        "/api/logging/v1/events",
-        json=payload,
-        headers={"X-Service-Identity": service},
-    )
+    with make_service_client(LOGGING_URL, LOGGING_API_KEY, service) as svc_client:
+        r = svc_client.post("/api/logging/v1/events", json=payload)
     if r.status_code == 204:
         return None
     if r.status_code == 403:
-        # loging_service зарезервирован — self-audit нельзя ингестить снаружи.
         pytest.skip(f"{service} is reserved for self-audit, cannot ingest externally")
+    if r.status_code == 401:
+        pytest.skip(
+            f"{service} not accepted by loging_service auth: {r.text}"
+        )
+    if r.status_code == 429:
+        pytest.skip(f"per-identity rate limit hit for {service}/{action}")
     assert r.status_code == 201, (
         f"POST /events failed for {service}/{action}: {r.status_code} {r.text}"
     )

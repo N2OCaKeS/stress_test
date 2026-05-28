@@ -319,10 +319,16 @@ class TestGetEvents:
 class TestRules:
     def test_create_rule_requires_loging_admin(
         self,
+        auth_client: httpx.Client,
+        admin_token: str,
         make_user,
         login_token,
     ):
-        u = make_user()  # обычный пользователь без platform_role
+        # Обычный пользователь без platform_role — должен быть отбит на write
+        # эндпоинте loging_service. auth_service требует department_id для
+        # не-admin'ов, так что заводим одноразовый отдел под этого юзера.
+        dept = ensure_department(auth_client, admin_token, f"hrbac_{short_id()}")
+        u = make_user(department_id=dept)
         token = login_token(u["username"], u["_password"])
         with httpx.Client(
             base_url=LOGGING_URL,
@@ -376,7 +382,12 @@ class TestRules:
         loging_db_engine,
     ):
         """SUPPRESS-правило: соответствующий event не приземляется в БД."""
-        action = f"h.suppress.test_{short_id()}"
+        # action regex: [a-z_.]{1,128} — без цифр. short_id() даёт hex, что
+        # включает 0-9, поэтому подкладываем латинский tag (только буквы).
+        # Берём строчные буквы из hex-id, отбрасываем цифры; если выпало
+        # пусто (очень маловероятно), фолбэк на статический suffix.
+        tag = "".join(ch for ch in short_id() if ch.isalpha()) or "abcdef"
+        action = f"h.suppress.test_{tag}"
         # Зарегистрируем action под server_service (для _validate_match_action
         # нужен registered action; иначе используем glob).
         with make_service_client(LOGGING_URL, LOGGING_API_KEY, "server_service") as svc:

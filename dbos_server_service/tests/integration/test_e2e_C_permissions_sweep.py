@@ -17,6 +17,8 @@ End-to-end сценарий с кастомной ролью лежит в эт�
 
 from __future__ import annotations
 
+import uuid
+
 import httpx
 import pytest
 
@@ -26,13 +28,13 @@ from tests.integration._helpers_C_permissions import (
     WORKER_ONLY_PAIRS,
     SweepCase,
     all_sweep_pairs,
+    assert_audit_found,
     assign_user_roles,
     auth_header,
     create_ipmi,
     create_server,
     ensure_role,
     expect_denied_audit,
-    find_event,
     now_utc,
     setup_cluster_c,
 )
@@ -96,14 +98,14 @@ def test_action_positive(
         return
     # Для view_password success-side эмитит `server_account.password_revealed`
     # с status=success. Для остальных audit_action имени совпадает.
-    ev = find_event(
+    assert_audit_found(
         logging_client,
         action=case.audit_action,
         status="success",
         from_time=since,
-    )
-    assert ev is not None, (
-        f"positive [{entity}/{action}] audit '{case.audit_action}' success not found"
+        fail_message=(
+            f"positive [{entity}/{action}] audit '{case.audit_action}' success not found"
+        ),
     )
 
 
@@ -145,19 +147,25 @@ def test_action_negative_guest(
         # read-only list — denied не аудитится отдельно (middleware пишет
         # http.access_denied); skip.
         return
-    ev = find_event(
-        logging_client,
-        action=case.audit_action,
-        status="denied",
-        from_time=since,
-    )
+    if (entity, action) == ("server_account", "view_password"):
+        # GET карточки без view_password права просто отдаёт null в
+        # `password_b64` без эмита `password_revealed`. denied-audit на
+        # уровне server_account.view не пишется — только http.access_denied
+        # уровнем middleware. Audit-часть теста не применима.
+        return
     # Для view_password специфика: чтение карточки само не пишет denied —
     # пишется server_account.view denied. Для grant_sudo на create -
     # эмитится server_account.create denied. У части power-actions denied
     # пишется под reason=no_view_permission (guest без view сервера ещё до
     # power-роли). Эти варианты тоже валидные denied-аудиты — поэтому ev != None.
-    assert ev is not None, (
-        f"negative [{entity}/{action}] denied audit '{case.audit_action}' not found"
+    assert_audit_found(
+        logging_client,
+        action=case.audit_action,
+        status="denied",
+        from_time=since,
+        fail_message=(
+            f"negative [{entity}/{action}] denied audit '{case.audit_action}' not found"
+        ),
     )
 
 
@@ -211,7 +219,7 @@ def test_worker_only_grant_revoke_roundtrip(
         headers=auth_header(cluster_c.admin_token),
     )
     assert r.status_code in (200, 201), f"grant {entity}/{action}: {r.status_code} {r.text}"
-    ev = find_event(
+    assert_audit_found(
         logging_client,
         action="permission.grant",
         status="success",
@@ -220,8 +228,8 @@ def test_worker_only_grant_revoke_roundtrip(
             (it.get("details") or {}).get("entity_type") == entity
             and (it.get("details") or {}).get("action") == action
         ),
+        fail_message=f"permission.grant success audit not found for {entity}.{action}",
     )
-    assert ev is not None, f"permission.grant success audit not found for {entity}.{action}"
 
     since2 = now_utc()
     r = server_client.delete(
@@ -230,7 +238,7 @@ def test_worker_only_grant_revoke_roundtrip(
         headers=auth_header(cluster_c.admin_token),
     )
     assert r.status_code == 200, f"revoke {entity}/{action}: {r.status_code} {r.text}"
-    ev = find_event(
+    assert_audit_found(
         logging_client,
         action="permission.revoke",
         status="success",
@@ -239,8 +247,8 @@ def test_worker_only_grant_revoke_roundtrip(
             (it.get("details") or {}).get("entity_type") == entity
             and (it.get("details") or {}).get("action") == action
         ),
+        fail_message=f"permission.revoke success audit not found for {entity}.{action}",
     )
-    assert ev is not None, f"permission.revoke success audit not found for {entity}.{action}"
 
 
 # ── Custom role end-to-end ────────────────────────────────────────────────────
@@ -259,7 +267,10 @@ class TestCustomRoleEndToEnd:
         logging_client: httpx.Client,
     ):
         # 1. account_admin создаёт кастомную роль в нашем dept'е.
-        role_name = "server_restarter"
+        # Suffix — на случай повторного прогона в той же БД (auth_service
+        # держит users / role_definitions per-session).
+        suffix = uuid.uuid4().hex[:6]
+        role_name = f"server_restarter_{suffix}"
         ensure_role(
             auth_client, admin_token, cluster_c.dept_id, SERVICE_NAME, role_name,
             display_name="Server Restarter",
@@ -269,12 +280,18 @@ class TestCustomRoleEndToEnd:
         # блокирует platform_admin), поэтому grant'аем матрицу через
         # самого dept-admin'а (`cluster_c.admin_token` несёт service-роль
         # `admin`, у неё есть permission_grant в seed'е).
-        grant_resp = server_client.put(
-            f"/api/server/v1/permissions/server/{role_name}/power_reboot",
-            json={"target_department_id": cluster_c.dept_id},
-            headers=auth_header(cluster_c.admin_token),
-        )
-        assert grant_resp.status_code in (200, 201), grant_resp.text
+        #
+        # `_dispatch_power` сперва ходит в `server_svc.get_server` →
+        # `require_action(VIEW)` (защищает существование сервера от
+        # cross-dept enumerate), поэтому роль обязана иметь `view` поверх
+        # самого power_reboot. Гранты идут одной парой.
+        for act in ("view", "power_reboot"):
+            grant_resp = server_client.put(
+                f"/api/server/v1/permissions/server/{role_name}/{act}",
+                json={"target_department_id": cluster_c.dept_id},
+                headers=auth_header(cluster_c.admin_token),
+            )
+            assert grant_resp.status_code in (200, 201), grant_resp.text
 
         # 3. Создаём пользователя без ролей и присваиваем `server_restarter`.
         from tests.integration._helpers_C_permissions import make_role_user
@@ -296,11 +313,11 @@ class TestCustomRoleEndToEnd:
         assert r.status_code in (200, 202), (
             f"power_reboot expected 200/202, got {r.status_code}: {r.text}"
         )
-        ev = find_event(
+        assert_audit_found(
             logging_client, action="server.power_reboot", status="success",
             from_time=since, target_id=srv["id"],
+            fail_message="power_reboot success audit not found",
         )
-        assert ev is not None, "power_reboot success audit not found"
 
         # 6. power_on у `server_restarter` отсутствует — должен быть 403.
         since = now_utc()
@@ -318,6 +335,8 @@ class TestCustomRoleEndToEnd:
         assign_user_roles(auth_client, admin_token, user_id, [])
 
         # 8. После revoke'а роли power_reboot тоже отбивается.
+        # У юзера больше нет даже view → _dispatch_power падает раньше
+        # power-гейта, reason="no_view_permission" вместо "permission_denied".
         since = now_utc()
         r = server_client.post(
             f"/api/server/v1/servers/{srv['id']}/ipmi/power/reboot",
@@ -326,4 +345,7 @@ class TestCustomRoleEndToEnd:
         assert r.status_code == 403, (
             f"power_reboot after revoke expected 403, got {r.status_code}: {r.text}"
         )
-        expect_denied_audit(logging_client, "server.power_reboot", since)
+        expect_denied_audit(
+            logging_client, "server.power_reboot", since,
+            reason="no_view_permission",
+        )

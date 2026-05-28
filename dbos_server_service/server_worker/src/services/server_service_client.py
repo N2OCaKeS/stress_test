@@ -16,6 +16,7 @@ import httpx
 
 from src.core.config import get_settings
 from src.core.exceptions import CredentialFetchError
+from src.services.http_pool import get_server_service_client
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +67,9 @@ async def fetch_ipmi_credentials(
     """
     settings = get_settings()
     url = f"{settings.server_service_url.rstrip('/')}/api/server/v1/internal/servers/{server_id}/ipmi/credentials"
+    client = get_server_service_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.get(url, headers=_headers(target_department_id))
+        response = await client.get(url, headers=_headers(target_department_id))
     except httpx.HTTPError as exc:
         raise CredentialFetchError(
             error_code="SERVER_SERVICE_UNREACHABLE",
@@ -102,9 +103,9 @@ async def fetch_account_password(
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/servers/{server_id}/accounts/{account_id}/password"
     )
+    client = get_server_service_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.get(url, headers=_headers(target_department_id))
+        response = await client.get(url, headers=_headers(target_department_id))
     except httpx.HTTPError as exc:
         raise CredentialFetchError(
             error_code="SERVER_SERVICE_UNREACHABLE",
@@ -145,13 +146,13 @@ async def submit_rotated_password(
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/servers/{server_id}/accounts/{account_id}/password/rotate"
     )
+    client = get_server_service_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.post(
-                url,
-                headers=_headers(target_department_id),
-                json={"password": new_password},
-            )
+        response = await client.post(
+            url,
+            headers=_headers(target_department_id),
+            json={"password": new_password},
+        )
     except httpx.HTTPError as exc:
         raise CredentialFetchError(
             error_code="SERVER_SERVICE_UNREACHABLE",
@@ -198,13 +199,13 @@ async def submit_inventory_facts(
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/servers/{server_id}/inventory"
     )
+    client = get_server_service_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.post(
-                url,
-                headers=_headers(target_department_id),
-                json=inventory_payload,
-            )
+        response = await client.post(
+            url,
+            headers=_headers(target_department_id),
+            json=inventory_payload,
+        )
     except httpx.HTTPError as exc:
         raise CredentialFetchError(
             error_code="SERVER_SERVICE_UNREACHABLE",
@@ -249,13 +250,13 @@ async def submit_users_inventory(
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/servers/{server_id}/users/inventory"
     )
+    client = get_server_service_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.post(
-                url,
-                headers=_headers(target_department_id),
-                json=users_payload,
-            )
+        response = await client.post(
+            url,
+            headers=_headers(target_department_id),
+            json=users_payload,
+        )
     except httpx.HTTPError as exc:
         raise CredentialFetchError(
             error_code="SERVER_SERVICE_UNREACHABLE",
@@ -301,13 +302,13 @@ async def submit_provision_status(
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/servers/{server_id}/accounts/{account_id}/provision_status"
     )
+    client = get_server_service_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.post(
-                url,
-                headers=_headers(target_department_id),
-                json={"operation": operation, "present": present},
-            )
+        response = await client.post(
+            url,
+            headers=_headers(target_department_id),
+            json={"operation": operation, "present": present},
+        )
     except httpx.HTTPError as exc:
         raise CredentialFetchError(
             error_code="SERVER_SERVICE_UNREACHABLE",
@@ -352,13 +353,13 @@ async def submit_prepared(
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/servers/{server_id}/prepared"
     )
+    client = get_server_service_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.post(
-                url,
-                headers=_headers(target_department_id),
-                json={"management_user": management_user},
-            )
+        response = await client.post(
+            url,
+            headers=_headers(target_department_id),
+            json={"management_user": management_user},
+        )
     except httpx.HTTPError as exc:
         raise CredentialFetchError(
             error_code="SERVER_SERVICE_UNREACHABLE",
@@ -391,9 +392,9 @@ async def fetch_secrets_migration_status() -> dict:
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/secrets/migration_status"
     )
+    client = get_server_service_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.get(url, headers=_headers())
+        response = await client.get(url, headers=_headers())
     except httpx.HTTPError as exc:
         raise CredentialFetchError(
             error_code="SERVER_SERVICE_UNREACHABLE",
@@ -423,13 +424,13 @@ async def trigger_secrets_reencrypt_batch(limit: int) -> dict:
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/secrets/reencrypt_batch"
     )
+    client = get_server_service_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.post(
-                url,
-                params={"limit": limit},
-                headers=_headers(),
-            )
+        response = await client.post(
+            url,
+            params={"limit": limit},
+            headers=_headers(),
+        )
     except httpx.HTTPError as exc:
         raise CredentialFetchError(
             error_code="SERVER_SERVICE_UNREACHABLE",
@@ -483,13 +484,13 @@ async def submit_rotated_ipmi_password(
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/ipmi-controllers/{ipmi_controller_id}/credentials_rotated"
     )
+    client = get_server_service_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.post(
-                url,
-                headers=_headers(target_department_id),
-                json={"new_password": new_password, "rotated_at": rotated_at},
-            )
+        response = await client.post(
+            url,
+            headers=_headers(target_department_id),
+            json={"new_password": new_password, "rotated_at": rotated_at},
+        )
     except httpx.HTTPError as exc:
         raise CredentialFetchError(
             error_code="SERVER_SERVICE_UNREACHABLE",

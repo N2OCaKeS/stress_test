@@ -12,7 +12,20 @@ import httpx
 import pytest
 
 from src.core.exceptions import CredentialFetchError
-from src.services import server_service_client
+from src.services import http_pool, server_service_client
+
+
+@pytest.fixture(autouse=True)
+def _reset_http_pool():
+    """Сбрасываем закешированный pooled-клиент между тестами.
+
+    Тесты подменяют `httpx.AsyncClient` через `monkeypatch.setattr` —
+    закешированный реальный экземпляр пережил бы patch и продолжил
+    ходить в сеть. Симметрично фикстуре в `test_audit_client.py`.
+    """
+    http_pool.reset_for_tests()
+    yield
+    http_pool.reset_for_tests()
 
 
 class _Resp:

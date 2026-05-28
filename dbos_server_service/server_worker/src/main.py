@@ -60,6 +60,21 @@ _PUBLISHER_TASK_KEY = "audit_outbox_publisher_task"
 
 
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _warmup_http_pools(state: TaskiqState) -> None:
+    """Прогрев pooled httpx.AsyncClient'ов для loging_service и server_service.
+
+    Сами `get_*_client()` ленивые, но прогрев на старте полезен по двум
+    причинам: (1) первая ошибка конфигурации лимитов всплывает сразу, а
+    не в середине первого audit-эмита; (2) async event-loop с привязкой
+    к pool'у фиксируется здесь, а не в первом call'е.
+    """
+    from src.services.http_pool import get_audit_client, get_server_service_client
+
+    get_audit_client()
+    get_server_service_client()
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def _start_audit_outbox_publisher(state: TaskiqState) -> None:
     """Поднимаем фоновый publisher для transactional audit outbox.
 
@@ -259,6 +274,25 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
             "graceful shutdown: outbox flush failed: %s",
             redacted,
         )
+
+
+@broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
+async def _close_http_pools(state: TaskiqState) -> None:
+    """Закрыть pooled HTTP-клиенты после graceful drain.
+
+    Ставится последним среди WORKER_SHUTDOWN-хендлеров, чтобы:
+
+      * `_stop_audit_outbox_publisher` уже отменил background loop;
+      * `_drain_running_tasks` доделал best-effort flush_outbox через
+        `audit_client.emit` (он сам же дергает наш пул, поэтому пулы
+        должны жить до этого момента).
+
+    После выхода из этого хука taskiq закроет broker, и FD-учёт
+    httpx-пула должен быть чистым.
+    """
+    from src.services import http_pool
+
+    await http_pool.aclose_all()
 
 
 # Регистрируем все task-handler'ы (должно идти после определения `broker`).

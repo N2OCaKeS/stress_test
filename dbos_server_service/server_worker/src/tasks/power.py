@@ -36,7 +36,6 @@ from src.tasks._bmc_errors import (
     wrap_bmc_error,
 )
 from src.tasks._bmc_helpers import aclose_bmc as _aclose_bmc
-from src.tasks._bmc_helpers import extract_bmc_host as _extract_bmc_host
 from src.tasks._bmc_helpers import get_bmc as _get_bmc
 from src.tasks._runner import run_task
 

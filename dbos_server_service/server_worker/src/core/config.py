@@ -68,6 +68,53 @@ class Settings(BaseSettings):
     http_request_timeout_seconds: float = Field(default=5.0, description="HTTP timeout")
     worker_log_level: str = Field(default="INFO", description="Python log level")
 
+    # ── Pooled HTTP clients ──────────────────────────────────────────────
+    # Долгоживущие httpx.AsyncClient'ы под два горячих исходящих канала:
+    # audit-emit в loging_service и callback'и в server_service. До этой
+    # настройки каждый emit/callback создавал свежий `httpx.AsyncClient` с
+    # последующим TCP/TLS handshake — амплификация file-descriptor'ов и
+    # лишняя латентность при burst'е задач.
+    #
+    # `max_connections` — общий лимит одновременных соединений в пуле;
+    # `max_keepalive_connections` — сколько держать idle для reuse.
+    # Дефолты подобраны под скромный worker-RPS: audit-эмит идёт
+    # пачками от outbox-publisher'а, callback'и в server_service —
+    # 1-2 на task. При desync конкретного стенда поднимать через env.
+    audit_pool_max_connections: int = Field(
+        default=20,
+        ge=1,
+        description=(
+            "Total concurrent connections in the pooled httpx client to "
+            "loging_service. Tune up if audit-outbox publisher batches "
+            "are large and observe queueing on emit()."
+        ),
+    )
+    audit_pool_max_keepalive_connections: int = Field(
+        default=10,
+        ge=1,
+        description=(
+            "Idle keepalive connections to keep open for reuse against "
+            "loging_service. Should be <= audit_pool_max_connections."
+        ),
+    )
+    server_service_pool_max_connections: int = Field(
+        default=20,
+        ge=1,
+        description=(
+            "Total concurrent connections in the pooled httpx client to "
+            "server_service. Covers fetch_*/submit_* callbacks from every "
+            "task handler."
+        ),
+    )
+    server_service_pool_max_keepalive_connections: int = Field(
+        default=10,
+        ge=1,
+        description=(
+            "Idle keepalive connections to keep open for reuse against "
+            "server_service. Should be <= server_service_pool_max_connections."
+        ),
+    )
+
     # ── Graceful shutdown ────────────────────────────────────────────────
     # Максимум сколько ждать running task'ам завершиться при SIGTERM /
     # WORKER_SHUTDOWN, прежде чем mark_pending_for_retry (если max_attempts

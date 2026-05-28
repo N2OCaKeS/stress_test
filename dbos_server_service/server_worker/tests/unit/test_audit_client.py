@@ -17,6 +17,10 @@
 published-but-not-delivered»): до этого emit
 логировал warning и тихо возвращал None — outbox publisher принимал это
 за успех и помечал row published, что приводило к silent loss audit-event.
+
+С переходом на pooled httpx-клиент тесты подменяют возвращаемый
+`get_audit_client()` объект — поведение `post()` под нагрузкой имитируется
+прямо в этом mock'е.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import httpx
 import pytest
 
 from src.services import audit_client
+from src.services import http_pool
 from src.services.audit_client import AuditEmitError
 
 
@@ -35,29 +40,32 @@ class _MockResponse:
         self.status_code = status_code
 
 
-class _AsyncClientCapture:
-    """Захватывает аргументы post() для последующей проверки."""
+class _PoolClientCapture:
+    """Подмена pooled `httpx.AsyncClient` — захватывает аргументы post()."""
 
-    captured: list[dict] = []
-
-    def __init__(self, *a, **kw): pass
-    async def __aenter__(self): return self
-    async def __aexit__(self, *a): pass
+    def __init__(self):
+        self.captured: list[dict] = []
 
     async def post(self, url, json=None, headers=None):
-        _AsyncClientCapture.captured.append({"url": url, "json": json, "headers": headers or {}})
+        self.captured.append({"url": url, "json": json, "headers": headers or {}})
         return _MockResponse(201)
 
 
 @pytest.fixture(autouse=True)
-def _reset_capture():
-    _AsyncClientCapture.captured = []
+def _reset_http_pool():
+    """Сбрасываем pool-кеш до и после каждого теста.
+
+    Без этого закешированный реальный AsyncClient переживёт monkeypatch
+    в соседнем тесте.
+    """
+    http_pool.reset_for_tests()
     yield
+    http_pool.reset_for_tests()
 
 
 @pytest.fixture
 def settings_stub(monkeypatch):
-    """Подменяет get_settings + httpx.AsyncClient."""
+    """Подменяет get_settings + pool-getter под захватывающий клиент."""
 
     class _S:
         logging_service_url = "http://logging.test"
@@ -65,9 +73,12 @@ def settings_stub(monkeypatch):
         worker_bot_token = "wbt-sample"
         http_request_timeout_seconds = 5.0
 
+    capture = _PoolClientCapture()
     monkeypatch.setattr("src.services.audit_client.get_settings", lambda: _S())
-    monkeypatch.setattr("src.services.audit_client.httpx.AsyncClient", _AsyncClientCapture)
-    return _S
+    monkeypatch.setattr(
+        "src.services.audit_client.get_audit_client", lambda: capture,
+    )
+    return capture
 
 
 # ── Payload composition ──────────────────────────────────────────────────────
@@ -75,8 +86,8 @@ def settings_stub(monkeypatch):
 class TestAuditPayload:
     async def test_minimal_call_has_required_fields(self, settings_stub):
         await audit_client.emit("power.success")
-        assert _AsyncClientCapture.captured
-        payload = _AsyncClientCapture.captured[0]["json"]
+        assert settings_stub.captured
+        payload = settings_stub.captured[0]["json"]
         assert payload["action"] == "power.success"
         assert payload["status"] == "success"
         assert payload["allowed"] is True
@@ -93,7 +104,7 @@ class TestAuditPayload:
             severity="WARNING", request_id="req_1",
             details={"k": "v"},
         )
-        payload = _AsyncClientCapture.captured[0]["json"]
+        payload = settings_stub.captured[0]["json"]
         assert payload["actor_id"] == "bot_1"
         assert payload["department_id"] == "dep_a"
         assert payload["target_id"] == "srv_1"
@@ -104,7 +115,7 @@ class TestAuditPayload:
 
     async def test_omitted_fields_absent(self, settings_stub):
         await audit_client.emit("x.y")
-        payload = _AsyncClientCapture.captured[0]["json"]
+        payload = settings_stub.captured[0]["json"]
         for f in ("actor_id", "department_id", "target_id", "target_type",
                   "severity", "request_id", "details"):
             assert f not in payload, f"{f} must not be present when not passed"
@@ -112,7 +123,7 @@ class TestAuditPayload:
     async def test_empty_details_not_attached(self, settings_stub):
         """`details={}` — falsy → не добавляется."""
         await audit_client.emit("x.y", details={})
-        payload = _AsyncClientCapture.captured[0]["json"]
+        payload = settings_stub.captured[0]["json"]
         assert "details" not in payload
 
 
@@ -121,7 +132,7 @@ class TestAuditPayload:
 class TestAuthHeader:
     async def test_api_key_used_when_set(self, settings_stub):
         await audit_client.emit("x.y")
-        headers = _AsyncClientCapture.captured[0]["headers"]
+        headers = settings_stub.captured[0]["headers"]
         assert headers["Authorization"] == "Bearer k-sample"
 
     async def test_empty_api_key_drops_event_no_http(self, monkeypatch, caplog):
@@ -136,14 +147,17 @@ class TestAuthHeader:
             worker_bot_token = "wbt-MUST-NOT-LEAK"
             http_request_timeout_seconds = 5.0
 
+        capture = _PoolClientCapture()
         monkeypatch.setattr("src.services.audit_client.get_settings", lambda: _S())
-        monkeypatch.setattr("src.services.audit_client.httpx.AsyncClient", _AsyncClientCapture)
+        monkeypatch.setattr(
+            "src.services.audit_client.get_audit_client", lambda: capture,
+        )
 
         with caplog.at_level("ERROR", logger="src.services.audit_client"):
             await audit_client.emit("x.y")
 
         # ни одного HTTP-запроса не должно быть
-        assert _AsyncClientCapture.captured == []
+        assert capture.captured == []
         # error залогирован
         assert any(
             "LOGGING_SERVICE_API_KEY" in r.message and r.levelname == "ERROR"
@@ -158,13 +172,16 @@ class TestAuthHeader:
             worker_bot_token = ""
             http_request_timeout_seconds = 5.0
 
+        capture = _PoolClientCapture()
         monkeypatch.setattr("src.services.audit_client.get_settings", lambda: _S())
-        monkeypatch.setattr("src.services.audit_client.httpx.AsyncClient", _AsyncClientCapture)
+        monkeypatch.setattr(
+            "src.services.audit_client.get_audit_client", lambda: capture,
+        )
 
         with caplog.at_level("ERROR", logger="src.services.audit_client"):
             await audit_client.emit("x.y")  # не должно падать
 
-        assert _AsyncClientCapture.captured == []
+        assert capture.captured == []
         assert any("LOGGING_SERVICE_API_KEY" in r.message for r in caplog.records)
 
 
@@ -173,7 +190,7 @@ class TestAuthHeader:
 class TestUrl:
     async def test_url_includes_ingest_path(self, settings_stub):
         await audit_client.emit("x.y")
-        assert _AsyncClientCapture.captured[0]["url"] == "http://logging.test/api/logging/v1/events"
+        assert settings_stub.captured[0]["url"] == "http://logging.test/api/logging/v1/events"
 
     async def test_trailing_slash_in_base_stripped(self, monkeypatch):
         class _S:
@@ -182,10 +199,13 @@ class TestUrl:
             worker_bot_token = ""
             http_request_timeout_seconds = 5.0
 
+        capture = _PoolClientCapture()
         monkeypatch.setattr("src.services.audit_client.get_settings", lambda: _S())
-        monkeypatch.setattr("src.services.audit_client.httpx.AsyncClient", _AsyncClientCapture)
+        monkeypatch.setattr(
+            "src.services.audit_client.get_audit_client", lambda: capture,
+        )
         await audit_client.emit("x.y")
-        assert _AsyncClientCapture.captured[0]["url"] == "http://logging.test/api/logging/v1/events"
+        assert capture.captured[0]["url"] == "http://logging.test/api/logging/v1/events"
 
 
 # ── Fail-loud на HTTP ошибках ────────────────────────────────────────────────
@@ -203,19 +223,30 @@ def _settings_default() -> type:
     return _S
 
 
+def _install_pool_with_post(monkeypatch, post_impl):
+    """Поднять fake pool-client, у которого `post()` делает то, что хотим.
+
+    `post_impl` — async-функция `(url, json, headers) -> response | raise`.
+    """
+    class _FakePoolClient:
+        async def post(self, url, json=None, headers=None):
+            return await post_impl(url, json, headers)
+
+    fake = _FakePoolClient()
+    monkeypatch.setattr(
+        "src.services.audit_client.get_settings", lambda: _settings_default()(),
+    )
+    monkeypatch.setattr(
+        "src.services.audit_client.get_audit_client", lambda: fake,
+    )
+
+
 class TestRaiseOnHttpFailure:
     async def test_4xx_raises_audit_emit_error(self, monkeypatch, caplog):
-        class _BadClient:
-            def __init__(self, *a, **kw): pass
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
-            async def post(self, *a, **kw):
-                return _MockResponse(403)
+        async def _post(url, json, headers):
+            return _MockResponse(403)
 
-        monkeypatch.setattr(
-            "src.services.audit_client.get_settings", lambda: _settings_default()(),
-        )
-        monkeypatch.setattr("src.services.audit_client.httpx.AsyncClient", _BadClient)
+        _install_pool_with_post(monkeypatch, _post)
         with pytest.raises(AuditEmitError) as exc_info:
             await audit_client.emit("x.y")
         # error_message содержит HTTP-код и action — нужно для диагностики
@@ -229,33 +260,19 @@ class TestRaiseOnHttpFailure:
         """422 (schema validation) — raise со `status_code=422`. Publisher
         теперь классифицирует 4xx как permanent-fatal: row пойдёт в DLQ
         сразу, без накручивания attempts (см. `_publish_one`)."""
-        class _BadClient:
-            def __init__(self, *a, **kw): pass
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
-            async def post(self, *a, **kw):
-                return _MockResponse(422)
+        async def _post(url, json, headers):
+            return _MockResponse(422)
 
-        monkeypatch.setattr(
-            "src.services.audit_client.get_settings", lambda: _settings_default()(),
-        )
-        monkeypatch.setattr("src.services.audit_client.httpx.AsyncClient", _BadClient)
+        _install_pool_with_post(monkeypatch, _post)
         with pytest.raises(AuditEmitError) as exc_info:
             await audit_client.emit("x.y")
         assert exc_info.value.status_code == 422
 
     async def test_500_raises_audit_emit_error(self, monkeypatch):
-        class _ServerErr:
-            def __init__(self, *a, **kw): pass
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
-            async def post(self, *a, **kw):
-                return _MockResponse(500)
+        async def _post(url, json, headers):
+            return _MockResponse(500)
 
-        monkeypatch.setattr(
-            "src.services.audit_client.get_settings", lambda: _settings_default()(),
-        )
-        monkeypatch.setattr("src.services.audit_client.httpx.AsyncClient", _ServerErr)
+        _install_pool_with_post(monkeypatch, _post)
         with pytest.raises(AuditEmitError) as exc_info:
             await audit_client.emit("x.y")
         assert "500" in exc_info.value.error_message
@@ -264,32 +281,18 @@ class TestRaiseOnHttpFailure:
         assert exc_info.value.status_code == 500
 
     async def test_503_raises_audit_emit_error(self, monkeypatch):
-        class _ServerErr:
-            def __init__(self, *a, **kw): pass
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
-            async def post(self, *a, **kw):
-                return _MockResponse(503)
+        async def _post(url, json, headers):
+            return _MockResponse(503)
 
-        monkeypatch.setattr(
-            "src.services.audit_client.get_settings", lambda: _settings_default()(),
-        )
-        monkeypatch.setattr("src.services.audit_client.httpx.AsyncClient", _ServerErr)
+        _install_pool_with_post(monkeypatch, _post)
         with pytest.raises(AuditEmitError):
             await audit_client.emit("x.y")
 
     async def test_timeout_raises_audit_emit_error(self, monkeypatch):
-        class _Timeout:
-            def __init__(self, *a, **kw): pass
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
-            async def post(self, *a, **kw):
-                raise httpx.TimeoutException("slow")
+        async def _post(url, json, headers):
+            raise httpx.TimeoutException("slow")
 
-        monkeypatch.setattr(
-            "src.services.audit_client.get_settings", lambda: _settings_default()(),
-        )
-        monkeypatch.setattr("src.services.audit_client.httpx.AsyncClient", _Timeout)
+        _install_pool_with_post(monkeypatch, _post)
         with pytest.raises(AuditEmitError) as exc_info:
             await audit_client.emit("x.y")
         # Имя оригинального класса — нужно для диагностики в outbox.last_error.
@@ -299,17 +302,10 @@ class TestRaiseOnHttpFailure:
         assert exc_info.value.status_code is None
 
     async def test_connect_error_raises_audit_emit_error(self, monkeypatch):
-        class _CE:
-            def __init__(self, *a, **kw): pass
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
-            async def post(self, *a, **kw):
-                raise httpx.ConnectError("down")
+        async def _post(url, json, headers):
+            raise httpx.ConnectError("down")
 
-        monkeypatch.setattr(
-            "src.services.audit_client.get_settings", lambda: _settings_default()(),
-        )
-        monkeypatch.setattr("src.services.audit_client.httpx.AsyncClient", _CE)
+        _install_pool_with_post(monkeypatch, _post)
         with pytest.raises(AuditEmitError) as exc_info:
             await audit_client.emit("x.y")
         assert "ConnectError" in exc_info.value.error_message
@@ -321,4 +317,4 @@ class TestRaiseOnHttpFailure:
         result = await audit_client.emit("x.y")
         assert result is None
         # И HTTP всё-таки выполнен.
-        assert len(_AsyncClientCapture.captured) == 1
+        assert len(settings_stub.captured) == 1

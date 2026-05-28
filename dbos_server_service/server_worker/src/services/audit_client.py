@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 import httpx
 
 from src.core.config import get_settings
+from src.services.http_pool import get_audit_client
 
 logger = logging.getLogger(__name__)
 
@@ -129,9 +130,9 @@ async def emit(
         )
         return
     headers = {"Authorization": f"Bearer {api_key}"}
+    client = get_audit_client()
     try:
-        async with httpx.AsyncClient(timeout=settings.http_request_timeout_seconds) as client:
-            response = await client.post(url, json=payload, headers=headers)
+        response = await client.post(url, json=payload, headers=headers)
     except httpx.HTTPError as exc:
         # Transport-level ошибка (timeout, connect-refused, DNS, TLS, ...).
         # Поднимаем — outbox publisher решит, что делать (retry, attempts++).

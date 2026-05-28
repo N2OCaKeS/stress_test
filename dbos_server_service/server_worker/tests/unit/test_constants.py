@@ -18,6 +18,7 @@ class TestTaskKind:
             "account.rotate_password", "ipmi.rotate_password",
             "account.provision", "account.update_on_host", "account.deprovision",
             "server.prepare",
+            "installed_packages.list",
         }
 
     def test_dot_namespaced(self):

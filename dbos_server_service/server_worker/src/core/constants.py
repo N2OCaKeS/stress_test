@@ -29,6 +29,7 @@ class TaskKind(StrEnum):
     ACCOUNT_DEPROVISION = "account.deprovision"
     SERVER_PREPARE = "server.prepare"
     IPMI_ROTATE_PASSWORD = "ipmi.rotate_password"
+    INSTALLED_PACKAGES_LIST = "installed_packages.list"
 
 
 class TaskStatus(StrEnum):

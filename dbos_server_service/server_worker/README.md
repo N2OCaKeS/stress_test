@@ -84,7 +84,7 @@ src/
     _bmc_helpers.py             # extract_bmc_host: strip scheme/port из endpoint_url для get_bmc_client
     _bmc_errors.py              # wrap_bmc_error → BMC_UNREACHABLE/BMC_AUTH_FAILED/BMC_REJECTED/BMC_TIMEOUT/BMC_ERROR
     power.py                    # power.{on,off,reboot,status}
-    inventory.py                # inventory.{sync,probe} + callback inventory_received
+    inventory.py                # inventory.sync + callback submit_inventory_facts
     passwords.py                # account.rotate_password (real SSH), ipmi.rotate_password (real BMC)
     installed_packages.py       # installed_packages.list (live SSH dpkg-query/rpm -qa)
     users.py                    # users.inventory (getent) + account.provision/update_on_host/deprovision (useradd/usermod/userdel)
@@ -103,10 +103,9 @@ src/
 | `power.off` | `server.power_off` | real Redfish/ipmitool — **hard ForceOff** (Redfish `ResetType: ForceOff` / ipmitool `chassis power off`), без graceful/ACPI shutdown |
 | `power.reboot` | `server.power_reboot` | real Redfish/ipmitool |
 | `power.status` | `server.power_status` | real Redfish/ipmitool |
-| `inventory.sync` | `server.inventory_sync` | real SSH (`asyncssh`) → facts → callback `inventory_received` в server_service |
-| `inventory.probe` | `server.inventory_probe` | real SSH probe (lightweight reachability check) |
-| `account.rotate_password` | `server_account.password_rotate` | real SSH `chpasswd` + callback `credentials_rotated_callback` с зашифрованным ciphertext |
-| `ipmi.rotate_password` | `ipmi_controller.password_rotate` | real: storage-first → BMC через Redfish с fallback на ipmitool + callback `ipmi_credentials_rotated_callback` |
+| `inventory.sync` | `server.inventory_sync` | real SSH (`asyncssh`) → facts → callback `submit_inventory_facts` в server_service |
+| `account.rotate_password` | `server_account.password_rotate` | real SSH `chpasswd` + callback `submit_rotated_password` (plaintext, server_service шифрует своим master-key) |
+| `ipmi.rotate_password` | `ipmi_controller.password_rotate` | real: storage-first → BMC через Redfish с fallback на ipmitool + callback `submit_rotated_ipmi_password` |
 | `installed_packages.list` | `installed_packages.list` | real SSH `dpkg-query` / `rpm -qa` через `asyncssh` |
 | `users.inventory` | `server_account.users_inventory` | real SSH `getent passwd`/`getent group` → парс OS-пользователей → callback `submit_users_inventory` |
 | `account.provision` | `server_account.provision` | real SSH `useradd` (idempotent) → callback `submit_provision_status(present=True)` |
@@ -239,21 +238,13 @@ make test-worker
 | `AUDIT_OUTBOX_RETENTION_DAYS` | `90` | сколько дней хранить published outbox-row'ы (и delivered, и DLQ-poisoned) до daily DELETE. Unpublished (in-flight) не трогаем |
 | `MAX_PUBLISH_ATTEMPTS` | `50` | cap по attempts в publisher loop'е. При превышении row уходит в DLQ через `_send_to_dlq` с `reason="attempts_cap"`; счётчик `audit_outbox_dead_total` тикает (stub под Prometheus) |
 
-### BMC / Redfish / PXE
+### BMC / Redfish
 
 | ENV | Default | Назначение |
 |---|---|---|
 | `IPMI_USER_ID` | `2` | дефолтный Redfish account slot (`/Managers/<m>/Accounts/<n>`). Dell iDRAC root=2, HPE iLO=1, Supermicro=3. Per-host override через payload |
 | `REDFISH_VERIFY_TLS` | `false` | iDRAC ships self-signed cert — `true` только когда BMC получили cert от внутреннего CA |
 | `REDFISH_TIMEOUT_SECONDS` | `30.0` | per-request timeout для Redfish-вызовов |
-| `PXE_HOST` | `""` | hostname/IP PXE-TFTP сервера. Пусто → `reinstall.start` падает с `PXE_NOT_CONFIGURED` |
-| `PXE_SSH_USERNAME` | `""` | SSH-user для PXE-host'а (service-account, не root) |
-| `PXE_SSH_PASSWORD` | `""` | SSH-пароль PXE-host'а (в проде через k8s Secret) |
-| `PXE_TFTP_ROOT` | `/srv/tftp` | абсолютный путь TFTP root на PXE-host'е |
-| `PXE_STRICT_HOST_KEY_CHECKING` | `false` | strict host-key check для SSH-коннектов к PXE-host'у. В prod ставить `true` и mount'ить `known_hosts`; в dev/test — `false` |
-| `REINSTALL_TIMEOUT_SECONDS` | `1800.0` | максимум сколько `reinstall.start` ждёт pipeline до `mark_failed` |
-| `REINSTALL_POLL_INTERVAL_SECONDS` | `30.0` | sleep между health-check probe'ами в reinstall-wait цикле |
-| `REINSTALL_DEFAULT_OS_IMAGE_URL` | `""` | fallback `os_image` URL, если в payload не пришёл |
 
 ### Management-SSH (prepare / онбординг)
 

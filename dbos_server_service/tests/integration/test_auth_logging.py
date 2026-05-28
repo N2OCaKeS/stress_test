@@ -29,10 +29,16 @@ class TestServiceStartup:
         logging_client: httpx.Client,
     ):
         """auth_service при старте отправляет событие service.started."""
+        # Startup-задача запускает register_events через `asyncio.to_thread`,
+        # потом эмитит `service.started`. Под медленным compose-стартом
+        # эта цепочка может не успеть до первого опроса — даём ей больше
+        # окна, чем дефолтный 15×0.5.
         event = wait_for_event(
             logging_client,
             action="service.started",
             status="success",
+            retries=40,
+            delay=0.5,
         )
         assert event["service"] == "auth_service"
         assert event["actor_type"] == "service"

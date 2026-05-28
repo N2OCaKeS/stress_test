@@ -39,6 +39,13 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
 
+    # SQLAlchemy connection pool sizing. Дефолты выставлены под dev/test-стенд:
+    # 10 постоянных коннектов + 20 burst — хватает 4 uvicorn-воркерам, не
+    # передаёт лимит `max_connections` локального postgres. В прод-нагрузке
+    # значения нужно поднимать вслед за БД-конфигом (`pgbouncer pool_size`).
+    db_pool_size: int = Field(default=10, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=20, alias="DB_MAX_OVERFLOW")
+
     # Shared secret, который другие сервисы шлют в `Authorization: Bearer <key>`.
     # FALLBACK когда `service_api_keys` пуст — сохраняет backward-compat с
     # старой single-key моделью деплоя.
@@ -92,6 +99,14 @@ class Settings(BaseSettings):
     # быстрее, не держа pool-slot.
     introspect_timeout_seconds: float = Field(
         default=3.0, alias="INTROSPECT_TIMEOUT_SECONDS"
+    )
+
+    # Отдельный connect-таймаут pooled introspect-клиента. Read/write делит
+    # общий `introspect_timeout_seconds`; для TCP+TLS handshake'а нужен
+    # более жёсткий бюджет, чтобы залипший FIN-WAIT не отъедал pool-slot
+    # на полные 3 секунды.
+    introspect_connect_timeout_seconds: float = Field(
+        default=2.0, alias="INTROSPECT_CONNECT_TIMEOUT_SECONDS"
     )
 
     # Проверяет ли introspect-клиент `httpx.AsyncClient` TLS-сертификат

@@ -68,6 +68,12 @@ KNOWN_SERVICE_IDENTITIES: frozenset[str] = frozenset(
 # request-path всегда через pool — lifespan отрабатывает до первого запроса.
 _introspect_client: httpx.AsyncClient | None = None
 
+# Pooled клиент для проксирования Swagger-логина (`POST /token`). Тоже
+# управляется lifespan'ом; live-сессия read/write делит общий таймаут с
+# introspect'ом, но connect-таймаут берёт из `INTROSPECT_CONNECT_TIMEOUT_SECONDS`.
+# Без pool'а каждый swagger-login открывал бы свежий TCP+TLS handshake.
+_token_proxy_client: httpx.AsyncClient | None = None
+
 # Где живёт introspect на auth_service. Pooled-клиент использует
 # base_url + этот относительный путь; fallback конкатенирует с
 # `settings.auth_service_url`.

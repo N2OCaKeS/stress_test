@@ -1,7 +1,7 @@
 """DB engine и фабрика сессий.
 
-# HACK: `pool_size=10` / `max_overflow=20` хардкод без env-конфига. Не
-# критично сейчас, но для нагрузочной настройки имеет смысл вынести в ENV.
+Размер pool'а конфигурируется через `DB_POOL_SIZE` и `DB_MAX_OVERFLOW` —
+старые хардкоды (10 / 20) живут как дефолты в `core.config.Settings`.
 """
 
 from sqlalchemy import create_engine
@@ -14,8 +14,8 @@ _settings = get_settings()
 engine = create_engine(
     _settings.database_url,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=_settings.db_pool_size,
+    max_overflow=_settings.db_max_overflow,
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

@@ -466,8 +466,10 @@ def test_pool_built_with_introspect_tls_verify_default_true(monkeypatch):
     real_async_client = httpx.AsyncClient
 
     def snoop(*args, **kwargs):
-        # The lifespan builds exactly one AsyncClient; capture its kwargs.
-        if "verify" in kwargs and "base_url" in kwargs:
+        # Lifespan теперь поднимает два AsyncClient: introspect (max=20) и
+        # /token-proxy (max=10). Нас интересует первый (introspect) — не
+        # перезаписываем, если уже захватили.
+        if "verify" in kwargs and "base_url" in kwargs and not captured_kwargs:
             captured_kwargs.update(kwargs)
         return real_async_client(*args, **kwargs)
 

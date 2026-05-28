@@ -6,6 +6,11 @@
 
 Этот эндпоинт прячется от схемы (`include_in_schema=False`) — но Swagger UI
 читает его через `tokenUrl` в OAuth2-flow секции (см. `main.custom_openapi`).
+
+Pooled-клиент (`auth_deps._token_proxy_client`) собирается в lifespan'е.
+Если он не инициализирован (early import / тесты, патчащие `httpx.post`)
+— фоллбэчимся на per-call `httpx.post`, чтобы существующие тесты на
+прозрачные мок'и `src.api.v1.endpoints.auth.httpx.post` не сломались.
 """
 
 import logging
@@ -17,14 +22,18 @@ from fastapi import Depends
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException, AuthenticationError
+from src.dependencies import auth as auth_deps
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
+_TOKEN_PATH = "/api/auth/v1/token"
+
+
 @router.post("/token", include_in_schema=False)
-def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     settings = get_settings()
     if not settings.auth_service_url:
         raise AppException(
@@ -32,12 +41,20 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
             error_code="AUTH_SERVICE_NOT_CONFIGURED",
             message="AUTH_SERVICE_URL is not configured",
         )
+    data = {"username": form_data.username, "password": form_data.password}
+    pooled = auth_deps._token_proxy_client
     try:
-        resp = httpx.post(
-            f"{settings.auth_service_url}/api/auth/v1/token",
-            data={"username": form_data.username, "password": form_data.password},
-            timeout=5.0,
-        )
+        if pooled is not None:
+            resp = await pooled.post(_TOKEN_PATH, data=data)
+        else:
+            # Fallback на per-call sync httpx. Здесь нет event-loop'а pool'а,
+            # поэтому идём через sync API — это же поведение тесты ожидают,
+            # когда патчат `httpx.post`.
+            resp = httpx.post(
+                f"{settings.auth_service_url}{_TOKEN_PATH}",
+                data=data,
+                timeout=5.0,
+            )
     except Exception as exc:
         # Детальная ошибка (включая внутренний hostname / URL, который
         # `ConnectError` / `ReadError` / `RemoteProtocolError` кладут в repr)
@@ -59,5 +76,5 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
             error_code="INVALID_CREDENTIALS",
             message="Invalid credentials",
         )
-    data = resp.json()
-    return {"access_token": data["access_token"], "token_type": "bearer"}
+    body = resp.json()
+    return {"access_token": body["access_token"], "token_type": "bearer"}

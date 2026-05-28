@@ -158,9 +158,11 @@ class TestRuleCacheStaleFallback:
         cache.get(db)
 
         before = cache._loaded_at
+        before_mono = cache._loaded_monotonic
 
         # Сбрасываем TTL и роняем БД
         cache._loaded_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        cache._loaded_monotonic = 0.0
         monkeypatch.setattr(rule_repo, "get_max_updated_at",
                             lambda d: (_ for _ in ()).throw(RuntimeError("fail")))
 
@@ -168,6 +170,11 @@ class TestRuleCacheStaleFallback:
         # _loaded_at должен быть обновлён (свежее, чем до stale-fallback)
         assert cache._loaded_at > datetime(2000, 1, 1, tzinfo=timezone.utc)
         assert cache._loaded_at != before  # обновился во время fallback
+        # _loaded_monotonic тоже двигается — иначе TTL не сбрасывается
+        # и на следующем get() мы снова полетим в упавшую БД.
+        assert cache._loaded_monotonic is not None
+        assert cache._loaded_monotonic > 0.0
+        assert cache._loaded_monotonic != before_mono
 
 
 # ── invalidate() ──────────────────────────────────────────────────────────────

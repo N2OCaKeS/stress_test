@@ -14,6 +14,7 @@
 import logging
 import re
 import threading
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -157,17 +158,29 @@ class _RuleCache:
 
     def __init__(self, ttl_seconds: int = 30) -> None:
         self._rules: list[AuditRule] = []
+        # `_loaded_at` (wall-clock) сравниваем с `MAX(updated_at)` из БД —
+        # это межсервисный timestamp, его нужно держать в UTC. TTL же
+        # считаем по `_loaded_monotonic`, чтобы NTP step / переключение
+        # часов не запирали кеш на десятки минут или, наоборот, не
+        # сбрасывали его внеплановым refresh'ем.
         self._loaded_at: datetime | None = None
+        self._loaded_monotonic: float | None = None
         self._ttl = ttl_seconds
         self._lock = threading.Lock()
 
+    def _ttl_fresh(self, mono_now: float) -> bool:
+        return (
+            self._loaded_monotonic is not None
+            and (mono_now - self._loaded_monotonic) <= self._ttl
+        )
+
     def get(self, db: Session) -> list[AuditRule]:
-        now = datetime.now(timezone.utc)
-        if self._loaded_at is not None and (now - self._loaded_at).total_seconds() <= self._ttl:
+        mono_now = time.monotonic()
+        if self._ttl_fresh(mono_now):
             return self._rules
         with self._lock:
-            now = datetime.now(timezone.utc)
-            if self._loaded_at is not None and (now - self._loaded_at).total_seconds() <= self._ttl:
+            mono_now = time.monotonic()
+            if self._ttl_fresh(mono_now):
                 return self._rules
             try:
                 db_updated_at = rule_repo.get_max_updated_at(db)
@@ -179,11 +192,14 @@ class _RuleCache:
                     for rule in fresh:
                         db.expunge(rule)
                     self._rules = fresh
-                self._loaded_at = now
+                self._loaded_at = datetime.now(timezone.utc)
+                self._loaded_monotonic = mono_now
             except Exception:
-                if self._loaded_at is not None:
+                if self._loaded_monotonic is not None:
                     logger.error("RuleCache: DB reload failed — serving stale cache")
-                    self._loaded_at = now  # сброс TTL чтобы не молотить БД
+                    # Сдвигаем TTL чтобы не долбить БД до следующего окна.
+                    self._loaded_monotonic = mono_now
+                    self._loaded_at = datetime.now(timezone.utc)
                 else:
                     raise
         return self._rules
@@ -193,6 +209,7 @@ class _RuleCache:
         Другие воркеры подхватят изменения через MAX(updated_at) при следующем TTL."""
         with self._lock:
             self._loaded_at = None
+            self._loaded_monotonic = None
 
 
 _cache = _RuleCache(ttl_seconds=30)

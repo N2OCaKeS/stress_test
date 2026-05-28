@@ -169,13 +169,30 @@ def create_application() -> FastAPI:
         live_settings = get_settings()
         url = live_settings.auth_service_url
         if url:
+            base = url.rstrip("/")
+            timeout = httpx.Timeout(
+                live_settings.introspect_timeout_seconds,
+                connect=live_settings.introspect_connect_timeout_seconds,
+            )
             auth_deps._introspect_client = httpx.AsyncClient(
-                base_url=url.rstrip("/"),
-                timeout=httpx.Timeout(
-                    live_settings.introspect_timeout_seconds, connect=2.0
-                ),
+                base_url=base,
+                timeout=timeout,
                 limits=httpx.Limits(
                     max_connections=20, max_keepalive_connections=10
+                ),
+                verify=live_settings.introspect_tls_verify,
+            )
+            # Pooled клиент для `POST /token` swagger-логина. Лимиты скромнее
+            # introspect'а — логины редкие, а одна полу-висящая connection
+            # не должна забирать pool-slot у hot-path introspect'а.
+            auth_deps._token_proxy_client = httpx.AsyncClient(
+                base_url=base,
+                timeout=httpx.Timeout(
+                    5.0,
+                    connect=live_settings.introspect_connect_timeout_seconds,
+                ),
+                limits=httpx.Limits(
+                    max_connections=10, max_keepalive_connections=5
                 ),
                 verify=live_settings.introspect_tls_verify,
             )
@@ -206,6 +223,10 @@ def create_application() -> FastAPI:
             auth_deps._introspect_client = None
             if client is not None:
                 await client.aclose()
+            token_client = auth_deps._token_proxy_client
+            auth_deps._token_proxy_client = None
+            if token_client is not None:
+                await token_client.aclose()
 
     app = FastAPI(
         title=settings.app_name,
@@ -673,7 +694,23 @@ def _action_for_path(method: str, path: str) -> str:
 # маскирует регрессии (БД упала, schema mismatch, AppException от
 # `record_admin_action`). Когда в loging_service появится Prometheus-клиент,
 # эту переменную заменит `Counter("loging_self_audit_failures_total", ...)`.
+#
+# `_emit_audit` исполняется внутри `asyncio.to_thread`, и несколько воркеров
+# могут инкрементить счётчик параллельно. CPython GIL не делает `+=` атомарным
+# (read-modify-write на байткоде из трёх инструкций), под нагрузкой получаем
+# lost-increment'ы — самые informative цифры теряются как раз когда сервис
+# горит. Заводим threading.Lock и делаем приватный setter, чтобы все апдейты
+# шли через него.
 self_audit_failures_total = 0
+_self_audit_failures_lock = threading.Lock()
+
+
+def _bump_self_audit_failures() -> int:
+    """Атомарно увеличить счётчик self-audit ошибок, вернуть новое значение."""
+    global self_audit_failures_total
+    with _self_audit_failures_lock:
+        self_audit_failures_total += 1
+        return self_audit_failures_total
 
 
 _VALID_ACTOR_TYPES = frozenset({"user", "bot", "service", "anonymous", "oauth_client"})
@@ -703,8 +740,6 @@ def _emit_audit(
     unknown → `"user"`, если `actor_id` есть, иначе `"anonymous"`. Без
     этого PAT/bot/oauth_client писались бы в audit как fake-user.
     """
-    global self_audit_failures_total
-
     # Резолвим actor_type c backward-compat fallback'ом. `_VALID_ACTOR_TYPES`
     # совпадает с `EventCreate.actor_type` Literal whitelist'ом.
     if actor_type in _VALID_ACTOR_TYPES:
@@ -733,7 +768,7 @@ def _emit_audit(
             ),
         )
     except Exception as exc:
-        self_audit_failures_total += 1
+        _bump_self_audit_failures()
         logger.error("self-audit failed: %s", exc, exc_info=True)
     finally:
         db.close()

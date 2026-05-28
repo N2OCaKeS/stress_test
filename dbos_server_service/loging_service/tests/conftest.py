@@ -175,11 +175,16 @@ def client(db, monkeypatch):
         from src.dependencies import auth as _auth_deps
         _pool = _auth_deps._introspect_client
         _auth_deps._introspect_client = None
+        # Аналогично pool'у /token: тесты в test_admin_auth патчат
+        # `src.api.v1.endpoints.auth.httpx.post`, ожидая fallback-путь.
+        _token_pool = _auth_deps._token_proxy_client
+        _auth_deps._token_proxy_client = None
         try:
             yield c
         finally:
             # Restore so lifespan-shutdown can close the original client.
             _auth_deps._introspect_client = _pool
+            _auth_deps._token_proxy_client = _token_pool
     app.dependency_overrides.clear()
     get_settings.cache_clear()
 

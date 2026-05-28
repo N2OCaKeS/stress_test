@@ -149,10 +149,10 @@ async def get_server(
       - 403 `PERMISSION_DENIED`.
       - 404 `SERVER_NOT_FOUND`.
 
-    Аудит на denied: `server.view` со `status=denied`, причина —
-    `permission_denied` (нет роли с VIEW), `not_found_or_cross_dept`
-    (несуществующий или чужой сервер) либо `cross_department` (объект
-    есть, но dept не совпал).
+    Аудит: `server.view` пишется на каждый вызов — `status=success` при
+    успешном чтении и `status=denied` при отказе (причина —
+    `permission_denied` нет роли с VIEW, либо `not_found_or_cross_dept`
+    несуществующий / чужой сервер).
     """
     obj = await svc.get_server(db, identity, server_id)
     return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))

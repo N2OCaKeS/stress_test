@@ -173,6 +173,17 @@ async def get_controller(
             message="No IPMI controller is registered for this server",
         )
 
+    audit_service.emit(
+        "ipmi_controller.view",
+        target_id=obj.id, target_type="ipmi_controller",
+        status="success", allowed=True,
+        details={
+            "server_id": server_id,
+            "department_id": server.department_id,
+            "with_credentials": has_credentials_action,
+        },
+    )
+
     if not has_credentials_action:
         return obj, None
 

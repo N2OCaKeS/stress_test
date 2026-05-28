@@ -235,6 +235,13 @@ async def get_account(
         )
         raise
 
+    audit_service.emit(
+        "server_account.view",
+        target_id=account.id, target_type="server_account",
+        status="success", allowed=True,
+        details={"login": account.login},
+    )
+
     if not has_password_action:
         return account, None
 

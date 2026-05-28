@@ -30,7 +30,7 @@ SERVICE_EVENTS = [
     {"action": "http.platform_admin_blocked", "description": "Platform admin (account_admin + loging_admin) blocked from server_service business endpoint (§7-8 admin-plane separation; loging_reader is NOT blocked)", "default_severity": "WARNING"},
     # Servers — CRUD
     {"action": "server.create", "description": "Server record created", "default_severity": "INFO"},
-    {"action": "server.view", "description": "Server record viewed (emitted on denied: cross-dept / nonexistent)", "default_severity": "INFO"},
+    {"action": "server.view", "description": "Server record viewed", "default_severity": "INFO"},
     {"action": "server.update", "description": "Server record updated", "default_severity": "INFO"},
     {"action": "server.delete", "description": "Server record deleted", "default_severity": "CRITICAL"},
     # Power-cycle (IPMI/iDRAC/iLO/Redfish) — dispatch to server_worker
@@ -59,7 +59,7 @@ SERVICE_EVENTS = [
     {"action": "secrets.reencrypt_batch", "description": "Background secret re-encryption batch processed (called by server_worker periodic task)", "default_severity": "INFO"},
     # Server accounts — CRUD (user-facing)
     {"action": "server_account.create", "description": "Server account created", "default_severity": "CRITICAL"},
-    {"action": "server_account.view", "description": "Server account viewed (emitted on denied: cross-dept / nonexistent)", "default_severity": "INFO"},
+    {"action": "server_account.view", "description": "Server account viewed", "default_severity": "INFO"},
     {"action": "server_account.list", "description": "Server accounts listed (emitted on denied)", "default_severity": "INFO"},
     {"action": "server_account.update", "description": "Server account updated", "default_severity": "INFO"},
     {"action": "server_account.link_servers", "description": "Server account linked to additional servers", "default_severity": "INFO"},
@@ -70,7 +70,7 @@ SERVICE_EVENTS = [
     {"action": "permission.revoke", "description": "entity_permission row revoked", "default_severity": "CRITICAL"},
     # IPMI controllers — CRUD (user-facing)
     {"action": "ipmi_controller.create", "description": "IPMI controller registered for a server", "default_severity": "CRITICAL"},
-    {"action": "ipmi_controller.view", "description": "IPMI controller card viewed (emitted on denied: cross-dept / nonexistent / not registered)", "default_severity": "INFO"},
+    {"action": "ipmi_controller.view", "description": "IPMI controller card viewed", "default_severity": "INFO"},
     {"action": "ipmi_controller.list", "description": "IPMI controllers listed (emitted on denied)", "default_severity": "INFO"},
     {"action": "ipmi_controller.update", "description": "IPMI controller updated (kind/endpoint/username)", "default_severity": "INFO"},
     {"action": "ipmi_controller.delete", "description": "IPMI controller deleted", "default_severity": "CRITICAL"},

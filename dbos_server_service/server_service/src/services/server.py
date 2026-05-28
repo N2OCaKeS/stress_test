@@ -191,6 +191,12 @@ async def get_server(
             details={"reason": reason},
         )
         raise
+    audit_service.emit(
+        "server.view",
+        target_id=obj.id, target_type="server",
+        status="success", allowed=True,
+        details={"department_id": obj.department_id},
+    )
     return obj
 
 
@@ -210,7 +216,12 @@ async def create_server(
     и создание вложенного контроллера — отдельный `ipmi_controller.create`
     grant тут не требуется, операция идёт под одним server-create.
     """
-    await permissions.require_action(db, identity, EntityType.SERVER, Action.CREATE)
+    with emit_denied_on_authz_error(
+        "server.create",
+        target_type="server",
+        extra_details={"department_id": payload.department_id},
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.CREATE)
     if payload.department_id != identity.department_id:
         audit_service.emit(
             "server.create",
@@ -291,7 +302,12 @@ async def update_server(
     Denid-аудит ДО re-raise + явный handling IntegrityError для
     SERVER_DUPLICATE (UNIQUE-конфликт по unique-полям).
     """
-    await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+    with emit_denied_on_authz_error(
+        "server.update",
+        target_id=server_id,
+        target_type="server",
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
     # Visibility-check: 404 для non-existent / cross-dept. Эмитим explicit `denied`
     # audit ДО re-raise — иначе попытка теряется в middleware'е как `http.client_error`
     # без action-key (симметрия с create_server и _dispatch_power).
@@ -369,7 +385,12 @@ async def delete_server(
 
     Audit `server.delete` с CRITICAL severity — это deliberately destructive.
     """
-    await permissions.require_action(db, identity, EntityType.SERVER, Action.DELETE)
+    with emit_denied_on_authz_error(
+        "server.delete",
+        target_id=server_id,
+        target_type="server",
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.DELETE)
     # Visibility-check: 404 для non-existent / cross-dept. Эмитим explicit `denied`
     # audit ДО re-raise — иначе попытка теряется в middleware'е как `http.client_error`
     # без action-key (симметрия с create_server и _dispatch_power).

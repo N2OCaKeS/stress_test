@@ -381,6 +381,94 @@ class TestPrepareHandler:
 
         get_settings.cache_clear()
 
+    @pytest.mark.parametrize(
+        "bad_key",
+        [
+            "",                                       # пустая
+            "pcd_abc",                                # без префикса
+            "dbos:prepare_creds:",                    # пустое тело
+            "dbos:prepare_creds:*",                   # wildcard
+            "dbos:prepare_creds:../etc/passwd",       # path traversal-подобное
+            "dbos:prepare_creds:pcd_x;FLUSHALL",      # injection попытка
+            "dbos:prepare_creds:pcd_" + "a" * 200,    # переполнение
+            "other:keyspace:pcd_x",                   # чужой keyspace
+        ],
+    )
+    async def test_malformed_creds_key_fails(
+        self, make_task, fetch_task, monkeypatch, bad_key,
+    ):
+        # Любой ключ, не соответствующий формату server_service, должен
+        # отбиваться до похода в Redis — иначе при компрометации очереди
+        # атакующий мог бы заставить worker прочитать произвольное значение.
+        _set_mgmt_env(monkeypatch)
+
+        read_calls: list[str] = []
+
+        async def fake_read(creds_key):
+            read_calls.append(creds_key)
+            return {"bootstrap_login": "x", "bootstrap_password": "y"}
+
+        monkeypatch.setattr(prepare, "_read_bootstrap_creds", fake_read)
+        monkeypatch.setattr(prepare, "_delete_bootstrap_creds", AsyncMock())
+
+        payload: dict = {"server_id": "srv_prep_bad"}
+        if bad_key:
+            payload["bootstrap_creds_key"] = bad_key
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prep_bad",
+            payload=payload,
+        )
+        await _force_terminal(tid)
+
+        async def noop(*a, **kw):
+            pass
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+        monkeypatch.setattr(
+            asyncssh, "connect",
+            AsyncMock(side_effect=AssertionError("connect must not be called")),
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert "SSH_BOOTSTRAP_CREDS_MISSING" in (t.last_error or "")
+        # Чтения Redis не было — guard сработал до него.
+        assert read_calls == []
+
+        get_settings.cache_clear()
+
+    async def test_well_formed_creds_key_passes_validation(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        # Sanity: валидный pcd_<hex> проходит guard и доходит до SSH-bootstrap.
+        _set_mgmt_env(monkeypatch)
+        _, delete_calls = _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
+
+        good_key = "dbos:prepare_creds:pcd_" + "a" * 32
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prep_ok",
+            payload={"server_id": "srv_prep_ok", "bootstrap_creds_key": good_key},
+        )
+        conn = _conn(_bootstrap_seq())
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert delete_calls == [good_key]
+
+        get_settings.cache_clear()
+
     async def test_bootstrap_password_not_in_audit(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):

@@ -22,6 +22,7 @@ last_error, не молчаливый краш под `root`).
 
 import json
 import logging
+import re
 
 import redis.asyncio as aioredis
 
@@ -36,6 +37,17 @@ logger = logging.getLogger(__name__)
 # В audit пускаем только server_id и имя управляющего юзера — bootstrap-логин
 # и пароль наружу не уходят ни при каких обстоятельствах.
 AUDIT_SAFE_FIELDS: set[str] = {"server_id", "management_user", "prepared"}
+
+# Формат ключа задаёт server_service (`worker_client.prepare_creds_key` +
+# `_new_id("pcd_")` → `dbos:prepare_creds:pcd_<uuid4.hex>`). Жёстко его
+# валидируем, чтобы при компрометации payload в очереди (или при отсутствии
+# AUTH на Redis в staging/dev) нельзя было подсунуть произвольный ключ и
+# прочитать чужие значения через `_read_bootstrap_creds`. Пускаем любое
+# Тело — alnum/`_`/`-`, длиной до 128. Smin = 1 (защита от пустого тела
+# уже есть); нижняя граница нужна только чтобы не пускать `dbos:prepare_creds:`
+# с пустым хвостом — это покрывает `{1,128}`. Длину uuid не хардкодим на
+# случай смены id-фабрики.
+_BOOTSTRAP_KEY_RE = re.compile(r"^dbos:prepare_creds:[A-Za-z0-9_\-]{1,128}$")
 
 
 async def _read_bootstrap_creds(creds_key: str) -> dict:
@@ -110,6 +122,14 @@ async def server_prepare(task_id: str) -> None:
                 error_code="SSH_BOOTSTRAP_CREDS_MISSING",
                 host="",
                 message="payload has no bootstrap_creds_key reference",
+            )
+        if not isinstance(creds_key, str) or not _BOOTSTRAP_KEY_RE.fullmatch(creds_key):
+            # Не доверяем строке из payload: если очередь скомпрометирована,
+            # произвольный ключ дал бы читателю Redis любые значения.
+            raise SshError(
+                error_code="SSH_BOOTSTRAP_CREDS_MISSING",
+                host="",
+                message="bootstrap_creds_key has unexpected format",
             )
 
         # Читаем одноразовые креды из Redis на каждой попытке — пока жив TTL,

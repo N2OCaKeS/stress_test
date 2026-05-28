@@ -8,9 +8,10 @@ from src.dependencies.db import get_db
 from src.utils.pagination import PaginationParams, pagination_params
 from src.schemas.common import OkResponse
 from src.schemas.groups import (
+    BotMemberAddRequest, BotMemberResponse,
     GroupCreate, GroupResponse, GroupRoleAssignRequest, GroupRoleResponse,
     GroupServiceAccessResponse, GroupServiceGrantRequest, GroupUpdate,
-    MemberAddRequest, MemberResponse, UserGroupsResponse,
+    MemberAddRequest, MemberResponse,
 )
 from src.services import group_service
 
@@ -161,6 +162,63 @@ async def remove_member(
     """Удалить membership."""
     await group_service.remove_member(db, identity, group_id, user_id,
                                       request_id=getattr(request.state, "request_id", None))
+    return OkResponse()
+
+
+# ── Bot members ─────────────────────────────────────────────────────────────────
+
+@groups_router.get(
+    "/{group_id}/bots",
+    response_model=list[BotMemberResponse],
+    summary="Боты в группе",
+)
+async def list_bot_members(
+    group_id: str, request: Request, identity: CurrentUserIdentity, db: AsyncSession = Depends(get_db),
+) -> list[BotMemberResponse]:
+    """Боты, состоящие в группе.
+
+    Доступ:
+        account_admin / department_admin своего отдела.
+    """
+    return await group_service.list_bot_members(db, identity, group_id,
+                                                request_id=getattr(request.state, "request_id", None))
+
+
+@groups_router.post(
+    "/{group_id}/bots",
+    response_model=BotMemberResponse,
+    status_code=201,
+    summary="Добавить бота в группу",
+    description="Бот и группа должны быть в одном отделе (GROUP_DEPARTMENT_MISMATCH guard). Бот наследует роли группы.",
+)
+async def add_bot_member(
+    group_id: str, body: BotMemberAddRequest, request: Request,
+    identity: AnyAdmin, db: AsyncSession = Depends(get_db),
+) -> BotMemberResponse:
+    """Добавить бота в группу.
+
+    Доступ:
+        account_admin или department_admin своего отдела.
+
+    Возможные ошибки:
+        * `GROUP_DEPARTMENT_MISMATCH` (400) — бот из другого отдела.
+    """
+    return await group_service.add_bot_member(db, identity, group_id, body.bot_id,
+                                             request_id=getattr(request.state, "request_id", None))
+
+
+@groups_router.delete(
+    "/{group_id}/bots/{bot_id}",
+    response_model=OkResponse,
+    summary="Убрать бота из группы",
+)
+async def remove_bot_member(
+    group_id: str, bot_id: str, request: Request,
+    identity: AnyAdmin, db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Удалить bot-membership. Роли группы перестают наследоваться (live)."""
+    await group_service.remove_bot_member(db, identity, group_id, bot_id,
+                                         request_id=getattr(request.state, "request_id", None))
     return OkResponse()
 
 

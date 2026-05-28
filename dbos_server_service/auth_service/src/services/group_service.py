@@ -4,12 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import PlatformRole
 from src.core.exceptions import AuthorizationError, ConflictError, NotFoundError
+from src.repositories.bots import BotRepository
 from src.repositories.groups import GroupRepository
 from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.services import ServiceRepository
 from src.repositories.users import UserRepository
 from src.schemas.groups import (
-    GroupResponse, GroupRoleResponse, GroupServiceAccessResponse,
+    BotMemberResponse, GroupResponse, GroupRoleResponse, GroupServiceAccessResponse,
     MemberResponse, UserGroupsResponse,
 )
 from src.services import audit_service
@@ -248,6 +249,100 @@ async def remove_member(db: AsyncSession, identity, group_id: str, user_id: str,
     audit_service.emit(
         "group.member_remove", identity.user_id, target_id=group_id, target_type="group",
         details={"group_name": grp.name, "user_id": user_id},
+        request_id=request_id,
+    )
+
+
+# ── Bot membership ──────────────────────────────────────────────────────────
+
+async def list_bot_members(db: AsyncSession, identity, group_id: str, request_id=None) -> list[BotMemberResponse]:
+    _require_admin(identity)
+    repo = GroupRepository(db)
+    grp = await repo.get(group_id)
+    if grp is None or not grp.is_active:
+        raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+    bot_repo = BotRepository(db)
+    members = await repo.list_bot_members(group_id)
+    result = []
+    for m in members:
+        bot = await bot_repo.get_by_id(m.bot_id)
+        if bot:
+            result.append(BotMemberResponse(bot_id=bot.id, name=bot.name, added_at=m.added_at))
+    return result
+
+
+async def add_bot_member(db: AsyncSession, identity, group_id: str, bot_id: str, request_id=None) -> BotMemberResponse:
+    if identity.platform_role not in (PlatformRole.ACCOUNT_ADMIN, PlatformRole.DEPARTMENT_ADMIN):
+        raise AuthorizationError(error_code="ROLE_REQUIRED", message="Admin role required")
+
+    repo = GroupRepository(db)
+    grp = await repo.get(group_id)
+    if grp is None or not grp.is_active:
+        raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+
+    bot_repo = BotRepository(db)
+    bot = await bot_repo.get_by_id(bot_id)
+    if bot is None:
+        raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
+
+    if bot.department_id != grp.department_id:
+        raise AuthorizationError(
+            error_code="GROUP_DEPARTMENT_MISMATCH",
+            message=(
+                f"Bot '{bot_id}' is in a different department from group '{grp.name}'"
+            ),
+        )
+
+    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
+        if identity.department_id != grp.department_id:
+            raise AuthorizationError(
+                error_code="DEPARTMENT_ACCESS_DENIED",
+                message="department_admin can only manage groups in their own department",
+            )
+
+    if await repo.get_bot_membership(group_id, bot_id):
+        raise ConflictError(error_code="ALREADY_GROUP_MEMBER", message="Bot is already a member of this group")
+
+    m = await repo.add_bot_member(group_id, bot_id, added_by=identity.user_id)
+    await db.commit()
+    audit_service.emit(
+        "group.bot_member_add", identity.user_id, target_id=group_id, target_type="group",
+        details={
+            "group_name": grp.name,
+            "bot_id": bot_id,
+            "target_bot_name": bot.name,
+            "target_department_id": bot.department_id,
+        },
+        request_id=request_id,
+    )
+    return BotMemberResponse(bot_id=bot.id, name=bot.name, added_at=m.added_at)
+
+
+async def remove_bot_member(db: AsyncSession, identity, group_id: str, bot_id: str, request_id=None) -> None:
+    if identity.platform_role not in (PlatformRole.ACCOUNT_ADMIN, PlatformRole.DEPARTMENT_ADMIN):
+        raise AuthorizationError(error_code="ROLE_REQUIRED", message="Admin role required")
+
+    repo = GroupRepository(db)
+    grp = await repo.get(group_id)
+    if grp is None or not grp.is_active:
+        raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+
+    m = await repo.get_bot_membership(group_id, bot_id)
+    if m is None:
+        raise NotFoundError(error_code="MEMBER_NOT_FOUND", message="Bot is not a member of this group")
+
+    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
+        if identity.department_id != grp.department_id:
+            raise AuthorizationError(
+                error_code="DEPARTMENT_ACCESS_DENIED",
+                message="department_admin can only manage groups in their own department",
+            )
+
+    await repo.remove_bot_member(m)
+    await db.commit()
+    audit_service.emit(
+        "group.bot_member_remove", identity.user_id, target_id=group_id, target_type="group",
+        details={"group_name": grp.name, "bot_id": bot_id},
         request_id=request_id,
     )
 

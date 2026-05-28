@@ -45,6 +45,18 @@ class MemberResponse(BaseModel):
     added_at: datetime
 
 
+class BotMemberAddRequest(BaseModel):
+    """Тело `POST /groups/{group_id}/bots`."""
+    bot_id: str = Field(description="ID бота, которого добавляем в группу.")
+
+
+class BotMemberResponse(BaseModel):
+    """Bot-member группы — бот + время вступления."""
+    bot_id: str
+    name: str
+    added_at: datetime
+
+
 class GroupServiceGrantRequest(BaseModel):
     """Тело `POST /groups/{group_id}/services`."""
     service_name: str = Field(description="Сервис, к которому даём group access.")

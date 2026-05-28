@@ -176,6 +176,44 @@ async def collect_user_permissions(
     return allowed_services, service_roles
 
 
+async def collect_bot_permissions(
+    db: AsyncSession, bot
+) -> tuple[list[str], dict[str, list[str]]]:
+    """Пересчитать effective (allowed_services, service_roles) бота из БД.
+
+    Аналог `collect_user_permissions` для service-account'ов. Забор сервисов —
+    `bot.allowed_services`, пересечённый с активными сервисами отдела
+    (`DepartmentServiceAccess`): группа даёт боту РОЛИ, но не расширяет список
+    сервисов. Эффективные роли = прямые `bot_service_roles` ∪ роли из групп
+    бота, отфильтрованные тем же INTERSECT'ом по `effective_services` (stale
+    direct/group роль для сервиса вне забора отбрасывается).
+    """
+    from src.repositories.bot_roles import BotRoleRepository
+
+    dept_repo = DepartmentRepository(db)
+    group_repo = GroupRepository(db)
+    bot_role_repo = BotRoleRepository(db)
+
+    dept_services = set(await dept_repo.list_active_services(bot.department_id))
+    effective_services = [s for s in (bot.allowed_services or []) if s in dept_services]
+    effective_set = set(effective_services)
+
+    direct_roles = await bot_role_repo.get_all_roles(bot.id)
+    group_roles = await group_repo.get_roles_for_bot(bot.id)
+
+    merged: dict[str, list[str]] = {}
+    for svc, roles in direct_roles.items():
+        if svc not in effective_set:
+            continue
+        merged.setdefault(svc, []).extend(roles)
+    for svc, roles in group_roles.items():
+        if svc not in effective_set:
+            continue
+        merged.setdefault(svc, []).extend(roles)
+    service_roles = {svc: list(set(roles)) for svc, roles in merged.items()}
+    return effective_services, service_roles
+
+
 def _build_identity(user, dept_name: str | None, allowed_services: list[str], service_roles: dict) -> IdentityContext:
     """Собрать `IdentityContext` для login/refresh/get_identity-ответов.
 

@@ -87,6 +87,8 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `group.delete` | CRITICAL | `group_service.delete_group` | group | — |
 | `group.member_add` | WARNING | `group_service.add_member` | group | `user_id`. |
 | `group.member_remove` | WARNING | `group_service.remove_member` | group | `user_id`. |
+| `group.bot_member_add` | WARNING | `group_service.add_bot_member` | group | `bot_id`. |
+| `group.bot_member_remove` | WARNING | `group_service.remove_bot_member` | group | `bot_id`. |
 | `group.service_grant` | CRITICAL | `group_service.grant_service_to_group` | group | `service_name`. |
 | `group.service_revoke` | CRITICAL | `group_service.revoke_service_from_group` | group | `service_name`. |
 | `group.roles_assign` | CRITICAL | `group_service.assign_group_roles` | group | `service_name`, `roles`. |

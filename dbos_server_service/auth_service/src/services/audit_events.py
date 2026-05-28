@@ -50,6 +50,8 @@ SERVICE_EVENTS = [
     {"action": "group.delete", "description": "Group deleted", "default_severity": "CRITICAL"},
     {"action": "group.member_add", "description": "Member added to group", "default_severity": "WARNING"},
     {"action": "group.member_remove", "description": "Member removed from group", "default_severity": "WARNING"},
+    {"action": "group.bot_member_add", "description": "Bot added to group", "default_severity": "WARNING"},
+    {"action": "group.bot_member_remove", "description": "Bot removed from group", "default_severity": "WARNING"},
     {"action": "group.service_grant", "description": "Service access granted to group", "default_severity": "CRITICAL"},
     {"action": "group.service_revoke", "description": "Service access revoked from group", "default_severity": "CRITICAL"},
     {"action": "group.roles_assign", "description": "Roles assigned to group", "default_severity": "CRITICAL"},

@@ -45,3 +45,6 @@ class BotAccount(Base):
     service_roles: Mapped[list["BotServiceRole"]] = relationship(  # noqa: F821
         "BotServiceRole", back_populates="bot", cascade="all, delete-orphan"
     )
+    group_memberships: Mapped[list["BotGroupMembership"]] = relationship(  # noqa: F821
+        "BotGroupMembership", back_populates="bot", cascade="all, delete-orphan"
+    )

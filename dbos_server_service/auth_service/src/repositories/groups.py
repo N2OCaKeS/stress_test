@@ -3,11 +3,18 @@
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.bot_group_membership import BotGroupMembership
 from src.models.group_service_access import GroupServiceAccess
 from src.models.group_service_role import GroupServiceRole
 from src.models.user_group import UserGroup
 from src.models.user_group_membership import UserGroupMembership
-from src.utils.ids import group_id, group_membership_id, group_service_access_id, group_service_role_id
+from src.utils.ids import (
+    bot_group_membership_id,
+    group_id,
+    group_membership_id,
+    group_service_access_id,
+    group_service_role_id,
+)
 
 
 class GroupRepository:
@@ -128,6 +135,49 @@ class GroupRepository:
         await self._db.delete(membership)
         await self._db.flush()
 
+    # ── Bot membership ──────────────────────────────────────────────────────────
+
+    async def get_bot_membership(self, group_id_: str, bot_id: str) -> BotGroupMembership | None:
+        return await self._db.scalar(
+            select(BotGroupMembership).where(
+                BotGroupMembership.group_id == group_id_,
+                BotGroupMembership.bot_id == bot_id,
+            )
+        )
+
+    async def list_bot_members(self, group_id_: str) -> list[BotGroupMembership]:
+        result = await self._db.scalars(
+            select(BotGroupMembership).where(BotGroupMembership.group_id == group_id_)
+        )
+        return list(result)
+
+    async def list_bot_groups(self, bot_id: str) -> list[BotGroupMembership]:
+        result = await self._db.scalars(
+            select(BotGroupMembership).where(BotGroupMembership.bot_id == bot_id)
+        )
+        return list(result)
+
+    async def add_bot_member(self, group_id_: str, bot_id: str, added_by: str | None) -> BotGroupMembership:
+        m = BotGroupMembership(
+            id=bot_group_membership_id(),
+            group_id=group_id_,
+            bot_id=bot_id,
+            added_by=added_by,
+        )
+        self._db.add(m)
+        await self._db.flush()
+        return m
+
+    async def remove_bot_member(self, membership: BotGroupMembership) -> None:
+        await self._db.delete(membership)
+        await self._db.flush()
+
+    async def _group_ids_for_bot(self, bot_id: str) -> list[str]:
+        rows = await self._db.scalars(
+            select(BotGroupMembership.group_id).where(BotGroupMembership.bot_id == bot_id)
+        )
+        return list(rows)
+
     # ── Service access ────────────────────────────────────────────────────────
 
     async def get_service_access(self, group_id_: str, service_name: str) -> GroupServiceAccess | None:
@@ -182,12 +232,8 @@ class GroupRepository:
         access.is_active = False
         await self._db.flush()
 
-    async def list_active_services_for_user(self, user_id: str) -> list[str]:
-        """All services accessible to the user via their groups (active memberships + active access)."""
-        memberships = await self._db.scalars(
-            select(UserGroupMembership.group_id).where(UserGroupMembership.user_id == user_id)
-        )
-        group_ids = list(memberships)
+    async def list_active_services_by_groups(self, group_ids: list[str]) -> list[str]:
+        """Active services granted to the given groups (deduplicated)."""
         if not group_ids:
             return []
         rows = await self._db.scalars(
@@ -197,6 +243,16 @@ class GroupRepository:
             )
         )
         return list(set(rows))
+
+    async def list_active_services_for_user(self, user_id: str) -> list[str]:
+        """All services accessible to the user via their groups (active memberships + active access)."""
+        group_ids = await self._group_ids_for_user(user_id)
+        return await self.list_active_services_by_groups(group_ids)
+
+    async def list_active_services_for_bot(self, bot_id: str) -> list[str]:
+        """All services granted to the bot's groups (active memberships + active access)."""
+        group_ids = await self._group_ids_for_bot(bot_id)
+        return await self.list_active_services_by_groups(group_ids)
 
     # ── Service roles ─────────────────────────────────────────────────────────
 
@@ -301,12 +357,14 @@ class GroupRepository:
             row.is_active = False
         await self._db.flush()
 
-    async def get_roles_for_user(self, user_id: str) -> dict[str, list[str]]:
-        """All service roles inherited by the user via their groups."""
-        memberships = await self._db.scalars(
+    async def _group_ids_for_user(self, user_id: str) -> list[str]:
+        rows = await self._db.scalars(
             select(UserGroupMembership.group_id).where(UserGroupMembership.user_id == user_id)
         )
-        group_ids = list(memberships)
+        return list(rows)
+
+    async def get_roles_by_groups(self, group_ids: list[str]) -> dict[str, list[str]]:
+        """Active service roles assigned to the given groups, keyed by service."""
         if not group_ids:
             return {}
         rows = await self._db.scalars(
@@ -320,3 +378,13 @@ class GroupRepository:
             result.setdefault(row.service_name, []).append(row.role)
         # deduplicate
         return {k: list(set(v)) for k, v in result.items()}
+
+    async def get_roles_for_user(self, user_id: str) -> dict[str, list[str]]:
+        """All service roles inherited by the user via their groups."""
+        group_ids = await self._group_ids_for_user(user_id)
+        return await self.get_roles_by_groups(group_ids)
+
+    async def get_roles_for_bot(self, bot_id: str) -> dict[str, list[str]]:
+        """All service roles inherited by the bot via its groups."""
+        group_ids = await self._group_ids_for_bot(bot_id)
+        return await self.get_roles_by_groups(group_ids)

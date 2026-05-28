@@ -32,6 +32,9 @@ class UserGroup(Base):
     memberships: Mapped[list["UserGroupMembership"]] = relationship(  # noqa: F821
         "UserGroupMembership", back_populates="group", cascade="all, delete-orphan"
     )
+    bot_memberships: Mapped[list["BotGroupMembership"]] = relationship(  # noqa: F821
+        "BotGroupMembership", back_populates="group", cascade="all, delete-orphan"
+    )
     service_access: Mapped[list["GroupServiceAccess"]] = relationship(  # noqa: F821
         "GroupServiceAccess", back_populates="group", cascade="all, delete-orphan"
     )

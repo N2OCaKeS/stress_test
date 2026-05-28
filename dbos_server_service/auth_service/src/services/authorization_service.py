@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import PlatformRole, SubjectType, UserStatus
 from src.core.security import decode_access_token, hash_opaque_token
-from src.repositories.bot_roles import BotRoleRepository
 from src.repositories.bot_tokens import BotTokenRepository
 from src.repositories.bots import BotRepository
 from src.repositories.departments import DepartmentRepository
@@ -18,7 +17,7 @@ from src.repositories.tokens import TokenRepository
 from src.repositories.users import UserRepository
 from src.schemas.authorization import IntrospectResponse, ServiceAccessResponse
 from src.services import audit_service
-from src.services.auth_service import collect_user_permissions
+from src.services.auth_service import collect_bot_permissions, collect_user_permissions
 from src.utils.time import is_expired
 
 
@@ -361,12 +360,7 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
                 request_id=request_id,
             )
             return IntrospectResponse(active=False)
-        dept_repo = DepartmentRepository(db)
-        dept_services = set(await dept_repo.list_active_services(bot.department_id))
-        effective_services = [s for s in bot.allowed_services if s in dept_services]
-        bot_role_repo = BotRoleRepository(db)
-        bot_roles = await bot_role_repo.get_all_roles(bot.id)
-        effective_roles = {k: v for k, v in bot_roles.items() if k in effective_services}
+        effective_services, effective_roles = await collect_bot_permissions(db, bot)
         await db.commit()
         audit_service.emit(
             "token.introspect",

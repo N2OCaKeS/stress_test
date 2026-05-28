@@ -84,3 +84,8 @@ def group_service_role_id() -> str:
 def bot_service_role_id() -> str:
     """`bsr_<hex>` — BotServiceRole."""
     return _new_id("bsr_")
+
+
+def bot_group_membership_id() -> str:
+    """`bgm_<hex>` — BotGroupMembership."""
+    return _new_id("bgm_")

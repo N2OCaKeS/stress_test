@@ -460,6 +460,20 @@ Errors: `GROUP_DEPARTMENT_MISMATCH` (400), `GROUP_NOT_FOUND` / `USER_NOT_FOUND` 
 
 Auth: AnyAdmin.
 
+### `GET /groups/{group_id}/bots`
+
+Auth: Bearer. account_admin / department_admin своего отдела. Response: `list[BotMemberResponse]`.
+
+### `POST /groups/{group_id}/bots`
+
+Auth: AnyAdmin. Body: `{ "bot_id": "..." }`. Бот и группа должны быть в одном отделе. Бот наследует service-роли группы (∩ `bot.allowed_services`).
+
+Errors: `GROUP_DEPARTMENT_MISMATCH` (400), `GROUP_NOT_FOUND` / `BOT_NOT_FOUND` (404), `ALREADY_GROUP_MEMBER` (409).
+
+### `DELETE /groups/{group_id}/bots/{bot_id}`
+
+Auth: AnyAdmin. Errors: `MEMBER_NOT_FOUND` (404).
+
 ### `GET /groups/{group_id}/services`
 
 Auth: Bearer. account_admin / department_admin своего отдела / member группы. Response: `list[GroupServiceAccessResponse]`.

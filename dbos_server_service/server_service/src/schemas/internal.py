@@ -64,9 +64,19 @@ class InventoryCallbackRequest(BaseModel):
     cpu_cores: int = Field(..., ge=1, description="Число физических ядер.")
     cpu_threads: int | None = Field(default=None, ge=1, description="Число потоков CPU (с учётом SMT/HT).")
     cpu_frequency_ghz: float | None = Field(default=None, ge=0, description="Базовая частота CPU в ГГц.")
-    os_version: str = Field(..., min_length=1, max_length=128, description="OS-версия для lookup в os_versions.name.")
+    os_version: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._\- ]+$",
+        description="OS-версия для lookup в os_versions.name.",
+    )
     disks: list[InventoryDiskItem] = Field(default_factory=list, description="Список дисков с probe'а.")
-    lspci: str | None = Field(default=None, description="Сырой вывод lspci (опционален, под будущий debug).")
+    lspci: str | None = Field(
+        default=None,
+        max_length=8192,
+        description="Сырой вывод lspci (опционален, под будущий debug).",
+    )
 
 
 class InventoryCallbackResponse(BaseModel):

@@ -1124,3 +1124,46 @@ class TestLinkUnlinkServers:
             json={"server_ids": [srv.id]},
         )
         assert resp.status_code == 404
+
+    async def test_unlink_unrelated_server_404(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        """Сервер существует, но к аккаунту НЕ привязан — должно быть 404,
+        не молчаливое success без изменения связок."""
+        srv_linked = await make_server(department_id="dep_a")
+        srv_other = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv_linked.id, login="ops")
+        resp = await client.request(
+            "DELETE",
+            f"{BASE}/{acc.id}/servers",
+            headers=_hdr(operator_token_a),
+            json={"server_ids": [srv_other.id]},
+        )
+        assert resp.status_code == 404, resp.text
+        body = resp.json()
+        assert body["error_code"] == "ACCOUNT_SERVER_LINK_NOT_FOUND"
+        assert srv_other.id in body.get("details", {}).get("unknown_server_ids", [])
+
+    async def test_unlink_mixed_known_and_unknown_404(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        """Если в payload есть и привязанный, и непривязанный server_id — 404,
+        связки НЕ трогаются (атомарно)."""
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        srv_other = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[srv1.id, srv2.id], login="ops")
+        resp = await client.request(
+            "DELETE",
+            f"{BASE}/{acc.id}/servers",
+            headers=_hdr(operator_token_a),
+            json={"server_ids": [srv2.id, srv_other.id]},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "ACCOUNT_SERVER_LINK_NOT_FOUND"
+        # Подтверждаем, что обе исходные связки на месте — атомарность операции.
+        resp_get = await client.get(
+            f"{BASE}/{acc.id}", headers=_hdr(operator_token_a),
+        )
+        assert resp_get.status_code == 200
+        assert set(resp_get.json()["server_ids"]) == {srv1.id, srv2.id}

@@ -168,6 +168,47 @@ async def get_account_on_server_by_login(
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def list_accounts_on_server_by_logins(
+    db: AsyncSession, server_id: str, logins: list[str]
+) -> dict[str, ServerAccount]:
+    """Аккаунты с указанными login'ами, привязанные к серверу — батчем.
+
+    Возвращает map ``login → account`` для всех найденных. Отсутствие login'а
+    в карте означает «не привязан к этому серверу». Используется reconcile-циклом
+    инвентаризации пользователей, чтобы не делать N запросов на N юзеров.
+    """
+    if not logins:
+        return {}
+    stmt = (
+        select(ServerAccount, ServerAccountServer.login)
+        .join(ServerAccountServer, ServerAccountServer.account_id == ServerAccount.id)
+        .where(
+            ServerAccountServer.server_id == server_id,
+            ServerAccountServer.login.in_(logins),
+        )
+    )
+    rows = (await db.execute(stmt)).all()
+    return {login: account for account, login in rows}
+
+
+async def list_links_for_server_by_account_ids(
+    db: AsyncSession, server_id: str, account_ids: list[str]
+) -> dict[str, ServerAccountServer]:
+    """Связки (account_id → link) для конкретного сервера по списку account_id.
+
+    Возвращает map ``account_id → link``. Идёт одним IN-запросом, чтобы
+    `receive_users_inventory` не дёргал `get_link` по каждому юзеру отдельно.
+    """
+    if not account_ids:
+        return {}
+    stmt = select(ServerAccountServer).where(
+        ServerAccountServer.server_id == server_id,
+        ServerAccountServer.account_id.in_(account_ids),
+    )
+    rows = list((await db.execute(stmt)).scalars())
+    return {link.account_id: link for link in rows}
+
+
 async def create_discovered(
     db: AsyncSession, data: dict, server_id: str
 ) -> ServerAccount:

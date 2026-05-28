@@ -219,3 +219,38 @@ class TestGetControllerCredentials:
         body = resp.json()
         assert body["username"] == f"u_{kind}"
         assert base64.b64decode(body["password_b64"]).decode() == f"pw_for_{kind}"
+
+    async def test_view_credentials_action_checked_once(
+        self, client, admin_role_token_a, make_server, make_ipmi, monkeypatch,
+    ):
+        """`get_controller` не должен дважды дёргать `has_action(VIEW_CREDENTIALS)`.
+
+        Раньше второй вызов делался непосредственно перед `_reveal_controller_password`,
+        дублируя ранний lookup. Теперь решение принимается по локальной переменной.
+        """
+        from src.core.constants import Action, EntityType
+        from src.services import permissions
+
+        calls: list[tuple[str, str]] = []
+        original = permissions.has_action
+
+        async def spy(db, identity, entity, action):
+            calls.append((entity, action))
+            return await original(db, identity, entity, action)
+
+        monkeypatch.setattr(
+            "src.services.ipmi_controller.permissions.has_action", spy,
+        )
+
+        srv = await make_server(department_id="dep_a")
+        await make_ipmi(server_id=srv.id, password="single-check")
+        resp = await client.get(_ipmi_url(srv.id), headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+
+        creds_calls = [
+            c for c in calls
+            if c == (EntityType.IPMI_CONTROLLER, Action.VIEW_CREDENTIALS)
+        ]
+        assert len(creds_calls) == 1, (
+            f"VIEW_CREDENTIALS должен проверяться ровно один раз, было: {calls}"
+        )

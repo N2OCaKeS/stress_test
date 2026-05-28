@@ -401,8 +401,20 @@ async def rotate_account_password(
 # ── Worker callbacks (write-direction internal API) ─────────────────────────
 
 
-async def _resolve_or_create_os(db: AsyncSession, name: str) -> str:
-    """Lookup OS-версии по name; INSERT при first-seen."""
+async def _resolve_or_create_os(
+    db: AsyncSession,
+    name: str,
+    *,
+    server_id: str | None = None,
+    server_department_id: str | None = None,
+) -> str:
+    """Lookup OS-версии по name; INSERT при first-seen.
+
+    Inventory-callback'и worker'а могут притащить ранее не виденное имя ОС —
+    мы заводим его в глобальном каталоге. Сейчас тут нет dept-scope, поэтому
+    каждое такое создание поднимает WARNING-аудит, чтобы оператор видел
+    источник записи и при необходимости вычистил мусор.
+    """
     obj = await osv_repo.get_by_name(db, name)
     if obj is not None:
         return obj.id
@@ -410,6 +422,19 @@ async def _resolve_or_create_os(db: AsyncSession, name: str) -> str:
         "id": os_version_id(),
         "name": name,
     })
+    audit_service.emit(
+        "os_version.create",
+        target_id=created.id,
+        target_type="os_version",
+        status="warning",
+        allowed=True,
+        details={
+            "reason": "auto_from_inventory",
+            "name": name,
+            "server_id": server_id,
+            "server_department_id": server_department_id,
+        },
+    )
     return created.id
 
 
@@ -496,7 +521,12 @@ async def receive_inventory(
         actor_department_id=identity.department_id,
     )
 
-    os_id_resolved = await _resolve_or_create_os(db, payload.os_version)
+    os_id_resolved = await _resolve_or_create_os(
+        db,
+        payload.os_version,
+        server_id=server_id,
+        server_department_id=server.department_id,
+    )
 
     await server_repo.update(db, server, {
         "hostname": payload.hostname,
@@ -624,6 +654,16 @@ async def receive_users_inventory(
     links = await account_repo.list_links_for_server(db, server_id)
     seen_logins = {item.login for item in payload.users}
 
+    # Батчим выборки на N юзеров: один SELECT по login'ам, один по account_id'ам
+    # их связок. Без батча reconcile делает 2·N запросов и проседает на больших
+    # инвентаризациях.
+    existing_by_login = await account_repo.list_accounts_on_server_by_logins(
+        db, server_id, [item.login for item in payload.users],
+    )
+    links_by_account_id = await account_repo.list_links_for_server_by_account_ids(
+        db, server_id, [acc.id for acc in existing_by_login.values()],
+    )
+
     created = 0
     present = 0
     drifted = 0
@@ -631,9 +671,7 @@ async def receive_users_inventory(
     drift_emits: list[dict] = []
 
     for item in payload.users:
-        existing = await account_repo.get_account_on_server_by_login(
-            db, server_id, item.login,
-        )
+        existing = existing_by_login.get(item.login)
         if existing is None:
             account_id = server_account_id()
             await account_repo.create_discovered(
@@ -662,7 +700,7 @@ async def receive_users_inventory(
         else:
             # БД — истина: атрибуты аккаунта НЕ перетираем, только presence.
             diff = _account_attr_drift(existing, item)
-            link = await account_repo.get_link(db, existing.id, server_id)
+            link = links_by_account_id.get(existing.id)
             if link is not None:
                 await account_repo.mark_link_inventoried(db, link, present=True)
             present += 1

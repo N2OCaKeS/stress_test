@@ -450,6 +450,23 @@ async def unlink_servers(
         raise
 
     current = set(repo.linked_server_ids(obj))
+    unknown = [sid for sid in payload.server_ids if sid not in current]
+    if unknown:
+        audit_service.emit(
+            "server_account.unlink_servers",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "server_not_linked",
+                "server_ids": payload.server_ids,
+                "unknown_server_ids": unknown,
+            },
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_SERVER_LINK_NOT_FOUND",
+            message="Account is not linked to one or more of the requested servers",
+            details={"unknown_server_ids": unknown},
+        )
     remaining = current - set(payload.server_ids)
     if not remaining:
         audit_service.emit(

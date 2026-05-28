@@ -173,9 +173,7 @@ async def get_controller(
             message="No IPMI controller is registered for this server",
         )
 
-    if not await permissions.has_action(
-        db, identity, EntityType.IPMI_CONTROLLER, Action.VIEW_CREDENTIALS
-    ):
+    if not has_credentials_action:
         return obj, None
 
     return obj, _reveal_controller_password(obj, server.department_id)

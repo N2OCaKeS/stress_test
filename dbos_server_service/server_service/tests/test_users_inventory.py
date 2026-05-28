@@ -400,6 +400,162 @@ class TestUsersInventoryReconcile:
         assert resp.status_code == 404
         assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
 
+    async def test_reconcile_uses_batched_queries(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+        monkeypatch,
+    ):
+        """Reconcile-цикл по N юзерам не должен делать 2·N запросов в репо.
+
+        Раньше get_account_on_server_by_login + get_link дёргались на каждого
+        юзера. Сейчас вызовы заменены батч-методами `list_accounts_on_server_by_logins`
+        + `list_links_for_server_by_account_ids` — фиксированное число запросов
+        вне зависимости от N.
+        """
+        from src.repositories import server_account as repo
+
+        per_user: list[str] = []
+        batch: list[str] = []
+
+        original_by_login = repo.get_account_on_server_by_login
+        original_get_link = repo.get_link
+        original_batch_login = repo.list_accounts_on_server_by_logins
+        original_batch_links = repo.list_links_for_server_by_account_ids
+
+        async def track_by_login(*args, **kwargs):
+            per_user.append("get_account_on_server_by_login")
+            return await original_by_login(*args, **kwargs)
+
+        async def track_get_link(*args, **kwargs):
+            per_user.append("get_link")
+            return await original_get_link(*args, **kwargs)
+
+        async def track_batch_login(*args, **kwargs):
+            batch.append("list_accounts_on_server_by_logins")
+            return await original_batch_login(*args, **kwargs)
+
+        async def track_batch_links(*args, **kwargs):
+            batch.append("list_links_for_server_by_account_ids")
+            return await original_batch_links(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "src.services.internal_service.account_repo.get_account_on_server_by_login",
+            track_by_login,
+        )
+        monkeypatch.setattr(
+            "src.services.internal_service.account_repo.get_link", track_get_link,
+        )
+        monkeypatch.setattr(
+            "src.services.internal_service.account_repo.list_accounts_on_server_by_logins",
+            track_batch_login,
+        )
+        monkeypatch.setattr(
+            "src.services.internal_service.account_repo.list_links_for_server_by_account_ids",
+            track_batch_links,
+        )
+
+        srv = await make_server(department_id=dept_a)
+        for login in ("a", "b", "c", "d", "e"):
+            await make_account(server_id=srv.id, login=login)
+        await db.commit()
+
+        users = [{"login": ch, "uid": 1000 + i} for i, ch in enumerate("abcde")]
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json={"users": users},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["present"] == 5
+
+        # Без батча было бы по 1+ вызову на юзера — теперь должно быть 0.
+        assert per_user == [], f"per-user queries leaked: {per_user}"
+        assert "list_accounts_on_server_by_logins" in batch
+        assert "list_links_for_server_by_account_ids" in batch
+        # Каждый батч-метод вызывается ровно один раз на reconcile.
+        assert batch.count("list_accounts_on_server_by_logins") == 1
+        assert batch.count("list_links_for_server_by_account_ids") == 1
+
+    async def test_auto_create_os_emits_warning(
+        self, client, worker_bot_token_a, make_server, dept_a, captured_emits,
+    ):
+        """Неизвестное `os_version` через inventory-callback заводит запись в
+        глобальный каталог + поднимает WARNING-аудит `os_version.create`.
+        Это нужно, чтобы SOC видел, кто загрязнил каталог."""
+        srv = await make_server(department_id=dept_a)
+        payload = {
+            "hostname": "srv-warn",
+            "kernel": "5.10.0",
+            "cpu_brand": None,
+            "cpu_model": None,
+            "cpu_cores": 1,
+            "cpu_threads": None,
+            "cpu_frequency_ghz": None,
+            "os_version": "UnseenDistro 9000",
+            "disks": [],
+        }
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 200, resp.text
+
+        warns = [
+            e for e in captured_emits
+            if e["action"] == "os_version.create" and e.get("status") == "warning"
+        ]
+        assert warns, f"expected os_version.create warning, captured: {captured_emits}"
+        emit = warns[0]
+        details = emit.get("details") or {}
+        assert details.get("name") == "UnseenDistro 9000"
+        assert details.get("reason") == "auto_from_inventory"
+        assert details.get("server_id") == srv.id
+        assert details.get("server_department_id") == dept_a
+
+    async def test_auto_create_os_rejects_invalid_name(
+        self, client, worker_bot_token_a, make_server, dept_a,
+    ):
+        """Имя ОС с управляющими/мусорными символами отбивается 422 ещё на
+        схеме — даже если worker_bot скомпрометирован."""
+        srv = await make_server(department_id=dept_a)
+        payload = {
+            "hostname": "srv-evil",
+            "kernel": "5.10.0",
+            "cpu_brand": None,
+            "cpu_model": None,
+            "cpu_cores": 1,
+            "cpu_threads": None,
+            "cpu_frequency_ghz": None,
+            "os_version": "Astra; DROP TABLE os_versions;--",
+            "disks": [],
+        }
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 422
+
+    async def test_inventory_lspci_over_limit_422(
+        self, client, worker_bot_token_a, make_server, dept_a,
+    ):
+        """`lspci` > 8192 байт отбивается схемой, не доходит до audit."""
+        srv = await make_server(department_id=dept_a)
+        payload = {
+            "hostname": "srv-lspci",
+            "kernel": "5.10.0",
+            "cpu_brand": None,
+            "cpu_model": None,
+            "cpu_cores": 1,
+            "cpu_threads": None,
+            "cpu_frequency_ghz": None,
+            "os_version": "Astra 1.7",
+            "disks": [],
+            "lspci": "x" * 8193,
+        }
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert resp.status_code == 422
+
 
 @pytest.mark.usefixtures("soft_dept_mode")
 class TestDiscoveredAccountNoPassword:

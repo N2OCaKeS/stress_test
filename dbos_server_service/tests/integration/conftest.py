@@ -336,8 +336,10 @@ def wait_for_event(
 #                              with `bot_id`.
 #   login_token(username, password) -> str
 #                              Helper: login a user and return access_token.
-#   pat_token(user_token, name=None, scope=None, ttl_seconds=3600) -> str
+#   pat_token(user_token, name=None, allowed_services=None,
+#             scope=None, ttl_seconds=3600) -> str
 #                              Helper: issue a PAT under the given user.
+#                              `scope` оставлен как алиас `allowed_services`.
 #
 #   ssh_session(target=ssh_test_host) -> paramiko.SSHClient
 #                              Helper context manager that opens a
@@ -607,12 +609,18 @@ def pat_token(auth_client: httpx.Client):
     def _issue(
         user_access_token: str,
         name: str | None = None,
+        allowed_services: list[str] | None = None,
         scope: list[str] | None = None,
         ttl_seconds: int | None = 3600,
     ) -> str:
+        # PATCreate в auth_service/src/schemas/tokens.py принимает
+        # `allowed_services` — старое имя `scope` тут оставлено как алиас,
+        # чтобы старые тесты не падали. Если переданы оба — `allowed_services`
+        # выигрывает.
+        services = allowed_services if allowed_services is not None else scope
         body: dict = {"name": name or f"pat_{_rand_suffix()}"}
-        if scope is not None:
-            body["scope"] = scope
+        if services is not None:
+            body["allowed_services"] = services
         if ttl_seconds is not None:
             body["ttl_seconds"] = ttl_seconds
         r = auth_client.post(

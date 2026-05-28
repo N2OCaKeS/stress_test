@@ -140,6 +140,8 @@ async def list_installed_packages(
     idempotency_key = request.headers.get("Idempotency-Key") or None
     payload: dict = {
         "server_id": server_id,
+        "host": server.hostname,
+        "ssh_port": server.ssh_port,
         "pattern": pattern,
         "target_department_id": server.department_id,
     }

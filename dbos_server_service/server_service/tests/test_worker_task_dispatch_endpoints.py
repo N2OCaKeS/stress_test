@@ -125,6 +125,8 @@ class TestPowerStatusDispatch:
         assert call["target_server_id"] == srv.id
         assert call["payload"] == {
             "server_id": srv.id,
+            "host": srv.hostname,
+            "ssh_port": srv.ssh_port,
             "target_department_id": "dep_a",
             "is_managed": False,
             "management_user": None,
@@ -211,6 +213,8 @@ class TestInventorySyncDispatch:
         assert call["target_server_id"] == srv.id
         assert call["payload"] == {
             "server_id": srv.id,
+            "host": srv.hostname,
+            "ssh_port": srv.ssh_port,
             "target_department_id": "dep_a",
             "is_managed": False,
             "management_user": None,
@@ -269,6 +273,8 @@ class TestAccountRotateDispatch:
         assert call["target_resource_id"] == acc.id
         assert call["payload"] == {
             "server_id": srv.id,
+            "host": srv.hostname,
+            "ssh_port": srv.ssh_port,
             "account_id": acc.id,
             "target_department_id": "dep_a",
             "login": "appuser",

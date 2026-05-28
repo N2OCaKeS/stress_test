@@ -90,6 +90,8 @@ class TestDispatchSuccess:
         assert call["target_server_id"] == srv.id
         assert call["payload"] == {
             "server_id": srv.id,
+            "host": srv.hostname,
+            "ssh_port": srv.ssh_port,
             "pattern": "linux-image*",
             "target_department_id": "dep_a",
         }

@@ -176,6 +176,11 @@ async def _dispatch_for_server(
     payload: dict = {
         "server_id": server_id,
         "target_department_id": server.department_id,
+        # SSH-эндпоинт: воркеру негде взять hostname/port, отправляем явно.
+        # ssh_client._extract_host читает `host`, fallback на server_id (UUID)
+        # сломал бы DNS-резолв на dev-стендах.
+        "host": server.hostname,
+        "ssh_port": server.ssh_port,
         # На подготовленном сервере worker заходит под управляющим пользователем
         # по ключу с sudo; inventory.sync собирает факты под ним вместо self-сессии.
         "is_managed": server.is_managed,
@@ -325,6 +330,11 @@ async def _dispatch_account_on_host(
         "server_id": server.id,
         "account_id": account_id,
         "target_department_id": server.department_id,
+        # Адресация по SSH: ключи `host`/`ssh_port` читает воркер в
+        # ssh_client._extract_host / _extract_port; без них fallback на
+        # server_id (UUID) рвёт DNS-резолв.
+        "host": server.hostname,
+        "ssh_port": server.ssh_port,
         "login": account.login,
         "has_sudo": account.has_sudo,
         "unix_groups": list(account.unix_groups),
@@ -441,6 +451,8 @@ async def fanout_update_on_host(
             "server_id": server.id,
             "account_id": account.id,
             "target_department_id": server.department_id,
+            "host": server.hostname,
+            "ssh_port": server.ssh_port,
             "login": account.login,
             "has_sudo": account.has_sudo,
             "unix_groups": list(account.unix_groups),
@@ -827,6 +839,10 @@ async def account_rotate_password_dispatch(
             "server_id": server.id,
             "account_id": account_id,
             "target_department_id": server.department_id,
+            # Адресация по SSH: ключи `host`/`ssh_port` читает воркер в
+            # ssh_client._extract_host / _extract_port.
+            "host": server.hostname,
+            "ssh_port": server.ssh_port,
             # login едет в payload — worker ротирует пароль управляемого/
             # discovered-аккаунта без отдельного read карточки.
             "login": account.login,

@@ -32,6 +32,7 @@ TLS-handshake между emissions. Outside the app lifecycle (unit-тесты, 
 
 import asyncio
 import logging
+import random
 from datetime import datetime, timezone
 
 import httpx
@@ -56,6 +57,43 @@ _EVENTS_PATH = "/api/logging/v1/events"
 # handle сюда на время жизни, снимаем по done-callback.
 _EMIT_TASKS: set[asyncio.Task] = set()
 
+# Бэкоффы между попытками при 429 от loging_service. Длина списка задаёт
+# число дополнительных попыток сверх первой; итого 3 попытки.
+_RETRY_DELAYS_ON_429 = (0.5, 1.5)
+
+# Сколько событий отброшено после исчерпания retry-бюджета на 429.
+# Монотонный счётчик за время жизни процесса. Ненулевое значение в проде
+# сигналит, что loging_service режет rate-limit'ом наши audit-emit'ы.
+_audit_dropped_429: int = 0
+
+
+def get_dropped_429_total() -> int:
+    """Сколько audit-событий было отброшено после трёх подряд 429."""
+    return _audit_dropped_429
+
+
+def _reset_dropped_429_for_tests() -> None:
+    """Test helper — сбросить счётчик между прогонами."""
+    global _audit_dropped_429
+    _audit_dropped_429 = 0
+
+
+async def _post_once(
+    client: httpx.AsyncClient | None,
+    url: str,
+    payload: dict,
+    headers: dict,
+) -> httpx.Response:
+    """Один POST attempt. Pooled при наличии клиента, иначе per-call."""
+    if client is not None:
+        return await client.post(_EVENTS_PATH, json=payload, headers=headers)
+    async with httpx.AsyncClient(timeout=2.0) as fallback:
+        return await fallback.post(
+            f"{url.rstrip('/')}{_EVENTS_PATH}",
+            json=payload,
+            headers=headers,
+        )
+
 
 async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> None:
     """Async-отправка одного payload'а в loging_service.
@@ -63,22 +101,28 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
     Pooled path (`_audit_client is not None`) — переиспользует TCP-сессию,
     amortize'ит TLS-handshake. Fallback path (None) — per-call client, нужен
     для unit-тестов, которые импортят модуль до lifespan startup.
-    Все ошибки глушим в WARNING (best-effort, audit не должен ломать main-flow).
+
+    На 429 от loging_service делаем до двух дополнительных попыток с
+    exponential backoff (0.5s, 1.5s) ± jitter. После трёх подряд 429 —
+    drop в WARNING + инкремент `_audit_dropped_429`. Любая транспортная
+    ошибка → drop сразу (best-effort, не блокируем main-flow).
     """
     headers = {"Authorization": f"Bearer {api_key}"}
     client = _audit_client
     try:
-        if client is not None:
-            # Pooled path: `base_url` уже выставлен на клиенте → relative path.
-            await client.post(_EVENTS_PATH, json=payload, headers=headers)
-        else:
-            # Fallback path: per-call client (unit-тесты outside lifespan).
-            async with httpx.AsyncClient(timeout=2.0) as fallback:
-                await fallback.post(
-                    f"{url.rstrip('/')}{_EVENTS_PATH}",
-                    json=payload,
-                    headers=headers,
-                )
+        for attempt in range(len(_RETRY_DELAYS_ON_429) + 1):
+            response = await _post_once(client, url, payload, headers)
+            if response.status_code != 429:
+                return
+            if attempt < len(_RETRY_DELAYS_ON_429):
+                delay = _RETRY_DELAYS_ON_429[attempt] * random.uniform(0.8, 1.2)
+                await asyncio.sleep(delay)
+        global _audit_dropped_429
+        _audit_dropped_429 += 1
+        logger.warning(
+            "audit_service: drop after 3x429 (action=%s)", payload.get("action"),
+        )
+        logger.info("audit_event_fallback %s", payload)
     except httpx.HTTPError as exc:
         logger.warning("audit_service: failed to send event: %s", exc)
         logger.info("audit_event_fallback %s", payload)

@@ -45,6 +45,22 @@ async def get_by_id(db: AsyncSession, server_id: str) -> Server | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_many_by_ids(
+    db: AsyncSession, server_ids: list[str]
+) -> dict[str, Server]:
+    """SELECT всех серверов из списка одним `WHERE id IN (...)` запросом.
+
+    Возвращает словарь по id (несуществующие просто отсутствуют). Для массовых
+    fan-out'ов (ротация, update_on_host), где иначе на каждый server_id шёл
+    бы свой round-trip в БД.
+    """
+    if not server_ids:
+        return {}
+    stmt = select(Server).where(Server.id.in_(server_ids))
+    rows = list((await db.execute(stmt)).scalars())
+    return {srv.id: srv for srv in rows}
+
+
 async def get_by_hostname(db: AsyncSession, hostname: str) -> Server | None:
     """SELECT по hostname (UNIQUE). Используется опционально под дедупликацию."""
     stmt = select(Server).where(Server.hostname == hostname)

@@ -10,10 +10,9 @@ import logging
 import httpx
 
 from src.core.config import get_settings
+from src.core.constants import SERVICE_NAME as _SERVICE_NAME
 
 logger = logging.getLogger("audit")
-
-_SERVICE_NAME = "server_service"
 
 # Каждая запись: action, human description, default_severity (для success;
 # failure по правилам в loging_service дефолтится в WARNING/CRITICAL).

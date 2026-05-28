@@ -2,6 +2,11 @@
 
 from enum import StrEnum
 
+# Имя сервиса для introspect (allowed_services), audit-payload, routing'а
+# событий в loging_service. Раньше повторялось в трёх модулях (auth/audit_service/
+# audit_events) — теперь источник один.
+SERVICE_NAME = "server_service"
+
 
 class ServerStatus(StrEnum):
     """Жизненный цикл сервера."""

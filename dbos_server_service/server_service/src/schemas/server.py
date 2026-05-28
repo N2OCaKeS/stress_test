@@ -7,9 +7,8 @@ from ipaddress import IPv4Address, IPv6Address
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from src.core.constants import IpmiKind
-from src.core.password_policy import validate_password
 from src.schemas.disk import DiskResponse, DiskSpec
+from src.schemas.ipmi_controller import IpmiControllerCreate
 
 
 def _decode_b64(value: str, field_name: str) -> str:
@@ -30,35 +29,13 @@ def _decode_b64(value: str, field_name: str) -> str:
         raise ValueError(f"{field_name} does not decode to UTF-8") from exc
 
 
-class ServerIpmiCreate(BaseModel):
+class ServerIpmiCreate(IpmiControllerCreate):
     """IPMI-блок, вкладываемый в `ServerCreate`.
 
-    Те же поля, что у обычной регистрации контроллера, но без `server_id` —
-    он подставляется автоматически из создаваемого сервера. Контроллер пишется
-    в той же транзакции, что и сервер (атомарно).
+    Полностью повторяет состав `IpmiControllerCreate`: те же поля, та же парольная
+    политика. Отличие — контекст: `server_id` не передаётся явно, его подставит
+    `create_server`, и controller пишется в одной транзакции с сервером.
     """
-
-    kind: IpmiKind = Field(..., description="Тип BMC: idrac / ilo / ipmi / redfish.")
-    endpoint_url: str = Field(
-        ..., min_length=1, max_length=512,
-        description="HTTPS URL Redfish API или IPMI host[:port].",
-    )
-    username: str = Field(
-        ..., min_length=1, max_length=128,
-        description="Логин IPMI/iDRAC/iLO-аккаунта.",
-    )
-    password: str = Field(
-        ..., min_length=1, max_length=512,
-        description=(
-            "Plaintext пароля BMC. Шифруется через `secrets_service.encrypt()` "
-            "ДО записи в БД, в ответе не возвращается."
-        ),
-    )
-
-    @field_validator("password")
-    @classmethod
-    def _check_password_policy(cls, value: str) -> str:
-        return validate_password(value)
 
 
 def _validate_storage(disks: list[DiskSpec]) -> list[DiskSpec]:

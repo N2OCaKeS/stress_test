@@ -46,6 +46,7 @@ import httpx
 from fastapi import Depends, Request
 
 from src.core.config import get_settings
+from src.core.constants import SERVICE_NAME
 from src.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -54,7 +55,11 @@ from src.core.exceptions import (
 from src.schemas.identity import IdentityContext
 from src.services import audit_context
 
-SERVICE_NAME = "server_service"
+__all__ = [
+    "CurrentIdentity",
+    "SERVICE_NAME",
+    "get_current_identity",
+]
 
 _INTROSPECT_PATH = "/api/auth/v1/authorization/introspect"
 

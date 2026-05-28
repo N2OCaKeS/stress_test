@@ -81,7 +81,7 @@ from src.schemas.server_account import (
 from src.services import audit_service, permissions, worker_client
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
-from src.utils.ids import _new_id  # type: ignore[attr-defined]
+from src.utils.ids import prepare_creds_id
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,46 @@ router_ipmi = APIRouter(prefix="/ipmi-controllers/{controller_id}")
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
+
+
+def _build_account_task_payload(
+    *,
+    server,
+    account,
+    include_attrs: bool,
+) -> dict:
+    """Базовый payload для account-task'ов (rotate / provision / update / deprovision).
+
+    Поля одинаковые для всех аккаунт-task'ов: ключи маршрутизации (host/ssh_port),
+    identity аккаунта (login), management-режим сервера. `include_attrs=True`
+    добавляет управляемые атрибуты (`has_sudo`/`unix_groups`/`shell`/`home_dir`),
+    которые нужны useradd/usermod (`account.provision`/`update_on_host`/
+    `deprovision`); для `account.rotate_password` атрибуты не нужны (там только
+    меняется пароль через chpasswd).
+
+    Caller дополняет результат своими ключами (`extra_payload`) через `.update`.
+    """
+    payload: dict = {
+        "server_id": server.id,
+        "account_id": account.id,
+        "target_department_id": server.department_id,
+        # Адресация по SSH: ключи `host`/`ssh_port` читает воркер в
+        # ssh_client._extract_host / _extract_port; без них fallback на
+        # server_id (UUID) рвёт DNS-резолв на dev-стендах.
+        "host": server.hostname,
+        "ssh_port": server.ssh_port,
+        "login": account.login,
+        # На подготовленном сервере worker заходит под управляющим пользователем
+        # по ключу с sudo, а не self-сессией под аккаунтом.
+        "is_managed": server.is_managed,
+        "management_user": server.management_user,
+    }
+    if include_attrs:
+        payload["has_sudo"] = account.has_sudo
+        payload["unix_groups"] = list(account.unix_groups)
+        payload["shell"] = account.shell
+        payload["home_dir"] = account.home_dir
+    return payload
 
 
 async def _dispatch_for_server(
@@ -326,25 +366,9 @@ async def _dispatch_account_on_host(
     idempotency_key = request.headers.get("Idempotency-Key") or None
     # Non-secret атрибуты аккаунта едут в payload — воркеру не нужен отдельный
     # read карточки, пароль он тянет через internal view_password endpoint.
-    payload: dict = {
-        "server_id": server.id,
-        "account_id": account_id,
-        "target_department_id": server.department_id,
-        # Адресация по SSH: ключи `host`/`ssh_port` читает воркер в
-        # ssh_client._extract_host / _extract_port; без них fallback на
-        # server_id (UUID) рвёт DNS-резолв.
-        "host": server.hostname,
-        "ssh_port": server.ssh_port,
-        "login": account.login,
-        "has_sudo": account.has_sudo,
-        "unix_groups": list(account.unix_groups),
-        "shell": account.shell,
-        "home_dir": account.home_dir,
-        # Если сервер прошёл prepare — worker зайдёт под управляющим
-        # пользователем по ключу с sudo, а не self-сессией под аккаунтом.
-        "is_managed": server.is_managed,
-        "management_user": server.management_user,
-    }
+    payload = _build_account_task_payload(
+        server=server, account=account, include_attrs=True,
+    )
     if extra_payload:
         payload.update(extra_payload)
     try:
@@ -426,12 +450,17 @@ async def fanout_update_on_host(
     target_links = [
         link for link in account.server_links if link.present_on_server
     ]
+    # Batch-load: вместо N `load_visible_server` round-trip'ов один
+    # `WHERE id IN (...)`. Cross-dept / отсутствующие — просто не попадают
+    # в map, фильтрация остаётся та же, что в старом цикле.
+    servers_by_id = await server_svc.load_visible_servers(
+        db, identity, [link.server_id for link in target_links],
+    )
 
     tasks: list[dict] = []
     for link in target_links:
-        try:
-            server = await server_svc.load_visible_server(db, identity, link.server_id)
-        except NotFoundError:
+        server = servers_by_id.get(link.server_id)
+        if server is None:
             continue
         if server.status == ServerStatus.DECOMMISSIONED:
             audit_service.emit(
@@ -447,20 +476,9 @@ async def fanout_update_on_host(
             )
             continue
         per_server_key = f"{idempotency_key}:{server.id}" if idempotency_key else None
-        payload = {
-            "server_id": server.id,
-            "account_id": account.id,
-            "target_department_id": server.department_id,
-            "host": server.hostname,
-            "ssh_port": server.ssh_port,
-            "login": account.login,
-            "has_sudo": account.has_sudo,
-            "unix_groups": list(account.unix_groups),
-            "shell": account.shell,
-            "home_dir": account.home_dir,
-            "is_managed": server.is_managed,
-            "management_user": server.management_user,
-        }
+        payload = _build_account_task_payload(
+            server=server, account=account, include_attrs=True,
+        )
         try:
             task_id = await worker_client.dispatch_task(
                 task_kind="account.update_on_host",
@@ -656,7 +674,7 @@ async def server_prepare_dispatch(
     # Креды НЕ кладём в task-payload (иначе plaintext осел бы в worker-БД).
     # Пишем их в Redis под одноразовый ключ с TTL, в payload — только ссылка.
     # Воркер читает креды по ссылке на каждой попытке, TTL чистит их сам.
-    creds_key = worker_client.prepare_creds_key(_new_id("pcd_"))
+    creds_key = worker_client.prepare_creds_key(prepare_creds_id())
     await worker_client.store_prepare_creds(
         creds_key,
         {"bootstrap_login": body.username(), "bootstrap_password": body.password()},
@@ -787,10 +805,24 @@ async def account_rotate_password_dispatch(
     # dispatch'у и decommissioned. Делаем это ДО первой постановки задачи —
     # в массовом режиме один списанный сервер не должен валить весь батч,
     # оставляя задачи 1..K-1 уже опубликованными в Redis без итогового аудита.
+    #
+    # Batch-load одним `WHERE id IN (...)` — раньше шёл N round-trip'ов на
+    # массовой ротации с большим числом привязанных серверов.
+    servers_by_id = await server_svc.load_visible_servers(db, identity, target_ids)
     dispatchable: list = []
     skipped: list[dict] = []
     for sid in target_ids:
-        server = await server_svc.load_visible_server(db, identity, sid)
+        server = servers_by_id.get(sid)
+        if server is None:
+            # Сервер пропал или dept изменили out-of-band уже после линковки.
+            # В точечном режиме это 404 как у `load_visible_server`.
+            if mode == "single":
+                raise NotFoundError(
+                    error_code="SERVER_NOT_FOUND", message="Server not found",
+                )
+            # В массовом — пропускаем (нерабочая привязка не должна валить батч).
+            skipped.append({"server_id": sid, "reason": "not_found_or_cross_dept"})
+            continue
         if server.status == ServerStatus.DECOMMISSIONED:
             if mode == "single":
                 # Точечная ротация на единственный явно указанный сервер —
@@ -835,22 +867,10 @@ async def account_rotate_password_dispatch(
         # Per-server idempotency-key суффикс — иначе один Idempotency-Key на
         # массовую ротацию схлопнул бы все серверы в одну задачу.
         per_server_key = f"{idempotency_key}:{server.id}" if idempotency_key else None
-        payload = {
-            "server_id": server.id,
-            "account_id": account_id,
-            "target_department_id": server.department_id,
-            # Адресация по SSH: ключи `host`/`ssh_port` читает воркер в
-            # ssh_client._extract_host / _extract_port.
-            "host": server.hostname,
-            "ssh_port": server.ssh_port,
-            # login едет в payload — worker ротирует пароль управляемого/
-            # discovered-аккаунта без отдельного read карточки.
-            "login": account.login,
-            # На подготовленном сервере worker применит chpasswd под управляющим
-            # пользователем по ключу с sudo вместо self-сессии под аккаунтом.
-            "is_managed": server.is_managed,
-            "management_user": server.management_user,
-        }
+        # Для chpasswd не нужны управляемые атрибуты (sudo/groups/shell/home).
+        payload = _build_account_task_payload(
+            server=server, account=account, include_attrs=False,
+        )
         try:
             task_id = await worker_client.dispatch_task(
                 task_kind="account.rotate_password",

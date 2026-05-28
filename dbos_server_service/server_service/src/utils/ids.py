@@ -50,3 +50,12 @@ def task_id() -> str:
     при INSERT'е через cross-DB engine (см. `services/worker_client.py`).
     """
     return _new_id("tsk_")
+
+
+def prepare_creds_id() -> str:
+    """`pcd_<uuid>` — для одноразового Redis-ключа bootstrap-кред `prepare`-задачи.
+
+    Plaintext bootstrap-логин/пароль кладутся в Redis под
+    `dbos:prepare_creds:<pcd_id>` с TTL, в task-payload едет только ссылка.
+    """
+    return _new_id("pcd_")

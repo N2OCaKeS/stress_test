@@ -68,6 +68,27 @@ async def load_visible_server(
     return obj
 
 
+async def load_visible_servers(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_ids: list[str],
+) -> dict[str, Server]:
+    """Batch-загрузка серверов через `WHERE id IN (...)` + dept-visibility.
+
+    Возвращает словарь {server_id: Server} только по видимым (свой department).
+    Cross-dept и несуществующие просто отсутствуют — caller сам решает, как
+    оформить ошибку (для массовой ротации мы не валим весь батч, для точечной
+    задачи отсутствие = 404).
+    """
+    if not server_ids:
+        return {}
+    found = await repo.get_many_by_ids(db, server_ids)
+    return {
+        sid: srv for sid, srv in found.items()
+        if identity.department_id == srv.department_id
+    }
+
+
 async def load_storage(db: AsyncSession, server_id: str) -> list[ServerDisk]:
     """Диски сервера для раздела `storage` в ответе. Порядок — по слоту."""
     return await disk_repo.list_all_for_server(db, server_id)

@@ -38,12 +38,11 @@ from datetime import datetime, timezone
 import httpx
 
 from src.core.config import get_settings
+from src.core.constants import SERVICE_NAME as _SERVICE_NAME
 from src.services import audit_context
 from src.services.redaction import redact
 
 logger = logging.getLogger("audit")
-
-_SERVICE_NAME = "server_service"
 
 # Module-level pooled client. Инициализируется в `main.lifespan` startup,
 # закрывается в shutdown. Остаётся `None` outside the app lifecycle

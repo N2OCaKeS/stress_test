@@ -1,7 +1,7 @@
 import re
 import json
 
-from os import chdir, makedirs
+from os import makedirs
 from pathlib import Path
 
 from lib import Test, system, status_check, Writer
@@ -10,155 +10,59 @@ from config.conf import (
     MAIN_DIR,
     RESULTS_MAIN_DIR,
     RESULT_PERF_BENCH_NAME,
-    RESULTS_STATUS
+    RESULTS_STATUS,
+    LOW_CONC,
+    HIGH_CONC,
+    STEP
 )
-
-
-class PerfBenchParser:
-    """
-    Парсер результатов perf bench
-    """
-    
-    def __init__(self):
-        self.results = {}
-    
-    def parse_sched_output(self, output: str, test_name: str) -> dict:
-        """
-        Парсинг результатов sched тестов
-        """
-        result = {"test": test_name, "value": None, "unit": "seconds"}
-        
-        # Ищем Total time
-        match = re.search(r'Total time:\s*([\d\.]+)\s*\[sec\]', output)
-        if match:
-            result["value"] = float(match.group(1))
-            return result
-        
-        log.warning(f"Не удалось распарсить {test_name}")
-        return result
-    
-    def parse_mem_output(self, output: str, test_name: str) -> dict:
-        """
-        Парсинг результатов mem тестов
-        """
-        result = {"test": test_name, "value": None, "unit": "GB/sec"}
-        
-        # Ищем все значения GB/sec 
-        matches = re.findall(r'(\d+),(\d+)\s+GB/sec', output)
-        if matches:
-            values = [float(f"{m[0]}.{m[1]}") for m in matches]
-            result["value"] = max(values)
-            return result
-        
-        log.warning(f"Не удалось распарсить {test_name}")
-        return result
-    
-    def parse_futex_output(self, output: str, test_name: str) -> dict:
-        """
-        Парсинг результатов futex тестов
-        """
-        result = {"test": test_name, "value": None, "unit": "ops/sec"}
-        
-        if "hash" in test_name.lower():
-            # Для futex hash
-            match = re.search(r'Averaged\s+(\d+)\s+operations/sec', output)
-            if match:
-                result["value"] = float(match.group(1))
-                return result
-        else:
-            # Для futex wake/requeue берём среднее время
-            match = re.search(r'in\s+(\d+),(\d+)\s+ms', output)
-            if match:
-                value = float(f"{match.group(1)}.{match.group(2)}")
-                result["value"] = value
-                result["unit"] = "milliseconds"
-                return result
-        
-        log.warning(f"Не удалось распарсить {test_name}")
-        return result
-    
-    def parse_epoll_output(self, output: str, test_name: str) -> dict:
-        """
-        Парсинг результатов epoll тестов
-        """
-        result = {"test": test_name, "value": None, "unit": "ops/sec"}
-        
-        if "wait" in test_name.lower():
-            # Для epoll wait
-            match = re.search(r'Averaged\s+(\d+)\s+operations/sec', output)
-            if match:
-                result["value"] = float(match.group(1))
-                return result
-        else:
-            # Для epoll ctl
-            match = re.search(r'Averaged\s+(\d+)\s+ADD\s+operations', output)
-            if match:
-                result["value"] = float(match.group(1))
-                result["unit"] = "operations/sec"
-                return result
-        
-        log.warning(f"Не удалось распарсить {test_name}")
-        return result
-    
-    def parse(self, test_name: str, output: str) -> dict:
-        """
-        Основной метод парсинга в зависимости от типа теста
-        """
-        if 'sched' in test_name.lower():
-            return self.parse_sched_output(output, test_name)
-        elif 'mem' in test_name.lower():
-            return self.parse_mem_output(output, test_name)
-        elif 'futex' in test_name.lower():
-            return self.parse_futex_output(output, test_name)
-        elif 'epoll' in test_name.lower():
-            return self.parse_epoll_output(output, test_name)
-        else:
-            return {"test": test_name, "value": None, "unit": "unknown"}
-    
-    def add_result(self, test_name: str, result: dict):
-        """
-        Добавление результата в общую структуру
-        """
-        self.results[test_name] = result
 
 
 class PerfBench(Test):
     """
-    Perf Bench - тестирование производительности ядра
-    Тесты:
-        - sched: планировщик и IPC
-        - mem: производительность памяти
-        - futex: быстрые блокировки
-        - epoll: опрос событий
+    Perf Bench
     """
-    
-    def __init__(self):
-        self.test_success = False
-        self.perf_dir = f"{MAIN_DIR}/benchmarks/perfbench"
-        self.results_file = f"{self.perf_dir}/perf_bench_result.txt"
-        self.writer = Writer(file_name=RESULTS_STATUS)
-        self.parser = PerfBenchParser()
+    def __init__(self,
+                 report_filename=None,
+                 low_concurrency=LOW_CONC,
+                 high_concurrency=HIGH_CONC,
+                 step=STEP):
         
-        makedirs(self.perf_dir, exist_ok=True)
-    
-    def run_perf_test(self, test_args: str) -> tuple:
+        self.test_success = False
+        self.results_dir = f"{RESULTS_MAIN_DIR}"
+        self.results_file = f"{self.results_dir}/perf_bench_result.txt"
+        self.writer = Writer(file_name=RESULTS_STATUS)
+        makedirs(self.results_dir, exist_ok=True)
+
+        self.low_concurrency = low_concurrency
+        self.high_concurrency = high_concurrency
+        self.step = step
+        self.concurrency = [self.low_concurrency] + list(range(self.step, self.high_concurrency, self.step))
+
+        if report_filename is None:
+            self._report_filename = f"{RESULTS_MAIN_DIR}/perf_bench_results.json"
+        else:
+            self._report_filename = report_filename
+
+    def run_perf_test(self, test_args: str, concur: int) -> tuple:
         """
-        Запуск отдельного теста perf bench
+        Запуск отдельного теста perf bench с указанной параллельностью
         
         Args:
             test_args: аргументы для perf bench (например, "sched pipe")
+            concur: количество параллельных потоков
         
         Returns:
             (output, success): вывод команды и статус успеха
         """
-        cmd = f"perf bench {test_args}"
+        # Не все тесты perf bench поддерживают флаг -p для параллельности, например "memcpy"
+        cmd = f"perf bench {test_args} -p {concur}"
         result, code = system.leave_command(cmd, returncode=True)
         return result, code
-    
-    @status_check
+
+    @status_check  
     def start_test(self):
         """
-        Запуск всех тестов perf bench
+        Запуск всех тестов perf bench с разными уровнями concurrency
         """
         log.info("Запуск Perf Bench")
         
@@ -180,7 +84,7 @@ class PerfBench(Test):
             ("epoll ctl", "epoll ctl"),             # управление epoll
         ]
         
-        status_codes = []
+        status_code_dict = {}
         
         # Очищаем файл результатов
         with open(self.results_file, 'w') as f:
@@ -188,63 +92,44 @@ class PerfBench(Test):
             f.write(f"Started: {system.leave_command('date', returncode=True)[0]}\n")
             f.write(f"{'='*60}\n\n")
         
-        for display_name, test_args in tests:
-            log.info(f"Running: {display_name}...")
-            
-            output, code = self.run_perf_test(test_args)
-            status_codes.append(code)
-            
-            # Сохраняем вывод в файл
-            with open(self.results_file, 'a') as f:
-                f.write(f"\n{'='*60}\n")
-                f.write(f"Test: {display_name}\n")
-                f.write(f"Command: perf bench {test_args}\n")
-                f.write(f"{'='*60}\n")
-                f.write(output)
-                f.write(f"\n{'='*60}\n\n")
-            
-            # Парсим результат
-            if code:
-                parsed = self.parser.parse(display_name, output)
-                self.parser.add_result(display_name, parsed)
+        for concur in self.concurrency:
+            log.info(f"Запуск Perf Bench с {concur} параллельными потоками")
+            for display_name, test_args in tests:
+                log.info(f"Running: {display_name} (concurrency={concur})...")
                 
-                if parsed["value"]:
-                    log.debug(f"  Result: {parsed['value']} {parsed['unit']}")
+                output, code = self.run_perf_test(test_args, concur)
+                key = f"{display_name}_{concur}"
+                status_code_dict[key] = code
                 
-                self.writer.wrs(
-                    cl=self.__class__,
-                    method=self.start_test.__name__,
-                    test=display_name,
-                    status=code,
-                    message=f"Result: {parsed['value']} {parsed['unit']}" if parsed['value'] else ""
-                )
+                # Сохраняем вывод в файл
+                with open(self.results_file, 'a') as f:
+                    f.write(f"\n{'='*60}\n")
+                    f.write(f"Test: {display_name} (concurrency={concur})\n")
+                    f.write(f"{'='*60}\n")
+                    f.write(output)
+                    f.write(f"\n{'='*60}\n\n")
+                
+                self.writer.wrs(cl=self.__class__,
+                                method=self.start_test.__name__,
+                                test=f"{display_name} {concur}",
+                                status=code)
         
-        all_success = all(status_codes)
-        
-        self.writer.wrs(
-            cl=self.__class__,
-            method=self.start_test.__name__,
-            test="ALL_TESTS",
-            status=all_success,
-            message=f"Passed: {sum(status_codes)}/{len(status_codes)} tests"
-        )
-        
-        if all_success:
-            log.info("Perf Bench: - тестирование завершено успешно")
-            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены{Colors.RESET}")
+        if all(code for code in status_code_dict.values()):
+            log.info("Perf Bench: тестирование завершено успешно")
+            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {status_code_dict}{Colors.RESET}")
             self.test_success = True
             return True, True
         else:
-            failed = len([c for c in status_codes if not c])
-            log.critical(f"Perf Bench: - тестирование провалено (неудачно: {failed}/{len(status_codes)})")
-            log.debug(f"{Colors.RED}Некоторые тесты провалены{Colors.RESET}")
+            failed_tests = [name for name, code in status_code_dict.items() if not code]
+            log.critical(f"Perf Bench: тестирование провалено. Проваленные тесты: {failed_tests}")
+            log.debug(f"{Colors.RED}Статусы: {status_code_dict}{Colors.RESET}")
             self.test_success = False
             return True, False
-    
+
     @status_check
     def get_results(self):
         """
-        Получить результаты и сохранить в JSON
+        Получить результаты и сохранить в JSON с группировкой по concurrency
         """
         if not self.test_success:
             log.critical(f"{Colors.RED}Perf Bench: тесты не были успешно завершены, сбор результатов пропущен{Colors.RESET}")
@@ -252,33 +137,121 @@ class PerfBench(Test):
         
         log.info("Сохранение результатов Perf Bench")
         
-        # Формируем структуру результатов
-        results = self.parser.results
+        # Проверяем существование файла с результатами
+        if not Path(self.results_file).exists():
+            log.error(f"Файл с результатами не найден: {self.results_file}")
+            return True, False
         
-        # Сохраняем в JSON
-        makedirs(RESULTS_MAIN_DIR, exist_ok=True)
-        json_path = f"{RESULTS_MAIN_DIR}/{RESULT_PERF_BENCH_NAME}"
+        try:
+            with open(self.results_file, 'r') as f:
+                content = f.read()
+            
+            makedirs(RESULTS_MAIN_DIR, exist_ok=True)
+            
+            # Результаты с группировкой по concurrency
+            results_by_concurrency = {str(concur): {} for concur in self.concurrency}
+            test_blocks = re.findall(r'Test: (.+?)\n=+\n(.*?)\n=+', content, re.DOTALL)
+            
+            for test_block_name, result_text in test_blocks:
+                test_block_name = test_block_name.strip()
+                
+                concur_match = re.search(r'concurrency[=:](\d+)', test_block_name, re.IGNORECASE)
+                
+                if concur_match:
+                    concur = concur_match.group(1)
+                    clean_test_name = re.sub(r'\s*\(concurrency[=:]\d+\)', '', test_block_name).strip()
+                    if 'sched messaging' in clean_test_name:
+                        clean_test_name = 'sched messaging'
+                else:
+                    log.warning(f"Не удалось определить concurrency для теста: {test_block_name}")
+                    continue
+                
+                # Парсим значение в зависимости от типа теста
+                parsed_value = self._parse_test_value(clean_test_name, result_text)
+                
+                if parsed_value:
+                    results_by_concurrency[concur][clean_test_name] = parsed_value
+            
+            json_path = f"{RESULTS_MAIN_DIR}/{RESULT_PERF_BENCH_NAME}"
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(results_by_concurrency, f, indent=4, ensure_ascii=False)
+            
+            log.info(f"Perf Bench: результаты сохранены в {json_path}")
+            log.info(f"Собрано результатов для {len(results_by_concurrency)} уровней concurrency")
+            
+            return True, True
+            
+        except Exception as e:
+            log.critical(f"Perf Bench: ошибка при сохранении результатов: {e}")
+            import traceback
+            log.critical(traceback.format_exc())
+            return True, False
+
+    def _parse_test_value(self, test_name, result_text):
+        """
+        Парсит значение теста в зависимости от его типа
+        """
+        # sched pipe и sched messaging
+        if 'sched' in test_name:
+            # Ищем время выполнения в секундах
+            match = re.search(r'Time:\s*([\d\.]+)\s*seconds', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "seconds"}
+            # Альтернативный парсинг
+            numbers = re.findall(r'([\d\.]+)\s+seconds', result_text)
+            if numbers:
+                return {"value": float(numbers[0]), "unit": "seconds"}
         
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(results, f, indent=4, ensure_ascii=False)
+        # futex hash (ops/sec)
+        elif 'futex hash' in test_name:
+            match = re.search(r'([\d,]+)\s+ops/sec', result_text)
+            if match:
+                value = match.group(1).replace(',', '')
+                return {"value": float(value), "unit": "ops/sec"}
+            numbers = re.findall(r'([\d\.]+)', result_text)
+            if numbers:
+                return {"value": float(numbers[-1]), "unit": "ops/sec"}
         
-        log.info(f"Perf Bench: - результаты сохранены в {json_path}")
-        log.info(f"Собрано результатов: {len(results)}")
+        # futex wake и futex requeue (миллисекунды)
+        elif 'futex wake' in test_name or 'futex requeue' in test_name:
+            match = re.search(r'([\d\.]+)\s+milliseconds', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "milliseconds"}
+            numbers = re.findall(r'([\d\.]+)', result_text)
+            if numbers:
+                return {"value": float(numbers[-1]), "unit": "milliseconds"}
         
-        log.info("=" * 50)
-        log.info("КРАТКАЯ СВОДКА РЕЗУЛЬТАТОВ PERF BENCH")
-        log.info("=" * 50)
-        for test_name, data in results.items():
-            if data["value"]:
-                log.info(f"  {test_name:20}: {data['value']:>12.2f} {data['unit']}")
+        # epoll wait и epoll ctl (ops/sec или operations/sec)
+        elif 'epoll' in test_name:
+            match = re.search(r'([\d,]+)\s+(?:ops|operations)/sec', result_text)
+            if match:
+                value = match.group(1).replace(',', '')
+                return {"value": float(value), "unit": "operations/sec"}
+            numbers = re.findall(r'([\d\.]+)', result_text)
+            if numbers:
+                return {"value": float(numbers[-1]), "unit": "operations/sec"}
         
-        self.writer.wrs(
-            cl=self.__class__,
-            method=self.get_results.__name__,
-            test="parse_and_save",
-            status=True,
-            message=f"Сохранено результатов: {len(results)}"
-        )
+        # memcpy (GB/sec)
+        elif 'memcpy' in test_name:
+            match = re.search(r'([\d\.]+)\s+GB/sec', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "GB/sec"}
+            numbers = re.findall(r'([\d\.]+)', result_text)
+            if numbers:
+                return {"value": float(numbers[-1]), "unit": "GB/sec"}
         
-        return True, True
-    
+        else:
+            # Общий парсинг: ищем число с единицей измерения
+            units = ['seconds', 'milliseconds', 'microseconds', 'ops/sec', 'operations/sec', 'GB/sec', 'MB/s']
+            for unit in units:
+                match = re.search(r'([\d,\.]+)\s+' + unit, result_text)
+                if match:
+                    value = match.group(1).replace(',', '')
+                    return {"value": float(value), "unit": unit}
+            
+            # Если ничего не нашли, берем первое число
+            numbers = re.findall(r'([\d\.]+)', result_text)
+            if numbers:
+                return {"value": float(numbers[0]), "unit": "unknown"}
+        
+        return None

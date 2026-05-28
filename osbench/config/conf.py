@@ -9,13 +9,19 @@ SUBSYSTEM_RESULTS = f"{RESULTS_MAIN_DIR}/subsystem_results.json"
 
 
 #################################################################################
-# UNIXBENCH                                                                     #
+# CONCURRENCY                                                                    #
 #################################################################################
-RESULT_UB_NAME = "unixbench_results.json"
 # Потоки - [4, 8, 16]
 LOW_CONC = 4
 HIGH_CONC = 17
 STEP = 8
+
+
+
+#################################################################################
+# UNIXBENCH                                                                     #
+#################################################################################
+RESULT_UB_NAME = "unixbench_results.json"
 
 # Регулярные выражения для парсинга результатов каждого теста
 REGEXP_PARSERS = {
@@ -84,6 +90,95 @@ RESULT_LMBENCH_NAME = "lmbench_results.json"
 
 
 #################################################################################
-# PerfBench                                                                       #
+# PerfBench                                                                     #
 #################################################################################
 RESULT_PERF_BENCH_NAME = "perf_bench_results.json"
+
+
+
+#################################################################################
+# Index Criterions                                                              #
+#################################################################################
+KERNEL_CRITERIONS = {
+    # ========== СИСТЕМНЫЕ ВЫЗОВЫ (30%) ==========
+    'syscall': {                              # базовые системные вызовы
+        'weight': 0.12, 
+        'negative': False,
+        'bounds': (0.0, 74000000)
+        },              
+    
+    'lat_syscall null': {                     # нулевой syscall - чистая задержка
+        'weight': 0.07, 
+        'negative': True,
+        'bounds': (0.0, 1500)
+        },     
+    'lat_syscall read': {                     # чтение - частая операция
+        'weight': 0.06, 
+        'negative': True,
+        'bounds': (0.0, 1500)
+        },     
+    'lat_syscall write': {                    # запись - частая операция
+        'weight': 0.05, 
+        'negative': True,
+        'bounds': (0.0, 1500)
+        },    
+    
+    # ========== ПЛАНИРОВЩИК (25%) ==========
+    'sched pipe': {                           # pipe через планировщик
+        'weight': 0.09, 
+        'negative': True,
+        'bounds': (0.0, 3000)
+        },           
+    'sched messaging': {                      # IPC через планировщик
+        'weight': 0.09, 
+        'negative': True,
+        'bounds': (0.0, 3000)
+        },      
+    'lat_ctx -s 0 2 4 8 16 24 32 64 128': {   # переключение контекста
+        'weight': 0.07, 
+        'negative': True,
+        'bounds': (0.0, 30000)
+        },  
+    
+    # ========== СИНХРОНИЗАЦИЯ (20%) ==========
+    'futex hash': {                           # хэш-таблица с futex
+        'weight': 0.08, 
+        'negative': False,
+        'bounds': (0.0, 50000000)
+        },           
+    'futex wake': {                           # пробуждение futex
+        'weight': 0.06, 
+        'negative': True,
+        'bounds': (0.0, 3000)
+        },           
+    'futex requeue': {                        # перемещение очереди futex
+        'weight': 0.06, 
+        'negative': True,
+        'bounds': (0.0, 1500)
+        },       
+    
+    # ========== СОБЫТИЯ (15%) ==========
+    'epoll wait': {                           # ожидание epoll
+        'weight': 0.08, 
+        'negative': False,
+        'bounds': (0.0, 3000000)
+        },          
+    'epoll ctl': {                            # управление epoll
+        'weight': 0.07, 
+        'negative': False,
+        'bounds': (0.0, 5000000)
+        },         
+    
+    # ========== СИГНАЛЫ (10%) ==========
+    'lat_sig install': {                      # установка обработчиков сигналов
+        'weight': 0.04, 
+        'negative': True,
+        'bounds': (0.0, 2000)
+        },  
+    'lat_sig catch': {                        # перехват сигналов
+        'weight': 0.06, 
+        'negative': True,
+        'bounds': (0.0, 5000)
+        },     
+}
+

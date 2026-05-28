@@ -1,0 +1,570 @@
+{
+      "kernel": {
+            "syscall": {
+                  "4": {
+                        "value": 664978.4,
+                        "unit": "lps"
+                  },
+                  "8": {
+                        "value": 692978.0,
+                        "unit": "lps"
+                  },
+                  "16": {
+                        "value": 716833.0,
+                        "unit": "lps"
+                  }
+            },
+            "lat_syscall null": {
+                  "value": 0.2905,
+                  "unit": "microseconds"
+            },
+            "lat_syscall read": {
+                  "value": 0.3696,
+                  "unit": "microseconds"
+            },
+            "lat_syscall write": {
+                  "value": 0.3278,
+                  "unit": "microseconds"
+            },
+            "lat_ctx -s 0 2 4 8 16 24 32 64 128": {
+                  "value": 128.0,
+                  "unit": "microseconds"
+            },
+            "lat_sig install": {
+                  "value": 0.3655,
+                  "unit": "microseconds"
+            },
+            "lat_sig catch": {
+                  "value": 1.4661,
+                  "unit": "microseconds"
+            },
+            "sched pipe": {
+                  "value": 14.358,
+                  "unit": "seconds"
+            },
+            "sched messaging": {
+                  "value": 0.075,
+                  "unit": "seconds"
+            },
+            "futex hash": {
+                  "value": 1065676.0,
+                  "unit": "ops/sec"
+            },
+            "futex wake": {
+                  "value": 0.13,
+                  "unit": "milliseconds"
+            },
+            "futex requeue": {
+                  "value": 0.09,
+                  "unit": "milliseconds"
+            },
+            "epoll wait": {
+                  "value": 10955.0,
+                  "unit": "ops/sec"
+            },
+            "epoll ctl": {
+                  "value": 42379.0,
+                  "unit": "operations/sec"
+            }
+      },
+      "processes_ipc": {
+            "execl": {
+                  "4": {
+                        "value": 9933.0,
+                        "unit": "lps"
+                  },
+                  "8": {
+                        "value": 17662.9,
+                        "unit": "lps"
+                  },
+                  "16": {
+                        "value": 26713.0,
+                        "unit": "lps"
+                  }
+            },
+            "pipe": {
+                  "4": {
+                        "value": 4137264.1,
+                        "unit": "lps"
+                  },
+                  "8": {
+                        "value": 7800882.8,
+                        "unit": "lps"
+                  },
+                  "16": {
+                        "value": 15227792.5,
+                        "unit": "lps"
+                  }
+            },
+            "context1": {
+                  "4": {
+                        "value": 384969.5,
+                        "unit": "lps"
+                  },
+                  "8": {
+                        "value": 773174.2,
+                        "unit": "lps"
+                  },
+                  "16": {
+                        "value": 1718672.3,
+                        "unit": "lps"
+                  }
+            },
+            "spawn": {
+                  "4": {
+                        "value": 19173.3,
+                        "unit": "lps"
+                  },
+                  "8": {
+                        "value": 36423.2,
+                        "unit": "lps"
+                  },
+                  "16": {
+                        "value": 64727.4,
+                        "unit": "lps"
+                  }
+            },
+            "lat_pipe": {
+                  "value": 10.1224,
+                  "unit": "microseconds"
+            },
+            "bw_pipe": {
+                  "value": 2623.88,
+                  "unit": "MB/s"
+            },
+            "lat_proc fork": {
+                  "value": 349.3644,
+                  "unit": "microseconds"
+            },
+            "lat_proc exec": {
+                  "value": 357.6337,
+                  "unit": "microseconds"
+            }
+      },
+      "filesystem": {
+            "fstime": {
+                  "4": {
+                        "value": 2849604.6,
+                        "unit": "KBps"
+                  },
+                  "8": {
+                        "value": 5026279.3,
+                        "unit": "KBps"
+                  },
+                  "16": {
+                        "value": 9077249.9,
+                        "unit": "KBps"
+                  }
+            },
+            "fsbuffer": {
+                  "4": {
+                        "value": 756795.7,
+                        "unit": "KBps"
+                  },
+                  "8": {
+                        "value": 1454203.3,
+                        "unit": "KBps"
+                  },
+                  "16": {
+                        "value": 2834258.5,
+                        "unit": "KBps"
+                  }
+            },
+            "fsdisk": {
+                  "4": {
+                        "value": 6710679.7,
+                        "unit": "KBps"
+                  },
+                  "8": {
+                        "value": 12312689.6,
+                        "unit": "KBps"
+                  },
+                  "16": {
+                        "value": 21627081.9,
+                        "unit": "KBps"
+                  }
+            },
+            "lat_fs 0K": {
+                  "value": 48177,
+                  "unit": "operations/sec"
+            },
+            "lat_fs 10K": {
+                  "value": 46643,
+                  "unit": "operations/sec"
+            },
+            "bw_file_rd 65536 open2close /home/u/git/stress_test/osbench/benchmarks/LMbench/lmbench/testdir/testfile": {
+                  "value": 5922.55,
+                  "unit": "MB/s"
+            },
+            "240000_files": {
+                  "speed": {
+                        "value": 43269.4,
+                        "unit": "ops/sec"
+                  },
+                  "app_overhead": {
+                        "value": 7147901,
+                        "unit": "microseconds"
+                  },
+                  "create_avg": {
+                        "value": 103,
+                        "unit": "microseconds"
+                  },
+                  "write_avg": {
+                        "value": 6,
+                        "unit": "microseconds"
+                  },
+                  "fsync_avg": {
+                        "value": 412,
+                        "unit": "microseconds"
+                  },
+                  "sync_avg": {
+                        "value": 0,
+                        "unit": "microseconds"
+                  },
+                  "close_avg": {
+                        "value": 2,
+                        "unit": "microseconds"
+                  },
+                  "unlink_avg": {
+                        "value": 245,
+                        "unit": "microseconds"
+                  }
+            },
+            "480000_files": {
+                  "speed": {
+                        "value": 31715.8,
+                        "unit": "ops/sec"
+                  },
+                  "app_overhead": {
+                        "value": 15404619,
+                        "unit": "microseconds"
+                  },
+                  "create_avg": {
+                        "value": 133,
+                        "unit": "microseconds"
+                  },
+                  "write_avg": {
+                        "value": 9,
+                        "unit": "microseconds"
+                  },
+                  "fsync_avg": {
+                        "value": 580,
+                        "unit": "microseconds"
+                  },
+                  "sync_avg": {
+                        "value": 0,
+                        "unit": "microseconds"
+                  },
+                  "close_avg": {
+                        "value": 3,
+                        "unit": "microseconds"
+                  },
+                  "unlink_avg": {
+                        "value": 250,
+                        "unit": "microseconds"
+                  }
+            },
+            "720000_files": {
+                  "speed": {
+                        "value": 33484.6,
+                        "unit": "ops/sec"
+                  },
+                  "app_overhead": {
+                        "value": 22382652,
+                        "unit": "microseconds"
+                  },
+                  "create_avg": {
+                        "value": 126,
+                        "unit": "microseconds"
+                  },
+                  "write_avg": {
+                        "value": 8,
+                        "unit": "microseconds"
+                  },
+                  "fsync_avg": {
+                        "value": 547,
+                        "unit": "microseconds"
+                  },
+                  "sync_avg": {
+                        "value": 0,
+                        "unit": "microseconds"
+                  },
+                  "close_avg": {
+                        "value": 3,
+                        "unit": "microseconds"
+                  },
+                  "unlink_avg": {
+                        "value": 251,
+                        "unit": "microseconds"
+                  }
+            },
+            "960000_files": {
+                  "speed": {
+                        "value": 31002.4,
+                        "unit": "ops/sec"
+                  },
+                  "app_overhead": {
+                        "value": 31567595,
+                        "unit": "microseconds"
+                  },
+                  "create_avg": {
+                        "value": 140,
+                        "unit": "microseconds"
+                  },
+                  "write_avg": {
+                        "value": 9,
+                        "unit": "microseconds"
+                  },
+                  "fsync_avg": {
+                        "value": 588,
+                        "unit": "microseconds"
+                  },
+                  "sync_avg": {
+                        "value": 0,
+                        "unit": "microseconds"
+                  },
+                  "close_avg": {
+                        "value": 3,
+                        "unit": "microseconds"
+                  },
+                  "unlink_avg": {
+                        "value": 215,
+                        "unit": "microseconds"
+                  }
+            },
+            "1200000_files": {
+                  "speed": {
+                        "value": 31086.0,
+                        "unit": "ops/sec"
+                  },
+                  "app_overhead": {
+                        "value": 40025684,
+                        "unit": "microseconds"
+                  },
+                  "create_avg": {
+                        "value": 143,
+                        "unit": "microseconds"
+                  },
+                  "write_avg": {
+                        "value": 10,
+                        "unit": "microseconds"
+                  },
+                  "fsync_avg": {
+                        "value": 582,
+                        "unit": "microseconds"
+                  },
+                  "sync_avg": {
+                        "value": 0,
+                        "unit": "microseconds"
+                  },
+                  "close_avg": {
+                        "value": 4,
+                        "unit": "microseconds"
+                  },
+                  "unlink_avg": {
+                        "value": 274,
+                        "unit": "microseconds"
+                  }
+            },
+            "1440000_files": {
+                  "speed": {
+                        "value": 30996.4,
+                        "unit": "ops/sec"
+                  },
+                  "app_overhead": {
+                        "value": 49371337,
+                        "unit": "microseconds"
+                  },
+                  "create_avg": {
+                        "value": 144,
+                        "unit": "microseconds"
+                  },
+                  "write_avg": {
+                        "value": 11,
+                        "unit": "microseconds"
+                  },
+                  "fsync_avg": {
+                        "value": 580,
+                        "unit": "microseconds"
+                  },
+                  "sync_avg": {
+                        "value": 0,
+                        "unit": "microseconds"
+                  },
+                  "close_avg": {
+                        "value": 4,
+                        "unit": "microseconds"
+                  },
+                  "unlink_avg": {
+                        "value": 310,
+                        "unit": "microseconds"
+                  }
+            },
+            "1680000_files": {
+                  "speed": {
+                        "value": 31593.7,
+                        "unit": "ops/sec"
+                  },
+                  "app_overhead": {
+                        "value": 54475091,
+                        "unit": "microseconds"
+                  },
+                  "create_avg": {
+                        "value": 139,
+                        "unit": "microseconds"
+                  },
+                  "write_avg": {
+                        "value": 11,
+                        "unit": "microseconds"
+                  },
+                  "fsync_avg": {
+                        "value": 572,
+                        "unit": "microseconds"
+                  },
+                  "sync_avg": {
+                        "value": 0,
+                        "unit": "microseconds"
+                  },
+                  "close_avg": {
+                        "value": 4,
+                        "unit": "microseconds"
+                  },
+                  "unlink_avg": {
+                        "value": 305,
+                        "unit": "microseconds"
+                  }
+            },
+            "1920000_files": {
+                  "speed": {
+                        "value": 31315.6,
+                        "unit": "ops/sec"
+                  },
+                  "app_overhead": {
+                        "value": 65224507,
+                        "unit": "microseconds"
+                  },
+                  "create_avg": {
+                        "value": 143,
+                        "unit": "microseconds"
+                  },
+                  "write_avg": {
+                        "value": 12,
+                        "unit": "microseconds"
+                  },
+                  "fsync_avg": {
+                        "value": 571,
+                        "unit": "microseconds"
+                  },
+                  "sync_avg": {
+                        "value": 0,
+                        "unit": "microseconds"
+                  },
+                  "close_avg": {
+                        "value": 4,
+                        "unit": "microseconds"
+                  },
+                  "unlink_avg": {
+                        "value": 293,
+                        "unit": "microseconds"
+                  }
+            },
+            "2160000_files": {
+                  "speed": {
+                        "value": 31571.5,
+                        "unit": "ops/sec"
+                  },
+                  "app_overhead": {
+                        "value": 70768813,
+                        "unit": "microseconds"
+                  },
+                  "create_avg": {
+                        "value": 140,
+                        "unit": "microseconds"
+                  },
+                  "write_avg": {
+                        "value": 12,
+                        "unit": "microseconds"
+                  },
+                  "fsync_avg": {
+                        "value": 569,
+                        "unit": "microseconds"
+                  },
+                  "sync_avg": {
+                        "value": 0,
+                        "unit": "microseconds"
+                  },
+                  "close_avg": {
+                        "value": 4,
+                        "unit": "microseconds"
+                  },
+                  "unlink_avg": {
+                        "value": 291,
+                        "unit": "microseconds"
+                  }
+            },
+            "2400000_files": {
+                  "speed": {
+                        "value": 31334.5,
+                        "unit": "ops/sec"
+                  },
+                  "app_overhead": {
+                        "value": 79094444,
+                        "unit": "microseconds"
+                  },
+                  "create_avg": {
+                        "value": 143,
+                        "unit": "microseconds"
+                  },
+                  "write_avg": {
+                        "value": 12,
+                        "unit": "microseconds"
+                  },
+                  "fsync_avg": {
+                        "value": 572,
+                        "unit": "microseconds"
+                  },
+                  "sync_avg": {
+                        "value": 0,
+                        "unit": "microseconds"
+                  },
+                  "close_avg": {
+                        "value": 4,
+                        "unit": "microseconds"
+                  },
+                  "unlink_avg": {
+                        "value": 294,
+                        "unit": "microseconds"
+                  }
+            }
+      },
+      "scripts": {
+            "shell1": {
+                  "4": {
+                        "value": 23337.2,
+                        "unit": "lpm"
+                  },
+                  "8": {
+                        "value": 44899.2,
+                        "unit": "lpm"
+                  },
+                  "16": {
+                        "value": 73002.2,
+                        "unit": "lpm"
+                  }
+            },
+            "shell8": {
+                  "4": {
+                        "value": 11233.6,
+                        "unit": "lpm"
+                  },
+                  "8": {
+                        "value": 12829.4,
+                        "unit": "lpm"
+                  },
+                  "16": {
+                        "value": 12708.9,
+                        "unit": "lpm"
+                  }
+            }
+      }
+}

@@ -162,19 +162,22 @@ class BenchmarkAggregator:
                         subsystem_results[test_name][copies] = ub_data[test_name]
             
             # LMbench тесты
-            for test_name, test_data in lm_results.items():
-                test_subsystem = self._get_subsystem_for_test('lmbench', test_name)
-                if test_subsystem == subsystem:
-                    subsystem_results[test_name] = test_data
+            for copies, lm_data in lm_results.items():
+                for test_name, test_data in lm_data.items():
+                    test_subsystem = self._get_subsystem_for_test('lmbench', test_name)
+                    if test_subsystem == subsystem:
+                        if test_name not in subsystem_results:
+                            subsystem_results[test_name] = {}
+                        subsystem_results[test_name][copies] = test_data
             
             # Perf тесты
-            for test_name, test_data in perf_results.items():
-                test_subsystem = self._get_subsystem_for_test('perf bench', test_name)
-                if test_subsystem == subsystem:
-                    subsystem_results[test_name] = {
-                        'value': test_data['value'],
-                        'unit': test_data['unit']
-                    }
+            for copies, perf_data in perf_results.items():
+                for test_name, test_data in perf_data.items():
+                    test_subsystem = self._get_subsystem_for_test('perf bench', test_name)
+                    if test_subsystem == subsystem:
+                        if test_name not in subsystem_results:
+                            subsystem_results[test_name] = {}
+                        subsystem_results[test_name][copies] = test_data
             
             # fs_mark тесты
             for test_name, test_data in fs_results.items():
@@ -210,24 +213,26 @@ class BenchmarkAggregator:
                 })
         
         # LMbench результаты
-        for test_name, test_data in lm_results.items():
-            rows.append({
-                'source': 'LMbench',
-                'test_name': test_name,
-                'subsystem': self._get_subsystem_for_test('lmbench', test_name),
-                'value': test_data['value'],
-                'unit': test_data['unit']
-            })
+        for copies, lm_data in lm_results.items():
+            for test_name, test_data in lm_data.items():
+                rows.append({
+                    'source': 'LMbench',
+                    'test_name': f"{test_name} ({copies} copies)",
+                    'subsystem': self._get_subsystem_for_test('lmbench', test_name),
+                    'value': test_data['value'],
+                    'unit': test_data['unit']
+                })
         
         # Perf результаты
-        for test_name, test_data in perf_results.items():
-            rows.append({
-                'source': 'perf bench',
-                'test_name': test_name,
-                'subsystem': self._get_subsystem_for_test('perf bench', test_name),
-                'value': test_data['value'],
-                'unit': test_data['unit']
-            })
+        for copies, perf_data in perf_results.items():
+            for test_name, test_data in perf_data.items():
+                rows.append({
+                    'source': 'perf bench',
+                    'test_name': f"{test_name} ({copies} copies)",
+                    'subsystem': self._get_subsystem_for_test('perf bench', test_name),
+                    'value': test_data['value'],
+                    'unit': test_data['unit']
+                })
         
         # fs_mark результаты 
         for test_name, test_data in fs_results.items():
@@ -286,6 +291,16 @@ class BenchmarkAggregator:
                 # Проверяем, UnixBench это или другой тест
                 if test_name in self.SUBSYSTEM_MAPPING[subsystem].get('unixbench', []):
                     # UnixBench - выводим для каждого количества копий
+                    log.info(f"\n  {test_name}:")
+                    for copies, copies_data in test_data.items():
+                        value = copies_data['value']
+                        unit = copies_data['unit']
+                        if value > 1000:
+                            log.info(f"    {copies} копий: {value:>15,.2f} {unit}")
+                        else:
+                            log.info(f"    {copies} копий: {value:>15.4f} {unit}")
+                elif isinstance(test_data, dict) and all(k.isdigit() for k in test_data.keys()):
+                    # LMbench или Perf 
                     log.info(f"\n  {test_name}:")
                     for copies, copies_data in test_data.items():
                         value = copies_data['value']

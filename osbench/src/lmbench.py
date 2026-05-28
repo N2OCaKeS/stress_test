@@ -10,7 +10,10 @@ from config.conf import (
     MAIN_DIR,
     RESULTS_MAIN_DIR,
     RESULT_LMBENCH_NAME,
-    RESULTS_STATUS
+    RESULTS_STATUS,
+    LOW_CONC,
+    HIGH_CONC,
+    STEP
 )
 
 
@@ -19,7 +22,10 @@ class LMBench(Test):
     LMbench
     """
     def __init__(self,
-                 report_filename=None):
+                 report_filename=None,
+                 low_concurrency=LOW_CONC,
+                 high_concurrency=HIGH_CONC,
+                 step=STEP):
         
         self.test_success = False
         self.lmbench_dir = f"{MAIN_DIR}/benchmarks/LMbench/lmbench"
@@ -32,17 +38,22 @@ class LMBench(Test):
         makedirs(self.results_dir, exist_ok=True)
         makedirs(self.test_dir, exist_ok=True)
 
+        self.low_concurrency = low_concurrency
+        self.high_concurrency = high_concurrency
+        self.step = step
+        self.concurrency = [self.low_concurrency] + list(range(self.step, self.high_concurrency, self.step))
+
         if report_filename is None:
             self._report_filename = f"{MAIN_DIR}/benchmarks/LMbench/lmbench/"
         else:
             self._report_filename = report_filename
 
-    def run_test(self, test_name, args):
+    def run_test(self, test_name, concur, args):
         """
         Запуск отдельного теста
         """
         if args:
-            cmd = f"{self.bin_path}/{test_name} {args}".strip()
+            cmd = f"{self.bin_path}/lmbench -P {concur} {test_name} {args}".strip()
         else:
             cmd = f"{self.bin_path}/{test_name}".strip()
 
@@ -50,7 +61,7 @@ class LMBench(Test):
 
         with open(self.results_file, 'a') as f:
             f.write(f"\n{'='*60}\n")
-            f.write(f"Test: {test_name} {args}\n")
+            f.write(f"Test: {test_name} {args} (concurrency={concur})\n")
             f.write(f"{'='*60}\n")
             f.write(result)
             f.write(f"\n{'='*60}\n\n")
@@ -68,7 +79,7 @@ class LMBench(Test):
         log.warning("Это НЕ ошибки, а нормальное поведение бенчмарка")
         log.warning("=" * 60)
         status_code_dict = {}
-
+        
         log.info(f"Создание тестового файла: {self.test_file}")
         system.leave_command(f"dd if=/dev/zero of={self.test_file} bs=1M count=100", returncode=True)
 
@@ -105,15 +116,18 @@ class LMBench(Test):
             f.write(f"Started: {system.leave_command('date', returncode=True)[0]}\n")
             f.write(f"{'='*60}\n\n")
 
-        for test_name, args in tests:
-            log.info(f"Running {test_name} {args}...")
-            output, code = self.run_test(test_name, args)
-            status_code_dict[test_name] = code
+        for concur in self.concurrency:
+            log.info(f"Запуск LMbench с {concur} параллельными потоками")
+            for test_name, args in tests:
+                log.info(f"Running {test_name} {concur} {args}...")
+                output, code = self.run_test(test_name, concur, args)
+                key = f"{test_name}_{args}_{concur}"
+                status_code_dict[key] = code
 
-            self.writer.wrs(cl=self.__class__,
-                            method=self.start_test.__name__,
-                            test=f"{test_name} {args}",
-                            status=code)
+                self.writer.wrs(cl=self.__class__,
+                                method=self.start_test.__name__,
+                                test=f"{test_name} {concur} {args}",
+                                status=code)
 
         if all(code for code in status_code_dict.values()):
             log.info("LMbench: - тестирование завершено успешно")
@@ -151,115 +165,113 @@ class LMBench(Test):
             
             makedirs(RESULTS_MAIN_DIR, exist_ok=True)
             
-            results = {}
-            
-            # Разбиваем на тесты
+            # Результаты с группировкой по concurrency
+            results_by_concurrency = {str(concur): {} for concur in self.concurrency}
             test_blocks = re.findall(r'Test: (.+?)\n=+\n(.*?)\n=+', content, re.DOTALL)
             
-            for test_name, result_text in test_blocks:
-                test_name = test_name.strip()
+            for test_block_name, result_text in test_blocks:
+                test_block_name = test_block_name.strip()
                 
-                # Определяем тип теста и единицы измерения
-                if 'lat_mem_rd' in test_name:
-                    numbers = re.findall(r'[\d\.]+\s+([\d\.]+)', result_text)
-                    if numbers:
-                        results[test_name] = {
-                            "value": float(numbers[-1]),
-                            "unit": "nanoseconds"
-                        }
-                        
-                elif 'lat_ctx' in test_name:
-                    numbers = re.findall(r'(\d+)\s+([\d\.]+)', result_text)
-                    if numbers:
-                        results[test_name] = {
-                            "value": float(numbers[-1][1]),
-                            "unit": "microseconds"
-                        }
-                        
-                elif 'lat_fs' in test_name:
-                    match = re.search(r'10k\s+(\d+)', result_text, re.IGNORECASE)
-                    if match:
-                        results[test_name] = {
-                            "value": int(match.group(1)),
-                            "unit": "operations/sec"
-                        }
-                        
-                elif 'bw_mem' in test_name:
-                    numbers = re.findall(r'[\d\.]+\s+([\d\.]+)', result_text)
-                    if numbers:
-                        results[test_name] = {
-                            "value": float(numbers[-1]),
-                            "unit": "MB/s"
-                        }
-                        
-                elif 'bw_file_rd' in test_name:
-                    match = re.search(r'[\d\.]+\s+([\d\.]+)', result_text)
-                    if match:
-                        results[test_name] = {
-                            "value": float(match.group(1)),
-                            "unit": "MB/s"
-                        }
-                        
-                elif 'lat_pipe' in test_name:
-                    match = re.search(r'([\d\.]+)\s+microseconds', result_text)
-                    if match:
-                        results[test_name] = {
-                            "value": float(match.group(1)),
-                            "unit": "microseconds"
-                        }
-                        
-                elif 'bw_pipe' in test_name:
-                    match = re.search(r'([\d\.]+)\s+MB/sec', result_text)
-                    if match:
-                        results[test_name] = {
-                            "value": float(match.group(1)),
-                            "unit": "MB/s"
-                        }
-                        
-                elif 'lat_proc' in test_name:
-                    match = re.search(r'([\d\.]+)\s+microseconds', result_text)
-                    if match:
-                        results[test_name] = {
-                            "value": float(match.group(1)),
-                            "unit": "microseconds"
-                        }
-                        
-                elif 'lat_sig' in test_name:
-                    match = re.search(r'([\d\.]+)\s+microseconds', result_text)
-                    if match:
-                        results[test_name] = {
-                            "value": float(match.group(1)),
-                            "unit": "microseconds"
-                        }
-                        
-                elif 'lat_syscall' in test_name:
-                    match = re.search(r'([\d\.]+)\s+microseconds', result_text)
-                    if match:
-                        results[test_name] = {
-                            "value": float(match.group(1)),
-                            "unit": "microseconds"
-                        }
+                concur_match = re.search(r'concurrency[=:](\d+)', test_block_name, re.IGNORECASE)
+                
+                if concur_match:
+                    concur = concur_match.group(1)
+                    clean_test_name = re.sub(r'\s*\(concurrency[=:]\d+\)', '', test_block_name).strip()
+                    if 'bw_file_rd' in clean_test_name:
+                        clean_test_name = 'bw_file_rd'
                 else:
-                    numbers = re.findall(r'([\d\.]+)', result_text)
-                    if numbers:
-                        results[test_name] = {
-                            "value": float(numbers[0]),
-                            "unit": "unknown"
-                        }
+                    log.warning(f"Не удалось определить concurrency для теста: {test_block_name}")
+                    continue
+                
+                # Парсим значение в зависимости от типа теста
+                parsed_value = self._parse_test_value(clean_test_name, result_text)
+                
+                if parsed_value:
+                    results_by_concurrency[concur][clean_test_name] = parsed_value
             
-            makedirs(RESULTS_MAIN_DIR, exist_ok=True)
             json_path = f"{RESULTS_MAIN_DIR}/{RESULT_LMBENCH_NAME}"
             with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump(results, f, indent=4, ensure_ascii=False)
+                json.dump(results_by_concurrency, f, indent=4, ensure_ascii=False)
             
-            log.info(f"LMbench: - результаты сохранены в {json_path}")
-            log.info(f"Собрано результатов: {len(results)}")
+            log.info(f"LMbench: результаты сохранены в {json_path}")
+            log.info(f"Собрано результатов для {len(results_by_concurrency)} уровней concurrency")
             
-            return True, True
-            
+            return True, True 
         except Exception as e:
-            log.critical(f"LMbench: - ошибка при сохранении результатов: {e}")
+            log.critical(f"LMbench: ошибка при сохранении результатов: {e}")
             import traceback
             log.critical(traceback.format_exc())
             return True, False
+            
+
+    def _parse_test_value(self, test_name, result_text):
+        """
+        Парсит значение теста в зависимости от его типа
+        """
+        if 'lat_mem_rd' in test_name:
+            numbers = re.findall(r'[\d\.]+\s+([\d\.]+)', result_text)
+            if numbers:
+                return {"value": float(numbers[-1]), "unit": "nanoseconds"}
+                
+        elif 'lat_ctx' in test_name:
+            numbers = re.findall(r'(\d+)\s+([\d\.]+)', result_text)
+            if numbers:
+                # Берем последнее значение (максимальное количество процессов)
+                return {"value": float(numbers[-1][1]), "unit": "microseconds"}
+                
+        elif 'lat_fs' in test_name:
+            # Ищем значение в operations/sec
+            match = re.search(r'(\d+)\s+operations/sec', result_text)
+            if match:
+                return {"value": int(match.group(1)), "unit": "operations/sec"}
+            # Альтернативный парсинг для других форматов
+            numbers = re.findall(r'(\d+)\s+(\d+)', result_text)
+            if numbers:
+                return {"value": int(numbers[-1][-1]), "unit": "operations/sec"}
+                
+        elif 'bw_mem' in test_name:
+            numbers = re.findall(r'[\d\.]+\s+([\d\.]+)', result_text)
+            if numbers:
+                return {"value": float(numbers[-1]), "unit": "MB/s"}
+                
+        elif 'bw_file_rd' in test_name:
+            # Для bw_file_rd ищем число в MB/s
+            match = re.search(r'([\d\.]+)\s+MB/s', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "MB/s"}
+            # Альтернативный парсинг
+            numbers = re.findall(r'([\d\.]+)', result_text)
+            if numbers:
+                return {"value": float(numbers[-1]), "unit": "MB/s"}
+                
+        elif 'lat_pipe' in test_name:
+            match = re.search(r'([\d\.]+)\s+microseconds', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "microseconds"}
+                
+        elif 'bw_pipe' in test_name:
+            match = re.search(r'([\d\.]+)\s+MB/s', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "MB/s"}
+                
+        elif 'lat_proc' in test_name:
+            match = re.search(r'([\d\.]+)\s+microseconds', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "microseconds"}
+                
+        elif 'lat_sig' in test_name:
+            match = re.search(r'([\d\.]+)\s+microseconds', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "microseconds"}
+                
+        elif 'lat_syscall' in test_name:
+            match = re.search(r'([\d\.]+)\s+microseconds', result_text)
+            if match:
+                return {"value": float(match.group(1)), "unit": "microseconds"}
+        else:
+            numbers = re.findall(r'([\d\.]+)', result_text)
+            if numbers:
+                return {"value": float(numbers[0]), "unit": "unknown"}
+        
+        return None
 

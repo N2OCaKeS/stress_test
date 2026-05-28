@@ -110,6 +110,12 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("server.prepare", "failure"): "CRITICAL",
     ("server.prepared", "success"): "CRITICAL",
     ("server.prepared", "failure"): "CRITICAL",
+    # Удаление сервера — destructive, без отката.
+    ("server.delete", "success"): "CRITICAL",
+    # Раскрытие расшифрованных секретов пользователю (b64) — отдельный action,
+    # эмитится только когда GET /ipmi или /server-accounts/{id} вернул plaintext.
+    ("ipmi_controller.credentials_revealed", "success"): "CRITICAL",
+    ("server_account.password_revealed", "success"): "CRITICAL",
     # IPMI power-операции — действия над железом.
     ("server.power_on", "success"): "WARNING",
     ("server.power_on", "failure"): "CRITICAL",

@@ -146,7 +146,10 @@ async def create_user(
         )
 
     from src.core.constants import PlatformRole as PR
-    _platform_admins = {PR.ACCOUNT_ADMIN, PR.LOGING_ADMIN}
+    # Платформенные роли без привязки к департаменту: account_admin —
+    # глобальный админ платформы, loging_admin/loging_reader — централизованное
+    # управление и чтение аудит-событий по всем департаментам.
+    _platform_admins = {PR.ACCOUNT_ADMIN, PR.LOGING_ADMIN, PR.LOGING_READER}
     if platform_role not in _platform_admins and not department_id:
         raise DomainValidationError(error_code="MISSING_REQUIRED_FIELD", message="department_id is required for non-admin users")
 

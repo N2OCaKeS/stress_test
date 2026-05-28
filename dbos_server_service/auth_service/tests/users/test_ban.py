@@ -298,6 +298,168 @@ async def test_ban_revokes_bot_tokens_for_owned_bots(
     )
 
 
+async def test_ban_revokes_tokens_of_deactivated_owned_bot(
+    client, admin_token, user_a, dept_a, db,
+):
+    """Если бот владельца давно деактивирован (`is_active=False`), но у него
+    остался активный токен — `ban_user` всё равно должен его отозвать.
+
+    Был риск, что `list_by_creator` начнут фильтровать по `is_active`, и
+    «зомби»-токен деактивированного бота переживёт ban владельца. Тест
+    фиксирует: выборка по `created_by` идёт без is_active-фильтра.
+    """
+    from src.core.security import generate_bot_token
+    from src.models import BotAccount, BotToken
+    from src.utils.ids import bot_id, bot_token_id
+
+    bot = BotAccount(
+        id=bot_id(),
+        name="deactivated_owned",
+        department_id=dept_a.id,
+        allowed_services=[],
+        is_active=False,
+        status="blocked",
+        created_by=user_a.id,
+    )
+    db.add(bot)
+    await db.flush()
+
+    raw_token, prefix, token_hash = generate_bot_token()
+    token = BotToken(
+        id=bot_token_id(),
+        bot_id=bot.id,
+        name="ghost_token",
+        token_hash=token_hash,
+        token_prefix=prefix,
+    )
+    db.add(token)
+    await db.flush()
+    await db.commit()
+
+    ban_resp = await _ban(client, admin_token, user_a.id)
+    assert ban_resp.status_code == 200
+
+    await db.refresh(token)
+    assert token.revoked_at is not None, (
+        "Токен деактивированного бота с created_by=banned_user должен быть "
+        "отозван — list_by_creator не фильтрует по is_active"
+    )
+
+
+async def test_ban_revokes_all_tokens_when_bot_has_multiple(
+    client, admin_token, user_a, dept_a, db,
+):
+    """У одного бота может быть несколько активных токенов — ban владельца
+    должен отозвать ВСЕ, не только первый."""
+    from src.core.security import generate_bot_token
+    from src.models import BotAccount, BotToken
+    from src.utils.ids import bot_id, bot_token_id
+
+    bot = BotAccount(
+        id=bot_id(),
+        name="multi_token_bot",
+        department_id=dept_a.id,
+        allowed_services=[],
+        is_active=True,
+        created_by=user_a.id,
+    )
+    db.add(bot)
+    await db.flush()
+
+    tokens: list[BotToken] = []
+    for i in range(3):
+        _, prefix, token_hash = generate_bot_token()
+        t = BotToken(
+            id=bot_token_id(),
+            bot_id=bot.id,
+            name=f"tok_{i}",
+            token_hash=token_hash,
+            token_prefix=prefix,
+        )
+        db.add(t)
+        tokens.append(t)
+    await db.flush()
+    await db.commit()
+
+    ban_resp = await _ban(client, admin_token, user_a.id)
+    assert ban_resp.status_code == 200
+
+    for t in tokens:
+        await db.refresh(t)
+        assert t.revoked_at is not None, (
+            f"Токен {t.name} должен быть отозван — bulk revoke_all_for_bots "
+            "обязан покрыть все live-токены каждого бота"
+        )
+
+
+async def test_ban_skips_already_revoked_tokens(
+    client, admin_token, user_a, dept_a, db, monkeypatch,
+):
+    """Уже отозванный токен (`revoked_at IS NOT NULL`) ban не должен трогать
+    повторно — счётчик `bot_tokens_revoked` в audit считает только свежие
+    отзывы."""
+    from src.core.security import generate_bot_token
+    from src.models import BotAccount, BotToken
+    from src.services import audit_service as audit_mod
+    from src.utils.ids import bot_id, bot_token_id
+    from src.utils.time import utcnow
+
+    bot = BotAccount(
+        id=bot_id(),
+        name="mixed_token_bot",
+        department_id=dept_a.id,
+        allowed_services=[],
+        is_active=True,
+        created_by=user_a.id,
+    )
+    db.add(bot)
+    await db.flush()
+
+    # Активный токен — будет revoked'нут ban'ом.
+    _, prefix_a, hash_a = generate_bot_token()
+    live = BotToken(
+        id=bot_token_id(), bot_id=bot.id, name="live",
+        token_hash=hash_a, token_prefix=prefix_a,
+    )
+    # Уже отозванный токен — ban не должен переписать revoked_at.
+    _, prefix_d, hash_d = generate_bot_token()
+    prior_revoke = utcnow()
+    dead = BotToken(
+        id=bot_token_id(), bot_id=bot.id, name="dead",
+        token_hash=hash_d, token_prefix=prefix_d,
+        revoked_at=prior_revoke,
+    )
+    db.add_all([live, dead])
+    await db.flush()
+    await db.commit()
+
+    captured: list[dict] = []
+    original_emit = audit_mod.emit
+
+    def _capture(action, actor_id=None, **kw):
+        captured.append({"action": action, **kw})
+        return original_emit(action, actor_id, **kw)
+
+    monkeypatch.setattr(audit_mod, "emit", _capture)
+
+    resp = await _ban(client, admin_token, user_a.id)
+    assert resp.status_code == 200
+
+    await db.refresh(live)
+    await db.refresh(dead)
+    assert live.revoked_at is not None, "активный токен должен быть отозван"
+    # `dead.revoked_at` не должен быть переписан — bulk-update фильтрует по
+    # `revoked_at IS NULL`.
+    assert dead.revoked_at == prior_revoke, (
+        "уже отозванный токен не должен получить новое revoked_at"
+    )
+
+    ban_events = [e for e in captured if e["action"] == "user.ban"]
+    assert ban_events
+    # Counter учитывает только свежие отзывы — один live токен.
+    assert ban_events[0]["details"]["bot_tokens_revoked"] == 1
+
+
 async def test_ban_does_not_revoke_tokens_of_bots_owned_by_others(
     client, admin_token, user_a, dept_a, db,
 ):

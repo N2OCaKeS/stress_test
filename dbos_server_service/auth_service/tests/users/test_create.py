@@ -23,6 +23,28 @@ async def test_admin_creates_account_admin_without_dept(client, admin_token):
     assert resp.json()["department_id"] is None
 
 
+async def test_admin_creates_loging_admin_without_dept(client, admin_token):
+    """loging_admin — платформенная роль, создаётся без department_id."""
+    resp = await client.post(URL, headers={"Authorization": f"Bearer {admin_token}"}, json={
+        "username": "new_log_admin", "password": "Admin1234!", "platform_role": "loging_admin",
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["department_id"] is None
+    assert body["platform_role"] == "loging_admin"
+
+
+async def test_admin_creates_loging_reader_without_dept(client, admin_token):
+    """loging_reader — платформенная read-only роль, тоже без department_id."""
+    resp = await client.post(URL, headers={"Authorization": f"Bearer {admin_token}"}, json={
+        "username": "new_log_reader", "password": "Reader1234!", "platform_role": "loging_reader",
+    })
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["department_id"] is None
+    assert body["platform_role"] == "loging_reader"
+
+
 async def test_admin_creates_dept_admin(client, admin_token, dept_a):
     resp = await client.post(URL, headers={"Authorization": f"Bearer {admin_token}"}, json={
         "username": "new_deptadmin", "password": "Admin1234!",

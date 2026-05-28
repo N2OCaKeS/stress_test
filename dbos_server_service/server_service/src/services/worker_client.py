@@ -70,6 +70,13 @@ _broker_started = False
 # свой broker (by design taskiq), lock в этом сценарии работать и не должен.
 _broker_lock = asyncio.Lock()
 
+# Pooled aioredis-клиент для bootstrap-кред prepare'а. До этого
+# `store_prepare_creds` дёргал `aioredis.from_url(...)` на каждый вызов —
+# burst /prepare исчерпывал FD'ы и connection-budget Redis'а. Поднимается
+# из lifespan в `src/main.py` (см. там же `aclose`). Если None — fallback
+# на per-call client (для unit-тестов вне lifespan).
+_prepare_redis_client: aioredis.Redis | None = None
+
 
 def _engine_factory():
     """Лениво строит async-engine для cross-DB вставок в `dev_server_worker.tasks`.
@@ -347,6 +354,14 @@ async def store_prepare_creds(creds_key: str, creds: dict) -> None:
             error_code="WORKER_REDIS_NOT_CONFIGURED",
             message="SERVER_WORKER_REDIS_URL is not set",
         )
+    pooled = _prepare_redis_client
+    if pooled is not None:
+        await pooled.set(
+            creds_key, json.dumps(creds), ex=settings.prepare_creds_ttl_seconds,
+        )
+        return
+    # Fallback: lifespan не поднял пул (unit-тест / standalone-вызов). Чтобы
+    # не ломать существующее поведение, делаем разовый клиент и закрываем.
     client = aioredis.from_url(settings.server_worker_redis_url)
     try:
         await client.set(

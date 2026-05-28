@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import httpx
+import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -23,7 +24,7 @@ from src.core.config import get_settings
 from src.core.exceptions import AppException
 from src.dependencies import auth as auth_deps
 from src.middleware.platform_admin_guard import platform_admin_guard
-from src.services import audit_context, audit_service
+from src.services import audit_context, audit_service, worker_client
 from src.services.audit_context import AuditContext
 from src.services.audit_events import register_events
 
@@ -151,6 +152,15 @@ def create_application() -> FastAPI:
                 timeout=2.0,
                 limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
             )
+        # Pooled aioredis-клиент для bootstrap-кред prepare'а. До этого
+        # `store_prepare_creds` строил `aioredis.from_url(...)` per-call —
+        # burst POST /prepare ронял Redis на connection-budget. Если
+        # `server_worker_redis_url` не задан, пул не создаём — сам
+        # `store_prepare_creds` поднимет WORKER_REDIS_NOT_CONFIGURED.
+        if settings.server_worker_redis_url:
+            worker_client._prepare_redis_client = aioredis.from_url(
+                settings.server_worker_redis_url,
+            )
         # Регистрируем event-каталог в loging_service + эмитим `service.started`
         # СИНХРОННО на startup (await до yield). Это закрывает прежнюю
         # race-condition с `asyncio.ensure_future(asyncio.to_thread(...))` —
@@ -214,6 +224,16 @@ def create_application() -> FastAPI:
             audit_service._audit_client = None
             if audit_pool is not None:
                 await audit_pool.aclose()
+
+            # Pooled prepare-creds Redis-клиент закрываем последним: с этого
+            # момента входящих POST /prepare уже нет (uvicorn graceful drain
+            # отработал выше), а `_prepare_redis_client = None` сбрасывает
+            # модульный slot, чтобы повторный запуск lifespan (в тестах через
+            # `app.router.lifespan_context`) не наследовал закрытый client.
+            prepare_redis = worker_client._prepare_redis_client
+            worker_client._prepare_redis_client = None
+            if prepare_redis is not None:
+                await prepare_redis.aclose()
 
     # В production закрываем публичный OpenAPI/Swagger UI — анонимы не должны
     # видеть каталог эндпоинтов (включая stub-501 с summary вроде «Reveal decrypted

@@ -269,7 +269,23 @@ async def _dispatch_account_on_host(
             message="Server account not found on this server",
         )
 
-    server = await server_svc.load_visible_server(db, identity, server_id)
+    # `load_visible_server` поднимает `NotFoundError` если сервер не найден
+    # или его department изменили out-of-band уже после линковки с аккаунтом
+    # (cross-dept edge). Без явного denied-аудита эта ветка молча отдаёт 404,
+    # security-trail теряет evidence — повторяем паттерн `server_account.get`.
+    try:
+        server = await server_svc.load_visible_server(db, identity, server_id)
+    except NotFoundError:
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={
+                "reason": "server_not_found_or_cross_dept",
+                "server_id": server_id,
+                "operation": operation,
+            },
+        )
+        raise
     if server.status == ServerStatus.DECOMMISSIONED:
         audit_service.emit(
             audit_action, target_id=account_id, target_type="server_account",

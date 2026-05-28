@@ -385,6 +385,7 @@ class TestTokenProxyFallbackTimeout:
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
         monkeypatch.setenv("INTROSPECT_TIMEOUT_SECONDS", "7.5")
+        monkeypatch.setenv("INTROSPECT_CONNECT_TIMEOUT_SECONDS", "2.5")
 
         # Зануляем pool, чтобы тестовая ветка пошла в fallback.
         monkeypatch.setattr(auth_dep, "_token_proxy_client", None)
@@ -406,7 +407,13 @@ class TestTokenProxyFallbackTimeout:
             password = "p"
 
         asyncio.run(auth_endpoint.login(_Form()))
-        assert captured["timeout"] == 7.5
+        # Fallback должен пробрасывать оба бюджета — общий read/write и
+        # отдельный connect. Без явного `httpx.Timeout` connect делил бы
+        # общий таймаут и медленнее залипал handshake.
+        timeout = captured["timeout"]
+        assert isinstance(timeout, httpx.Timeout)
+        assert timeout.read == 7.5
+        assert timeout.connect == 2.5
 
     def test_pooled_client_uses_introspect_timeout(self, monkeypatch):
         """Lifespan создаёт `_token_proxy_client` с total-таймаутом из env."""

@@ -672,10 +672,14 @@ def _action_for_path(method: str, path: str) -> str:
     """Возвращает имя action для успешного обращения к admin-эндпоинту loging_service."""
     if "/rules" in path:
         return "logging.rules_read" if method == "GET" else "logging.rules_write"
-    if "/services" in path:
-        return "logging.services_read"
+    # `/events` проверяем раньше `/services` — путь
+    # `/api/logging/v1/services/{svc}/events` содержит оба substring'а;
+    # без этого порядка SIEM атрибутировал бы чтение events конкретного
+    # сервиса как `logging.services_read`, теряя factum чтения событий.
     if "/events" in path:
         return "logging.events_queried"
+    if "/services" in path:
+        return "logging.services_read"
     return "logging.admin_access"
 
 
@@ -699,6 +703,18 @@ def _bump_self_audit_failures() -> int:
     global self_audit_failures_total
     with _self_audit_failures_lock:
         self_audit_failures_total += 1
+        return self_audit_failures_total
+
+
+def get_self_audit_failures_total() -> int:
+    """Прочитать счётчик под тем же lock'ом, что и инкремент.
+
+    Прямое чтение `self_audit_failures_total` из-под GIL атомарно для int,
+    но это implicit invariant: будущая замена на не-int (Prometheus Counter)
+    сломалась бы тихо. Внешним наблюдателям (`/metrics`, тесты) рекомендуется
+    идти через этот хелпер.
+    """
+    with _self_audit_failures_lock:
         return self_audit_failures_total
 
 

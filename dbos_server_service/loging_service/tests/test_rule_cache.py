@@ -119,6 +119,54 @@ class TestRuleCacheTTL:
         rules = cache.get(db)
         assert [r.name for r in rules] == ["new-rule"]
 
+    def test_soft_delete_bumps_max_and_invalidates_other_workers(self, db, TestSessionLocal):
+        """Soft-delete правила (deleted_at=now, bump updated_at) обязан
+        повышать MAX(updated_at) и заставить кеш на «других воркерах»
+        перезагрузиться. Иначе физический DELETE оставлял бы SUPPRESS-правило
+        активным до TTL=30s на репликах, не выполнивших delete.
+        """
+        # Раздельные сессии для воркеров A и B — у каждого реального воркера
+        # свой Session/identity-map. На общей сессии expunge внутри cache_b.get()
+        # отвязал бы объект правила и от воркера A, и последующий soft-delete
+        # ничего бы не записал в БД.
+        cache_b = _RuleCache(ttl_seconds=0)
+        session_b = TestSessionLocal()
+        try:
+            rule = _make_rule(db, "del-me", effect="SUPPRESS")
+            time.sleep(0.01)
+            rules_b = cache_b.get(session_b)
+            assert [r.name for r in rules_b] == ["del-me"]
+
+            # Воркер A удаляет (soft-delete).
+            time.sleep(0.01)
+            rule_repo.delete(db, rule)
+
+            # Воркер B видит, что MAX(updated_at) переехал, перезагружается и
+            # больше не возвращает удалённое правило.
+            time.sleep(0.01)
+            rules_b_after = cache_b.get(session_b)
+            assert rules_b_after == [], (
+                "После soft-delete cache на другом воркере обязан перезагрузиться "
+                "и не возвращать удалённое правило"
+            )
+        finally:
+            session_b.close()
+
+    def test_soft_deleted_rule_skipped_by_get_active_sorted(self, db):
+        """Soft-deleted правило не входит в active_sorted, даже если был active."""
+        rule = _make_rule(db, "to-delete")
+        rule_repo.delete(db, rule)
+        active = rule_repo.get_active_sorted(db)
+        assert active == []
+
+    def test_soft_deleted_rule_skipped_by_get_by_id(self, db):
+        """`get_by_id` возвращает None для soft-deleted — повторные операции
+        в endpoint'е получают 404, а не натыкаются на призрак."""
+        rule = _make_rule(db, "del-then-find")
+        rule_id = rule.id
+        rule_repo.delete(db, rule)
+        assert rule_repo.get_by_id(db, rule_id) is None
+
 
 # ── Stale fallback при ошибке БД ──────────────────────────────────────────────
 

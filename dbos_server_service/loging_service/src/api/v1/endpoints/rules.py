@@ -47,6 +47,9 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
     `username` и `department_id` пробрасываются для симметрии с
     `main.py::audit_access` — без них SIEM видит только opaque `actor_id`
     и не может атрибутировать `logging_rule.*` к человеку/отделу.
+
+    `commit=False` — call-site CRUD + audit живёт в одной транзакции,
+    единственный `db.commit()` делает endpoint после обеих DML.
     """
     actor_type = identity.get("actor_type") or "user"
     event_service.record_admin_action(
@@ -64,6 +67,7 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
             severity=None,
             details=details,
         ),
+        commit=False,
     )
 
 
@@ -140,7 +144,13 @@ def create_rule(
 ) -> RuleResponse:
     _validate_match_action(payload.match_action, db)
     try:
-        rule = rule_repo.create(db, payload)
+        rule = rule_repo.create(db, payload, commit=False)
+        # Audit + main op в одной транзакции: без этого audit-row коммитится
+        # отдельно — окно между двумя commit'ами теряет audit при OOM/network
+        # drop, нарушает compliance «все admin-действия аудитируются».
+        _audit(db, identity, "logging_rule.create", {"rule_id": rule.id, "rule_name": rule.name})
+        db.commit()
+        db.refresh(rule)
     except IntegrityError:
         db.rollback()
         raise ConflictError(
@@ -149,7 +159,6 @@ def create_rule(
             details={"name": payload.name},
         )
     rule_service.invalidate_cache()
-    _audit(db, identity, "logging_rule.create", {"rule_id": rule.id, "rule_name": rule.name})
     return RuleResponse.model_validate(rule)
 
 
@@ -194,7 +203,10 @@ def update_rule(
             message="effect_severity is only valid with effect=OVERRIDE_SEVERITY",
         )
     try:
-        updated = rule_repo.update(db, rule, payload)
+        updated = rule_repo.update(db, rule, payload, commit=False)
+        _audit(db, identity, "logging_rule.update", {"rule_id": rule_id, "changes": payload.model_dump(exclude_unset=True)})
+        db.commit()
+        db.refresh(updated)
     except IntegrityError:
         db.rollback()
         raise ConflictError(
@@ -203,7 +215,6 @@ def update_rule(
             details={"name": payload.name},
         )
     rule_service.invalidate_cache()
-    _audit(db, identity, "logging_rule.update", {"rule_id": rule_id, "changes": payload.model_dump(exclude_unset=True)})
     return RuleResponse.model_validate(updated)
 
 
@@ -224,8 +235,14 @@ def delete_rule(
     db: Session = Depends(get_db),
 ) -> None:
     rule = _get_or_404(db, rule_id)
-    _audit(db, identity, "logging_rule.delete", {"rule_id": rule_id, "rule_name": rule.name})
-    rule_repo.delete(db, rule)
+    # Сначала сохраняем имя для audit-details (репозиторий переименует row
+    # на soft-delete, чтобы освободить UNIQUE на name).
+    original_name = rule.name
+    # Порядок: delete → audit. Если delete упадёт — audit не пишется,
+    # SIEM не врёт «удалено» о неудалённом правиле.
+    rule_repo.delete(db, rule, commit=False)
+    _audit(db, identity, "logging_rule.delete", {"rule_id": rule_id, "rule_name": original_name})
+    db.commit()
     rule_service.invalidate_cache()
 
 

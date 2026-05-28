@@ -44,26 +44,19 @@ def _register_events_rate_limit_key(request: Request) -> str:
     IP-адресом nginx'а. Per-IP было бы либо too loose (общий bucket на все
     внутренние сервисы), либо самобан легитимного трафика.
 
-    Стратегия:
-      * primary key — `X-Service-Identity` (каждый внутренний сервис обязан
-        его слать). Bucket'ы независимы между сервисами:
-        compromised SERVICE_API_KEY заявляющий `auth_service` не выжмет
-        бюджет `server_service`.
-      * fallback на IP, если header отсутствует — backward-compat soft mode.
-        Per-service mode (`SERVICE_API_KEYS` непустой) уже отбрасывает запрос
-        без header'а ещё в `require_service_token`, так что этот fallback
-        срабатывает только в legacy single-key deploy.
+    Стратегия: берём верифицированную identity из `request.state`
+    (`require_service_token` положил её туда после `compare_digest` против
+    `SERVICE_API_KEYS[identity]`). Bucket'ы независимы между сервисами:
+    compromised SERVICE_API_KEY заявляющий `auth_service` не выжмет бюджет
+    `server_service`. Trust'а unauthenticated header'а здесь нет —
+    атакующий не может разносить bucket'ы spoof'ом X-Service-Identity.
 
-    `normalize_service_name` приводит identity к канонической форме
-    (NFKC + invisibles strip + confusables fold + lower), чтобы Unicode-варианты
-    (`AUTH_SERVICE`, `lоging_service`, ZWSP-padding) попадали в один bucket
-    и не обходили лимит дешёвой ротацией casing'а.
+    Fallback на IP — если auth ещё не отработал (нет state); в legacy
+    single-key deploy без X-Service-Identity бакеты сольются в один IP-key.
     """
-    raw_identity = request.headers.get("X-Service-Identity")
-    if raw_identity:
-        normalized = normalize_service_name(raw_identity)
-        if normalized:
-            return f"svc:{normalized}"
+    advertised = getattr(request.state, "service_identity", None)
+    if advertised:
+        return f"svc:{advertised}"
     return f"ip:{get_remote_address(request)}"
 
 # `RESERVED_SERVICE_NAMES` живёт в `core/constants.py`. Сравнение через

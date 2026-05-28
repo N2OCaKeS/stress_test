@@ -53,7 +53,7 @@ def create(db: Session, payload: RetentionPolicyCreate) -> RetentionPolicy:
 
 
 def create_policy(
-    db: Session, payload: RetentionPolicyCreate
+    db: Session, payload: RetentionPolicyCreate, *, commit: bool = True
 ) -> list[RetentionPolicy]:
     """Создаёт N×M retention-политик из Cartesian product (severity × service).
 
@@ -63,6 +63,9 @@ def create_policy(
     «все сервисы» соответственно.
 
     Возвращает список созданных строк в порядке вставки.
+
+    `commit=False` — для атомарного admin-CRUD: caller (endpoint)
+    делает единственный `db.commit()` после deactivate + create + audit.
     """
     now = datetime.now(timezone.utc)
     severities = payload.severity_filter or [None]
@@ -81,18 +84,24 @@ def create_policy(
             )
             db.add(policy)
             created.append(policy)
-    db.commit()
-    for p in created:
-        db.refresh(p)
+    if commit:
+        db.commit()
+        for p in created:
+            db.refresh(p)
+    else:
+        db.flush()
     return created
 
 
-def deactivate_all_active(db: Session) -> int:
+def deactivate_all_active(db: Session, *, commit: bool = True) -> int:
     """Помечает is_active=False у всех текущих активных политик.
 
     Используется при PUT с filter'ами: новая filtered-политика заменяет
     предыдущий набор (single global или предыдущий Cartesian). Возвращает
     количество затронутых строк.
+
+    `commit=False` — атомарный admin-CRUD: caller делает один commit
+    после deactivate + create + audit.
     """
     now = datetime.now(timezone.utc)
     result = db.execute(
@@ -100,7 +109,10 @@ def deactivate_all_active(db: Session) -> int:
         .where(RetentionPolicy.is_active == True)  # noqa: E712
         .values(is_active=False, updated_at=now)
     )
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return result.rowcount
 
 

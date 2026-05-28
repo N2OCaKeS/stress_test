@@ -58,6 +58,24 @@ class TestRulesCRUD:
         assert admin_client.delete(f"{RULES_URL}/{created['id']}").status_code == 204
         assert admin_client.get(f"{RULES_URL}/{created['id']}").status_code == 404
 
+    def test_delete_rule_frees_name_for_recreate(self, admin_client):
+        """Soft-delete переименовывает row, чтобы UNIQUE на name не блокировал
+        повторное создание правила с тем же именем."""
+        created = admin_client.post(RULES_URL, json=make_rule(name="recycle")).json()
+        admin_client.delete(f"{RULES_URL}/{created['id']}")
+        again = admin_client.post(RULES_URL, json=make_rule(name="recycle"))
+        assert again.status_code == 201
+        assert again.json()["id"] != created["id"]
+
+    def test_delete_rule_does_not_appear_in_list(self, admin_client):
+        """Soft-delete не должен показывать удалённое правило в GET /rules
+        (filter по deleted_at IS NULL)."""
+        created = admin_client.post(RULES_URL, json=make_rule(name="hide-me")).json()
+        admin_client.delete(f"{RULES_URL}/{created['id']}")
+        body = admin_client.get(RULES_URL).json()
+        ids = [r["id"] for r in body["items"]]
+        assert created["id"] not in ids
+
     def test_duplicate_name_returns_409(self, admin_client):
         admin_client.post(RULES_URL, json=make_rule(name="dup"))
         assert admin_client.post(RULES_URL, json=make_rule(name="dup")).status_code == 409

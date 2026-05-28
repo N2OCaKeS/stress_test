@@ -11,7 +11,7 @@ from src.schemas.events import EventCreate
 from src.utils.ids import audit_event_id
 
 
-def insert(db: Session, payload: EventCreate) -> AuditEvent:
+def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEvent:
     """Вставляет новое событие аудита с idempotency по `(service, idempotency_key)`.
 
     Когда `payload.idempotency_key` задан, два POST'а с одинаковой
@@ -24,6 +24,9 @@ def insert(db: Session, payload: EventCreate) -> AuditEvent:
 
     Когда `payload.idempotency_key` — None, дедуп не происходит. Legacy
     caller'ы / one-shot ingest продолжают вставлять безусловно.
+
+    `commit=False` — для атомарного admin-CRUD: основной DML и audit
+    шарят одну транзакцию, единственный `db.commit()` делает caller.
     """
     new_id = audit_event_id()
     received = datetime.now(timezone.utc)
@@ -50,8 +53,11 @@ def insert(db: Session, payload: EventCreate) -> AuditEvent:
             idempotency_key=None,
         )
         db.add(event)
-        db.commit()
-        db.refresh(event)
+        if commit:
+            db.commit()
+            db.refresh(event)
+        else:
+            db.flush()
         return event
 
     # Idempotent path — INSERT … ON CONFLICT (service, idempotency_key) DO
@@ -95,7 +101,10 @@ def insert(db: Session, payload: EventCreate) -> AuditEvent:
         .returning(AuditEvent.id)
     )
     result = db.execute(stmt).scalar_one_or_none()
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
     if result is not None:
         # Свежая вставка — достаём row, который только что записали, чтобы

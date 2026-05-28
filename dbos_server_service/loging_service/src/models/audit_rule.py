@@ -51,3 +51,10 @@ class AuditRule(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+    # Soft-delete для cross-worker invalidation: физический DELETE не меняет
+    # MAX(updated_at) на оставшихся row, и _RuleCache на других воркерах
+    # видит «свежие» данные ещё TTL=30s. Soft-delete bump'ит updated_at у
+    # самой строки, MAX растёт, кеш переезжает.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )

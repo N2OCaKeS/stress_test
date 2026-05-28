@@ -401,3 +401,69 @@ class TestFilteredPolicy:
         deleted = apply_active(db)
         assert deleted == 0
         assert db.query(AuditEvent).count() == 1
+
+
+class TestRetentionAuditSnapshot:
+    """`logging.retention_write` audit-events должны нести ПОЛНЫЙ snapshot
+    активного набора, а не только первую представительскую строку."""
+
+    def test_put_audit_old_snapshot_lists_all_active_policies(
+        self, admin_client, db
+    ):
+        from src.models.audit_event import AuditEvent
+
+        # Подготовка: набор из 4 filtered-политик активен.
+        admin_client.put(
+            URL,
+            json={
+                "retain_days": 30,
+                "severity_filter": ["INFO", "WARNING"],
+                "service_filter": ["auth_service", "server_service"],
+            },
+        )
+
+        # Перезаписываем — теперь old_snapshot должен описать все 4 прежних.
+        admin_client.put(URL, json={"retain_days": 60})
+
+        events = (
+            db.query(AuditEvent)
+            .filter_by(action="logging.retention_write")
+            .order_by(AuditEvent.received_at.desc())
+            .all()
+        )
+        assert events, "ожидался хотя бы один retention_write event"
+        latest = events[0]
+        old = latest.details.get("old", [])
+        # 4-элементный Cartesian, не одна представительская строка.
+        assert isinstance(old, list)
+        assert len(old) == 4, (
+            f"old_snapshot должен описать весь активный набор, "
+            f"получили {len(old)} элементов"
+        )
+
+    def test_delete_audit_old_snapshot_lists_all_active_policies(
+        self, admin_client, db
+    ):
+        from src.models.audit_event import AuditEvent
+
+        admin_client.put(
+            URL,
+            json={
+                "retain_days": 30,
+                "severity_filter": ["INFO", "ERROR"],
+            },
+        )
+        admin_client.delete(URL)
+
+        events = (
+            db.query(AuditEvent)
+            .filter_by(action="logging.retention_write")
+            .order_by(AuditEvent.received_at.desc())
+            .all()
+        )
+        # disable пишет последним событием.
+        latest = events[0]
+        old = latest.details.get("old", [])
+        assert isinstance(old, list)
+        assert len(old) == 2
+        assert latest.details.get("new") is None

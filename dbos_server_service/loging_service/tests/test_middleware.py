@@ -40,8 +40,14 @@ class TestActionForPath:
         from src.main import _action_for_path
         assert _action_for_path("GET",
                                 "/api/logging/v1/services") == "logging.services_read"
-        assert _action_for_path("GET",
-                                "/api/logging/v1/services/auth_service/events") == "logging.services_read"
+
+    def test_services_events_subpath_maps_to_events_queried(self):
+        """GET /services/{svc}/events содержит и `/services`, и `/events`;
+        правильная атрибуция в SIEM — чтение событий, не реестр сервисов."""
+        from src.main import _action_for_path
+        assert _action_for_path(
+            "GET", "/api/logging/v1/services/auth_service/events"
+        ) == "logging.events_queried"
 
     def test_events_get_maps_to_events_queried(self):
         from src.main import _action_for_path

@@ -37,21 +37,20 @@ def _ingest_rate_limit_key(request: Request) -> str:
 
     В k8s весь ingest идёт через один ingress-pod — per-IP key дал бы общий
     bucket на все сервисы, и один флудящий сервис выжимал бы бюджет
-    остальных. Поэтому ключуемся по идентичности сервиса из заголовка
-    `X-Service-Identity` (его шлёт каждый внутренний caller), с fallback на IP
-    для legacy single-key deploy без header'а. Симметрично
-    `_register_events_rate_limit_key` для batch-канала
-    `POST /services/{service}/events`.
+    остальных. Поэтому ключуемся по идентичности сервиса, которую
+    `require_service_token` положил в `request.state.service_identity`
+    ПОСЛЕ аутентификации. Это закрывает bucket-spoofing: атакующий с
+    валидным SERVICE_API_KEY (shared mode) не может разнести bucket'ы
+    рандомным `X-Service-Identity` на каждый запрос — limit-decorator
+    видит уже верифицированную identity.
 
-    `normalize_service_name` приводит identity к канонической форме (NFKC +
-    invisibles strip + confusables fold + lower), чтобы Unicode-варианты не
-    обходили лимит ротацией casing'а.
+    Fallback на IP — для случаев, где state не выставлен (path до
+    `require_service_token` сработал, тесты на отказ авторизации).
     """
-    raw_identity = request.headers.get("X-Service-Identity")
-    if raw_identity:
-        normalized = normalize_service_name(raw_identity)
-        if normalized:
-            return f"svc:{normalized}"
+    advertised = getattr(request.state, "service_identity", None)
+    if advertised:
+        # require_service_token уже нормализовал identity перед stash'ем.
+        return f"svc:{advertised}"
     return f"ip:{get_remote_address(request)}"
 
 

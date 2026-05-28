@@ -33,7 +33,9 @@ def record(db: Session, payload: EventCreate) -> AuditEvent | None:
     return event_repo.insert(db, modified)
 
 
-def record_admin_action(db: Session, payload: EventCreate) -> AuditEvent:
+def record_admin_action(
+    db: Session, payload: EventCreate, *, commit: bool = True
+) -> AuditEvent:
     """Сохраняет событие администратора loging_service, минуя правила (нельзя подавить).
 
     severity назначается из _DEFAULT_SEVERITY если не задан явно.
@@ -43,6 +45,9 @@ def record_admin_action(db: Session, payload: EventCreate) -> AuditEvent:
     bypass правил для чужих сервисов. Используем `AppException(500)` (а не
     `assert`), чтобы invariant сохранялся даже под `python -O`, и чтобы FastAPI
     отдал стандартизованный 500-ответ через `app_exception_handler`.
+
+    `commit=False` — для admin-CRUD: основная DML-операция и audit идут в
+    одной транзакции, итоговый `db.commit()` делает endpoint.
     """
     from src.services.rule_service import _resolve_default_severity
     if payload.service != "loging_service":
@@ -59,7 +64,7 @@ def record_admin_action(db: Session, payload: EventCreate) -> AuditEvent:
         payload = payload.model_copy(
             update={"severity": _resolve_default_severity(payload.action, payload.status)}
         )
-    return event_repo.insert(db, payload)
+    return event_repo.insert(db, payload, commit=commit)
 
 
 def query(

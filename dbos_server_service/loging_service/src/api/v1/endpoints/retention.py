@@ -42,6 +42,9 @@ def _audit(db: Session, identity: dict, details: dict) -> None:
     Зеркалит логику из rules.py: actor_type c fallback на "user", все
     identity-поля проброшены для атрибуции в SIEM (без department_id и
     username SOC видел бы только opaque actor_id).
+
+    `commit=False` — retention-CRUD и audit живут в одной транзакции
+    endpoint'а, единственный `db.commit()` делает caller.
     """
     actor_type = identity.get("actor_type") or "user"
     event_service.record_admin_action(
@@ -59,6 +62,7 @@ def _audit(db: Session, identity: dict, details: dict) -> None:
             severity=None,
             details=details,
         ),
+        commit=False,
     )
 
 
@@ -74,6 +78,17 @@ def _snapshot(policy) -> dict | None:
         "severity": policy.severity,
         "service": policy.service,
     }
+
+
+def _snapshot_list(policies) -> list[dict]:
+    """Полный снимок набора политик для audit-details.
+
+    Filtered-PUT/DELETE затрагивает Cartesian product (N×M строк). `get_active`
+    возвращает только одну (limit 1) — audit-events с `details.old` показывали
+    бы лишь представительскую строку. SOC видит частичную картину изменения
+    политики хранения.
+    """
+    return [_snapshot(p) for p in policies if p is not None]
 
 
 @router.get(
@@ -112,15 +127,24 @@ def set_policy(
     identity: AdminIdentity,
     db: Session = Depends(get_db),
 ) -> RetentionPolicyResponse:
-    existing = repo.get_active(db)
-    old_snapshot = _snapshot(existing)
+    # Полный снимок прежнего активного набора (filtered-PUT мог дать
+    # Cartesian N×M строк). get_active даёт только одну, audit-details
+    # показал бы частичную картину.
+    old_snapshot = _snapshot_list(repo.list_active(db))
 
     # PUT replaces: гасим весь прежний активный набор (одна global-строка
     # либо предыдущий Cartesian) и пишем новый. Иначе сброс фильтров оставил
     # бы старые узкие предикаты активными рядом с новой политикой.
-    repo.deactivate_all_active(db)
-    created = repo.create_policy(db, payload)
-    _audit(db, identity, {"old": old_snapshot, "new": _snapshot(created[0])})
+    # Всё в одной транзакции: deactivate + create + audit, единственный
+    # commit в конце. Иначе окно между раздельными commit'ами теряет audit
+    # при OOM/connection drop — нарушение compliance.
+    repo.deactivate_all_active(db, commit=False)
+    created = repo.create_policy(db, payload, commit=False)
+    new_snapshot = _snapshot_list(created)
+    _audit(db, identity, {"old": old_snapshot, "new": new_snapshot})
+    db.commit()
+    for p in created:
+        db.refresh(p)
     return RetentionPolicyResponse.model_validate(created[0])
 
 
@@ -140,15 +164,15 @@ def disable_policy(
     identity: AdminIdentity,
     db: Session = Depends(get_db),
 ) -> None:
-    old_snapshot = _snapshot(repo.get_active(db))
-    deactivated = repo.deactivate_all_active(db)
-    # old_snapshot — представительская строка набора (самая свежая); при
-    # пустой системе None. deactivated_count показывает SOC реальный размер
-    # погашенного набора (1 для global, N×M для filtered).
+    # Полный снимок всего набора (filtered-режим даёт N×M строк);
+    # представительская get_active() показывала бы только одну.
+    old_snapshot = _snapshot_list(repo.list_active(db))
+    deactivated = repo.deactivate_all_active(db, commit=False)
     _audit(
         db,
         identity,
         {"old": old_snapshot, "new": None, "deactivated_count": deactivated},
     )
+    db.commit()
 
 

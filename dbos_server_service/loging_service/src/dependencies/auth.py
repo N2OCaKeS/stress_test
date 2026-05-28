@@ -143,6 +143,14 @@ def require_service_token(
 
         expected_key = settings.service_api_keys.get(identity)
         if expected_key is None:
+            # Timing-oracle защита: known/unknown identity должны давать
+            # одинаковую latency, иначе атакующий probit'ит список
+            # сконфигурированных identity по разнице времени ответа. Прогоняем
+            # compare_digest против фиктивного секрета той же длины, что и
+            # реальные ключи (берём первый из map для длины — все ключи
+            # должны быть сопоставимы; иначе фолбэк на 32 байта).
+            sample_key = next(iter(settings.service_api_keys.values()), "x" * 32)
+            secrets.compare_digest(credentials.credentials, sample_key)
             _logger.warning(
                 "loging: X-Service-Identity %r is not present in "
                 "SERVICE_API_KEYS map (path=%s) — rejecting",

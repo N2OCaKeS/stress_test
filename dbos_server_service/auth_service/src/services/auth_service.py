@@ -234,7 +234,7 @@ def _build_identity(user, dept_name: str | None, allowed_services: list[str], se
     )
 
 
-def _build_access_token(user, allowed_services: list[str], service_roles: dict) -> str:
+def _build_access_token(user) -> str:
     """Сминтить access JWT для юзера. TTL — из settings.
 
     В payload кладём минимум: `sub` + `actor_type` (+ iat/exp/iss/aud от
@@ -243,9 +243,7 @@ def _build_access_token(user, allowed_services: list[str], service_roles: dict) 
     `username` декодируются из base64 без ключа и палят права/принадлежность
     отделу через любой логированный или утёкший токен. Все эти поля живые
     данные: `get_current_identity` и `introspect` revalidate'ят их из БД на
-    каждом запросе, в payload они не нужны. Параметры `allowed_services` и
-    `service_roles` оставлены в сигнатуре, чтобы не ломать callers — внутри
-    игнорируются.
+    каждом запросе, в payload они не нужны.
     """
     settings = get_settings()
     return create_access_token(
@@ -357,7 +355,7 @@ async def login(
         user_agent=user_agent,
     )
 
-    access_token = _build_access_token(user, allowed_services, service_roles)
+    access_token = _build_access_token(user)
     await db.commit()
 
     audit_context.update_context(
@@ -386,9 +384,6 @@ async def refresh(db: AsyncSession, raw_refresh_token: str, request_id: str | No
     settings = get_settings()
     session_repo = SessionRepository(db)
     user_repo = UserRepository(db)
-    role_repo = RoleRepository(db)
-    dept_repo = DepartmentRepository(db)
-    group_repo = GroupRepository(db)
 
     token_hash = hash_refresh_token(raw_refresh_token)
     sess = await session_repo.get_active_by_token_hash(token_hash)
@@ -421,12 +416,6 @@ async def refresh(db: AsyncSession, raw_refresh_token: str, request_id: str | No
         await db.commit()
         raise AuthorizationError(error_code="USER_BLOCKED", message="User is blocked")
 
-    dept_services = await dept_repo.list_active_services(user.department_id)
-    direct_roles = await role_repo.get_all_roles(user.id)
-    group_services = await group_repo.list_active_services_for_user(user.id)
-    group_roles = await group_repo.get_roles_for_user(user.id)
-    allowed_services, service_roles = _merge_permissions(dept_services, direct_roles, group_services, group_roles)
-
     new_raw, new_hash = generate_refresh_token()
     new_expires = expires_at(days=settings.refresh_token_ttl_days)
     rotated = await session_repo.rotate(sess, new_hash, new_expires)
@@ -451,7 +440,7 @@ async def refresh(db: AsyncSession, raw_refresh_token: str, request_id: str | No
             message="Refresh token was rotated by a concurrent request; retry with the new token.",
         )
 
-    access_token = _build_access_token(user, allowed_services, service_roles)
+    access_token = _build_access_token(user)
     await db.commit()
 
     audit_context.update_context(

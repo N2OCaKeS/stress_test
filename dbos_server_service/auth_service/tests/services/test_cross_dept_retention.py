@@ -112,12 +112,10 @@ async def test_introspect_after_transfer_returns_filtered_view(
     user = two_depts_one_service["user"]
     dept_b = two_depts_one_service["dept_b"]
 
-    # Issue JWT до transfer'а — payload содержит config_service / admin.
-    access = _build_access_token(
-        user,
-        allowed_services=["config_service"],
-        service_roles={"config_service": ["admin"]},
-    )
+    # Issue JWT до transfer'а — claims больше не несут permissions, но
+    # `sub`/`actor_type` достаточно, чтобы introspect зашёл в БД и пересчитал
+    # права уже после transfer'а.
+    access = _build_access_token(user)
 
     # Transfer и commit.
     user_repo = UserRepository(db)

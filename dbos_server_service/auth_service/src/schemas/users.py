@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 from pydantic_core import PydanticCustomError
 
 from src.core.constants import BanType, PlatformRole, UserStatus
+from src.core.password_policy import validate_password
 
 
 class InitialRoleAssignment(BaseModel):
@@ -17,7 +18,7 @@ class InitialRoleAssignment(BaseModel):
 class UserCreate(BaseModel):
     """Тело `POST /users`."""
     username: str = Field(min_length=3, max_length=128, description="Уникальный username (3..128 символов).")
-    password: str = Field(min_length=4, description="Пароль в plaintext. Хэшируется Argon2id перед записью.")
+    password: str = Field(min_length=8, description="Пароль в plaintext. Минимум 8 символов, буквы + цифры. Хэшируется Argon2id перед записью.")
     email: EmailStr | None = Field(default=None, description="Email (опционально).")
     # У account_admin юзеров нет отдела; для всех остальных ролей department_id обязателен
     department_id: str | None = Field(
@@ -36,6 +37,11 @@ class UserCreate(BaseModel):
         default=None,
         description="Service-роли, которые сразу выдать новому юзеру.",
     )
+
+    @field_validator("password")
+    @classmethod
+    def _check_password_policy(cls, value: str) -> str:
+        return validate_password(value)
 
 
 class UserUpdate(BaseModel):
@@ -77,7 +83,12 @@ class AssignRolesRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     """Тело `POST /users/{user_id}/reset-password`."""
-    new_password: str = Field(min_length=8, description="Новый пароль (минимум 8 символов).")
+    new_password: str = Field(min_length=8, description="Новый пароль (минимум 8 символов, буквы + цифры).")
+
+    @field_validator("new_password")
+    @classmethod
+    def _check_password_policy(cls, value: str) -> str:
+        return validate_password(value)
 
 
 class AddUserToGroupRequest(BaseModel):

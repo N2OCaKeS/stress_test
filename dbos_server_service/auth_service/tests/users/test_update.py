@@ -163,34 +163,32 @@ async def test_patch_status_garbage_returns_422(client, admin_token, user_a):
     assert resp.status_code == 422
 
 
-@pytest.mark.xfail(
-    reason="ban_user revoke-ит PAT, поэтому после PATCH-ban introspect отвечает "
-    "active=False, а не active=True+is_banned=True. Тест надо переписать под "
-    "новую семантику либо удалить как дубликат ban_user-flow.",
-    strict=False,
-)
-async def test_patch_status_banned_makes_pat_introspect_report_is_banned(
+async def test_patch_status_banned_revokes_pat(
     client, admin_token, user_a, user_a_token,
 ):
-    """Главный эксплойт: PATCH со status="banned" не должен оставлять PAT валидным
-    «активным» для applied services. После фикса `is_banned=True` в introspect."""
-    # Выпускаем PAT до бана.
+    """PATCH со status="banned" делегирует в `ban_user`, который revoke-ит PAT.
+
+    Раньше PATCH-путь мог оставить PAT активным («тихий бан»). После фикса
+    PATCH-ACTIVE→BANNED проходит через `ban_user` → `token_repo.revoke_all_for_user`,
+    и introspect возвращает `active=False`.
+    """
     raw = (await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
         json={"name": "patch_ban_intr_pat", "allowed_services": []},
     )).json()["token"]
 
-    # Баним через PATCH (альтернативный путь к ban_user).
+    # Sanity: PAT валиден до бана.
+    pre = await client.post(INTROSPECT_URL, json={"token": raw})
+    assert pre.status_code == 200
+    assert pre.json()["active"] is True
+
     resp = await _patch(client, admin_token, user_a.id, {"status": "banned"})
     assert resp.status_code == 200
 
-    # introspect должен честно сказать «забанен».
-    intr = await client.post(INTROSPECT_URL, json={"token": raw})
-    assert intr.status_code == 200
-    body = intr.json()
-    assert body["active"] is True   # сам токен валиден
-    assert body["is_banned"] is True  # но юзер забанен
+    post = await client.post(INTROSPECT_URL, json={"token": raw})
+    assert post.status_code == 200
+    assert post.json()["active"] is False  # но юзер забанен
 
 
 # ── PATCH /users {status: banned/active} должен эмитить user.ban / user.unban ──

@@ -120,37 +120,6 @@ async def test_unban_sets_is_active_true_in_db(client, admin_token, user_a, db):
     assert user_a.is_active is True
 
 
-@pytest.mark.xfail(
-    reason="ban_user revoke-ит PAT, поэтому introspect отвечает active=False. "
-    "Тест ожидает active=True + is_banned=True (старая семантика). "
-    "Либо переписать тест под новую семантику, либо удалить — оставить дубликат "
-    "test_pat_introspect_reports_is_banned_false_after_unban покрывает unban-путь.",
-    strict=False,
-)
-async def test_pat_introspect_reports_is_banned_true_after_ban(
-    client, admin_token, user_a, user_a_token,
-):
-    """PAT-introspect забаненного юзера: `is_banned=True`.
-
-    До фикса возвращал `False`, потому что `user.is_active` не менялся
-    при бане (см. `authorization_service.introspect:115`).
-    """
-    raw = (await client.post(
-        TOKENS_URL,
-        headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "ban_intr_pat", "allowed_services": []},
-    )).json()["token"]
-
-    await _ban(client, admin_token, user_a.id)
-
-    resp = await client.post(INTROSPECT_URL, json={"token": raw})
-    assert resp.status_code == 200
-    body = resp.json()
-    # PAT остаётся валидным как токен (его не отзывали), но юзер забанен.
-    assert body["active"] is True
-    assert body["is_banned"] is True
-
-
 # unban_user реактивирует PAT-токены, отозванные при ban'е, через
 # `revoked_reason="ban"` (миграция c7d8e9f0a1b2).
 async def test_pat_introspect_reports_is_banned_false_after_unban(

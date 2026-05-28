@@ -18,35 +18,45 @@ from src.schemas.users import BanRequest, ResetPasswordRequest, UserCreate, User
 
 class TestUserCreate:
     def test_minimal_valid(self):
-        m = UserCreate(username="alice123", password="strong", department_id="dep_a")
+        m = UserCreate(username="alice123", password="Strong12", department_id="dep_a")
         assert m.username == "alice123"
         assert m.platform_role is None
 
     def test_username_min_length(self):
         with pytest.raises(ValidationError):
-            UserCreate(username="ab", password="strong", department_id="dep_a")
+            UserCreate(username="ab", password="Strong12", department_id="dep_a")
 
     def test_username_max_length(self):
-        UserCreate(username="u" * 128, password="strong", department_id="dep_a")
+        UserCreate(username="u" * 128, password="Strong12", department_id="dep_a")
         with pytest.raises(ValidationError):
-            UserCreate(username="u" * 129, password="strong", department_id="dep_a")
+            UserCreate(username="u" * 129, password="Strong12", department_id="dep_a")
 
     def test_password_min_length(self):
         with pytest.raises(ValidationError):
             UserCreate(username="alice", password="abc", department_id="dep_a")
 
+    def test_password_complexity_letters_and_digits(self):
+        # Только буквы — fail.
+        with pytest.raises(ValidationError):
+            UserCreate(username="alice", password="onlyletters", department_id="dep_a")
+        # Только цифры — fail.
+        with pytest.raises(ValidationError):
+            UserCreate(username="alice", password="12345678", department_id="dep_a")
+        # 8+ символов, буквы и цифры — ok.
+        UserCreate(username="alice", password="Mix12345", department_id="dep_a")
+
     def test_email_validated(self):
         with pytest.raises(ValidationError):
-            UserCreate(username="alice", password="strong", department_id="dep_a",
+            UserCreate(username="alice", password="Strong12", department_id="dep_a",
                        email="not-an-email")
-        m = UserCreate(username="alice", password="strong", department_id="dep_a",
+        m = UserCreate(username="alice", password="Strong12", department_id="dep_a",
                        email="alice@example.com")
         assert m.email == "alice@example.com"
 
     def test_department_id_optional_in_schema(self):
         """Schema-level не требует department_id — это бизнес-валидация в user_service
         (для не-admin ролей)."""
-        m = UserCreate(username="root", password="strong")
+        m = UserCreate(username="root", password="Strong12")
         assert m.department_id is None
 
 
@@ -98,9 +108,17 @@ class TestResetPasswordRequest:
         with pytest.raises(ValidationError):
             ResetPasswordRequest(new_password="short")
 
-    def test_valid_8_chars(self):
-        m = ResetPasswordRequest(new_password="12345678")
-        assert len(m.new_password) == 8
+    def test_complexity_letters_and_digits(self):
+        # Только цифры — fail (раньше проходило, политика была мягче).
+        with pytest.raises(ValidationError):
+            ResetPasswordRequest(new_password="12345678")
+        # Только буквы — fail.
+        with pytest.raises(ValidationError):
+            ResetPasswordRequest(new_password="onlyletters")
+
+    def test_valid_letters_and_digits(self):
+        m = ResetPasswordRequest(new_password="Mix12345")
+        assert m.new_password == "Mix12345"
 
 
 # ── ServiceRoleCreate ────────────────────────────────────────────────────────

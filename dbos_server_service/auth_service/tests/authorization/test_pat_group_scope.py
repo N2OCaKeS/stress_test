@@ -182,7 +182,7 @@ async def test_pat_and_jwt_yield_same_services(db, user_with_group_service):
     raw = await _issue_pat(db, user.id, "pat_symmetry", list(full_services))
     pat_resp = await introspect(db, raw)
 
-    jwt = _build_access_token(user, allowed_services=[], service_roles={})
+    jwt = _build_access_token(user)
     jwt_resp = await introspect(db, jwt)
 
     assert pat_resp.active is True and jwt_resp.active is True

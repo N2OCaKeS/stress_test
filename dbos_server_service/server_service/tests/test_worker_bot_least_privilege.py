@@ -72,7 +72,7 @@ class TestWorkerBotAllowedActions:
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
             headers=_hdr(worker_bot_token_a),
-            json={"password": "acc-new"},
+            json={"password": "AccNew1234"},
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["ok"] is True

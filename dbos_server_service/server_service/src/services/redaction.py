@@ -29,6 +29,7 @@ _PASSWORD_KEYS = {
     "password", "passwd", "pwd", "pass",
     "old_password", "new_password", "current_password",
     "confirm_password", "user_password",
+    "bootstrap_password", "bootstrap_login",
 }
 _TOKEN_KEYS = {
     "token", "access_token", "refresh_token", "id_token",

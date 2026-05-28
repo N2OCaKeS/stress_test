@@ -292,6 +292,24 @@ async def fetch_account_password(
             },
         )
     if account.password_encrypted is None:
+        # Discovered-аккаунт (`source=discovered`) приходит в БД без пароля —
+        # инвентаризация ловит существующего OS-юзера и заводит карточку.
+        # `account.provision` на такой записи отдаёт worker'у пустой пароль:
+        # tasks/users.py трактует это как «useradd без chpasswd», что
+        # соответствует ТЗ (SUCCEEDED + INFO, не failure). Для managed-аккаунтов
+        # без пароля поведение прежнее — 404 ACCOUNT_HAS_NO_PASSWORD.
+        if account.source == "discovered":
+            audit_service.emit(
+                "server_account.view_password",
+                target_id=account_id, target_type="server_account",
+                status="success", allowed=True,
+                details={
+                    "server_id": server_id,
+                    "login": account.login,
+                    "discovered_no_password": True,
+                },
+            )
+            return {"login": account.login, "password": ""}
         audit_service.emit(
             "server_account.view_password",
             target_id=account_id, target_type="server_account",
@@ -441,32 +459,26 @@ async def _resolve_or_create_os(
 async def _upsert_disks(
     db: AsyncSession, server_id: str, items: list,
 ) -> int:
-    """Bulk-upsert по (server_id, device_name).
+    """Bulk-upsert по (server_id, device_name) через PostgreSQL ON CONFLICT.
 
     Возвращает счётчик затронутых строк (INSERT + UPDATE). is_system-инвариант
     (ровно один system disk на server) гарантирует partial unique index в
     миграции, дубли отбиваются IntegrityError'ом на уровне БД.
+
+    Каждый item летит как `INSERT ... ON CONFLICT DO UPDATE` — один SQL,
+    атомарно, без savepoint'ов. Повторный callback от worker'а (HTTP-таймаут
+    → retry) и параллельные callback'и обрабатываются БД, не приложением.
     """
     touched = 0
     for item in items:
-        existing = await disk_repo.get_by_server_and_device(
-            db, server_id, item.name,
-        )
-        if existing is not None:
-            await disk_repo.update(db, existing, {
-                "size_gb": item.size_gb,
-                "model": item.model,
-                "is_system": item.is_system,
-            })
-        else:
-            await disk_repo.create(db, {
-                "id": server_disk_id(),
-                "server_id": server_id,
-                "device_name": item.name,
-                "size_gb": item.size_gb,
-                "model": item.model,
-                "is_system": item.is_system,
-            })
+        await disk_repo.upsert_by_device(db, {
+            "id": server_disk_id(),
+            "server_id": server_id,
+            "device_name": item.name,
+            "size_gb": item.size_gb,
+            "model": item.model,
+            "is_system": item.is_system,
+        })
         touched += 1
     return touched
 
@@ -674,7 +686,7 @@ async def receive_users_inventory(
         existing = existing_by_login.get(item.login)
         if existing is None:
             account_id = server_account_id()
-            await account_repo.create_discovered(
+            created_account = await account_repo.try_create_discovered(
                 db,
                 {
                     "id": account_id,
@@ -691,6 +703,27 @@ async def receive_users_inventory(
                 },
                 server_id,
             )
+            if created_account is None:
+                # Гонка callback'ов: параллельный воркер уже завёл discovered со
+                # связкой по `uq_server_login`. Подтягиваем существующую запись
+                # и трактуем как present — без задвоения drift'а.
+                existing = await account_repo.get_account_on_server_by_login(
+                    db, server_id, item.login,
+                )
+                if existing is None:
+                    # Конфликт пришёл не по `uq_server_login` — таких сценариев
+                    # быть не должно, но защищаемся явно.
+                    raise RuntimeError(
+                        "try_create_discovered returned None but no existing "
+                        f"link found for server={server_id} login={item.login}"
+                    )
+                link = await account_repo.get_link(db, existing.id, server_id)
+                if link is not None:
+                    await account_repo.mark_link_inventoried(
+                        db, link, present=True,
+                    )
+                present += 1
+                continue
             created += 1
             drifted += 1
             drift_emits.append({

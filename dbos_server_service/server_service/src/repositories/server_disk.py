@@ -4,7 +4,8 @@
 наружу выставлены list/sync-примитивы, а не пагинируемый CRUD.
 """
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import ServerDisk
@@ -39,6 +40,34 @@ async def create(db: AsyncSession, data: dict) -> ServerDisk:
     """INSERT новой строки. commit — на caller'е."""
     obj = ServerDisk(**data)
     db.add(obj)
+    await db.flush()
+    return obj
+
+
+async def upsert_by_device(db: AsyncSession, data: dict) -> ServerDisk:
+    """INSERT … ON CONFLICT (server_id, device_name) DO UPDATE — атомарный upsert.
+
+    Гарантирует идемпотентность при гонке двух callback'ов от worker'а на
+    одну (server_id, device_name) пару — конфликт по `uq_server_disk_device`
+    обрабатывается в одном SQL-запросе, без savepoint'а и без IntegrityError.
+    `updated_at` принудительно тыкается `now()` (onupdate=func.now() в ORM
+    при ON CONFLICT не срабатывает).
+    """
+    stmt = (
+        pg_insert(ServerDisk)
+        .values(**data)
+        .on_conflict_do_update(
+            constraint="uq_server_disk_device",
+            set_={
+                "size_gb": data["size_gb"],
+                "model": data["model"],
+                "is_system": data["is_system"],
+                "updated_at": func.now(),
+            },
+        )
+        .returning(ServerDisk)
+    )
+    obj = (await db.execute(stmt)).scalar_one()
     await db.flush()
     return obj
 

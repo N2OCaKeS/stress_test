@@ -217,6 +217,41 @@ class TestUsersInventoryReconcile:
         assert link.present_on_server is True
         assert link.last_inventory_at is not None
 
+    async def test_duplicate_callback_is_idempotent(
+        self, client, worker_bot_token_a, make_server, db, dept_a,
+    ):
+        # Worker может повторить callback после HTTP-таймаута — первый завёл
+        # discovered-аккаунт, второй раз приходит тот же payload и должен
+        # пройти без 500 (IntegrityError на uq_server_login).
+        srv = await make_server(department_id=dept_a)
+        payload = {"users": [
+            {"login": "dup_user", "uid": 1500, "shell": "/bin/bash",
+             "home_dir": "/home/dup_user", "unix_groups": [], "has_sudo": False},
+        ]}
+        first = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert first.status_code == 200, first.text
+        assert first.json()["created"] == 1
+
+        second = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(worker_bot_token_a), json=payload,
+        )
+        assert second.status_code == 200, second.text
+        body = second.json()
+        # Повтор не создаёт нового аккаунта и не валит 500.
+        assert body["created"] == 0
+        assert body["present"] == 1
+
+        await db.commit()
+        accs = (await db.execute(
+            select(ServerAccount).where(ServerAccount.login == "dup_user")
+        )).scalars().all()
+        # Один аккаунт в БД — повтор не задвоил строку.
+        assert len(accs) == 1
+
     async def test_attribute_drift_warns_and_keeps_db(
         self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
         captured_emits,
@@ -582,7 +617,7 @@ class TestDiscoveredAccountNoPassword:
         assert body["source"] == "discovered"
         assert body["password_b64"] is None
 
-    async def test_internal_fetch_password_on_discovered_404(
+    async def test_internal_fetch_password_on_discovered_returns_empty(
         self, client, worker_bot_token_a, make_server, db, dept_a,
     ):
         srv = await make_server(department_id=dept_a)
@@ -599,6 +634,9 @@ class TestDiscoveredAccountNoPassword:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr(worker_bot_token_a),
         )
-        # Понятная ошибка, не краш.
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_HAS_NO_PASSWORD"
+        # Discovered-аккаунт без сохранённого пароля — 200 с пустым password,
+        # login отдаём как есть.
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["login"] == "ops"
+        assert body["password"] == ""

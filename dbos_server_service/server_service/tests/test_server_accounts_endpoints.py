@@ -490,6 +490,42 @@ class TestUpdateAccountFanout:
         assert resp.status_code == 200
         assert captured_dispatch == []
 
+    async def test_noop_managed_field_patch_does_not_fan_out(
+        self, client, admin_role_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        # PATCH `{has_sudo: True}` на уже-True аккаунт — value не меняется,
+        # репозиторий не делает UPDATE, fanout запускать не за чем.
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_id=srv.id, login="already_sudo", has_sudo=True,
+        )
+        resp = await client.patch(
+            f"{BASE}/{acc.id}",
+            headers=_hdr(admin_role_token_a),
+            json={"has_sudo": True},
+        )
+        assert resp.status_code == 200, resp.text
+        assert captured_dispatch == []
+
+    async def test_noop_unix_groups_same_set_does_not_fan_out(
+        self, client, admin_role_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        # Передаём те же группы, но в другом порядке — `set(...)`-сравнение
+        # должно считать это no-op.
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_id=srv.id, login="grp", unix_groups=["a", "b"],
+        )
+        resp = await client.patch(
+            f"{BASE}/{acc.id}",
+            headers=_hdr(admin_role_token_a),
+            json={"unix_groups": ["b", "a"]},
+        )
+        assert resp.status_code == 200, resp.text
+        assert captured_dispatch == []
+
     async def test_fanout_skips_absent_links(
         self, client, admin_role_token_a, make_server, make_account, db,
         captured_dispatch,

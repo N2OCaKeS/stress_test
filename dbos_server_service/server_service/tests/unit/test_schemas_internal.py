@@ -11,7 +11,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from src.schemas.internal import InventoryCallbackRequest
+from src.schemas.internal import (
+    InventoryCallbackRequest,
+    IpmiCredentialsRotatedRequest,
+    PasswordRotateRequest,
+    UsersInventoryCallbackRequest,
+)
 
 
 _BASE = {
@@ -69,3 +74,106 @@ class TestInventoryCallbackOsVersion:
     def test_os_version_empty_rejected(self):
         with pytest.raises(ValidationError):
             InventoryCallbackRequest(**{**_BASE, "os_version": ""})
+
+
+# ── Парольная политика для PasswordRotateRequest ────────────────────────────
+
+
+class TestPasswordRotateRequestPolicy:
+    def test_compliant_password_accepted(self):
+        m = PasswordRotateRequest(password="Strong1Password")
+        assert m.password == "Strong1Password"
+
+    def test_short_password_rejected(self):
+        with pytest.raises(ValidationError):
+            PasswordRotateRequest(password="A1b")
+
+    def test_password_without_digit_rejected(self):
+        with pytest.raises(ValidationError):
+            PasswordRotateRequest(password="OnlyLettersHere")
+
+    def test_password_without_letter_rejected(self):
+        with pytest.raises(ValidationError):
+            PasswordRotateRequest(password="12345678")
+
+    def test_token_urlsafe_like_passes_policy(self):
+        # `secrets.token_urlsafe(32)` всегда содержит и буквы, и цифры —
+        # тут просто проверяем, что типичный auto-gen worker'а проходит.
+        m = PasswordRotateRequest(password="abcDEF1234567890xyzABCDEFGHIJK")
+        assert len(m.password) >= 8
+
+
+class TestIpmiCredentialsRotatedRequestPolicy:
+    _ROTATED = "2026-01-01T00:00:00+00:00"
+
+    def test_compliant_password_accepted(self):
+        m = IpmiCredentialsRotatedRequest(
+            new_password="Strong1Password", rotated_at=self._ROTATED,
+        )
+        assert m.new_password == "Strong1Password"
+
+    def test_short_password_rejected(self):
+        with pytest.raises(ValidationError):
+            IpmiCredentialsRotatedRequest(
+                new_password="A1b", rotated_at=self._ROTATED,
+            )
+
+    def test_password_without_digit_rejected(self):
+        with pytest.raises(ValidationError):
+            IpmiCredentialsRotatedRequest(
+                new_password="OnlyLettersHere", rotated_at=self._ROTATED,
+            )
+
+    def test_password_without_letter_rejected(self):
+        with pytest.raises(ValidationError):
+            IpmiCredentialsRotatedRequest(
+                new_password="12345678", rotated_at=self._ROTATED,
+            )
+
+
+# ── Лимит на размер inventory-списков ───────────────────────────────────────
+
+
+_DISK_ITEM = {
+    "name": "sda",
+    "size_gb": 100,
+    "is_system": False,
+}
+
+
+def _disk_with_name(idx: int) -> dict:
+    item = dict(_DISK_ITEM)
+    item["name"] = f"sd{idx}"
+    return item
+
+
+class TestInventoryDisksCap:
+    def test_128_disks_accepted(self):
+        disks = [_disk_with_name(i) for i in range(128)]
+        m = InventoryCallbackRequest(**{**_BASE, "disks": disks})
+        assert len(m.disks) == 128
+
+    def test_129_disks_rejected(self):
+        disks = [_disk_with_name(i) for i in range(129)]
+        with pytest.raises(ValidationError):
+            InventoryCallbackRequest(**{**_BASE, "disks": disks})
+
+
+class TestUsersInventoryCap:
+    def _user(self, idx: int) -> dict:
+        return {
+            "login": f"user{idx}",
+            "uid": 1000 + idx,
+            "has_sudo": False,
+            "unix_groups": [],
+        }
+
+    def test_1000_users_accepted(self):
+        users = [self._user(i) for i in range(1000)]
+        m = UsersInventoryCallbackRequest(users=users)
+        assert len(m.users) == 1000
+
+    def test_1001_users_rejected(self):
+        users = [self._user(i) for i in range(1001)]
+        with pytest.raises(ValidationError):
+            UsersInventoryCallbackRequest(users=users)

@@ -282,7 +282,7 @@ class TestIpmiCredentialsRotatedCallback:
             f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
             headers=_hdr(admin_role_token_a),
             json={
-                "new_password": "rotated-from-worker",
+                "new_password": "RotatedWorker1234",
                 "rotated_at": rotated_at.isoformat(),
             },
         )
@@ -299,7 +299,7 @@ class TestIpmiCredentialsRotatedCallback:
         assert secrets_service.decrypt(
             refreshed.password_encrypted,
             aad=secrets_service.aad_for_ipmi_credential(refreshed.id),
-        ) == "rotated-from-worker"
+        ) == "RotatedWorker1234"
 
     async def test_worker_bot_can_record_rotation(
         self, client, worker_bot_token_a, make_server, make_ipmi, dept_a,
@@ -310,7 +310,7 @@ class TestIpmiCredentialsRotatedCallback:
             f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
             headers=_hdr(worker_bot_token_a),
             json={
-                "new_password": "bot-rotated",
+                "new_password": "BotRotated1234",
                 "rotated_at": _iso(),
             },
         )
@@ -325,7 +325,7 @@ class TestIpmiCredentialsRotatedCallback:
             f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
             headers=_hdr(reader_token_a),
             json={
-                "new_password": "reader-attempt",
+                "new_password": "ReaderTry1234",
                 "rotated_at": _iso(),
             },
         )
@@ -338,7 +338,7 @@ class TestIpmiCredentialsRotatedCallback:
             f"{BASE_INT}/ipmi-controllers/ipm_missing/credentials_rotated",
             headers=_hdr(admin_role_token_a),
             json={
-                "new_password": "anything",
+                "new_password": "Anything1234",
                 "rotated_at": _iso(),
             },
         )
@@ -355,7 +355,7 @@ class TestIpmiCredentialsRotatedCallback:
             f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
             headers=_hdr(admin_role_token_a),
             json={
-                "new_password": "audit-pwd",
+                "new_password": "AuditPwd1234",
                 "rotated_at": _iso(),
             },
         )
@@ -402,7 +402,7 @@ class TestCallbackDeptHeaderStrict:
             f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
             headers=_hdr(admin_role_token_a, dept=dept_a),
             json={
-                "new_password": "strict-ok",
+                "new_password": "StrictOk1234",
                 "rotated_at": _iso(),
             },
         )

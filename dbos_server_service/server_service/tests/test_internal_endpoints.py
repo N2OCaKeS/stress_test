@@ -129,6 +129,25 @@ class TestAccountPassword:
         assert resp.status_code == 404
         assert resp.json()["error_code"] == "ACCOUNT_HAS_NO_PASSWORD"
 
+    async def test_discovered_account_without_password_returns_empty(
+        self, client, worker_pat_token, make_server, make_account, db,
+    ):
+        # Discovered-аккаунт (`source=discovered`) приходит из инвентаризации
+        # без пароля — provision на managed-сервер не должен валить task'у:
+        # endpoint отдаёт пустой password, worker трактует как «chpasswd skip».
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password=None)
+        acc.source = "discovered"
+        await db.flush()
+        resp = await client.get(
+            f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
+            headers=_hdr(worker_pat_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["login"] == acc.login
+        assert body["password"] == ""
+
     async def test_account_on_different_server_returns_404(
         self, client, worker_pat_token, make_server, make_account,
     ):
@@ -164,7 +183,7 @@ class TestRotatePassword:
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
             headers=_hdr(worker_pat_token),
-            json={"password": "new-pwd-rotated"},
+            json={"password": "NewPwdRotated1234"},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -176,7 +195,7 @@ class TestRotatePassword:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr(worker_pat_token),
         )
-        assert fetch.json()["password"] == "new-pwd-rotated"
+        assert fetch.json()["password"] == "NewPwdRotated1234"
 
     async def test_rotate_for_account_without_initial_password_works(
         self, client, worker_pat_token, make_server, make_account,
@@ -186,7 +205,7 @@ class TestRotatePassword:
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
             headers=_hdr(worker_pat_token),
-            json={"password": "first-time-pwd"},
+            json={"password": "FirstTimePwd1234"},
         )
         assert resp.status_code == 200
 
@@ -197,7 +216,7 @@ class TestRotatePassword:
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
             headers=_hdr(operator_token_a),
-            json={"password": "ops-new-pwd"},
+            json={"password": "OpsNewPwd1234"},
         )
         assert resp.status_code == 200
 
@@ -207,7 +226,7 @@ class TestRotatePassword:
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
             headers=_hdr(reader_token_a),
-            json={"password": "x"},
+            json={"password": "ReaderTry1234"},
         )
         assert resp.status_code == 403
 
@@ -218,7 +237,7 @@ class TestRotatePassword:
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/acc_ghost/password/rotate",
             headers=_hdr(worker_pat_token),
-            json={"password": "x"},
+            json={"password": "GhostPwd1234"},
         )
         assert resp.status_code == 404
 
@@ -381,7 +400,7 @@ class TestTargetDeptHeaderStrictMode:
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
             headers=_hdr_with_dept(worker_pat_token, "dep_b"),
-            json={"password": "new-blocked"},
+            json={"password": "NewBlocked1234"},
         )
         assert resp.status_code == 403
         assert resp.json()["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
@@ -394,7 +413,7 @@ class TestTargetDeptHeaderStrictMode:
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
             headers=_hdr_with_dept(worker_pat_token, "dep_a"),
-            json={"password": "new-allowed"},
+            json={"password": "NewAllowed1234"},
         )
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
@@ -480,7 +499,7 @@ class TestActorDeptCrossCheckSoftMode:
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
             headers=_hdr(foreign_token),
-            json={"password": "cross-dept-injection"},
+            json={"password": "CrossDeptInj1234"},
         )
         assert resp.status_code == 403
         assert resp.json()["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
@@ -499,7 +518,7 @@ class TestActorDeptCrossCheckSoftMode:
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
             headers=_hdr_with_dept(foreign_token, "dep_a"),
-            json={"password": "cross-dept-injection2"},
+            json={"password": "CrossDeptInj5678"},
         )
         assert resp.status_code == 403
         assert resp.json()["error_code"] == "TARGET_DEPARTMENT_MISMATCH"

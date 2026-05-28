@@ -2,7 +2,9 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from src.core.password_policy import validate_password
 
 
 class IpmiCredentialsResponse(BaseModel):
@@ -25,7 +27,21 @@ class AccountPasswordResponse(BaseModel):
 class PasswordRotateRequest(BaseModel):
     """Тело POST /internal/.../accounts/{id}/password/rotate — новый пароль от worker'а."""
 
-    password: str = Field(..., min_length=1, description="Новый plaintext-пароль; server_service шифрует и сохраняет.")
+    password: str = Field(
+        ...,
+        min_length=8,
+        description=(
+            "Новый plaintext-пароль; server_service шифрует и сохраняет. "
+            "Проверяется парольной политикой (минимум 8 символов, буква+цифра) — "
+            "штатный `secrets.token_urlsafe(32)` worker'а проходит её сам, но "
+            "кастомизированный отправитель защищён на приёмной стороне."
+        ),
+    )
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, value: str) -> str:
+        return validate_password(value)
 
 
 class PasswordRotateResponse(BaseModel):
@@ -71,7 +87,11 @@ class InventoryCallbackRequest(BaseModel):
         pattern=r"^[A-Za-z0-9._\- ]+$",
         description="OS-версия для lookup в os_versions.name.",
     )
-    disks: list[InventoryDiskItem] = Field(default_factory=list, description="Список дисков с probe'а.")
+    disks: list[InventoryDiskItem] = Field(
+        default_factory=list,
+        max_length=128,
+        description="Список дисков с probe'а (cap=128, hardware-разумный потолок).",
+    )
     lspci: str | None = Field(
         default=None,
         max_length=16384,
@@ -119,7 +139,12 @@ class UsersInventoryCallbackRequest(BaseModel):
     список реальных OS-пользователей сервера."""
 
     users: list[InventoryUserItem] = Field(
-        default_factory=list, description="Найденные пользователи (без системных)."
+        default_factory=list,
+        max_length=1000,
+        description=(
+            "Найденные пользователи (без системных). Cap=1000 — защита от "
+            "массивного payload'а, который раздул бы reconcile + N drift-emit'ов."
+        ),
     )
 
 
@@ -175,10 +200,19 @@ class IpmiCredentialsRotatedRequest(BaseModel):
     """
 
     new_password: str = Field(
-        ..., min_length=1,
-        description="Новый plaintext-пароль (через TLS внутри cluster'а).",
+        ...,
+        min_length=8,
+        description=(
+            "Новый plaintext-пароль (через TLS внутри cluster'а). Проверяется "
+            "парольной политикой (минимум 8 символов, буква+цифра)."
+        ),
     )
     rotated_at: datetime = Field(description="ISO-8601 timestamp UTC момента ротации.")
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password(cls, value: str) -> str:
+        return validate_password(value)
 
 
 class IpmiCredentialsRotatedResponse(BaseModel):

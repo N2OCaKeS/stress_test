@@ -513,7 +513,7 @@ class TestInternalSensitiveAudit:
         acc = await make_account(server_id=srv.id, password="old-pwd")
         resp = await client.post(
             f"{INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
-            json={"password": "fresh-rotated-secret"},
+            json={"password": "FreshRotated1234"},
             headers=_hdr(worker_pat_token),
         )
         assert resp.status_code == 200, resp.text
@@ -531,7 +531,7 @@ class TestInternalSensitiveAudit:
         acc = await make_account(server_id=srv.id)
         resp = await client.post(
             f"{INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
-            json={"password": "x"},
+            json={"password": "ReaderTry1234"},
             headers=_hdr(reader_token_a),
         )
         assert resp.status_code == 403

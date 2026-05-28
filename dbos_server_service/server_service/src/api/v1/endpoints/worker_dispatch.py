@@ -670,6 +670,43 @@ async def server_prepare_dispatch(
     срабатывает до этого хендлера). Связано:
     `server_worker/src/tasks/prepare.py::server_prepare`.
     """
+    audit_action = "server.prepare"
+    task_kind = "server.prepare"
+
+    # Все checks ДО `store_prepare_creds` — иначе любой authenticated caller
+    # без прав / cross-dept может забивать Redis TTL'd-плейнтекстом (и audit
+    # denied-emit пройдёт уже после store). Visibility → permission →
+    # decommissioned, тот же порядок, что у `_dispatch_for_server`.
+    try:
+        server = await server_svc.get_server(db, identity, server_id)
+    except (NotFoundError, AuthorizationError) as exc:
+        reason = "not_found_or_cross_dept" if isinstance(exc, NotFoundError) else "no_view_permission"
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": reason},
+        )
+        raise
+
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"department_id": server.department_id},
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+
+    if server.status == ServerStatus.DECOMMISSIONED:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "decommissioned"},
+        )
+        raise ConflictError(
+            error_code="SERVER_DECOMMISSIONED",
+            message="Server is decommissioned and cannot accept worker operations",
+        )
+
     # base64 уже провалидирован схемой; декодируем plaintext для воркера.
     # Креды НЕ кладём в task-payload (иначе plaintext осел бы в worker-БД).
     # Пишем их в Redis под одноразовый ключ с TTL, в payload — только ссылка.
@@ -679,16 +716,62 @@ async def server_prepare_dispatch(
         creds_key,
         {"bootstrap_login": body.username(), "bootstrap_password": body.password()},
     )
-    result = await _dispatch_for_server(
-        db=db, identity=identity, request=request,
-        server_id=server_id,
-        action=Action.UPDATE,
-        audit_action="server.prepare",
-        task_kind="server.prepare",
-        require_ipmi=False,
-        extra_payload={"bootstrap_creds_key": creds_key},
+
+    idempotency_key = request.headers.get("Idempotency-Key") or None
+    payload: dict = {
+        "server_id": server_id,
+        "target_department_id": server.department_id,
+        "host": server.hostname,
+        "ssh_port": server.ssh_port,
+        "is_managed": server.is_managed,
+        "management_user": server.management_user,
+        "bootstrap_creds_key": creds_key,
+    }
+    try:
+        task_id = await worker_client.dispatch_task(
+            task_kind=task_kind,
+            target_server_id=server_id,
+            payload=payload,
+            created_by=identity.user_id,
+            request_id=getattr(request.state, "request_id", None),
+            idempotency_key=idempotency_key,
+        )
+    except ConflictError:
+        # Подчищаем Redis: воркер за креды не пойдёт, иначе plaintext висит до TTL.
+        await worker_client.delete_prepare_creds(creds_key)
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "idempotent_conflict",
+                "task_kind": task_kind,
+                "department_id": server.department_id,
+            },
+        )
+        raise
+    except ServiceUnavailableError:
+        await worker_client.delete_prepare_creds(creds_key)
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "worker_unreachable",
+                "task_kind": task_kind,
+                "department_id": server.department_id,
+            },
+        )
+        raise
+
+    audit_service.emit(
+        audit_action, target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "task_id": task_id,
+            "task_kind": task_kind,
+            "department_id": server.department_id,
+        },
     )
-    return ServerPrepareResponse(**result)
+    return ServerPrepareResponse(task_id=task_id, status="queued")
 
 
 # ── /server-accounts/{id}/rotate — admin-initiated worker rotation ──────────
@@ -904,6 +987,12 @@ async def account_rotate_password_dispatch(
             # Воркер недоступен глобально (redis down / не сконфигурён) — не
             # per-server проблема: продолжать батч смысла нет, каждый
             # следующий сервер упадёт идентично. Отбиваем весь запрос.
+            #
+            # До raise эмитим агрегат с фактическим состоянием батча: на
+            # серверы 1..K-1 уже стоит INSERT+RPUSH (dispatched), на K случился
+            # сбой (failed), на оставшихся не дошли (not_attempted). Без этого
+            # SIEM увидит только per-server failure и не сможет восстановить,
+            # какие task_id'ы реально в работе.
             audit_service.emit(
                 audit_action, target_id=account_id, target_type="server_account",
                 status="failure", allowed=True,
@@ -912,6 +1001,27 @@ async def account_rotate_password_dispatch(
                     "task_kind": "account.rotate_password",
                     "server_id": server.id,
                     "department_id": server.department_id,
+                },
+            )
+            failed_server_id = server.id
+            dispatched_index = dispatchable.index(server)
+            not_attempted = [s.id for s in dispatchable[dispatched_index + 1:]]
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "mode": mode,
+                    "task_kind": "account.rotate_password",
+                    "reason": "worker_unreachable_partial",
+                    "task_ids": [t["task_id"] for t in tasks],
+                    "dispatched": [t["server_id"] for t in tasks],
+                    "dispatched_count": len(tasks),
+                    "failed": [failed_server_id],
+                    "not_attempted": not_attempted,
+                    "skipped": skipped,
+                    "skipped_count": len(skipped),
+                    "login": account.login,
+                    "department_id": account.department_id,
                 },
             )
             raise

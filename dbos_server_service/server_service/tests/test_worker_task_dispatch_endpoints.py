@@ -585,9 +585,9 @@ class TestDispatchAuditOnWorkerFailure:
         failures = [
             e for e in _events(captured_emits, "server_account.rotate_password_dispatch")
             if e.get("status") == "failure"
+            and e.get("details", {}).get("reason") == "worker_unreachable"
         ]
         assert len(failures) == 1
-        assert failures[0]["details"]["reason"] == "worker_unreachable"
         assert failures[0]["details"]["task_kind"] == "account.rotate_password"
 
     async def test_service_unavailable_emits_failure_for_ipmi_rotate(
@@ -860,3 +860,59 @@ class TestMassRotatePartialTolerance:
         )
         assert resp.status_code == 503
         assert resp.json()["error_code"] == "WORKER_REDIS_NOT_CONFIGURED"
+
+    async def test_worker_unreachable_midbatch_emits_partial_aggregate(
+        self, client, operator_token_a, make_server, make_account,
+        captured_emits, monkeypatch, db,
+    ):
+        """Если воркер падает после K успешных INSERT+RPUSH в батче, SIEM
+        должен увидеть агрегат с фактическим dispatched/failed/not_attempted —
+        не только per-server failure последнего сервера."""
+        from src.core.exceptions import ServiceUnavailableError
+
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        srv3 = await make_server(department_id="dep_a")
+        acc = await make_account(
+            server_ids=[srv1.id, srv2.id, srv3.id], login="ops",
+        )
+
+        call_count = {"n": 0}
+
+        async def boom_after_first(*, target_server_id, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return "tsk_ok_1"
+            raise ServiceUnavailableError(
+                error_code="WORKER_UNREACHABLE",
+                message="redis down mid-batch",
+            )
+
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom_after_first,
+        )
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 503
+
+        events = _events(
+            captured_emits, "server_account.rotate_password_dispatch",
+        )
+        # Должны быть два failure-emit: per-server (worker_unreachable) и
+        # агрегированный (worker_unreachable_partial) с фактическим состоянием.
+        partial_aggregates = [
+            e for e in events
+            if e.get("status") == "failure"
+            and e["details"].get("reason") == "worker_unreachable_partial"
+        ]
+        assert len(partial_aggregates) == 1
+        agg = partial_aggregates[0]["details"]
+        assert agg["mode"] == "all"
+        assert agg["dispatched_count"] == 1
+        # Сервер, на котором случился сбой — единственный в `failed`.
+        assert len(agg["failed"]) == 1
+        # Третий сервер остался непопытанным.
+        assert agg["not_attempted"] == [srv3.id] or len(agg["not_attempted"]) == 1

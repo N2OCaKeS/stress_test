@@ -182,9 +182,12 @@ async def update_account(
     после сохранения рассылаем `account.update_on_host` на все серверы, где
     аккаунт присутствует — синк правки на боксы (см. `fanout_update_on_host`).
     """
-    changed_fields = set(body.model_dump(exclude_unset=True).keys())
-    obj = await svc.update_account(db, identity, account_id, body)
-    if changed_fields & _OS_MANAGED_FIELDS:
+    # `applied_fields` — то, что реально изменилось (диф против актуального
+    # состояния). Без него no-op PATCH (`{has_sudo: True}` на уже-True аккаунт)
+    # запустил бы fanout `update_on_host` на N серверов — лишний шум в audit
+    # и worker-нагрузка.
+    obj, applied_fields = await svc.update_account(db, identity, account_id, body)
+    if applied_fields & _OS_MANAGED_FIELDS:
         await fanout_update_on_host(
             db=db, identity=identity, request=request, account=obj,
         )

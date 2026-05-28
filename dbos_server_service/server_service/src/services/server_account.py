@@ -284,12 +284,17 @@ async def update_account(
     identity: IdentityContext,
     account_id: str,
     payload: ServerAccountUpdate,
-) -> ServerAccount:
+) -> tuple[ServerAccount, set[str]]:
     """PATCH-обновление. Пустой диф → возврат без UPDATE.
 
     `has_sudo=True` дополнительно требует GRANT_SUDO. Изменение пароля
     через PATCH не предусмотрено — только через `/rotate_password`.
     Привязка серверов — через `/servers` под-операции.
+
+    Возвращает `(obj, applied_fields)` — `applied_fields` это набор полей, по
+    которым актуальное значение реально отличалось от прежнего и было
+    обновлено в БД. Caller использует его, чтобы решать, надо ли пускать
+    fanout на серверы (no-op PATCH не должен генерировать `update_on_host`).
     """
     with emit_denied_on_authz_error(
         "server_account.update",
@@ -310,9 +315,26 @@ async def update_account(
         )
         raise
 
-    changes = payload.model_dump(exclude_unset=True, mode="json")
+    raw_changes = payload.model_dump(exclude_unset=True, mode="json")
+    if not raw_changes:
+        return obj, set()
+
+    # Сравниваем с текущим состоянием — PATCH `{has_sudo: True}` на уже-True
+    # аккаунт оседает как no-op, fanout его не должен запускать. Для
+    # коллекций сравниваем как множества (порядок групп не значим).
+    def _is_changed(field: str, new_value) -> bool:
+        current = getattr(obj, field, None)
+        if field == "unix_groups":
+            return set(current or []) != set(new_value or [])
+        return current != new_value
+
+    changes = {
+        field: value
+        for field, value in raw_changes.items()
+        if _is_changed(field, value)
+    }
     if not changes:
-        return obj
+        return obj, set()
 
     # has_sudo=True или подъём флага — требует GRANT_SUDO. Снятие флага
     # допустимо обычным UPDATE — это понижение привилегии.
@@ -359,7 +381,7 @@ async def update_account(
             "department_id": obj.department_id,
         },
     )
-    return obj
+    return obj, set(changes.keys())
 
 
 async def link_servers(

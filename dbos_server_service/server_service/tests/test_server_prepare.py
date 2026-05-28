@@ -40,12 +40,31 @@ def captured_dispatch(monkeypatch):
     Возвращает список dispatch-вызовов. Каждый элемент дополнительно несёт
     `stored_creds` — креды, которые prepare положил бы в Redis под ключ из
     payload (мокаем `store_prepare_creds`, чтобы тест не ходил в Redis).
+
+    На fixture'е дополнительно висят:
+    * `stored_creds_calls` — список (creds_key, creds) в порядке поступления,
+      чтобы проверять, что `store_prepare_creds` не сработал ДО проверки прав;
+    * `deleted_keys` — список creds_key, для которых был вызов
+      `delete_prepare_creds` (cleanup на падении dispatch'а).
     """
-    calls: list[dict] = []
+    class _Recorder(list):
+        """list-подкласс, поддерживающий атрибуты — для совместимости с
+        существующими тестами, которые читают fixture как обычный список,
+        и для новых тестов, которые проверяют side-effects store/delete."""
+
+    calls: _Recorder = _Recorder()
     stored: dict[str, dict] = {}
+    stored_calls: list[tuple[str, dict]] = []
+    deleted: list[str] = []
+    calls.stored_creds_calls = stored_calls  # type: ignore[attr-defined]
+    calls.deleted_keys = deleted  # type: ignore[attr-defined]
 
     async def fake_store(creds_key, creds):
         stored[creds_key] = creds
+        stored_calls.append((creds_key, creds))
+
+    async def fake_delete(creds_key):
+        deleted.append(creds_key)
 
     async def fake_dispatch(*, task_kind, target_server_id, payload,
                             created_by, request_id,
@@ -64,6 +83,11 @@ def captured_dispatch(monkeypatch):
     monkeypatch.setattr(
         "src.api.v1.endpoints.worker_dispatch.worker_client.store_prepare_creds",
         fake_store,
+    )
+    monkeypatch.setattr(worker_mod, "delete_prepare_creds", fake_delete)
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.delete_prepare_creds",
+        fake_delete,
     )
     monkeypatch.setattr(worker_mod, "dispatch_task", fake_dispatch)
     monkeypatch.setattr(
@@ -167,6 +191,83 @@ class TestPrepareDispatch:
         assert resp.status_code == 409, resp.text
         assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
         assert captured_dispatch == []
+
+    # ── Bootstrap-кред НЕ кладутся в Redis до проверки прав/видимости ──
+
+    async def test_reader_does_not_store_creds_in_redis(
+        self, client, reader_token_a, make_server, captured_dispatch,
+    ):
+        # Reader без `update` не должен иметь возможности забить Redis
+        # plaintext-блобами: store_prepare_creds обязан произойти ПОСЛЕ
+        # permission-check, не раньше.
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(reader_token_a),
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+        )
+        assert resp.status_code == 403, resp.text
+        assert captured_dispatch.stored_creds_calls == []
+
+    async def test_cross_dept_does_not_store_creds_in_redis(
+        self, client, operator_token_b, make_server, captured_dispatch,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_b),
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+        )
+        assert resp.status_code == 404, resp.text
+        assert captured_dispatch.stored_creds_calls == []
+
+    async def test_decommissioned_does_not_store_creds_in_redis(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
+    ):
+        srv = await make_server(department_id="dep_a")
+        srv.status = ServerStatus.DECOMMISSIONED
+        await db.flush()
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+        )
+        assert resp.status_code == 409, resp.text
+        assert captured_dispatch.stored_creds_calls == []
+
+    async def test_dispatch_failure_cleans_up_creds_in_redis(
+        self, client, operator_token_a, make_server, captured_dispatch,
+        monkeypatch,
+    ):
+        # Если worker недоступен (ServiceUnavailable), уже положенные в Redis
+        # plaintext-кред'ы должны быть удалены — иначе висят до TTL=900s.
+        from src.core.exceptions import ServiceUnavailableError
+
+        async def boom(*args, **kwargs):
+            raise ServiceUnavailableError(
+                error_code="WORKER_UNREACHABLE",
+                message="redis down",
+            )
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "dispatch_task", boom)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+        )
+        assert resp.status_code == 503, resp.text
+        # Кред'ы успели лечь под некий ключ — этот же ключ обязан попасть
+        # в delete_prepare_creds.
+        assert len(captured_dispatch.stored_creds_calls) == 1
+        creds_key, _ = captured_dispatch.stored_creds_calls[0]
+        assert creds_key in captured_dispatch.deleted_keys
 
 
 # ── Callback: POST /internal/servers/{id}/prepared ───────────────────────────

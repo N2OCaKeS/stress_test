@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import ServerAccount, ServerAccountServer
@@ -232,6 +233,47 @@ async def create_discovered(
     )
     await db.flush()
     return obj
+
+
+async def try_create_discovered(
+    db: AsyncSession, data: dict, server_id: str
+) -> ServerAccount | None:
+    """Как `create_discovered`, но безопасный к гонке callback'ов.
+
+    Создаём ServerAccount, затем пробуем INSERT связки с
+    `ON CONFLICT (server_id, login) DO NOTHING`. Если конфликт сработал
+    (параллельный callback уже завёл discovered-аккаунт со связкой по
+    `uq_server_login`), откатываем созданный ServerAccount — иначе
+    остался бы висячий аккаунт без линка — и возвращаем None. Caller
+    тогда трактует ситуацию как `present` и подтягивает existing-запись.
+    """
+    account = ServerAccount(**data)
+    db.add(account)
+    await db.flush()
+
+    link_id = server_account_server_id()
+    stmt = (
+        pg_insert(ServerAccountServer)
+        .values(
+            id=link_id,
+            account_id=account.id,
+            server_id=server_id,
+            login=account.login,
+            present_on_server=True,
+            last_inventory_at=datetime.now(timezone.utc),
+        )
+        .on_conflict_do_nothing(constraint="uq_server_login")
+        .returning(ServerAccountServer.id)
+    )
+    inserted_id = (await db.execute(stmt)).scalar_one_or_none()
+    if inserted_id is None:
+        # Гонка: линк уже создан параллельным callback'ом. Сносим
+        # только что вставленный аккаунт, чтобы не плодить orphan'ов.
+        await db.delete(account)
+        await db.flush()
+        return None
+    await db.flush()
+    return account
 
 
 async def mark_link_inventoried(

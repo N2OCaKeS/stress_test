@@ -334,6 +334,32 @@ async def _delete_task_row(task_id_to_delete: str) -> None:
         pass
 
 
+async def delete_prepare_creds(creds_key: str) -> None:
+    """Снять bootstrap-креды из Redis (best-effort).
+
+    Зовётся из server_prepare_dispatch, когда `dispatch_task` падает уже после
+    `store_prepare_creds` — иначе plaintext-пароль висит в Redis до истечения
+    TTL. Сама операция не должна валить ответ клиенту: если Redis недоступен
+    или ключ уже исчез — глушим исключение.
+    """
+    settings = get_settings()
+    if not settings.server_worker_redis_url:
+        return
+    pooled = _prepare_redis_client
+    try:
+        if pooled is not None:
+            await pooled.delete(creds_key)
+            return
+        client = aioredis.from_url(settings.server_worker_redis_url)
+        try:
+            await client.delete(creds_key)
+        finally:
+            await client.aclose()
+    except Exception:  # noqa: BLE001
+        # Best-effort: TTL подчистит ключ, если DEL не прошёл.
+        pass
+
+
 async def store_prepare_creds(creds_key: str, creds: dict) -> None:
     """Положить bootstrap-креды в Redis под ключ `creds_key` с TTL.
 

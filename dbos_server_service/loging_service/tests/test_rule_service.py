@@ -258,3 +258,163 @@ class TestApplyRulesLogic:
         assert apply_rules(db, _event(action="user.login", status="success")) is not None
         # failure подавляется
         assert apply_rules(db, _event(action="user.login", status="failure", allowed=False)) is None
+
+
+# ── _DEFAULT_SEVERITY — server/worker actions ────────────────────────────────
+
+class TestDefaultSeverityServerActions:
+    """Покрывает дефолты severity для эмитов server_service / server_worker.
+
+    Без явных entry'ев действия проваливались в fallback (INFO/WARNING) — для
+    power-операций и ротаций секретов это занижало приоритет SIEM-триагера.
+    """
+
+    # power_on / power_off / power_reboot
+    @pytest.mark.parametrize("action", ["server.power_on", "server.power_off", "server.power_reboot"])
+    def test_power_mutating_success_is_warning(self, action):
+        assert _resolve_default_severity(action, "success") == "WARNING"
+
+    @pytest.mark.parametrize("action", ["server.power_on", "server.power_off", "server.power_reboot"])
+    def test_power_mutating_failure_is_critical(self, action):
+        assert _resolve_default_severity(action, "failure") == "CRITICAL"
+
+    @pytest.mark.parametrize("action", ["server.power_on", "server.power_off", "server.power_reboot"])
+    def test_power_mutating_denied_is_warning(self, action):
+        assert _resolve_default_severity(action, "denied") == "WARNING"
+
+    # power_status — read-only, INFO для success
+    def test_power_status_success_is_info(self):
+        assert _resolve_default_severity("server.power_status", "success") == "INFO"
+
+    def test_power_status_failure_is_warning(self):
+        assert _resolve_default_severity("server.power_status", "failure") == "WARNING"
+
+    def test_power_status_denied_is_warning(self):
+        assert _resolve_default_severity("server.power_status", "denied") == "WARNING"
+
+    # inventory_sync — read-only probe
+    def test_inventory_sync_success_is_info(self):
+        assert _resolve_default_severity("server.inventory_sync", "success") == "INFO"
+
+    def test_inventory_sync_failure_is_warning(self):
+        assert _resolve_default_severity("server.inventory_sync", "failure") == "WARNING"
+
+    def test_inventory_sync_denied_is_warning(self):
+        assert _resolve_default_severity("server.inventory_sync", "denied") == "WARNING"
+
+    # users_inventory — read-only probe
+    def test_users_inventory_success_is_info(self):
+        assert _resolve_default_severity("server_account.users_inventory", "success") == "INFO"
+
+    def test_users_inventory_failure_is_warning(self):
+        assert _resolve_default_severity("server_account.users_inventory", "failure") == "WARNING"
+
+    def test_users_inventory_denied_is_warning(self):
+        assert _resolve_default_severity("server_account.users_inventory", "denied") == "WARNING"
+
+    # installed_packages.list — read-only probe
+    def test_installed_packages_success_is_info(self):
+        assert _resolve_default_severity("installed_packages.list", "success") == "INFO"
+
+    def test_installed_packages_failure_is_warning(self):
+        assert _resolve_default_severity("installed_packages.list", "failure") == "WARNING"
+
+    def test_installed_packages_denied_is_warning(self):
+        assert _resolve_default_severity("installed_packages.list", "denied") == "WARNING"
+
+    # password_rotate — sensitive, штатный поток
+    @pytest.mark.parametrize(
+        "action",
+        ["server_account.password_rotate", "ipmi_controller.password_rotate"],
+    )
+    def test_password_rotate_success_is_warning(self, action):
+        assert _resolve_default_severity(action, "success") == "WARNING"
+
+    @pytest.mark.parametrize(
+        "action",
+        ["server_account.password_rotate", "ipmi_controller.password_rotate"],
+    )
+    def test_password_rotate_failure_is_critical(self, action):
+        assert _resolve_default_severity(action, "failure") == "CRITICAL"
+
+    @pytest.mark.parametrize(
+        "action",
+        ["server_account.password_rotate", "ipmi_controller.password_rotate"],
+    )
+    def test_password_rotate_denied_is_warning(self, action):
+        assert _resolve_default_severity(action, "denied") == "WARNING"
+
+
+# ── RuleCreate.match_service normalisation ───────────────────────────────────
+
+class TestMatchServiceNormalization:
+    """`match_service` должен нормализоваться так же, как `EventCreate.service`.
+
+    Без этого SUPPRESS/OVERRIDE_SEVERITY с `match_service="Auth_Service"` или
+    с zero-width space внутри молча не матчит нормализованные на ingest
+    события — правило выглядит активным, но не срабатывает.
+    """
+
+    def test_canonical_passes_unchanged(self):
+        from src.schemas.rules import RuleCreate
+        r = RuleCreate(name="r", effect="SUPPRESS", match_service="auth_service")
+        assert r.match_service == "auth_service"
+
+    def test_uppercase_rejected(self):
+        from pydantic import ValidationError
+        from src.schemas.rules import RuleCreate
+        with pytest.raises(ValidationError):
+            RuleCreate(name="r", effect="SUPPRESS", match_service="Auth_Service")
+
+    def test_dash_rejected(self):
+        from pydantic import ValidationError
+        from src.schemas.rules import RuleCreate
+        with pytest.raises(ValidationError):
+            RuleCreate(name="r", effect="SUPPRESS", match_service="auth-service")
+
+    def test_digit_rejected(self):
+        from pydantic import ValidationError
+        from src.schemas.rules import RuleCreate
+        with pytest.raises(ValidationError):
+            RuleCreate(name="r", effect="SUPPRESS", match_service="auth1")
+
+    def test_zero_width_space_stripped(self):
+        from src.schemas.rules import RuleCreate
+        r = RuleCreate(name="r", effect="SUPPRESS", match_service="auth​_service")
+        assert r.match_service == "auth_service"
+
+    def test_cyrillic_homoglyph_folded(self):
+        from src.schemas.rules import RuleCreate
+        # `а` (U+0430, кир.) → ASCII `a`
+        r = RuleCreate(name="r", effect="SUPPRESS", match_service="аuth_service")
+        assert r.match_service == "auth_service"
+
+    def test_none_allowed(self):
+        from src.schemas.rules import RuleCreate
+        r = RuleCreate(name="r", effect="SUPPRESS", match_service=None)
+        assert r.match_service is None
+
+    def test_update_normalises_match_service(self):
+        from src.schemas.rules import RuleUpdate
+        r = RuleUpdate(match_service="auth​_service")
+        assert r.match_service == "auth_service"
+
+    def test_update_rejects_invalid_charset(self):
+        from pydantic import ValidationError
+        from src.schemas.rules import RuleUpdate
+        with pytest.raises(ValidationError):
+            RuleUpdate(match_service="Bad-Name")
+
+    def test_apply_rules_matches_normalised_service(self, db):
+        """Правило с pre-normalisation формой матчит event с тем же сервисом."""
+        from src.repositories import rules as rule_repo
+        from src.schemas.rules import RuleCreate
+        payload = RuleCreate(
+            name="match-norm", effect="SUPPRESS",
+            match_service="auth​_service",
+            match_action="user.login",
+        )
+        rule_repo.create(db, payload)
+        invalidate_cache()
+        # event.service = "auth_service" (canonical)
+        assert apply_rules(db, _event(service="auth_service", action="user.login")) is None

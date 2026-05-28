@@ -1,9 +1,30 @@
 """Схемы запросов/ответов для правил аудита."""
 
+import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from src.utils.normalization import normalize_service_name_preserve_case
+
+# Тот же charset, что у `EventCreate.service`: snake_case ASCII после NFKC.
+# Без симметрии правило с `match_service="Auth-Service"` или
+# `match_service="auth_service​"` (с zero-width space) молча не матчит
+# нормализованные на ingest event.service — SUPPRESS/OVERRIDE не работает.
+_RULE_SERVICE_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_]{1,64}$")
+
+
+def _normalize_match_service(value: str | None) -> str | None:
+    if value is None:
+        return None
+    pre_lower = normalize_service_name_preserve_case(value)
+    if not _RULE_SERVICE_PATTERN.match(pre_lower):
+        raise ValueError(
+            "match_service must match [a-z_]{1,64} after NFKC normalisation "
+            "(lowercase snake_case, symmetric with EventCreate.service)"
+        )
+    return pre_lower.lower()
 
 
 # `DROP` принимается как входной alias к `SUPPRESS` (модель безопасности
@@ -43,6 +64,11 @@ class RuleCreate(BaseModel):
         description="Обязательно для effect=OVERRIDE_SEVERITY",
     )
 
+    @field_validator("match_service", mode="after")
+    @classmethod
+    def _normalize_match_service(cls, v: str | None) -> str | None:
+        return _normalize_match_service(v)
+
     @model_validator(mode="after")
     def _validate_effect(self) -> "RuleCreate":
         if self.effect == "DROP":
@@ -66,6 +92,11 @@ class RuleUpdate(BaseModel):
     match_allowed: bool | None = Field(default=None)
     effect: RuleEffect | None = Field(default=None)
     effect_severity: RuleSeverity | None = Field(default=None)
+
+    @field_validator("match_service", mode="after")
+    @classmethod
+    def _normalize_match_service(cls, v: str | None) -> str | None:
+        return _normalize_match_service(v)
 
     @model_validator(mode="after")
     def _normalize_effect(self) -> "RuleUpdate":

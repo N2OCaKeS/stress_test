@@ -91,7 +91,17 @@ class TestEventCreateServiceCharset:
 
 class TestEventCreateActionCharset:
     @pytest.mark.parametrize(
-        "act", ["user.login", "user", "x.y.z", "a" * 128, "user_logout"],
+        "act",
+        [
+            "user.login",
+            "user",
+            "x.y.z",
+            "a" * 128,
+            "user_logout",
+            "user.login.1",
+            "provision_v2",
+            "http.4xx_error",
+        ],
     )
     def test_valid_action_accepted(self, act: str):
         m = EventCreate(**{**_BASE_EVENT, "action": act})
@@ -102,7 +112,6 @@ class TestEventCreateActionCharset:
         [
             "user.login\r\n[ALERT] fake",
             "user.LOGIN",
-            "user.login.1",
             "user login",
             "user-login",
             "user.login\x00",

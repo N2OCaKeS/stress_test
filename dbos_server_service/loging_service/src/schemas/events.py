@@ -51,9 +51,10 @@ _REQUEST_ID_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 #     `normalize_service_name` уже привёл к нижнему регистру, так что
 #     uppercase сюда не доходит.
 #   * action — dot-namespace `user.login.success` → разрешаем точку.
+#     Цифры разрешены для версионирования (`provision_v2`, `http.4xx_error`).
 #   * username — email-like, разрешаем `-_@.`.
 _SERVICE_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_]{1,64}$")
-_ACTION_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_.]{1,128}$")
+_ACTION_PATTERN: re.Pattern[str] = re.compile(r"^[a-z0-9_.]{1,128}$")
 _USERNAME_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_\-@.]{1,128}$")
 # ID-поля идентификаторов (`actor_id`, `target_id`, `department_id`) — это
 # opaque-токены формата `usr_…` / `srv_…` / `dept_…` (см. `utils/ids.py`
@@ -151,13 +152,13 @@ class EventCreate(BaseModel):
         """Action идёт в JSON-логи + CSV-экспорты без escape'а CRLF.
 
         `action="user.login\\r\\n[ALERT] fake"` подделывает вторую строку в
-        log-shipping pipeline'е. Разрешаем нижний регистр буквы, цифры
-        перебивают конвенцию (`user.login` — да; `user.login.v2` — нет).
+        log-shipping pipeline'е. Разрешаем нижний регистр, цифры (для
+        версий — `provision_v2`, `http.4xx_error`) и точку.
         """
         if not _ACTION_PATTERN.match(v):
             raise ValueError(
-                "action must match [a-z_.]{1,128} "
-                "(no CR/LF, no digits, no Unicode)"
+                "action must match [a-z0-9_.]{1,128} "
+                "(no CR/LF, no uppercase, no Unicode)"
             )
         return v
 

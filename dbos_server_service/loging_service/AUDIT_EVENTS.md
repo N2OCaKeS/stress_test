@@ -132,7 +132,15 @@ Details:
 `loging_service` принимает события от всех сервисов платформы. Каждый источник ведёт свой `AUDIT_EVENTS.md` со списком action'ов и default severity:
 
 - `auth_service` — самый крупный писатель. Полный список — в `dbos_server_service/auth_service/AUDIT_EVENTS.md` (user/department/group/service_role/pat/bot/oauth_client/docker_registry/token/http).
-- `server_service`, `server_worker`, `config_service` — см. их собственные `AUDIT_EVENTS.md`.
+- `server_service` — `dbos_server_service/server_service/AUDIT_EVENTS.md`. Дефолтные severity дублируются в `_DEFAULT_SEVERITY` loging-сервиса для следующих action'ов:
+  - `server.prepare` — CRITICAL (success/failure)
+  - `server.prepared` — CRITICAL (success/failure/denied; callback воркера)
+  - `server_account.provision` — CRITICAL (success/failure; в `server_service` собственный default WARNING — расхождение известно, ужесточение здесь намеренное)
+  - `server_account.deprovision` — WARNING
+  - `server_account.update_on_host` — INFO
+  - `server_account.drift_detected` — WARNING (reconcile инвентаризации)
+- `server_worker` — на сегодня собственного `AUDIT_EVENTS.md` нет; action'ы worker'а наследуют каталог `server_service` (worker эмитит те же `server.prepared` / `server_account.*` callback-события).
+- `config_service` — не реализован, см. `obsidian/TODO.md`.
 
 `loging_service` не валидирует `action` против чьего-либо whitelist'а на ingest'е — реестр `service_events` нужен только для правил (нельзя завести правило на незарегистрированный action). Зарегистрированные action'ы появляются при первом `POST /services/{service}/events` от источника.
 

@@ -5,6 +5,20 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir pytest==9.0.3 httpx==0.28.1
+# ssh-client — для прямой проверки openssh-target из тестов (`ssh -p 2222 ...`).
+# Остальное — runtime для фикстур: httpx (HTTP), sqlalchemy/psycopg (прямой
+# доступ к loging-БД и worker-БД), paramiko (SSH-сессии под management-ключом),
+# redis (если тестам нужно проинспектировать prepare_creds).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+        pytest==9.0.3 \
+        httpx==0.28.1 \
+        sqlalchemy==2.0.36 \
+        psycopg[binary]==3.2.3 \
+        paramiko==3.5.0 \
+        redis==5.2.0
 
 COPY tests/ tests/

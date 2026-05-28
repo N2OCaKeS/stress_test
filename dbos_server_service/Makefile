@@ -56,6 +56,7 @@ LOGGING = docker compose -f loging_service/tests/docker-compose.test.yml
 SERVER  = docker compose -f server_service/tests/docker-compose.test.yml
 WORKER  = docker compose -f server_worker/tests/docker-compose.test.yml
 ROOT    = docker compose -f tests/docker-compose.test.yml
+E2E     = docker compose -f tests/integration/docker-compose.test.yml
 DEV     = docker compose -f docker-compose.dev.yml
 K8S     = kubectl -n dbos
 
@@ -78,7 +79,8 @@ _DEV_ADMIN_EMAIL = admin@example.com
         test-dev test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-integration test-dev-all \
         test-local test-local-auth test-local-logging test-local-server test-local-worker test-local-integration test-local-all \
         test-devcont-all install-registry \
-        test-integration test-auth test-auth-e2e test-logging test-server test-worker test-all test-down test-build \
+        test-integration logs-test-integration up-test-integration down-test-integration \
+        test-auth test-auth-e2e test-logging test-server test-worker test-all test-down test-build \
         k8s-install k8s-secrets k8s-build k8s-deploy k8s-rollout k8s-rollback \
         k8s-logs k8s-status k8s-backup k8s-destroy
 
@@ -306,8 +308,28 @@ test-server: ## Тесты server_service в Docker
 test-worker: ## Тесты server_worker в Docker
 	$(WORKER) run --rm test-runner pytest tests/ -v --tb=short
 
-test-integration: ## Кросс-сервисные интеграционные тесты в Docker
-	$(ROOT) run --rm test-runner
+test-integration: ## Полный E2E-стек (4 сервиса + openssh-server + worker) и pytest tests/integration/
+	$(E2E) up -d --wait test-postgres test-redis ssh-target logging-service auth-service server-service
+	$(E2E) up --abort-on-container-exit --exit-code-from init-ssh-keys init-ssh-keys
+	$(E2E) up --abort-on-container-exit --exit-code-from seeder seeder
+	$(E2E) up -d server-worker
+	$(E2E) run --rm test-runner
+
+up-test-integration: ## Поднять E2E-стек без запуска тестов (для ручной отладки сценариев)
+	$(E2E) up -d --wait test-postgres test-redis ssh-target logging-service auth-service server-service
+	$(E2E) up --abort-on-container-exit --exit-code-from init-ssh-keys init-ssh-keys
+	$(E2E) up --abort-on-container-exit --exit-code-from seeder seeder
+	$(E2E) up -d server-worker
+	@echo ""
+	@echo "  E2E stack ready. Logs: make logs-test-integration"
+	@echo "  Run tests:           $(E2E) run --rm test-runner"
+	@echo "  SSH target:          ssh -p 2222 dbosroot@127.0.0.1 (password: test-root-pw)"
+
+logs-test-integration: ## tail логов всех сервисов E2E-стека (Ctrl+C для выхода)
+	$(E2E) logs -f auth-service logging-service server-service server-worker ssh-target
+
+down-test-integration: ## Остановить E2E-стек и удалить тома (mgmt-keys, bootstrap)
+	$(E2E) down -v --remove-orphans
 
 test-all: test-auth test-logging test-server test-worker test-integration ## Все тесты в Docker
 
@@ -317,6 +339,7 @@ test-build: ## Пересобрать все тестовые образы
 	$(SERVER) build
 	$(WORKER) build
 	$(ROOT) build
+	$(E2E) build
 
 test-down: ## Удалить тестовые контейнеры и тома
 	$(AUTH) down -v --remove-orphans
@@ -324,6 +347,7 @@ test-down: ## Удалить тестовые контейнеры и тома
 	$(SERVER) down -v --remove-orphans
 	$(WORKER) down -v --remove-orphans
 	$(ROOT) down -v --remove-orphans
+	$(E2E) down -v --remove-orphans
 
 ##@ k8s: production деплой в k3s на VM
 # Полный цикл деплоя: install_k3s → gen_secrets → build_and_import → deploy.

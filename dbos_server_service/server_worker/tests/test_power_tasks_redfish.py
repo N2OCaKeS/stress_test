@@ -1,9 +1,8 @@
 """End-to-end-style тесты power.* handler'ов через RedfishClient.
 
-Отличие от `test_task_handlers.py` — здесь не подменяется `_build_client`
-заранее, а собран реальный `RedfishClient` поверх `httpx.MockTransport`.
-Покрытие: actual httpx-flow внутри handler'а + Redfish error-mapping
-→ `AppException(BMC_*)` → audit failure.
+Здесь собран реальный `RedfishClient` поверх `httpx.MockTransport` (а не
+голый мок). Покрытие: actual httpx-flow внутри handler'а + Redfish
+error-mapping → `AppException(BMC_*)` → audit failure.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from src.tasks import power
 
 
 def _redfish_with(handler):
-    """RedfishClient с MockTransport — для подмены `_build_client` в power.*."""
+    """RedfishClient поверх MockTransport — подмена реального BMC-клиента."""
     client = RedfishClient("https://bmc.test", "u", "p")
     client._client = httpx.AsyncClient(
         base_url="https://bmc.test",

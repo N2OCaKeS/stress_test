@@ -8,8 +8,7 @@
 
 * Handler'ы (`tasks/inventory.py`, `tasks/passwords.py`) работают на
   уровне «передай credentials, получи facts / OK». Им не нужно знать
-  про context manager / port / known_hosts — всё это инкапсулировано
-  здесь.
+  про context manager / port — всё это инкапсулировано здесь.
 * `inventory_facts_to_payload` мапит сырой `SshClient.get_inventory`-результат
   на flat-schema `InventoryCallbackRequest` server_service'а
   (lscpu/lsblk parse + os-release pick).
@@ -32,23 +31,32 @@ logger = logging.getLogger(__name__)
 
 
 def apply_session_hints(credentials: dict, payload: dict) -> dict:
-    """Прокинуть в credentials признаки управляющей сессии из task-payload.
+    """Прокинуть в credentials признаки управляющей сессии и адрес из payload.
 
     server_service кладёт в payload `is_managed` (прошёл ли сервер prepare) и
-    `management_user`. На их основе `_build_session` выбирает сессию: ключевую
-    под управляющим пользователем для подготовленного сервера либо self-сессию
-    под самим аккаунтом для остальных. Приватный ключ берётся из worker-конфига,
-    по сети не передаётся.
+    `management_user` (на их основе `_build_session` выбирает между ключевой
+    сессией под управляющим пользователем и self-сессией под аккаунтом), а
+    также `host` / `ssh_port` — адрес сервера, чтобы не дёргать DNS-резолв из
+    `server_id` каждый раз.
 
-    Если в payload полей нет (старый dispatch, например inventory.sync до
-    проброса hints на стороне server_service) — credentials остаются как есть,
-    выбор сессии падает на self-поведение.
+    Если адрес в credentials уже есть (например, fetch_account_password вернул
+    `host`) — payload его не перетирает: credentials обычно несут более свежее
+    значение от server_service. Если в payload полей нет (старый dispatch) —
+    `_extract_host` будет fallback'иться на `server_id`.
     """
     if payload.get("is_managed"):
         credentials["is_managed"] = True
         management_user = payload.get("management_user")
         if management_user:
             credentials["management_user"] = management_user
+    if not credentials.get("host"):
+        host = payload.get("host") or payload.get("ssh_host")
+        if host:
+            credentials["host"] = host
+    if not credentials.get("port") and not credentials.get("ssh_port"):
+        port = payload.get("ssh_port") or payload.get("port")
+        if port:
+            credentials["ssh_port"] = port
     return credentials
 
 
@@ -113,7 +121,6 @@ def _build_session(credentials: dict, server_id: str) -> SshClient:
     """
     host = _extract_host(credentials, server_id)
     port = _extract_port(credentials)
-    known_hosts = credentials.get("known_hosts")
 
     if credentials.get("is_managed"):
         settings = get_settings()
@@ -142,7 +149,6 @@ def _build_session(credentials: dict, server_id: str) -> SshClient:
             username=management_user,
             password=None,
             port=port,
-            known_hosts=known_hosts,
             client_keys=[key_path],
         )
 
@@ -153,14 +159,13 @@ def _build_session(credentials: dict, server_id: str) -> SshClient:
         username=username,
         password=password,
         port=port,
-        known_hosts=known_hosts,
     )
 
 
 async def collect_inventory(credentials: dict, server_id: str) -> dict:
     """Собрать структурированный inventory сервера по SSH.
 
-    `credentials` — `{login, password, host?, port?, known_hosts?}` от
+    `credentials` — `{login, password, host?, port?}` от
     `server_service_client.fetch_account_password` (с дополнительными
     SSH-полями, если они есть в кредах).
 
@@ -184,7 +189,7 @@ async def collect_inventory(credentials: dict, server_id: str) -> dict:
 async def collect_os_users(credentials: dict, server_id: str) -> dict:
     """Снять список OS-пользователей сервера по SSH.
 
-    `credentials` — `{login, password, host?, port?, known_hosts?}` от
+    `credentials` — `{login, password, host?, port?}` от
     `server_service_client.fetch_account_password` (плюс SSH-поля, если есть).
 
     Возврат — то, что отдал `SshClient.get_os_users`: dict с ключами
@@ -240,8 +245,8 @@ async def provision_user(
 ) -> dict:
     """Завести OS-пользователя `login` на удалённом хосте (`useradd`).
 
-    `credentials` — те же поля, что у `set_account_password` (host/port/
-    known_hosts + login/password для self-сессии). На управляемом сервере
+    `credentials` — те же поля, что у `set_account_password` (host/port
+    + login/password для self-сессии). На управляемом сервере
     (`credentials['is_managed']`) сессия идёт под управляющим пользователем по
     ключу с sudo; иначе — под самим аккаунтом. Заводим всегда `login`.
 
@@ -317,7 +322,7 @@ async def bootstrap_management_user(
     """Онбординг управления: завести управляющего пользователя и положить ключ.
 
     `credentials` — одноразовые bootstrap-креды (`{login, password, host?,
-    port?, known_hosts?}`): под ними SSH-сессия password-auth заходит на ещё
+    port?}`): под ними SSH-сессия password-auth заходит на ещё
     не управляемый сервер. После prepare управление идёт под `management_user`
     по ключу, исходный пароль больше не нужен и нигде не сохраняется.
 
@@ -329,15 +334,15 @@ async def bootstrap_management_user(
     username = credentials.get("login") or credentials.get("username") or "root"
     password = credentials.get("password")
     port = _extract_port(credentials)
-    known_hosts = credentials.get("known_hosts")
 
-    logger.info("ssh prepare management user %s on %s as %s", management_user, host, username)
+    # Bootstrap-логин под одноразовыми кредами — это шумная диагностика, не
+    # бизнес-событие; в INFO бьёт по громкости логов на массовом prepare'е.
+    logger.debug("ssh prepare management user %s on %s as %s", management_user, host, username)
     async with SshClient(
         host=host,
         username=username,
         password=password,
         port=port,
-        known_hosts=known_hosts,
     ) as ssh:
         await ssh.bootstrap_management_user(management_user, public_key)
     return {"prepared": True, "management_user": management_user}

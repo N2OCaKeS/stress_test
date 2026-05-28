@@ -143,9 +143,12 @@ async def server_prepare(task_id: str) -> None:
         creds = {
             "login": bootstrap.get("bootstrap_login"),
             "password": bootstrap.get("bootstrap_password"),
-            "host": payload.get("host"),
-            "port": payload.get("ssh_port") or payload.get("port"),
         }
+        # `apply_session_hints` доклеивает host/ssh_port из payload и (для
+        # consistency) is_managed/management_user — на prepare последние
+        # ничего не меняют, потому что bootstrap_management_user открывает
+        # password-сессию напрямую через SshClient.
+        ssh_client.apply_session_hints(creds, payload)
         await ssh_client.bootstrap_management_user(
             creds, server_id,
             management_user=management_user,

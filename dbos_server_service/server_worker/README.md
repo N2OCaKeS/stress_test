@@ -261,5 +261,4 @@ Bootstrap-креды `prepare` worker читает из Redis (тот же `REDI
 | ENV | Default | Назначение |
 |---|---|---|
 | `SECRETS_REENCRYPT_ENABLED` | `false` | включает periodic `secrets.reencrypt_lazy` (5-минутный тик). Дефолт `false` — включать осознанно (`true`) только на время миграции master-ключа, чтобы тик не сработал неожиданно при копировании prod-манифеста в dev/staging, где `/internal/secrets/*` недостижим |
-| `SECRETS_REENCRYPT_INTERVAL_SECONDS` | `300.0` | cooldown между тиками (≥1.0). Не путать с cron-расписанием самого periodic'а — это hot-loop guard внутри handler'а |
 | `SECRETS_REENCRYPT_BATCH_SIZE` | `100` | размер `reencrypt_batch` запроса в server_service. Worker не делает несколько батчей за тик — high-priority задачи должны успевать прорваться между ними |

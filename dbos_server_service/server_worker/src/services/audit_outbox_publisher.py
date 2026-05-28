@@ -53,9 +53,14 @@ from src.utils.redaction import redact_error_message
 
 logger = logging.getLogger(__name__)
 
-# Сколько строк за один проход. Маленький batch — чтобы один зависший emit
-# не блокировал свежие события надолго.
-_BATCH_SIZE = 50
+# Сколько строк за один проход. Размер выбран маленьким сознательно:
+# `_publish_one` делает HTTP-запрос в loging_service на каждую строку, при
+# `with_for_update(skip_locked=True)` весь batch держится залоченным до
+# финального commit'а. При batch=50 один медленный emit (timeout 5s) тормозит
+# остальные 49 даже если loging тут же ответил бы быстро. batch=5 ограничивает
+# blast-radius медленных запросов и при этом не убивает throughput на happy-
+# path'е — за 2-секундный poll-interval все 5 успевают пройти.
+_BATCH_SIZE = 5
 # Пауза между проходами фонового loop'а.
 _POLL_INTERVAL_SECONDS = 2.0
 

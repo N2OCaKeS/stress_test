@@ -182,12 +182,9 @@ async def installed_packages_list(task_id: str) -> None:
         else:
             creds = {"login": payload.get("ssh_login", "root")}
 
-        # ssh_host из payload — server_service кладёт туда server.ip_address.
-        if "ssh_host" in payload and "host" not in creds:
-            creds["host"] = payload["ssh_host"]
-
-        # is_managed/management_user из payload влияют на выбор сессии —
-        # пропускаем их через apply_session_hints.
+        # is_managed/management_user/host/ssh_port из payload пропускаются
+        # через единый apply_session_hints — server_service кладёт туда
+        # server.ip_address как `host` и `ssh_port` для нестандартного порта.
         ssh_client.apply_session_hints(creds, payload)
 
         host = creds.get("host") or creds.get("ssh_host") or server_id

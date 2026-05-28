@@ -34,6 +34,27 @@ logger = logging.getLogger(__name__)
 
 _INGEST_PATH = "/api/logging/v1/events"
 
+# Сколько раз emit() уронил событие из-за отсутствия LOGGING_SERVICE_API_KEY.
+# Растёт монотонно за время жизни процесса — health-check / future-метрика
+# увидит ненулевое значение и поднимет тревогу: без ключа outbox-row
+# помечается «доставлено» (см. ниже), но в loging событие так и не доехало.
+_audit_dropped_no_api_key: int = 0
+
+
+def get_dropped_no_api_key_total() -> int:
+    """Сколько событий было отброшено из-за пустого LOGGING_SERVICE_API_KEY.
+
+    Сбрасывается рестартом процесса. Любое ненулевое значение в проде —
+    мисконфигурация: events помечаются published без реальной доставки.
+    """
+    return _audit_dropped_no_api_key
+
+
+def _reset_dropped_counter_for_tests() -> None:
+    """Test helper — сбросить счётчик между прогонами."""
+    global _audit_dropped_no_api_key
+    _audit_dropped_no_api_key = 0
+
 
 class AuditEmitError(Exception):
     """loging_service не подтвердил доставку события.
@@ -124,9 +145,13 @@ async def emit(
     # drain'ится (отдельный health-check, ещё не реализован).
     api_key = settings.logging_service_api_key
     if not api_key:
+        global _audit_dropped_no_api_key
+        _audit_dropped_no_api_key += 1
         logger.error(
-            "LOGGING_SERVICE_API_KEY is not set; audit event dropped for %s",
+            "LOGGING_SERVICE_API_KEY is not set; audit event dropped for %s "
+            "(dropped_total=%s)",
             action,
+            _audit_dropped_no_api_key,
         )
         return
     headers = {"Authorization": f"Bearer {api_key}"}

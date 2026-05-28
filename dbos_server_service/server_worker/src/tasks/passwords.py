@@ -32,7 +32,7 @@ import string
 from datetime import datetime, timezone
 
 from src.clients.ipmitool import IpmitoolError
-from src.clients.redfish import RedfishClient, RedfishError
+from src.clients.redfish import RedfishError
 from src.core.config import get_settings
 from src.main import broker
 from src.services import server_service_client, ssh_client
@@ -96,22 +96,6 @@ def _generate_password() -> str:
     pwd_chars = required + body
     rng.shuffle(pwd_chars)
     return "".join(pwd_chars)
-
-
-def _build_redfish_client(creds: dict) -> RedfishClient:
-    """Legacy-фабрика чистого `RedfishClient` для тестов.
-
-    Используется только тестовым кодом (`monkeypatch.setattr(..., _build_redfish_client, ...)`).
-    Production-путь — `_get_bmc` (probe + fallback на ipmitool).
-    """
-    settings = get_settings()
-    return RedfishClient(
-        host=creds["endpoint_url"],
-        username=creds["username"],
-        password=creds["password"],
-        verify_tls=settings.redfish_verify_tls,
-        timeout=settings.redfish_timeout_seconds,
-    )
 
 
 @broker.task("account.rotate_password")

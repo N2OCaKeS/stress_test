@@ -303,16 +303,6 @@ class Settings(BaseSettings):
             "fires unexpectedly when a prod manifest is copied to dev/staging."
         ),
     )
-    secrets_reencrypt_interval_seconds: float = Field(
-        default=300.0,
-        ge=1.0,
-        description=(
-            "Cooldown between successive `secrets.reencrypt_lazy` ticks. "
-            "Lower values speed up the migration but pressure the DB / "
-            "server_service; default 5 min — компромисс под realistic "
-            "RPS воркера."
-        ),
-    )
     secrets_reencrypt_batch_size: int = Field(
         default=100,
         ge=1,

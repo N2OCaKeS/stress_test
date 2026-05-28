@@ -35,8 +35,6 @@ import logging
 import os
 import socket
 import uuid
-from contextlib import contextmanager
-from typing import Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -118,21 +116,6 @@ def unregister_running_task(task_id: str) -> None:
     """Снять пометку running. Идемпотентна — двойной discard безопасен
     (drain мог уже убрать id при shutdown-таймауте)."""
     RUNNING_TASKS.discard(task_id)
-
-
-@contextmanager
-def track_running_task(task_id: str) -> Iterator[None]:
-    """Context manager поверх register/unregister: add при enter, discard
-    при exit.
-
-    Гарантирует discard даже при exception в теле. Если caller упадёт до
-    `add` — задача в множество не попадает, drain её не финализирует.
-    """
-    register_running_task(task_id)
-    try:
-        yield
-    finally:
-        unregister_running_task(task_id)
 
 
 def reset_for_tests() -> None:

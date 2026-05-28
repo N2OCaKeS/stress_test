@@ -484,9 +484,12 @@ class SshClient:
         (password-auth), под которыми мы заходим на ещё не управляемый сервер.
         Здесь мы:
 
-        1. `useradd -m -s /bin/bash -G sudo <management_user>` (idempotent —
+        1. `useradd -m -s /bin/bash -G <sudo-group> <management_user>` (idempotent —
            уже существующий пользователь синхронизируется как usermod,
-           пароль не трогаем, ключ ниже всё равно доложим);
+           пароль не трогаем, ключ ниже всё равно доложим). Sudo-группа
+           подбирается по дистрибутиву: `sudo` на Debian/Ubuntu/Astra,
+           `wheel` на RHEL/Alpine — пробуем sudo первым, при provision-fail
+           откатываемся на wheel;
         2. пишем `/etc/sudoers.d/<management_user>-management` с правилом
            `NOPASSWD: ALL` — на управляющей сессии пароля нет (заходим по
            ключу), поэтому sudo обязан работать без него;
@@ -519,10 +522,36 @@ class SshClient:
                 message="management public key must be a single line",
             )
 
-        # 1. Управляющий пользователь — заводим idempotent'но, с sudo.
-        await self.create_user(
-            management_user, groups=["sudo"], has_sudo=True, shell="/bin/bash",
-        )
+        # 1. Управляющий пользователь — заводим idempotent'но, с sudo-группой.
+        # На Debian/Ubuntu/Astra sudoer-группа — `sudo`, на RHEL/Alpine — `wheel`.
+        # Пробуем `sudo`, при отказе useradd/usermod (`-G` ругается на
+        # несуществующую группу) — `wheel`. NOPASSWD-правило ниже всё равно
+        # перекрывает sudoers — членство в группе нужно для дефолтной policy
+        # на тех дистрибутивах, где `/etc/sudoers.d/*` подгружается ленивее
+        # системного `/etc/sudoers`.
+        last_exc: SshError | None = None
+        provisioned = False
+        for sudo_group in ("sudo", "wheel"):
+            try:
+                await self.create_user(
+                    management_user,
+                    groups=[sudo_group],
+                    has_sudo=False,
+                    shell="/bin/bash",
+                )
+            except SshError as exc:
+                if exc.error_code not in ("SSH_USERADD_FAILED", "SSH_USERMOD_FAILED"):
+                    raise
+                last_exc = exc
+                logger.info(
+                    "bootstrap: sudo-group %r not available on %s, retrying",
+                    sudo_group, self.host,
+                )
+                continue
+            provisioned = True
+            break
+        if not provisioned and last_exc is not None:
+            raise last_exc
 
         # 2. NOPASSWD-правило. Управляющие сессии заходят по ключу без пароля,
         # а группа `sudo` по умолчанию пароль требует — без этого правила любая

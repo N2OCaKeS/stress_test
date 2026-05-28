@@ -95,8 +95,8 @@ class _FakeRedfishClient:
 def _patch_power_redfish(monkeypatch, fake_client: _FakeRedfishClient):
     """Подменяем `_get_bmc` в power.py на async-фабрику, возвращающую fake.
 
-    Раньше тесты мокали синхронный `_build_client`; после переключения на
-    probe+fallback (`clients.get_bmc_client`) точка подмены — async helper.
+    Точка подмены — async helper, потому что `clients.get_bmc_client`
+    делает probe + fallback на ipmitool.
     """
     async def _factory(creds, *, prefer="redfish"):
         return fake_client

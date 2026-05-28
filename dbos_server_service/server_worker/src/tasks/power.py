@@ -26,8 +26,7 @@ from __future__ import annotations
 import logging
 
 from src.clients.ipmitool import IpmitoolError
-from src.clients.redfish import RedfishClient, RedfishError
-from src.core.config import get_settings
+from src.clients.redfish import RedfishError
 from src.main import broker
 from src.services import server_service_client
 from src.tasks._bmc_errors import (
@@ -61,23 +60,6 @@ def _normalize_power_state(state: str) -> str:
             out.append("_")
         out.append(ch.lower())
     return "".join(out)
-
-
-def _build_client(creds: dict) -> RedfishClient:
-    """Legacy-фабрика чистого `RedfishClient` для тестов.
-
-    Используется только тестовым кодом (`monkeypatch.setattr(..., _build_client, ...)`)
-    в `tests/test_task_handlers.py` и `tests/test_power_tasks_redfish.py`.
-    Production-путь через `_get_bmc` — он сам решает Redfish vs ipmitool.
-    """
-    settings = get_settings()
-    return RedfishClient(
-        host=creds["endpoint_url"],
-        username=creds["username"],
-        password=creds["password"],
-        verify_tls=settings.redfish_verify_tls,
-        timeout=settings.redfish_timeout_seconds,
-    )
 
 
 @broker.task("power.on")

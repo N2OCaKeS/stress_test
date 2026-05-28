@@ -784,8 +784,8 @@ async def secrets_reencrypt_lazy() -> None:
       1. Если `SECRETS_REENCRYPT_ENABLED=false` → выйти молча (dev/test).
       2. Если в `RUNNING_TASKS` есть активные user-handler'ы → skip, чтобы
          не конкурировать с power/SSH/inventory за DB-write'ы и CPU.
-         Полагаемся на short-running ходовку: следующий тик через
-         `SECRETS_REENCRYPT_INTERVAL_SECONDS` снова попробует.
+         Полагаемся на short-running ходовку: следующий cron-тик (`*/5`)
+         снова попробует.
       3. `GET /internal/secrets/migration_status`. `remaining==0` →
          миграция доехала, audit с processed=0 и выходим. Оператор по
          этому событию (и метрике в loging_service) решает, можно ли
@@ -800,14 +800,44 @@ async def secrets_reencrypt_lazy() -> None:
     `SECRETS_REENCRYPT_BATCH_SIZE` env.
 
     Ошибки внутри тика логируются (`redact_error_message`) и НЕ пробрасываются
-    — periodic-task не должен крэшить scheduler-loop. Failed audit пишется в
-    outbox через `audit_client.emit`, который сам же его доставит на retry
-    background loop'а.
+    — periodic-task не должен крэшить scheduler-loop. Все audit-события идут
+    через transactional outbox (`enqueue_audit` + `commit`), а не через прямой
+    `audit_client.emit` — чтобы при недоступности loging_service запись не
+    терялась, а ждала retry'я publisher'ом.
     """
     from src.tasks._runner_state import RUNNING_TASKS
-    from src.services import audit_client, server_service_client
+    from src.services import server_service_client
+    from src.services import audit_outbox_publisher
+    from src.repositories import task as task_repo
+    from src.db.session import AsyncSessionLocal
     from src.core.exceptions import CredentialFetchError
     from src.utils.redaction import redact_error_message
+
+    async def _enqueue_outbox_audit(payload: dict) -> None:
+        """Положить audit-row в outbox, зафиксировать и попытаться доставить.
+
+        После commit'а зовём `flush_outbox()` — это same-pattern, что и у
+        `_runner.run_task::_safe_flush_outbox`: happy-path сразу доставляет
+        событие, при сбое publisher background-loop'а добьёт row позже.
+        Best-effort: ошибки на любом шаге логируются, тик не падает.
+        """
+        try:
+            async with AsyncSessionLocal() as session:
+                await task_repo.enqueue_audit(session, task_id=None, payload=payload)
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001 — best-effort audit
+            logger.debug(
+                "secrets.reencrypt_lazy: outbox enqueue failed: %s",
+                redact_error_message(f"{type(exc).__name__}: {exc}"),
+            )
+            return
+        try:
+            await audit_outbox_publisher.flush_outbox()
+        except Exception as exc:  # noqa: BLE001 — happy-path optimization
+            logger.debug(
+                "secrets.reencrypt_lazy: outbox flush failed: %s",
+                redact_error_message(f"{type(exc).__name__}: {exc}"),
+            )
 
     settings = get_settings()
 
@@ -820,23 +850,17 @@ async def secrets_reencrypt_lazy() -> None:
             "secrets.reencrypt_lazy: skip tick — %s active task(s) in flight",
             len(RUNNING_TASKS),
         )
-        try:
-            await audit_client.emit(
-                "secrets.reencrypt_tick",
-                status="success",
-                allowed=True,
-                target_type="secret",
-                details={
-                    "skipped": True,
-                    "reason": "active_tasks_present",
-                    "active_count": len(RUNNING_TASKS),
-                },
-            )
-        except Exception as exc:  # noqa: BLE001 — best-effort audit
-            logger.debug(
-                "secrets.reencrypt_lazy: skip-audit emit failed: %s",
-                redact_error_message(f"{type(exc).__name__}: {exc}"),
-            )
+        await _enqueue_outbox_audit({
+            "action": "secrets.reencrypt_tick",
+            "status": "success",
+            "allowed": True,
+            "target_type": "secret",
+            "details": {
+                "skipped": True,
+                "reason": "active_tasks_present",
+                "active_count": len(RUNNING_TASKS),
+            },
+        })
         return
 
     try:
@@ -861,23 +885,17 @@ async def secrets_reencrypt_lazy() -> None:
             "secrets.reencrypt_lazy: nothing to do (remaining=0, active=v%s)",
             active_version,
         )
-        try:
-            await audit_client.emit(
-                "secrets.reencrypt_tick",
-                status="success",
-                allowed=True,
-                target_type="secret",
-                details={
-                    "processed": 0,
-                    "remaining": 0,
-                    "active_version": active_version,
-                },
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "secrets.reencrypt_lazy: done-audit emit failed: %s",
-                redact_error_message(f"{type(exc).__name__}: {exc}"),
-            )
+        await _enqueue_outbox_audit({
+            "action": "secrets.reencrypt_tick",
+            "status": "success",
+            "allowed": True,
+            "target_type": "secret",
+            "details": {
+                "processed": 0,
+                "remaining": 0,
+                "active_version": active_version,
+            },
+        })
         return
 
     try:
@@ -905,22 +923,16 @@ async def secrets_reencrypt_lazy() -> None:
         errors,
         remaining,
     )
-    try:
-        await audit_client.emit(
-            "secrets.reencrypt_tick",
-            status="success" if errors == 0 else "warning",
-            allowed=True,
-            target_type="secret",
-            details={
-                "processed": processed,
-                "errors": errors,
-                "remaining_before": remaining,
-                "active_version": active_version,
-                "batch_size": settings.secrets_reencrypt_batch_size,
-            },
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug(
-            "secrets.reencrypt_lazy: tick-audit emit failed: %s",
-            redact_error_message(f"{type(exc).__name__}: {exc}"),
-        )
+    await _enqueue_outbox_audit({
+        "action": "secrets.reencrypt_tick",
+        "status": "success" if errors == 0 else "warning",
+        "allowed": True,
+        "target_type": "secret",
+        "details": {
+            "processed": processed,
+            "errors": errors,
+            "remaining_before": remaining,
+            "active_version": active_version,
+            "batch_size": settings.secrets_reencrypt_batch_size,
+        },
+    })

@@ -155,8 +155,6 @@ async def test_get_current_identity_writes_subject_type_to_context(monkeypatch):
     """`get_current_identity` пишет subject_type в audit_context."""
     from fastapi import Request
 
-    auth_dep._clear_introspect_cache()
-
     async def fake_introspect(token: str) -> dict:
         return _body("bot")
 

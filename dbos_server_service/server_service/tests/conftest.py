@@ -157,12 +157,8 @@ def _identity_body(
 def _patch_introspect(monkeypatch):
     """Перехватывает `_introspect` чтобы тесты работали без auth_service.
 
-    Кэша introspect больше нет — каждый запрос идёт свежим `_introspect`.
-    `_clear_introspect_cache()` остался no-op'ом для совместимости; зовём
-    его на enter/exit, чтобы не зависеть от деталей реализации.
+    Кэша introspect нет — каждый запрос идёт свежим `_introspect`.
     """
-    from src.dependencies import auth as _auth_mod
-
     async def fake_introspect(token: str) -> dict:
         body = _FAKE_INTROSPECT.get(token)
         if body is None:
@@ -171,10 +167,8 @@ def _patch_introspect(monkeypatch):
 
     monkeypatch.setattr("src.dependencies.auth._introspect", fake_introspect)
     _FAKE_INTROSPECT.clear()
-    _auth_mod._clear_introspect_cache()
     yield
     _FAKE_INTROSPECT.clear()
-    _auth_mod._clear_introspect_cache()
 
 
 @pytest.fixture(autouse=True)

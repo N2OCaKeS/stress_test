@@ -41,3 +41,12 @@ def entity_permission_id() -> str:
 def server_disk_id() -> str:
     """`dsk_<uuid>` — для server_disks."""
     return _new_id("dsk_")
+
+
+def task_id() -> str:
+    """`tsk_<uuid>` — для строк worker-БД `dev_server_worker.tasks`.
+
+    Сама таблица живёт в worker-БД, но id выписывает server_service
+    при INSERT'е через cross-DB engine (см. `services/worker_client.py`).
+    """
+    return _new_id("tsk_")

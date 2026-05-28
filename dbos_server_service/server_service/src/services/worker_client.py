@@ -38,7 +38,7 @@ from taskiq_redis import ListQueueBroker
 
 from src.core.config import get_settings
 from src.core.exceptions import ConflictError, ServiceUnavailableError
-from src.utils.ids import _new_id  # type: ignore[attr-defined]
+from src.utils.ids import task_id
 
 # Префикс Redis-ключа для одноразовых bootstrap-кред prepare'а. Креды лежат
 # под `dbos:prepare_creds:<task_id>` с TTL — в task-payload едет только ссылка
@@ -49,11 +49,6 @@ PREPARE_CREDS_KEY_PREFIX = "dbos:prepare_creds:"
 def prepare_creds_key(task_id_value: str) -> str:
     """Redis-ключ для bootstrap-кред конкретной prepare-задачи."""
     return f"{PREPARE_CREDS_KEY_PREFIX}{task_id_value}"
-
-
-def task_id() -> str:
-    """Сгенерить task_id (`tsk_<uuid>`). Локальный helper — задача же в worker-БД."""
-    return _new_id("tsk_")
 
 
 # Module-level state. При `uvicorn --workers >1` каждый воркер — отдельный

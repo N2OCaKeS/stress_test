@@ -69,17 +69,12 @@ Middleware регистрируется **после** ``attach_request_id_and_c
 
 Чтобы понять, ``platform_role`` ли это, middleware зовёт тот же
 ``_introspect()`` helper, что и обычная dependency
-``get_current_identity``. Это **тот же** HTTP-roundtrip — никакой новой
-нагрузки на ``auth_service``: на endpoint-фазе ``CurrentIdentity``
-сделал бы ровно тот же call, мы просто сделали его на middleware-фазе
-для тех путей, которые не aware о ``CurrentIdentity`` (например,
-``/openapi.json`` без depends).
-
-Поэтому: middleware **не дублирует** introspect — он ставит его раньше,
-а endpoint-уровень всё равно дёрнет ``CurrentIdentity`` отдельно. Это
-не оптимально по сети (два roundtrip'а на запрос), но **корректно** и
-без кэша: отозванный токен перестаёт работать немедленно, без окна
-жизни в памяти процесса.
+``get_current_identity``. Результат кладётся в
+``request.state.introspect_body`` — endpoint-уровневый
+``get_current_identity`` читает его оттуда и **не делает второго
+roundtrip'а** к auth_service. На один защищённый запрос — один
+introspect, контракт мгновенного revoke сохраняется (state не
+переживает между запросами, middleware всегда зовёт свежий).
 
 В случае любой ошибки introspect (``AuthenticationError`` / network
 fail) middleware **не блокирует** — пропускает дальше. Endpoint-уровень
@@ -242,9 +237,9 @@ async def platform_admin_guard(request: Request, call_next):
         return await call_next(request)
 
     # Свежий introspect на каждом запросе — отозванный токен перестаёт
-    # работать немедленно. Endpoint-уровень `CurrentIdentity` сделает свой
-    # introspect отдельно; второй roundtrip — сознательная цена за
-    # мгновенный revoke.
+    # работать немедленно. Body кладём в `request.state.introspect_body`,
+    # чтобы endpoint-уровень `get_current_identity` переиспользовал его
+    # без второго roundtrip'а к auth_service.
     try:
         body = await auth_deps._introspect(token)
     except AppException:
@@ -258,6 +253,13 @@ async def platform_admin_guard(request: Request, call_next):
         # false-positive «platform_admin блокирован». Endpoint-уровень
         # отдаст ServiceUnavailableError по-нормальному.
         return await call_next(request)
+
+    # Свежий introspect получен — кладём в state, чтобы endpoint-уровень
+    # `get_current_identity` переиспользовал его без второго roundtrip'а.
+    # Сохраняем и при active=False (endpoint всё равно отдаст 401, но без
+    # лишнего сетевого вызова) — главное, чтобы middleware и endpoint
+    # видели одну и ту же картинку.
+    request.state.introspect_body = body
 
     if not body.get("active"):
         # Невалидный/протухший токен — пусть endpoint отдаст 401

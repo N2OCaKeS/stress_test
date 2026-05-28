@@ -201,9 +201,6 @@ def create_application() -> FastAPI:
             #      теоретически от late-completing finally-блока endpoint'а),
             #      попадёт в `client is None` ветку → sync-fallback per-call
             #      httpx.post с timeout=2.0 (без leak'а pooled-сокетов).
-            #   4. `_clear_introspect_cache()` — обнуляем TTL-кэш, чтобы
-            #      повторный старт (TestClient между тестами) начинал с чистого
-            #      листа без shared state.
             introspect = auth_deps._introspect_client
             auth_deps._introspect_client = None
             if introspect is not None:
@@ -217,8 +214,6 @@ def create_application() -> FastAPI:
             audit_service._audit_client = None
             if audit_pool is not None:
                 await audit_pool.aclose()
-
-            auth_deps._clear_introspect_cache()
 
     # В production закрываем публичный OpenAPI/Swagger UI — анонимы не должны
     # видеть каталог эндпоинтов (включая stub-501 с summary вроде «Reveal decrypted

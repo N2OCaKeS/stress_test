@@ -10,8 +10,7 @@ pooled ``_audit_client`` мог быть уже закрыт к моменту, 
 Текущий контракт shutdown'а:
 
 1. Closing order — `_introspect_client` → **drain audit tasks** →
-   `_audit_client` → `_clear_introspect_cache()` (no-op, кэша больше нет).
-   `_audit_client` закрывается ПОСЛЕДНИМ (после drain'а).
+   `_audit_client`. `_audit_client` закрывается ПОСЛЕДНИМ (после drain'а).
 2. ``_drain_pending_audit_tasks()`` итерирует по
    ``audit_service._pending_audit_tasks`` (set in-flight task'ов) и ждёт
    их завершения с таймаутом ``_AUDIT_DRAIN_TIMEOUT_SECONDS = 2.0``.
@@ -243,9 +242,7 @@ async def test_lifespan_closes_audit_client_after_drain(monkeypatch):
 async def test_lifespan_completes_clean_shutdown(monkeypatch):
     """Lifespan shutdown отрабатывает без ошибок (closing-order контракт).
 
-    Кэша introspect больше нет — `_clear_introspect_cache()` стал no-op'ом,
-    но остаётся в финале shutdown'а для совместимости. Проверяем, что
-    startup/shutdown цикл проходит чисто.
+    Кэша introspect нет. Проверяем, что startup/shutdown цикл проходит чисто.
     """
     from src.core import config as config_mod
     from src.main import create_application

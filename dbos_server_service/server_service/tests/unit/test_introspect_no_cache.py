@@ -113,3 +113,100 @@ async def test_platform_admin_guard_introspects_every_request(monkeypatch):
         assert result == "passed"
 
     assert state["calls"] == 3
+
+
+@pytest.mark.asyncio
+async def test_middleware_and_dependency_share_one_introspect(monkeypatch):
+    """На одном request introspect зовётся ровно один раз.
+
+    Полный путь: `platform_admin_guard` middleware → `get_current_identity`
+    dependency. Раньше каждый дёргал свой introspect; теперь middleware
+    кладёт body в `request.state.introspect_body`, dependency его читает.
+    """
+    state = {"calls": 0}
+
+    async def spy_introspect(token: str) -> dict:
+        state["calls"] += 1
+        return _active_body()
+
+    monkeypatch.setattr(auth_dep, "_introspect", spy_introspect)
+
+    captured: dict = {}
+
+    async def call_next(request):
+        captured["request"] = request
+        return "passed"
+
+    request = _request_with_token("dbos_pat_dedup_xyz_000001")
+    request.scope["path"] = "/api/server/v1/servers"
+
+    result = await guard_mod.platform_admin_guard(request, call_next)
+    assert result == "passed"
+
+    # Endpoint-фаза: dependency должна взять body из state, без нового
+    # сетевого вызова.
+    identity = await auth_dep.get_current_identity(captured["request"])
+    assert identity.user_id == "usr_1"
+    assert state["calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_dependency_falls_back_to_introspect_when_no_state(monkeypatch):
+    """Если middleware не запускался (ad-hoc Request) — dependency сама зовёт introspect."""
+    state = {"calls": 0}
+
+    async def spy_introspect(token: str) -> dict:
+        state["calls"] += 1
+        return _active_body()
+
+    monkeypatch.setattr(auth_dep, "_introspect", spy_introspect)
+
+    request = _request_with_token("dbos_pat_fallback_xyz_00001")
+    # request.state пустой — middleware не пробегал.
+    identity = await auth_dep.get_current_identity(request)
+    assert identity.user_id == "usr_1"
+    assert state["calls"] == 1
+
+
+@pytest.mark.asyncio
+async def test_revoke_between_requests_uses_fresh_introspect(monkeypatch):
+    """Состояние state на одном request не пробивает в следующий — revoke действует мгновенно.
+
+    Первый request: middleware кэширует body в `request.state`, endpoint
+    переиспользует. Второй request: новый объект `Request`, новый state,
+    новый introspect — если token revoke'нут, endpoint видит active=False.
+    """
+    state = {"calls": 0, "revoked": False}
+
+    async def spy_introspect(token: str) -> dict:
+        state["calls"] += 1
+        if state["revoked"]:
+            return {"active": False}
+        return _active_body()
+
+    monkeypatch.setattr(auth_dep, "_introspect", spy_introspect)
+
+    async def call_next(_request):
+        return "passed"
+
+    token = "dbos_pat_revoke_dedup_xyz_001"
+
+    # Первый запрос — все живо.
+    req1 = _request_with_token(token)
+    req1.scope["path"] = "/api/server/v1/servers"
+    await guard_mod.platform_admin_guard(req1, call_next)
+    identity = await auth_dep.get_current_identity(req1)
+    assert identity.user_id == "usr_1"
+    assert state["calls"] == 1
+
+    # Между запросами токен отозван.
+    state["revoked"] = True
+
+    req2 = _request_with_token(token)
+    req2.scope["path"] = "/api/server/v1/servers"
+    await guard_mod.platform_admin_guard(req2, call_next)
+    with pytest.raises(AuthenticationError) as exc:
+        await auth_dep.get_current_identity(req2)
+    assert exc.value.error_code == "ACCESS_TOKEN_INVALID"
+    # Один introspect на запрос: 1 за первый + 1 за второй.
+    assert state["calls"] == 2

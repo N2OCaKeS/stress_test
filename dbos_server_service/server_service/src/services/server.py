@@ -7,7 +7,7 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, BusyState, EntityType
+from src.core.constants import Action, BusyState, EntityType, ServerStatus
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -177,12 +177,11 @@ async def get_server(
             raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
         _ensure_visible(identity, obj)
     except (NotFoundError, AuthorizationError) as exc:
-        if isinstance(exc, NotFoundError):
-            reason = "not_found_or_cross_dept"
-        elif exc.error_code == "PERMISSION_DENIED":
-            reason = "permission_denied"
-        else:
-            reason = "cross_department"
+        reason = (
+            "not_found_or_cross_dept"
+            if isinstance(exc, NotFoundError)
+            else "permission_denied"
+        )
         audit_service.emit(
             "server.view",
             target_id=server_id,
@@ -448,7 +447,6 @@ async def acquire_server(
         await permissions.require_action(
             db, identity, EntityType.SERVER, Action.BUSY_ACQUIRE,
         )
-    from src.core.constants import ServerStatus
     if obj.status == ServerStatus.DECOMMISSIONED:
         audit_service.emit(
             "server.acquire",

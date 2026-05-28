@@ -24,18 +24,20 @@ TCP+TLS handshake на каждый запрос и истощил FD-пул с 
 Pooled client ставит потолок на исходящие соединения и амортизирует
 TLS-handshake между запросами.
 
-### Без кэша introspect
+### Без кэша introspect, но с дедупликацией внутри одного запроса
 
-Результат introspect намеренно НЕ кэшируется. Отозванный/забаненный
-PAT или bot-токен должен переставать работать в тот же момент, без окна
-в несколько секунд. Поэтому и `platform_admin_guard` middleware, и
-endpoint dependency `get_current_identity` зовут свежий `_introspect(token)`
-на каждом запросе. Пул соединений (`_introspect_client`) остаётся — он
-про амортизацию TCP+TLS, а не про кэш ответов.
+Результат introspect намеренно НЕ кэшируется между запросами — отозванный
+или забаненный PAT/bot-токен должен переставать работать в тот же момент.
+А вот внутри одного и того же запроса `platform_admin_guard` middleware
+и endpoint-dependency `get_current_identity` раньше делали по своему
+introspect'у — два сетевых roundtrip'а на один защищённый запрос.
 
-Цена: на non-public path два introspect-roundtrip'а на один запрос
-(middleware + endpoint dep), и под нагрузкой это прямая нагрузка на
-auth_service. Это сознательный размен в пользу немедленного revoke.
+Сейчас middleware кладёт свежий body в `request.state.introspect_body`,
+а `get_current_identity` сначала читает оттуда; `_introspect(token)`
+вызывается только если в state ничего нет (запрос пришёл мимо
+middleware — например, через TestClient без full app-stack). Контракт
+немедленного revoke сохраняется: middleware всё равно делает свежий
+introspect на каждый запрос, кэш не появляется.
 """
 
 from typing import Annotated
@@ -78,15 +80,6 @@ def _is_token_shape_valid(token: str) -> bool:
     if not token or len(token) < _MIN_TOKEN_LENGTH:
         return False
     return token.startswith(_VALID_TOKEN_PREFIXES)
-
-
-def _clear_introspect_cache() -> None:
-    """No-op. Кэша introspect больше нет (отзыв токена действует мгновенно).
-
-    Оставлено для совместимости с lifespan-shutdown и тестами, которые
-    раньше сбрасывали TTL-кэш между прогонами.
-    """
-    return None
 
 
 # Module-level pooled client. Инициализируется в `main.lifespan` startup,
@@ -208,11 +201,15 @@ async def get_current_identity(request: Request) -> IdentityContext:
             message="Missing bearer token",
         )
 
-    # Свежий introspect на каждом запросе — отозванный/забаненный токен
-    # перестаёт работать немедленно. middleware platform_admin_guard уже
-    # сделал свой introspect на этом же request'е; повторный roundtrip —
-    # сознательная цена за мгновенный revoke (см. docstring модуля).
-    body = await _introspect(token)
+    # Дедупликация per-request: middleware `platform_admin_guard` уже
+    # сделал свежий introspect и положил body в `request.state`. Если он там
+    # есть — переиспользуем; иначе зовём `_introspect` (это путь для запросов,
+    # которые прошли мимо middleware — например, ad-hoc TestClient-вызовы
+    # без full ASGI-stack'а). Контракт мгновенного revoke сохранён: между
+    # запросами state не переживает, на каждом запросе introspect свежий.
+    body = getattr(request.state, "introspect_body", None)
+    if body is None:
+        body = await _introspect(token)
     if not body.get("active"):
         raise AuthenticationError(
             error_code="ACCESS_TOKEN_INVALID",

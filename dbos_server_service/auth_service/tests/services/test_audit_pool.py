@@ -126,7 +126,7 @@ async def test_lifespan_initialises_audit_pool(monkeypatch):
     # (register_events + service.started emit). Подмена на async-noop.
     async def _noop_startup() -> None:
         return None
-    monkeypatch.setattr("src.main._startup_sequence", lambda: None)
+    monkeypatch.setattr("src.main._startup_sequence", _noop_startup)
 
     # Чтобы bootstrap_admin не лез в БД на сборке app (мы тестируем lifespan,
     # не БД-side-effects) — подменяем на no-op.
@@ -164,7 +164,8 @@ async def test_lifespan_shutdown_closes_audit_pool(monkeypatch):
     monkeypatch.setenv("LOGGING_SERVICE_API_KEY", "test-key")
     config_mod.get_settings.cache_clear()
 
-    monkeypatch.setattr("src.main._startup_sequence", lambda: None)
+    async def _noop_startup(): pass
+    monkeypatch.setattr("src.main._startup_sequence", _noop_startup)
 
     async def _noop_bootstrap(db):
         return None
@@ -201,7 +202,8 @@ async def test_lifespan_skips_audit_pool_when_logging_url_empty(monkeypatch):
     monkeypatch.delenv("LOGGING_SERVICE_API_KEY", raising=False)
     config_mod.get_settings.cache_clear()
 
-    monkeypatch.setattr("src.main._startup_sequence", lambda: None)
+    async def _noop_startup(): pass
+    monkeypatch.setattr("src.main._startup_sequence", _noop_startup)
 
     async def _noop_bootstrap(db):
         return None
@@ -240,7 +242,8 @@ async def test_lifespan_shutdown_drains_inflight_emit_tasks(monkeypatch):
     monkeypatch.setenv("LOGGING_SERVICE_API_KEY", "test-key")
     config_mod.get_settings.cache_clear()
 
-    monkeypatch.setattr("src.main._startup_sequence", lambda: None)
+    async def _noop_startup(): pass
+    monkeypatch.setattr("src.main._startup_sequence", _noop_startup)
 
     async def _noop_bootstrap(db):
         return None

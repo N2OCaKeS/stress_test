@@ -174,9 +174,12 @@ def create_application() -> FastAPI:
                 limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
             )
 
-        # FIXME: fire-and-forget без ожидания — если loging_service лежит
-        # на старте, события не зарегистрируются до рестарта.
-        _startup_task = asyncio.ensure_future(asyncio.to_thread(_startup_sequence))
+        # Запуск sequence как task'а В loop'е, а не через asyncio.to_thread:
+        # внутри потока emit() ловит RuntimeError на asyncio.get_running_loop()
+        # и теряет service.started — наблюдаемо в audit-канале loging_service.
+        # Сам register_events использует sync httpx, поэтому внутри sequence
+        # он завёрнут в asyncio.to_thread.
+        _startup_task = asyncio.create_task(_startup_sequence())
         _BACKGROUND_TASKS.add(_startup_task)
         _startup_task.add_done_callback(_BACKGROUND_TASKS.discard)
         try:
@@ -452,9 +455,14 @@ def create_application() -> FastAPI:
     return app
 
 
-def _startup_sequence() -> None:
-    """Фоновый запуск после старта: регистрируем audit-события + эмитим service.started."""
-    register_events()
+async def _startup_sequence() -> None:
+    """Фоновый запуск после старта: регистрируем audit-события + эмитим service.started.
+
+    Крутится в loop'е, не в worker-потоке: иначе emit() не находит running
+    loop и не доставляет service.started в loging_service. Sync httpx внутри
+    register_events заворачиваем в asyncio.to_thread, чтобы не блокировать loop.
+    """
+    await asyncio.to_thread(register_events)
     audit_service.emit("service.started", None, actor_type="service")
 
 

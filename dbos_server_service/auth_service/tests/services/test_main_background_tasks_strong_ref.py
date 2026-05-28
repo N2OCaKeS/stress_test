@@ -23,10 +23,10 @@ async def test_lifespan_strong_refs_startup_task(monkeypatch):
     started = threading.Event()
     release = threading.Event()
 
-    def slow_startup():
+    async def slow_startup():
         started.set()
         # Блокируемся в worker-thread, пока тест не отпустит.
-        release.wait(timeout=5.0)
+        await asyncio.to_thread(release.wait, 5.0)
 
     monkeypatch.setattr(main_mod, "_startup_sequence", slow_startup)
 

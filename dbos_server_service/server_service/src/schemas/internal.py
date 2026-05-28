@@ -74,7 +74,7 @@ class InventoryCallbackRequest(BaseModel):
     disks: list[InventoryDiskItem] = Field(default_factory=list, description="Список дисков с probe'а.")
     lspci: str | None = Field(
         default=None,
-        max_length=8192,
+        max_length=16384,
         description="Сырой вывод lspci (опционален, под будущий debug).",
     )
 

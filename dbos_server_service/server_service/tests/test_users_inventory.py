@@ -536,7 +536,7 @@ class TestUsersInventoryReconcile:
     async def test_inventory_lspci_over_limit_422(
         self, client, worker_bot_token_a, make_server, dept_a,
     ):
-        """`lspci` > 8192 байт отбивается схемой, не доходит до audit."""
+        """`lspci` > 16384 байт отбивается схемой, не доходит до audit."""
         srv = await make_server(department_id=dept_a)
         payload = {
             "hostname": "srv-lspci",
@@ -548,7 +548,7 @@ class TestUsersInventoryReconcile:
             "cpu_frequency_ghz": None,
             "os_version": "Astra 1.7",
             "disks": [],
-            "lspci": "x" * 8193,
+            "lspci": "x" * 16385,
         }
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/inventory",

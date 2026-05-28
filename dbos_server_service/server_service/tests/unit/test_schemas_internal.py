@@ -29,13 +29,13 @@ _BASE = {
 
 class TestInventoryCallbackLspciLimit:
     def test_lspci_within_limit_accepted(self):
-        m = InventoryCallbackRequest(**{**_BASE, "lspci": "x" * 8192})
+        m = InventoryCallbackRequest(**{**_BASE, "lspci": "x" * 16384})
         assert m.lspci is not None
-        assert len(m.lspci) == 8192
+        assert len(m.lspci) == 16384
 
     def test_lspci_over_limit_rejected(self):
         with pytest.raises(ValidationError) as exc:
-            InventoryCallbackRequest(**{**_BASE, "lspci": "x" * 8193})
+            InventoryCallbackRequest(**{**_BASE, "lspci": "x" * 16385})
         assert "lspci" in str(exc.value)
 
     def test_lspci_optional(self):

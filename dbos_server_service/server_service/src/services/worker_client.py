@@ -110,32 +110,34 @@ def _build_broker() -> ListQueueBroker:
     Стабы существуют только чтобы можно было вызвать ``.kiq()`` из этого
     сервиса — настоящие handler'ы с теми же именами живут в server_worker.
 
-    **Endpoint-readiness map.**
+    **Dispatch map (task_kind → endpoint).**
 
-    Из 8 task-kinds сейчас dispatch'атся из server_service endpoints ровно 3
-    (см. `api/v1/endpoints/ipmi.py::_dispatch_power`):
+    Все стабы из `_task_stubs` сейчас активно dispatch'атся из endpoints;
+    501-заглушек больше нет. Соответствие task-kind'ов и endpoint'ов:
 
-    * ``power.on`` — ``POST /servers/{id}/ipmi/power/on``  wired
-    * ``power.off`` — ``POST /servers/{id}/ipmi/power/off``  wired
-    * ``power.reboot`` — ``POST /servers/{id}/ipmi/power/reboot``  wired
-
-    Остальные 5 stubs зарегистрированы под endpoint'ы, которых пока нет в
-    `api/v1/endpoints/` (все соответствующие endpoint'ы — 501-stub'ы). Worker
-    handler'ы при этом **уже реализованы**, см. server_worker/src/tasks/:
-
-    * ``power.status`` — `power.py:80-94` (idrac_client.power_status) worker ready.
-      Endpoint в server_service: 501.
-    * ``inventory.sync`` — `inventory.py` (SSH-based, sync mocked). worker ready.
-      Endpoint в server_service: 501.
-    * ``account.rotate_password`` — `passwords.py:75-100` (full flow:
-      generate → ssh → submit). worker ready. Endpoint: 501.
-    * ``ipmi.rotate_password`` — `passwords.py:103-138` raise'ит
-      `NotImplementedError` до запроса в iDRAC (нельзя ротейтить
-      iDRAC-пароль, пока server_service не умеет его persist'ить).
-      Disabled-by-design до парного storage endpoint'а.
-
-    Stubs не удаляем: интеграционная точка для будущего wiring'а, регистрация
-    в taskiq бесплатная (пустой `async def`).
+    * ``power.on`` / ``power.off`` / ``power.reboot`` —
+      `endpoints/ipmi.py::_dispatch_power`.
+    * ``power.status`` — `endpoints/worker_dispatch.py::server_power_status`
+      (live BMC-probe).
+    * ``inventory.sync`` — `endpoints/worker_dispatch.py::server_inventory_sync`.
+    * ``installed_packages.list`` —
+      `endpoints/installed_packages.py::list_installed_packages` (live SSH).
+    * ``users.inventory`` —
+      `endpoints/worker_dispatch.py::server_users_inventory` (getent reconcile).
+    * ``account.rotate_password`` —
+      `endpoints/worker_dispatch.py::account_rotate_password_dispatch`
+      (точечная `?server_id=` / массовая fan-out).
+    * ``account.provision`` / ``account.update_on_host`` /
+      ``account.deprovision`` —
+      `endpoints/worker_dispatch.py::account_provision_on_host` /
+      `account_update_on_host` / `account_deprovision`. Плюс fan-out
+      `update_on_host` из PATCH аккаунта (`fanout_update_on_host`).
+    * ``ipmi.rotate_password`` —
+      `endpoints/worker_dispatch.py::ipmi_rotate_credentials_dispatch`
+      (worker сейчас raise'ит NotImplementedError до запроса в iDRAC,
+      см. SAFETY GUARD в `server_worker/src/tasks/passwords.py`).
+    * ``server.prepare`` — `endpoints/worker_dispatch.py::server_prepare`
+      (bootstrap-креды едут через Redis по `bootstrap_creds_key`).
     """
     global _worker_broker, _task_stubs
     settings = get_settings()
@@ -149,7 +151,9 @@ def _build_broker() -> ListQueueBroker:
 
     broker = ListQueueBroker(url=settings.server_worker_redis_url)
 
-    # ── Wired ↔ server_service endpoints — dispatched today ───────────────
+    # ── Стабы регистрируем под все диспатчуемые task-kinds. Реальные
+    # handler'ы с теми же именами живут в server_worker; здесь нужны только
+    # пустые `async def` под `.kiq()` (taskiq резолвит handler по имени).
 
     @broker.task("power.on")
     async def _power_on(task_id: str) -> None:  # noqa: ARG001
@@ -162,12 +166,6 @@ def _build_broker() -> ListQueueBroker:
     @broker.task("power.reboot")
     async def _power_reboot(task_id: str) -> None:  # noqa: ARG001
         return None
-
-    # ── Pending wiring — worker handler ready, server endpoint = 501 ─
-    # См. module-level комментарий выше: worker-сторона реализована, dispatch
-    # активируется когда соответствующий endpoint в `api/v1/endpoints/`
-    # перестанет быть 501-заглушкой. До тех пор `.kiq()` для этих stub'ов
-    # из server_service не вызывается — нет endpoint'а, который бы это сделал.
 
     @broker.task("power.status")
     async def _power_status(task_id: str) -> None:  # noqa: ARG001

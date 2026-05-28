@@ -1,22 +1,38 @@
-"""Worker-dispatch endpoints для read-only/maintenance task'ов.
+"""Worker-dispatch endpoints для maintenance/inventory/provision task'ов.
 
 Дополняет `endpoints/ipmi.py` (power.on/off/reboot) и user-facing
 `endpoints/server_accounts.py` (`/rotate_password` — локальная ротация без
-SSH-apply). Дисптачи через `worker_client`:
+SSH-apply). Дисптачи через `worker_client.dispatch_task`:
 
-* ``POST /servers/{id}/power/status``     → `power.status`
+* ``POST /servers/{id}/power/status``      → `power.status`
   (live BMC-probe, требует IPMI-row).
-* ``POST /servers/{id}/inventory/sync``   → `inventory.sync`
-* ``POST /server-accounts/{id}/rotate``   → `account.rotate_password`
-  (через worker: generate → SSH → submit-обратно; user-facing локальный
-  `/rotate_password` в `endpoints/server_accounts.py` пароль только меняет
-  в БД, без apply'я на сервер).
-* ``POST /ipmi-controllers/{id}/rotate``  → `ipmi.rotate_password`
+* ``POST /servers/{id}/inventory/sync``    → `inventory.sync`
+  (full SSH-probe: lscpu/lsblk/lspci/os-release).
+* ``POST /servers/{id}/users/inventory``   → `users.inventory`
+  (getent → reconcile в server_accounts).
+* ``POST /server-accounts/{id}/rotate``    → `account.rotate_password`
+  (worker: generate → SSH chpasswd → submit ciphertext; точечная
+  `?server_id=` либо массовый fan-out на все linked серверы).
+* ``POST /server-accounts/{id}/provision`` → `account.provision`
+  (useradd на боксе; запись `present_on_server=True`).
+* ``POST /server-accounts/{id}/update_on_host`` → `account.update_on_host`
+  (usermod атрибутов: sudo/groups/shell). Также вызывается fan-out'ом
+  из PATCH аккаунта через `fanout_update_on_host`.
+* ``POST /server-accounts/{id}/deprovision`` → `account.deprovision`
+  (userdel; `present_on_server=False`).
+* ``POST /servers/{id}/prepare``           → `server.prepare`
+  (bootstrap управляющего юзера DBOS; bootstrap-креды кладутся в Redis
+  под `bootstrap_creds_key` с TTL, в payload едет только ссылка).
+* ``POST /ipmi-controllers/{id}/rotate``   → `ipmi.rotate_password`
   (worker сейчас raise'ит NotImplementedError до того, как тронет iDRAC —
   storage round-trip ещё не существует. Endpoint всё равно поднимает таску,
   worker mark_failed + audit failure через `_runner` — это полный
   defense-in-depth контракт «вызов фиксируется до того, как handler
   откажет», см. server_worker/src/tasks/passwords.py SAFETY GUARD).
+
+Дополнительно `installed_packages.list` диспатчится из
+`endpoints/installed_packages.py` (live dpkg-query/rpm -qa через SSH без
+записи в БД).
 
 Общая схема (см. `_dispatch_power` в `endpoints/ipmi.py` как канонический
 референс):

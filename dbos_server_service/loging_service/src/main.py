@@ -628,12 +628,36 @@ def _build_retention_sweep_details(
     return details
 
 
+_RETENTION_TICK_INTERVAL_SECONDS = 60.0
+
+
+def _next_retention_boundary_from(now_monotonic: float, *, interval: float = _RETENTION_TICK_INTERVAL_SECONDS) -> float:
+    """Возвращает абсолютный monotonic-timestamp ближайшего будущего tick'а.
+
+    Привязка идёт к wallclock-минуте (`time.time()` floor + interval), чтобы
+    тики не дрейфовали относительно реального времени — иначе при медленном
+    sweep'е, который сожрал больше interval'а, инкремент `next_run += interval`
+    наматывает отставание, и мы проскакиваем нужные минутные слоты.
+
+    Перевод обратно в monotonic делается через дельту wall→mono в момент
+    вычисления — это корректно даже если системные часы прыгнули (NTP-step):
+    monotonic-база не зависит от прыжков wallclock'а, а смещение фиксируется
+    сейчас, не в момент старта процесса.
+    """
+    wall_now = time.time()
+    # floor wall_now до interval-секунд + interval = следующая граница.
+    boundary_wall = (wall_now // interval) * interval + interval
+    delta_to_boundary = boundary_wall - wall_now
+    return now_monotonic + delta_to_boundary
+
+
 def _retention_loop() -> None:
     """Фоновый тред: применяет retention-политику раз в сутки в 00:00 MSK (UTC+3).
 
-    Тик минутный, через `sleep_until(next_run)` — устраняем drift, когда
-    под нагрузкой `time.sleep(60)` undershoot'ил и тик мог проспать минуту
-    или, наоборот, добавлять накопленную задержку на каждой итерации.
+    Тик минутный. `next_run` всегда пересчитывается от абсолютной wallclock-границы
+    через `_next_retention_boundary_from` — drift не накапливается, а если sweep
+    занял дольше interval'а, мы перескакиваем пропущенные слоты, а не
+    отрабатываем их катящимся залпом.
 
     Под multi-replica каждый instance тикает независимо. Чтобы DELETE не
     шёл из N replica'ов одновременно (DELETE race + WAL amplification),
@@ -645,12 +669,20 @@ def _retention_loop() -> None:
     from sqlalchemy import text
     _MSK = ZoneInfo("Europe/Moscow")
     last_run: date | None = None
+    interval = _RETENTION_TICK_INTERVAL_SECONDS
 
-    # Базовый момент tick'а — выровнен на минуту. `next_run` всегда в будущем
-    # на N*60s; sleep до него убирает накопление drift'а.
-    next_run = time.monotonic() + 60.0
+    # Стартовый tick — ближайшая wallclock-минута, не «сейчас + 60s».
+    next_run = _next_retention_boundary_from(time.monotonic(), interval=interval)
 
     while True:
+        # Sleep до запланированной границы. Сам tick (`if hour == 0`) идёт
+        # после сна — так дительность работы внутри слота легко замерить.
+        now_mono = time.monotonic()
+        sleep_seconds = next_run - now_mono
+        if sleep_seconds > 0:
+            time.sleep(sleep_seconds)
+
+        slot_start = time.monotonic()
         now_msk = datetime.now(_MSK)
         today = now_msk.date()
 
@@ -733,20 +765,17 @@ def _retention_loop() -> None:
             except Exception as exc:
                 logger.error("Retention cleanup failed: %s", exc)
 
-        # Sleep до следующего минутного tick'а, не на 60s от текущего момента.
-        # Если cleanup занял 25s, спим только 35s до 60s-границы. Если по
-        # какой-то причине мы проспали (next_run уже в прошлом) — следующий
-        # tick немедленный.
-        now = time.monotonic()
-        sleep_seconds = next_run - now
-        if sleep_seconds > 0:
-            time.sleep(sleep_seconds)
-        next_run += 60.0
-        # Защита от unbounded catch-up при долгой паузе процесса
-        # (suspend → resume через час). Иначе цикл крутил бы 60 итераций
-        # без сна. Pin'им next_run к now + 60.
-        if next_run < time.monotonic():
-            next_run = time.monotonic() + 60.0
+        # Если tick (включая sweep) сожрал больше interval'а — WARN. next_run
+        # пересчитывается от абсолютной wallclock-границы относительно
+        # текущего момента: пропущенные слоты тихо скипаются, drift не копится.
+        tick_duration = time.monotonic() - slot_start
+        if tick_duration > interval:
+            logger.warning(
+                "retention sweep took %.1fs (interval=%d)",
+                tick_duration, int(interval),
+            )
+
+        next_run = _next_retention_boundary_from(time.monotonic(), interval=interval)
 
 
 def _action_for_path(method: str, path: str) -> str:

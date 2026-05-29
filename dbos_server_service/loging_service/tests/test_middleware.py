@@ -509,87 +509,24 @@ class TestEmitAuditBypassesRules:
         assert ev.actor_id is None
 
 
-# ── Pending audit drain ───────────────────────────────────────────────────────
+# ── Audit outbox: end-to-end через middleware ─────────────────────────────────
 
 
-class TestPendingAuditTasksDrain:
-    """Self-audit задачи держатся в module-level set'е и drain'ятся в lifespan.
+class TestAuditOutboxMiddleware:
+    """`audit_access` middleware пушит envelope в outbox; drain пишет в БД.
 
-    `asyncio.ensure_future` без сохранённой reference собирался GC до
-    выполнения — последние audit-события при SIGTERM терялись. Теперь
-    каждая task стучится в `_pending_audit_tasks` + `add_done_callback`
-    выгребает её обратно. Lifespan shutdown ждёт drain с timeout 2s.
+    Раньше каждое событие шло через `asyncio.to_thread(_emit_audit)` со
+    своим `SessionLocal()` — пул упирался под нагрузкой. Теперь push в
+    `asyncio.Queue`, drain выгребает батчами одной транзакцией.
     """
 
-    def test_task_registered_and_auto_removed(self):
-        """Task попадает в set и удаляется через done_callback."""
-        import asyncio
-        from src.main import _pending_audit_tasks
+    def test_audit_access_writes_via_outbox(
+        self, admin_client, db, TestSessionLocal, monkeypatch
+    ):
+        """Сквозной чек: 404 → push в outbox → drain пишет http.client_error.
 
-        async def run():
-            _pending_audit_tasks.clear()
-
-            async def _noop():
-                return None
-
-            task = asyncio.ensure_future(_noop())
-            _pending_audit_tasks.add(task)
-            task.add_done_callback(_pending_audit_tasks.discard)
-            assert task in _pending_audit_tasks
-            await task
-            # done-callback срабатывает синхронно в момент финализации task'а,
-            # но event loop успевает обработать его только после yield'а
-            # control'а. Один await sleep(0) достаточно.
-            await asyncio.sleep(0)
-            assert task not in _pending_audit_tasks
-            assert len(_pending_audit_tasks) == 0
-
-        asyncio.run(run())
-
-    def test_drain_completes_pending_tasks(self):
-        """Аналог lifespan-shutdown drain'а: await gather до timeout'а."""
-        import asyncio
-        from src.main import _pending_audit_tasks
-        from src.core.config import get_settings
-
-        drain_timeout = get_settings().audit_drain_timeout_seconds
-
-        async def run():
-            _pending_audit_tasks.clear()
-            finished: list[int] = []
-
-            async def _slow(i):
-                await asyncio.sleep(0.01)
-                finished.append(i)
-
-            for i in range(3):
-                t = asyncio.ensure_future(_slow(i))
-                _pending_audit_tasks.add(t)
-                t.add_done_callback(_pending_audit_tasks.discard)
-
-            # Точно тот же паттерн, что в lifespan finally.
-            pending = list(_pending_audit_tasks)
-            await asyncio.wait_for(
-                asyncio.gather(*pending, return_exceptions=True),
-                timeout=drain_timeout,
-            )
-            assert sorted(finished) == [0, 1, 2]
-            await asyncio.sleep(0)
-            assert len(_pending_audit_tasks) == 0
-
-        asyncio.run(run())
-
-    def test_audit_access_registers_task(self, admin_client, db, TestSessionLocal, monkeypatch):
-        """Сквозной чек: 404 → audit_access ставит task в set, task пишет в БД.
-
-        Ключевой инвариант — задача регистрируется ДО возврата response,
-        `add_done_callback(discard)` её снимает после выполнения. Сразу
-        после ответа task либо ещё в set'е, либо уже снята. Инспектируем
-        БД — событие должно быть записано (task реально запустилась).
-
-        `SessionLocal` патчим на test'овую сессию, иначе `_emit_audit`
-        пытается лезть в дефолтный `DATABASE_URL` (localhost:5432) — этого
-        в test-окружении нет.
+        `SessionLocal` патчим на test-сессию, иначе drain лезет в
+        дефолтный `DATABASE_URL=localhost:5432`, которого нет в CI.
         """
         import src.db.session as session_module
         monkeypatch.setattr(session_module, "SessionLocal", TestSessionLocal)
@@ -599,15 +536,20 @@ class TestPendingAuditTasksDrain:
         import time
 
         admin_client.delete("/api/logging/v1/rules/rl_does_not_exist")
-        # Grace на завершение `asyncio.to_thread` (run в default executor).
-        for _ in range(20):
+        # Grace: push в очередь моментальный, drain'у нужен один awake +
+        # `audit_outbox_poll_interval_seconds` (50ms по умолчанию). Поднимаем
+        # бюджет ожидания до ~1.5s — он перекрывает медленный CI runner.
+        events = []
+        for _ in range(30):
             events = db.execute(
                 select(AuditEvent).where(AuditEvent.action == "http.client_error")
             ).scalars().all()
             if events:
                 break
             time.sleep(0.05)
-        assert len(events) >= 1, f"audit event не записался — task потерялась? Pending={len(__import__('src.main', fromlist=['_pending_audit_tasks'])._pending_audit_tasks)}"
+        assert len(events) >= 1, (
+            "audit event не записался — outbox drain не отработал?"
+        )
 
 
 # ── Security headers ──────────────────────────────────────────────────────────

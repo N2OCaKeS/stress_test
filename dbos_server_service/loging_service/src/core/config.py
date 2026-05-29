@@ -216,14 +216,47 @@ class Settings(BaseSettings):
         default=1024 * 1024, alias="MAX_REQUEST_BODY_BYTES"
     )
 
-    # Бюджет на draining pending self-audit задач при shutdown'е (см.
-    # `main.lifespan`). Lifespan ждёт до этого числа секунд, пока
-    # `_pending_audit_tasks` досчитаются; всё, что не успело, теряется и
-    # логируется как warning. 2.0s — historic default; обычно достаточно
-    # для пары http.* events, но под нагрузкой / на slow БД полезно
-    # поднять без передеплоя.
+    # Бюджет на draining self-audit outbox'а при shutdown'е (см.
+    # `main.lifespan`). Lifespan ждёт до этого числа секунд, пока drain
+    # допишет остаток `asyncio.Queue`; всё, что не успело, теряется и
+    # логируется как warning + инкремент `audit_outbox.dropped_total`.
+    # 2.0s — historic default; обычно достаточно для остатков http.*
+    # events, но под нагрузкой / на slow БД полезно поднять.
     audit_drain_timeout_seconds: float = Field(
         default=2.0, alias="AUDIT_DRAIN_TIMEOUT_SECONDS", ge=0.0
+    )
+
+    # Размер in-memory буфера self-audit outbox'а. На push-стороне
+    # middleware ничего не блокирует: переполнение дропает старейший
+    # элемент и инкрементит `dropped_total`. 4096 рассчитано так, чтобы
+    # на 4 uvicorn-воркерах × ~100 RPS spike'а у drain'а было ≥10 секунд
+    # форы при пуле в 30 коннектов; поднимать под более тяжёлый трафик.
+    audit_outbox_max_size: int = Field(
+        default=4096, alias="AUDIT_OUTBOX_MAX_SIZE", ge=1
+    )
+
+    # Сколько событий выгребает drain за одну транзакцию. Больше — меньше
+    # commit'ов, дольше держим один pooled-коннект; меньше — быстрее
+    # отдаём коннект назад в пул. 64 — сбалансированный middle-ground
+    # на дефолтном `db_pool_size=10 + max_overflow=20`.
+    audit_outbox_batch_size: int = Field(
+        default=64, alias="AUDIT_OUTBOX_BATCH_SIZE", ge=1
+    )
+
+    # Пауза между батчами drain-loop'а. Положительное число — лёгкий
+    # back-pressure, чтобы не дёргать БД transactions по одному событию,
+    # если push идёт ровным потоком. На простаивающей очереди никак не
+    # сказывается — drain ждёт элемент через `Queue.get()`.
+    audit_outbox_poll_interval_seconds: float = Field(
+        default=0.05, alias="AUDIT_OUTBOX_POLL_INTERVAL_SECONDS", gt=0.0
+    )
+
+    # Включать ли drain-loop в lifespan'е. Дефолт True — production.
+    # Тесты могут отключить, если хотят инспектировать очередь руками
+    # (fallback в `push_nowait` без started-loop сам выполнит синхронный
+    # write через session_factory, что эквивалентно старому поведению).
+    audit_outbox_enabled: bool = Field(
+        default=True, alias="AUDIT_OUTBOX_ENABLED"
     )
 
     # Запускать ли retention-cleanup loop в lifespan'е. По умолчанию True —

@@ -28,13 +28,24 @@ from src.core.exceptions import AppException
 from src.core.limiter import limiter
 from src.core.logging import configure_logging
 from src.dependencies import auth as auth_deps
+from src.services.audit_outbox import (
+    AuditEnvelope,
+    AuditOutbox,
+    make_envelope,
+    write_envelope_to_db,
+)
 
 
-# Pending fire-and-forget self-audit задачи. Под SIGTERM lifespan drain'ит
-# их с бюджетом `settings.audit_drain_timeout_seconds`, иначе последние
-# http.* events терялись (`asyncio.ensure_future` без ref'а собирает GC,
-# если loop закрывается до их выполнения).
-_pending_audit_tasks: set[asyncio.Task] = set()
+# Self-audit outbox: middleware `audit_access` пишет события через
+# `_audit_outbox.push_nowait(...)`, drain-loop в lifespan'е выгребает их
+# батчами под одним pooled-коннектом. До этого каждый http.* event запускал
+# собственный `asyncio.to_thread(_emit_audit)`, который открывал свой
+# `SessionLocal()` — под всплеском admin/reader-трафика пул упирался в cap.
+#
+# Сам инстанс создаётся в `_build_audit_outbox()` лениво (per-application),
+# чтобы тесты могли подменить session_factory / writer через monkeypatch до
+# первого push'а.
+_audit_outbox: "AuditOutbox | None" = None
 
 
 # Strict-numeric content-length: `int()` принимает `+1`, `_`-сепараторы,
@@ -152,26 +163,29 @@ def create_application() -> FastAPI:
             # Retention-цикл — daemon thread, как и старый on_event hook.
             t = threading.Thread(target=_retention_loop, daemon=True)
             t.start()
+        # Поднимаем self-audit outbox с актуальными настройками. Инстанс
+        # делаем под `live_settings`, чтобы tests-overrides буфера/батча
+        # подтянулись после `get_settings.cache_clear()`.
+        global _audit_outbox
+        if live_settings.audit_outbox_enabled:
+            _audit_outbox = _build_audit_outbox(live_settings)
+            _audit_outbox.start(asyncio.get_running_loop())
         try:
             yield
         finally:
-            # Drain pending self-audit задачи с timeout'ом. Snapshot'им set
-            # потому что `add_done_callback(discard)` мутирует его во время
-            # gather'а.
-            pending = list(_pending_audit_tasks)
-            if pending:
+            # Graceful drain self-audit outbox'а с бюджетом
+            # `audit_drain_timeout_seconds`. Что не успело — теряется и
+            # логируется как warning (см. `_drain_remaining`).
+            outbox = _audit_outbox
+            if outbox is not None:
                 drain_timeout = live_settings.audit_drain_timeout_seconds
                 try:
-                    await asyncio.wait_for(
-                        asyncio.gather(*pending, return_exceptions=True),
-                        timeout=drain_timeout,
+                    await outbox.stop(timeout=drain_timeout)
+                except Exception as exc:
+                    logger.error(
+                        "audit outbox shutdown failed: %s", exc, exc_info=True
                     )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "audit drain timed out after %.1fs, %d tasks dropped",
-                        drain_timeout,
-                        sum(1 for t in pending if not t.done()),
-                    )
+                _audit_outbox = None
             client = auth_deps._introspect_client
             auth_deps._introspect_client = None
             if client is not None:
@@ -340,13 +354,24 @@ def create_application() -> FastAPI:
         else:
             action, emit_status, allowed = _action_for_path(request.method, path), "success", True
 
-        task = asyncio.ensure_future(asyncio.to_thread(
-            _emit_audit, action, actor_id, actor_type, username, emit_status, allowed, request_id, details
-        ))
-        # Держим ref до завершения — иначе GC может собрать task до того,
-        # как `to_thread` отработает. Discard на done — set не растёт.
-        _pending_audit_tasks.add(task)
-        task.add_done_callback(_pending_audit_tasks.discard)
+        envelope = make_envelope(
+            action=action,
+            actor_id=actor_id,
+            actor_type=actor_type,
+            username=username,
+            emit_status=emit_status,
+            allowed=allowed,
+            request_id=request_id,
+            details=details,
+        )
+        outbox = _audit_outbox
+        if outbox is not None:
+            outbox.push_nowait(envelope)
+        else:
+            # Lifespan не подняли (тесты с `audit_outbox_enabled=False`) —
+            # fallback в синхронный writer на отдельном треде, как раньше.
+            # Без drain'а это редкий путь, не hot-path.
+            await asyncio.to_thread(_emit_audit_envelope, envelope)
         return response
 
     @app.middleware("http")
@@ -836,6 +861,53 @@ def get_self_audit_failures_total() -> int:
 
 
 _VALID_ACTOR_TYPES = frozenset({"user", "bot", "service", "anonymous", "oauth_client"})
+
+
+def _build_audit_outbox(settings) -> AuditOutbox:
+    """Собирает `AuditOutbox` с инжектированной session_factory и writer'ом.
+
+    Session factory разрешается лениво (через `_session_factory_default`),
+    чтобы тесты, патчающие `src.db.session.SessionLocal` через monkeypatch,
+    видели свой `SessionLocal` на момент drain'а, а не снапшот из импорта.
+
+    Writer оборачивает default-`write_envelope_to_db` в self-audit-failure
+    обвязку: исключения проходят через `_bump_self_audit_failures` —
+    инвариант «counter растёт ровно на каждое потерянное событие» сохраняется.
+    """
+    return AuditOutbox(
+        max_size=settings.audit_outbox_max_size,
+        batch_size=settings.audit_outbox_batch_size,
+        poll_interval_seconds=settings.audit_outbox_poll_interval_seconds,
+        session_factory=_session_factory_default,
+        writer=write_envelope_to_db,
+        bump_failure=_bump_self_audit_failures,
+    )
+
+
+def _session_factory_default():
+    """Поздний резолв `SessionLocal` — учитывает monkeypatch'и в тестах."""
+    from src.db import session as session_module
+    return session_module.SessionLocal()
+
+
+def _emit_audit_envelope(envelope: AuditEnvelope) -> None:
+    """Sync-обёртка для записи одного envelope'а вне drain'а (fallback).
+
+    Используется, когда outbox не поднят (тесты без lifespan'а): открывает
+    собственную сессию, пишет и закрывает. По семантике совпадает со старым
+    `_emit_audit`.
+    """
+    db = _session_factory_default()
+    try:
+        try:
+            write_envelope_to_db(db, envelope)
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            _bump_self_audit_failures()
+            logger.error("self-audit failed: %s", exc, exc_info=True)
+    finally:
+        db.close()
 
 
 def _emit_audit(

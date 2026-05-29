@@ -551,10 +551,19 @@ async def acquire_server(
     Decommissioned-сервер захватывать нельзя — это бизнес-правило симметрично
     с power-операциями.
 
-    Порядок проверок — паттерн `_dispatch_power`: visibility ДО role-check,
-    иначе guest/cross-dept caller узнаёт о существовании чужого сервера
-    через разницу 403/404.
+    Порядок проверок — канон permission → visibility (`require_action`
+    смотрит на роли caller'а, не на target, поэтому 403 не делает
+    existence-oracle). Та же раскладка, что и в `_dispatch_power`.
     """
+    with emit_denied_on_authz_error(
+        "server.acquire",
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.BUSY_ACQUIRE,
+        )
     try:
         obj = await load_visible_server(db, identity, server_id)
     except NotFoundError:
@@ -565,15 +574,6 @@ async def acquire_server(
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
-    with emit_denied_on_authz_error(
-        "server.acquire",
-        target_id=server_id,
-        target_type="server",
-        extra_details={"department_id": obj.department_id},
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.BUSY_ACQUIRE,
-        )
     if obj.status == ServerStatus.DECOMMISSIONED:
         audit_service.emit(
             "server.acquire",
@@ -648,8 +648,18 @@ async def release_server(
     Если сервер уже free — 409 SERVER_NOT_BUSY (идемпотентный release клиенту
     осмыслен не очень — он сигналит о рассинхронизации состояния).
 
-    Порядок проверок — visibility ДО role-check (паттерн `_dispatch_power`).
+    Порядок проверок — канон permission → visibility (тот же паттерн, что
+    у `_dispatch_power` и `acquire_server`).
     """
+    with emit_denied_on_authz_error(
+        "server.release",
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.BUSY_RELEASE,
+        )
     try:
         obj = await load_visible_server(db, identity, server_id)
     except NotFoundError:
@@ -660,15 +670,6 @@ async def release_server(
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
-    with emit_denied_on_authz_error(
-        "server.release",
-        target_id=server_id,
-        target_type="server",
-        extra_details={"department_id": obj.department_id},
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.BUSY_RELEASE,
-        )
     if obj.busy_state == BusyState.FREE:
         audit_service.emit(
             "server.release",
@@ -733,8 +734,17 @@ async def update_os_version(
     os_versions(id) с ondelete=RESTRICT, поэтому невалидный id → 422
     INVALID_OS_VERSION (через IntegrityError).
 
-    Порядок проверок — visibility ДО role-check (паттерн `_dispatch_power`).
+    Порядок проверок — канон permission → visibility.
     """
+    with emit_denied_on_authz_error(
+        "server.update_os_version",
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.OS_SYNC,
+        )
     try:
         obj = await load_visible_server(db, identity, server_id)
     except NotFoundError:
@@ -745,15 +755,6 @@ async def update_os_version(
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
-    with emit_denied_on_authz_error(
-        "server.update_os_version",
-        target_id=server_id,
-        target_type="server",
-        extra_details={"department_id": obj.department_id},
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.OS_SYNC,
-        )
     previous = obj.os_version_id
     try:
         await repo.update(db, obj, {

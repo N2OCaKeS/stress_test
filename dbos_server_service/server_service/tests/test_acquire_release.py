@@ -327,14 +327,18 @@ class TestBusyAuditEmission:
     async def test_reader_acquire_emits_permission_denied(
         self, client, reader_token_a, make_server, captured_emits,
     ):
-        """Reader без `busy_acquire` пишет denied audit с reason=permission_denied."""
+        """Reader без `busy_acquire` пишет denied audit с reason=permission_denied.
+
+        canon permission→visibility: на permission_denied obj ещё не загружен,
+        поэтому department_id в details не приходит. Идентификация — через
+        target_id (server_id).
+        """
         srv = await make_server(department_id="dep_a")
         resp = await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(reader_token_a))
         assert resp.status_code == 403
         denied = [e for e in _events(captured_emits, "server.acquire") if e["status"] == "denied"]
         assert len(denied) == 1
         assert denied[0]["details"]["reason"] == "permission_denied"
-        assert denied[0]["details"]["department_id"] == "dep_a"
 
     async def test_cross_dept_acquire_emits_not_found(
         self, client, operator_token_b, make_server, captured_emits,

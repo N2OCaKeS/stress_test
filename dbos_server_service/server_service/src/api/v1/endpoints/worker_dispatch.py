@@ -164,10 +164,11 @@ async def _dispatch_for_server(
     Порядок check'ов — те же приоритеты, что у `_dispatch_power` в
     `endpoints/ipmi.py`:
 
-      1. ``server_svc.get_server`` (VIEW + dept-isolation) — 404 cross-dept
-         ДО role-check, чтобы caller из чужого dep_b не определил по 403/404
-         существование сервера из dep_a.
-      2. ``require_action(action)`` — для конкретной операции.
+      1. ``require_action(action)`` — для конкретной операции. Идёт первой
+         по канону permission → visibility: проверка зависит только от ролей
+         caller'а, на target_id не смотрит — 403 на этом шаге не делает
+         existence-oracle.
+      2. ``server_svc.get_server`` (VIEW + dept-isolation) — 404 cross-dept.
       3. ``SERVER_DECOMMISSIONED`` — списанные сервера не принимают ни одной
          worker-операции.
       4. ``SERVER_NO_IPMI`` — для task'ов, которые ходят в BMC (power.status).
@@ -178,7 +179,16 @@ async def _dispatch_for_server(
     target_department_id}`` — нужен для редких task-kind'ов с собственными
     полями (например, `inventory.sync` опционально берёт ``account_id``).
     """
-    # 1. Visibility + dept isolation.
+    # 1. Role-check.
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, action)
+
+    # 2. Visibility + dept isolation.
     try:
         server = await server_svc.get_server(db, identity, server_id)
     except (NotFoundError, AuthorizationError) as exc:
@@ -189,15 +199,6 @@ async def _dispatch_for_server(
             details={"reason": reason},
         )
         raise
-
-    # 2. Role-check.
-    with emit_denied_on_authz_error(
-        audit_action,
-        target_id=server_id,
-        target_type="server",
-        extra_details={"department_id": server.department_id},
-    ):
-        await permissions.require_action(db, identity, EntityType.SERVER, action)
 
     # 3. Decommissioned-gate.
     if server.status == ServerStatus.DECOMMISSIONED:
@@ -696,8 +697,16 @@ async def server_prepare_dispatch(
 
     # Все checks ДО `store_prepare_creds` — иначе любой authenticated caller
     # без прав / cross-dept может забивать Redis TTL'd-плейнтекстом (и audit
-    # denied-emit пройдёт уже после store). Visibility → permission →
+    # denied-emit пройдёт уже после store). Permission → visibility →
     # decommissioned, тот же порядок, что у `_dispatch_for_server`.
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
+
     try:
         server = await server_svc.get_server(db, identity, server_id)
     except (NotFoundError, AuthorizationError) as exc:
@@ -708,14 +717,6 @@ async def server_prepare_dispatch(
             details={"reason": reason},
         )
         raise
-
-    with emit_denied_on_authz_error(
-        audit_action,
-        target_id=server_id,
-        target_type="server",
-        extra_details={"department_id": server.department_id},
-    ):
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
 
     if server.status == ServerStatus.DECOMMISSIONED:
         audit_service.emit(

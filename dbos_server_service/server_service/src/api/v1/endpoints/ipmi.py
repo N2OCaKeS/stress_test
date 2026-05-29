@@ -64,10 +64,14 @@ async def _dispatch_power(
 
     Порядок проверок (важен для безопасности):
 
-      1. `get_server` — visibility + dept-isolation. Cross-dept или non-existent
-         → 404 ДО role-check'а на POWER_*, чтобы guest/oператор из чужого
-         dep_b не узнал о существовании сервера из dep_a через 403.
-      2. `require_action(POWER_*)` — если нет права на конкретную power-операцию.
+      1. `require_action(POWER_*)` — если нет права на конкретную power-операцию.
+         Идёт первой по канону permission → visibility: `require_action`
+         смотрит только на роли caller'а и его department, никаких данных о
+         целевом сервере не использует, поэтому 403 на этом шаге не делает
+         existence-oracle. Симметрия с `get_server`/`update_server`/
+         `delete_server` и server_account.* CRUD.
+      2. `get_server` — visibility + dept-isolation. Cross-dept или non-existent
+         → 404.
       3. `SERVER_DECOMMISSIONED` — нельзя дёргать выведенный сервер.
       4. `SERVER_NO_IPMI` — нет записи в `ipmi_controllers` (BMC не настроен).
          Без этой проверки worker получит таску и упадёт уже в runtime —
@@ -79,15 +83,21 @@ async def _dispatch_power(
     `http.access_denied` middleware'а — SIEM не отличил бы её от любой 403.
     """
     audit_action = _POWER_ACTION_TO_AUDIT[action]
-    # Visibility-check + 404 для cross-dept / non-existent сервера (см. server_svc.get_server:
-    # require_action(VIEW) + _ensure_visible). Делаем ДО role-check на POWER_*, чтобы
-    # oператор из чужого dep_b не узнал о существовании сервера из dep_a через 403.
+    # canon: permission first, visibility second — см. TODO L427 closure.
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, action)
     try:
         server = await server_svc.get_server(db, identity, server_id)
     except (NotFoundError, AuthorizationError) as exc:
         # NotFoundError — cross-dept или несуществующий сервер. AuthorizationError —
-        # нет VIEW (guest). В обоих случаях фиксируем попытку power-операции
-        # (security-важно: иначе guest/cross-dept attempts уходят без следа).
+        # нет VIEW (теоретически возможен, если у роли есть POWER_*, но не VIEW).
+        # В обоих случаях фиксируем попытку power-операции (security-важно: иначе
+        # guest/cross-dept attempts уходят без следа).
         reason = "not_found_or_cross_dept" if isinstance(exc, NotFoundError) else "no_view_permission"
         audit_service.emit(
             audit_action, target_id=server_id, target_type="server",
@@ -95,13 +105,6 @@ async def _dispatch_power(
             details={"reason": reason},
         )
         raise
-    with emit_denied_on_authz_error(
-        audit_action,
-        target_id=server_id,
-        target_type="server",
-        extra_details={"department_id": server.department_id},
-    ):
-        await permissions.require_action(db, identity, EntityType.SERVER, action)
     if server.status == ServerStatus.DECOMMISSIONED:
         audit_service.emit(
             audit_action, target_id=server_id, target_type="server",

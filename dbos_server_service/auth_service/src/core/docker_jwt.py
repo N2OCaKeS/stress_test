@@ -28,6 +28,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from src.core.config import get_settings
+from src.core.constants import TOKEN_PREFIX_LEN
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def _key_id(public_key) -> str:
         serialization.Encoding.DER,
         serialization.PublicFormat.SubjectPublicKeyInfo,
     )
-    return hashlib.sha256(der).hexdigest()[:12]
+    return hashlib.sha256(der).hexdigest()[:TOKEN_PREFIX_LEN]
 
 
 def sign_docker_token(payload: dict) -> str:
@@ -91,6 +92,7 @@ def get_public_key_pem() -> str:
     private_key = _get_rsa_private_key()
     now = datetime.datetime.now(datetime.timezone.utc)
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "auth_service")])
+    validity_days = get_settings().docker_cert_validity_days
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -98,7 +100,7 @@ def get_public_key_pem() -> str:
         .public_key(private_key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(now)
-        .not_valid_after(now + datetime.timedelta(days=3650))
+        .not_valid_after(now + datetime.timedelta(days=validity_days))
         .sign(private_key, hashes.SHA256())
     )
     return cert.public_bytes(serialization.Encoding.PEM).decode()

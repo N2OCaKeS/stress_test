@@ -284,6 +284,14 @@ class Settings(BaseSettings):
             "иначе HTTP-клиенты получают header и ломаются на rebound'е."
         ),
     )
+    docker_cert_validity_days: int = Field(
+        default=730,
+        alias="DOCKER_CERT_VALIDITY_DAYS",
+        description=(
+            "Срок жизни self-signed cert'а в `get_public_key_pem`. Используется "
+            "Docker registry для извлечения public key. 2 года по умолчанию."
+        ),
+    )
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod

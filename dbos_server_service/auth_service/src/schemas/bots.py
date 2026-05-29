@@ -1,6 +1,7 @@
 """Схемы для bot accounts и bot tokens."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,7 +29,10 @@ class BotUpdate(BaseModel):
     """Тело `PATCH /bots/{bot_id}` — частичный апдейт."""
     name: str | None = None
     description: str | None = None
-    status: str | None = Field(default=None, description='Статус бота: "active" или "disabled".')
+    status: Literal["active", "disabled"] | None = Field(
+        default=None,
+        description='Статус бота: "active" или "disabled".',
+    )
     allowed_services: list[str] | None = Field(
         default=None,
         description="Новый allowed_services (если задан — заменяет полностью).",

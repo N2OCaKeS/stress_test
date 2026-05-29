@@ -284,7 +284,10 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
         # allowed_services (subset прав юзера, не расширение).
         allowed_services_full, service_roles_full = await collect_user_permissions(db, user)
         allowed_set = set(allowed_services_full)
-        effective_services = [s for s in pat.allowed_services if s in allowed_set]
+        # Защитный `or []` — у PAT.allowed_services стоит NOT NULL, но при
+        # возможной миграции назад или legacy-row держим инвариант (bot-ветка
+        # уже защищена тем же приёмом).
+        effective_services = [s for s in (pat.allowed_services or []) if s in allowed_set]
         effective_roles = {
             k: v for k, v in service_roles_full.items() if k in effective_services
         }

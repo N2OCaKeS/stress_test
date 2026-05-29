@@ -127,6 +127,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "Content-Security-Policy",
             "default-src 'none'; frame-ancestors 'none'",
         )
+        # Permissions-Policy: для JSON-API без UI зануляем sensor-API.
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "geolocation=(), microphone=(), camera=(), payment=(), usb=()",
+        )
         if self._hsts_enabled:
             response.headers.setdefault(
                 "Strict-Transport-Security",

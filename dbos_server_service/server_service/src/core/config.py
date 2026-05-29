@@ -206,6 +206,27 @@ class Settings(BaseSettings):
             "`global_rate_limit`."
         ),
     )
+    ipmi_credentials_rotate_rate_limit: str = Field(
+        default="5/minute",
+        alias="IPMI_CREDENTIALS_ROTATE_RATE_LIMIT",
+        description=(
+            "Per-IP rate-limit на пользовательский POST "
+            "/servers/{id}/ipmi/credentials/rotate — прямая ротация без worker'а "
+            "(админ применил пароль вручную/через CLI и записывает ciphertext). "
+            "CRITICAL-аудит на каждый вызов; burst грозит шумом и race'ом с "
+            "BMC. Применяется поверх `global_rate_limit`."
+        ),
+    )
+    account_rotate_password_rate_limit: str = Field(
+        default="10/minute",
+        alias="ACCOUNT_ROTATE_PASSWORD_RATE_LIMIT",
+        description=(
+            "Per-IP rate-limit на POST /server-accounts/{id}/rotate_password — "
+            "user-initiated ротация общего ciphertext'а без SSH-apply. CRITICAL-"
+            "аудит; burst грозит шумом и парой race'ов с параллельным "
+            "/rotate-dispatch'ем. Применяется поверх `global_rate_limit`."
+        ),
+    )
     security_hsts_enabled: bool = Field(
         default=False,
         alias="SECURITY_HSTS_ENABLED",

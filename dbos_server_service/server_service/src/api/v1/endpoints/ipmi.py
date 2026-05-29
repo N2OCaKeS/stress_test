@@ -11,6 +11,7 @@ CRUD ходит через `services/ipmi_controller.py`, power — через
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.constants import Action, EntityType, ServerStatus
 from src.core.exceptions import (
     AuthorizationError,
@@ -18,6 +19,7 @@ from src.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
+from src.core.limiter import endpoint_limiter
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.repositories import ipmi_controller as ipmi_repo
@@ -352,14 +354,20 @@ async def delete_controller(
     description=(
         "Генерирует новый пароль (если в body не передан) или принимает "
         "уже применённый worker'ом, шифрует и сохраняет. Plaintext в ответ "
-        "не возвращается. Доступ: `(ipmi_controller, *, rotate_credentials)`."
+        "не возвращается. Доступ: `(ipmi_controller, *, rotate_credentials)`. "
+        "Per-IP rate-limit см. `IPMI_CREDENTIALS_ROTATE_RATE_LIMIT` (5/мин по "
+        "умолчанию) — частый burst пишет CRITICAL-аудит и может разойтись с "
+        "BMC."
     ),
     responses={
         403: {"description": "Нет `rotate_credentials`."},
         404: {"description": "Сервер не найден / чужой dept, либо контроллер не зарегистрирован."},
+        429: {"description": "Per-IP rotate-rate-limit пробит."},
     },
 )
+@endpoint_limiter.limit(get_settings().ipmi_credentials_rotate_rate_limit)
 async def rotate_credentials(
+    request: Request,
     server_id: str,
     identity: CurrentIdentity,
     body: IpmiCredentialsRotateRequest | None = None,

@@ -15,6 +15,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.endpoints.worker_dispatch import fanout_update_on_host
+from src.core.config import get_settings
+from src.core.limiter import endpoint_limiter
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.models import ServerAccount
@@ -281,15 +283,19 @@ async def delete_account(
         "нет — генерит новый через `secrets.token_urlsafe(32)`. Меняет только "
         "общий ciphertext в БД (без apply'я на серверы). Apply на конкретный "
         "сервер или на все привязанные — через worker-dispatch `/rotate`. "
-        "Plaintext в ответ НЕ возвращается."
+        "Plaintext в ответ НЕ возвращается. Per-IP rate-limit см. "
+        "`ACCOUNT_ROTATE_PASSWORD_RATE_LIMIT` (10/мин по умолчанию)."
     ),
     responses={
         403: {"description": "Нет `rotate_password`."},
         404: {"description": "Аккаунт не найден / чужой dept."},
         422: {"description": "Переданный пароль не проходит политику."},
+        429: {"description": "Per-IP rotate-rate-limit пробит."},
     },
 )
+@endpoint_limiter.limit(get_settings().account_rotate_password_rate_limit)
 async def rotate_password(
+    request: Request,
     account_id: str,
     identity: CurrentIdentity,
     body: ServerAccountRotateRequest | None = None,

@@ -113,15 +113,34 @@ class TestRequireUserContext:
         result = auth_dep.require_user_context(identity)
         assert result is identity
 
-    def test_empty_subject_type_rejected(self):
-        """Явно пустая строка subject_type="" != "user" → отбивается."""
+    def test_empty_subject_type_rejected_by_pydantic(self):
+        """Пустая строка / невалидное значение subject_type режется Pydantic'ом
+        до того, как identity дойдёт до handler-а.
+
+        После перевода `IdentityContext.subject_type` на `SubjectType`-enum
+        конструктор сам валидирует входное значение — отдельной проверки
+        в `require_user_context` уже не нужно. Раньше fallback на str принимал
+        что угодно и отбивался уже на guard'е.
+        """
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            IdentityContext(
+                user_id="usr_y",
+                username="y",
+                subject_type="",
+            )
+
+    def test_oauth_client_subject_type_passes_validation(self):
+        """`subject_type="oauth_client"` корректно коэрсится в `SubjectType.OAUTH_CLIENT`."""
+        from src.core.constants import SubjectType
+
         identity = IdentityContext(
-            user_id="usr_y",
-            username="y",
-            subject_type="",
+            user_id="cli_x",
+            username="x",
+            subject_type="oauth_client",
         )
-        with pytest.raises(AuthorizationError):
-            auth_dep.require_user_context(identity)
+        assert identity.subject_type == SubjectType.OAUTH_CLIENT
 
 
 # ── identity_cache_put / _get с TTL ──────────────────────────────────────────

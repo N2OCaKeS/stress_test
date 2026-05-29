@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, Field
 
+from src.core.constants import PlatformRole, SubjectType
+
 
 class IdentityContext(BaseModel):
     """Identity юзера/бота — то, что возвращает `/me` и embed'ится в introspect.
@@ -30,18 +32,24 @@ class IdentityContext(BaseModel):
         ),
     )
     is_banned: bool = Field(default=False, description="True, если активен `Ban` (permanent или не истёкший temporary).")
-    platform_role: str | None = Field(
+    platform_role: PlatformRole | None = Field(
         default=None,
-        description="Platform-уровень: `account_admin` или `department_admin`. None у обычного юзера.",
+        description=(
+            "Platform-уровень: одно из значений `PlatformRole` "
+            "(`account_admin` / `department_admin` / `loging_admin` / `loging_reader`). "
+            "None у обычного юзера."
+        ),
     )
-    # Тип actor-а за этим identity: ``"user"`` (default — JWT минтуется логином
-    # или PAT) или ``"oauth_client"`` (m2m JWT через client_credentials).
-    # Используется ``require_user_context``-guard'ом для отсечения m2m-JWT на
-    # user-facing endpoint'ах (см. ``dependencies/auth.py``). Default — "user"
-    # для обратной совместимости с тестовыми payload'ами, где поле может не
-    # выставляться явно.
-    subject_type: str = Field(
-        default="user",
+    # Тип actor-а за этим identity: USER (JWT минтуется логином или PAT) или
+    # OAUTH_CLIENT (m2m JWT через client_credentials). Используется
+    # require_user_context-guard'ом для отсечения m2m-JWT на user-facing
+    # endpoint'ах (см. dependencies/auth.py). BOT в IdentityContext сейчас не
+    # конструируется — бот-токены ходят через /authorization/introspect, а не
+    # через get_current_identity, но значение оставлено в enum'е для симметрии
+    # с SubjectType в introspect-ответах. Default — USER для обратной
+    # совместимости с тестовыми payload'ами, где поле может не выставляться.
+    subject_type: SubjectType = Field(
+        default=SubjectType.USER,
         description='Тип субъекта: "user" (обычный юзер/PAT/bot) или "oauth_client" (m2m).',
     )
 

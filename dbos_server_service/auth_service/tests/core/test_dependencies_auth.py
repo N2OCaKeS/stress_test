@@ -101,12 +101,25 @@ def _identity(platform_role: str | None) -> IdentityContext:
     return IdentityContext(user_id="u", username="t", platform_role=platform_role)
 
 
+def test_identity_rejects_garbage_platform_role():
+    """Произвольная строка в `platform_role` отбивается Pydantic'ом до
+    того, как identity попадает в guard.
+
+    До перевода на `PlatformRole`-enum это поле было `str | None` —
+    любое значение проходило, фильтрация была только на guard'ах.
+    """
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        IdentityContext(user_id="u", username="t", platform_role="random")
+
+
 class TestRequireAccountAdmin:
     def test_account_admin_passes(self):
         identity = _identity("account_admin")
         assert auth_dep.require_account_admin(identity) is identity
 
-    @pytest.mark.parametrize("role", [None, "department_admin", "loging_admin", "loging_reader", "random"])
+    @pytest.mark.parametrize("role", [None, "department_admin", "loging_admin", "loging_reader"])
     def test_other_roles_rejected(self, role):
         with pytest.raises(AuthorizationError) as exc:
             auth_dep.require_account_admin(_identity(role))
@@ -119,7 +132,7 @@ class TestRequireAnyAdmin:
         identity = _identity(role)
         assert auth_dep.require_any_admin(identity) is identity
 
-    @pytest.mark.parametrize("role", [None, "loging_admin", "loging_reader", "user"])
+    @pytest.mark.parametrize("role", [None, "loging_admin", "loging_reader"])
     def test_non_admin_rejected(self, role):
         with pytest.raises(AuthorizationError):
             auth_dep.require_any_admin(_identity(role))

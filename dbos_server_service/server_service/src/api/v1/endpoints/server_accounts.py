@@ -16,12 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.endpoints.worker_dispatch import fanout_update_on_host
 from src.core.config import get_settings
+from src.core.exceptions import BadRequestError
 from src.core.limiter import endpoint_limiter
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.models import ServerAccount
 from src.repositories import server_account as account_repo
-from src.schemas.common import OkResponse, PaginatedResponse
+from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.server_account import (
     ServerAccountCreate,
     ServerAccountResponse,
@@ -90,14 +91,19 @@ async def create_account(
 
 @router.get(
     "",
-    response_model=PaginatedResponse[ServerAccountResponse],
+    response_model=None,
     summary="Список аккаунтов, привязанных к серверу",
     description=(
         "Принимает `server_id` query-параметром. Возвращает страницу аккаунтов, "
         "привязанных к этому серверу, отсортированных по `created_at DESC`. "
-        "Cross-dept сервер скрыт за 404."
+        "Cross-dept сервер скрыт за 404.\n\n"
+        "Два режима пагинации: cursor (рекомендуемый — `cursor=true` или "
+        "`after=<token>`, envelope `{items, next_cursor, has_more}`) и legacy "
+        "offset/limit (envelope `{items, total, limit, offset}`)."
     ),
     responses={
+        200: {"description": "Страница аккаунтов."},
+        400: {"description": "INVALID_CURSOR — `after` не декодируется."},
         403: {"description": "Нет роли с `view`."},
         404: {"description": "Сервер не найден / чужой dept."},
     },
@@ -107,9 +113,28 @@ async def list_accounts(
     server_id: str = Query(..., description="ID сервера, чьи аккаунты выбрать."),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse[ServerAccountResponse]:
+    offset: int = Query(default=0, ge=0, description="DEPRECATED — используйте cursor-пагинацию."),
+    after: str | None = Query(default=None, description="Opaque cursor предыдущей страницы."),
+    cursor: bool = Query(default=False, description="Включить cursor-envelope."),
+) -> PaginatedResponse[ServerAccountResponse] | CursorPaginatedResponse[ServerAccountResponse]:
     """List-эндпоинт. Доступ: `(server_account, *, view)`."""
+    if cursor or after is not None:
+        from src.utils.cursor import InvalidCursorError
+        try:
+            items, next_cursor, has_more = await svc.list_accounts_cursor(
+                db, identity, server_id, limit=limit, after=after,
+            )
+        except InvalidCursorError as exc:
+            raise BadRequestError(
+                error_code="INVALID_CURSOR",
+                message="cursor 'after' is invalid",
+                details={"hint": str(exc)},
+            ) from exc
+        return CursorPaginatedResponse[ServerAccountResponse](
+            items=[_to_response(i) for i in items],
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
     items, total = await svc.list_accounts(
         db, identity, server_id, limit=limit, offset=offset
     )

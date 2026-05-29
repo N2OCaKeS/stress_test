@@ -1,6 +1,8 @@
 """Server-репозиторий — сырой CRUD против таблицы `servers`."""
 
-from sqlalchemy import func, select
+from datetime import datetime
+
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import Server
@@ -37,6 +39,52 @@ async def count_in_departments(
             return 0
         stmt = stmt.where(Server.department_id.in_(department_ids))
     return int((await db.execute(stmt)).scalar_one())
+
+
+async def list_in_departments_after(
+    db: AsyncSession,
+    department_ids: list[str] | None,
+    *,
+    limit: int,
+    after_created_at: datetime | None,
+    after_id: str | None,
+) -> list[Server]:
+    """Keyset-страница серверов по `(created_at DESC, id DESC)`.
+
+    Без `after_*` — отдаёт первую страницу. С указанной парой выдаёт строки
+    строго «после» неё в выбранном порядке — `(created_at, id) < (after_created_at, after_id)`.
+    Тай-брейк по `id` нужен, потому что `created_at` с миллисекундной точностью
+    на одном INSERT batch'е может совпадать у нескольких строк, и иначе курсор
+    «соскользнул» бы либо пропустив строку, либо выдав её дважды.
+
+    `department_ids=None` — все отделы (зарезервировано); `[]` — пусто.
+    """
+    if department_ids is not None and not department_ids:
+        return []
+    stmt = (
+        select(Server)
+        .order_by(Server.created_at.desc(), Server.id.desc())
+        .limit(limit)
+    )
+    if department_ids is not None:
+        stmt = stmt.where(Server.department_id.in_(department_ids))
+    if after_created_at is not None and after_id is not None:
+        # `(created_at, id) < (?, ?)` — стандартный keyset; tuple_-сравнение
+        # SQLAlchemy переводит в портабельный SQL, который Postgres исполняет
+        # как лексикографическое сравнение пары.
+        stmt = stmt.where(
+            or_(
+                Server.created_at < after_created_at,
+                and_(
+                    Server.created_at == after_created_at,
+                    Server.id < after_id,
+                ),
+            )
+        )
+        # OR-разворачивание вместо tuple_-сравнения — на некоторых диалектах
+        # tuple-сравнение не поддерживается, а такой WHERE работает везде.
+        # Postgres план выходит тот же.
+    return list((await db.execute(stmt)).scalars())
 
 
 async def get_by_id(db: AsyncSession, server_id: str) -> Server | None:

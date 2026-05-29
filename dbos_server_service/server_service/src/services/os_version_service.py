@@ -102,6 +102,45 @@ async def get_os_version_by_name(
     return obj
 
 
+async def list_os_versions_cursor(
+    db: AsyncSession,
+    *,
+    limit: int,
+    after: str | None,
+) -> tuple[list[OsVersion], str | None, bool]:
+    """Keyset-страница каталога OS-версий. Возвращает `(items, next_cursor, has_more)`.
+
+    Каталог глобальный, без dept-фильтра. `limit + 1` row-fetch для
+    has_more-детекта без отдельного COUNT'а.
+    """
+    from src.utils.cursor import (
+        decode_cursor,
+        encode_cursor,
+        normalize_limit,
+        parse_cursor_datetime,
+    )
+
+    page_size = normalize_limit(limit)
+    after_discovered_at = None
+    after_id = None
+    if after:
+        cur = decode_cursor(after)
+        after_discovered_at = parse_cursor_datetime(cur.sort_value)
+        after_id = cur.row_id
+    rows = await repo.list_all_after(
+        db,
+        limit=page_size + 1,
+        after_discovered_at=after_discovered_at,
+        after_id=after_id,
+    )
+    has_more = len(rows) > page_size
+    items = rows[:page_size]
+    next_cursor = (
+        encode_cursor(items[-1].discovered_at, items[-1].id) if has_more and items else None
+    )
+    return items, next_cursor, has_more
+
+
 async def list_os_versions(
     db: AsyncSession,
     limit: int,

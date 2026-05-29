@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,6 +57,40 @@ async def list_for_server(
         .limit(limit)
         .offset(offset)
     )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def list_for_server_after(
+    db: AsyncSession,
+    server_id: str,
+    *,
+    limit: int,
+    after_created_at: datetime | None,
+    after_id: str | None,
+) -> list[ServerAccount]:
+    """Keyset-страница аккаунтов сервера по `(created_at DESC, id DESC)`.
+
+    Аналогично `server.list_in_departments_after`: пара (created_at, id) уберегает
+    от пропусков/дублей на одинаковых timestamp'ах. Фильтр через JOIN на
+    `server_account_servers` (M2M).
+    """
+    stmt = (
+        select(ServerAccount)
+        .join(ServerAccountServer, ServerAccountServer.account_id == ServerAccount.id)
+        .where(ServerAccountServer.server_id == server_id)
+        .order_by(ServerAccount.created_at.desc(), ServerAccount.id.desc())
+        .limit(limit)
+    )
+    if after_created_at is not None and after_id is not None:
+        stmt = stmt.where(
+            or_(
+                ServerAccount.created_at < after_created_at,
+                and_(
+                    ServerAccount.created_at == after_created_at,
+                    ServerAccount.id < after_id,
+                ),
+            )
+        )
     return list((await db.execute(stmt)).scalars())
 
 

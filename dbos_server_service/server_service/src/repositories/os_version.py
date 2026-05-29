@@ -1,6 +1,8 @@
 """OsVersion-репозиторий — сырой CRUD против таблицы `os_versions`."""
 
-from sqlalchemy import func, select
+from datetime import datetime
+
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import OsVersion, Server
@@ -28,6 +30,36 @@ async def list_all(
         .limit(limit)
         .offset(offset)
     )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def list_all_after(
+    db: AsyncSession,
+    *,
+    limit: int,
+    after_discovered_at: datetime | None,
+    after_id: str | None,
+) -> list[OsVersion]:
+    """Keyset-страница каталога по `(discovered_at DESC, id DESC)`.
+
+    Сортировка та же, что в `list_all` — `discovered_at DESC` — плюс tie-break
+    по `id`, чтобы курсор не «соскальзывал» на коллизиях timestamp'а.
+    """
+    stmt = (
+        select(OsVersion)
+        .order_by(OsVersion.discovered_at.desc(), OsVersion.id.desc())
+        .limit(limit)
+    )
+    if after_discovered_at is not None and after_id is not None:
+        stmt = stmt.where(
+            or_(
+                OsVersion.discovered_at < after_discovered_at,
+                and_(
+                    OsVersion.discovered_at == after_discovered_at,
+                    OsVersion.id < after_id,
+                ),
+            )
+        )
     return list((await db.execute(stmt)).scalars())
 
 

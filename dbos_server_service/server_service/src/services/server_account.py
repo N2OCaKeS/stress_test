@@ -270,6 +270,65 @@ async def get_account(
     return account, _reveal_account_password(account)
 
 
+async def list_accounts_cursor(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    *,
+    limit: int,
+    after: str | None,
+) -> tuple[list[ServerAccount], str | None, bool]:
+    """Keyset-страница аккаунтов сервера. Возвращает `(items, next_cursor, has_more)`.
+
+    `limit + 1` row-fetch — детектит наличие следующей страницы без COUNT'а.
+    """
+    from src.utils.cursor import (
+        decode_cursor,
+        encode_cursor,
+        normalize_limit,
+        parse_cursor_datetime,
+    )
+
+    with emit_denied_on_authz_error(
+        "server_account.list",
+        target_type="server_account",
+        extra_details={"server_id": server_id},
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
+        )
+    try:
+        await load_visible_server(db, identity, server_id)
+    except NotFoundError:
+        audit_service.emit(
+            "server_account.list",
+            target_type="server_account",
+            status="denied", allowed=False,
+            details={"reason": "server_not_found_or_cross_dept", "server_id": server_id},
+        )
+        raise
+    page_size = normalize_limit(limit)
+    after_created_at = None
+    after_id = None
+    if after:
+        cur = decode_cursor(after)
+        after_created_at = parse_cursor_datetime(cur.sort_value)
+        after_id = cur.row_id
+    rows = await repo.list_for_server_after(
+        db,
+        server_id,
+        limit=page_size + 1,
+        after_created_at=after_created_at,
+        after_id=after_id,
+    )
+    has_more = len(rows) > page_size
+    items = rows[:page_size]
+    next_cursor = (
+        encode_cursor(items[-1].created_at, items[-1].id) if has_more and items else None
+    )
+    return items, next_cursor, has_more
+
+
 async def list_accounts(
     db: AsyncSession,
     identity: IdentityContext,

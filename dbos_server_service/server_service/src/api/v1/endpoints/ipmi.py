@@ -8,13 +8,14 @@ CRUD ходит через `services/ipmi_controller.py`, power — через
 в `password_b64`.
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.constants import Action, EntityType, ServerStatus
 from src.core.exceptions import (
     AuthorizationError,
+    BadRequestError,
     ConflictError,
     NotFoundError,
     ServiceUnavailableError,
@@ -23,7 +24,7 @@ from src.core.limiter import endpoint_limiter
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.repositories import ipmi_controller as ipmi_repo
-from src.schemas.common import OkResponse, PaginatedResponse
+from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.ipmi_controller import (
     IpmiControllerCreate,
     IpmiControllerResponse,
@@ -212,15 +213,20 @@ async def _dispatch_power(
 
 @list_router.get(
     "",
-    response_model=PaginatedResponse[IpmiControllerResponse],
+    response_model=None,
     summary="Список IPMI-контроллеров, видимых вызывающему",
     description=(
         "Возвращает страницу IPMI-контроллеров серверов своего отдела. "
         "JOIN с `servers` обеспечивает department-фильтр (контроллеры "
         "наследуют dept от связанного сервера). Без `view` на "
-        "`ipmi_controller` — 403."
+        "`ipmi_controller` — 403.\n\n"
+        "Два режима пагинации: cursor (`cursor=true` или `after=<token>`, "
+        "envelope `{items, next_cursor, has_more}`) и legacy offset/limit "
+        "(envelope `{items, total, limit, offset}`)."
     ),
     responses={
+        200: {"description": "Страница контроллеров."},
+        400: {"description": "INVALID_CURSOR — `after` не декодируется."},
         401: {"description": "Нет/невалидный bearer-токен."},
         403: {"description": "Нет роли с `view` на ipmi_controller."},
     },
@@ -228,10 +234,29 @@ async def _dispatch_power(
 async def list_controllers(
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
-    limit: int = 100,
-    offset: int = 0,
-) -> PaginatedResponse[IpmiControllerResponse]:
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0, description="DEPRECATED — используйте cursor-пагинацию."),
+    after: str | None = Query(default=None, description="Opaque cursor предыдущей страницы."),
+    cursor: bool = Query(default=False, description="Включить cursor-envelope."),
+) -> PaginatedResponse[IpmiControllerResponse] | CursorPaginatedResponse[IpmiControllerResponse]:
     """List-эндпоинт. Доступ: `(ipmi_controller, *, view)`."""
+    if cursor or after is not None:
+        from src.utils.cursor import InvalidCursorError
+        try:
+            items, next_cursor, has_more = await ipmi_svc.list_controllers_cursor(
+                db, identity, limit=limit, after=after,
+            )
+        except InvalidCursorError as exc:
+            raise BadRequestError(
+                error_code="INVALID_CURSOR",
+                message="cursor 'after' is invalid",
+                details={"hint": str(exc)},
+            ) from exc
+        return CursorPaginatedResponse[IpmiControllerResponse](
+            items=[IpmiControllerResponse.model_validate(i) for i in items],
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
     items, total = await ipmi_svc.list_controllers(
         db, identity, limit=limit, offset=offset
     )

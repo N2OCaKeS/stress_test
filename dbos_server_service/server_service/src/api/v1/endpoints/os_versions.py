@@ -14,10 +14,11 @@ from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
+from src.core.exceptions import BadRequestError
 from src.core.limiter import endpoint_limiter
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
-from src.schemas.common import OkResponse, PaginatedResponse
+from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.os_version import OsVersionCreate, OsVersionResponse, OsVersionUpdate
 from src.services import audit_service
 from src.services import os_version_service as svc
@@ -54,18 +55,53 @@ def _anon_rate_limit_key(request: Request) -> str | None:
 
 @router.get(
     "",
-    response_model=PaginatedResponse[OsVersionResponse],
+    response_model=None,
     summary="Список OS-версий в каталоге",
-    description="Глобальный каталог OS-версий. Публичный read — без авторизации.",
+    description=(
+        "Глобальный каталог OS-версий. Публичный read — без авторизации.\n\n"
+        "Два режима пагинации: cursor (`cursor=true` или `after=<token>`, "
+        "envelope `{items, next_cursor, has_more}`) и legacy offset/limit "
+        "(envelope `{items, total, limit, offset}`)."
+    ),
+    responses={
+        200: {"description": "Страница каталога."},
+        400: {"description": "INVALID_CURSOR — `after` не декодируется."},
+    },
 )
 @endpoint_limiter.limit(_ANON_LIMIT, key_func=_anon_rate_limit_key)
 async def list_os_versions(
     request: Request,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse[OsVersionResponse]:
+    offset: int = Query(default=0, ge=0, description="DEPRECATED — используйте cursor-пагинацию."),
+    after: str | None = Query(default=None, description="Opaque cursor предыдущей страницы."),
+    cursor: bool = Query(default=False, description="Включить cursor-envelope."),
+) -> PaginatedResponse[OsVersionResponse] | CursorPaginatedResponse[OsVersionResponse]:
     """List OS-версий. Публичный, без авторизации."""
+    if cursor or after is not None:
+        from src.utils.cursor import InvalidCursorError
+        try:
+            items, next_cursor, has_more = await svc.list_os_versions_cursor(
+                db, limit=limit, after=after,
+            )
+        except InvalidCursorError as exc:
+            raise BadRequestError(
+                error_code="INVALID_CURSOR",
+                message="cursor 'after' is invalid",
+                details={"hint": str(exc)},
+            ) from exc
+        if _is_anonymous(request):
+            audit_service.emit(
+                "os_version.list_anonymous",
+                target_type="os_version",
+                status="success", allowed=True,
+                details={"caller_type": "anonymous", "page_size": len(items), "has_more": has_more},
+            )
+        return CursorPaginatedResponse[OsVersionResponse](
+            items=[OsVersionResponse.model_validate(i) for i in items],
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
     items, total = await svc.list_os_versions(db, limit=limit, offset=offset)
     if _is_anonymous(request):
         audit_service.emit(

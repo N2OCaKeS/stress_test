@@ -204,6 +204,53 @@ async def get_controller(
     return obj, _reveal_controller_password(obj, server.department_id)
 
 
+async def list_controllers_cursor(
+    db: AsyncSession,
+    identity: IdentityContext,
+    *,
+    limit: int,
+    after: str | None,
+) -> tuple[list[IpmiController], str | None, bool]:
+    """Keyset-страница IPMI-контроллеров видимых caller'у. `(items, next_cursor, has_more)`."""
+    from src.utils.cursor import (
+        decode_cursor,
+        encode_cursor,
+        normalize_limit,
+        parse_cursor_datetime,
+    )
+
+    with emit_denied_on_authz_error(
+        "ipmi_controller.list",
+        target_type="ipmi_controller",
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.IPMI_CONTROLLER, Action.VIEW
+        )
+    if identity.department_id is None:
+        return [], None, False
+    page_size = normalize_limit(limit)
+    after_created_at = None
+    after_id = None
+    if after:
+        cur = decode_cursor(after)
+        after_created_at = parse_cursor_datetime(cur.sort_value)
+        after_id = cur.row_id
+    dept_filter = [identity.department_id]
+    rows = await repo.list_in_departments_after(
+        db,
+        dept_filter,
+        limit=page_size + 1,
+        after_created_at=after_created_at,
+        after_id=after_id,
+    )
+    has_more = len(rows) > page_size
+    items = rows[:page_size]
+    next_cursor = (
+        encode_cursor(items[-1].created_at, items[-1].id) if has_more and items else None
+    )
+    return items, next_cursor, has_more
+
+
 async def list_controllers(
     db: AsyncSession,
     identity: IdentityContext,

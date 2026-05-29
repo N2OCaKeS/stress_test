@@ -7,7 +7,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import IpmiController, Server
@@ -48,6 +48,42 @@ async def list_in_departments(
         if not department_ids:
             return []
         stmt = stmt.where(Server.department_id.in_(department_ids))
+    return list((await db.execute(stmt)).scalars())
+
+
+async def list_in_departments_after(
+    db: AsyncSession,
+    department_ids: list[str] | None,
+    *,
+    limit: int,
+    after_created_at: datetime | None,
+    after_id: str | None,
+) -> list[IpmiController]:
+    """Keyset-страница IPMI-контроллеров по `(created_at DESC, id DESC)`.
+
+    JOIN с `servers` чтобы фильтровать по department'у — dept-колонки на
+    самом контроллере нет.
+    """
+    if department_ids is not None and not department_ids:
+        return []
+    stmt = (
+        select(IpmiController)
+        .join(Server, Server.id == IpmiController.server_id)
+        .order_by(IpmiController.created_at.desc(), IpmiController.id.desc())
+        .limit(limit)
+    )
+    if department_ids is not None:
+        stmt = stmt.where(Server.department_id.in_(department_ids))
+    if after_created_at is not None and after_id is not None:
+        stmt = stmt.where(
+            or_(
+                IpmiController.created_at < after_created_at,
+                and_(
+                    IpmiController.created_at == after_created_at,
+                    IpmiController.id < after_id,
+                ),
+            )
+        )
     return list((await db.execute(stmt)).scalars())
 
 

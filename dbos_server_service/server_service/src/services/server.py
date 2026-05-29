@@ -153,6 +153,56 @@ async def _insert_ipmi(
     })
 
 
+async def list_servers_cursor(
+    db: AsyncSession,
+    identity: IdentityContext,
+    *,
+    limit: int,
+    after: str | None,
+) -> tuple[list[Server], str | None, bool]:
+    """Keyset-страница серверов своего отдела. Возвращает `(items, next_cursor, has_more)`.
+
+    Запрашиваем у репозитория `limit + 1` строк, чтобы по факту наличия лишней
+    понять, есть ли следующая страница, без отдельного COUNT'а. Если страница
+    переполнена — отрезаем лишний элемент и кодируем курсор на last-в-странице.
+    """
+    from src.utils.cursor import (
+        InvalidCursorError,
+        decode_cursor,
+        encode_cursor,
+        normalize_limit,
+        parse_cursor_datetime,
+    )
+
+    await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
+    if identity.department_id is None:
+        return [], None, False
+    page_size = normalize_limit(limit)
+    after_created_at = None
+    after_id = None
+    if after:
+        cur = decode_cursor(after)
+        try:
+            after_created_at = parse_cursor_datetime(cur.sort_value)
+        except InvalidCursorError:
+            raise
+        after_id = cur.row_id
+    dept_filter = [identity.department_id]
+    rows = await repo.list_in_departments_after(
+        db,
+        dept_filter,
+        limit=page_size + 1,
+        after_created_at=after_created_at,
+        after_id=after_id,
+    )
+    has_more = len(rows) > page_size
+    items = rows[:page_size]
+    next_cursor = (
+        encode_cursor(items[-1].created_at, items[-1].id) if has_more and items else None
+    )
+    return items, next_cursor, has_more
+
+
 async def list_servers(
     db: AsyncSession,
     identity: IdentityContext,

@@ -5,9 +5,10 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.exceptions import BadRequestError
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
-from src.schemas.common import OkResponse, PaginatedResponse
+from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.drift import DriftEventItem, ServerDriftResponse
 from src.schemas.server import (
     ServerAcquireRequest,
@@ -23,16 +24,26 @@ router = APIRouter(prefix="/servers")
 
 @router.get(
     "",
-    response_model=PaginatedResponse[ServerResponse],
+    response_model=None,
     summary="Список серверов, видимых вызывающему",
     description=(
-        "Возвращает страницу серверов своего отдела. Без роли с `view` на "
-        "entity_type=server — 403 PERMISSION_DENIED. Platform-админам "
-        "(`account_admin`/`loging_admin`) сюда вход запрещён middleware'ом — "
-        "403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED."
+        "Возвращает страницу серверов своего отдела, упорядоченных по "
+        "`created_at DESC`. Поддерживает два режима пагинации:\n\n"
+        "* **Cursor (рекомендуемый):** `?after=<cursor>&limit=<N>`. "
+        "Envelope `{items, next_cursor, has_more}`. `next_cursor` подставляется "
+        "в следующий запрос; `null` означает конец. Битый/чужой `after` → 400.\n"
+        "* **Offset (deprecated):** `?limit=<N>&offset=<M>`. Envelope "
+        "`{items, total, limit, offset}`. Оставлен для совместимости; новые "
+        "интеграции должны использовать cursor — он стабильнее на вставках "
+        "в начало и не платит за глубокий offset.\n\n"
+        "Без роли с `view` на `entity_type=server` — 403 PERMISSION_DENIED. "
+        "Platform-админам (`account_admin`/`loging_admin`) вход запрещён "
+        "middleware'ом — 403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED."
     ),
-    response_description="Страница серверов + total/limit/offset",
+    response_description="Страница серверов в одном из двух envelope'ов.",
     responses={
+        200: {"description": "Страница серверов."},
+        400: {"description": "INVALID_CURSOR — `after` не декодируется."},
         401: {"description": "Нет/невалидный bearer-токен."},
         403: {"description": "Нет роли с `view` на server, либо department не имеет доступа к server_service, либо platform-админ заблокирован."},
     },
@@ -41,11 +52,13 @@ async def list_servers(
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-) -> PaginatedResponse[ServerResponse]:
+    offset: int = Query(default=0, ge=0, description="DEPRECATED — используйте cursor-пагинацию (`after` + `cursor=true`)."),
+    after: str | None = Query(default=None, description="Opaque cursor предыдущей страницы; вместе с `cursor=true` переводит endpoint в keyset-режим."),
+    cursor: bool = Query(default=False, description="Включить cursor-envelope (даже для первой страницы — `after` опустить)."),
+) -> PaginatedResponse[ServerResponse] | CursorPaginatedResponse[ServerResponse]:
     """
     Что делает: возвращает страницу серверов из таблицы `servers`, упорядоченных
-    по `created_at DESC`. Результат всегда отфильтрован по
+    по `created_at DESC, id DESC`. Результат всегда отфильтрован по
     `identity.department_id` (изоляция отделов).
 
     Доступ:
@@ -55,13 +68,36 @@ async def list_servers(
       - `account_admin`/`loging_admin` отбиваются 403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED middleware'ом.
 
     Возможные ошибки:
+      - 400 `INVALID_CURSOR` (битый `after`).
       - 401 `ACCESS_TOKEN_MISSING` / `ACCESS_TOKEN_INVALID` / `USER_BANNED`.
       - 403 `SERVICE_ACCESS_DENIED` (department без доступа к server_service).
       - 403 `PERMISSION_DENIED` (роль без `view`).
       - 403 `PLATFORM_ADMIN_BUSINESS_DATA_DENIED` (platform-админ).
-
-    Связано: `services/server.py::list_servers`, `repositories/server.py::list_in_departments`.
     """
+    # Cursor-режим включается явным `cursor=true` или подачей `after`. Без них
+    # endpoint остаётся в legacy offset/limit envelope'е — старые клиенты,
+    # которые шлют `?limit=X&offset=Y`, продолжают работать без изменений.
+    if cursor or after is not None:
+        from src.utils.cursor import InvalidCursorError
+        try:
+            items, next_cursor, has_more = await svc.list_servers_cursor(
+                db, identity, limit=limit, after=after,
+            )
+        except InvalidCursorError as exc:
+            raise BadRequestError(
+                error_code="INVALID_CURSOR",
+                message="cursor 'after' is invalid",
+                details={"hint": str(exc)},
+            ) from exc
+        cards = [
+            ServerResponse.from_server(i, await svc.load_storage(db, i.id))
+            for i in items
+        ]
+        return CursorPaginatedResponse[ServerResponse](
+            items=cards,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
     items, total = await svc.list_servers(db, identity, limit=limit, offset=offset)
     cards = [
         ServerResponse.from_server(i, await svc.load_storage(db, i.id))

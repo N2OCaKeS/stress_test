@@ -31,9 +31,27 @@ class OkResponse(BaseModel):
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
-    """Generic-обёртка для постраничных ответов (limit/offset)."""
+    """Generic-обёртка для постраничных ответов (limit/offset).
+
+    Legacy-формат. Для новых интеграций предпочитать `CursorPaginatedResponse`:
+    keyset-пагинация устойчива к вставкам в начале списка и не платит за
+    глубокий offset.
+    """
 
     items: list[T] = Field(description="Содержимое страницы.")
     total: int = Field(description="Общее количество записей под фильтром (без учёта limit/offset).")
     limit: int = Field(description="Размер страницы, переданный в запросе.")
     offset: int = Field(description="Смещение от начала, переданное в запросе.")
+
+
+class CursorPaginatedResponse(BaseModel, Generic[T]):
+    """Generic-обёртка под keyset-пагинацию (cursor / has_more).
+
+    `next_cursor` — opaque-токен, подставляется в `?after=<cursor>` следующего
+    запроса. `null` означает конец списка. `has_more` дублирует флаг для
+    клиентов, которым удобнее булеан, чем сравнение с null.
+    """
+
+    items: list[T] = Field(description="Содержимое страницы.")
+    next_cursor: str | None = Field(default=None, description="Курсор следующей страницы или null в конце.")
+    has_more: bool = Field(default=False, description="Есть ли ещё страницы после этой.")

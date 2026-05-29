@@ -106,7 +106,7 @@ Durable retry: `tasks.scheduled_retry_at` пишется ДО fire-and-forget `_
 
 ### `test_secrets_reencrypt_task.py` — `secrets.reencrypt_lazy`
 
-Periodic фоновая ре-шифрация секретов. Скип на `SECRETS_REENCRYPT_ENABLED=false`. Скип при непустом `RUNNING_TASKS` (high-prio в полёте). Happy: status `remaining>0` → batch вызывается. `remaining=0` → batch НЕ вызывается, audit `success processed=0`. Batch-size wiring через настройки.
+Periodic фоновая ре-шифрация секретов. Скип на `SECRETS_REENCRYPT_ENABLED=false`. Скип при непустом `RUNNING_TASKS` (high-prio в полёте). Happy: status `remaining>0` → batch вызывается. `remaining=0` → batch НЕ вызывается, audit `success processed=0`. APP_ENV guard: при несовпадении `worker.app_env` и `server_service.app_env` (case-insensitive) тик прерывается до batch'а с audit `failure reason=app_env_mismatch`; case-mismatch (`Production`/`production`) проходит; отсутствие поля в payload (старый server_service) — soft, тик идёт. Batch-size wiring через настройки.
 
 ---
 

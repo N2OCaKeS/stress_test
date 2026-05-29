@@ -26,9 +26,10 @@ FastAPI-`lifespan`'ом в `src/main.py`:
 slowdown auth_service в 503 fan-out. Один pooled client кэпает количество
 исходящих коннектов и амортизирует TLS-handshake по запросам — симметрично `server_service`.
 
-Fallback (`_introspect_client is None`) — per-call sync `httpx.post`. Это
-test-path (TestClient в unit-тестах, которые патчат `httpx.post`, lifespan
-не триггерит). Production всегда идёт через pool — lifespan стартует до
+Fallback (`_introspect_client is None`) — эфемерный `AsyncClient`, открытый
+и закрытый ровно на один запрос. Это путь для ad-hoc сценариев, где lifespan
+не стартовал (например, прямой вызов `_fetch_identity` в тестах без
+TestClient). Production всегда идёт через pool — lifespan отрабатывает до
 первого запроса.
 """
 
@@ -78,10 +79,10 @@ KNOWN_SERVICE_IDENTITIES: frozenset[str] = frozenset(
 
 # Module-level pooled client. Инициализируется в `main.lifespan` (startup),
 # закрывается в shutdown. Остаётся `None` вне app-lifecycle (например, при
-# раннем импорте в тестах, где lifespan не запускается) — `_fetch_identity`
-# в этом случае фоллбэчится на per-call `httpx.post`, чтобы тесты, патчащие
-# `src.dependencies.auth.httpx.post`, продолжали работать. Production
-# request-path всегда через pool — lifespan отрабатывает до первого запроса.
+# раннем импорте в ad-hoc тестах, где lifespan не запускается) —
+# `_fetch_identity` в этом случае открывает эфемерный `AsyncClient` ровно
+# на один запрос (см. ниже). Production request-path всегда через pool —
+# lifespan отрабатывает до первого запроса.
 _introspect_client: httpx.AsyncClient | None = None
 
 # Pooled клиент для проксирования Swagger-логина (`POST /token`). Тоже
@@ -260,10 +261,10 @@ async def _fetch_identity(
     кладёт subject id в `sub`; мы экспозим его как `user_id`, чтобы остальной
     loging_service не трогать (audit middleware, эндпоинт-хендлеры).
 
-    Production-path — pooled `_introspect_client`. Fallback (например,
-    ad-hoc тесты, где lifespan не запускался) — per-call `httpx.post`,
-    чтобы существующие мок'и на `src.dependencies.auth.httpx.post`
-    продолжали работать.
+    Production-path — pooled `_introspect_client`. Fallback (ad-hoc
+    тесты, где lifespan не запускался) — эфемерный `AsyncClient` ровно
+    на один запрос (open → POST → aclose). Sync `httpx.post` нигде не
+    используется.
     """
     if credentials is None:
         raise AppException(http_status=401, error_code="MISSING_TOKEN",
@@ -302,18 +303,26 @@ async def _fetch_identity(
             # Pooled (production) path: base_url выставлен на клиенте.
             resp = await client.post(_INTROSPECT_PATH, json=payload, headers=headers)
         else:
-            # Fallback (тесты, ad-hoc): per-call sync `httpx.post` — оставлен,
-            # чтобы существующие тесты, патчащие
-            # `src.dependencies.auth.httpx.post`, продолжали работать.
-            # Production всегда идёт через pool выше.
-            url = f"{settings.auth_service_url.rstrip('/')}{_INTROSPECT_PATH}"
-            resp = httpx.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=settings.introspect_timeout_seconds,
-                verify=settings.introspect_tls_verify,
+            # Fallback (ad-hoc, lifespan не запускался): эфемерный AsyncClient
+            # ровно на один запрос. Sync `httpx.post` не используем —
+            # вне event-loop'а live-сессии это блокировало бы threadpool,
+            # а внутри loop'а sync вызов недоступен совсем. Эфемерный
+            # клиент дороже pooled'а (один handshake), но это test/ad-hoc
+            # путь, не hot-path.
+            base = settings.auth_service_url.rstrip("/")
+            timeout = httpx.Timeout(
+                settings.introspect_timeout_seconds,
+                connect=settings.introspect_connect_timeout_seconds,
             )
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                verify=settings.introspect_tls_verify,
+            ) as ephemeral:
+                resp = await ephemeral.post(
+                    f"{base}{_INTROSPECT_PATH}",
+                    json=payload,
+                    headers=headers,
+                )
     except httpx.TimeoutException:
         raise AppException(http_status=503, error_code="AUTH_SERVICE_TIMEOUT",
                            message="Auth service did not respond in time")

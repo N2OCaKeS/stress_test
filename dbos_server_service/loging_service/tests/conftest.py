@@ -12,6 +12,7 @@
 """
 
 import os
+from contextlib import contextmanager
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -34,6 +35,7 @@ TEST_API_KEY = "test-service-api-key"
 # ломала бы их предположения о fixture-сегрегации БД.
 os.environ.setdefault("RETENTION_LOOP_ENABLED", "false")
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -152,14 +154,12 @@ def _db_override(db: Session):
 def client(db, monkeypatch):
     """TestClient c аутентификацией по SERVICE_API_KEY (для сервисов).
 
-    Forces the pooled ``_introspect_client`` to ``None`` after lifespan
-    startup so existing tests that ``patch("src.dependencies.auth.httpx.post")``
-    still intercept the introspect call via the per-call fallback path. The
-    dedicated pool-behaviour tests in ``tests/dependencies/test_auth_pool.py``
-    install their own pooled ``AsyncClient`` with ``MockTransport``.
+    Tests that ходят через `require_admin` / `require_reader` подменяют
+    pooled `_introspect_client` MockTransport-обёрткой через `mock_introspect`
+    / `mock_token_proxy` фикстуры (см. ниже).
     """
     monkeypatch.setenv("SERVICE_API_KEY", TEST_API_KEY)
-    # Установить фиктивный URL — это нужно чтобы require_admin доходил до httpx.get,
+    # Установить фиктивный URL — это нужно чтобы require_admin доходил до introspect,
     # а не возвращал 503 AUTH_SERVICE_NOT_CONFIGURED ещё до вызова.
     monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth-test:8000")
     from src.core.config import get_settings
@@ -167,26 +167,76 @@ def client(db, monkeypatch):
 
     app.dependency_overrides[get_db] = _db_override(db)
     with TestClient(app) as c:
-        # After lifespan startup, the pooled AsyncClient is initialised with
-        # base_url=http://auth-test:8000. Tests in this suite mock the
-        # FALLBACK path (sync httpx.post) — force the pool back to None so
-        # those mocks are honoured. The pooled path is exercised explicitly
-        # by ``tests/dependencies/test_auth_pool.py``.
-        from src.dependencies import auth as _auth_deps
-        _pool = _auth_deps._introspect_client
-        _auth_deps._introspect_client = None
-        # Аналогично pool'у /token: тесты в test_admin_auth патчат
-        # `src.api.v1.endpoints.auth.httpx.post`, ожидая fallback-путь.
-        _token_pool = _auth_deps._token_proxy_client
-        _auth_deps._token_proxy_client = None
-        try:
-            yield c
-        finally:
-            # Restore so lifespan-shutdown can close the original client.
-            _auth_deps._introspect_client = _pool
-            _auth_deps._token_proxy_client = _token_pool
+        yield c
     app.dependency_overrides.clear()
     get_settings.cache_clear()
+
+
+@contextmanager
+def _install_pooled_mock(attr_name: str, *, status_code=200, json_body=None,
+                         side_effect=None, base_url="http://auth-test:8000"):
+    """Подменяет pooled-клиент в `src.dependencies.auth` на AsyncClient с
+    MockTransport. Один обработчик на весь блок: возвращает заданный
+    `status_code`/`json_body` либо бросает `side_effect` (httpx-exception).
+    Захватывает вызовы в `.calls` для assertion'ов.
+    """
+    from src.dependencies import auth as _auth_deps
+
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if side_effect is not None:
+            raise side_effect
+        return httpx.Response(status_code, json=json_body if json_body is not None else {})
+
+    transport = httpx.MockTransport(handler)
+    pooled = httpx.AsyncClient(base_url=base_url, transport=transport, timeout=5.0)
+    original = getattr(_auth_deps, attr_name)
+    setattr(_auth_deps, attr_name, pooled)
+    try:
+        # Прикрепляем `calls` к pooled, чтобы тесты могли инспектировать
+        # request.url / request.content / request.headers.
+        pooled._mock_calls = calls  # type: ignore[attr-defined]
+        yield pooled
+    finally:
+        setattr(_auth_deps, attr_name, original)
+        import asyncio as _asyncio
+        _asyncio.run(pooled.aclose())
+
+
+@pytest.fixture()
+def mock_introspect():
+    """Контекст-менеджер: подменяет pooled `_introspect_client` на
+    MockTransport-обёртку. Использование:
+
+        with mock_introspect(json_body={"active": True, "sub": "u", ...}):
+            r = client.get(...)
+
+        with mock_introspect(side_effect=httpx.TimeoutException("...")):
+            ...
+    """
+    def _factory(*, status_code=200, json_body=None, side_effect=None):
+        return _install_pooled_mock(
+            "_introspect_client",
+            status_code=status_code,
+            json_body=json_body,
+            side_effect=side_effect,
+        )
+    return _factory
+
+
+@pytest.fixture()
+def mock_token_proxy():
+    """Контекст-менеджер для подмены pooled `_token_proxy_client`."""
+    def _factory(*, status_code=200, json_body=None, side_effect=None):
+        return _install_pooled_mock(
+            "_token_proxy_client",
+            status_code=status_code,
+            json_body=json_body,
+            side_effect=side_effect,
+        )
+    return _factory
 
 
 @pytest.fixture()

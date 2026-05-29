@@ -1,34 +1,26 @@
 """Tests for the pooled introspect ``AsyncClient``.
 
-Pre-fix, ``_fetch_identity`` called ``httpx.post`` synchronously per request
-in ``dependencies/auth.py``. Each ``GET /events`` / ``GET /rules`` /
-``GET /services`` opened a fresh TCP+TLS handshake against auth_service →
-slowloris-amplification (30 concurrent readers × 3s introspect-timeout
-exhausted pgsql + auth_service FD pools long before slowapi's per-IP limit
-tripped).
-
-The fix introduces a module-level ``_introspect_client: httpx.AsyncClient``
-managed by the FastAPI ``lifespan`` in ``src/main.py``:
+`_fetch_identity` ходит в auth_service через module-level
+``_introspect_client: httpx.AsyncClient``, который собирается FastAPI
+``lifespan``-ом в ``src/main.py``:
 
 * startup → builds a single pooled client with ``base_url=auth_service_url``,
   bounded ``Limits(max_connections=20, max_keepalive_connections=10)``, and
   ``verify=settings.introspect_tls_verify``;
-* ``_fetch_identity`` uses the pool when set; falls back to per-call
-  ``httpx.post`` otherwise (kept so existing tests that
-  ``patch("src.dependencies.auth.httpx.post")`` continue to work);
+* ``_fetch_identity`` uses the pool when set; иначе (ad-hoc, lifespan не
+  стартовал) открывает эфемерный ``AsyncClient`` ровно на один запрос —
+  sync httpx нигде не используется;
 * shutdown → ``await _introspect_client.aclose()``.
 
-The tests here exercise both paths:
+Тесты покрывают:
 
-* lifespan startup/shutdown semantics on a real ``create_application()``;
-* pooled-path uses the existing ``AsyncClient`` instead of creating new ones
-  under N concurrent ``_fetch_identity`` calls;
-* fallback-path is the historical sync ``httpx.post`` (mocked) so
-  ``test_admin_auth.py`` / ``test_reader_auth.py`` / ``test_retention.py`` /
-  ``test_middleware.py`` keep working unchanged;
-* sanity: pooled-path still sends the ``X-Service-Identity`` header +
-  ``Authorization: Bearer <SERVICE_API_KEY>`` (header invariant);
-* TLS-verify flag propagates into the pooled client.
+* lifespan startup/shutdown семантику на реальном ``create_application()``;
+* pooled-path использует существующий ``AsyncClient`` под N параллельных
+  ``_fetch_identity`` вместо создания новых;
+* fallback-path (pool=None) открывает эфемерный ``AsyncClient`` с тем же
+  wire-format'ом, что pooled — и с тем же ``verify``-флагом;
+* sanity: pooled-path шлёт ``X-Service-Identity`` + ``Authorization``;
+* TLS-verify флаг доходит до pooled-клиента.
 
 We avoid the ``pytest.mark.asyncio`` marker (no ``pytest-asyncio`` in deps)
 and drive async code via ``asyncio.run`` inside synchronous tests — keeps
@@ -39,7 +31,6 @@ pattern when it needs an event loop).
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -71,6 +62,7 @@ def _fake_settings(
     *,
     verify: bool = True,
     timeout: float = 3.0,
+    connect_timeout: float = 2.0,
     url: str = "http://auth-mock",
     introspect_key: str = "",
 ):
@@ -82,6 +74,7 @@ def _fake_settings(
             "service_api_key": api_key,
             "introspect_service_api_key": introspect_key,
             "introspect_timeout_seconds": timeout,
+            "introspect_connect_timeout_seconds": connect_timeout,
             "introspect_tls_verify": verify,
         },
     )()
@@ -142,8 +135,9 @@ def test_lifespan_shutdown_closes_introspect_client(monkeypatch):
 
 def test_lifespan_skips_pool_when_auth_url_unset(monkeypatch):
     """When AUTH_SERVICE_URL is empty/unset (early-dev) the pool stays None
-    so ``_fetch_identity`` falls back to the per-call ``httpx.post`` path
-    (and raises ``AUTH_SERVICE_NOT_CONFIGURED`` if hit).
+    and ``_fetch_identity`` raises ``AUTH_SERVICE_NOT_CONFIGURED`` if hit
+    (без auth_service_url эфемерный fallback тоже не строится — exception
+    выбрасывается раньше).
     """
     auth_dep._introspect_client = None
     monkeypatch.delenv("AUTH_SERVICE_URL", raising=False)
@@ -375,26 +369,40 @@ def test_pooled_introspect_active_false_raises_invalid_token(monkeypatch):
 # ── _fetch_identity fallback path (backward compat) ─────────────────────────
 
 
-def test_fallback_path_uses_sync_httpx_post_when_pool_none(monkeypatch):
-    """When ``_introspect_client is None``, the existing
-    ``patch("src.dependencies.auth.httpx.post")`` test pattern still works —
-    the call goes through sync ``httpx.post`` as before.
+def test_fallback_path_uses_ephemeral_async_client_when_pool_none(monkeypatch):
+    """When ``_introspect_client is None`` (ad-hoc, lifespan не запускался),
+    `_fetch_identity` открывает короткоживущий `AsyncClient` ровно на один
+    запрос — sync `httpx.post` нигде не используется.
 
-    Regression invariant: do NOT break ``test_admin_auth.py``,
-    ``test_reader_auth.py``, ``test_retention.py``, ``test_middleware.py``.
+    Регрессия: pool=None НЕ должен молча проваливаться или блокировать
+    event-loop sync-вызовом.
     """
     monkeypatch.setattr(auth_dep, "_introspect_client", None)
     monkeypatch.setattr(auth_dep, "get_settings", lambda: _fake_settings())
 
-    mock_response = MagicMock(
-        status_code=200,
-        json=lambda: {
-            "active": True,
-            "sub": "usr_fallback",
-            "username": "fb",
-            "platform_role": "loging_admin",
-        },
-    )
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers.get("Authorization")
+        captured["x_service_identity"] = request.headers.get("X-Service-Identity")
+        import json as _json
+        captured["body"] = _json.loads(request.content.decode())
+        return httpx.Response(200, json={
+            "active": True, "sub": "usr_fallback",
+            "username": "fb", "platform_role": "loging_admin",
+        })
+
+    real_async_client = httpx.AsyncClient
+    ephemeral_count = {"n": 0}
+
+    def factory(*args, **kwargs):
+        ephemeral_count["n"] += 1
+        # Подсовываем MockTransport, чтобы запрос не ушёл в реальную сеть.
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(auth_dep.httpx, "AsyncClient", factory)
 
     async def _drive():
         return await auth_dep._fetch_identity(
@@ -402,21 +410,21 @@ def test_fallback_path_uses_sync_httpx_post_when_pool_none(monkeypatch):
             _fake_request(),
         )
 
-    with patch("src.dependencies.auth.httpx.post", return_value=mock_response) as m:
-        result = asyncio.run(_drive())
+    result = asyncio.run(_drive())
     assert result["user_id"] == "usr_fallback"
-    assert m.called
-    call_kwargs = m.call_args.kwargs
-    # Same wire-format as before the refactor.
-    assert call_kwargs["json"] == {"token": "eyJfallback_token_long_enough_xxx"}
-    assert call_kwargs["headers"]["Authorization"] == "Bearer pool-test-key"
-    assert call_kwargs["headers"]["X-Service-Identity"] == "loging_service"
+    # Ровно один эфемерный AsyncClient на запрос.
+    assert ephemeral_count["n"] == 1
+    # Wire-format совпадает с pooled-путём.
+    assert captured["body"] == {"token": "eyJfallback_token_long_enough_xxx"}
+    assert captured["authorization"] == "Bearer pool-test-key"
+    assert captured["x_service_identity"] == "loging_service"
+    assert captured["url"].endswith("/api/auth/v1/authorization/introspect")
 
 
 def test_fallback_path_honours_introspect_tls_verify(monkeypatch):
-    """``introspect_tls_verify`` flag is forwarded into the fallback
-    ``httpx.post`` call. Default True — kept in production. False is only
-    for devcontainer/local self-signed certs.
+    """``introspect_tls_verify`` пробрасывается в эфемерный `AsyncClient`
+    (как kwarg `verify=` при создании). Default True — production. False —
+    devcontainer/local с self-signed.
     """
     monkeypatch.setattr(auth_dep, "_introspect_client", None)
     monkeypatch.setattr(
@@ -425,15 +433,23 @@ def test_fallback_path_honours_introspect_tls_verify(monkeypatch):
         lambda: _fake_settings(api_key="tls-verify-key", verify=False),
     )
 
-    mock_response = MagicMock(
-        status_code=200,
-        json=lambda: {
-            "active": True,
-            "sub": "usr_v",
-            "username": "v",
-            "platform_role": "loging_admin",
-        },
-    )
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "active": True, "sub": "usr_v",
+            "username": "v", "platform_role": "loging_admin",
+        })
+
+    real_async_client = httpx.AsyncClient
+
+    def factory(*args, **kwargs):
+        captured["verify"] = kwargs.get("verify")
+        captured["timeout"] = kwargs.get("timeout")
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(auth_dep.httpx, "AsyncClient", factory)
 
     async def _drive():
         return await auth_dep._fetch_identity(
@@ -441,10 +457,12 @@ def test_fallback_path_honours_introspect_tls_verify(monkeypatch):
             _fake_request(),
         )
 
-    with patch("src.dependencies.auth.httpx.post", return_value=mock_response) as m:
-        asyncio.run(_drive())
-    assert m.call_args.kwargs["verify"] is False
-    assert m.call_args.kwargs["timeout"] == 3.0
+    asyncio.run(_drive())
+    assert captured["verify"] is False
+    # Timeout пробрасывается как httpx.Timeout(read=..., connect=...).
+    assert isinstance(captured["timeout"], httpx.Timeout)
+    assert captured["timeout"].read == 3.0
+    assert captured["timeout"].connect == 2.0
 
 
 # ── TLS verify flag is propagated into the pooled client ────────────────────

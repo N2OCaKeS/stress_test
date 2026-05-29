@@ -1,12 +1,27 @@
 """Тесты: /api/logging/v1/services — реестр событий и статистика сервисов."""
 
-from unittest.mock import MagicMock, patch
-
+import httpx
 import pytest
+
+from src.dependencies import auth as _auth_deps
 from tests.conftest import make_event, make_event_def
 
 SERVICES_URL = "/api/logging/v1/services"
 EVENTS_URL = "/api/logging/v1/events"
+
+
+class _IntrospectCtx:
+    """Тот же интерфейс, что у `unittest.mock._patch` (`.stop()`), под
+    которым жил локальный `_mock_identity` хелпер."""
+
+    def __init__(self, pooled: httpx.AsyncClient, original):
+        self._pooled = pooled
+        self._original = original
+
+    def stop(self):
+        _auth_deps._introspect_client = self._original
+        import asyncio
+        asyncio.run(self._pooled.aclose())
 
 
 def _mock_identity(identity_payload: dict):
@@ -21,10 +36,18 @@ def _mock_identity(identity_payload: dict):
     payload.setdefault("subject_type", "user")
     if "user_id" in payload and "sub" not in payload:
         payload["sub"] = payload.pop("user_id")
-    p = patch("src.dependencies.auth.httpx.post")
-    m = p.start()
-    m.return_value = MagicMock(status_code=200, json=lambda: payload)
-    return p
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    pooled = httpx.AsyncClient(
+        base_url="http://auth-test:8000",
+        transport=httpx.MockTransport(handler),
+        timeout=5.0,
+    )
+    original = _auth_deps._introspect_client
+    _auth_deps._introspect_client = pooled
+    return _IntrospectCtx(pooled, original)
 
 
 # ── POST /services/{service}/events — регистрация событий ────────────────────

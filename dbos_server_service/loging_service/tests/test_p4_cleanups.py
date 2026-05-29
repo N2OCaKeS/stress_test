@@ -372,8 +372,9 @@ class TestAdvisoryLockConstant:
 
 
 class TestTokenProxyFallbackTimeout:
-    """Fallback ветка (`httpx.post` напрямую) должна брать таймаут из
-    `introspect_timeout_seconds`, а не из литерала 5.0. Pooled клиент тоже.
+    """Fallback ветка (эфемерный `AsyncClient`) должна брать таймаут из
+    `introspect_timeout_seconds` + `introspect_connect_timeout_seconds`,
+    а не из литерала. Pooled клиент тоже.
     """
 
     def test_fallback_passes_introspect_timeout(self, monkeypatch):
@@ -391,16 +392,17 @@ class TestTokenProxyFallbackTimeout:
         monkeypatch.setattr(auth_dep, "_token_proxy_client", None)
 
         captured: dict = {}
+        real_async_client = httpx.AsyncClient
 
-        class _R:
-            status_code = 200
-            def json(self): return {"access_token": "t"}
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"access_token": "t", "token_type": "bearer"})
 
-        def fake_post(url, data=None, timeout=None):
-            captured["timeout"] = timeout
-            return _R()
+        def factory(*args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            kwargs["transport"] = httpx.MockTransport(handler)
+            return real_async_client(*args, **kwargs)
 
-        monkeypatch.setattr(httpx, "post", fake_post)
+        monkeypatch.setattr(auth_endpoint.httpx, "AsyncClient", factory)
 
         class _Form:
             username = "u"

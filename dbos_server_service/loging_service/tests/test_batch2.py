@@ -16,9 +16,10 @@ Each test class covers exactly one item:
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from tests.conftest import make_event
@@ -56,6 +57,7 @@ class TestActorTypePropagation:
     """
 
     @staticmethod
+    @contextmanager
     def _patch_introspect(subject_type: str | None, sub: str):
         body: dict = {
             "active": True,
@@ -65,10 +67,25 @@ class TestActorTypePropagation:
         }
         if subject_type is not None:
             body["subject_type"] = subject_type
-        return patch(
-            "src.dependencies.auth.httpx.post",
-            return_value=MagicMock(status_code=200, json=lambda: body),
+
+        from src.dependencies import auth as _auth_deps
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=body)
+
+        pooled = httpx.AsyncClient(
+            base_url="http://auth-test:8000",
+            transport=httpx.MockTransport(handler),
+            timeout=5.0,
         )
+        original = _auth_deps._introspect_client
+        _auth_deps._introspect_client = pooled
+        try:
+            yield
+        finally:
+            _auth_deps._introspect_client = original
+            import asyncio
+            asyncio.run(pooled.aclose())
 
     def _resolve_identity(self, client, subject_type: str | None, sub: str) -> dict:
         """Drive the FastAPI dependency chain and capture ``request.state.auth_identity``."""

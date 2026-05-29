@@ -601,97 +601,57 @@ class TestDeptScopedRolesQuirk:
     → scope к dept_id → None → 403. Тест фиксирует это поведение как ожидаемое.
     """
 
-    def test_loging_reader_with_dept_id_passes(self, client):
-        from unittest.mock import patch, MagicMock
+    def test_loging_reader_with_dept_id_passes(self, client, mock_introspect):
         EVENTS_URL = "/api/logging/v1/events"
-        with patch("src.dependencies.auth.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {
-                    "active": True,
-                    "subject_type": "user",
-                    "sub": "usr_reader",
-                    "username": "reader",
-                    "platform_role": "loging_reader",
-                    "department_id": "dep_abc",
-                },
-            )
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user",
+            "sub": "usr_reader", "username": "reader",
+            "platform_role": "loging_reader", "department_id": "dep_abc",
+        }):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 200
 
-    def test_loging_reader_without_dept_id_returns_403_no_department(self, client):
-        from unittest.mock import patch, MagicMock
+    def test_loging_reader_without_dept_id_returns_403_no_department(self, client, mock_introspect):
         EVENTS_URL = "/api/logging/v1/events"
-        with patch("src.dependencies.auth.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {
-                    "active": True,
-                    "subject_type": "user",
-                    "sub": "usr_reader",
-                    "username": "reader",
-                    "platform_role": "loging_reader",
-                    "department_id": None,
-                },
-            )
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user",
+            "sub": "usr_reader", "username": "reader",
+            "platform_role": "loging_reader", "department_id": None,
+        }):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 403
         assert r.json()["error_code"] == "NO_DEPARTMENT"
 
-    def test_department_admin_without_dept_id_returns_403(self, client):
-        from unittest.mock import patch, MagicMock
+    def test_department_admin_without_dept_id_returns_403(self, client, mock_introspect):
         EVENTS_URL = "/api/logging/v1/events"
-        with patch("src.dependencies.auth.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {
-                    "active": True,
-                    "subject_type": "user",
-                    "sub": "usr_da",
-                    "username": "da",
-                    "platform_role": "department_admin",
-                    "department_id": None,
-                },
-            )
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user",
+            "sub": "usr_da", "username": "da",
+            "platform_role": "department_admin", "department_id": None,
+        }):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 403
         assert r.json()["error_code"] == "NO_DEPARTMENT"
 
-    def test_loging_admin_without_dept_id_passes(self, client):
+    def test_loging_admin_without_dept_id_passes(self, client, mock_introspect):
         """loging_admin НЕ в _DEPT_SCOPED_ROLES → dept_scope=None → 200."""
-        from unittest.mock import patch, MagicMock
         EVENTS_URL = "/api/logging/v1/events"
-        with patch("src.dependencies.auth.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {
-                    "active": True,
-                    "subject_type": "user",
-                    "sub": "usr_la",
-                    "username": "la",
-                    "platform_role": "loging_admin",
-                    "department_id": None,
-                },
-            )
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user",
+            "sub": "usr_la", "username": "la",
+            "platform_role": "loging_admin", "department_id": None,
+        }):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 200
 
-    def test_account_admin_without_dept_id_passes(self, client):
+    def test_account_admin_without_dept_id_passes(self, client, mock_introspect):
         """account_admin НЕ в _DEPT_SCOPED_ROLES → dept_scope=None → 200."""
-        from unittest.mock import patch, MagicMock
         EVENTS_URL = "/api/logging/v1/events"
-        with patch("src.dependencies.auth.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {
-                    "active": True,
-                    "subject_type": "user",
-                    "sub": "usr_aa",
-                    "username": "aa",
-                    "platform_role": "account_admin",
-                    "department_id": None,
-                },
-            )
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user",
+            "sub": "usr_aa", "username": "aa",
+            "platform_role": "account_admin", "department_id": None,
+        }):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 200
 
@@ -741,12 +701,10 @@ class TestTokenProxyErrorPropagation:
 
     TOKEN_URL = "/api/logging/v1/token"
 
-    def test_4xx_from_auth_service_returns_401(self, client):
+    def test_4xx_from_auth_service_returns_401(self, client, mock_token_proxy):
         """Любой non-200 от auth_service (403, 429) → 401 INVALID_CREDENTIALS."""
-        from unittest.mock import patch, MagicMock
         for status_code in (400, 403, 422, 429):
-            with patch("src.api.v1.endpoints.auth.httpx.post") as mock_post:
-                mock_post.return_value = MagicMock(status_code=status_code)
+            with mock_token_proxy(status_code=status_code):
                 r = client.post(self.TOKEN_URL,
                                 data={"username": "u", "password": "p"})
             assert r.status_code == 401, (
@@ -754,7 +712,7 @@ class TestTokenProxyErrorPropagation:
             )
             assert r.json()["error_code"] == "INVALID_CREDENTIALS"
 
-    def test_5xx_from_auth_service_returns_401(self, client):
+    def test_5xx_from_auth_service_returns_401(self, client, mock_token_proxy):
         """Любой non-200 от auth_service, включая 5xx, → 401 INVALID_CREDENTIALS.
 
         /token proxy намеренно возвращает единый 401 для всех non-200: Swagger UI
@@ -763,27 +721,20 @@ class TestTokenProxyErrorPropagation:
         (обрабатывается в except Exception). Здесь мок возвращает ответ с кодом 502,
         что endpoint трактует как «не 200» → INVALID_CREDENTIALS 401.
         """
-        from unittest.mock import patch, MagicMock
-        with patch("src.api.v1.endpoints.auth.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=502)
+        with mock_token_proxy(status_code=502):
             r = client.post(self.TOKEN_URL, data={"username": "u", "password": "p"})
         assert r.status_code == 401
         assert r.json()["error_code"] == "INVALID_CREDENTIALS"
 
-    def test_valid_response_returns_only_access_token_and_type(self, client):
+    def test_valid_response_returns_only_access_token_and_type(self, client, mock_token_proxy):
         """Успешный /token — возвращаем только access_token + token_type,
         не весь ответ auth_service (может содержать refresh_token)."""
-        from unittest.mock import patch, MagicMock
-        with patch("src.api.v1.endpoints.auth.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {
-                    "access_token": "jwt-abc",
-                    "token_type": "bearer",
-                    "refresh_token": "should_not_leak",
-                    "expires_in": 900,
-                },
-            )
+        with mock_token_proxy(json_body={
+            "access_token": "jwt-abc",
+            "token_type": "bearer",
+            "refresh_token": "should_not_leak",
+            "expires_in": 900,
+        }):
             r = client.post(self.TOKEN_URL, data={"username": "u", "password": "p"})
 
         assert r.status_code == 200

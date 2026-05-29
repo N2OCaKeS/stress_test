@@ -1,7 +1,5 @@
 """Тесты: /api/logging/v1/retention — политика хранения логов."""
 
-from unittest.mock import MagicMock, patch
-
 URL = "/api/logging/v1/retention"
 
 
@@ -122,38 +120,32 @@ class TestAdminGuard:
     def test_no_token_delete_returns_401(self, client):
         assert client.delete(URL).status_code == 401
 
-    def test_account_admin_cannot_manage_retention(self, client):
+    def test_account_admin_cannot_manage_retention(self, client, mock_introspect):
         """account_admin не имеет loging_admin → 403 при попытке управлять retention."""
-        with patch("src.dependencies.auth.httpx.post") as mock_get:
-            mock_get.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {"active": True, "subject_type": "user", "sub": "u",
-                              "username": "n", "platform_role": "account_admin"},
-            )
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user", "sub": "u",
+            "username": "n", "platform_role": "account_admin",
+        }):
             r = client.put(URL, headers={"Authorization": "Bearer t"}, json={"retain_days": 60})
         assert r.status_code == 403
         assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
-    def test_department_admin_cannot_manage_retention(self, client):
-        with patch("src.dependencies.auth.httpx.post") as mock_get:
-            mock_get.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {"active": True, "subject_type": "user", "sub": "u",
-                              "username": "n", "platform_role": "department_admin",
-                              "department_id": "dep_x"},
-            )
+    def test_department_admin_cannot_manage_retention(self, client, mock_introspect):
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user", "sub": "u",
+            "username": "n", "platform_role": "department_admin",
+            "department_id": "dep_x",
+        }):
             r = client.get(URL, headers={"Authorization": "Bearer t"})
         assert r.status_code == 403
 
-    def test_loging_reader_cannot_manage_retention(self, client):
+    def test_loging_reader_cannot_manage_retention(self, client, mock_introspect):
         """loging_reader даёт только чтение событий, не управление retention."""
-        with patch("src.dependencies.auth.httpx.post") as mock_get:
-            mock_get.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {"active": True, "subject_type": "user", "sub": "u",
-                              "username": "n", "platform_role": "loging_reader",
-                              "department_id": "dep_x"},
-            )
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user", "sub": "u",
+            "username": "n", "platform_role": "loging_reader",
+            "department_id": "dep_x",
+        }):
             r = client.delete(URL, headers={"Authorization": "Bearer t"})
         assert r.status_code == 403
 

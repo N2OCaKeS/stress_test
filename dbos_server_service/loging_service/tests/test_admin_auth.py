@@ -4,9 +4,9 @@ AUTH_SERVICE_URL выставляется в client-фикстуре (conftest.p
 поэтому все тесты, использующие client, автоматически имеют его.
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
+import json as _json
 
+import pytest
 import httpx
 
 from tests.conftest import TEST_API_KEY, make_event
@@ -25,21 +25,18 @@ class TestRequireAdmin:
         r = client.get(EVENTS_URL)
         assert r.status_code == 401
 
-    def test_service_token_rejected(self, client, auth_headers):
+    def test_service_token_rejected(self, client, auth_headers, mock_introspect):
         """SERVICE_API_KEY — не JWT. auth_service возвращает 401 → 401."""
-        with patch("src.dependencies.auth.httpx.post") as mock_get:
-            mock_get.return_value = MagicMock(status_code=200, json=lambda: {"active": False})
+        with mock_introspect(json_body={"active": False}):
             r = client.get(EVENTS_URL, headers=auth_headers)
         assert r.status_code == 401
 
-    def test_wrong_platform_role_returns_403(self, client):
+    def test_wrong_platform_role_returns_403(self, client, mock_introspect):
         """account_admin не может управлять правилами (POST /rules → require_admin требует loging_admin)."""
-        with patch("src.dependencies.auth.httpx.post") as mock_get:
-            mock_get.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {"active": True, "subject_type": "user", "sub": "usr_1",
-                              "username": "u", "platform_role": "account_admin"},
-            )
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user", "sub": "usr_1",
+            "username": "u", "platform_role": "account_admin",
+        }):
             r = client.post(
                 RULES_URL,
                 headers={"Authorization": "Bearer some-jwt"},
@@ -52,23 +49,20 @@ class TestRequireAdmin:
         """admin_client использует dependency override — всегда 200."""
         assert admin_client.get(EVENTS_URL).status_code == 200
 
-    def test_auth_service_timeout_returns_503(self, client):
-        with patch("src.dependencies.auth.httpx.post",
-                   side_effect=httpx.TimeoutException("timeout")):
+    def test_auth_service_timeout_returns_503(self, client, mock_introspect):
+        with mock_introspect(side_effect=httpx.TimeoutException("timeout")):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer some-jwt"})
         assert r.status_code == 503
         assert r.json()["error_code"] == "AUTH_SERVICE_TIMEOUT"
 
-    def test_auth_service_unreachable_returns_503(self, client):
-        with patch("src.dependencies.auth.httpx.post",
-                   side_effect=httpx.ConnectError("refused")):
+    def test_auth_service_unreachable_returns_503(self, client, mock_introspect):
+        with mock_introspect(side_effect=httpx.ConnectError("refused")):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer some-jwt"})
         assert r.status_code == 503
         assert r.json()["error_code"] == "AUTH_SERVICE_UNREACHABLE"
 
-    def test_auth_service_500_returns_503(self, client):
-        with patch("src.dependencies.auth.httpx.post") as mock_get:
-            mock_get.return_value = MagicMock(status_code=500)
+    def test_auth_service_500_returns_503(self, client, mock_introspect):
+        with mock_introspect(status_code=500):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer some-jwt"})
         assert r.status_code == 503
 
@@ -83,27 +77,23 @@ class TestRequireAdmin:
         finally:
             get_settings.cache_clear()
 
-    def test_introspect_call_sends_service_api_key_header(self, client):
+    def test_introspect_call_sends_service_api_key_header(self, client, mock_introspect):
         """auth_service /introspect is guarded by require_service_token —
         loging_service must send SERVICE_API_KEY in Authorization header,
         while user's bearer goes into the JSON body."""
-        with patch("src.dependencies.auth.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {
-                    "active": True, "subject_type": "user", "sub": "usr_1",
-                    "username": "admin", "platform_role": "loging_admin",
-                },
-            )
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user", "sub": "usr_1",
+            "username": "admin", "platform_role": "loging_admin",
+        }) as pooled:
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer user-jwt-xyz"})
+            calls = pooled._mock_calls
 
         assert r.status_code == 200
-        assert mock_post.called
-        call_kwargs = mock_post.call_args.kwargs
+        assert len(calls) == 1
         # Service-to-service auth header — exactly the configured SERVICE_API_KEY
-        assert call_kwargs["headers"]["Authorization"] == f"Bearer {TEST_API_KEY}"
+        assert calls[0].headers["Authorization"] == f"Bearer {TEST_API_KEY}"
         # User's token is forwarded only via JSON body, NOT the header
-        assert call_kwargs["json"] == {"token": "user-jwt-xyz"}
+        assert _json.loads(calls[0].content.decode()) == {"token": "user-jwt-xyz"}
 
 
 # ── Разграничение: service token vs admin token ───────────────────────────────
@@ -112,14 +102,12 @@ class TestAccessSeparation:
     def test_service_token_can_post_events(self, client, auth_headers):
         assert client.post(EVENTS_URL, headers=auth_headers, json=make_event()).status_code == 201
 
-    def test_service_token_cannot_get_events(self, client, auth_headers):
-        with patch("src.dependencies.auth.httpx.post") as mock_get:
-            mock_get.return_value = MagicMock(status_code=200, json=lambda: {"active": False})
+    def test_service_token_cannot_get_events(self, client, auth_headers, mock_introspect):
+        with mock_introspect(json_body={"active": False}):
             assert client.get(EVENTS_URL, headers=auth_headers).status_code == 401
 
-    def test_service_token_cannot_manage_rules(self, client, auth_headers):
-        with patch("src.dependencies.auth.httpx.post") as mock_get:
-            mock_get.return_value = MagicMock(status_code=200, json=lambda: {"active": False})
+    def test_service_token_cannot_manage_rules(self, client, auth_headers, mock_introspect):
+        with mock_introspect(json_body={"active": False}):
             assert client.get(RULES_URL, headers=auth_headers).status_code == 401
 
     def test_service_token_can_register_service_events(self, client, auth_headers):
@@ -130,9 +118,8 @@ class TestAccessSeparation:
         )
         assert r.status_code == 200
 
-    def test_service_token_cannot_list_services(self, client, auth_headers):
-        with patch("src.dependencies.auth.httpx.post") as mock_get:
-            mock_get.return_value = MagicMock(status_code=200, json=lambda: {"active": False})
+    def test_service_token_cannot_list_services(self, client, auth_headers, mock_introspect):
+        with mock_introspect(json_body={"active": False}):
             assert client.get(SERVICES_URL, headers=auth_headers).status_code == 401
 
     def test_admin_client_can_access_all_admin_endpoints(self, admin_client):
@@ -144,20 +131,15 @@ class TestAccessSeparation:
 # ── /token — OAuth2 password flow ─────────────────────────────────────────────
 
 class TestTokenEndpoint:
-    def test_valid_credentials_return_access_token(self, client):
-        with patch("src.api.v1.endpoints.auth.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {"access_token": "jwt-token-123", "token_type": "Bearer"},
-            )
+    def test_valid_credentials_return_access_token(self, client, mock_token_proxy):
+        with mock_token_proxy(json_body={"access_token": "jwt-token-123", "token_type": "Bearer"}):
             r = client.post(TOKEN_URL, data={"username": "admin", "password": "secret"})
         assert r.status_code == 200
         assert r.json()["access_token"] == "jwt-token-123"
         assert r.json()["token_type"] == "bearer"
 
-    def test_invalid_credentials_return_401(self, client):
-        with patch("src.api.v1.endpoints.auth.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=401)
+    def test_invalid_credentials_return_401(self, client, mock_token_proxy):
+        with mock_token_proxy(status_code=401):
             r = client.post(TOKEN_URL, data={"username": "admin", "password": "wrong"})
         assert r.status_code == 401
 
@@ -172,9 +154,8 @@ class TestTokenEndpoint:
         finally:
             get_settings.cache_clear()
 
-    def test_auth_service_unreachable_returns_503(self, client):
-        with patch("src.api.v1.endpoints.auth.httpx.post",
-                   side_effect=httpx.ConnectError("refused")):
+    def test_auth_service_unreachable_returns_503(self, client, mock_token_proxy):
+        with mock_token_proxy(side_effect=httpx.ConnectError("refused")):
             r = client.post(TOKEN_URL, data={"username": "admin", "password": "x"})
         assert r.status_code == 503
         assert r.json()["error_code"] == "AUTH_SERVICE_UNREACHABLE"
@@ -185,7 +166,7 @@ class TestTokenEndpoint:
 
     # ── Защита от утечки internal hostname через httpx exception repr ──────
 
-    def test_connect_error_does_not_leak_internal_url(self, client):
+    def test_connect_error_does_not_leak_internal_url(self, client, mock_token_proxy):
         """ConnectError несёт ``request.url`` в repr — internal hostname
         не должен попасть в response body (detail / message).
         """
@@ -194,7 +175,7 @@ class TestTokenEndpoint:
         exc = httpx.ConnectError("Connection refused")
         exc._request = request
 
-        with patch("src.api.v1.endpoints.auth.httpx.post", side_effect=exc):
+        with mock_token_proxy(side_effect=exc):
             r = client.post(TOKEN_URL, data={"username": "admin", "password": "x"})
 
         assert r.status_code == 503
@@ -213,13 +194,13 @@ class TestTokenEndpoint:
         assert ":8000/" not in rendered
         assert "connection refused" not in rendered
 
-    def test_read_error_does_not_leak_internal_url(self, client):
+    def test_read_error_does_not_leak_internal_url(self, client, mock_token_proxy):
         """`httpx.ReadError` (другой подкласс TransportError) — тот же инвариант."""
         request = httpx.Request("POST", "http://auth-internal.svc.local/api/auth/v1/token")
         exc = httpx.ReadError("Read timed out")
         exc._request = request
 
-        with patch("src.api.v1.endpoints.auth.httpx.post", side_effect=exc):
+        with mock_token_proxy(side_effect=exc):
             r = client.post(TOKEN_URL, data={"username": "admin", "password": "x"})
 
         assert r.status_code == 503
@@ -229,10 +210,9 @@ class TestTokenEndpoint:
         assert "svc.local" not in rendered
         assert "read timed out" not in rendered
 
-    def test_generic_exception_does_not_leak_repr(self, client):
+    def test_generic_exception_does_not_leak_repr(self, client, mock_token_proxy):
         """`except Exception` ловит любое — generic envelope без сырого str(exc)."""
-        with patch(
-            "src.api.v1.endpoints.auth.httpx.post",
+        with mock_token_proxy(
             side_effect=RuntimeError("internal-db-host=secret.internal.example.com"),
         ):
             r = client.post(TOKEN_URL, data={"username": "admin", "password": "x"})
@@ -243,14 +223,14 @@ class TestTokenEndpoint:
         assert "secret.internal.example.com" not in r.text
         assert "internal-db-host" not in r.text
 
-    def test_connect_error_logs_full_detail(self, client, caplog):
+    def test_connect_error_logs_full_detail(self, client, caplog, mock_token_proxy):
         """Полная ошибка (с URL) должна попасть в logs — нужно для on-call."""
         request = httpx.Request("POST", "http://auth-internal.cluster.local:8000/x")
         exc = httpx.ConnectError("Connection refused")
         exc._request = request
 
         with caplog.at_level("ERROR", logger="src.api.v1.endpoints.auth"):
-            with patch("src.api.v1.endpoints.auth.httpx.post", side_effect=exc):
+            with mock_token_proxy(side_effect=exc):
                 client.post(TOKEN_URL, data={"username": "admin", "password": "x"})
 
         # В лог должно быть записано имя сообщения + сам exc (с repr-URL)

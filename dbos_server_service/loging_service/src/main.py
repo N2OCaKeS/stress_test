@@ -97,7 +97,7 @@ def create_application() -> FastAPI:
             когда N параллельных reader-запросов иначе открывали бы N свежих
             TCP+TLS handshake'ов (как в `server_service`). Скипаем, если
             `AUTH_SERVICE_URL` не задан (early-dev конфиги); `_fetch_identity`
-            тогда фоллбэчится на per-call `httpx.post`.
+            тогда поднимет `AUTH_SERVICE_NOT_CONFIGURED` на первом обращении.
           * Стартуем retention-cleanup daemon-thread (раньше висел на
             `@app.on_event("startup")`, теперь свёрнут в lifespan, чтобы
             убрать FastAPI DeprecationWarning). Под `RETENTION_LOOP_ENABLED=False`

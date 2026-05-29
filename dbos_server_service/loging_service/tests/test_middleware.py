@@ -120,15 +120,11 @@ class TestAppExceptionResponseShape:
         ts = datetime.fromisoformat(body["timestamp"].replace("Z", "+00:00"))
         assert ts.tzinfo is not None
 
-    def test_403_shape_for_wrong_role(self, client):
-        from unittest.mock import patch, MagicMock
-        with patch("src.dependencies.auth.httpx.post") as mock_get:
-            mock_get.return_value = MagicMock(
-                status_code=200,
-                json=lambda: {"active": True, "subject_type": "user", "sub": "u",
-                              "username": "n",
-                              "platform_role": "account_admin"},
-            )
+    def test_403_shape_for_wrong_role(self, client, mock_introspect):
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user", "sub": "u",
+            "username": "n", "platform_role": "account_admin",
+        }):
             r = client.post(
                 "/api/logging/v1/rules",
                 headers={"Authorization": "Bearer t"},
@@ -140,11 +136,9 @@ class TestAppExceptionResponseShape:
         assert body["error_code"] == "INSUFFICIENT_ROLE"
         assert body["request_id"]
 
-    def test_503_shape_for_auth_unavailable(self, client):
+    def test_503_shape_for_auth_unavailable(self, client, mock_introspect):
         import httpx
-        from unittest.mock import patch
-        with patch("src.dependencies.auth.httpx.post",
-                   side_effect=httpx.ConnectError("refused")):
+        with mock_introspect(side_effect=httpx.ConnectError("refused")):
             r = client.get("/api/logging/v1/rules",
                            headers={"Authorization": "Bearer t"})
         assert r.status_code == 503

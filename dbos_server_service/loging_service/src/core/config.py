@@ -92,10 +92,10 @@ class Settings(BaseSettings):
         default="", alias="INTROSPECT_SERVICE_API_KEY"
     )
 
-    # Таймаут pooled introspect HTTP-вызова (и per-call fallback'а, который
-    # используют тесты). 3 секунды — исторический default из старого синхронного
-    # `httpx.post(timeout=3.0)`. Connect-таймаут на pooled клиенте — 2 секунды
-    # (см. `main.lifespan`), чтобы залипший TCP-handshake с auth_service падал
+    # Таймаут pooled introspect HTTP-вызова (и эфемерного fallback-клиента,
+    # который собирается на запрос, если pool=None). 3 секунды — исторический
+    # default. Connect-таймаут на pooled клиенте — 2 секунды (см.
+    # `main.lifespan`), чтобы залипший TCP-handshake с auth_service падал
     # быстрее, не держа pool-slot.
     introspect_timeout_seconds: float = Field(
         default=3.0, alias="INTROSPECT_TIMEOUT_SECONDS"

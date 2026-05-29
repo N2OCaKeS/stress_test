@@ -1,10 +1,26 @@
 """Тесты: require_reader — все варианты read-доступа к /events и dept-scoping."""
 
-from unittest.mock import MagicMock, patch
+import httpx
 
+from src.dependencies import auth as _auth_deps
 from tests.conftest import make_event
 
 EVENTS_URL = "/api/logging/v1/events"
+
+
+class _IntrospectCtx:
+    """Минимальный context-manager-совместимый объект — поддерживает старый
+    `p.stop()`-интерфейс хелпера, под которым жили тесты файла."""
+
+    def __init__(self, attr: str, pooled: httpx.AsyncClient, original):
+        self._attr = attr
+        self._pooled = pooled
+        self._original = original
+
+    def stop(self):
+        setattr(_auth_deps, self._attr, self._original)
+        import asyncio
+        asyncio.run(self._pooled.aclose())
 
 
 def _mock_identity(client, identity_payload):
@@ -12,16 +28,25 @@ def _mock_identity(client, identity_payload):
 
     Принимает короткий dict с полями user_id/username/... и автоматически
     оборачивает его в формат IntrospectResponse (active=True, sub=...).
+    Подменяет pooled `_introspect_client` AsyncClient'ом с MockTransport.
     """
     payload = dict(identity_payload)
     payload.setdefault("active", True)
     payload.setdefault("subject_type", "user")
     if "user_id" in payload and "sub" not in payload:
         payload["sub"] = payload.pop("user_id")
-    p = patch("src.dependencies.auth.httpx.post")
-    m = p.start()
-    m.return_value = MagicMock(status_code=200, json=lambda: payload)
-    return p
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    pooled = httpx.AsyncClient(
+        base_url="http://auth-test:8000",
+        transport=httpx.MockTransport(handler),
+        timeout=5.0,
+    )
+    original = _auth_deps._introspect_client
+    _auth_deps._introspect_client = pooled
+    return _IntrospectCtx("_introspect_client", pooled, original)
 
 
 def _ingest(client, auth_headers, **overrides):

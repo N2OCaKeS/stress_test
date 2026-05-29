@@ -156,42 +156,32 @@ class TestFetchIdentityNetworkErrors:
         assert exc.value.error_code == "AUTH_SERVICE_NOT_CONFIGURED"
         assert exc.value.http_status == 503
 
-    def test_timeout_returns_503(self, monkeypatch):
-        from src.core.config import get_settings
+    def test_timeout_returns_503(self, monkeypatch, mock_introspect):
         import httpx
+        from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
-        monkeypatch.setattr(auth_dep, "_introspect_client", None)
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
         monkeypatch.setenv("SERVICE_API_KEY", "x")
-
-        def boom(*a, **kw):
-            raise httpx.TimeoutException("slow")
-
-        monkeypatch.setattr(httpx, "post", boom)
         class _Creds:
             credentials = "tok"
 
-        with pytest.raises(AppException) as exc:
-            _run(auth_dep._fetch_identity(_Creds(), _FakeRequest()))
+        with mock_introspect(side_effect=httpx.TimeoutException("slow")):
+            with pytest.raises(AppException) as exc:
+                _run(auth_dep._fetch_identity(_Creds(), _FakeRequest()))
         assert exc.value.error_code == "AUTH_SERVICE_TIMEOUT"
 
-    def test_connect_error_returns_503(self, monkeypatch):
-        from src.core.config import get_settings
+    def test_connect_error_returns_503(self, monkeypatch, mock_introspect):
         import httpx
+        from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
-        monkeypatch.setattr(auth_dep, "_introspect_client", None)
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
         monkeypatch.setenv("SERVICE_API_KEY", "x")
-
-        def boom(*a, **kw):
-            raise httpx.ConnectError("nope")
-
-        monkeypatch.setattr(httpx, "post", boom)
         class _Creds:
             credentials = "tok"
 
-        with pytest.raises(AppException) as exc:
-            _run(auth_dep._fetch_identity(_Creds(), _FakeRequest()))
+        with mock_introspect(side_effect=httpx.ConnectError("nope")):
+            with pytest.raises(AppException) as exc:
+                _run(auth_dep._fetch_identity(_Creds(), _FakeRequest()))
         assert exc.value.error_code == "AUTH_SERVICE_UNREACHABLE"
 
     def test_non_200_response_returns_503(self, monkeypatch):
@@ -213,67 +203,45 @@ class TestFetchIdentityNetworkErrors:
             _run(auth_dep._fetch_identity(_Creds(), _FakeRequest()))
         assert exc.value.error_code == "AUTH_SERVICE_ERROR"
 
-    def test_inactive_token_returns_401(self, monkeypatch):
+    def test_inactive_token_returns_401(self, monkeypatch, mock_introspect):
         from src.core.config import get_settings
-        import httpx
         get_settings.cache_clear()  # type: ignore[attr-defined]
-        monkeypatch.setattr(auth_dep, "_introspect_client", None)
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
-
-        class _R:
-            status_code = 200
-            def json(self): return {"active": False}
-
-        monkeypatch.setattr(httpx, "post", lambda *a, **kw: _R())
         class _Creds:
             credentials = "tok"
 
-        with pytest.raises(AppException) as exc:
-            _run(auth_dep._fetch_identity(_Creds(), _FakeRequest()))
+        with mock_introspect(json_body={"active": False}):
+            with pytest.raises(AppException) as exc:
+                _run(auth_dep._fetch_identity(_Creds(), _FakeRequest()))
         assert exc.value.error_code == "INVALID_TOKEN"
 
-    def test_banned_user_returns_401(self, monkeypatch):
-        import httpx
+    def test_banned_user_returns_401(self, monkeypatch, mock_introspect):
         from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
-        monkeypatch.setattr(auth_dep, "_introspect_client", None)
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
-
-        class _R:
-            status_code = 200
-            def json(self): return {"active": True, "is_banned": True, "sub": "u"}
-
-        monkeypatch.setattr(httpx, "post", lambda *a, **kw: _R())
         class _Creds:
             credentials = "tok"
 
-        with pytest.raises(AppException) as exc:
-            _run(auth_dep._fetch_identity(_Creds(), _FakeRequest()))
+        with mock_introspect(json_body={"active": True, "is_banned": True, "sub": "u"}):
+            with pytest.raises(AppException) as exc:
+                _run(auth_dep._fetch_identity(_Creds(), _FakeRequest()))
         assert exc.value.error_code == "USER_BANNED"
 
-    def test_active_token_stores_identity_on_request_state(self, monkeypatch):
-        import httpx
+    def test_active_token_stores_identity_on_request_state(self, monkeypatch, mock_introspect):
         from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
-        monkeypatch.setattr(auth_dep, "_introspect_client", None)
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
-
-        class _R:
-            status_code = 200
-            def json(self):
-                return {
-                    "active": True, "is_banned": False, "sub": "usr_1",
-                    "platform_role": "loging_admin",
-                    "service_roles": {"loging_service": ["reader"]},
-                }
-
-        monkeypatch.setattr(httpx, "post", lambda *a, **kw: _R())
         req = _FakeRequest()
         class _Creds:
             credentials = "tok"
 
-        identity = _run(auth_dep._fetch_identity(_Creds(), req))
+        body = {
+            "active": True, "is_banned": False, "sub": "usr_1",
+            "platform_role": "loging_admin",
+            "service_roles": {"loging_service": ["reader"]},
+        }
+        with mock_introspect(json_body=body):
+            identity = _run(auth_dep._fetch_identity(_Creds(), req))
         assert identity["user_id"] == "usr_1"
         assert identity["_loging_service_roles"] == ["reader"]
-        # И в request.state — для audit middleware
         assert req.state.auth_identity["sub"] == "usr_1"

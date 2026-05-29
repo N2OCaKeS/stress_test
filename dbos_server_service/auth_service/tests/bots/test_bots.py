@@ -47,6 +47,25 @@ async def test_regular_user_cannot_create_bot(client, user_a_token, dept_a):
     assert resp.status_code == 403
 
 
+async def test_duplicate_name_in_same_dept_returns_409(client, admin_token, dept_a):
+    name = "dup_bot_same_dept"
+    first = await _create_bot(client, admin_token, dept_a.id, name=name)
+    assert first.status_code == 201
+    second = await _create_bot(client, admin_token, dept_a.id, name=name)
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "BOT_NAME_TAKEN"
+
+
+async def test_duplicate_name_across_depts_returns_409(client, admin_token, dept_a, dept_b):
+    """bot.name глобально-уникален: коллизия даже между разными отделами → 409."""
+    name = "dup_bot_cross_dept"
+    first = await _create_bot(client, admin_token, dept_a.id, name=name)
+    assert first.status_code == 201
+    second = await _create_bot(client, admin_token, dept_b.id, name=name)
+    assert second.status_code == 409
+    assert second.json()["error_code"] == "BOT_NAME_TAKEN"
+
+
 # ── List ──────────────────────────────────────────────────────────────────────
 
 async def test_admin_sees_all_bots(client, admin_token, dept_a, dept_b):

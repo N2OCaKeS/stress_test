@@ -45,7 +45,7 @@ async def create_bot(
         account_admin (любой отдел) или department_admin (только свой).
 
     Возможные ошибки:
-        * `BOT_NAME_TAKEN` (409) — имя уже занято в отделе.
+        * `BOT_NAME_TAKEN` (409) — имя уже занято (глобально уникально).
         * `DEPARTMENT_NOT_FOUND` (404).
     """
     return await bot_service.create_bot(

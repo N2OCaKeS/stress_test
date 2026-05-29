@@ -51,6 +51,44 @@ async def test_refresh_expired_token_returns_401(client, account_admin):
     assert resp.json()["error_code"] in ("REFRESH_TOKEN_INVALID", "REFRESH_TOKEN_EXPIRED")
 
 
+async def test_reuse_of_token_three_rotations_ago_detected(client, account_admin):
+    """RT, ротированный 3 раза назад, всё ещё ловится — sliding window N>=3."""
+    data = await _login(client)
+    very_old = data["refresh_token"]
+
+    # 3 успешные ротации поверх very_old.
+    rt = very_old
+    for _ in range(3):
+        resp = await client.post(URL, json={"refresh_token": rt})
+        assert resp.status_code == 200
+        rt = resp.json()["refresh_token"]
+
+    # Подсовываем самый старый RT — должно сработать reuse-detection.
+    resp = await client.post(URL, json={"refresh_token": very_old})
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "REFRESH_TOKEN_INVALID"
+
+    # И живой текущий RT тоже должен быть отозван (revoke_all_for_user).
+    resp = await client.post(URL, json={"refresh_token": rt})
+    assert resp.status_code == 401
+
+
+async def test_reuse_of_token_five_rotations_ago_detected(client, account_admin):
+    """N=5: граничный случай — window ровно в 5 поколений."""
+    data = await _login(client)
+    very_old = data["refresh_token"]
+
+    rt = very_old
+    for _ in range(5):
+        resp = await client.post(URL, json={"refresh_token": rt})
+        assert resp.status_code == 200
+        rt = resp.json()["refresh_token"]
+
+    resp = await client.post(URL, json={"refresh_token": very_old})
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "REFRESH_TOKEN_INVALID"
+
+
 async def test_refresh_truly_expired_session_returns_expired_error(client, account_admin, db):
     """Истёкший по времени refresh_token (Session.expires_at в прошлом) → 401 REFRESH_TOKEN_EXPIRED."""
     data = await _login(client)

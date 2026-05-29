@@ -78,6 +78,15 @@ async def create_bot(
 
     await _validate_bot_services(dept_repo, data.department_id, data.allowed_services)
 
+    # bot.name глобально-уникален: docker basic-auth ищет по имени без
+    # department-фильтра. Pre-check 409 — чище IntegrityError'а из БД.
+    existing = await bot_repo.first_by_name(data.name)
+    if existing is not None:
+        raise ConflictError(
+            error_code="BOT_NAME_TAKEN",
+            message=f"Bot with name '{data.name}' already exists",
+        )
+
     bot = await bot_repo.create(
         name=data.name,
         department_id=data.department_id,
@@ -173,6 +182,15 @@ async def update_bot(
     if "allowed_services" in updates:
         dept_repo = DepartmentRepository(db)
         await _validate_bot_services(dept_repo, bot.department_id, updates["allowed_services"])
+    if "name" in updates and updates["name"] != bot.name:
+        # Зеркало create_bot: имя глобально-уникально, иначе кто-то перетрёт
+        # чужого бота для целей docker basic-auth.
+        existing = await bot_repo.first_by_name(updates["name"])
+        if existing is not None and existing.id != bot.id:
+            raise ConflictError(
+                error_code="BOT_NAME_TAKEN",
+                message=f"Bot with name '{updates['name']}' already exists",
+            )
     if "status" in updates:
         updates["is_active"] = updates["status"] == "active"
     await bot_repo.update(bot, **updates)

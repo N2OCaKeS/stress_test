@@ -15,7 +15,7 @@ class BotCreate(BaseModel):
     """
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1, max_length=256, description="Имя бота (уникально внутри отдела).")
+    name: str = Field(min_length=1, max_length=256, description="Имя бота (глобально уникально — docker basic-auth ищет по нему).")
     department_id: str = Field(description="ID отдела, к которому привязываем бота.")
     allowed_services: list[str] = Field(
         default_factory=list,

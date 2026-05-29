@@ -294,8 +294,8 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
 
         # Token не валиден ИЛИ привязан к неактивному боту. Регистрируем
         # неуспех на боте, идентифицируя его по username (Basic-auth) —
-        # bot.name не уникален, но первого совпадения достаточно для
-        # счётчика. Симметрия с user-password путём.
+        # bot.name глобально уникален (UNIQUE constraint), поэтому имя
+        # однозначно адресует конкретного бота. Симметрия с user-password путём.
         target_bot = await bot_repo.first_by_name(username) if username else None
         if target_bot is not None:
             if await _lockout.release_principal_if_expired(

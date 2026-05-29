@@ -1,9 +1,9 @@
 """DAO для `Session` — CRUD refresh-сессий + CAS rotate (reuse-detection)."""
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.session import Session
+from src.models.session import PREVIOUS_TOKEN_HASH_WINDOW, Session
 from src.repositories._cas import atomic_transition
 from src.utils.ids import session_id
 from src.utils.time import utcnow
@@ -25,11 +25,19 @@ class SessionRepository:
         )
 
     async def get_by_token_hash(self, token_hash: str) -> Session | None:
-        """Lookup по current ИЛИ previous token-hash — для reuse-detection."""
+        """Lookup по current ИЛИ любому из previous token-hashes — для reuse-detection.
+
+        Sliding window до `PREVIOUS_TOKEN_HASH_WINDOW` поколений: атакер не
+        ловится только если RT был ротирован больше N раз с момента кражи.
+        """
+        # ARRAY `@>` (contains) — точное совпадение элемента массива.
         return await self._db.scalar(
             select(Session).where(
-                (Session.refresh_token_hash == token_hash) |
-                (Session.previous_token_hash == token_hash)
+                or_(
+                    Session.refresh_token_hash == token_hash,
+                    Session.previous_token_hash == token_hash,
+                    Session.previous_token_hashes.contains([token_hash]),
+                )
             )
         )
 
@@ -73,6 +81,15 @@ class SessionRepository:
         """
         expected_hash = sess.refresh_token_hash
         now = utcnow()
+        # Sliding window поколений. Берём список как он лежит в БД (через
+        # ORM-инстанс — DB и память в этой точке согласованы CAS-инвариантом),
+        # аппендим expected_hash в хвост, режем голову до N. Записываем как
+        # literal-массив — обновление атомарно с прочими values в CAS UPDATE.
+        prev_window = list(sess.previous_token_hashes or [])
+        prev_window.append(expected_hash)
+        if len(prev_window) > PREVIOUS_TOKEN_HASH_WINDOW:
+            prev_window = prev_window[-PREVIOUS_TOKEN_HASH_WINDOW:]
+
         # `token_generation = Session.token_generation + 1` — это column-expr,
         # `.values(**dict)` нормально его принимает.
         won = await atomic_transition(
@@ -86,6 +103,7 @@ class SessionRepository:
             ),
             update_values={
                 "previous_token_hash": expected_hash,
+                "previous_token_hashes": prev_window,
                 "refresh_token_hash": new_hash,
                 "token_generation": Session.token_generation + 1,
                 "expires_at": new_expires_at,
@@ -97,6 +115,7 @@ class SessionRepository:
         # Синкаем ORM-инстанс с тем, что записали в БД — caller'ы (например
         # `auth_service.refresh`) после возврата читают `sess.id` для audit.
         sess.previous_token_hash = expected_hash
+        sess.previous_token_hashes = prev_window
         sess.refresh_token_hash = new_hash
         sess.token_generation += 1
         sess.expires_at = new_expires_at

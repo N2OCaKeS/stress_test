@@ -19,7 +19,10 @@ class BotAccount(Base):
     __tablename__ = "bot_accounts"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    # Глобальная уникальность: docker basic-auth ищет бота по `name` без
+    # привязки к отделу (`BotRepository.first_by_name`); коллизия имени
+    # приводила бы к лоокауту/анлоку не того бота.
+    name: Mapped[str] = mapped_column(String(256), nullable=False, unique=True)
     department_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("departments.id", ondelete="RESTRICT"), nullable=False, index=True
     )

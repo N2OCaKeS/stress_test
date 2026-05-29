@@ -98,12 +98,10 @@ class BotRepository:
     async def first_by_name_in_department(
         self, department_id: str, name: str
     ) -> BotAccount | None:
-        """Первый бот с этим именем в отделе (используется в docker auth-пути).
+        """Бот по (department_id, name).
 
-        У `bot_accounts.name` нет уникальности — теоретически возможны
-        дубликаты. Для лоокаута это допустимо: при коллизии лоокаунем
-        первого, что хуже не делает (атакующий и так не знает, какого
-        конкретно бота он перебирает).
+        bot.name UNIQUE на уровне БД, так что результат однозначный — limit(1)
+        и order_by нужны только как safety на случай legacy-данных.
         """
         result = await self._db.scalar(
             select(BotAccount)

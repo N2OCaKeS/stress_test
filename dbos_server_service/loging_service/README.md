@@ -107,6 +107,8 @@ Daemon-thread (`src/main.py::_retention_loop`) считает время до с
 
 | ENV | Default | Назначение |
 |---|---|---|
+| `APP_NAME` | `loging_service` | имя сервиса в собственных audit-эмитах |
+| `APP_HOST` | `0.0.0.0` | bind-адрес uvicorn |
 | `APP_PORT` | `8001` | |
 | `APP_ENV` | `local` | `production`/`staging` включает доп. guard'ы (https, `verify=true`, SERVICE_API_KEY non-default) |
 | `APP_DEBUG` | `true` | в prod отбивается на старте, если `true` |
@@ -148,7 +150,7 @@ API: http://localhost:8001/docs
 
 ## Тесты
 
-**777 passed** в актуальном прогоне (см. `Test.md` и `make test-logging`). Реальный PostgreSQL в Docker, между тестами `TRUNCATE ... RESTART IDENTITY CASCADE` — никакого SQLite/моков БД.
+Актуальный счётчик — в выводе `make test-logging` (последняя зафиксированная цифра — `777 passed`, перепроверяется по `pytest --collect-only -q`). Реальный PostgreSQL в Docker, между тестами `TRUNCATE ... RESTART IDENTITY CASCADE` — никакого SQLite/моков БД. Реестр файлов и зон — в `Test.md`.
 
 Покрытие: ingest, query, rules CRUD, rule_service unit (glob/severity/cache + stress), services registry, retention (+ protection + multi-replica + per-severity/per-service фильтры), admin/reader auth, payload validation, body-size limit + negative CL, rate-limit (per-IP + per-service), Unicode normalization, config validation (https, prod-guard `verify=false`), timezones, redaction, IDs, concurrency, schema validators (shadow-keys, NUL, charset, idempotency_key), introspect pool.
 

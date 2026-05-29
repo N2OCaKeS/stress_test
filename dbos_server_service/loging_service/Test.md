@@ -1,7 +1,7 @@
 # loging_service · реестр тестов
 
-**Всего тестов**: 777 passed (актуальный прогон).
-**Файлов**: 31 (`tests/test_*.py`).
+**Всего тестов**: точное число живёт в выводе `make test-logging` (последняя зафиксированная цифра — `777 passed`, актуальный счётчик перепроверяется по `pytest --collect-only -q`).
+**Файлов**: 34 (`tests/test_*.py`).
 **Стек**: pytest + `fastapi.TestClient` поверх реального PostgreSQL в Docker (`loging_db_test`). Никаких моков БД — каждый тест начинается с `TRUNCATE` всех таблиц.
 
 ## Запуск
@@ -55,6 +55,9 @@ docker compose -f loging_service/tests/docker-compose.test.yml run --rm test-run
 | `test_introspect_pool.py` | Pooled `AsyncClient` для introspect — закрывает slowloris (раньше каждый запрос открывал свежий TCP+TLS handshake к auth_service). |
 | `test_batch2.py` | Сводный батч: проброс `actor_type` из introspect, idempotency-key на ingest (`(service, idempotency_key)` UNIQUE), per-service `SERVICE_API_KEYS`. |
 | `test_hardening.py` | Hardening-батч: whitelist `default_severity` + `RuleStatus.warning` как четвёртый литерал, charset-валидаторы service/action/username/target_id/target_type против CRLF-инъекций, retention advisory-lock и sleep-until-MSK-00:00, RESERVED_SERVICE_NAMES в `core/constants.py`. |
+| `test_audit_events_md_sync.py` | Doc-sync guard: парсит `AUDIT_EVENTS.md` (HTTP middleware / retention / admin actions / severity-override таблицы) и для каждой `(action, status, severity)` строки сверяет с `_DEFAULT_SEVERITY` в `services/rule_service.py` — ловит drift между кодом и markdown. |
+| `test_cov_focus.py` | Точечное покрытие гэпов: `_RuleCache` TTL под NTP-step (monkeypatch `time.monotonic` с прыжком), `event_service.apply_rules` на пересекающихся политиках (Cartesian OVERRIDE + SUPPRESS), retention `apply_active` chunked DELETE при rollback + filter-set sweep, `POST /events` `_ACTION_PATTERN` с цифрами и unicode-confusables, `core/limiter` `_rate_limit_key` exempt-path, dept-scoped roles quirk (`loging_reader` без `department_id` → 403 `NO_DEPARTMENT`). |
+| `test_p4_cleanups.py` | P4-чистки: DB pool sizing через env (`DB_POOL_SIZE`/`DB_MAX_OVERFLOW`) вместо хардкода в `db/session.py`; introspect connect-таймаут через `INTROSPECT_CONNECT_TIMEOUT_SECONDS` вместо literal `2.0`; `self_audit_failures_total` под `threading.Lock` (lost-increment guard под параллельным `to_thread`'ом); `ADVISORY_LOCKS["retention_sweep"]` единственный источник pg-advisory-key. |
 
 ---
 

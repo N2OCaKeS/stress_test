@@ -40,7 +40,7 @@
 
 Шесть уровней: `TRACE` < `DEBUG` < `INFO` < `WARNING` < `ERROR` < `CRITICAL`. Назначаются автоматически по таблице `(action, status) → severity` в `src/services/rule_service.py::_DEFAULT_SEVERITY`. Для неизвестных action'ов: `status ∈ {failure, denied}` → `WARNING`, иначе `INFO`. Правила `OVERRIDE_SEVERITY` переопределяют без деплоя.
 
-Дефолты для server-действий: `server.prepare` / `server.prepared` и `server_account.provision` (и success, и failure) → `CRITICAL`; `server_account.update_on_host` → `INFO`; `server_account.deprovision` и `server_account.drift_detected` → `WARNING`. Для `server_account.provision` каталог `_DEFAULT_SEVERITY` строже (CRITICAL), чем `default_severity` в самом `server_service` (WARNING) — расхождение известно, источник истины по severity-каталогу не зафиксирован.
+Дефолты для server-действий: `server.prepare` / `server.prepared` → `CRITICAL`; `server_account.provision` — success=`WARNING`, failure=`CRITICAL`; `server_account.update_on_host` → `INFO`; `server_account.deprovision` и `server_account.drift_detected` → `WARNING`.
 
 Подробный справочник — `AUDIT_EVENTS.md`.
 

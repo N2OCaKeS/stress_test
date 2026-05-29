@@ -107,7 +107,7 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
 | `server_account.rotate_password_dispatch` | CRITICAL | POST `/api/server/v1/server-accounts/{id}/rotate` — dispatch SSH-rotation task. Эмитится один агрегированный success на запрос (даже при частичных пропусках в массовом режиме); per-server-фейлы (idempotent-конфликт) идут отдельными failure-эмитами, worker-unreachable отбивает весь батч | `server_account` | success: `mode`, `task_kind=account.rotate_password`, `task_ids`, `server_ids` (только реально поставленные), `dispatched`, `skipped` (список `{server_id, reason}`), `skipped_count`, `login`, `department_id` |
-| `server_account.provision` | CRITICAL | POST `/api/server/v1/server-accounts/{id}/provision` — dispatch useradd на боксе (открывает SSH-доступ → CRITICAL) | `server_account` | `task_id`, `task_kind=account.provision` |
+| `server_account.provision` | WARNING | POST `/api/server/v1/server-accounts/{id}/provision` — dispatch useradd на боксе | `server_account` | `task_id`, `task_kind=account.provision` |
 | `server_account.update_on_host` | INFO | POST `/api/server/v1/server-accounts/{id}/update-on-host` — dispatch usermod (синк атрибутов) | `server_account` | `task_id`, `task_kind=account.update_on_host` |
 | `server_account.deprovision` | WARNING | POST `/api/server/v1/server-accounts/{id}/deprovision` — dispatch userdel | `server_account` | `task_id`, `task_kind=account.deprovision` |
 | `server_account.users_inventory` | INFO | POST `/api/server/v1/servers/{id}/users-inventory` — dispatch инвентаризации OS-пользователей (SSH getent) | `server` | `task_id`, `task_kind=account.users_inventory` |

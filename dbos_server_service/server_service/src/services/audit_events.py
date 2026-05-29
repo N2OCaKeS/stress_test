@@ -90,7 +90,7 @@ SERVICE_EVENTS = [
     {"action": "server.inventory_sync", "description": "Inventory-sync (SSH-probe) dispatched to worker", "default_severity": "INFO"},
     {"action": "server_account.users_inventory", "description": "OS-user inventory (SSH getent) dispatched to worker", "default_severity": "INFO"},
     {"action": "server_account.rotate_password_dispatch", "description": "Server account password rotation dispatched to worker (SSH apply + storage round-trip)", "default_severity": "CRITICAL"},
-    {"action": "server_account.provision", "description": "OS-user provision (useradd) dispatched to worker", "default_severity": "CRITICAL"},
+    {"action": "server_account.provision", "description": "OS-user provision (useradd) dispatched to worker", "default_severity": "WARNING"},
     {"action": "server_account.update_on_host", "description": "OS-user attribute sync (usermod) dispatched to worker", "default_severity": "INFO"},
     {"action": "server_account.deprovision", "description": "OS-user deprovision (userdel) dispatched to worker", "default_severity": "WARNING"},
     {"action": "ipmi_controller.rotate_dispatch", "description": "IPMI controller password rotation dispatched to worker (currently safety-guarded: worker fails fast until storage round-trip exists)", "default_severity": "CRITICAL"},

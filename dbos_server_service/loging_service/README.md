@@ -95,7 +95,7 @@ Daemon-thread (`src/main.py::_retention_loop`) считает время до с
 
 ## События, которые сервис эмитит сам
 
-Десять self-audit событий: `logging.events_queried`, `logging.rules_read`, `logging.rules_write`, `logging.services_read`, `logging.admin_access`, `logging.retention_write`, `logging.retention_sweep`, `logging_rule.create`, `logging_rule.update`, `logging_rule.delete`. Полный справочник — `AUDIT_EVENTS.md`.
+Одиннадцать self-audit событий: `logging.events_queried`, `logging.rules_read`, `logging.rules_write`, `logging.services_read`, `logging.admin_access`, `logging.retention_read`, `logging.retention_write`, `logging.retention_sweep`, `logging_rule.create`, `logging_rule.update`, `logging_rule.delete`. Полный справочник — `AUDIT_EVENTS.md`.
 
 ## Отказоустойчивость
 
@@ -108,17 +108,31 @@ Daemon-thread (`src/main.py::_retention_loop`) считает время до с
 | ENV | Default | Назначение |
 |---|---|---|
 | `APP_PORT` | `8001` | |
-| `APP_ENV` | `development` | `production` включает доп. guard'ы (https, `verify=true`) |
+| `APP_ENV` | `local` | `production`/`staging` включает доп. guard'ы (https, `verify=true`, SERVICE_API_KEY non-default) |
+| `APP_DEBUG` | `true` | в prod отбивается на старте, если `true` |
+| `APP_LOG_LEVEL` | `INFO` | уровень логгера приложения |
 | `DATABASE_URL` | `postgresql+psycopg://logging_user:...@localhost:5432/logging_db` | |
+| `DB_POOL_SIZE` | `10` | SQLAlchemy pool size |
+| `DB_MAX_OVERFLOW` | `20` | SQLAlchemy pool overflow |
 | `SERVICE_API_KEY` | `change-me-service-key` | shared secret для ingest (legacy, в prod не `change-me`) |
 | `SERVICE_API_KEYS` | `{}` | JSON map per-service ключей; map непустой → mandatory identity + per-service `compare_digest` |
 | `STRICT_SERVICE_IDENTITY` | `false` | unknown `X-Service-Identity` → 401 вместо WARNING |
 | `AUTH_SERVICE_URL` | — | для JWT introspect; в prod https-only |
 | `INTROSPECT_SERVICE_API_KEY` | — | ключ, которым `loging_service` сам ходит в introspect; обязателен в prod при непустом `SERVICE_API_KEYS` |
-| `INTROSPECT_TIMEOUT_SECONDS` | `3.0` | таймаут `AsyncClient.post` к introspect |
+| `INTROSPECT_TIMEOUT_SECONDS` | `3.0` | таймаут `AsyncClient.post` к introspect (read/write бюджет) |
+| `INTROSPECT_CONNECT_TIMEOUT_SECONDS` | `2.0` | отдельный connect-таймаут pooled introspect-клиента |
 | `INTROSPECT_TLS_VERIFY` | `true` | `false` отбивается на старте в prod при https-remote |
-| `MAX_REQUEST_BODY_BYTES` | `65536` | body-size middleware cap |
+| `INTROSPECT_POOL_MAX_CONNECTIONS` | `20` | `httpx.Limits` для pooled introspect-клиента |
+| `INTROSPECT_POOL_MAX_KEEPALIVE` | `10` | `httpx.Limits` keepalive для pooled introspect-клиента |
+| `TOKEN_PROXY_POOL_MAX_CONNECTIONS` | `10` | `httpx.Limits` для `/token` proxy-клиента (Swagger login) |
+| `TOKEN_PROXY_POOL_MAX_KEEPALIVE` | `5` | `httpx.Limits` keepalive для `/token` proxy-клиента |
+| `MAX_REQUEST_BODY_BYTES` | `1048576` | body-size middleware cap (1 MiB) |
 | `INGEST_RATE_LIMIT` | `100/minute` | slowapi default на `POST /events` |
+| `REGISTER_EVENTS_RATE_LIMIT` | `100/minute` | slowapi default на `POST /services/{service}/events` (per-identity) |
+| `RATE_LIMIT_HEADERS_ENABLED` | `false` | включать ли `X-RateLimit-*` response headers |
+| `SECURITY_HSTS_ENABLED` | `false` | `Strict-Transport-Security` header — только за https-фронтом |
+| `AUDIT_DRAIN_TIMEOUT_SECONDS` | `2.0` | бюджет на draining pending self-audit задач при shutdown'е |
+| `RETENTION_LOOP_ENABLED` | `true` | запускать ли фоновый retention-cleanup daemon |
 
 ## Запуск
 

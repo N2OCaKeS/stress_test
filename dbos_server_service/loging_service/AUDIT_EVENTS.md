@@ -72,7 +72,7 @@ Severity вычисляется автоматически в `src/services/rule
 
 ## События, которые `loging_service` эмитит сам
 
-Десять собственных событий. Все они идут через `record_admin_action()` (для admin CRUD) или `_emit_audit()` (для HTTP middleware), **минуя rule engine** — SUPPRESS-правило не подавит self-audit.
+Одиннадцать собственных событий. Все они идут через `record_admin_action()` (для admin CRUD) или `_emit_audit()` (для HTTP middleware), **минуя rule engine** — SUPPRESS-правило не подавит self-audit.
 
 ### HTTP middleware (`logging.*`)
 
@@ -80,11 +80,12 @@ Severity вычисляется автоматически в `src/services/rule
 
 | action | status | severity | Когда возникает | target_type |
 |---|---|---|---|---|
-| `logging.events_queried` | `success` | INFO | `GET /api/logging/v1/events` (любой фильтр) | `audit_event` |
+| `logging.events_queried` | `success` | INFO | `GET /api/logging/v1/events` (любой фильтр); путь `/services/{svc}/events` тоже сюда — `_action_for_path` проверяет `/events` раньше `/services` | `audit_event` |
 | `logging.rules_read` | `success` | INFO | `GET /api/logging/v1/rules` или `GET /rules/{id}` | `audit_rule` |
 | `logging.rules_write` | `success` | WARNING | `POST/PATCH/DELETE /api/logging/v1/rules*` (поверх `logging_rule.*`) | `audit_rule` |
-| `logging.services_read` | `success` | INFO | `GET /api/logging/v1/services` или `GET /services/{svc}/events` | `service_event` |
+| `logging.services_read` | `success` | INFO | `GET /api/logging/v1/services` (список зарегистрированных сервисов) | `service_event` |
 | `logging.admin_access` | `success` | INFO | Любой admin-endpoint без явного маппинга в `_action_for_path` | — |
+| `logging.retention_read` | `success` | INFO | `GET /api/logging/v1/retention` — чтение активных политик хранения | `retention_policy` |
 | `logging.retention_write` | `success` | WARNING | `PUT/DELETE /api/logging/v1/retention` — изменение или отключение политики хранения | `retention_policy` |
 | `logging.retention_sweep` | `success` | INFO | Фоновый retention-цикл в 00:00 MSK после успешного `apply_active` | `audit_event` |
 
@@ -115,12 +116,14 @@ Details:
 
 ### Retention CRUD и sweep (`logging.retention_*`)
 
-Эмитятся в `src/api/v1/endpoints/retention.py::_audit` (PUT/DELETE) и
+Эмитятся в `src/api/v1/endpoints/retention.py::_audit` (PUT/DELETE),
+HTTP middleware `audit_access` для `GET /retention` (через `_action_for_path` → `logging.retention_read`) и
 в `src/main.py::_retention_loop` (фоновый sweep). Идут через
-`record_admin_action()`, минуя rule engine.
+`record_admin_action()` или `_emit_audit()`, минуя rule engine.
 
 Details:
 
+- `logging.retention_read` (GET): пишется middleware'ом — `{method, path, status_code, ip}` (см. http-access ниже).
 - `logging.retention_write` (PUT/DELETE): `{old: <snapshot|null>, new: <snapshot|null>}`,
   где snapshot — `{id, retain_days, description, is_active}` или `null`.
 - `logging.retention_sweep`: `{deleted_count, run_date_msk, policies: [{id, retain_days, severity, service}, ...], min_retain_days, max_retain_days}`. Под filter-режимом активных политик может быть несколько с разными `retain_days` — массив `policies` несёт полный snapshot, `min_retain_days`/`max_retain_days` дают границы. Поля `min/max` опускаются, если на момент запуска sweep'а активных политик нет.

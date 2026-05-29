@@ -167,6 +167,22 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
         # `None` означает «не OAuth-токен» — фильтрация не нужна; пустой
         # список = «вообще ничего».
         oauth_scopes = payload.get("oauth_scopes")
+        # Дополнительно пересекаем с live `client.allowed_scopes`: если
+        # администратор сузил список scope'ов клиента после выпуска кода,
+        # старые JWT не должны видеть отозванные сервисы. Клиента ищем по
+        # `oauth_client_id` из payload; если клиент уже снесён / деактивирован
+        # — обнуляем scopes (токен фактически мёртв).
+        if oauth_scopes is not None:
+            oauth_cid = payload.get("oauth_client_id")
+            if oauth_cid:
+                _client_repo = OAuthClientRepository(db)
+                _client = await _client_repo.get_by_client_id(oauth_cid)
+                if _client is None or not _client.is_active:
+                    oauth_scopes = []
+                else:
+                    _client_allowed = set(_client.allowed_scopes or [])
+                    oauth_scopes = [s for s in oauth_scopes if s in _client_allowed]
+
         is_account_admin = user.platform_role == PlatformRole.ACCOUNT_ADMIN
         if is_account_admin:
             allowed_services: list[str] = []

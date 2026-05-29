@@ -125,7 +125,7 @@ async def list_members(
     """Юзеры в группе.
 
     Доступ:
-        account_admin / department_admin своего отдела / любой member группы.
+        account_admin.
     """
     return await group_service.list_members(db, identity, group_id,
                                             request_id=getattr(request.state, "request_id", None))
@@ -182,7 +182,7 @@ async def list_bot_members(
     """Боты, состоящие в группе.
 
     Доступ:
-        account_admin / department_admin своего отдела.
+        account_admin.
     """
     return await group_service.list_bot_members(db, identity, group_id,
                                                 request_id=getattr(request.state, "request_id", None))
@@ -239,7 +239,7 @@ async def list_group_services(
     """Service-access группы.
 
     Доступ:
-        account_admin / department_admin своего отдела / member группы.
+        account_admin.
     """
     return await group_service.list_group_services(db, identity, group_id,
                                                    request_id=getattr(request.state, "request_id", None))
@@ -299,7 +299,7 @@ async def list_group_roles(
     """Service-роли группы.
 
     Доступ:
-        account_admin / department_admin своего отдела / member группы.
+        account_admin.
     """
     return await group_service.list_group_roles(db, identity, group_id,
                                                 request_id=getattr(request.state, "request_id", None))

@@ -162,6 +162,12 @@ async def collect_user_permissions(
     `groups`: `{group_name: ["<service>.<role>", ...]}` — какие группы юзера
     через какие роли расширяют его права. Группы без service-роли (только
     access) сюда не попадают. Поле информационное, для `/me` и introspect.
+
+    Забор сервисов для юзера — UNION `dept_services ∪ group_services`: группа
+    расширяет список сервисов поверх департамента. Контраст с
+    `collect_bot_permissions` — у бота забор INTERSECT'ит `bot.allowed_services`
+    с `dept_services`, группа боту даёт только РОЛИ для уже разрешённых
+    сервисов, не расширяет видимость.
     """
     role_repo = RoleRepository(db)
     dept_repo = DepartmentRepository(db)
@@ -319,7 +325,7 @@ async def login(
         # Жжём Argon2id на dummy-хэше — timing симметричен случаю «юзер есть,
         # пароль неверный». Иначе по latency можно было перебирать username'ы.
         verify_password(password, _dummy_password_hash())
-        audit_service.emit("user.login", None, status="failure", allowed=False, details={"username": username, "reason": "user_not_found"}, request_id=request_id)
+        audit_service.emit("user.login", None, status="failure", allowed=False, username=username, details={"reason": "user_not_found"}, request_id=request_id)
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid username or password")
 
     # ── Just-in-time auto-unban для истёкшего temporary ban'а ─────────────────
@@ -339,11 +345,11 @@ async def login(
             if reloaded is not None:
                 user = reloaded
         else:
-            audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "banned", "username": user.username}, request_id=request_id)
+            audit_service.emit("user.login", user.id, status="failure", allowed=False, username=user.username, details={"reason": "banned"}, request_id=request_id)
             raise AuthorizationError(error_code="USER_BANNED", message="User is banned")
 
     if user.status == UserStatus.BLOCKED:
-        audit_service.emit("user.login", user.id, status="failure", allowed=False, details={"reason": "blocked", "username": user.username}, request_id=request_id)
+        audit_service.emit("user.login", user.id, status="failure", allowed=False, username=user.username, details={"reason": "blocked"}, request_id=request_id)
         raise AuthorizationError(error_code="USER_BLOCKED", message="User is blocked")
 
     # Общий lockout + verify_password pipeline. Кидает AuthorizationError

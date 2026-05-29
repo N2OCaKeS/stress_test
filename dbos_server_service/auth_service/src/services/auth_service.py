@@ -363,9 +363,9 @@ async def login(
         if exc.error_code == "ACCOUNT_TEMPORARILY_LOCKED":
             audit_service.emit(
                 "user.login", user.id, status="failure", allowed=False,
+                username=user.username,
                 details={
                     "reason": "account_locked",
-                    "username": user.username,
                     "retry_after_seconds": exc.details.get("retry_after_seconds"),
                 },
                 request_id=request_id,
@@ -374,9 +374,9 @@ async def login(
     except AuthenticationError:
         audit_service.emit(
             "user.login", user.id, status="failure", allowed=False,
+            username=user.username,
             details={
                 "reason": "invalid_password",
-                "username": user.username,
                 "attempts": user.failed_login_attempts,
                 "max_attempts": get_settings().max_failed_login_attempts,
             },
@@ -408,11 +408,12 @@ async def login(
     audit_context.update_context(
         actor_id=user.id, username=user.username, department_id=user.department_id,
     )
+    # `username` берётся из ctx (`update_context` выше) — это поле верхнего
+    # уровня payload'а, не дублируем его в details. `department_id` тоже
+    # подхватывается из контекста emit'ом.
     audit_service.emit(
         "user.login", user.id, status="success", request_id=request_id,
         details={
-            "username": username,
-            "department_id": user.department_id,
             "platform_role": user.platform_role,
             "allowed_services_count": len(allowed_services),
             # Полный `{service: [roles]}` уезжал в loging plaintext — это

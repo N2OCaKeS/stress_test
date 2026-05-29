@@ -149,7 +149,10 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
                         else "blocked" if user.status == UserStatus.BLOCKED
                         else "inactive"
                     ),
-                    "username": payload.get("username"),
+                    # `payload.get("username")` всегда был None — username не
+                    # лежит в JWT (только `sub + actor_type`). Берём из БД,
+                    # если юзер вообще нашёлся; для user_not_found поля нет.
+                    "username": user.username if user is not None else None,
                     "exp": payload.get("exp"),
                 },
                 request_id=request_id,

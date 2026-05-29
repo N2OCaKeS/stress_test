@@ -231,7 +231,17 @@ async def delete_config(
 # ── Token issuance ────────────────────────────────────────────────────────────
 
 def _parse_scope(scope_str: str) -> list[dict]:
-    """Распарсить Docker scope-строку `repository:foo/bar:pull,push` в структурный формат."""
+    """Распарсить Docker scope-строку `repository:foo/bar:pull,push` в структурный формат.
+
+    Docker token spec жёстко требует три сегмента (`type:name:actions`).
+    Части с менее чем тремя сегментами молча игнорируются — это
+    типовой `scope=` без actions от клиента, не делающего push/pull
+    (например, `repository:foo/bar`). Возвращать 400 на «короткий»
+    scope нельзя: distribution-2.x шлёт пустой scope при `docker login`
+    без последующего pull/push, и ругаться на легитимный поток смысла нет.
+    Issuer всё равно вернёт пустой `access`, чтобы registry на /v2/_catalog
+    отбил по правам.
+    """
     entries = []
     for part in scope_str.split():
         segments = part.split(":")
@@ -320,11 +330,14 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
     if user is None:
         # Не раскрываем существование юзера — та же ошибка, что и при wrong-pw.
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid credentials")
-    if user.status != "active":
+    if not user.is_active:
         # Отбиваем BANNED / BLOCKED / inactive ДО Argon2id verify — экономим
         # CPU и держим ту же generic-ошибку, чтобы не палить состояние аккаунта
         # через Docker auth (зеркало `/login`, где USER_BANNED / USER_BLOCKED
         # уходит только в user-facing JSON-login, не в Docker Basic-auth канал).
+        # `is_active` — boolean-колонка, отражающая `status == ACTIVE`; через
+        # неё новые статусы (`pending`/`archived`) сразу попадут в not-active
+        # ветку без правки строкового сравнения.
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Account is not active")
 
     # ── Brute-force lockout pipeline ──────────────────────────────────────────

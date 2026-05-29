@@ -1,7 +1,6 @@
 /*
  * load_generator2.c — Многопоточный нагрузчик HTTP с МРД-меткой
  *
-
  * Сборка:
  *   gcc load_generator2.c -I/usr/include/parsec -lpdp -lgssapi_krb5 -lpthread \
  *       -o load_generator2
@@ -11,7 +10,7 @@
  *   KRB5CCNAME=$(klist -l 2>/dev/null | awk 'NR==3{print $NF}') \
  *   sudo -E execaps -c 0x804 -- ./load_generator2 \
  *       -h 10.0.2.20 -n web1.balance.rbt -l 2 -u /lev2.html \
- *       -w 4 -r 1000
+ *       -w 4 -r 1000 -o results.json
  *
  *   Ключевые флаги:
  *     sudo -E  — передать переменные окружения (включая KRB5CCNAME) в sudo
@@ -25,6 +24,7 @@
  *   -l <level>    МРД-уровень 0..3 (по умолчанию 0)
  *   -w <workers>  Число параллельных потоков (по умолчанию 4)
  *   -r <count>    Общее число запросов (по умолчанию 100)
+ *   -o <file>     Путь к JSON-файлу с результатами (по умолчанию не пишется)
  */
 
 #define _GNU_SOURCE
@@ -238,7 +238,8 @@ typedef struct {
     char url[512];
     int  level;
     long total_requests;
-    int  delay_ms;   /* задержка между запросами в каждом потоке, мс (0 = нет) */
+    int  delay_ms;
+    char json_output[512];
 } Config;
 
 static Config g_cfg;
@@ -397,6 +398,73 @@ static void *worker_thread(void *arg)
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
+ * Запись результатов в JSON
+ * ───────────────────────────────────────────────────────────────────────── */
+static void write_json_results(
+    const char *path,
+    long sent, long ok, long forbidden, long unauthorized, long other,
+    long err_gss, long err_label, long err_conn, long err_io,
+    double wall_sec, double rps, double avg_ms,
+    int workers)
+{
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        fprintf(stderr, "[json] Не удалось открыть файл для записи: %s (%s)\n",
+                path, strerror(errno));
+        return;
+    }
+
+    time_t now = time(NULL);
+    char ts[32];
+    strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", localtime(&now));
+
+    long errors = err_gss + err_label + err_conn + err_io;
+
+    fprintf(f,
+        "{\n"
+        "  \"timestamp\": \"%s\",\n"
+        "  \"config\": {\n"
+        "    \"ip\": \"%s\",\n"
+        "    \"hostname\": \"%s\",\n"
+        "    \"port\": %d,\n"
+        "    \"url\": \"%s\",\n"
+        "    \"mrd_level\": %d,\n"
+        "    \"workers\": %d,\n"
+        "    \"total_requests\": %ld,\n"
+        "    \"delay_ms\": %d\n"
+        "  },\n"
+        "  \"results\": {\n"
+        "    \"sent\": %ld,\n"
+        "    \"http_200\": %ld,\n"
+        "    \"http_401\": %ld,\n"
+        "    \"http_403\": %ld,\n"
+        "    \"http_other\": %ld,\n"
+        "    \"errors\": {\n"
+        "      \"total\": %ld,\n"
+        "      \"gssapi\": %ld,\n"
+        "      \"label_socket\": %ld,\n"
+        "      \"connect\": %ld,\n"
+        "      \"send_recv\": %ld\n"
+        "    }\n"
+        "  },\n"
+        "  \"performance\": {\n"
+        "    \"wall_sec\": %.3f,\n"
+        "    \"rps\": %.2f,\n"
+        "    \"avg_latency_ms\": %.2f\n"
+        "  }\n"
+        "}\n",
+        ts,
+        g_cfg.ip, g_cfg.hostname, g_cfg.port, g_cfg.url,
+        g_cfg.level, workers, g_cfg.total_requests, g_cfg.delay_ms,
+        sent, ok, unauthorized, forbidden, other,
+        errors, err_gss, err_label, err_conn, err_io,
+        wall_sec, rps, avg_ms);
+
+    fclose(f);
+    printf("[json] Результаты записаны в: %s\n", path);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
  * MAIN
  * ───────────────────────────────────────────────────────────────────────── */
 int main(int argc, char *argv[])
@@ -410,28 +478,30 @@ int main(int argc, char *argv[])
     int workers = 4;
 
     int opt;
-    while ((opt = getopt(argc, argv, "h:n:p:u:l:w:r:d:")) != -1) {
+    while ((opt = getopt(argc, argv, "h:n:p:u:l:w:r:d:o:")) != -1) {
         switch (opt) {
-        case 'h': strncpy(g_cfg.ip,       optarg, sizeof(g_cfg.ip)-1);       break;
-        case 'n': strncpy(g_cfg.hostname, optarg, sizeof(g_cfg.hostname)-1); break;
-        case 'p': g_cfg.port           = atoi(optarg);                        break;
-        case 'u': strncpy(g_cfg.url,     optarg, sizeof(g_cfg.url)-1);       break;
-        case 'l': g_cfg.level          = atoi(optarg);                        break;
-        case 'w': workers              = atoi(optarg);                        break;
-        case 'r': g_cfg.total_requests = atol(optarg);                        break;
-        case 'd': g_cfg.delay_ms       = atoi(optarg);                        break;
+        case 'h': strncpy(g_cfg.ip,          optarg, sizeof(g_cfg.ip)-1);          break;
+        case 'n': strncpy(g_cfg.hostname,    optarg, sizeof(g_cfg.hostname)-1);    break;
+        case 'p': g_cfg.port              = atoi(optarg);                           break;
+        case 'u': strncpy(g_cfg.url,         optarg, sizeof(g_cfg.url)-1);         break;
+        case 'l': g_cfg.level             = atoi(optarg);                           break;
+        case 'w': workers                 = atoi(optarg);                           break;
+        case 'r': g_cfg.total_requests    = atol(optarg);                           break;
+        case 'd': g_cfg.delay_ms          = atoi(optarg);                           break;
+        case 'o': strncpy(g_cfg.json_output, optarg, sizeof(g_cfg.json_output)-1); break;
         default:
             fprintf(stderr,
                 "Использование: %s -h <ip> -n <hostname> [-p <port>] [-u <url>]\n"
                 "               [-l <level 0..3>] [-w <workers>] [-r <requests>]\n"
-                "               [-d <delay_ms>]\n\n"
-                "  -d <ms>  задержка между запросами в каждом потоке (диагностика скорости)\n\n"
+                "               [-d <delay_ms>] [-o <json_file>]\n\n"
+                "  -d <ms>    задержка между запросами в каждом потоке (диагностика скорости)\n"
+                "  -o <file>  записать итоговую статистику в JSON-файл\n\n"
                 "Пример:\n"
                 "  kinit user@BALANCE.RBT\n"
                 "  KRB5CCNAME=$(klist -l | awk 'NR==3{print $NF}') \\\n"
                 "  sudo -E execaps -c 0x804 -- %s \\\n"
                 "      -h 10.0.2.20 -n web1.balance.rbt -l 2 -u /lev2.html \\\n"
-                "      -w 4 -r 1000 -d 1000\n",
+                "      -w 4 -r 1000 -o results.json\n",
                 argv[0], argv[0]);
             return 1;
         }
@@ -464,6 +534,8 @@ int main(int argc, char *argv[])
     printf("[conf] Запросов:    %ld\n",   g_cfg.total_requests);
     if (g_cfg.delay_ms > 0)
         printf("[conf] Задержка:    %d мс/запрос\n", g_cfg.delay_ms);
+    if (g_cfg.json_output[0])
+        printf("[conf] JSON-вывод:  %s\n", g_cfg.json_output);
     printf("──────────────────────────────────────────────\n");
 
     /* Диагностика: ccache под sudo */
@@ -608,6 +680,12 @@ int main(int argc, char *argv[])
     printf("[stat] Скорость:          %.1f req/s\n", rps);
     printf("[stat] Средняя latency:   %.1f мс\n",   avg_ms);
     printf("══════════════════════════════════════════════\n");
+
+    if (g_cfg.json_output[0])
+        write_json_results(g_cfg.json_output,
+            sent, ok, forbidden, unauthorized, other,
+            err_gss, err_label, err_conn, err_io,
+            wall_sec, rps, avg_ms, workers);
 
     pdp_release();
     return 0;

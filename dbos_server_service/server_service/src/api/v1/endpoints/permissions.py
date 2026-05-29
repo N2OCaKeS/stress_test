@@ -19,6 +19,7 @@ from src.schemas.permission import (
     CatalogEntity,
     PermissionDescribedResponse,
     PermissionGrant,
+    PermissionListResponse,
     PermissionResponse,
 )
 from src.services import permission_service
@@ -28,15 +29,16 @@ router = APIRouter(prefix="/permissions")
 
 @router.get(
     "",
-    response_model=list[PermissionResponse] | list[PermissionDescribedResponse],
+    response_model=PermissionListResponse,
     summary="Список записей entity_permissions",
     description=(
-        "Возвращает матрицу grants. Используется UI-админкой для отрисовки "
-        "таблицы прав. Опциональный `role=<role>` сужает выдачу до грантов "
-        "одной роли; `describe=true` обогащает каждую строку описаниями "
-        "сущности/действия и флагом `sensitive` из каталога. Без параметров "
-        "формат прежний. Доступ: `(permission, *, view)` (department_admin "
-        "своего отдела или сервисная роль `admin` своего отдела)."
+        "Возвращает матрицу grants в envelope'е `{items, total, described}`. "
+        "Используется UI-админкой для отрисовки таблицы прав. Опциональный "
+        "`role=<role>` сужает выдачу до грантов одной роли; `describe=true` "
+        "обогащает каждую строку описаниями сущности/действия и флагом "
+        "`sensitive` из каталога (в этом случае `described=true` в ответе). "
+        "Доступ: `(permission, *, view)` (department_admin своего отдела или "
+        "сервисная роль `admin` своего отдела)."
     ),
     responses={
         403: {"description": "Нет роли с `view` на permission либо platform-админ заблокирован middleware'ом."},
@@ -54,10 +56,11 @@ async def list_permissions(
         description="Обогатить каждую строку описаниями из каталога.",
     ),
     db: AsyncSession = Depends(get_db),
-) -> list[PermissionResponse] | list[PermissionDescribedResponse]:
+) -> PermissionListResponse:
     """
     Что делает: SELECT по таблице `entity_permissions` (опц. WHERE role=:role),
-    упорядоченный по `(entity_type, role, action, system_first)`.
+    упорядоченный по `(entity_type, role, action, system_first)`. Ответ —
+    envelope `{items, total, described}`.
 
     Доступ: `(permission, *, view)`. Platform-админы отбиваются
     middleware'ом до endpoint'а (403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED).
@@ -67,13 +70,15 @@ async def list_permissions(
     """
     rows = await permission_service.list_all(db, identity, role=role)
     if describe:
-        return [
+        items: list[PermissionResponse | PermissionDescribedResponse] = [
             PermissionDescribedResponse.model_validate(
                 {**PermissionResponse.model_validate(r).model_dump(), **permission_service.describe_row(r)}
             )
             for r in rows
         ]
-    return [PermissionResponse.model_validate(r) for r in rows]
+    else:
+        items = [PermissionResponse.model_validate(r) for r in rows]
+    return PermissionListResponse(items=items, total=len(items), described=describe)
 
 
 @router.get(
@@ -109,12 +114,14 @@ async def permissions_catalog(
 
 @router.get(
     "/{entity_type}",
-    response_model=list[PermissionResponse],
+    response_model=PermissionListResponse,
     summary="Grants для одного entity_type",
     description=(
         "То же, что GET /permissions, но отфильтровано по `entity_type` "
-        "(server/server_account/ipmi_controller/...). Неизвестный entity_type "
-        "→ 422 UNKNOWN_ENTITY_TYPE."
+        "(server/server_account/ipmi_controller/...). Ответ — тот же envelope "
+        "`{items, total, described}`; describe-обогащения здесь нет, поэтому "
+        "`described` всегда `false`. Неизвестный entity_type → 422 "
+        "UNKNOWN_ENTITY_TYPE."
     ),
     responses={
         403: {"description": "Нет роли с `view` на permission."},
@@ -125,9 +132,10 @@ async def list_permissions_for_entity(
     entity_type: str,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
-) -> list[PermissionResponse]:
+) -> PermissionListResponse:
     """
-    Что делает: SELECT с WHERE `entity_type=:type`.
+    Что делает: SELECT с WHERE `entity_type=:type`. Ответ — envelope
+    `{items, total, described=false}`.
 
     Доступ: `(permission, *, view)`. Platform-админы блокируются middleware'ом.
 
@@ -135,7 +143,10 @@ async def list_permissions_for_entity(
     422 UNKNOWN_ENTITY_TYPE.
     """
     rows = await permission_service.list_for_entity(db, identity, entity_type)
-    return [PermissionResponse.model_validate(r) for r in rows]
+    items: list[PermissionResponse | PermissionDescribedResponse] = [
+        PermissionResponse.model_validate(r) for r in rows
+    ]
+    return PermissionListResponse(items=items, total=len(items), described=False)
 
 
 @router.put(

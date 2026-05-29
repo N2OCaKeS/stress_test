@@ -82,3 +82,21 @@ class PermissionDescribedResponse(PermissionResponse):
     entity_description: str = Field(description="Человеческое описание сущности грантa.")
     action_description: str = Field(description="Человеческое описание действия грантa.")
     sensitive: bool = Field(description="Чувствительное ли действие грантa.")
+
+
+class PermissionListResponse(BaseModel):
+    """Envelope для list-эндпоинтов матрицы прав.
+
+    Строки могут быть обычными `PermissionResponse` либо обогащёнными
+    `PermissionDescribedResponse` (флаг `described`). Поле `total` — длина
+    `items`; зарезервировано под будущий offset/limit (сейчас фильтрация
+    идёт по `role`/`entity_type`, пагинация на уровне репо не вкручена).
+    """
+
+    items: list[PermissionResponse | PermissionDescribedResponse] = Field(
+        description="Список grants. Тип строк определяется флагом `described`.",
+    )
+    total: int = Field(description="Количество записей в `items` (под будущий offset/limit).")
+    described: bool = Field(
+        description="True — строки обогащены описаниями (`describe=true`); False — обычная `PermissionResponse`.",
+    )

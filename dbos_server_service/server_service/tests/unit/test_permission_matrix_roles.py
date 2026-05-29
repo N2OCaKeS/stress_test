@@ -42,14 +42,14 @@ class TestWorkerBotGrantCount:
     ):
         resp = await client.get(f"{BASE}?role=worker_bot", headers=_hdr(admin_token))
         assert resp.status_code == 200
-        rows = resp.json()
+        rows = resp.json()["items"]
         assert len(rows) == 8, f"expected 8 worker_bot grants, got {len(rows)}: {rows}"
 
     async def test_worker_bot_grants_match_expected_set(
         self, client, admin_token,
     ):
         resp = await client.get(f"{BASE}?role=worker_bot", headers=_hdr(admin_token))
-        rows = resp.json()
+        rows = resp.json()["items"]
         actual = {(r["entity_type"], r["action"]) for r in rows}
         assert actual == self.EXPECTED_WORKER_BOT_GRANTS, (
             f"extra={actual - self.EXPECTED_WORKER_BOT_GRANTS}, "
@@ -61,7 +61,7 @@ class TestWorkerBotGrantCount:
     ):
         """worker_bot не должен видеть список серверов — только колбэки."""
         resp = await client.get(f"{BASE}?role=worker_bot", headers=_hdr(admin_token))
-        rows = resp.json()
+        rows = resp.json()["items"]
         server_view = [r for r in rows if r["entity_type"] == "server" and r["action"] == "view"]
         assert server_view == [], "worker_bot must not have server.view"
 
@@ -69,7 +69,7 @@ class TestWorkerBotGrantCount:
         self, client, admin_token,
     ):
         resp = await client.get(f"{BASE}?role=worker_bot", headers=_hdr(admin_token))
-        rows = resp.json()
+        rows = resp.json()["items"]
         server_update = [r for r in rows if r["entity_type"] == "server" and r["action"] == "update"]
         assert server_update == [], "worker_bot must not have server.update"
 
@@ -77,7 +77,7 @@ class TestWorkerBotGrantCount:
         self, client, admin_token,
     ):
         resp = await client.get(f"{BASE}?role=worker_bot", headers=_hdr(admin_token))
-        rows = resp.json()
+        rows = resp.json()["items"]
         perm_grant = [r for r in rows if r["action"] == "permission_grant"]
         assert perm_grant == [], "worker_bot must not have permission_grant"
 
@@ -96,7 +96,7 @@ class TestSensitiveActionsNotDefaultGranted:
         resp = await client.get(
             f"{BASE}?role=operator", headers=_hdr(admin_token),
         )
-        rows = resp.json()
+        rows = resp.json()["items"]
         found = [r for r in rows
                  if r["entity_type"] == entity and r["action"] == action]
         assert found == [], f"operator must not have default grant {entity}.{action}"
@@ -112,7 +112,7 @@ class TestSensitiveActionsNotDefaultGranted:
         resp = await client.get(
             f"{BASE}?role=reader", headers=_hdr(admin_token),
         )
-        rows = resp.json()
+        rows = resp.json()["items"]
         found = [r for r in rows
                  if r["entity_type"] == entity and r["action"] == action]
         assert found == [], f"reader must not have default grant {entity}.{action}"
@@ -122,14 +122,17 @@ class TestGuestHasZeroGrants:
     async def test_guest_zero_grants_from_seed(self, client, admin_token):
         resp = await client.get(f"{BASE}?role=guest", headers=_hdr(admin_token))
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
+        assert body["described"] is False
 
 
 class TestReaderOnlyViewGrants:
     async def test_reader_has_only_view_actions(self, client, admin_token):
         resp = await client.get(f"{BASE}?role=reader", headers=_hdr(admin_token))
         assert resp.status_code == 200
-        rows = resp.json()
+        rows = resp.json()["items"]
         assert rows, "reader should have at least one grant"
         non_view = [r for r in rows if r["action"] != "view"]
         assert non_view == [], f"reader has non-view grants: {non_view}"

@@ -118,9 +118,11 @@ class TestPermissionsList:
         )
         assert r.status_code == 200, r.text
         body = r.json()
-        assert isinstance(body, list)
+        assert body["described"] is False
+        items = body["items"]
+        assert body["total"] == len(items)
         # seed-grant'ы для admin/reader/operator должны там быть.
-        roles = {row["role"] for row in body}
+        roles = {row["role"] for row in items}
         assert {"admin", "reader", "operator"} <= roles
 
     def test_list_filter_by_role(self, cluster_c, server_client: httpx.Client):
@@ -130,9 +132,9 @@ class TestPermissionsList:
             headers=auth_header(cluster_c.admin_token),
         )
         assert r.status_code == 200, r.text
-        body = r.json()
+        items = r.json()["items"]
         # Только reader-строки.
-        for row in body:
+        for row in items:
             assert row["role"] == "reader"
 
     def test_describe_flag(self, cluster_c, server_client: httpx.Client):
@@ -143,9 +145,11 @@ class TestPermissionsList:
         )
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body, "expected at least one reader row"
+        assert body["described"] is True
+        items = body["items"]
+        assert items, "expected at least one reader row"
         # describe=true → каждая строка содержит entity_description/action_description/sensitive.
-        for row in body:
+        for row in items:
             assert "entity_description" in row
             assert "action_description" in row
             assert "sensitive" in row
@@ -204,7 +208,9 @@ class TestPermissionsList:
             headers=auth_header(cluster_c.admin_token),
         )
         assert r.status_code == 200, r.text
-        assert r.json() == [], f"cross-dept custom role leaked: {r.json()}"
+        body = r.json()
+        assert body["items"] == [], f"cross-dept custom role leaked: {body}"
+        assert body["total"] == 0
 
 
 # ── PUT /permissions/{entity}/{role}/{action} ────────────────────────────────

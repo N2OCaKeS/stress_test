@@ -220,7 +220,7 @@ class TestWorkerBotGrantsLandedInDb:
         """
         resp = await client.get(f"{BASE}/permissions", headers=_hdr(admin_token))
         assert resp.status_code == 200, resp.text
-        rows = resp.json()
+        rows = resp.json()["items"]
         wb = [r for r in rows if r["role"] == "worker_bot"]
         pairs = {(r["entity_type"], r["action"]) for r in wb}
         assert pairs == {
@@ -243,7 +243,7 @@ class TestWorkerBotGrantsLandedInDb:
         """
         resp = await client.get(f"{BASE}/permissions", headers=_hdr(admin_token))
         assert resp.status_code == 200
-        rows = resp.json()
+        rows = resp.json()["items"]
         wb_rows = [r for r in rows if r["role"] == "worker_bot"]
         assert len(wb_rows) == 8, (
             f"expected 8 worker_bot grants (4 secret-access + 2 inventory_submit "

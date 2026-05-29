@@ -31,7 +31,10 @@ class TestListAll:
         """
         resp = await client.get(BASE, headers=_hdr(admin_token))
         assert resp.status_code == 200
-        rows = resp.json()
+        body = resp.json()
+        assert body["described"] is False
+        rows = body["items"]
+        assert body["total"] == len(rows)
         # Baseline (831ba55543e9) + позднее: drop boot_order/pxe/reinstall
         # (b8d4e3f9a712) убирает 5 admin server-action'ов и 1 worker_bot row;
         # reveal_* гранты сняты (c3f9b1a8d420), пароль теперь раскрывается
@@ -78,7 +81,10 @@ class TestListForEntity:
     async def test_filters_by_entity(self, client, admin_token):
         resp = await client.get(f"{BASE}/server", headers=_hdr(admin_token))
         assert resp.status_code == 200
-        rows = resp.json()
+        body = resp.json()
+        assert body["described"] is False
+        rows = body["items"]
+        assert body["total"] == len(rows)
         assert all(r["entity_type"] == "server" for r in rows)
         # admin для server: baseline 17 actions, потом split добавил
         # reinstall_status_submit (18), затем b8d4e3f9a712 удалил 5 (boot_order_view,
@@ -100,7 +106,10 @@ class TestListForEntity:
         await db.commit()
         resp = await client.get(f"{BASE}/os_version", headers=_hdr(admin_token))
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
+        assert body["described"] is False
 
 
 # ── PUT /{entity}/{role}/{action} ────────────────────────────────────────────
@@ -290,20 +299,28 @@ class TestMatrixByRole:
     async def test_role_filter_returns_only_that_role(self, client, admin_token):
         resp = await client.get(f"{BASE}?role=reader", headers=_hdr(admin_token))
         assert resp.status_code == 200
-        rows = resp.json()
+        body = resp.json()
+        rows = body["items"]
+        assert body["described"] is False
+        assert body["total"] == len(rows)
         assert rows  # reader has seeded grants
         assert all(r["role"] == "reader" for r in rows)
 
     async def test_role_filter_unknown_role_empty(self, client, admin_token):
         resp = await client.get(f"{BASE}?role=no_such_role", headers=_hdr(admin_token))
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
+        assert body["described"] is False
 
     async def test_no_params_keeps_legacy_shape(self, client, admin_token):
         """Без describe строки не содержат полей-обогащений."""
         resp = await client.get(BASE, headers=_hdr(admin_token))
         assert resp.status_code == 200
-        row = resp.json()[0]
+        body = resp.json()
+        assert body["described"] is False
+        row = body["items"][0]
         assert "entity_description" not in row
         assert "action_description" not in row
         assert "sensitive" not in row
@@ -311,7 +328,10 @@ class TestMatrixByRole:
     async def test_describe_adds_descriptions(self, client, admin_token):
         resp = await client.get(f"{BASE}?describe=true", headers=_hdr(admin_token))
         assert resp.status_code == 200
-        rows = resp.json()
+        body = resp.json()
+        assert body["described"] is True
+        rows = body["items"]
+        assert body["total"] == len(rows)
         for r in rows:
             assert "entity_description" in r
             assert "action_description" in r
@@ -322,7 +342,9 @@ class TestMatrixByRole:
         resp = await client.get(
             f"{BASE}?role=worker_bot&describe=true", headers=_hdr(admin_token)
         )
-        rows = resp.json()
+        body = resp.json()
+        assert body["described"] is True
+        rows = body["items"]
         vp = [r for r in rows if r["action"] == "view_password"]
         assert vp and all(r["sensitive"] is True for r in vp)
 
@@ -331,7 +353,9 @@ class TestMatrixByRole:
             f"{BASE}?role=reader&describe=true", headers=_hdr(admin_token)
         )
         assert resp.status_code == 200
-        rows = resp.json()
+        body = resp.json()
+        assert body["described"] is True
+        rows = body["items"]
         assert all(r["role"] == "reader" for r in rows)
         assert all("action_description" in r for r in rows)
 

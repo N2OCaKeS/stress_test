@@ -265,6 +265,34 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── BMC circuit breaker ──────────────────────────────────────────────
+    # Per-host shared breaker (Redis-backed; см. services/bmc_circuit_breaker.py).
+    # Многореплика worker'а: каждая реплика видит общий счётчик failure'ов и
+    # общий open_until. Без shared state одна реплика отбивала бы запросы,
+    # а вторая продолжала бы насиловать контроллер.
+    bmc_breaker_failure_threshold: int = Field(
+        default=5, ge=1,
+        description=(
+            "Сколько failure'ов на один host в окне window_seconds должно "
+            "случиться, чтобы breaker перешёл из closed в open. По умолчанию 5."
+        ),
+    )
+    bmc_breaker_window_seconds: int = Field(
+        default=60, ge=1,
+        description=(
+            "Размер rolling-окна для счётчика failure'ов (TTL ключа "
+            "cb:bmc:<host>:failures). 60s покрывает типичную серию retry'ев "
+            "одной задачи."
+        ),
+    )
+    bmc_breaker_cooldown_seconds: int = Field(
+        default=30, ge=1,
+        description=(
+            "На сколько секунд open breaker отбивает запросы до перехода в "
+            "half-open. После cooldown первый запрос проходит как пробный."
+        ),
+    )
+
     # ── Management user / bootstrap (prepare) ────────────────────────────
     # Бутстрап управления (#14): задача `server.prepare` заходит на сервер
     # под одноразовыми bootstrap-кредами (password-auth), заводит системного

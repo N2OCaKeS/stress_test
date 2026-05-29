@@ -29,12 +29,14 @@ from src.clients.ipmitool import IpmitoolError
 from src.clients.redfish import RedfishError
 from src.main import broker
 from src.services import server_service_client
+from src.services import bmc_circuit_breaker as _breaker
 from src.tasks._bmc_errors import (
     dispatch_get_power_state,
     dispatch_power_action,
     wrap_bmc_error,
 )
 from src.tasks._bmc_helpers import aclose_bmc as _aclose_bmc
+from src.tasks._bmc_helpers import extract_bmc_host as _extract_bmc_host
 from src.tasks._bmc_helpers import get_bmc as _get_bmc
 from src.tasks._runner import run_task
 
@@ -85,13 +87,17 @@ async def power_on(task_id: str) -> None:
         server_id = payload["server_id"]
         target_dept = payload.get("target_department_id")
         creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
+        host = _extract_bmc_host(creds["endpoint_url"])
+        await _breaker.check(host)
         client = await _get_bmc(creds)
         try:
             try:
                 await dispatch_power_action(client, "On")
                 state = await dispatch_get_power_state(client)
             except (RedfishError, IpmitoolError) as exc:
+                await _breaker.record_failure(host)
                 raise wrap_bmc_error("power_on", exc) from exc
+            await _breaker.record_success(host)
         finally:
             await _aclose_bmc(client)
         return {"power_state": _normalize_power_state(state)}
@@ -127,6 +133,8 @@ async def power_off(task_id: str) -> None:
         server_id = payload["server_id"]
         target_dept = payload.get("target_department_id")
         creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
+        host = _extract_bmc_host(creds["endpoint_url"])
+        await _breaker.check(host)
         client = await _get_bmc(creds)
         try:
             try:
@@ -134,7 +142,9 @@ async def power_off(task_id: str) -> None:
                 await dispatch_power_action(client, "ForceOff")
                 state = await dispatch_get_power_state(client)
             except (RedfishError, IpmitoolError) as exc:
+                await _breaker.record_failure(host)
                 raise wrap_bmc_error("power_off", exc) from exc
+            await _breaker.record_success(host)
         finally:
             await _aclose_bmc(client)
         return {
@@ -173,6 +183,8 @@ async def power_reboot(task_id: str) -> None:
         target_dept = payload.get("target_department_id")
         force = bool(payload.get("force", False))
         creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
+        host = _extract_bmc_host(creds["endpoint_url"])
+        await _breaker.check(host)
         client = await _get_bmc(creds)
         try:
             try:
@@ -181,7 +193,9 @@ async def power_reboot(task_id: str) -> None:
                 )
                 state = await dispatch_get_power_state(client)
             except (RedfishError, IpmitoolError) as exc:
+                await _breaker.record_failure(host)
                 raise wrap_bmc_error("power_reboot", exc) from exc
+            await _breaker.record_success(host)
         finally:
             await _aclose_bmc(client)
         return {
@@ -218,12 +232,16 @@ async def power_status(task_id: str) -> None:
         server_id = payload["server_id"]
         target_dept = payload.get("target_department_id")
         creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
+        host = _extract_bmc_host(creds["endpoint_url"])
+        await _breaker.check(host)
         client = await _get_bmc(creds)
         try:
             try:
                 state = await dispatch_get_power_state(client)
             except (RedfishError, IpmitoolError) as exc:
+                await _breaker.record_failure(host)
                 raise wrap_bmc_error("power_status", exc) from exc
+            await _breaker.record_success(host)
         finally:
             await _aclose_bmc(client)
         return {"power_state": _normalize_power_state(state)}

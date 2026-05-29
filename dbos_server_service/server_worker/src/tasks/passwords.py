@@ -46,7 +46,9 @@ from src.tasks._bmc_errors import (
     dispatch_rotate_user_password,
     wrap_bmc_error,
 )
+from src.services import bmc_circuit_breaker as _breaker
 from src.tasks._bmc_helpers import aclose_bmc as _aclose_bmc
+from src.tasks._bmc_helpers import extract_bmc_host as _extract_bmc_host
 from src.tasks._bmc_helpers import get_bmc as _get_bmc
 from src.tasks._runner import run_task
 
@@ -311,12 +313,16 @@ async def ipmi_rotate_password(task_id: str) -> None:
         rotated_at = datetime.now(timezone.utc).isoformat()
 
         # ── BMC apply: Redfish PATCH либо ipmitool user set password ───
+        host = _extract_bmc_host(creds["endpoint_url"])
+        await _breaker.check(host)
         client = await _get_bmc(creds)
         try:
             try:
                 await dispatch_rotate_user_password(client, user_id, new_password)
             except (RedfishError, IpmitoolError) as exc:
+                await _breaker.record_failure(host)
                 raise wrap_bmc_error("ipmi_rotate_password", exc) from exc
+            await _breaker.record_success(host)
         finally:
             await _aclose_bmc(client)
 
@@ -329,14 +335,17 @@ async def ipmi_rotate_password(task_id: str) -> None:
         # зайти ciphertext'ом, который никогда не работал.
         verify_creds = dict(creds)
         verify_creds["password"] = new_password
+        await _breaker.check(host)
         verify_client = await _get_bmc(verify_creds)
         try:
             try:
                 await dispatch_get_power_state(verify_client)
             except (RedfishError, IpmitoolError) as exc:
+                await _breaker.record_failure(host)
                 wrapped = wrap_bmc_error("ipmi_rotate_password", exc)
                 wrapped.error_code = "BMC_VERIFY_AFTER_ROTATE_FAILED"
                 raise wrapped from exc
+            await _breaker.record_success(host)
         finally:
             await _aclose_bmc(verify_client)
 

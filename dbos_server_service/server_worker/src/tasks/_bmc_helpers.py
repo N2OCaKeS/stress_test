@@ -5,6 +5,10 @@
 поверх `clients.get_bmc_client` (probe Redfish + fallback на ipmitool) и
 идемпотентное закрытие BMC-клиента.
 
+Shared circuit breaker (`services.bmc_circuit_breaker`) handler'ы дёргают
+сами вокруг `get_bmc` + dispatch — `_bmc_helpers` про breaker не знает,
+чтобы pytest-monkeypatch'и (подмена `_get_bmc`) не теряли проверку.
+
 Маппинг BMC-исключений и `dispatch_*` адаптеры — рядом, в `_bmc_errors.py`.
 Разделение по файлам: `_bmc_errors` отвечает за «как разобрать ошибку BMC и
 как унифицировать вызовы клиента», `_bmc_helpers` — за «как достать рабочий
@@ -44,6 +48,13 @@ async def get_bmc(creds: dict, *, prefer: str = "redfish"):
     опционально `kind` (`idrac`/`ilo`/`ipmi`/`redfish`, отдаётся
     `server_service_client.fetch_ipmi_credentials`). Для legacy-payload'ов
     без поля fallback — `None`, RedfishClient берёт iDRAC default.
+
+    Circuit breaker не вызывается здесь — handler сам делает
+    ``bmc_circuit_breaker.check(host)`` до этой функции и
+    ``record_success``/``record_failure`` после. Это сделано чтобы
+    monkeypatch'и тестов (которые подменяют именно ``_get_bmc``) не теряли
+    проверку breaker'а, а заодно чтобы factor'у клиента не приходилось
+    знать про breaker.
     """
     return await get_bmc_client(
         host=extract_bmc_host(creds["endpoint_url"]),

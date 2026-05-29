@@ -2,6 +2,7 @@
 
 import json
 import re
+import unicodedata
 from datetime import datetime
 from typing import Literal
 
@@ -212,6 +213,28 @@ class EventCreate(BaseModel):
                 "(no CR/LF, no digits, no Unicode)"
             )
         return v
+
+    @field_validator("idempotency_key", mode="before")
+    @classmethod
+    def _normalize_idempotency_key(cls, v):
+        """Канонизирует ключ до UNIQUE-сравнения: NFKC + trim, пустое → None.
+
+        Без этого `"abc"` и `"abc "` (trailing space) или `"abc"` и
+        `"ａｂｃ"` (fullwidth) считались бы разными ключами на PostgreSQL'овском
+        partial UNIQUE индексе — два «логически одинаковых» retry'я outbox'а
+        записывались бы как два разных события, вместо дедупа.
+
+        Применяем NFKC + strip ДО length-check'а (max_length=128 в Field),
+        чтобы атакующий не мог обойти cap раздуванием через compatibility-form'у.
+        Пустая строка после strip'а → None (тот же legacy-режим, что и
+        опущенное поле — без дедупа).
+        """
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return v
+        normalised = unicodedata.normalize("NFKC", v).strip()
+        return normalised or None
 
     @field_validator("request_id")
     @classmethod

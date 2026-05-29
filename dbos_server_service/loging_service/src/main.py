@@ -31,11 +31,10 @@ from src.dependencies import auth as auth_deps
 
 
 # Pending fire-and-forget self-audit задачи. Под SIGTERM lifespan drain'ит
-# их с коротким timeout'ом, иначе последние http.* events терялись
-# (`asyncio.ensure_future` без ref'а собирает GC, если loop закрывается
-# до их выполнения).
+# их с бюджетом `settings.audit_drain_timeout_seconds`, иначе последние
+# http.* events терялись (`asyncio.ensure_future` без ref'а собирает GC,
+# если loop закрывается до их выполнения).
 _pending_audit_tasks: set[asyncio.Task] = set()
-_AUDIT_DRAIN_TIMEOUT_SECONDS = 2.0
 
 
 # Strict-numeric content-length: `int()` принимает `+1`, `_`-сепараторы,
@@ -156,15 +155,16 @@ def create_application() -> FastAPI:
             # gather'а.
             pending = list(_pending_audit_tasks)
             if pending:
+                drain_timeout = live_settings.audit_drain_timeout_seconds
                 try:
                     await asyncio.wait_for(
                         asyncio.gather(*pending, return_exceptions=True),
-                        timeout=_AUDIT_DRAIN_TIMEOUT_SECONDS,
+                        timeout=drain_timeout,
                     )
                 except asyncio.TimeoutError:
                     logger.warning(
                         "audit drain timed out after %.1fs, %d tasks dropped",
-                        _AUDIT_DRAIN_TIMEOUT_SECONDS,
+                        drain_timeout,
                         sum(1 for t in pending if not t.done()),
                     )
             client = auth_deps._introspect_client
@@ -362,14 +362,12 @@ def create_application() -> FastAPI:
           HTTP/1.1 и HTTP/2 клиенты всегда шлют его на fixed-size body; ASGI
           передаёт header без изменений. Если declared length больше cap'а —
           возвращаем 413 сразу, не трогая body.
-        * Если `Content-Length` нет (chunked transfer-encoding) или его не
-          распарсить, мы НЕ читаем body проактивно и не считаем байты в
-          middleware — это потребовало бы буферизации всего body внутри
-          middleware, что defeats the purpose. Пропускаем дальше;
-          defence-in-depth идёт от: (a) uvicorn'овского
-          `--limit-concurrency` флага в деплое, (b) per-field length caps
-          в `EventCreate`, (c) per-IP slowapi rate-limit. Follow-up в TODO
-          отчёта.
+        * Если `Content-Length` нет (chunked transfer-encoding,
+          `Transfer-Encoding: chunked`) — оборачиваем ASGI `receive`-колбэк
+          и считаем байты по мере приёма chunk'ов. Как только сумма
+          превышает `max_size`, отдаём 413 и не пропускаем дальше. Это
+          стримовая проверка: память не раздувается, downstream обработчик
+          не вызывается на overflow.
 
         Проверяем только `POST/PUT/PATCH` — `GET/HEAD/DELETE/OPTIONS`
         body для audit-ingest не несут.
@@ -419,6 +417,62 @@ def create_application() -> FastAPI:
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
                     )
+            else:
+                # Chunked / Transfer-Encoding: оборачиваем receive, считаем
+                # байты по потоку, абортим на overflow. Без этого атакующий
+                # с HTTP/1.1 chunked-кодированием обходит cheap path и шлёт
+                # сколько угодно body — единственный hard-cap дальше — это
+                # 64 KiB на `details`, но `EventCreate` его видит уже после
+                # ASGI'еного буфера. Ловим на стриме до того, как ASGI
+                # дочитает body.
+                received = 0
+                overflow = False
+                original_receive = request.receive
+
+                async def limited_receive():
+                    nonlocal received, overflow
+                    message = await original_receive()
+                    if message["type"] == "http.request":
+                        body = message.get("body", b"")
+                        if body:
+                            received += len(body)
+                            if received > max_size:
+                                overflow = True
+                                # Помечаем поток завершённым, чтобы downstream
+                                # не залип в ожидании; реальный 413 вернём
+                                # сразу после прохода через call_next.
+                                return {
+                                    "type": "http.request",
+                                    "body": b"",
+                                    "more_body": False,
+                                }
+                    return message
+
+                # Подменяем receive у Starlette Request — он передаст его дальше
+                # в route handler через ASGI scope. В Starlette `request._receive`
+                # — приватный атрибут, но это единственная точка подмены без
+                # переписывания scope руками.
+                request._receive = limited_receive  # type: ignore[attr-defined]
+
+                response = await call_next(request)
+                if overflow:
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "error": "payload_too_large",
+                            "error_code": "PAYLOAD_TOO_LARGE",
+                            "message": (
+                                f"Request body exceeds the {max_size}-byte limit"
+                            ),
+                            "details": {
+                                "max_bytes": max_size,
+                                "received_bytes": received,
+                            },
+                            "request_id": None,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+                return response
         return await call_next(request)
 
     # SecurityHeadersMiddleware регистрируем последним → outermost слой.

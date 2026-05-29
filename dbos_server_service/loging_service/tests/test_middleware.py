@@ -555,7 +555,10 @@ class TestPendingAuditTasksDrain:
     def test_drain_completes_pending_tasks(self):
         """Аналог lifespan-shutdown drain'а: await gather до timeout'а."""
         import asyncio
-        from src.main import _pending_audit_tasks, _AUDIT_DRAIN_TIMEOUT_SECONDS
+        from src.main import _pending_audit_tasks
+        from src.core.config import get_settings
+
+        drain_timeout = get_settings().audit_drain_timeout_seconds
 
         async def run():
             _pending_audit_tasks.clear()
@@ -574,7 +577,7 @@ class TestPendingAuditTasksDrain:
             pending = list(_pending_audit_tasks)
             await asyncio.wait_for(
                 asyncio.gather(*pending, return_exceptions=True),
-                timeout=_AUDIT_DRAIN_TIMEOUT_SECONDS,
+                timeout=drain_timeout,
             )
             assert sorted(finished) == [0, 1, 2]
             await asyncio.sleep(0)

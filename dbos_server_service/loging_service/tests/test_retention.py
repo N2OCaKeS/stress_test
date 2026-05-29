@@ -371,15 +371,33 @@ class TestFilteredPolicy:
         remaining = {e.service for e in db.query(AuditEvent).all()}
         assert remaining == {"server_service"}
 
-    def test_apply_active_protects_loging_service_even_with_filter(self, db):
-        """Filter на `loging_service` НЕ может удалить его события — инвариант."""
+    def test_schema_rejects_loging_service_in_filter(self):
+        """Schema-уровень валидирует service_filter и отвергает `loging_service`
+        с 422 — политика никогда не сработала бы на защищённом сервисе.
+        Закрывает «полития создаётся, но retention не чистит».
+        """
+        import pytest
+        from pydantic import ValidationError
+
+        from src.schemas.retention import RetentionPolicyCreate
+
+        with pytest.raises(ValidationError) as excinfo:
+            RetentionPolicyCreate(
+                retain_days=60, service_filter=["loging_service"]
+            )
+        assert "protected" in str(excinfo.value)
+
+    def test_apply_active_protects_loging_service_via_legacy_policy(self, db):
+        """Defence-in-depth: даже если policy с `service='loging_service'` попала
+        в БД мимо schema (legacy data, прямой ORM-insert), runtime-guard в
+        `apply_active` всё равно не удаляет события защищённого сервиса.
+        """
         from datetime import datetime, timedelta, timezone
         import uuid
 
         from src.models.audit_event import AuditEvent
+        from src.models.retention_policy import RetentionPolicy
         from src.repositories.retention_policies import apply_active
-        from src.repositories import retention_policies as repo
-        from src.schemas.retention import RetentionPolicyCreate
 
         old = datetime.now(timezone.utc) - timedelta(days=100)
         db.add(AuditEvent(
@@ -388,15 +406,17 @@ class TestFilteredPolicy:
             actor_id=None, actor_type="service", status="success",
             allowed=True, severity="INFO", details={},
         ))
+        # Прямая вставка policy с loging_service — имитация legacy-data,
+        # когда schema-guard ещё не существовал.
+        now = datetime.now(timezone.utc)
+        db.add(RetentionPolicy(
+            retain_days=60,
+            service="loging_service",
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        ))
         db.flush()
-
-        # Пытаемся явно нацелиться на loging_service.
-        repo.create_policy(
-            db,
-            RetentionPolicyCreate(
-                retain_days=60, service_filter=["loging_service"]
-            ),
-        )
 
         deleted = apply_active(db)
         assert deleted == 0

@@ -17,45 +17,56 @@ def upsert_events(
 ) -> tuple[int, int]:
     """Upsert батча определений событий для *service*.
 
-    Возвращает (added, updated). Атомарен на уровне БД: каждый row идёт через
-    `INSERT … ON CONFLICT (service, action) DO UPDATE`, поэтому параллельные
-    upsert'ы одной (service, action) не падают `IntegrityError`. RETURNING
-    `xmax = 0` отличает свежий INSERT (xmax = 0) от UPDATE (xmax = xid) —
-    дёшево и не просит лишний SELECT для подсчёта.
+    Возвращает (added, updated). Атомарен на уровне БД: всё batch'ом идёт через
+    единственный `INSERT … ON CONFLICT (service, action) DO UPDATE`, поэтому
+    параллельные upsert'ы одной (service, action) не падают `IntegrityError`.
+    `RETURNING (xmax = 0)` отличает свежий INSERT (xmax = 0) от UPDATE
+    (xmax = xid) per-row — дёшево и не просит лишний SELECT для подсчёта.
+
+    Раньше цикл вызывал по `db.execute()` на каждый row — N+1 round-trip'ов
+    в БД на батч в 1000 action'ов. Замено одним INSERT-statement'ом с
+    values-list'ом и `excluded.*` в SET-блоке (Postgres подставляет
+    конфликтующие значения каждой row'и).
     """
     if not events:
         return 0, 0
 
     now = datetime.now(timezone.utc)
-    added = updated = 0
 
+    # Дедупликация по `action` внутри одного батча: pg_insert падает с
+    # `cardinality violation: ON CONFLICT DO UPDATE command cannot affect
+    # row a second time`, если в values-list'е две row'и с одной парой
+    # (service, action). Берём последнее упоминание (как делал бы цикл).
+    deduped: dict[str, dict] = {}
     for ev in events:
-        stmt = (
-            pg_insert(ServiceEvent)
-            .values(
-                id=service_event_id(),
-                service=service,
-                action=ev["action"],
-                description=ev.get("description"),
-                default_severity=ev.get("default_severity"),
-                registered_at=now,
-                updated_at=now,
-            )
-            .on_conflict_do_update(
-                index_elements=["service", "action"],
-                set_={
-                    "description": ev.get("description"),
-                    "default_severity": ev.get("default_severity"),
-                    "updated_at": now,
-                },
-            )
-            .returning(literal_column("(xmax = 0)").label("was_inserted"))
-        )
-        was_inserted = db.execute(stmt).scalar_one()
-        if was_inserted:
-            added += 1
-        else:
-            updated += 1
+        deduped[ev["action"]] = ev
+
+    rows = [
+        {
+            "id": service_event_id(),
+            "service": service,
+            "action": action,
+            "description": ev.get("description"),
+            "default_severity": ev.get("default_severity"),
+            "registered_at": now,
+            "updated_at": now,
+        }
+        for action, ev in deduped.items()
+    ]
+
+    insert_stmt = pg_insert(ServiceEvent).values(rows)
+    stmt = insert_stmt.on_conflict_do_update(
+        index_elements=["service", "action"],
+        set_={
+            "description": insert_stmt.excluded.description,
+            "default_severity": insert_stmt.excluded.default_severity,
+            "updated_at": now,
+        },
+    ).returning(literal_column("(xmax = 0)").label("was_inserted"))
+
+    flags = list(db.execute(stmt).scalars())
+    added = sum(1 for f in flags if f)
+    updated = len(flags) - added
 
     db.commit()
     return added, updated

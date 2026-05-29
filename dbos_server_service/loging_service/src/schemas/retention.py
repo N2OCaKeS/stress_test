@@ -15,6 +15,12 @@ from src.utils.normalization import normalize_service_name
 # никогда не будет.
 _SERVICE_FILTER_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_]{1,64}$")
 
+# Имя сервиса, события которого защищены от ротации (`apply_active` форсит
+# `service != _PROTECTED_SERVICE`). Политика с этим сервисом в фильтре
+# никогда не сработает, поэтому ловим её на schema-уровне и возвращаем 422,
+# а не молча создаём dead-row, который вводит оператора в заблуждение.
+_PROTECTED_SERVICE = "loging_service"
+
 # Severity-уровни синхронизированы с `schemas/events.py::EventCreate.severity`
 # — единый whitelist по всему сервису. Любая правка одного — править оба.
 Severity = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -90,6 +96,11 @@ class RetentionPolicyCreate(BaseModel):
                 raise ValueError(
                     f"service name {name!r} invalid after normalisation; "
                     "allowed: [a-z_]{1,64} (snake_case, без digits/Unicode)"
+                )
+            if normalised == _PROTECTED_SERVICE:
+                raise ValueError(
+                    f"service {_PROTECTED_SERVICE!r} is protected from retention "
+                    "and cannot appear in service_filter"
                 )
             canonical.append(normalised)
         return sorted(set(canonical))

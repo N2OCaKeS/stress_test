@@ -11,8 +11,8 @@ Threat model: держатель утёкшего `SERVICE_API_KEY` шлёт
 `service="loging_service​"` (каноническое имя + U+200B zero-width space)
 или `service="lоging_service"` (кириллическая `о`). С наивным
 `payload.service.strip().lower() == "loging_service"` row попадает в
-`audit_events`, и retention WHERE-clause `func.lower(service) !=
-'loging_service'` его тоже не видит — событие переживает все sweep'ы,
+`audit_events`, и retention WHERE-clause `service != 'loging_service'`
+его тоже не видит — событие переживает все sweep'ы,
 открывая путь к silent erasure audit-trail'а (минтуем кучу fake-loging
 событий, чтобы замаскировать настоящие admin-действия, а потом ждём, пока
 retention выметет настоящие).

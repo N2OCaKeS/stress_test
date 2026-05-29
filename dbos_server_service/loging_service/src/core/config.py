@@ -197,6 +197,16 @@ class Settings(BaseSettings):
         default=1024 * 1024, alias="MAX_REQUEST_BODY_BYTES"
     )
 
+    # Бюджет на draining pending self-audit задач при shutdown'е (см.
+    # `main.lifespan`). Lifespan ждёт до этого числа секунд, пока
+    # `_pending_audit_tasks` досчитаются; всё, что не успело, теряется и
+    # логируется как warning. 2.0s — historic default; обычно достаточно
+    # для пары http.* events, но под нагрузкой / на slow БД полезно
+    # поднять без передеплоя.
+    audit_drain_timeout_seconds: float = Field(
+        default=2.0, alias="AUDIT_DRAIN_TIMEOUT_SECONDS", ge=0.0
+    )
+
     # Запускать ли retention-cleanup loop в lifespan'е. По умолчанию True —
     # production стартует daemon-thread, который раз в сутки в 00:00 MSK
     # применяет активную retention-политику.

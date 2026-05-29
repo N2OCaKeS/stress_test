@@ -421,18 +421,42 @@ class TestRetentionPolicyServiceFilter:
 
     def test_uppercase_normalised_to_lowercase(self):
         m = RetentionPolicyCreate(
-            retain_days=60, service_filter=["AUTH_SERVICE", "Loging_Service"]
+            retain_days=60, service_filter=["AUTH_SERVICE", "Server_Service"]
         )
         # NFKC + lower → сравнимо с ingest'ом.
-        assert m.service_filter == ["auth_service", "loging_service"]
+        assert m.service_filter == ["auth_service", "server_service"]
 
     def test_cyrillic_confusable_folded_to_ascii(self):
-        # `lоging_service` с кириллической `о` (U+043E) — атакующий мог бы
+        # `аuth_service` с кириллической `а` (U+0430) — атакующий мог бы
         # создать политику, никогда не матчащую настоящие события.
         m = RetentionPolicyCreate(
-            retain_days=60, service_filter=["lоging_service"]
+            retain_days=60, service_filter=["аuth_service"]
         )
-        assert m.service_filter == ["loging_service"]
+        assert m.service_filter == ["auth_service"]
+
+    def test_loging_service_in_filter_rejected(self):
+        # `loging_service` защищён от ротации в `apply_active`. Политика с
+        # ним в фильтре никогда не сработала бы — отбиваем на schema-уровне
+        # (422), чтобы оператор увидел сразу, а не разбирался почему
+        # «филтр зарегистрировался, но ничего не чистит».
+        with pytest.raises(ValidationError) as excinfo:
+            RetentionPolicyCreate(
+                retain_days=60, service_filter=["loging_service"]
+            )
+        assert "protected" in str(excinfo.value)
+
+    def test_loging_service_case_variant_also_rejected(self):
+        # Нормализация case-fold'ит до `loging_service` ДО защиты-check'а,
+        # поэтому uppercase / case-variant / confusable формы тоже банятся.
+        with pytest.raises(ValidationError):
+            RetentionPolicyCreate(
+                retain_days=60, service_filter=["LoGiNg_SeRvIcE"]
+            )
+        with pytest.raises(ValidationError):
+            # кириллическая `о` → ascii `o` через _CONFUSABLES_MAP.
+            RetentionPolicyCreate(
+                retain_days=60, service_filter=["lоging_service"]
+            )
 
     def test_digits_rejected(self):
         # Ingest принимает только `[a-z_]`. Цифры тихо проскакивали
@@ -454,19 +478,19 @@ class TestRetentionPolicyServiceFilter:
 
     def test_zero_width_space_stripped_to_valid_name(self):
         # ZWSP внутри имени — NFKC оставит его, но `_INVISIBLE_CHARS_RE`
-        # удалит. Результат — каноническое `loging_service`.
+        # удалит. Результат — каноническое `auth_service`.
         m = RetentionPolicyCreate(
-            retain_days=60, service_filter=["loging​_service"]
+            retain_days=60, service_filter=["auth​_service"]
         )
-        assert m.service_filter == ["loging_service"]
+        assert m.service_filter == ["auth_service"]
 
     def test_dedup_after_normalisation(self):
         # Confusable + uppercase → одна и та же каноническая форма.
         m = RetentionPolicyCreate(
             retain_days=60,
-            service_filter=["loging_service", "Loging_Service", "lоging_service"],
+            service_filter=["auth_service", "Auth_Service", "аuth_service"],
         )
-        assert m.service_filter == ["loging_service"]
+        assert m.service_filter == ["auth_service"]
 
     def test_too_long_after_normalisation_rejected(self):
         with pytest.raises(ValidationError):

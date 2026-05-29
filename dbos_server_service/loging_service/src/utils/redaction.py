@@ -1,11 +1,19 @@
 """Маскировка секретов в `details` — защитный слой на стороне loging_service.
 
-Дублирует логику `auth_service.services.redaction`. Применяется к
+Дублирует логику `auth_service/src/services/redaction.py`. Применяется к
 `payload.details` перед сохранением, чтобы случайные секреты от любого
 источника не попали в БД.
 
-# TODO: вынести в общий пакет (sdk?), сейчас просто два экземпляра в auth /
-# loging.
+TODO (см. obsidian/TODO.md P4): вынести в общий пакет — sdk либо
+отдельный pip-пакет. Сейчас сервисы независимо депло́ятся, общего PYTHONPATH
+нет (`auth_service/src` и `loging_service/src` — изолированы), поэтому
+просто `from auth_service.services.redaction import redact` не сработает.
+Варианты: (a) общий внутренний пакет `dbos_audit_sdk` (наиболее чистый,
+но требует своего pyproject + публикации в internal registry),
+(b) git-submodule или symlink в общий каталог корня монорепо,
+(c) оставить два экземпляра + sync-тест (как у `_DEFAULT_SEVERITY`).
+Выбор откладывается, пока схемы redaction не разойдутся (сейчас держим
+руками в синхронности).
 
 Плейсхолдеры: `<PASSWORD>`, `<TOKEN>`, `<SECRET>`, `<HASH>`, `<CREDENTIAL>`.
 """

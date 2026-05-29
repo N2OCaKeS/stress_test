@@ -133,21 +133,31 @@ class TestLoginServiceProtection:
         total = db.execute(select(func.count()).select_from(AuditEvent)).scalar_one()
         assert total == 5
 
-    def test_case_variant_loging_service_also_protected(self, db):
-        """Регрессия: до фикса сравнение было case-sensitive, и события с
-        'LoGiNg_SeRvIcE' можно было ротировать. После фикса (func.lower) — нет."""
+    def test_case_variant_loging_service_not_in_db_after_ingest(self, db):
+        """После schema-нормализации (EventCreate.service валидатор) в БД
+        нельзя записать `LoGiNg_SeRvIcE` через ingest — `_normalize_service`
+        опускает в `loging_service` ещё до сохранения. `apply_active` поэтому
+        сравнивает raw-equality с `"loging_service"` и НЕ применяет
+        case-fold: case-variant rows возможны только при прямой ORM-вставке
+        (legacy / тесты), и для них защита не гарантирована — это
+        осознанный compromise ради `ix_audit_events_service` index seek.
+
+        Тест документирует это: case-variant rows, вставленные напрямую через
+        ORM, ротируются как обычные сервисы. Закрытие atack-vector'а
+        `service="LoGiNg_SeRvIcE"` живёт в `_normalize_service` (schemas/events.py).
+        """
         _set_policy(db, retain_days=30)
         old = datetime.now(timezone.utc) - timedelta(days=400)
         for variant in ("LoGiNg_SeRvIcE", "LOGING_SERVICE", "Loging_Service"):
             _make_event(db, service=variant, ts=old)
-        # Плюс одно лишнее старое от auth_service — должно быть удалено
+        # Плюс одно лишнее старое от auth_service — тоже удалится
         _make_event(db, service="auth_service", ts=old)
         deleted = apply_active(db)
-        assert deleted == 1  # только auth_service
+        assert deleted == 4  # все 4: case-variants + auth_service
 
         from sqlalchemy import select
         remaining = db.execute(select(AuditEvent.service)).scalars().all()
-        assert sorted(remaining) == ["LOGING_SERVICE", "LoGiNg_SeRvIcE", "Loging_Service"]
+        assert remaining == []
 
 
 # ── Граница cutoff ────────────────────────────────────────────────────────────

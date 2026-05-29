@@ -33,6 +33,7 @@ services:
     volumes:
       - .:/app/tests
       - ../src:/app/src
+      - ../AUDIT_EVENTS.md:/app/AUDIT_EVENTS.md:ro
     depends_on:
       test-postgres:
         condition: service_healthy

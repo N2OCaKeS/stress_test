@@ -828,7 +828,7 @@ class TestPATLifecycle:
         r = auth_client.post(
             f"{AUTH_PREFIX}/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": f"pat_list_{rand_suffix()}"},
+            json={"name": f"pat_list_{rand_suffix()}", "allowed_services": ["auth_service"]},
         )
         assert r.status_code == 201
         token_plain = r.json()["token"]
@@ -857,7 +857,7 @@ class TestPATLifecycle:
         r = auth_client.post(
             f"{AUTH_PREFIX}/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": f"pat_rev_{rand_suffix()}"},
+            json={"name": f"pat_rev_{rand_suffix()}", "allowed_services": ["auth_service"]},
         )
         token = r.json()["token"]
         token_id = r.json()["token_id"]
@@ -926,7 +926,7 @@ class TestPATLifecycle:
         admin_pat = auth_client.post(
             f"{AUTH_PREFIX}/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": f"adm_pat_{rand_suffix()}"},
+            json={"name": f"adm_pat_{rand_suffix()}", "allowed_services": ["auth_service"]},
         ).json()
 
         other = make_user(password="Other1234!", platform_role="account_admin")
@@ -955,7 +955,11 @@ class TestPATLifecycle:
         r = auth_client.post(
             f"{AUTH_PREFIX}/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": f"pat_expired_{rand_suffix()}", "expires_at": past},
+            json={
+                "name": f"pat_expired_{rand_suffix()}",
+                "expires_at": past,
+                "allowed_services": ["auth_service"],
+            },
         )
         assert r.status_code == 201, r.text
         token = r.json()["token"]
@@ -1026,7 +1030,7 @@ class TestBanCascade:
         tok = auth_client.post(
             f"{AUTH_PREFIX}/bots/{bot_id}/tokens",
             headers={"Authorization": f"Bearer {owner_token}"},
-            json={"name": "ban-cascade-token"},
+            json={"name": "ban-cascade-token", "allowed_services": ["auth_service"]},
         )
         assert tok.status_code == 201
         bot_token_plain = tok.json()["token"]
@@ -1095,7 +1099,7 @@ class TestRevokeImmediateEffect:
         r = auth_client.post(
             f"{AUTH_PREFIX}/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": f"pat_imm_{rand_suffix()}"},
+            json={"name": f"pat_imm_{rand_suffix()}", "allowed_services": ["auth_service"]},
         )
         token = r.json()["token"]
         token_id = r.json()["token_id"]

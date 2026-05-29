@@ -81,7 +81,7 @@ def _create_bot_with_token(
     tok_resp = auth_client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": f"t_{short_id()}"},
+        json={"name": f"t_{short_id()}", "allowed_services": ["auth_service"]},
     )
     assert tok_resp.status_code == 201, tok_resp.text
     tok_body = tok_resp.json()

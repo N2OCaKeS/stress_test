@@ -336,342 +336,338 @@
                 "unit": "MB/s"
             }
         },
-        "240000_files": {
-            "speed": {
+        "speed": {
+            "240000": {
                 "value": 42204.4,
                 "unit": "ops/sec"
             },
-            "app_overhead": {
-                "value": 7103526,
-                "unit": "microseconds"
-            },
-            "create_avg": {
-                "value": 106,
-                "unit": "microseconds"
-            },
-            "write_avg": {
-                "value": 6,
-                "unit": "microseconds"
-            },
-            "fsync_avg": {
-                "value": 424,
-                "unit": "microseconds"
-            },
-            "sync_avg": {
-                "value": 0,
-                "unit": "microseconds"
-            },
-            "close_avg": {
-                "value": 2,
-                "unit": "microseconds"
-            },
-            "unlink_avg": {
-                "value": 234,
-                "unit": "microseconds"
-            }
-        },
-        "480000_files": {
-            "speed": {
+            "480000": {
                 "value": 31718.9,
                 "unit": "ops/sec"
             },
-            "app_overhead": {
-                "value": 15928368,
-                "unit": "microseconds"
-            },
-            "create_avg": {
-                "value": 137,
-                "unit": "microseconds"
-            },
-            "write_avg": {
-                "value": 9,
-                "unit": "microseconds"
-            },
-            "fsync_avg": {
-                "value": 572,
-                "unit": "microseconds"
-            },
-            "sync_avg": {
-                "value": 0,
-                "unit": "microseconds"
-            },
-            "close_avg": {
-                "value": 4,
-                "unit": "microseconds"
-            },
-            "unlink_avg": {
-                "value": 322,
-                "unit": "microseconds"
-            }
-        },
-        "720000_files": {
-            "speed": {
+            "720000": {
                 "value": 30342.1,
                 "unit": "ops/sec"
             },
-            "app_overhead": {
-                "value": 25467182,
-                "unit": "microseconds"
-            },
-            "create_avg": {
-                "value": 153,
-                "unit": "microseconds"
-            },
-            "write_avg": {
-                "value": 11,
-                "unit": "microseconds"
-            },
-            "fsync_avg": {
-                "value": 586,
-                "unit": "microseconds"
-            },
-            "sync_avg": {
-                "value": 0,
-                "unit": "microseconds"
-            },
-            "close_avg": {
-                "value": 4,
-                "unit": "microseconds"
-            },
-            "unlink_avg": {
-                "value": 276,
-                "unit": "microseconds"
-            }
-        },
-        "960000_files": {
-            "speed": {
+            "960000": {
                 "value": 30701.6,
                 "unit": "ops/sec"
             },
-            "app_overhead": {
-                "value": 33312809,
-                "unit": "microseconds"
-            },
-            "create_avg": {
-                "value": 146,
-                "unit": "microseconds"
-            },
-            "write_avg": {
-                "value": 10,
-                "unit": "microseconds"
-            },
-            "fsync_avg": {
-                "value": 586,
-                "unit": "microseconds"
-            },
-            "sync_avg": {
-                "value": 0,
-                "unit": "microseconds"
-            },
-            "close_avg": {
-                "value": 4,
-                "unit": "microseconds"
-            },
-            "unlink_avg": {
-                "value": 275,
-                "unit": "microseconds"
-            }
-        },
-        "1200000_files": {
-            "speed": {
+            "1200000": {
                 "value": 30451.2,
                 "unit": "ops/sec"
             },
-            "app_overhead": {
-                "value": 40400174,
-                "unit": "microseconds"
-            },
-            "create_avg": {
-                "value": 149,
-                "unit": "microseconds"
-            },
-            "write_avg": {
-                "value": 10,
-                "unit": "microseconds"
-            },
-            "fsync_avg": {
-                "value": 592,
-                "unit": "microseconds"
-            },
-            "sync_avg": {
-                "value": 0,
-                "unit": "microseconds"
-            },
-            "close_avg": {
-                "value": 4,
-                "unit": "microseconds"
-            },
-            "unlink_avg": {
-                "value": 275,
-                "unit": "microseconds"
-            }
-        },
-        "1440000_files": {
-            "speed": {
+            "1440000": {
                 "value": 30890.5,
                 "unit": "ops/sec"
             },
-            "app_overhead": {
-                "value": 48082680,
-                "unit": "microseconds"
-            },
-            "create_avg": {
-                "value": 144,
-                "unit": "microseconds"
-            },
-            "write_avg": {
-                "value": 11,
-                "unit": "microseconds"
-            },
-            "fsync_avg": {
-                "value": 583,
-                "unit": "microseconds"
-            },
-            "sync_avg": {
-                "value": 0,
-                "unit": "microseconds"
-            },
-            "close_avg": {
-                "value": 4,
-                "unit": "microseconds"
-            },
-            "unlink_avg": {
-                "value": 267,
-                "unit": "microseconds"
-            }
-        },
-        "1680000_files": {
-            "speed": {
+            "1680000": {
                 "value": 31816.7,
                 "unit": "ops/sec"
             },
-            "app_overhead": {
-                "value": 53836056,
-                "unit": "microseconds"
-            },
-            "create_avg": {
-                "value": 137,
-                "unit": "microseconds"
-            },
-            "write_avg": {
-                "value": 11,
-                "unit": "microseconds"
-            },
-            "fsync_avg": {
-                "value": 569,
-                "unit": "microseconds"
-            },
-            "sync_avg": {
-                "value": 0,
-                "unit": "microseconds"
-            },
-            "close_avg": {
-                "value": 3,
-                "unit": "microseconds"
-            },
-            "unlink_avg": {
-                "value": 318,
-                "unit": "microseconds"
-            }
-        },
-        "1920000_files": {
-            "speed": {
+            "1920000": {
                 "value": 30941.5,
                 "unit": "ops/sec"
             },
-            "app_overhead": {
-                "value": 64101351,
-                "unit": "microseconds"
-            },
-            "create_avg": {
-                "value": 146,
-                "unit": "microseconds"
-            },
-            "write_avg": {
-                "value": 12,
-                "unit": "microseconds"
-            },
-            "fsync_avg": {
-                "value": 578,
-                "unit": "microseconds"
-            },
-            "sync_avg": {
-                "value": 0,
-                "unit": "microseconds"
-            },
-            "close_avg": {
-                "value": 4,
-                "unit": "microseconds"
-            },
-            "unlink_avg": {
-                "value": 277,
-                "unit": "microseconds"
-            }
-        },
-        "2160000_files": {
-            "speed": {
+            "2160000": {
                 "value": 30758.1,
                 "unit": "ops/sec"
             },
-            "app_overhead": {
+            "2400000": {
+                "value": 31066.2,
+                "unit": "ops/sec"
+            }
+        },
+        "app_overhead": {
+            "240000": {
+                "value": 7103526,
+                "unit": "microseconds"
+            },
+            "480000": {
+                "value": 15928368,
+                "unit": "microseconds"
+            },
+            "720000": {
+                "value": 25467182,
+                "unit": "microseconds"
+            },
+            "960000": {
+                "value": 33312809,
+                "unit": "microseconds"
+            },
+            "1200000": {
+                "value": 40400174,
+                "unit": "microseconds"
+            },
+            "1440000": {
+                "value": 48082680,
+                "unit": "microseconds"
+            },
+            "1680000": {
+                "value": 53836056,
+                "unit": "microseconds"
+            },
+            "1920000": {
+                "value": 64101351,
+                "unit": "microseconds"
+            },
+            "2160000": {
                 "value": 71953921,
                 "unit": "microseconds"
             },
-            "create_avg": {
-                "value": 147,
-                "unit": "microseconds"
-            },
-            "write_avg": {
-                "value": 12,
-                "unit": "microseconds"
-            },
-            "fsync_avg": {
-                "value": 584,
-                "unit": "microseconds"
-            },
-            "sync_avg": {
-                "value": 0,
-                "unit": "microseconds"
-            },
-            "close_avg": {
-                "value": 4,
-                "unit": "microseconds"
-            },
-            "unlink_avg": {
-                "value": 312,
+            "2400000": {
+                "value": 81772668,
                 "unit": "microseconds"
             }
         },
-        "2400000_files": {
-            "speed": {
-                "value": 31066.2,
-                "unit": "ops/sec"
-            },
-            "app_overhead": {
-                "value": 81772668,
+        "create_avg": {
+            "240000": {
+                "value": 106,
                 "unit": "microseconds"
             },
-            "create_avg": {
+            "480000": {
+                "value": 137,
+                "unit": "microseconds"
+            },
+            "720000": {
+                "value": 153,
+                "unit": "microseconds"
+            },
+            "960000": {
+                "value": 146,
+                "unit": "microseconds"
+            },
+            "1200000": {
+                "value": 149,
+                "unit": "microseconds"
+            },
+            "1440000": {
+                "value": 144,
+                "unit": "microseconds"
+            },
+            "1680000": {
+                "value": 137,
+                "unit": "microseconds"
+            },
+            "1920000": {
+                "value": 146,
+                "unit": "microseconds"
+            },
+            "2160000": {
+                "value": 147,
+                "unit": "microseconds"
+            },
+            "2400000": {
                 "value": 143,
                 "unit": "microseconds"
+            }
+        },
+        "write_avg": {
+            "240000": {
+                "value": 6,
+                "unit": "microseconds"
             },
-            "write_avg": {
+            "480000": {
+                "value": 9,
+                "unit": "microseconds"
+            },
+            "720000": {
+                "value": 11,
+                "unit": "microseconds"
+            },
+            "960000": {
+                "value": 10,
+                "unit": "microseconds"
+            },
+            "1200000": {
+                "value": 10,
+                "unit": "microseconds"
+            },
+            "1440000": {
+                "value": 11,
+                "unit": "microseconds"
+            },
+            "1680000": {
+                "value": 11,
+                "unit": "microseconds"
+            },
+            "1920000": {
+                "value": 12,
+                "unit": "microseconds"
+            },
+            "2160000": {
+                "value": 12,
+                "unit": "microseconds"
+            },
+            "2400000": {
                 "value": 13,
                 "unit": "microseconds"
-            },
-            "fsync_avg": {
-                "value": 576,
+            }
+        },
+        "fsync_avg": {
+            "240000": {
+                "value": 424,
                 "unit": "microseconds"
             },
-            "sync_avg": {
+            "480000": {
+                "value": 572,
+                "unit": "microseconds"
+            },
+            "720000": {
+                "value": 586,
+                "unit": "microseconds"
+            },
+            "960000": {
+                "value": 586,
+                "unit": "microseconds"
+            },
+            "1200000": {
+                "value": 592,
+                "unit": "microseconds"
+            },
+            "1440000": {
+                "value": 583,
+                "unit": "microseconds"
+            },
+            "1680000": {
+                "value": 569,
+                "unit": "microseconds"
+            },
+            "1920000": {
+                "value": 578,
+                "unit": "microseconds"
+            },
+            "2160000": {
+                "value": 584,
+                "unit": "microseconds"
+            },
+            "2400000": {
+                "value": 576,
+                "unit": "microseconds"
+            }
+        },
+        "sync_avg": {
+            "240000": {
                 "value": 0,
                 "unit": "microseconds"
             },
-            "close_avg": {
+            "480000": {
+                "value": 0,
+                "unit": "microseconds"
+            },
+            "720000": {
+                "value": 0,
+                "unit": "microseconds"
+            },
+            "960000": {
+                "value": 0,
+                "unit": "microseconds"
+            },
+            "1200000": {
+                "value": 0,
+                "unit": "microseconds"
+            },
+            "1440000": {
+                "value": 0,
+                "unit": "microseconds"
+            },
+            "1680000": {
+                "value": 0,
+                "unit": "microseconds"
+            },
+            "1920000": {
+                "value": 0,
+                "unit": "microseconds"
+            },
+            "2160000": {
+                "value": 0,
+                "unit": "microseconds"
+            },
+            "2400000": {
+                "value": 0,
+                "unit": "microseconds"
+            }
+        },
+        "close_avg": {
+            "240000": {
+                "value": 2,
+                "unit": "microseconds"
+            },
+            "480000": {
                 "value": 4,
                 "unit": "microseconds"
             },
-            "unlink_avg": {
+            "720000": {
+                "value": 4,
+                "unit": "microseconds"
+            },
+            "960000": {
+                "value": 4,
+                "unit": "microseconds"
+            },
+            "1200000": {
+                "value": 4,
+                "unit": "microseconds"
+            },
+            "1440000": {
+                "value": 4,
+                "unit": "microseconds"
+            },
+            "1680000": {
+                "value": 3,
+                "unit": "microseconds"
+            },
+            "1920000": {
+                "value": 4,
+                "unit": "microseconds"
+            },
+            "2160000": {
+                "value": 4,
+                "unit": "microseconds"
+            },
+            "2400000": {
+                "value": 4,
+                "unit": "microseconds"
+            }
+        },
+        "unlink_avg": {
+            "240000": {
+                "value": 234,
+                "unit": "microseconds"
+            },
+            "480000": {
+                "value": 322,
+                "unit": "microseconds"
+            },
+            "720000": {
+                "value": 276,
+                "unit": "microseconds"
+            },
+            "960000": {
+                "value": 275,
+                "unit": "microseconds"
+            },
+            "1200000": {
+                "value": 275,
+                "unit": "microseconds"
+            },
+            "1440000": {
+                "value": 267,
+                "unit": "microseconds"
+            },
+            "1680000": {
+                "value": 318,
+                "unit": "microseconds"
+            },
+            "1920000": {
+                "value": 277,
+                "unit": "microseconds"
+            },
+            "2160000": {
+                "value": 312,
+                "unit": "microseconds"
+            },
+            "2400000": {
                 "value": 313,
                 "unit": "microseconds"
             }

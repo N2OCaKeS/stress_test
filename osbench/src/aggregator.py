@@ -125,15 +125,13 @@ class BenchmarkAggregator:
         metric_keys = ['speed', 'app_overhead', 'create_avg', 'write_avg', 
                     'fsync_avg', 'sync_avg', 'close_avg', 'unlink_avg']
         
-        # Группируем по количеству файлов
-        for iter_key, file_count in file_count_map.items():
-            group_key = f"{file_count}_files"
-            results[group_key] = {}
-            
-            for metric in metric_keys:
+        # Группируем по метрикам 
+        for metric in metric_keys:
+            results[metric] = {}
+            for iter_key, file_count in file_count_map.items():
                 if metric in fs_data and iter_key in fs_data[metric]:
                     value = fs_data[metric][iter_key]
-                    results[group_key][metric] = {
+                    results[metric][str(file_count)] = {
                         'value': value,
                         'unit': 'ops/sec' if metric == 'speed' else 'microseconds'
                     }

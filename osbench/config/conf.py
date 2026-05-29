@@ -103,66 +103,66 @@ RESULT_PERF_BENCH_NAME = "perf_bench_results.json"
 # Index Criterions                                                              #
 #################################################################################
 KERNEL_CRITERIONS = {
-    # ========== СИСТЕМНЫЕ ВЫЗОВЫ (30%) ==========
+    # ========== СИСТЕМНЫЕ ВЫЗОВЫ (24%) ==========
     'syscall': {                              # базовые системные вызовы
-        'weight': 0.12, 
+        'weight': 0.11, 
         'negative': False,
         'bounds': (0.0, 74000000)
         },              
     
     'lat_syscall null': {                     # нулевой syscall - чистая задержка
-        'weight': 0.07, 
+        'weight': 0.06, 
         'negative': True,
         'bounds': (0.0, 1500)
         },     
     'lat_syscall read': {                     # чтение - частая операция
-        'weight': 0.06, 
+        'weight': 0.05, 
         'negative': True,
         'bounds': (0.0, 1500)
         },     
     'lat_syscall write': {                    # запись - частая операция
-        'weight': 0.05, 
+        'weight': 0.04, 
         'negative': True,
         'bounds': (0.0, 1500)
         },    
     
-    # ========== ПЛАНИРОВЩИК (25%) ==========
+    # ========== ПЛАНИРОВЩИК (26%) ==========
+    'lat_ctx -s 0 2 4 8 16 24 32 64 128': {   # переключение контекста
+        'weight': 0.08, 
+        'negative': True,
+        'bounds': (0.0, 30000)
+    },
     'sched pipe': {                           # pipe через планировщик
         'weight': 0.09, 
         'negative': True,
         'bounds': (0.0, 3000)
-        },           
+    },
     'sched messaging': {                      # IPC через планировщик
         'weight': 0.09, 
         'negative': True,
         'bounds': (0.0, 3000)
-        },      
-    'lat_ctx -s 0 2 4 8 16 24 32 64 128': {   # переключение контекста
-        'weight': 0.07, 
-        'negative': True,
-        'bounds': (0.0, 30000)
-        },  
+    },
     
-    # ========== СИНХРОНИЗАЦИЯ (20%) ==========
+    # ========== СИНХРОНИЗАЦИЯ (22%) ==========           
     'futex hash': {                           # хэш-таблица с futex
         'weight': 0.08, 
         'negative': False,
         'bounds': (0.0, 50000000)
-        },           
+    },
     'futex wake': {                           # пробуждение futex
-        'weight': 0.06, 
+        'weight': 0.07, 
         'negative': True,
         'bounds': (0.0, 3000)
         },           
     'futex requeue': {                        # перемещение очереди futex
-        'weight': 0.06, 
+        'weight': 0.07, 
         'negative': True,
         'bounds': (0.0, 1500)
         },       
     
-    # ========== СОБЫТИЯ (15%) ==========
+    # ========== СОБЫТИЯ (16%) ==========
     'epoll wait': {                           # ожидание epoll
-        'weight': 0.08, 
+        'weight': 0.09, 
         'negative': False,
         'bounds': (0.0, 3000000)
         },          
@@ -185,3 +185,137 @@ KERNEL_CRITERIONS = {
         },     
 }
 
+PROCESSES_IPC_CRITERIONS = {
+    # ========== СОЗДАНИЕ ПРОЦЕССОВ (35%) ==========
+    'spawn': {                                # создание процессов
+        'weight': 0.12,
+        'negative': False,
+        'bounds': (0.0, 200000)            
+    },
+    'execl': {                                # запуск программ
+        'weight': 0.12,
+        'negative': False,
+        'bounds': (0.0, 200000)              
+    },
+    'lat_proc fork': {                        # время fork
+        'weight': 0.09,
+        'negative': True,
+        'bounds': (0.0, 5000)                 
+    },
+    'lat_proc exec': {                        # время exec
+        'weight': 0.08,
+        'negative': True,
+        'bounds': (0.0, 5000)                 
+    },
+    
+    # ========== IPC МЕХАНИЗМЫ (65%) ==========
+    'pipe': {                                 # пропускная способность pipe
+        'weight': 0.16,
+        'negative': False,
+        'bounds': (0.0, 50000000)             
+    },
+    'context1': {                             # контекст pipe-based
+        'weight': 0.14,
+        'negative': False,
+        'bounds': (0.0, 5000000)              
+    },
+    'lat_pipe': {                             # задержка pipe
+        'weight': 0.11,
+        'negative': True,
+        'bounds': (0.0, 500)                  
+    },
+    'bw_pipe': {                              # пропускная способность pipe
+        'weight': 0.18,
+        'negative': False,
+        'bounds': (0.0, 50000)                
+    },
+}
+
+FILESYSTEM_CRITERIONS = {
+    # ========== ПРОПУСКНАЯ СПОСОБНОСТЬ (12%) ==========
+    'bw_file_rd': {                           # пропускная способность чтения файла
+        'weight': 0.12,
+        'negative': False,
+        'bounds': (0.0, 50000)                
+    },
+
+    # ========== ОПЕРАЦИИ КОПИРОВАНИЯ (20%) ==========
+    'fstime': {                               # копирование 1024
+        'weight': 0.07,
+        'negative': False,
+        'bounds': (0.0, 20000000)            
+    },
+    'fsbuffer': {                             # копирование 256
+        'weight': 0.06,
+        'negative': False,
+        'bounds': (0.0, 10000000)            
+    },
+    'fsdisk': {                               # копирование 4096
+        'weight': 0.07,
+        'negative': False,
+        'bounds': (0.0, 50000000)             
+    },
+    
+    # ========== ЛАТЕНТНОСТЬ ФС (13%) ==========
+    'lat_fs 0K': {                            # латентность для малых файлов
+        'weight': 0.07,
+        'negative': False,                   
+        'bounds': (0.0, 200000)               
+    },
+    'lat_fs 10K': {                           # латентность для 10KB файлов
+        'weight': 0.06,
+        'negative': False,
+        'bounds': (0.0, 200000)              
+    },
+    
+    # ========== FS_MARK НАГРУЗКИ (55%) ==========
+    'speed': {                                # общая скорость операций
+        'weight': 0.12,
+        'negative': False,
+        'bounds': (0.0, 200000)              
+    },
+    'app_overhead': {                         # накладные расходы
+        'weight': 0.04, 
+        'negative': True, 
+        'bounds': (0.0, 150000000)
+    },
+    'create_avg': {                           # создание файлов
+        'weight': 0.10,
+        'negative': True,
+        'bounds': (0.0, 5000)                
+    },
+    'write_avg': {                            # запись в файлы
+        'weight': 0.08,
+        'negative': True,
+        'bounds': (0.0, 5000)                
+    },
+    'fsync_avg': {                            # синхронизация файлов
+        'weight': 0.06,
+        'negative': True,
+        'bounds': (0.0, 5000)                
+    },
+    'close_avg': {                            # закрытие файлов
+        'weight': 0.05, 
+        'negative': True, 
+        'bounds': (0.0, 500)
+    },
+    'unlink_avg': {                           # удаление файлов
+        'weight': 0.10,
+        'negative': True,
+        'bounds': (0.0, 5000)                
+    }
+}
+
+SCRIPTS_CRITERIONS = {
+    # ========== SHELL СКРИПТЫ (100%) ==========
+    'shell1': {                               # один параллельный скрипт
+        'weight': 0.50,
+        'negative': False,
+        'bounds': (0.0, 200000)               
+    },
+    'shell8': {                               # восемь параллельных скриптов
+        'weight': 0.50,
+        'negative': False,
+        'bounds': (0.0, 200000)              
+    }
+}

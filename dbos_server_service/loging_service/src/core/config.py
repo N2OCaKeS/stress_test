@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = Field(default="loging_service", alias="APP_NAME")
-    app_env: Literal["local", "development", "test", "production"] = Field(
+    app_env: Literal["local", "development", "test", "staging", "production"] = Field(
         default="local", alias="APP_ENV"
     )
     app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
@@ -294,8 +294,13 @@ class Settings(BaseSettings):
         shared secret позволил бы любому network-reachable актору
         подделывать события аудита (включая `service='loging_service'` записи,
         которые retention-инвариант никогда не удаляет).
+
+        `staging` трактуется как prod-like: на стенде те же angles атаки,
+        что и в проде (network-reachable секрет, MITM на introspect), —
+        дефолтный `SERVICE_API_KEY` или `http://` auth_service-URL не должны
+        тихо проходить только из-за того, что env-флаг — не `production`.
         """
-        if self.app_env == "production":
+        if self.app_env in ("production", "staging"):
             if not self.service_api_key or self.service_api_key == _DEFAULT_SERVICE_API_KEY:
                 raise ValueError(
                     "SERVICE_API_KEY must be changed from the default and non-empty in production"

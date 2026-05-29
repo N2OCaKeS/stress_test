@@ -82,7 +82,10 @@ def create_application() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.app_log_level)
 
-    _is_prod = settings.app_env == "production"
+    # `staging` приравнивается к `production`: prod-guard'ы (TLS-enforcement,
+    # отказ от persistAuthorization в Swagger UI, валидация SERVICE_API_KEY)
+    # обязаны срабатывать и на стенде — модель угроз одинаковая.
+    _is_prod = settings.app_env in ("production", "staging")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

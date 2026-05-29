@@ -79,6 +79,19 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         # Один envelope для всего сервиса. Bearer-challenge header'а нет —
         # `AppException`-handler не умеет custom headers, и для browser-flow
         # /token это и не нужно: Swagger UI читает body, не `WWW-Authenticate`.
+        #
+        # 4xx (`401`/`403`/`422`/`429`) и 5xx (`502`/`503`) от auth_service
+        # склеиваются в один 401 INVALID_CREDENTIALS сознательно — Swagger UI
+        # читает только body, и пользователь не сможет осмысленно различить
+        # «неверный пароль» от «auth_service лежит». Реальная недоступность
+        # auth_service сюда не доходит — `httpx`-исключения ловятся выше и
+        # дают 503 AUTH_SERVICE_UNREACHABLE; мы здесь только когда сервис
+        # ответил HTTP'ом. Логируем upstream-статус, чтобы оператор всё-таки
+        # мог отличить «лежит» от «не угадал пароль» по логам.
+        logger.warning(
+            "auth_service /token proxy: upstream returned %d, mapping to 401",
+            resp.status_code,
+        )
         raise AuthenticationError(
             error_code="INVALID_CREDENTIALS",
             message="Invalid credentials",

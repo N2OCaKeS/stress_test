@@ -102,6 +102,22 @@ class RuleUpdate(BaseModel):
     def _normalize_effect(self) -> "RuleUpdate":
         if self.effect == "DROP":
             self.effect = "SUPPRESS"
+        # PATCH-семантика: финальный invariant `effect ↔ effect_severity`
+        # проверяется в endpoint'е `update_rule` после мёржа с DB-состоянием
+        # (одно из полей может остаться от прежнего значения). Здесь только
+        # очевидная клиентская ошибка — оба поля в payload одновременно,
+        # и они несовместимы.
+        eff_set = "effect" in self.model_fields_set
+        sev_set = "effect_severity" in self.model_fields_set
+        if eff_set and sev_set:
+            if self.effect == "OVERRIDE_SEVERITY" and self.effect_severity is None:
+                raise ValueError(
+                    "effect_severity обязателен при effect=OVERRIDE_SEVERITY"
+                )
+            if self.effect != "OVERRIDE_SEVERITY" and self.effect_severity is not None:
+                raise ValueError(
+                    "effect_severity используется только с effect=OVERRIDE_SEVERITY"
+                )
         return self
 
 

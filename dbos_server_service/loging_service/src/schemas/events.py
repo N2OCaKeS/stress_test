@@ -42,7 +42,10 @@ _RESERVED_DETAIL_KEYS: frozenset[str] = frozenset({
 # проверки `request_id="abc\r\nSet-Cookie: hijack"` раскалывает ответ.
 # Defence-in-depth (middleware тоже скрабит), плюс схема не пускает
 # опасные байты до Postgres.
-_REQUEST_ID_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+# Точка в charset'е — de-facto convention `req.<id>` / `trace.<span>`;
+# middleware пропускает её (страйпит только CR/LF/NUL), асимметрия со
+# схемой ловила бы legit-внешние request-id 422-кой.
+_REQUEST_ID_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
 
 # Charset для текстовых полей audit-журнала. Любой downstream-экспорт
 # (CSV/JSON log shipping, SIEM ingestion) сплющивает запись в строку;

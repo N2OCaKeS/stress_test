@@ -237,6 +237,10 @@ class TestEventCreateRequestIdCharset:
         "ABCxyz_0",
         "a",
         "x" * 64,
+        # Точка разрешена — конвенция `req.<id>` / `trace.<span>` встречается
+        # у внешних клиентов; middleware пропускает её, схема симметрична.
+        "abc.def",
+        "req.123",
     ])
     def test_valid_request_id_accepted(self, rid: str):
         m = EventCreate(**_BASE_EVENT, request_id=rid)
@@ -247,7 +251,6 @@ class TestEventCreateRequestIdCharset:
         "abc\nXSS",
         "abc\rXSS",
         "abc def",   # space
-        "abc.def",   # dot
         "abc/def",   # slash
         "abc:def",   # colon
         "абв",       # cyrillic

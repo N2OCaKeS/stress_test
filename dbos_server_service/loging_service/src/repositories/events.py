@@ -148,7 +148,6 @@ def query(
     `include_total=False`.
     """
     stmt = select(AuditEvent)
-    count_stmt = select(func.count()).select_from(AuditEvent)
 
     filters = []
     if department_id is not None:
@@ -166,9 +165,14 @@ def query(
 
     for f in filters:
         stmt = stmt.where(f)
-        count_stmt = count_stmt.where(f)
 
-    total = db.execute(count_stmt).scalar_one() if include_total else None
+    if include_total:
+        count_stmt = select(func.count()).select_from(AuditEvent)
+        for f in filters:
+            count_stmt = count_stmt.where(f)
+        total = db.execute(count_stmt).scalar_one()
+    else:
+        total = None
 
     # Берём на одну строку больше запрошенного лимита — лишняя строка говорит,
     # что за текущей страницей есть ещё данные. Её саму в выдачу не отдаём.

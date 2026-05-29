@@ -1,6 +1,6 @@
 """DAO для `BotServiceRole` — set/clear ролей бота по сервису + bulk-deactivate операции."""
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.bot_account import BotAccount
@@ -80,18 +80,24 @@ class BotRoleRepository:
     async def deactivate_by_role_name_in_dept(
         self, department_id: str, service_name: str, role_name: str
     ) -> None:
-        """Деактивировать bot→role-связи только для ботов указанного отдела."""
-        rows = await self._db.scalars(
-            select(BotServiceRole)
-            .join(BotAccount, BotAccount.id == BotServiceRole.bot_id)
+        """Деактивировать bot→role-связи только для ботов указанного отдела.
+
+        Один UPDATE-WHERE. Возвращаемые id никому не нужны (ботский identity не
+        кэшируется), поэтому не загружаем строки в Python.
+        """
+        bot_ids_stmt = select(BotAccount.id).where(
+            BotAccount.department_id == department_id
+        )
+        await self._db.execute(
+            update(BotServiceRole)
             .where(
-                BotAccount.department_id == department_id,
+                BotServiceRole.bot_id.in_(bot_ids_stmt),
                 BotServiceRole.service_name == service_name,
                 BotServiceRole.role == role_name,
+                BotServiceRole.is_active.is_(True),
             )
+            .values(is_active=False)
         )
-        for row in rows:
-            row.is_active = False
         await self._db.flush()
 
     async def deactivate_all_in_dept_for_service(

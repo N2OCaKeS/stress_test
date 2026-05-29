@@ -1,6 +1,6 @@
 """DAO для `UserServiceRole` — set/clear/list ролей юзера + bulk-операции."""
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.user import User
@@ -137,21 +137,23 @@ class RoleRepository:
         Возвращает список user_id, у которых роль действительно была снята —
         нужен caller'у (`service_role_service.delete_role`) чтобы сбросить
         identity-кэш этих юзеров и не дать им до TTL увидеть удалённую роль.
+
+        Один UPDATE-WHERE ... RETURNING — раньше тащили все строки в Python
+        и руками синкали `is_active`.
         """
-        rows = await self._db.scalars(
-            select(UserServiceRole)
-            .join(User, User.id == UserServiceRole.user_id)
+        user_ids_stmt = select(User.id).where(User.department_id == department_id)
+        result = await self._db.scalars(
+            update(UserServiceRole)
             .where(
-                User.department_id == department_id,
+                UserServiceRole.user_id.in_(user_ids_stmt),
                 UserServiceRole.service_name == service_name,
                 UserServiceRole.role == role_name,
+                UserServiceRole.is_active.is_(True),
             )
+            .values(is_active=False)
+            .returning(UserServiceRole.user_id)
         )
-        affected: list[str] = []
-        for row in rows:
-            if row.is_active:
-                affected.append(row.user_id)
-            row.is_active = False
+        affected = list(result)
         await self._db.flush()
         return affected
 

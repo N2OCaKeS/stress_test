@@ -9,6 +9,7 @@ from src.dependencies.db import get_db
 from src.schemas.auth import IdentityContext, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest, RefreshResponse
 from src.schemas.common import OkResponse
 from src.services import auth_service
+from src.services.audit_context import extract_client_ip
 
 router = APIRouter()
 
@@ -54,7 +55,7 @@ async def token_form(
         db=db,
         username=form.username,
         password=form.password,
-        ip_address=request.client.host if request and request.client else None,
+        ip_address=extract_client_ip(request) if request is not None else None,
         user_agent=request.headers.get("User-Agent") if request else None,
         request_id=getattr(request.state, "request_id", None) if request else None,
     )
@@ -99,7 +100,10 @@ async def login(
         db=db,
         username=body.username,
         password=body.password,
-        ip_address=request.client.host if request.client else None,
+        # `extract_client_ip` уважает trusted-proxy allow-list — тот же IP,
+        # что попадает в audit-trail. Раньше Session.ip_address брался из
+        # `request.client.host` напрямую и расходился с audit на ingress.
+        ip_address=extract_client_ip(request),
         user_agent=request.headers.get("User-Agent"),
         request_id=getattr(request.state, "request_id", None),
     )

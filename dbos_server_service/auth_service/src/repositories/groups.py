@@ -1,6 +1,6 @@
 """DAO для `UserGroup` + membership + group-service-access/role."""
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.bot_group_membership import BotGroupMembership
@@ -330,22 +330,24 @@ class GroupRepository:
         """Deactivate (group, role) bindings only for groups in the given department.
 
         Возвращает group_id затронутых групп — caller использует это, чтобы
-        прокинуть identity-cache-invalidate по всем юзерам-членам.
+        прокинуть identity-cache-invalidate по всем юзерам-членам. Один
+        UPDATE-WHERE ... RETURNING.
         """
-        rows = await self._db.scalars(
-            select(GroupServiceRole)
-            .join(UserGroup, UserGroup.id == GroupServiceRole.group_id)
+        group_ids_stmt = select(UserGroup.id).where(
+            UserGroup.department_id == department_id
+        )
+        result = await self._db.scalars(
+            update(GroupServiceRole)
             .where(
-                UserGroup.department_id == department_id,
+                GroupServiceRole.group_id.in_(group_ids_stmt),
                 GroupServiceRole.service_name == service_name,
                 GroupServiceRole.role == role_name,
+                GroupServiceRole.is_active.is_(True),
             )
+            .values(is_active=False)
+            .returning(GroupServiceRole.group_id)
         )
-        affected: list[str] = []
-        for row in rows:
-            if row.is_active:
-                affected.append(row.group_id)
-            row.is_active = False
+        affected = list(result)
         await self._db.flush()
         return affected
 

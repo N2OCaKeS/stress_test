@@ -180,8 +180,15 @@ async def create_user(
                     error_code="SERVICE_NOT_ALLOWED_FOR_DEPARTMENT",
                     message=f"Service '{svc_name}' is not allowed for this department",
                 )
+            # Один SELECT по (department, service) вместо N×exists. Под обычным
+            # каталогом ролей экономия минорная, но симметрично с bulk_assign /
+            # assign_bot_roles, где паттерн прижился раньше.
+            defined = {
+                r.role_name
+                for r in await role_def_repo.list_active(department_id, svc_name)
+            }
             for role in roles:
-                if not await role_def_repo.exists(department_id, svc_name, role):
+                if role not in defined:
                     raise DomainValidationError(
                         error_code="INVALID_SERVICE_ROLE",
                         message=(

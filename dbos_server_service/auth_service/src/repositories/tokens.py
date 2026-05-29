@@ -1,6 +1,7 @@
 """DAO для `PersonalAccessToken` — CRUD + touch + revoke (включая bulk при ban'е)."""
 
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.personal_access_token import PersonalAccessToken
 from src.utils.ids import pat_id
 from src.utils.time import utcnow
+
+# Допустимые значения для `PersonalAccessToken.revoked_reason`.
+#   "user"        — юзер сам через DELETE /tokens/{id}.
+#   "ban"         — bulk при ban'е; `unban_user` именно по нему ищет PAT для
+#                   реактивации.
+#   "admin_reset" — каскад при password-reset.
+# Любое другое значение → пакеты выше по стеку молча писали бы строку в БД;
+# Literal даёт mypy/pyright отсечь опечатки.
+RevokeReason = Literal["user", "ban", "admin_reset"]
 
 
 class TokenRepository:
@@ -63,20 +73,16 @@ class TokenRepository:
         await self._db.flush()
         return pat
 
-    async def revoke(self, pat: PersonalAccessToken, reason: str | None = "user") -> None:
-        """Отозвать PAT.
-
-        `reason` пишется в `revoked_reason`: "user" (юзер сам через
-        DELETE /tokens/{id}), "ban" (bulk при ban'е), "admin_reset"
-        (password-reset cascade) и т.д. По нему `unban_user` находит именно
-        ban-revoked PAT'ы для реактивации.
-        """
+    async def revoke(
+        self, pat: PersonalAccessToken, reason: RevokeReason | None = "user"
+    ) -> None:
+        """Отозвать PAT. См. `RevokeReason` про допустимые значения."""
         pat.revoked_at = utcnow()
         pat.revoked_reason = reason
         await self._db.flush()
 
     async def revoke_all_for_user(
-        self, user_id: str, reason: str | None = "user"
+        self, user_id: str, reason: RevokeReason | None = "user"
     ) -> int:
         """Bulk-revoke всех активных PAT юзера.
 

@@ -41,6 +41,13 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://auth_user:auth_password@localhost:5432/auth_db",
         alias="DATABASE_URL",
     )
+    # SQLAlchemy connection pool sizing. Дефолты под dev/test-стенд:
+    # 10 постоянных + 20 burst — суммарный лимит 30 соединений к БД,
+    # хватает одной replica auth_service'а под нагрузкой. В прод поднимать
+    # вслед за БД-конфигом (`pgbouncer pool_size`). Симметрично с
+    # `loging_service`, `server_service` и `server_worker`.
+    db_pool_size: int = Field(default=10, ge=1, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=20, ge=0, alias="DB_MAX_OVERFLOW")
     secret_key: str = Field(default="change-me", alias="SECRET_KEY")
     access_token_ttl_minutes: int = Field(default=10, alias="ACCESS_TOKEN_TTL_MINUTES")
     refresh_token_ttl_days: int = Field(default=14, alias="REFRESH_TOKEN_TTL_DAYS")

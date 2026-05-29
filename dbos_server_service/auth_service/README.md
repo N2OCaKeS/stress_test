@@ -177,6 +177,8 @@ PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 | Переменная | Описание |
 |------|------|
 | `DATABASE_URL` | `postgresql+psycopg://user:pass@host:5432/db` |
+| `DB_POOL_SIZE` | SQLAlchemy pool_size (default 10) |
+| `DB_MAX_OVERFLOW` | SQLAlchemy max_overflow (default 20) |
 | `SECRET_KEY` | JWT подпись (≥32 символов, не `change-me` в prod) |
 | `ACCESS_TOKEN_TTL_MINUTES` | TTL access JWT (default 10) |
 | `REFRESH_TOKEN_TTL_DAYS` | TTL refresh (default 14) |

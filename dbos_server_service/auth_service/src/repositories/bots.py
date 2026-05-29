@@ -1,6 +1,8 @@
 """DAO для `BotAccount` — CRUD bot-accounts."""
 
-from sqlalchemy import func, select
+from datetime import datetime
+
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.bot_account import BotAccount
@@ -83,3 +85,64 @@ class BotRepository:
             setattr(bot, key, value)
         await self._db.flush()
         return bot
+
+    async def first_by_name_in_department(
+        self, department_id: str, name: str
+    ) -> BotAccount | None:
+        """Первый бот с этим именем в отделе (используется в docker auth-пути).
+
+        У `bot_accounts.name` нет уникальности — теоретически возможны
+        дубликаты. Для лоокаута это допустимо: при коллизии лоокаунем
+        первого, что хуже не делает (атакующий и так не знает, какого
+        конкретно бота он перебирает).
+        """
+        result = await self._db.scalar(
+            select(BotAccount)
+            .where(
+                BotAccount.department_id == department_id,
+                BotAccount.name == name,
+            )
+            .order_by(BotAccount.created_at, BotAccount.id)
+            .limit(1)
+        )
+        return result
+
+    async def first_by_name(self, name: str) -> BotAccount | None:
+        """Первый бот с этим именем по всем отделам."""
+        return await self._db.scalar(
+            select(BotAccount)
+            .where(BotAccount.name == name)
+            .order_by(BotAccount.created_at, BotAccount.id)
+            .limit(1)
+        )
+
+    async def increment_failed_token_attempts(self, bot: BotAccount) -> int:
+        stmt = (
+            update(BotAccount)
+            .where(BotAccount.id == bot.id)
+            .values(failed_token_attempts=BotAccount.failed_token_attempts + 1)
+            .returning(BotAccount.failed_token_attempts)
+        )
+        new_value = await self._db.scalar(stmt)
+        if new_value is not None:
+            bot.failed_token_attempts = new_value
+        return new_value if new_value is not None else bot.failed_token_attempts
+
+    async def set_locked_until(self, bot: BotAccount, locked_until: datetime) -> None:
+        stmt = (
+            update(BotAccount)
+            .where(BotAccount.id == bot.id)
+            .values(locked_until=locked_until)
+        )
+        await self._db.execute(stmt)
+        bot.locked_until = locked_until
+
+    async def reset_failed_token_attempts(self, bot: BotAccount) -> None:
+        stmt = (
+            update(BotAccount)
+            .where(BotAccount.id == bot.id)
+            .values(failed_token_attempts=0, locked_until=None)
+        )
+        await self._db.execute(stmt)
+        bot.failed_token_attempts = 0
+        bot.locked_until = None

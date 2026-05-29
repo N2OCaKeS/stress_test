@@ -57,6 +57,33 @@ class Settings(BaseSettings):
         description="Длительность lockout в минутах после достижения лимита неудач.",
     )
 
+    # Симметричные лимиты для OAuth `client_credentials` brute-force
+    # (`OAuthClient.failed_secret_attempts`) и для bot-токена в
+    # `/docker/token` (`BotAccount.failed_token_attempts`). Те же
+    # 5 / 15 дефолты OWASP, но переопределяемы отдельно — иначе
+    # завязка на user-параметры мешала бы крутить агрессивнее одно
+    # без другого.
+    oauth_client_max_failed_secret_attempts: int = Field(
+        default=5,
+        alias="OAUTH_CLIENT_MAX_FAILED_SECRET_ATTEMPTS",
+        description="Сколько подряд неверных client_secret триггерят lockout клиента.",
+    )
+    oauth_client_lockout_minutes: int = Field(
+        default=15,
+        alias="OAUTH_CLIENT_LOCKOUT_MINUTES",
+        description="Длительность OAuth-client lockout в минутах.",
+    )
+    bot_max_failed_token_attempts: int = Field(
+        default=5,
+        alias="BOT_MAX_FAILED_TOKEN_ATTEMPTS",
+        description="Сколько подряд неверных bot-токенов триггерят lockout бота.",
+    )
+    bot_lockout_minutes: int = Field(
+        default=15,
+        alias="BOT_LOCKOUT_MINUTES",
+        description="Длительность bot-lockout в минутах.",
+    )
+
     # TTL для identity-cache (sha256(token) → IdentityContext) в
     # `dependencies/auth.py`. Default 5s — окно burst'а одной UI-сессии, но
     # недостаточно для долгого stale-доступа забаненного.

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,6 +26,12 @@ class OAuthClient(Base):
     # Поддерживаемые grant types: authorization_code, client_credentials
     grant_types: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Public clients (SPA / native CLI) обязаны идти PKCE S256.
+    # У confidential — поведение не меняем (back-compat).
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Per-client brute-force lockout: счётчик неверных client_secret + окно блокировки.
+    failed_secret_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

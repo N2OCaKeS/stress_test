@@ -80,6 +80,14 @@ class OAuthClientCreate(BaseModel):
         default=["authorization_code"],
         description="Разрешённые grant'ы (`authorization_code`, `client_credentials`, `refresh_token`).",
     )
+    is_public: bool = Field(
+        default=False,
+        description=(
+            "Public-клиент (SPA / native CLI) — не может хранить client_secret. "
+            "Для таких включается обязательный PKCE с S256 (plain отвергается). "
+            "Default False (confidential)."
+        ),
+    )
 
     @field_validator("redirect_uris")
     @classmethod
@@ -104,6 +112,7 @@ class OAuthClientResponse(BaseModel):
     allowed_scopes: list[str]
     grant_types: list[str]
     is_active: bool
+    is_public: bool = False
     created_at: datetime
 
 

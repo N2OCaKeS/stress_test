@@ -268,10 +268,44 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
 
     if password.startswith(BOT_TOKEN_PREFIX):
         bot_token = await bot_token_repo.get_active_by_hash(hash_opaque_token(password))
+        bot_for_success: object | None = None
         if bot_token and not (bot_token.expires_at and is_expired(bot_token.expires_at)):
-            bot = await bot_repo.get_by_id(bot_token.bot_id)
-            if bot and bot.is_active:
-                return bot.id, bot.department_id
+            bot_for_success = await bot_repo.get_by_id(bot_token.bot_id)
+            if bot_for_success and bot_for_success.is_active:
+                # JIT-сброс истёкшего lockout'а перед happy-path.
+                if await _lockout.release_principal_if_expired(
+                    bot_repo, bot_for_success,
+                    reset_attr="reset_failed_token_attempts",
+                ):
+                    await db.commit()
+                _lockout.assert_principal_not_locked(bot_for_success)
+                if bot_for_success.failed_token_attempts:
+                    await bot_repo.reset_failed_token_attempts(bot_for_success)
+                    await db.commit()
+                return bot_for_success.id, bot_for_success.department_id
+
+        # Token не валиден ИЛИ привязан к неактивному боту. Регистрируем
+        # неуспех на боте, идентифицируя его по username (Basic-auth) —
+        # bot.name не уникален, но первого совпадения достаточно для
+        # счётчика. Симметрия с user-password путём.
+        target_bot = await bot_repo.first_by_name(username) if username else None
+        if target_bot is not None:
+            if await _lockout.release_principal_if_expired(
+                bot_repo, target_bot,
+                reset_attr="reset_failed_token_attempts",
+            ):
+                await db.commit()
+            _lockout.assert_principal_not_locked(target_bot)
+            settings = get_settings()
+            await _lockout.register_principal_failure(
+                bot_repo,
+                target_bot,
+                counter_attr="failed_token_attempts",
+                increment_method="increment_failed_token_attempts",
+                max_attempts=settings.bot_max_failed_token_attempts,
+                lockout_minutes=settings.bot_lockout_minutes,
+            )
+            await db.commit()
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid credentials")
 
     user = await user_repo.get_by_username(username)

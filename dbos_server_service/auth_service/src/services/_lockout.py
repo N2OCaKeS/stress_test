@@ -87,3 +87,62 @@ async def register_failure(
 async def register_success(user_repo: UserRepository, user) -> None:
     """Сбросить счётчик + `locked_until` после успешного verify'я."""
     await user_repo.reset_failed_attempts(user)
+
+
+# ── Generic helpers для OAuth/Bot lockout ──────────────────────────────────────
+# Те же инварианты, что и для user-lockout (commit-до-raise остаётся на caller'е),
+# но репо/принципал передаются как duck-typed объекты с увеличивать/сетить/
+# ресетить-методами. Так избегаем общего базового класса и тесно связанной
+# иерархии — нужны только три конкретных метода.
+
+async def release_principal_if_expired(
+    repo, principal, *, reset_attr: str = "reset_failed_attempts"
+) -> bool:
+    """Generic-аналог `release_if_expired` для OAuth/Bot principal'а."""
+    if principal.locked_until and is_expired(principal.locked_until):
+        await getattr(repo, reset_attr)(principal)
+        return True
+    return False
+
+
+def assert_principal_not_locked(principal) -> None:
+    """Generic-аналог `assert_not_locked` для произвольного principal'а
+    с полем `locked_until`."""
+    if not principal.locked_until:
+        return
+    if is_expired(principal.locked_until):
+        return
+    locked_dt = (
+        principal.locked_until
+        if principal.locked_until.tzinfo
+        else principal.locked_until.replace(tzinfo=timezone.utc)
+    )
+    retry_secs = int((locked_dt - utcnow()).total_seconds())
+    raise AuthorizationError(
+        error_code="ACCOUNT_TEMPORARILY_LOCKED",
+        message="Account is temporarily locked",
+        details={"retry_after_seconds": retry_secs},
+        http_status=429,
+    )
+
+
+async def register_principal_failure(
+    repo,
+    principal,
+    *,
+    counter_attr: str,
+    increment_method: str,
+    set_locked_method: str = "set_locked_until",
+    max_attempts: int,
+    lockout_minutes: int,
+) -> None:
+    """Атомарный инкремент произвольного счётчика + опциональный lockout.
+
+    `counter_attr` — имя поля на ORM-инстансе (`failed_secret_attempts` /
+    `failed_token_attempts`). `increment_method` — имя метода репо.
+    """
+    await getattr(repo, increment_method)(principal)
+    if getattr(principal, counter_attr) >= max_attempts:
+        await getattr(repo, set_locked_method)(
+            principal, expires_at(minutes=lockout_minutes)
+        )

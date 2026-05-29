@@ -26,7 +26,7 @@ from src.schemas.oauth import (
     OAuthClientResponse,
     OAuthTokenResponse,
 )
-from src.services import audit_service
+from src.services import _lockout, audit_service
 from src.utils.time import is_expired, utcnow
 
 _SECRET_PREFIX_LEN = 12
@@ -49,6 +49,7 @@ def _to_response(client) -> OAuthClientResponse:
         allowed_scopes=client.allowed_scopes,
         grant_types=client.grant_types,
         is_active=client.is_active,
+        is_public=client.is_public,
         created_at=client.created_at,
     )
 
@@ -96,6 +97,7 @@ async def create_client(
         allowed_scopes=data.allowed_scopes,
         grant_types=data.grant_types,
         description=data.description,
+        is_public=data.is_public,
         created_by=actor_id,
     )
     await db.commit()
@@ -236,12 +238,27 @@ async def issue_authorization_code(
     if redirect_uri not in client.redirect_uris:
         raise AuthorizationError(error_code="REDIRECT_URI_MISMATCH", message="redirect_uri does not match registered URIs")
 
-    # PKCE-валидация (если клиент прислал challenge — method обязателен и из
-    # дозволенного множества; default по RFC 7636 §4.3 — "plain", но мы
-    # предпочитаем явный method, чтобы не было сюрпризов с downgrade).
+    # PKCE-валидация. Для public-клиентов (`is_public=True`) S256 обязателен —
+    # plain не защищает от перехвата кода (verifier == challenge тривиально).
+    # Для confidential — поведение прежнее (back-compat): если challenge есть,
+    # method из дозволенного множества; если нет — пропускаем.
     pkce_challenge: str | None = None
     pkce_method: str | None = None
-    if code_challenge:
+    if client.is_public:
+        if not code_challenge:
+            raise AuthorizationError(
+                error_code="PKCE_REQUIRED",
+                message="code_challenge is required for public OAuth clients",
+            )
+        method = code_challenge_method or "plain"
+        if method != "S256":
+            raise AuthorizationError(
+                error_code="PKCE_METHOD_INVALID",
+                message="public OAuth clients must use code_challenge_method=S256",
+            )
+        pkce_challenge = code_challenge
+        pkce_method = method
+    elif code_challenge:
         method = code_challenge_method or "plain"
         if method not in _PKCE_METHODS:
             raise AuthorizationError(
@@ -292,6 +309,43 @@ async def issue_authorization_code(
     return raw_code
 
 
+async def _verify_client_secret_with_lockout(
+    db: AsyncSession,
+    client_repo: OAuthClientRepository,
+    client,
+    client_secret: str,
+) -> None:
+    """Проверить client_secret с lockout-пайплайном.
+
+    Зеркалит `verify_password_with_lockout`: release_if_expired → assert_not_locked
+    → compare_digest. При неудаче — атомарный инкремент + commit, при
+    превышении лимита — locked_until. Любая неудача поднимает
+    `OAUTH_CLIENT_INVALID` (без раскрытия того, что lockout сработал на
+    конкретно этом промахе; залоченный клиент получит 429 на следующем
+    запросе через assert_not_locked).
+    """
+    if await _lockout.release_principal_if_expired(client_repo, client):
+        await db.commit()
+
+    _lockout.assert_principal_not_locked(client)
+
+    if not hmac.compare_digest(hash_opaque_token(client_secret), client.client_secret_hash):
+        settings = get_settings()
+        await _lockout.register_principal_failure(
+            client_repo,
+            client,
+            counter_attr="failed_secret_attempts",
+            increment_method="increment_failed_secret_attempts",
+            max_attempts=settings.oauth_client_max_failed_secret_attempts,
+            lockout_minutes=settings.oauth_client_lockout_minutes,
+        )
+        await db.commit()
+        raise AuthenticationError(
+            error_code="OAUTH_CLIENT_INVALID",
+            message="Invalid client credentials",
+        )
+
+
 async def exchange_code(
     db: AsyncSession,
     client_id: str,
@@ -312,8 +366,11 @@ async def exchange_code(
     if client is None or not client.is_active:
         raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
 
-    if not hmac.compare_digest(hash_opaque_token(client_secret), client.client_secret_hash):
-        raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
+    await _verify_client_secret_with_lockout(db, client_repo, client, client_secret)
+    # Успешный verify сбрасываем счётчик — но только если он ненулевой
+    # (избегаем лишнего UPDATE на happy path).
+    if client.failed_secret_attempts:
+        await client_repo.reset_failed_attempts(client)
 
     code_hash = hash_opaque_token(code)
     code_repo = OAuthCodeRepository(db)
@@ -432,8 +489,10 @@ async def client_credentials_token(
     if client is None or not client.is_active:
         raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
 
-    if not hmac.compare_digest(hash_opaque_token(client_secret), client.client_secret_hash):
-        raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
+    await _verify_client_secret_with_lockout(db, client_repo, client, client_secret)
+    if client.failed_secret_attempts:
+        await client_repo.reset_failed_attempts(client)
+        await db.commit()
 
     if "client_credentials" not in client.grant_types:
         raise AuthorizationError(error_code="GRANT_TYPE_NOT_ALLOWED", message="client_credentials grant not enabled for this client")

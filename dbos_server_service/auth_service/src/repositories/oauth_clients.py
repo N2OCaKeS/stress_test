@@ -1,8 +1,9 @@
 """DAO для `OAuthClient` + `OAuthAuthorizationCode` — CRUD клиентов и CAS mark_used кодов."""
 
 import secrets
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.oauth_authorization_code import OAuthAuthorizationCode
@@ -50,6 +51,7 @@ class OAuthClientRepository:
         allowed_scopes: list[str],
         grant_types: list[str],
         description: str | None = None,
+        is_public: bool = False,
         created_by: str | None = None,
     ) -> OAuthClient:
         client = OAuthClient(
@@ -63,6 +65,7 @@ class OAuthClientRepository:
             redirect_uris=redirect_uris,
             allowed_scopes=allowed_scopes,
             grant_types=grant_types,
+            is_public=is_public,
             created_by=created_by,
         )
         self._db.add(client)
@@ -78,6 +81,42 @@ class OAuthClientRepository:
     async def deactivate(self, client: OAuthClient) -> None:
         client.is_active = False
         await self._db.flush()
+
+    async def increment_failed_secret_attempts(self, client: OAuthClient) -> int:
+        """Атомарный инкремент `failed_secret_attempts` через UPDATE … RETURNING.
+
+        Возвращает новое значение и синхронизирует ORM-инстанс — caller'ы
+        могут сразу читать `client.failed_secret_attempts`.
+        """
+        stmt = (
+            update(OAuthClient)
+            .where(OAuthClient.id == client.id)
+            .values(failed_secret_attempts=OAuthClient.failed_secret_attempts + 1)
+            .returning(OAuthClient.failed_secret_attempts)
+        )
+        new_value = await self._db.scalar(stmt)
+        if new_value is not None:
+            client.failed_secret_attempts = new_value
+        return new_value if new_value is not None else client.failed_secret_attempts
+
+    async def set_locked_until(self, client: OAuthClient, locked_until: datetime) -> None:
+        stmt = (
+            update(OAuthClient)
+            .where(OAuthClient.id == client.id)
+            .values(locked_until=locked_until)
+        )
+        await self._db.execute(stmt)
+        client.locked_until = locked_until
+
+    async def reset_failed_attempts(self, client: OAuthClient) -> None:
+        stmt = (
+            update(OAuthClient)
+            .where(OAuthClient.id == client.id)
+            .values(failed_secret_attempts=0, locked_until=None)
+        )
+        await self._db.execute(stmt)
+        client.failed_secret_attempts = 0
+        client.locked_until = None
 
 
 class OAuthCodeRepository:

@@ -390,19 +390,10 @@ async def create_server(
     )
     if ipmi_obj is not None:
         await db.refresh(ipmi_obj)
-        audit_service.emit(
-            "ipmi_controller.create",
-            target_id=ipmi_obj.id,
-            target_type="ipmi_controller",
-            status="success",
-            allowed=True,
-            details={
-                "server_id": ipmi_obj.server_id,
-                "kind": ipmi_obj.kind,
-                "endpoint_url": ipmi_obj.endpoint_url,
-                "department_id": obj.department_id,
-            },
-        )
+        # Локальный импорт — `services/ipmi_controller` тянет `load_visible_server`
+        # из этого модуля, чтобы не словить циклический импорт на старте.
+        from src.services.ipmi_controller import emit_create_success
+        emit_create_success(ipmi_obj, obj.department_id)
     return obj
 
 

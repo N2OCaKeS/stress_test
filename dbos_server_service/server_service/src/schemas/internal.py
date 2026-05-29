@@ -180,8 +180,7 @@ class DriftItem(BaseModel):
 class UsersInventoryResultSummary(BaseModel):
     """Сводка reconcile инвентаризации, возвращаемая worker'у вместе с
     обычными счётчиками. Worker может сохранить её в `tasks.result_payload`
-    (см. F6-worker TODO) либо клиент агрегирует через
-    `GET /servers/{id}/drift`."""
+    либо клиент агрегирует через `GET /servers/{id}/drift`."""
 
     total_users: int = Field(description="Сколько OS-пользователей пришло в payload (после фильтра системных).")
     created_discovered: int = Field(description="Сколько discovered-аккаунтов заведено в этом проходе.")

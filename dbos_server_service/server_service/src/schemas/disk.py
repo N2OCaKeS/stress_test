@@ -19,6 +19,13 @@ class DiskSpec(BaseModel):
     `slot` — логическое имя устройства (`system`, `disk1`, `diskN`), оно же
     ложится в `server_disks.device_name`. Слот `system` всегда системный;
     для остальных системность задаётся флагом `is_system`.
+
+    Тонкость: колонка `server_disks.device_name` мультиформатная. Через эту
+    схему туда попадают логические слоты (`system`/`diskN`); inventory-
+    callback от worker'а (`InventoryDiskItem.name` в `schemas/internal.py`)
+    пишет сырые имена устройств из `lsblk` — `sda`, `nvme0n1`. Единый
+    UNIQUE(server_id, device_name) гарантирует отсутствие коллизий, но
+    оператору надо помнить, что один и тот же столбец несёт оба алфавита.
     """
 
     slot: str = Field(

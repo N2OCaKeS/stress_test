@@ -605,8 +605,10 @@ async def power_status_dispatch(
         "Публикует задачу `inventory.sync` в taskiq-broker. Worker идёт на "
         "сервер по SSH (используя любой аккаунт сервера, если в payload "
         "передан `account_id`, иначе дефолтный `root`), снимает OS/kernel/"
-        "packages/disks и сохраняет в `task.result`. Постинг facts обратно "
-        "в server_service — пока TODO в worker'е (см. inventory.py)."
+        "packages/disks и постит facts обратно через `submit_inventory_facts` "
+        "(internal endpoint). Сырые facts остаются в `task.result` для "
+        "диагностики; submit-fail уходит в audit как `server.inventory_sync` "
+        "failure, но сам task остаётся SUCCEEDED."
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},

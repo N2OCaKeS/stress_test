@@ -624,7 +624,7 @@ async def receive_inventory(
 #
 # `home_dir` намеренно НЕ в списке: PATCH home_dir не запускает fan-out
 # (worker не двигает $HOME), а inventory эмитил бы drift на каждом скане —
-# оператор получал бы шум, который ничем не закрыть. Symmetрично `home_dir`
+# оператор получал бы шум, который ничем не закрыть. Симметрично `home_dir`
 # исключён из `_OS_MANAGED_FIELDS` для fanout-payload в server_accounts.py.
 _DRIFT_ATTRS = ("has_sudo", "unix_groups", "shell")
 

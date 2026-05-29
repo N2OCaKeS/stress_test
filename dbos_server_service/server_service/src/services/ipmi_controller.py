@@ -42,6 +42,30 @@ def _generate_password() -> str:
     return secrets.token_urlsafe(32)
 
 
+def emit_create_success(controller: IpmiController, department_id: str) -> None:
+    """Аудит-эмит успешной регистрации BMC.
+
+    Вынесено отдельным хелпером, потому что create контроллера живёт в двух
+    точках: standalone POST /servers/{id}/ipmi (этот сервис) и вложенный
+    блок `ipmi` в POST /servers (`services/server.py::create_server`). Обе
+    точки должны бить ровно одинаковыми деталями — каталог `AUDIT_EVENTS.md`
+    описывает один формат.
+    """
+    audit_service.emit(
+        "ipmi_controller.create",
+        target_id=controller.id,
+        target_type="ipmi_controller",
+        status="success",
+        allowed=True,
+        details={
+            "server_id": controller.server_id,
+            "kind": controller.kind,
+            "endpoint_url": controller.endpoint_url,
+            "department_id": department_id,
+        },
+    )
+
+
 async def create_controller(
     db: AsyncSession,
     identity: IdentityContext,
@@ -107,17 +131,7 @@ async def create_controller(
             details={"hint": "уникальный ключ server_id (1:1 с сервером)"},
         ) from exc
     await db.refresh(obj)
-    audit_service.emit(
-        "ipmi_controller.create",
-        target_id=obj.id, target_type="ipmi_controller",
-        status="success", allowed=True,
-        details={
-            "server_id": obj.server_id,
-            "kind": obj.kind,
-            "endpoint_url": obj.endpoint_url,
-            "department_id": server.department_id,
-        },
-    )
+    emit_create_success(obj, server.department_id)
     return obj
 
 

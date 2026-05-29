@@ -133,8 +133,8 @@ class TestResolveDefaultSeverity:
         assert _resolve_default_severity("server.prepared", "success") == "CRITICAL"
         assert _resolve_default_severity("server.prepared", "failure") == "CRITICAL"
 
-    def test_server_account_provision_critical(self):
-        assert _resolve_default_severity("server_account.provision", "success") == "CRITICAL"
+    def test_server_account_provision_severity(self):
+        assert _resolve_default_severity("server_account.provision", "success") == "WARNING"
         assert _resolve_default_severity("server_account.provision", "failure") == "CRITICAL"
 
     def test_server_account_update_on_host_info(self):

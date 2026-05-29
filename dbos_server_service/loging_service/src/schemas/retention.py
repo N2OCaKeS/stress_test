@@ -106,12 +106,6 @@ class RetentionPolicyCreate(BaseModel):
         return sorted(set(canonical))
 
 
-class RetentionPolicyUpdate(BaseModel):
-    retain_days: int | None = Field(default=None, ge=30, le=3650)
-    description: str | None = None
-    is_active: bool | None = None
-
-
 class RetentionPolicyResponse(BaseModel):
     id: str
     retain_days: int

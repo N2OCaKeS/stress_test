@@ -68,7 +68,7 @@ Match-полей пять: `match_service`, `match_action` (glob с одной �
 В БД политика хранения задаётся per-severity и per-service: колонки `severity`, `service` в `retention_policies` (`NULL` = «любой»), плюс `retain_days` (диапазон `30..3650`). В API:
 
 - `RetentionPolicyCreate` принимает `retain_days` + опциональные `severity_filter: list[Severity] | None` и `service_filter: list[str] | None`. Repository пишет Cartesian (N×M строк) — одна row на каждую пару `(severity_i, service_j)`. Без фильтров — глобальная семантика (один row `NULL`/`NULL`).
-- `RetentionPolicyUpdate` фильтр-полей не принимает: для смены filter'ов делается full re-PUT (осознанный trade-off).
+- PATCH-эндпоинта нет: любое изменение идёт через full re-PUT (осознанный trade-off, упрощает replace-семантику).
 - `PUT /retention` — replace-семантика: сначала деактивируется ВЕСЬ прежний активный набор (`deactivate_all_active`), затем пишется новый. Так сброс фильтров не оставляет старые узкие предикаты активными рядом с новой политикой. Unfiltered-PUT поверх существующей политики создаёт новую строку (новый `id`), а не in-place update.
 - `DELETE /retention` (idempotent, 204) деактивирует ВЕСЬ активный набор — «отключить retention» гасит все активные строки (для filtered это N×M), чтобы фоновая ротация полностью остановилась. Self-audit несёт `deactivated_count` — реальный размер погашенного набора.
 

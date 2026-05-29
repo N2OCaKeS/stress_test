@@ -46,6 +46,7 @@ class EventDefinition(BaseModel):
 class RegisterEventsRequest(BaseModel):
     events: list[EventDefinition] = Field(
         min_length=1,
+        max_length=500,
         description="Полный список событий, которые сервис может эмитить",
     )
 

@@ -15,7 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.schemas.events import EventCreate
-from src.schemas.retention import RetentionPolicyCreate, RetentionPolicyUpdate
+from src.schemas.retention import RetentionPolicyCreate
 from src.schemas.rules import RuleCreate, RuleUpdate
 from src.schemas.services import EventDefinition, RegisterEventsRequest
 

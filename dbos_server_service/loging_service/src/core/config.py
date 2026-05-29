@@ -124,6 +124,25 @@ class Settings(BaseSettings):
         default=True, alias="INTROSPECT_TLS_VERIFY"
     )
 
+    # Размеры пула pooled introspect-клиента (httpx.Limits). Default 20/10 —
+    # достаточно для типичного hot-path (один RPS на пользовательский
+    # запрос). Под высокой нагрузкой можно поднять без передеплоя.
+    introspect_pool_max_connections: int = Field(
+        default=20, alias="INTROSPECT_POOL_MAX_CONNECTIONS", ge=1
+    )
+    introspect_pool_max_keepalive: int = Field(
+        default=10, alias="INTROSPECT_POOL_MAX_KEEPALIVE", ge=0
+    )
+
+    # Аналог для token-proxy клиента (POST /token swagger-логин). Лимиты
+    # ниже introspect'а — логины редкие.
+    token_proxy_pool_max_connections: int = Field(
+        default=10, alias="TOKEN_PROXY_POOL_MAX_CONNECTIONS", ge=1
+    )
+    token_proxy_pool_max_keepalive: int = Field(
+        default=5, alias="TOKEN_PROXY_POOL_MAX_KEEPALIVE", ge=0
+    )
+
     # Per-IP rate-limit на `POST /events` ingest (синтаксис slowapi: `<n>/<period>`).
     # Quick-win: скомпрометированный shared SERVICE_API_KEY не сможет насытить
     # БД (~3000 ev/s, ~10 GB/h), как только один client IP вылезет за cap.

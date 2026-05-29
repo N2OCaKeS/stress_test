@@ -123,7 +123,8 @@ def create_application() -> FastAPI:
                 base_url=base,
                 timeout=timeout,
                 limits=httpx.Limits(
-                    max_connections=20, max_keepalive_connections=10
+                    max_connections=live_settings.introspect_pool_max_connections,
+                    max_keepalive_connections=live_settings.introspect_pool_max_keepalive,
                 ),
                 verify=live_settings.introspect_tls_verify,
             )
@@ -139,7 +140,8 @@ def create_application() -> FastAPI:
                     connect=live_settings.introspect_connect_timeout_seconds,
                 ),
                 limits=httpx.Limits(
-                    max_connections=10, max_keepalive_connections=5
+                    max_connections=live_settings.token_proxy_pool_max_connections,
+                    max_keepalive_connections=live_settings.token_proxy_pool_max_keepalive,
                 ),
                 verify=live_settings.introspect_tls_verify,
             )

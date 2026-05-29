@@ -1,5 +1,7 @@
 """Бизнес-логика приёма и чтения событий аудита."""
 
+import logging
+import traceback
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -10,6 +12,8 @@ from src.repositories import events as event_repo
 from src.schemas.events import EventCreate, EventListResponse, EventDetail
 from src.services import rule_service
 from src.utils.redaction import redact
+
+logger = logging.getLogger(__name__)
 
 
 def _redact_payload(payload: EventCreate) -> EventCreate:
@@ -51,6 +55,13 @@ def record_admin_action(
     """
     from src.services.rule_service import _resolve_default_severity
     if payload.service != "loging_service":
+        # Логируем стек вызова, чтобы invariant-500 не маскировал bug call-site:
+        # traceback покажет, какой endpoint вызвал record_admin_action с чужим сервисом.
+        caller = traceback.extract_stack(limit=4)[-2]
+        logger.error(
+            "record_admin_action invariant violation: service=%r at %s:%d in %s",
+            payload.service, caller.filename, caller.lineno, caller.name,
+        )
         raise AppException(
             error_code="ADMIN_AUDIT_WRONG_SERVICE",
             message=(

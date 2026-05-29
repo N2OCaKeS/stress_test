@@ -185,7 +185,7 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("ipmi_controller.password_rotate", "failure"): "CRITICAL",
     ("ipmi_controller.password_rotate", "denied"): "WARNING",
     # Сервисные OS-учётки на хостах
-    ("server_account.provision", "success"): "CRITICAL",
+    ("server_account.provision", "success"): "WARNING",
     ("server_account.provision", "failure"): "CRITICAL",
     ("server_account.update_on_host", "success"): "INFO",
     ("server_account.deprovision", "success"): "WARNING",

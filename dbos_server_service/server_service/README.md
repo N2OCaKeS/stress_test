@@ -250,6 +250,8 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 | ENV | Назначение |
 |---|---|
 | `DATABASE_URL` | PostgreSQL async DSN |
+| `DB_POOL_SIZE` | SQLAlchemy `pool_size`; default 10 |
+| `DB_MAX_OVERFLOW` | SQLAlchemy `max_overflow` поверх pool_size; default 20 |
 | `AUTH_SERVICE_URL` | базовый URL для introspect; в prod/staging обязан быть https |
 | `AUTH_REQUEST_TIMEOUT_SECONDS` | default 3.0 |
 | `SERVER_ENCRYPTION_KEY` | master-ключ, обязательный, `min_length=32` |

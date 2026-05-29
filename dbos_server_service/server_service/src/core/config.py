@@ -36,6 +36,13 @@ class Settings(BaseSettings):
         ...,
         description="PostgreSQL async DSN, например postgresql+psycopg://user:pass@host/db",
     )
+    # SQLAlchemy connection pool sizing. Дефолты под dev/test-стенд:
+    # 10 постоянных + 20 burst — хватает 4 uvicorn-воркерам, не упирается
+    # в `max_connections` локального postgres. В прод-нагрузке поднимать
+    # вслед за БД-конфигом (`pgbouncer pool_size`). Симметрично с
+    # `loging_service` и `server_worker`.
+    db_pool_size: int = Field(default=10, ge=1, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=20, ge=0, alias="DB_MAX_OVERFLOW")
     auth_service_url: str = Field(
         ...,
         description="Base URL auth_service для introspect-вызовов, например http://auth_service:8000",

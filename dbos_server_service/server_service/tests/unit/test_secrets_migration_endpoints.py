@@ -64,7 +64,13 @@ class TestMigrationStatusShape:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert set(body.keys()) == {"remaining", "total", "active_version", "by_version"}
+        assert set(body.keys()) == {
+            "remaining",
+            "total",
+            "active_version",
+            "by_version",
+            "app_env",
+        }
 
     async def test_counts_with_records(
         self, client, worker_pat_token, make_server, make_account, make_ipmi,

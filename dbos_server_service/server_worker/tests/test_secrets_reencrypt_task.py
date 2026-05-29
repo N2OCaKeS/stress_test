@@ -289,6 +289,95 @@ class TestFailureModes:
         await _invoke_task()
 
 
+class TestAppEnvGuard:
+    async def test_mismatch_aborts_tick(self, monkeypatch, captured_audit):
+        """server_service отдал чужой APP_ENV → batch не вызывается, audit failure."""
+        from src.main import _settings
+        from src.services import server_service_client
+
+        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
+        monkeypatch.setattr(_settings, "app_env", "staging")
+
+        status_mock = AsyncMock(return_value={
+            "remaining": 10,
+            "total": 10,
+            "active_version": 2,
+            "by_version": {"1": 10},
+            "app_env": "production",
+        })
+        batch_mock = AsyncMock(return_value={"processed": 10, "errors": 0})
+        monkeypatch.setattr(
+            server_service_client, "fetch_secrets_migration_status", status_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+        )
+
+        await _invoke_task()
+
+        status_mock.assert_awaited_once()
+        batch_mock.assert_not_called()
+        tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
+        assert len(tick) == 1
+        assert tick[0]["status"] == "failure"
+        assert tick[0]["details"]["reason"] == "app_env_mismatch"
+        assert tick[0]["details"]["worker_app_env"] == "staging"
+        assert tick[0]["details"]["server_service_app_env"] == "production"
+
+    async def test_match_case_insensitive_proceeds(self, monkeypatch, captured_audit):
+        """APP_ENV сравниваем без учёта регистра — Production==production."""
+        from src.main import _settings
+        from src.services import server_service_client
+
+        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
+        monkeypatch.setattr(_settings, "app_env", "Production")
+
+        status_mock = AsyncMock(return_value={
+            "remaining": 5,
+            "total": 5,
+            "active_version": 2,
+            "by_version": {"1": 5},
+            "app_env": "production",
+        })
+        batch_mock = AsyncMock(return_value={"processed": 5, "errors": 0})
+        monkeypatch.setattr(
+            server_service_client, "fetch_secrets_migration_status", status_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+        )
+
+        await _invoke_task()
+
+        batch_mock.assert_awaited_once()
+
+    async def test_missing_app_env_in_status_proceeds(self, monkeypatch, captured_audit):
+        """Старый server_service без `app_env` в ответе — guard молчит, тик идёт штатно."""
+        from src.main import _settings
+        from src.services import server_service_client
+
+        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
+        monkeypatch.setattr(_settings, "app_env", "production")
+
+        status_mock = AsyncMock(return_value={
+            "remaining": 5,
+            "total": 5,
+            "active_version": 2,
+            "by_version": {"1": 5},
+        })
+        batch_mock = AsyncMock(return_value={"processed": 5, "errors": 0})
+        monkeypatch.setattr(
+            server_service_client, "fetch_secrets_migration_status", status_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+        )
+
+        await _invoke_task()
+
+        batch_mock.assert_awaited_once()
+
+
 class TestBatchSizeWiring:
     async def test_passes_configured_batch_size(self, monkeypatch):
         from src.main import _settings

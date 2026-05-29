@@ -951,6 +951,32 @@ async def secrets_reencrypt_lazy() -> None:
         )
         return
 
+    # Guard от worker'а, указывающего на чужое окружение (например,
+    # staging-воркер с прод-server_service в env): такой тик переписал бы
+    # секреты другого контура своим master-key. server_service отдаёт свой
+    # APP_ENV в status — сравниваем без учёта регистра.
+    remote_app_env = str(status.get("app_env") or "").strip()
+    local_app_env = settings.app_env.strip()
+    if remote_app_env and remote_app_env.lower() != local_app_env.lower():
+        logger.error(
+            "secrets.reencrypt_lazy: APP_ENV mismatch (worker=%s, server_service=%s) — aborting tick",
+            local_app_env,
+            remote_app_env,
+        )
+        await _enqueue_outbox_audit({
+            "action": "secrets.reencrypt_tick",
+            "status": "failure",
+            "allowed": True,
+            "target_type": "secret",
+            "details": {
+                "skipped": True,
+                "reason": "app_env_mismatch",
+                "worker_app_env": local_app_env,
+                "server_service_app_env": remote_app_env,
+            },
+        })
+        return
+
     remaining = int(status.get("remaining", 0))
     active_version = status.get("active_version")
     if remaining <= 0:

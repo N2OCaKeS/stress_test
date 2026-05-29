@@ -29,6 +29,15 @@ class MigrationStatusResponse(BaseModel):
         default_factory=dict,
         description="Разбивка `{version: count}` по wire-префиксам `v<N>$...`.",
     )
+    app_env: str = Field(
+        ...,
+        description=(
+            "APP_ENV server_service'а (`local`/`development`/`test`/`staging`/`production`). "
+            "Worker сверяет со своим `app_env` перед запуском батч-ре-шифрации: "
+            "несовпадение значит, что воркер указывает на чужое окружение и "
+            "может переписать чужие секреты — тик должен быть пропущен."
+        ),
+    )
 
 
 class ReencryptBatchResponse(BaseModel):

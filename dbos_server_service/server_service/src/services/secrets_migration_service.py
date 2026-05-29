@@ -114,6 +114,7 @@ async def status(db: AsyncSession) -> dict:
         "total": total,
         "active_version": active,
         "by_version": by_version,
+        "app_env": settings.app_env,
     }
 
 

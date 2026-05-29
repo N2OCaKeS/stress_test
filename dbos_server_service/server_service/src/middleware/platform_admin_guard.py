@@ -120,9 +120,15 @@ BLOCKED_PLATFORM_ROLES: frozenset[PlatformRole] = frozenset(
 # Public-paths, которые пропускаются без introspect. Health/ready ходят
 # без JWT (k8s probe), openapi/docs — публичные в dev (в production они
 # отключены через docs_url=None в main.create_application).
-_PUBLIC_SUFFIXES: tuple[str, ...] = (
-    "/health",
-    "/ready",
+#
+# Health/ready — точный матч (тот же набор, что и в main._HEALTH_PATHS),
+# чтобы гипотетический `/api/server/v1/servers/{id}/health` или иной
+# вложенный путь не обходил guard через endswith.
+_HEALTH_PATHS: frozenset[str] = frozenset({
+    "/api/server/v1/health",
+    "/api/server/v1/ready",
+})
+_DOCS_SUFFIXES: tuple[str, ...] = (
     "/openapi.json",
     "/docs",
     "/redoc",
@@ -135,16 +141,15 @@ def _is_public_path(path: str) -> bool:
     Соответствует двум классам:
 
     * **k8s probes** (``/api/server/v1/health``, ``/api/server/v1/ready``)
-      — не должны зависеть от auth_service.
+      — не должны зависеть от auth_service. Матч точный, чтобы вложенные
+      пути с похожим окончанием не проскочили мимо guard.
     * **OpenAPI/Swagger** (``/openapi.json``, ``/docs``, ``/redoc``, плюс
       их static-подресурсы Swagger UI) — публичные в dev/test, в проде
       отключены в ``main.py``.
-
-    Используем ``endswith`` + ``startswith`` для корневых ``/docs`` и
-    ``/redoc`` (FastAPI Swagger UI делает ещё запросы к
-    ``/docs/oauth2-redirect`` и подобным — все они должны проходить).
     """
-    if path.endswith(_PUBLIC_SUFFIXES):
+    if path in _HEALTH_PATHS:
+        return True
+    if path.endswith(_DOCS_SUFFIXES):
         return True
     # Swagger UI подгружает свои static'и (``/docs/oauth2-redirect`` и пр.)
     # — пропускаем всё, что начинается с ``/docs/`` или ``/redoc/``.

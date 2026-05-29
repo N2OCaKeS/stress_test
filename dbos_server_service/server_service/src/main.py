@@ -235,6 +235,12 @@ def create_application() -> FastAPI:
             if prepare_redis is not None:
                 await prepare_redis.aclose()
 
+            # taskiq-broker держит свой Redis-pool — закрываем его и
+            # сбрасываем модульные `_worker_broker`/`_broker_started`, чтобы
+            # повторный lifespan (в тестах) поднял свежий broker, а не
+            # реиспользовал закрытый.
+            await worker_client.shutdown_broker()
+
     # В production закрываем публичный OpenAPI/Swagger UI — анонимы не должны
     # видеть каталог эндпоинтов (включая stub-501 с summary вроде «Reveal decrypted
     # IPMI credentials»). В dev/test/local остаётся открытым для разработки.

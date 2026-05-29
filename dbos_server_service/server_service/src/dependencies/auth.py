@@ -40,6 +40,7 @@ middleware — например, через TestClient без full app-stack). �
 introspect на каждый запрос, кэш не появляется.
 """
 
+import logging
 from typing import Annotated
 
 import httpx
@@ -54,6 +55,8 @@ from src.core.exceptions import (
 )
 from src.schemas.identity import IdentityContext
 from src.services import audit_context
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "CurrentIdentity",
@@ -138,6 +141,11 @@ async def _introspect(token: str) -> dict:
                 _INTROSPECT_PATH, json={"token": token}, headers=headers
             )
         else:
+            # Lifespan уже снёс pool (или unit-тест, который ходит мимо
+            # lifespan'а) — каждый запрос здесь поднимает свежий TCP+TLS,
+            # медленнее и без slowloris-bound'а. В нормальном проде сюда
+            # попадать не должны; debug-лог даёт сигнал, если попали.
+            logger.debug("introspect: pooled client missing, using per-call fallback")
             url = f"{settings.auth_service_url.rstrip('/')}{_INTROSPECT_PATH}"
             async with httpx.AsyncClient(timeout=settings.auth_request_timeout_seconds) as fallback:
                 response = await fallback.post(url, json={"token": token}, headers=headers)

@@ -35,6 +35,14 @@ _MIGRATIONS_DIR = (
 )
 _DEFAULT_SEED_PATH = _MIGRATIONS_DIR / "831ba55543e9_seed_default_entity_permissions.py"
 _WORKER_BOT_SEED_PATH = _MIGRATIONS_DIR / "43cf9cfef9e1_seed_worker_bot_entity_permissions.py"
+# Callback-гранты для worker_bot выезжают отдельными миграциями: inventory
+# по серверу и аккаунту, provision_on_host, prepare_callback. Каждая ставит
+# ровно один (entity, action) — следим, чтобы он не разъехался и не
+# обрастал лишним.
+_CALLBACK_GRANTS_PATH = _MIGRATIONS_DIR / "e9a7c2814d33_worker_bot_callback_grants.py"
+_ACCOUNT_INVENTORY_PATH = _MIGRATIONS_DIR / "b7e2c9a14f63_worker_bot_account_inventory_submit.py"
+_PROVISION_ON_HOST_PATH = _MIGRATIONS_DIR / "c4f7d9b2a1e8_worker_bot_provision_on_host.py"
+_PREPARE_CALLBACK_PATH = _MIGRATIONS_DIR / "d1f4a8c7b3e9_server_prepared_and_worker_bot_grant.py"
 
 
 def _load(path: pathlib.Path, mod_name: str):
@@ -53,6 +61,26 @@ def worker_bot_seed():
 @pytest.fixture(scope="module")
 def default_seed():
     return _load(_DEFAULT_SEED_PATH, "default_seed_mod")
+
+
+@pytest.fixture(scope="module")
+def callback_grants_mig():
+    return _load(_CALLBACK_GRANTS_PATH, "wb_callback_grants_mod")
+
+
+@pytest.fixture(scope="module")
+def account_inventory_mig():
+    return _load(_ACCOUNT_INVENTORY_PATH, "wb_account_inventory_mod")
+
+
+@pytest.fixture(scope="module")
+def provision_on_host_mig():
+    return _load(_PROVISION_ON_HOST_PATH, "wb_provision_on_host_mod")
+
+
+@pytest.fixture(scope="module")
+def prepare_callback_mig():
+    return _load(_PREPARE_CALLBACK_PATH, "wb_prepare_callback_mod")
 
 
 # ── Состав worker_bot grants ─────────────────────────────────────────────────
@@ -190,6 +218,82 @@ class TestWorkerBotMigrationShape:
         регрессия удаляющая admin/reader/operator поломала бы прод."""
         import inspect
         src = inspect.getsource(worker_bot_seed.downgrade)
+        assert "worker_bot" in src
+        for forbidden_role in ("admin", "reader", "operator", "guest"):
+            assert forbidden_role not in src, (
+                f"downgrade() trog'аеt роль '{forbidden_role}' — это ошибка"
+            )
+
+
+# ── Callback-гранты: каждая миграция = строго ожидаемые (entity, action) ─────
+
+class TestWorkerBotCallbackGrants:
+    """Защита от того, что callback-миграция добавит в worker_bot что-то лишнее.
+
+    Интеграционный тест видит итоговый состав в БД, но если миграция
+    случайно вырастет ещё одной парой (типа `server:reinstall_status` →
+    `server:reinstall_start`+`reinstall_status`), unit-сетка должна это
+    отбить до прогона интеграции.
+    """
+
+    EXPECTED_CALLBACK_GRANTS: set[tuple[str, str]] = {
+        ("server", "inventory_submit"),
+        ("server", "reinstall_start"),
+    }
+
+    def test_callback_grants_composition_exact(self, callback_grants_mig):
+        got = set(callback_grants_mig._NEW_WORKER_BOT_GRANTS)
+        assert got == self.EXPECTED_CALLBACK_GRANTS
+
+    @pytest.mark.xfail(
+        reason=(
+            "Миграция `e9a7c2814d33` исторически грантит "
+            "`(server, reinstall_start)`, но PXE/reinstall чистка убрала "
+            "этот action из `permission_catalog.ENTITY_ACTIONS`. "
+            "Эффект миграции отменён миграцией `f1234abc56e7_split_reinstall_status_action`. "
+            "Сам по себе grant в catalog'е больше не валидный — это "
+            "expected drift, отлавливать его не нужно."
+        ),
+        strict=True,
+    )
+    def test_callback_grants_pass_is_valid_action(self, callback_grants_mig):
+        invalid = [
+            (entity_type, action)
+            for entity_type, action in callback_grants_mig._NEW_WORKER_BOT_GRANTS
+            if not is_valid_action(entity_type, action)
+        ]
+        assert invalid == []
+
+    def test_account_inventory_grant_is_account_inventory_submit(self, account_inventory_mig):
+        assert account_inventory_mig._GRANT == ("server_account", "inventory_submit")
+        assert is_valid_action(*account_inventory_mig._GRANT)
+
+    def test_provision_on_host_grant_is_server_account_provision(self, provision_on_host_mig):
+        assert provision_on_host_mig._GRANT == ("server_account", "provision_on_host")
+        assert is_valid_action(*provision_on_host_mig._GRANT)
+
+    def test_prepare_callback_grant_is_server_prepare_callback(self, prepare_callback_mig):
+        assert prepare_callback_mig._GRANT == ("server", "prepare_callback")
+        assert is_valid_action(*prepare_callback_mig._GRANT)
+
+
+class TestWorkerBotCallbackMigrationsDowngradeSafe:
+    """Downgrade каждой callback-миграции не должен трогать другие роли."""
+
+    @pytest.fixture(
+        params=[
+            "callback_grants_mig",
+            "account_inventory_mig",
+            "provision_on_host_mig",
+            "prepare_callback_mig",
+        ],
+    )
+    def mig(self, request):
+        return request.getfixturevalue(request.param)
+
+    def test_downgrade_mentions_only_worker_bot(self, mig):
+        import inspect
+        src = inspect.getsource(mig.downgrade)
         assert "worker_bot" in src
         for forbidden_role in ("admin", "reader", "operator", "guest"):
             assert forbidden_role not in src, (

@@ -226,6 +226,28 @@ def _build_broker() -> ListQueueBroker:
     return broker
 
 
+async def shutdown_broker() -> None:
+    """Закрыть taskiq-broker и сбросить модульные слоты.
+
+    Зовётся из lifespan на shutdown сервиса; без него Redis-соединение
+    брокера полагается на GC, а в тестах с несколькими lifespan'ами
+    подряд (`app.router.lifespan_context`) предыдущий `_worker_broker` /
+    `_broker_started` течёт в следующий запуск и портит изоляцию.
+
+    Best-effort: ошибки `broker.shutdown()` глотаем — на пути shutdown
+    важнее, чтобы lifespan не упал, чем чтобы Redis-таймауты доехали.
+    """
+    global _worker_broker, _broker_started
+    broker = _worker_broker
+    if broker is not None and _broker_started:
+        try:
+            await broker.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+    _worker_broker = None
+    _broker_started = False
+
+
 async def _ensure_broker_started() -> None:
     """Идемпотентный broker startup с защитой от race в одном event loop.
 

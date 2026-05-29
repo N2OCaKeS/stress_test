@@ -183,7 +183,21 @@ Errors: `SERVICE_ACCESS_DENIED` (403), `ROLE_NOT_FOUND` (404).
 
 Auth: AnyAdmin. `account_admin` — любой юзер; `department_admin` — только свой отдел. Body: `{ "new_password": "<min 8>" }`.
 
-Errors: `USER_NOT_FOUND` (404), `PERMISSION_DENIED` (403).
+Admin-вариант — для смены чужого пароля. Для self-reset используется `POST /users/me/password` (требует подтверждения старого пароля).
+
+Errors: `USER_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ISOLATION` (403).
+
+### `POST /users/me/password`
+
+Auth: Bearer (user-context, m2m отбивается). Body:
+
+```json
+{ "old_password": "...", "new_password": "<min 8, буквы + цифры>" }
+```
+
+Self-reset пароля с обязательным подтверждением `old_password`. После успеха — revoke всех активных сессий юзера (включая текущую), PAT остаются валидными. Audit `user.self_password_reset` (CRITICAL) с `caller_is_admin` в details для SIEM-фильтра по admin-self-reset'ам.
+
+Errors: `INVALID_OLD_PASSWORD` (401, инкрементит lockout-счётчик), `SAME_PASSWORD` (422), `ACCOUNT_TEMPORARILY_LOCKED` (429 + `retry_after_seconds`), `USER_NOT_FOUND` (404).
 
 ### `POST /users/{user_id}/ban`
 

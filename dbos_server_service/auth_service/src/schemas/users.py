@@ -91,6 +91,29 @@ class ResetPasswordRequest(BaseModel):
         return validate_password(value)
 
 
+class SelfChangePasswordRequest(BaseModel):
+    """Тело `POST /users/me/password` — self-reset с подтверждением старого пароля.
+
+    Отдельная схема от `ResetPasswordRequest`, потому что у admin-ручки
+    `old_password` нет (admin меняет чужой пароль). Сравнение `old != new`
+    делается в сервисе через `verify_password` против хэша — нельзя сравнить
+    plaintext тут, потому что хэш в БД, а не в схеме.
+    """
+    old_password: str = Field(
+        min_length=1,
+        description="Текущий пароль юзера. Проверяется через Argon2id verify.",
+    )
+    new_password: str = Field(
+        min_length=8,
+        description="Новый пароль (минимум 8 символов, буквы + цифры).",
+    )
+
+    @field_validator("new_password")
+    @classmethod
+    def _check_password_policy(cls, value: str) -> str:
+        return validate_password(value)
+
+
 class AddUserToGroupRequest(BaseModel):
     """Тело `POST /users/{user_id}/groups`."""
     group_id: str = Field(description="ID группы, в которую добавляем юзера.")

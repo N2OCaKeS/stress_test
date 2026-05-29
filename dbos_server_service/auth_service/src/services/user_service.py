@@ -4,9 +4,10 @@ from datetime import timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.constants import PlatformRole, UserStatus
-from src.core.exceptions import AuthorizationError, ConflictError, DomainValidationError, NotFoundError
-from src.core.security import hash_password
+from src.core.exceptions import AuthenticationError, AuthorizationError, ConflictError, DomainValidationError, NotFoundError
+from src.core.security import hash_password, verify_password
 from src.repositories.bans import BanRepository
 from src.repositories.bot_tokens import BotTokenRepository
 from src.repositories.bots import BotRepository
@@ -26,7 +27,7 @@ from src.schemas.users import (
     UserPermissionsResponse,
     UserResponse,
 )
-from src.services import audit_service
+from src.services import _lockout, audit_service
 from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 from src.services.auth_service import collect_user_permissions
 from src.utils.pagination import PaginationParams
@@ -564,9 +565,9 @@ async def reset_password(
             message="department_admin can only reset passwords for users in their own department",
         )
 
-    # TODO: self-reset с `current_password`-confirm и защита
-    # account_admin → account_admin (нужно знание текущего пароля для смены
-    # чужого account_admin-пароля). Сейчас schema несёт только new_password.
+    # Admin-flow без current_password-confirm: actor != target по определению
+    # (cross-dept guard выше + endpoint-level `AnyAdmin`). Self-reset идёт
+    # через отдельный `change_own_password` с обязательным old_password.
 
     await user_repo.update(user, password_hash=hash_password(new_password))
     await session_repo.revoke_all_for_user(user_id)
@@ -583,6 +584,129 @@ async def reset_password(
             "new_password": new_password,
             "sessions_revoked": True,
             "tokens_revoked": True,
+        },
+        request_id=request_id,
+    )
+
+
+_ADMIN_PLATFORM_ROLES = frozenset(
+    {
+        PlatformRole.ACCOUNT_ADMIN,
+        PlatformRole.DEPARTMENT_ADMIN,
+        PlatformRole.LOGING_ADMIN,
+        PlatformRole.LOGING_READER,
+    }
+)
+
+
+async def change_own_password(
+    db: AsyncSession,
+    user_id: str,
+    old_password: str,
+    new_password: str,
+    request_id: str | None = None,
+) -> None:
+    """Self-reset пароля юзером с обязательным подтверждением текущего пароля.
+
+    Отдельная от admin-`reset_password` ручка: actor == target, поэтому нужно
+    знание `old_password` (иначе угон access-токена даёт перманентный takeover
+    через смену пароля без подтверждения). admin→admin сценарий покрывается
+    тем же путём — account_admin меняет себе пароль через `/me/password`, а не
+    через admin-ручку.
+
+    Поведение:
+        * 404 USER_NOT_FOUND — JWT валиден, но юзер удалён (race).
+        * 422 SAME_PASSWORD — new_password совпадает с old (через verify, не
+          через сравнение строк, чтобы политика «нельзя ставить тот же пароль»
+          работала даже когда policy чуть отличается).
+        * 401 INVALID_OLD_PASSWORD + инкремент `failed_login_attempts` — та же
+          lockout-шкала, что и в `/login`, чтобы brute-force старого пароля
+          через `/me/password` упирался в тот же `ACCOUNT_TEMPORARILY_LOCKED`.
+        * При успехе — новый хэш Argon2id, revoke всех активных сессий
+          (включая ту, которой пришёл вызов: пользователь должен залогиниться
+          заново и получить свежий refresh), identity-cache reset, audit
+          `user.self_password_reset` (CRITICAL). PAT'ы оставляем — они
+          представляют отдельную identity юзера и часто привязаны к CI/боту,
+          смена пароля не должна их валить.
+    """
+    user_repo = UserRepository(db)
+    session_repo = SessionRepository(db)
+
+    user = await user_repo.get_by_id(user_id)
+    if user is None:
+        raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
+
+    settings = get_settings()
+
+    # Lockout: истёкший lockout сначала сбрасываем, активный — отбиваем 429.
+    # Лимит общий с /login: иначе атакующий, получивший access-токен и
+    # пытающийся угадать старый пароль для смены, обходил бы счётчик логина.
+    if await _lockout.release_if_expired(user_repo, user):
+        await db.commit()
+    _lockout.assert_not_locked(user)
+
+    if not verify_password(old_password, user.password_hash):
+        await _lockout.register_failure(
+            user_repo,
+            user,
+            max_attempts=settings.max_failed_login_attempts,
+            lockout_minutes=settings.lockout_minutes,
+        )
+        # Commit до raise — иначе get_db()-rollback стирает инкремент,
+        # та же грабля, что и в verify_password_with_lockout.
+        await db.commit()
+        # Аудит неудачи: SIEM должен видеть попытки смены пароля с неверным
+        # старым (потенциальный признак угона access-токена).
+        audit_service.emit(
+            "user.self_password_reset",
+            user_id,
+            target_id=user_id,
+            target_type="user",
+            status="failure",
+            allowed=False,
+            details={
+                "reason": "invalid_old_password",
+                "caller_is_admin": user.platform_role in _ADMIN_PLATFORM_ROLES,
+            },
+            request_id=request_id,
+        )
+        raise AuthenticationError(
+            error_code="INVALID_OLD_PASSWORD",
+            message="Old password is incorrect",
+        )
+
+    # Сброс счётчика на успешном verify'е (как в /login).
+    await _lockout.register_success(user_repo, user)
+
+    # Same-password-as-old guard. Pydantic не может это проверить (хэш в БД),
+    # поэтому 422 кидаем здесь. До смены/revoke — чтобы юзер не выкинулся из
+    # сессий впустую.
+    if verify_password(new_password, user.password_hash):
+        # Commit reset_failed_attempts до raise: иначе get_db()-rollback
+        # вернёт stale-счётчик после валидного old_password (юзер
+        # доказал владение паролем).
+        await db.commit()
+        raise DomainValidationError(
+            error_code="SAME_PASSWORD",
+            message="New password must differ from the current one",
+        )
+
+    await user_repo.update(user, password_hash=hash_password(new_password))
+    await session_repo.revoke_all_for_user(user_id)
+    await db.commit()
+    # Identity-cache: без сброса закэшированный access-token продолжит
+    # пускать юзера на /me и introspect до истечения TTL даже после revoke
+    # сессий (revoke бьёт refresh, не access). Симметрично admin-reset'у.
+    _invalidate_identity_cache(user_id)
+    audit_service.emit(
+        "user.self_password_reset",
+        user_id,
+        target_id=user_id,
+        target_type="user",
+        details={
+            "caller_is_admin": user.platform_role in _ADMIN_PLATFORM_ROLES,
+            "sessions_revoked": True,
+            "tokens_revoked": False,
         },
         request_id=request_id,
     )

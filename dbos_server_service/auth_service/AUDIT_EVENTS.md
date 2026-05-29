@@ -63,6 +63,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `user.update` | INFO | `user_service.update_user` | user | Diff обновлённых полей (без password). |
 | `user.roles_assign` | INFO | `user_service.assign_roles` | user | `service_name`, `roles` (новый набор). |
 | `user.password_reset` | CRITICAL | `user_service.reset_password` | user | Без plaintext пароля. |
+| `user.self_password_reset` | CRITICAL | `user_service.change_own_password` (`POST /users/me/password`) | user (== actor) | `caller_is_admin` (true для платформенных админ-ролей), `sessions_revoked`, `tokens_revoked=false`. Failure-вариант (`status="failure"`, `details.reason="invalid_old_password"`) эмитится при неверном `old_password` — для SIEM-сигнала о возможном угоне access-токена. |
 | `user.ban` | CRITICAL | `user_service.ban_user` | user | `ban_type`, `reason`, `expires_at`, счётчики revoke'нутых PAT/bot-токенов. |
 | `user.unban` | CRITICAL | `user_service.unban_user` | user | — |
 | `user.ban_deactivated_via_status_change` | WARNING | `user_service.update_user` (PATCH `/users/{id}/status`) | user | Активный ban деактивирован как side-effect смены статуса (без явного unban). Логируется отдельно от `user.unban` для трассировки полу-явных деактиваций. |

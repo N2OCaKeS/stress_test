@@ -13,6 +13,7 @@ from src.schemas.users import (
     AssignRolesRequest,
     BanRequest,
     ResetPasswordRequest,
+    SelfChangePasswordRequest,
     UserCreate,
     UserPermissionsResponse,
     UserResponse,
@@ -21,6 +22,68 @@ from src.schemas.users import (
 from src.services import group_service, user_service
 
 router = APIRouter(prefix="/users")
+
+
+# `/users/me/password` регистрируется до любых `/users/{user_id}/...`-роутов
+# — FastAPI матчит по порядку регистрации, и без этого `me` улетал бы в
+# `{user_id}`-парам с 404 USER_NOT_FOUND (или ещё хуже — в действие над
+# юзером с буквальным id "me", если бы такой существовал).
+@router.post(
+    "/me/password",
+    response_model=OkResponse,
+    summary="Сменить собственный пароль",
+    description=(
+        "Self-reset пароля с подтверждением текущего пароля. После успеха все "
+        "активные сессии юзера revoke'ятся (включая текущую — нужен повторный login); "
+        "PAT остаются валидными."
+    ),
+    responses={
+        401: {"description": "Старый пароль неверный (INVALID_OLD_PASSWORD)."},
+        422: {"description": "Новый пароль не соответствует политике или совпадает со старым (SAME_PASSWORD)."},
+        429: {"description": "Аккаунт залочен после серии неудачных подтверждений старого пароля."},
+    },
+)
+async def change_own_password(
+    body: SelfChangePasswordRequest,
+    request: Request,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Сменить собственный пароль.
+
+    Что делает:
+        Проверяет `old_password` через Argon2id-verify. При неудаче — 401
+        `INVALID_OLD_PASSWORD` + инкремент счётчика lockout'а (как в /login).
+        При успехе — пишет новый Argon2id-хэш, revoke всех активных сессий
+        юзера (refresh-токены становятся невалидными немедленно), сбрасывает
+        identity-cache. PAT юзера НЕ отзываются — это отдельная identity,
+        часто привязана к боту/CI.
+
+    Доступ:
+        Любой залогиненный юзер (Bearer). PAT/m2m не пропускаются
+        (`require_user_context`), потому что у не-юзер-actor'а нет
+        password_hash для verify.
+
+    Возможные ошибки:
+        * `INVALID_OLD_PASSWORD` (401) — старый пароль не совпал.
+        * `SAME_PASSWORD` (422) — новый пароль совпадает со старым (verify
+          поверх хэша, не строковое сравнение).
+        * `ACCOUNT_TEMPORARILY_LOCKED` (429) — слишком много попыток
+          подтвердить старый пароль.
+        * `USER_NOT_FOUND` (404) — JWT валиден, но юзер удалён.
+
+    Audit:
+        `user.self_password_reset` (CRITICAL). В `details` — `caller_is_admin`
+        (для SIEM-фильтра «admin сменил себе пароль»).
+    """
+    await user_service.change_own_password(
+        db=db,
+        user_id=identity.user_id,
+        old_password=body.old_password,
+        new_password=body.new_password,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return OkResponse()
 
 
 @router.get(

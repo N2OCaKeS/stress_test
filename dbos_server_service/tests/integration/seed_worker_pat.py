@@ -148,19 +148,26 @@ def _ensure_bot(client: httpx.Client, dept_id: str) -> str:
     if existing:
         print(f"  = bot {BOT_NAME} (already exists, id={existing['bot_id']})")
         return existing["bot_id"]
+    # BotCreate strict-mode (extra=forbid) больше не принимает inline-роли —
+    # сначала создаём бота, потом отдельным запросом ассайним worker_bot.
     body = {
         "name": BOT_NAME,
         "department_id": dept_id,
         "allowed_services": ["server_service"],
-        "service_roles": [
-            {"service_name": "server_service", "roles": ["worker_bot"]},
-        ],
     }
     r = client.post("/api/auth/v1/bots", json=body)
     if r.status_code not in (200, 201):
         sys.exit(f"  ! create bot: HTTP {r.status_code} — {r.text}")
     bot_id = r.json()["bot_id"]
     print(f"  + bot {BOT_NAME} created (id={bot_id})")
+
+    r = client.post(
+        f"/api/auth/v1/bots/{bot_id}/roles",
+        json={"service_name": "server_service", "roles": ["worker_bot"]},
+    )
+    if r.status_code not in (200, 201, 204):
+        sys.exit(f"  ! assign bot roles: HTTP {r.status_code} — {r.text}")
+    print(f"  + bot {BOT_NAME} role=worker_bot assigned for server_service")
     return bot_id
 
 

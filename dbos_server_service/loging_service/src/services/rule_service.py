@@ -15,6 +15,7 @@ import logging
 import re
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -24,6 +25,43 @@ from src.repositories import rules as rule_repo
 from src.schemas.events import EventCreate
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _RuleSnapshot:
+    """Иммутабельный снимок `AuditRule` для in-memory кеша.
+
+    Заведён, чтобы кеш не таскал detached ORM-объекты: при истечении сессии
+    обращение к ленивым полям ORM кидает `DetachedInstanceError`. Раньше
+    решалось через `db.expunge(rule)` — работало, пока snapshot читал только
+    eager-loaded колонки, но любое добавление relationship в `AuditRule`
+    тихо ломало бы кеш в проде. Dataclass отвязан от Session by-design.
+    Атрибут-имена дублируют ORM, чтобы `_matches` ходил по тем же полям.
+    """
+
+    id: str
+    name: str
+    match_service: str | None
+    match_action: str | None
+    match_status: str | None
+    match_severity: str | None
+    match_allowed: bool | None
+    effect: str
+    effect_severity: str | None
+
+
+def _snapshot_rule(rule: AuditRule) -> _RuleSnapshot:
+    return _RuleSnapshot(
+        id=rule.id,
+        name=rule.name,
+        match_service=rule.match_service,
+        match_action=rule.match_action,
+        match_status=rule.match_status,
+        match_severity=rule.match_severity,
+        match_allowed=rule.match_allowed,
+        effect=rule.effect,
+        effect_severity=rule.effect_severity,
+    )
 
 # Severity по умолчанию для каждой пары (action, status).
 # Переопределяется через правила OVERRIDE_SEVERITY без деплоя.
@@ -158,6 +196,7 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("logging.rules_write",      "success"): "WARNING",
     ("logging.services_read",    "success"): "INFO",
     ("logging.admin_access",     "success"): "INFO",
+    ("logging.retention_read",   "success"): "INFO",
     ("logging.retention_write",  "success"): "WARNING",
     ("logging.retention_sweep",  "success"): "INFO",
 }
@@ -193,7 +232,7 @@ class _RuleCache:
     """
 
     def __init__(self, ttl_seconds: int = 30) -> None:
-        self._rules: list[AuditRule] = []
+        self._rules: list[_RuleSnapshot] = []
         # `_loaded_at` (wall-clock) сравниваем с `MAX(updated_at)` из БД —
         # это межсервисный timestamp, его нужно держать в UTC. TTL же
         # считаем по `_loaded_monotonic`, чтобы NTP step / переключение
@@ -210,7 +249,7 @@ class _RuleCache:
             and (mono_now - self._loaded_monotonic) <= self._ttl
         )
 
-    def get(self, db: Session) -> list[AuditRule]:
+    def get(self, db: Session) -> list[_RuleSnapshot]:
         mono_now = time.monotonic()
         if self._ttl_fresh(mono_now):
             return self._rules
@@ -221,13 +260,11 @@ class _RuleCache:
             try:
                 db_updated_at = rule_repo.get_max_updated_at(db)
                 if self._loaded_at is None or db_updated_at is None or db_updated_at > self._loaded_at:
-                    fresh = rule_repo.get_active_sorted(db)
-                    # Отвязываем правила от этой сессии — иначе последующие
-                    # чтения (в других сессиях / после expire-on-commit)
-                    # триггерят refresh и роняют `DetachedInstanceError`.
-                    for rule in fresh:
-                        db.expunge(rule)
-                    self._rules = fresh
+                    fresh_orm = rule_repo.get_active_sorted(db)
+                    # Снимаем frozen-dataclass с каждой ORM-row до выхода из
+                    # session-скоупа — кеш не должен зависеть ни от Session,
+                    # ни от lazy-loading'а добавленных в будущем relationship'ов.
+                    self._rules = [_snapshot_rule(r) for r in fresh_orm]
                 self._loaded_at = datetime.now(timezone.utc)
                 self._loaded_monotonic = mono_now
             except Exception:
@@ -255,7 +292,7 @@ def invalidate_cache() -> None:
     _cache.invalidate()
 
 
-def _matches(rule: AuditRule, event: EventCreate) -> bool:
+def _matches(rule: _RuleSnapshot, event: EventCreate) -> bool:
     """Проверяет, совпадает ли событие с критериями правила."""
     if rule.match_service is not None and rule.match_service != event.service:
         return False

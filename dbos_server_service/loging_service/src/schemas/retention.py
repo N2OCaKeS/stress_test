@@ -1,9 +1,19 @@
 """Схемы для управления retention-политикой."""
 
+import re
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+from src.utils.normalization import normalize_service_name
+
+# Тот же charset, что и у `EventCreate.service` после `normalize_service_name`
+# (`schemas/events.py::_SERVICE_PATTERN`). Иначе политика с uppercase /
+# digits / `-` тихо не матчит ни одного события: ingest хранит `[a-z_]`,
+# а фильтр пускал `[A-Za-z0-9._-]` и оседал в БД с именами, которых там
+# никогда не будет.
+_SERVICE_FILTER_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_]{1,64}$")
 
 # Severity-уровни синхронизированы с `schemas/events.py::EventCreate.severity`
 # — единый whitelist по всему сервису. Любая правка одного — править оба.
@@ -64,23 +74,25 @@ class RetentionPolicyCreate(BaseModel):
     @field_validator("service_filter", mode="after")
     @classmethod
     def _validate_services(cls, v: list[str] | None) -> list[str] | None:
-        normalised = _normalise_filter(v)
-        if normalised is None:
+        if not v:
             return None
-        # Charset гард на каждое имя — тот же что у ingest, чтобы фильтр
-        # не пускал Unicode-confusables / ascii-control мимо retention'а.
-        # 64 — `String(64)` predикат на колонку модели.
-        for name in normalised:
-            if not name or len(name) > 64:
+        # Сначала прогоняем каждое имя через ту же security-нормализацию,
+        # что и `EventCreate.service` (NFKC + invisibles + confusables +
+        # lower). Затем чарсет — `[a-z_]{1,64}`. Совпадает с регексом
+        # ingest'а, поэтому политика не может тихо застрять с именем,
+        # под которое события никогда не попадут.
+        canonical: list[str] = []
+        for name in v:
+            if not isinstance(name, str):
+                raise ValueError("service name must be a string")
+            normalised = normalize_service_name(name)
+            if not _SERVICE_FILTER_PATTERN.match(normalised):
                 raise ValueError(
-                    "service name length must be 1..64 chars"
+                    f"service name {name!r} invalid after normalisation; "
+                    "allowed: [a-z_]{1,64} (snake_case, без digits/Unicode)"
                 )
-            if not all(c.isalnum() or c in "._-" for c in name):
-                raise ValueError(
-                    f"service name {name!r} has invalid chars; "
-                    "allowed: [A-Za-z0-9._-]"
-                )
-        return normalised
+            canonical.append(normalised)
+        return sorted(set(canonical))
 
 
 class RetentionPolicyUpdate(BaseModel):

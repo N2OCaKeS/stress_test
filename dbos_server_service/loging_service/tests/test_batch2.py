@@ -187,14 +187,19 @@ class TestActorTypePropagation:
     def test_emit_audit_unknown_actor_type_falls_back(
         self, db, monkeypatch, TestSessionLocal
     ):
-        """`_emit_audit` accepts None/unknown actor_type and falls back."""
+        """`_emit_audit` пишет `"anonymous"` для любого unknown actor_type.
+
+        Раньше `actor_type=None + actor_id != None → "user"`; SOC получал бы
+        фейкового юзера для bot/oauth_client с неизвестным subject_type.
+        Теперь любой не-whitelist'нутый actor_type → `"anonymous"`.
+        """
         from src.models.audit_event import AuditEvent
         from sqlalchemy import select
         import src.db.session as session_module
         from src.main import _emit_audit
 
         monkeypatch.setattr(session_module, "SessionLocal", TestSessionLocal)
-        # actor_type=None + actor_id set → fallback "user"
+        # actor_type=None + actor_id set → "anonymous" (не «user»)
         _emit_audit(
             action="http.access_denied",
             actor_id="usr_x",
@@ -208,7 +213,7 @@ class TestActorTypePropagation:
         ev = db.execute(
             select(AuditEvent).where(AuditEvent.request_id == "req_fallback_user")
         ).scalar_one()
-        assert ev.actor_type == "user"
+        assert ev.actor_type == "anonymous"
 
         # actor_type=None + actor_id=None → fallback "anonymous"
         _emit_audit(

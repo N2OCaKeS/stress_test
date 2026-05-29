@@ -411,3 +411,63 @@ class TestRetentionPolicyBounds:
     def test_out_of_range(self, days: int):
         with pytest.raises(ValidationError):
             RetentionPolicyCreate(retain_days=days)
+
+
+class TestRetentionPolicyServiceFilter:
+    """`service_filter` должен принимать ровно то же множество, что хранит
+    `audit_events.service` после `normalize_service_name`. Иначе политика
+    с uppercase / digits / `-` тихо не матчит ни одного события.
+    """
+
+    def test_uppercase_normalised_to_lowercase(self):
+        m = RetentionPolicyCreate(
+            retain_days=60, service_filter=["AUTH_SERVICE", "Loging_Service"]
+        )
+        # NFKC + lower → сравнимо с ingest'ом.
+        assert m.service_filter == ["auth_service", "loging_service"]
+
+    def test_cyrillic_confusable_folded_to_ascii(self):
+        # `lоging_service` с кириллической `о` (U+043E) — атакующий мог бы
+        # создать политику, никогда не матчащую настоящие события.
+        m = RetentionPolicyCreate(
+            retain_days=60, service_filter=["lоging_service"]
+        )
+        assert m.service_filter == ["loging_service"]
+
+    def test_digits_rejected(self):
+        # Ingest принимает только `[a-z_]`. Цифры тихо проскакивали
+        # под прежним `[A-Za-z0-9._-]` и оседали в БД мёртвым весом.
+        with pytest.raises(ValidationError):
+            RetentionPolicyCreate(retain_days=60, service_filter=["auth2"])
+
+    def test_dash_rejected(self):
+        with pytest.raises(ValidationError):
+            RetentionPolicyCreate(retain_days=60, service_filter=["auth-service"])
+
+    def test_dot_rejected(self):
+        with pytest.raises(ValidationError):
+            RetentionPolicyCreate(retain_days=60, service_filter=["auth.service"])
+
+    def test_space_rejected(self):
+        with pytest.raises(ValidationError):
+            RetentionPolicyCreate(retain_days=60, service_filter=["bad name"])
+
+    def test_zero_width_space_stripped_to_valid_name(self):
+        # ZWSP внутри имени — NFKC оставит его, но `_INVISIBLE_CHARS_RE`
+        # удалит. Результат — каноническое `loging_service`.
+        m = RetentionPolicyCreate(
+            retain_days=60, service_filter=["loging​_service"]
+        )
+        assert m.service_filter == ["loging_service"]
+
+    def test_dedup_after_normalisation(self):
+        # Confusable + uppercase → одна и та же каноническая форма.
+        m = RetentionPolicyCreate(
+            retain_days=60,
+            service_filter=["loging_service", "Loging_Service", "lоging_service"],
+        )
+        assert m.service_filter == ["loging_service"]
+
+    def test_too_long_after_normalisation_rejected(self):
+        with pytest.raises(ValidationError):
+            RetentionPolicyCreate(retain_days=60, service_filter=["a" * 65])

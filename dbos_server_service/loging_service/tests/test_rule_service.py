@@ -103,6 +103,12 @@ class TestResolveDefaultSeverity:
     def test_unknown_action_denied_defaults_to_warning(self):
         assert _resolve_default_severity("unknown.action", "denied") == "WARNING"
 
+    def test_logging_retention_read_info(self):
+        assert _resolve_default_severity("logging.retention_read", "success") == "INFO"
+
+    def test_logging_retention_write_warning(self):
+        assert _resolve_default_severity("logging.retention_write", "success") == "WARNING"
+
     def test_admin_rule_create(self):
         assert _resolve_default_severity("logging_rule.create", "success") == "WARNING"
 
@@ -418,3 +424,51 @@ class TestMatchServiceNormalization:
         invalidate_cache()
         # event.service = "auth_service" (canonical)
         assert apply_rules(db, _event(service="auth_service", action="user.login")) is None
+
+
+# ── _RuleSnapshot — frozen dataclass вместо detached ORM ──────────────────────
+
+
+class TestRuleSnapshot:
+    """Кеш правил больше не хранит ORM-объекты. Это закрывает риск
+    `DetachedInstanceError` после expire-on-commit / cross-session reads,
+    которого не видно при текущих eager-loaded колонках, но любой
+    добавленный relationship тихо ломал бы кеш.
+    """
+
+    def test_cache_returns_immutable_snapshots(self, db):
+        from src.repositories import rules as rule_repo
+        from src.schemas.rules import RuleCreate
+        from src.services.rule_service import _RuleCache, _RuleSnapshot
+
+        rule_repo.create(db, RuleCreate(
+            name="snap-1", effect="SUPPRESS", match_service="auth_service",
+        ))
+        cache = _RuleCache(ttl_seconds=30)
+        snapshots = cache.get(db)
+        assert snapshots, "ожидался непустой набор snapshot'ов"
+        for snap in snapshots:
+            assert isinstance(snap, _RuleSnapshot)
+            # frozen=True → попытка мутации падает.
+            with pytest.raises((AttributeError, TypeError)):
+                snap.match_service = "other"  # type: ignore[misc]
+
+    def test_snapshots_survive_session_close(self, db):
+        """Атрибуты snapshot'а читаются после закрытия сессии-источника."""
+        from src.repositories import rules as rule_repo
+        from src.schemas.rules import RuleCreate
+        from src.services.rule_service import _RuleCache
+
+        rule_repo.create(db, RuleCreate(
+            name="snap-2", effect="OVERRIDE_SEVERITY",
+            effect_severity="ERROR", match_action="user.*",
+        ))
+        cache = _RuleCache(ttl_seconds=30)
+        snapshots = cache.get(db)
+        # Закрываем сессию — для ORM это вызвало бы DetachedInstanceError
+        # на любом атрибут-доступе (через lazy refresh).
+        db.close()
+        snap = next(s for s in snapshots if s.name == "snap-2")
+        assert snap.effect == "OVERRIDE_SEVERITY"
+        assert snap.effect_severity == "ERROR"
+        assert snap.match_action == "user.*"

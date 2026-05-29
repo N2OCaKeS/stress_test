@@ -56,9 +56,25 @@ class TestActionForPath:
 
     def test_unknown_path_maps_to_admin_access(self):
         from src.main import _action_for_path
-        assert _action_for_path("GET",
-                                "/api/logging/v1/retention") == "logging.admin_access"
         assert _action_for_path("GET", "/api/logging/v1/anything") == "logging.admin_access"
+
+    def test_retention_get_maps_to_read(self):
+        from src.main import _action_for_path
+        assert _action_for_path(
+            "GET", "/api/logging/v1/retention"
+        ) == "logging.retention_read"
+
+    def test_retention_put_maps_to_write(self):
+        from src.main import _action_for_path
+        assert _action_for_path(
+            "PUT", "/api/logging/v1/retention"
+        ) == "logging.retention_write"
+
+    def test_retention_delete_maps_to_write(self):
+        from src.main import _action_for_path
+        assert _action_for_path(
+            "DELETE", "/api/logging/v1/retention"
+        ) == "logging.retention_write"
 
 
 # ── _http_status_to_category ──────────────────────────────────────────────────

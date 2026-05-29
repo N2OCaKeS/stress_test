@@ -277,6 +277,10 @@ def create_application() -> FastAPI:
         "/api/logging/v1/events",
         "/api/logging/v1/services/",  # POST /services/{svc}/events
     )
+    # PUT/DELETE retention эндпоинт сам пишет `logging.retention_write`
+    # (single source) — middleware на success дублировал бы запись.
+    # Ошибки (401/403/4xx/5xx) всё равно эмитятся как `http.*` ниже.
+    _RETENTION_PATH = "/api/logging/v1/retention"
 
     @app.middleware("http")
     async def audit_access(request: Request, call_next):
@@ -299,6 +303,15 @@ def create_application() -> FastAPI:
         if request.method == "POST" and path.startswith(_INGEST_PREFIXES):
             if status_code not in (401, 403):
                 return response
+
+        # Successful retention writes покрываются endpoint-уровневым self-audit'ом;
+        # middleware-эмиссия дала бы дубль `logging.retention_write` в SIEM.
+        if (
+            request.method in ("PUT", "DELETE")
+            and path == _RETENTION_PATH
+            and status_code < 400
+        ):
+            return response
 
         identity = getattr(request.state, "auth_identity", None)
         actor_id = identity.get("user_id") if identity else None
@@ -680,6 +693,13 @@ def _action_for_path(method: str, path: str) -> str:
         return "logging.events_queried"
     if "/services" in path:
         return "logging.services_read"
+    if "/retention" in path:
+        # PUT/DELETE retention'а пишет self-audit прямо в endpoint'е
+        # (`logging.retention_write` через `retention.py::_audit`), а
+        # успех на write-методах из middleware скипается (см. `audit_access`).
+        # Сюда дойдёт только GET → read; write-ветка оставлена на случай,
+        # если функцию когда-то позовут вне `audit_access` (defence-in-depth).
+        return "logging.retention_read" if method == "GET" else "logging.retention_write"
     return "logging.admin_access"
 
 
@@ -740,17 +760,21 @@ def _emit_audit(
     антипаттерн: маскирует регрессии инварианта «self-audit всегда пишется».
 
     `actor_type` пробрасывается из identity (через `_fetch_identity` —
-    маппинг от auth_service introspect `subject_type`). Значения
-    `"user"`/`"bot"`/`"oauth_client"`/`"service"` идут как есть; None или
-    unknown → `"user"`, если `actor_id` есть, иначе `"anonymous"`. Без
-    этого PAT/bot/oauth_client писались бы в audit как fake-user.
+    маппинг от auth_service introspect `subject_type`). Известные значения
+    из whitelist'а идут как есть; всё остальное (None или новый subject_type
+    от auth_service, который мы ещё не знаем) → `"anonymous"`, чтобы
+    неизвестный subject не атрибутировался к человеку в SOC. Раньше unknown
+    + non-null actor_id → `"user"`, но это false-positive: bot/oauth_client
+    с слегка переименованным subject_type попадали бы в user-метрики.
     """
-    # Резолвим actor_type c backward-compat fallback'ом. `_VALID_ACTOR_TYPES`
-    # совпадает с `EventCreate.actor_type` Literal whitelist'ом.
+    # Резолвим actor_type c whitelist'а. `_VALID_ACTOR_TYPES` совпадает
+    # с `EventCreate.actor_type` Literal whitelist'ом. Неизвестные значения
+    # сваливаются в "anonymous" — лучше потерять атрибуцию, чем подмешать
+    # фейкового user'а в SIEM-агрегаты.
     if actor_type in _VALID_ACTOR_TYPES:
         resolved_actor_type = actor_type
     else:
-        resolved_actor_type = "user" if actor_id else "anonymous"
+        resolved_actor_type = "anonymous"
 
     from src.db.session import SessionLocal
     from src.schemas.events import EventCreate

@@ -236,7 +236,7 @@ class TestDetailsAlwaysFilled:
         r = await client.post(
             "/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": "my-cli-token", "allowed_services": []},
+            json={"name": "my-cli-token", "allowed_services": ["service_x"]},
         )
         assert r.status_code == 201
 

@@ -222,7 +222,7 @@ async def assign_roles(
     "/{user_id}/reset-password",
     response_model=OkResponse,
     summary="Сбросить пароль юзеру",
-    description="Перезаписывает пароль (Argon2id хэш). Все активные сессии юзера НЕ ревокаются — только пароль.",
+    description="Перезаписывает пароль (Argon2id хэш) + revoke всех активных сессий и PAT юзера.",
 )
 async def reset_password(
     user_id: str,
@@ -234,15 +234,17 @@ async def reset_password(
     """Сбросить пароль за юзера.
 
     Что делает:
-        Записывает новый хэш Argon2id. Минимум 8 символов (валидируется
-        pydantic'ом). Существующие refresh не убиваются — отдельная задача.
+        Записывает новый хэш Argon2id (минимум 8 символов, валидируется
+        pydantic'ом) и сразу же revoke'ит все активные сессии юзера и все
+        его PAT'ы — то есть refresh-токены и долгоживущие токены становятся
+        невалидными немедленно.
 
     Доступ:
         account_admin (любой юзер) или department_admin (только свой отдел).
 
     Возможные ошибки:
         * `USER_NOT_FOUND` (404).
-        * `PERMISSION_DENIED` (403) — cross-dept у department_admin.
+        * `DEPARTMENT_ISOLATION` (403) — cross-dept у department_admin.
     """
     await user_service.reset_password(
         db=db,
@@ -446,7 +448,7 @@ async def unban_user(
 
     Возможные ошибки:
         * `USER_NOT_FOUND` (404).
-        * `NOT_BANNED` (400) — у юзера нет активного бана.
+        * `BAN_NOT_FOUND` (404) — у юзера нет активного бана.
     """
     await user_service.unban_user(
         db=db,

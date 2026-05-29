@@ -129,7 +129,7 @@ async def test_pat_introspect_reports_is_banned_false_after_unban(
     raw = (await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "unban_intr_pat", "allowed_services": []},
+        json={"name": "unban_intr_pat", "allowed_services": ["service_x"]},
     )).json()["token"]
 
     await _ban(client, admin_token, user_a.id)
@@ -165,7 +165,7 @@ async def test_ban_revokes_active_pat(
     raw = (await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "ban_revoke_pat", "allowed_services": []},
+        json={"name": "ban_revoke_pat", "allowed_services": ["service_x"]},
     )).json()["token"]
 
     # PAT валиден ДО ban'а — sanity-чек, чтобы исключить ложноположительный

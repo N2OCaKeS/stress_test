@@ -16,6 +16,15 @@ class BotRepository:
     async def get_by_id(self, bid: str) -> BotAccount | None:
         return await self._db.get(BotAccount, bid)
 
+    async def list_by_ids(self, bot_ids: list[str]) -> list[BotAccount]:
+        """Batch-выборка ботов по списку id. Пустой список — пустой результат."""
+        if not bot_ids:
+            return []
+        result = await self._db.scalars(
+            select(BotAccount).where(BotAccount.id.in_(bot_ids))
+        )
+        return list(result)
+
     async def list_by_department(
         self, department_id: str, limit: int | None = None, offset: int = 0
     ) -> list[BotAccount]:

@@ -49,23 +49,6 @@ def _extract_bearer(request: Request) -> str | None:
     return None
 
 
-def _payload_to_identity(payload: dict) -> IdentityContext:
-    """JWT payload → IdentityContext (без revalidate из БД).
-
-    Маленький pure helper, оставлен ради legacy unit-тестов. **Не** является
-    источником истины по правам — `get_current_identity` пересобирает все
-    privilege-поля из БД.
-    """
-    return IdentityContext(
-        user_id=payload["sub"],
-        username=payload.get("username", ""),
-        department_id=payload.get("department_id", ""),
-        allowed_services=payload.get("allowed_services", []),
-        service_roles=payload.get("service_roles", {}),
-        platform_role=payload.get("platform_role"),
-    )
-
-
 def _invalid_token_error() -> AuthenticationError:
     """Единая ошибка для невалидного/истёкшего JWT. Не палит конкретику."""
     return AuthenticationError(

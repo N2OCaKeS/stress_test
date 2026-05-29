@@ -199,7 +199,7 @@ Errors: `USER_NOT_FOUND` (404), 422 — cross-field инварианты.
 
 ### `POST /users/{user_id}/unban`
 
-Auth: `account_admin`. Errors: `USER_NOT_FOUND` (404), `NOT_BANNED` (400).
+Auth: `account_admin`. Errors: `USER_NOT_FOUND` (404), `BAN_NOT_FOUND` (404).
 
 ### `GET /users/{user_id}/groups`
 
@@ -759,7 +759,7 @@ Auth: public. Response: JWKS (RS256).
 - `DEPARTMENT_MISMATCH`, `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT`
 - `CANNOT_ASSIGN_SERVICE`, `CANNOT_ASSIGN_ROLE`
 - `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — назначить `platform_role` пытается не `account_admin` (на `POST /users`).
-- `BAN_ALREADY_ACTIVE`, `BAN_NOT_FOUND`, `NOT_BANNED`, `UNBAN_FORBIDDEN`
+- `BAN_ALREADY_ACTIVE`, `BAN_NOT_FOUND`, `UNBAN_FORBIDDEN`
 
 ### Groups
 

@@ -296,16 +296,17 @@ def create_application() -> FastAPI:
         # "oauth_client" / fallback "user" для старых JWT. Без него все
         # audit-события писались бы `actor_type="user"`, oauth_client-вызовы
         # смешивались бы с человеческими в SIEM.
-        actor_id, username, department_id, subject_type = _extract_actor_info(request)
+        actor_id, subject_type = _extract_actor_info(request)
         # X-Forwarded-For доверяется только если запрос пришёл с IP из
         # `settings.trusted_proxy_ips` (CIDR allow-list). Иначе берём прямой
         # `request.client.host`. См. `services/audit_context.py:extract_client_ip`.
         ip = extract_client_ip(request, list(settings.trusted_proxy_ips or []))
         ua = request.headers.get("User-Agent")
+        # `username` / `department_id` тут не заполняем — их нет в JWT-payload;
+        # `_propagate_identity_to_audit_context` дозаполнит контекст после
+        # `get_current_identity` (когда identity resolve'нулась из БД).
         ctx = AuditContext(
             actor_id=actor_id,
-            username=username,
-            department_id=department_id,
             request_id=request_id,
             ip_address=ip,
             user_agent=ua,
@@ -468,17 +469,21 @@ async def _startup_sequence() -> None:
 
 def _extract_actor_info(
     request: Request,
-) -> tuple[str | None, str | None, str | None, str | None]:
-    """Декодит JWT для user_id + username + department_id + actor_type (только для аудита).
+) -> tuple[str | None, str | None]:
+    """Декодит JWT для actor_id + actor_type (только для аудита).
 
-    Возвращает (actor_id, username, department_id, subject_type). Любая ошибка →
-    (None, None, None, None) — middleware не валится на битом токене,
-    это работа auth-guard'а. `subject_type` берётся из JWT claim
-    `actor_type`; отсутствие → "user" (backward compat со старыми JWT).
+    Возвращает (actor_id, subject_type). Любая ошибка → (None, None) —
+    middleware не валится на битом токене, это работа auth-guard'а.
+    `subject_type` берётся из JWT claim `actor_type`; отсутствие → "user"
+    (backward compat со старыми JWT).
+
+    `username` и `department_id` намеренно НЕ читаем: их нет в JWT-payload
+    (см. `_build_access_token`). Эти поля заполняет
+    `_propagate_identity_to_audit_context` после `get_current_identity`.
     """
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
-        return None, None, None, None
+        return None, None
     token = auth[7:]
     try:
         from src.core.security import decode_access_token
@@ -486,14 +491,9 @@ def _extract_actor_info(
         # JWT может не иметь `actor_type` (legacy токены) — fallback на "user",
         # как делает get_current_identity / authorization_service.introspect.
         actor_type = payload.get("actor_type") or "user"
-        return (
-            payload.get("sub"),
-            payload.get("username"),
-            payload.get("department_id"),
-            actor_type,
-        )
+        return payload.get("sub"), actor_type
     except Exception:
-        return None, None, None, None
+        return None, None
 
 
 def _http_status_to_category(status: int) -> str:

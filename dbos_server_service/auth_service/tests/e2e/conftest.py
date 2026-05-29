@@ -123,6 +123,31 @@ def e2e_user(e2e_api, e2e_dept):
     return next(u for u in users if u["username"] == _E2E_USER)
 
 
+_E2E_SERVICE = "e2e_service"
+
+
+@pytest.fixture(scope="session")
+def e2e_service(e2e_api, e2e_dept):
+    """Создать платформенный сервис и выдать e2e_dept доступ к нему.
+
+    PAT-create требует непустой `allowed_services`, и каждый сервис в нём
+    должен быть в `dept.allowed_services`. Без этой фикстуры PAT-тесты
+    в e2e падали бы на 422 / 403.
+    """
+    s, base = e2e_api
+    # Создаём (или переиспользуем) платформенный сервис.
+    r = s.post(f"{base}/api/auth/v1/services",
+               json={"service_name": _E2E_SERVICE, "display_name": "E2E Service"})
+    assert r.status_code in (201, 409), f"create service failed: {r.text}"
+    # Выдаём отделу доступ — идемпотентно.
+    dept_id = e2e_dept["department_id"]
+    s.post(
+        f"{base}/api/auth/v1/departments/{dept_id}/services",
+        json={"service_name": _E2E_SERVICE},
+    )
+    return _E2E_SERVICE
+
+
 @pytest.fixture(scope="session")
 def e2e_user_token(e2e_user):
     r = requests.post(f"{AUTH_URL}/api/auth/v1/login",

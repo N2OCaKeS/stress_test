@@ -260,9 +260,12 @@ async def list_bot_members(db: AsyncSession, identity, group_id: str, request_id
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
     bot_repo = BotRepository(db)
     members = await repo.list_bot_members(group_id)
+    # Один SELECT по всем bot_id'ам вместо N×get_by_id.
+    bots = await bot_repo.list_by_ids([m.bot_id for m in members])
+    by_id = {b.id: b for b in bots}
     result = []
     for m in members:
-        bot = await bot_repo.get_by_id(m.bot_id)
+        bot = by_id.get(m.bot_id)
         if bot:
             result.append(BotMemberResponse(bot_id=bot.id, name=bot.name, added_at=m.added_at))
     return result

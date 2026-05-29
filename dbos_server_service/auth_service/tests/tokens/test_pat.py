@@ -5,7 +5,7 @@ INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
 
 
 async def _create_pat(client, token, name="my_pat", scopes=None):
-    body = {"name": name, "allowed_services": scopes or []}
+    body = {"name": name, "allowed_services": scopes or ["service_x"]}
     return await client.post(URL, headers={"Authorization": f"Bearer {token}"}, json=body)
 
 

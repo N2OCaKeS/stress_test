@@ -280,7 +280,7 @@ async def test_pat_create_expires_in_past_returns_422(client, user_a_token):
     resp = await client.post(
         "/api/auth/v1/tokens",
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "expired_pat", "expires_at": past, "allowed_services": []},
+        json={"name": "expired_pat", "expires_at": past, "allowed_services": ["service_x"]},
     )
     assert resp.status_code == 422
     assert resp.json()["error_code"] == "INVALID_TOKEN_EXPIRY"

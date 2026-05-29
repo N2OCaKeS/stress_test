@@ -188,7 +188,7 @@ async def test_pat_as_docker_password(client, admin_token, user_a_token, user_a,
     await _enable_docker(client, admin_token, dept_a.id)
     pat = (await client.post(TOKENS_URL,
                       headers={"Authorization": f"Bearer {user_a_token}"},
-                      json={"name": "docker_pat", "allowed_services": []})).json()["token"]
+                      json={"name": "docker_pat", "allowed_services": ["service_x"]})).json()["token"]
     resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", pat),
                       params={"service": "registry.test"})
     assert resp.status_code == 200
@@ -198,7 +198,7 @@ async def test_revoked_pat_denied_for_docker(client, admin_token, user_a_token, 
     await _enable_docker(client, admin_token, dept_a.id)
     pat_data = (await client.post(TOKENS_URL,
                            headers={"Authorization": f"Bearer {user_a_token}"},
-                           json={"name": "docker_pat_rev", "allowed_services": []})).json()
+                           json={"name": "docker_pat_rev", "allowed_services": ["service_x"]})).json()
     await client.delete(f"{TOKENS_URL}/{pat_data['token_id']}",
                   headers={"Authorization": f"Bearer {user_a_token}"})
     resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", pat_data["token"]),

@@ -72,7 +72,7 @@ class TestOrphanPat:
         tok = await client.post(
             "/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "orphan_pat", "allowed_services": []},
+            json={"name": "orphan_pat", "allowed_services": ["service_x"]},
         )
         raw = tok.json()["token"]
 

@@ -411,8 +411,13 @@ async def assign_bot_roles(
         )
 
     role_def_repo = ServiceRoleDefinitionRepository(db)
+    # Один SELECT всех активных ролей сервиса в отделе вместо N×exists.
+    defined = {
+        rd.role_name
+        for rd in await role_def_repo.list_active(bot.department_id, service_name)
+    }
     for role in roles:
-        if not await role_def_repo.exists(bot.department_id, service_name, role):
+        if role not in defined:
             raise DomainValidationError(
                 error_code="INVALID_SERVICE_ROLE",
                 message=(

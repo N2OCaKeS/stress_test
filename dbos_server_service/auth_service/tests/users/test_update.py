@@ -175,7 +175,7 @@ async def test_patch_status_banned_revokes_pat(
     raw = (await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "patch_ban_intr_pat", "allowed_services": []},
+        json={"name": "patch_ban_intr_pat", "allowed_services": ["service_x"]},
     )).json()["token"]
 
     # Sanity: PAT валиден до бана.

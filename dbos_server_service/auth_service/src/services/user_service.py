@@ -525,7 +525,11 @@ async def reset_password(
     new_password: str,
     request_id: str | None = None,
 ) -> None:
-    """Сбросить пароль юзеру + revoke его сессии и PAT."""
+    """Сбросить пароль юзеру + revoke все его активные сессии и все PAT'ы.
+
+    Дополнительно сбрасывает identity-cache, чтобы кешированный access-token
+    с `is_active=True` не пускал юзера до истечения TTL после смены пароля.
+    """
     user_repo = UserRepository(db)
     session_repo = SessionRepository(db)
     token_repo = TokenRepository(db)

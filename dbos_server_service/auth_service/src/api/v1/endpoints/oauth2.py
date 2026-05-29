@@ -90,7 +90,11 @@ async def list_clients(
     "/clients/{client_id}",
     response_model=OkResponse,
     summary="Удалить OAuth2-клиента",
-    description="Каскадно убивает все authorization codes и issued токены клиента.",
+    description=(
+        "Soft-delete клиента (`is_active=False`). Выпущенные authorization-codes "
+        "и access-токены не удаляются сразу — они истекают по TTL и отбиваются "
+        "на introspect через `is_active`-check."
+    ),
 )
 async def delete_client(
     client_id: str,

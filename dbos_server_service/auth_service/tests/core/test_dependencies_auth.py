@@ -3,7 +3,6 @@
 Покрытие:
 * `_extract_bearer` — варианты заголовка: пустой, без "Bearer ", lowercase
   "bearer ", два пробела, только "Bearer", "Bearer " без токена.
-* `_payload_to_identity` — корректно мапит claims в IdentityContext.
 * `get_current_identity` — асинхронно требует валидный JWT, иначе
   AuthenticationError.
 * `require_account_admin` / `require_any_admin` — фильтрация по platform_role.
@@ -61,36 +60,6 @@ class TestExtractBearer:
 
     def test_bearer_space_only_returns_empty_string(self):
         assert auth_dep._extract_bearer(_make_request({"Authorization": "Bearer "})) == ""
-
-
-# ── _payload_to_identity ─────────────────────────────────────────────────────
-
-class TestPayloadToIdentity:
-    def test_full_payload(self):
-        identity = auth_dep._payload_to_identity({
-            "sub": "usr_1",
-            "username": "alice",
-            "department_id": "dep_a",
-            "allowed_services": ["s1"],
-            "service_roles": {"s1": ["reader"]},
-            "platform_role": "account_admin",
-        })
-        assert isinstance(identity, IdentityContext)
-        assert identity.user_id == "usr_1"
-        assert identity.platform_role == "account_admin"
-        assert identity.allowed_services == ["s1"]
-
-    def test_partial_payload_defaults(self):
-        """Только обязательное `sub` — остальное доберётся defaults."""
-        identity = auth_dep._payload_to_identity({"sub": "usr_x"})
-        assert identity.user_id == "usr_x"
-        assert identity.username == ""
-        assert identity.allowed_services == []
-        assert identity.service_roles == {}
-
-    def test_missing_sub_raises(self):
-        with pytest.raises(KeyError):
-            auth_dep._payload_to_identity({"username": "no_sub"})
 
 
 # ── get_current_identity ─────────────────────────────────────────────────────

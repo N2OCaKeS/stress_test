@@ -252,12 +252,13 @@ class TestDisabledRegistry:
 
 class TestPATAuth:
     def test_pat_works_as_docker_password(self, registry_host, auth_base,
-                                           e2e_docker_enabled, e2e_user_token):
+                                           e2e_docker_enabled, e2e_user_token,
+                                           e2e_service):
         # Create a PAT
         pat_resp = requests.post(
             f"{auth_base}/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {e2e_user_token}"},
-            json={"name": "e2e_docker_pat", "allowed_services": []},
+            json={"name": "e2e_docker_pat", "allowed_services": [e2e_service]},
         )
         assert pat_resp.status_code == 201
         pat = pat_resp.json()["token"]
@@ -270,11 +271,12 @@ class TestPATAuth:
         assert "token" in resp.json()
 
     def test_revoked_pat_denied(self, registry_host, auth_base,
-                                 e2e_docker_enabled, e2e_user_token):
+                                 e2e_docker_enabled, e2e_user_token,
+                                 e2e_service):
         pat_data = requests.post(
             f"{auth_base}/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {e2e_user_token}"},
-            json={"name": "e2e_docker_pat_rev", "allowed_services": []},
+            json={"name": "e2e_docker_pat_rev", "allowed_services": [e2e_service]},
         ).json()
         requests.delete(
             f"{auth_base}/api/auth/v1/tokens/{pat_data['token_id']}",

@@ -262,7 +262,15 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
                 # PAT валидный, но если у юзера активен password-lockout —
                 # рубим и docker-auth: иначе атакующий, скомпрометировавший
                 # PAT, обходит per-user 429 после 5 неуспешных password-логинов.
-                _lockout.assert_not_locked(user)
+                # Сам факт lockout'а через Docker канал не раскрываем —
+                # отвечаем generic `INVALID_CREDENTIALS`, чтобы держатель
+                # PAT'а не получал side-channel «юзер сейчас залочен».
+                try:
+                    _lockout.assert_not_locked(user)
+                except AuthorizationError:
+                    raise AuthenticationError(
+                        error_code="INVALID_CREDENTIALS", message="Invalid credentials"
+                    )
                 return user.id, user.department_id
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid credentials")
 

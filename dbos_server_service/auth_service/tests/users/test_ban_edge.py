@@ -365,7 +365,7 @@ class TestUnbanAndPAT:
         raw = (await client.post(
             "/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "unban_pat_cycle", "allowed_services": []},
+            json={"name": "unban_pat_cycle", "allowed_services": ["service_x"]},
         )).json()["token"]
 
         await client.post(
@@ -653,7 +653,7 @@ class TestAutoUnbanReactivatesPat:
         raw = (await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "auto_unban_pat", "allowed_services": []},
+            json={"name": "auto_unban_pat", "allowed_services": ["service_x"]},
         )).json()["token"]
 
         future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()

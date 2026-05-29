@@ -194,7 +194,7 @@ class TestOauthClientRejectedOnUserEndpoints:
         resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {cc_token}"},
-            json={"name": "attacker_pat", "allowed_services": []},
+            json={"name": "attacker_pat", "allowed_services": ["service_x"]},
         )
         assert resp.status_code == 403, resp.text
         assert resp.json()["error_code"] == "USER_CONTEXT_REQUIRED"
@@ -257,6 +257,6 @@ class TestUserJwtUnaffected:
         resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "sanity_pat_after_fix", "allowed_services": []},
+            json={"name": "sanity_pat_after_fix", "allowed_services": ["service_x"]},
         )
         assert resp.status_code == 201, resp.text

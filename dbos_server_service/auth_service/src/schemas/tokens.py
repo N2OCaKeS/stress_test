@@ -22,8 +22,8 @@ class PATCreate(BaseModel):
         description="Альтернатива expires_at: offset в секундах от текущего момента.",
     )
     allowed_services: list[str] = Field(
-        default_factory=list,
-        description="Scope токена — список сервисов, куда им можно ходить.",
+        min_length=1,
+        description="Scope токена — список сервисов, куда им можно ходить. Минимум один.",
     )
 
     @model_validator(mode="after")

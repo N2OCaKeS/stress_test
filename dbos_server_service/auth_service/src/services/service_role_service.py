@@ -298,8 +298,11 @@ async def bulk_assign(
 
     user_repo = UserRepository(db)
     role_repo = RoleRepository(db)
+    # Один SELECT по списку вместо N×get_by_id.
+    users = await user_repo.list_by_ids(user_ids)
+    by_id = {u.id: u for u in users}
     for user_id in user_ids:
-        user = await user_repo.get_by_id(user_id)
+        user = by_id.get(user_id)
         if user is None:
             raise NotFoundError(
                 error_code="USER_NOT_FOUND", message=f"User '{user_id}' not found"
@@ -345,8 +348,11 @@ async def bulk_revoke(
     """Bulk-снять роль со списка юзеров. Юзеры обязательно из этого отдела."""
     _check_can_manage(identity, department_id, service_name)
     user_repo = UserRepository(db)
+    # Один SELECT по списку вместо N×get_by_id.
+    users = await user_repo.list_by_ids(user_ids)
+    by_id = {u.id: u for u in users}
     for user_id in user_ids:
-        user = await user_repo.get_by_id(user_id)
+        user = by_id.get(user_id)
         if user is None:
             raise NotFoundError(
                 error_code="USER_NOT_FOUND", message=f"User '{user_id}' not found"

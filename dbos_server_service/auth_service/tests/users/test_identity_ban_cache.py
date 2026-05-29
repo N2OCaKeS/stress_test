@@ -344,7 +344,7 @@ class TestUnbanReactivatesPAT:
         pat_resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "p2d_pat", "allowed_services": []},
+            json={"name": "p2d_pat", "allowed_services": ["service_x"]},
         )
         assert pat_resp.status_code in (200, 201)
         raw = pat_resp.json()["token"]
@@ -384,7 +384,7 @@ class TestUnbanReactivatesPAT:
         pat_resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "p2d_user_revoked", "allowed_services": []},
+            json={"name": "p2d_user_revoked", "allowed_services": ["service_x"]},
         )
         pat_id = pat_resp.json()["token_id"]
         raw = pat_resp.json()["token"]
@@ -426,7 +426,7 @@ class TestUnbanReactivatesPAT:
             await client.post(
                 TOKENS_URL,
                 headers={"Authorization": f"Bearer {user_a_token}"},
-                json={"name": f"p2d_audit_pat_{i}", "allowed_services": []},
+                json={"name": f"p2d_audit_pat_{i}", "allowed_services": ["service_x"]},
             )
 
         # Ban (revoke'ит оба).
@@ -492,7 +492,7 @@ class TestIntrospectSymmetryAtBanned:
         raw = (await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "p2e_pat", "allowed_services": []},
+            json={"name": "p2e_pat", "allowed_services": ["service_x"]},
         )).json()["token"]
 
         # Sanity до ban'а — PAT active.
@@ -527,7 +527,7 @@ class TestIntrospectSymmetryAtBanned:
         pat_resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "p2e_defence_pat", "allowed_services": []},
+            json={"name": "p2e_defence_pat", "allowed_services": ["service_x"]},
         )
         raw = pat_resp.json()["token"]
 

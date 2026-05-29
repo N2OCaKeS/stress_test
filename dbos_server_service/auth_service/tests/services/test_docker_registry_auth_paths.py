@@ -105,7 +105,7 @@ async def test_expired_pat_denied_in_docker(
     pat_resp = await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "exp_docker_pat", "expires_at": future, "allowed_services": []},
+        json={"name": "exp_docker_pat", "expires_at": future, "allowed_services": ["service_x"]},
     )
     pat_raw = pat_resp.json()["token"]
     pat_id = pat_resp.json()["token_id"]

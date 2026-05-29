@@ -98,15 +98,26 @@ def _build_account_task_payload(
     server,
     account,
     include_attrs: bool,
+    include_home_dir: bool | None = None,
 ) -> dict:
     """Базовый payload для account-task'ов (rotate / provision / update / deprovision).
 
     Поля одинаковые для всех аккаунт-task'ов: ключи маршрутизации (host/ssh_port),
     identity аккаунта (login), management-режим сервера. `include_attrs=True`
-    добавляет управляемые атрибуты (`has_sudo`/`unix_groups`/`shell`/`home_dir`),
-    которые нужны useradd/usermod (`account.provision`/`update_on_host`/
-    `deprovision`); для `account.rotate_password` атрибуты не нужны (там только
-    меняется пароль через chpasswd).
+    добавляет управляемые атрибуты (`has_sudo`/`unix_groups`/`shell`), которые
+    нужны useradd/usermod (`account.provision`/`update_on_host`/`deprovision`);
+    для `account.rotate_password` атрибуты не нужны (там только меняется пароль
+    через chpasswd).
+
+    `home_dir` едет только в `provision` — `useradd -d <path>` ставит домашний
+    каталог при заведении пользователя. `usermod` в `modify_user` (worker'ский
+    `account.update_on_host`) `-d` не передаёт: смена home существующего юзера —
+    отдельный сценарий с переносом данных, через PATCH сейчас не делается.
+    `deprovision` — `userdel`, home в payload'е тоже не нужен.
+
+    По умолчанию (`include_home_dir=None`) home_dir едет, если `include_attrs=True`,
+    чтобы не ломать существующих caller'ов; provision-вызов берёт дефолт,
+    update/deprovision передают `False` явно.
 
     Caller дополняет результат своими ключами (`extra_payload`) через `.update`.
     """
@@ -129,7 +140,8 @@ def _build_account_task_payload(
         payload["has_sudo"] = account.has_sudo
         payload["unix_groups"] = list(account.unix_groups)
         payload["shell"] = account.shell
-        payload["home_dir"] = account.home_dir
+        if include_home_dir is None or include_home_dir:
+            payload["home_dir"] = account.home_dir
     return payload
 
 
@@ -283,6 +295,7 @@ async def _dispatch_account_on_host(
     task_kind: str,
     operation: str,
     extra_payload: dict | None = None,
+    include_home_dir: bool | None = None,
 ) -> dict:
     """Общая логика per-server provision/update/deprovision OS-пользователя.
 
@@ -368,6 +381,7 @@ async def _dispatch_account_on_host(
     # read карточки, пароль он тянет через internal view_password endpoint.
     payload = _build_account_task_payload(
         server=server, account=account, include_attrs=True,
+        include_home_dir=include_home_dir,
     )
     if extra_payload:
         payload.update(extra_payload)
@@ -478,6 +492,9 @@ async def fanout_update_on_host(
         per_server_key = f"{idempotency_key}:{server.id}" if idempotency_key else None
         payload = _build_account_task_payload(
             server=server, account=account, include_attrs=True,
+            # update_on_host через usermod не двигает home — параллель с
+            # точечным dispatch'ем (`account_update_on_host_dispatch`).
+            include_home_dir=False,
         )
         try:
             task_id = await worker_client.dispatch_task(
@@ -1148,6 +1165,9 @@ async def account_update_on_host_dispatch(
         audit_action="server_account.update_on_host",
         task_kind="account.update_on_host",
         operation="update",
+        # usermod без `-d`: смена home существующего юзера через PATCH не
+        # делается, worker'ский modify_user `home_dir` не принимает.
+        include_home_dir=False,
     )
     return AccountProvisionDispatchResponse(**result)
 
@@ -1201,6 +1221,8 @@ async def account_deprovision_dispatch(
         task_kind="account.deprovision",
         operation="deprovision",
         extra_payload={"remove_home": remove_home},
+        # userdel home не использует — флаг отдельный (`remove_home`).
+        include_home_dir=False,
     )
     return AccountProvisionDispatchResponse(**result)
 

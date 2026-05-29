@@ -39,9 +39,9 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import LAST_ERROR_MAX_LEN
@@ -113,6 +113,15 @@ _circuit_open_until: float = 0.0
 # доступен через `get_dlq_total()` для health-эндпоинтов и тестов.
 _dlq_total: int = 0
 
+# Backoff cap. 2^attempts растёт быстро: уже на 10 fail'ах = 1024s
+# (~17 минут) между попытками, на 20 — ~12 дней. Cap'аем потолком,
+# чтобы row не «уезжал» на месяцы из-за случайно высокого attempts
+# (например, после ручного re-attempt'а из DLQ с не-обнулённым счётчиком).
+# Cap совпадает с `_CB_MAX_OPEN_SECONDS` — после 5 минут backoff'а
+# дальнейшее ожидание не имеет смысла: либо loging уже починили, либо
+# proper DLQ-обработка через `internal.outbox_re_attempt`.
+_BACKOFF_MAX_SECONDS = 300.0
+
 
 def get_dlq_total() -> int:
     """Сколько raз publisher отбраковал outbox-row в DLQ за время жизни процесса.
@@ -138,6 +147,38 @@ def _reset_breaker_state() -> None:
     _consecutive_failures = 0
     _circuit_open_until = 0.0
     _dlq_total = 0
+
+
+async def re_attempt_row(row_id: int) -> bool:
+    """Operator-команда: вернуть outbox-row из DLQ обратно в очередь.
+
+    Сбрасывает `published_at`, `attempts`, `next_retry_at`, `last_error`
+    → publisher увидит row в следующем тике и попытается отправить
+    заново. Никаких guard'ов по типу row'и нет: оператор сам решает,
+    какие DLQ-причины пересылать (для `permanent_4xx` без правки payload
+    повторная попытка тоже даст 4xx, но это его головная боль).
+
+    Возвращает True, если row найден и сброшен; False — если row нет
+    или она уже unpublished. Caller отвечает только за вызов; commit
+    делает сама функция.
+    """
+    async with AsyncSessionLocal() as session:
+        row = await session.get(AuditOutbox, row_id)
+        if row is None:
+            logger.warning("outbox_re_attempt: row=%s not found", row_id)
+            return False
+        if row.published_at is None:
+            logger.info(
+                "outbox_re_attempt: row=%s already unpublished, noop", row_id
+            )
+            return False
+        row.published_at = None
+        row.attempts = 0
+        row.next_retry_at = None
+        row.last_error = None
+        await session.commit()
+    logger.info("outbox_re_attempt: row=%s re-queued from DLQ", row_id)
+    return True
 
 
 def _send_to_dlq(row: AuditOutbox, *, reason: str) -> None:
@@ -178,6 +219,22 @@ def _maybe_poison(row: AuditOutbox) -> bool:
         _send_to_dlq(row, reason="attempts_cap")
         return True
     return False
+
+
+def _apply_backoff(row: AuditOutbox) -> None:
+    """Назначить `next_retry_at` после неуспешной попытки.
+
+    Формула: `now() + min(2^attempts, _BACKOFF_MAX_SECONDS)` секунд.
+    `attempts` уже инкрементнут к моменту вызова — берём текущее
+    значение. SELECT publisher'а потом не возьмёт row, пока время не
+    наступит.
+
+    Не вызывается при поэтапной отбраковке (`missing_action`,
+    `permanent_4xx`, `attempts_cap`) — там row уже закрыт через
+    `_send_to_dlq` и `next_retry_at` смысла не имеет.
+    """
+    delay = min(2 ** row.attempts, _BACKOFF_MAX_SECONDS)
+    row.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
 
 
 async def _publish_one(session: AsyncSession, row: AuditOutbox) -> tuple[bool, bool]:
@@ -242,12 +299,14 @@ async def _publish_one(session: AsyncSession, row: AuditOutbox) -> tuple[bool, b
         if _maybe_poison(row):
             await session.flush()
             return False, True
+        _apply_backoff(row)
         await session.flush()
         logger.warning(
-            "audit_outbox publish HTTP-failed row=%s attempts=%s status=%s",
+            "audit_outbox publish HTTP-failed row=%s attempts=%s status=%s next_retry_at=%s",
             row.id,
             row.attempts,
             exc.status_code,
+            row.next_retry_at,
         )
         return False, True
     except Exception as exc:  # noqa: BLE001
@@ -261,16 +320,21 @@ async def _publish_one(session: AsyncSession, row: AuditOutbox) -> tuple[bool, b
         if _maybe_poison(row):
             await session.flush()
             return False, False
+        _apply_backoff(row)
         await session.flush()
         logger.warning(
-            "audit_outbox publish failed row=%s attempts=%s err=%s",
+            "audit_outbox publish failed row=%s attempts=%s err=%s next_retry_at=%s",
             row.id,
             row.attempts,
             type(exc).__name__,
+            row.next_retry_at,
         )
         return False, False
 
     row.published_at = datetime.now(timezone.utc)
+    # На успех — обнуляем backoff (был выставлен предыдущей попыткой,
+    # но row всё равно уйдёт из выборки по `published_at IS NOT NULL`).
+    row.next_retry_at = None
     await session.flush()
     return True, False
 
@@ -295,9 +359,16 @@ def _select_unpublished(limit: int):
     UPDATE `published_at`, поэтому строки атомарно «исчезают» из
     выборки конкурента до того, как lock будет отпущен.
     """
+    now = datetime.now(timezone.utc)
     return (
         select(AuditOutbox)
-        .where(AuditOutbox.published_at.is_(None))
+        .where(
+            AuditOutbox.published_at.is_(None),
+            or_(
+                AuditOutbox.next_retry_at.is_(None),
+                AuditOutbox.next_retry_at <= now,
+            ),
+        )
         .order_by(AuditOutbox.created_at.asc())
         .limit(limit)
         .with_for_update(skip_locked=True)
@@ -314,9 +385,16 @@ def _select_unpublished_excluding(limit: int, exclude_ids: list[int]):
     unpublished), и мы будем долбить тот же неработающий канал 5 раз
     подряд вместо того, чтобы дать шанс соседним row'ам.
     """
+    now = datetime.now(timezone.utc)
     stmt = (
         select(AuditOutbox)
-        .where(AuditOutbox.published_at.is_(None))
+        .where(
+            AuditOutbox.published_at.is_(None),
+            or_(
+                AuditOutbox.next_retry_at.is_(None),
+                AuditOutbox.next_retry_at <= now,
+            ),
+        )
         .order_by(AuditOutbox.created_at.asc())
         .limit(limit)
         .with_for_update(skip_locked=True)

@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import asyncssh
 import pytest
@@ -23,6 +23,12 @@ from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.models import Task
 from src.tasks import _runner, prepare
+from tests._ssh_mock_helpers import (
+    bootstrap_seq as _bootstrap_seq,
+    bootstrap_seq_existing_sudo as _bootstrap_seq_existing_sudo,
+    make_conn as _conn,
+    run_result as _run_result,
+)
 
 
 async def _force_terminal(tid: str) -> None:
@@ -34,54 +40,7 @@ async def _force_terminal(tid: str) -> None:
         await session.commit()
 
 
-def _run_result(stdout="", stderr="", rc=0):
-    res = MagicMock()
-    res.stdout = stdout
-    res.stderr = stderr
-    res.exit_status = rc
-    return res
-
-
-def _conn(run_results):
-    conn = MagicMock(spec=asyncssh.SSHClientConnection)
-    conn.close = MagicMock()
-    conn.wait_closed = AsyncMock()
-    conn.run = AsyncMock(side_effect=run_results)
-    return conn
-
-
 _PUBKEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc dbos"
-
-
-# Полная последовательность SSH-команд bootstrap'а.
-#
-# Путь «юзера ещё нет» (getent_rc=2): outer user_exists → False, pre-check
-# id -nG пропускаем, заходим в create_user (он сам зовёт getent),
-# useradd → sudoers → authorized_keys. Итого 5 команд.
-#
-# Путь «юзер есть, но не в sudo/wheel» — здесь не используется; для
-# idempotent-теста (existing user уже в sudo) — отдельная фикстура
-# `_bootstrap_seq_existing_sudo`.
-def _bootstrap_seq(getent_rc=2):
-    return [
-        _run_result("", "", getent_rc),  # outer user_exists: getent passwd <user>
-        _run_result("", "", getent_rc),  # create_user → user_exists: getent passwd <user>
-        _run_result("", "", 0),          # useradd
-        _run_result("", "", 0),          # sudoers tee/visudo/mv
-        _run_result("", "", 0),          # authorized_keys bash
-    ]
-
-
-# Юзер уже существует и состоит в sudo-группе — useradd/usermod пропускаются.
-# Последовательность: getent passwd (rc=0) → id -nG (вывод содержит "sudo") →
-# sudoers → authorized_keys. Итого 4 команды.
-def _bootstrap_seq_existing_sudo(login: str = "dbos"):
-    return [
-        _run_result(f"{login}:x:1001:1001::/home/{login}:/bin/bash", "", 0),
-        _run_result(f"{login} sudo\n", "", 0),
-        _run_result("", "", 0),  # sudoers
-        _run_result("", "", 0),  # authorized_keys
-    ]
 
 
 # ── SshClient.bootstrap_management_user ──────────────────────────────────────

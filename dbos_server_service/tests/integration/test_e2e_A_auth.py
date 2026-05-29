@@ -791,7 +791,7 @@ class TestPATLifecycle:
         r = auth_client.post(
             f"{AUTH_PREFIX}/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": name, "allowed_services": []},
+            json={"name": name, "allowed_services": ["auth_service"]},
         )
         assert r.status_code == 201, r.text
         body = r.json()

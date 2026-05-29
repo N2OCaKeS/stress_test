@@ -289,6 +289,47 @@ async def mark_link_inventoried(
     return link
 
 
+async def mark_links_inventoried_bulk(
+    db: AsyncSession,
+    server_id: str,
+    account_ids: list[str],
+    *,
+    present: bool,
+) -> int:
+    """Bulk-вариант `mark_link_inventoried` — один UPDATE на N связок.
+
+    Reconcile-цикл (`receive_users_inventory`) обходит N юзеров и на каждом
+    вызывает `mark_link_inventoried`, которая делает `flush` (один UPDATE
+    через ORM dirty-механизм). Bulk-апдейт сворачивает их в один statement,
+    что снимает N round-trip'ов до Postgres на больших инвентаризациях.
+
+    Если `account_ids` пуст — no-op, 0. Возвращает число обновлённых строк
+    (для метрик, не строго используется).
+    """
+    if not account_ids:
+        return 0
+    from sqlalchemy import update as sa_update
+
+    stmt = (
+        sa_update(ServerAccountServer)
+        .where(
+            ServerAccountServer.server_id == server_id,
+            ServerAccountServer.account_id.in_(account_ids),
+        )
+        .values(
+            present_on_server=present,
+            last_inventory_at=datetime.now(timezone.utc),
+        )
+        # `fetch` синхронизирует session-identity-map после UPDATE — caller'ы,
+        # которые уже подтянули связки (тесты или сама `receive_users_inventory`
+        # после `list_links_for_server`), увидят новое состояние без явного
+        # `refresh`.
+        .execution_options(synchronize_session="fetch")
+    )
+    result = await db.execute(stmt)
+    return result.rowcount or 0
+
+
 async def set_link_presence(
     db: AsyncSession,
     link: ServerAccountServer,

@@ -48,6 +48,22 @@ _logger = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=False)
 
 # Роли, scoped к своему отделу.
+#
+# По platform-модели auth_service `loging_reader` создаётся БЕЗ
+# `department_id` (как `loging_admin` / `account_admin`) и описан как
+# «чтение аудит-событий по всем департаментам». Здесь же он попадает в
+# dept-scope гард: без `department_id` `require_reader` отдаёт
+# 403 NO_DEPARTMENT.
+#
+# Это сознательная локальная политика loging_service'а: даже platform-роль
+# «reader» сужается до своего отдела, чтобы read-доступ не утекал
+# кросс-департаментно через одну ошибку выдачи прав. Полное «видеть всё»
+# остаётся за `loging_admin` и `account_admin`.
+#
+# Если когда-нибудь понадобится глобальный read без admin-привилегий —
+# вынести `loging_reader` из `_DEPT_SCOPED_ROLES` и вернуть
+# `_dept_scope=None` в `require_reader`. Тест-контракт фиксирующий текущее
+# поведение: `tests/test_cov_focus.py::TestDeptScopedRolesQuirk`.
 _DEPT_SCOPED_ROLES = {"loging_reader", "department_admin"}
 
 # Сестринские сервисы, которые мы ожидаем увидеть в `X-Service-Identity`, когда

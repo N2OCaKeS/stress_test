@@ -276,6 +276,18 @@ class TestOutboxRetryOnPublisherFailure:
         assert len(before) == 1
         assert before[0].published_at is None
 
+        # После failure publisher выставил next_retry_at в будущее (per-row
+        # backoff). Чтобы дёрнуть «следующий тик» руками, сдвигаем backoff
+        # в прошлое — иначе SELECT отфильтрует row до окончания delay.
+        from sqlalchemy import update as _upd
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                _upd(AuditOutbox)
+                .where(AuditOutbox.id == before[0].id)
+                .values(next_retry_at=None)
+            )
+            await session.commit()
+
         # Имитируем следующий тик publisher-loop'а (или next-task flush)
         published_count = await audit_outbox_publisher.flush_outbox()
         assert published_count == 1
@@ -605,6 +617,16 @@ class TestFlushOutboxSkipLocked:
         before = await _unpublished_outbox_rows()
         assert len(before) == N
 
+        # После seed-фейлов у row'ов выставлен next_retry_at в будущее
+        # (per-row backoff). Для теста параллельности это лишний фильтр —
+        # сбрасываем, чтобы оба publisher'а сразу видели всю очередь.
+        from sqlalchemy import update as _upd
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                _upd(AuditOutbox).values(next_retry_at=None)
+            )
+            await session.commit()
+
         # 2) Теперь "чиним сеть": emit работает, но счётчик ловит, кто
         # сколько раз отправил каждое событие.
         emit_calls: Counter = Counter()
@@ -694,6 +716,14 @@ class TestFlushOutboxSkipLocked:
                 impl=ok_impl,
                 audit_safe_fields={"power_state"},
             )
+
+        # Сбрасываем backoff — иначе SELECT отфильтрует все row'ы.
+        from sqlalchemy import update as _upd
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                _upd(AuditOutbox).values(next_retry_at=None)
+            )
+            await session.commit()
 
         # "Сеть починилась" — emit просто успешен, со sleep'ом, чтобы
         # publisher'ы реально жили параллельно.
@@ -936,6 +966,17 @@ class TestPublishHttpFailLoud:
         assert before[0].attempts == 1
         assert "500" in (before[0].last_error or "")
 
+        # Сдвигаем backoff в прошлое: после 5xx publisher выставил
+        # next_retry_at в будущее, иначе SELECT пропустит row.
+        from sqlalchemy import update as _upd
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                _upd(AuditOutbox)
+                .where(AuditOutbox.id == before[0].id)
+                .values(next_retry_at=None)
+            )
+            await session.commit()
+
         # Имитируем next-tick publisher loop.
         published = await audit_outbox_publisher.flush_outbox()
         assert published == 1
@@ -992,13 +1033,14 @@ class TestOutboxPoisonPill:
         row_id = unpub[0].id
 
         # Жёстко выставляем attempts = cap-1: следующий publish даст cap,
-        # poison-логика должна сработать.
+        # poison-логика должна сработать. `next_retry_at=None` сбрасываем
+        # backoff, который был поставлен первой неудачей.
         cap = 50
         async with AsyncSessionLocal() as session:
             await session.execute(
                 update(AuditOutbox)
                 .where(AuditOutbox.id == row_id)
-                .values(attempts=cap - 1)
+                .values(attempts=cap - 1, next_retry_at=None)
             )
             await session.commit()
 
@@ -1050,6 +1092,16 @@ class TestOutboxPoisonPill:
         rows = await _unpublished_outbox_rows()
         assert len(rows) == 1
         assert rows[0].attempts == 1
+
+        # Сдвигаем backoff в прошлое — иначе SELECT пропустит row до
+        # окончания delay'я.
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(AuditOutbox)
+                .where(AuditOutbox.id == rows[0].id)
+                .values(next_retry_at=None)
+            )
+            await session.commit()
 
         # Дёрнем cap руками: на следующем flush attempts станет 2 == cap →
         # poison.
@@ -1226,13 +1278,14 @@ class TestOutboxClassify4xx:
         row_id = rows[0].id
 
         # Жёстко поднимаем attempts до cap-1 — следующий flush попадёт
-        # в cap → DLQ через attempts_cap reason.
+        # в cap → DLQ через attempts_cap reason. `next_retry_at=None`
+        # сбрасывает backoff, который повесился первой неудачей.
         cap = 50
         async with AsyncSessionLocal() as session:
             await session.execute(
                 update(AuditOutbox)
                 .where(AuditOutbox.id == row_id)
-                .values(attempts=cap - 1)
+                .values(attempts=cap - 1, next_retry_at=None)
             )
             await session.commit()
 

@@ -166,8 +166,10 @@ def _check_target_department(
                 ),
                 details={"server_id": target_id},
             )
-        # Soft mode: всё равно фиксируем отсутствие как warning-event.
-        _emit("missing_target_department_header_soft", denied=False)
+        # Soft mode: warning эмитит caller через `_emit_dept_header_missing_soft`
+        # под отдельным action'ом `internal.dept_header_missing`. Дублировать
+        # его здесь под `<audit_action>` с reason=`missing_target_department_header_soft`
+        # значит писать два события на один триггер.
         return
 
     if header_department_id != server_department_id:
@@ -733,6 +735,11 @@ async def receive_users_inventory(
     drifted = 0
     # Дрейф эмитим после commit'а — события best-effort, в транзакцию не входят.
     drift_emits: list[dict] = []
+    # Аккумулируем account_id'ы под bulk-апдейты в конце цикла — один UPDATE
+    # на N связок вместо N flush'ей в `mark_link_inventoried`. Гонка-recover
+    # (когда `try_create_discovered` вернул None) идёт точечно — N там маленькое.
+    present_account_ids: list[str] = []
+    missing_account_ids: list[str] = []
 
     for item in payload.users:
         existing = existing_by_login.get(item.login)
@@ -750,7 +757,8 @@ async def receive_users_inventory(
                     "unix_groups": list(item.unix_groups),
                     "shell": item.shell,
                     "home_dir": item.home_dir,
-                    "is_active": True,
+                    # `is_active` берётся из дефолта колонки — поле пока
+                    # зарезервировано, в выборках не фильтруется.
                     "created_by": identity.user_id,
                 },
                 server_id,
@@ -769,6 +777,9 @@ async def receive_users_inventory(
                         "try_create_discovered returned None but no existing "
                         f"link found for server={server_id} login={item.login}"
                     )
+                # Race-ветка идёт точечно (link уже из чужой транзакции, в
+                # `links_by_account_id` его нет). Случается редко — оставляем
+                # per-call.
                 link = await account_repo.get_link(db, existing.id, server_id)
                 if link is not None:
                     await account_repo.mark_link_inventoried(
@@ -785,9 +796,8 @@ async def receive_users_inventory(
         else:
             # БД — истина: атрибуты аккаунта НЕ перетираем, только presence.
             diff = _account_attr_drift(existing, item)
-            link = links_by_account_id.get(existing.id)
-            if link is not None:
-                await account_repo.mark_link_inventoried(db, link, present=True)
+            if existing.id in links_by_account_id:
+                present_account_ids.append(existing.id)
             present += 1
             if diff:
                 drifted += 1
@@ -801,12 +811,22 @@ async def receive_users_inventory(
     # Привязанные в API, но не найденные на сервере — drift.
     for link in links:
         if link.login not in seen_logins:
-            await account_repo.mark_link_inventoried(db, link, present=False)
+            missing_account_ids.append(link.account_id)
             drifted += 1
             drift_emits.append({
                 "login": link.login,
                 "drift": "missing_on_box",
             })
+
+    # Bulk-flush presence: два statement'а вместо N flush'ей в цикле.
+    if present_account_ids:
+        await account_repo.mark_links_inventoried_bulk(
+            db, server_id, present_account_ids, present=True,
+        )
+    if missing_account_ids:
+        await account_repo.mark_links_inventoried_bulk(
+            db, server_id, missing_account_ids, present=False,
+        )
 
     await db.commit()
 

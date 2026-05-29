@@ -485,21 +485,30 @@ class SshClient:
         (password-auth), под которыми мы заходим на ещё не управляемый сервер.
         Здесь мы:
 
+        0. Pre-check: `getent passwd <user>` + `id -nG <user>`. Если юзер уже
+           существует и состоит в `sudo` или `wheel` — useradd/usermod
+           пропускаются целиком, идём сразу к sudoers + authorized_keys.
+           Покрывает retry-сценарий «предыдущий прогон упал после
+           useradd, но до sudoers» — повторно `usermod -G` не зовём
+           (он перепишет group-list, NSS-кэш + sssd иногда показывают
+           неполный список — потеряем существующее членство).
         1. `useradd -m -s /bin/bash -G <sudo-group> <management_user>` (idempotent —
            уже существующий пользователь синхронизируется как usermod,
            пароль не трогаем, ключ ниже всё равно доложим). Sudo-группа
            подбирается по дистрибутиву: `sudo` на Debian/Ubuntu/Astra,
            `wheel` на RHEL/Alpine — пробуем sudo первым, при provision-fail
-           откатываемся на wheel;
+           откатываемся на wheel. Если pre-check показал нужную группу,
+           этот шаг **skip'ается** целиком.
         2. пишем `/etc/sudoers.d/<management_user>-management` с правилом
            `NOPASSWD: ALL` — на управляющей сессии пароля нет (заходим по
            ключу), поэтому sudo обязан работать без него;
         3. создаём `~/.ssh` с правами 700 и `authorized_keys` 600;
         4. дописываем `public_key` в authorized_keys, если его там ещё нет.
 
-        Повторный prepare не падает: useradd на existing → usermod, sudoers-файл
-        перезаписывается, а ключ добавляется только при отсутствии (grep по
-        точному совпадению строки).
+        Повторный prepare не падает: pre-check короткой дорогой обходит
+        шаг 1, иначе useradd на existing → usermod, sudoers-файл
+        перезаписывается, а ключ добавляется только при отсутствии
+        (grep по точному совпадению строки).
 
         Пароль управляющему пользователю не ставим — управление дальше идёт по
         ключу. `public_key` — аргумент для безопасной записи через here-doc на

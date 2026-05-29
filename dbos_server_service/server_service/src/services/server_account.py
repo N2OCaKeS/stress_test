@@ -160,7 +160,8 @@ async def create_account(
         "linked_user_id": payload.linked_user_id,
         "shell": payload.shell,
         "home_dir": payload.home_dir,
-        "is_active": True,
+        # `is_active` берётся из дефолта колонки (True). Поле зарезервировано
+        # под disable-аккаунта в будущем — пока не читается в выборках.
         "created_by": identity.user_id,
     }
     try:

@@ -8,31 +8,16 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
 import asyncssh
 import pytest
 
 from src.clients.ssh import SshClient, SshError
+from tests._ssh_mock_helpers import make_conn as _conn, run_result as _run_result
 
 
 _PUBKEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest dbos"
-
-
-def _run_result(stdout="", stderr="", rc=0):
-    res = MagicMock()
-    res.stdout = stdout
-    res.stderr = stderr
-    res.exit_status = rc
-    return res
-
-
-def _conn(run_results):
-    conn = MagicMock(spec=asyncssh.SSHClientConnection)
-    conn.close = MagicMock()
-    conn.wait_closed = AsyncMock()
-    conn.run = AsyncMock(side_effect=list(run_results))
-    return conn
 
 
 class TestBootstrapWheelFallback:

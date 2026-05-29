@@ -24,8 +24,17 @@ Publisher может перезапускаться неограниченное
 Failure-mode `attempts ≥ MAX_PUBLISH_ATTEMPTS` (env, default 50) publisher
 помечает row отравленным: выставляет `published_at = now()` и логирует ERROR
 `audit_outbox: poisoned row dropped …`. Событие потеряно, но row перестаёт
-блокировать SKIP LOCKED выборку и attempts не уходит в overflow. Полноценный
-DLQ с отдельной таблицей и операторскими ручками — отдельная история.
+блокировать SKIP LOCKED выборку и attempts не уходит в overflow.
+
+Per-row backoff: между неуспешными попытками publisher ставит
+`next_retry_at = now() + 2^attempts` (capped). SELECT отфильтровывает
+row'ы, у которых backoff ещё не дотик'ал, — иначе при долгой недоступности
+loging_service row крутилась бы в каждом тике loop'а и attempts уходил бы
+в cap за минуты, не за часы.
+
+Ручной re-attempt из DLQ: taskiq-таска `internal.outbox_re_attempt`
+(см. `src/main.py`) сбрасывает `published_at`, `attempts`,
+`next_retry_at` для указанной row → она снова видна publisher'у.
 """
 
 from datetime import datetime
@@ -67,12 +76,24 @@ class AuditOutbox(Base):
         Integer, nullable=False, server_default=text("0"), default=0
     )
     last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Backoff per row: после очередного fail'а publisher ставит сюда
+    # `now() + 2^attempts seconds`. SELECT отфильтровывает строки, у
+    # которых это время ещё не наступило, — между retry'ями row отдыхает
+    # вместо того, чтобы крутиться в каждом тике loop'а и жечь HTTP-
+    # лимиты loging_service. NULL означает «ретраить можно сразу»
+    # (первый прогон или после ручного re-attempt).
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         # Partial-index по «ещё не опубликованным» — publisher сканирует
-        # только их, цена INSERT для уже отправленных копеечная.
+        # только их, цена INSERT для уже отправленных копеечная. Ключ
+        # `(next_retry_at, created_at)` — фильтр по «можно ретраить»
+        # сразу попадает в b-tree.
         Index(
-            "ix_audit_outbox_unpublished",
+            "ix_audit_outbox_unpublished_retry",
+            "next_retry_at",
             "created_at",
             postgresql_where=text("published_at IS NULL"),
         ),

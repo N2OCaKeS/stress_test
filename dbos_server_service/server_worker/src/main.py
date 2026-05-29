@@ -803,6 +803,40 @@ async def audit_outbox_cleanup_published_old() -> None:
         )
 
 
+@broker.task("internal.outbox_re_attempt")
+async def internal_outbox_re_attempt(row_id: int) -> bool:
+    """Operator ручка: вернуть outbox-row из DLQ обратно в очередь.
+
+    DLQ-row'ы (`_send_to_dlq` поставил `published_at = now()`) больше не
+    попадают в publisher'овский SELECT. Чтобы попробовать заново —
+    например, после фикса payload-схемы или починки loging_service на
+    permanent-4xx — оператор kick'ает эту таску с конкретным
+    `audit_outbox.id`. Она сбрасывает `published_at`, `attempts`,
+    `next_retry_at`, `last_error` → publisher подхватит row в ближайший
+    тик loop'а.
+
+    Возвращает True, если row найден и сброшен; False — если row нет
+    или она уже unpublished (idempotent). Ошибки логируются и НЕ
+    пробрасываются — single-shot task, retry'я нет.
+
+    Запускать через `taskiq broker.send` / kiq-CLI или из server_service
+    `internal`-endpoint'а. UI-эндпоинта пока нет — это операторская
+    ручка под рестарт после инцидента.
+    """
+    from src.services import audit_outbox_publisher
+    from src.utils.redaction import redact_error_message
+
+    try:
+        return await audit_outbox_publisher.re_attempt_row(row_id)
+    except Exception as exc:  # noqa: BLE001
+        redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
+        logger.warning(
+            "internal.outbox_re_attempt: row=%s failed: %s",
+            row_id, redacted,
+        )
+        return False
+
+
 @broker.task(
     "secrets.reencrypt_lazy",
     schedule=[{"cron": "*/5 * * * *"}] if _settings.scheduler_enabled else [],

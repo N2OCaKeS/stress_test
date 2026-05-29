@@ -15,11 +15,15 @@ body 100 MB → пул pgsql забит, очередь длительная, в
     non-mutating методы).
   * 413 НЕ порождает audit-emit (middleware outermost → audit_access не достигается).
   * Конфигурация через env `MAX_REQUEST_BODY_BYTES`.
+  * Chunked transfer (Content-Length отсутствует) — overflow ловится на
+    стриме через подменённый ASGI ``receive`` callback, downstream-route
+    не вызывается.
   * Глубокая вложенность details (>10 уровней) → 422 от `_details_depth`.
   * Mixed dict/list вложенность считается.
   * Нормальные events в пределах лимитов — 201.
 """
 
+import asyncio
 import json
 
 from tests.conftest import make_event
@@ -222,6 +226,163 @@ class TestBodySizeMiddleware:
         assert len(events) == 0, (
             "413-ответ на admin-mutation не должен эмитить http.client_error "
             f"(нашли {len(events)} event'ов: {[e.details for e in events]})"
+        )
+
+
+# ── Chunked transfer (без Content-Length) — стриминг-кэп ────────────────────
+
+
+class TestChunkedOverflow:
+    """``limit_body_size`` middleware: ветка без Content-Length.
+
+    Cheap path по заголовку — easy. Хитрая ветка — `Transfer-Encoding: chunked`
+    (или любой HTTP/1.1-клиент, не выставивший CL): middleware подменяет
+    ASGI ``receive`` callback, считает сумму байт по приходящим
+    ``http.request``-сообщениям и отбивает 413, не давая downstream-роуту
+    дочитать тело. Тестим напрямую через ASGI: TestClient на httpx ВСЕГДА
+    вычисляет реальный CL по `body=`, путь без CL так не выстрелить —
+    собираем scope руками.
+
+    Контракт, который проверяем:
+      * overflow ловится по сумме байт через несколько `http.request`
+        chunk'ов (никаких CL header'ов в scope);
+      * route handler не получает накопившийся body (downstream обрезан);
+      * Ответ — 413 PAYLOAD_TOO_LARGE с тем же envelope-форматом, что и
+        cheap path;
+      * Под лимитом — стрим проходит насквозь.
+    """
+
+    @staticmethod
+    def _send_to_app(app, *, chunks: list[bytes], path: str = EVENTS_URL,
+                     method: str = "POST", api_key: str = "test-service-api-key"):
+        """Прямой ASGI-вызов без Content-Length header'а.
+
+        Возвращает `(status, headers_dict, body_bytes)`. Эмулирует Hypercorn'овский
+        chunked-режим: HTTP scope без `content-length`, body доставляется N
+        `http.request` сообщениями с `more_body=True/False`.
+        """
+        headers = [
+            (b"host", b"testserver"),
+            (b"authorization", f"Bearer {api_key}".encode()),
+            (b"content-type", b"application/json"),
+            (b"transfer-encoding", b"chunked"),
+        ]
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": method,
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode(),
+            "query_string": b"",
+            "root_path": "",
+            "server": ("testserver", 80),
+            "client": ("127.0.0.1", 12345),
+            "headers": headers,
+        }
+
+        receive_queue: list[dict] = []
+        for i, chunk in enumerate(chunks):
+            receive_queue.append({
+                "type": "http.request",
+                "body": chunk,
+                "more_body": i < len(chunks) - 1,
+            })
+
+        responses: list[dict] = []
+
+        async def receive():
+            if receive_queue:
+                return receive_queue.pop(0)
+            # Если middleware дернул receive больше раз, чем у нас чанков —
+            # отдаём end-of-stream, чтобы не висеть.
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            responses.append(message)
+
+        asyncio.run(app(scope, receive, send))
+
+        status = None
+        out_headers: dict[bytes, bytes] = {}
+        body = b""
+        for msg in responses:
+            if msg["type"] == "http.response.start":
+                status = msg["status"]
+                out_headers = dict(msg.get("headers") or [])
+            elif msg["type"] == "http.response.body":
+                body += msg.get("body", b"")
+        return status, out_headers, body
+
+    def test_chunked_overflow_returns_413(self, monkeypatch):
+        """Сумма chunk'ов > лимита → 413, route не вызывается.
+
+        Понижаем лимит до 50 KiB и шлём четыре чанка по 20 KiB (= 80 KiB,
+        overflow на третьем). Без CL header'а cheap path неактивен —
+        работает стрим-cap.
+        """
+        monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", str(50 * 1024))
+        monkeypatch.setenv("SERVICE_API_KEY", "test-service-api-key")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        from src.main import app
+
+        chunk = b"x" * (20 * 1024)
+        status, headers, body = self._send_to_app(
+            app, chunks=[chunk, chunk, chunk, chunk]
+        )
+        assert status == 413, f"expected 413, got {status}: {body!r}"
+        payload = json.loads(body)
+        assert payload["error"] == "payload_too_large"
+        assert payload["error_code"] == "PAYLOAD_TOO_LARGE"
+        assert payload["details"]["max_bytes"] == 50 * 1024
+        # `received_bytes` — счётчик из middleware, должен быть > max.
+        assert payload["details"]["received_bytes"] > 50 * 1024
+
+    def test_chunked_under_limit_passes_through(self, monkeypatch):
+        """Сумма chunk'ов ≤ лимита — стрим уходит дальше в route.
+
+        Тест валидирует, что middleware НЕ ломает легитимный chunked-ingest
+        (route может ответить ошибкой по другим причинам — нам важно, чтобы
+        ответ не был 413). БД не нужна: проверяем только, что middleware
+        отдал управление downstream'у. Если downstream упал на отсутствии
+        DB или auth — это «не 413», что и требуется.
+        """
+        monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", str(50 * 1024))
+        monkeypatch.setenv("SERVICE_API_KEY", "test-service-api-key")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        from src.main import app
+
+        small = json.dumps(make_event()).encode()
+        assert len(small) < 50 * 1024
+        try:
+            status, _, _ = self._send_to_app(app, chunks=[small])
+        except Exception:
+            # Downstream упал (нет БД, нет auth) — middleware пропустил
+            # запрос дальше, что и требуется. Главное: не 413.
+            return
+        assert status != 413, f"chunked under-limit неожиданно отбит 413"
+
+    def test_chunked_exactly_at_limit_passes(self, monkeypatch):
+        """Граничный кейс `received == max_size` — НЕ overflow.
+
+        Middleware проверяет `received > max_size` (строгое неравенство).
+        Тест защищает от off-by-one — если кто-то поменяет на `>=`, легит
+        ровно-в-лимит chunked-ingest начнёт отбиваться.
+        """
+        monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", str(50 * 1024))
+        monkeypatch.setenv("SERVICE_API_KEY", "test-service-api-key")
+        from src.core.config import get_settings
+        get_settings.cache_clear()
+        from src.main import app
+
+        # Ровно 50 KiB — на грани, но не за.
+        boundary = b"x" * (50 * 1024)
+        status, _, body = self._send_to_app(app, chunks=[boundary])
+        assert status != 413, (
+            f"граничный размер (== max_size) не должен 413; got {status}: {body!r}"
         )
 
 

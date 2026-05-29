@@ -369,6 +369,15 @@ def create_application() -> FastAPI:
           стримовая проверка: память не раздувается, downstream обработчик
           не вызывается на overflow.
 
+        Оба пути сверяются с тем же `max_request_body_bytes` — атакующий
+        не может выиграть, перейдя на chunked transfer-encoding. Контракт
+        зафиксирован тестами `tests/test_body_size_limit.py`
+        (`TestBodySizeMiddleware` — CL-путь, `TestChunkedOverflow` —
+        стримовый путь без CL).
+
+        Граничное условие — строгое `received > max_size`: ровно-в-лимит
+        body пропускается, off-by-one не съест последний легитимный байт.
+
         Проверяем только `POST/PUT/PATCH` — `GET/HEAD/DELETE/OPTIONS`
         body для audit-ingest не несут.
         """

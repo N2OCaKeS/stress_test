@@ -631,11 +631,12 @@ def pat_token(auth_client: httpx.Client):
         # PATCreate в auth_service/src/schemas/tokens.py принимает
         # `allowed_services` — старое имя `scope` тут оставлено как алиас,
         # чтобы старые тесты не падали. Если переданы оба — `allowed_services`
-        # выигрывает.
+        # выигрывает. Если не передан ни один — дефолтим в `["auth_service"]`
+        # (всегда есть в seed, доступ есть у любого юзера через authority).
         services = allowed_services if allowed_services is not None else scope
-        body: dict = {"name": name or f"pat_{_rand_suffix()}"}
-        if services is not None:
-            body["allowed_services"] = services
+        if services is None:
+            services = ["auth_service"]
+        body: dict = {"name": name or f"pat_{_rand_suffix()}", "allowed_services": services}
         if ttl_seconds is not None:
             body["ttl_seconds"] = ttl_seconds
         r = auth_client.post(

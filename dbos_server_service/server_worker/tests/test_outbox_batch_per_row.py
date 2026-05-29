@@ -42,7 +42,12 @@ async def _unpublished_rows() -> list[AuditOutbox]:
 async def _seed_tasks_with_failed_emit(
     make_task, monkeypatch, n: int
 ) -> list[str]:
-    """Создать N задач с fail'ящим emit → N unpublished outbox-строк."""
+    """Создать N задач с fail'ящим emit → N unpublished outbox-строк.
+
+    После seed'а сбрасываем `next_retry_at` у всех row'ов — иначе
+    per-row backoff отфильтровывает их в SELECT publisher'а, и
+    последующий flush'в тестах ничего не вернёт.
+    """
     async def failing_emit(action, **kw):
         raise RuntimeError("seeding: emit down")
 
@@ -65,6 +70,12 @@ async def _seed_tasks_with_failed_emit(
             audit_safe_fields={"power_state"},
         )
         task_ids.append(tid)
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            update(AuditOutbox).values(next_retry_at=None)
+        )
+        await session.commit()
     return task_ids
 
 

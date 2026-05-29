@@ -157,7 +157,10 @@ class TestTokenAudit:
         # делаем имя уникальным, чтобы повторный прогон не падал на 409.
         r = auth_client.post(
             "/api/auth/v1/tokens",
-            json={"name": f"integration-test-pat-{uuid.uuid4().hex[:8]}"},
+            json={
+                "name": f"integration-test-pat-{uuid.uuid4().hex[:8]}",
+                "allowed_services": ["auth_service"],
+            },
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert r.status_code == 201

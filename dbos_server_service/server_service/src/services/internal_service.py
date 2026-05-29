@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.core.constants import Action, EntityType
+from src.core.constants import AccountSource, Action, EntityType
 from src.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import os_version as osv_repo
@@ -336,7 +336,7 @@ async def fetch_account_password(
         # tasks/users.py трактует это как «useradd без chpasswd», что
         # соответствует ТЗ (SUCCEEDED + INFO, не failure). Для managed-аккаунтов
         # без пароля поведение прежнее — 404 ACCOUNT_HAS_NO_PASSWORD.
-        if account.source == "discovered":
+        if account.source == AccountSource.DISCOVERED.value:
             audit_service.emit(
                 "server_account.view_password",
                 target_id=account_id, target_type="server_account",
@@ -757,7 +757,7 @@ async def receive_users_inventory(
                     "department_id": server.department_id,
                     "login": item.login,
                     "password_encrypted": None,
-                    "source": "discovered",
+                    "source": AccountSource.DISCOVERED.value,
                     "has_sudo": item.has_sudo,
                     "unix_groups": list(item.unix_groups),
                     "shell": item.shell,

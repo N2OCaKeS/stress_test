@@ -330,28 +330,51 @@ async def create_server(
     data["id"] = new_id()
     data["created_by"] = identity.user_id
     ipmi_obj: IpmiController | None = None
+    # Куда именно прилетел UNIQUE — `server` (hostname/ip/serial), `storage`
+    # (server_id + slot) или `ipmi` (server_id-дубль). На transactional
+    # rollback'е inspect'ить constraint name из `exc.orig` нестабильно (зависит
+    # от диалекта); проще трекать стадию, на которой свалились.
+    failing_stage = "server"
     try:
         obj = await repo.create(db, data)
         if payload.storage:
+            failing_stage = "storage"
             await _sync_storage(db, obj.id, payload.storage)
         if payload.ipmi is not None:
+            failing_stage = "ipmi"
             ipmi_obj = await _insert_ipmi(db, obj.id, payload.ipmi)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на создании сервера: %s", type(exc.orig).__name__)
+        logger.warning(
+            "IntegrityError на создании сервера stage=%s: %s",
+            failing_stage, type(exc.orig).__name__,
+        )
+        if failing_stage == "ipmi":
+            error_code = "IPMI_DUPLICATE"
+            message = "IPMI controller for this server already exists"
+        else:
+            error_code = "SERVER_DUPLICATE"
+            message = (
+                "Server with this hostname, IP, serial_number or disk slot "
+                "already exists"
+            )
         audit_service.emit(
             "server.create",
             target_id=data["id"],
             target_type="server",
             status="failure",
             allowed=True,
-            details={"reason": "duplicate", "department_id": payload.department_id},
+            details={
+                "reason": "duplicate",
+                "stage": failing_stage,
+                "department_id": payload.department_id,
+            },
         )
         raise ConflictError(
-            error_code="SERVER_DUPLICATE",
-            message="Server with this hostname, IP, serial_number or disk slot already exists",
-            details={"hint": _DUPLICATE_HINT},
+            error_code=error_code,
+            message=message,
+            details={"hint": _DUPLICATE_HINT, "stage": failing_stage},
         ) from exc
     await db.refresh(obj)
     audit_service.emit(

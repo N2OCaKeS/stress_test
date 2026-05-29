@@ -92,11 +92,19 @@ class InventoryCallbackRequest(BaseModel):
         max_length=128,
         description="Список дисков с probe'а (cap=128, hardware-разумный потолок).",
     )
-    lspci: str | None = Field(
-        default=None,
-        max_length=16384,
-        description="Сырой вывод lspci (опционален, под будущий debug).",
-    )
+
+    @field_validator("disks")
+    @classmethod
+    def _at_most_one_system_disk(cls, value: list[InventoryDiskItem]) -> list[InventoryDiskItem]:
+        # На уровне БД инвариант держит partial unique index
+        # (`ix_server_disks_system`), но без schema-проверки `_upsert_disks`
+        # уронит 500 на IntegrityError при двух system-дисках в одном payload'е.
+        system_count = sum(1 for d in value if d.is_system)
+        if system_count > 1:
+            raise ValueError(
+                f"at most one disk may have is_system=True, got {system_count}"
+            )
+        return value
 
 
 class InventoryCallbackResponse(BaseModel):

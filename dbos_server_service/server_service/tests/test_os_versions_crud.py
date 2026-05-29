@@ -182,8 +182,19 @@ class TestListOsVersions:
         resp = await client.get(BASE, headers=_hdr(no_role_token_a))
         assert resp.status_code == 200
 
-    async def test_list_emits_no_audit(self, client, captured_emits):
+    async def test_anonymous_list_emits_audit(self, client, captured_emits):
+        """Anonymous read оставляет SIEM-trail для enumeration-видимости."""
         resp = await client.get(BASE)
+        assert resp.status_code == 200
+        events = [e for e in captured_emits if e["action"] == "os_version.list_anonymous"]
+        assert len(events) == 1
+        assert events[0]["details"]["caller_type"] == "anonymous"
+
+    async def test_authenticated_list_emits_no_audit(
+        self, client, no_role_token_a, captured_emits,
+    ):
+        """Authenticated read проходит без записи в audit (общий каталог)."""
+        resp = await client.get(BASE, headers=_hdr(no_role_token_a))
         assert resp.status_code == 200
         os_events = [e for e in captured_emits if e["action"].startswith("os_version")]
         assert os_events == []
@@ -218,13 +229,32 @@ class TestGetOsVersion:
         assert resp.status_code == 404
         assert resp.json()["error_code"] == "OS_VERSION_NOT_FOUND"
 
-    async def test_get_emits_no_audit(self, client, admin_role_token_a, captured_emits):
+    async def test_anonymous_get_emits_audit(
+        self, client, admin_role_token_a, captured_emits,
+    ):
+        """Anonymous get эмитит `view_anonymous`."""
         created = await client.post(
-            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-get-noaudit"),
+            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-get-anon"),
         )
         ov_id = created.json()["id"]
         captured_emits.clear()
         resp = await client.get(f"{BASE}/{ov_id}")
+        assert resp.status_code == 200
+        events = [e for e in captured_emits if e["action"] == "os_version.view_anonymous"]
+        assert len(events) == 1
+        assert events[0]["target_id"] == ov_id
+        assert events[0]["details"]["caller_type"] == "anonymous"
+        assert events[0]["details"]["lookup"] == "by_id"
+
+    async def test_authenticated_get_emits_no_audit(
+        self, client, admin_role_token_a, no_role_token_a, captured_emits,
+    ):
+        created = await client.post(
+            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-get-auth"),
+        )
+        ov_id = created.json()["id"]
+        captured_emits.clear()
+        resp = await client.get(f"{BASE}/{ov_id}", headers=_hdr(no_role_token_a))
         assert resp.status_code == 200
         os_events = [e for e in captured_emits if e["action"].startswith("os_version")]
         assert os_events == []
@@ -246,12 +276,31 @@ class TestGetOsVersionByName:
         assert resp.status_code == 404
         assert resp.json()["error_code"] == "OS_VERSION_NOT_FOUND"
 
-    async def test_by_name_emits_no_audit(self, client, admin_role_token_a, captured_emits):
+    async def test_anonymous_by_name_emits_audit(
+        self, client, admin_role_token_a, captured_emits,
+    ):
+        """Anonymous by-name read эмитит `view_anonymous` с lookup=by_name."""
         await client.post(
-            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-by-name-noaudit"),
+            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-by-name-anon"),
         )
         captured_emits.clear()
-        resp = await client.get(f"{BASE}/by-name/osv-by-name-noaudit")
+        resp = await client.get(f"{BASE}/by-name/osv-by-name-anon")
+        assert resp.status_code == 200
+        events = [e for e in captured_emits if e["action"] == "os_version.view_anonymous"]
+        assert len(events) == 1
+        assert events[0]["details"]["caller_type"] == "anonymous"
+        assert events[0]["details"]["lookup"] == "by_name"
+
+    async def test_authenticated_by_name_emits_no_audit(
+        self, client, admin_role_token_a, no_role_token_a, captured_emits,
+    ):
+        await client.post(
+            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-by-name-auth"),
+        )
+        captured_emits.clear()
+        resp = await client.get(
+            f"{BASE}/by-name/osv-by-name-auth", headers=_hdr(no_role_token_a),
+        )
         assert resp.status_code == 200
         os_events = [e for e in captured_emits if e["action"].startswith("os_version")]
         assert os_events == []

@@ -7,7 +7,7 @@ SSH-apply). Дисптачи через `worker_client.dispatch_task`:
 * ``POST /servers/{id}/power/status``      → `power.status`
   (live BMC-probe, требует IPMI-row).
 * ``POST /servers/{id}/inventory/sync``    → `inventory.sync`
-  (full SSH-probe: lscpu/lsblk/lspci/os-release).
+  (full SSH-probe: lscpu/lsblk/os-release).
 * ``POST /servers/{id}/users/inventory``   → `users.inventory`
   (getent → reconcile в server_accounts).
 * ``POST /server-accounts/{id}/rotate``    → `account.rotate_password`

@@ -315,6 +315,205 @@ async def test_rotate_account_password_actor_mismatch_soft_emits_denied(
     assert denied[0]["details"]["reason"] == "actor_department_mismatch"
 
 
+@pytest.mark.asyncio
+async def test_fetch_ipmi_credentials_soft_mode_no_header_emits_warning(
+    monkeypatch, captured_emits, db,
+):
+    """fetch_ipmi_credentials: soft + missing header → `internal.dept_header_missing`."""
+    _settings(monkeypatch, strict=False)
+    _stub_permissions_ok(monkeypatch)
+    _stub_secrets(monkeypatch)
+    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
+
+    class _Ctrl:
+        id = "ctrl_1"
+        kind = "redfish"
+        endpoint_url = "https://1.2.3.4"
+        username = "root"
+        password_encrypted = "v1$nonce$cipher"
+
+    async def get_by_server_id(db, sid):
+        return _Ctrl()
+
+    monkeypatch.setattr(internal_service.ipmi_repo, "get_by_server_id", get_by_server_id)
+
+    await internal_service.fetch_ipmi_credentials(
+        db, _identity(), server_id="srv_1", target_department_id=None,
+    )
+
+    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
+    assert len(warns) == 1
+    assert warns[0]["details"]["path"] == "internal.fetch_ipmi_credentials"
+    assert warns[0]["details"]["caller_type"] == "bot"
+
+
+@pytest.mark.asyncio
+async def test_receive_inventory_soft_mode_no_header_emits_warning(
+    monkeypatch, captured_emits, db,
+):
+    """receive_inventory: soft + missing header → warning."""
+    _settings(monkeypatch, strict=False)
+    _stub_permissions_ok(monkeypatch)
+    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
+
+    async def _noop(*a, **kw):
+        return None
+
+    async def _resolve_os(*a, **kw):
+        return "osv_1"
+
+    async def _upsert(*a, **kw):
+        return 0
+
+    monkeypatch.setattr(internal_service.server_repo, "update", _noop)
+    monkeypatch.setattr(internal_service, "_resolve_or_create_os", _resolve_os)
+    monkeypatch.setattr(internal_service, "_upsert_disks", _upsert)
+
+    class _Sess:
+        async def commit(self):
+            return None
+
+    from src.schemas.internal import InventoryCallbackRequest
+
+    payload = InventoryCallbackRequest(
+        hostname="h", kernel="k", cpu_brand=None, cpu_model=None,
+        cpu_cores=1, cpu_threads=None, cpu_frequency_ghz=None,
+        os_version="Astra", disks=[],
+    )
+    await internal_service.receive_inventory(
+        _Sess(), _identity(), server_id="srv_1", payload=payload,
+        target_department_id=None,
+    )
+
+    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
+    assert len(warns) == 1
+    assert warns[0]["details"]["path"] == "internal.receive_inventory"
+
+
+@pytest.mark.asyncio
+async def test_record_provision_status_soft_mode_no_header_emits_warning(
+    monkeypatch, captured_emits, db,
+):
+    """record_provision_status: soft + missing header → warning."""
+    _settings(monkeypatch, strict=False)
+    _stub_permissions_ok(monkeypatch)
+    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
+
+    class _Account:
+        id = "acc_1"
+        login = "root"
+
+    class _Link:
+        pass
+
+    async def get_by_id(db, aid):
+        return _Account()
+
+    async def get_link(db, aid, sid):
+        return _Link()
+
+    async def set_link_presence(db, link, present):
+        return None
+
+    monkeypatch.setattr(internal_service.account_repo, "get_by_id", get_by_id)
+    monkeypatch.setattr(internal_service.account_repo, "get_link", get_link)
+    monkeypatch.setattr(internal_service.account_repo, "set_link_presence", set_link_presence)
+
+    class _Sess:
+        async def commit(self):
+            return None
+
+    from src.schemas.internal import ProvisionStatusRequest
+
+    payload = ProvisionStatusRequest(operation="provision", present=True)
+    await internal_service.record_provision_status(
+        _Sess(), _identity(), server_id="srv_1", account_id="acc_1",
+        payload=payload, target_department_id=None,
+    )
+
+    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
+    assert len(warns) == 1
+    assert warns[0]["details"]["path"] == "internal.record_provision_status"
+
+
+@pytest.mark.asyncio
+async def test_record_server_prepared_soft_mode_no_header_emits_warning(
+    monkeypatch, captured_emits, db,
+):
+    """record_server_prepared: soft + missing header → warning."""
+    _settings(monkeypatch, strict=False)
+    _stub_permissions_ok(monkeypatch)
+    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
+
+    async def _noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(internal_service.server_repo, "update", _noop)
+
+    class _Sess:
+        async def commit(self):
+            return None
+
+    from src.schemas.server import ServerPrepareCallbackRequest
+
+    payload = ServerPrepareCallbackRequest(management_user="dbos_mgmt")
+    await internal_service.record_server_prepared(
+        _Sess(), _identity(), server_id="srv_1", payload=payload,
+        target_department_id=None,
+    )
+
+    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
+    assert len(warns) == 1
+    assert warns[0]["details"]["path"] == "internal.record_server_prepared"
+
+
+@pytest.mark.asyncio
+async def test_record_ipmi_credentials_rotated_soft_mode_no_header_emits_warning(
+    monkeypatch, captured_emits, db,
+):
+    """record_ipmi_credentials_rotated: soft + missing header → warning."""
+    from datetime import datetime, timezone
+
+    _settings(monkeypatch, strict=False)
+    _stub_permissions_ok(monkeypatch)
+    _stub_secrets(monkeypatch)
+    _stub_server_repo(monkeypatch, server_id="srv_1", department_id="dep_a")
+
+    class _Ctrl:
+        id = "ctrl_1"
+        server_id = "srv_1"
+        password_encrypted = None
+        password_rotated_at = None
+
+    async def get_by_id(db, cid):
+        return _Ctrl()
+
+    async def update(db, ctrl, fields):
+        return None
+
+    monkeypatch.setattr(internal_service.ipmi_repo, "get_by_id", get_by_id)
+    monkeypatch.setattr(internal_service.ipmi_repo, "update", update)
+
+    class _Sess:
+        async def commit(self):
+            return None
+
+    from src.schemas.internal import IpmiCredentialsRotatedRequest
+
+    payload = IpmiCredentialsRotatedRequest(
+        new_password="Strong1Password",
+        rotated_at=datetime.now(timezone.utc),
+    )
+    await internal_service.record_ipmi_credentials_rotated(
+        _Sess(), _identity(), controller_id="ctrl_1", payload=payload,
+        target_department_id=None,
+    )
+
+    warns = [e for e in captured_emits if e["action"] == "internal.dept_header_missing"]
+    assert len(warns) == 1
+    assert warns[0]["details"]["path"] == "internal.record_ipmi_credentials_rotated"
+
+
 def test_platform_admin_blocked_description_matches_blocked_roles():
     """Description `http.platform_admin_blocked` упоминает ровно те роли,
     что действительно блокируются `BLOCKED_PLATFORM_ROLES`. loging_reader

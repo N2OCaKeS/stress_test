@@ -568,29 +568,6 @@ class TestUsersInventoryReconcile:
         )
         assert resp.status_code == 422
 
-    async def test_inventory_lspci_over_limit_422(
-        self, client, worker_bot_token_a, make_server, dept_a,
-    ):
-        """`lspci` > 16384 байт отбивается схемой, не доходит до audit."""
-        srv = await make_server(department_id=dept_a)
-        payload = {
-            "hostname": "srv-lspci",
-            "kernel": "5.10.0",
-            "cpu_brand": None,
-            "cpu_model": None,
-            "cpu_cores": 1,
-            "cpu_threads": None,
-            "cpu_frequency_ghz": None,
-            "os_version": "Astra 1.7",
-            "disks": [],
-            "lspci": "x" * 16385,
-        }
-        resp = await client.post(
-            f"{BASE_INT}/servers/{srv.id}/inventory",
-            headers=_hdr(worker_bot_token_a), json=payload,
-        )
-        assert resp.status_code == 422
-
 
 @pytest.mark.usefixtures("soft_dept_mode")
 class TestDiscoveredAccountNoPassword:

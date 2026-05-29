@@ -89,7 +89,6 @@ class TestInventoryCallback:
                 {"name": "sda", "size_gb": 500, "model": "ST500", "is_system": True},
                 {"name": "sdb", "size_gb": 1000, "model": "WD1T"},
             ],
-            "lspci": "00:00.0 Host bridge",
         }
         resp = await client.post(
             f"{BASE_INT}/servers/{srv.id}/inventory",

@@ -32,22 +32,6 @@ _BASE = {
 }
 
 
-class TestInventoryCallbackLspciLimit:
-    def test_lspci_within_limit_accepted(self):
-        m = InventoryCallbackRequest(**{**_BASE, "lspci": "x" * 16384})
-        assert m.lspci is not None
-        assert len(m.lspci) == 16384
-
-    def test_lspci_over_limit_rejected(self):
-        with pytest.raises(ValidationError) as exc:
-            InventoryCallbackRequest(**{**_BASE, "lspci": "x" * 16385})
-        assert "lspci" in str(exc.value)
-
-    def test_lspci_optional(self):
-        m = InventoryCallbackRequest(**_BASE)
-        assert m.lspci is None
-
-
 class TestInventoryCallbackOsVersion:
     def test_os_version_simple_name_accepted(self):
         m = InventoryCallbackRequest(**{**_BASE, "os_version": "Astra Linux SE 1.7"})
@@ -157,6 +141,30 @@ class TestInventoryDisksCap:
         disks = [_disk_with_name(i) for i in range(129)]
         with pytest.raises(ValidationError):
             InventoryCallbackRequest(**{**_BASE, "disks": disks})
+
+
+class TestInventorySystemDiskInvariant:
+    def test_zero_system_disks_accepted(self):
+        m = InventoryCallbackRequest(**{**_BASE, "disks": [
+            {"name": "sda", "size_gb": 100, "is_system": False},
+            {"name": "sdb", "size_gb": 200, "is_system": False},
+        ]})
+        assert sum(1 for d in m.disks if d.is_system) == 0
+
+    def test_one_system_disk_accepted(self):
+        m = InventoryCallbackRequest(**{**_BASE, "disks": [
+            {"name": "sda", "size_gb": 100, "is_system": True},
+            {"name": "sdb", "size_gb": 200, "is_system": False},
+        ]})
+        assert sum(1 for d in m.disks if d.is_system) == 1
+
+    def test_two_system_disks_rejected(self):
+        with pytest.raises(ValidationError) as exc:
+            InventoryCallbackRequest(**{**_BASE, "disks": [
+                {"name": "sda", "size_gb": 100, "is_system": True},
+                {"name": "sdb", "size_gb": 200, "is_system": True},
+            ]})
+        assert "is_system" in str(exc.value)
 
 
 class TestUsersInventoryCap:

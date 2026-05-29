@@ -53,6 +53,42 @@ from src.services import audit_service, permissions, secrets_service
 from src.utils.ids import os_version_id, server_account_id, server_disk_id
 
 
+def _emit_dept_header_missing_soft(
+    *,
+    handler_path: str,
+    identity: IdentityContext,
+    target_id: str,
+    target_type: str,
+    extra: dict | None = None,
+) -> None:
+    """Soft-mode SIEM-trail для missing `X-Target-Department-Id` header'а.
+
+    Эмитится только когда `_check_target_department` уже прошёл успешно
+    (actor-vs-server совпало), но header не пришёл — `internal_require_dept_header`
+    выключен. Отдельный action для SIEM-правила «worker без header'а».
+    Эмиссия — однообразно во всех internal-handler'ах с двухуровневым
+    dept-check'ом.
+    """
+    if get_settings().internal_require_dept_header:
+        return
+    details = {
+        "path": handler_path,
+        "soft_mode": True,
+        "caller_type": identity.subject_type,
+    }
+    if extra:
+        details.update(extra)
+    audit_service.emit(
+        "internal.dept_header_missing",
+        actor_id=identity.user_id,
+        target_id=target_id,
+        target_type=target_type,
+        status="warning",
+        allowed=True,
+        details=details,
+    )
+
+
 def _check_target_department(
     *,
     audit_action: str,
@@ -172,7 +208,10 @@ async def fetch_ipmi_credentials(
             "ipmi_controller.view_credentials",
             target_id=server_id, target_type="ipmi_controller",
             status="denied", allowed=False,
-            details={"reason": "permission_denied"},
+            details={
+                "reason": "permission_denied",
+                "caller_type": identity.subject_type,
+            },
         )
         raise
     server = await server_repo.get_by_id(db, server_id)
@@ -192,6 +231,14 @@ async def fetch_ipmi_credentials(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.fetch_ipmi_credentials",
+            identity=identity,
+            target_id=server_id,
+            target_type="ipmi_controller",
+            extra={"server_id": server_id},
+        )
     ctrl = await ipmi_repo.get_by_server_id(db, server_id)
     if ctrl is None:
         audit_service.emit(
@@ -216,6 +263,7 @@ async def fetch_ipmi_credentials(
             "server_id": server_id,
             "kind": ctrl.kind,
             "department_id": server.department_id,
+            "caller_type": identity.subject_type,
         },
     )
     return {
@@ -244,7 +292,11 @@ async def fetch_account_password(
             "server_account.view_password",
             target_id=account_id, target_type="server_account",
             status="denied", allowed=False,
-            details={"reason": "permission_denied", "server_id": server_id},
+            details={
+                "reason": "permission_denied",
+                "server_id": server_id,
+                "caller_type": identity.subject_type,
+            },
         )
         raise
     account = await account_repo.get_by_id(db, account_id)
@@ -273,23 +325,13 @@ async def fetch_account_password(
         actor_department_id=identity.department_id,
         extra_details={"server_id": server_id},
     )
-    # Soft-mode + missing header: actor-check уже прошёл выше, header-missing
-    # warning эмитит `_check_target_department`. Дополнительный
-    # `internal.dept_header_missing` сохранён для SIEM-совместимости —
-    # отдельный action, по которому считают «worker без header'а».
-    if target_department_id is None and not get_settings().internal_require_dept_header:
-        audit_service.emit(
-            "internal.dept_header_missing",
-            actor_id=identity.user_id,
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.fetch_account_password",
+            identity=identity,
             target_id=account_id,
             target_type="server_account",
-            status="warning",
-            allowed=True,
-            details={
-                "path": "internal.fetch_account_password",
-                "server_id": server_id,
-                "soft_mode": True,
-            },
+            extra={"server_id": server_id},
         )
     if account.password_encrypted is None:
         # Discovered-аккаунт (`source=discovered`) приходит в БД без пароля —
@@ -307,6 +349,7 @@ async def fetch_account_password(
                     "server_id": server_id,
                     "login": account.login,
                     "discovered_no_password": True,
+                    "caller_type": identity.subject_type,
                 },
             )
             return {"login": account.login, "password": ""}
@@ -328,7 +371,11 @@ async def fetch_account_password(
         "server_account.view_password",
         target_id=account_id, target_type="server_account",
         status="success", allowed=True,
-        details={"server_id": server_id, "login": account.login},
+        details={
+            "server_id": server_id,
+            "login": account.login,
+            "caller_type": identity.subject_type,
+        },
     )
     return {"login": account.login, "password": plain}
 
@@ -351,7 +398,11 @@ async def rotate_account_password(
             "server_account.rotate_password",
             target_id=account_id, target_type="server_account",
             status="denied", allowed=False,
-            details={"reason": "permission_denied", "server_id": server_id},
+            details={
+                "reason": "permission_denied",
+                "server_id": server_id,
+                "caller_type": identity.subject_type,
+            },
         )
         raise
     account = await account_repo.get_by_id(db, account_id)
@@ -380,22 +431,13 @@ async def rotate_account_password(
         actor_department_id=identity.department_id,
         extra_details={"server_id": server_id},
     )
-    # Soft-mode + missing header: actor-check прошёл, header-missing warning
-    # уже эмитнул `_check_target_department`. Дополнительный
-    # `internal.dept_header_missing` сохраняем для SIEM-совместимости.
-    if target_department_id is None and not get_settings().internal_require_dept_header:
-        audit_service.emit(
-            "internal.dept_header_missing",
-            actor_id=identity.user_id,
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.rotate_account_password",
+            identity=identity,
             target_id=account_id,
             target_type="server_account",
-            status="warning",
-            allowed=True,
-            details={
-                "path": "internal.rotate_account_password",
-                "server_id": server_id,
-                "soft_mode": True,
-            },
+            extra={"server_id": server_id},
         )
     encrypted = secrets_service.encrypt(
         new_password,
@@ -411,6 +453,7 @@ async def rotate_account_password(
             "server_id": server_id,
             "login": account.login,
             "rotated_at": updated.password_rotated_at.isoformat(),
+            "caller_type": identity.subject_type,
         },
     )
     return {"ok": True, "rotated_at": updated.password_rotated_at.isoformat()}
@@ -532,6 +575,13 @@ async def receive_inventory(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.receive_inventory",
+            identity=identity,
+            target_id=server_id,
+            target_type="server",
+        )
 
     os_id_resolved = await _resolve_or_create_os(
         db,
@@ -564,6 +614,7 @@ async def receive_inventory(
             "os_version": payload.os_version,
             "disks": disks_count,
             "department_id": server.department_id,
+            "caller_type": identity.subject_type,
         },
     )
     return {
@@ -661,6 +712,13 @@ async def receive_users_inventory(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.receive_users_inventory",
+            identity=identity,
+            target_id=server_id,
+            target_type="server",
+        )
 
     # Снимок текущих связок сервера + login'ов, найденных на боксе.
     links = await account_repo.list_links_for_server(db, server_id)
@@ -787,6 +845,7 @@ async def receive_users_inventory(
             "drifted": drifted,
             "found": len(payload.users),
             "department_id": server.department_id,
+            "caller_type": identity.subject_type,
         },
     )
     return {"ok": True, "created": created, "present": present, "drifted": drifted}
@@ -846,6 +905,14 @@ async def record_provision_status(
         actor_department_id=identity.department_id,
         extra_details={"server_id": server_id},
     )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.record_provision_status",
+            identity=identity,
+            target_id=account_id,
+            target_type="server_account",
+            extra={"server_id": server_id},
+        )
 
     await account_repo.set_link_presence(db, link, present=payload.present)
     await db.commit()
@@ -860,6 +927,7 @@ async def record_provision_status(
             "operation": payload.operation,
             "present_on_server": payload.present,
             "department_id": server_department_id,
+            "caller_type": identity.subject_type,
         },
     )
     return {"ok": True, "present_on_server": payload.present}
@@ -913,6 +981,13 @@ async def record_server_prepared(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.record_server_prepared",
+            identity=identity,
+            target_id=server_id,
+            target_type="server",
+        )
 
     prepared_at = datetime.now(timezone.utc)
     await server_repo.update(db, server, {
@@ -930,6 +1005,7 @@ async def record_server_prepared(
             "management_user": payload.management_user,
             "prepared_at": prepared_at.isoformat(),
             "department_id": server.department_id,
+            "caller_type": identity.subject_type,
         },
     )
     return {
@@ -992,6 +1068,14 @@ async def record_ipmi_credentials_rotated(
         actor_department_id=identity.department_id,
         extra_details={"server_id": ctrl.server_id},
     )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.record_ipmi_credentials_rotated",
+            identity=identity,
+            target_id=controller_id,
+            target_type="ipmi_controller",
+            extra={"server_id": ctrl.server_id},
+        )
 
     rotated_at = payload.rotated_at
     if rotated_at.tzinfo is None:
@@ -1015,6 +1099,7 @@ async def record_ipmi_credentials_rotated(
             "server_id": ctrl.server_id,
             "rotated_at": rotated_at.isoformat(),
             "department_id": server_dept,
+            "caller_type": identity.subject_type,
         },
     )
     return {"ok": True, "rotated_at": rotated_at.isoformat()}

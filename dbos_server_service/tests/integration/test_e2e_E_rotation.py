@@ -321,14 +321,6 @@ def test_rotate_password_mass_all_dispatched(
         cleanup_user_on_box(ssh_session, login)
 
 
-@pytest.mark.xfail(
-    reason=(
-        "infra: см. test_rotate_password_mass_all_dispatched — dispatch-audit "
-        "теряется на rate-limit logging_service. Сам API возвращает 202 с "
-        "корректным skipped[decommissioned], но wait_for_audit таймаутит."
-    ),
-    strict=False,
-)
 def test_rotate_password_mass_one_decommissioned_continues(
     e_managed_server: dict,
     server_client: httpx.Client,

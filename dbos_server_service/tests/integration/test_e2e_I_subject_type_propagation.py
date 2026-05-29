@@ -87,15 +87,6 @@ def _create_bot_with_token(
     return bot_id, plain
 
 
-# `loging_service` режет `POST /events` на 100 rpm per-IP (slowapi). В E2E под
-# auth/server трафиком лимит выбивается раньше, чем доходит наш `os_version.create`,
-# и server_service (best-effort emit) глотает 429. Аудит-propagation проверяется
-# только когда лимит снят (или service подняли с другим лимитом / выключенным
-# rate-limit в test env).
-@pytest.mark.xfail(
-    reason="loging_service /events rate-limit (100/min) задушивает best-effort audit emit под E2E нагрузкой",
-    strict=False,
-)
 class TestSubjectTypePropagation:
     def test_user_jwt_emits_actor_type_user_on_server_endpoint(
         self,
@@ -135,6 +126,14 @@ class TestSubjectTypePropagation:
         )
         assert ev["actor_id"] == user["id"]
 
+    # `loging_service` режет `POST /events` на 100 rpm per-IP (slowapi). Под
+    # bot-сценарием лимит выбивается раньше `os_version.create`, и server_service
+    # (best-effort emit) глотает 429. Снимется, когда лимит вынесем в config или
+    # отключим в test env.
+    @pytest.mark.xfail(
+        reason="loging_service /events rate-limit (100/min) задушивает best-effort audit emit под bot-нагрузкой",
+        strict=False,
+    )
     def test_bot_token_emits_actor_type_bot_on_server_endpoint(
         self,
         auth_client: httpx.Client,

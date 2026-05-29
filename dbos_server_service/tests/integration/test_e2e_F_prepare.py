@@ -557,15 +557,6 @@ class TestPrepareNegativePaths:
             "cross_department",
         }
 
-    @pytest.mark.xfail(
-        reason=(
-            "infra-coordination: на shared compose-стеке параллельные test-runner'ы "
-            "могут TRUNCATE'ить `tasks` (через reset_state) во время этого "
-            "теста. Сам тест корректен: дожидается FAILED с SSH_AUTH_FAILED. "
-            "Стабилен на изолированном стенде; в shared CI — flaky."
-        ),
-        strict=False,
-    )
     def test_bad_bootstrap_creds_fail_task_and_leave_server_unmanaged(
         self,
         server_client: httpx.Client,
@@ -683,13 +674,6 @@ class TestPrepareRetryWithinTtl:
         assert row["status"] == "succeeded"
         assert row["attempts"] >= 1
 
-    @pytest.mark.xfail(
-        reason=(
-            "infra-coordination: на shared compose-стеке параллельные tests "
-            "могут TRUNCATE'ить `tasks` во время поллинга. Сам тест корректен."
-        ),
-        strict=False,
-    )
     def test_creds_gone_returns_specific_error(
         self,
         server_client: httpx.Client,

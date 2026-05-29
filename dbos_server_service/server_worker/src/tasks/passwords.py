@@ -152,10 +152,12 @@ def _generate_password() -> str:
     Гарантии: длина == ``_PASSWORD_LENGTH`` (20); в строке есть минимум по
     одному lowercase, uppercase, digit и символу из ``!@#$%^&*``.
 
-    Все выборы через ``secrets.choice`` — пароль годится для хранения
-    credentials (CSPRNG, не ``random``).
+    Все источники случайности — CSPRNG. ``secrets.choice`` берёт энтропию
+    из ``os.urandom``; перемешивание делает ``secrets.SystemRandom().shuffle``,
+    у которого тот же источник (``random.SystemRandom`` биндится на
+    ``os.urandom``, не на mt19937). Отдельный ``random.shuffle`` тут
+    нельзя — он сидится из времени и снизит стойкость.
     """
-    rng = secrets.SystemRandom()
     required = [
         secrets.choice(string.ascii_lowercase),
         secrets.choice(string.ascii_uppercase),
@@ -165,7 +167,7 @@ def _generate_password() -> str:
     remaining_length = _PASSWORD_LENGTH - len(required)
     body = [secrets.choice(_PASSWORD_ALPHABET) for _ in range(remaining_length)]
     pwd_chars = required + body
-    rng.shuffle(pwd_chars)
+    secrets.SystemRandom().shuffle(pwd_chars)
     return "".join(pwd_chars)
 
 

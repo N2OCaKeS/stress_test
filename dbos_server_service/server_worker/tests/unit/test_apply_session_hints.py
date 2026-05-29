@@ -1,7 +1,9 @@
 """Unit-тесты `services.ssh_client.apply_session_hints`.
 
 Функция копирует поля из payload в credentials:
-* `is_managed` / `management_user` — если payload.is_managed truthy;
+* `is_managed` — выставляется всегда (`bool(payload.is_managed)`) — даже при
+  отсутствующем/False payload-ключе, чтобы не унаследовать прошлое значение;
+* `management_user` — только при `is_managed=True`;
 * `host` — из payload, если credentials.host пуст;
 * `ssh_port` — из payload, если credentials не содержат ни port, ни ssh_port.
 
@@ -21,15 +23,23 @@ class TestIsManaged:
         result = apply_session_hints(creds, {"is_managed": True})
         assert result["is_managed"] is True
 
-    def test_is_managed_false_does_not_set_flag(self):
+    def test_is_managed_false_sets_flag_false(self):
         creds = {}
         result = apply_session_hints(creds, {"is_managed": False})
-        assert "is_managed" not in result
+        assert result["is_managed"] is False
 
-    def test_is_managed_absent_does_not_set_flag(self):
+    def test_is_managed_absent_sets_flag_false(self):
         creds = {}
         result = apply_session_hints(creds, {})
-        assert "is_managed" not in result
+        assert result["is_managed"] is False
+
+    def test_is_managed_false_overwrites_prior_true(self):
+        # Защита от грязных credentials: если в creds из прошлого прохода
+        # is_managed=True, а payload говорит False — флаг должен сброситься,
+        # иначе self-сессия неожиданно превратится в управляющую.
+        creds = {"is_managed": True, "management_user": "dbos"}
+        result = apply_session_hints(creds, {"is_managed": False})
+        assert result["is_managed"] is False
 
     def test_management_user_copied_when_is_managed(self):
         creds = {}
@@ -130,7 +140,9 @@ class TestReturnValue:
         assert result["host"] == "10.0.0.5"
         assert result["ssh_port"] == 2222
 
-    def test_empty_creds_empty_payload_returns_empty(self):
+    def test_empty_creds_empty_payload_keeps_only_is_managed_false(self):
+        # is_managed=False всегда выставляется явно — это часть контракта,
+        # а не «no-op».
         creds = {}
         result = apply_session_hints(creds, {})
-        assert result == {}
+        assert result == {"is_managed": False}

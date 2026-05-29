@@ -308,8 +308,9 @@ class TestInventorySync:
         )
 
         await inventory.inventory_sync.original_func(tid)
-        # без account_id используется default login='root'
-        assert captured_creds == [{"login": "root"}]
+        # без account_id используется default login='root'; apply_session_hints
+        # выставляет is_managed=False явно (контракт «всегда задаём флаг»).
+        assert captured_creds == [{"login": "root", "is_managed": False}]
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert t.result["facts"]["os_version_name"] == "Astra"
@@ -367,7 +368,9 @@ class TestInventorySync:
             "src.tasks.inventory.server_service_client.submit_inventory_facts", fake_submit,
         )
         await inventory.inventory_sync.original_func(tid)
-        assert captured_creds == [{"login": "custom_user"}]
+        # apply_session_hints всегда добавляет is_managed=False, если payload
+        # не несёт is_managed=True.
+        assert captured_creds == [{"login": "custom_user", "is_managed": False}]
 
 
 # ── passwords.account_rotate_password ────────────────────────────────────────

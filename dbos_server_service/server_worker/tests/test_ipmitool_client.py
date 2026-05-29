@@ -333,6 +333,36 @@ class TestBaseArgs:
         # Передан дочернему процессу через env по флагу `-E`.
         assert kwargs["env"]["IPMI_PASSWORD"] == "TOP-SECRET-PW"
 
+    async def test_subprocess_env_does_not_leak_worker_secrets(self, monkeypatch):
+        """Дочерний ipmitool не должен видеть worker-секреты в env.
+
+        До фикса env был `{**os.environ, IPMI_PASSWORD: ...}` — ipmitool
+        наследовал WORKER_BOT_TOKEN, REDIS_PASSWORD, DATABASE_URL и пр.
+        После фикса в env только whitelisted ключи (PATH/HOME/LANG/LC_ALL)
+        плюс IPMI_PASSWORD.
+        """
+        # Подкладываем «секрет» в env родителя — fix должен его НЕ передать.
+        monkeypatch.setenv("WORKER_BOT_TOKEN", "should-not-leak")
+        monkeypatch.setenv("LOGGING_SERVICE_API_KEY", "should-not-leak")
+        monkeypatch.setenv("DATABASE_URL", "postgresql://leak:leak@x/y")
+        monkeypatch.setenv("REDIS_PASSWORD", "should-not-leak")
+
+        proc = _make_fake_process(returncode=0, stdout=b"Chassis Power is on\n")
+        calls = _patch_subprocess(monkeypatch, proc)
+
+        client = IpmitoolClient("10.0.0.5", "ADMIN", "BMC_PW")
+        await client.chassis_power_status()
+
+        _, kwargs = calls[0]
+        env = kwargs["env"]
+
+        # Whitelist пробросился.
+        assert env["IPMI_PASSWORD"] == "BMC_PW"
+        # Чувствительные env-секреты — нет.
+        for forbidden in ("WORKER_BOT_TOKEN", "LOGGING_SERVICE_API_KEY",
+                          "DATABASE_URL", "REDIS_PASSWORD"):
+            assert forbidden not in env, f"{forbidden} leaked into ipmitool env"
+
 
 # ── _mask_password_in_argv ───────────────────────────────────────────────────
 

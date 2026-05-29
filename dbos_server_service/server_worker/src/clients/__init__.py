@@ -211,7 +211,18 @@ async def get_bmc_client(
         )
 
     if await _probe_redfish_cascade(host):
-        kwargs: dict = {"host": host, "username": username, "password": password}
+        settings = get_settings()
+        kwargs: dict = {
+            "host": host,
+            "username": username,
+            "password": password,
+            # Пробрасываем настроенные verify/timeout — без этого RedfishClient
+            # подхватывал свои hard-coded дефолты (verify=False, timeout=30s),
+            # и env-настройки `REDFISH_VERIFY_TLS`/`REDFISH_TIMEOUT_SECONDS`
+            # не влияли на реальные запросы (probe их видел, transport — нет).
+            "verify_tls": settings.redfish_verify_tls,
+            "timeout": settings.redfish_timeout_seconds,
+        }
         if kind:
             manager_id = resolve_manager_id(kind)
             # Пустой '' для generic-kind (ipmi/redfish) → discovery через

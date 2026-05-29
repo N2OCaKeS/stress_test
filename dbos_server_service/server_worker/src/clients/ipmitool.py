@@ -273,7 +273,20 @@ class IpmitoolClient:
 
         # Пароль передаётся ребёнку через env (флаг `-E` его читает), а не
         # через argv — иначе он виден в `/proc/<pid>/cmdline`.
-        child_env = {**os.environ, _IPMI_PASSWORD_ENV: self._password}
+        #
+        # Не наследуем полный env воркера: иначе ipmitool увидел бы
+        # WORKER_BOT_TOKEN, LOGGING_SERVICE_API_KEY, DATABASE_URL и т.п.
+        # При core-dump'е ipmitool'а или подмене бинаря (supply-chain)
+        # эти секреты утекли бы. Передаём минимально необходимое: PATH
+        # (без него exec и system-lib lookup сломаются), HOME/LANG/LC_ALL
+        # — некоторые сборки ipmitool читают locale; всё остальное — пропускаем.
+        child_env: dict[str, str] = {
+            _IPMI_PASSWORD_ENV: self._password,
+        }
+        for key in ("PATH", "HOME", "LANG", "LC_ALL"):
+            value = os.environ.get(key)
+            if value is not None:
+                child_env[key] = value
 
         try:
             proc = await asyncio.create_subprocess_exec(

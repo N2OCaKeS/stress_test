@@ -44,8 +44,12 @@ def apply_session_hints(credentials: dict, payload: dict) -> dict:
     значение от server_service. Если в payload полей нет (старый dispatch) —
     `_extract_host` будет fallback'иться на `server_id`.
     """
-    if payload.get("is_managed"):
-        credentials["is_managed"] = True
+    # `is_managed` ставим всегда (включая False) — иначе при повторной обработке
+    # credentials остался бы с предыдущим True, и self-сессия неожиданно стала
+    # бы ключевой management-сессией. `_build_session` опирается на этот флаг
+    # как на жёсткий инвариант, не на «truthy/missing».
+    credentials["is_managed"] = bool(payload.get("is_managed"))
+    if credentials["is_managed"]:
         management_user = payload.get("management_user")
         if management_user:
             credentials["management_user"] = management_user
@@ -86,6 +90,21 @@ def _extract_port(credentials: dict) -> int:
         return int(port)
     except (TypeError, ValueError):
         return 22
+
+
+def _mask_bootstrap_login(login: str) -> str:
+    """Замаскировать bootstrap-логин для DEBUG-лога.
+
+    Имя одноразовой bootstrap-учётки — чувствительный артефакт первичного
+    доступа на ещё не управляемый сервер; в лог пишем только префикс,
+    хвост заменяем на `***`. Короткие имена (<=3 символов) маскируются
+    целиком, иначе видно слишком много.
+    """
+    if not login:
+        return "***"
+    if len(login) <= 3:
+        return "***"
+    return f"{login[:3]}***"
 
 
 def build_session(credentials: dict, server_id: str) -> SshClient:
@@ -337,7 +356,14 @@ async def bootstrap_management_user(
 
     # Bootstrap-логин под одноразовыми кредами — это шумная диагностика, не
     # бизнес-событие; в INFO бьёт по громкости логов на массовом prepare'е.
-    logger.debug("ssh prepare management user %s on %s as %s", management_user, host, username)
+    # Сам bootstrap-username не светим полностью даже в DEBUG: лог-стрим может
+    # быть отправлен в external sink, а имя bootstrap-учётки облегчает атаку
+    # на ещё не управляемый сервер. Префикс из 3 символов оставляем — этого
+    # хватает, чтобы дебажить «не тот логин в payload'е».
+    logger.debug(
+        "ssh prepare management user %s on %s as %s",
+        management_user, host, _mask_bootstrap_login(username),
+    )
     async with SshClient(
         host=host,
         username=username,

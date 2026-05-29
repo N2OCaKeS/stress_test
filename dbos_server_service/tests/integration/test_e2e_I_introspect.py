@@ -202,13 +202,16 @@ class TestIntrospectPAT:
     ):
         sid = short_id()
         dept = ensure_department(auth_client, admin_token, f"is_pat_rev_{sid}")
-        # PATCreate теперь требует non-empty allowed_services; даём dept
-        # доступ к auth_service, чтобы юзер мог выписать PAT в этот scope.
-        grant_service_to_department(auth_client, admin_token, dept, "auth_service")
+        # PATCreate теперь требует non-empty allowed_services с реально
+        # зарегистрированным сервисом. Создаём уникальный платформенный
+        # сервис → грантим dept → юзер может выписать PAT в этот scope.
+        svc = f"is_pat_rev_svc_{sid}"
+        ensure_service(auth_client, admin_token, svc)
+        grant_service_to_department(auth_client, admin_token, dept, svc)
         user = make_user_in_dept(auth_client, admin_token, department_id=dept)
         u_jwt = login_user(auth_client, user["username"], user["_password"])["body"]["access_token"]
 
-        pat_body = issue_pat(auth_client, u_jwt, name=f"pat_rev_{sid}")
+        pat_body = issue_pat(auth_client, u_jwt, name=f"pat_rev_{sid}", allowed_services=[svc])
         plain_pat = pat_body["token"]
         target_id = pat_body["token_id"]
 

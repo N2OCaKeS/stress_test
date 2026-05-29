@@ -149,8 +149,8 @@ async def get_account(
 
 # Поля, которые worker применяет на боксе через usermod — их правка
 # триггерит fan-out `update_on_host` на привязанные серверы. `home_dir`/
-# `is_active`/`linked_user_id` остаются только в БД: modify_user на воркере
-# usermod'ит группы/sudo/shell, дом-каталог и метаданные не двигает.
+# `linked_user_id` остаются только в БД: modify_user на воркере usermod'ит
+# группы/sudo/shell, дом-каталог и метаданные не двигает.
 _OS_MANAGED_FIELDS = {"has_sudo", "unix_groups", "shell"}
 
 

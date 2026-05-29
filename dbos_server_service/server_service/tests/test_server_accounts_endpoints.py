@@ -467,13 +467,13 @@ class TestUpdateAccountFanout:
         self, client, operator_token_a, make_server, make_account,
         captured_dispatch,
     ):
-        # linked_user_id / is_active — не OS-управляемые поля, fan-out не нужен.
+        # linked_user_id — не OS-управляемое поле, fan-out не нужен.
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id, login="meta")
         resp = await client.patch(
             f"{BASE}/{acc.id}",
             headers=_hdr(operator_token_a),
-            json={"is_active": False},
+            json={"linked_user_id": "usr_meta_owner"},
         )
         assert resp.status_code == 200, resp.text
         assert captured_dispatch == []

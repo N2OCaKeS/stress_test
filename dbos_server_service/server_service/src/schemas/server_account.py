@@ -90,14 +90,21 @@ class ServerAccountCreate(BaseModel):
 
 class ServerAccountUpdate(BaseModel):
     """Тело PATCH /server-accounts/{id}. Пароль через `rotate_password`,
-    привязка серверов — через `/servers` под-операции."""
+    привязка серверов — через `/servers` под-операции.
+
+    Поля `is_active` в апдейте нет: колонка в БД присутствует и отдаётся
+    в GET, но dispatch/rotate/fetch_password её не читают, и менять её
+    через PATCH ведёт только к расхождению между «логически выключенным»
+    аккаунтом и тем фактом, что воркер всё равно отдаст пароль. Когда
+    появится реальная семантика disable — поле вернётся вместе с гейтами
+    в internal_service и pipeline'ах.
+    """
 
     has_sudo: bool | None = Field(default=None, description="Сменить sudo-флаг (требует `grant_sudo`).")
     unix_groups: list[str] | None = Field(default=None, description="Перезаписать список групп.")
     linked_user_id: str | None = Field(default=None, description="Сменить связь с user'ом.")
     shell: str | None = Field(default=None, max_length=64, description="Сменить shell.")
     home_dir: str | None = Field(default=None, max_length=256, description="Сменить home_dir.")
-    is_active: bool | None = Field(default=None, description="Отключить/включить аккаунт.")
 
 
 class ServerAccountServersUpdate(BaseModel):

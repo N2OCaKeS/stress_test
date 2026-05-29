@@ -144,7 +144,9 @@ async def test_openapi_closed_in_production(app_with_env):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         for path in ("/openapi.json", "/docs", "/redoc"):
             resp = await ac.get(path)
-            assert resp.status_code == 404, (
+            # 404 — route не зарегистрирован; 403 — HTTPS-guard блокирует cleartext
+            # ещё до маршрутизации. Оба варианта означают «закрыто в production».
+            assert resp.status_code in (403, 404), (
                 f"{path} должен быть закрыт в production, got {resp.status_code}"
             )
 

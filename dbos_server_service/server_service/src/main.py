@@ -22,6 +22,7 @@ from src.core.config import get_settings
 from src.core.limiter import limiter
 from src.core.exceptions import AppException
 from src.dependencies import auth as auth_deps
+from src.middleware.https_guard import HTTPSRequiredMiddleware
 from src.middleware.platform_admin_guard import platform_admin_guard
 from src.services import audit_context, audit_service, worker_client
 from src.services.audit_context import AuditContext
@@ -393,6 +394,19 @@ def create_application() -> FastAPI:
             except RateLimitExceeded as exc:
                 return _rate_limit_exceeded_response(request, exc)
         return await call_next(request)
+
+    # HTTPSRequiredMiddleware регистрируем перед SecurityHeadersMiddleware,
+    # чтобы security-headers ОБОРАЧИВАЛИ его 403-ответ: HSTS на отбитом
+    # cleartext-запросе бесполезен, но X-Frame-Options/X-Content-Type-Options
+    # и CSP должны висеть на любом ответе сервиса, включая HTTPS_REQUIRED.
+    # В dev/test/local middleware просто пропускает (self._enabled=False).
+    # В production/staging cleartext-HTTP отбивается 403 ДО rate-limit'а,
+    # introspect-call'а и audit-канала — никакого http-flood'а в audit.
+    # Health/ready пропускаются всегда — k8s probe ходит на pod-network http.
+    app.add_middleware(
+        HTTPSRequiredMiddleware,
+        app_env=settings.app_env,
+    )
 
     # SecurityHeadersMiddleware регистрируем последним → outermost слой.
     # Так заголовки попадают на КАЖДЫЙ ответ, включая 429 от rate-limit и

@@ -218,11 +218,13 @@ async def server_prepare(task_id: str) -> None:
                 "login": bootstrap.get("bootstrap_login"),
                 "password": bootstrap.get("bootstrap_password"),
             }
-            # `apply_session_hints` доклеивает host/ssh_port из payload и
-            # (для consistency) is_managed/management_user — на prepare
-            # последние ничего не меняют, потому что
-            # bootstrap_management_user открывает password-сессию напрямую
-            # через SshClient.
+            # Нужны только host/ssh_port из payload —
+            # `bootstrap_management_user` сам открывает password-сессию через
+            # SshClient, без management-логики. is_managed/management_user
+            # выставляются для симметрии с rotate/provision-handler'ами:
+            # creds в дальнейшем нигде не переиспользуются, но если кто-то
+            # добавит post-bootstrap step с management-сессией — флаги уже
+            # правильные.
             ssh_client.apply_session_hints(creds, payload)
             await ssh_client.bootstrap_management_user(
                 creds, server_id,

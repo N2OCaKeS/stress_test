@@ -134,7 +134,9 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
 
     Без этого taskiq отменял coroutine'ы где-то в середине impl, и task
     в БД оставалась `status='running'` навсегда — требовала ручного
-    recovery. Watchdog для stale-running не реализован — TODO.
+    recovery. Stale-running теперь подбирает periodic `tasks.sweep_orphaned`
+    (60s) через `list_orphaned_running` (heartbeat-aware), drain — это
+    fast-path для штатного SIGTERM, sweep — fallback для kill -9 / OOM.
 
     Текущая логика:
 

@@ -225,6 +225,7 @@ run-server: ## Запустить server_service локально (devcontainer,
 #   make test-dev TEST=loging_service/tests/test_rules.py
 #   make test-dev TEST=loging_service/tests/test_rules.py::TestRulesCRUD
 #   make test-dev TEST=auth_service/tests/auth/test_login.py
+#   make test-dev TEST=server_worker/tests/test_smoke.py
 #   make test-dev TEST=tests/integration/test_auth_logging.py
 #
 # Запуск всех тестов:
@@ -233,6 +234,7 @@ run-server: ## Запустить server_service локально (devcontainer,
 _LOGGING_TEST_URL = postgresql+psycopg://app_user:app_password@postgres:5432/test_logging_unit
 _AUTH_TEST_URL    = postgresql+psycopg://app_user:app_password@postgres:5432/test_auth_unit
 _SERVER_TEST_URL  = postgresql+psycopg://app_user:app_password@postgres:5432/test_server_unit
+_WORKER_TEST_URL  = postgresql+psycopg://app_user:app_password@postgres:5432/test_worker_unit
 
 test-dev: ## Запустить конкретный тест. Пример: make test-dev TEST=loging_service/tests/test_rules.py
 	@if [ -z "$(TEST)" ]; then \
@@ -241,6 +243,7 @@ test-dev: ## Запустить конкретный тест. Пример: mak
 		echo "  make test-dev TEST=loging_service/tests/test_rules.py"; \
 		echo "  make test-dev TEST=auth_service/tests/auth/test_login.py"; \
 		echo "  make test-dev TEST=server_service/tests/test_health.py"; \
+		echo "  make test-dev TEST=server_worker/tests/test_smoke.py"; \
 		echo "  make test-dev TEST=tests/integration/test_auth_logging.py"; \
 		exit 1; \
 	fi
@@ -253,6 +256,14 @@ test-dev: ## Запустить конкретный тест. Пример: mak
 	elif echo "$(TEST)" | grep -q "^server_service/"; then \
 		cd server_service && DATABASE_URL=$(_SERVER_TEST_URL) TEST_DATABASE_URL=$(_SERVER_TEST_URL) \
 			SERVER_ENCRYPTION_KEY=$(_DEV_SERVER_KEY) \
+			PYTHONPATH=. pytest ../$(TEST) -v --tb=short; \
+	elif echo "$(TEST)" | grep -q "^server_worker/"; then \
+		cd server_worker && DATABASE_URL=$(_WORKER_TEST_URL) TEST_DATABASE_URL=$(_WORKER_TEST_URL) \
+			REDIS_URL=redis://localhost:6379/0 \
+			SERVER_SERVICE_URL=http://not-used \
+			AUTH_SERVICE_URL=http://not-used \
+			LOGGING_SERVICE_URL=http://not-used \
+			WORKER_BOT_TOKEN=dummy-test-token \
 			PYTHONPATH=. pytest ../$(TEST) -v --tb=short; \
 	else \
 		pytest $(TEST) -v --tb=short; \
@@ -271,10 +282,19 @@ test-dev-server: ## Unit-тесты server_service (devcontainer)
 		SERVER_ENCRYPTION_KEY=$(_DEV_SERVER_KEY) \
 		PYTHONPATH=. pytest tests/ -v --tb=short
 
+test-dev-worker: ## Unit-тесты server_worker (devcontainer; Redis не поднимается, broker monkeypatch'ится)
+	cd server_worker && DATABASE_URL=$(_WORKER_TEST_URL) TEST_DATABASE_URL=$(_WORKER_TEST_URL) \
+		REDIS_URL=redis://localhost:6379/0 \
+		SERVER_SERVICE_URL=http://not-used \
+		AUTH_SERVICE_URL=http://not-used \
+		LOGGING_SERVICE_URL=http://not-used \
+		WORKER_BOT_TOKEN=dummy-test-token \
+		PYTHONPATH=. pytest tests/ -v --tb=short
+
 test-dev-integration: ## Кросс-сервисные интеграционные тесты (devcontainer, порты :8010/:8011)
 	pytest tests/ -v --tb=short
 
-test-dev-all: test-dev-auth test-dev-logging test-dev-server test-dev-integration ## Все тесты в devcontainer
+test-dev-all: test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-integration ## Все тесты в devcontainer
 
 test-devcont-all: ## Полный набор в devcontainer: unit + integration + E2E docker registry
 	python tests/scripts/run_devcont_tests.py
@@ -287,7 +307,8 @@ install-registry: ## Установить бинарник registry v2.8.3 (ну
 test-local-auth: test-dev-auth ## = test-dev-auth
 test-local-logging: test-dev-logging ## = test-dev-logging
 test-local-server: test-dev-server ## = test-dev-server
-test-local: test-dev-auth test-dev-logging test-dev-server ## = test-dev-auth + test-dev-logging + test-dev-server
+test-local-worker: test-dev-worker ## = test-dev-worker
+test-local: test-dev-auth test-dev-logging test-dev-server test-dev-worker ## = test-dev-auth + test-dev-logging + test-dev-server + test-dev-worker
 test-local-integration: test-dev-integration ## = test-dev-integration
 test-local-all: test-dev-all ## = test-dev-all
 

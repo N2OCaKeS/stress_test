@@ -30,7 +30,10 @@ class Settings(BaseSettings):
         description=(
             "Deployment environment label: local|dev|test|staging|production. "
             "В 'production' включается строгий validator: REDIS_URL обязан содержать "
-            "password (защита taskiq queue от анонимного RPUSH из соседних подов)."
+            "password (защита taskiq queue от анонимного RPUSH из соседних подов). "
+            "В 'production'/'staging' enforce'ится https:// для outbound URL. "
+            "Тип — str, не Literal: case-insensitive (`.lower()` в guards), и тесты "
+            "явно проверяют `APP_ENV=PRODUCTION`. См. test_config_redis_auth.py."
         ),
     )
     database_url: str = Field(

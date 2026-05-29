@@ -7,7 +7,7 @@ sweep-task `tasks_sweep_orphaned` (через `repositories/task.py
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import delete, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert

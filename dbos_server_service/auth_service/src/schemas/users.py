@@ -252,6 +252,58 @@ class UserGroupWithRolesEntry(BaseModel):
     service_roles: list[GroupServiceRoleEntry] = Field(default_factory=list)
 
 
+class SessionEntry(BaseModel):
+    """Одна активная refresh-сессия в `GET /users/me/sessions`.
+
+    `is_current=True` — это та сессия, через `sid` которой был выдан
+    access-токен текущего запроса. Если в JWT нет `sid` (старые токены,
+    выписанные до фичи), все entries придут с `is_current=False` — UI
+    не сможет различить «выйти отовсюду, кроме меня», и
+    `revoke_except_current` сделает full-revoke.
+    """
+
+    session_id: str
+    created_at: datetime
+    last_used_at: datetime | None = None
+    expires_at: datetime
+    ip_address: str | None = None
+    user_agent: str | None = None
+    is_current: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class SessionsListResponse(BaseModel):
+    """Ответ `GET /users/me/sessions`."""
+
+    items: list[SessionEntry] = Field(default_factory=list)
+    total: int = Field(description="Число активных сессий (= len(items)).")
+
+
+class RevokeSessionsRequest(BaseModel):
+    """Тело `POST /users/me/sessions/revoke`.
+
+    `except_current=true` оставляет ту сессию, чей `sid` сейчас сидит в
+    JWT — реализация «выйти со всех остальных устройств». Если у токена
+    нет `sid`, сервер делает полный revoke (тот же эффект, что
+    `except_current=false`) и кладёт в audit `current_session_id=None`.
+    """
+
+    except_current: bool = Field(
+        default=False,
+        description=(
+            "True — оставить текущую сессию (определяется по `sid` claim'у "
+            "из access JWT). False — снести всё."
+        ),
+    )
+
+
+class RevokeSessionsResponse(BaseModel):
+    """Ответ `POST /users/me/sessions/revoke` и `DELETE .../{session_id}`."""
+
+    revoked_count: int = Field(description="Сколько сессий фактически revoked.")
+
+
 class UserPermissionsResponse(BaseModel):
     """Полный снимок прав пользователя для UI / admin overview.
 

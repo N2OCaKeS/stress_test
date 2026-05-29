@@ -199,6 +199,45 @@ Self-reset пароля с обязательным подтверждением
 
 Errors: `INVALID_OLD_PASSWORD` (401, инкрементит lockout-счётчик), `SAME_PASSWORD` (422), `ACCOUNT_TEMPORARILY_LOCKED` (429 + `retry_after_seconds`), `USER_NOT_FOUND` (404).
 
+### `GET /users/me/sessions`
+
+Auth: Bearer (user-context, m2m отбивается). Response:
+
+```json
+{
+  "items": [
+    {
+      "session_id": "ses_...",
+      "created_at": "ISO-8601",
+      "last_used_at": "ISO-8601 | null",
+      "expires_at": "ISO-8601",
+      "ip_address": "1.2.3.4 | null",
+      "user_agent": "Mozilla/5.0 ... | null",
+      "is_current": false
+    }
+  ],
+  "total": 0
+}
+```
+
+Список активных refresh-сессий юзера для UI «Active devices». `is_current=true` — это сессия, через `sid` claim которой был выдан access-токен текущего вызова. Истёкшие и revoked не возвращаются. Audit `user.sessions_listed` (INFO).
+
+### `POST /users/me/sessions/revoke`
+
+Auth: Bearer (user-context). Body:
+
+```json
+{ "except_current": false }
+```
+
+Отзывает все активные refresh-сессии юзера. `except_current=true` оставляет ту, через `sid` которой пришёл вызов (если в JWT нет `sid` — legacy-токен, сервер делает полный revoke). PAT и bot-токены не трогаются. Identity-cache инвалидируется. Response: `{"revoked_count": N}`. Audit `user.sessions_revoked_all` (CRITICAL).
+
+### `DELETE /users/me/sessions/{session_id}`
+
+Auth: Bearer (user-context). Целевой revoke одной своей сессии. Response: `{"revoked_count": 1}`. Audit `user.session_revoked_one` (WARNING).
+
+Errors: `SESSION_NOT_FOUND` (404) — сессия не найдена, чужая или уже revoked (намеренно не отличаем, чтобы не было session-id-oracle между юзерами).
+
 ### `POST /users/{user_id}/ban`
 
 Auth: `account_admin`. Body:

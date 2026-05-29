@@ -41,6 +41,29 @@ class SessionRepository:
             )
         )
 
+    async def find_rotated_by_old_hash(self, token_hash: str) -> Session | None:
+        """Найти сессию, у которой `token_hash` лежит в истории previous_*.
+
+        В отличие от `get_by_token_hash` НЕ матчит по `refresh_token_hash` —
+        это нужно, чтобы refresh-flow различал две ситуации:
+
+        * Сессия revoked (logout / sessions-revoke-one / sessions-revoke-all),
+          ротации не было: текущий `refresh_token_hash` всё ещё равен hash'у
+          предъявленного токена. Это НЕ reuse — пользователь сам её закрыл,
+          бить по другим сессиям не надо.
+        * Старый ротированный токен подсунут заново: hash лежит в
+          `previous_token_hash` / `previous_token_hashes` (sliding window).
+          Это реальный reuse — кидаем kill-switch (`revoke_all_for_user`).
+        """
+        return await self._db.scalar(
+            select(Session).where(
+                or_(
+                    Session.previous_token_hash == token_hash,
+                    Session.previous_token_hashes.contains([token_hash]),
+                )
+            )
+        )
+
     async def create(
         self,
         user_id: str,
@@ -127,18 +150,58 @@ class SessionRepository:
         sess.revoked_at = utcnow()
         await self._db.flush()
 
-    async def revoke_all_for_user(self, user_id: str) -> None:
+    async def revoke_all_for_user(
+        self,
+        user_id: str,
+        except_session_id: str | None = None,
+    ) -> int:
+        """Revoke все активные сессии юзера. Опционально пропустить одну.
+
+        `except_session_id` нужен ручке `revoke_sessions(except_current=True)`
+        — оставить ту сессию, через которую пришёл вызов, чтобы юзер не
+        выкинулся из текущего UI/CLI. None — снести всё (поведение admin
+        reset-password / ban / self-password-reset).
+
+        Возвращает число фактически revoked'нутых сессий.
+        """
         now = utcnow()
-        result = await self._db.scalars(
-            select(Session).where(
-                Session.user_id == user_id,
-                Session.is_active.is_(True),
-            )
-        )
+        where = [Session.user_id == user_id, Session.is_active.is_(True)]
+        if except_session_id is not None:
+            where.append(Session.id != except_session_id)
+        result = await self._db.scalars(select(Session).where(*where))
+        count = 0
         for sess in result:
             sess.is_active = False
             sess.revoked_at = now
+            count += 1
         await self._db.flush()
+        return count
+
+    async def list_active_for_user(self, user_id: str) -> list[Session]:
+        """Активные refresh-сессии юзера в порядке last_used_at desc.
+
+        Для UI «Active devices». Истёкшие по `expires_at` исключаются — они
+        логически невалидны, хотя `is_active=True` может ещё стоять (revoke
+        не делается превентивно). Сортировка по last_used_at desc; для
+        свежесозданных (last_used_at IS NULL) — по created_at desc.
+        """
+        now = utcnow()
+        result = await self._db.scalars(
+            select(Session)
+            .where(
+                Session.user_id == user_id,
+                Session.is_active.is_(True),
+                Session.expires_at > now,
+            )
+            .order_by(
+                # NULLS LAST для last_used_at, чтобы только-что-логиненная
+                # сессия (без last_used_at) шла в конце, а реально активные —
+                # сверху. PostgreSQL поддерживает NULLS LAST нативно.
+                Session.last_used_at.desc().nulls_last(),
+                Session.created_at.desc(),
+            )
+        )
+        return list(result)
 
     async def mark_suspicious(self, sess: Session) -> None:
         sess.is_suspicious = True

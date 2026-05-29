@@ -276,7 +276,7 @@ def _build_identity(
     )
 
 
-def _build_access_token(user) -> str:
+def _build_access_token(user, session_id: str | None = None) -> str:
     """Сминтить access JWT для юзера. TTL — из settings.
 
     В payload кладём минимум: `sub` + `actor_type` (+ iat/exp/iss/aud от
@@ -286,16 +286,25 @@ def _build_access_token(user) -> str:
     отделу через любой логированный или утёкший токен. Все эти поля живые
     данные: `get_current_identity` и `introspect` revalidate'ят их из БД на
     каждом запросе, в payload они не нужны.
+
+    Опциональный `sid` — id refresh-сессии, через которую был выдан access.
+    Используется ручкой `revoke_sessions(except_current=True)`, чтобы
+    пропустить именно ту сессию, с которой пришёл вызов; в introspect и в
+    privilege-логике не участвует. Сам `sid` не приватная информация: только
+    непривилегированный идентификатор строки в `sessions` таблице.
     """
     settings = get_settings()
+    payload: dict = {
+        "sub": user.id,
+        # `actor_type` нужен `authorization_service.introspect` и
+        # `get_current_identity` для диспатча revalidate-пути:
+        # "user" → UserRepository, "oauth_client" → OAuthClientRepository.
+        "actor_type": "user",
+    }
+    if session_id is not None:
+        payload["sid"] = session_id
     return create_access_token(
-        payload={
-            "sub": user.id,
-            # `actor_type` нужен `authorization_service.introspect` и
-            # `get_current_identity` для диспатча revalidate-пути:
-            # "user" → UserRepository, "oauth_client" → OAuthClientRepository.
-            "actor_type": "user",
-        },
+        payload=payload,
         expires_delta=timedelta(minutes=settings.access_token_ttl_minutes),
     )
 
@@ -394,7 +403,7 @@ async def login(
 
     raw_refresh, refresh_hash = generate_refresh_token()
     refresh_expires = expires_at(days=settings.refresh_token_ttl_days)
-    await session_repo.create(
+    new_session = await session_repo.create(
         user_id=user.id,
         refresh_token_hash=refresh_hash,
         expires_at=refresh_expires,
@@ -402,7 +411,7 @@ async def login(
         user_agent=user_agent,
     )
 
-    access_token = _build_access_token(user)
+    access_token = _build_access_token(user, session_id=new_session.id)
     await db.commit()
 
     audit_context.update_context(
@@ -443,7 +452,13 @@ async def refresh(db: AsyncSession, raw_refresh_token: str, request_id: str | No
     sess = await session_repo.get_active_by_token_hash(token_hash)
 
     if sess is None:
-        old_sess = await session_repo.get_by_token_hash(token_hash)
+        # Reuse-detection: матчим только по previous_token_hash(es), т.е.
+        # реально ротированные ранее токены. Если же hash совпадает с текущим
+        # `refresh_token_hash` неактивной сессии — это явно revoked'нутая
+        # сессия (logout / sessions/revoke-one / sessions/revoke), ротации не
+        # было. Бить по другим сессиям юзера в этом случае нельзя — это
+        # ломает feature «logout одной сессии без выкидывания остальных».
+        old_sess = await session_repo.find_rotated_by_old_hash(token_hash)
         if old_sess:
             await session_repo.mark_suspicious(old_sess)
             await session_repo.revoke_all_for_user(old_sess.user_id)
@@ -494,7 +509,7 @@ async def refresh(db: AsyncSession, raw_refresh_token: str, request_id: str | No
             message="Refresh token was rotated by a concurrent request; retry with the new token.",
         )
 
-    access_token = _build_access_token(user)
+    access_token = _build_access_token(user, session_id=sess.id)
     await db.commit()
 
     audit_context.update_context(

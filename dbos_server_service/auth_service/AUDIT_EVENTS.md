@@ -69,6 +69,9 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `user.ban_deactivated_via_status_change` | WARNING | `user_service.update_user` (PATCH `/users/{id}/status`) | user | Активный ban деактивирован как side-effect смены статуса (без явного unban). Логируется отдельно от `user.unban` для трассировки полу-явных деактиваций. |
 | `user.permissions_view` | INFO | `GET /users/{id}/permissions` | user | Кто смотрит чьи права. |
 | `user.roles_purged_on_transfer` | WARNING | `user_service.update_user` (department change) | user | Сколько ролей сброшено при переводе в другой отдел. |
+| `user.sessions_listed` | INFO | `GET /users/me/sessions` | user (== actor) | `count` активных сессий. |
+| `user.sessions_revoked_all` | CRITICAL | `POST /users/me/sessions/revoke` | user (== actor) | `revoked_count`, `except_session_id`, `except_current`. PAT и bot-токены не трогаются. |
+| `user.session_revoked_one` | WARNING | `DELETE /users/me/sessions/{id}` | user (== actor) | `session_id`, `was_current`. |
 
 ## Departments
 

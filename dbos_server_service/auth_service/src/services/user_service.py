@@ -23,6 +23,8 @@ from src.schemas.users import (
     DirectServiceRoleEntry,
     GroupServiceAccessEntry,
     GroupServiceRoleEntry,
+    SessionEntry,
+    SessionsListResponse,
     UserGroupWithRolesEntry,
     UserPermissionsResponse,
     UserResponse,
@@ -1221,3 +1223,125 @@ async def get_user_permissions(
         allowed_services=allowed_services,
         service_roles=service_roles,
     )
+
+
+# ── /users/me/sessions ───────────────────────────────────────────────────────
+
+
+def _session_to_entry(sess, current_session_id: str | None) -> SessionEntry:
+    return SessionEntry(
+        session_id=sess.id,
+        created_at=sess.created_at,
+        last_used_at=sess.last_used_at,
+        expires_at=sess.expires_at,
+        ip_address=sess.ip_address,
+        user_agent=sess.user_agent,
+        is_current=(current_session_id is not None and sess.id == current_session_id),
+    )
+
+
+async def list_sessions(
+    db: AsyncSession,
+    user_id: str,
+    current_session_id: str | None = None,
+    request_id: str | None = None,
+) -> SessionsListResponse:
+    """Список активных refresh-сессий юзера для UI «Active devices».
+
+    `current_session_id` — `sid` claim из текущего access-токена. Если есть
+    и совпадает с одной из сессий — её `is_current=True`. Если в JWT нет
+    `sid` (legacy-токен до фичи) — None и все entries без current-флага.
+
+    Audit `user.sessions_listed` INFO с count'ом активных сессий.
+    """
+    session_repo = SessionRepository(db)
+    sessions = await session_repo.list_active_for_user(user_id)
+    items = [_session_to_entry(s, current_session_id) for s in sessions]
+    audit_service.emit(
+        "user.sessions_listed",
+        user_id,
+        target_id=user_id,
+        target_type="user",
+        status="success",
+        details={"count": len(items)},
+        request_id=request_id,
+    )
+    return SessionsListResponse(items=items, total=len(items))
+
+
+async def revoke_sessions(
+    db: AsyncSession,
+    user_id: str,
+    except_session_id: str | None = None,
+    request_id: str | None = None,
+) -> int:
+    """Revoke все активные refresh-сессии юзера, опционально кроме одной.
+
+    Симметрично admin `reset_password` по части revoke-сессий, но без сброса
+    пароля и PAT — это user-инициированное «выйти со всех устройств». PAT
+    не трогаем намеренно: они представляют отдельную identity (CI/боты).
+
+    `except_session_id` — id той сессии, которую оставить (обычно `sid` из
+    JWT). None или несуществующий id — снести всё. Identity-cache
+    инвалидируем, чтобы закэшированный access-token со старого устройства
+    не пускал юзера на /me и introspect до истечения TTL.
+    """
+    session_repo = SessionRepository(db)
+    revoked = await session_repo.revoke_all_for_user(
+        user_id, except_session_id=except_session_id
+    )
+    await db.commit()
+    _invalidate_identity_cache(user_id)
+    audit_service.emit(
+        "user.sessions_revoked_all",
+        user_id,
+        target_id=user_id,
+        target_type="user",
+        details={
+            "revoked_count": revoked,
+            "except_session_id": except_session_id,
+            "except_current": except_session_id is not None,
+        },
+        request_id=request_id,
+    )
+    return revoked
+
+
+async def revoke_one_session(
+    db: AsyncSession,
+    user_id: str,
+    session_id: str,
+    current_session_id: str | None = None,
+    request_id: str | None = None,
+) -> int:
+    """Целевой logout одной сессии юзера.
+
+    404 SESSION_NOT_FOUND — сессия не принадлежит юзеру, неактивна, или не
+    существует. Намеренно не отличаем «нет» от «чужая» — иначе endpoint
+    становится session-id-enumeration oracle'ом между юзерами.
+
+    Возвращает 1 при успехе.
+    """
+    session_repo = SessionRepository(db)
+    sess = await session_repo.get_by_id(session_id)
+    if sess is None or sess.user_id != user_id or not sess.is_active:
+        raise NotFoundError(
+            error_code="SESSION_NOT_FOUND",
+            message="Session not found or already revoked",
+        )
+
+    await session_repo.revoke(sess)
+    await db.commit()
+    _invalidate_identity_cache(user_id)
+    audit_service.emit(
+        "user.session_revoked_one",
+        user_id,
+        target_id=user_id,
+        target_type="user",
+        details={
+            "session_id": session_id,
+            "was_current": current_session_id is not None and session_id == current_session_id,
+        },
+        request_id=request_id,
+    )
+    return 1

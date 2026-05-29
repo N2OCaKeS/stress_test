@@ -13,7 +13,10 @@ from src.schemas.users import (
     AssignRolesRequest,
     BanRequest,
     ResetPasswordRequest,
+    RevokeSessionsRequest,
+    RevokeSessionsResponse,
     SelfChangePasswordRequest,
+    SessionsListResponse,
     UserCreate,
     UserPermissionsResponse,
     UserResponse,
@@ -84,6 +87,148 @@ async def change_own_password(
         request_id=getattr(request.state, "request_id", None),
     )
     return OkResponse()
+
+
+# ── Session management (P2: list / revoke-all / revoke-one) ────────────────
+# Все три ручки идут под `/users/me/...` и регистрируются ДО любых
+# `/users/{user_id}/...`-роутов (см. комментарий выше про `/me/password`):
+# FastAPI матчит routes по порядку, иначе "me" улетит в `{user_id}`-параметр.
+
+
+def _current_session_id(request: Request) -> str | None:
+    """Достать `sid` из JWT-payload текущего запроса.
+
+    Middleware `_extract_actor_info` декодит токен и кладёт payload в
+    `request.state.jwt_payload`. `sid` появляется только у access-токенов,
+    выписанных login'ом/refresh'ем после внедрения фичи; legacy-токены
+    дадут None → `revoke_except_current` сделает полный revoke.
+    """
+    payload = getattr(request.state, "jwt_payload", None)
+    if not isinstance(payload, dict):
+        return None
+    sid = payload.get("sid")
+    return sid if isinstance(sid, str) and sid else None
+
+
+@router.get(
+    "/me/sessions",
+    response_model=SessionsListResponse,
+    summary="Активные сессии текущего пользователя",
+    description=(
+        "Список активных refresh-сессий юзера (для UI «Active devices»). "
+        "Поле `is_current=True` маркирует ту, через `sid` которой пришёл вызов."
+    ),
+)
+async def list_my_sessions(
+    request: Request,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> SessionsListResponse:
+    """Активные сессии юзера.
+
+    Что возвращает:
+        Список `SessionEntry` с `created_at`/`last_used_at`/`expires_at`,
+        IP и User-Agent (snapshot момента login'а). Истёкшие или revoked'ы
+        не возвращаются.
+
+    Доступ:
+        Любой залогиненный юзер (user-context). m2m отбивается
+        `require_user_context` ниже по цепочке — у oauth_client нет сессий.
+
+    Audit:
+        `user.sessions_listed` (INFO).
+    """
+    return await user_service.list_sessions(
+        db=db,
+        user_id=identity.user_id,
+        current_session_id=_current_session_id(request),
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+
+@router.post(
+    "/me/sessions/revoke",
+    response_model=RevokeSessionsResponse,
+    summary="Logout-all — отозвать все сессии юзера",
+    description=(
+        "Отзывает все активные refresh-сессии юзера. `except_current=true` "
+        "оставляет ту сессию, через `sid` которой пришёл вызов. PAT остаются."
+    ),
+)
+async def revoke_my_sessions(
+    body: RevokeSessionsRequest,
+    request: Request,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> RevokeSessionsResponse:
+    """Logout со всех (или со всех, кроме текущей) устройств.
+
+    Что делает:
+        Помечает `is_active=False` + `revoked_at=now` всем активным
+        сессиям юзера. PAT и bot-токены НЕ трогаются — отдельная identity.
+        Identity-cache сбрасывается, чтобы access-токены с других устройств
+        потеряли доступ к /me/introspect мгновенно (а не через TTL).
+
+    `except_current`:
+        Если `true` и в JWT есть `sid` — пропускаем эту сессию.
+        Если `true`, но `sid` отсутствует (legacy-токен) — делаем полный
+        revoke и логируем `current_session_id=None` (UI должен это видеть
+        как «пришлось всё снести»).
+
+    Доступ:
+        Любой залогиненный юзер (user-context). m2m отбивается.
+
+    Audit:
+        `user.sessions_revoked_all` (CRITICAL) с `revoked_count`.
+    """
+    except_sid: str | None = None
+    if body.except_current:
+        except_sid = _current_session_id(request)
+    revoked = await user_service.revoke_sessions(
+        db=db,
+        user_id=identity.user_id,
+        except_session_id=except_sid,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return RevokeSessionsResponse(revoked_count=revoked)
+
+
+@router.delete(
+    "/me/sessions/{session_id}",
+    response_model=RevokeSessionsResponse,
+    summary="Logout одной конкретной сессии",
+    description="Целевой revoke одной сессии юзера по session_id.",
+    responses={
+        404: {"description": "Сессия не найдена, чужая или уже revoked."},
+    },
+)
+async def revoke_one_my_session(
+    session_id: str,
+    request: Request,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> RevokeSessionsResponse:
+    """Revoke одной сессии.
+
+    Что делает:
+        Помечает `is_active=False` указанную сессию, если она принадлежит
+        текущему юзеру и активна. Иначе 404 `SESSION_NOT_FOUND` — намеренно
+        не отличаем «нет» от «чужая», чтобы не было session-id-oracle.
+
+    Доступ:
+        Только владелец сессии (user-context).
+
+    Audit:
+        `user.session_revoked_one` (WARNING) с `was_current`-флагом.
+    """
+    revoked = await user_service.revoke_one_session(
+        db=db,
+        user_id=identity.user_id,
+        session_id=session_id,
+        current_session_id=_current_session_id(request),
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return RevokeSessionsResponse(revoked_count=revoked)
 
 
 @router.get(

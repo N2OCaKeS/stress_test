@@ -261,14 +261,21 @@ def create_application() -> FastAPI:
 
     # ВАЖНО: Starlette стакает `@app.middleware("http")` в **обратном** порядке
     # регистрации — последний зарегистрированный = outermost. Чтобы достичь
-    # порядка outer→inner: `rate_limit → attach_request_id → platform_admin_guard → audit_access → route`,
+    # порядка outer→inner: `SecurityHeaders → rate_limit → attach_request_id → platform_admin_guard → audit_access → route`,
     # регистрируем их в обратной последовательности (audit_access первым =
-    # innermost, rate_limit последним = outermost).
+    # innermost, rate_limit последним из `@app.middleware`, плюс
+    # `SecurityHeadersMiddleware` добавляется через `add_middleware` ниже и
+    # становится истинным outermost'ом — заголовки попадают на КАЖДЫЙ ответ
+    # (включая 429 rate-limit и 422 валидации), а не только на route-ответы).
     #
     # Зачем такой порядок:
-    #   * `rate_limit_middleware` outermost — 429-ответ всплывает мимо
-    #     `audit_access`, никакого `http.client_error` audit-emit'а на
-    #     rate-limited трафике (иначе slowloris дудосит сам audit-канал).
+    #   * `SecurityHeadersMiddleware` outermost (см. `add_middleware` ниже) —
+    #     HSTS/X-Frame-Options/X-Content-Type-Options/etc. навешиваются на
+    #     любой ответ, в том числе ранние 429 и 422.
+    #   * `rate_limit_middleware` outermost среди `@app.middleware`-стэка —
+    #     429-ответ всплывает мимо `audit_access`, никакого `http.client_error`
+    #     audit-emit'а на rate-limited трафике (иначе slowloris дудосит сам
+    #     audit-канал).
     #   * `attach_request_id_and_context` — выставляет request_id и
     #     audit_context для всего, что прошло rate-limit. Platform-admin
     #     guard ниже использует этот request_id в 403-envelope.

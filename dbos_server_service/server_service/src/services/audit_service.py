@@ -72,11 +72,21 @@ _RETRY_DELAYS_ON_429 = (0.5, 1.5)
 # Сколько событий отброшено после исчерпания retry-бюджета на 429.
 # Монотонный счётчик за время жизни процесса. Ненулевое значение в проде
 # сигналит, что loging_service режет rate-limit'ом наши audit-emit'ы.
+#
+# Known limitation: счётчик per-process. При `uvicorn --workers N` каждый
+# процесс ведёт свой counter — общая картина не агрегируется. Для prod-наблюдаемости
+# вынести в Prometheus Counter (multi-process mode через PROMETHEUS_MULTIPROC_DIR)
+# или Redis INCR; пока — оператор должен суммировать по pod'ам/процессам вручную
+# (`/metrics`-aggregation на уровне scraper'а).
 _audit_dropped_429: int = 0
 
 
 def get_dropped_429_total() -> int:
-    """Сколько audit-событий было отброшено после трёх подряд 429."""
+    """Сколько audit-событий было отброшено после трёх подряд 429.
+
+    Per-process. Multi-worker uvicorn возвращает только локальный счётчик
+    текущего процесса — внешний агрегатор должен суммировать сам.
+    """
     return _audit_dropped_429
 
 

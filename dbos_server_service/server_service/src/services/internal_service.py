@@ -127,16 +127,26 @@ def _check_target_department(
         "actor_department_id": actor_department_id,
     })
 
-    # Actor-vs-server check: всегда блокирующий, не зависит от soft/strict.
-    # Closes cross-department password/credentials leak в soft-mode, где
-    # отсутствие/несовпадение `X-Target-Department-Id` header'а не отбивалось.
-    if actor_department_id is None or actor_department_id != server_department_id:
+    def _emit(reason: str, *, denied: bool) -> None:
+        """Локальный shortcut для audit_service.emit с общим target/action.
+
+        `denied=True` → status=denied/allowed=False (блок), иначе warning/allowed.
+        """
         audit_service.emit(
             audit_action,
             target_id=target_id, target_type=target_type,
-            status="denied", allowed=False,
-            details={**extra, "reason": "actor_department_mismatch"},
+            status="denied" if denied else "warning",
+            allowed=not denied,
+            details={**extra, "reason": reason},
         )
+
+    # Actor-vs-server check: всегда блокирующий, не зависит от soft/strict.
+    # Closes cross-department password/credentials leak в soft-mode, где
+    # отсутствие/несовпадение `X-Target-Department-Id` header'а не отбивалось.
+    # `actor_department_id is None` — platform-роли (account_admin/loging_admin),
+    # которых platform_admin_guard должен был отбить раньше; defense-in-depth.
+    if actor_department_id is None or actor_department_id != server_department_id:
+        _emit("actor_department_mismatch", denied=True)
         raise AuthorizationError(
             error_code="TARGET_DEPARTMENT_MISMATCH",
             message=(
@@ -147,12 +157,7 @@ def _check_target_department(
 
     if header_department_id is None:
         if strict:
-            audit_service.emit(
-                audit_action,
-                target_id=target_id, target_type=target_type,
-                status="denied", allowed=False,
-                details={**extra, "reason": "missing_target_department_header"},
-            )
+            _emit("missing_target_department_header", denied=True)
             raise AuthorizationError(
                 error_code="TARGET_DEPARTMENT_HEADER_REQUIRED",
                 message=(
@@ -162,25 +167,14 @@ def _check_target_department(
                 details={"server_id": target_id},
             )
         # Soft mode: всё равно фиксируем отсутствие как warning-event.
-        audit_service.emit(
-            audit_action,
-            target_id=target_id, target_type=target_type,
-            status="warning", allowed=True,
-            details={**extra, "reason": "missing_target_department_header_soft"},
-        )
+        _emit("missing_target_department_header_soft", denied=False)
         return
 
     if header_department_id != server_department_id:
         # Mismatch эмитим всегда, независимо от режима — это сигнал бага в
         # worker'е (stale payload) или, хуже, PAT'а, который щупает чужие
         # отделы.
-        audit_service.emit(
-            audit_action,
-            target_id=target_id, target_type=target_type,
-            status="denied" if strict else "warning",
-            allowed=not strict,
-            details={**extra, "reason": "target_department_mismatch"},
-        )
+        _emit("target_department_mismatch", denied=strict)
         if strict:
             raise AuthorizationError(
                 error_code="TARGET_DEPARTMENT_MISMATCH",

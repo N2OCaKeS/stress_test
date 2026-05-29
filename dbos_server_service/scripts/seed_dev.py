@@ -432,8 +432,16 @@ def main() -> None:
         ok("  PAT для server_worker (используется автоматически при make up):")
         print(f"\n    {worker_pat}\n")
         try:
-            with open("/shared/.worker_pat", "w") as f:
+            pat_path = "/shared/.worker_pat"
+            with open(pat_path, "w") as f:
                 f.write(worker_pat)
+            # 0600: PAT'у на shared-volume оставляем доступ только владельцу.
+            # На bind-mount'ах (.dev/ в host'е) uid в контейнере и на хосте
+            # могут не совпадать — поэтому chmod best-effort, без падения.
+            try:
+                os.chmod(pat_path, 0o600)
+            except OSError:
+                pass
             ok("  PAT записан в .dev/.worker_pat (mount /shared у seeder и worker)")
         except OSError as exc:
             fail(f"  не удалось записать /shared/.worker_pat: {exc}")

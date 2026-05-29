@@ -168,9 +168,16 @@ services:
       SERVICE_API_KEY: dev-logging-api-key
       WORKER_LOG_LEVEL: INFO
     # If WORKER_BOT_TOKEN is not provided via env but a PAT file is mounted
-    # (written by `make seed`), source it before starting taskiq.
+    # (written by `make seed`), source it before starting taskiq. Seeder
+    # выставляет 0600 на файле; здесь проверяем mode и warn'им если права
+    # шире — bind-mount с host'а может прийти с 0644.
     command: >
       sh -c "if [ -z \"$$WORKER_BOT_TOKEN\" ] && [ -s /shared/.worker_pat ]; then
+               mode=$$(stat -c %a /shared/.worker_pat 2>/dev/null || echo unknown);
+               case \"$$mode\" in
+                 600|400|unknown) : ;;
+                 *) echo \"server_worker: WARNING /shared/.worker_pat mode=$$mode (expected 600)\" ;;
+               esac;
                export WORKER_BOT_TOKEN=$$(cat /shared/.worker_pat);
                echo 'server_worker: loaded WORKER_BOT_TOKEN from /shared/.worker_pat';
              fi;

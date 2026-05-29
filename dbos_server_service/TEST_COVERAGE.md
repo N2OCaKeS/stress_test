@@ -7,7 +7,7 @@
 | [auth_service](#auth_service) | production-ready | **943** | `make test-auth`, `make test-auth-e2e` |
 | [loging_service](#loging_service) | production-ready | **777** | `make test-logging` |
 | [server_service](#server_service) | production-ready, 0 stubs | **816** | `make test-server` |
-| [server_worker](#server_worker) | production-ready, 4 hw-клиента (Redfish/ipmitool/SSH/PXE) | **1486** | `make test-worker` |
+| [server_worker](#server_worker) | production-ready, 3 hw-клиента (Redfish/ipmitool/SSH) | **1486** | `make test-worker` |
 | [tests/integration](#cross-service-integration) | cross-service auth↔logging↔server | — | `make test-integration` |
 | `config_service` | не начат | — | — |
 | `web_settings` | не начат | — | — |
@@ -259,9 +259,9 @@ matrix. Заглушки 501 (`server_accounts`, `inventory`, `installed_package
   (admin OK, остальные по матрице); account_admin bypass (**21**).
 - [`test_ipmi_endpoints.py`](server_service/tests/test_ipmi_endpoints.py) —
   3 power endpoints (on/off/reboot): 202 + `tsk_*` task_id, dispatch check,
-  payload + created_by, permission (reader → 403, operator → 200); 10 stubs 501
-  (GET /ipmi, PUT/DELETE /ipmi, /credentials, /credentials/rotate, GET /power,
-  boot-order, boot/pxe-once, reinstall) (**11**).
+  payload + created_by, permission (reader → 403, operator → 200) (**11**).
+  Boot-order/reinstall endpoint'ов нет — pipeline вырезан миграцией
+  `b8d4e3f9a712`.
 - [`test_roles_endpoints.py`](server_service/tests/test_roles_endpoints.py) —
   GET (reader OK, guest → 403, bearer forwarding), POST (admin_role OK, reader
   → 403), DELETE (admin_role OK, reader → 403); auth_service unreachable → 503 (**12**).
@@ -338,12 +338,12 @@ handlers, модель Task, HTTP-клиенты, mock'и iDRAC/SSH, enum'ы.
   (load → mark_running → impl → mark_succeeded → audit success); exception →
   mark_failed (`Type: message` в `last_error`) + audit failure; `task_not_found`
   (audit без mark_running); fallback target_id → task_id; attempt 0→1 (**8**).
-- [`test_task_handlers.py`](server_worker/tests/test_task_handlers.py) — все 8
-  хендлеров: `power.{on,off,reboot,status}` (+ credentials_fetch_failure + KeyError),
+- [`test_task_handlers.py`](server_worker/tests/test_task_handlers.py) — хендлеры:
+  `power.{on,off,reboot,status}` (+ credentials_fetch_failure + KeyError),
   `inventory.sync` (default `ssh_login=root`, account override), `account.rotate_password`
   (full flow fetch → ssh → submit, **password secrecy в audit**),
-  `ipmi.rotate_password` (idrac), `reinstall.start` (stub `phase=queued_for_real_impl`,
-  os_version optional), `_generate_password()` (uniqueness, length ≥ 24) (**17**).
+  `ipmi.rotate_password` (idrac), `_generate_password()` (uniqueness, length ≥ 24)
+  (**17**). `reinstall.start` вырезан вместе с PXE-pipeline'ом.
 - [`test_task_model.py`](server_worker/tests/test_task_model.py) — ORM Task: defaults
   (status=queued, attempt=0, max_attempts=3, payload={}, enqueued_at=now()); UNIQUE
   `idempotency_key` → IntegrityError; NULL не нарушает UNIQUE (PostgreSQL); JSONB

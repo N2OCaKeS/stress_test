@@ -19,7 +19,7 @@
 - `auth_service` — единая точка аутентификации и авторизации;
 - `logging_service` — централизованный аудит действий;
 - `server_service` — операции по управлению серверами (REST-фасад);
-- `server_worker` — фоновый исполнитель hardware-задач (Redfish / ipmitool / SSH / PXE);
+- `server_worker` — фоновый исполнитель hardware-задач (Redfish / ipmitool / SSH);
 - `config_service` — хранение и выдача секретов и служебных учётных данных (отложен);
 - `web_settings` — web-интерфейс для администрирования платформы (отложен);
 - `cli` — кроссплатформенный CLI-клиент для работы с сервисами из консоли (отложен).
@@ -144,7 +144,7 @@
 
 ### `server_service`
 
-Отвечает за жизненный цикл серверов, операции управления и интеграцию с низкоуровневыми интерфейсами вроде `iDRAC`, `iLO` и `PXE`.
+Отвечает за жизненный цикл серверов, операции управления и интеграцию с низкоуровневыми интерфейсами вроде `iDRAC`, `iLO` и SSH-управления хостом.
 
 Сам сервис — это REST-фасад: хранит модели серверов/IPMI/аккаунтов/каталоги, шифрует пароли (AES-256-GCM с версионированием ключа), валидирует action-based права и **диспетчеризует hardware-операции в `server_worker`** через taskiq+Redis. Прямого общения с BMC у `server_service` нет.
 
@@ -152,12 +152,11 @@
 
 Фоновый исполнитель задач, делегированных `server_service`. Не имеет HTTP-API. Стек: `taskiq` + Redis broker, своя БД `dev_server_worker` (`tasks`, `audit_outbox`, `worker_heartbeats`).
 
-Содержит 4 hardware-клиента в `clients/`:
+Содержит 3 hardware-клиента в `clients/`:
 
 - **Redfish** (iDRAC/iLO),
 - **ipmitool** (fallback для legacy BMC: Supermicro X9/X10),
-- **SSH** (`asyncssh` для `inventory.sync` и `chpasswd`),
-- **PXE** (next-boot=PXE → reboot → ожидание host'а для `reinstall.start`).
+- **SSH** (`asyncssh` для `inventory.sync` и `chpasswd`).
 
 Выбор между Redfish и ipmitool делает dispatcher `get_bmc_client` через HEAD `/redfish/v1/` probe; ошибки маппятся на унифицированные коды `BMC_UNREACHABLE` / `BMC_AUTH_FAILED` / `BMC_REJECTED` / `BMC_TIMEOUT` / `BMC_ERROR`.
 

@@ -40,6 +40,27 @@ class Settings(BaseSettings):
         ...,
         description="PostgreSQL async DSN for the worker's own DB (dev_server_worker)",
     )
+    db_pool_size: int = Field(
+        default=5,
+        ge=1,
+        alias="DB_POOL_SIZE",
+        description=(
+            "SQLAlchemy pool_size для воркер-engine. Дефолт 5 рассчитан на "
+            "1-2 active handler'а + heartbeat/sweep/outbox-publisher. При "
+            "более широкой concurrency (taskiq --workers >2, выше "
+            "WORKER_HANDLER_CONCURRENCY) — поднимать через env."
+        ),
+    )
+    db_max_overflow: int = Field(
+        default=10,
+        ge=0,
+        alias="DB_MAX_OVERFLOW",
+        description=(
+            "SQLAlchemy max_overflow поверх pool_size. Burst-кап на короткие "
+            "пики (fan-out reconcile, drain). Должен быть >= ожидаемого burst'а "
+            "минус pool_size."
+        ),
+    )
     redis_url: str = Field(
         default="redis://redis:6379/0",
         description=(

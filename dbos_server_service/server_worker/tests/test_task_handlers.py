@@ -467,9 +467,19 @@ class TestAccountRotate:
 class _FakeRedfishForRotate:
     """Stand-in для RedfishClient в IPMI-rotate тестах."""
 
-    def __init__(self, *, raise_on_rotate: bool = False):
+    def __init__(
+        self,
+        *,
+        raise_on_rotate: bool = False,
+        raise_on_verify: bool = False,
+        power_state: str = "On",
+    ):
         self._raise = raise_on_rotate
+        self._raise_verify = raise_on_verify
+        self._power_state = power_state
         self.rotate_calls: list[tuple[int, str]] = []
+        self.get_power_state_calls: int = 0
+        self.aclose_calls: int = 0
 
     async def __aenter__(self): return self
     async def __aexit__(self, *a): pass
@@ -480,16 +490,31 @@ class _FakeRedfishForRotate:
             raise RedfishError(500, "patch failed")
         self.rotate_calls.append((user_id, new_password))
 
+    async def get_power_state(self) -> str:
+        # Используется verify-шагом ротации (`dispatch_get_power_state`).
+        self.get_power_state_calls += 1
+        if self._raise_verify:
+            from src.clients.redfish import RedfishError
+            raise RedfishError(401, "auth failed")
+        return self._power_state
+
+    async def aclose(self) -> None:
+        self.aclose_calls += 1
+
 
 class TestIpmiRotate:
-    """Storage-first ordering: ciphertext в server_service ДО PATCH'а BMC.
+    """Verify-then-submit ordering: BMC apply → verify (новый пароль) →
+    submit ciphertext в server_service с `verified_at`.
 
-    Если storage упал — BMC не трогается (доступ сохранён).
-    Если BMC упал — storage уже сохранил новый ciphertext, оператор повторно
-    дёргает rotate для re-sync (recoverable).
+    Если BMC apply упал — submit НЕ зовётся (storage остался со старым).
+    Если verify упал — submit НЕ зовётся, task FAILED `BMC_VERIFY_AFTER_ROTATE_FAILED`
+    (BMC мог принять или нет, но мы не подтвердили — лучше не коммитить
+    в storage потенциально невалидный пароль).
+    Если submit упал — задача FAILED (BMC уже на новом пароле, оператор
+    пересинхронизирует вручную или через retry).
     """
 
-    async def test_full_flow_storage_then_bmc(
+    async def test_full_flow_bmc_then_verify_then_submit(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):
         tid = await make_task(
@@ -507,12 +532,25 @@ class TestIpmiRotate:
                 "password": "old",
             }
 
-        submit_calls: list[tuple[str, str, str]] = []
-        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None):
-            submit_calls.append((controller_id, new_password, rotated_at))
+        submit_calls: list[dict] = []
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
+            submit_calls.append({
+                "controller_id": controller_id,
+                "new_password": new_password,
+                "rotated_at": rotated_at,
+                "verified_at": verified_at,
+            })
             return {"rotated_at": "2026-05-21T10:00:00Z"}
 
+        # Один и тот же fake — apply и verify дёргают `get_power_state`
+        # на новом клиенте, но `_get_bmc` мы мокаем, так что обе фазы
+        # получают этот же объект.
         fake_rf = _FakeRedfishForRotate()
+        bmc_creds_seen: list[str] = []
+
+        async def _bmc_factory(creds, *, prefer="redfish"):
+            bmc_creds_seen.append(creds["password"])
+            return fake_rf
 
         monkeypatch.setattr(
             "src.tasks.passwords.server_service_client.fetch_ipmi_credentials", fake_fetch,
@@ -521,21 +559,26 @@ class TestIpmiRotate:
             "src.tasks.passwords.server_service_client.submit_rotated_ipmi_password",
             fake_submit,
         )
-        async def _bmc_factory(creds, *, prefer="redfish"):
-            return fake_rf
         monkeypatch.setattr("src.tasks.passwords._get_bmc", _bmc_factory)
 
         await passwords.ipmi_rotate_password.original_func(tid)
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
-        # storage был вызван с controller_id, новым паролем и rotated_at
+        # BMC apply действительно был вызван.
+        assert len(fake_rf.rotate_calls) == 1
+        new_password = fake_rf.rotate_calls[0][1]
+        assert fake_rf.rotate_calls[0][0] == 2  # default user_id=2
+        # Verify был сделан с НОВЫМ паролем (вторая фабрика BMC получила
+        # его в creds).
+        assert bmc_creds_seen == ["old", new_password]
+        assert fake_rf.get_power_state_calls == 1
+        # Submit был вызван один раз, с `verified_at` и тем же паролем.
         assert len(submit_calls) == 1
-        assert submit_calls[0][0] == "ipm_1"
-        new_password = submit_calls[0][1]
-        assert submit_calls[0][2]  # rotated_at ISO string
-        # тот же пароль ушёл в BMC PATCH
-        assert fake_rf.rotate_calls == [(2, new_password)]  # default user_id=2
+        assert submit_calls[0]["controller_id"] == "ipm_1"
+        assert submit_calls[0]["new_password"] == new_password
+        assert submit_calls[0]["rotated_at"]
+        assert submit_calls[0]["verified_at"]
         assert t.result["server_id"] == "srv_1"
         # IP/endpoint BMC наружу не уходит — в result только controller_id.
         assert t.result["controller_id"] == "ipm_1"
@@ -547,10 +590,10 @@ class TestIpmiRotate:
         assert captured_audit[0]["action"] == "ipmi_controller.password_rotate"
         assert captured_audit[0]["status"] == "success"
 
-    async def test_storage_failure_skips_bmc(
+    async def test_bmc_apply_failure_skips_submit(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):
-        """Если submit_rotated_ipmi_password упал — RedfishClient.rotate НЕ вызывается."""
+        """BMC apply упал — submit_rotated_ipmi_password НЕ вызывается."""
         tid = await _make_task_max1(
             make_task,
             task_kind="ipmi.rotate_password",
@@ -565,7 +608,104 @@ class TestIpmiRotate:
                 "endpoint_url": "https://bmc", "username": "u", "password": "p",
             }
 
-        async def boom_submit(controller_id, new_password, rotated_at, target_department_id=None):
+        submit_calls: list = []
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
+            submit_calls.append(controller_id)
+            return {"rotated_at": "x"}
+
+        monkeypatch.setattr(
+            "src.tasks.passwords.server_service_client.fetch_ipmi_credentials", fake_fetch,
+        )
+        monkeypatch.setattr(
+            "src.tasks.passwords.server_service_client.submit_rotated_ipmi_password",
+            fake_submit,
+        )
+        async def _bmc_raising(creds, *, prefer="redfish"):
+            return _FakeRedfishForRotate(raise_on_rotate=True)
+        monkeypatch.setattr("src.tasks.passwords._get_bmc", _bmc_raising)
+
+        await passwords.ipmi_rotate_password.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert submit_calls == [], "submit must not be called if BMC apply failed"
+        assert "BMC_ERROR" in t.last_error
+        assert captured_audit[0]["status"] == "failure"
+
+    async def test_verify_failure_skips_submit(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """BMC apply прошёл, но verify под новым паролем упал —
+        submit НЕ вызывается, task FAILED с `BMC_VERIFY_AFTER_ROTATE_FAILED`."""
+        tid = await _make_task_max1(
+            make_task,
+            task_kind="ipmi.rotate_password",
+            target_server_id="srv_1",
+            payload={"server_id": "srv_1"},
+        )
+        _patch_no_retry(monkeypatch)
+
+        async def fake_fetch(server_id, target_department_id=None):
+            return {
+                "controller_id": "ipm_1",
+                "endpoint_url": "https://bmc", "username": "u", "password": "p",
+            }
+
+        submit_calls: list = []
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
+            submit_calls.append(controller_id)
+            return {"rotated_at": "x"}
+
+        # `_get_bmc` зовётся дважды: один раз для apply, второй для verify.
+        # Apply должен пройти, verify — упасть. Поэтому возвращаем новый
+        # fake каждый раз и помечаем второй как `raise_on_verify`.
+        bmc_seq: list[_FakeRedfishForRotate] = [
+            _FakeRedfishForRotate(),  # apply
+            _FakeRedfishForRotate(raise_on_verify=True),  # verify
+        ]
+        idx = {"n": 0}
+        async def _bmc_factory(creds, *, prefer="redfish"):
+            cli = bmc_seq[idx["n"]]
+            idx["n"] += 1
+            return cli
+
+        monkeypatch.setattr(
+            "src.tasks.passwords.server_service_client.fetch_ipmi_credentials", fake_fetch,
+        )
+        monkeypatch.setattr(
+            "src.tasks.passwords.server_service_client.submit_rotated_ipmi_password",
+            fake_submit,
+        )
+        monkeypatch.setattr("src.tasks.passwords._get_bmc", _bmc_factory)
+
+        await passwords.ipmi_rotate_password.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert submit_calls == [], "submit must not be called if verify failed"
+        assert "BMC_VERIFY_AFTER_ROTATE_FAILED" in t.last_error
+        assert captured_audit[0]["status"] == "failure"
+        # Apply прошёл (на первом клиенте), verify запустился на втором.
+        assert len(bmc_seq[0].rotate_calls) == 1
+        assert bmc_seq[1].get_power_state_calls == 1
+
+    async def test_submit_failure_after_verify_marks_failed(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """BMC apply + verify прошли, submit упал — task FAILED."""
+        tid = await _make_task_max1(
+            make_task,
+            task_kind="ipmi.rotate_password",
+            target_server_id="srv_1",
+            payload={"server_id": "srv_1"},
+        )
+        _patch_no_retry(monkeypatch)
+
+        async def fake_fetch(server_id, target_department_id=None):
+            return {
+                "controller_id": "ipm_1",
+                "endpoint_url": "https://bmc", "username": "u", "password": "p",
+            }
+
+        async def boom_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
             raise CredentialFetchError(
                 error_code="IPMI_ROTATE_REJECTED", message="404",
             )
@@ -585,45 +725,10 @@ class TestIpmiRotate:
         await passwords.ipmi_rotate_password.original_func(tid)
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
-        assert fake_rf.rotate_calls == [], "BMC must not be touched if storage rejected"
+        # BMC apply и verify прошли.
+        assert len(fake_rf.rotate_calls) == 1
+        assert fake_rf.get_power_state_calls == 1
         assert "CredentialFetchError" in t.last_error
-        assert captured_audit[0]["status"] == "failure"
-
-    async def test_bmc_failure_after_storage_marks_failed(
-        self, make_task, fetch_task, captured_audit, monkeypatch,
-    ):
-        """Если storage прошёл, а BMC упал — task failed, оператор пересинхронизирует."""
-        tid = await _make_task_max1(
-            make_task,
-            task_kind="ipmi.rotate_password",
-            target_server_id="srv_1",
-            payload={"server_id": "srv_1"},
-        )
-        _patch_no_retry(monkeypatch)
-
-        async def fake_fetch(server_id, target_department_id=None):
-            return {
-                "controller_id": "ipm_1",
-                "endpoint_url": "https://bmc", "username": "u", "password": "p",
-            }
-        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None):
-            return {"rotated_at": "2026-05-21T10:00:00Z"}
-
-        monkeypatch.setattr(
-            "src.tasks.passwords.server_service_client.fetch_ipmi_credentials", fake_fetch,
-        )
-        monkeypatch.setattr(
-            "src.tasks.passwords.server_service_client.submit_rotated_ipmi_password",
-            fake_submit,
-        )
-        async def _bmc_raising(creds, *, prefer="redfish"):
-            return _FakeRedfishForRotate(raise_on_rotate=True)
-        monkeypatch.setattr("src.tasks.passwords._get_bmc", _bmc_raising)
-
-        await passwords.ipmi_rotate_password.original_func(tid)
-        t = await fetch_task(tid)
-        assert t.status == TaskStatus.FAILED
-        assert "BMC_ERROR" in t.last_error
         assert captured_audit[0]["status"] == "failure"
 
     async def test_user_id_override_from_payload(
@@ -639,7 +744,7 @@ class TestIpmiRotate:
                 "controller_id": "ipm_1",
                 "endpoint_url": "https://bmc", "username": "u", "password": "p",
             }
-        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None):
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
             return {"rotated_at": "now"}
 
         fake_rf = _FakeRedfishForRotate()
@@ -673,7 +778,7 @@ class TestIpmiRotate:
             }
 
         captured_pwd = {}
-        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None):
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
             captured_pwd["pwd"] = new_password
             return {"rotated_at": "x"}
 

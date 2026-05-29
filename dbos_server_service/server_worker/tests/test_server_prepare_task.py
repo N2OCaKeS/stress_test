@@ -247,11 +247,56 @@ class TestPrepareHandler:
         await prepare.server_prepare.original_func(tid)
 
         t = await fetch_task(tid)
-        # Plaintext-кред в payload нет — только ссылка на Redis-ключ.
+        # Plaintext-кред в payload нет — только ссылка на Redis-ключ, и та
+        # после успешного prepare замаскирована scrub'ом (defense-in-depth:
+        # ссылку в Redis-неймспейс не оставляем «висеть» в worker.tasks).
         assert "bootstrap_login" not in (t.payload or {})
         assert "bootstrap_password" not in (t.payload or {})
-        assert t.payload["bootstrap_creds_key"] == "dbos:prepare_creds:pcd_y"
+        assert t.payload["bootstrap_creds_key"] == "<scrubbed>"
         assert t.payload["server_id"] == "srv_prep2"
+
+        get_settings.cache_clear()
+
+    async def test_scrub_replaces_bootstrap_creds_key_on_success(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """После успешного `submit_prepared` ключ `bootstrap_creds_key`
+        в `tasks.payload` замаскирован на `<scrubbed>` — оператор с SELECT
+        на worker.tasks не может попытаться прочитать секрет в Redis,
+        даже если TTL ещё не истёк."""
+        _set_mgmt_env(monkeypatch)
+        _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
+        original_key = "dbos:prepare_creds:pcd_scrub"
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prep_scrub",
+            payload={
+                "server_id": "srv_prep_scrub",
+                "bootstrap_creds_key": original_key,
+            },
+        )
+        conn = _conn(_bootstrap_seq())
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # Ключ замаскирован, но строка осталась в форенсике («здесь был ключ»).
+        assert t.payload.get("bootstrap_creds_key") == "<scrubbed>"
+        # Остальной payload остался нетронут.
+        assert t.payload.get("server_id") == "srv_prep_scrub"
+        # Plaintext-creds, разумеется, тоже не появились.
+        assert "bootstrap_login" not in t.payload
+        assert "bootstrap_password" not in t.payload
 
         get_settings.cache_clear()
 

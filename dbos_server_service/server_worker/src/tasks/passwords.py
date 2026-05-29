@@ -8,20 +8,23 @@
 → Redfish PATCH `/Accounts/{user_id}` либо fallback `ipmitool user set password`
 для legacy BMC без Redfish.
 
-**Storage-first ordering для IPMI.** В отличие от account-ротации, где
-ciphertext сохраняется ПОСЛЕ применения на сервере (если applying упадёт,
-старый пароль ещё валиден), у IPMI порядок инвертирован:
+**Verify-then-submit для IPMI.** В отличие от account-ротации, где
+ciphertext сохраняется ПОСЛЕ применения на сервере, у IPMI поток такой:
 
-  1. сгенерить пароль;
-  2. отправить **plaintext** в server_service → он шифрует + сохраняет;
-  3. ТОЛЬКО ПОСЛЕ успешного storage round-trip'а — отправить на BMC.
+  1. сгенерить пароль и положить в Redis-stash под task_id (TTL);
+  2. отправить на BMC (Redfish PATCH или ipmitool user set password);
+  3. сделать read-only вызов BMC с НОВЫМ паролем (`get_power_state`) —
+     это доказывает, что BMC реально принял пароль (не отверг тихо по
+     policy сложности и не вернулся к старому);
+  4. ТОЛЬКО при успешном verify — отправить plaintext в server_service
+     вместе с `verified_at`. Сервер шифрует и сохраняет.
 
-Иначе если worker умрёт между «BMC сменил пароль» и «storage сохранил»,
-доступ к iDRAC потерян навсегда (нет ни у кого plaintext'а). Storage-first
-не идеален (BMC может остаться со старым паролем, но ciphertext указывает
-на новый), но это recoverable: оператор видит mismatch в audit и
-повторно дёргает rotate. Inverse situation (BMC ушёл, storage нет) —
-**не recoverable**.
+Без verify storage мог бы хранить пароль, который BMC отверг — следующая
+ротация попыталась бы зайти ciphertext'ом, который никогда не работал, и
+out-of-band доступ к iDRAC пропал бы без шумного сигнала. Если verify
+упал — submit НЕ зовём, задача FAILED с reason `verify_after_rotate_failed`;
+stash в Redis с in-flight паролем живёт до TTL, оператор может разобраться
+вручную или дождаться следующего retry.
 """
 
 from __future__ import annotations
@@ -38,7 +41,11 @@ from src.clients.redfish import RedfishError
 from src.core.config import get_settings
 from src.main import broker
 from src.services import server_service_client, ssh_client
-from src.tasks._bmc_errors import dispatch_rotate_user_password, wrap_bmc_error
+from src.tasks._bmc_errors import (
+    dispatch_get_power_state,
+    dispatch_rotate_user_password,
+    wrap_bmc_error,
+)
 from src.tasks._bmc_helpers import aclose_bmc as _aclose_bmc
 from src.tasks._bmc_helpers import get_bmc as _get_bmc
 from src.tasks._runner import run_task
@@ -238,16 +245,28 @@ async def account_rotate_password(task_id: str) -> None:
 async def ipmi_rotate_password(task_id: str) -> None:
     """Ротировать пароль IPMI-контроллера через Redfish или ipmitool.
 
-    Flow (storage-first ordering, см. module docstring):
+    Flow (verify-then-submit):
 
-      1. `fetch_ipmi_credentials` — для login'а на BMC старым паролем.
+      1. `fetch_ipmi_credentials` — login на BMC старым паролем.
       2. `secrets.token_urlsafe(24)` — новый пароль (CSPRNG, ASCII-safe).
-      3. `submit_rotated_ipmi_password` → server_service шифрует + хранит.
-         Только теперь у нас «commit point»: ciphertext в storage.
-      4. `get_bmc_client` → выбор Redfish vs ipmitool → ротация на BMC.
-      5. Если шаг 4 упал — handler raise'ит исключение, `_runner` запишет
-         failure-audit. У storage уже новый ciphertext, у BMC — старый.
-         Recoverable: оператор повторно дёргает rotate.
+         Stash в Redis под `_IPMI_ROTATE_KEY_PREFIX` с TTL — единый пароль
+         на все попытки одной dispatch'и (см. комментарий ниже).
+      3. `dispatch_rotate_user_password` → BMC apply (Redfish PATCH либо
+         ipmitool user set password).
+      4. `dispatch_get_power_state` под НОВЫМ паролем — read-only verify,
+         доказательство что BMC действительно принял пароль (не отверг
+         тихо по policy, не вернулся к старому). Не verify прошёл → не
+         коммитим storage; задача FAILED.
+      5. `submit_rotated_ipmi_password` с `verified_at` → server_service
+         шифрует + хранит. server_service отказывает без `verified_at`.
+      6. DELETE stash.
+
+    Если verify (шаг 4) упал — submit НЕ зовём, поднимаем исключение
+    `BMC_VERIFY_AFTER_ROTATE_FAILED`. Storage остаётся со старым ciphertext,
+    BMC — с новым паролем (если apply прошёл) или со старым (если apply
+    откатил). Stash в Redis с in-flight паролем доживёт до TTL, оператор
+    видит mismatch в audit и решает: подождать ещё один retry или
+    разбираться вручную.
 
     Параметры: `task_id`. Payload — `server_id`, опционально
     `target_department_id`, опционально `user_id` (override default из
@@ -259,7 +278,7 @@ async def ipmi_rotate_password(task_id: str) -> None:
 
     Возможные ошибки: `CredentialFetchError(IPMI_CREDENTIALS_UNAVAILABLE
     | IPMI_ROTATE_REJECTED | SERVER_SERVICE_UNREACHABLE)`,
-    `AppException(BMC_*)`.
+    `AppException(BMC_*)`, в т.ч. `BMC_VERIFY_AFTER_ROTATE_FAILED`.
 
     Связано с: `ipmi_controller.password_rotate` audit action,
     `server_service` endpoint `POST .../ipmi/credentials_rotated`.
@@ -275,35 +294,21 @@ async def ipmi_rotate_password(task_id: str) -> None:
 
         # Один и тот же пароль на все попытки одной dispatch'и. При retry'е
         # `_impl` запускается заново; без stash'а мы бы каждый раз генерили
-        # новый ключ → перезаписывали storage чужим plaintext'ом → при
-        # финальном `mark_failed` storage хранит пароль, который НИКОГДА не
-        # доехал до BMC. С Redis-stash'ем все retry'и видят тот же пароль:
-        # storage синхронен сам с собой, BMC либо принял его, либо нет —
-        # повторный rotate генерит новый ключ и заходит в обычный happy-
-        # path.
+        # новый ключ. Тогда apply на BMC выставил бы один пароль, а на
+        # следующем retry'е submit ушёл бы с другим — storage разъехался бы
+        # с BMC. С Redis-stash'ем все retry'и видят тот же пароль и
+        # сходятся к одному и тому же ciphertext'у.
         stashed_password = await _read_ipmi_rotate_password(task_id)
         if stashed_password is None:
             # CSPRNG-пароль: 24 байта ≈ 32-символьный URL-safe string. Лимит
             # iDRAC9 — 40 символов, влезает с запасом. token_urlsafe не
             # гарантирует «все 4 класса», но iDRAC принимает любой ASCII;
             # PAM-чек тут не применим, BMC не часть OS.
-            new_password = secrets.token_urlsafe(24)
-            # Stash ДО `submit_rotated_ipmi_password`: даже если POST'нём
-            # plaintext, а потом упадём transient'ом до того, как retry
-            # дойдёт сюда — Redis уже знает «текущий in-flight пароль».
+            new_password = _generate_password()
             await _store_ipmi_rotate_password(task_id, new_password)
         else:
             new_password = stashed_password
         rotated_at = datetime.now(timezone.utc).isoformat()
-
-        # ── STORAGE-FIRST: commit plaintext в server_service до BMC ───
-        # server_service сам шифрует и сохраняет ciphertext; worker
-        # не держит SERVER_ENCRYPTION_KEY. На retry'е этот POST идемпотентен
-        # на уровне ciphertext'а — server_service просто перешифровывает
-        # тот же plaintext.
-        confirmation = await server_service_client.submit_rotated_ipmi_password(
-            controller_id, new_password, rotated_at, target_dept,
-        )
 
         # ── BMC apply: Redfish PATCH либо ipmitool user set password ───
         client = await _get_bmc(creds)
@@ -314,6 +319,37 @@ async def ipmi_rotate_password(task_id: str) -> None:
                 raise wrap_bmc_error("ipmi_rotate_password", exc) from exc
         finally:
             await _aclose_bmc(client)
+
+        # ── BMC verify: read-only call с НОВЫМ паролем ──────────────────
+        # Доказательство, что BMC действительно сохранил новый пароль —
+        # пере-аутентифицируемся новым ключом и опрашиваем power state
+        # (легчайший read-op в Redfish и ipmitool). Если этот шаг падает с
+        # auth — BMC отверг пароль (например, policy сложности), и в
+        # storage его класть НЕЛЬЗЯ, иначе следующая ротация попробует
+        # зайти ciphertext'ом, который никогда не работал.
+        verify_creds = dict(creds)
+        verify_creds["password"] = new_password
+        verify_client = await _get_bmc(verify_creds)
+        try:
+            try:
+                await dispatch_get_power_state(verify_client)
+            except (RedfishError, IpmitoolError) as exc:
+                wrapped = wrap_bmc_error("ipmi_rotate_password", exc)
+                wrapped.error_code = "BMC_VERIFY_AFTER_ROTATE_FAILED"
+                raise wrapped from exc
+        finally:
+            await _aclose_bmc(verify_client)
+
+        verified_at = datetime.now(timezone.utc).isoformat()
+
+        # ── Storage commit: только после verify ─────────────────────────
+        # server_service шифрует и сохраняет ciphertext; worker не держит
+        # `SERVER_ENCRYPTION_KEY`. Без `verified_at` server_service
+        # отвергает запрос.
+        confirmation = await server_service_client.submit_rotated_ipmi_password(
+            controller_id, new_password, rotated_at, target_dept,
+            verified_at=verified_at,
+        )
 
         # Успех — больше не нужен stash. TTL подстрахует, но явный DELETE
         # сокращает окно жизни plaintext'а в Redis.

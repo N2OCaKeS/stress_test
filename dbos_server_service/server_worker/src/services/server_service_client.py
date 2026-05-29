@@ -450,6 +450,7 @@ async def submit_rotated_ipmi_password(
     new_password: str,
     rotated_at: str,
     target_department_id: str | None = None,
+    verified_at: str | None = None,
 ) -> dict:
     """Отдать сгенерированный IPMI-пароль обратно в server_service.
 
@@ -458,18 +459,19 @@ async def submit_rotated_ipmi_password(
     server_service шифрует через `secrets_service.encrypt()` (AES-256-GCM
     + master-key) и сохраняет ciphertext в `ipmi_controllers.password_encrypted`.
 
-    Контракт: worker отдаёт plaintext по TLS внутри cluster'а; encrypt'ит
-    приёмная сторона — у worker'а нет `SERVER_ENCRYPTION_KEY`. Этот
-    round-trip обязателен ДО `RedfishClient.rotate_user_password` —
-    иначе если процесс умрёт между «BMC сменил пароль» и «storage
-    сохранил», out-of-band доступ потерян навсегда.
+    Контракт: worker применяет новый пароль на BMC, делает read-only verify
+    запрос с НОВЫМ паролем (доказательство что BMC принял), и только потом
+    POST'ит plaintext в server_service вместе с `verified_at`. server_service
+    отказывает в записи без `verified_at` — иначе ciphertext мог бы хранить
+    пароль, который BMC не принял (например, политика сложности).
 
     `ipmi_controller_id` — id записи в `ipmi_controllers`, не `server_id`
     (resource у endpoint'а — controller). Worker берёт его из
     `fetch_ipmi_credentials` response.
 
-    `rotated_at` — ISO-8601 UTC timestamp момента генерации пароля
-    (worker фиксирует ДО storage round-trip'а).
+    `rotated_at` — ISO-8601 UTC timestamp момента генерации пароля.
+    `verified_at` — ISO-8601 UTC timestamp успешного verify-вызова к BMC
+    с новым паролем (BMC подтвердил применение).
 
     Возвращает: `{ok, rotated_at}` от
     `POST /api/server/v1/internal/ipmi-controllers/{controller_id}/credentials_rotated`.
@@ -477,19 +479,23 @@ async def submit_rotated_ipmi_password(
     Возможные ошибки: `CredentialFetchError` с `error_code`:
       * `SERVER_SERVICE_UNREACHABLE` — transport.
       * `IPMI_ROTATE_REJECTED` — server_service вернул не 200
-        (валидация policy, dept-mismatch, отказ хранилища).
+        (валидация policy, dept-mismatch, отказ хранилища, отсутствие
+        `verified_at`).
     """
     settings = get_settings()
     url = (
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/ipmi-controllers/{ipmi_controller_id}/credentials_rotated"
     )
+    body: dict = {"new_password": new_password, "rotated_at": rotated_at}
+    if verified_at is not None:
+        body["verified_at"] = verified_at
     client = get_server_service_client()
     try:
         response = await client.post(
             url,
             headers=_headers(target_department_id),
-            json={"new_password": new_password, "rotated_at": rotated_at},
+            json=body,
         )
     except httpx.HTTPError as exc:
         raise CredentialFetchError(

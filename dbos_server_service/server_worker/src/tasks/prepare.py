@@ -28,7 +28,9 @@ import redis.asyncio as aioredis
 
 from src.clients.ssh import SshError
 from src.core.config import get_settings
+from src.db.session import AsyncSessionLocal
 from src.main import broker
+from src.repositories import task as task_repo
 from src.services import server_service_client, ssh_client
 from src.tasks._runner import run_task
 
@@ -240,6 +242,26 @@ async def server_prepare(task_id: str) -> None:
         if creds_key and isinstance(creds_key, str) and _BOOTSTRAP_KEY_RE.fullmatch(creds_key):
             await _delete_bootstrap_creds(creds_key)
         await _delete_bootstrap_succeeded(task_id)
+        # Defense-in-depth: `bootstrap_creds_key` сам по себе — это ссылка
+        # в Redis-неймспейс с одноразовыми bootstrap-кредами. TTL и явный
+        # DELETE уже закрыли значение в Redis, но ссылка в `tasks.payload`
+        # остаётся жить вместе с task-row до retention cleanup'а. Стираем
+        # её, чтобы оператор с SELECT на worker.tasks не мог попытаться
+        # прочитать секрет (например, если в каком-то окружении TTL ещё
+        # не истёк, либо DELETE упал). Best-effort: если scrub упадёт —
+        # task уже SUCCEEDED, ронять happy-path нет смысла.
+        try:
+            async with AsyncSessionLocal() as scrub_session:
+                await task_repo.scrub_payload_keys(
+                    scrub_session, task_id, ["bootstrap_creds_key"],
+                )
+                await scrub_session.commit()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "failed to scrub bootstrap_creds_key from payload",
+                exc_info=True,
+                extra={"task_id": task_id},
+            )
         return {
             "server_id": server_id,
             "management_user": management_user,

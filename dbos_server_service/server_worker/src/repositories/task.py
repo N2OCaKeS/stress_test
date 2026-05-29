@@ -85,14 +85,26 @@ async def mark_running(
     return task
 
 
-async def scrub_payload_keys(db: AsyncSession, task_id: str, keys: list[str]) -> None:
-    """Удалить заданные ключи из персистентного `tasks.payload`.
+async def scrub_payload_keys(
+    db: AsyncSession,
+    task_id: str,
+    keys: list[str],
+    *,
+    replacement: str | None = "<scrubbed>",
+) -> None:
+    """Стереть секретные значения из персистентного `tasks.payload`.
 
-    Используется для одноразовых bootstrap-кред (`server.prepare`): креды
-    приходят в payload через cross-DB dispatch-канал, и handler стирает их
-    из строки сразу после чтения, чтобы plaintext не оставался в БД воркера
-    после исполнения. Перечитываем актуальный payload и переписываем без
-    указанных ключей. Идемпотентно — отсутствующие ключи пропускаются.
+    Используется как defense-in-depth для одноразовых bootstrap-кред
+    (`server.prepare`): creds приходят в payload через cross-DB dispatch-
+    канал, и handler стирает их из строки сразу после чтения, чтобы
+    plaintext не оставался в БД воркера после исполнения.
+
+    По умолчанию заменяет значение на строку `"<scrubbed>"` — в форенсике
+    видно, что «здесь был ключ», а не «ключа никогда не было». Если
+    `replacement=None`, ключ удаляется полностью.
+
+    Перечитываем актуальный payload и переписываем. Идемпотентно —
+    отсутствующие ключи и уже-замаскированные значения пропускаются.
     """
     task = await get_by_id(db, task_id)
     if task is None or not task.payload:
@@ -100,8 +112,13 @@ async def scrub_payload_keys(db: AsyncSession, task_id: str, keys: list[str]) ->
     payload = dict(task.payload)
     changed = False
     for key in keys:
-        if key in payload:
+        if key not in payload:
+            continue
+        if replacement is None:
             del payload[key]
+            changed = True
+        elif payload[key] != replacement:
+            payload[key] = replacement
             changed = True
     if changed:
         await db.execute(

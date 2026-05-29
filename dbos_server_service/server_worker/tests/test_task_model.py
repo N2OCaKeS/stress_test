@@ -143,3 +143,101 @@ class TestSchema:
         async with AsyncSessionLocal() as session:
             t = (await session.execute(select(Task).where(Task.id == tid))).scalar_one()
             assert t.payload == {}
+
+
+# ── scrub_payload_keys ───────────────────────────────────────────────────────
+
+
+class TestScrubPayloadKeys:
+    """`task_repo.scrub_payload_keys` — стирает секреты из `tasks.payload`."""
+
+    async def test_replaces_key_with_sentinel_by_default(self):
+        from src.repositories import task as task_repo
+
+        tid = _new_id()
+        async with AsyncSessionLocal() as session:
+            session.add(Task(
+                id=tid, task_kind="server.prepare",
+                payload={
+                    "server_id": "srv_1",
+                    "bootstrap_creds_key": "dbos:prepare_creds:pcd_1",
+                },
+            ))
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            await task_repo.scrub_payload_keys(
+                session, tid, ["bootstrap_creds_key"],
+            )
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            t = (await session.execute(select(Task).where(Task.id == tid))).scalar_one()
+            assert t.payload["bootstrap_creds_key"] == "<scrubbed>"
+            assert t.payload["server_id"] == "srv_1"
+
+    async def test_deletes_key_when_replacement_is_none(self):
+        from src.repositories import task as task_repo
+
+        tid = _new_id()
+        async with AsyncSessionLocal() as session:
+            session.add(Task(
+                id=tid, task_kind="server.prepare",
+                payload={"server_id": "srv_2", "bootstrap_creds_key": "k"},
+            ))
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            await task_repo.scrub_payload_keys(
+                session, tid, ["bootstrap_creds_key"], replacement=None,
+            )
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            t = (await session.execute(select(Task).where(Task.id == tid))).scalar_one()
+            assert "bootstrap_creds_key" not in t.payload
+            assert t.payload["server_id"] == "srv_2"
+
+    async def test_missing_keys_are_noop(self):
+        from src.repositories import task as task_repo
+
+        tid = _new_id()
+        async with AsyncSessionLocal() as session:
+            session.add(Task(
+                id=tid, task_kind="power.on",
+                payload={"server_id": "srv_3"},
+            ))
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            # Идемпотентный путь — ключа нет, payload не меняется.
+            await task_repo.scrub_payload_keys(
+                session, tid, ["bootstrap_creds_key"],
+            )
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            t = (await session.execute(select(Task).where(Task.id == tid))).scalar_one()
+            assert t.payload == {"server_id": "srv_3"}
+
+    async def test_idempotent_already_scrubbed(self):
+        from src.repositories import task as task_repo
+
+        tid = _new_id()
+        async with AsyncSessionLocal() as session:
+            session.add(Task(
+                id=tid, task_kind="server.prepare",
+                payload={"bootstrap_creds_key": "<scrubbed>"},
+            ))
+            await session.commit()
+
+        # Второй вызов — ничего не меняет, второй commit не нужен.
+        async with AsyncSessionLocal() as session:
+            await task_repo.scrub_payload_keys(
+                session, tid, ["bootstrap_creds_key"],
+            )
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            t = (await session.execute(select(Task).where(Task.id == tid))).scalar_one()
+            assert t.payload["bootstrap_creds_key"] == "<scrubbed>"

@@ -266,8 +266,23 @@ class TestSubmitRotatedIpmi:
             "ipm_42", "secret-pwd", "2026-05-21T10:00:00Z",
         )
         assert "/ipmi-controllers/ipm_42/credentials_rotated" in cap["url"]
-        # тело — plaintext + rotated_at, не encrypted
+        # тело — plaintext + rotated_at, не encrypted; без verified_at body
+        # не несёт лишний ключ (backward-compat: старый server ещё его не
+        # требовал).
         assert cap["json"] == {"new_password": "secret-pwd", "rotated_at": "2026-05-21T10:00:00Z"}
+
+    async def test_verified_at_included_when_passed(self, settings_stub, monkeypatch):
+        cap = {}
+        monkeypatch.setattr(httpx, "AsyncClient", _Client(_Resp(200, {"ok": True}), cap))
+        await server_service_client.submit_rotated_ipmi_password(
+            "ipm_42", "secret-pwd", "2026-05-21T10:00:00Z",
+            verified_at="2026-05-21T10:00:05Z",
+        )
+        assert cap["json"] == {
+            "new_password": "secret-pwd",
+            "rotated_at": "2026-05-21T10:00:00Z",
+            "verified_at": "2026-05-21T10:00:05Z",
+        }
 
     async def test_404_rejected(self, settings_stub, monkeypatch):
         monkeypatch.setattr(httpx, "AsyncClient", _Client(_Resp(404)))

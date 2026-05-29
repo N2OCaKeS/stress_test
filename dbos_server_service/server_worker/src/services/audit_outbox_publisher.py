@@ -237,15 +237,21 @@ def _apply_backoff(row: AuditOutbox) -> None:
     row.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
 
 
-async def _publish_one(session: AsyncSession, row: AuditOutbox) -> tuple[bool, bool]:
+async def _publish_one(
+    session: AsyncSession, row: AuditOutbox,
+) -> tuple[bool, bool, bool]:
     """Попытка отправить одну строку.
 
-    Возвращает `(ok, audit_emit_error)`:
-      * `ok=True` — row помечен published.
-      * `ok=False, audit_emit_error=True` — `AuditEmitError` (HTTP/transport
+    Возвращает `(closed, audit_emit_error, was_published)`:
+      * `closed=True, was_published=True` — успешный 2xx, row помечена published.
+      * `closed=True, was_published=False` — row отбракована в DLQ
+        (missing_action / permanent_4xx / attempts_cap). Caller не должен
+        повторно подбирать её на этом тике, но и в счётчик published она
+        не идёт — это «потерянное» событие, не доставленное.
+      * `closed=False, audit_emit_error=True` — `AuditEmitError` (HTTP/transport
         fail на стороне loging_service). Это сигнал для circuit breaker:
         нагружать loging_service дальше смысла нет.
-      * `ok=False, audit_emit_error=False` — программная ошибка
+      * `closed=False, audit_emit_error=False` — программная ошибка
         (сериализация и т.п.). Breaker такие НЕ считает — это локальный
         баг, не проблема loging_service.
     """
@@ -253,11 +259,12 @@ async def _publish_one(session: AsyncSession, row: AuditOutbox) -> tuple[bool, b
     action = payload.pop("action", None)
     if not action:
         # Битый payload без action — событие потеряно, ретраить нечего.
-        # Не лотим попыток впустую, сразу в DLQ.
+        # Не лотим попыток впустую, сразу в DLQ. Breaker НЕ считает это
+        # сигналом про loging_service — корень в нашем payload'е.
         row.last_error = "missing_action"
         _send_to_dlq(row, reason="missing_action")
         await session.flush()
-        return True, False
+        return True, False, False
 
     try:
         # `audit_client.emit` сам решает, что считать неудачей:
@@ -294,11 +301,15 @@ async def _publish_one(session: AsyncSession, row: AuditOutbox) -> tuple[bool, b
         if exc.status_code is not None and 400 <= exc.status_code < 500:
             _send_to_dlq(row, reason="permanent_4xx")
             await session.flush()
-            return True, False
+            return True, False, False
 
         if _maybe_poison(row):
+            # Cap по attempts — row закрыта в DLQ. Breaker НЕ открываем:
+            # последняя ошибка может быть transient'ом, но row сама по
+            # себе ядовитая, нет смысла обвинять канал. Если loging
+            # реально лежит, следующие row'ы это покажут.
             await session.flush()
-            return False, True
+            return True, False, False
         _apply_backoff(row)
         await session.flush()
         logger.warning(
@@ -308,7 +319,7 @@ async def _publish_one(session: AsyncSession, row: AuditOutbox) -> tuple[bool, b
             exc.status_code,
             row.next_retry_at,
         )
-        return False, True
+        return False, True, False
     except Exception as exc:  # noqa: BLE001
         # Программные ошибки (сериализация, неожиданные exception'ы) —
         # тоже не маркируем published, publisher повторит на следующем
@@ -319,7 +330,7 @@ async def _publish_one(session: AsyncSession, row: AuditOutbox) -> tuple[bool, b
         row.last_error = error_message[:LAST_ERROR_MAX_LEN]
         if _maybe_poison(row):
             await session.flush()
-            return False, False
+            return True, False, False
         _apply_backoff(row)
         await session.flush()
         logger.warning(
@@ -329,14 +340,14 @@ async def _publish_one(session: AsyncSession, row: AuditOutbox) -> tuple[bool, b
             type(exc).__name__,
             row.next_retry_at,
         )
-        return False, False
+        return False, False, False
 
     row.published_at = datetime.now(timezone.utc)
     # На успех — обнуляем backoff (был выставлен предыдущей попыткой,
     # но row всё равно уйдёт из выборки по `published_at IS NOT NULL`).
     row.next_retry_at = None
     await session.flush()
-    return True, False
+    return True, False, True
 
 
 def _select_unpublished(limit: int):
@@ -445,12 +456,14 @@ async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
                 # выходим, не нужно бить лишний SELECT.
                 break
             row_id = row.id
-            ok, audit_emit_error = await _publish_one(session, row)
-            if ok:
+            closed, audit_emit_error, was_published = await _publish_one(session, row)
+            if was_published:
                 published += 1
-            else:
+            if not closed:
                 # Row осталась unpublished — не SELECT'им её повторно в
-                # этом проходе.
+                # этом проходе. DLQ-row (closed=True, was_published=False)
+                # тоже исчезает из выборки (через `published_at`), её не
+                # надо отдельно exclude'ить.
                 failed_ids.append(row_id)
             if audit_emit_error:
                 audit_emit_errors += 1

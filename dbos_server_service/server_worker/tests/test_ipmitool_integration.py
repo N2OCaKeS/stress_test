@@ -380,6 +380,25 @@ class TestIpmitoolErrorMapping:
 # ── ipmi.rotate_password через ipmitool ─────────────────────────────────────
 
 
+def _ipmitool_rotate_proc_factory(state: str = "on"):
+    """Фабрика subprocess'ов для verify-then-submit ipmi.rotate_password.
+
+    Возвращает callable `(args, kwargs) -> Process`, которая:
+      * `user set password ...` → returncode=0, пустой stdout (apply OK);
+      * `chassis power status` → returncode=0, "Chassis Power is on" (verify OK);
+      * прочее → returncode=0, пустой stdout.
+    """
+    def factory(args, kwargs):
+        argv = list(args)
+        if "status" in argv and "power" in argv:
+            return _make_fake_process(
+                returncode=0,
+                stdout=f"Chassis Power is {state}\n".encode(),
+            )
+        return _make_fake_process(returncode=0)
+    return factory
+
+
 class TestIpmiRotatePasswordIpmitool:
     async def test_full_flow_storage_then_user_set_password(
         self, make_task, fetch_task, captured_audit, monkeypatch,
@@ -393,8 +412,8 @@ class TestIpmiRotatePasswordIpmitool:
         _patch_creds(monkeypatch, "passwords")
 
         submit_calls: list[tuple] = []
-        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None):
-            submit_calls.append((controller_id, new_password, rotated_at))
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
+            submit_calls.append((controller_id, new_password, rotated_at, verified_at))
             return {"rotated_at": "2026-05-21T17:00:00Z"}
 
         monkeypatch.setattr(
@@ -402,23 +421,34 @@ class TestIpmiRotatePasswordIpmitool:
             fake_submit,
         )
 
-        proc = _make_fake_process(returncode=0)
-        calls = _patch_subprocess(monkeypatch, proc)
+        calls = _patch_subprocess(monkeypatch, _ipmitool_rotate_proc_factory())
 
         await passwords.ipmi_rotate_password.original_func(tid)
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
         assert t.result["controller_rotated"] is True
         assert t.result["password_rotated_at"] == "2026-05-21T17:00:00Z"
-        # storage был вызван до BMC, и тот же пароль ушёл в ipmitool argv
+        # submit вызван один раз и с `verified_at` (verify прошёл).
         assert len(submit_calls) == 1
         new_password = submit_calls[0][1]
+        assert submit_calls[0][3] is not None, "verified_at должен быть передан"
         argv_with_user = next(
             (c[0] for c in calls if "user" in c[0] and "set" in c[0] and "password" in c[0]),
             None,
         )
         assert argv_with_user is not None, "ipmitool user set password не вызывался"
+        # `user set password <id> <newpass>` — пароль в argv (это known
+        # exposure через /proc/<pid>/cmdline у ipmitool'а, обходить нечем).
         assert new_password in argv_with_user
+        # verify через `chassis power status` — этот вызов идёт под новым
+        # паролем через `IPMI_PASSWORD` env (а не argv). Найдём verify-вызов
+        # и убедимся, что env содержит новый пароль.
+        verify_calls = [c for c in calls if "status" in c[0] and "power" in c[0]]
+        assert len(verify_calls) == 1, "должен быть ровно один verify-вызов"
+        env_for_verify = verify_calls[0][1].get("env") or {}
+        assert env_for_verify.get("IPMI_PASSWORD") == new_password, (
+            "verify должен идти с новым паролем (через IPMI_PASSWORD env)"
+        )
         assert captured_audit[0]["action"] == "ipmi_controller.password_rotate"
         assert captured_audit[0]["target_type"] == "ipmi_controller"
 
@@ -433,15 +463,14 @@ class TestIpmiRotatePasswordIpmitool:
         _force_ipmitool(monkeypatch)
         _patch_creds(monkeypatch, "passwords")
 
-        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None):
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
             return {"rotated_at": "x"}
         monkeypatch.setattr(
             "src.tasks.passwords.server_service_client.submit_rotated_ipmi_password",
             fake_submit,
         )
 
-        proc = _make_fake_process(returncode=0)
-        calls = _patch_subprocess(monkeypatch, proc)
+        calls = _patch_subprocess(monkeypatch, _ipmitool_rotate_proc_factory())
         await passwords.ipmi_rotate_password.original_func(tid)
 
         argv_with_user = next(
@@ -453,10 +482,11 @@ class TestIpmiRotatePasswordIpmitool:
         idx = argv_with_user.index("user")
         assert argv_with_user[idx + 3] == "4"
 
-    async def test_bmc_failure_after_storage_marks_failed(
+    async def test_bmc_apply_failure_skips_submit(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):
-        """Storage прошёл → ipmitool упал с AUTH → task FAILED, BMC_AUTH_FAILED."""
+        """ipmitool user set password упал с AUTH → submit НЕ вызывается,
+        task FAILED с `BMC_AUTH_FAILED`."""
         tid = await _make_task_max1(
             make_task,
             task_kind="ipmi.rotate_password",
@@ -467,7 +497,9 @@ class TestIpmiRotatePasswordIpmitool:
         _force_ipmitool(monkeypatch)
         _patch_creds(monkeypatch, "passwords")
 
-        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None):
+        submit_calls: list = []
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
+            submit_calls.append(controller_id)
             return {"rotated_at": "ok"}
         monkeypatch.setattr(
             "src.tasks.passwords.server_service_client.submit_rotated_ipmi_password",
@@ -484,6 +516,51 @@ class TestIpmiRotatePasswordIpmitool:
         t = await fetch_task(tid)
         assert t.status == TaskStatus.FAILED
         assert "BMC_AUTH_FAILED" in t.last_error
+        assert submit_calls == [], "submit must not be called if BMC apply failed"
+
+    async def test_verify_failure_skips_submit(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """ipmitool user set password прошёл, но verify (chassis power status)
+        под новым паролем вернул AUTH-ошибку → submit НЕ вызывается, task
+        FAILED с `BMC_VERIFY_AFTER_ROTATE_FAILED`."""
+        tid = await _make_task_max1(
+            make_task,
+            task_kind="ipmi.rotate_password",
+            target_server_id="srv_1",
+            payload={"server_id": "srv_1"},
+        )
+        _patch_no_retry(monkeypatch)
+        _force_ipmitool(monkeypatch)
+        _patch_creds(monkeypatch, "passwords")
+
+        submit_calls: list = []
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
+            submit_calls.append(controller_id)
+            return {"rotated_at": "ok"}
+        monkeypatch.setattr(
+            "src.tasks.passwords.server_service_client.submit_rotated_ipmi_password",
+            fake_submit,
+        )
+
+        def proc_factory(args, kwargs):
+            argv = list(args)
+            if "status" in argv and "power" in argv:
+                # Verify-шаг — BMC отверг новый пароль.
+                return _make_fake_process(
+                    returncode=1,
+                    stderr=b"Error: RAKP 2 message indicates an error\n",
+                )
+            # Apply — OK.
+            return _make_fake_process(returncode=0)
+
+        _patch_subprocess(monkeypatch, proc_factory)
+
+        await passwords.ipmi_rotate_password.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.FAILED
+        assert "BMC_VERIFY_AFTER_ROTATE_FAILED" in t.last_error
+        assert submit_calls == [], "submit must not be called if verify failed"
 
     async def test_plaintext_password_not_in_audit(
         self, make_task, fetch_task, captured_audit, monkeypatch,
@@ -497,7 +574,7 @@ class TestIpmiRotatePasswordIpmitool:
         _patch_creds(monkeypatch, "passwords")
 
         captured = {}
-        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None):
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
             captured["pwd"] = new_password
             return {"rotated_at": "x"}
         monkeypatch.setattr(
@@ -505,8 +582,7 @@ class TestIpmiRotatePasswordIpmitool:
             fake_submit,
         )
 
-        proc = _make_fake_process(returncode=0)
-        _patch_subprocess(monkeypatch, proc)
+        _patch_subprocess(monkeypatch, _ipmitool_rotate_proc_factory())
 
         await passwords.ipmi_rotate_password.original_func(tid)
         # Пароль не в audit
@@ -518,10 +594,10 @@ class TestIpmiRotatePasswordIpmitool:
         """Retry IPMI rotate использует ТОТ ЖЕ пароль, что и первая попытка.
 
         Сценарий бага: при retry'е `_impl` запускался заново, генерил новый
-        `secrets.token_urlsafe(24)`, перезаписывал storage. Если BMC принял
-        попытку 1, но ответ не дошёл, попытка 2 ставила другой пароль и в
-        storage, и в BMC. Финальный fail оставлял в storage пароль, который
-        НИКОГДА не подтверждался на BMC.
+        пароль через `_generate_password`, перезаписывал storage. Если BMC
+        принял попытку 1, но ответ не дошёл, попытка 2 ставила другой пароль
+        и в storage, и в BMC — финальный fail оставлял в storage пароль,
+        который НИКОГДА не подтверждался на BMC.
 
         Здесь моделируем «попытка 1 уже отработала, stash в Redis есть»:
         предзаполняем stash вручную, дёргаем handler, видим что
@@ -542,7 +618,7 @@ class TestIpmiRotatePasswordIpmitool:
         await passwords._store_ipmi_rotate_password(tid, stashed_pwd)
 
         submit_calls: list[str] = []
-        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None):
+        async def fake_submit(controller_id, new_password, rotated_at, target_department_id=None, verified_at=None):
             submit_calls.append(new_password)
             return {"rotated_at": "x"}
         monkeypatch.setattr(
@@ -550,8 +626,7 @@ class TestIpmiRotatePasswordIpmitool:
             fake_submit,
         )
 
-        proc = _make_fake_process(returncode=0)
-        _patch_subprocess(monkeypatch, proc)
+        _patch_subprocess(monkeypatch, _ipmitool_rotate_proc_factory())
 
         await passwords.ipmi_rotate_password.original_func(tid)
 

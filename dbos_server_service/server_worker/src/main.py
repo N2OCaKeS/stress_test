@@ -846,37 +846,34 @@ async def internal_outbox_re_attempt(row_id: int) -> bool:
     schedule=[{"cron": "*/5 * * * *"}] if _settings.scheduler_enabled else [],
 )
 async def secrets_reencrypt_lazy() -> None:
-    """Фоновая постепенная ре-шифрация секретов под активный мастер-ключ.
+    """Фоновая постепенная ре-шифрация секретов через outbox-pattern.
 
-    Политика: после смены `SERVER_ENCRYPTION_KEY` обе версии живут
-    параллельно (старая — для decrypt, новая — для encrypt). Этот тик
-    постепенно подтягивает старые записи к активной версии.
+    Прежний поток (`POST /reencrypt_batch`) держал AsyncSession server_service'а
+    открытой на весь decrypt-N → encrypt-N → UPDATE-N цикл и мог вычистить
+    pool. Текущий поток разрезает работу на короткие транзакции:
 
-    Алгоритм одного тика:
+      1. `SECRETS_REENCRYPT_ENABLED=false` → выйти молча (dev/test).
+      2. Если `RUNNING_TASKS` непуст → skip-tick + audit (не конкурируем
+         с power/SSH за DB-write'ы; следующий cron `*/5` снова попробует).
+      3. `GET /internal/secrets/migration_status` для observability и
+         APP_ENV-guard'а. Mismatch APP_ENV → abort + audit failure.
+      4. Если `outbox.pending + outbox.processing == 0`, но `remaining > 0`
+         (после bump'а версии ключа ещё ничего не посеяно) →
+         `POST /reencrypt_outbox/seed` чтобы наполнить очередь.
+      5. `GET /reencrypt_outbox/pending?limit=N` — claim батча (на сервере
+         FOR UPDATE SKIP LOCKED, короткая транзакция).
+      6. Для каждого claim'нутого row'а POST `.../{id}/done` — server
+         делает per-row decrypt+encrypt+UPDATE в своей короткой транзакции.
+         Если POST упал на HTTP/transport — POST `.../{id}/failed` чтобы
+         row не залип в processing.
 
-      1. Если `SECRETS_REENCRYPT_ENABLED=false` → выйти молча (dev/test).
-      2. Если в `RUNNING_TASKS` есть активные user-handler'ы → skip, чтобы
-         не конкурировать с power/SSH/inventory за DB-write'ы и CPU.
-         Полагаемся на short-running ходовку: следующий cron-тик (`*/5`)
-         снова попробует.
-      3. `GET /internal/secrets/migration_status`. `remaining==0` →
-         миграция доехала, audit с processed=0 и выходим. Оператор по
-         этому событию (и метрике в loging_service) решает, можно ли
-         дропнуть `SERVER_ENCRYPTION_KEY__v<old>`.
-      4. `POST /internal/secrets/reencrypt_batch?limit=N` —
-         server_service сам commit'ит транзакцию. Worker логирует
-         результат + audit `secrets.reencrypt_tick`.
-
-    Cron-расписание `*/5 * * * *` — в проде даёт ~720 батчей в сутки, по
-    100 записей = 72k записей/день в worst case. На практике RPS воркера
-    ниже из-за shed'а при busy state. Реальный темп управляется через
-    `SECRETS_REENCRYPT_BATCH_SIZE` env.
+    Worker не держит мастер-ключ: crypto остаётся на server-side. Pool
+    свободен — каждый запрос обслуживается отдельной короткой сессией.
 
     Ошибки внутри тика логируются (`redact_error_message`) и НЕ пробрасываются
     — periodic-task не должен крэшить scheduler-loop. Все audit-события идут
     через transactional outbox (`enqueue_audit` + `commit`), а не через прямой
-    `audit_client.emit` — чтобы при недоступности loging_service запись не
-    терялась, а ждала retry'я publisher'ом.
+    `audit_client.emit`.
     """
     from src.tasks._runner_state import RUNNING_TASKS
     from src.services import server_service_client
@@ -889,10 +886,9 @@ async def secrets_reencrypt_lazy() -> None:
     async def _enqueue_outbox_audit(payload: dict) -> None:
         """Положить audit-row в outbox, зафиксировать и попытаться доставить.
 
-        После commit'а зовём `flush_outbox()` — это same-pattern, что и у
-        `_runner.run_task::_safe_flush_outbox`: happy-path сразу доставляет
-        событие, при сбое publisher background-loop'а добьёт row позже.
-        Best-effort: ошибки на любом шаге логируются, тик не падает.
+        Same-pattern, что и у `_runner.run_task::_safe_flush_outbox`:
+        commit потом best-effort `flush_outbox()`. Background-loop добьёт
+        row, если happy-path flush упал.
         """
         try:
             async with AsyncSessionLocal() as session:
@@ -951,10 +947,9 @@ async def secrets_reencrypt_lazy() -> None:
         )
         return
 
-    # Guard от worker'а, указывающего на чужое окружение (например,
-    # staging-воркер с прод-server_service в env): такой тик переписал бы
-    # секреты другого контура своим master-key. server_service отдаёт свой
-    # APP_ENV в status — сравниваем без учёта регистра.
+    # APP_ENV guard — server_service сообщает свой APP_ENV в status.
+    # Mismatch значит, что worker указывает на чужой контур и может переписать
+    # чужие секреты — abort.
     remote_app_env = str(status.get("app_env") or "").strip()
     local_app_env = settings.app_env.strip()
     if remote_app_env and remote_app_env.lower() != local_app_env.lower():
@@ -979,9 +974,13 @@ async def secrets_reencrypt_lazy() -> None:
 
     remaining = int(status.get("remaining", 0))
     active_version = status.get("active_version")
-    if remaining <= 0:
+    outbox_snapshot = status.get("outbox") or {}
+    pending = int(outbox_snapshot.get("pending", 0))
+    processing = int(outbox_snapshot.get("processing", 0))
+
+    if remaining <= 0 and pending == 0 and processing == 0:
         logger.debug(
-            "secrets.reencrypt_lazy: nothing to do (remaining=0, active=v%s)",
+            "secrets.reencrypt_lazy: nothing to do (remaining=0, outbox empty, active=v%s)",
             active_version,
         )
         await _enqueue_outbox_audit({
@@ -997,29 +996,102 @@ async def secrets_reencrypt_lazy() -> None:
         })
         return
 
+    # Если remaining>0, но outbox пуст — server-service ещё не сидил
+    # outbox после bump'а версии. Запросим разовый seed; результат
+    # подхватим тем же claim-ом ниже.
+    seeded = 0
+    if remaining > 0 and pending == 0 and processing == 0:
+        try:
+            seed_result = await server_service_client.seed_reencrypt_outbox(
+                limit=max(settings.secrets_reencrypt_batch_size, 1) * 10
+            )
+            seeded = int(seed_result.get("inserted", 0))
+        except CredentialFetchError as exc:
+            logger.warning(
+                "secrets.reencrypt_lazy: outbox seed failed: %s",
+                redact_error_message(f"{exc.error_code}: {exc.message}"),
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "secrets.reencrypt_lazy: outbox seed unexpected error: %s",
+                redact_error_message(f"{type(exc).__name__}: {exc}"),
+            )
+            return
+
+    # Claim'аем батч pending row'ов. Server-side короткая транзакция;
+    # параллельные replica'и SKIP LOCKED'ом не пересекаются.
     try:
-        result = await server_service_client.trigger_secrets_reencrypt_batch(
-            settings.secrets_reencrypt_batch_size
+        items = await server_service_client.claim_reencrypt_outbox_pending(
+            limit=settings.secrets_reencrypt_batch_size
         )
     except CredentialFetchError as exc:
         logger.warning(
-            "secrets.reencrypt_lazy: batch failed: %s",
+            "secrets.reencrypt_lazy: claim failed: %s",
             redact_error_message(f"{exc.error_code}: {exc.message}"),
         )
         return
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "secrets.reencrypt_lazy: batch unexpected error: %s",
+            "secrets.reencrypt_lazy: claim unexpected error: %s",
             redact_error_message(f"{type(exc).__name__}: {exc}"),
         )
         return
 
-    processed = int(result.get("processed", 0))
-    errors = int(result.get("errors", 0))
+    processed = 0
+    skipped = 0
+    errors = 0
+
+    for item in items:
+        outbox_id = item.get("id")
+        if not isinstance(outbox_id, str):
+            errors += 1
+            continue
+        try:
+            result = await server_service_client.finalize_reencrypt_outbox_done(
+                outbox_id
+            )
+            if result.get("skipped"):
+                skipped += 1
+            else:
+                processed += 1
+        except CredentialFetchError as exc:
+            errors += 1
+            logger.warning(
+                "secrets.reencrypt_lazy: finalize_done failed id=%s: %s",
+                outbox_id,
+                redact_error_message(f"{exc.error_code}: {exc.message}"),
+            )
+            # Пометить failed — иначе row залипнет в `processing` до
+            # ручного вмешательства. Best-effort: если и failed не
+            # уходит, оставляем как есть; следующий тик не повторит
+            # claim (row не в pending), но cleanup'ом не подберём.
+            try:
+                await server_service_client.finalize_reencrypt_outbox_failed(
+                    outbox_id, error=f"{exc.error_code}: {exc.message}"
+                )
+            except Exception as inner:  # noqa: BLE001
+                logger.warning(
+                    "secrets.reencrypt_lazy: finalize_failed also failed id=%s: %s",
+                    outbox_id,
+                    redact_error_message(f"{type(inner).__name__}: {inner}"),
+                )
+        except Exception as exc:  # noqa: BLE001
+            errors += 1
+            logger.warning(
+                "secrets.reencrypt_lazy: finalize_done unexpected error id=%s: %s",
+                outbox_id,
+                redact_error_message(f"{type(exc).__name__}: {exc}"),
+            )
+
     logger.info(
-        "secrets.reencrypt_lazy: processed=%s errors=%s remaining_before=%s",
+        "secrets.reencrypt_lazy: processed=%s skipped=%s errors=%s "
+        "claimed=%s seeded=%s remaining_before=%s",
         processed,
+        skipped,
         errors,
+        len(items),
+        seeded,
         remaining,
     )
     await _enqueue_outbox_audit({
@@ -1029,7 +1101,10 @@ async def secrets_reencrypt_lazy() -> None:
         "target_type": "secret",
         "details": {
             "processed": processed,
+            "skipped": skipped,
             "errors": errors,
+            "claimed": len(items),
+            "seeded": seeded,
             "remaining_before": remaining,
             "active_version": active_version,
             "batch_size": settings.secrets_reencrypt_batch_size,

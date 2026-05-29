@@ -1,20 +1,24 @@
 """Periodic task `secrets.reencrypt_lazy` — фоновая ре-шифрация секретов.
 
-Тест-сценарии:
+После перехода на outbox-pattern контракт изменился:
 
-* Скип на disable-флаге (`SECRETS_REENCRYPT_ENABLED=false`).
-* Скип когда `RUNNING_TASKS` не пуст (high-prio задача в полёте).
-* Happy path: status returns remaining>0 → batch вызывается.
-* `remaining=0` → batch НЕ вызывается, audit success processed=0.
-* Transport-failure на status → выход без batch, без exception.
-* Transport-failure на batch → audit о failed-batch не пишется,
-  task не падает.
-* Audit-tick содержит processed/errors/remaining/active_version.
+* worker не вызывает `trigger_secrets_reencrypt_batch`;
+* worker зовёт `fetch_secrets_migration_status` (status + outbox-снапшот),
+  при необходимости `seed_reencrypt_outbox`, затем
+  `claim_reencrypt_outbox_pending` и для каждого row'а
+  `finalize_reencrypt_outbox_done`.
 
-Реальный HTTP к server_service замочен через monkeypatch'и:
-`server_service_client.fetch_secrets_migration_status` и
-`server_service_client.trigger_secrets_reencrypt_batch` подменяются на
-async-stub'ы.
+Сценарии:
+
+* Скип на disable-флаге.
+* Скип когда `RUNNING_TASKS` непуст (high-prio задача в полёте).
+* Happy path: remaining=0 & outbox пустой → audit success processed=0.
+* remaining>0, outbox пустой → выполняется seed + claim + finalize.
+* outbox.pending>0 → seed не зовётся, claim + finalize.
+* Transport-failure на status → выход без claim, без exception.
+* Transport-failure на finalize_done → finalize_failed вызывается.
+* APP_ENV-mismatch → abort + audit failure.
+* batch size прокидывается в claim.
 """
 
 from __future__ import annotations
@@ -34,7 +38,6 @@ async def _invoke_task() -> None:
 
 @pytest.fixture(autouse=True)
 def _clear_running_tasks():
-    """Каждый тест стартует с пустым `RUNNING_TASKS`."""
     from src.tasks._runner_state import RUNNING_TASKS
 
     RUNNING_TASKS.clear()
@@ -46,17 +49,10 @@ def _clear_running_tasks():
 def _sync_settings_singleton():
     """Гарантируем, что `src.main._settings` и `get_settings()` — один объект.
 
-    Соседние тесты (`test_secrets_reencrypt_task.py` и инвентаризационные)
-    дёргают `get_settings.cache_clear()`, после чего `get_settings()` возвращает
-    **новый** Settings-инстанс, а `src.main._settings`, прихваченный на импорте
-    `src/main.py`, остаётся указывать на старый. Наши тесты делают
-    `monkeypatch.setattr(_settings, ...)`,
-    но task body внутри `secrets.reencrypt_lazy` зовёт `get_settings()` — и
-    видит другой объект, где монки нет.
-
-    Фикстура clear'ит кэш, форсит populate и пере-присваивает `src.main._settings`
-    к тому же объекту. Teardown — симметричный clear, чтобы не утаскивать
-    свой инстанс в следующий тестовый модуль.
+    Соседние тесты делают `get_settings.cache_clear()`, после чего
+    `src.main._settings`, прихваченный на импорте, остаётся указывать на
+    старый объект. Фикстура clear'ит кэш, форсит populate и пере-присваивает
+    `src.main._settings` к тому же объекту.
     """
     from src import main as worker_main
     from src.core import config as cfg
@@ -86,18 +82,18 @@ class TestDisableFlag:
 
         monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", False)
         status_mock = AsyncMock(return_value={"remaining": 1})
-        batch_mock = AsyncMock(return_value={"processed": 1, "errors": 0})
+        claim_mock = AsyncMock(return_value=[])
         monkeypatch.setattr(
             server_service_client, "fetch_secrets_migration_status", status_mock,
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
         )
 
         await _invoke_task()
 
         status_mock.assert_not_called()
-        batch_mock.assert_not_called()
+        claim_mock.assert_not_called()
         # При disabled мы НЕ должны писать audit (просто silent exit).
         assert captured_audit == []
 
@@ -114,20 +110,18 @@ class TestSkipOnActiveTasks:
         RUNNING_TASKS.add("tsk_active_001")
 
         status_mock = AsyncMock(return_value={"remaining": 5})
-        batch_mock = AsyncMock(return_value={"processed": 5, "errors": 0})
+        claim_mock = AsyncMock(return_value=[])
         monkeypatch.setattr(
             server_service_client, "fetch_secrets_migration_status", status_mock,
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
         )
 
         await _invoke_task()
 
         status_mock.assert_not_called()
-        batch_mock.assert_not_called()
-        # Audit-tick всё-таки эмитится со skipped=True — оператор должен
-        # видеть, что worker отрабатывал, но уступил.
+        claim_mock.assert_not_called()
         skip_events = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
         assert len(skip_events) == 1
         assert skip_events[0]["details"]["skipped"] is True
@@ -135,9 +129,10 @@ class TestSkipOnActiveTasks:
 
 
 class TestHappyPath:
-    async def test_calls_batch_when_remaining_positive(
+    async def test_seeds_claims_and_finalizes_when_outbox_empty(
         self, monkeypatch, captured_audit
     ):
+        """remaining>0 + outbox пустой: seed → claim → finalize_done."""
         from src.main import _settings
         from src.services import server_service_client
 
@@ -149,29 +144,99 @@ class TestHappyPath:
             "total": 200,
             "active_version": 2,
             "by_version": {"1": 100, "2": 100},
+            "outbox": {"pending": 0, "processing": 0, "done": 0, "failed": 0},
         })
-        batch_mock = AsyncMock(return_value={"processed": 50, "errors": 0})
+        seed_mock = AsyncMock(return_value={
+            "inserted": 100, "scanned": 100, "active_version": 2,
+        })
+        claim_mock = AsyncMock(return_value=[
+            {"id": "rox_a", "entity_type": "server_account",
+             "entity_id": "acc_1", "legacy_ciphertext": "v1$n$c", "attempts": 1},
+            {"id": "rox_b", "entity_type": "ipmi_controller",
+             "entity_id": "ipmi_1", "legacy_ciphertext": "v1$n$c", "attempts": 1},
+        ])
+        done_mock = AsyncMock(return_value={
+            "id": "rox_a", "status": "done", "skipped": False,
+        })
         monkeypatch.setattr(
             server_service_client, "fetch_secrets_migration_status", status_mock,
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+            server_service_client, "seed_reencrypt_outbox", seed_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "finalize_reencrypt_outbox_done", done_mock,
         )
 
         await _invoke_task()
 
-        status_mock.assert_awaited_once()
-        batch_mock.assert_awaited_once_with(50)
+        seed_mock.assert_awaited_once()
+        claim_mock.assert_awaited_once_with(limit=50)
+        assert done_mock.await_count == 2
+
         tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
         assert len(tick) == 1
         details = tick[0]["details"]
-        assert details["processed"] == 50
+        assert details["processed"] == 2
         assert details["errors"] == 0
+        assert details["claimed"] == 2
+        assert details["seeded"] == 100
         assert details["remaining_before"] == 100
         assert details["active_version"] == 2
         assert details["batch_size"] == 50
 
-    async def test_does_not_call_batch_when_remaining_zero(
+    async def test_skips_seed_when_outbox_has_pending(
+        self, monkeypatch, captured_audit
+    ):
+        """outbox.pending>0 → seed не зовётся; сразу claim."""
+        from src.main import _settings
+        from src.services import server_service_client
+
+        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
+        monkeypatch.setattr(_settings, "secrets_reencrypt_batch_size", 25)
+
+        status_mock = AsyncMock(return_value={
+            "remaining": 50,
+            "total": 200,
+            "active_version": 2,
+            "by_version": {"1": 50},
+            "outbox": {"pending": 50, "processing": 0, "done": 0, "failed": 0},
+        })
+        seed_mock = AsyncMock()
+        claim_mock = AsyncMock(return_value=[
+            {"id": "rox_x", "entity_type": "server_account",
+             "entity_id": "acc_x", "legacy_ciphertext": "v1$n$c", "attempts": 1},
+        ])
+        done_mock = AsyncMock(return_value={
+            "id": "rox_x", "status": "done", "skipped": False,
+        })
+        monkeypatch.setattr(
+            server_service_client, "fetch_secrets_migration_status", status_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "seed_reencrypt_outbox", seed_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "finalize_reencrypt_outbox_done", done_mock,
+        )
+
+        await _invoke_task()
+
+        seed_mock.assert_not_called()
+        claim_mock.assert_awaited_once_with(limit=25)
+        done_mock.assert_awaited_once_with("rox_x")
+
+        tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
+        assert tick[0]["details"]["seeded"] == 0
+        assert tick[0]["details"]["processed"] == 1
+
+    async def test_does_nothing_when_remaining_zero_and_outbox_empty(
         self, monkeypatch, captured_audit
     ):
         from src.main import _settings
@@ -184,25 +249,69 @@ class TestHappyPath:
             "total": 50,
             "active_version": 2,
             "by_version": {"2": 50},
+            "outbox": {"pending": 0, "processing": 0, "done": 0, "failed": 0},
         })
-        batch_mock = AsyncMock()
+        seed_mock = AsyncMock()
+        claim_mock = AsyncMock()
         monkeypatch.setattr(
             server_service_client, "fetch_secrets_migration_status", status_mock,
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+            server_service_client, "seed_reencrypt_outbox", seed_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
         )
 
         await _invoke_task()
 
-        status_mock.assert_awaited_once()
-        batch_mock.assert_not_called()
-        # Audit о «done» с processed=0 должен быть, чтобы операторская
-        # дашборда видела «работа доехала».
+        seed_mock.assert_not_called()
+        claim_mock.assert_not_called()
         tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
         assert len(tick) == 1
         assert tick[0]["details"]["processed"] == 0
         assert tick[0]["details"]["remaining"] == 0
+
+    async def test_skipped_finalize_counts_separately(
+        self, monkeypatch, captured_audit
+    ):
+        """finalize_done вернул skipped=True → отдельный счётчик в audit."""
+        from src.main import _settings
+        from src.services import server_service_client
+
+        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
+        monkeypatch.setattr(_settings, "secrets_reencrypt_batch_size", 10)
+
+        status_mock = AsyncMock(return_value={
+            "remaining": 5,
+            "total": 5,
+            "active_version": 2,
+            "by_version": {"1": 5},
+            "outbox": {"pending": 5, "processing": 0, "done": 0, "failed": 0},
+        })
+        claim_mock = AsyncMock(return_value=[
+            {"id": "rox_skip", "entity_type": "server_account",
+             "entity_id": "acc_s", "legacy_ciphertext": "v1$n$c", "attempts": 1},
+        ])
+        done_mock = AsyncMock(return_value={
+            "id": "rox_skip", "status": "done", "skipped": True,
+        })
+        monkeypatch.setattr(
+            server_service_client, "fetch_secrets_migration_status", status_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "finalize_reencrypt_outbox_done", done_mock,
+        )
+
+        await _invoke_task()
+
+        tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
+        details = tick[0]["details"]
+        assert details["skipped"] == 1
+        assert details["processed"] == 0
 
 
 class TestFailureModes:
@@ -221,20 +330,67 @@ class TestFailureModes:
                 message="boom",
             )
 
-        batch_mock = AsyncMock()
+        claim_mock = AsyncMock()
         monkeypatch.setattr(
             server_service_client, "fetch_secrets_migration_status", boom,
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
         )
 
-        # Не должно бросить — periodic-loop устойчив к транзиентным ошибкам.
         await _invoke_task()
 
-        batch_mock.assert_not_called()
+        claim_mock.assert_not_called()
 
-    async def test_batch_failure_does_not_raise(
+    async def test_finalize_failure_marks_failed(
+        self, monkeypatch, captured_audit
+    ):
+        """finalize_done бросил → finalize_failed зовётся, errors инкрементится."""
+        from src.core.exceptions import CredentialFetchError
+        from src.main import _settings
+        from src.services import server_service_client
+
+        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
+
+        status_mock = AsyncMock(return_value={
+            "remaining": 1, "total": 1, "active_version": 2,
+            "by_version": {"1": 1},
+            "outbox": {"pending": 1, "processing": 0, "done": 0, "failed": 0},
+        })
+        claim_mock = AsyncMock(return_value=[
+            {"id": "rox_bad", "entity_type": "server_account",
+             "entity_id": "acc_bad", "legacy_ciphertext": "v1$n$c", "attempts": 1},
+        ])
+
+        async def boom_done(_id):
+            raise CredentialFetchError(
+                error_code="SECRETS_OUTBOX_FINALIZE_REJECTED",
+                message="crypto",
+            )
+
+        failed_mock = AsyncMock(return_value={"id": "rox_bad", "status": "failed"})
+
+        monkeypatch.setattr(
+            server_service_client, "fetch_secrets_migration_status", status_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "finalize_reencrypt_outbox_done", boom_done,
+        )
+        monkeypatch.setattr(
+            server_service_client, "finalize_reencrypt_outbox_failed", failed_mock,
+        )
+
+        await _invoke_task()
+
+        failed_mock.assert_awaited_once()
+        tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
+        assert tick[0]["details"]["errors"] == 1
+        assert tick[0]["status"] == "warning"
+
+    async def test_claim_failure_does_not_raise(
         self, monkeypatch, captured_audit
     ):
         from src.core.exceptions import CredentialFetchError
@@ -244,12 +400,14 @@ class TestFailureModes:
         monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
 
         status_mock = AsyncMock(return_value={
-            "remaining": 10, "total": 10, "active_version": 2, "by_version": {"1": 10},
+            "remaining": 1, "total": 1, "active_version": 2,
+            "by_version": {"1": 1},
+            "outbox": {"pending": 1, "processing": 0, "done": 0, "failed": 0},
         })
 
-        async def boom_batch(_limit):
+        async def boom_claim(*_, **__):
             raise CredentialFetchError(
-                error_code="SECRETS_REENCRYPT_REJECTED",
+                error_code="SECRETS_OUTBOX_CLAIM_REJECTED",
                 message="db down",
             )
 
@@ -257,15 +415,12 @@ class TestFailureModes:
             server_service_client, "fetch_secrets_migration_status", status_mock,
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch", boom_batch,
+            server_service_client, "claim_reencrypt_outbox_pending", boom_claim,
         )
 
         # Не должно бросить.
         await _invoke_task()
 
-        status_mock.assert_awaited_once()
-        # Audit-tick про неудачный batch не пишем — иначе одна порча льёт
-        # лог. Об ошибке оператор узнаёт по WARNING-логу.
         tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
         assert tick == []
 
@@ -284,14 +439,12 @@ class TestFailureModes:
             server_service_client, "fetch_secrets_migration_status", boom,
         )
 
-        # Periodic-task не должен пробрасывать наружу — иначе scheduler-loop
-        # сломается на одной ошибке.
         await _invoke_task()
 
 
 class TestAppEnvGuard:
     async def test_mismatch_aborts_tick(self, monkeypatch, captured_audit):
-        """server_service отдал чужой APP_ENV → batch не вызывается, audit failure."""
+        """server_service отдал чужой APP_ENV → claim не вызывается, audit failure."""
         from src.main import _settings
         from src.services import server_service_client
 
@@ -304,19 +457,20 @@ class TestAppEnvGuard:
             "active_version": 2,
             "by_version": {"1": 10},
             "app_env": "production",
+            "outbox": {"pending": 0, "processing": 0, "done": 0, "failed": 0},
         })
-        batch_mock = AsyncMock(return_value={"processed": 10, "errors": 0})
+        claim_mock = AsyncMock()
         monkeypatch.setattr(
             server_service_client, "fetch_secrets_migration_status", status_mock,
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
         )
 
         await _invoke_task()
 
         status_mock.assert_awaited_once()
-        batch_mock.assert_not_called()
+        claim_mock.assert_not_called()
         tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
         assert len(tick) == 1
         assert tick[0]["status"] == "failure"
@@ -325,7 +479,6 @@ class TestAppEnvGuard:
         assert tick[0]["details"]["server_service_app_env"] == "production"
 
     async def test_match_case_insensitive_proceeds(self, monkeypatch, captured_audit):
-        """APP_ENV сравниваем без учёта регистра — Production==production."""
         from src.main import _settings
         from src.services import server_service_client
 
@@ -338,18 +491,19 @@ class TestAppEnvGuard:
             "active_version": 2,
             "by_version": {"1": 5},
             "app_env": "production",
+            "outbox": {"pending": 5, "processing": 0, "done": 0, "failed": 0},
         })
-        batch_mock = AsyncMock(return_value={"processed": 5, "errors": 0})
+        claim_mock = AsyncMock(return_value=[])
         monkeypatch.setattr(
             server_service_client, "fetch_secrets_migration_status", status_mock,
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
         )
 
         await _invoke_task()
 
-        batch_mock.assert_awaited_once()
+        claim_mock.assert_awaited_once()
 
     async def test_missing_app_env_in_status_proceeds(self, monkeypatch, captured_audit):
         """Старый server_service без `app_env` в ответе — guard молчит, тик идёт штатно."""
@@ -364,18 +518,19 @@ class TestAppEnvGuard:
             "total": 5,
             "active_version": 2,
             "by_version": {"1": 5},
+            "outbox": {"pending": 5, "processing": 0, "done": 0, "failed": 0},
         })
-        batch_mock = AsyncMock(return_value={"processed": 5, "errors": 0})
+        claim_mock = AsyncMock(return_value=[])
         monkeypatch.setattr(
             server_service_client, "fetch_secrets_migration_status", status_mock,
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
         )
 
         await _invoke_task()
 
-        batch_mock.assert_awaited_once()
+        claim_mock.assert_awaited_once()
 
 
 class TestBatchSizeWiring:
@@ -387,16 +542,18 @@ class TestBatchSizeWiring:
         monkeypatch.setattr(_settings, "secrets_reencrypt_batch_size", 250)
 
         status_mock = AsyncMock(return_value={
-            "remaining": 500, "total": 1000, "active_version": 2, "by_version": {"1": 500},
+            "remaining": 500, "total": 1000, "active_version": 2,
+            "by_version": {"1": 500},
+            "outbox": {"pending": 500, "processing": 0, "done": 0, "failed": 0},
         })
-        batch_mock = AsyncMock(return_value={"processed": 250, "errors": 0})
+        claim_mock = AsyncMock(return_value=[])
         monkeypatch.setattr(
             server_service_client, "fetch_secrets_migration_status", status_mock,
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch", batch_mock,
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
         )
 
         await _invoke_task()
 
-        batch_mock.assert_awaited_once_with(250)
+        claim_mock.assert_awaited_once_with(limit=250)

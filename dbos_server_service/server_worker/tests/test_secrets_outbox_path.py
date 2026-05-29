@@ -1,11 +1,10 @@
-"""Тест: secrets.reencrypt_lazy использует outbox, а не прямой audit_client.emit.
+"""Тест: secrets.reencrypt_lazy использует outbox для audit, а не прямой emit.
 
-W4-fix: задача перешла с direct emit на transactional outbox через
+Задача давно перешла с direct emit на transactional outbox через
 `task_repo.enqueue_audit + commit + flush_outbox`. Это гарантирует, что при
-недоступности loging_service audit-запись не теряется.
-
-Проверяем: после выполнения задачи в таблице `audit_outbox` появляется
-соответствующая строка (независимо от состояния emit).
+недоступности loging_service audit-запись не теряется. Контракт переезд
+на новый outbox-pattern (для самой ре-шифрации) не меняет — мы по-прежнему
+эмитим `secrets.reencrypt_tick` через audit_outbox publisher.
 """
 
 from __future__ import annotations
@@ -100,7 +99,7 @@ class TestSecretsReencryptUsesOutbox:
     async def test_happy_path_audit_row_written_to_outbox(
         self, monkeypatch,
     ):
-        """После успешного batch — outbox-row с reencrypt_tick создан."""
+        """После успешного claim+finalize — outbox-row с reencrypt_tick создан."""
         from src.main import _settings
         from src.services import server_service_client
 
@@ -114,11 +113,19 @@ class TestSecretsReencryptUsesOutbox:
                 "total": 100,
                 "active_version": 2,
                 "by_version": {"1": 50},
+                "outbox": {"pending": 50, "processing": 0, "done": 0, "failed": 0},
             }),
         )
         monkeypatch.setattr(
-            server_service_client, "trigger_secrets_reencrypt_batch",
-            AsyncMock(return_value={"processed": 10, "errors": 0}),
+            server_service_client, "claim_reencrypt_outbox_pending",
+            AsyncMock(return_value=[
+                {"id": "rox_1", "entity_type": "server_account",
+                 "entity_id": "acc_1", "legacy_ciphertext": "v1$n$c", "attempts": 1},
+            ]),
+        )
+        monkeypatch.setattr(
+            server_service_client, "finalize_reencrypt_outbox_done",
+            AsyncMock(return_value={"id": "rox_1", "status": "done", "skipped": False}),
         )
 
         # Нейтральный emit (ничего не делает).
@@ -136,7 +143,7 @@ class TestSecretsReencryptUsesOutbox:
         tick_rows = [r for r in rows if r.payload.get("action") == "secrets.reencrypt_tick"]
         assert len(tick_rows) == 1
         details = tick_rows[0].payload["details"]
-        assert details["processed"] == 10
+        assert details["processed"] == 1
         assert details["remaining_before"] == 50
         assert details["active_version"] == 2
 
@@ -155,15 +162,12 @@ class TestSecretsReencryptUsesOutbox:
             server_service_client, "fetch_secrets_migration_status",
             AsyncMock(return_value={
                 "remaining": 0, "total": 5, "active_version": 2, "by_version": {"2": 5},
+                "outbox": {"pending": 0, "processing": 0, "done": 0, "failed": 0},
             }),
         )
 
-        # Если бы код вызвал emit напрямую (не через outbox flush),
-        # этот assert сломал бы тест.
         direct_calls = []
 
-        # Монки на сам audit_client.emit модуля main (там нет прямого импорта).
-        # Монки только для flush-пути (через publisher), а не для secrets модуля напрямую.
         async def record_emit(action, **kw):
             direct_calls.append(action)
 
@@ -171,8 +175,8 @@ class TestSecretsReencryptUsesOutbox:
             "src.services.audit_outbox_publisher.audit_client.emit",
             record_emit,
         )
+
         # Убеждаемся, что secrets.reencrypt_lazy не вызывает audit_client.emit напрямую.
-        # Фильтруем строки кода (без docstring и комментариев).
         import src.main as main_mod
         import inspect
         src_lines = inspect.getsource(main_mod.secrets_reencrypt_lazy).splitlines()

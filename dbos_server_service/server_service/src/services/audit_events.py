@@ -56,7 +56,11 @@ SERVICE_EVENTS = [
     {"action": "server_account.provision_status", "description": "OS-user provision/update/deprovision result received from worker, present_on_server updated (callback)", "default_severity": "INFO"},
     {"action": "ipmi_controller.credentials_rotated_callback", "description": "Worker confirmed IPMI credentials rotation (callback after worker-side encrypt)", "default_severity": "WARNING"},
     # Постепенная фоновая ротация мастер-ключа (зовётся server_worker'ом)
-    {"action": "secrets.reencrypt_batch", "description": "Background secret re-encryption batch processed (called by server_worker periodic task)", "default_severity": "INFO"},
+    {"action": "secrets.reencrypt_batch", "description": "Background secret re-encryption batch processed (called by server_worker periodic task, legacy sync path)", "default_severity": "INFO"},
+    {"action": "secrets.reencrypt_seed", "description": "Reencrypt outbox seeded with pending owner rows whose ciphertext version differs from the active key", "default_severity": "INFO"},
+    {"action": "secrets.reencrypt_done", "description": "Reencrypt outbox row finalized successfully (owner-row updated with active-version ciphertext)", "default_severity": "INFO"},
+    {"action": "secrets.reencrypt_failed", "description": "Reencrypt outbox row marked failed (decrypt/encrypt error reported by worker)", "default_severity": "WARNING"},
+    {"action": "secrets.reencrypt_outbox_cleanup", "description": "Done outbox rows older than retention threshold removed", "default_severity": "INFO"},
     # Server accounts — CRUD (user-facing)
     {"action": "server_account.create", "description": "Server account created", "default_severity": "CRITICAL"},
     {"action": "server_account.view", "description": "Server account viewed", "default_severity": "INFO"},

@@ -3,6 +3,17 @@
 from pydantic import BaseModel, Field
 
 
+class OutboxStatusSnapshot(BaseModel):
+    """Слепок outbox-таблицы для observability'ы."""
+
+    pending: int = Field(0, ge=0, description="Сколько row'ов ждут claim'а.")
+    processing: int = Field(0, ge=0, description="Сколько в полёте (claim'нуто).")
+    done: int = Field(0, ge=0, description="Закрыто успешно, ещё не cleanup'нуто.")
+    failed: int = Field(
+        0, ge=0, description="Финализировано с ошибкой; ждёт оператора или requeue."
+    )
+
+
 class MigrationStatusResponse(BaseModel):
     """Ответ GET /internal/secrets/migration_status."""
 
@@ -38,10 +49,18 @@ class MigrationStatusResponse(BaseModel):
             "может переписать чужие секреты — тик должен быть пропущен."
         ),
     )
+    outbox: OutboxStatusSnapshot = Field(
+        default_factory=OutboxStatusSnapshot,
+        description=(
+            "Состояние outbox-таблицы `secrets_reencrypt_outbox`. Worker"
+            " ориентируется на `pending` > 0 как сигнал «нужно работать»;"
+            " оператор смотрит на `failed` для разбора инцидентов."
+        ),
+    )
 
 
 class ReencryptBatchResponse(BaseModel):
-    """Ответ POST /internal/secrets/reencrypt_batch."""
+    """Ответ POST /internal/secrets/reencrypt_batch (legacy sync-путь)."""
 
     processed: int = Field(
         ...,
@@ -55,4 +74,110 @@ class ReencryptBatchResponse(BaseModel):
             "Сколько строк завершились ошибкой decrypt/encrypt и были пропущены "
             "(например, нет ключа для старой версии в env или повреждён ciphertext)."
         ),
+    )
+
+
+# ── Outbox endpoints ────────────────────────────────────────────────────────
+
+
+class SeedOutboxResponse(BaseModel):
+    """Ответ POST /internal/secrets/reencrypt_outbox/seed."""
+
+    inserted: int = Field(
+        ..., ge=0, description="Сколько новых outbox-row'ов создано."
+    )
+    scanned: int = Field(
+        ...,
+        ge=0,
+        description=(
+            "Сколько owner-row'ов попало в SELECT-кандидатов в этом проходе"
+            " (включая те, что уже представлены в outbox)."
+        ),
+    )
+    active_version: int = Field(
+        ..., ge=1, description="Активная версия ключа на момент seed'а."
+    )
+
+
+class OutboxItem(BaseModel):
+    """Одна строка claim-ответа — то, что worker получает на обработку."""
+
+    id: str = Field(..., description="`rox_<uuid>` — outbox row id.")
+    entity_type: str = Field(
+        ..., description="`server_account` | `ipmi_controller`."
+    )
+    entity_id: str = Field(..., description="ID owner-row'а в исходной таблице.")
+    legacy_ciphertext: str = Field(
+        ...,
+        description=(
+            "Wire-token `v<N>$...` на момент seed'а. Если кто-то параллельно"
+            " ротировал пароль на этой строке, finalize_done пройдёт"
+            " идемпотентно — owner-row не перепишется."
+        ),
+    )
+    attempts: int = Field(
+        ..., ge=1, description="Какая по счёту попытка обработки этой строки."
+    )
+
+
+class OutboxClaimResponse(BaseModel):
+    """Ответ GET /internal/secrets/reencrypt_outbox/pending."""
+
+    items: list[OutboxItem] = Field(
+        default_factory=list,
+        description="Список claim'нутых row'ов; пустой если очередь иссякла.",
+    )
+
+
+class OutboxFinalizeDoneResponse(BaseModel):
+    """Ответ POST /internal/secrets/reencrypt_outbox/{id}/done."""
+
+    id: str = Field(..., description="Outbox row id.")
+    status: str = Field(
+        ...,
+        description=(
+            "`done` — нормально закрыто; `missing` — row не найден"
+            " (вернулись 404 в endpoint); другие значения — row уже"
+            " закрыт другой ветвью."
+        ),
+    )
+    skipped: bool = Field(
+        ...,
+        description=(
+            "True, если owner-row уже не содержит legacy ciphertext"
+            " (ротация прошла параллельно). Outbox-row всё равно помечается"
+            " `done` — работа фактически выполнена."
+        ),
+    )
+
+
+class OutboxFinalizeFailedRequest(BaseModel):
+    """Тело POST /internal/secrets/reencrypt_outbox/{id}/failed."""
+
+    error: str = Field(
+        ...,
+        min_length=1,
+        max_length=4096,
+        description=(
+            "Текст ошибки. Сохраняется в `last_error` без редактирования;"
+            " caller должен сам не класть туда секреты."
+        ),
+    )
+
+
+class OutboxFinalizeFailedResponse(BaseModel):
+    """Ответ POST /internal/secrets/reencrypt_outbox/{id}/failed."""
+
+    id: str
+    status: str = Field(
+        ...,
+        description="`failed` — нормальный исход; `missing` если row уже нет.",
+    )
+
+
+class OutboxCleanupResponse(BaseModel):
+    """Ответ POST /internal/secrets/reencrypt_outbox/cleanup."""
+
+    deleted: int = Field(
+        ..., ge=0, description="Сколько done-row'ов удалено в этом проходе."
     )

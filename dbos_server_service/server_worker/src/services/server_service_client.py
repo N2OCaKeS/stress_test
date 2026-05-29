@@ -410,7 +410,11 @@ async def fetch_secrets_migration_status() -> dict:
 
 
 async def trigger_secrets_reencrypt_batch(limit: int) -> dict:
-    """Дёрнуть один батч ре-шифрации `limit` записей.
+    """Legacy sync-путь: дёрнуть один батч ре-шифрации `limit` записей.
+
+    Сохранён для совместимости с тестами и операторских ad-hoc вызовов.
+    Новый периодик идёт через outbox (`seed_reencrypt_outbox` →
+    `claim_reencrypt_outbox_pending` → `finalize_reencrypt_outbox_done`).
 
     Возвращает: `{processed, errors}` от
     `POST /api/server/v1/internal/secrets/reencrypt_batch?limit=N`.
@@ -441,6 +445,151 @@ async def trigger_secrets_reencrypt_batch(limit: int) -> dict:
             error_code="SECRETS_REENCRYPT_REJECTED",
             message=f"server_service returned {response.status_code}",
             details={"limit": limit, "status_code": response.status_code},
+        )
+    return response.json()
+
+
+async def seed_reencrypt_outbox(limit: int = 500) -> dict:
+    """Попросить server_service просканировать owner-таблицы и публиковать
+    pending outbox-row'ы.
+
+    Возвращает: `{inserted, scanned, active_version}` от
+    `POST /api/server/v1/internal/secrets/reencrypt_outbox/seed?limit=N`.
+    `inserted=0` — больше публиковать нечего; caller прекращает повторные
+    вызовы в текущем тике.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport.
+      * `SECRETS_OUTBOX_SEED_REJECTED` — server_service вернул не 200.
+    """
+    settings = get_settings()
+    url = (
+        f"{settings.server_service_url.rstrip('/')}"
+        f"/api/server/v1/internal/secrets/reencrypt_outbox/seed"
+    )
+    client = get_server_service_client()
+    try:
+        response = await client.post(
+            url, params={"limit": limit}, headers=_headers(),
+        )
+    except httpx.HTTPError as exc:
+        raise CredentialFetchError(
+            error_code="SERVER_SERVICE_UNREACHABLE",
+            message=f"Failed to call server_service: {type(exc).__name__}",
+        ) from exc
+    if response.status_code != 200:
+        raise CredentialFetchError(
+            error_code="SECRETS_OUTBOX_SEED_REJECTED",
+            message=f"server_service returned {response.status_code}",
+            details={"limit": limit, "status_code": response.status_code},
+        )
+    return response.json()
+
+
+async def claim_reencrypt_outbox_pending(limit: int) -> list[dict]:
+    """Claim'нуть до `limit` pending outbox-row'ов для обработки.
+
+    Server-side: `FOR UPDATE SKIP LOCKED` + переход pending → processing.
+    Параллельные replica'и не конфликтуют — каждая получает свой непустой
+    непересекающийся набор.
+
+    Возвращает: список `{id, entity_type, entity_id, legacy_ciphertext,
+    attempts}`. Пустой список — очередь иссякла.
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport.
+      * `SECRETS_OUTBOX_CLAIM_REJECTED` — server_service вернул не 200.
+    """
+    settings = get_settings()
+    url = (
+        f"{settings.server_service_url.rstrip('/')}"
+        f"/api/server/v1/internal/secrets/reencrypt_outbox/pending"
+    )
+    client = get_server_service_client()
+    try:
+        response = await client.get(
+            url, params={"limit": limit}, headers=_headers(),
+        )
+    except httpx.HTTPError as exc:
+        raise CredentialFetchError(
+            error_code="SERVER_SERVICE_UNREACHABLE",
+            message=f"Failed to call server_service: {type(exc).__name__}",
+        ) from exc
+    if response.status_code != 200:
+        raise CredentialFetchError(
+            error_code="SECRETS_OUTBOX_CLAIM_REJECTED",
+            message=f"server_service returned {response.status_code}",
+            details={"limit": limit, "status_code": response.status_code},
+        )
+    body = response.json() or {}
+    items = body.get("items")
+    return list(items) if isinstance(items, list) else []
+
+
+async def finalize_reencrypt_outbox_done(outbox_id: str) -> dict:
+    """Закрыть outbox-row: server_service делает decrypt+encrypt, пишет
+    обратно в owner-row и помечает outbox `done`.
+
+    Возвращает: `{id, status, skipped}`. `status="done"` — happy path;
+    `skipped=True` — owner-row уже не legacy (ротация прошла параллельно).
+
+    Возможные ошибки: `CredentialFetchError` с `error_code`:
+      * `SERVER_SERVICE_UNREACHABLE` — transport.
+      * `SECRETS_OUTBOX_FINALIZE_REJECTED` — server_service вернул не 200
+        (включая `404 SECRETS_OUTBOX_ROW_NOT_FOUND` и `500
+        SECRETS_REENCRYPT_FINALIZE_FAILED` при crypto-ошибке).
+    """
+    settings = get_settings()
+    url = (
+        f"{settings.server_service_url.rstrip('/')}"
+        f"/api/server/v1/internal/secrets/reencrypt_outbox/{outbox_id}/done"
+    )
+    client = get_server_service_client()
+    try:
+        response = await client.post(url, headers=_headers())
+    except httpx.HTTPError as exc:
+        raise CredentialFetchError(
+            error_code="SERVER_SERVICE_UNREACHABLE",
+            message=f"Failed to call server_service: {type(exc).__name__}",
+        ) from exc
+    if response.status_code != 200:
+        raise CredentialFetchError(
+            error_code="SECRETS_OUTBOX_FINALIZE_REJECTED",
+            message=f"server_service returned {response.status_code}",
+            details={"outbox_id": outbox_id, "status_code": response.status_code},
+        )
+    return response.json()
+
+
+async def finalize_reencrypt_outbox_failed(outbox_id: str, error: str) -> dict:
+    """Пометить outbox-row `failed` с причиной (worker не смог завершить).
+
+    Используется, когда `finalize_reencrypt_outbox_done` бросил
+    SERVER_SERVICE_UNREACHABLE на повторных попытках, либо когда worker
+    сам поймал ошибку до отправки POST .../done.
+
+    Возвращает: `{id, status}`.
+    """
+    settings = get_settings()
+    url = (
+        f"{settings.server_service_url.rstrip('/')}"
+        f"/api/server/v1/internal/secrets/reencrypt_outbox/{outbox_id}/failed"
+    )
+    # Текст ошибки обрезаем здесь же — schema требует ≤4096.
+    body = {"error": (error or "unknown")[:4096]}
+    client = get_server_service_client()
+    try:
+        response = await client.post(url, headers=_headers(), json=body)
+    except httpx.HTTPError as exc:
+        raise CredentialFetchError(
+            error_code="SERVER_SERVICE_UNREACHABLE",
+            message=f"Failed to call server_service: {type(exc).__name__}",
+        ) from exc
+    if response.status_code != 200:
+        raise CredentialFetchError(
+            error_code="SECRETS_OUTBOX_FINALIZE_REJECTED",
+            message=f"server_service returned {response.status_code}",
+            details={"outbox_id": outbox_id, "status_code": response.status_code},
         )
     return response.json()
 

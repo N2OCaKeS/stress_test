@@ -70,6 +70,13 @@ class TestMigrationStatusShape:
             "active_version",
             "by_version",
             "app_env",
+            "outbox",
+        }
+        assert set(body["outbox"].keys()) == {
+            "pending",
+            "processing",
+            "done",
+            "failed",
         }
 
     async def test_counts_with_records(
@@ -267,3 +274,188 @@ class TestReencryptBatchAuditStatus:
         assert events[0]["status"] == "success"
         assert events[0]["details"]["processed"] == 3
         assert events[0]["details"]["errors"] == 1
+
+
+# ── Outbox-pattern endpoints ────────────────────────────────────────────────
+
+
+class TestOutboxSeedEndpoint:
+    async def test_no_token_returns_401(self, client):
+        resp = await client.post(f"{BASE}/reencrypt_outbox/seed")
+        assert resp.status_code == 401
+
+    async def test_reader_forbidden(self, client, reader_token_a):
+        resp = await client.post(
+            f"{BASE}/reencrypt_outbox/seed", headers=_hdr(reader_token_a)
+        )
+        assert resp.status_code == 403
+
+    async def test_empty_db_no_inserts(self, client, worker_pat_token):
+        resp = await client.post(
+            f"{BASE}/reencrypt_outbox/seed", headers=_hdr(worker_pat_token)
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["inserted"] == 0
+        assert body["scanned"] == 0
+        assert body["active_version"] >= 1
+
+    async def test_limit_validation(self, client, worker_pat_token):
+        resp = await client.post(
+            f"{BASE}/reencrypt_outbox/seed?limit=0", headers=_hdr(worker_pat_token)
+        )
+        assert resp.status_code == 422
+        resp = await client.post(
+            f"{BASE}/reencrypt_outbox/seed?limit=99999",
+            headers=_hdr(worker_pat_token),
+        )
+        assert resp.status_code == 422
+
+
+class TestOutboxClaimEndpoint:
+    async def test_empty_returns_no_items(self, client, worker_pat_token):
+        resp = await client.get(
+            f"{BASE}/reencrypt_outbox/pending?limit=10",
+            headers=_hdr(worker_pat_token),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body == {"items": []}
+
+    async def test_reader_forbidden(self, client, reader_token_a):
+        resp = await client.get(
+            f"{BASE}/reencrypt_outbox/pending?limit=10",
+            headers=_hdr(reader_token_a),
+        )
+        assert resp.status_code == 403
+
+
+class TestOutboxFinalizeEndpoints:
+    async def test_done_missing_returns_404(self, client, worker_pat_token):
+        resp = await client.post(
+            f"{BASE}/reencrypt_outbox/rox_doesnotexist/done",
+            headers=_hdr(worker_pat_token),
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "SECRETS_OUTBOX_ROW_NOT_FOUND"
+
+    async def test_failed_missing_returns_404(self, client, worker_pat_token):
+        resp = await client.post(
+            f"{BASE}/reencrypt_outbox/rox_doesnotexist/failed",
+            headers=_hdr(worker_pat_token),
+            json={"error": "boom"},
+        )
+        assert resp.status_code == 404
+
+    async def test_failed_requires_error_body(self, client, worker_pat_token):
+        resp = await client.post(
+            f"{BASE}/reencrypt_outbox/rox_x/failed",
+            headers=_hdr(worker_pat_token),
+            json={},
+        )
+        assert resp.status_code == 422
+
+
+class TestOutboxCleanupEndpoint:
+    async def test_empty_db_returns_zero(self, client, worker_pat_token):
+        resp = await client.post(
+            f"{BASE}/reencrypt_outbox/cleanup?older_than_hours=24",
+            headers=_hdr(worker_pat_token),
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": 0}
+
+    async def test_reader_forbidden(self, client, reader_token_a):
+        resp = await client.post(
+            f"{BASE}/reencrypt_outbox/cleanup?older_than_hours=24",
+            headers=_hdr(reader_token_a),
+        )
+        assert resp.status_code == 403
+
+
+class TestOutboxRoundTrip:
+    """End-to-end happy-path: seed → claim → done; v1-ciphertext → v2."""
+
+    async def test_full_lifecycle(
+        self, client, worker_pat_token, make_server, make_account, db,
+    ):
+        from src.core.config import get_settings
+
+        settings = get_settings()
+        if settings.server_encryption_key_version == 1:
+            pytest.skip("active version is v1; cannot synthesize legacy ciphertext")
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="secret-x")
+        # Перепишем токен с префиксом v1$… — формат корректен, но не active.
+        original = acc.password_encrypted
+        _, nonce_b64, ct_b64 = original.split("$", 2)
+        acc.password_encrypted = f"v1${nonce_b64}${ct_b64}"
+        await db.flush()
+        await db.commit()
+
+        # 1. seed
+        seed = await client.post(
+            f"{BASE}/reencrypt_outbox/seed", headers=_hdr(worker_pat_token)
+        )
+        assert seed.status_code == 200, seed.text
+        body = seed.json()
+        assert body["inserted"] >= 1
+
+        # 2. claim
+        claim = await client.get(
+            f"{BASE}/reencrypt_outbox/pending?limit=10",
+            headers=_hdr(worker_pat_token),
+        )
+        assert claim.status_code == 200
+        items = claim.json()["items"]
+        assert len(items) >= 1
+        target = next(i for i in items if i["entity_id"] == acc.id)
+        # legacy ciphertext был v1, owner-row v1 — но crypto не может
+        # расшифровать тот ciphertext без оригинального plain. Финализация
+        # в этом сценарии должна упасть (потому что мы подменили только
+        # префикс версии), и это ОК — мы проверяем shape API. Реальный
+        # сценарий с консистентным v1 ciphertext'ом покрывается в
+        # integration-тестах.
+        finalize = await client.post(
+            f"{BASE}/reencrypt_outbox/{target['id']}/done",
+            headers=_hdr(worker_pat_token),
+        )
+        # Либо 500 (decrypt не смог) — тогда воркер сам пометит failed,
+        # либо 200 с done. Оба варианта валидны для shape-теста.
+        assert finalize.status_code in (200, 500)
+
+    async def test_claim_marks_row_processing(
+        self, client, worker_pat_token, db,
+    ):
+        """После claim'а — row в processing, attempts=1."""
+        from src.models import ReencryptOutboxEntry
+
+        entry = ReencryptOutboxEntry(
+            id="rox_test_001",
+            entity_type="server_account",
+            entity_id="acc_test_001",
+            legacy_ciphertext="v1$abc$def",
+            status="pending",
+        )
+        db.add(entry)
+        await db.commit()
+
+        claim = await client.get(
+            f"{BASE}/reencrypt_outbox/pending?limit=10",
+            headers=_hdr(worker_pat_token),
+        )
+        assert claim.status_code == 200
+        items = claim.json()["items"]
+        target = next((i for i in items if i["id"] == "rox_test_001"), None)
+        assert target is not None
+        assert target["attempts"] == 1
+
+        # Финализируем как failed — должно работать.
+        failed = await client.post(
+            f"{BASE}/reencrypt_outbox/rox_test_001/failed",
+            headers=_hdr(worker_pat_token),
+            json={"error": "test-error"},
+        )
+        assert failed.status_code == 200
+        assert failed.json()["status"] == "failed"

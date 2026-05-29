@@ -202,6 +202,9 @@ class TestIntrospectPAT:
     ):
         sid = short_id()
         dept = ensure_department(auth_client, admin_token, f"is_pat_rev_{sid}")
+        # PATCreate теперь требует non-empty allowed_services; даём dept
+        # доступ к auth_service, чтобы юзер мог выписать PAT в этот scope.
+        grant_service_to_department(auth_client, admin_token, dept, "auth_service")
         user = make_user_in_dept(auth_client, admin_token, department_id=dept)
         u_jwt = login_user(auth_client, user["username"], user["_password"])["body"]["access_token"]
 

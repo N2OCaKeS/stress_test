@@ -82,9 +82,10 @@ class TestListForEntity:
         assert all(r["entity_type"] == "server" for r in rows)
         # admin для server: baseline 17 actions, потом split добавил
         # reinstall_status_submit (18), затем b8d4e3f9a712 удалил 5 (boot_order_view,
-        # boot_order_set, pxe_boot, reinstall_start, reinstall_status_submit) → 13.
+        # boot_order_set, pxe_boot, reinstall_start, reinstall_status_submit) → 13,
+        # e3f8c4b21a07 добавил view_drift → 14.
         admin = [r for r in rows if r["role"] == "admin"]
-        assert len(admin) == 13
+        assert len(admin) == 14
 
     async def test_unknown_entity_type_422(self, client, admin_token):
         resp = await client.get(f"{BASE}/nonexistent_type", headers=_hdr(admin_token))

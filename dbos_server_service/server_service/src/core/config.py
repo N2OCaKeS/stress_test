@@ -171,6 +171,41 @@ class Settings(BaseSettings):
             "/ready) исключены из ограничения."
         ),
     )
+    os_versions_anon_rate_limit: str = Field(
+        default="100/minute",
+        alias="OS_VERSIONS_ANON_RATE_LIMIT",
+        description=(
+            "Per-IP rate-limit на анонимные GET /os-versions* (синтаксис "
+            "slowapi). Каталог публичный — без этого лимита анонимный сканер "
+            "выкачивает имена/версии и шумит в audit "
+            "`os_version.list_anonymous`/`view_anonymous`. Лимит применяется "
+            "поверх `global_rate_limit`; authenticated read под глобальным."
+        ),
+    )
+    ipmi_verify_max_age_seconds: int = Field(
+        default=60,
+        ge=1,
+        alias="IPMI_VERIFY_MAX_AGE_SECONDS",
+        description=(
+            "Максимальный возраст `verified_at` в "
+            "`IpmiCredentialsRotatedRequest` (секунды). Worker обязан "
+            "подтвердить BMC test-call в этом окне после apply; иначе "
+            "приёмник отбивает 400 BMC_VERIFY_REQUIRED. По умолчанию 60s — "
+            "достаточно для round-trip apply→verify→storage, не даёт "
+            "реиспользовать давний successful test."
+        ),
+    )
+    ipmi_rotate_per_server_rate_limit: str = Field(
+        default="5/minute",
+        alias="IPMI_ROTATE_PER_SERVER_RATE_LIMIT",
+        description=(
+            "Per-IP rate-limit на dispatch ротации IPMI-credentials через "
+            "POST /ipmi-controllers/{id}/rotate (синтаксис slowapi). Ротация "
+            "запускает BMC-операцию + worker-task — частый burst грозит "
+            "DoS'нуть BMC и забить очередь. Применяется поверх "
+            "`global_rate_limit`."
+        ),
+    )
     security_hsts_enabled: bool = Field(
         default=False,
         alias="SECURITY_HSTS_ENABLED",

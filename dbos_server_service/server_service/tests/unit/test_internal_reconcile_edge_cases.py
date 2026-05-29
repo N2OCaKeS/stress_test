@@ -122,11 +122,14 @@ class TestAccountAttrDrift:
         assert diff["shell"]["expected"] == "/bin/bash"
         assert diff["shell"]["found"] == "/bin/sh"
 
-    def test_only_home_dir_differs(self):
+    def test_home_dir_no_longer_counted_as_drift(self):
+        """home_dir намеренно исключён из `_DRIFT_ATTRS` — PATCH home_dir не
+        запускает fan-out (worker не двигает $HOME), и эмитить drift на каждом
+        скане смысла нет (оператор не может его закрыть API-действием)."""
         acc = _FakeAccount(home_dir="/home/user")
         item = _FakeItem(home_dir="/var/lib/app")
         diff = _account_attr_drift(acc, item)
-        assert set(diff.keys()) == {"home_dir"}
+        assert diff == {}
 
     def test_only_unix_groups_differs(self):
         acc = _FakeAccount(unix_groups=["sudo"])
@@ -136,13 +139,14 @@ class TestAccountAttrDrift:
         assert set(diff["unix_groups"]["expected"]) == {"sudo"}
         assert set(diff["unix_groups"]["found"]) == {"wheel"}
 
-    def test_all_four_attrs_differ(self):
+    def test_all_three_managed_attrs_differ(self):
+        """home_dir намеренно не считается drift'ом (см. `_DRIFT_ATTRS`)."""
         acc = _FakeAccount(has_sudo=False, unix_groups=["a"],
                            shell="/bin/bash", home_dir="/home/x")
         item = _FakeItem(has_sudo=True, unix_groups=["b"],
                          shell="/bin/sh", home_dir="/home/y")
         diff = _account_attr_drift(acc, item)
-        assert set(diff.keys()) == {"has_sudo", "unix_groups", "shell", "home_dir"}
+        assert set(diff.keys()) == {"has_sudo", "unix_groups", "shell"}
 
     def test_added_group_to_box(self):
         """Бокс добавил группу, которой нет в БД."""
@@ -371,7 +375,14 @@ class TestUsersInventoryEdgeCases:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body == {"ok": True, "created": 0, "present": 0, "drifted": 0}
+        assert body["ok"] is True
+        assert body["created"] == 0
+        assert body["present"] == 0
+        assert body["drifted"] == 0
+        # result_summary должен быть пустым по drift'ам.
+        assert body["result_summary"]["total_users"] == 0
+        assert body["result_summary"]["created_discovered"] == 0
+        assert body["result_summary"]["drifts"] == []
 
         drift = [e for e in captured_emits if e.get("action") == "server_account.drift_detected"]
         assert drift == []

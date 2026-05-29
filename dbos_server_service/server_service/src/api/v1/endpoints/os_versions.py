@@ -3,13 +3,18 @@
 Чтение (list / get по id / get по имени) публичное — без auth. Запись
 (create/update/delete) остаётся под матрицей прав. Anonymous-чтение
 эмитит INFO-аудит (`os_version.list_anonymous` / `view_anonymous`) для
-SIEM-видимости enumeration-попыток; общий rate-limit middleware кладёт
-потолок на частоту таких вызовов.
+SIEM-видимости enumeration-попыток; поверх глобального rate-limit'а
+повешен отдельный per-IP лимит `OS_VERSIONS_ANON_RATE_LIMIT`
+(`settings.os_versions_anon_rate_limit`, default 100/minute) — на
+authenticated запросы он не распространяется (см. `_anon_rate_limit_key`).
 """
 
 from fastapi import APIRouter, Depends, Query, Request
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
+from src.core.limiter import endpoint_limiter
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
@@ -18,6 +23,8 @@ from src.services import audit_service
 from src.services import os_version_service as svc
 
 router = APIRouter(prefix="/os-versions")
+
+_ANON_LIMIT = get_settings().os_versions_anon_rate_limit
 
 
 def _is_anonymous(request: Request) -> bool:
@@ -31,12 +38,27 @@ def _is_anonymous(request: Request) -> bool:
     return not auth.lower().startswith("bearer ")
 
 
+def _anon_rate_limit_key(request: Request) -> str | None:
+    """`key_func` для slowapi: возвращает client-IP только для anonymous.
+
+    Authenticated клиент → `None`. slowapi трактует falsy key как «лимит не
+    применять» (см. `extension.py: if all(args)`), поэтому authenticated
+    read остаётся под одним только глобальным `global_rate_limit`.
+    `exempt_when` тут не годится — slowapi-сигнатура для него — `() -> bool`
+    (без request), а нам нужен contextual check.
+    """
+    if _is_anonymous(request):
+        return get_remote_address(request)
+    return None
+
+
 @router.get(
     "",
     response_model=PaginatedResponse[OsVersionResponse],
     summary="Список OS-версий в каталоге",
     description="Глобальный каталог OS-версий. Публичный read — без авторизации.",
 )
+@endpoint_limiter.limit(_ANON_LIMIT, key_func=_anon_rate_limit_key)
 async def list_os_versions(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -69,9 +91,10 @@ async def list_os_versions(
         404: {"description": "Версия не найдена."},
     },
 )
+@endpoint_limiter.limit(_ANON_LIMIT, key_func=_anon_rate_limit_key)
 async def get_os_version_by_name(
-    name: str,
     request: Request,
+    name: str,
     db: AsyncSession = Depends(get_db),
 ) -> OsVersionResponse:
     """Get OS-версии по имени. Публичный, без авторизации."""
@@ -120,9 +143,10 @@ async def create_os_version(
         404: {"description": "Версия не найдена."},
     },
 )
+@endpoint_limiter.limit(_ANON_LIMIT, key_func=_anon_rate_limit_key)
 async def get_os_version(
-    os_version_id: str,
     request: Request,
+    os_version_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> OsVersionResponse:
     """Get OS-версии по id. Публичный, без авторизации."""

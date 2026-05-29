@@ -14,13 +14,12 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.router import api_router
 from src.core.config import get_settings
+from src.core.limiter import limiter
 from src.core.exceptions import AppException
 from src.dependencies import auth as auth_deps
 from src.middleware.platform_admin_guard import platform_admin_guard
@@ -117,11 +116,10 @@ def create_application() -> FastAPI:
     # Health endpoints (/health, /ready) исключены из лимита — k8s probe
     # не должен натыкаться на 429 при тестовой нагрузке. Исключение —
     # в `rate_limit_middleware` ниже (path-bypass до `_check_request_limit`).
-    limiter = Limiter(
-        key_func=get_remote_address,
-        default_limits=[settings.global_rate_limit],
-        headers_enabled=True,
-    )
+    #
+    # Сам limiter живёт в `src.core.limiter` — endpoint-модули вешают
+    # `@limiter.limit(...)` декораторы (для os_versions anon, ipmi rotate
+    # и т.п.), и через нейтральный модуль не образуется цикл импорта.
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

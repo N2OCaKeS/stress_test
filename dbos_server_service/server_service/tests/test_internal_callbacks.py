@@ -283,6 +283,7 @@ class TestIpmiCredentialsRotatedCallback:
             json={
                 "new_password": "RotatedWorker1234",
                 "rotated_at": rotated_at.isoformat(),
+                "verified_at": rotated_at.isoformat(),
             },
         )
         assert resp.status_code == 200, resp.text
@@ -311,6 +312,7 @@ class TestIpmiCredentialsRotatedCallback:
             json={
                 "new_password": "BotRotated1234",
                 "rotated_at": _iso(),
+                "verified_at": _iso(),
             },
         )
         assert resp.status_code == 200, resp.text
@@ -326,6 +328,7 @@ class TestIpmiCredentialsRotatedCallback:
             json={
                 "new_password": "ReaderTry1234",
                 "rotated_at": _iso(),
+                "verified_at": _iso(),
             },
         )
         assert resp.status_code == 403
@@ -339,6 +342,7 @@ class TestIpmiCredentialsRotatedCallback:
             json={
                 "new_password": "Anything1234",
                 "rotated_at": _iso(),
+                "verified_at": _iso(),
             },
         )
         assert resp.status_code == 404
@@ -356,12 +360,71 @@ class TestIpmiCredentialsRotatedCallback:
             json={
                 "new_password": "AuditPwd1234",
                 "rotated_at": _iso(),
+                "verified_at": _iso(),
             },
         )
         events = _by_action(captured_emits, "ipmi_controller.credentials_rotated_callback")
         success = [e for e in events if e.get("status") == "success"]
         assert success
         assert success[0].get("target_id") == ctrl.id
+        # verified_at должен попасть в audit details (verify-then-storage trace).
+        assert success[0]["details"].get("verified_at") is not None
+
+    async def test_missing_verified_at_returns_422(
+        self, client, admin_role_token_a, make_server, make_ipmi, dept_a,
+    ):
+        """Без `verified_at` Pydantic отбивает 422 — поле обязательное."""
+        srv = await make_server(department_id=dept_a)
+        ctrl = await make_ipmi(server_id=srv.id)
+        resp = await client.post(
+            f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "new_password": "NoVerify1234",
+                "rotated_at": _iso(),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+    async def test_stale_verified_at_rejected_400(
+        self, client, admin_role_token_a, make_server, make_ipmi, db, dept_a,
+    ):
+        """`verified_at` старше IPMI_VERIFY_MAX_AGE_SECONDS → 400 BMC_VERIFY_REQUIRED.
+
+        Storage не должен обновиться — старый ciphertext остаётся, чтобы
+        BMC доступ не потерялся при разорванном verify→storage пути.
+        """
+        from datetime import timedelta
+        from src.models import IpmiController
+
+        srv = await make_server(department_id=dept_a)
+        ctrl = await make_ipmi(server_id=srv.id, password="old-pwd-stable")
+        # 1 час назад — за пределами 60s окна.
+        stale = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        resp = await client.post(
+            f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "new_password": "StaleVerify1234",
+                "rotated_at": _iso(),
+                "verified_at": stale,
+            },
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error_code"] == "BMC_VERIFY_REQUIRED"
+
+        # Storage не должен мутироваться.
+        await db.commit()
+        refreshed = (await db.execute(
+            select(IpmiController).where(IpmiController.id == ctrl.id)
+        )).scalar_one()
+        # password_rotated_at не выставился (если был None — остаётся None).
+        old_rotated = refreshed.password_rotated_at
+        # И новый пароль не сохранён — decrypt старого должен вернуть исходный.
+        assert secrets_service.decrypt(
+            refreshed.password_encrypted,
+            aad=secrets_service.aad_for_ipmi_credential(refreshed.id),
+        ) == "old-pwd-stable"
 
 
 # ── X-Target-Department-Id strict mode ──────────────────────────────────────
@@ -403,6 +466,7 @@ class TestCallbackDeptHeaderStrict:
             json={
                 "new_password": "StrictOk1234",
                 "rotated_at": _iso(),
+                "verified_at": _iso(),
             },
         )
         assert resp.status_code == 200

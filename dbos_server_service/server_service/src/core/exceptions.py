@@ -18,6 +18,18 @@ class AppException(Exception):
 
 
 @dataclass
+class BadRequestError(AppException):
+    """400 — запрос синтаксически валиден, но семантически отвергнут.
+
+    Например, callback'и worker'а, у которых отсутствует обязательный proof
+    (verify-then-storage для IPMI-rotate), либо нарушено state-precondition,
+    не покрываемое 409/422.
+    """
+
+    http_status: int = 400
+
+
+@dataclass
 class AuthenticationError(AppException):
     """401 — нет валидного bearer'а (отсутствие/подделка/expire/ban)."""
 

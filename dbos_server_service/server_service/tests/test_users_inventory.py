@@ -282,7 +282,10 @@ class TestUsersInventoryReconcile:
         d = drift[0]["details"]
         assert d["drift"] == "attributes"
         assert d["login"] == "postgres"
-        assert set(d["fields"]) == {"has_sudo", "unix_groups", "shell", "home_dir"}
+        # home_dir намеренно НЕ в `_DRIFT_ATTRS` (см. internal_service.py) —
+        # PATCH home_dir не запускает fan-out, и эмитить drift на каждом скане
+        # смысла нет (оператор не может его закрыть API-действием).
+        assert set(d["fields"]) == {"has_sudo", "unix_groups", "shell"}
         assert d["expected"]["has_sudo"] is False
         assert d["found"]["has_sudo"] is True
         assert d["expected"]["shell"] == "/bin/bash"

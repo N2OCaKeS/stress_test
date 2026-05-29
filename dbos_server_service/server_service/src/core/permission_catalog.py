@@ -52,6 +52,10 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
     Action.POWER_STATUS: "Опросить состояние питания.",
     Action.INVENTORY_TRIGGER: "Запустить инвентаризацию железа и/или ОС-пользователей.",
     Action.INVENTORY_SUBMIT: "Callback воркера с результатом инвентаризации.",
+    Action.VIEW_DRIFT: (
+        "Прочитать агрегированную сводку drift'ов аккаунтов на сервере "
+        "(события server_account.drift_detected из loging)."
+    ),
     Action.PREPARE_CALLBACK: (
         "Callback воркера: пометить сервер подготовленным после bootstrap."
     ),

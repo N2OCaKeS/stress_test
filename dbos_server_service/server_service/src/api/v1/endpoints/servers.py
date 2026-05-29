@@ -1,11 +1,14 @@
 """CRUD-эндпоинты серверов + busy-lease (acquire/release) + ручной os-sync."""
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
+from src.schemas.drift import DriftEventItem, ServerDriftResponse
 from src.schemas.server import (
     ServerAcquireRequest,
     ServerCreate,
@@ -156,6 +159,50 @@ async def get_server(
     """
     obj = await svc.get_server(db, identity, server_id)
     return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
+
+
+@router.get(
+    "/{server_id}/drift",
+    response_model=ServerDriftResponse,
+    summary="Drift-сводка сервера за окно",
+    description=(
+        "Агрегирует события `server_account.drift_detected` для конкретного "
+        "сервера за окно `[since, now]`. По умолчанию окно — последние 24 часа.\n\n"
+        "Drift-события эмитятся `internal/.../users/inventory` (инвентаризация "
+        "OS-пользователей) — БД-истина не перетирается, но расхождения "
+        "поднимают WARNING для оператора. Endpoint удобен как «что случилось "
+        "с этим сервером недавно», без выгрузки логов в SIEM.\n\n"
+        "Доступ: `(server, *, view_drift)`. Cross-dept сервер скрыт за 404."
+    ),
+    response_description="Список drift'ов + флаг переполнения окна.",
+    responses={
+        403: {"description": "Нет роли с `view_drift`."},
+        404: {"description": "Сервер не найден / чужой dept."},
+        503: {"description": "loging_service недоступен."},
+    },
+)
+async def get_server_drift(
+    server_id: str,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+    since: datetime | None = Query(
+        default=None,
+        description="Начало окна (ISO 8601 UTC). По умолчанию — `now - 24h`.",
+    ),
+) -> ServerDriftResponse:
+    """GET /servers/{id}/drift — собрать drift-сводку из loging."""
+    if since is None:
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
+    elif since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+
+    drifts, truncated = await svc.query_drift_summary(db, identity, server_id, since)
+    return ServerDriftResponse(
+        server_id=server_id,
+        since=since,
+        drifts=[DriftEventItem(**item) for item in drifts],
+        truncated=truncated,
+    )
 
 
 @router.patch(

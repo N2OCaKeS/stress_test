@@ -123,6 +123,10 @@ class Action(StrEnum):
     POWER_STATUS = "power_status"
     INVENTORY_TRIGGER = "inventory_trigger"
     INVENTORY_SUBMIT = "inventory_submit"
+    # Read aggregated drift-summary по серверу — обращается в loging за
+    # событиями `server_account.drift_detected`. Право узкое: даёт смотреть
+    # факт расхождения без полного доступа к accounts.
+    VIEW_DRIFT = "view_drift"
     # worker_bot callback после бутстрапа управления (prepare): помечает
     # сервер подготовленным. Узкий least-privilege грант, без CRUD над сервером.
     PREPARE_CALLBACK = "prepare_callback"
@@ -158,6 +162,8 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.INVENTORY_TRIGGER, Action.INVENTORY_SUBMIT,
         # worker_bot подтверждает завершение бутстрапа управления — callback-only.
         Action.PREPARE_CALLBACK,
+        # Чтение drift-сводки по серверу (агрегация event'ов из loging).
+        Action.VIEW_DRIFT,
     }),
     EntityType.SERVER_ACCOUNT: frozenset({
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,

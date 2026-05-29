@@ -89,30 +89,58 @@ class TestPasswordRotateRequestPolicy:
 
 class TestIpmiCredentialsRotatedRequestPolicy:
     _ROTATED = "2026-01-01T00:00:00+00:00"
+    _VERIFIED = "2026-01-01T00:00:00+00:00"
 
     def test_compliant_password_accepted(self):
         m = IpmiCredentialsRotatedRequest(
-            new_password="Strong1Password", rotated_at=self._ROTATED,
+            new_password="Strong1Password",
+            rotated_at=self._ROTATED,
+            verified_at=self._VERIFIED,
         )
         assert m.new_password == "Strong1Password"
+        assert m.verified_at is not None
 
     def test_short_password_rejected(self):
         with pytest.raises(ValidationError):
             IpmiCredentialsRotatedRequest(
-                new_password="A1b", rotated_at=self._ROTATED,
+                new_password="A1b",
+                rotated_at=self._ROTATED,
+                verified_at=self._VERIFIED,
             )
 
     def test_password_without_digit_rejected(self):
         with pytest.raises(ValidationError):
             IpmiCredentialsRotatedRequest(
-                new_password="OnlyLettersHere", rotated_at=self._ROTATED,
+                new_password="OnlyLettersHere",
+                rotated_at=self._ROTATED,
+                verified_at=self._VERIFIED,
             )
 
     def test_password_without_letter_rejected(self):
         with pytest.raises(ValidationError):
             IpmiCredentialsRotatedRequest(
-                new_password="12345678", rotated_at=self._ROTATED,
+                new_password="12345678",
+                rotated_at=self._ROTATED,
+                verified_at=self._VERIFIED,
             )
+
+    def test_missing_verified_at_rejected(self):
+        """`verified_at` обязательное поле — отсутствие → ValidationError."""
+        with pytest.raises(ValidationError):
+            IpmiCredentialsRotatedRequest(
+                new_password="Strong1Password",
+                rotated_at=self._ROTATED,
+            )
+
+    def test_naive_verified_at_is_tz_normalized(self):
+        """Naive datetime приходит как UTC (контракт internal-канала)."""
+        m = IpmiCredentialsRotatedRequest(
+            new_password="Strong1Password",
+            rotated_at="2026-01-01T00:00:00",
+            verified_at="2026-01-01T00:00:00",
+        )
+        assert m.verified_at.tzinfo is not None
+        assert m.rotated_at.tzinfo is not None
 
 
 # ── Лимит на размер inventory-списков ───────────────────────────────────────

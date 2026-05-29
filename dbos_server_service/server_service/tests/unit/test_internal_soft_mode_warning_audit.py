@@ -107,6 +107,9 @@ def _identity():
 def _settings(monkeypatch, *, strict: bool):
     class _S:
         internal_require_dept_header = strict
+        # IPMI verify max age — реальное значение по умолчанию (60s).
+        # record_ipmi_credentials_rotated читает его при проверке verified_at.
+        ipmi_verify_max_age_seconds = 60
 
     monkeypatch.setattr(internal_service, "get_settings", lambda: _S())
 
@@ -503,6 +506,7 @@ async def test_record_ipmi_credentials_rotated_soft_mode_no_header_emits_warning
     payload = IpmiCredentialsRotatedRequest(
         new_password="Strong1Password",
         rotated_at=datetime.now(timezone.utc),
+        verified_at=datetime.now(timezone.utc),
     )
     await internal_service.record_ipmi_credentials_rotated(
         _Sess(), _identity(), controller_id="ctrl_1", payload=payload,

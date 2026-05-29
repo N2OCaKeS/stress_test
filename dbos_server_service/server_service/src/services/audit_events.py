@@ -30,6 +30,7 @@ SERVICE_EVENTS = [
     # Servers — CRUD
     {"action": "server.create", "description": "Server record created", "default_severity": "INFO"},
     {"action": "server.view", "description": "Server record viewed", "default_severity": "INFO"},
+    {"action": "server.view_drift", "description": "Aggregated drift summary read for server (queries loging server_account.drift_detected events)", "default_severity": "INFO"},
     {"action": "server.update", "description": "Server record updated", "default_severity": "INFO"},
     {"action": "server.delete", "description": "Server record deleted", "default_severity": "CRITICAL"},
     # Power-cycle (IPMI/iDRAC/iLO/Redfish) — dispatch to server_worker

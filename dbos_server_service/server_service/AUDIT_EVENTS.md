@@ -51,6 +51,7 @@ Source-of-truth — `src/services/audit_events.py::SERVICE_EVENTS`.
 |---|---|---|---|---|
 | `server.create` | INFO | INSERT в `servers` | `server` | `hostname`, `ip_address`, `department_id` (whitelist в audit_service) |
 | `server.view` | INFO | denied на GET /{id} (cross-dept / nonexistent) — success на read не аудитим (шум) | `server` | `reason in {not_found_or_cross_dept, cross_department}` |
+| `server.view_drift` | INFO | GET `/servers/{id}/drift` — агрегированная сводка drift-событий | `server` | `department_id`, `since`, `count`, `truncated`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server.update` | INFO | UPDATE через PATCH | `server` | поля diff'а (whitelist), `department_id` |
 | `server.delete` | CRITICAL | hard-delete + CASCADE | `server` | `department_id` |
 | `server.power_on` | WARNING | dispatch `power.on` в worker | `server` | `task_id`, `task_kind=power.on`, `department_id`. denied/failure: `reason in {not_found_or_cross_dept, no_view_permission, permission_denied, decommissioned, no_ipmi, idempotent_conflict, worker_unreachable}` |

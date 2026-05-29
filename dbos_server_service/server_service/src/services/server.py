@@ -221,6 +221,77 @@ async def get_server(
     return obj
 
 
+async def query_drift_summary(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+    since: datetime,
+) -> tuple[list[dict], bool]:
+    """Собрать drift-сводку по серверу за окно `[since, now]`.
+
+    Право — `(server, view_drift)`. Cross-dept сервер скрыт за 404 ровно как
+    у `get_server`. Сами события достаём из loging_service через
+    `loging_client.fetch_drift_events`; на стороне server_service делаем
+    только permission/visibility-check и трансформацию в schema-ready dict.
+
+    Возвращает кортеж `(drifts, truncated)`:
+
+    * `drifts` — список dict'ов, валидируемых далее `DriftEventItem`.
+    * `truncated` — флаг переполнения окна (см. `loging_client`).
+    """
+    from src.services import loging_client  # локальный импорт — рвём цикл при тестах
+
+    try:
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW_DRIFT)
+        obj = await repo.get_by_id(db, server_id)
+        if obj is None:
+            raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+        _ensure_visible(identity, obj)
+    except (NotFoundError, AuthorizationError) as exc:
+        reason = (
+            "not_found_or_cross_dept"
+            if isinstance(exc, NotFoundError)
+            else "permission_denied"
+        )
+        audit_service.emit(
+            "server.view_drift",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": reason},
+        )
+        raise
+
+    events, truncated = await loging_client.fetch_drift_events(
+        server_id=server_id, since=since,
+    )
+
+    # Из event'а пытаемся достать login / drift_type / fields. Контракт:
+    # emitter (`internal_service.receive_users_inventory`) кладёт login и
+    # drift в `details`, fields появляется только при drift='attributes'.
+    items: list[dict] = []
+    for ev in events:
+        details = ev.get("details") or {}
+        items.append({
+            "login": details.get("login") or "",
+            "drift_type": details.get("drift") or "",
+            "fields": details.get("fields"),
+            "detected_at": ev.get("timestamp"),
+        })
+
+    audit_service.emit(
+        "server.view_drift",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "department_id": obj.department_id,
+            "since": since.isoformat(),
+            "count": len(items),
+            "truncated": truncated,
+        },
+    )
+    return items, truncated
+
+
 async def create_server(
     db: AsyncSession,
     identity: IdentityContext,

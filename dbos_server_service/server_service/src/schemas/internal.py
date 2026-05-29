@@ -1,6 +1,6 @@
 """Схемы для internal-эндпоинтов, которые зовёт server_worker."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -156,6 +156,44 @@ class UsersInventoryCallbackRequest(BaseModel):
     )
 
 
+class DriftItem(BaseModel):
+    """Один drift-сигнал в `result_summary`.
+
+    Зеркалит details emit'а `server_account.drift_detected`:
+
+    * `unknown_login` — на боксе живёт юзер, которого в API нет (создан
+      discovered-аккаунт);
+    * `attributes` — login совпадает, но атрибуты (has_sudo / unix_groups /
+      shell / home_dir) разошлись с БД-истиной; `fields` перечисляет
+      разошедшиеся поля;
+    * `missing_on_box` — аккаунт привязан в API, но на боксе не найден.
+    """
+
+    login: str = Field(description="Login на боксе / в API.")
+    drift_type: str = Field(description="unknown_login / attributes / missing_on_box.")
+    fields: list[str] | None = Field(
+        default=None,
+        description="Для drift_type='attributes' — разошедшиеся поля.",
+    )
+
+
+class UsersInventoryResultSummary(BaseModel):
+    """Сводка reconcile инвентаризации, возвращаемая worker'у вместе с
+    обычными счётчиками. Worker может сохранить её в `tasks.result_payload`
+    (см. F6-worker TODO) либо клиент агрегирует через
+    `GET /servers/{id}/drift`."""
+
+    total_users: int = Field(description="Сколько OS-пользователей пришло в payload (после фильтра системных).")
+    created_discovered: int = Field(description="Сколько discovered-аккаунтов заведено в этом проходе.")
+    drifts: list[DriftItem] = Field(
+        default_factory=list,
+        description=(
+            "Подробный список drift-сигналов. Не отрезается по cap — payload "
+            "сам ограничен 1000 юзерами через `UsersInventoryCallbackRequest`."
+        ),
+    )
+
+
 class UsersInventoryCallbackResponse(BaseModel):
     """Сводка reconcile инвентаризации пользователей."""
 
@@ -163,6 +201,14 @@ class UsersInventoryCallbackResponse(BaseModel):
     created: int = Field(default=0, description="Сколько discovered-аккаунтов заведено (каждый — drift-сигнал).")
     present: int = Field(default=0, description="Сколько существующих аккаунтов подтверждено на боксе (present_on_server=True).")
     drifted: int = Field(default=0, description="Сколько drift-сигналов поднято: расхождение атрибутов + привязки, отсутствующие на боксе.")
+    result_summary: UsersInventoryResultSummary | None = Field(
+        default=None,
+        description=(
+            "Подробная сводка — список drift'ов с типом и затронутыми полями. "
+            "Worker кладёт её в `tasks.result_payload`, либо клиент строит "
+            "drift-отчёт через `GET /servers/{id}/drift`."
+        ),
+    )
 
 
 # ── OS-user provision callback ──────────────────────────────────────────────
@@ -201,10 +247,19 @@ class IpmiCredentialsRotatedRequest(BaseModel):
 
     Worker присылает plaintext-пароль по TLS внутри кластера; шифрует
     приёмная сторона через `secrets_service.encrypt()` — у worker'а нет
-    `SERVER_ENCRYPTION_KEY`. Этот контракт обязан выполняться до того,
-    как worker применит новый пароль на BMC (storage-first ordering):
-    иначе при падении worker'а между BMC-apply и storage-save доступ к
-    iDRAC потерян безвозвратно.
+    `SERVER_ENCRYPTION_KEY`.
+
+    Контракт verify-then-storage: storage обновляется ТОЛЬКО если worker
+    предварительно подтвердил, что новый пароль реально работает на BMC
+    (BMC test-call после apply). Подтверждение — поле `verified_at`,
+    timestamp успешного test-call'а. Без `verified_at` или со «старым»
+    `verified_at` приёмник отбивает 400 `BMC_VERIFY_REQUIRED` — иначе
+    при сбое apply→verify мы записали бы ciphertext, которым нельзя
+    залогиниться, и out-of-band доступ был бы потерян до ручной починки.
+
+    Окно свежести `verified_at` — `IPMI_VERIFY_MAX_AGE_SECONDS` (default
+    60s). 60s достаточно для round-trip apply→verify→post, при этом не
+    даёт реиспользовать verify-результат поверх давнего successful test.
     """
 
     new_password: str = Field(
@@ -216,11 +271,29 @@ class IpmiCredentialsRotatedRequest(BaseModel):
         ),
     )
     rotated_at: datetime = Field(description="ISO-8601 timestamp UTC момента ротации.")
+    verified_at: datetime = Field(
+        ...,
+        description=(
+            "ISO-8601 timestamp UTC момента успешного BMC test-call'а после "
+            "apply. Обязателен; должен быть свежее `IPMI_VERIFY_MAX_AGE_SECONDS` "
+            "(см. config). Без него — 400 BMC_VERIFY_REQUIRED."
+        ),
+    )
 
     @field_validator("new_password")
     @classmethod
     def _validate_new_password(cls, value: str) -> str:
         return validate_password(value)
+
+    @field_validator("verified_at", "rotated_at")
+    @classmethod
+    def _ensure_tz_aware(cls, value: datetime) -> datetime:
+        # Без tzinfo трактуем как UTC — internal-канал работает в UTC, а
+        # клиент-libsы (стандарт.lib `datetime.utcnow()`) исторически отдают
+        # naive значения. Внутри service'а сравниваем уже tz-aware.
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class IpmiCredentialsRotatedResponse(BaseModel):

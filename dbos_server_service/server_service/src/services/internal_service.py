@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.constants import Action, EntityType
-from src.core.exceptions import AuthorizationError, NotFoundError
+from src.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import os_version as osv_repo
 from src.repositories import server as server_repo
@@ -621,7 +621,12 @@ async def receive_inventory(
 
 
 # Атрибуты OS-пользователя, чьё расхождение бокса с БД считается дрейфом.
-_DRIFT_ATTRS = ("has_sudo", "unix_groups", "shell", "home_dir")
+#
+# `home_dir` намеренно НЕ в списке: PATCH home_dir не запускает fan-out
+# (worker не двигает $HOME), а inventory эмитил бы drift на каждом скане —
+# оператор получал бы шум, который ничем не закрыть. Symmetрично `home_dir`
+# исключён из `_OS_MANAGED_FIELDS` для fanout-payload в server_accounts.py.
+_DRIFT_ATTRS = ("has_sudo", "unix_groups", "shell")
 
 
 def _account_attr_drift(account, item) -> dict:
@@ -631,6 +636,8 @@ def _account_attr_drift(account, item) -> dict:
     `{field: {"expected": <БД>, "found": <бокс>}}`. Группы сравниваем как
     множества — порядок и дубли в выводе getent не значимы. Пустой dict —
     расхождений нет.
+
+    `home_dir` сюда не входит — см. комментарий к `_DRIFT_ATTRS`.
     """
     diff: dict = {}
     if bool(account.has_sudo) != bool(item.has_sudo):
@@ -642,8 +649,6 @@ def _account_attr_drift(account, item) -> dict:
         }
     if account.shell != item.shell:
         diff["shell"] = {"expected": account.shell, "found": item.shell}
-    if account.home_dir != item.home_dir:
-        diff["home_dir"] = {"expected": account.home_dir, "found": item.home_dir}
     return diff
 
 
@@ -862,7 +867,28 @@ async def receive_users_inventory(
             "caller_type": identity.subject_type,
         },
     )
-    return {"ok": True, "created": created, "present": present, "drifted": drifted}
+
+    # Сводный result_summary — worker сохранит его в `tasks.result_payload`,
+    # либо клиент построит drift-отчёт через `GET /servers/{id}/drift`.
+    drift_items = [
+        {
+            "login": emit["login"],
+            "drift_type": emit["drift"],
+            "fields": emit.get("fields"),
+        }
+        for emit in drift_emits
+    ]
+    return {
+        "ok": True,
+        "created": created,
+        "present": present,
+        "drifted": drifted,
+        "result_summary": {
+            "total_users": len(payload.users),
+            "created_discovered": created,
+            "drifts": drift_items,
+        },
+    }
 
 
 async def record_provision_status(
@@ -1094,6 +1120,41 @@ async def record_ipmi_credentials_rotated(
     rotated_at = payload.rotated_at
     if rotated_at.tzinfo is None:
         rotated_at = rotated_at.replace(tzinfo=timezone.utc)
+    verified_at = payload.verified_at
+    if verified_at.tzinfo is None:
+        verified_at = verified_at.replace(tzinfo=timezone.utc)
+
+    # verify-then-storage: пишем ciphertext только если worker подтвердил
+    # удачный BMC test-call в окне `IPMI_VERIFY_MAX_AGE_SECONDS`. Старый /
+    # отсутствующий verify => 400. Иначе сохранили бы пароль, которым
+    # нельзя залогиниться, и out-of-band доступ потерян до ручной починки.
+    now = datetime.now(timezone.utc)
+    max_age = get_settings().ipmi_verify_max_age_seconds
+    verify_age = (now - verified_at).total_seconds()
+    if verify_age > max_age or verify_age < -max_age:
+        audit_service.emit(
+            "ipmi_controller.credentials_rotated_callback",
+            target_id=controller_id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={
+                "reason": "verify_stale",
+                "server_id": ctrl.server_id,
+                "verified_at": verified_at.isoformat(),
+                "verify_age_seconds": round(verify_age, 3),
+                "max_age_seconds": max_age,
+            },
+        )
+        raise BadRequestError(
+            error_code="BMC_VERIFY_REQUIRED",
+            message=(
+                "Stale or missing BMC verify proof: verified_at must be "
+                f"within {max_age}s of now"
+            ),
+            details={
+                "verified_at": verified_at.isoformat(),
+                "max_age_seconds": max_age,
+            },
+        )
 
     encrypted = secrets_service.encrypt(
         payload.new_password,
@@ -1112,6 +1173,7 @@ async def record_ipmi_credentials_rotated(
         details={
             "server_id": ctrl.server_id,
             "rotated_at": rotated_at.isoformat(),
+            "verified_at": verified_at.isoformat(),
             "department_id": server_dept,
             "caller_type": identity.subject_type,
         },

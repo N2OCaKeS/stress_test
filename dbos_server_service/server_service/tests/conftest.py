@@ -180,14 +180,17 @@ def _reset_rate_limiter():
     мог бы случайно отбить тест c 429. Глобальный лимит (`global_rate_limit`,
     по умолчанию 500/minute) штатно проверяется в `test_rate_limit.py`.
     """
+    from src.core.limiter import endpoint_limiter
     from src.main import app
 
     limiter = getattr(app.state, "limiter", None)
     if limiter is not None:
         limiter.reset()
+    endpoint_limiter.reset()
     yield
     if limiter is not None:
         limiter.reset()
+    endpoint_limiter.reset()
 
 
 # ── Token factories ──────────────────────────────────────────────────────────

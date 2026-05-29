@@ -531,6 +531,21 @@ class SshClient:
                 cmd_sanitized="prepare authorized_keys",
                 message="management public key must be a single line",
             )
+        # Defence-in-depth: ключ уходит через stdin (не argv), shell-инъекция
+        # невозможна, но если payload подменён на произвольную строку — она
+        # окажется в authorized_keys рабочего сервера. Префикс отбивает
+        # очевидный мусор и явно требует поддерживаемый формат.
+        if not key_line.startswith((
+            "ssh-rsa ", "ssh-ed25519 ", "ssh-dss ",
+            "ecdsa-sha2-nistp256 ", "ecdsa-sha2-nistp384 ", "ecdsa-sha2-nistp521 ",
+            "sk-ssh-ed25519@openssh.com ", "sk-ecdsa-sha2-nistp256@openssh.com ",
+        )):
+            raise SshError(
+                error_code="SSH_INVALID_ARG",
+                host=self.host,
+                cmd_sanitized="prepare authorized_keys",
+                message="management public key has unsupported algorithm prefix",
+            )
 
         # 1. Управляющий пользователь — заводим idempotent'но, с sudo-группой.
         # На Debian/Ubuntu/Astra sudoer-группа — `sudo`, на RHEL/Alpine — `wheel`.
@@ -600,6 +615,12 @@ class SshClient:
         # Правило идёт на stdin `tee` (не в командную строку), сначала во
         # временный файл, проверяется `visudo -cf` и только при валидности
         # перемещается на место — битый sudoers не оставляем.
+        #
+        # `management_user` подставляется в shell-команду (sudoers_path) и в
+        # sudoers-строку напрямую. Безопасно ТОЛЬКО потому, что
+        # `_validate_login` отбивает всё, кроме `[A-Za-z0-9._-]` (см. валидацию
+        # в начале метода). Ослаблять regex без перевода путей на shlex.quote
+        # — мгновенный command-injection.
         sudoers_path = f"/etc/sudoers.d/{management_user}-management"
         sudoers_line = f"{management_user} ALL=(ALL) NOPASSWD: ALL"
         rc, _out, stderr = await self.run(

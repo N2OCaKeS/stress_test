@@ -444,8 +444,10 @@ async def _recover_scheduled_retries(state: TaskiqState) -> None:
 #   * `audit_outbox.cleanup_published_old` (daily 03:30 MSK) — DELETE
 #     published outbox-row'ов старше `AUDIT_OUTBOX_RETENTION_DAYS`
 #     (default 90d); bounded growth `audit_outbox`;
-#   * `secrets.reencrypt_lazy` (1h) — заглушка под master-key rotation,
-#     реальная re-encrypt логика ещё не реализована.
+#   * `secrets.reencrypt_lazy` (*/5 минут) — постепенная ре-шифрация
+#     секретов под активный мастер-ключ через server_service. Скип-тик
+#     если есть активные user-handler'ы, чтобы не конкурировать за DB-
+#     write'ы. Полная логика — в самой task'е ниже.
 #
 # Когда `SCHEDULER_ENABLED=false` — task'и всё равно регистрируются на
 # broker'е (нужны на worker-стороне для `find_task`), но без `schedule`

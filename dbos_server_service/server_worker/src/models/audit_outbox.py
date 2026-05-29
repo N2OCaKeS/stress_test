@@ -22,9 +22,13 @@ Publisher может перезапускаться неограниченное
 `request_id`/`action`/`timestamp`).
 
 Failure-mode `attempts ≥ MAX_PUBLISH_ATTEMPTS` (env, default 50) publisher
-помечает row отравленным: выставляет `published_at = now()` и логирует ERROR
-`audit_outbox: poisoned row dropped …`. Событие потеряно, но row перестаёт
-блокировать SKIP LOCKED выборку и attempts не уходит в overflow.
+помечает row дропнутой в DLQ: выставляет `published_at = now()` и логирует
+ERROR `audit_outbox: row sent to DLQ event=dlq reason=attempts_cap …`. Та же
+DLQ-ветка срабатывает на `reason=permanent_4xx` (loging ответил 4xx — payload
+не починить retry'ями) и `reason=missing_action` (битый payload без action).
+Событие потеряно, но row перестаёт блокировать SKIP LOCKED выборку и
+attempts не уходит в overflow. Re-attempt из DLQ — через ручную task'у
+`internal.outbox_re_attempt` (см. ниже).
 
 Per-row backoff: между неуспешными попытками publisher ставит
 `next_retry_at = now() + 2^attempts` (capped). SELECT отфильтровывает

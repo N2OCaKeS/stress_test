@@ -202,7 +202,7 @@ class TestGroupCRUD:
             target_id=grp["id"], since=since,
         )
 
-    def test_patch_group_dept_admin_forbidden(
+    def test_patch_group_dept_admin_own_dept_allowed(
         self, auth_client: httpx.Client, admin_token: str, two_depts,
     ):
         dept_a, _, _ = two_depts
@@ -213,9 +213,8 @@ class TestGroupCRUD:
 
         r = patch_group(auth_client, da_token, grp["id"], description="x")
 
-        # _require_admin = strict account_admin only — баг открыт в TODO (P2)
-        assert r.status_code == 403, r.text
-        assert r.json()["error_code"] == "ROLE_REQUIRED"
+        assert r.status_code == 200, r.text
+        assert r.json()["description"] == "x"
 
     def test_delete_group_admin_only(
         self, auth_client: httpx.Client, admin_token: str,
@@ -729,10 +728,10 @@ class TestNegativeAccess:
         assert r1.status_code == 403, r1.text
         assert r1.json()["error_code"] == "DEPARTMENT_ACCESS_DENIED"
 
-        # 2) patch чужой группы — _require_admin отшивает раньше
+        # 2) patch чужой группы — у DA есть роль на groups, но dept чужой
         r2 = patch_group(auth_client, da_b_token, grp["id"], description="x")
         assert r2.status_code == 403, r2.text
-        assert r2.json()["error_code"] == "ROLE_REQUIRED"
+        assert r2.json()["error_code"] == "DEPARTMENT_ACCESS_DENIED"
 
     def test_unknown_group_id_returns_404(
         self, auth_client: httpx.Client, admin_token: str,

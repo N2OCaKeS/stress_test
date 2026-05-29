@@ -16,6 +16,27 @@ async def get_by_id(db: AsyncSession, account_id: str) -> ServerAccount | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_for_update(db: AsyncSession, account_id: str) -> ServerAccount | None:
+    """SELECT по PK с row-lock'ом на самой строке ServerAccount.
+
+    Берёт `FOR UPDATE OF server_accounts`, чтобы конкурентные `update_account` /
+    `link_servers` / `unlink_servers` сериализовались по строке аккаунта и
+    fan-out не уходил с mixed snapshot'ом (см. lost-update-сценарий между
+    PATCH'ом полей и параллельной linkage-операцией).
+
+    `of=ServerAccount` явно указывает, что блокируется строка аккаунта, а не
+    join'ы selectin-relationship'а (`server_links` подтянется отдельным SELECT'ом
+    без лока — нам это не нужно, lock на parent'е достаточен, потому что link/unlink
+    тоже сначала берут лок на parent'е через эту же функцию).
+    """
+    stmt = (
+        select(ServerAccount)
+        .where(ServerAccount.id == account_id)
+        .with_for_update(of=ServerAccount)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 def linked_server_ids(account: ServerAccount) -> list[str]:
     """Список server_id из связок аккаунта, упорядоченный по времени привязки."""
     return [

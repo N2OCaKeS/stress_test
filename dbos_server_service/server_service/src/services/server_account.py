@@ -62,6 +62,27 @@ async def _load_account_visible(
     return account
 
 
+async def _load_account_visible_for_update(
+    db: AsyncSession,
+    identity: IdentityContext,
+    account_id: str,
+) -> ServerAccount:
+    """То же, что `_load_account_visible`, но берёт row-lock на аккаунте.
+
+    Используется write-операциями (`update_account`, `link_servers`,
+    `unlink_servers`) — лок сериализует параллельные write'ы по одному
+    account_id, чтобы PATCH полей не уезжал на fan-out со stale links и
+    наоборот. Read-операции (`get_account`, `delete_account`,
+    `rotate_password`) этим не пользуются.
+    """
+    account = await repo.get_for_update(db, account_id)
+    if account is None:
+        raise NotFoundError(error_code="ACCOUNT_NOT_FOUND", message="Server account not found")
+    if identity.department_id != account.department_id:
+        raise NotFoundError(error_code="ACCOUNT_NOT_FOUND", message="Server account not found")
+    return account
+
+
 def _generate_password() -> str:
     """Дефолтный генератор паролей для новых аккаунтов и rotate'а."""
     return secrets.token_urlsafe(32)
@@ -292,6 +313,12 @@ async def update_account(
     через PATCH не предусмотрено — только через `/rotate_password`.
     Привязка серверов — через `/servers` под-операции.
 
+    Загрузка аккаунта идёт через `SELECT ... FOR UPDATE OF server_accounts`
+    (`_load_account_visible_for_update`). Лок держится до commit'а и
+    сериализует PATCH с параллельными `link_servers`/`unlink_servers` —
+    fan-out не уходит со смешанным snapshot'ом (stale атрибуты + свежие
+    links и наоборот). Read-операции (`get_account`) лок не берут.
+
     Возвращает `(obj, applied_fields)` — `applied_fields` это набор полей, по
     которым актуальное значение реально отличалось от прежнего и было
     обновлено в БД. Caller использует его, чтобы решать, надо ли пускать
@@ -306,7 +333,7 @@ async def update_account(
             db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
         )
     try:
-        obj = await _load_account_visible(db, identity, account_id)
+        obj = await _load_account_visible_for_update(db, identity, account_id)
     except NotFoundError:
         audit_service.emit(
             "server_account.update",
@@ -406,7 +433,7 @@ async def link_servers(
             db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
         )
     try:
-        obj = await _load_account_visible(db, identity, account_id)
+        obj = await _load_account_visible_for_update(db, identity, account_id)
     except NotFoundError:
         audit_service.emit(
             "server_account.link_servers",
@@ -469,7 +496,7 @@ async def unlink_servers(
             db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
         )
     try:
-        obj = await _load_account_visible(db, identity, account_id)
+        obj = await _load_account_visible_for_update(db, identity, account_id)
     except NotFoundError:
         audit_service.emit(
             "server_account.unlink_servers",

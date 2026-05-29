@@ -31,13 +31,14 @@ class TestServiceStartup:
         """auth_service при старте отправляет событие service.started."""
         # Startup-задача запускает register_events через `asyncio.to_thread`,
         # потом эмитит `service.started`. Под медленным compose-стартом
-        # эта цепочка может не успеть до первого опроса — даём ей больше
-        # окна, чем дефолтный 15×0.5.
+        # эта цепочка может не успеть до первого опроса — даём окно
+        # `120 × 0.5 = 60s`, чтобы покрыть холодный bootstrap auth-service +
+        # доезд audit-emit через HTTP до loging.
         event = wait_for_event(
             logging_client,
             action="service.started",
             status="success",
-            retries=40,
+            retries=120,
             delay=0.5,
         )
         assert event["service"] == "auth_service"

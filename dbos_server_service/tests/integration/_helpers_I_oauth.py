@@ -375,9 +375,10 @@ def issue_pat(
     v2 по умолчанию игнорирует, и PAT уходит с пустым allowed_services →
     introspect отдаёт пустой effective_services).
     """
-    body: dict = {"name": name or f"pat_{short_id()}"}
-    if allowed_services is not None:
-        body["allowed_services"] = allowed_services
+    body: dict = {
+        "name": name or f"pat_{short_id()}",
+        "allowed_services": allowed_services if allowed_services is not None else ["auth_service"],
+    }
     if expires_at is not None:
         body["expires_at"] = expires_at
     r = auth_client.post(

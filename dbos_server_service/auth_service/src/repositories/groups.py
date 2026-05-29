@@ -411,6 +411,50 @@ class GroupRepository:
         group_ids = await self._group_ids_for_user(user_id)
         return await self.get_roles_by_groups(group_ids)
 
+    async def list_groups_with_roles_for_user(
+        self, user_id: str
+    ) -> dict[str, list[str]]:
+        """Активные группы юзера → `{group.name: ["<service>.<role>", ...]}`.
+
+        Используется `/me` и introspect, чтобы показать клиенту, через какие
+        группы какие роли пришли. Группы без service-роли (только service-
+        access) — не показываем (по запросу владельца).
+
+        Возвращает свежий snapshot: только активные группы, активные роли.
+        """
+        group_ids = await self._group_ids_for_user(user_id)
+        if not group_ids:
+            return {}
+
+        groups = await self.list_active_by_ids(group_ids)
+        active_by_id = {g.id: g for g in groups}
+        if not active_by_id:
+            return {}
+
+        # Один JOIN-запрос по всем активным группам юзера: вытаскиваем сразу
+        # (group_id, service, role) для активных bindings.
+        rows = await self._db.execute(
+            select(
+                GroupServiceRole.group_id,
+                GroupServiceRole.service_name,
+                GroupServiceRole.role,
+            ).where(
+                GroupServiceRole.group_id.in_(list(active_by_id.keys())),
+                GroupServiceRole.is_active.is_(True),
+            )
+        )
+
+        by_group: dict[str, list[str]] = {}
+        for group_id_, service_name, role in rows:
+            grp = active_by_id.get(group_id_)
+            if grp is None:
+                continue
+            by_group.setdefault(grp.name, []).append(f"{service_name}.{role}")
+
+        # Дедупликация + стабильный порядок (важно для snapshot-тестов и
+        # детерминированности UI).
+        return {name: sorted(set(items)) for name, items in by_group.items()}
+
     async def get_roles_for_bot(self, bot_id: str) -> dict[str, list[str]]:
         """All service roles inherited by the bot via its groups."""
         group_ids = await self._group_ids_for_bot(bot_id)

@@ -140,9 +140,12 @@ def _merge_permissions(
 
 
 async def collect_user_permissions(
-    db: AsyncSession, user, oauth_scopes: list[str] | None = None
-) -> tuple[list[str], dict[str, list[str]]]:
-    """Пересчитать effective (allowed_services, service_roles) юзера из БД.
+    db: AsyncSession,
+    user,
+    oauth_scopes: list[str] | None = None,
+    include_groups: bool = True,
+) -> tuple[list[str], dict[str, list[str]], dict[str, list[str]]]:
+    """Пересчитать effective (allowed_services, service_roles, groups) юзера из БД.
 
     Single source of truth для login/refresh/get_identity И для JWT introspect
     revalidate'а (чтобы протухший JWT не держал отозванную роль/сервис до
@@ -155,6 +158,10 @@ async def collect_user_permissions(
     получившее токен с ограниченным scope, увидит через introspect полные
     права юзера (scope-creep). Для не-OAuth токенов параметр == None и
     фильтрация не применяется.
+
+    `groups`: `{group_name: ["<service>.<role>", ...]}` — какие группы юзера
+    через какие роли расширяют его права. Группы без service-роли (только
+    access) сюда не попадают. Поле информационное, для `/me` и introspect.
     """
     role_repo = RoleRepository(db)
     dept_repo = DepartmentRepository(db)
@@ -171,16 +178,31 @@ async def collect_user_permissions(
     allowed_services, service_roles = _merge_permissions(
         dept_services, direct_roles, group_services, group_roles
     )
+    # `include_groups=False` — caller (например, `user_service.get_user_permissions`)
+    # уже отдаёт собственный raw-список групп и не нуждается в
+    # `<svc>.<role>`-flatten. Экономим лишний batch-lookup.
+    groups = (
+        await group_repo.list_groups_with_roles_for_user(user.id)
+        if include_groups
+        else {}
+    )
 
     if oauth_scopes is not None:
         # OAuth authorization_code: пересекаем live-права с зафиксированным
         # в коде scope. Пустой список scopes → пустые права (а не "any").
-        # TODO: подумать, есть ли смысл также интерсектить с allowed_scopes клиента
         scope_set = set(oauth_scopes)
         allowed_services = [s for s in allowed_services if s in scope_set]
         service_roles = {s: r for s, r in service_roles.items() if s in scope_set}
+        # Аналогично режем groups: оставляем только `<svc>.<role>` со svc из
+        # выписанных scope'ов; пустые группы выкидываем.
+        filtered_groups: dict[str, list[str]] = {}
+        for name, items in groups.items():
+            kept = [i for i in items if i.split(".", 1)[0] in scope_set]
+            if kept:
+                filtered_groups[name] = kept
+        groups = filtered_groups
 
-    return allowed_services, service_roles
+    return allowed_services, service_roles, groups
 
 
 async def collect_bot_permissions(
@@ -202,7 +224,7 @@ async def collect_bot_permissions(
     bot_role_repo = BotRoleRepository(db)
 
     dept_services = set(await dept_repo.list_active_services(bot.department_id))
-    effective_services = [s for s in (bot.allowed_services or []) if s in dept_services]
+    effective_services = sorted(s for s in (bot.allowed_services or []) if s in dept_services)
     effective_set = set(effective_services)
 
     direct_roles = await bot_role_repo.get_all_roles(bot.id)
@@ -217,14 +239,20 @@ async def collect_bot_permissions(
         if svc not in effective_set:
             continue
         merged.setdefault(svc, []).extend(roles)
-    service_roles = {svc: list(set(roles)) for svc, roles in merged.items()}
+    service_roles = {svc: sorted(set(roles)) for svc, roles in merged.items()}
     return effective_services, service_roles
 
 
-def _build_identity(user, dept_name: str | None, allowed_services: list[str], service_roles: dict) -> IdentityContext:
+def _build_identity(
+    user,
+    dept_name: str | None,
+    allowed_services: list[str],
+    service_roles: dict,
+    groups: dict[str, list[str]] | None = None,
+) -> IdentityContext:
     """Собрать `IdentityContext` для login/refresh/get_identity-ответов.
 
-    Для account_admin зануляем allowed_services/service_roles — у них нет
+    Для account_admin зануляем allowed_services/service_roles/groups — у них нет
     отдела, и сами по себе они не являются service-юзерами (admin-роли на
     platform-уровне).
     """
@@ -236,6 +264,7 @@ def _build_identity(user, dept_name: str | None, allowed_services: list[str], se
         department_name=dept_name,
         allowed_services=[] if is_account_admin else allowed_services,
         service_roles={} if is_account_admin else service_roles,
+        groups={} if is_account_admin else (groups or {}),
         is_banned=user.status == UserStatus.BANNED,
         platform_role=user.platform_role,
     )
@@ -354,6 +383,7 @@ async def login(
     group_services = await group_repo.list_active_services_for_user(user.id)
     group_roles = await group_repo.get_roles_for_user(user.id)
     allowed_services, service_roles = _merge_permissions(dept_services, direct_roles, group_services, group_roles)
+    groups_summary = await group_repo.list_groups_with_roles_for_user(user.id)
     dept = await dept_repo.get_by_id(user.department_id) if user.department_id else None
 
     raw_refresh, refresh_hash = generate_refresh_token()
@@ -379,14 +409,20 @@ async def login(
             "department_id": user.department_id,
             "platform_role": user.platform_role,
             "allowed_services_count": len(allowed_services),
-            "service_roles_summary": {k: list(v) for k, v in service_roles.items()},
+            # Полный `{service: [roles]}` уезжал в loging plaintext — это
+            # info leak ровно того, что вытащено из JWT payload. Загружать
+            # эти данные надо через `/me` или introspect, не из audit.
+            "service_roles_count": sum(len(v) for v in service_roles.values()),
         },
     )
     return LoginResponse(
         access_token=access_token,
         refresh_token=raw_refresh,
         expires_in=settings.access_token_ttl_minutes * 60,
-        identity=_build_identity(user, dept.display_name if dept else None, allowed_services, service_roles),
+        identity=_build_identity(
+            user, dept.display_name if dept else None,
+            allowed_services, service_roles, groups_summary,
+        ),
     )
 
 
@@ -503,6 +539,7 @@ async def get_identity(db: AsyncSession, user_id: str, request_id: str | None = 
     group_services = await group_repo.list_active_services_for_user(user.id)
     group_roles = await group_repo.get_roles_for_user(user.id)
     allowed_services, service_roles = _merge_permissions(dept_services, direct_roles, group_services, group_roles)
+    groups_summary = await group_repo.list_groups_with_roles_for_user(user.id)
     dept = await dept_repo.get_by_id(user.department_id) if user.department_id else None
 
     audit_service.emit(
@@ -514,4 +551,7 @@ async def get_identity(db: AsyncSession, user_id: str, request_id: str | None = 
             "allowed_services_count": len(allowed_services),
         },
     )
-    return _build_identity(user, dept.display_name if dept else None, allowed_services, service_roles)
+    return _build_identity(
+        user, dept.display_name if dept else None,
+        allowed_services, service_roles, groups_summary,
+    )

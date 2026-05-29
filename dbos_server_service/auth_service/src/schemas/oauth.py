@@ -117,8 +117,18 @@ class OAuthClientResponse(BaseModel):
 
 
 class OAuthClientCreatedResponse(OAuthClientResponse):
-    """Возвращается только при создании — содержит plaintext secret (показ один раз)."""
-    client_secret: str = Field(description="Plaintext client_secret. Сохрани сейчас — больше не покажем.")
+    """Возвращается только при создании — содержит plaintext secret (показ один раз).
+
+    Для public-клиентов `client_secret == None` (секрет не выдаётся, identity
+    доказывается PKCE-verifier'ом). Для confidential — plaintext-строка.
+    """
+    client_secret: str | None = Field(
+        default=None,
+        description=(
+            "Plaintext client_secret. Сохрани сейчас — больше не покажем. "
+            "У public-клиентов поле отсутствует/None (secret не выдаётся)."
+        ),
+    )
 
 
 # ── Authorization code flow ───────────────────────────────────────────────────

@@ -61,7 +61,7 @@ async def two_depts_one_service(db):
 async def test_baseline_role_visible_in_owning_dept(db, two_depts_one_service):
     """Юзер в dept_a (имеющем access к config_service) видит admin."""
     user = two_depts_one_service["user"]
-    allowed, roles = await collect_user_permissions(db, user)
+    allowed, roles, _ = await collect_user_permissions(db, user)
     assert "config_service" in allowed
     assert roles.get("config_service") == ["admin"]
 
@@ -88,7 +88,7 @@ async def test_transfer_to_dept_without_access_drops_role(
     await db.commit()
     await db.refresh(user)
 
-    allowed, roles = await collect_user_permissions(db, user)
+    allowed, roles, _ = await collect_user_permissions(db, user)
     assert "config_service" not in allowed, (
         "dept_b не имеет access к config_service — он не должен числиться "
         "в allowed_services"
@@ -176,7 +176,7 @@ async def test_transfer_to_dept_with_access_keeps_role(
     await user_repo.update(user, department_id=dept_b.id)
     await db.commit()
 
-    allowed, roles = await collect_user_permissions(db, user)
+    allowed, roles, _ = await collect_user_permissions(db, user)
     assert "config_service" in allowed
     assert roles.get("config_service") == ["admin"], (
         "Юзер всё ещё admin в config_service: новый отдел имеет access, "
@@ -197,7 +197,7 @@ async def test_revoke_dept_service_access_drops_role(
     svc = two_depts_one_service["service"]
 
     # До revoke — роль видна (sanity check).
-    allowed, roles = await collect_user_permissions(db, user)
+    allowed, roles, _ = await collect_user_permissions(db, user)
     assert "config_service" in allowed and roles.get("config_service") == ["admin"]
 
     # Revoke dept access (без касания user_service_roles).
@@ -207,7 +207,7 @@ async def test_revoke_dept_service_access_drops_role(
     await dept_repo.revoke_access(access, revoked_by=None)
     await db.commit()
 
-    allowed_after, roles_after = await collect_user_permissions(db, user)
+    allowed_after, roles_after, _ = await collect_user_permissions(db, user)
     assert "config_service" not in allowed_after, (
         "После revoke DepartmentServiceAccess отдел не должен видеть сервис"
     )

@@ -1043,8 +1043,10 @@ async def get_user_permissions(
         allowed_services: list[str] = []
         service_roles: dict[str, list[str]] = {}
     else:
-        allowed_services, service_roles = await collect_user_permissions(
-            db, target
+        # `include_groups=False` — endpoint строит свой raw-список групп
+        # с per-service ролями выше; flatten `<svc>.<role>` тут не нужен.
+        allowed_services, service_roles, _groups = await collect_user_permissions(
+            db, target, include_groups=False,
         )
     allowed_services = sorted(allowed_services)
     service_roles = {

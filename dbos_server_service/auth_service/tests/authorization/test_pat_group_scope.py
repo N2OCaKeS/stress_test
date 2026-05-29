@@ -177,7 +177,7 @@ async def test_pat_and_jwt_yield_same_services(db, user_with_group_service):
     user = ctx["user"]
 
     # Полный scope = всё, что реально доступно юзеру.
-    full_services, full_roles = await collect_user_permissions(db, user)
+    full_services, full_roles, _ = await collect_user_permissions(db, user)
 
     raw = await _issue_pat(db, user.id, "pat_symmetry", list(full_services))
     pat_resp = await introspect(db, raw)

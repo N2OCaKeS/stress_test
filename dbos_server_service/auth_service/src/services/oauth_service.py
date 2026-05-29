@@ -84,9 +84,19 @@ async def create_client(
             message=f"OAuth2 client '{data.name}' already exists in this department",
         )
 
-    raw_secret = f"cs_{secrets.token_urlsafe(32)}"
-    secret_hash = hash_opaque_token(raw_secret)
-    secret_prefix = raw_secret[:_SECRET_PREFIX_LEN]
+    # Public-клиенты (SPA / native CLI) не могут безопасно хранить
+    # client_secret — для них identity доказывается PKCE-verifier'ом,
+    # секрет не выдаём. В БД на месте `client_secret_hash` лежит пустая
+    # строка (NOT NULL), `client_secret_prefix` тоже пуст — `exchange_code`
+    # для public пропускает verify целиком.
+    if data.is_public:
+        raw_secret: str | None = None
+        secret_hash = ""
+        secret_prefix = ""
+    else:
+        raw_secret = f"cs_{secrets.token_urlsafe(32)}"
+        secret_hash = hash_opaque_token(raw_secret)
+        secret_prefix = raw_secret[:_SECRET_PREFIX_LEN]
 
     client = await client_repo.create(
         department_id=data.department_id,
@@ -115,6 +125,7 @@ async def create_client(
             "client_secret_prefix": secret_prefix,
             "client_secret": raw_secret,
             "description": data.description,
+            "is_public": data.is_public,
         },
     )
     return OAuthClientCreatedResponse(**_to_response(client).model_dump(), client_secret=raw_secret)
@@ -366,11 +377,14 @@ async def exchange_code(
     if client is None or not client.is_active:
         raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
 
-    await _verify_client_secret_with_lockout(db, client_repo, client, client_secret)
-    # Успешный verify сбрасываем счётчик — но только если он ненулевой
-    # (избегаем лишнего UPDATE на happy path).
-    if client.failed_secret_attempts:
-        await client_repo.reset_failed_attempts(client)
+    # Public-клиенты: identity доказывается PKCE-verifier'ом, не secret'ом.
+    # Confidential — обычный pipeline с lockout. Любой переданный secret для
+    # public игнорируется, отдельной ошибки не отдаём — это позволяет
+    # фронту слать единый payload без знания типа клиента.
+    if not client.is_public:
+        await _verify_client_secret_with_lockout(db, client_repo, client, client_secret)
+        if client.failed_secret_attempts:
+            await client_repo.reset_failed_attempts(client)
 
     code_hash = hash_opaque_token(code)
     code_repo = OAuthCodeRepository(db)
@@ -488,6 +502,15 @@ async def client_credentials_token(
     client = await client_repo.get_by_client_id(client_id)
     if client is None or not client.is_active:
         raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
+
+    # client_credentials — m2m grant, без user-flow. Public-клиент (SPA/CLI)
+    # не может его использовать: у него нет client_secret для аутентификации
+    # себя, а PKCE привязан к /authorize-коду (которого здесь нет).
+    if client.is_public:
+        raise AuthorizationError(
+            error_code="GRANT_TYPE_NOT_ALLOWED",
+            message="client_credentials grant is not available for public clients",
+        )
 
     await _verify_client_secret_with_lockout(db, client_repo, client, client_secret)
     if client.failed_secret_attempts:

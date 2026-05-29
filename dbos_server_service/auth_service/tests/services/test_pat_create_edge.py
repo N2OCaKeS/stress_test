@@ -115,6 +115,22 @@ class TestCreatePATScope:
         assert "ghost_service" in forbidden
         assert service_x.service_name not in forbidden
 
+    async def test_forbidden_details_include_available_services(
+        self, db, user_a, dept_a_with_service, service_x,
+    ):
+        """В details должен быть `available_services` — подсказка юзеру."""
+        with pytest.raises(DomainValidationError) as exc:
+            await token_service.create_pat(
+                db, user_a.id, "available_hint_pat",
+                allowed_services=["ghost_service"],
+            )
+        details = exc.value.details
+        assert "available_services" in details
+        # service_x активен в dept_a_with_service — должен быть в подсказке.
+        assert service_x.service_name in details["available_services"]
+        # Список отсортирован — детерминированно для клиента.
+        assert details["available_services"] == sorted(details["available_services"])
+
 
 # ── Duplicate name ───────────────────────────────────────────────────────────
 

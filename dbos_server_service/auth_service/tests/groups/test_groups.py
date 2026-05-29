@@ -86,6 +86,96 @@ async def test_admin_deletes_group(client, admin_token, dept_a):
     assert resp.status_code == 200
 
 
+async def test_dept_admin_updates_group_in_own_dept(
+    client, admin_token, dept_admin_a_token, dept_a,
+):
+    """DA своего отдела может PATCH'ить группу."""
+    group_id = (await _create_group(
+        client, admin_token, dept_a.id, name="da_own_update"
+    )).json()["id"]
+    resp = await client.patch(
+        f"{GROUPS_URL}/{group_id}",
+        headers={"Authorization": f"Bearer {dept_admin_a_token}"},
+        json={"display_name": "DA updated"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["display_name"] == "DA updated"
+
+
+async def test_dept_admin_cannot_update_group_in_other_dept(
+    client, admin_token, dept_admin_a_token, dept_b,
+):
+    """DA dept_a → PATCH группы dept_b → 403 DEPARTMENT_ACCESS_DENIED."""
+    group_id = (await _create_group(
+        client, admin_token, dept_b.id, name="da_cross_update"
+    )).json()["id"]
+    resp = await client.patch(
+        f"{GROUPS_URL}/{group_id}",
+        headers={"Authorization": f"Bearer {dept_admin_a_token}"},
+        json={"display_name": "should_fail"},
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["error_code"] == "DEPARTMENT_ACCESS_DENIED"
+
+
+async def test_regular_user_cannot_update_group(
+    client, admin_token, user_a_token, dept_a,
+):
+    """Юзер без admin-роли → 403 на PATCH (`ROLE_REQUIRED`/`require_any_admin`-guard)."""
+    group_id = (await _create_group(
+        client, admin_token, dept_a.id, name="user_no_update"
+    )).json()["id"]
+    resp = await client.patch(
+        f"{GROUPS_URL}/{group_id}",
+        headers={"Authorization": f"Bearer {user_a_token}"},
+        json={"display_name": "nope"},
+    )
+    assert resp.status_code == 403
+
+
+async def test_dept_admin_deletes_group_in_own_dept(
+    client, admin_token, dept_admin_a_token, dept_a,
+):
+    """DA своего отдела может DELETE группу."""
+    group_id = (await _create_group(
+        client, admin_token, dept_a.id, name="da_own_delete"
+    )).json()["id"]
+    resp = await client.delete(
+        f"{GROUPS_URL}/{group_id}",
+        headers={"Authorization": f"Bearer {dept_admin_a_token}"},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_dept_admin_cannot_delete_group_in_other_dept(
+    client, admin_token, dept_admin_a_token, dept_b,
+):
+    """DA dept_a → DELETE группы dept_b → 403 DEPARTMENT_ACCESS_DENIED."""
+    group_id = (await _create_group(
+        client, admin_token, dept_b.id, name="da_cross_delete"
+    )).json()["id"]
+    resp = await client.delete(
+        f"{GROUPS_URL}/{group_id}",
+        headers={"Authorization": f"Bearer {dept_admin_a_token}"},
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["error_code"] == "DEPARTMENT_ACCESS_DENIED"
+
+
+async def test_regular_user_cannot_delete_group(
+    client, admin_token, user_a_token, dept_a,
+):
+    """Юзер без admin-роли → 403 на DELETE."""
+    group_id = (await _create_group(
+        client, admin_token, dept_a.id, name="user_no_delete"
+    )).json()["id"]
+    resp = await client.delete(
+        f"{GROUPS_URL}/{group_id}",
+        headers={"Authorization": f"Bearer {user_a_token}"},
+    )
+    assert resp.status_code == 403
+
+
 # ── Membership ────────────────────────────────────────────────────────────────
 
 async def test_admin_adds_member(client, admin_token, dept_a, user_a):

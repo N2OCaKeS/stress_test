@@ -163,3 +163,81 @@ class TestConfidentialBackwardCompat:
         )
         assert resp.status_code == 201, resp.text
         assert resp.json()["is_public"] is False
+
+
+class TestPublicClientNoSecret:
+    async def test_public_client_creation_returns_no_secret(
+        self, client, admin_token, dept_a,
+    ):
+        """Создание public-клиента: client_secret = None в ответе."""
+        cc = await _make_client(
+            client, admin_token, dept_a.id, name="pub_no_secret_create",
+            is_public=True,
+        )
+        assert cc["is_public"] is True
+        assert cc.get("client_secret") is None
+
+    async def test_public_client_exchange_without_secret_works(
+        self, client, admin_token, user_a_token, dept_a,
+    ):
+        """Public-клиент: обмен кода БЕЗ client_secret + S256 PKCE → 200."""
+        verifier = "valid-verifier-with-enough-length-zzzzzzz1234567890ab"
+        challenge = _s256(verifier)
+        cc = await _make_client(
+            client, admin_token, dept_a.id, name="pub_no_secret_exchange",
+            is_public=True,
+        )
+        resp = await _authorize(
+            client, user_a_token, cc, challenge=challenge, method="S256",
+        )
+        assert resp.status_code == 302, resp.text
+        code = resp.headers["location"].split("code=", 1)[1].split("&", 1)[0]
+
+        # Никакого client_secret — Public flow.
+        token_resp = await client.post(TOKEN_URL, json={
+            "grant_type": "authorization_code",
+            "client_id": cc["client_id"],
+            "code": code,
+            "redirect_uri": "https://app.example.com/cb",
+            "code_verifier": verifier,
+        })
+        assert token_resp.status_code == 200, token_resp.text
+        assert "access_token" in token_resp.json()
+
+    async def test_confidential_client_still_returns_secret(
+        self, client, admin_token, dept_a,
+    ):
+        """Back-compat: confidential (default) client возвращает plaintext secret."""
+        cc = await _make_client(
+            client, admin_token, dept_a.id, name="conf_has_secret",
+            is_public=False,
+        )
+        assert cc["is_public"] is False
+        assert cc.get("client_secret") is not None
+        assert cc["client_secret"].startswith("cs_")
+
+    async def test_public_client_credentials_grant_rejected(
+        self, client, admin_token, dept_a,
+    ):
+        """Public-клиент не может использовать client_credentials grant."""
+        cc_resp = await client.post(
+            CLIENTS_URL,
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={
+                "department_id": dept_a.id,
+                "name": "pub_cc_forbidden",
+                "grant_types": ["client_credentials"],
+                "redirect_uris": [],
+                "allowed_scopes": [],
+                "is_public": True,
+            },
+        )
+        assert cc_resp.status_code == 201, cc_resp.text
+        cc = cc_resp.json()
+
+        token_resp = await client.post(TOKEN_URL, json={
+            "grant_type": "client_credentials",
+            "client_id": cc["client_id"],
+        })
+        assert token_resp.status_code == 403, token_resp.text
+        assert token_resp.json()["error_code"] == "GRANT_TYPE_NOT_ALLOWED"

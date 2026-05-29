@@ -445,6 +445,25 @@ async def issue_token(
     cfg = await docker_repo.get_by_department(department_id)
 
     if cfg is None or not cfg.is_enabled:
+        # Симметрично lockout/INVALID_CREDENTIALS веткам: SOC должен видеть
+        # явный фейл с subject_id и причиной NO_CFG, иначе password-путь
+        # отбьётся middleware'ом `http.access_denied` без полезного контекста.
+        audit_service.emit(
+            "docker.token_issued",
+            subject_id,
+            department_id=department_id,
+            target_id=service or settings.docker_registry_service,
+            target_type="docker_registry",
+            status="failure",
+            allowed=False,
+            details={
+                "reason": "NO_CFG" if cfg is None else "DISABLED",
+                "username": username,
+                "service": service or settings.docker_registry_service,
+                "requested_scope": scope,
+            },
+            request_id=request_id,
+        )
         raise AuthorizationError(
             error_code="DOCKER_ACCESS_DENIED",
             message="Docker registry is not enabled for this department",

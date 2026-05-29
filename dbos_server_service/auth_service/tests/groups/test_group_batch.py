@@ -114,7 +114,12 @@ async def test_list_members_batches_user_lookup(
 async def test_list_user_groups_batches_group_lookup(
     spy_per_item, client, admin_token, dept_a, user_a, user_a_token, db,
 ):
-    """Юзер в 3 группах → один `list_active_by_ids`, ноль per-membership `get`."""
+    """Юзер в 3 группах → один `list_active_by_ids` per stage, ноль per-membership `get`.
+
+    Запрос делает два разных batch-lookup: первый — внутри `collect_user_permissions`
+    (auth-dependency считает `groups` для identity), второй — внутри
+    `list_user_groups` endpoint'а. Оба batched, per-membership get'ов нет.
+    """
     gids = []
     for i in range(3):
         gid = (await _create_group(client, admin_token, dept_a.id, f"ug_{i}")).json()["id"]
@@ -130,7 +135,8 @@ async def test_list_user_groups_batches_group_lookup(
     )
     assert resp.status_code == 200
     assert len(resp.json()) == 3
-    assert spy_per_item["group_list_active_by_ids"] == 1
+    # Два batch-lookup'а (identity-кэш + endpoint-резолв), не пер-группа.
+    assert spy_per_item["group_list_active_by_ids"] == 2
     assert spy_per_item["group_get"] == 0, "per-membership group_get устранён"
 
 

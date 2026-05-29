@@ -31,6 +31,13 @@ class IntrospectResponse(BaseModel):
         default_factory=dict,
         description="Effective service-роли, отфильтрованные по allowed_services.",
     )
+    groups: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Группы субъекта → `<service>.<role>` строки, которые группа даёт. "
+            "Группы без service-роли (только access) не показываются."
+        ),
+    )
     exp: int | None = Field(default=None, description="JWT exp (unix timestamp), если применимо.")
 
 

@@ -80,9 +80,13 @@ async def create_group(
 )
 async def update_group(
     group_id: str, body: GroupUpdate, request: Request,
-    identity: CurrentUserIdentity, db: AsyncSession = Depends(get_db),
+    identity: AnyAdmin, db: AsyncSession = Depends(get_db),
 ) -> GroupResponse:
-    """Patch display_name/description группы."""
+    """Patch display_name/description группы.
+
+    Доступ:
+        account_admin (любая группа) или department_admin (только своего отдела).
+    """
     return await group_service.update_group(
         db, identity, group_id, body.display_name, body.description,
         request_id=getattr(request.state, "request_id", None),
@@ -96,12 +100,12 @@ async def update_group(
     description="Каскадно убирает всех members и group_service_roles/access.",
 )
 async def delete_group(
-    group_id: str, request: Request, identity: CurrentUserIdentity, db: AsyncSession = Depends(get_db),
+    group_id: str, request: Request, identity: AnyAdmin, db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
     """Снести группу (вместе с членством и ролями).
 
     Доступ:
-        account_admin или department_admin своего отдела.
+        account_admin (любая группа) или department_admin (только своего отдела).
     """
     await group_service.delete_group(db, identity, group_id,
                                      request_id=getattr(request.state, "request_id", None))

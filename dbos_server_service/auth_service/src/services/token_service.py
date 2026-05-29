@@ -51,13 +51,20 @@ async def create_pat(
         actor = await user_repo.get_by_id(actor_id)
         # account_admin без dept — глобальный scope, не проверяем.
         if actor is not None and actor.department_id:
-            dept_services = set(await dept_repo.list_active_services(actor.department_id))
+            dept_services_list = await dept_repo.list_active_services(actor.department_id)
+            dept_services = set(dept_services_list)
             forbidden = sorted(set(allowed_services) - dept_services)
             if forbidden:
                 raise DomainValidationError(
                     error_code="SERVICE_NOT_ALLOWED_FOR_DEPARTMENT",
                     message="PAT cannot scope to services the department has no access to",
-                    details={"forbidden_services": forbidden},
+                    details={
+                        "forbidden_services": forbidden,
+                        # Подсказка юзеру, из чего можно выбрать. Пустой
+                        # список означает, что отдел вообще не имеет ни
+                        # одного активного сервиса.
+                        "available_services": sorted(dept_services_list),
+                    },
                 )
 
     if await token_repo.exists_name(actor_id, name):

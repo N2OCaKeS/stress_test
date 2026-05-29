@@ -171,8 +171,9 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
         if is_account_admin:
             allowed_services: list[str] = []
             service_roles: dict[str, list[str]] = {}
+            groups: dict[str, list[str]] = {}
         else:
-            allowed_services, service_roles = await collect_user_permissions(
+            allowed_services, service_roles, groups = await collect_user_permissions(
                 db, user, oauth_scopes=oauth_scopes
             )
 
@@ -214,6 +215,7 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
             is_banned=user.status == UserStatus.BANNED,
             allowed_services=allowed_services,
             service_roles=service_roles,
+            groups=groups,
             exp=payload.get("exp"),
         )
 
@@ -282,7 +284,7 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
         # PAT не видел бы сервисы, доступные юзеру только через группу —
         # асимметрия с JWT того же юзера. PAT по-прежнему ограничен своим
         # allowed_services (subset прав юзера, не расширение).
-        allowed_services_full, service_roles_full = await collect_user_permissions(db, user)
+        allowed_services_full, service_roles_full, groups_full = await collect_user_permissions(db, user)
         allowed_set = set(allowed_services_full)
         # Защитный `or []` — у PAT.allowed_services стоит NOT NULL, но при
         # возможной миграции назад или legacy-row держим инвариант (bot-ветка
@@ -291,6 +293,13 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
         effective_roles = {
             k: v for k, v in service_roles_full.items() if k in effective_services
         }
+        # PAT-ветка: groups режем по effective_services (PAT'у позволено только
+        # подмножество прав юзера); пустые после фильтрации группы выкидываем.
+        effective_groups: dict[str, list[str]] = {}
+        for gname, items in groups_full.items():
+            kept = [i for i in items if i.split(".", 1)[0] in effective_services]
+            if kept:
+                effective_groups[gname] = kept
         await db.commit()
         audit_service.emit(
             "token.introspect",
@@ -326,6 +335,7 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
             is_banned=user.status == UserStatus.BANNED,
             allowed_services=effective_services,
             service_roles=effective_roles,
+            groups=effective_groups,
         )
 
     # 3. Пробуем bot-токен

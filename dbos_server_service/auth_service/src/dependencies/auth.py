@@ -87,8 +87,9 @@ async def _identity_from_user_jwt(
     if is_account_admin:
         allowed_services: list[str] = []
         service_roles: dict[str, list[str]] = {}
+        groups: dict[str, list[str]] = {}
     else:
-        allowed_services, service_roles = await collect_user_permissions(db, user)
+        allowed_services, service_roles, groups = await collect_user_permissions(db, user)
 
     dept_name: str | None = None
     if user.department_id:
@@ -102,6 +103,7 @@ async def _identity_from_user_jwt(
         department_name=dept_name,
         allowed_services=allowed_services,
         service_roles=service_roles,
+        groups=groups,
         is_banned=user.status == UserStatus.BANNED,
         platform_role=user.platform_role,
         subject_type="user",

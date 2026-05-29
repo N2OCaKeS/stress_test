@@ -24,6 +24,25 @@ def _require_admin(identity) -> None:
         raise AuthorizationError(error_code="ROLE_REQUIRED", message="account_admin role required")
 
 
+def _require_dept_or_account_admin(identity, dept_id: str) -> None:
+    """Гард для операций над группой внутри отдела.
+
+    account_admin — любой отдел; department_admin — только свой
+    (`identity.department_id == dept_id`). Остальные → 403 ROLE_REQUIRED;
+    DA из чужого отдела → 403 DEPARTMENT_ACCESS_DENIED.
+    """
+    if identity.platform_role == PlatformRole.ACCOUNT_ADMIN:
+        return
+    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
+        if identity.department_id != dept_id:
+            raise AuthorizationError(
+                error_code="DEPARTMENT_ACCESS_DENIED",
+                message="department_admin can only manage groups in their own department",
+            )
+        return
+    raise AuthorizationError(error_code="ROLE_REQUIRED", message="Admin role required")
+
+
 def _grp_response(grp) -> GroupResponse:
     """ORM-группа → GroupResponse DTO."""
     return GroupResponse(
@@ -111,11 +130,16 @@ async def update_group(
     db: AsyncSession, identity, group_id: str,
     display_name: str | None, description: str | None, request_id=None,
 ) -> GroupResponse:
-    _require_admin(identity)
+    """Обновить метаданные группы.
+
+    account_admin — любая группа; department_admin — только группы своего отдела
+    (симметрия с `create_group`).
+    """
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+    _require_dept_or_account_admin(identity, grp.department_id)
     await repo.update(grp, display_name=display_name, description=description)
     await db.commit()
     audit_service.emit(
@@ -130,11 +154,16 @@ async def update_group(
 
 
 async def delete_group(db: AsyncSession, identity, group_id: str, request_id=None) -> None:
-    _require_admin(identity)
+    """Soft-delete группы.
+
+    account_admin — любая группа; department_admin — только группы своего отдела
+    (симметрия с `create_group`).
+    """
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+    _require_dept_or_account_admin(identity, grp.department_id)
     # Снимаем кэш до commit'а, чтобы списать членов до deactivate (после
     # deactivate группа сама не используется в `_merge_permissions`, но
     # group_services и group_roles остаются на ней — без сброса юзеры

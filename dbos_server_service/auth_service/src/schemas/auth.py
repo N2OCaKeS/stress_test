@@ -22,6 +22,13 @@ class IdentityContext(BaseModel):
         default_factory=dict,
         description="Effective роли по сервисам: `{service_name: [role_name, ...]}`.",
     )
+    groups: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Группы юзера → список `<service>.<role>` строк, которые группа даёт. "
+            "Группы без service-роли (только access) не показываются."
+        ),
+    )
     is_banned: bool = Field(default=False, description="True, если активен `Ban` (permanent или не истёкший temporary).")
     platform_role: str | None = Field(
         default=None,

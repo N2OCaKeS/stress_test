@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, exists, not_, select, update
+from sqlalchemy import delete, exists, func, not_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import TaskStatus
@@ -252,15 +252,28 @@ async def list_orphaned_running(
     server_service dispatch.
 
     Считаем `now` параметром, чтобы тесты могли подменять время; в
-    production caller передаст `None` → `datetime.now(timezone.utc)`.
+    production caller передаст `None` — тогда cutoff'ы считаются
+    через `func.now() - interval`, чтобы исключить clock-skew между
+    подом worker'а и сервером Postgres (heartbeat'ы пишутся серверным
+    `now()`; если sweep сравнивает с локальным временем worker'а, при
+    дрейфе часов он мог бы посчитать живой replica orphan'ом).
     """
-    n = now or datetime.now(timezone.utc)
-    orphan_cutoff = datetime.fromtimestamp(
-        n.timestamp() - orphan_threshold_seconds, tz=timezone.utc,
-    )
-    heartbeat_cutoff = datetime.fromtimestamp(
-        n.timestamp() - heartbeat_stale_seconds, tz=timezone.utc,
-    )
+    orphan_cutoff: object
+    heartbeat_cutoff: object
+    if now is not None:
+        orphan_cutoff = datetime.fromtimestamp(
+            now.timestamp() - orphan_threshold_seconds, tz=timezone.utc,
+        )
+        heartbeat_cutoff = datetime.fromtimestamp(
+            now.timestamp() - heartbeat_stale_seconds, tz=timezone.utc,
+        )
+    else:
+        orphan_cutoff = func.now() - text(
+            f"interval '{orphan_threshold_seconds} seconds'"
+        )
+        heartbeat_cutoff = func.now() - text(
+            f"interval '{heartbeat_stale_seconds} seconds'"
+        )
 
     # Фильтр «активных воркеров»: EXISTS WorkerHeartbeat по worker_id
     # с свежим last_heartbeat_at. Если task.worker_id IS NULL — EXISTS

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import delete
+from sqlalchemy import delete, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,9 +28,16 @@ async def upsert_heartbeat(
     «row есть, но не успели обновить», sweep видит свежий timestamp.
 
     Caller отвечает за commit (мы только flush()'им). `now` — для
-    тестов; в production caller передаёт `None`.
+    тестов; в production caller передаёт `None`, и timestamp берётся
+    из БД (`func.now()`) — это устраняет clock-skew между подами
+    worker'а и сервером Postgres: sweep сравнивает `last_heartbeat_at`
+    с серверным `now()` тоже, поэтому единая точка отсчёта важна.
     """
-    timestamp = now or datetime.now(timezone.utc)
+    timestamp: datetime | object
+    if now is not None:
+        timestamp = now
+    else:
+        timestamp = func.now()
     stmt = pg_insert(WorkerHeartbeat).values(
         worker_id=worker_id, last_heartbeat_at=timestamp,
     )

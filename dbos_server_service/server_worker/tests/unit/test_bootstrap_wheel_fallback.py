@@ -38,9 +38,11 @@ def _conn(run_results):
 class TestBootstrapWheelFallback:
     async def test_sudo_succeeds_no_wheel_attempt(self, monkeypatch):
         # Стандартный путь: sudo-группа есть (Debian/Astra) — wheel не пробуем.
-        # getent (not found rc=2) → useradd rc=0 → sudoers → authorized_keys
+        # getent (not found rc=2) → внутренний user_exists False → пропускаем
+        # pre-check id -nG → useradd rc=0 → sudoers → authorized_keys
         conn = _conn([
-            _run_result("", "", 2),  # getent passwd
+            _run_result("", "", 2),  # user_exists pre-check (rc=2)
+            _run_result("", "", 2),  # getent внутри create_user (rc=2)
             _run_result("", "", 0),  # useradd -G sudo
             _run_result("", "", 0),  # sudoers
             _run_result("", "", 0),  # authorized_keys
@@ -62,12 +64,17 @@ class TestBootstrapWheelFallback:
         # sudo-группы нет (RHEL): useradd с -G sudo → rc=6 ("group 'sudo' does
         # not exist") → retry с wheel → успех.
         # Последовательность вызовов:
+        #   pre-check: user_exists rc=2 (нет юзера)
         #   attempt-1: getent(rc=2) → useradd -G sudo(rc=6 error)
+        #     → post-fail user_exists rc=2 (юзер не создан) → пропускаем
+        #     id -nG → retry
         #   attempt-2: getent(rc=2) → useradd -G wheel(rc=0) → sudoers → auth_keys
         conn = _conn([
-            _run_result("", "", 2),   # getent (попытка 1)
+            _run_result("", "", 2),   # user_exists pre-check
+            _run_result("", "", 2),   # getent внутри create_user попытка 1
             _run_result("", "group 'sudo' does not exist", 6),  # useradd sudo fail
-            _run_result("", "", 2),   # getent (попытка 2)
+            _run_result("", "", 2),   # post-fail user_exists (юзер не создан)
+            _run_result("", "", 2),   # getent внутри create_user попытка 2
             _run_result("", "", 0),   # useradd -G wheel success
             _run_result("", "", 0),   # sudoers
             _run_result("", "", 0),   # authorized_keys
@@ -87,16 +94,23 @@ class TestBootstrapWheelFallback:
         assert "-G wheel" in useradd_calls[1].args[0]
 
     async def test_usermod_fail_on_sudo_falls_back_to_wheel(self, monkeypatch):
-        # Пользователь уже существует (getent rc=0) → usermod -G sudo → fail
-        # → retry с wheel → success.
-        # usermod вызывается из create_user (user_exists=True → modify_user).
+        # Пользователь уже существует, но не в sudo/wheel (например, прошлая
+        # попытка bootstrap'а упала после useradd с пустым -G).
+        # pre-check: user_exists=True → id -nG показывает "dbos" (без sudo/wheel)
+        # → попытка 1: usermod -G sudo → fail
+        #   → post-fail id -nG показывает "dbos" → retry
+        # → попытка 2: usermod -G wheel → success
         conn = _conn([
-            _run_result("dbos:x:1001:", "", 0),   # getent (попытка 1) — юзер есть
-            _run_result("", "group sudo not found", 6),  # usermod -G sudo fail
-            _run_result("dbos:x:1001:", "", 0),   # getent (попытка 2)
-            _run_result("", "", 0),               # usermod -G wheel success
-            _run_result("", "", 0),               # sudoers
-            _run_result("", "", 0),               # authorized_keys
+            _run_result("dbos:x:1001:", "", 0),         # user_exists pre-check (есть)
+            _run_result("dbos\n", "", 0),               # id -nG (нет sudo/wheel)
+            _run_result("dbos:x:1001:", "", 0),         # getent внутри create_user попытка 1
+            _run_result("", "group sudo not found", 6), # usermod -G sudo fail
+            _run_result("dbos:x:1001:", "", 0),         # post-fail user_exists
+            _run_result("dbos\n", "", 0),               # post-fail id -nG (всё ещё нет)
+            _run_result("dbos:x:1001:", "", 0),         # getent внутри create_user попытка 2
+            _run_result("", "", 0),                     # usermod -G wheel success
+            _run_result("", "", 0),                     # sudoers
+            _run_result("", "", 0),                     # authorized_keys
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -110,14 +124,67 @@ class TestBootstrapWheelFallback:
         ]
         assert len(mod_calls) == 2
 
+    async def test_user_already_in_sudo_group_skips_useradd(self, monkeypatch):
+        # Пользователь уже существует и состоит в sudo-группе (предыдущий
+        # bootstrap упал между useradd и sudoers-шагом). На повторе пропускаем
+        # useradd/usermod целиком — идём сразу к sudoers + authorized_keys.
+        conn = _conn([
+            _run_result("dbos:x:1001:", "", 0),    # user_exists pre-check
+            _run_result("dbos sudo\n", "", 0),     # id -nG — sudo на месте
+            _run_result("", "", 0),                # sudoers
+            _run_result("", "", 0),                # authorized_keys
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "boot", "pwd") as ssh:
+            await ssh.bootstrap_management_user("dbos", _PUBKEY)
+
+        # Никаких useradd/usermod не должно быть вызвано.
+        modify_calls = [
+            c for c in conn.run.await_args_list
+            if "useradd" in (c.args[0] if c.args else "")
+            or "usermod" in (c.args[0] if c.args else "")
+        ]
+        assert modify_calls == []
+
+    async def test_user_appeared_in_wheel_after_partial_failure(self, monkeypatch):
+        # Edge-case: первая попытка useradd -G sudo упала, но useradd успел
+        # завести аккаунт и какой-то другой агент (puppet/ansible) подсадил
+        # его в wheel параллельно. Post-fail id -nG показывает wheel —
+        # bootstrap должен считать это успехом, не делать вторую попытку.
+        conn = _conn([
+            _run_result("", "", 2),                              # user_exists pre-check
+            _run_result("", "", 2),                              # getent внутри create_user
+            _run_result("", "group 'sudo' does not exist", 6),   # useradd sudo fail
+            _run_result("dbos:x:1001:", "", 0),                  # post-fail user_exists (есть!)
+            _run_result("dbos wheel\n", "", 0),                  # id -nG → wheel
+            _run_result("", "", 0),                              # sudoers
+            _run_result("", "", 0),                              # authorized_keys
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "boot", "pwd") as ssh:
+            await ssh.bootstrap_management_user("dbos", _PUBKEY)
+
+        # Только одна попытка useradd (sudo).
+        useradd_calls = [
+            c for c in conn.run.await_args_list
+            if "useradd" in (c.args[0] if c.args else "")
+        ]
+        assert len(useradd_calls) == 1
+        assert "-G sudo" in useradd_calls[0].args[0]
+
     async def test_both_sudo_and_wheel_fail_raises_last_error(self, monkeypatch):
         # Ни sudo, ни wheel не работают — bootstrap должен поднять SshError
         # с последней ошибкой (wheel-failure).
         conn = _conn([
-            _run_result("", "", 2),                              # getent (sudo попытка)
+            _run_result("", "", 2),                              # user_exists pre-check
+            _run_result("", "", 2),                              # getent внутри create_user попытка 1
             _run_result("", "group sudo not found", 6),          # useradd sudo fail
-            _run_result("", "", 2),                              # getent (wheel попытка)
+            _run_result("", "", 2),                              # post-fail user_exists (нет)
+            _run_result("", "", 2),                              # getent внутри create_user попытка 2
             _run_result("", "group wheel not found", 6),         # useradd wheel fail
+            _run_result("", "", 2),                              # post-fail user_exists (нет)
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -140,7 +207,7 @@ class TestBootstrapWheelFallback:
 
         async def raise_on_run(cmd, **kw):
             call_count["n"] += 1
-            if "getent" in cmd:
+            if "getent" in cmd or "id -nG" in cmd:
                 res = MagicMock()
                 res.stdout = ""
                 res.stderr = ""

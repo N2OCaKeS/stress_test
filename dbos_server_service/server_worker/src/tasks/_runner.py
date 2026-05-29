@@ -114,9 +114,17 @@ def _filter_result_for_audit(
     if result is None:
         return None
     if safe_fields is None:
-        return {"emitted": False, "reason": "no_whitelist"}
+        return {
+            "emitted": False,
+            "reason": "no_whitelist",
+            "result_type": type(result).__name__,
+        }
     if not isinstance(result, dict):
-        return {"emitted": False, "reason": "result_not_dict"}
+        return {
+            "emitted": False,
+            "reason": "result_not_dict",
+            "result_type": type(result).__name__,
+        }
     return {k: v for k, v in result.items() if k in safe_fields}
 
 

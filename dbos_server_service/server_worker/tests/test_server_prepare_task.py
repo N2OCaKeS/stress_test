@@ -53,14 +53,34 @@ def _conn(run_results):
 _PUBKEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc dbos"
 
 
-# Полная последовательность SSH-команд bootstrap'а: getent (проверка
-# существования юзера) → useradd → sudoers (NOPASSWD) → authorized_keys bash.
+# Полная последовательность SSH-команд bootstrap'а.
+#
+# Путь «юзера ещё нет» (getent_rc=2): outer user_exists → False, pre-check
+# id -nG пропускаем, заходим в create_user (он сам зовёт getent),
+# useradd → sudoers → authorized_keys. Итого 5 команд.
+#
+# Путь «юзер есть, но не в sudo/wheel» — здесь не используется; для
+# idempotent-теста (existing user уже в sudo) — отдельная фикстура
+# `_bootstrap_seq_existing_sudo`.
 def _bootstrap_seq(getent_rc=2):
     return [
-        _run_result("", "", getent_rc),  # getent passwd <user>
+        _run_result("", "", getent_rc),  # outer user_exists: getent passwd <user>
+        _run_result("", "", getent_rc),  # create_user → user_exists: getent passwd <user>
         _run_result("", "", 0),          # useradd
         _run_result("", "", 0),          # sudoers tee/visudo/mv
         _run_result("", "", 0),          # authorized_keys bash
+    ]
+
+
+# Юзер уже существует и состоит в sudo-группе — useradd/usermod пропускаются.
+# Последовательность: getent passwd (rc=0) → id -nG (вывод содержит "sudo") →
+# sudoers → authorized_keys. Итого 4 команды.
+def _bootstrap_seq_existing_sudo(login: str = "dbos"):
+    return [
+        _run_result(f"{login}:x:1001:1001::/home/{login}:/bin/bash", "", 0),
+        _run_result(f"{login} sudo\n", "", 0),
+        _run_result("", "", 0),  # sudoers
+        _run_result("", "", 0),  # authorized_keys
     ]
 
 
@@ -69,24 +89,27 @@ def _bootstrap_seq(getent_rc=2):
 
 class TestBootstrapManagementUser:
     async def test_useradd_sudoers_and_authorized_keys(self, monkeypatch):
+        # Юзера нет: outer getent (rc=2) → inner getent (rc=2) → useradd →
+        # sudoers → authorized_keys. Pre-check id -nG не вызывается, потому
+        # что outer user_exists уже вернул False.
         conn = _conn(_bootstrap_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async with SshClient("h", "boot", "boot-pwd") as ssh:
             await ssh.bootstrap_management_user("dbos", _PUBKEY)
 
-        useradd_cmd = conn.run.await_args_list[1].args[0]
+        useradd_cmd = conn.run.await_args_list[2].args[0]
         assert "useradd" in useradd_cmd
         assert "dbos" in useradd_cmd
         assert "-G sudo" in useradd_cmd
 
-        sudoers_cmd = conn.run.await_args_list[2].args[0]
+        sudoers_cmd = conn.run.await_args_list[3].args[0]
         assert "/etc/sudoers.d/dbos-management" in sudoers_cmd
         assert "visudo -cf" in sudoers_cmd
         # NOPASSWD-правило едет на stdin, не в командную строку.
-        sudoers_stdin = conn.run.await_args_list[2].kwargs["input"]
+        sudoers_stdin = conn.run.await_args_list[3].kwargs["input"]
         assert "dbos ALL=(ALL) NOPASSWD: ALL" in sudoers_stdin
 
-        keys_cmd = conn.run.await_args_list[3].args[0]
+        keys_cmd = conn.run.await_args_list[4].args[0]
         assert "authorized_keys" in keys_cmd
         assert "grep -qxF" in keys_cmd
 
@@ -96,14 +119,16 @@ class TestBootstrapManagementUser:
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async with SshClient("h", "boot", "boot-pwd") as ssh:
             await ssh.bootstrap_management_user("ctl", _PUBKEY)
-        sudoers_cmd = conn.run.await_args_list[2].args[0]
+        sudoers_cmd = conn.run.await_args_list[3].args[0]
         assert "/etc/sudoers.d/ctl-management" in sudoers_cmd
-        sudoers_stdin = conn.run.await_args_list[2].kwargs["input"]
+        sudoers_stdin = conn.run.await_args_list[3].kwargs["input"]
         assert "ctl ALL=(ALL) NOPASSWD: ALL" in sudoers_stdin
 
     async def test_idempotent_existing_user(self, monkeypatch):
-        # getent (found rc=0) → usermod (sync) → sudoers → authorized_keys bash
-        conn = _conn(_bootstrap_seq(getent_rc=0))
+        # Юзер существует и уже в sudo-группе: outer getent (rc=0) →
+        # id -nG (вывод "dbos sudo") → useradd/usermod пропускаются →
+        # sudoers → authorized_keys.
+        conn = _conn(_bootstrap_seq_existing_sudo())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async with SshClient("h", "boot", "boot-pwd") as ssh:
             # уже существующий пользователь — не падаем.
@@ -126,8 +151,10 @@ class TestBootstrapManagementUser:
         assert ei.value.error_code == "SSH_INVALID_ARG"
 
     async def test_sudoers_failure_raises(self, monkeypatch):
-        # getent (not found) → useradd (rc=0) → sudoers (rc=1, visudo отбил)
+        # outer getent (rc=2) → inner getent (rc=2) → useradd (rc=0) →
+        # sudoers (rc=1, visudo отбил).
         conn = _conn([
+            _run_result("", "", 2),
             _run_result("", "", 2),
             _run_result("", "", 0),
             _run_result("", "invalid sudoers", 1),
@@ -139,8 +166,9 @@ class TestBootstrapManagementUser:
         assert ei.value.error_code == "SSH_PREPARE_FAILED"
 
     async def test_authorized_keys_failure_raises(self, monkeypatch):
-        # getent → useradd → sudoers → bash authorized_keys (rc=1)
+        # outer getent → inner getent → useradd → sudoers → bash authorized_keys (rc=1)
         conn = _conn([
+            _run_result("", "", 2),
             _run_result("", "", 2),
             _run_result("", "", 0),
             _run_result("", "", 0),

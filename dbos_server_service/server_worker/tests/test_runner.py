@@ -72,6 +72,7 @@ class TestRunTaskHappy:
         assert ev["details"]["result"] == {
             "emitted": False,
             "reason": "no_whitelist",
+            "result_type": "dict",
         }
 
     async def test_falls_back_to_task_id_when_no_target_server(

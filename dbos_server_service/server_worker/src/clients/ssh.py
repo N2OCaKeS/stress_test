@@ -141,7 +141,6 @@ class SshClient:
         password: str | None = None,
         *,
         port: int = 22,
-        known_hosts: str | None = None,
         timeout: float = 30.0,
         client_keys: list[str] | None = None,
     ) -> None:
@@ -149,7 +148,6 @@ class SshClient:
         self.username = username
         self._password = password
         self.port = port
-        self._known_hosts = known_hosts
         self.timeout = timeout
         self._client_keys = client_keys
         self._conn: asyncssh.SSHClientConnection | None = None
@@ -178,7 +176,10 @@ class SshClient:
                 username=self.username,
                 password=self._password,
                 client_keys=self._client_keys,
-                known_hosts=self._known_hosts,
+                # known_hosts=None = «accept-any»: флот серверов часто
+                # переустанавливается, host-key меняется — known_hosts-
+                # проверка непрактична. Каналом доверия выступает password/key.
+                known_hosts=None,
                 connect_timeout=self.timeout,
                 login_timeout=self.timeout,
             )
@@ -529,27 +530,58 @@ class SshClient:
         # перекрывает sudoers — членство в группе нужно для дефолтной policy
         # на тех дистрибутивах, где `/etc/sudoers.d/*` подгружается ленивее
         # системного `/etc/sudoers`.
+        #
+        # При повторном bootstrap'е (предыдущий прогон упал между useradd и
+        # sudoers/auth_keys) пользователь уже существует и может уже состоять
+        # в `sudo` или `wheel` — проверяем перед `usermod`, чтобы не дёргать
+        # ненужную команду и не наступить на edge-case, когда usermod -G
+        # переписывает текущую групп-листу при `id`-показании совпадающего
+        # состояния (NSS-кэш, sssd, ldap-членство).
         last_exc: SshError | None = None
         provisioned = False
-        for sudo_group in ("sudo", "wheel"):
-            try:
-                await self.create_user(
-                    management_user,
-                    groups=[sudo_group],
-                    has_sudo=False,
-                    shell="/bin/bash",
-                )
-            except SshError as exc:
-                if exc.error_code not in ("SSH_USERADD_FAILED", "SSH_USERMOD_FAILED"):
-                    raise
-                last_exc = exc
+        existing_groups: set[str] = set()
+        if await self.user_exists(management_user):
+            existing_groups = await self._sudo_group_membership(management_user)
+            if existing_groups & {"sudo", "wheel"}:
                 logger.info(
-                    "bootstrap: sudo-group %r not available on %s, retrying",
-                    sudo_group, self.host,
+                    "bootstrap: user %r already in sudo-group %s on %s, skipping useradd",
+                    management_user, sorted(existing_groups), self.host,
                 )
-                continue
-            provisioned = True
-            break
+                provisioned = True
+
+        if not provisioned:
+            for sudo_group in ("sudo", "wheel"):
+                try:
+                    await self.create_user(
+                        management_user,
+                        groups=[sudo_group],
+                        has_sudo=False,
+                        shell="/bin/bash",
+                    )
+                except SshError as exc:
+                    if exc.error_code not in ("SSH_USERADD_FAILED", "SSH_USERMOD_FAILED"):
+                        raise
+                    last_exc = exc
+                    logger.info(
+                        "bootstrap: sudo-group %r not available on %s, retrying",
+                        sudo_group, self.host,
+                    )
+                    # Между неудачной попыткой и retry проверяем, не оказался
+                    # ли пользователь уже в нужной группе — useradd мог успеть
+                    # создать аккаунт до того как `-G` упал, или партнёрский
+                    # процесс (puppet/ansible) подсадил его параллельно.
+                    if await self.user_exists(management_user):
+                        existing_groups = await self._sudo_group_membership(management_user)
+                        if existing_groups & {"sudo", "wheel"}:
+                            logger.info(
+                                "bootstrap: user %r now in sudo-group %s on %s after partial failure",
+                                management_user, sorted(existing_groups), self.host,
+                            )
+                            provisioned = True
+                            break
+                    continue
+                provisioned = True
+                break
         if not provisioned and last_exc is not None:
             raise last_exc
 
@@ -609,6 +641,20 @@ class SshClient:
                 stderr=stderr.strip(),
                 message=f"authorized_keys setup exit code {rc}",
             )
+
+    async def _sudo_group_membership(self, login: str) -> set[str]:
+        """Вернуть подмножество `{sudo, wheel}`, в которых состоит login.
+
+        Используется bootstrap'ом для пропуска `useradd`/`usermod`, если
+        предыдущий прогон уже успел подсадить пользователя в нужную группу
+        (полу-успешный run). `id -nG` дешёвый, без sudo.
+        """
+        self._validate_login(login)
+        rc, out, _err = await self.run(f"id -nG {login}")
+        if rc != 0:
+            return set()
+        groups = set(out.split())
+        return groups & {"sudo", "wheel"}
 
     def _validate_login(self, login: str) -> None:
         """Отбить login с символами вне POSIX-набора до подстановки в команду."""

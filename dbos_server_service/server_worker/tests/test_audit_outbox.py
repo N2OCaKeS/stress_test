@@ -398,7 +398,11 @@ class TestResultWhitelist:
 
         assert len(captured_audit) == 1
         result = captured_audit[0]["details"]["result"]
-        assert result == {"emitted": False, "reason": "no_whitelist"}
+        assert result == {
+            "emitted": False,
+            "reason": "no_whitelist",
+            "result_type": "dict",
+        }
         # Ни значения, ни ключи handler-result в audit не уехали.
         assert "secret" not in str(captured_audit)
         assert '"a"' not in str(captured_audit)
@@ -459,7 +463,11 @@ class TestResultWhitelist:
         )
 
         result = captured_audit[0]["details"]["result"]
-        assert result == {"emitted": False, "reason": "result_not_dict"}
+        assert result == {
+            "emitted": False,
+            "reason": "result_not_dict",
+            "result_type": "str",
+        }
         assert "hunter2" not in str(captured_audit)
 
 

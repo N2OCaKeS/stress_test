@@ -161,11 +161,11 @@ class TestSshClientLifecycle:
 
     async def test_no_known_hosts_connects_without_verification(self, monkeypatch):
         # Флот часто переустанавливается, host-key меняется → host-key не
-        # проверяем. Пустой known_hosts больше не блокирует соединение, и в
-        # asyncssh уходит known_hosts=None (accept-any).
+        # проверяем. SshClient захардкожен на known_hosts=None (accept-any) —
+        # параметр настройки убран.
         connect_mock = AsyncMock(return_value=_make_fake_conn())
         monkeypatch.setattr(asyncssh, "connect", connect_mock)
-        await SshClient("h", "u", "p", known_hosts=None).connect()
+        await SshClient("h", "u", "p").connect()
         connect_mock.assert_awaited_once()
         assert connect_mock.await_args.kwargs["known_hosts"] is None
 

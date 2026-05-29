@@ -4,14 +4,14 @@ from datetime import timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import AuthorizationError, ConflictError, DomainValidationError, NotFoundError
+from src.core.exceptions import ConflictError, DomainValidationError, NotFoundError
 from src.core.security import generate_pat
 from src.repositories.departments import DepartmentRepository
 from src.repositories.tokens import TokenRepository
 from src.repositories.users import UserRepository
 from src.schemas.tokens import PATCreateResponse, PATListItem
 from src.services import audit_service
-from src.utils.time import is_expired, utcnow
+from src.utils.time import utcnow
 
 
 async def create_pat(

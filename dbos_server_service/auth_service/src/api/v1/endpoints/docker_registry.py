@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.docker_jwt import get_jwks, get_public_key_pem
 from src.core.exceptions import AuthenticationError
-from src.dependencies.auth import AccountAdmin, AnyAdmin
+from src.dependencies.auth import AnyAdmin
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
 from src.schemas.docker_registry import (

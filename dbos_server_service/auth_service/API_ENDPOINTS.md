@@ -614,6 +614,10 @@ Response: 302 redirect на `{redirect_uri}?code=…&state=…`.
 
 Errors: `UNSUPPORTED_RESPONSE_TYPE` (400), `INVALID_REDIRECT_URI` (400), `INVALID_CLIENT` (400), `PKCE_METHOD_INVALID` (400), `USER_CONTEXT_REQUIRED` (403) — m2m-токен на user-endpoint.
 
+**`state` — обязанности клиента.** Параметр `state` сервер прозрачно прокидывает обратно в `redirect_uri` без интерпретации (RFC 6749 §10.12). Защита от CSRF на этом канале — на стороне клиента: клиент **обязан** генерировать криптостойкий `state` (например `secrets.token_urlsafe(32)`), привязывать его к сессии (cookie/session storage) и при колбэке проверять равенство `state`-присланного и сохранённого. Сервер ограничивает длину 2048 символами, но не валидирует содержимое и не помнит выданные значения.
+
+**PKCE рекомендуется всегда.** Для public-клиентов (без `client_secret`, флаг `is_public`) PKCE с `code_challenge_method=S256` обязателен (`PKCE_METHOD_INVALID` 400 при отсутствии). Для confidential-клиентов сервер допускает запрос без PKCE, но рекомендуется его всё равно использовать — это закрывает класс атак на перехват `code` в логах, прокси и истории браузера. `plain` оставлен для совместимости и должен не использоваться в новых интеграциях.
+
 ### `POST /oauth2/token`
 
 Auth: public. Body:

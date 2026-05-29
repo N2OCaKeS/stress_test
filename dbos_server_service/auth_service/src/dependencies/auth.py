@@ -226,15 +226,35 @@ async def get_current_identity(
 
 # TTL=5s по умолчанию; читается из Settings (env `IDENTITY_CACHE_TTL_SECONDS`).
 # 0 / отрицательное — disable (тесты, мутирующие User прямым SQL'ом мимо
-# invalidate-хуков). Модульный кэш value-копия — `get_settings()` кэширован
-# на процесс, отдельная переменная нужна, чтобы тесты могли monkeypatch'ить
-# её на лету без сброса `lru_cache(get_settings)`.
-_IDENTITY_CACHE_TTL_SECONDS: float = float(get_settings().identity_cache_ttl_seconds)
-# Потолок числа entries. Каждая запись — небольшой кортеж + строка-ключ.
-# Читается из Settings (env `IDENTITY_CACHE_MAXSIZE`); под burst'ом коротко-
-# живущих токенов без cap'а кэш растёт без границ → OOM pod'а.
-_IDENTITY_CACHE_MAXSIZE: int = int(get_settings().identity_cache_maxsize)
+# invalidate-хуков). Конфиг достаётся через `_get_cache_config()` лениво на
+# каждый cache-hit. Модульные имена `_IDENTITY_CACHE_TTL_SECONDS` /
+# `_IDENTITY_CACHE_MAXSIZE` сохранены как legacy-точки monkeypatch'а тестов —
+# если они выставлены явно (не None), они перекрывают settings.
+_IDENTITY_CACHE_TTL_SECONDS: float | None = None
+_IDENTITY_CACHE_MAXSIZE: int | None = None
 _identity_cache: "OrderedDict[str, tuple[IdentityContext, float]]" = OrderedDict()
+
+
+def _get_cache_config() -> tuple[float, int]:
+    """Текущие TTL и maxsize кэша. Lazy чтение из Settings — тестовые
+    env-override подхватываются после `get_settings.cache_clear()`. Module-level
+    overrides (`_IDENTITY_CACHE_TTL_SECONDS`/`_MAXSIZE`) держат приоритет ради
+    тестов, которые monkeypatch'ат их напрямую.
+    """
+    if _IDENTITY_CACHE_TTL_SECONDS is not None and _IDENTITY_CACHE_MAXSIZE is not None:
+        return float(_IDENTITY_CACHE_TTL_SECONDS), int(_IDENTITY_CACHE_MAXSIZE)
+    settings = get_settings()
+    ttl = (
+        float(_IDENTITY_CACHE_TTL_SECONDS)
+        if _IDENTITY_CACHE_TTL_SECONDS is not None
+        else float(settings.identity_cache_ttl_seconds)
+    )
+    maxsize = (
+        int(_IDENTITY_CACHE_MAXSIZE)
+        if _IDENTITY_CACHE_MAXSIZE is not None
+        else int(settings.identity_cache_maxsize)
+    )
+    return ttl, maxsize
 
 
 def _token_cache_key(token: str) -> str:
@@ -252,7 +272,8 @@ def _identity_cache_get(token: str) -> IdentityContext | None:
 
     TTL<=0 → кэш disabled (тестовый режим), всегда miss.
     """
-    if _IDENTITY_CACHE_TTL_SECONDS <= 0:
+    ttl, _ = _get_cache_config()
+    if ttl <= 0:
         return None
     key = _token_cache_key(token)
     entry = _identity_cache.get(key)
@@ -273,15 +294,16 @@ def _identity_cache_get(token: str) -> IdentityContext | None:
 def _identity_cache_put(token: str, identity: IdentityContext) -> None:
     """Положить identity в кэш с expires_at = now + TTL.
 
-    TTL<=0 → no-op (кэш disabled). При переполнении `_IDENTITY_CACHE_MAXSIZE`
+    TTL<=0 → no-op (кэш disabled). При переполнении maxsize
     вытесняем самые старые записи.
     """
-    if _IDENTITY_CACHE_TTL_SECONDS <= 0:
+    ttl, maxsize = _get_cache_config()
+    if ttl <= 0:
         return
     key = _token_cache_key(token)
-    _identity_cache[key] = (identity, time.time() + _IDENTITY_CACHE_TTL_SECONDS)
+    _identity_cache[key] = (identity, time.time() + ttl)
     _identity_cache.move_to_end(key)
-    while len(_identity_cache) > _IDENTITY_CACHE_MAXSIZE:
+    while len(_identity_cache) > maxsize:
         _identity_cache.popitem(last=False)
 
 

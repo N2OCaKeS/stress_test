@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import ConflictError, NotFoundError
 from src.repositories.departments import DepartmentRepository
-from src.repositories.groups import GroupRepository
 from src.repositories.roles import RoleRepository
 from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.services import ServiceRepository

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import BOT_TOKEN_PREFIX, PAT_PREFIX, PlatformRole
-from src.core.exceptions import AuthenticationError, AuthorizationError, ConflictError, NotFoundError
+from src.core.exceptions import AuthenticationError, AuthorizationError, NotFoundError
 from src.core.security import hash_opaque_token
 from src.core.config import get_settings
 from src.models.department_docker_registry import PULL_POLICY_ALL, PULL_POLICY_RESTRICTED
@@ -33,7 +33,7 @@ from src.schemas.docker_registry import (
     DockerTokenResponse,
 )
 from src.services import _lockout, audit_service
-from src.utils.time import is_expired, utcnow
+from src.utils.time import is_expired
 from src.core.docker_jwt import sign_docker_token
 
 
@@ -329,6 +329,12 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
     user = await user_repo.get_by_username(username)
     if user is None:
         # Не раскрываем существование юзера — та же ошибка, что и при wrong-pw.
+        # Симметрия с password-веткой `/login` (`auth_service.login_user` →
+        # ветка `user is None`): счётчик `register_failure` тут не дёргаем,
+        # потому что нет таргетной строки `users` для инкремента, а вешать
+        # глобальный лимит по username == DoS-вектор (любой может залочить
+        # чужой аккаунт перебором имён). Brute-force такого канала глушит
+        # slowapi rate-limit на endpoint'е, не per-user lockout. No-op by design.
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid credentials")
     if not user.is_active:
         # Отбиваем BANNED / BLOCKED / inactive ДО Argon2id verify — экономим

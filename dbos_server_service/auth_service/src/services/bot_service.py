@@ -15,7 +15,6 @@ from src.repositories.bot_tokens import BotTokenRepository
 from src.repositories.bots import BotRepository
 from src.repositories.departments import DepartmentRepository
 from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
-from src.repositories.services import ServiceRepository
 from src.repositories.users import UserRepository
 from src.schemas.bots import (
     BotCreate,

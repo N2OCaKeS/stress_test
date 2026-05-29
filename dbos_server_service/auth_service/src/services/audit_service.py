@@ -172,11 +172,19 @@ def emit(
     settings = get_settings()
     ctx = audit_context.get_context()
 
-    # Приоритет: явный параметр > контекст. Для actor_type fallback на "user"
-    # если ни caller, ни identity-middleware ничего не выставили — backward-
-    # compat для anonymous / health-paths / service.started.
+    # Приоритет: явный параметр > контекст. Если actor_id не резолвится
+    # (anonymous endpoint / health-path / service.started без identity),
+    # actor_type ставим в "anonymous" — иначе SIEM-фильтр по actor_type
+    # смешает аноним с реальным user-флоу.
     resolved_actor_id = actor_id if actor_id is not None else ctx.actor_id
-    resolved_actor_type = actor_type if actor_type is not None else (ctx.subject_type or "user")
+    if actor_type is not None:
+        resolved_actor_type = actor_type
+    elif ctx.subject_type:
+        resolved_actor_type = ctx.subject_type
+    elif resolved_actor_id is None:
+        resolved_actor_type = "anonymous"
+    else:
+        resolved_actor_type = "user"
     resolved_username = username if username is not None else ctx.username
     resolved_department = department_id if department_id is not None else ctx.department_id
     resolved_request_id = request_id if request_id is not None else ctx.request_id

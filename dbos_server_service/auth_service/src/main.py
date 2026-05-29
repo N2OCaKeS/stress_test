@@ -485,6 +485,10 @@ def _extract_actor_info(
     `username` и `department_id` намеренно НЕ читаем: их нет в JWT-payload
     (см. `_build_access_token`). Эти поля заполняет
     `_propagate_identity_to_audit_context` после `get_current_identity`.
+
+    Декодированный payload кэшируется в `request.state.jwt_payload` — тот
+    же токен потом достанет `get_current_identity` через `_extract_bearer`
+    + `decode_access_token`, повторный HS256-decode не нужен.
     """
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
@@ -493,6 +497,7 @@ def _extract_actor_info(
     try:
         from src.core.security import decode_access_token
         payload = decode_access_token(token)
+        request.state.jwt_payload = payload
         # JWT может не иметь `actor_type` (legacy токены) — fallback на "user",
         # как делает get_current_identity / authorization_service.introspect.
         actor_type = payload.get("actor_type") or "user"

@@ -185,10 +185,15 @@ async def get_current_identity(
         _propagate_identity_to_audit_context(cached)
         return cached
 
-    try:
-        payload = decode_access_token(token)
-    except Exception:
-        raise _invalid_token_error()
+    # Middleware (`_extract_actor_info`) уже декодит JWT для audit-контекста
+    # и кладёт payload в request.state.jwt_payload — переиспользуем, чтобы
+    # не платить HS256-decode второй раз за запрос.
+    payload = getattr(request.state, "jwt_payload", None)
+    if payload is None:
+        try:
+            payload = decode_access_token(token)
+        except Exception:
+            raise _invalid_token_error()
 
     # `actor_type` — диспатч между user-JWT и oauth_client_credentials.
     # Отсутствие → "user" для backward compat со старыми JWT.

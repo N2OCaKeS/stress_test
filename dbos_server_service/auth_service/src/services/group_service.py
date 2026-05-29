@@ -210,6 +210,16 @@ async def add_member(db: AsyncSession, identity, group_id: str, user_id: str, re
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
 
+    # dept-isolation для DA проверяем СРАЗУ после lookup'а группы — иначе
+    # DA из dept_b отличает «существует user в dept_a» (403 DEPT_MISMATCH)
+    # от «не существует» (404), что просвечивает чужой dept по статус-коду.
+    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
+        if identity.department_id != grp.department_id:
+            raise AuthorizationError(
+                error_code="DEPARTMENT_ACCESS_DENIED",
+                message="department_admin can only manage groups in their own department",
+            )
+
     user_repo = UserRepository(db)
     user = await user_repo.get_by_id(user_id)
     if user is None:
@@ -222,13 +232,6 @@ async def add_member(db: AsyncSession, identity, group_id: str, user_id: str, re
                 f"User '{user_id}' is in a different department from group '{grp.name}'"
             ),
         )
-
-    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
-        if identity.department_id != grp.department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only manage groups in their own department",
-            )
 
     if await repo.get_membership(group_id, user_id):
         raise ConflictError(error_code="ALREADY_GROUP_MEMBER", message="User is already a member of this group")
@@ -258,16 +261,17 @@ async def remove_member(db: AsyncSession, identity, group_id: str, user_id: str,
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
 
-    m = await repo.get_membership(group_id, user_id)
-    if m is None:
-        raise NotFoundError(error_code="MEMBER_NOT_FOUND", message="User is not a member of this group")
-
+    # dept-isolation для DA — до membership-lookup'а; см. комментарий в add_member.
     if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
         if identity.department_id != grp.department_id:
             raise AuthorizationError(
                 error_code="DEPARTMENT_ACCESS_DENIED",
                 message="department_admin can only manage groups in their own department",
             )
+
+    m = await repo.get_membership(group_id, user_id)
+    if m is None:
+        raise NotFoundError(error_code="MEMBER_NOT_FOUND", message="User is not a member of this group")
 
     await repo.remove_member(m)
     await db.commit()
@@ -309,9 +313,22 @@ async def add_bot_member(db: AsyncSession, identity, group_id: str, bot_id: str,
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
 
+    # dept-isolation для DA — до bot-lookup'а; см. комментарий в add_member.
+    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
+        if identity.department_id != grp.department_id:
+            raise AuthorizationError(
+                error_code="DEPARTMENT_ACCESS_DENIED",
+                message="department_admin can only manage groups in their own department",
+            )
+
     bot_repo = BotRepository(db)
     bot = await bot_repo.get_by_id(bot_id)
-    if bot is None:
+    # Деактивированный бот семантически = «нет бота» для group-membership:
+    # introspect его всё равно отобьёт, а в группу попадёт «фантомная» запись
+    # которая будет шуметь в list_bot_members / GET /users/{id}/permissions.
+    # 404 BOT_NOT_FOUND вместо отдельного кода, чтобы не светить статус
+    # деактивированного бота вне dept-isolation guard'а.
+    if bot is None or not bot.is_active:
         raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
 
     if bot.department_id != grp.department_id:
@@ -321,13 +338,6 @@ async def add_bot_member(db: AsyncSession, identity, group_id: str, bot_id: str,
                 f"Bot '{bot_id}' is in a different department from group '{grp.name}'"
             ),
         )
-
-    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
-        if identity.department_id != grp.department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only manage groups in their own department",
-            )
 
     if await repo.get_bot_membership(group_id, bot_id):
         raise ConflictError(error_code="ALREADY_GROUP_MEMBER", message="Bot is already a member of this group")
@@ -356,16 +366,17 @@ async def remove_bot_member(db: AsyncSession, identity, group_id: str, bot_id: s
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
 
-    m = await repo.get_bot_membership(group_id, bot_id)
-    if m is None:
-        raise NotFoundError(error_code="MEMBER_NOT_FOUND", message="Bot is not a member of this group")
-
+    # dept-isolation для DA — до membership-lookup'а; см. комментарий в add_member.
     if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
         if identity.department_id != grp.department_id:
             raise AuthorizationError(
                 error_code="DEPARTMENT_ACCESS_DENIED",
                 message="department_admin can only manage groups in their own department",
             )
+
+    m = await repo.get_bot_membership(group_id, bot_id)
+    if m is None:
+        raise NotFoundError(error_code="MEMBER_NOT_FOUND", message="Bot is not a member of this group")
 
     await repo.remove_bot_member(m)
     await db.commit()

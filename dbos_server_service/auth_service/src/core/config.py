@@ -1,11 +1,14 @@
 """Конфиг auth_service. Settings через pydantic-settings + production-guard."""
 
+import logging
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 # Hostnames, где plain http допустим даже в проде (devcontainer / sidecar /
@@ -437,6 +440,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 "LOGGING_SERVICE_API_KEY must be set in production "
                 "(audit channel will silently drop events otherwise)"
+            )
+
+        # ── SECURITY_HSTS_ENABLED (warn-only — не error) ───────────────────
+        # HSTS не обязателен (за http-фронтом ставить нельзя), но в типовой
+        # prod-схеме с https-ingress должен быть включён. Молчаливый дефолт
+        # `False` уходил в SIEM без сигнала, теперь хотя бы WARN при старте.
+        if not self.security_hsts_enabled:
+            logger.warning(
+                "SECURITY_HSTS_ENABLED=false in production: HSTS header не "
+                "ставится. Если фронт-ingress терминирует https, включи "
+                "SECURITY_HSTS_ENABLED=true."
             )
 
         # docker_jwt: эфемерный RSA-ключ (regenerated на каждом рестарте)

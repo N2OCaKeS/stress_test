@@ -272,15 +272,16 @@ async def _ensure_broker_started() -> None:
         _broker_started = True
 
 
-async def _get_task_id_by_idempotency_key(key: str) -> tuple[str | None, bool]:
-    """SELECT существующего tasks.id по idempotency_key.
+async def _get_task_by_idempotency_key(
+    key: str,
+) -> tuple[str, str, str | None] | None:
+    """SELECT существующего tasks по idempotency_key.
 
-    Возвращает `(task_id_or_none, idempotent_hit)`. `idempotent_hit` — True,
-    когда строка найдена и dispatch_task вернёт существующий id без новой
-    публикации в брокер. Caller (см. `dispatch_task` с `return_hit=True`)
-    пробрасывает флаг наверх — `_dispatch_power` / `worker_dispatch`
-    добавляют его в audit details, чтобы SIEM отличал «новый task» от
-    «idempotent replay».
+    Возвращает `(task_id, task_kind, target_server_id)` либо `None`. Caller
+    (`dispatch_task`) сверяет `task_kind` / `target_server_id` ранее
+    зарегистрированной задачи с новым запросом: расхождение значит, что
+    клиент reuse'ит ключ под другую операцию, и мы не имеем права молча
+    отдать старый task_id (confused-deputy).
 
     Используется cross-DB worker-engine — `tasks` живёт в dev_server_worker.
     """
@@ -288,13 +289,49 @@ async def _get_task_id_by_idempotency_key(key: str) -> tuple[str | None, bool]:
     async with session_factory() as session:
         row = (
             await session.execute(
-                text("SELECT id FROM tasks WHERE idempotency_key = :key"),
+                text(
+                    "SELECT id, task_kind, target_server_id FROM tasks "
+                    "WHERE idempotency_key = :key"
+                ),
                 {"key": key},
             )
         ).first()
         if row is None:
-            return None, False
-        return row[0], True
+            return None
+        return row[0], row[1], row[2]
+
+
+def _ensure_idempotency_matches(
+    *,
+    existing: tuple[str, str, str | None],
+    task_kind: str,
+    target_server_id: str | None,
+) -> None:
+    """Проверить, что reuse'нутый Idempotency-Key пришёл на ту же операцию.
+
+    Клиент имеет право повторить тот же POST с тем же ключом — это
+    идемпотентный retry. Но если он ткнул тот же ключ для другой операции
+    (другой `task_kind` или другой `target_server_id`), отдать ему старый
+    task_id значит соврать про то, что мы поставили: confused-deputy.
+    В таком случае поднимаем 409 `IDEMPOTENCY_KEY_REUSE_CONFLICT` — клиент
+    обязан сгенерировать новый ключ.
+    """
+    _existing_id, existing_kind, existing_target = existing
+    if existing_kind == task_kind and existing_target == target_server_id:
+        return
+    raise ConflictError(
+        error_code="IDEMPOTENCY_KEY_REUSE_CONFLICT",
+        message=(
+            "Idempotency-Key already used for a different operation "
+            "(task_kind/target_server_id mismatch)"
+        ),
+        details={
+            "existing_task_kind": existing_kind,
+            "existing_target_server_id": existing_target,
+            "requested_task_kind": task_kind,
+            "requested_target_server_id": target_server_id,
+        },
+    )
 
 
 async def _insert_task_row(
@@ -613,9 +650,15 @@ async def dispatch_task(
     выглядят одинаково и нельзя посчитать долю реальных повторов.
     """
     if idempotency_key is not None:
-        existing_id, hit = await _get_task_id_by_idempotency_key(idempotency_key)
-        if existing_id is not None:
-            return (existing_id, hit) if return_hit else existing_id
+        existing = await _get_task_by_idempotency_key(idempotency_key)
+        if existing is not None:
+            _ensure_idempotency_matches(
+                existing=existing,
+                task_kind=task_kind,
+                target_server_id=target_server_id,
+            )
+            existing_id = existing[0]
+            return (existing_id, True) if return_hit else existing_id
 
     new_id = task_id()
     try:
@@ -633,11 +676,18 @@ async def dispatch_task(
         # Race на UNIQUE(idempotency_key): другой процесс успел вставить
         # задачу с этим ключом между нашим SELECT и INSERT. Повторный SELECT
         # должен её увидеть и вернуть существующий id — это идемпотентный
-        # путь, никакого нового kick'а worker'у.
+        # путь, никакого нового kick'а worker'у. Снова сверяем kind/server,
+        # чтобы race не пробил confused-deputy через гонку.
         if idempotency_key is not None:
-            existing_id, hit = await _get_task_id_by_idempotency_key(idempotency_key)
-            if existing_id is not None:
-                return (existing_id, hit) if return_hit else existing_id
+            existing = await _get_task_by_idempotency_key(idempotency_key)
+            if existing is not None:
+                _ensure_idempotency_matches(
+                    existing=existing,
+                    task_kind=task_kind,
+                    target_server_id=target_server_id,
+                )
+                existing_id = existing[0]
+                return (existing_id, True) if return_hit else existing_id
         raise ConflictError(
             error_code="TASK_IDEMPOTENT_CONFLICT",
             message="Task insert failed and idempotent retry did not resolve",

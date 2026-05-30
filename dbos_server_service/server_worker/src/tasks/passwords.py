@@ -29,6 +29,7 @@ stash в Redis с in-flight паролем живёт до TTL, оператор
 
 from __future__ import annotations
 
+import json
 import logging
 import secrets
 import string
@@ -96,14 +97,60 @@ _IPMI_ROTATE_PASSWORD_TTL_SECONDS = 1800
 # Префикс ключа задаём явный — отделяет от bootstrap-creds в Redis-namespace.
 _IPMI_ROTATE_KEY_PREFIX = "dbos:ipmi_rotate_pw:"
 
+# Ключ для in-flight account-rotate. Симметричен `_IPMI_ROTATE_KEY_PREFIX`.
+# Зачем: при retry'е `account.rotate_password._impl` запускается заново;
+# без stash'а каждая попытка генерила бы новый пароль через
+# `_generate_password()`, `chpasswd` перезаписывал бы аккаунт другим
+# секретом, и self-сессии (`is_managed=False`), завязанные на пароль из
+# storage, ломались бы при первом transient-fail'е submit'а — storage
+# хранит один пароль, на хосте стоит другой.
+_ACCOUNT_ROTATE_KEY_PREFIX = "dbos:account_rotate_pw:"
+
+
+def _ipmi_stash_value(password: str, rotated_at: str | None) -> str:
+    """Сериализовать (password, rotated_at) в JSON для Redis-stash'а."""
+    return json.dumps({"password": password, "rotated_at": rotated_at})
+
+
+def _ipmi_stash_parse(raw: bytes | bytearray | str) -> tuple[str | None, str | None]:
+    """Разобрать stash из Redis.
+
+    Поддерживает два формата: новый JSON `{"password": ..., "rotated_at": ...}`
+    и старый plain-string (пароль без timestamp'а) — на случай retry'я после
+    апгрейда воркера с уже живущим in-flight ключом.
+    """
+    if isinstance(raw, (bytes, bytearray)):
+        text = raw.decode("utf-8")
+    else:
+        text = str(raw)
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return text, None
+    if isinstance(data, dict):
+        return data.get("password"), data.get("rotated_at")
+    return text, None
+
 
 async def _read_ipmi_rotate_password(task_id: str) -> str | None:
     """Достать ранее сгенерированный пароль ротации из Redis.
 
     Возвращает plaintext или None, если ключа нет (первая попытка либо TTL
-    истёк). Фикс P1: при retry'е IPMI rotate `_impl` запускается заново —
-    без stash'а каждая попытка генерила бы новый пароль и перезаписывала
-    storage, рассинхронизируя storage с реальным BMC при transient-fail'ах.
+    истёк). При retry'е IPMI rotate `_impl` запускается заново — без stash'а
+    каждая попытка генерила бы новый пароль и перезаписывала storage,
+    рассинхронизируя storage с реальным BMC при transient-fail'ах.
+    """
+    password, _ = await _read_ipmi_rotate_state(task_id)
+    return password
+
+
+async def _read_ipmi_rotate_state(task_id: str) -> tuple[str | None, str | None]:
+    """Достать (password, rotated_at) из stash'а.
+
+    rotated_at сохраняется вместе с паролем, чтобы при retry'е submit'а
+    storage получал тот же timestamp, что и при первой успешной попытке —
+    без этого rotated_at дрейфил бы между BMC apply и записью в storage
+    на каждой повторной submit-попытке (drift до десятков секунд).
     """
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
@@ -112,25 +159,30 @@ async def _read_ipmi_rotate_password(task_id: str) -> str | None:
     finally:
         await client.aclose()
     if raw is None:
-        return None
-    return raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+        return None, None
+    return _ipmi_stash_parse(raw)
 
 
-async def _store_ipmi_rotate_password(task_id: str, password: str) -> None:
-    """Сохранить in-flight пароль ротации в Redis с TTL.
+async def _store_ipmi_rotate_password(
+    task_id: str, password: str, rotated_at: str | None = None,
+) -> None:
+    """Сохранить in-flight пароль ротации (и опционально rotated_at) с TTL.
 
     Кладём ПЕРЕД `submit_rotated_ipmi_password`: даже если transient
     network-fail отвалит после POST'а storage, следующий retry достанет
-    ТОТ ЖЕ пароль из Redis и подтвердит state. Без stash'а worker
-    сгенерил бы новый и перезаписал storage очередным ciphertext'ом,
-    оставляя BMC потенциально на старом пароле.
+    ТОТ ЖЕ пароль и timestamp из Redis и подтвердит state. Без stash'а
+    worker сгенерил бы новый и перезаписал storage очередным
+    ciphertext'ом, оставляя BMC потенциально на старом пароле.
+
+    `rotated_at` опционален для обратной совместимости с тестами,
+    которые предзаполняют stash перед запуском handler'а.
     """
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:
         await client.set(
             _IPMI_ROTATE_KEY_PREFIX + task_id,
-            password,
+            _ipmi_stash_value(password, rotated_at),
             ex=_IPMI_ROTATE_PASSWORD_TTL_SECONDS,
         )
     finally:
@@ -151,6 +203,59 @@ async def _delete_ipmi_rotate_password(task_id: str) -> None:
             await client.delete(_IPMI_ROTATE_KEY_PREFIX + task_id)
         except Exception:  # noqa: BLE001
             logger.debug("failed to delete in-flight ipmi rotate password", exc_info=True)
+    finally:
+        await client.aclose()
+
+
+async def _read_account_rotate_password(task_id: str) -> str | None:
+    """Достать ранее сгенерированный account-пароль ротации из Redis.
+
+    Симметрично `_read_ipmi_rotate_password`. Возвращает plaintext или
+    None, если ключа нет.
+    """
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        raw = await client.get(_ACCOUNT_ROTATE_KEY_PREFIX + task_id)
+    finally:
+        await client.aclose()
+    if raw is None:
+        return None
+    return raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+
+
+async def _store_account_rotate_password(task_id: str, password: str) -> None:
+    """Сохранить in-flight account-пароль ротации в Redis с TTL.
+
+    Кладём ПЕРЕД `chpasswd`: если retry повторит _impl, мы достанем тот
+    же пароль и не сгенерим новый. Без этого каждый retry перезаписывал
+    бы пароль на хосте новым случайным секретом, ломая self-сессии и
+    рассинхронизируя storage с реальностью на хосте.
+    """
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        await client.set(
+            _ACCOUNT_ROTATE_KEY_PREFIX + task_id,
+            password,
+            ex=_IPMI_ROTATE_PASSWORD_TTL_SECONDS,
+        )
+    finally:
+        await client.aclose()
+
+
+async def _delete_account_rotate_password(task_id: str) -> None:
+    """Дропнуть in-flight account-ключ после успешного submit'а."""
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        try:
+            await client.delete(_ACCOUNT_ROTATE_KEY_PREFIX + task_id)
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "failed to delete in-flight account rotate password",
+                exc_info=True,
+            )
     finally:
         await client.aclose()
 
@@ -227,11 +332,30 @@ async def account_rotate_password(task_id: str) -> None:
                 server_id, account_id, target_dept,
             )
         ssh_client.apply_session_hints(creds, payload)
-        new_password = _generate_password()
+
+        # Один и тот же пароль на все попытки одной dispatch'и (симметрично
+        # ipmi.rotate_password). Без stash'а retry _impl запускался бы с
+        # новым `_generate_password()`, chpasswd перезаписывал бы аккаунт
+        # другим секретом, а submit ушёл бы с третьим — storage хранил бы
+        # пароль, отличный от того, что реально стоит на хосте. Для
+        # self-сессий (`is_managed=False`), которые логинятся паролем из
+        # storage, это означало бы постоянный auth-fail после первого же
+        # transient-fail'а submit'а.
+        stashed = await _read_account_rotate_password(task_id)
+        if stashed is None:
+            new_password = _generate_password()
+            await _store_account_rotate_password(task_id, new_password)
+        else:
+            new_password = stashed
         await ssh_client.set_account_password(creds, server_id, creds["login"], new_password)
         confirmation = await server_service_client.submit_rotated_password(
             server_id, account_id, new_password, target_dept,
         )
+
+        # Успех — больше не нужен stash. TTL подстрахует, явный DELETE
+        # сокращает окно жизни plaintext'а в Redis.
+        await _delete_account_rotate_password(task_id)
+
         return {"server_id": server_id, "account_id": account_id, "rotated_at": confirmation.get("rotated_at")}
 
     await run_task(
@@ -300,7 +424,7 @@ async def ipmi_rotate_password(task_id: str) -> None:
         # следующем retry'е submit ушёл бы с другим — storage разъехался бы
         # с BMC. С Redis-stash'ем все retry'и видят тот же пароль и
         # сходятся к одному и тому же ciphertext'у.
-        stashed_password = await _read_ipmi_rotate_password(task_id)
+        stashed_password, stashed_rotated_at = await _read_ipmi_rotate_state(task_id)
         if stashed_password is None:
             # 20-символьный CSPRNG-пароль с гарантией lower/upper/digit/punct
             # (см. `_generate_password`). Лимит iDRAC9 — 40 символов, влезает
@@ -330,7 +454,16 @@ async def ipmi_rotate_password(task_id: str) -> None:
         # уходит, и retry-цикл считает новый timestamp на следующей
         # попытке. Без этого порядка storage помечал бы ротацию моментом
         # старта, что расходится с реальным временем смены пароля на BMC.
-        rotated_at = datetime.now(timezone.utc).isoformat()
+        #
+        # Если в stash'е уже лежит rotated_at от предыдущей успешной apply-
+        # попытки (retry упёрся в submit, не в apply) — переиспользуем его,
+        # иначе новое значение ушло бы в storage и timestamp разъехался бы
+        # с фактическим моментом смены пароля на BMC.
+        if stashed_rotated_at:
+            rotated_at = stashed_rotated_at
+        else:
+            rotated_at = datetime.now(timezone.utc).isoformat()
+            await _store_ipmi_rotate_password(task_id, new_password, rotated_at)
 
         # ── BMC verify: read-only call с НОВЫМ паролем ──────────────────
         # Доказательство, что BMC действительно сохранил новый пароль —

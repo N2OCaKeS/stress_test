@@ -333,7 +333,7 @@ class TestPowerVisibility:
         assert captured_dispatch == []
 
 
-# ── No IPMI controller — 409 SERVER_NO_IPMI ────
+# ── No IPMI controller — 404 NO_IPMI_CONTROLLER ────
 
 
 class TestPowerNoIpmiController:
@@ -346,15 +346,16 @@ class TestPowerNoIpmiController:
     только асинхронно как failed task. Это ломает контракт «202 = задача
     физически выполнима».
 
-    Фикс — `409 SERVER_NO_IPMI` синхронно. Покрытие:
-    * сервер без IPMI-controller → 409, dispatch не вызывался;
+    Фикс — `404 NO_IPMI_CONTROLLER` синхронно (унифицирован с rotate/get).
+    Покрытие:
+    * сервер без IPMI-controller → 404, dispatch не вызывался;
     * `_decommissioned` проверка идёт ПЕРЕД `_no_ipmi` — server без IPMI и в
       статусе decommissioned получает 409 SERVER_DECOMMISSIONED (приоритет
       бизнес-правила «не трогать списанные сервера»);
     * audit-failure event эмиттится с `reason="no_ipmi"`.
     """
 
-    async def test_power_on_without_ipmi_returns_409(
+    async def test_power_on_without_ipmi_returns_404(
         self, client, operator_token_a, make_server, captured_dispatch,
     ):
         # `make_server` без `with_ipmi=True` → IPMI controller row отсутствует
@@ -363,14 +364,14 @@ class TestPowerNoIpmiController:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
+        assert resp.status_code == 404
         body = resp.json()
-        assert body.get("error_code") == "SERVER_NO_IPMI"
+        assert body.get("error_code") == "NO_IPMI_CONTROLLER"
         assert "IPMI" in body.get("message", "")
         # worker НЕ должен получить задачу
         assert captured_dispatch == []
 
-    async def test_power_off_without_ipmi_returns_409(
+    async def test_power_off_without_ipmi_returns_404(
         self, client, operator_token_a, make_server, captured_dispatch,
     ):
         srv = await make_server(department_id="dep_a")
@@ -378,11 +379,11 @@ class TestPowerNoIpmiController:
             f"{BASE}/{srv.id}/ipmi/power/off",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "SERVER_NO_IPMI"
+        assert resp.status_code == 404
+        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
         assert captured_dispatch == []
 
-    async def test_power_reboot_without_ipmi_returns_409(
+    async def test_power_reboot_without_ipmi_returns_404(
         self, client, operator_token_a, make_server, captured_dispatch,
     ):
         srv = await make_server(department_id="dep_a")
@@ -390,8 +391,8 @@ class TestPowerNoIpmiController:
             f"{BASE}/{srv.id}/ipmi/power/reboot",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "SERVER_NO_IPMI"
+        assert resp.status_code == 404
+        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
         assert captured_dispatch == []
 
     async def test_no_ipmi_blocks_dept_admin_too(
@@ -408,8 +409,8 @@ class TestPowerNoIpmiController:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(admin_token),
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "SERVER_NO_IPMI"
+        assert resp.status_code == 404
+        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
         assert captured_dispatch == []
 
     async def test_decommissioned_takes_priority_over_no_ipmi(
@@ -435,7 +436,7 @@ class TestPowerNoIpmiController:
         self, client, reader_token_a, make_server, captured_dispatch,
     ):
         """403 от permission check идёт РАНЬШЕ IPMI-validate — reader без
-        POWER_ON прав получит 403, а не 409 SERVER_NO_IPMI (иначе мы бы
+        POWER_ON прав получит 403, а не 404 NO_IPMI_CONTROLLER (иначе мы бы
         утекали структурную информацию о сервере анонимам/guest'ам).
         """
         srv = await make_server(department_id="dep_a")  # без IPMI
@@ -444,8 +445,8 @@ class TestPowerNoIpmiController:
             headers=_hdr(reader_token_a),
         )
         assert resp.status_code == 403
-        # error_code НЕ должен быть SERVER_NO_IPMI — это утечка bookkeeping
-        assert resp.json().get("error_code") != "SERVER_NO_IPMI"
+        # error_code НЕ должен быть NO_IPMI_CONTROLLER — это утечка bookkeeping
+        assert resp.json().get("error_code") != "NO_IPMI_CONTROLLER"
         assert captured_dispatch == []
 
 
@@ -460,7 +461,7 @@ class TestPowerNoIpmiAudit:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
+        assert resp.status_code == 404
         failures = [
             e for e in _events(captured_emits, "server.power_on")
             if e.get("status") == "failure"
@@ -476,13 +477,13 @@ class TestPowerNoIpmiAudit:
     async def test_no_ipmi_does_not_emit_success(
         self, client, operator_token_a, make_server, captured_emits, captured_dispatch,
     ):
-        """Sanity: на 409 SERVER_NO_IPMI success-emit не должен случиться."""
+        """Sanity: на 404 NO_IPMI_CONTROLLER success-emit не должен случиться."""
         srv = await make_server(department_id="dep_a")
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/power/off",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
+        assert resp.status_code == 404
         successes = [
             e for e in _events(captured_emits, "server.power_off")
             if e.get("status") == "success"

@@ -75,9 +75,10 @@ async def _dispatch_power(
       2. `get_server` — visibility + dept-isolation. Cross-dept или non-existent
          → 404.
       3. `SERVER_DECOMMISSIONED` — нельзя дёргать выведенный сервер.
-      4. `SERVER_NO_IPMI` — нет записи в `ipmi_controllers` (BMC не настроен).
-         Без этой проверки worker получит таску и упадёт уже в runtime —
-         нарушает контракт «202 = задача принята и физически выполнима».
+      4. `NO_IPMI_CONTROLLER` (404) — нет записи в `ipmi_controllers`
+         (BMC не настроен). Без этой проверки worker получит таску и упадёт
+         уже в runtime — нарушает контракт «202 = задача принята и физически
+         выполнима». Унифицирован между power/get/rotate.
       5. `dispatch_task` — INSERT в `dev_server_worker.tasks` + `.kiq()` в Redis.
 
     Любая ветка denied/failure пишет explicit audit-event ДО raise. Без этого
@@ -117,18 +118,18 @@ async def _dispatch_power(
             error_code="SERVER_DECOMMISSIONED",
             message="Server is decommissioned and cannot accept power operations",
         )
-    # IPMI-controller presence gate. Power-операция
-    # обязана идти через BMC (iDRAC/iLO/IPMI/Redfish), и worker без записи
-    # `ipmi_controllers` (endpoint_url + username + password_encrypted) задачу
-    # выполнить не сможет — но без этой проверки server_service отправлял бы
-    # таску в Redis, клиент получал бы 202+task_id, и обнаруживалось бы это
-    # только worker'ом (после INSERT в task table) как «failed at runtime».
-    # Нарушает контракт «202 = задача принята и физически выполнима».
+    # IPMI-controller presence gate. Power-операция обязана идти через BMC
+    # (iDRAC/iLO/IPMI/Redfish), и worker без записи `ipmi_controllers`
+    # (endpoint_url + username + password_encrypted) задачу выполнить не
+    # сможет — без этой проверки server_service отправлял бы таску в Redis,
+    # клиент получал бы 202+task_id, и проблема всплыла бы только в worker'е
+    # как «failed at runtime», ломая контракт «202 = принята и выполнима».
     #
-    # Проверяем БД-row, а не вспомогательные поля (`server.bmc_url` и т.п. в
-    # модели Server не существуют — данные iDRAC лежат в отдельной таблице
-    # `ipmi_controllers` с UNIQUE на server_id, 1:1 relation). Если row нет —
-    # 409 SERVER_NO_IPMI + failure-audit (симметрично SERVER_DECOMMISSIONED).
+    # Проверяем БД-row: данные BMC лежат в отдельной таблице `ipmi_controllers`
+    # с UNIQUE на server_id (1:1 relation). Row нет — 404 NO_IPMI_CONTROLLER
+    # (target IPMI controller отсутствует, как отсутствующий ресурс) +
+    # failure-audit. Унифицирован с rotate/get_status, чтобы клиент не угадывал
+    # по коду, какой именно из IPMI-эндпоинтов он дёргает.
     ipmi_ctrl = await ipmi_repo.get_by_server_id(db, server_id)
     if ipmi_ctrl is None:
         audit_service.emit(
@@ -136,8 +137,8 @@ async def _dispatch_power(
             status="failure", allowed=True,
             details={"reason": "no_ipmi", "department_id": server.department_id},
         )
-        raise ConflictError(
-            error_code="SERVER_NO_IPMI",
+        raise NotFoundError(
+            error_code="NO_IPMI_CONTROLLER",
             message="Server has no IPMI controller configured (BMC endpoint/credentials missing)",
         )
     # Idempotency-Key — опциональный HTTP-header (стандарт IETF
@@ -360,7 +361,7 @@ async def update_controller(
     summary="Удалить IPMI-контроллер (CRITICAL аудит)",
     description=(
         "Hard-delete BMC-записи. После удаления power-операции на сервере "
-        "будут отбиваться 409 SERVER_NO_IPMI до повторной регистрации. "
+        "будут отбиваться 404 NO_IPMI_CONTROLLER до повторной регистрации. "
         "Только роль с `delete`."
     ),
     responses={
@@ -624,8 +625,8 @@ async def power_status(
     responses={
         202: {"description": "Задача принята, возвращается task_id для отслеживания."},
         403: {"description": "Нет роли с `power_on` либо чужой department."},
-        404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
-        409: {"description": "SERVER_DECOMMISSIONED / SERVER_NO_IPMI / TASK_IDEMPOTENT_CONFLICT."},
+        404: {"description": "Сервер не найден / чужой dept (скрыто за 404) либо NO_IPMI_CONTROLLER."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен (WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED)."},
     },
 )
@@ -641,7 +642,7 @@ async def power_on(
     Доступ: `(server, *, power_on)`.
 
     Возможные ошибки: 403 PERMISSION_DENIED, 404 SERVER_NOT_FOUND,
-    409 SERVER_DECOMMISSIONED, 409 SERVER_NO_IPMI,
+    404 NO_IPMI_CONTROLLER, 409 SERVER_DECOMMISSIONED,
     409 TASK_IDEMPOTENT_CONFLICT, 503 WORKER_UNREACHABLE.
 
     Связано: `_dispatch_power`, `worker_client.dispatch_task`,

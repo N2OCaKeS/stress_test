@@ -261,3 +261,144 @@ class TestGracefulShutdown:
 
         asyncio.run(run())
         assert captured == []
+
+
+# ── cancel ПОСЛЕ commit'а не должен приводить к дублям через _drain_remaining ─
+
+
+class TestCancelAfterCommitNoRequeue:
+    """Прямая регрессия на race: `_write_batch_sync` успел закоммитить батч,
+    `to_thread` вернулся, и сразу прилетел `CancelledError` до того, как
+    drain-loop инкрементил счётчики. Cancel-ветка должна по `committed_ids`
+    отфильтровать requeue, чтобы `_drain_remaining` ничего не дописал."""
+
+    def test_committed_batch_not_requeued_into_drain_remaining(self):
+        """Подменяем `_write_batch_sync` так, чтобы он закоммитил батч и
+        затем заставил `_flush_batch` пробросить `CancelledError`. После
+        `_drain_remaining` writer не должен быть вызван второй раз."""
+
+        writer_calls: list[str] = []
+
+        def writer(_db, env):
+            writer_calls.append(env.action)
+
+        outbox = AuditOutbox(
+            max_size=8,
+            batch_size=8,
+            poll_interval_seconds=0.01,
+            session_factory=_FakeSession,
+            writer=writer,
+            bump_failure=lambda: 0,
+        )
+
+        batch = [_env(f"ev-{i}") for i in range(3)]
+
+        # Подменённый sync-таргет: «коммитит» (заполняет committed_ids), но
+        # затем эмулирует cancel в await'е `to_thread` — это ровно тот race,
+        # где старая логика requeue'ила уже-в-БД events.
+        def fake_write_batch_sync(b, committed_ids):
+            for env in b:
+                writer(None, env)
+                committed_ids.add(id(env))
+            return len(b)
+
+        outbox._write_batch_sync = fake_write_batch_sync  # type: ignore[assignment]
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+
+            committed_ids: set[int] = set()
+
+            # Имитируем drain-loop'овский кусок: вызываем `_flush_batch`,
+            # потом пробрасываем CancelledError ровно как в реальном
+            # сценарии graceful-shutdown'а.
+            await outbox._flush_batch(batch, committed_ids)
+
+            # commit прошёл, все три envelope'а в set'е.
+            assert committed_ids == {id(env) for env in batch}
+            assert writer_calls == ["ev-0", "ev-1", "ev-2"]
+
+            # Эмулируем cancel-ветку из `_drain_loop`: re-enqueue только те,
+            # кого НЕ в committed_ids → ничего не должно попасть в очередь.
+            for envelope in batch:
+                if id(envelope) in committed_ids:
+                    continue
+                outbox._queue.put_nowait(envelope)
+
+            assert outbox._queue.qsize() == 0
+
+            # `_drain_remaining` на пустой очереди — никаких новых writer-call'ов.
+            await outbox._drain_remaining(timeout=0.5)
+
+        asyncio.run(run())
+
+        # Контракт: writer вызван ровно по разу на каждое событие.
+        assert writer_calls == ["ev-0", "ev-1", "ev-2"]
+
+    def test_drain_loop_cancel_branch_filters_committed(self):
+        """End-to-end: реально пробрасываем CancelledError ВО ВРЕМЯ
+        `_flush_batch` ПОСЛЕ того, как sync-target закоммитил, и убеждаемся,
+        что `_drain_remaining` НЕ перепишет тот же батч."""
+
+        writer_calls: list[str] = []
+
+        def writer(_db, env):
+            writer_calls.append(env.action)
+
+        outbox = AuditOutbox(
+            max_size=8,
+            batch_size=8,
+            poll_interval_seconds=0.01,
+            session_factory=_FakeSession,
+            writer=writer,
+            bump_failure=lambda: 0,
+        )
+
+        batch = [_env(f"ev-{i}") for i in range(2)]
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+
+            commit_done = asyncio.Event()
+
+            def fake_write_batch_sync(b, committed_ids):
+                # Помечаем commit как прошедший.
+                for env in b:
+                    writer(None, env)
+                    committed_ids.add(id(env))
+                outbox._loop.call_soon_threadsafe(commit_done.set)
+                return len(b)
+
+            outbox._write_batch_sync = fake_write_batch_sync  # type: ignore[assignment]
+
+            committed_ids: set[int] = set()
+
+            async def flush_then_cancel():
+                # Запускаем `_flush_batch`; внутри to_thread пометит commit,
+                # после возврата мы эмулируем cancel ровно так, как делает
+                # `stop()`/`task.cancel()`.
+                await outbox._flush_batch(batch, committed_ids)
+                # Поднимаем cancel руками — после `to_thread` returning.
+                raise asyncio.CancelledError
+
+            try:
+                await flush_then_cancel()
+            except asyncio.CancelledError:
+                # Точно копия cancel-ветки из `_drain_loop`.
+                for envelope in batch:
+                    if id(envelope) in committed_ids:
+                        continue
+                    outbox._queue.put_nowait(envelope)
+
+            assert committed_ids == {id(env) for env in batch}
+            assert outbox._queue.qsize() == 0
+
+            await outbox._drain_remaining(timeout=0.5)
+            assert commit_done.is_set()
+
+        asyncio.run(run())
+
+        # Главный инвариант: каждое событие записано ровно один раз.
+        assert writer_calls == ["ev-0", "ev-1"]

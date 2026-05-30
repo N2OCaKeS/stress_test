@@ -296,7 +296,7 @@ class TestDispatchTaskRollbackDoesNotBreakIdempotency:
     и попасть в нормальный путь (на этот раз kiq пройдёт).
 
     Это критично: если бы DELETE не происходил, retry пришёл бы в
-    `_get_task_id_by_idempotency_key` и вернул бы id zombie-row, который
+    `_get_task_by_idempotency_key` и вернул бы id zombie-row, который
     worker не подберёт — клиент думал бы что dispatch успешен, на деле нет.
     """
 
@@ -305,14 +305,14 @@ class TestDispatchTaskRollbackDoesNotBreakIdempotency:
         2-й вызов с тем же ключом находит «строки нет» (DELETE сработал),
         идёт через нормальный INSERT-then-kiq, успешно завершается.
         """
-        # Замокаем `_get_task_id_by_idempotency_key` — в unit-окружении нет
+        # Замокаем `_get_task_by_idempotency_key` — в unit-окружении нет
         # реальной БД. Эмулируем «нет такой строки» → dispatch пойдёт через
         # INSERT, как и в production после rollback'а.
-        async def fake_lookup(key: str) -> tuple[str | None, bool]:
-            return None, False
+        async def fake_lookup(key: str):
+            return None
 
         monkeypatch.setattr(
-            worker_client, "_get_task_id_by_idempotency_key", fake_lookup,
+            worker_client, "_get_task_by_idempotency_key", fake_lookup,
         )
 
         # 1-й вызов: kiq падает → DELETE → 503
@@ -365,7 +365,7 @@ class TestDispatchTaskRollbackDoesNotBreakIdempotency:
         должен вернуть None (строки больше нет) → dispatch_task пойдёт через
         INSERT снова, а не вернёт устаревший id.
 
-        Тут мы напрямую не дергаем реальный `_get_task_id_by_idempotency_key`,
+        Тут мы напрямую не дергаем реальный `_get_task_by_idempotency_key`,
         а проверяем что после первого упавшего вызова `deleted` содержит
         именно тот id, что был во вставке — то есть retry увидит чистое состояние.
         """

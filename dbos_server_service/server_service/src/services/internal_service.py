@@ -101,7 +101,6 @@ def _check_target_department(
     mask_as_not_found: bool = False,
     not_found_error_code: str | None = None,
     not_found_message: str | None = None,
-    target_field: str = "server_id",
 ) -> None:
     """Cross-check caller department + `X-Target-Department-Id` header против
     server.department_id.
@@ -123,11 +122,11 @@ def _check_target_department(
     `audit_action` — тот же action-key, что caller использует для
     success/denied/failure emit'ов, чтобы оператор мог корреллировать.
 
-    `target_field` — ключ, под которым `target_id` уезжает в `details`
-    (и в JSON-ошибки 403/header-required). Дефолт `server_id` оставлен
-    для server-scoped endpoint'ов; account/controller-scoped caller'ы
-    передают `account_id` / `controller_id`, иначе в audit/SIEM
-    `acc_*`/`ipm_*` улетал бы под ключом `server_id`.
+    Идентификатор уезжает в `details` под единым ключом `target_id` —
+    SIEM/правила различают тип через `target_type` рядом, а не по имени
+    поля. Раньше у нас был `target_field` с дефолтом `server_id`, и
+    account/controller caller'ы получали `acc_*`/`ipm_*` либо под чужой
+    меткой, либо требовали явного override'а на каждом call-site.
     """
     strict = get_settings().internal_require_dept_header
     extra = dict(extra_details or {})
@@ -162,12 +161,12 @@ def _check_target_department(
             raise NotFoundError(
                 error_code=not_found_error_code or "RESOURCE_NOT_FOUND",
                 message=not_found_message or message,
-                details={target_field: target_id},
+                details={"target_id": target_id},
             )
         raise AuthorizationError(
             error_code="TARGET_DEPARTMENT_MISMATCH",
             message=message,
-            details={target_field: target_id},
+            details={"target_id": target_id},
         )
 
     # Actor-vs-server check: всегда блокирующий, не зависит от soft/strict.
@@ -190,7 +189,7 @@ def _check_target_department(
                     "X-Target-Department-Id header is required for internal "
                     "credential endpoints in strict mode"
                 ),
-                details={target_field: target_id},
+                details={"target_id": target_id},
             )
         # Soft mode: warning эмитит caller через `_emit_dept_header_missing_soft`
         # под отдельным action'ом `internal.dept_header_missing`. Дублировать
@@ -212,7 +211,7 @@ def _check_target_department(
                     "X-Target-Department-Id does not match the server's "
                     "actual department"
                 ),
-                details={target_field: target_id},
+                details={"target_id": target_id},
             )
 
 
@@ -350,7 +349,6 @@ async def fetch_account_password(
         mask_as_not_found=True,
         not_found_error_code="ACCOUNT_NOT_FOUND",
         not_found_message="Server account not found on this server",
-        target_field="account_id",
     )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
@@ -460,7 +458,6 @@ async def rotate_account_password(
         mask_as_not_found=True,
         not_found_error_code="ACCOUNT_NOT_FOUND",
         not_found_message="Server account not found on this server",
-        target_field="account_id",
     )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
@@ -995,7 +992,6 @@ async def record_provision_status(
         mask_as_not_found=True,
         not_found_error_code="ACCOUNT_NOT_FOUND",
         not_found_message="Server account not found on this server",
-        target_field="account_id",
     )
     try:
         await permissions.require_action(
@@ -1173,7 +1169,6 @@ async def record_ipmi_credentials_rotated(
         mask_as_not_found=True,
         not_found_error_code="IPMI_CONTROLLER_NOT_FOUND",
         not_found_message="IPMI controller not found",
-        target_field="controller_id",
     )
     try:
         await permissions.require_action(

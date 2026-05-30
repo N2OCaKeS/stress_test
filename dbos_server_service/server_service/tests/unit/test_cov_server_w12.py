@@ -214,10 +214,11 @@ class TestIpmi404Unification:
         assert resp.json()["error_code"] == "IPMI_NOT_FOUND"
 
     @pytest.mark.asyncio
-    async def test_power_on_no_ipmi_controller_returns_409(
+    async def test_power_on_no_ipmi_controller_returns_404(
         self, client, make_server, make_token, dept_a, monkeypatch
     ):
-        """Power-on без IPMI controller → 409 SERVER_NO_IPMI (not 500)."""
+        """Power-on без IPMI controller → 404 NO_IPMI_CONTROLLER (унифицирован
+        с rotate/get, не 409 — нет ресурса, а не конфликт состояния)."""
         from src.services import worker_client as wc
 
         async def fake_dispatch(**_kw):
@@ -234,8 +235,8 @@ class TestIpmi404Unification:
             f"/api/server/v1/servers/{srv.id}/ipmi/power/on",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_NO_IPMI"
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
 
     @pytest.mark.asyncio
     async def test_get_ipmi_no_controller_server_exists_returns_404(
@@ -1289,14 +1290,14 @@ class TestIdempotentHitAudit:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return None, False
-            return "tsk_race_winner", True
+                return None
+            return "tsk_race_winner", "power.on", "srv_abc"
 
         async def fake_ensure():
             pass
 
         monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
-        monkeypatch.setattr(wc, "_get_task_id_by_idempotency_key", fake_lookup)
+        monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
         monkeypatch.setattr(wc, "_ensure_broker_started", fake_ensure)
 
         result = await wc.dispatch_task(
@@ -1323,10 +1324,10 @@ class TestIdempotentHitAudit:
             raise SAIntegrityError("UNIQUE", None, None)
 
         async def fake_lookup(key):
-            return None, False
+            return None
 
         monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
-        monkeypatch.setattr(wc, "_get_task_id_by_idempotency_key", fake_lookup)
+        monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
 
         with pytest.raises(ConflictError) as exc_info:
             await wc.dispatch_task(

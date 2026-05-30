@@ -607,7 +607,10 @@ async def submit_rotated_ipmi_password(
     (resource у endpoint'а — controller). Worker берёт его из
     `fetch_ipmi_credentials` response.
 
-    `rotated_at` — ISO-8601 UTC timestamp момента генерации пароля.
+    `rotated_at` — ISO-8601 UTC timestamp момента успешного apply на BMC
+    (фиксируется сразу после `dispatch_rotate_user_password` и сохраняется
+    в Redis-stash'е, чтобы retry submit'а не пересчитывал его и не
+    дрейфил относительно реального момента смены пароля).
     `verified_at` — ISO-8601 UTC timestamp успешного verify-вызова к BMC
     с новым паролем (BMC подтвердил применение).
 

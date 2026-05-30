@@ -585,3 +585,61 @@ class TestPatTouchOrdering:
             select(PersonalAccessToken).where(PersonalAccessToken.id == pat_id)
         )).scalar_one()
         assert row_after.last_used_at == baseline_last_used
+
+
+class TestBotTouchOrdering:
+    """`last_used_at` bot-токена апдейтится только после is_active-check бота.
+
+    Симметрия с PAT: для disabled-бота introspect возвращает active=false,
+    лишний UPDATE на `bot_tokens.last_used_at` искажает «недавно использован»
+    в админке. Раньше touch шёл раньше валидации бота.
+    """
+
+    async def test_disabled_bot_introspect_does_not_touch(
+        self, client, admin_token, dept_a, db,
+    ):
+        from sqlalchemy import select, update
+
+        from src.models import BotAccount, BotToken
+
+        BOTS_URL = "/api/auth/v1/bots"
+
+        bot_resp = await client.post(
+            BOTS_URL,
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"name": "touch_order_bot", "department_id": dept_a.id, "allowed_services": []},
+        )
+        assert bot_resp.status_code == 201, bot_resp.text
+        bot_id = bot_resp.json()["bot_id"]
+
+        tok_resp = await client.post(
+            f"{BOTS_URL}/{bot_id}/tokens",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"name": "touch_order_tok"},
+        )
+        assert tok_resp.status_code == 201, tok_resp.text
+        raw = tok_resp.json()["token"]
+        bot_token_id = tok_resp.json()["token_id"]
+
+        row = (await db.execute(
+            select(BotToken).where(BotToken.id == bot_token_id)
+        )).scalar_one()
+        baseline_last_used = row.last_used_at
+
+        await db.execute(
+            update(BotAccount).where(BotAccount.id == bot_id).values(is_active=False)
+        )
+        await db.commit()
+
+        resp = await client.post(INTROSPECT_URL, json={"token": raw})
+        assert resp.status_code == 200
+        assert resp.json()["active"] is False
+
+        db.expire_all()
+        row_after = (await db.execute(
+            select(BotToken).where(BotToken.id == bot_token_id)
+        )).scalar_one()
+        assert row_after.last_used_at == baseline_last_used, (
+            "touch для disabled бота должен идти ПОСЛЕ is_active-check; "
+            f"last_used_at апдейтнулся: baseline={baseline_last_used}, after={row_after.last_used_at}"
+        )

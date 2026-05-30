@@ -628,27 +628,28 @@ class TestInternalCallbacksActorDeptMaskedAs404:
         )
         assert resp.status_code == 404
         assert resp.json()["error_code"] == "IPMI_CONTROLLER_NOT_FOUND"
-        # Controller-scoped endpoint — details должны нести `controller_id`.
+        # Controller-scoped endpoint — details несут `target_id` = controller_id.
         details = resp.json().get("details") or {}
-        assert details.get("controller_id") == ctrl.id
+        assert details.get("target_id") == ctrl.id
         assert "server_id" not in details
+        assert "controller_id" not in details
 
 
-# ── target_field mislabel: account/controller id под правильным ключом ──────
+# ── target_id единый ключ в details (без mislabel) ─────────────────────────
 
 
 class TestCheckTargetDeptFieldLabel:
-    """`_check_target_department` пишет `details[<target_field>]=<target_id>`.
+    """`_check_target_department` пишет `details["target_id"]=<target_id>`.
 
-    Дефолт `server_id` оставлен для server-scoped caller'ов; account/controller
-    caller'ы передают `account_id` / `controller_id`. Иначе `acc_*`/`ipm_*`
-    улетал бы в SIEM под именем `server_id` (mislabel).
+    Тип target'а различается через `target_type` (отдельный аудит-поле),
+    не по имени ключа в details. Старый дефолт `server_id` для account/
+    controller caller'ов слал SIEM `acc_*`/`ipm_*` под именем `server_id`.
     """
 
-    async def test_account_password_header_required_uses_account_id_label(
+    async def test_account_password_header_required_uses_target_id_key(
         self, client, worker_pat_token, make_server, make_account, strict_dept_mode,
     ):
-        """Strict-mode: missing header → `details["account_id"]`, не `server_id`."""
+        """Strict-mode: missing header → `details["target_id"] == account_id`."""
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id, password="leak-target")
         resp = await client.get(
@@ -659,10 +660,11 @@ class TestCheckTargetDeptFieldLabel:
         body = resp.json()
         assert body["error_code"] == "TARGET_DEPARTMENT_HEADER_REQUIRED"
         details = body.get("details") or {}
-        assert details.get("account_id") == acc.id
+        assert details.get("target_id") == acc.id
         assert "server_id" not in details
+        assert "account_id" not in details
 
-    async def test_account_rotate_mismatch_uses_account_id_label(
+    async def test_account_rotate_mismatch_uses_target_id_key(
         self, client, worker_pat_token, make_server, make_account, strict_dept_mode,
     ):
         srv = await make_server(department_id="dep_a")
@@ -679,14 +681,15 @@ class TestCheckTargetDeptFieldLabel:
         body = resp.json()
         assert body["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
         details = body.get("details") or {}
-        assert details.get("account_id") == acc.id
+        assert details.get("target_id") == acc.id
         assert "server_id" not in details
+        assert "account_id" not in details
 
-    async def test_ipmi_credentials_keeps_server_id_label(
+    async def test_ipmi_credentials_uses_target_id_key(
         self, client, worker_pat_token, make_server, make_ipmi, strict_dept_mode,
     ):
-        """`fetch_ipmi_credentials` target_id=server_id — default-метка
-        `server_id` сохраняется (не account/controller endpoint)."""
+        """`fetch_ipmi_credentials` target_id=server_id — едет под единым
+        ключом `target_id`."""
         srv = await make_server(department_id="dep_a")
         await make_ipmi(server_id=srv.id, password="ipmi-strict")
         resp = await client.get(
@@ -695,7 +698,8 @@ class TestCheckTargetDeptFieldLabel:
         )
         assert resp.status_code == 403
         details = (resp.json().get("details") or {})
-        assert details.get("server_id") == srv.id
+        assert details.get("target_id") == srv.id
+        assert "server_id" not in details
 
 
 # ── strict_dept_mode reused in other modules' tests; ensure fixture access ──

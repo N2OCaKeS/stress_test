@@ -45,23 +45,26 @@ def test_count_set_local_statement_timeout_applies_configured_value(db, monkeypa
     try:
         _insert_row(db)
 
-        captured: dict[str, str] = {}
+        # SELECT и COUNT теперь оба идут под `SET LOCAL` — собираем все
+        # выставленные значения, COUNT первым в списке.
+        captured: list[str] = []
         original_execute = db.execute
 
         def spy(clause, *args, **kwargs):
             result = original_execute(clause, *args, **kwargs)
             sql_text = str(getattr(clause, "text", clause))
             if "set local statement_timeout" in sql_text.lower():
-                captured["value"] = original_execute(
-                    text("SHOW statement_timeout")
-                ).scalar_one()
+                captured.append(
+                    original_execute(text("SHOW statement_timeout")).scalar_one()
+                )
             return result
 
         monkeypatch.setattr(db, "execute", spy)
 
         events, total, has_more = events_repo.query(db, include_total=True)
 
-        assert captured.get("value") == "7531ms"
+        # COUNT-таймаут — сконфигурированный, SELECT — дефолт (30000ms).
+        assert "7531ms" in captured
         assert total == 1
         assert len(events) == 1
         assert has_more is False

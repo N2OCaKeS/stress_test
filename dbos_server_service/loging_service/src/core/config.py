@@ -234,6 +234,18 @@ class Settings(BaseSettings):
         default=10000, alias="AUDIT_COUNT_STATEMENT_TIMEOUT_MS", ge=0
     )
 
+    # Тот же гард, но для основного `SELECT ORDER BY timestamp DESC OFFSET
+    # LIMIT` в `GET /events`. Под широким фильтром на нескольких миллионах
+    # строк он тоже умеет уйти в seq-scan и забить пул коннектов; COUNT —
+    # не единственный вектор. Дефолт длиннее, чем у COUNT'а: основной запрос
+    # обычно идёт по индексу `timestamp DESC` и завершается за миллисекунды,
+    # но при больших OFFSET'ах в дашбордной пагинации может зацепиться. На
+    # `57014` репо возвращает пустую страницу + warning лог; caller получает
+    # 200 с empty list и не валится в 500.
+    audit_query_statement_timeout_ms: int = Field(
+        default=30000, alias="AUDIT_QUERY_STATEMENT_TIMEOUT_MS", ge=0
+    )
+
     # Запускать ли retention-cleanup loop в lifespan'е. По умолчанию True —
     # production стартует daemon-thread, который раз в сутки в 00:00 MSK
     # применяет активную retention-политику.

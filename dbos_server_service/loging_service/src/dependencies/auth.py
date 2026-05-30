@@ -247,8 +247,15 @@ async def _fetch_identity(
                            message=f"Unexpected error: {type(exc).__name__}")
 
     if resp.status_code != 200:
+        # Upstream HTTP-статус из introspect не уходит наружу — это
+        # информация о внутренней инфре auth_service (вверх по стеку
+        # клиент видит 503 от нас и не должен различать «auth вернул 500»
+        # и «auth вернул 502»). Детальный статус — только в лог для SRE.
+        _logger.warning(
+            "introspect returned non-200 status: %d", resp.status_code,
+        )
         raise AppException(http_status=503, error_code="AUTH_SERVICE_ERROR",
-                           message=f"Auth service returned {resp.status_code}")
+                           message="Authentication service error")
 
     body = resp.json()
     if not body.get("active"):

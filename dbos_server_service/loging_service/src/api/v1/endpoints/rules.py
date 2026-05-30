@@ -152,11 +152,28 @@ def create_rule(
         _audit(db, identity, "logging_rule.create", {"rule_id": rule.id, "rule_name": rule.name})
         db.commit()
         db.refresh(rule)
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
-        raise ConflictError(
-            error_code="RULE_NAME_CONFLICT",
-            message=f"Rule with name '{payload.name}' already exists",
+        # Раньше любой IntegrityError слепо мимикрировал под NAME_CONFLICT,
+        # включая FK / NOT NULL / CHECK violation'ы (например, неизвестная
+        # колонка в JSON details или severity, не прошедший CHECK). SOC
+        # видел фейковый конфликт имён, caller тратил время на поиск
+        # дубликата, которого нет. Разбираем pgcode из psycopg-orig:
+        # `23505` — UniqueViolation, единственный UNIQUE на audit_rules —
+        # `name`, значит это реальный конфликт имён → 409. Любой другой
+        # pgcode (или отсутствие orig) → 500 INTERNAL_ERROR.
+        pgcode = getattr(getattr(exc.orig, "pgcode", None), "value", None) \
+            or getattr(exc.orig, "pgcode", None)
+        if pgcode == "23505":
+            raise ConflictError(
+                error_code="RULE_NAME_CONFLICT",
+                message=f"Rule with name '{payload.name}' already exists",
+                details={"name": payload.name},
+            )
+        raise AppException(
+            http_status=500,
+            error_code="INTERNAL_ERROR",
+            message="Database constraint violation during rule create",
             details={"name": payload.name},
         )
     rule_service.invalidate_cache()

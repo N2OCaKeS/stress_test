@@ -296,14 +296,16 @@ class AuditOutbox:
         if not batch:
             return
         try:
-            await asyncio.to_thread(self._write_batch_sync, batch)
+            succeeded = await asyncio.to_thread(self._write_batch_sync, batch)
+            # `succeeded` — сколько savepoint'ов закоммитилось. Failures за
+            # отказавшие savepoint'ы уже забампил `_write_batch_sync` через
+            # `_bump_failure`, отдельно не считаем. Инвариант:
+            # `drained + failures = enqueued`.
             with self._counters_lock:
-                self._drained_total += len(batch)
+                self._drained_total += succeeded
         except Exception as exc:
-            # `_write_batch_sync` сам ловит per-event ошибки и бампит счётчик
-            # для каждого. Сюда долетает только катастрофа на уровне сессии
-            # (БД лежит / connection pool пуст). Все события батча считаем
-            # потерянными, бампим failure-counter за каждое.
+            # Катастрофа на уровне сессии (БД лежит / пул пуст). Все события
+            # батча — потерянные, бампим failure-counter за каждое.
             for _ in batch:
                 self._bump_failure()
             logger.error(
@@ -311,7 +313,7 @@ class AuditOutbox:
                 len(batch), exc, exc_info=True,
             )
 
-    def _write_batch_sync(self, batch: list[AuditEnvelope]) -> None:
+    def _write_batch_sync(self, batch: list[AuditEnvelope]) -> int:
         """Sync-часть flush'а: одна сессия, savepoint на событие, один commit.
 
         `record_admin_action(commit=False)` живёт в общей транзакции, каждый
@@ -319,13 +321,19 @@ class AuditOutbox:
         событие, не валит весь батч. На финале — `db.commit()`. Если падает
         savepoint, бампим self-audit-failure counter (та же семантика, что
         у старого `_emit_audit`).
+
+        Возвращает число успешно записанных событий — caller использует это
+        значение для `_drained_total`, чтобы partial-failure не приводил к
+        перерасчёту `drained + failures > enqueued`.
         """
         db = self._session_factory()
+        succeeded = 0
         try:
             for envelope in batch:
                 try:
                     with db.begin_nested():
                         self._writer(db, envelope)
+                    succeeded += 1
                 except Exception as exc:
                     self._bump_failure()
                     logger.error(
@@ -335,6 +343,7 @@ class AuditOutbox:
             db.commit()
         finally:
             db.close()
+        return succeeded
 
     # ── introspection ────────────────────────────────────────────────────
 

@@ -235,9 +235,37 @@ def query(
 
     # Берём на одну строку больше запрошенного лимита — лишняя строка говорит,
     # что за текущей страницей есть ещё данные. Её саму в выдачу не отдаём.
-    rows = db.execute(
-        stmt.order_by(AuditEvent.timestamp.desc()).offset(offset).limit(limit + 1)
-    ).scalars().all()
+    page_stmt = stmt.order_by(AuditEvent.timestamp.desc()).offset(offset).limit(limit + 1)
+
+    # Основной SELECT тоже под guard'ом: широкий фильтр + большой OFFSET
+    # умеет уйти в долгий seq-scan и забить пул коннектов так же, как
+    # COUNT'у. Семантика на превышение — пустая страница + warning лог
+    # (а не 500): caller продолжает работать с пустым результатом,
+    # дашборд не падает целиком.
+    settings = get_settings()
+    query_timeout_ms = settings.audit_query_statement_timeout_ms
+    if query_timeout_ms > 0:
+        # SET LOCAL не принимает bind-параметры, значение — int из Settings.
+        timeout_sql = f"SET LOCAL statement_timeout = {int(query_timeout_ms)}"
+        nested = db.begin_nested()
+        try:
+            db.execute(text(timeout_sql))
+            rows = db.execute(page_stmt).scalars().all()
+            nested.commit()
+        except DBAPIError as exc:
+            nested.rollback()
+            pgcode = getattr(getattr(exc.orig, "pgcode", None), "value", None) \
+                or getattr(exc.orig, "pgcode", None)
+            if pgcode == "57014":
+                _log.warning(
+                    "audit SELECT exceeded statement_timeout=%dms; returning empty page",
+                    query_timeout_ms,
+                )
+                rows = []
+            else:
+                raise
+    else:
+        rows = db.execute(page_stmt).scalars().all()
 
     has_more = len(rows) > limit
     events = list(rows[:limit])

@@ -206,7 +206,7 @@ def captured_audit_sys(monkeypatch):
 class TestSystemTaskGuardRoleVariations:
     """Вариации платформенных ролей против system task guard."""
 
-    async def _call_cancel(self, db, monkeypatch, identity, task_kind="cleanup_completed"):
+    async def _call_cancel(self, db, monkeypatch, identity, task_kind="tasks.cleanup_completed_old"):
         from src.api.v1.endpoints import tasks as ep
 
         async def fake_fetch(task_id_value):
@@ -267,29 +267,31 @@ class TestSystemTaskGuardRoleVariations:
     async def test_cleanup_completed_task_kind_in_audit_details(
         self, db, patch_permissions_ok, captured_audit_sys, monkeypatch,
     ):
-        """task_kind=cleanup_completed — попадает в denied-аудит."""
+        """task_kind=tasks.cleanup_completed_old — попадает в denied-аудит."""
         identity = _identity(platform_role=PlatformRole.DEPARTMENT_ADMIN)
 
         with pytest.raises(AuthorizationError):
-            await self._call_cancel(db, monkeypatch, identity, task_kind="cleanup_completed")
+            await self._call_cancel(
+                db, monkeypatch, identity, task_kind="tasks.cleanup_completed_old",
+            )
 
         ev = [e for e in captured_audit_sys if e["action"] == "task.cancelled"]
         assert len(ev) == 1
-        assert ev[0]["details"]["task_kind"] == "cleanup_completed"
+        assert ev[0]["details"]["task_kind"] == "tasks.cleanup_completed_old"
         assert ev[0]["details"]["reason"] == "system_task_admin_required"
 
     async def test_sweep_task_kind_in_audit_details(
         self, db, patch_permissions_ok, captured_audit_sys, monkeypatch,
     ):
-        """task_kind=sweep — тоже системная, блокируется аналогично heartbeat."""
+        """task_kind=tasks.sweep_orphaned — тоже системная, блокируется аналогично heartbeat."""
         identity = _identity(platform_role=PlatformRole.DEPARTMENT_ADMIN)
 
         with pytest.raises(AuthorizationError):
-            await self._call_cancel(db, monkeypatch, identity, task_kind="sweep")
+            await self._call_cancel(db, monkeypatch, identity, task_kind="tasks.sweep_orphaned")
 
         ev = [e for e in captured_audit_sys if e["action"] == "task.cancelled"]
         assert len(ev) == 1
-        assert ev[0]["details"]["task_kind"] == "sweep"
+        assert ev[0]["details"]["task_kind"] == "tasks.sweep_orphaned"
 
     async def test_account_admin_can_cancel_cleanup_completed(
         self, db, patch_permissions_ok, captured_audit_sys, monkeypatch,

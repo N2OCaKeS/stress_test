@@ -70,11 +70,11 @@ async def test_mark_used_persists_when_user_inactive(
     assert first.json()["error_code"] == "OAUTH_USER_INACTIVE"
 
     # Повторный обмен того же кода: даже если бы юзера сейчас разблокировали,
-    # код уже потрачен — должен ответить INVALID_GRANT, а не пропустить
+    # код уже потрачен — должен ответить OAUTH_CODE_INVALID, а не пропустить
     # обмен заново.
     second = await client.post(TOKEN_URL, json=payload)
     assert second.status_code == 401, second.text
-    assert second.json()["error_code"] == "INVALID_GRANT", (
+    assert second.json()["error_code"] == "OAUTH_CODE_INVALID", (
         "после первого fail'а на inactive user mark_used должен быть "
-        f"закоммичен; повтор обмена ожидался INVALID_GRANT, got: {second.json()}"
+        f"закоммичен; повтор обмена ожидался OAUTH_CODE_INVALID, got: {second.json()}"
     )

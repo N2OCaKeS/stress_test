@@ -1,44 +1,92 @@
 """Обёртка над task lifecycle — DB-статус + audit.
 
-Архитектура lifecycle.
+Архитектура lifecycle. Поток разбит на две DB-сессии, чтобы не
+держать транзакцию открытой на время медленного `impl(payload)`
+(IPMI-reboot, SSH-prepare на тормозном линке).
 
-Durable retry:
-
-* На retry-path записываем `tasks.scheduled_retry_at = now + back-off`
-  перед запуском `_schedule_retry` (fire-and-forget). Если worker умрёт
-  во время `asyncio.sleep`, `_recover_scheduled_retries` на следующем
-  startup'е увидит `scheduled_retry_at <= now()` и сделает `kiq` —
-  устраняет «навсегда queued» после краха.
-* `mark_running` пишет `tasks.worker_id` (для sweep'а), а
-  `mark_pending_for_retry` обнуляет — task между попытками «ничейная»,
-  не считается orphan'ом.
-
-  ┌─ session 1 (task lookup + mark_running) ────┐
-  │   load Task; mark_running; commit            │
+  ┌─ session 1 (task lookup + CAS mark_running) ─┐
+  │   load Task; cancel fast-path?               │
+  │   mark_running (CAS WHERE status='queued')   │
+  │   commit                                     │
   └──────────────────────────────────────────────┘
                        │
                        ▼
-                impl(payload)               ← бизнес-логика (idrac/ssh/...)
+                impl(payload)            ← бизнес-логика (idrac/ssh/...)
                        │
                        ▼
   ┌─ session 2 (terminal status + outbox) ──────┐
-  │   load fresh Task (FOR UPDATE-эквивалент)   │
-  │   mark_succeeded | mark_failed              │
-  │   INSERT audit event INTO audit_outbox      │
-  │   commit  ← ATOMIC: status и audit вместе   │
+  │   load fresh Task (или fresh=None)           │
+  │   mark_succeeded | mark_failed | retry       │
+  │   INSERT audit event INTO audit_outbox       │
+  │   commit  ← ATOMIC: status и audit вместе    │
   └──────────────────────────────────────────────┘
                        │
                        ▼
               flush_outbox (best-effort just-in-time)
 
+Обрабатываемые ветки:
+
+* **task_not_found** — `get_by_id` в session 1 вернул None
+  (task_id из брокера, в БД row нет). Пишем audit с
+  `details.reason="task_not_found"` без `mark_running`, impl не
+  вызывается.
+* **cancel fast-path** — в session 1 task уже в `cancelled`
+  (оператор успел дёрнуть `POST /tasks/{id}/cancel` до того, как
+  worker подобрал сообщение из Redis). Пишем audit с
+  `reason="task_cancelled"`, `severity=WARNING`,
+  `timestamp` = `task.cancelled_at`, прицепляем `cancelled_by` и
+  `cancel_reason` если выставлены. Impl не запускается.
+* **duplicate_dispatch** — `mark_running` CAS отбил task в
+  нестандартном статусе (already running / terminal). Audit с
+  `reason="duplicate_dispatch"` и `observed_status`. Защита от
+  повторного enqueue и race двух worker'ов.
+* **happy path** — impl вернул result → session 2 fresh row
+  найден → `mark_succeeded` CAS → audit success с
+  whitelist'ом result'а (`_filter_result_for_audit`).
+* **failure → retry** — impl бросил исключение и
+  `attempt < max_attempts` → `mark_pending_for_retry`,
+  `scheduled_retry_at = now + back-off`, audit с `will_retry=True`,
+  `severity=WARNING`. Фоновый `_schedule_retry` через
+  `asyncio.create_task` положит task_id обратно в Redis после
+  back-off (`10s * 2^(attempt-1)`, capped 300s).
+* **failure → terminal** — попытки исчерпаны → `mark_failed`,
+  audit с `will_retry=False`, `severity=ERROR`.
+* **cancelled_midrun** — оператор отменил task пока impl работал;
+  CAS-ы `mark_succeeded` / `mark_failed` / `mark_pending_for_retry`
+  отбили запись (они фильтруют по `status != 'cancelled'`).
+  Terminal write пропущен, retry не шедулится. Audit с
+  `reason="cancelled_midrun"`, `severity=WARNING`,
+  `timestamp` override на `cancelled_at`.
+* **deleted_midrun** — row задачи удалён между `mark_running` и
+  terminal write (retention cleanup, ручной DELETE, автотест).
+  `get_by_id` в session 2 вернул None. Пишем отдельный audit
+  `action="task.deleted_midrun"` с `original_action`,
+  `severity=WARNING` — обычный success/failure под `audit_action`
+  handler'а врал бы оператору, что row ещё жива. Retry не
+  шедулится (re-kick попал бы в task_not_found → loop).
+
 Гарантии:
 
 * Если task в DB `succeeded`/`failed` — соответствующая audit-row в
-  `audit_outbox` гарантированно существует (один commit). SIGKILL после
-  commit'а не теряет audit — publisher отправит при следующем проходе.
+  `audit_outbox` гарантированно существует (один commit). SIGKILL
+  после commit'а не теряет audit — publisher отправит при следующем
+  проходе.
 * `flush_outbox()` после commit'а — оптимизация latency (доставка в
   loging_service «обычно сразу»); если она упадёт, фоновый publisher
   всё равно довезёт. Никогда не блокирует mark_succeeded/failed.
+* Активная running task регистрируется в `runner_state.running_tasks`
+  для graceful shutdown (см. `_runner_state.py`); снимается finally.
+
+Durable retry:
+
+* `mark_pending_for_retry` пишет `scheduled_retry_at = now + back-off`
+  в БД перед запуском `_schedule_retry` (fire-and-forget). Если
+  worker умрёт во время `asyncio.sleep`, `_recover_scheduled_retries`
+  на следующем startup'е увидит `scheduled_retry_at <= now()` и
+  сделает `kiq` — устраняет «навсегда queued» после краха.
+* `mark_running` пишет `tasks.worker_id` (для sweep'а), а
+  `mark_pending_for_retry` обнуляет — task между попытками
+  «ничейная», не считается orphan'ом.
 
 Что *не* гарантирует код здесь:
 
@@ -46,20 +94,6 @@ Durable retry:
   (`request_id` + `action` + `timestamp` идемпотентны на ingest).
 * Параллельные воркеры на одном task_id — это исключено taskiq-broker'ом
   (по дизайну — один consumer на сообщение).
-
-Retry / back-off:
-
-* `mark_running` теперь CAS (UPDATE WHERE status='queued' RETURNING).
-  Если task в нестандартном статусе (уже-running/succeeded/failed) —
-  возвращает None, impl не вызывается, audit «duplicate_dispatch».
-  Защита от повторного enqueue одного task_id (server_service dispatch
-  retry / Redis re-delivery).
-* На exception в impl, если `attempt < max_attempts` — task переводится
-  обратно в `queued` (mark_pending_for_retry) и шедулится re-kick через
-  asyncio.create_task с back-off `10s * 2^(attempt-1)` capped 300s.
-  Финальный фейл (`attempt >= max_attempts`) — mark_failed как раньше.
-* Активная running task регистрируется в `runner_state.running_tasks`
-  для graceful shutdown (см. `_runner_state.py`).
 """
 
 import asyncio

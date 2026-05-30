@@ -36,13 +36,13 @@ from __future__ import annotations
 # Логика:
 #   - читаем state и open_until;
 #   - state="open" и open_until > now → возвращаем open + остаток окна;
-#   - state="open" и open_until <= now → пытаемся захватить probe-слот
-#     через SET NX EX cooldown. Победитель SETNX переводит state в
-#     half_open и пропускает пробный запрос; проигравшие получают
-#     {open, cooldown} — другая реплика уже отправила пробный запрос,
-#     до его исхода никого больше не пускаем (thundering herd на
-#     половине отказавшего downstream'а — основная причина наличия
-#     probe-ключа);
+#   - state="open" и open_until <= now → через `cb:<name>:probe`
+#     (SET NX EX cooldown) выбирается ровно один probe. Реплика-
+#     победитель SETNX переводит state в half_open и шлёт пробный
+#     запрос; остальные конкуренты видят занятый probe-ключ и
+#     получают {open, cooldown} — до исхода пробы никого больше не
+#     пускаем (thundering herd на половине отказавшего downstream'а —
+#     основная причина наличия probe-ключа);
 #   - state="half_open" → пробный запрос уже в полёте, тоже отбиваем
 #     {open, retry_after}; retry_after берём из PTTL probe-ключа,
 #     либо cooldown как консервативный фолбэк;

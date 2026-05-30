@@ -28,6 +28,25 @@ from src.services import event_service, rule_service
 router = APIRouter()
 
 
+def _is_unique_violation(exc: IntegrityError) -> bool:
+    """True, если `IntegrityError` пришёл из UNIQUE-constraint'а (pgcode 23505).
+
+    psycopg3 хранит SQLSTATE в `sqlstate`; psycopg2/SA fallback — `pgcode`
+    (либо как строка, либо как enum-обёртка с `.value`). Третий fallback —
+    имя класса orig (`UniqueViolation`) на случай custom dbapi без pgcode.
+    Без этой проверки любая IntegrityError (FK / NOT NULL / CHECK) врала бы
+    SOC'у про дубликат имени, которого нет.
+    """
+    orig = getattr(exc, "orig", None)
+    pgcode = (
+        getattr(orig, "sqlstate", None)
+        or getattr(getattr(orig, "pgcode", None), "value", None)
+        or getattr(orig, "pgcode", None)
+    )
+    orig_cls = type(orig).__name__ if orig is not None else ""
+    return pgcode == "23505" or orig_cls == "UniqueViolation"
+
+
 def _get_or_404(db: Session, rule_id: str):
     rule = rule_repo.get_by_id(db, rule_id)
     if not rule:
@@ -154,25 +173,11 @@ def create_rule(
         db.refresh(rule)
     except IntegrityError as exc:
         db.rollback()
-        # Раньше любой IntegrityError слепо мимикрировал под NAME_CONFLICT,
-        # включая FK / NOT NULL / CHECK violation'ы (например, неизвестная
-        # колонка в JSON details или severity, не прошедший CHECK). SOC
-        # видел фейковый конфликт имён, caller тратил время на поиск
-        # дубликата, которого нет. Разбираем pgcode из psycopg-orig:
-        # `23505` — UniqueViolation, единственный UNIQUE на audit_rules —
-        # `name`, значит это реальный конфликт имён → 409. Любой другой
-        # pgcode (или отсутствие orig) → 500 INTERNAL_ERROR.
-        # psycopg3 хранит SQLSTATE в `sqlstate` атрибуте orig; psycopg2/SA
-        # fallback — `pgcode`. Также имя класса orig может быть
-        # 'UniqueViolation' — третий fallback на случай custom dbapi.
-        orig = getattr(exc, "orig", None)
-        pgcode = (
-            getattr(orig, "sqlstate", None)
-            or getattr(getattr(orig, "pgcode", None), "value", None)
-            or getattr(orig, "pgcode", None)
-        )
-        orig_cls = type(orig).__name__ if orig is not None else ""
-        if pgcode == "23505" or orig_cls == "UniqueViolation":
+        # Единственный UNIQUE на audit_rules — `name`, значит pgcode 23505
+        # здесь это реальный конфликт имён → 409. Любая другая IntegrityError
+        # (FK / NOT NULL / CHECK) шла бы как фейковый NAME_CONFLICT и врала
+        # SOC'у про дубликат, которого нет.
+        if _is_unique_violation(exc):
             raise ConflictError(
                 error_code="RULE_NAME_CONFLICT",
                 message=f"Rule with name '{payload.name}' already exists",
@@ -236,26 +241,17 @@ def update_rule(
     except IntegrityError as exc:
         db.rollback()
         # PATCH ловит IntegrityError по двум осям: имя (UNIQUE на name) и
-        # любые другие constraint'ы (NOT NULL / FK / CHECK на других полях).
-        # Слепой 409 RULE_NAME_CONFLICT для всех случаев врёт SOC'у про
-        # дубликат, которого может не быть. Симметрично с `create_rule`:
-        # разбираем pgcode из orig, и только pgcode `23505` + наличие
-        # `payload.name` мапим в 409. Если `payload.name is None` и пришёл
-        # 23505 — это уже странно (UNIQUE на NULL не имеет смысла) → 500.
-        # Любой pgcode ≠ 23505 → 500 INTERNAL_ERROR без вранья про имя.
-        orig = getattr(exc, "orig", None)
-        pgcode = (
-            getattr(orig, "sqlstate", None)
-            or getattr(getattr(orig, "pgcode", None), "value", None)
-            or getattr(orig, "pgcode", None)
-        )
-        orig_cls = type(orig).__name__ if orig is not None else ""
-        is_unique = pgcode == "23505" or orig_cls == "UniqueViolation"
-        if is_unique and payload.name is not None:
+        # прочие constraint'ы (NOT NULL / FK / CHECK на других полях). Слепой
+        # 409 RULE_NAME_CONFLICT для всех случаев врёт SOC'у про дубликат,
+        # которого может не быть. Симметрично с `create_rule`: только pgcode
+        # 23505 мапится в 409 — payload.name тут может быть None (rename не
+        # затронут в PATCH), это вычитывается из БД через `rule.name`.
+        if _is_unique_violation(exc):
+            conflict_name = payload.name if payload.name is not None else rule.name
             raise ConflictError(
                 error_code="RULE_NAME_CONFLICT",
-                message=f"Rule with name '{payload.name}' already exists",
-                details={"name": payload.name},
+                message=f"Rule with name '{conflict_name}' already exists",
+                details={"name": conflict_name},
             )
         raise AppException(
             http_status=500,

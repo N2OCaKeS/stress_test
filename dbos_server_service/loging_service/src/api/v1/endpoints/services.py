@@ -7,6 +7,8 @@ GET  /services                  — read-роли смотрят список с
 GET  /services/{service}/events — read-роли смотрят action'ы конкретного сервиса.
 """
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
@@ -18,6 +20,7 @@ from src.dependencies.auth import ReaderIdentity, require_service_token
 from src.dependencies.db import get_db
 from src.repositories import events as events_repo
 from src.repositories import service_events as se_repo
+from src.schemas.events import EventCreate
 from src.schemas.services import (
     RegisterEventsRequest,
     RegisterEventsResponse,
@@ -26,6 +29,7 @@ from src.schemas.services import (
     ServiceInfo,
     ServiceListResponse,
 )
+from src.services import event_service
 from src.utils.normalization import normalize_service_name
 
 # Лимитер вынесен в `core.limiter` ради разрыва цикла import'ов
@@ -209,8 +213,40 @@ def register_events(
         )
 
     events_list = [ev.model_dump() for ev in payload.events]
-    added, updated = se_repo.upsert_events(db, service, events_list)
+    added, updated = se_repo.upsert_events(db, service, events_list, commit=False)
     _, total = se_repo.list_for_service(db, service)
+
+    # Self-audit: registry-mutation идёт от service-token caller'а, так что
+    # actor_type=service, actor_id=верифицированная X-Service-Identity (или
+    # ── на legacy soft-mode без header'а ── имя сервиса из path). Без audit
+    # admin не увидит, кто и когда переписал каталог action'ов (rules/retention
+    # writes аудитируются — здесь была дыра в симметрии). Идём через ту же
+    # tx, что и upsert (`commit=False` выше); единственный commit ниже.
+    advertised = getattr(request.state, "service_identity", None)
+    actor_id = advertised or service
+    event_service.record_admin_action(
+        db,
+        EventCreate(
+            timestamp=datetime.now(timezone.utc),
+            service="loging_service",
+            action="logging.service_events_registered",
+            actor_id=actor_id,
+            actor_type="service",
+            target_id=service,
+            target_type="service_event",
+            status="success",
+            allowed=True,
+            severity=None,
+            details={
+                "service": service,
+                "added": added,
+                "updated": updated,
+                "total": total,
+            },
+        ),
+        commit=False,
+    )
+    db.commit()
     return RegisterEventsResponse(service=service, added=added, updated=updated, total=total)
 
 

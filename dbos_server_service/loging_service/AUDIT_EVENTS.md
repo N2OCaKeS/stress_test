@@ -3,7 +3,7 @@
 Документ покрывает две стороны контракта `loging_service`:
 
 1. **Что сервис принимает** — схема `EventCreate` для `POST /api/logging/v1/events`. Сюда попадают события от любого сервиса-источника (`auth_service`, `server_service`, `server_worker`, `config_service`).
-2. **Что сервис эмитит сам** — 10 собственных событий `logging.*` / `logging_rule.*`.
+2. **Что сервис эмитит сам** — собственные события `logging.*` / `logging_rule.*` / `services.*`.
 
 Severity вычисляется автоматически в `src/services/rule_service.py::_DEFAULT_SEVERITY` по таблице `(action, status) → severity`, если поле не указано явно при ingest'е. Правила (`OVERRIDE_SEVERITY` / `SUPPRESS` / `ALLOW`) могут переопределить или подавить любую группу событий без деплоя.
 
@@ -72,7 +72,7 @@ Severity вычисляется автоматически в `src/services/rule
 
 ## События, которые `loging_service` эмитит сам
 
-Одиннадцать собственных событий. Все они идут через `record_admin_action()` (для admin CRUD) или `_emit_audit()` (для HTTP middleware), **минуя rule engine** — SUPPRESS-правило не подавит self-audit.
+Собственные события идут через `record_admin_action()` (для admin CRUD и self-audit) или `_emit_audit()` (для HTTP middleware), **минуя rule engine** — SUPPRESS-правило не подавит self-audit.
 
 ### HTTP middleware (`logging.*`)
 
@@ -113,6 +113,16 @@ Details:
 - `create`: `{rule_id, rule_name}`.
 - `update`: `{rule_id, changes: <PATCH-payload, exclude_unset>}`.
 - `delete`: `{rule_id, rule_name}`.
+
+### Service-catalog registration (`logging.service_events_registered`)
+
+Эмитится в `src/api/v1/endpoints/services.py::register_events` через `record_admin_action()` — каждый `POST /api/logging/v1/services/{service}/events` пишет self-audit в той же транзакции, что и upsert каталога. Caller — service-token holder, поэтому `actor_type=service`, `actor_id` — верифицированный `X-Service-Identity` (на legacy soft-mode без header — имя сервиса из path).
+
+| action | status | severity | Когда возникает | target_type |
+|---|---|---|---|---|
+| `logging.service_events_registered` | `success` | INFO | `POST /api/logging/v1/services/{service}/events` | `service_event` |
+
+Details: `{service, added, updated, total}` — счётчики из ответа upsert'а.
 
 ### Retention CRUD и sweep (`logging.retention_*`)
 

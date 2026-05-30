@@ -63,9 +63,10 @@ def emit_denied_on_authz_error(
     ```
 
     `identity` опционален: если задан — в details попадает `subject_type`
-    (user / bot / pat / oauth_client). Помогает SIEM'у фильтровать denied'ы
-    по типу caller'а (например, искать аномалии в bot-traffic). Без identity
-    остаёмся обратно-совместимыми с call-site'ами, которые его не пробрасывают.
+    (user / bot / oauth_client; PAT идёт под user, отдельного значения нет).
+    Помогает SIEM'у фильтровать denied'ы по типу caller'а (например, искать
+    аномалии в bot-traffic). Без identity остаёмся обратно-совместимыми с
+    call-site'ами, которые его не пробрасывают.
 
     Контекст-менеджер sync, потому что `audit_service.emit` сам sync (он
     fire-and-forget'ит httpx-task внутри). Тело `with` может быть `await`

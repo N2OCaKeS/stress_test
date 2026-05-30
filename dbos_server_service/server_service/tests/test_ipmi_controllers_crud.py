@@ -426,6 +426,31 @@ class TestRotateCredentials:
         )
         assert resp.status_code == 410
 
+    async def test_410_details_do_not_echo_server_id(
+        self, client, admin_token, make_server, make_ipmi,
+    ):
+        """410-ответ не эхо'ит server_id обратно.
+
+        Caller мог передать `UPPER`/whitespace-варианты id'а — эхо такого
+        значения создавало CAS-different отпечаток в ответе (полезной
+        информации не несёт, audit и без того пишет сырой id).
+        """
+        srv = await make_server(department_id="dep_a")
+        await make_ipmi(server_id=srv.id)
+
+        for variant in (srv.id.upper(), f"  {srv.id}  ", srv.id.lower()):
+            resp = await client.post(
+                f"{BASE}/{variant}/ipmi/credentials/rotate",
+                headers=_hdr(admin_token),
+                json={},
+            )
+            assert resp.status_code == 410
+            body = resp.json()
+            details = body.get("details") or {}
+            assert "server_id" not in details, (
+                f"410 details echoed server_id for variant {variant!r}: {details!r}"
+            )
+
     async def test_worker_bot_callback_still_allowed(
         self, client, worker_bot_token_a, make_server, make_ipmi, db,
     ):

@@ -439,6 +439,10 @@ async def rotate_credentials(
                 "migration": "use POST /ipmi-controllers/{id}/rotate",
             },
         )
+        # details пустые: эхо `server_id` из URL даёт CAS-different (caller
+        # может подсунуть UPPER/Lower/whitespace вариант), а полезной
+        # информации не несёт — caller сам знает, что он передал. Audit
+        # выше пишет сырой server_id уже как security-trail.
         raise GoneError(
             error_code="IPMI_ROTATE_USER_FACING_DEPRECATED",
             message=(
@@ -447,7 +451,6 @@ async def rotate_credentials(
                 "POST /api/server/v1/ipmi-controllers/{id}/rotate (worker "
                 "dispatch with BMC apply + verify)."
             ),
-            details={"server_id": server_id},
         )
     new_password = body.password if body is not None else None
     obj = await ipmi_svc.rotate_credentials(db, identity, server_id, new_password)

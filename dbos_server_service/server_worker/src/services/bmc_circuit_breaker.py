@@ -24,14 +24,14 @@ Logical states и переходы:
   * **open** — есть ``state=open`` и ``open_until > now``. ``check``
     бросает ``CircuitBreakerOpenError`` без сетевого вызова BMC.
     ``record_*`` не имеют эффекта (мы внутри open-window).
-  * **half_open** — ``state=open`` и ``open_until <= now``. Lua-скрипт
-    ``CHECK`` пытается захватить probe-слот через ``SET NX EX cooldown``
-    на отдельном ключе ``cb:bmc:<host>:probe``. Победитель SETNX
-    переключает ``state=half_open`` и пропускает ровно один пробный
-    запрос; проигравшие конкурентные ``check`` видят probe-ключ и
-    получают ``open`` с retry_after = TTL probe-ключа. Без probe-ключа
-    в окне ``open→half_open`` все реплики разом видели бы половинку
-    и кидали залп в едва ожившие BMC — thundering herd. Probe-ключ
+  * **half_open** — ``state=open`` и ``open_until <= now``. Через
+    ``cb:bmc:<host>:probe`` (Lua ``SET NX EX cooldown``) выбирается
+    ровно один probe — реплика-победитель SETNX переводит ``state``
+    в ``half_open`` и шлёт пробный запрос; остальные конкурентные
+    ``check``'и видят probe-ключ и получают ``open`` до исхода пробы
+    (``retry_after`` = TTL probe-ключа). Без probe-ключа в окне
+    ``open→half_open`` все реплики разом видели бы половинку и
+    кидали залп в едва ожившие BMC — thundering herd. Probe-ключ
     сносится в ``record_success`` (успех закрывает breaker) и в
     ``record_failure`` (fail в half_open возвращает в open).
 

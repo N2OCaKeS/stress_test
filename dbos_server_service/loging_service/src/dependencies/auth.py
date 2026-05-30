@@ -243,8 +243,13 @@ async def _fetch_identity(
         raise AppException(http_status=503, error_code="AUTH_SERVICE_UNREACHABLE",
                            message="Unable to connect to auth service")
     except Exception as exc:
+        # exc-type ушёл бы наружу через message — клиент бы видел
+        # `RemoteProtocolError` / `WriteError` и узнавал детали транспортной
+        # ошибки auth_service. Симметрично non-200 ветке ниже: наружу
+        # константная фраза, имя класса остаётся в логе для SRE.
+        _logger.warning("introspect raised unexpected exception: %s", type(exc).__name__)
         raise AppException(http_status=503, error_code="AUTH_SERVICE_ERROR",
-                           message=f"Unexpected error: {type(exc).__name__}")
+                           message="Authentication service error")
 
     if resp.status_code != 200:
         # Upstream HTTP-статус из introspect не уходит наружу — это

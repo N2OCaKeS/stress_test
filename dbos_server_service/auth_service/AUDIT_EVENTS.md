@@ -48,7 +48,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | Action | Default severity | Emitter | Target | Key details |
 |------|------|------|------|------|
 | `user.login` | INFO | `auth_service.login` | user | `reason` на failure (`invalid_credentials`, `account_locked`, `user_banned`). |
-| `user.refresh` | INFO | `auth_service.refresh` | session | `session_id`. |
+| `user.refresh` | INFO | `auth_service.refresh` | session | `session_id`. На failure: `reason="user_not_found" \| "banned" \| "blocked" \| "expired"`. |
 | `user.logout` | INFO | `auth_service.logout` | session | Идемпотент: для несуществующего тоже success. |
 | `user.me` | INFO | `/me` endpoint | user | Скан собственного identity. |
 | `token.refresh_reuse` | CRITICAL | `SessionRepository.rotate` | session | Reuse-detection — kill-switch на всю сессию. |
@@ -137,7 +137,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | Action | Default severity | Emitter | Key details |
 |------|------|------|------|
 | `bot.create` | WARNING | `bot_service.create_bot` | `name`, `department_id`, `allowed_services`. |
-| `bot.list` | INFO | `GET /bots` | — |
+| `bot.list` | INFO | `GET /bots` | `count`, `total`, `scope`, `filter_department_id_requested` (что прислал клиент), `filter_department_id_effective` (что реально применили — для dept_admin форсится на собственный отдел). |
 | `bot.update` | WARNING | `bot_service.update_bot` | Diff. |
 | `bot.token_create` | WARNING | `bot_service.create_bot_token` | `name`, `expires_at` (по умолчанию now + 6 мес). |
 | `bot.token_list` | INFO | `GET /bots/{id}/tokens` | — |

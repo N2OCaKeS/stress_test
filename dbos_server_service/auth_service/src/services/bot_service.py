@@ -150,12 +150,14 @@ async def list_bots(
     pagination = pagination or PaginationParams()
     bot_repo = BotRepository(db)
 
+    effective_department_id: str | None
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
         if actor_department_id is None:
             user_repo = UserRepository(db)
             actor = await user_repo.get_by_id(actor_id)
             actor_department_id = actor.department_id if actor else None
         dept_id = actor_department_id
+        effective_department_id = dept_id
         if dept_id:
             bots = await bot_repo.list_by_department(
                 dept_id, limit=pagination.limit, offset=pagination.offset
@@ -164,11 +166,13 @@ async def list_bots(
         else:
             bots, total = [], 0
     elif department_id:
+        effective_department_id = department_id
         bots = await bot_repo.list_by_department(
             department_id, limit=pagination.limit, offset=pagination.offset
         )
         total = await bot_repo.count_by_department(department_id)
     else:
+        effective_department_id = None
         bots = await bot_repo.list_all(limit=pagination.limit, offset=pagination.offset)
         total = await bot_repo.count_all()
 
@@ -178,6 +182,8 @@ async def list_bots(
             "count": len(bots),
             "total": total,
             "filter_department_id": department_id,
+            "filter_department_id_requested": department_id,
+            "filter_department_id_effective": effective_department_id,
             "scope": "department" if (actor_role == PlatformRole.DEPARTMENT_ADMIN or department_id) else "all",
         },
     )

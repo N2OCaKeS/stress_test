@@ -176,10 +176,11 @@ async def _introspect(token: str) -> dict:
 def _to_identity(body: dict) -> IdentityContext:
     """Маппинг introspect-ответа в наш IdentityContext.
 
-    `subject_type` пробрасывается из introspect-ответа (`user` / `bot` / `pat` /
+    `subject_type` пробрасывается из introspect-ответа (`user` / `bot` /
     `oauth_client`) — `audit_service.emit` потом подхватит как `actor_type`,
     чтобы worker_bot и OAuth-клиенты не смешивались с человеческими действиями
-    в SIEM-логе.
+    в SIEM-логе. PAT-токены auth_service маппит на subject_type=`user`
+    (владелец токена — обычный пользователь), отдельного значения для них нет.
     """
     return IdentityContext(
         user_id=body.get("sub") or "",

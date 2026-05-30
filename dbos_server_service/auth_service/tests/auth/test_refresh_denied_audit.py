@@ -93,6 +93,42 @@ async def test_refresh_blocked_user_emits_audit(client, db, account_admin, captu
     assert events, f"user.refresh blocked audit not emitted: {captured_audit}"
 
 
+async def test_refresh_expired_session_emits_audit(
+    client, db, account_admin, captured_audit,
+):
+    """Просроченная refresh-сессия → 401 REFRESH_TOKEN_EXPIRED + denied audit."""
+    login = await client.post(
+        LOGIN_URL, json={"username": "t_admin", "password": "Admin1234!"}
+    )
+    rt = login.json()["refresh_token"]
+
+    from datetime import datetime, timedelta, timezone
+
+    from src.core.security import hash_refresh_token
+    from src.models import Session
+
+    past = datetime.now(timezone.utc) - timedelta(days=1)
+    th = hash_refresh_token(rt)
+    sess = (await db.execute(
+        Session.__table__.select().where(Session.refresh_token_hash == th)
+    )).first()
+    assert sess is not None, "session not found by refresh-token hash"
+
+    await db.execute(
+        Session.__table__.update()
+        .where(Session.refresh_token_hash == th)
+        .values(expires_at=past)
+    )
+    await db.commit()
+
+    resp = await client.post(URL, json={"refresh_token": rt})
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "REFRESH_TOKEN_EXPIRED"
+
+    events = _refresh_failures(captured_audit, "expired")
+    assert events, f"user.refresh expired audit not emitted: {captured_audit}"
+
+
 async def test_refresh_missing_user_emits_audit(
     client, db, account_admin, monkeypatch, captured_audit,
 ):

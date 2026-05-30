@@ -56,7 +56,7 @@ CRUD сервисных учёток на сервере: `TestCreateAccount`, `
 Power-операции через IPMI/Redfish. Классы: `TestPowerOn`, `TestPowerOff`, `TestPowerReboot`, `TestDispatchedPayload`, `TestPowerVisibility`, `TestPowerNoIpmiController`, `TestPowerNoIpmiAudit`, `TestPowerIdempotency`, `TestPowerDispatchFailureAudit`.
 
 - Happy path: dispatch таска в worker через taskiq, audit `server.power_on`.
-- 409 `SERVER_NO_IPMI` если у сервера нет `ipmi_controllers` row (проверяется **после** DECOMMISSIONED).
+- 404 `NO_IPMI_CONTROLLER` если у сервера нет `ipmi_controllers` row (проверяется **после** DECOMMISSIONED).
 - 409 `SERVER_DECOMMISSIONED` — гард впереди IPMI-проверки.
 - Идемпотентность: повторный dispatch с тем же idempotency-key не клонирует таску.
 - Audit на success, denied и dispatch-failure (failure через monkeypatched worker client).

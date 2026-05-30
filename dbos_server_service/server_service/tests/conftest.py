@@ -388,10 +388,10 @@ async def make_server(db):
 
     `with_ipmi=True` дополнительно создаёт IPMI controller row для сервера —
     нужно для power-success тестов: `_dispatch_power` в `endpoints/ipmi.py`
-    требует наличие записи в `ipmi_controllers`, иначе возвращает 409
-    SERVER_NO_IPMI. Тесты, проверяющие 401/403/404 ДО IPMI-проверки, либо
+    требует наличие записи в `ipmi_controllers`, иначе возвращает 404
+    NO_IPMI_CONTROLLER. Тесты, проверяющие 401/403 ДО IPMI-проверки, либо
     409 SERVER_DECOMMISSIONED (проверка DECOMMISSIONED идёт раньше IPMI),
-    либо непосредственно SERVER_NO_IPMI поведение — не нуждаются в
+    либо непосредственно NO_IPMI_CONTROLLER поведение — не нуждаются в
     `with_ipmi=True` и оставляют дефолт.
     """
     from src.models import IpmiController, Server

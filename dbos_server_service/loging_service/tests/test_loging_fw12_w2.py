@@ -304,11 +304,11 @@ class TestUpdateRuleIntegrityError:
         assert body["error_code"] == "RULE_NAME_CONFLICT"
         assert "dup" in body["message"]
 
-    def test_unique_violation_without_name_returns_500(self, admin_client, monkeypatch):
-        """pgcode=23505 без `payload.name` → 500 (UNIQUE на NULL — бессмыслица).
+    def test_unique_violation_without_name_uses_existing_name(self, admin_client, monkeypatch):
+        """pgcode=23505 без `payload.name` → 409 с именем из БД (а не None).
 
-        Защищает от вранья «уже существует None» и подсказывает caller'у
-        искать настоящую причину.
+        Контракт обновлён: pgcode — единственный сигнал; в сообщение
+        подставляется текущее имя правила из БД, чтобы не врать «None».
         """
         from sqlalchemy.exc import IntegrityError
 
@@ -329,7 +329,8 @@ class TestUpdateRuleIntegrityError:
             f"{RULES_URL}/{created['id']}",
             json={"priority": 50},
         )
-        assert r.status_code == 500, r.text
+        assert r.status_code == 409, r.text
         body = r.json()
-        assert body["error_code"] == "INTERNAL_ERROR"
+        assert body["error_code"] == "RULE_NAME_CONFLICT"
         assert "None" not in body["message"]
+        assert "orig" in body["message"]

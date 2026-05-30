@@ -177,8 +177,11 @@ async def _dispatch_for_server(
       2. ``server_svc.get_server`` (VIEW + dept-isolation) — 404 cross-dept.
       3. ``SERVER_DECOMMISSIONED`` — списанные сервера не принимают ни одной
          worker-операции.
-      4. ``SERVER_NO_IPMI`` — для task'ов, которые ходят в BMC (power.status).
-         Для inventory.sync — пропускаем: handler идёт по SSH.
+      4. ``NO_IPMI_CONTROLLER`` (404) — для task'ов, которые ходят в BMC
+         (power.status). Для inventory.sync — пропускаем: handler идёт по SSH.
+         Унифицирован с `endpoints/ipmi.py::_dispatch_power` (тоже 404
+         NO_IPMI_CONTROLLER), чтобы клиент не угадывал по коду, какой именно
+         из IPMI-эндпоинтов он дёргает.
       5. ``worker_client.dispatch_task`` + audit-emit на каждой ветке.
 
     ``extra_payload`` мерджится поверх стандартного ``{server_id,
@@ -227,8 +230,8 @@ async def _dispatch_for_server(
                 status="failure", allowed=True,
                 details={"reason": "no_ipmi", "department_id": server.department_id},
             )
-            raise ConflictError(
-                error_code="SERVER_NO_IPMI",
+            raise NotFoundError(
+                error_code="NO_IPMI_CONTROLLER",
                 message="Server has no IPMI controller configured (BMC endpoint/credentials missing)",
             )
 
@@ -625,8 +628,8 @@ async def fanout_update_on_host(
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
         403: {"description": "Нет роли с `power_status` либо чужой department."},
-        404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
-        409: {"description": "SERVER_DECOMMISSIONED / SERVER_NO_IPMI / TASK_IDEMPOTENT_CONFLICT."},
+        404: {"description": "Сервер не найден / чужой dept (скрыто за 404) либо NO_IPMI_CONTROLLER."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
         503: {"description": "Worker недоступен."},
     },
 )
@@ -641,8 +644,8 @@ async def power_status_dispatch(
     Доступ: `(server, *, power_status)`.
 
     Возможные ошибки: 403 PERMISSION_DENIED, 404 SERVER_NOT_FOUND,
-    409 SERVER_DECOMMISSIONED, 409 SERVER_NO_IPMI, 409 TASK_IDEMPOTENT_CONFLICT,
-    503 WORKER_UNREACHABLE.
+    404 NO_IPMI_CONTROLLER, 409 SERVER_DECOMMISSIONED,
+    409 TASK_IDEMPOTENT_CONFLICT, 503 WORKER_UNREACHABLE.
 
     Связано: `_dispatch_for_server`, `server_worker/src/tasks/power.py::power_status`.
     """

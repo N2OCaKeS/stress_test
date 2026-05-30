@@ -56,17 +56,23 @@ from src.services.audit_helpers import emit_denied_on_authz_error
 
 logger = logging.getLogger(__name__)
 
-# Whitelist системных task'ов — `cancel_task_endpoint` требует
-# `account_admin` только для этих kind'ов. Раньше критерий был
-# `(target_server_id IS NULL AND created_by IS NULL)` — неявный признак,
-# который ломался, как только scheduler заводил бы новую системную task'у
-# с не-NULL target_server_id (например, per-server probe). Явный whitelist
-# делает контракт стабильным и упрощает аудит. Если в worker'е появится
-# новый системный kind — он сначала добавляется сюда, иначе по нему
-# свалит default dept-isolation путь.
+# Whitelist зарезервирован под scheduler-task'и, которые в будущем будут
+# проходить через `worker_client.dispatch_task` (а значит через
+# `cancel_task_endpoint`). На сегодня scheduler-task'и из server_worker
+# (heartbeat/sweep/recover/cleanup/reencrypt) дисптачит сам worker напрямую
+# в свою БД, минуя server_service: у их row'а нет `target_server_id` и
+# нет meta-маршрута через dispatch_task, поэтому endpoint их попросту не
+# видит — `_fetch_task_status_and_meta` возвращает None, и cancel
+# отбивается 404 на :110-118 ещё до проверки whitelist'а. Реальный
+# системный kind через whitelist пройдёт только тогда, когда планировщик
+# сменит транспорт на dispatch_task.
 #
-# Источник истины — server_worker autostart tasks, см.
-# `server_worker/src/main.py` (`@broker.task(...)` с `schedule=[...]`).
+# Defence-in-depth: даже если кто-то на тестовом стенде вручную поднимет
+# task-row с одним из этих kind'ов через dispatch_task, dept-admin не
+# сможет её отменить — нужен account_admin.
+#
+# Источник истины по самим kind-именам — server_worker autostart tasks,
+# см. `server_worker/src/main.py` (`@broker.task(...)` с `schedule=[...]`).
 _SYSTEM_TASK_KINDS = frozenset({
     "system.heartbeat",
     "worker.heartbeat",

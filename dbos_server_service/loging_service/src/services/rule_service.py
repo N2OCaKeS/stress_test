@@ -199,6 +199,7 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("logging.retention_read",   "success"): "INFO",
     ("logging.retention_write",  "success"): "WARNING",
     ("logging.retention_sweep",  "success"): "INFO",
+    ("logging.service_events_registered", "success"): "INFO",
 }
 
 

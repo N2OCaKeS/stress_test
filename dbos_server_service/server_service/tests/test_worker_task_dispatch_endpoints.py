@@ -154,17 +154,21 @@ class TestPowerStatusDispatch:
         assert resp.status_code == 404
         assert captured_dispatch == []
 
-    async def test_no_ipmi_returns_409(
+    async def test_no_ipmi_returns_404(
         self, client, operator_token_a, make_server, captured_dispatch,
     ):
-        """Без IPMI-row power.status не может ходить в BMC."""
+        """Без IPMI-row power.status не может ходить в BMC.
+
+        Унифицировано с `endpoints/ipmi.py::_dispatch_power`: 404
+        NO_IPMI_CONTROLLER (target ресурс отсутствует), а не 409.
+        """
         srv = await make_server(department_id="dep_a")  # без ipmi
         resp = await client.post(
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "SERVER_NO_IPMI"
+        assert resp.status_code == 404
+        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
         assert captured_dispatch == []
 
     async def test_decommissioned_returns_409(

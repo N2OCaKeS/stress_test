@@ -479,6 +479,11 @@ async def refresh(
     if is_expired(sess.expires_at):
         await session_repo.revoke(sess)
         await db.commit()
+        audit_service.emit(
+            "user.refresh", sess.user_id, status="failure", allowed=False,
+            details={"session_id": sess.id, "reason": "expired"},
+            request_id=request_id,
+        )
         raise AuthenticationError(error_code="REFRESH_TOKEN_EXPIRED", message="Refresh token expired")
 
     user = await user_repo.get_by_id(sess.user_id)

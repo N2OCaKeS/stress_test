@@ -1,5 +1,3 @@
-import pytest
-
 """Edge cases для `POST /authorization/introspect` и `POST /authorization/service-access`.
 
 Базовые happy лежат в `test_introspect.py`. Здесь покрытие пропусков:
@@ -535,7 +533,6 @@ class TestXServiceIdentityValidation:
             config.get_settings.cache_clear()
 
 
-@pytest.mark.xfail(reason="W11-W3 own test: fixture setup для banned-PAT через subject_type=user не отражает фактический lookup-flow; src-фикс рабочий, перепишу в W12.", strict=False)
 class TestPatTouchOrdering:
     """`last_used_at` PAT'а апдейтится только после валидации юзера.
 
@@ -546,7 +543,7 @@ class TestPatTouchOrdering:
     """
 
     async def test_banned_user_pat_introspect_does_not_touch(
-        self, client, user_a, user_a_token, db,
+        self, client, user_a, user_a_token, service_x, db,
     ):
         from sqlalchemy import select, update
 
@@ -557,7 +554,7 @@ class TestPatTouchOrdering:
         tok = await client.post(
             "/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "touch_order_pat", "allowed_services": []},
+            json={"name": "touch_order_pat", "allowed_services": [service_x.service_name]},
         )
         assert tok.status_code == 201, tok.text
         raw = tok.json()["token"]
@@ -580,7 +577,7 @@ class TestPatTouchOrdering:
         assert resp.status_code == 200
         assert resp.json()["active"] is False
 
-        await db.expire_all()
+        db.expire_all()
         row_after = (await db.execute(
             select(PersonalAccessToken).where(PersonalAccessToken.id == pat_id)
         )).scalar_one()

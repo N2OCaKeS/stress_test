@@ -25,6 +25,19 @@ out-of-band доступ к iDRAC пропал бы без шумного сиг
 упал — submit НЕ зовём, задача FAILED с reason `verify_after_rotate_failed`;
 stash в Redis с in-flight паролем живёт до TTL, оператор может разобраться
 вручную или дождаться следующего retry.
+
+**Account-stash (симметрично IPMI).** Account-ротация тоже держит in-flight
+пароль в Redis под `dbos:account_rotate_pw:<task_id>` с тем же TTL. При
+retry `_impl` запускается заново; без stash'а каждая попытка генерила бы
+новый `_generate_password()` и `chpasswd` перезаписывал бы аккаунт другим
+секретом, а submit ушёл бы с третьим — storage хранил бы пароль, отличный
+от того, что реально стоит на хосте. Self-сессии (`is_managed=False`),
+завязанные на пароль из storage, ловили бы вечный auth-fail после первого
+transient-fail'а submit'а. Stash хранит plaintext-пароль; для IPMI рядом с
+паролем кладётся `rotated_at`, чтобы при retry submit'а timestamp не
+дрейфил относительно фактического момента смены пароля на BMC. Удаляем
+stash явно после успешного submit'а; TTL подстрахует на случай аварии
+worker'а между apply и delete.
 """
 
 from __future__ import annotations
@@ -87,12 +100,13 @@ _PASSWORD_ALPHABET = (
 )
 
 
-# TTL для in-flight IPMI rotate-пароля в Redis. Покрывает суммарное окно
-# back-off'а exponential retry'я (`_compute_backoff_delay` capped 300s) с
-# запасом на сетевые тормоза. По истечении TTL `mark_failed` уже отработал —
-# storage хранит «висящий» пароль, оператор повторяет rotate, который
-# сгенерит новый ключ и попадёт в обычный happy-path.
-_IPMI_ROTATE_PASSWORD_TTL_SECONDS = 1800
+# TTL для in-flight rotate-пароля в Redis (общий для IPMI и account
+# stash'ей). Покрывает суммарное окно back-off'а exponential retry'я
+# (`_compute_backoff_delay` capped 300s) с запасом на сетевые тормоза.
+# По истечении TTL `mark_failed` уже отработал — storage хранит
+# «висящий» пароль, оператор повторяет rotate, который сгенерит новый
+# ключ и попадёт в обычный happy-path.
+_ROTATE_PASSWORD_STASH_TTL_SECONDS = 1800
 
 # Префикс ключа задаём явный — отделяет от bootstrap-creds в Redis-namespace.
 _IPMI_ROTATE_KEY_PREFIX = "dbos:ipmi_rotate_pw:"
@@ -183,7 +197,7 @@ async def _store_ipmi_rotate_password(
         await client.set(
             _IPMI_ROTATE_KEY_PREFIX + task_id,
             _ipmi_stash_value(password, rotated_at),
-            ex=_IPMI_ROTATE_PASSWORD_TTL_SECONDS,
+            ex=_ROTATE_PASSWORD_STASH_TTL_SECONDS,
         )
     finally:
         await client.aclose()
@@ -238,7 +252,7 @@ async def _store_account_rotate_password(task_id: str, password: str) -> None:
         await client.set(
             _ACCOUNT_ROTATE_KEY_PREFIX + task_id,
             password,
-            ex=_IPMI_ROTATE_PASSWORD_TTL_SECONDS,
+            ex=_ROTATE_PASSWORD_STASH_TTL_SECONDS,
         )
     finally:
         await client.aclose()

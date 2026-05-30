@@ -7,10 +7,15 @@
 Изоляция тестов: перед каждым тестом все таблицы очищаются через TRUNCATE.
 
 Клиенты:
-  client       — service-token auth (SERVICE_API_KEY). Для POST /events, POST /services/{svc}/events.
-  admin_client — admin identity override. Для GET /events, /rules/*, GET /services/*, /services/{svc}/events.
+  client       — service-token auth (`SERVICE_API_KEYS` map). Для POST /events,
+                 POST /services/{svc}/events. `auth_headers` отдаёт Bearer +
+                 `X-Service-Identity: auth_service`, под которым по дефолту
+                 ходит `make_event()`.
+  admin_client — admin identity override. Для GET /events, /rules/*, GET
+                 /services/*, /services/{svc}/events.
 """
 
+import json
 import os
 from contextlib import contextmanager
 
@@ -19,7 +24,19 @@ TEST_DATABASE_URL = os.environ.get(
     "postgresql+psycopg://app_user:app_password@postgres:5432/test_logging",
 )
 
+# Тестовый bearer и identity, под которой ходит дефолтный test-caller.
+# `client` фикстура регистрирует все four known service identities в
+# `SERVICE_API_KEYS`, чтобы отдельные тесты могли подменять
+# `X-Service-Identity` на server_service / config_service / server_worker
+# без перенастройки env.
 TEST_API_KEY = "test-service-api-key"
+TEST_SERVICE_IDENTITY = "auth_service"
+TEST_SERVICE_API_KEYS = {
+    "auth_service": TEST_API_KEY,
+    "server_service": TEST_API_KEY,
+    "config_service": TEST_API_KEY,
+    "server_worker": TEST_API_KEY,
+}
 
 # `RETENTION_LOOP_ENABLED=false` ОБЯЗАН быть выставлен ДО первого
 # `from src.*` import'а: `src.main.create_application()` снимает
@@ -152,13 +169,19 @@ def _db_override(db: Session):
 
 @pytest.fixture()
 def client(db, monkeypatch):
-    """TestClient c аутентификацией по SERVICE_API_KEY (для сервисов).
+    """TestClient c аутентификацией по per-service `SERVICE_API_KEYS`.
+
+    Все 4 known service identity сидят на одном `TEST_API_KEY` — отдельные
+    тесты подменяют `X-Service-Identity` без перенастройки env. `INTROSPECT_
+    SERVICE_API_KEY` ставится в *отличный* секрет, чтобы prod-symmetric
+    key-separation guard не разъезжался в тестах.
 
     Tests that ходят через `require_admin` / `require_reader` подменяют
     pooled `_introspect_client` MockTransport-обёрткой через `mock_introspect`
     / `mock_token_proxy` фикстуры (см. ниже).
     """
-    monkeypatch.setenv("SERVICE_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("SERVICE_API_KEYS", json.dumps(TEST_SERVICE_API_KEYS))
+    monkeypatch.setenv("INTROSPECT_SERVICE_API_KEY", "test-introspect-key")
     # Установить фиктивный URL — это нужно чтобы require_admin доходил до introspect,
     # а не возвращал 503 AUTH_SERVICE_NOT_CONFIGURED ещё до вызова.
     monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth-test:8000")
@@ -242,7 +265,8 @@ def mock_token_proxy():
 @pytest.fixture()
 def admin_client(db, monkeypatch):
     """TestClient с admin identity override (имитирует loging_admin JWT без реального auth_service)."""
-    monkeypatch.setenv("SERVICE_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("SERVICE_API_KEYS", json.dumps(TEST_SERVICE_API_KEYS))
+    monkeypatch.setenv("INTROSPECT_SERVICE_API_KEY", "test-introspect-key")
     from src.core.config import get_settings
     get_settings.cache_clear()
 
@@ -259,8 +283,17 @@ def admin_client(db, monkeypatch):
 
 @pytest.fixture()
 def auth_headers() -> dict:
-    """Bearer headers для SERVICE_API_KEY (для POST /events, POST /services/{svc}/events)."""
-    return {"Authorization": f"Bearer {TEST_API_KEY}"}
+    """Bearer + `X-Service-Identity` для service-to-service ingest.
+
+    Identity по умолчанию — `auth_service` (совпадает с `make_event()`
+    default `service="auth_service"`). Тесты, которым нужно ходить под
+    другой identity (server_service / config_service / server_worker),
+    переписывают header руками: `auth_headers | {"X-Service-Identity": "server_service"}`.
+    """
+    return {
+        "Authorization": f"Bearer {TEST_API_KEY}",
+        "X-Service-Identity": TEST_SERVICE_IDENTITY,
+    }
 
 
 # ── Payload factories ─────────────────────────────────────────────────────────

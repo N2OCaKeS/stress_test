@@ -9,8 +9,6 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
-_DEFAULT_SERVICE_API_KEY = "change-me-service-key"
-
 # Hostnames, где plain `http://` допустим даже в production. Используется
 # https-only гардом для `AUTH_SERVICE_URL` ниже — devcontainer / sidecar /
 # on-host debug-сценарии, где TLS терминируется на localhost.
@@ -46,36 +44,22 @@ class Settings(BaseSettings):
     db_pool_size: int = Field(default=10, alias="DB_POOL_SIZE")
     db_max_overflow: int = Field(default=20, alias="DB_MAX_OVERFLOW")
 
-    # Shared secret, который другие сервисы шлют в `Authorization: Bearer <key>`.
-    # FALLBACK когда `service_api_keys` пуст — сохраняет backward-compat с
-    # старой single-key моделью деплоя.
-    service_api_key: str = Field(default=_DEFAULT_SERVICE_API_KEY, alias="SERVICE_API_KEY")
-
-    # Per-service API keys. Закрывают «компрометация shared-ключа → forge
-    # audit от имени любого сервиса» — `X-Service-Identity` allow-list сам
-    # этого не делает (header не аутентифицирован, любой держатель
-    # `SERVICE_API_KEY` заявит любую identity).
-    #
-    # Формат: JSON-объект service-identity → bearer-secret, напр.::
+    # Per-service API keys — единственный режим service-to-service auth.
+    # JSON-объект service-identity → bearer-secret, напр.::
     #
     #     SERVICE_API_KEYS='{"auth_service":"k1","server_service":"k2"}'
     #
-    # Тип поля `str | dict[str, str]` (не голый `dict[str, str]`), чтобы
+    # `require_service_token` требует `X-Service-Identity` header, lookup'ает
+    # ключ по identity, и сравнивает `compare_digest`'ом. Identity вне map'а
+    # отвергается (map = operator allow-list). Компрометация одного ключа
+    # ограничена write-доступом от имени соответствующей identity.
+    #
+    # Тип поля `Annotated[..., NoDecode]` (не голый `dict[str, str]`), чтобы
     # `pydantic-settings` не парсил env как JSON раньше нашего валидатора —
     # auto-парсер падает с `SettingsError` без нашего точного сообщения.
     #
-    # Порядок резолва в `require_service_token`:
-    #   1. `service_api_keys` непустой — authoritative. Header
-    #      `X-Service-Identity` обязателен, обязан быть в map'е — иначе
-    #      401. `compare_digest(provided, keys[identity])` решает
-    #      accept/reject. Map — заодно эффективный allow-list (identity
-    #      вне map отвергается, даже если она в `KNOWN_SERVICE_IDENTITIES`).
-    #   2. `service_api_keys` пуст (legacy single-key) — fallback на
-    #      `service_api_key` + старый soft-mode allow-list для
-    #      `X-Service-Identity`.
-    #
-    # Значения — bearer-secret as-is (не хеш), чтобы ротация делалась
-    # тем же kubectl-rollout'ом, что и `SERVICE_API_KEY`.
+    # Значения — bearer-secret as-is (не хеш): ротация — обычный
+    # kubectl-rollout с новым Secret.
     service_api_keys: Annotated[dict[str, str], NoDecode] = Field(
         default_factory=dict, alias="SERVICE_API_KEYS"
     )
@@ -83,11 +67,11 @@ class Settings(BaseSettings):
     # URL auth_service'а для валидации `loging_admin` JWT.
     auth_service_url: str | None = Field(default=None, alias="AUTH_SERVICE_URL")
 
-    # Outbound bearer для POST /introspect в auth_service. По умолчанию пуст —
-    # тогда `_fetch_identity` фолбэчит на `service_api_key` (legacy / single-key
-    # стенды). На раздельных деплоях (`SERVICE_API_KEYS` per-service) выдай
-    # этому полю свой ключ — компрометация ingest-ключа другого сервиса
-    # не позволит читать чужие introspect-ответы от имени loging_service.
+    # Outbound bearer для POST /introspect в auth_service. Должен быть отличным
+    # от любого значения `SERVICE_API_KEYS` (см. key-separation guard ниже).
+    # В production обязателен; в local/dev допустимо оставить пустым только
+    # если auth_service использует legacy single-key конфиг и принимает
+    # любой service-token.
     introspect_service_api_key: str = Field(
         default="", alias="INTROSPECT_SERVICE_API_KEY"
     )
@@ -178,27 +162,6 @@ class Settings(BaseSettings):
         default=False, alias="SECURITY_HSTS_ENABLED"
     )
 
-    # Strict-mode для валидации `X-Service-Identity` на service-token
-    # эндпоинтах. Симметрично с auth_service:
-    #
-    # * default (soft mode, `False`) — отсутствие или unknown identity
-    #   логируется как WARNING, но запрос проходит. Позволяет роллауту
-    #   ехать без координированного передеплоя всех caller'ов.
-    # * strict mode (`True`) — отсутствие identity или identity не в
-    #   :data:`KNOWN_SERVICE_IDENTITIES` отвергается с 401
-    #   `INVALID_SERVICE_IDENTITY`. Включать только после аудита, что все
-    #   внутренние caller'ы шлют известное значение.
-    #
-    # Независимо от этого переключателя: когда service-token эндпоинт
-    # привязан к конкретному сервису через path-параметр
-    # (`POST /services/{service}/events`), эндпоинт сравнивает
-    # advertised identity с путём — mismatch ВСЕГДА 403
-    # `SERVICE_IDENTITY_PATH_MISMATCH`, независимо от strict mode. Soft
-    # mode рулит только обработкой *отсутствующих* / *неизвестных* headers.
-    strict_service_identity: bool = Field(
-        default=False, alias="STRICT_SERVICE_IDENTITY"
-    )
-
     # Hard cap на размер тела запроса для мутирующих методов
     # (POST/PUT/PATCH). Закрывает DoS-вектор, ортогональный
     # `ingest_rate_limit`: один атакующий с SERVICE_API_KEY может прислать
@@ -284,9 +247,10 @@ class Settings(BaseSettings):
         caller'ы, передающие настоящий dict (тесты, in-process конфиг),
         проходят без изменений.
 
-        Пустая строка / `None` → пустой dict (совпадает с default), так что
-        deploy может явно прислать `SERVICE_API_KEYS=` чтобы сказать
-        «используем legacy shared key», не пропуская переменную из манифеста.
+        Пустая строка / `None` → пустой dict. В production пустой map'ы
+        отвергается guard'ом `_validate_production_secrets` (service-to-service
+        ingest перестал бы работать). В local/dev пустой map допустим, но
+        ingest-эндпоинты будут отвечать 401 на любой запрос.
         """
         if v is None or v == "":
             return {}
@@ -321,37 +285,36 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_production_secrets(self) -> "Settings":
-        """Запретить default / empty SERVICE_API_KEY в production.
+        """Production-guard'ы конфигурации.
 
-        Симметрично `auth_service::_validate_production_secrets` — default
-        shared secret позволил бы любому network-reachable актору
-        подделывать события аудита (включая `service='loging_service'` записи,
-        которые retention-инвариант никогда не удаляет).
+        `staging` трактуется как prod-like: те же angles атаки
+        (network-reachable секрет, MITM на introspect), — конфиг-ошибки не
+        должны тихо проходить только из-за того, что env-флаг не `production`.
 
-        `staging` трактуется как prod-like: на стенде те же angles атаки,
-        что и в проде (network-reachable секрет, MITM на introspect), —
-        дефолтный `SERVICE_API_KEY` или `http://` auth_service-URL не должны
-        тихо проходить только из-за того, что env-флаг — не `production`.
+        Инварианты:
+          * `SERVICE_API_KEYS` непустой — без него service-to-service ingest
+            не работает вовсе (легаси shared-key режим удалён).
+          * `INTROSPECT_SERVICE_API_KEY` непустой и не пересекается со
+            значениями `SERVICE_API_KEYS` — иначе утёкший ingest-ключ
+            одного сервиса автоматически даёт right на introspect от имени
+            loging_service.
+          * `APP_DEBUG=false`, `AUTH_SERVICE_URL` задан и https-only
+            (loopback исключён), `INTROSPECT_TLS_VERIFY=true` на не-loopback
+            https — стандартный набор для MITM-устойчивого introspect-канала.
         """
         if self.app_env in ("production", "staging"):
-            if not self.service_api_key or self.service_api_key == _DEFAULT_SERVICE_API_KEY:
-                raise ValueError(
-                    "SERVICE_API_KEY must be changed from the default and non-empty in production"
-                )
             if self.app_debug:
                 raise ValueError("APP_DEBUG must be false in production")
 
-            # Per-service mode (SERVICE_API_KEYS непустой) делает ingest-ключи
-            # и introspect-ключ независимыми сущностями. Если `service_api_keys`
-            # настроен, а `introspect_service_api_key` пуст — `_fetch_identity`
-            # тихо фолбэчит на `service_api_key` (single-shared-key). Деплой
-            # выглядит «всё ок», но компрометация одного ingest-ключа открывает
-            # чтение introspect-ответов от имени loging_service. Гард ловит
-            # эту deployment-trap'у на старте.
-            if self.service_api_keys and not self.introspect_service_api_key:
+            if not self.service_api_keys:
                 raise ValueError(
-                    "INTROSPECT_SERVICE_API_KEY must be set when SERVICE_API_KEYS "
-                    "(per-service mode) is configured in production"
+                    "SERVICE_API_KEYS must be a non-empty JSON map in production "
+                    "(legacy single-key SERVICE_API_KEY mode has been removed)"
+                )
+
+            if not self.introspect_service_api_key:
+                raise ValueError(
+                    "INTROSPECT_SERVICE_API_KEY must be set in production"
                 )
 
             # Коллизия introspect-ключа с любым ingest-ключом убивает
@@ -360,11 +323,7 @@ class Settings(BaseSettings):
             # INTROSPECT_SERVICE_API_KEY — утёкший ingest-ключ auth_service
             # сразу даёт право дёргать /introspect от имени loging_service.
             # Ловим это на старте, а не в post-mortem.
-            if (
-                self.service_api_keys
-                and self.introspect_service_api_key
-                and self.introspect_service_api_key in self.service_api_keys.values()
-            ):
+            if self.introspect_service_api_key in self.service_api_keys.values():
                 raise ValueError(
                     "INTROSPECT_SERVICE_API_KEY must be distinct from all "
                     "SERVICE_API_KEYS values; reusing an ingest key for introspect "

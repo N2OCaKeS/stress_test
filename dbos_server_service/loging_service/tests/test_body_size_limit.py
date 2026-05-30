@@ -323,7 +323,7 @@ class TestChunkedOverflow:
         работает стрим-cap.
         """
         monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", str(50 * 1024))
-        monkeypatch.setenv("SERVICE_API_KEY", "test-service-api-key")
+        monkeypatch.setenv("SERVICE_API_KEYS", '{"auth_service":"test-service-api-key"}')
         from src.core.config import get_settings
         get_settings.cache_clear()
         from src.main import app
@@ -350,7 +350,7 @@ class TestChunkedOverflow:
         DB или auth — это «не 413», что и требуется.
         """
         monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", str(50 * 1024))
-        monkeypatch.setenv("SERVICE_API_KEY", "test-service-api-key")
+        monkeypatch.setenv("SERVICE_API_KEYS", '{"auth_service":"test-service-api-key"}')
         from src.core.config import get_settings
         get_settings.cache_clear()
         from src.main import app
@@ -373,7 +373,7 @@ class TestChunkedOverflow:
         ровно-в-лимит chunked-ingest начнёт отбиваться.
         """
         monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", str(50 * 1024))
-        monkeypatch.setenv("SERVICE_API_KEY", "test-service-api-key")
+        monkeypatch.setenv("SERVICE_API_KEYS", '{"auth_service":"test-service-api-key"}')
         from src.core.config import get_settings
         get_settings.cache_clear()
         from src.main import app

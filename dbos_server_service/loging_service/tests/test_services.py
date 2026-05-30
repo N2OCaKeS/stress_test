@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from src.dependencies import auth as _auth_deps
-from tests.conftest import make_event, make_event_def
+from tests.conftest import TEST_API_KEY, make_event, make_event_def
 
 SERVICES_URL = "/api/logging/v1/services"
 EVENTS_URL = "/api/logging/v1/events"
@@ -119,7 +119,7 @@ class TestRegisterEvents:
             r = client.post(
                 f"{SERVICES_URL}/{svc}/events",
                 json={"events": [make_event_def(action="service.started")]},
-                headers=auth_headers,
+                headers={**auth_headers, "X-Service-Identity": svc},
             )
             assert r.json()["total"] == 1
 
@@ -210,22 +210,20 @@ class TestRegisterEventsServiceIdentityGuard:
         assert r.status_code == 403
         assert r.json()["error_code"] == "SERVICE_IDENTITY_PATH_MISMATCH"
 
-    def test_missing_identity_soft_mode_allowed(self, client, auth_headers):
-        """Без header — backward-compat (soft mode по умолчанию) → 200."""
+    def test_missing_identity_rejected_with_401(self, client):
+        """Без header → 401 `MISSING_SERVICE_IDENTITY` (legacy soft-mode удалён)."""
         r = client.post(
             f"{SERVICES_URL}/auth_service/events",
             json={"events": [make_event_def(action="user.login")]},
-            headers=auth_headers,
+            headers={"Authorization": f"Bearer {TEST_API_KEY}"},
         )
-        assert r.status_code == 200
+        assert r.status_code == 401
+        assert r.json()["error_code"] == "MISSING_SERVICE_IDENTITY"
 
-    def test_unknown_identity_soft_mode_with_matching_path_allowed(
-        self, client, auth_headers
-    ):
-        """Unknown identity (не в allow-list'е), но path тот же — в soft mode
-        warning + 200 (header informational). Цель — не сломать совместимость
-        с пока-не-добавленными сервисами; per-service keys сделают это
-        строже.
+    def test_unknown_identity_rejected_with_401(self, client, auth_headers):
+        """Identity, которой нет в `SERVICE_API_KEYS` map'е, → 401
+        `INVALID_SERVICE_KEY`. Legacy soft-mode «пропускаем unknown с
+        warning'ом» удалён вместе с shared-key режимом.
         """
         headers = {**auth_headers, "X-Service-Identity": "future_service"}
         r = client.post(
@@ -233,9 +231,8 @@ class TestRegisterEventsServiceIdentityGuard:
             json={"events": [make_event_def(action="future.event")]},
             headers=headers,
         )
-        # Soft mode: unknown identity is logged WARNING but request passes
-        # require_service_token. Path matches identity → no mismatch raise.
-        assert r.status_code == 200
+        assert r.status_code == 401
+        assert r.json()["error_code"] == "INVALID_SERVICE_KEY"
 
     def test_identity_case_and_whitespace_normalised(
         self, client, auth_headers
@@ -256,47 +253,20 @@ class TestRegisterEventsServiceIdentityGuard:
         )
         assert r.status_code == 200
 
-    def test_strict_mode_missing_identity_rejected_with_401(
-        self, client, auth_headers, monkeypatch
-    ):
-        """STRICT_SERVICE_IDENTITY=true → отсутствие header'а → 401
-        ``MISSING_SERVICE_IDENTITY``. Используется после миграции всех
-        внутренних caller'ов.
+    def test_random_garbage_identity_rejected_with_401(self, client, auth_headers):
+        """Random identity вне `SERVICE_API_KEYS` map'а → 401
+        `INVALID_SERVICE_KEY`. Legacy `STRICT_SERVICE_IDENTITY=true` режим
+        выкинут — в per-service-only режиме каждая identity вне map'а
+        отвергается всегда.
         """
-        monkeypatch.setenv("STRICT_SERVICE_IDENTITY", "true")
-        from src.core.config import get_settings
-        get_settings.cache_clear()
-        try:
-            r = client.post(
-                f"{SERVICES_URL}/auth_service/events",
-                json={"events": [make_event_def(action="user.login")]},
-                headers=auth_headers,
-            )
-            assert r.status_code == 401
-            assert r.json()["error_code"] == "MISSING_SERVICE_IDENTITY"
-        finally:
-            get_settings.cache_clear()
-
-    def test_strict_mode_unknown_identity_rejected_with_401(
-        self, client, auth_headers, monkeypatch
-    ):
-        """STRICT_SERVICE_IDENTITY=true + unknown identity → 401
-        ``INVALID_SERVICE_IDENTITY``.
-        """
-        monkeypatch.setenv("STRICT_SERVICE_IDENTITY", "true")
-        from src.core.config import get_settings
-        get_settings.cache_clear()
-        try:
-            headers = {**auth_headers, "X-Service-Identity": "random_garbage"}
-            r = client.post(
-                f"{SERVICES_URL}/auth_service/events",
-                json={"events": [make_event_def(action="user.login")]},
-                headers=headers,
-            )
-            assert r.status_code == 401
-            assert r.json()["error_code"] == "INVALID_SERVICE_IDENTITY"
-        finally:
-            get_settings.cache_clear()
+        headers = {**auth_headers, "X-Service-Identity": "random_garbage"}
+        r = client.post(
+            f"{SERVICES_URL}/auth_service/events",
+            json={"events": [make_event_def(action="user.login")]},
+            headers=headers,
+        )
+        assert r.status_code == 401
+        assert r.json()["error_code"] == "INVALID_SERVICE_KEY"
 
 
 # ── POST /services/{service}/events — Unicode bypass guard ──────────────────
@@ -424,7 +394,7 @@ class TestGetServiceEvents:
         for svc in ("auth_service", "config_service"):
             client.post(f"{SERVICES_URL}/{svc}/events",
                         json={"events": [make_event_def(action="service.started")]},
-                        headers=auth_headers)
+                        headers={**auth_headers, "X-Service-Identity": svc})
         r_auth = admin_client.get(f"{SERVICES_URL}/auth_service/events")
         r_conf = admin_client.get(f"{SERVICES_URL}/config_service/events")
         assert r_auth.json()["total"] == 1

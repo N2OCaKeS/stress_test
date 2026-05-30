@@ -64,14 +64,21 @@ def _fake_settings(
     timeout: float = 3.0,
     connect_timeout: float = 2.0,
     url: str = "http://auth-mock",
-    introspect_key: str = "",
+    introspect_key: str | None = None,
 ):
+    """`api_key` исторически отдавал shared SERVICE_API_KEY; легаси-режим
+    удалён, теперь любой outbound introspect шлёт `introspect_service_api_key`.
+    Если caller не указал `introspect_key` — используем `api_key` как удобный
+    дефолт, чтобы старые тесты, передавшие только `api_key`, продолжали
+    проверять wire-format Authorization header'а.
+    """
+    if introspect_key is None:
+        introspect_key = api_key
     return type(
         "FakeSettings",
         (),
         {
             "auth_service_url": url,
-            "service_api_key": api_key,
             "introspect_service_api_key": introspect_key,
             "introspect_timeout_seconds": timeout,
             "introspect_connect_timeout_seconds": connect_timeout,
@@ -87,7 +94,6 @@ def test_lifespan_startup_initialises_introspect_client(monkeypatch):
     """After lifespan startup, ``_introspect_client`` is a live AsyncClient."""
     auth_dep._introspect_client = None
     monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth-test:8000")
-    monkeypatch.setenv("SERVICE_API_KEY", "test-key")
     from src.core.config import get_settings
     get_settings.cache_clear()
 
@@ -113,7 +119,6 @@ def test_lifespan_shutdown_closes_introspect_client(monkeypatch):
     """``aclose()`` is actually called on shutdown."""
     auth_dep._introspect_client = None
     monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth-test:8000")
-    monkeypatch.setenv("SERVICE_API_KEY", "test-key")
     from src.core.config import get_settings
     get_settings.cache_clear()
 
@@ -141,7 +146,6 @@ def test_lifespan_skips_pool_when_auth_url_unset(monkeypatch):
     """
     auth_dep._introspect_client = None
     monkeypatch.delenv("AUTH_SERVICE_URL", raising=False)
-    monkeypatch.setenv("SERVICE_API_KEY", "test-key")
     from src.core.config import get_settings
     get_settings.cache_clear()
 
@@ -228,10 +232,10 @@ def test_pooled_introspect_reuses_single_client(monkeypatch):
 
 
 def test_pooled_introspect_sends_service_api_key_and_identity_header(monkeypatch):
-    """Sanity: pooled-path still sends ``Authorization: Bearer <SERVICE_API_KEY>``
-    and ``X-Service-Identity: loging_service``. User token goes into the JSON
-    body, not into the header. Regression for the header invariant
-    (``test_admin_auth.py::test_introspect_call_sends_service_api_key_header``).
+    """Sanity: pooled-path still sends ``Authorization: Bearer
+    <INTROSPECT_SERVICE_API_KEY>`` and ``X-Service-Identity: loging_service``.
+    User token goes into the JSON body, not into the header. Regression for
+    the header invariant (``test_admin_auth.py``).
     """
     captured: dict = {}
 
@@ -475,7 +479,6 @@ def test_pool_built_with_introspect_tls_verify_default_true(monkeypatch):
     """
     auth_dep._introspect_client = None
     monkeypatch.setenv("AUTH_SERVICE_URL", "https://auth-test:8443")
-    monkeypatch.setenv("SERVICE_API_KEY", "tls-key")
     monkeypatch.delenv("INTROSPECT_TLS_VERIFY", raising=False)
     from src.core.config import get_settings
     get_settings.cache_clear()
@@ -518,7 +521,6 @@ def test_pool_built_with_introspect_tls_verify_false_when_env_set(monkeypatch):
     """
     auth_dep._introspect_client = None
     monkeypatch.setenv("AUTH_SERVICE_URL", "https://auth-test:8443")
-    monkeypatch.setenv("SERVICE_API_KEY", "tls-key")
     monkeypatch.setenv("INTROSPECT_TLS_VERIFY", "false")
     from src.core.config import get_settings
     get_settings.cache_clear()

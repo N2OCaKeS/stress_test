@@ -76,34 +76,86 @@ def _fake_request(headers: dict | None = None):
 
 
 class TestRequireServiceToken:
-    def test_missing_credentials_returns_401(self):
-        with pytest.raises(AppException) as exc:
-            auth_dep.require_service_token(request=_fake_request(), credentials=None)
-        assert exc.value.error_code == "INVALID_SERVICE_TOKEN"
-        assert exc.value.http_status == 401
+    """Per-service-only режим: `SERVICE_API_KEYS` обязателен, identity header
+    обязателен, lookup по identity + timing-safe compare ключа.
+    """
 
-    def test_wrong_token_returns_401(self, monkeypatch):
+    _KEYS = '{"auth_service":"expected-key-xyz"}'
+
+    def _setup(self, monkeypatch, keys: str = _KEYS):
         from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
-        monkeypatch.setenv("SERVICE_API_KEY", "expected-key-xyz")
+        monkeypatch.setenv("SERVICE_API_KEYS", keys)
+
+    def test_empty_keys_returns_503(self, monkeypatch):
+        from src.core.config import get_settings
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+        monkeypatch.delenv("SERVICE_API_KEYS", raising=False)
+        with pytest.raises(AppException) as exc:
+            auth_dep.require_service_token(
+                request=_fake_request(headers={"X-Service-Identity": "auth_service"}),
+                credentials=None,
+            )
+        assert exc.value.error_code == "SERVICE_TOKEN_NOT_CONFIGURED"
+        assert exc.value.http_status == 503
+
+    def test_missing_credentials_returns_401(self, monkeypatch):
+        self._setup(monkeypatch)
+        with pytest.raises(AppException) as exc:
+            auth_dep.require_service_token(
+                request=_fake_request(headers={"X-Service-Identity": "auth_service"}),
+                credentials=None,
+            )
+        assert exc.value.error_code == "INVALID_SERVICE_KEY"
+        assert exc.value.http_status == 401
+
+    def test_missing_identity_returns_401(self, monkeypatch):
+        self._setup(monkeypatch)
+
+        class _Creds:
+            credentials = "expected-key-xyz"
+
+        with pytest.raises(AppException) as exc:
+            auth_dep.require_service_token(
+                request=_fake_request(), credentials=_Creds()
+            )
+        assert exc.value.error_code == "MISSING_SERVICE_IDENTITY"
+
+    def test_wrong_token_returns_401(self, monkeypatch):
+        self._setup(monkeypatch)
 
         class _Creds:
             credentials = "wrong-key"
 
         with pytest.raises(AppException) as exc:
-            auth_dep.require_service_token(request=_fake_request(), credentials=_Creds())
-        assert exc.value.error_code == "INVALID_SERVICE_TOKEN"
+            auth_dep.require_service_token(
+                request=_fake_request(headers={"X-Service-Identity": "auth_service"}),
+                credentials=_Creds(),
+            )
+        assert exc.value.error_code == "INVALID_SERVICE_KEY"
 
-    def test_correct_token_passes_silently(self, monkeypatch):
-        from src.core.config import get_settings
-        get_settings.cache_clear()  # type: ignore[attr-defined]
-        monkeypatch.setenv("SERVICE_API_KEY", "shared-svc-key")
+    def test_unknown_identity_returns_401(self, monkeypatch):
+        self._setup(monkeypatch)
 
         class _Creds:
-            credentials = "shared-svc-key"
+            credentials = "expected-key-xyz"
 
-        # должно вернуть None без исключений
-        assert auth_dep.require_service_token(request=_fake_request(), credentials=_Creds()) is None
+        with pytest.raises(AppException) as exc:
+            auth_dep.require_service_token(
+                request=_fake_request(headers={"X-Service-Identity": "stranger"}),
+                credentials=_Creds(),
+            )
+        assert exc.value.error_code == "INVALID_SERVICE_KEY"
+
+    def test_correct_token_passes_silently(self, monkeypatch):
+        self._setup(monkeypatch)
+
+        class _Creds:
+            credentials = "expected-key-xyz"
+
+        req = _fake_request(headers={"X-Service-Identity": "auth_service"})
+        assert auth_dep.require_service_token(request=req, credentials=_Creds()) is None
+        assert req.state.service_identity == "auth_service"
 
     def test_timing_safe_compare_used(self):
         """`secrets.compare_digest` — устойчив к timing атакам.
@@ -146,7 +198,7 @@ class TestFetchIdentityNetworkErrors:
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.setattr(auth_dep, "_introspect_client", None)
         monkeypatch.setenv("AUTH_SERVICE_URL", "")
-        monkeypatch.setenv("SERVICE_API_KEY", "x")
+        monkeypatch.setenv("INTROSPECT_SERVICE_API_KEY", "introspect-x")
 
         class _Creds:
             credentials = "tok"
@@ -161,7 +213,7 @@ class TestFetchIdentityNetworkErrors:
         from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
-        monkeypatch.setenv("SERVICE_API_KEY", "x")
+        monkeypatch.setenv("INTROSPECT_SERVICE_API_KEY", "introspect-x")
         class _Creds:
             credentials = "tok"
 
@@ -175,7 +227,7 @@ class TestFetchIdentityNetworkErrors:
         from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
-        monkeypatch.setenv("SERVICE_API_KEY", "x")
+        monkeypatch.setenv("INTROSPECT_SERVICE_API_KEY", "introspect-x")
         class _Creds:
             credentials = "tok"
 
@@ -190,6 +242,7 @@ class TestFetchIdentityNetworkErrors:
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.setattr(auth_dep, "_introspect_client", None)
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
+        monkeypatch.setenv("INTROSPECT_SERVICE_API_KEY", "introspect-x")
 
         class _R:
             status_code = 500
@@ -207,6 +260,7 @@ class TestFetchIdentityNetworkErrors:
         from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
+        monkeypatch.setenv("INTROSPECT_SERVICE_API_KEY", "introspect-x")
         class _Creds:
             credentials = "tok"
 
@@ -219,6 +273,7 @@ class TestFetchIdentityNetworkErrors:
         from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
+        monkeypatch.setenv("INTROSPECT_SERVICE_API_KEY", "introspect-x")
         class _Creds:
             credentials = "tok"
 
@@ -231,6 +286,7 @@ class TestFetchIdentityNetworkErrors:
         from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
+        monkeypatch.setenv("INTROSPECT_SERVICE_API_KEY", "introspect-x")
         req = _FakeRequest()
         class _Creds:
             credentials = "tok"

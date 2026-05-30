@@ -1,8 +1,11 @@
 """Auth-зависимости loging_service.
 
 Три уровня:
-  `require_service_token` — shared `SERVICE_API_KEY` для service-to-service
-                           вызовов (только POST events / register events).
+  `require_service_token` — per-service `SERVICE_API_KEYS` map для
+                           service-to-service вызовов (POST events / register
+                           events). Identity определяется из map по
+                           предъявленному ключу + обязательному
+                           `X-Service-Identity` header'у.
   `require_admin`         — `loging_admin` JWT: полный доступ, включая правила.
   `require_reader`        — read-only: `loging_admin` / `loging_reader` /
                            `department_admin` / `account_admin`. `loging_reader`
@@ -50,6 +53,12 @@ _bearer = HTTPBearer(auto_error=False)
 
 # Роли, scoped к своему отделу.
 #
+# `KNOWN_SERVICE_IDENTITIES` снят: в per-service-only режиме allow-list — это
+# сам `SERVICE_API_KEYS` map. Identity вне map'а отвергается на этапе
+# `require_service_token`; отдельный hard-coded set дублировал бы операторскую
+# конфигурацию и приводил к расхождениям при добавлении нового внутреннего
+# сервиса.
+#
 # По platform-модели auth_service `loging_reader` создаётся БЕЗ
 # `department_id` (как `loging_admin` / `account_admin`) и описан как
 # «чтение аудит-событий по всем департаментам». Здесь же он попадает в
@@ -66,16 +75,6 @@ _bearer = HTTPBearer(auto_error=False)
 # `_dept_scope=None` в `require_reader`. Тест-контракт фиксирующий текущее
 # поведение: `tests/test_cov_focus.py::TestDeptScopedRolesQuirk`.
 _DEPT_SCOPED_ROLES = {"loging_reader", "department_admin"}
-
-# Сестринские сервисы, которые мы ожидаем увидеть в `X-Service-Identity`, когда
-# внутренний caller дёргает service-token эндпоинт. Зеркалит аналогичный set
-# в `auth_service/src/core/constants.py`. Cross-tenant гарды полагаются на это
-# как на канонический allow-list — добавляешь новый внутренний сервис, который
-# дёргает loging_service по service-token? Добавь его и сюда.
-KNOWN_SERVICE_IDENTITIES: frozenset[str] = frozenset(
-    {"auth_service", "server_service", "config_service", "server_worker"}
-)
-
 
 # Module-level pooled client. Инициализируется в `main.lifespan` (startup),
 # закрывается в shutdown. Остаётся `None` вне app-lifecycle (например, при
@@ -103,152 +102,89 @@ def require_service_token(
 ) -> None:
     """Service-to-service гард для ingest-эндпоинтов.
 
-    Два режима, выбираются автоматически по `SERVICE_API_KEYS`:
+    Per-service-only режим: `SERVICE_API_KEYS` JSON map'ит каждую
+    service-identity на свой bearer-secret. `X-Service-Identity` обязателен
+    и работает ключом lookup'а; сравнение `compare_digest`'ом — timing-safe.
+    Identity вне map'а отвергается (map — operator allow-list).
 
-    **Per-service mode** (`SERVICE_API_KEYS` непустой): JSON-env мапит
-    каждую service-identity на свой bearer-secret. `X-Service-Identity`
-    обязателен, работает ключом lookup'а; сравнение timing-safe.
-    Identity вне map'а отвергается, даже если она в
-    :data:`KNOWN_SERVICE_IDENTITIES` (map — operator allow-list).
-    Закрывает «компрометация shared key → forge any service».
+    Семантика:
 
-    **Shared mode** (`SERVICE_API_KEYS` пустой — legacy single-key):
-    fallback на `SERVICE_API_KEY` + soft/strict allow-list для
-    `X-Service-Identity`. Backward compatible.
-
-    Семантика header'а в per-identity mode:
-
-    * Нет → 401 `MISSING_SERVICE_IDENTITY` (без identity не выбрать ключ).
-    * Есть и в map'е → `compare_digest(provided, keys[identity])` → 401
-      `INVALID_SERVICE_TOKEN` на mismatch, иначе stash identity в
-      `request.state.service_identity`, чтобы эндпоинты могли сделать
-      path-vs-identity check (`endpoints/services.py`).
-    * Есть, но НЕТ в map'е → 401 `UNKNOWN_SERVICE_IDENTITY`
-      (намеренно — map это операционный allow-list).
-
-    Семантика shared mode: soft пропускает missing/unknown headers
-    (WARNING'ом), strict — 401.
+    * `SERVICE_API_KEYS` пуст → 503 `SERVICE_TOKEN_NOT_CONFIGURED`
+      (deployment-misconfig, никакой ingest не работает).
+    * Нет `Authorization` → 401 `INVALID_SERVICE_KEY`.
+    * Нет `X-Service-Identity` → 401 `MISSING_SERVICE_IDENTITY`.
+    * Identity нормализована и НЕ в map'е → 401 `INVALID_SERVICE_KEY`
+      (timing-safe сравнение против sample-key, чтобы не утечь список
+      сконфигурированных identity по разнице latency).
+    * Identity в map'е, но `compare_digest` не сошёлся → 401
+      `INVALID_SERVICE_KEY`.
+    * Match → identity stash'ится в `request.state.service_identity`
+      (downstream rate-limit key и path-vs-identity check).
     """
     settings = get_settings()
 
     # Локальный импорт — иначе circular dependency на module-import.
     from src.utils.normalization import normalize_service_name
 
-    # ── Per-service-key path ────────────────────────────────────────────
-    if settings.service_api_keys:
-        if credentials is None:
-            raise AppException(
-                http_status=401,
-                error_code="INVALID_SERVICE_TOKEN",
-                message="Valid service API key required",
-            )
+    if not settings.service_api_keys:
+        # Конфиг-промах: ingest невозможен ни от какого сервиса. Production
+        # guard уже отбивает это на старте; здесь — для local/dev, где
+        # оператор может прокинуть пустой map'ы случайно.
+        raise AppException(
+            http_status=503,
+            error_code="SERVICE_TOKEN_NOT_CONFIGURED",
+            message="SERVICE_API_KEYS is empty — service-to-service ingest is disabled",
+        )
 
-        raw_identity = request.headers.get("X-Service-Identity")
-        if raw_identity is None:
-            raise AppException(
-                http_status=401,
-                error_code="MISSING_SERVICE_IDENTITY",
-                message=(
-                    "X-Service-Identity header is required when per-service "
-                    "API keys are configured"
-                ),
-            )
-
-        identity = normalize_service_name(raw_identity)
-        if not identity:
-            identity = "<empty>"
-
-        expected_key = settings.service_api_keys.get(identity)
-        if expected_key is None:
-            # Timing-oracle защита: known/unknown identity должны давать
-            # одинаковую latency, иначе атакующий probit'ит список
-            # сконфигурированных identity по разнице времени ответа. Прогоняем
-            # compare_digest против фиктивного секрета той же длины, что и
-            # реальные ключи (берём первый из map для длины — все ключи
-            # должны быть сопоставимы; иначе фолбэк на 32 байта).
-            sample_key = next(iter(settings.service_api_keys.values()), "x" * 32)
-            secrets.compare_digest(credentials.credentials, sample_key)
-            _logger.warning(
-                "loging: X-Service-Identity %r is not present in "
-                "SERVICE_API_KEYS map (path=%s) — rejecting",
-                raw_identity,
-                request.url.path,
-            )
-            raise AppException(
-                http_status=401,
-                error_code="UNKNOWN_SERVICE_IDENTITY",
-                message=(
-                    "X-Service-Identity does not match any configured "
-                    "per-service API key"
-                ),
-            )
-
-        if not secrets.compare_digest(credentials.credentials, expected_key):
-            raise AppException(
-                http_status=401,
-                error_code="INVALID_SERVICE_TOKEN",
-                message="Valid service API key required",
-            )
-
-        request.state.service_identity = identity
-        return
-
-    # ── Legacy shared-key path (backward-compat) ─────────────────────────
-    if credentials is None or not secrets.compare_digest(
-        credentials.credentials, settings.service_api_key
-    ):
+    if credentials is None:
         raise AppException(
             http_status=401,
-            error_code="INVALID_SERVICE_TOKEN",
+            error_code="INVALID_SERVICE_KEY",
             message="Valid service API key required",
         )
 
-    # ── X-Service-Identity валидация (mTLS-partial) ─────────────────────
     raw_identity = request.headers.get("X-Service-Identity")
     if raw_identity is None:
-        if settings.strict_service_identity:
-            raise AppException(
-                http_status=401,
-                error_code="MISSING_SERVICE_IDENTITY",
-                message=(
-                    "X-Service-Identity header is required "
-                    "(STRICT_SERVICE_IDENTITY=true)"
-                ),
-            )
-        # Soft mode — backward-compat для caller'ов, которые не знают про header.
-        return
+        raise AppException(
+            http_status=401,
+            error_code="MISSING_SERVICE_IDENTITY",
+            message="X-Service-Identity header is required",
+        )
 
-    # Нормализуем (NFKC + invisibles strip + confusables fold + lower) до и
-    # allow-list проверки, и stash'а, чтобы downstream path-vs-identity
-    # сравнение в эндпоинте могло делать plain `==` без повторной
-    # нормализации. Зеркалит `endpoints/services.py`, который тоже
-    # `normalize_service_name`'ит path-параметр.
     identity = normalize_service_name(raw_identity)
     if not identity:
         identity = "<empty>"
 
-    if identity in KNOWN_SERVICE_IDENTITIES:
-        request.state.service_identity = identity
-        return
-
-    _logger.warning(
-        "loging: unknown X-Service-Identity header value=%r path=%s; "
-        "valid SERVICE_API_KEY present, request %s",
-        raw_identity,
-        request.url.path,
-        "REJECTED (STRICT_SERVICE_IDENTITY=true)"
-        if settings.strict_service_identity
-        else "allowed (soft mode)",
-    )
-    if settings.strict_service_identity:
+    expected_key = settings.service_api_keys.get(identity)
+    if expected_key is None:
+        # Timing-oracle защита: known/unknown identity должны давать
+        # одинаковую latency, иначе атакующий probit'ит список
+        # сконфигурированных identity по разнице времени ответа. Прогоняем
+        # compare_digest против фиктивного секрета той же длины, что и
+        # реальные ключи (берём первый из map для длины — все ключи
+        # должны быть сопоставимы; иначе фолбэк на 32 байта).
+        sample_key = next(iter(settings.service_api_keys.values()), "x" * 32)
+        secrets.compare_digest(credentials.credentials, sample_key)
+        _logger.warning(
+            "loging: X-Service-Identity %r is not present in "
+            "SERVICE_API_KEYS map (path=%s) — rejecting",
+            raw_identity,
+            request.url.path,
+        )
         raise AppException(
             http_status=401,
-            error_code="INVALID_SERVICE_IDENTITY",
-            message=(
-                "X-Service-Identity header does not match any known "
-                "service in the allow-list"
-            ),
+            error_code="INVALID_SERVICE_KEY",
+            message="Invalid service API key",
         )
+
+    if not secrets.compare_digest(credentials.credentials, expected_key):
+        raise AppException(
+            http_status=401,
+            error_code="INVALID_SERVICE_KEY",
+            message="Invalid service API key",
+        )
+
+    request.state.service_identity = identity
 
 
 async def _fetch_identity(
@@ -275,25 +211,22 @@ async def _fetch_identity(
         raise AppException(http_status=503, error_code="AUTH_SERVICE_NOT_CONFIGURED",
                            message="AUTH_SERVICE_URL is not configured")
 
-    # auth_service /introspect защищён `require_service_token` — нам надо
-    # послать shared `SERVICE_API_KEY` в Authorization header. Bearer
-    # пользователя (`credentials.credentials`) идёт в JSON body для
-    # introspect'а.
+    # auth_service /introspect защищён `require_service_token` — шлём наш
+    # outbound introspect-ключ в Authorization header. Bearer пользователя
+    # (`credentials.credentials`) идёт в JSON body для introspect'а.
     #
-    # `X-Service-Identity` — self-identification caller'а. Introspect-guard
-    # на auth_service сейчас проверяет только `SERVICE_API_KEY` (один
-    # shared secret на все сервисы), так что этот header сегодня
-    # информационный. Он нужен как wire-format hook для будущего
-    # per-caller mTLS / per-service-key (auth_service сможет требовать,
-    # чтобы client-cert / API-key совпадал с заявленной identity). См.
-    # TODO «single SERVICE_API_KEY → per-service key».
+    # `X-Service-Identity: loging_service` self-identification caller'а:
+    # auth_service сверит его со своим `SERVICE_API_KEYS["loging_service"]`
+    # и `compare_digest` с предъявленным ключом.
     payload = {"token": credentials.credentials}
-    # Outbound introspect-ключ. Если задан отдельный `INTROSPECT_SERVICE_API_KEY` —
-    # используем его (раздельные ключи для ingest- и introspect-каналов); иначе
-    # фолбэк на shared `SERVICE_API_KEY` (legacy single-key стенд).
-    introspect_key = settings.introspect_service_api_key or settings.service_api_key
+    if not settings.introspect_service_api_key:
+        raise AppException(
+            http_status=503,
+            error_code="INTROSPECT_KEY_NOT_CONFIGURED",
+            message="INTROSPECT_SERVICE_API_KEY is not set",
+        )
     headers = {
-        "Authorization": f"Bearer {introspect_key}",
+        "Authorization": f"Bearer {settings.introspect_service_api_key}",
         "X-Service-Identity": "loging_service",
     }
 

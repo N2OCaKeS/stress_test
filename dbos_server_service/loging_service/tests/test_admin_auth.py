@@ -9,7 +9,7 @@ import json as _json
 import pytest
 import httpx
 
-from tests.conftest import TEST_API_KEY, make_event
+from tests.conftest import make_event
 
 EVENTS_URL = "/api/logging/v1/events"
 RULES_URL = "/api/logging/v1/rules"
@@ -79,8 +79,10 @@ class TestRequireAdmin:
 
     def test_introspect_call_sends_service_api_key_header(self, client, mock_introspect):
         """auth_service /introspect is guarded by require_service_token —
-        loging_service must send SERVICE_API_KEY in Authorization header,
-        while user's bearer goes into the JSON body."""
+        loging_service must send INTROSPECT_SERVICE_API_KEY in the outbound
+        Authorization header, while user's bearer goes into the JSON body.
+        Identity заявляется как `loging_service`.
+        """
         with mock_introspect(json_body={
             "active": True, "subject_type": "user", "sub": "usr_1",
             "username": "admin", "platform_role": "loging_admin",
@@ -90,8 +92,10 @@ class TestRequireAdmin:
 
         assert r.status_code == 200
         assert len(calls) == 1
-        # Service-to-service auth header — exactly the configured SERVICE_API_KEY
-        assert calls[0].headers["Authorization"] == f"Bearer {TEST_API_KEY}"
+        # Outbound introspect auth — отдельный INTROSPECT_SERVICE_API_KEY,
+        # отличный от ingest-ключей (key-separation).
+        assert calls[0].headers["Authorization"] == "Bearer test-introspect-key"
+        assert calls[0].headers["X-Service-Identity"] == "loging_service"
         # User's token is forwarded only via JSON body, NOT the header
         assert _json.loads(calls[0].content.decode()) == {"token": "user-jwt-xyz"}
 

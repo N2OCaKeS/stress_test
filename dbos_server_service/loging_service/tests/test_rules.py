@@ -294,7 +294,10 @@ class TestAdminAudit:
             "_dept_scope": "dep_finance",
             "_loging_service_roles": [],
         }
-        monkeypatch.setenv("SERVICE_API_KEY", "test-service-api-key")
+        monkeypatch.setenv(
+            "SERVICE_API_KEYS",
+            '{"auth_service":"test-service-api-key"}',
+        )
         from src.core.config import get_settings
         get_settings.cache_clear()
 

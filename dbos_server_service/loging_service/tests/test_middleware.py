@@ -594,8 +594,15 @@ class TestDocsHiddenInProduction:
     def _build_app(monkeypatch, app_env: str):
         monkeypatch.setenv("APP_ENV", app_env)
         if app_env == "production":
-            # production-guard требует реальные секреты + AUTH_SERVICE_URL.
-            monkeypatch.setenv("SERVICE_API_KEY", "real-secret-xyz-1234567890")
+            # production-guard требует SERVICE_API_KEYS map, отдельный
+            # INTROSPECT_SERVICE_API_KEY и https AUTH_SERVICE_URL.
+            monkeypatch.setenv(
+                "SERVICE_API_KEYS",
+                '{"auth_service":"real-secret-xyz-1234567890"}',
+            )
+            monkeypatch.setenv(
+                "INTROSPECT_SERVICE_API_KEY", "introspect-secret-xyz-9876543210"
+            )
             monkeypatch.setenv("APP_DEBUG", "false")
             monkeypatch.setenv("AUTH_SERVICE_URL", "https://auth.example.com")
         from src.core.config import get_settings

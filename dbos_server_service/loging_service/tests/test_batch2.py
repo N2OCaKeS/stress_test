@@ -346,14 +346,14 @@ class TestIngestIdempotency:
 
 
 class TestPerServiceApiKeys:
-    """SERVICE_API_KEYS map: per-identity bearer secrets.
+    """SERVICE_API_KEYS map: per-identity bearer secrets — единственный режим.
 
-    When non-empty:
-      * X-Service-Identity is mandatory and the lookup key.
-      * Identity not in map → 401 UNKNOWN_SERVICE_IDENTITY.
-      * Key mismatch → 401 INVALID_SERVICE_TOKEN.
-
-    When empty (default): falls back to single SERVICE_API_KEY (legacy).
+      * `X-Service-Identity` обязателен и работает ключом lookup'а.
+      * Identity не в map'е → 401 INVALID_SERVICE_KEY.
+      * Key mismatch → 401 INVALID_SERVICE_KEY.
+      * Missing identity header → 401 MISSING_SERVICE_IDENTITY.
+      * Пустой `SERVICE_API_KEYS` → 503 SERVICE_TOKEN_NOT_CONFIGURED
+        (legacy single-key fallback убран).
     """
 
     def test_per_service_key_matches(self, monkeypatch, db):
@@ -438,10 +438,10 @@ class TestPerServiceApiKeys:
             get_settings.cache_clear()
 
         assert r.status_code == 401
-        assert r.json()["error_code"] == "INVALID_SERVICE_TOKEN"
+        assert r.json()["error_code"] == "INVALID_SERVICE_KEY"
 
     def test_unknown_identity_rejected(self, monkeypatch, db):
-        """Identity not in SERVICE_API_KEYS → 401 UNKNOWN_SERVICE_IDENTITY."""
+        """Identity not in SERVICE_API_KEYS → 401 INVALID_SERVICE_KEY."""
         from fastapi.testclient import TestClient
         from src.core.config import get_settings
         from src.dependencies.db import get_db
@@ -481,7 +481,7 @@ class TestPerServiceApiKeys:
             get_settings.cache_clear()
 
         assert r.status_code == 401
-        assert r.json()["error_code"] == "UNKNOWN_SERVICE_IDENTITY"
+        assert r.json()["error_code"] == "INVALID_SERVICE_KEY"
 
     def test_missing_identity_with_per_service_keys_rejected(self, monkeypatch, db):
         """In per-service mode, omitting X-Service-Identity → 401."""
@@ -523,12 +523,22 @@ class TestPerServiceApiKeys:
         assert r.status_code == 401
         assert r.json()["error_code"] == "MISSING_SERVICE_IDENTITY"
 
-    def test_legacy_shared_key_fallback(self, client, auth_headers):
-        """SERVICE_API_KEYS unset → existing SERVICE_API_KEY fallback works."""
-        # `client` fixture sets SERVICE_API_KEY=test-service-api-key,
-        # `auth_headers` carries the matching Bearer. No
-        # X-Service-Identity required (soft mode).
+    def test_legacy_shared_key_payload_rejected(self, client):
+        """Legacy single-key режим выкинут: одиночный `Authorization: Bearer`
+        без `X-Service-Identity` header'а → 401 `MISSING_SERVICE_IDENTITY`.
+
+        Регрессия-гард: восстановление shared-key fallback'а (`SERVICE_API_KEY`)
+        не должно тихо проехать незамеченным.
+        """
+        # `client` фикстура заранее выставила `SERVICE_API_KEYS` map, но не
+        # `SERVICE_API_KEY` — даже валидный bearer без identity header'а
+        # должен отбиваться.
+        from tests.conftest import TEST_API_KEY
+
         r = client.post(
-            "/api/logging/v1/events", json=make_event(), headers=auth_headers
+            "/api/logging/v1/events",
+            json=make_event(),
+            headers={"Authorization": f"Bearer {TEST_API_KEY}"},
         )
-        assert r.status_code == 201
+        assert r.status_code == 401
+        assert r.json()["error_code"] == "MISSING_SERVICE_IDENTITY"

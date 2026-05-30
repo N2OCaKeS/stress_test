@@ -37,7 +37,7 @@ docker compose -f loging_service/tests/docker-compose.test.yml run --rm test-run
 | `test_retention.py` | API ретеншена `GET/PUT/DELETE /retention`: границы `30 ≤ retain_days ≤ 3650`, идемпотентность DELETE, admin-guard, per-severity / per-service колонки (`severity`, `service`) с CHECK-валидацией каталога severity и `RESERVED_SERVICE_NAMES`. |
 | `test_retention_apply.py` | Сама функция `apply_active`: 0 удалений без политики, граница `cutoff`, rowcount возврата, неактивная политика. |
 | `test_retention_protection.py` | Инвариант безопасности: события `service='loging_service'` не удаляются ретеншном ни при каких retain_days. |
-| `test_admin_auth.py` | `require_admin` поверх admin-эндпоинтов, разделение SERVICE_API_KEY vs JWT, `POST /token` proxy в auth_service. |
+| `test_admin_auth.py` | `require_admin` поверх admin-эндпоинтов, разделение per-service ingest map vs JWT, `POST /token` proxy в auth_service, проверка `Authorization: Bearer <INTROSPECT_SERVICE_API_KEY>` на outbound introspect-вызовах. |
 | `test_reader_auth.py` | `require_reader`: `account_admin` без скоупа, dept-scoping для `loging_reader`/`department_admin`, сервисные роли в `loging_service`. |
 | `test_admin_audit_severity.py` | `record_admin_action`: автоназначение severity из `_DEFAULT_SEVERITY`, обход SUPPRESS-правил, явный severity не перезаписывается. |
 | `test_middleware.py` | Self-audit middleware в `main.py`: `_action_for_path`, `_http_status_to_category`, форма AppException-ответов, X-Request-ID, `_emit_audit` обходит правила. |
@@ -48,12 +48,12 @@ docker compose -f loging_service/tests/docker-compose.test.yml run --rm test-run
 | `test_redaction.py` | Defense-in-depth маскировка `details`: по имени ключа (password/token/secret/hash/credential) и по форме значения (JWT, argon2/bcrypt), вложенность, truncate длинных строк. |
 | `test_normalization.py` | `utils.normalization.normalize_service_name`: NFKC-фолд, удаление невидимых символов, confusable-маппинг, защита от unicode-байпасса reserved-имени `loging_service`. |
 | `test_timezones.py` | UTC в БД vs MSK на отображении: нормализация `timestamp` с offset, `received_at` всегда UTC, naive-input. |
-| `test_config_validation.py` | Production-guard `Settings`: запрет дефолтного `SERVICE_API_KEY`, HTTPS для `AUTH_SERVICE_URL` в проде, запрет `INTROSPECT_TLS_VERIFY=false` на не-loopback, запрет пустого `INTROSPECT_SERVICE_API_KEY` при включённом per-service mode (`SERVICE_API_KEYS` непустой) — silent shared-key fallback больше невозможен. |
+| `test_config_validation.py` | Production-guard `Settings`: обязательный непустой `SERVICE_API_KEYS` (legacy shared `SERVICE_API_KEY` удалён), обязательный `INTROSPECT_SERVICE_API_KEY` отдельным значением от ingest-ключей, HTTPS для `AUTH_SERVICE_URL` в проде, запрет `INTROSPECT_TLS_VERIFY=false` на не-loopback. |
 | `test_core_exceptions.py` | Unit на `core/exceptions.py`: HTTP-статусы и form ошибок, `_fetch_identity` на сетевые сбои (timeout/connection refused/5xx). |
 | `test_ids.py` | Префиксы ID: `log_<hex>`, `rl_<hex>`, `se_<hex>`, `rp_<hex>`, уникальность на 1000 итераций, длина ≤ 48. |
 | `test_concurrency.py` | Гонки upsert `service_events`: последовательный и параллельный upsert через `INSERT ... ON CONFLICT (service, action) DO UPDATE` — оба завершаются без `IntegrityError`. |
 | `test_introspect_pool.py` | Pooled `AsyncClient` для introspect — закрывает slowloris (раньше каждый запрос открывал свежий TCP+TLS handshake к auth_service). |
-| `test_batch2.py` | Сводный батч: проброс `actor_type` из introspect, idempotency-key на ingest (`(service, idempotency_key)` UNIQUE), per-service `SERVICE_API_KEYS`. |
+| `test_batch2.py` | Сводный батч: проброс `actor_type` из introspect, idempotency-key на ingest (`(service, idempotency_key)` UNIQUE), per-service `SERVICE_API_KEYS` accept/reject, регрессионный гард на отсутствие legacy shared-key fallback'а. |
 | `test_hardening.py` | Hardening-батч: whitelist `default_severity` + `RuleStatus.warning` как четвёртый литерал, charset-валидаторы service/action/username/target_id/target_type против CRLF-инъекций, retention advisory-lock и sleep-until-MSK-00:00, RESERVED_SERVICE_NAMES в `core/constants.py`. |
 | `test_audit_events_md_sync.py` | Doc-sync guard: парсит `AUDIT_EVENTS.md` (HTTP middleware / retention / admin actions / severity-override таблицы) и для каждой `(action, status, severity)` строки сверяет с `_DEFAULT_SEVERITY` в `services/rule_service.py` — ловит drift между кодом и markdown. |
 | `test_cov_focus.py` | Точечное покрытие гэпов: `_RuleCache` TTL под NTP-step (monkeypatch `time.monotonic` с прыжком), `event_service.apply_rules` на пересекающихся политиках (Cartesian OVERRIDE + SUPPRESS), retention `apply_active` chunked DELETE при rollback + filter-set sweep, `POST /events` `_ACTION_PATTERN` с цифрами и unicode-confusables, `core/limiter` `_rate_limit_key` exempt-path, dept-scoped roles quirk (`loging_reader` без `department_id` → 403 `NO_DEPARTMENT`). |
@@ -68,9 +68,9 @@ docker compose -f loging_service/tests/docker-compose.test.yml run --rm test-run
 - **Тестовая БД** — `logging_db_test` в контейнере `loging-tests-test-postgres-1`. Схема создаётся раз на сессию через `Base.metadata.create_all`, между тестами `TRUNCATE audit_events, audit_rules, service_events RESTART IDENTITY CASCADE`.
 - **`TestClient`** — синхронный, через `fastapi.testclient.TestClient`. Зависимость `get_db` подменяется на тестовую сессию.
 - **Две фикстуры клиента**:
-  - `client` — без аутентификации (для проверки 401/403 путей и для ingest c `SERVICE_API_KEY` через `auth_headers`).
+  - `client` — без аутентификации (для проверки 401/403 путей и для ingest через `auth_headers`). Выставляет `SERVICE_API_KEYS` map для всех 4 known identity на единый `TEST_API_KEY` и отдельный `INTROSPECT_SERVICE_API_KEY`.
   - `admin_client` — переопределяет `require_admin` И `require_reader` на `ADMIN_IDENTITY` (loging_admin), используется для всех админ-эндпоинтов.
-- **`auth_headers`** — `{"Authorization": "Bearer test-service-api-key"}` для POST /events.
+- **`auth_headers`** — `{"Authorization": "Bearer test-service-api-key", "X-Service-Identity": "auth_service"}` для POST /events. Тесты, ходящие под другой identity, переписывают header руками.
 - **Имитация identity через httpx mock** — для тестов с не-admin ролями (`patch("src.dependencies.auth.httpx.get")` → возвращает кастомный identity-payload).
 - **Payload-factories** — `make_event(**overrides)`, `make_rule(**overrides)`, `make_event_def(**overrides)` с разумными дефолтами.
 

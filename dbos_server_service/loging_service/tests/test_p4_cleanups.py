@@ -86,7 +86,6 @@ class TestDbPoolEnv:
 class TestIntrospectConnectTimeoutEnv:
     def test_lifespan_uses_env_connect_timeout(self, monkeypatch):
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth-test:8000")
-        monkeypatch.setenv("SERVICE_API_KEY", "test-key")
         monkeypatch.setenv("INTROSPECT_CONNECT_TIMEOUT_SECONDS", "0.5")
         monkeypatch.setenv("INTROSPECT_TIMEOUT_SECONDS", "4.5")
         from src.core.config import get_settings
@@ -196,7 +195,6 @@ class TestSelfAuditCounterLock:
 class TestTokenProxyPool:
     def test_lifespan_initialises_token_proxy_client(self, monkeypatch):
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth-test:8000")
-        monkeypatch.setenv("SERVICE_API_KEY", "test-key")
         from src.core.config import get_settings
         get_settings.cache_clear()
         try:
@@ -221,7 +219,6 @@ class TestTokenProxyPool:
 
     def test_lifespan_skips_token_pool_when_auth_url_unset(self, monkeypatch):
         monkeypatch.delenv("AUTH_SERVICE_URL", raising=False)
-        monkeypatch.setenv("SERVICE_API_KEY", "test-key")
         from src.core.config import get_settings
         get_settings.cache_clear()
         try:

@@ -11,7 +11,7 @@ Severity вычисляется автоматически в `src/services/rule
 
 ## Схема EventCreate (что сервис принимает)
 
-`POST /api/logging/v1/events`. Body — JSON, заголовки `Authorization: Bearer <SERVICE_API_KEY>` + `X-Service-Identity: <service>`.
+`POST /api/logging/v1/events`. Body — JSON, заголовки `Authorization: Bearer <SERVICE_API_KEYS[identity]>` + `X-Service-Identity: <identity>` (per-service ingest map; legacy shared `SERVICE_API_KEY` удалён).
 
 | Поле | Тип | Обязательное | Описание |
 |---|---|---|---|
@@ -29,7 +29,7 @@ Severity вычисляется автоматически в `src/services/rule
 | `severity` | `Literal["TRACE","DEBUG","INFO","WARNING","ERROR","CRITICAL"] \| None` | нет | Если `None` — берётся из `_DEFAULT_SEVERITY`. |
 | `request_id` | `str` (≤ 64, `^[A-Za-z0-9_\-]+$`) | нет | Корреляция с HTTP-запросом. |
 | `idempotency_key` | `str` (≤ 128) | нет | Outbox-retry safe: повторный POST с тем же `(service, idempotency_key)` вернёт 201 с прежним `event_id`. |
-| `details` | `dict` (JSONB) | нет (default `{}`) | Структурированные детали. Размер ≤ 64 KB, глубина ≤ 10. Reserved-keys (`actor_id`, `actor_type`) запрещены на любой глубине — чтобы держатель `SERVICE_API_KEY` не shadow'ил identity actor'а через `details`. NUL-byte в строках банится. Прогоняется через redaction-слой перед записью. |
+| `details` | `dict` (JSONB) | нет (default `{}`) | Структурированные детали. Размер ≤ 64 KB, глубина ≤ 10. Reserved-keys (`actor_id`, `actor_type`) запрещены на любой глубине — чтобы держатель ingest-ключа не shadow'ил identity actor'а через `details`. NUL-byte в строках банится. Прогоняется через redaction-слой перед записью. |
 
 Ответ ingest'а: `201 {id: "log_<hex>", received_at: <UTC datetime>}` или `204 No Content` если SUPPRESS-правило отбросило событие.
 

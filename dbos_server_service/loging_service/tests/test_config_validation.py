@@ -1,13 +1,21 @@
 """Тесты production-guard для Settings (loging_service).
 
-Закрывает дыру: дефолтный SERVICE_API_KEY='change-me-service-key' при
-APP_ENV=production раньше принимался → любой пользователь сети мог писать
-аудит-события от имени любого сервиса (включая loging_service с retention-
-инвариантом).
+Legacy single-key режим (`SERVICE_API_KEY`) удалён: единственный канал
+service-to-service ingest — `SERVICE_API_KEYS` JSON map. Production-guard'ы
+обязывают: непустой map, отдельный `INTROSPECT_SERVICE_API_KEY`, https
+для `AUTH_SERVICE_URL` (loopback исключение), `verify=true` на https-remote,
+key-separation между introspect и любыми ingest-ключами.
 """
 
 import pytest
 from pydantic import ValidationError
+
+
+_PER_SERVICE_KEYS = (
+    '{"auth_service":"k-auth-1234567890","server_service":"k-srv-1234567890"}'
+)
+_INTROSPECT_KEY = "introspect-only-key-9876"
+_AUTH_URL = "https://auth.example.com"
 
 
 def _load_settings_fresh(monkeypatch, env: dict[str, str]):
@@ -15,11 +23,9 @@ def _load_settings_fresh(monkeypatch, env: dict[str, str]):
 
     Возвращает экземпляр Settings либо пробрасывает ValidationError.
     """
-    # Подавляем .env-файл, чтобы не было локального шума.
     monkeypatch.setenv("APP_ENV", env.get("APP_ENV", "local"))
     for k in (
-        "SERVICE_API_KEY",
-        "SERVICE_APP_KEYS",
+        "SERVICE_API_KEY",  # удалён, но чистим — на случай шума из родительского env
         "SERVICE_API_KEYS",
         "INTROSPECT_SERVICE_API_KEY",
         "APP_DEBUG",
@@ -33,96 +39,55 @@ def _load_settings_fresh(monkeypatch, env: dict[str, str]):
 
     from src.core import config as cfg
     cfg.get_settings.cache_clear()
-    # Игнорируем .env, передавая _env_file=None, чтобы тесты были
-    # детерминированными независимо от рабочего каталога.
     return cfg.Settings(_env_file=None)
 
 
-class TestProductionGuard:
-    def test_default_service_api_key_rejected_in_production(self, monkeypatch):
-        with pytest.raises(ValidationError) as excinfo:
-            _load_settings_fresh(
-                monkeypatch,
-                {
-                    "APP_ENV": "production",
-                    "SERVICE_API_KEY": "change-me-service-key",
-                    "APP_DEBUG": "false",
-                },
-            )
-        assert "SERVICE_API_KEY" in str(excinfo.value)
+def _prod_env(**overrides) -> dict[str, str]:
+    """Базовый валидный production-env; тесты переопределяют отдельные ключи."""
+    base = {
+        "APP_ENV": "production",
+        "APP_DEBUG": "false",
+        "SERVICE_API_KEYS": _PER_SERVICE_KEYS,
+        "INTROSPECT_SERVICE_API_KEY": _INTROSPECT_KEY,
+        "AUTH_SERVICE_URL": _AUTH_URL,
+    }
+    base.update(overrides)
+    return base
 
-    def test_empty_service_api_key_rejected_in_production(self, monkeypatch):
+
+class TestProductionGuardServiceApiKeys:
+    """В production `SERVICE_API_KEYS` обязан быть непустым JSON-объектом."""
+
+    def test_empty_service_api_keys_rejected_in_production(self, monkeypatch):
         with pytest.raises(ValidationError) as excinfo:
-            _load_settings_fresh(
-                monkeypatch,
-                {
-                    "APP_ENV": "production",
-                    "SERVICE_API_KEY": "",
-                    "APP_DEBUG": "false",
-                },
-            )
-        assert "SERVICE_API_KEY" in str(excinfo.value)
+            _load_settings_fresh(monkeypatch, _prod_env(SERVICE_API_KEYS=""))
+        assert "SERVICE_API_KEYS" in str(excinfo.value)
+
+    def test_unset_service_api_keys_rejected_in_production(self, monkeypatch):
+        env = _prod_env()
+        del env["SERVICE_API_KEYS"]
+        with pytest.raises(ValidationError) as excinfo:
+            _load_settings_fresh(monkeypatch, env)
+        assert "SERVICE_API_KEYS" in str(excinfo.value)
 
     def test_app_debug_true_rejected_in_production(self, monkeypatch):
         with pytest.raises(ValidationError) as excinfo:
-            _load_settings_fresh(
-                monkeypatch,
-                {
-                    "APP_ENV": "production",
-                    "SERVICE_API_KEY": "real-secret-xyz-1234567890",
-                    "APP_DEBUG": "true",
-                },
-            )
+            _load_settings_fresh(monkeypatch, _prod_env(APP_DEBUG="true"))
         assert "APP_DEBUG" in str(excinfo.value)
 
-    def test_production_with_real_key_accepted(self, monkeypatch):
-        s = _load_settings_fresh(
-            monkeypatch,
-            {
-                "APP_ENV": "production",
-                "SERVICE_API_KEY": "real-secret-xyz-1234567890",
-                "APP_DEBUG": "false",
-                # AUTH_SERVICE_URL обязателен в проде (см. TestAuthServiceUrlRequired).
-                "AUTH_SERVICE_URL": "https://auth.example.com",
-            },
-        )
+    def test_production_with_per_service_keys_accepted(self, monkeypatch):
+        s = _load_settings_fresh(monkeypatch, _prod_env())
         assert s.app_env == "production"
-        assert s.service_api_key == "real-secret-xyz-1234567890"
-        assert s.app_debug is False
+        assert s.service_api_keys["auth_service"] == "k-auth-1234567890"
 
 
 class TestNonProductionEnvs:
-    """Вне production дефолтные значения остаются допустимыми (dev / test / local)."""
+    """Вне production пустой map допустим (ingest всё равно вернёт 503)."""
 
-    def test_local_with_default_key_ok(self, monkeypatch):
-        s = _load_settings_fresh(
-            monkeypatch,
-            {
-                "APP_ENV": "local",
-                "SERVICE_API_KEY": "change-me-service-key",
-            },
-        )
-        assert s.service_api_key == "change-me-service-key"
-
-    def test_development_with_default_key_ok(self, monkeypatch):
-        s = _load_settings_fresh(
-            monkeypatch,
-            {
-                "APP_ENV": "development",
-                "SERVICE_API_KEY": "change-me-service-key",
-            },
-        )
-        assert s.service_api_key == "change-me-service-key"
-
-    def test_test_env_with_default_key_ok(self, monkeypatch):
-        s = _load_settings_fresh(
-            monkeypatch,
-            {
-                "APP_ENV": "test",
-                "SERVICE_API_KEY": "change-me-service-key",
-            },
-        )
-        assert s.service_api_key == "change-me-service-key"
+    @pytest.mark.parametrize("app_env", ["local", "development", "test"])
+    def test_empty_map_ok_outside_production(self, monkeypatch, app_env):
+        s = _load_settings_fresh(monkeypatch, {"APP_ENV": app_env})
+        assert s.service_api_keys == {}
 
 
 class TestAuthServiceUrlHttpsGuard:
@@ -132,69 +97,39 @@ class TestAuthServiceUrlHttpsGuard:
     Исключение: localhost / 127.0.0.1 / ::1 (devcontainer-сценарии, TLS-on-host).
     """
 
-    _PROD_KEY = "real-secret-xyz-1234567890"
-
     def test_production_http_remote_rejected(self, monkeypatch):
         with pytest.raises(ValidationError) as excinfo:
             _load_settings_fresh(
-                monkeypatch,
-                {
-                    "APP_ENV": "production",
-                    "SERVICE_API_KEY": self._PROD_KEY,
-                    "APP_DEBUG": "false",
-                    "AUTH_SERVICE_URL": "http://auth:8000",
-                },
+                monkeypatch, _prod_env(AUTH_SERVICE_URL="http://auth:8000")
             )
         assert "AUTH_SERVICE_URL" in str(excinfo.value)
         assert "https" in str(excinfo.value)
 
-    def test_production_http_localhost_accepted(self, monkeypatch):
-        s = _load_settings_fresh(
-            monkeypatch,
-            {
-                "APP_ENV": "production",
-                "SERVICE_API_KEY": self._PROD_KEY,
-                "APP_DEBUG": "false",
-                "AUTH_SERVICE_URL": "http://localhost:8000",
-            },
-        )
-        assert s.auth_service_url == "http://localhost:8000"
-
-    def test_production_http_127_0_0_1_accepted(self, monkeypatch):
-        s = _load_settings_fresh(
-            monkeypatch,
-            {
-                "APP_ENV": "production",
-                "SERVICE_API_KEY": self._PROD_KEY,
-                "APP_DEBUG": "false",
-                "AUTH_SERVICE_URL": "http://127.0.0.1:8000",
-            },
-        )
-        assert s.auth_service_url == "http://127.0.0.1:8000"
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+        ],
+    )
+    def test_production_http_loopback_accepted(self, monkeypatch, url):
+        s = _load_settings_fresh(monkeypatch, _prod_env(AUTH_SERVICE_URL=url))
+        assert s.auth_service_url == url
 
     def test_production_https_accepted(self, monkeypatch):
         s = _load_settings_fresh(
-            monkeypatch,
-            {
-                "APP_ENV": "production",
-                "SERVICE_API_KEY": self._PROD_KEY,
-                "APP_DEBUG": "false",
-                "AUTH_SERVICE_URL": "https://auth.example.com",
-            },
+            monkeypatch, _prod_env(AUTH_SERVICE_URL="https://auth.example.com")
         )
         assert s.auth_service_url == "https://auth.example.com"
 
-    def test_non_prod_http_remote_accepted(self, monkeypatch):
+    @pytest.mark.parametrize("app_env", ["local", "development", "test"])
+    def test_non_prod_http_remote_accepted(self, monkeypatch, app_env):
         """В dev/test/local plain http:// разрешён (docker-compose сценарии)."""
-        for env in ("local", "development", "test"):
-            s = _load_settings_fresh(
-                monkeypatch,
-                {
-                    "APP_ENV": env,
-                    "AUTH_SERVICE_URL": "http://auth:8000",
-                },
-            )
-            assert s.auth_service_url == "http://auth:8000", f"failed for APP_ENV={env}"
+        s = _load_settings_fresh(
+            monkeypatch,
+            {"APP_ENV": app_env, "AUTH_SERVICE_URL": "http://auth:8000"},
+        )
+        assert s.auth_service_url == "http://auth:8000"
 
 
 class TestIntrospectTlsVerifyProductionGuard:
@@ -205,32 +140,24 @@ class TestIntrospectTlsVerifyProductionGuard:
     Исключения: localhost / 127.0.0.1 / ::1 (devcontainer self-signed).
     """
 
-    _PROD_KEY = "real-secret-xyz-1234567890"
-
     def test_prod_https_remote_verify_false_rejected(self, monkeypatch):
         with pytest.raises(ValidationError) as excinfo:
             _load_settings_fresh(
                 monkeypatch,
-                {
-                    "APP_ENV": "production",
-                    "SERVICE_API_KEY": self._PROD_KEY,
-                    "APP_DEBUG": "false",
-                    "AUTH_SERVICE_URL": "https://auth.cluster.svc:8000",
-                    "INTROSPECT_TLS_VERIFY": "false",
-                },
+                _prod_env(
+                    AUTH_SERVICE_URL="https://auth.cluster.svc:8000",
+                    INTROSPECT_TLS_VERIFY="false",
+                ),
             )
         assert "INTROSPECT_TLS_VERIFY" in str(excinfo.value)
 
     def test_prod_https_remote_verify_true_accepted(self, monkeypatch):
         s = _load_settings_fresh(
             monkeypatch,
-            {
-                "APP_ENV": "production",
-                "SERVICE_API_KEY": self._PROD_KEY,
-                "APP_DEBUG": "false",
-                "AUTH_SERVICE_URL": "https://auth.cluster.svc:8000",
-                "INTROSPECT_TLS_VERIFY": "true",
-            },
+            _prod_env(
+                AUTH_SERVICE_URL="https://auth.cluster.svc:8000",
+                INTROSPECT_TLS_VERIFY="true",
+            ),
         )
         assert s.introspect_tls_verify is True
 
@@ -238,105 +165,72 @@ class TestIntrospectTlsVerifyProductionGuard:
         """Localhost-исключение: self-signed devcontainer-сценарий."""
         s = _load_settings_fresh(
             monkeypatch,
-            {
-                "APP_ENV": "production",
-                "SERVICE_API_KEY": self._PROD_KEY,
-                "APP_DEBUG": "false",
-                "AUTH_SERVICE_URL": "https://localhost:8000",
-                "INTROSPECT_TLS_VERIFY": "false",
-            },
+            _prod_env(
+                AUTH_SERVICE_URL="https://localhost:8000",
+                INTROSPECT_TLS_VERIFY="false",
+            ),
         )
         assert s.introspect_tls_verify is False
 
     def test_prod_http_localhost_verify_false_accepted(self, monkeypatch):
         """Plain-http localhost AUTH_SERVICE_URL: нет https-remote для MITM →
-        verify=False допустим. https-only гард пропускает localhost, а
-        verify-гард срабатывает только на https-remote — на http он молчит.
+        verify=False допустим.
         """
         s = _load_settings_fresh(
             monkeypatch,
+            _prod_env(
+                AUTH_SERVICE_URL="http://localhost:8000",
+                INTROSPECT_TLS_VERIFY="false",
+            ),
+        )
+        assert s.introspect_tls_verify is False
+
+    @pytest.mark.parametrize("app_env", ["local", "development", "test"])
+    def test_non_prod_verify_false_accepted(self, monkeypatch, app_env):
+        """В dev/test/local verify=False разрешён независимо от URL."""
+        s = _load_settings_fresh(
+            monkeypatch,
             {
-                "APP_ENV": "production",
-                "SERVICE_API_KEY": self._PROD_KEY,
-                "APP_DEBUG": "false",
-                "AUTH_SERVICE_URL": "http://localhost:8000",
+                "APP_ENV": app_env,
+                "AUTH_SERVICE_URL": "https://auth.cluster.svc:8000",
                 "INTROSPECT_TLS_VERIFY": "false",
             },
         )
         assert s.introspect_tls_verify is False
 
-    def test_non_prod_verify_false_accepted(self, monkeypatch):
-        """В dev/test/local verify=False разрешён независимо от URL."""
-        for env in ("local", "development", "test"):
-            s = _load_settings_fresh(
-                monkeypatch,
-                {
-                    "APP_ENV": env,
-                    "AUTH_SERVICE_URL": "https://auth.cluster.svc:8000",
-                    "INTROSPECT_TLS_VERIFY": "false",
-                },
-            )
-            assert s.introspect_tls_verify is False, f"failed for APP_ENV={env}"
-
 
 class TestIntrospectServiceApiKeyProductionGuard:
-    """В production: если `SERVICE_API_KEYS` заполнен (per-service mode), то
-    `INTROSPECT_SERVICE_API_KEY` обязан быть непустым — иначе `_fetch_identity`
-    молча фолбэчит на shared `SERVICE_API_KEY`, что нивелирует ключевую
-    гарантию per-service режима (изоляция ingest-ключей от introspect-ключа).
+    """В production `INTROSPECT_SERVICE_API_KEY` обязан быть непустым — без
+    него `_fetch_identity` возвращает 503 на любой introspect-вызов
+    (легаси-фолбэк на shared ключ удалён).
     """
 
-    _PROD_KEY = "real-secret-xyz-1234567890"
-    _PER_SERVICE_KEYS = (
-        '{"auth_service":"k-auth-1234567890","server_service":"k-srv-1234567890"}'
-    )
-
-    @pytest.mark.parametrize(
-        "service_api_keys, introspect_key, should_fail",
-        [
-            # per-service mode + пустой introspect_key → fail
-            (_PER_SERVICE_KEYS, "", True),
-            # per-service mode + заполненный introspect_key → ok
-            (_PER_SERVICE_KEYS, "introspect-bearer-abcdef1234", False),
-            # legacy single-key (SERVICE_API_KEYS пуст) + пустой introspect →
-            # ok (fallback на SERVICE_API_KEY), guard не активируется
-            ("", "", False),
-        ],
-    )
-    def test_per_service_requires_introspect_key(
-        self, monkeypatch, service_api_keys, introspect_key, should_fail
-    ):
-        env = {
-            "APP_ENV": "production",
-            "SERVICE_API_KEY": self._PROD_KEY,
-            "APP_DEBUG": "false",
-            "SERVICE_API_KEYS": service_api_keys,
-            "INTROSPECT_SERVICE_API_KEY": introspect_key,
-            # AUTH_SERVICE_URL обязателен в проде; задаём, чтобы success-кейсы
-            # не валились на отдельном (AUTH_SERVICE_URL) guard'е.
-            "AUTH_SERVICE_URL": "https://auth.example.com",
-        }
-        if should_fail:
-            with pytest.raises(ValidationError) as excinfo:
-                _load_settings_fresh(monkeypatch, env)
-            assert "INTROSPECT_SERVICE_API_KEY" in str(excinfo.value)
-            assert "SERVICE_API_KEYS" in str(excinfo.value)
-        else:
-            s = _load_settings_fresh(monkeypatch, env)
-            assert s.introspect_service_api_key == introspect_key
-
-    def test_non_prod_per_service_empty_introspect_accepted(self, monkeypatch):
-        """Вне production гард не активируется (dev-стенды с одним shared key)."""
-        for app_env in ("local", "development", "test"):
-            s = _load_settings_fresh(
-                monkeypatch,
-                {
-                    "APP_ENV": app_env,
-                    "SERVICE_API_KEYS": self._PER_SERVICE_KEYS,
-                    "INTROSPECT_SERVICE_API_KEY": "",
-                },
+    def test_empty_introspect_key_rejected_in_production(self, monkeypatch):
+        with pytest.raises(ValidationError) as excinfo:
+            _load_settings_fresh(
+                monkeypatch, _prod_env(INTROSPECT_SERVICE_API_KEY="")
             )
-            assert s.introspect_service_api_key == ""
+        assert "INTROSPECT_SERVICE_API_KEY" in str(excinfo.value)
+
+    def test_introspect_key_accepted_in_production(self, monkeypatch):
+        s = _load_settings_fresh(
+            monkeypatch,
+            _prod_env(INTROSPECT_SERVICE_API_KEY="introspect-bearer-abcdef1234"),
+        )
+        assert s.introspect_service_api_key == "introspect-bearer-abcdef1234"
+
+    @pytest.mark.parametrize("app_env", ["local", "development", "test"])
+    def test_non_prod_empty_introspect_accepted(self, monkeypatch, app_env):
+        """Вне production гард не активируется (dev-стенды с моками auth_service)."""
+        s = _load_settings_fresh(
+            monkeypatch,
+            {
+                "APP_ENV": app_env,
+                "SERVICE_API_KEYS": _PER_SERVICE_KEYS,
+                "INTROSPECT_SERVICE_API_KEY": "",
+            },
+        )
+        assert s.introspect_service_api_key == ""
 
 
 class TestAuthServiceUrlRequiredInProduction:
@@ -345,43 +239,22 @@ class TestAuthServiceUrlRequiredInProduction:
     pod выглядит живым, а JWT-эндпоинты молча недоступны. Fail-fast на старте.
     """
 
-    _PROD_KEY = "real-secret-xyz-1234567890"
-
     def test_production_without_auth_url_rejected(self, monkeypatch):
+        env = _prod_env()
+        del env["AUTH_SERVICE_URL"]
         with pytest.raises(ValidationError) as excinfo:
-            _load_settings_fresh(
-                monkeypatch,
-                {
-                    "APP_ENV": "production",
-                    "SERVICE_API_KEY": self._PROD_KEY,
-                    "APP_DEBUG": "false",
-                },
-            )
+            _load_settings_fresh(monkeypatch, env)
         assert "AUTH_SERVICE_URL" in str(excinfo.value)
 
     def test_production_with_https_auth_url_accepted(self, monkeypatch):
-        s = _load_settings_fresh(
-            monkeypatch,
-            {
-                "APP_ENV": "production",
-                "SERVICE_API_KEY": self._PROD_KEY,
-                "APP_DEBUG": "false",
-                "AUTH_SERVICE_URL": "https://auth.example.com",
-            },
-        )
-        assert s.auth_service_url == "https://auth.example.com"
+        s = _load_settings_fresh(monkeypatch, _prod_env())
+        assert s.auth_service_url == _AUTH_URL
 
-    def test_non_prod_without_auth_url_accepted(self, monkeypatch):
+    @pytest.mark.parametrize("app_env", ["local", "development", "test"])
+    def test_non_prod_without_auth_url_accepted(self, monkeypatch, app_env):
         """Вне production AUTH_SERVICE_URL остаётся опциональным."""
-        for app_env in ("local", "development", "test"):
-            s = _load_settings_fresh(
-                monkeypatch,
-                {
-                    "APP_ENV": app_env,
-                    "SERVICE_API_KEY": self._PROD_KEY,
-                },
-            )
-            assert s.auth_service_url is None, f"failed for APP_ENV={app_env}"
+        s = _load_settings_fresh(monkeypatch, {"APP_ENV": app_env})
+        assert s.auth_service_url is None
 
 
 class TestIntrospectKeyCollisionGuard:
@@ -390,52 +263,52 @@ class TestIntrospectKeyCollisionGuard:
     /introspect от имени loging_service (нарушение key-separation).
     """
 
-    _PROD_KEY = "real-secret-xyz-1234567890"
-    _AUTH_URL = "https://auth.example.com"
-    _PER_SERVICE_KEYS = (
-        '{"auth_service":"k-auth-1234567890","server_service":"k-srv-1234567890"}'
-    )
-
     def test_collision_with_ingest_key_rejected(self, monkeypatch):
         with pytest.raises(ValidationError) as excinfo:
             _load_settings_fresh(
                 monkeypatch,
-                {
-                    "APP_ENV": "production",
-                    "SERVICE_API_KEY": self._PROD_KEY,
-                    "APP_DEBUG": "false",
-                    "AUTH_SERVICE_URL": self._AUTH_URL,
-                    "SERVICE_API_KEYS": self._PER_SERVICE_KEYS,
-                    # совпадает с SERVICE_API_KEYS["auth_service"]
-                    "INTROSPECT_SERVICE_API_KEY": "k-auth-1234567890",
-                },
+                _prod_env(INTROSPECT_SERVICE_API_KEY="k-auth-1234567890"),
             )
         assert "INTROSPECT_SERVICE_API_KEY" in str(excinfo.value)
         assert "distinct" in str(excinfo.value)
 
     def test_distinct_introspect_key_accepted(self, monkeypatch):
+        s = _load_settings_fresh(monkeypatch, _prod_env())
+        assert s.introspect_service_api_key == _INTROSPECT_KEY
+
+    @pytest.mark.parametrize("app_env", ["local", "development", "test"])
+    def test_collision_not_enforced_outside_production(self, monkeypatch, app_env):
+        """Вне production гард не активируется — dev-стенды могут шарить ключ."""
         s = _load_settings_fresh(
             monkeypatch,
             {
-                "APP_ENV": "production",
-                "SERVICE_API_KEY": self._PROD_KEY,
-                "APP_DEBUG": "false",
-                "AUTH_SERVICE_URL": self._AUTH_URL,
-                "SERVICE_API_KEYS": self._PER_SERVICE_KEYS,
-                "INTROSPECT_SERVICE_API_KEY": "introspect-only-key-9876",
+                "APP_ENV": app_env,
+                "SERVICE_API_KEYS": _PER_SERVICE_KEYS,
+                "INTROSPECT_SERVICE_API_KEY": "k-auth-1234567890",
             },
         )
-        assert s.introspect_service_api_key == "introspect-only-key-9876"
+        assert s.introspect_service_api_key == "k-auth-1234567890"
 
-    def test_collision_not_enforced_outside_production(self, monkeypatch):
-        """Вне production гард не активируется — dev-стенды могут шарить ключ."""
-        for app_env in ("local", "development", "test"):
-            s = _load_settings_fresh(
-                monkeypatch,
-                {
-                    "APP_ENV": app_env,
-                    "SERVICE_API_KEYS": self._PER_SERVICE_KEYS,
-                    "INTROSPECT_SERVICE_API_KEY": "k-auth-1234567890",
-                },
-            )
-            assert s.introspect_service_api_key == "k-auth-1234567890"
+
+class TestLegacySharedKeyFieldRemoved:
+    """Регрессионный гард: поле `service_api_key` больше нет в Settings,
+    `SERVICE_API_KEY` env vars никак не влияет на конфиг.
+    """
+
+    def test_settings_has_no_service_api_key_attr(self, monkeypatch):
+        s = _load_settings_fresh(monkeypatch, {})
+        assert not hasattr(s, "service_api_key")
+
+    def test_legacy_env_var_ignored(self, monkeypatch):
+        """`SERVICE_API_KEY=...` в env не должен влиять на загрузку Settings,
+        в т.ч. — не падать с extra-field ошибкой (`Settings.extra="ignore"`).
+        """
+        s = _load_settings_fresh(
+            monkeypatch,
+            {
+                "APP_ENV": "local",
+                "SERVICE_API_KEY": "ignored-legacy-value",
+            },
+        )
+        # Loaded without error, legacy field absent.
+        assert not hasattr(s, "service_api_key")

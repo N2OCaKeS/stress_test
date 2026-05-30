@@ -11,7 +11,8 @@ services:
       APP_HOST: 0.0.0.0
       APP_PORT: 8001
       DATABASE_URL: postgresql+psycopg://logging_user:logging_password@logging_postgres:5432/logging_db
-      SERVICE_API_KEY: change-me-service-key
+      SERVICE_API_KEYS: '{"auth_service":"change-me-service-key","server_service":"change-me-service-key","config_service":"change-me-service-key","server_worker":"change-me-service-key"}'
+      INTROSPECT_SERVICE_API_KEY: change-me-introspect-key
     ports:
       - "8001:8001"
     volumes:

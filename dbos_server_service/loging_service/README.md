@@ -6,7 +6,7 @@
 
 ## Что делает
 
-- **Ingest.** `POST /api/logging/v1/events` принимает структурированные события от сервисов-источников по `Authorization: Bearer <SERVICE_API_KEY>` + `X-Service-Identity: <service>`. Валидирует payload, нормализует Unicode, прогоняет через redaction-слой и rule engine.
+- **Ingest.** `POST /api/logging/v1/events` принимает структурированные события от сервисов-источников по `Authorization: Bearer <SERVICE_API_KEYS[identity]>` + `X-Service-Identity: <service>`. Ключ выбирается из карты `SERVICE_API_KEYS` по advertised identity, сравнение timing-safe. Валидирует payload, нормализует Unicode, прогоняет через redaction-слой и rule engine.
 - **Rule engine.** Цепочка правил на каждом событии: `OVERRIDE_SEVERITY` меняет уровень, `SUPPRESS` отбрасывает событие до записи, `ALLOW` сохраняет и прерывает цепочку. Match по `service`, `action` (glob `user.*`), `status`, `severity`, `allowed`. Реализация — `src/services/rule_service.py`.
 - **Retention.** Per-severity / per-service политики в `retention_policies`. Фоновый sweep раз в сутки в 00:00 MSK; advisory-lock защищает от двойного срабатывания в multi-replica; DELETE чанкуется (commit на чанк), чтобы не лочить огромные выборки. `PUT` и `DELETE /retention` работают со ВСЕМ активным набором (при filtered-режиме это N×M строк). События самого `loging_service` ретеншном никогда не удаляются.
 - **Storage.** Append-only таблица `audit_events`; партиционирование/ротация снаружи, средствами Postgres.
@@ -27,14 +27,22 @@
 |---|---|
 | `platform_role=loging_admin` | Управление правилами, retention, ingest-ключами. Чтение **всех** событий |
 | `platform_role=account_admin` | Чтение **всех** событий аудита. **Без** управления правилами/retention |
-| `platform_role=loging_reader` | Read-only, только свой департамент |
+| `platform_role=loging_reader` | Read-only, только свой департамент. **Требует `department_id`**: без него первое чтение событий → 403 `NO_DEPARTMENT` (by design, см. ниже) |
 | `platform_role=department_admin` | Read-only, только свой департамент |
 | `loging_service.reader` / `operator` / `admin` | Read-only, только свой департамент. Все три роли дают одно и то же — отдельных прав у service-`admin` тут нет |
-| Сервисы-источники | Только **запись** через `SERVICE_API_KEY` + `X-Service-Identity` |
+| Сервисы-источники | Только **запись** через per-service `SERVICE_API_KEYS` map + `X-Service-Identity` |
 
 Управление правилами и retention-политиками — **только у `platform_role=loging_admin`**. Ни service-`admin`, ни `department_admin`, ни `account_admin` сюда не пройдут. Все изменения правил и retention пишутся в собственный аудит сервиса.
 
 Роли пользователей создаются и меняются **только в `auth_service`**; `loging_service` лишь читает их из JWT-introspect ответа.
+
+### loging_reader vs loging_admin — dept-scope
+
+`loging_reader` — это **dept-scoped reader**. Введён осознанно: оператор отдела видит аудит только своего отдела, а не всей платформы. Поэтому пользователь с `platform_role=loging_reader` **обязан** иметь `department_id`.
+
+Если такой пользователь окажется без отдела — `auth_service` на `POST /users` его не пустит (`department_id` обязателен для всех platform-ролей, кроме `account_admin`), но даже при обходе на первом GET в `loging_service` сработает гард в `src/dependencies/auth.py` и вернёт **403 `NO_DEPARTMENT`**. Fallback «нет dept → показать всё» **намеренно не сделан**.
+
+Если задача — дать сотруднику глобальный read-only по аудиту, выдай `platform_role=loging_admin` (видит все события + управляет правилами/retention) или `platform_role=account_admin` (read-only по всему аудиту, без управления правилами/retention). Эти platform-роли создаются без `department_id` — это их штатное состояние.
 
 ## Уровни severity
 
@@ -81,13 +89,10 @@ Daemon-thread (`src/main.py::_retention_loop`) считает время до с
 - **Unicode normalization.** `utils/normalization.py` сворачивает входящие service-имена через NFKC + invisible-strip (ZWSP, ZWJ, BOM, SHY, …) + curated confusables fold (кир. `о` → ASCII `o`, греч. `ο` → `o`, и т.д.) до lower-кейса. Применяется в `EventCreate.service` валидаторе, `X-Service-Identity` парсере и path-параметре `/services/{service}/events`. Закрывает обход `loging_service`-reserved-guard через homoglyphs и retention-исключения.
 - **Charset validators.** `actor_id` / `target_id` / `department_id` / `request_id` — `^[A-Za-z0-9_\-]{1,48}$` (request_id — до 64); `target_type` — `^[a-z_.]{1,64}$`; `action` — `^[a-z0-9_.]{1,128}$` (snake_case + точка + цифры для версий, напр. `provision_v2`, `http.4xx_error`); `service` после Unicode-нормализации — `[a-z_]{1,64}`; `username` — email-like `[A-Za-z0-9_\-@.]{1,128}`. Параллельно middleware санирует incoming `X-Request-ID` (стрипает CRLF/NUL, truncate, fallback `req_<hex>`).
 - **Body-size middleware.** Отбивает `Content-Length > MAX_REQUEST_BODY_BYTES` (по умолчанию 64 KB) **до** body-read'а. Negative Content-Length → 400 `INVALID_CONTENT_LENGTH`.
-- **Shadow-keys guard.** `EventCreate.details` запрещает actor-identity ключи (`actor_id`, `actor_type`) на любой глубине вложенности — чтобы держатель `SERVICE_API_KEY` не shadow'ил identity actor'а через нестед `details`. Остальные top-level колонки (`service`, `action`, `status`, `request_id`, `severity`, `event_id`, `occurred_at`, `department_id`) разрешены внутри `details`: реальные события всех 4 сервисов используют их как target/scope/context (permission-аудит пишет `details={"action": "delete", ...}` — это granted action, не event action; denied-аудит несёт `department_id` цели и т.п.). NUL-byte в ключах/значениях тоже банится. Walker итеративный — рекурсия сама была бы DoS-вектором.
+- **Shadow-keys guard.** `EventCreate.details` запрещает actor-identity ключи (`actor_id`, `actor_type`) на любой глубине вложенности — чтобы держатель ingest-ключа не shadow'ил identity actor'а через нестед `details`. Остальные top-level колонки (`service`, `action`, `status`, `request_id`, `severity`, `event_id`, `occurred_at`, `department_id`) разрешены внутри `details`: реальные события всех 4 сервисов используют их как target/scope/context (permission-аудит пишет `details={"action": "delete", ...}` — это granted action, не event action; denied-аудит несёт `department_id` цели и т.п.). NUL-byte в ключах/значениях тоже банится. Walker итеративный — рекурсия сама была бы DoS-вектором.
 - **Depth-cap.** `details` ограничен глубиной 10 и размером 64 KB.
-- **X-Service-Identity dual-mode.**
-  - **Per-service mode:** `SERVICE_API_KEYS` JSON env — мап `{service: key}`; identity обязателен, проверяется `secrets.compare_digest` против ключа выбранного сервиса. Compromise одного ключа даёт право писать только от имени этого сервиса.
-  - **Shared mode:** `SERVICE_API_KEY` один на всех (legacy/dev); identity сверяется с `KNOWN_SERVICE_IDENTITIES` set, soft mode (`STRICT_SERVICE_IDENTITY=true` — strict: unknown → 401).
-  - На `POST /services/{service}/events` дополнительно сверяется path-параметр с identity → mismatch = 403 `SERVICE_IDENTITY_PATH_MISMATCH`.
-- **HTTPS guard для introspect.** `AUTH_SERVICE_URL` валидируется на https в prod (`APP_ENV=production`), localhost-исключение для devcontainer. В prod + https-remote (non-loopback) запрещено `INTROSPECT_TLS_VERIFY=false` — fail-fast на старте. Пустой `INTROSPECT_SERVICE_API_KEY` при непустом `SERVICE_API_KEYS` тоже отбивается на старте.
+- **Per-service ingest auth.** `SERVICE_API_KEYS` JSON env — мапа `{identity: key}`; единственный режим service-to-service ingest (legacy shared `SERVICE_API_KEY` удалён). `X-Service-Identity` обязателен, работает ключом lookup'а; сравнение `secrets.compare_digest` — timing-safe. Identity вне map'а → 401 `INVALID_SERVICE_KEY`; mismatch ключа → 401 `INVALID_SERVICE_KEY`; отсутствие identity header'а → 401 `MISSING_SERVICE_IDENTITY`; пустой `SERVICE_API_KEYS` → 503 `SERVICE_TOKEN_NOT_CONFIGURED`. Compromise одного ключа даёт право писать только от имени соответствующего сервиса. На `POST /services/{service}/events` дополнительно сверяется path-параметр с identity → mismatch = 403 `SERVICE_IDENTITY_PATH_MISMATCH`.
+- **HTTPS guard для introspect.** `AUTH_SERVICE_URL` валидируется на https в prod (`APP_ENV=production`), localhost-исключение для devcontainer. В prod + https-remote (non-loopback) запрещено `INTROSPECT_TLS_VERIFY=false` — fail-fast на старте. Production-guard'ы также требуют непустые `SERVICE_API_KEYS` и `INTROSPECT_SERVICE_API_KEY`, причём отдельные друг от друга (key-separation).
 - **Idempotency.** `EventCreate.idempotency_key` (≤ 128 символов, opaque-токен в body) + partial UNIQUE `(service, idempotency_key) WHERE idempotency_key IS NOT NULL`. Repository делает `pg_insert(...).on_conflict_do_nothing(...)` и возвращает канонический row — outbox-retry safe: повторный POST с тем же ключом возвращает 201 с прежним `event_id` и `received_at`.
 - **Redaction.** На стороне `loging_service` `event_service.record()` и `record_admin_action()` ещё раз прогоняют `details` через `utils/redaction.redact()` — defense-in-depth. Маскируются по имени ключа (`password`, `token`, `api_key`, `secret`, `credential`, …) и по форме значения (JWT-like, argon2/bcrypt-хэши).
 - **Rate-limit на ingest.** `POST /events` ключуется per-service-identity (`X-Service-Identity`, нормализованный, с fallback на IP при отсутствии header'а), бюджет `INGEST_RATE_LIMIT` (`100/minute` по умолчанию). За k8s ingress общий per-IP bucket позволял одному сервису выжать бюджет остальных — теперь bucket'ы независимы. `headers_enabled=False` — `X-RateLimit-Remaining` не утекает атакующему.
@@ -110,17 +115,15 @@ Daemon-thread (`src/main.py::_retention_loop`) считает время до с
 | `APP_NAME` | `loging_service` | имя сервиса в собственных audit-эмитах |
 | `APP_HOST` | `0.0.0.0` | bind-адрес uvicorn |
 | `APP_PORT` | `8001` | |
-| `APP_ENV` | `local` | `production`/`staging` включает доп. guard'ы (https, `verify=true`, SERVICE_API_KEY non-default) |
+| `APP_ENV` | `local` | `production`/`staging` включает доп. guard'ы (https, `verify=true`, непустые `SERVICE_API_KEYS` и `INTROSPECT_SERVICE_API_KEY`) |
 | `APP_DEBUG` | `true` | в prod отбивается на старте, если `true` |
 | `APP_LOG_LEVEL` | `INFO` | уровень логгера приложения |
 | `DATABASE_URL` | `postgresql+psycopg://logging_user:...@localhost:5432/logging_db` | |
 | `DB_POOL_SIZE` | `10` | SQLAlchemy pool size |
 | `DB_MAX_OVERFLOW` | `20` | SQLAlchemy pool overflow |
-| `SERVICE_API_KEY` | `change-me-service-key` | shared secret для ingest (legacy, в prod не `change-me`) |
-| `SERVICE_API_KEYS` | `{}` | JSON map per-service ключей; map непустой → mandatory identity + per-service `compare_digest` |
-| `STRICT_SERVICE_IDENTITY` | `false` | unknown `X-Service-Identity` → 401 вместо WARNING |
+| `SERVICE_API_KEYS` | `{}` | JSON map `{identity: bearer_secret}` для ingest. Обязателен непустой в prod; вне prod пустая map'а = ingest вернёт 503. |
 | `AUTH_SERVICE_URL` | — | для JWT introspect; в prod https-only |
-| `INTROSPECT_SERVICE_API_KEY` | — | ключ, которым `loging_service` сам ходит в introspect; обязателен в prod при непустом `SERVICE_API_KEYS` |
+| `INTROSPECT_SERVICE_API_KEY` | — | ключ, которым `loging_service` сам ходит в introspect; обязателен в prod, должен отличаться от любого значения `SERVICE_API_KEYS` |
 | `INTROSPECT_TIMEOUT_SECONDS` | `3.0` | таймаут `AsyncClient.post` к introspect (read/write бюджет) |
 | `INTROSPECT_CONNECT_TIMEOUT_SECONDS` | `2.0` | отдельный connect-таймаут pooled introspect-клиента |
 | `INTROSPECT_TLS_VERIFY` | `true` | `false` отбивается на старте в prod при https-remote |

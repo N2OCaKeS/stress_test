@@ -502,7 +502,7 @@ async def check_service_access(
             department_id=result.department_id,
             target_id=service_name,
             target_type="service",
-            status="denied",
+            status="failure",
             allowed=False,
             details={
                 "reason": "department_no_access",
@@ -521,7 +521,7 @@ async def check_service_access(
             department_id=result.department_id,
             target_id=service_name,
             target_type="service",
-            status="denied",
+            status="failure",
             allowed=False,
             details={
                 "reason": "service_not_in_token",

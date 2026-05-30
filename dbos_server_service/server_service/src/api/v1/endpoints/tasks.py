@@ -117,6 +117,7 @@ async def cancel_task_endpoint(
         audit_action,
         target_id=task_id,
         target_type="task",
+        identity=identity,
     ):
         await permissions.require_action(db, identity, EntityType.TASK, Action.CANCEL)
 

@@ -397,7 +397,7 @@ class TestAuditEmit:
         denied = [
             e for e in captured
             if e["action"] == "user.permissions_view"
-            and e.get("status") == "denied"
+            and e.get("status") == "failure"
         ]
         assert denied, (
             f"expected denied emit, got: "
@@ -441,7 +441,7 @@ class TestAuditEmitDeptAdminCrossDept:
         denied = [
             e for e in captured
             if e["action"] == "user.permissions_view"
-            and e.get("status") == "denied"
+            and e.get("status") == "failure"
         ]
         assert denied
         details = denied[0].get("details") or {}

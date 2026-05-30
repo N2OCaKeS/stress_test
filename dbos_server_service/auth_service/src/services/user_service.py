@@ -1059,17 +1059,18 @@ def _emit_permissions_denied(
     department_id: str | None,
     request_id: str | None,
 ) -> None:
-    """Helper: эмит `user.permissions_view` с `status="denied"`.
+    """Helper: эмит `user.permissions_view` с `status="failure"`.
 
-    Действие одно, разделяет статус — `success`/`denied`. SIEM
-    `status=denied` ловит попытки заглянуть в чужие права.
+    Действие одно, разделяет статус — `success`/`failure`. SIEM
+    `status=failure` ловит попытки заглянуть в чужие права. Конвенция
+    единая по auth_service (см. bot_service `_check_can_manage_bot_or_audit`).
     """
     audit_service.emit(
         "user.permissions_view",
         actor_id,
         target_id=target_id,
         target_type="user",
-        status="denied",
+        status="failure",
         allowed=False,
         department_id=department_id,
         details={"reason": reason},
@@ -1101,7 +1102,7 @@ async def get_user_permissions(
     user_id.
 
     На успех — `user.permissions_view status=success`. На denied —
-    `user.permissions_view status=denied + reason`.
+    `user.permissions_view status=failure + reason`.
     """
     user_repo = UserRepository(db)
     dept_repo = DepartmentRepository(db)

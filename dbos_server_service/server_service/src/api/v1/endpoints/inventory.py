@@ -79,6 +79,7 @@ async def trigger_users_inventory(
         target_id=server_id,
         target_type="server",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER, Action.INVENTORY_TRIGGER,

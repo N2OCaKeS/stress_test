@@ -181,12 +181,23 @@ def _cancel_timestamp(task) -> str | None:
 
 
 def _attach_cancel_metadata(details: dict, task) -> None:
-    """Доклеить `cancelled_by`/`cancel_reason` в details cancel-audit'а.
+    """Доклеить `cancelled_by`/`cancel_reason` + дублирующие clock-поля в details.
 
     Поля приходят из `POST /tasks/{id}/cancel` (см. migration 0005). Если
     оператор не указал reason или server_service не пробросил actor_id — в
     DB лежит NULL, в audit такие поля просто не попадают: пустые значения
     в audit-payload только захламляют дашборды.
+
+    Дополнительно кладём пару clock-меток на случай NTP-drift'а между
+    server_service и worker'ом:
+
+    * ``cancel_request_received_at`` — момент, когда оператор дёрнул cancel
+      (server_service'ский clock = `task.cancelled_at`). Идёт в audit
+      `timestamp` через `_cancel_timestamp`; дублируем в details, чтобы
+      payload оставался самодостаточным даже после ребейза `timestamp`.
+    * ``worker_clock_now`` — worker'ский UTC в момент формирования audit-
+      event'а. SIEM по этой паре видит факт расхождения часов и может сам
+      решить, какой источник истины ему ближе.
     """
     if task is None:
         return
@@ -196,6 +207,10 @@ def _attach_cancel_metadata(details: dict, task) -> None:
     cancel_reason = getattr(task, "cancel_reason", None)
     if cancel_reason is not None:
         details["cancel_reason"] = cancel_reason
+    cancelled_at = getattr(task, "cancelled_at", None)
+    if cancelled_at is not None:
+        details["cancel_request_received_at"] = cancelled_at.isoformat()
+    details["worker_clock_now"] = datetime.now(timezone.utc).isoformat()
 
 
 async def run_task(

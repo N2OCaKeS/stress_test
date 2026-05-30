@@ -255,6 +255,7 @@ async def grant_action(
         "permission.grant",
         target_type="entity_permission",
         extra_details=dict(audit_details),
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.PERMISSION, Action.PERMISSION_GRANT
@@ -344,6 +345,7 @@ async def revoke_action(
         "permission.revoke",
         target_type="entity_permission",
         extra_details=dict(audit_details),
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.PERMISSION, Action.PERMISSION_REVOKE

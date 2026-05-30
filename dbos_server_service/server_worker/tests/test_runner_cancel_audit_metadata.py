@@ -152,3 +152,81 @@ class TestCancelMidrunMetadata:
         assert details["reason"] == "cancelled_midrun"
         assert details["cancelled_by"] == "usr_op_99"
         assert details["cancel_reason"] == "rolled back"
+
+
+class TestCancelClockPair:
+    """Cancel-audit несёт пару clock-меток для устойчивости к NTP-drift'у.
+
+    `cancel_request_received_at` — server_service'ский clock (= `task.cancelled_at`),
+    дублирует значение, которое уже идёт в `payload.timestamp` через
+    `_cancel_timestamp`. `worker_clock_now` — worker'ский UTC в момент сборки
+    audit-event'а. По паре SIEM видит дрейф часов между server и worker.
+    """
+
+    async def test_fast_path_emits_both_clocks(self, make_task, captured_audit):
+        from datetime import datetime, timezone
+
+        tid = await make_task(task_kind="power.on", target_server_id="srv_clk")
+        cancelled_at = datetime.now(timezone.utc)
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Task).where(Task.id == tid).values(
+                    status=TaskStatus.CANCELLED,
+                    cancelled_by="usr_op_1",
+                    cancel_reason="reroute",
+                    cancelled_at=cancelled_at,
+                )
+            )
+            await session.commit()
+
+        async def impl(_):
+            raise AssertionError("impl must not run")
+
+        await run_task(
+            tid,
+            audit_action="server.power_on",
+            audit_target_type="server",
+            impl=impl,
+        )
+
+        assert len(captured_audit) == 1
+        details = captured_audit[0]["details"]
+        assert "cancel_request_received_at" in details
+        assert "worker_clock_now" in details
+        # Оба — валидные ISO-8601 UTC строки.
+        datetime.fromisoformat(details["cancel_request_received_at"])
+        datetime.fromisoformat(details["worker_clock_now"])
+
+    async def test_midrun_success_emits_both_clocks(
+        self, make_task, captured_audit,
+    ):
+        from datetime import datetime, timezone
+
+        tid = await make_task(task_kind="power.on", target_server_id="srv_clk2")
+
+        async def impl(_):
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    update(Task).where(Task.id == tid).values(
+                        status=TaskStatus.CANCELLED,
+                        cancelled_by="usr_op_2",
+                        cancel_reason="stop",
+                        cancelled_at=datetime.now(timezone.utc),
+                    )
+                )
+                await session.commit()
+            return {"power_state": "on"}
+
+        await run_task(
+            tid,
+            audit_action="server.power_on",
+            audit_target_type="server",
+            impl=impl,
+            audit_safe_fields={"power_state"},
+        )
+
+        assert len(captured_audit) == 1
+        details = captured_audit[0]["details"]
+        assert details["reason"] == "cancelled_midrun"
+        assert "cancel_request_received_at" in details
+        assert "worker_clock_now" in details

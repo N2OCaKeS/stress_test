@@ -362,6 +362,7 @@ async def create_server(
         "server.create",
         target_type="server",
         extra_details={"department_id": payload.department_id},
+        identity=identity,
     ):
         await permissions.require_action(db, identity, EntityType.SERVER, Action.CREATE)
     if payload.department_id != identity.department_id:
@@ -462,6 +463,7 @@ async def update_server(
         "server.update",
         target_id=server_id,
         target_type="server",
+        identity=identity,
     ):
         await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
     # Visibility-check: 404 для non-existent / cross-dept. Эмитим explicit `denied`
@@ -545,6 +547,7 @@ async def delete_server(
         "server.delete",
         target_id=server_id,
         target_type="server",
+        identity=identity,
     ):
         await permissions.require_action(db, identity, EntityType.SERVER, Action.DELETE)
     # Visibility-check: 404 для non-existent / cross-dept. Эмитим explicit `denied`
@@ -610,6 +613,7 @@ async def acquire_server(
         target_id=server_id,
         target_type="server",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER, Action.BUSY_ACQUIRE,
@@ -747,6 +751,7 @@ async def release_server(
         target_id=server_id,
         target_type="server",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER, Action.BUSY_RELEASE,
@@ -832,6 +837,7 @@ async def update_os_version(
         target_id=server_id,
         target_type="server",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER, Action.OS_SYNC,

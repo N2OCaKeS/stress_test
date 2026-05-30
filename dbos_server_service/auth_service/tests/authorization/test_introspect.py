@@ -200,3 +200,88 @@ async def test_introspect_bot_token_forwards_caller_ip_to_tracker(
 async def test_service_access_includes_roles(client, user_a_token, service_x):
     resp = await client.post(ACCESS_URL, json={"subject_token": user_a_token, "service_name": service_x.service_name})
     assert "reader" in resp.json()["service_roles"]
+
+
+# ── audit status convention: всё, что не success, идёт как `failure` ──────────
+
+
+async def test_service_access_denied_emits_failure_status(
+    client, user_b_token, service_x, monkeypatch,
+):
+    """dept_b не подключён к service_x — audit-event с status=failure (не denied).
+
+    Конвенция единая по auth_service: success / failure / error.
+    `denied` исторически плавал по разным emit-сайтам и путал SIEM-классификацию.
+    """
+    from src.services import audit_service as audit_mod
+
+    captured: list[dict] = []
+    original = audit_mod.emit
+
+    def _capture(action, actor_id=None, **kw):
+        captured.append({"action": action, "actor_id": actor_id, **kw})
+        return original(action, actor_id, **kw)
+
+    monkeypatch.setattr(audit_mod, "emit", _capture)
+
+    resp = await client.post(
+        ACCESS_URL,
+        json={"subject_token": user_b_token, "service_name": service_x.service_name},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["allowed"] is False
+
+    access = [e for e in captured if e["action"] == "service.access_check"]
+    assert access, captured
+    assert access[-1]["status"] == "failure"
+    assert access[-1]["allowed"] is False
+    assert access[-1]["details"].get("reason") == "department_no_access"
+
+
+async def test_service_access_not_in_token_emits_failure_status(
+    client, dept_a_with_service, service_x, admin_token, monkeypatch,
+):
+    """Department подключён, но конкретный сервис не в allowed_services токена.
+
+    Сценарий искусственный: достаём токен у юзера, который не разрешён на
+    сервис, через token без сервиса в allowed_services. Используем второй
+    сервис из соседнего dept'а — проще проверить через nonexistent service
+    в маршруте `service_not_in_token`.
+    """
+    from src.services import audit_service as audit_mod
+
+    captured: list[dict] = []
+    original = audit_mod.emit
+
+    def _capture(action, actor_id=None, **kw):
+        captured.append({"action": action, "actor_id": actor_id, **kw})
+        return original(action, actor_id, **kw)
+
+    monkeypatch.setattr(audit_mod, "emit", _capture)
+
+    # Создаём бот без allowed_services вообще — тогда `service_not_in_token`
+    # отработает на любой подключённый к департаменту сервис.
+    bot_id = (await client.post(
+        BOTS_URL,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"name": "no_svc_bot", "department_id": dept_a_with_service.id,
+              "allowed_services": []},
+    )).json()["bot_id"]
+    raw = (await client.post(
+        f"{BOTS_URL}/{bot_id}/tokens",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"name": "tok"},
+    )).json()["token"]
+
+    captured.clear()
+    resp = await client.post(
+        ACCESS_URL,
+        json={"subject_token": raw, "service_name": service_x.service_name},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["allowed"] is False
+
+    access = [e for e in captured if e["action"] == "service.access_check"]
+    assert access, captured
+    assert access[-1]["status"] == "failure"
+    assert access[-1]["details"].get("reason") == "service_not_in_token"

@@ -92,6 +92,7 @@ async def _dispatch_power(
         target_id=server_id,
         target_type="server",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(db, identity, EntityType.SERVER, action)
     try:
@@ -499,6 +500,7 @@ async def view_credentials(
         audit_action,
         target_id=server_id,
         target_type="ipmi_controller",
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.IPMI_CONTROLLER, Action.VIEW_CREDENTIALS,

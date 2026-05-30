@@ -24,11 +24,16 @@ Logical states и переходы:
   * **open** — есть ``state=open`` и ``open_until > now``. ``check``
     бросает ``CircuitBreakerOpenError`` без сетевого вызова BMC.
     ``record_*`` не имеют эффекта (мы внутри open-window).
-  * **half_open** — ``state=open`` и ``open_until <= now`` (либо ключ ушёл
-    по TTL и Lua вернула нет state'а — тогда `_transition_to_half_open`
-    при `check`). Пропускаем ровно один пробный запрос — ставим
-    ``state=half_open``. Если он успешен — ``record_success`` сбрасывает
-    всё в closed; fail → снова open + reset ``open_until``.
+  * **half_open** — ``state=open`` и ``open_until <= now``. Lua-скрипт
+    ``CHECK`` пытается захватить probe-слот через ``SET NX EX cooldown``
+    на отдельном ключе ``cb:bmc:<host>:probe``. Победитель SETNX
+    переключает ``state=half_open`` и пропускает ровно один пробный
+    запрос; проигравшие конкурентные ``check`` видят probe-ключ и
+    получают ``open`` с retry_after = TTL probe-ключа. Без probe-ключа
+    в окне ``open→half_open`` все реплики разом видели бы половинку
+    и кидали залп в едва ожившие BMC — thundering herd. Probe-ключ
+    сносится в ``record_success`` (успех закрывает breaker) и в
+    ``record_failure`` (fail в half_open возвращает в open).
 
 Атомарность переходов — через Lua-скрипты (Redis выполняет их сериально на
 одном thread'е, race между реплик'ами невозможна). Альтернатива
@@ -132,9 +137,20 @@ _RECORD_FAILURE_SCRIPT = _breaker_lua.RECORD_FAILURE_SCRIPT
 
 
 def _keys(host: str) -> tuple[str, str, str]:
-    """Тройка Redis-ключей для одного host'а: failures, state, open_until."""
+    """Тройка Redis-ключей для одного host'а: failures, state, open_until.
+
+    Probe-ключ (in-flight half_open marker) живёт отдельно — см.
+    ``_probe_key``. Возвращаем тройку, потому что вызовы и тесты, которые
+    смотрят на state, открытое окно и счётчик, не должны разбираться с
+    четвёртым ключом, у которого свой жизненный цикл.
+    """
     base = f"{_KEY_PREFIX}{host}"
     return f"{base}:failures", f"{base}:state", f"{base}:open_until"
+
+
+def _probe_key(host: str) -> str:
+    """In-flight half_open marker; SETNX-захват в ``CHECK_SCRIPT``."""
+    return f"{_KEY_PREFIX}{host}:probe"
 
 
 async def _get_client() -> aioredis.Redis:
@@ -160,9 +176,9 @@ async def check(host: str) -> None:
     client = await _get_client()
     try:
         try:
-            keys = _keys(host)
+            keys = (*_keys(host), _probe_key(host))
             result = await client.eval(
-                _CHECK_SCRIPT, 3, *keys,
+                _CHECK_SCRIPT, 4, *keys,
                 str(int(time.time())), str(thresholds.cooldown_seconds),
             )
         except Exception:  # noqa: BLE001 — fail-open
@@ -196,8 +212,8 @@ async def record_success(host: str) -> None:
     client = await _get_client()
     try:
         try:
-            keys = _keys(host)
-            await client.eval(_RECORD_SUCCESS_SCRIPT, 3, *keys)
+            keys = (*_keys(host), _probe_key(host))
+            await client.eval(_RECORD_SUCCESS_SCRIPT, 4, *keys)
         except Exception:  # noqa: BLE001 — best-effort
             logger.warning(
                 "bmc_breaker: record_success failed for host=%s",
@@ -219,9 +235,9 @@ async def record_failure(host: str) -> None:
     client = await _get_client()
     try:
         try:
-            keys = _keys(host)
+            keys = (*_keys(host), _probe_key(host))
             result = await client.eval(
-                _RECORD_FAILURE_SCRIPT, 3, *keys,
+                _RECORD_FAILURE_SCRIPT, 4, *keys,
                 str(int(time.time())),
                 str(thresholds.failure_threshold),
                 str(thresholds.window_seconds),
@@ -250,16 +266,16 @@ async def record_failure(host: str) -> None:
 async def reset(host: str) -> None:
     """Test/operator helper: очистить состояние breaker'а для host'а.
 
-    Снимает ``state``, ``open_until`` и счётчик ``failures``. Используется
-    в тестах вместо TRUNCATE; в проде — operator-команда «отпусти
-    контроллер досрочно».
+    Снимает ``state``, ``open_until``, счётчик ``failures`` и
+    probe-marker. Используется в тестах вместо TRUNCATE; в проде —
+    operator-команда «отпусти контроллер досрочно».
     """
     if not host:
         return
     client = await _get_client()
     try:
         try:
-            await client.delete(*_keys(host))
+            await client.delete(*_keys(host), _probe_key(host))
         except Exception:  # noqa: BLE001
             logger.warning(
                 "bmc_breaker: reset failed for host=%s", host, exc_info=True,

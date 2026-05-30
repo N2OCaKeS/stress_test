@@ -8,8 +8,13 @@ FakeRedis матчит скрипты по объекту-строке: `cb._CHE
 _breaker_lua.CHECK_SCRIPT`, потому в обоих тестах в `eval()` приходит
 один и тот же объект, и `if script == CHECK_SCRIPT` ловит обе ветки.
 
-TTL не симулируем штатно — все тесты двигают `now` через `frozen_clock`
-фикстуру, которая monkeypatch'ит `cb.time.time`.
+TTL не симулируем штатно для всех ключей — все тесты двигают `now`
+через `frozen_clock` фикстуру, которая monkeypatch'ит `cb.time.time`.
+Исключение — probe-ключ: для него отдельно держим expiry в `_expiry`,
+потому что `CHECK_SCRIPT` дёргает `TTL` probe-ключа, чтобы вернуть
+retry_after для проигравших SETNX. Без модели TTL CHECK возвращал бы
+бесконечный или нулевой retry_after — тест на thundering herd
+без этой детали смысла не имеет.
 """
 
 from __future__ import annotations
@@ -25,9 +30,16 @@ class FakeRedis:
     `_store` — class-level: все инстансы шарят один dict, что моделирует
     «N реплик worker'а смотрят в один Redis». Сброс — через
     `reset_store()` (фикстура делает это автоматически).
+
+    `_expiry` — отдельный dict с absolute expiry time (тот же frozen
+    `now` из тестов). Используется только для probe-ключа: `CHECK_SCRIPT`
+    дёргает у него `TTL`, остальным ключам expiry не нужен — тест либо
+    двигает `now` за окно, либо явно проверяет наличие ключа.
     """
 
     _store: dict[str, str] = {}
+    _expiry: dict[str, int] = {}
+    _now_provider = staticmethod(lambda: 0)
 
     def __init__(self) -> None:
         pass
@@ -35,14 +47,16 @@ class FakeRedis:
     @classmethod
     def reset_store(cls) -> None:
         cls._store.clear()
+        cls._expiry.clear()
 
-    async def eval(self, script: str, n: int, *args: str):  # noqa: PLR0911, PLR0912
+    async def eval(self, script: str, n: int, *args: str):  # noqa: PLR0911, PLR0912, PLR0915
         keys = list(args[:n])
         argv = list(args[n:])
 
         if script == _breaker_lua.CHECK_SCRIPT:
             now = int(argv[0])
-            cooldown = int(argv[1])  # noqa: F841 — для half_open TTL не моделируем
+            cooldown = int(argv[1])
+            probe_key = keys[3]
             state = self._store.get(keys[1])
             open_until_raw = self._store.get(keys[2], "0")
             try:
@@ -52,9 +66,22 @@ class FakeRedis:
             if state == "open":
                 if open_until > now:
                     return [state, open_until - now]
+                # Cooldown истёк — пытаемся захватить probe-слот.
+                if probe_key in self._store:
+                    ttl = self._expiry.get(probe_key, now + cooldown) - now
+                    if ttl < 0:
+                        ttl = cooldown
+                    return ["open", ttl]
+                self._store[probe_key] = "1"
+                self._expiry[probe_key] = now + cooldown
                 self._store[keys[1]] = "half_open"
                 self._store.pop(keys[2], None)
                 return ["half_open", 0]
+            if state == "half_open":
+                ttl = self._expiry.get(probe_key, now + cooldown) - now
+                if ttl < 0:
+                    ttl = cooldown
+                return ["open", ttl]
             if state is not None:
                 return [state, 0]
             return ["closed", 0]
@@ -62,6 +89,7 @@ class FakeRedis:
         if script == _breaker_lua.RECORD_SUCCESS_SCRIPT:
             for k in keys:
                 self._store.pop(k, None)
+                self._expiry.pop(k, None)
             return 1
 
         if script == _breaker_lua.RECORD_FAILURE_SCRIPT:
@@ -71,10 +99,12 @@ class FakeRedis:
             current_state = self._store.get(keys[1])
             if current_state == "half_open":
                 # Пробный запрос провалился — сразу обратно в open,
-                # счётчик failures обнуляем (нет смысла копить заново).
+                # счётчик failures и probe-ключ сносим.
                 self._store[keys[1]] = "open"
                 self._store[keys[2]] = str(now + cooldown)
                 self._store.pop(keys[0], None)
+                self._store.pop(keys[3], None)
+                self._expiry.pop(keys[3], None)
                 return ["open", 1]
             try:
                 cur = int(self._store.get(keys[0], "0"))
@@ -96,6 +126,7 @@ class FakeRedis:
         for k in keys:
             if k in self._store:
                 self._store.pop(k, None)
+                self._expiry.pop(k, None)
                 n += 1
         return n
 

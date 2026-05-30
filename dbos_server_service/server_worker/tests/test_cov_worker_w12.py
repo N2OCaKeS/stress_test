@@ -3,8 +3,8 @@
 Покрываемые области:
   * scrub finally — `account_provision._impl` finally-scrub запускается даже
     при RuntimeError на happy-path (impl upало после useradd/submit).
-  * breaker half_open immediate-reopen — второй check() в half_open остаётся
-    half_open (нет spontaneous re-open без record_failure).
+  * breaker half_open probe-gate — второй check() в half_open отбивается
+    probe-ключом (anti-thundering-herd: один пробный запрос на cycle).
   * flush bail-out — пустая очередь после первого bail-out не вызывает
     дополнительных SELECT'ов; breaker_skipped при пустом batch.
   * rotated_at after BMC apply — rotated_at не фиксируется если verify упал.
@@ -175,46 +175,50 @@ class TestScrubFinallyRunsOnHappyPathFailure:
         assert t.payload.get("ssh_private_key_plaintext") == "<scrubbed>"
 
 
-# ── breaker half_open immediate-reopen ───────────────────────────────────────
+# ── breaker half_open probe-gate ─────────────────────────────────────────────
 
 
 class TestBreakerHalfOpenSecondCheck:
-    """Второй check() в half_open не re-open'ит автоматически.
+    """Второй check() в half_open отбивается probe-ключом (anti-thundering-herd).
 
-    check() — read-операция (с побочным эффектом open→half_open при
-    cooldown). Но два последовательных check() в half_open должны оба
-    пропустить запрос — не открывать снова без record_failure.
+    Раньше check() в half_open пропускал всех подряд — все реплики разом
+    видели «половинку открыто» и кидали залп в едва ожившие BMC/loging.
+    Теперь open→half_open захватывается через SETNX probe-ключа; второй
+    check (любая другая реплика) видит probe в Redis и получает
+    `CircuitBreakerOpenError` до результата пробного запроса первого.
     """
 
-    async def test_second_check_in_half_open_does_not_raise(
+    async def test_second_check_in_half_open_is_rejected(
         self, fake_redis_apb, frozen_clock_apb,
     ):
-        """Два последовательных check() в half_open — оба проходят."""
+        """Первый check проходит как пробный, второй отбивается probe-ключом."""
         for _ in range(audit_publisher_breaker.DEFAULT_FAILURE_THRESHOLD):
             await audit_publisher_breaker.record_failure()
 
         frozen_clock_apb["now"] += audit_publisher_breaker.DEFAULT_COOLDOWN_SECONDS + 1
 
-        # Первый check() переводит open → half_open.
+        # Первый check() — winner SETNX, state переходит в half_open.
         await audit_publisher_breaker.check()
         _, state_key, _ = audit_publisher_breaker._keys()
         assert FakeRedis._store.get(state_key) == "half_open"
 
-        # Второй check() не должен бросать — half_open пропускает запросы.
-        await audit_publisher_breaker.check()
+        # Второй check — probe-ключ занят, отбивается.
+        with pytest.raises(audit_publisher_breaker.CircuitBreakerOpenError):
+            await audit_publisher_breaker.check()
+        # State не меняется — probe ещё в полёте.
         assert FakeRedis._store.get(state_key) == "half_open", (
-            "второй check() в half_open не должен менять state"
+            "проигравший check не должен трогать state"
         )
 
-    async def test_half_open_reopens_only_after_record_failure(
+    async def test_half_open_reopens_on_record_failure(
         self, fake_redis_apb, frozen_clock_apb,
     ):
-        """half_open → open происходит ТОЛЬКО при record_failure, не при check()."""
+        """half_open → open при record_failure (пробный запрос провалился)."""
         for _ in range(audit_publisher_breaker.DEFAULT_FAILURE_THRESHOLD):
             await audit_publisher_breaker.record_failure()
 
         frozen_clock_apb["now"] += audit_publisher_breaker.DEFAULT_COOLDOWN_SECONDS + 1
-        await audit_publisher_breaker.check()  # → half_open
+        await audit_publisher_breaker.check()  # → half_open (winner)
 
         _, state_key, _ = audit_publisher_breaker._keys()
         assert FakeRedis._store.get(state_key) == "half_open"

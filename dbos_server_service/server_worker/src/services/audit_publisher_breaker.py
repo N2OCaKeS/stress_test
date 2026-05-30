@@ -17,11 +17,14 @@ in-memory breaker → ~15 лишних запросов в умирающий lo
     пишем (отсутствие ключа = closed).
   * `cb:audit_publisher:open_until` — unix-ts, до которого breaker
     отбивает запросы.
+  * `cb:audit_publisher:probe` — in-flight half_open marker. SETNX
+    в `CHECK_SCRIPT` пропускает в half_open ровно одну реплику;
+    остальные продолжают видеть open до результата пробного запроса.
 
 Lua-скрипты — три атомарных перехода (check / record_success /
 record_failure). От BMC-варианта отличаются только префиксом ключей:
 канал один (publisher → loging_service), поэтому host-измерения нет,
-все три ключа фиксированы.
+все четыре ключа фиксированы.
 
 Fail-open на ошибках Redis: если Redis недоступен, мы не блокируем
 HTTP-вызов в loging_service — это менее опасно, чем потерять канал
@@ -112,12 +115,20 @@ _RECORD_FAILURE_SCRIPT = _breaker_lua.RECORD_FAILURE_SCRIPT
 
 
 def _keys() -> tuple[str, str, str]:
-    """Тройка ключей: failures, state, open_until. Канал один, host-измерения нет."""
+    """Тройка ключей: failures, state, open_until. Канал один, host-измерения нет.
+
+    Probe-ключ (in-flight half_open marker) — отдельный, см. ``_probe_key``.
+    """
     return (
         f"{_KEY_PREFIX}:failures",
         f"{_KEY_PREFIX}:state",
         f"{_KEY_PREFIX}:open_until",
     )
+
+
+def _probe_key() -> str:
+    """In-flight half_open marker; SETNX-захват в ``CHECK_SCRIPT``."""
+    return f"{_KEY_PREFIX}:probe"
 
 
 async def _get_client() -> aioredis.Redis:
@@ -136,9 +147,9 @@ async def check() -> None:
     client = await _get_client()
     try:
         try:
-            keys = _keys()
+            keys = (*_keys(), _probe_key())
             result = await client.eval(
-                _CHECK_SCRIPT, 3, *keys,
+                _CHECK_SCRIPT, 4, *keys,
                 str(int(time.time())), str(thresholds.cooldown_seconds),
             )
         except Exception:  # noqa: BLE001 — fail-open
@@ -179,9 +190,9 @@ async def get_state() -> tuple[str, float]:
     client = await _get_client()
     try:
         try:
-            keys = _keys()
+            keys = (*_keys(), _probe_key())
             result = await client.eval(
-                _CHECK_SCRIPT, 3, *keys,
+                _CHECK_SCRIPT, 4, *keys,
                 str(int(time.time())), str(thresholds.cooldown_seconds),
             )
         except Exception:  # noqa: BLE001 — fail-open
@@ -206,8 +217,8 @@ async def record_success() -> None:
     client = await _get_client()
     try:
         try:
-            keys = _keys()
-            await client.eval(_RECORD_SUCCESS_SCRIPT, 3, *keys)
+            keys = (*_keys(), _probe_key())
+            await client.eval(_RECORD_SUCCESS_SCRIPT, 4, *keys)
         except Exception:  # noqa: BLE001 — best-effort
             logger.warning(
                 "audit_publisher_breaker: record_success failed",
@@ -228,9 +239,9 @@ async def record_failure() -> None:
     client = await _get_client()
     try:
         try:
-            keys = _keys()
+            keys = (*_keys(), _probe_key())
             result = await client.eval(
-                _RECORD_FAILURE_SCRIPT, 3, *keys,
+                _RECORD_FAILURE_SCRIPT, 4, *keys,
                 str(int(time.time())),
                 str(thresholds.failure_threshold),
                 str(thresholds.window_seconds),
@@ -257,11 +268,14 @@ async def record_failure() -> None:
 
 
 async def reset() -> None:
-    """Operator/test helper: очистить state breaker'а досрочно."""
+    """Operator/test helper: очистить state breaker'а досрочно.
+
+    Сносит все четыре ключа (failures, state, open_until, probe).
+    """
     client = await _get_client()
     try:
         try:
-            await client.delete(*_keys())
+            await client.delete(*_keys(), _probe_key())
         except Exception:  # noqa: BLE001
             logger.warning(
                 "audit_publisher_breaker: reset failed", exc_info=True,

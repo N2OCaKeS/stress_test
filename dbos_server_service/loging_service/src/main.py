@@ -23,7 +23,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.router import api_router
 from src.core.config import get_settings
-from src.core.constants import ADVISORY_LOCKS
+from src.core.constants import ADVISORY_LOCKS, VALID_ACTOR_TYPES
 from src.core.exceptions import AppException
 from src.core.limiter import limiter
 from src.core.logging import configure_logging
@@ -860,9 +860,6 @@ def get_self_audit_failures_total() -> int:
         return self_audit_failures_total
 
 
-_VALID_ACTOR_TYPES = frozenset({"user", "bot", "service", "anonymous", "oauth_client"})
-
-
 def _build_audit_outbox(settings) -> AuditOutbox:
     """Собирает `AuditOutbox` с инжектированной session_factory и writer'ом.
 
@@ -936,11 +933,11 @@ def _emit_audit(
     + non-null actor_id → `"user"`, но это false-positive: bot/oauth_client
     с слегка переименованным subject_type попадали бы в user-метрики.
     """
-    # Резолвим actor_type c whitelist'а. `_VALID_ACTOR_TYPES` совпадает
+    # Резолвим actor_type c whitelist'а. `VALID_ACTOR_TYPES` совпадает
     # с `EventCreate.actor_type` Literal whitelist'ом. Неизвестные значения
     # сваливаются в "anonymous" — лучше потерять атрибуцию, чем подмешать
     # фейкового user'а в SIEM-агрегаты.
-    if actor_type in _VALID_ACTOR_TYPES:
+    if actor_type in VALID_ACTOR_TYPES:
         resolved_actor_type = actor_type
     else:
         resolved_actor_type = "anonymous"

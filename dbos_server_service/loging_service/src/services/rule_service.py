@@ -240,6 +240,10 @@ class _RuleCache:
         # сбрасывали его внеплановым refresh'ем.
         self._loaded_at: datetime | None = None
         self._loaded_monotonic: float | None = None
+        # Запоминаем, что предыдущий tick видел пустую БД (MAX(updated_at) = NULL).
+        # Без этого флага условие `db_updated_at is None` каждый раз даёт True
+        # и тянет лишний SELECT active_sorted каждые TTL-секунд на пустой БД.
+        self._db_empty: bool = False
         self._ttl = ttl_seconds
         self._lock = threading.Lock()
 
@@ -259,12 +263,27 @@ class _RuleCache:
                 return self._rules
             try:
                 db_updated_at = rule_repo.get_max_updated_at(db)
-                if self._loaded_at is None or db_updated_at is None or db_updated_at > self._loaded_at:
+                # Пустая БД (NULL MAX) при пустом кеше — стабильное состояние,
+                # лишний SELECT active_sorted не нужен. Как только в БД
+                # появится первая row — db_updated_at станет non-NULL и
+                # ветка ниже подтянет её.
+                db_empty_now = db_updated_at is None
+                first_load = self._loaded_at is None
+                changed = (
+                    not db_empty_now
+                    and (first_load or db_updated_at > self._loaded_at)
+                )
+                if changed or (db_empty_now and not self._db_empty and not first_load):
                     fresh_orm = rule_repo.get_active_sorted(db)
                     # Снимаем frozen-dataclass с каждой ORM-row до выхода из
                     # session-скоупа — кеш не должен зависеть ни от Session,
                     # ни от lazy-loading'а добавленных в будущем relationship'ов.
                     self._rules = [_snapshot_rule(r) for r in fresh_orm]
+                elif first_load and db_empty_now:
+                    # Первая загрузка на пустой БД: фиксируем пустой кеш без
+                    # дополнительного SELECT'а.
+                    self._rules = []
+                self._db_empty = db_empty_now
                 self._loaded_at = datetime.now(timezone.utc)
                 self._loaded_monotonic = mono_now
             except Exception:
@@ -283,6 +302,7 @@ class _RuleCache:
         with self._lock:
             self._loaded_at = None
             self._loaded_monotonic = None
+            self._db_empty = False
 
 
 _cache = _RuleCache(ttl_seconds=30)

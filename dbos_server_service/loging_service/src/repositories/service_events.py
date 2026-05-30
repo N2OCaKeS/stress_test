@@ -14,6 +14,8 @@ def upsert_events(
     db: Session,
     service: str,
     events: list[dict],
+    *,
+    commit: bool = True,
 ) -> tuple[int, int]:
     """Upsert батча определений событий для *service*.
 
@@ -68,7 +70,8 @@ def upsert_events(
     added = sum(1 for f in flags if f)
     updated = len(flags) - added
 
-    db.commit()
+    if commit:
+        db.commit()
     return added, updated
 
 

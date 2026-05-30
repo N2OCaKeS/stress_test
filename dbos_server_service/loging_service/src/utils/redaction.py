@@ -19,9 +19,10 @@ TODO (см. obsidian/TODO.md P4): вынести в общий пакет — sd
 
 Списки ключей — exact-set lookup по нижнему регистру. В частности,
 `_SECRET_KEYS` включает имена ключей S2S-ингеста (`service_api_key`,
-`service_key`, `introspect_key`) и `bearer` — auth_service / server_service
+`service_key`, `introspect_key`) — auth_service / server_service
 аудитят rotate-операции с этими именами в `details`, без них secret уезжал
-бы в БД в plaintext.
+бы в БД в plaintext. `bearer` лежит в `_TOKEN_KEYS` (классифицируется как
+`<TOKEN>`).
 """
 
 from __future__ import annotations
@@ -39,10 +40,13 @@ _TOKEN_KEYS = {
     "oauth_token", "bearer", "jwt", "jwt_token",
     "refresh_token_hash", "session_token",
 }
+# `bearer` живёт только в `_TOKEN_KEYS` — `_classify_key` идёт
+# PASSWORD → TOKEN → SECRET, дубль здесь был мёртвым (TOKEN всегда
+# побеждает).
 _SECRET_KEYS = {
     "secret", "secret_key", "api_key", "apikey",
     "client_secret", "private_key", "signing_key",
-    "service_api_key", "service_key", "introspect_key", "bearer",
+    "service_api_key", "service_key", "introspect_key",
 }
 _HASH_KEYS = {
     "password_hash", "hash", "token_hash", "pwd_hash",
@@ -113,6 +117,15 @@ def redact(payload: Any) -> Any:
     кортежи `(src, dst, key_or_index)`, где `dst[key]` будет заполнен
     результатом обработки `src`. На глубине `_MAX_DEPTH` подставляем
     `"<TRUNCATED>"` плейсхолдер — экраним bombing на pathological-вложенности.
+
+    Контракт — только для контейнеров: маскировка строк работает
+    исключительно для значений ВНУТРИ dict/list (по имени ключа или
+    pattern'у на content). Top-level скаляр возвращается как есть:
+    `redact("Bearer abc.def.xyz")` → строка без изменений. Это
+    сознательно: единственный публичный caller — `record_admin_action`,
+    он всегда получает `details: dict`. Если в будущем понадобится
+    маскировать top-level строку, дёргать нужно `_classify_value` /
+    `_redact_value(v, None)` напрямую.
     """
     if not isinstance(payload, (dict, list)):
         return payload

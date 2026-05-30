@@ -1,6 +1,16 @@
 """Доменные константы, общие на весь сервис."""
 
 
+# Whitelist значений `actor_type` для audit-событий. Должен совпадать с
+# Literal у `EventCreate.actor_type` в `src/schemas/events.py` — там
+# источник истины для Pydantic-валидации, здесь — для рантайм-резолва в
+# точках, где `actor_type` приходит из introspect и может быть unknown.
+# При расхождении тест `test_payload_validation` падает.
+VALID_ACTOR_TYPES: frozenset[str] = frozenset(
+    {"user", "bot", "service", "anonymous", "oauth_client"}
+)
+
+
 # Сервисы, чей audit-журнал нельзя писать через внешний service-token
 # endpoint. `loging_service` — единственный сейчас, потому что retention
 # инвариант защищает только его. Сравнение идёт через

@@ -29,6 +29,8 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
+from src.core.constants import VALID_ACTOR_TYPES
+
 logger = logging.getLogger(__name__)
 
 
@@ -400,7 +402,7 @@ def write_envelope_to_db(db: Session, envelope: AuditEnvelope) -> Any:
     from src.services.event_service import record_admin_action
 
     # `actor_type` whitelist — повторяем семантику старого `_emit_audit`.
-    if envelope.actor_type in _VALID_ACTOR_TYPES:
+    if envelope.actor_type in VALID_ACTOR_TYPES:
         resolved_actor_type = envelope.actor_type
     else:
         resolved_actor_type = "anonymous"
@@ -418,6 +420,3 @@ def write_envelope_to_db(db: Session, envelope: AuditEnvelope) -> Any:
         details=envelope.details,
     )
     return record_admin_action(db, payload, commit=False)
-
-
-_VALID_ACTOR_TYPES = frozenset({"user", "bot", "service", "anonymous", "oauth_client"})

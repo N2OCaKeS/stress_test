@@ -119,5 +119,12 @@ def unregister_running_task(task_id: str) -> None:
 
 
 def reset_for_tests() -> None:
-    """Test helper: очистить множество (между тестами не должно копиться)."""
+    """Test helper: очистить множество (между тестами не должно копиться).
+
+    Заодно сбрасывает кешированный `_RESOLVED_WORKER_ID`: full-suite раны
+    иначе тянули значение, резолвнутое первым тестом, и тесты, которые
+    подменяют env `WORKER_ID`, видели не своё значение.
+    """
+    global _RESOLVED_WORKER_ID
     RUNNING_TASKS.clear()
+    _RESOLVED_WORKER_ID = None

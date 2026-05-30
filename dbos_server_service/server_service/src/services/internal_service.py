@@ -734,21 +734,11 @@ async def receive_users_inventory(
       * привязан в API, но не найден на сервере → drift + пометить связку
         `present_on_server=False`, запись НЕ удаляем.
     """
-    try:
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.INVENTORY_SUBMIT,
-        )
-    except AuthorizationError:
-        audit_service.emit(
-            "server_account.users_inventory_received",
-            target_id=server_id, target_type="server",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
-
-    # Dept-check ВЫШЕ existence: разница 404 vs 403 — enumeration-oracle на
-    # факт существования сервера в чужом dept.
+    # Dept-check ВЫШЕ permission: cross-dept caller без нужного grant'а иначе
+    # ловит 403 permission_denied, а same-dept без grant'а — тоже 403. Разница
+    # 403 vs 404 для cross-dept caller'а работает enumeration-oracle'ом на
+    # факт существования сервера в чужом dept. `mask_as_not_found=True`
+    # унифицирует «не твой dept» и «не существует» в 404 ещё до permission gate.
     server = await server_repo.get_by_id(db, server_id)
     server_department_id = server.department_id if server is not None else None
     _check_target_department(
@@ -762,6 +752,18 @@ async def receive_users_inventory(
         not_found_error_code="SERVER_NOT_FOUND",
         not_found_message="Server not found",
     )
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.INVENTORY_SUBMIT,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server_account.users_inventory_received",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
     if server is None:
         audit_service.emit(
             "server_account.users_inventory_received",
@@ -977,23 +979,9 @@ async def record_provision_status(
     → True, deprovision → False. `last_inventory_at` не трогается — это не
     инвентаризация. Аккаунт обязан быть привязан к серверу, иначе 404.
     """
-    try:
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.PROVISION_ON_HOST,
-        )
-    except AuthorizationError:
-        audit_service.emit(
-            "server_account.provision_status",
-            target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied", "server_id": server_id},
-        )
-        raise
-
-    # Dept-check ВЫШЕ existence: разница 404 ACCOUNT_NOT_FOUND vs 403
-    # TARGET_DEPARTMENT_MISMATCH сливает caller'у факт привязки account_id к
-    # серверу чужого dept. Симметрично с `fetch_account_password` /
-    # `rotate_account_password`.
+    # Dept-check ВЫШЕ permission: cross-dept caller без grant'а иначе ловит 403
+    # permission_denied, что enum-oracle'ит факт привязки account_id к серверу
+    # чужого dept. Симметрично с `fetch_account_password` / `rotate_account_password`.
     server = await server_repo.get_by_id(db, server_id)
     server_department_id = server.department_id if server is not None else None
     _check_target_department(
@@ -1009,6 +997,18 @@ async def record_provision_status(
         not_found_message="Server account not found on this server",
         target_field="account_id",
     )
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.PROVISION_ON_HOST,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server_account.provision_status",
+            target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "server_id": server_id},
+        )
+        raise
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.record_provision_status",
@@ -1066,21 +1066,8 @@ async def record_server_prepared(
     `management_user=<имя>`. Идемпотентно: повторный callback просто
     переписывает те же поля. Аудит — CRITICAL.
     """
-    try:
-        await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
-        )
-    except AuthorizationError:
-        audit_service.emit(
-            "server.prepared",
-            target_id=server_id, target_type="server",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
-
-    # Dept-check ВЫШЕ existence: разница 404 vs 403 — enumeration-oracle на
-    # cross-dept server_id.
+    # Dept-check ВЫШЕ permission: cross-dept caller без grant'а иначе ловит 403
+    # permission_denied, что enum-oracle'ит факт существования сервера в чужом dept.
     server = await server_repo.get_by_id(db, server_id)
     server_department_id = server.department_id if server is not None else None
     _check_target_department(
@@ -1094,6 +1081,18 @@ async def record_server_prepared(
         not_found_error_code="SERVER_NOT_FOUND",
         not_found_message="Server not found",
     )
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.prepared",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
     if server is None:
         audit_service.emit(
             "server.prepared",
@@ -1154,21 +1153,9 @@ async def record_ipmi_credentials_rotated(
 
     Аудит — WARNING, `ipmi_controller.credentials_rotated_callback`.
     """
-    try:
-        await permissions.require_action(
-            db, identity, EntityType.IPMI_CONTROLLER, Action.ROTATE_CREDENTIALS,
-        )
-    except AuthorizationError:
-        audit_service.emit(
-            "ipmi_controller.credentials_rotated_callback",
-            target_id=controller_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
-
-    # Dept-check ВЫШЕ existence: разница 404 IPMI_CONTROLLER_NOT_FOUND vs 403
-    # сливает caller'у факт привязки controller_id к серверу чужого dept.
+    # Dept-check ВЫШЕ permission: cross-dept caller без grant'а иначе ловит 403
+    # permission_denied, что enum-oracle'ит факт привязки controller_id к
+    # серверу чужого dept.
     ctrl = await ipmi_repo.get_by_id(db, controller_id)
     server = None
     server_dept = None
@@ -1188,6 +1175,18 @@ async def record_ipmi_credentials_rotated(
         not_found_message="IPMI controller not found",
         target_field="controller_id",
     )
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.IPMI_CONTROLLER, Action.ROTATE_CREDENTIALS,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "ipmi_controller.credentials_rotated_callback",
+            target_id=controller_id, target_type="ipmi_controller",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
     if ctrl is None:
         audit_service.emit(
             "ipmi_controller.credentials_rotated_callback",

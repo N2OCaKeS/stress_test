@@ -665,12 +665,9 @@ async def acquire_server(
     if result.rowcount == 0:
         # Re-fetch без кэша — нужно увидеть, что положил параллельный writer.
         # Сессия SQLAlchemy могла бы вернуть закэшированный obj; expire
-        # принудительно перечитывает (sync API на AsyncSession).
-        # Дополнительный rollback'ом сбрасываем snapshot текущей транзакции:
-        # READ COMMITTED видит свежий commit конкурента в новой tx, иначе
-        # короткое race-окно может вернуть pre-decommission snapshot и мы
-        # отдадим ALREADY_BUSY вместо точного DECOMMISSIONED.
-        await db.rollback()
+        # принудительно перечитывает (sync API на AsyncSession). READ COMMITTED
+        # (дефолт PostgreSQL) выдаёт свежий snapshot на каждый SELECT, поэтому
+        # явный rollback'а транзакции не нужен — он ломал тестовые SAVEPOINT'ы.
         db.expire(obj)
         current = await repo.get_by_id(db, server_id)
         if current is None:

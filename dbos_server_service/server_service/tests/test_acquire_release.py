@@ -496,14 +496,18 @@ class TestAcquireRaceRollback:
         # уйдёт в SERVER_ALREADY_BUSY.
         assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
 
-    async def test_rollback_called_before_refetch(
+    async def test_expire_called_before_refetch(
         self, client, operator_token_a, make_server, monkeypatch,
     ):
-        """Прямая проверка: до re-fetch'а в CAS-miss ветке вызывается db.rollback().
+        """Прямая проверка: до re-fetch'а в CAS-miss ветке вызывается db.expire().
 
-        Перехватываем `AsyncSession.rollback` через wrapper и фиксируем порядок:
-        rollback должен быть вызван минимум один раз после CAS-miss'а — иначе
-        свежий commit конкурента не виден.
+        Перехватываем `AsyncSession.expire` через wrapper и фиксируем, что
+        кеш текущего объекта инвалидируется минимум один раз после CAS-miss'а.
+        Раньше та же роль закрывалась явным `db.rollback()`, но он ломал тестовые
+        SAVEPOINT'ы. READ COMMITTED-снапшот PostgreSQL обновляется на каждый
+        SELECT в новой транзакции, а commit конкурента в `racy_load` уже закрыл
+        предыдущую tx caller'а — expire достаточно, чтобы SQLAlchemy сходил
+        в БД и увидел свежее состояние.
         """
         from sqlalchemy import update as sa_update
         from src.core.constants import BusyState
@@ -511,7 +515,7 @@ class TestAcquireRaceRollback:
         from src.services import server as server_svc
 
         srv = await make_server(department_id="dep_a")
-        rollback_count = {"n": 0}
+        expire_count = {"n": 0}
 
         original_load = server_svc.load_visible_server
 
@@ -525,15 +529,14 @@ class TestAcquireRaceRollback:
             )
             await db_.commit()
 
-            # Оборачиваем rollback после load, чтобы не считать первый
-            # rollback внутри test-setup'а.
-            real_rollback = db_.rollback
+            # Оборачиваем expire после load, чтобы не считать setup-вызовы.
+            real_expire = db_.expire
 
-            async def counting_rollback():
-                rollback_count["n"] += 1
-                await real_rollback()
+            def counting_expire(instance, *args, **kwargs):
+                expire_count["n"] += 1
+                return real_expire(instance, *args, **kwargs)
 
-            db_.rollback = counting_rollback
+            db_.expire = counting_expire
             return obj
 
         monkeypatch.setattr(server_svc, "load_visible_server", racy_load)
@@ -543,6 +546,6 @@ class TestAcquireRaceRollback:
         )
         assert resp.status_code == 409
         assert resp.json()["error_code"] == "SERVER_ALREADY_BUSY"
-        assert rollback_count["n"] >= 1, (
-            "expected db.rollback() to be called before CAS-miss re-fetch"
+        assert expire_count["n"] >= 1, (
+            "expected db.expire() to be called before CAS-miss re-fetch"
         )

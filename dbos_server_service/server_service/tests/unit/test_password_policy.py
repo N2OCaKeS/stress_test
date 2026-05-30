@@ -11,7 +11,14 @@ import secrets
 
 import pytest
 
-from src.core.password_policy import is_compliant, validate_password
+from pydantic_core import PydanticCustomError
+
+from src.core.password_policy import (
+    is_compliant,
+    is_strong,
+    validate_password,
+    validate_strong_password,
+)
 
 
 @pytest.mark.parametrize(
@@ -44,6 +51,39 @@ def test_generated_tokens_meet_length_floor():
     """
     for _ in range(50):
         assert len(secrets.token_urlsafe(32)) >= 8
+
+
+@pytest.mark.parametrize(
+    "password",
+    [
+        "Aa1!Aa1!Aa1!Aa1!",          # 16, all four classes
+        "Boot1234!StrongPwd",        # 18
+        "P@ssw0rd-with-len-32-or-so",
+    ],
+)
+def test_strong_passwords_pass(password):
+    assert is_strong(password) is True
+    assert validate_strong_password(password) == password
+
+
+@pytest.mark.parametrize(
+    "password",
+    [
+        "Aa1!Aa1!Aa1!Aa1",     # 15 chars, otherwise compliant
+        "1234567890!@#$%^",    # no letter
+        "AbcdEfghIjkl!@#$",    # no digit
+        "Abcd1234Efgh5678",    # no symbol
+        "",
+        "Boot1234!Short",      # 14 chars
+    ],
+    ids=["too_short_15", "no_letter", "no_digit", "no_symbol", "empty",
+         "short_with_all_classes"],
+)
+def test_strong_policy_rejects(password):
+    assert is_strong(password) is False
+    with pytest.raises(PydanticCustomError) as exc_info:
+        validate_strong_password(password)
+    assert exc_info.value.type == "WEAK_PASSWORD"
 
 
 def test_generated_tokens_are_overwhelmingly_compliant():

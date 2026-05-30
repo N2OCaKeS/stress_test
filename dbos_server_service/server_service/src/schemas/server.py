@@ -7,6 +7,7 @@ from ipaddress import IPv4Address, IPv6Address
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from src.core.password_policy import validate_strong_password
 from src.schemas.disk import DiskResponse, DiskSpec
 from src.schemas.ipmi_controller import IpmiControllerCreate
 
@@ -227,14 +228,13 @@ class ServerPrepareRequest(BaseModel):
     пользователя DBOS и кладёт ему публичный ключ, после чего исходный
     пароль больше не нужен.
 
-    Инвариант: bootstrap-пароль **намеренно** не валидируется через
-    `core.password_policy.validate_password` (8 символов, буква+цифра). Это
-    одноразовый кред уже существующего OS-аккаунта на свежем боксе — он
-    приходит от инсталлятора/админа и может не соответствовать политике
-    DBOS-аккаунтов. Жёсткая валидация здесь сломала бы онбординг боксов с
-    короткими/простыми initial-паролями. Пароль не сохраняется и не
-    рассматривается как managed-секрет — политика применяется только к
-    управляемым DBOS-аккаунтам (`ServerAccountCreate.password_b64`,
+    Bootstrap-пароль валидируется по усиленной политике
+    `core.password_policy.validate_strong_password` — минимум 16 символов,
+    буква, цифра и хотя бы один не-алфанумерический символ. Это входная
+    точка управления свежим боксом: даже одноразовый кред должен быть
+    устойчив к перебору, пока он лежит в Redis под TTL и едет к worker'у
+    по internal-каналу. Управляемые DBOS-аккаунты после онбординга идут
+    под отдельной политикой (`ServerAccountCreate.password_b64`,
     `PasswordRotateRequest.password`, `IpmiCredentialsRotatedRequest.new_password`).
     """
 
@@ -256,7 +256,8 @@ class ServerPrepareRequest(BaseModel):
     @field_validator("password_b64")
     @classmethod
     def _check_password_b64(cls, value: str) -> str:
-        _decode_b64(value, "password_b64")
+        plaintext = _decode_b64(value, "password_b64")
+        validate_strong_password(plaintext)
         return value
 
     def username(self) -> str:

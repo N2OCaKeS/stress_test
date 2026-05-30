@@ -108,7 +108,7 @@ class TestPrepareDispatch:
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(operator_token_a),
-            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
         assert resp.status_code == 202, resp.text
         body = resp.json()
@@ -126,7 +126,7 @@ class TestPrepareDispatch:
         # base64 декодирован и креды ушли в Redis-store под этот ключ.
         assert call["stored_creds"] == {
             "bootstrap_login": "bootadmin",
-            "bootstrap_password": "Boot1234",
+            "bootstrap_password": "Boot1234!StrongPwd",
         }
 
     async def test_reader_cannot_prepare(
@@ -136,7 +136,7 @@ class TestPrepareDispatch:
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(reader_token_a),
-            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
         assert resp.status_code == 403, resp.text
         assert captured_dispatch == []
@@ -148,7 +148,7 @@ class TestPrepareDispatch:
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(operator_token_a),
-            json={"username_b64": "!!notb64!!", "password_b64": _b64("Boot1234")},
+            json={"username_b64": "!!notb64!!", "password_b64": _b64("Boot1234!StrongPwd")},
         )
         assert resp.status_code == 422, resp.text
         assert captured_dispatch == []
@@ -165,6 +165,125 @@ class TestPrepareDispatch:
         assert resp.status_code == 422, resp.text
         assert captured_dispatch == []
 
+    # ── Усиленная парольная политика для bootstrap-пароля ──────────────────
+
+    async def test_weak_password_short_422(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        # Короткий пароль с буквой/цифрой/символом — отказ только по длине.
+        srv = await make_server(department_id="dep_a")
+        pwd = "Boot1234!Short"  # 14
+        assert len(pwd) < 16
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64(pwd),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        body = resp.json()
+        types = [e["type"] for e in body["details"]["errors"]]
+        assert "WEAK_PASSWORD" in types
+        assert captured_dispatch.stored_creds_calls == []
+
+    async def test_weak_password_exactly_15_422(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        # Ровно 15 символов с буквой/цифрой/символом — всё равно отказ.
+        srv = await make_server(department_id="dep_a")
+        pwd = "Aa1!Aa1!Aa1!Aa1"  # 15
+        assert len(pwd) == 15
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64(pwd),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        types = [e["type"] for e in resp.json()["details"]["errors"]]
+        assert "WEAK_PASSWORD" in types
+        assert captured_dispatch == []
+
+    async def test_weak_password_no_letter_422(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        # 16+ цифр и символов, но ни одной буквы.
+        srv = await make_server(department_id="dep_a")
+        pwd = "1234567890!@#$%^"  # 16
+        assert len(pwd) == 16
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64(pwd),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        types = [e["type"] for e in resp.json()["details"]["errors"]]
+        assert "WEAK_PASSWORD" in types
+        assert captured_dispatch == []
+
+    async def test_weak_password_no_digit_422(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        srv = await make_server(department_id="dep_a")
+        pwd = "AbcdEfghIjkl!@#$"  # 16, no digit
+        assert len(pwd) == 16
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64(pwd),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        types = [e["type"] for e in resp.json()["details"]["errors"]]
+        assert "WEAK_PASSWORD" in types
+        assert captured_dispatch == []
+
+    async def test_weak_password_no_symbol_422(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        srv = await make_server(department_id="dep_a")
+        pwd = "Abcd1234Efgh5678"  # 16, only alnum
+        assert len(pwd) == 16
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64(pwd),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        types = [e["type"] for e in resp.json()["details"]["errors"]]
+        assert "WEAK_PASSWORD" in types
+        assert captured_dispatch == []
+
+    async def test_strong_password_exactly_16_ok(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        # Граница длины: ровно 16, буква+цифра+символ — пропускаем.
+        srv = await make_server(department_id="dep_a")
+        pwd = "Aa1!Aa1!Aa1!Aa1!"  # 16
+        assert len(pwd) == 16
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64(pwd),
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        assert len(captured_dispatch) == 1
+
     async def test_cross_dept_server_404(
         self, client, operator_token_b, make_server, captured_dispatch,
     ):
@@ -172,7 +291,7 @@ class TestPrepareDispatch:
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(operator_token_b),
-            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
         assert resp.status_code == 404, resp.text
         assert captured_dispatch == []
@@ -186,7 +305,7 @@ class TestPrepareDispatch:
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(operator_token_a),
-            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
         assert resp.status_code == 409, resp.text
         assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
@@ -204,7 +323,7 @@ class TestPrepareDispatch:
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(reader_token_a),
-            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
         assert resp.status_code == 403, resp.text
         assert captured_dispatch.stored_creds_calls == []
@@ -216,7 +335,7 @@ class TestPrepareDispatch:
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(operator_token_b),
-            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
         assert resp.status_code == 404, resp.text
         assert captured_dispatch.stored_creds_calls == []
@@ -230,7 +349,7 @@ class TestPrepareDispatch:
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(operator_token_a),
-            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
         assert resp.status_code == 409, resp.text
         assert captured_dispatch.stored_creds_calls == []
@@ -260,7 +379,7 @@ class TestPrepareDispatch:
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(operator_token_a),
-            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
         assert resp.status_code == 503, resp.text
         # Кред'ы успели лечь под некий ключ — этот же ключ обязан попасть
@@ -353,9 +472,9 @@ class TestPrepareAuditSafety:
         resp = await client.post(
             f"{BASE}/{srv.id}/prepare",
             headers=_hdr(operator_token_a),
-            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234")},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
         assert resp.status_code == 202, resp.text
         blob = str(events)
-        assert "Boot1234" not in blob
+        assert "Boot1234!StrongPwd" not in blob
         assert "bootadmin" not in blob

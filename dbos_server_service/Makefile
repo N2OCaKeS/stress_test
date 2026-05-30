@@ -372,6 +372,9 @@ test-down: ## Удалить тестовые контейнеры и тома
 	$(ROOT) down -v --remove-orphans
 	$(E2E) down -v --remove-orphans
 
+scan: ## [ручной] Полное локальное сканирование (тесты + lint + audit). CI нет — это единственный регулярный прогон.
+	@scripts/full-scan.sh
+
 ##@ k8s: production деплой в k3s на VM
 # Полный цикл деплоя: install_k3s → gen_secrets → build_and_import → deploy.
 # Подробный runbook — в k8s/README.md.

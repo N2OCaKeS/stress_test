@@ -445,13 +445,17 @@ handlers, модель Task, HTTP-клиенты, mock'и iDRAC/SSH, enum'ы.
 - [x] Property-based testing (Hypothesis) — `secrets_hypothesis`,
       `ids_hypothesis`, `redaction_hypothesis`.
 - [x] Migration tests (Alembic upgrade/downgrade) — auth_service.
-- [ ] CI pipeline (GitHub Actions / собственный) запускающий `make test-all`.
+- [x] Полный локальный скан вручную: `make scan` → `scripts/full-scan.sh`
+      (тесты всех сервисов + ruff + опционально pip-audit/safety). CI/CD
+      в репозитории намеренно отсутствует, регулярный прогон делает
+      владелец этой командой.
 - [ ] Coverage-репорт (pytest-cov) с порогом на сервис (например, ≥80%).
 - [ ] Mutation testing (mutmut / cosmic-ray) на security-critical модулях
       (`secrets_service.py`, `core/security.py`, `redaction.py`).
 - [ ] Performance benchmark suite: ingest throughput, query latency, introspect
       QPS — baseline + regression detection.
-- [ ] Security scan: bandit / safety в CI.
+- [ ] Security scan: bandit / safety в составе ручного `make scan`
+      (сейчас только pip-audit/safety опционально).
 - [ ] Migration tests для loging_service и server_service (Alembic upgrade/downgrade
       на свежей БД).
 - [ ] End-to-end test stack для server_worker (respx + fakeredis или реальные

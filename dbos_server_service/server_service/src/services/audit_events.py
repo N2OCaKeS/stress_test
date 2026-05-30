@@ -108,6 +108,10 @@ SERVICE_EVENTS = [
     # Worker-task cancel (POST /tasks/{id}/cancel). Помечает row CANCELLED;
     # worker при подборе следующей попытки пропускает её через CAS на
     # mark_running. running-task'у не убивает принудительно — graceful.
+    # denied: permission_denied / system_task_admin_required / task_not_found_or_cross_dept.
+    # failure: task_not_found (гонка после check'а) / not_cancellable (terminal status).
+    # Mid-run cancel сам по себе фиксируется не здесь, а worker'ом — он пишет
+    # audit с action=<task_kind>, status=failure, details.reason=cancelled_midrun.
     {"action": "task.cancelled", "description": "Worker task cancelled by operator (status set to CANCELLED in dev_server_worker.tasks; running task finishes current stage)", "default_severity": "WARNING"},
 ]
 

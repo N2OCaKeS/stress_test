@@ -201,6 +201,20 @@ dispatch-событие, server_worker (`tasks/installed_packages.py`) —
 
 ---
 
+## Worker task lifecycle (cancel)
+
+Единственная server_service-ручка управления task-row'ой — `POST /api/server/v1/tasks/{id}/cancel`. Row физически живёт в `dev_server_worker.tasks`; server_service ходит туда cross-DB через `worker_client`. Cancel применяется немедленно: queued → cancelled, running → worker завершает текущий stage и видит `status=cancelled` при попытке terminal `mark_succeeded/failed` (CAS отбрасывает финализацию). Force-kill процесса нет.
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `task.cancelled` | WARNING | POST `/tasks/{id}/cancel` — success на cancel pending/running task'и | `task` | success: `task_id`, `previous_status`, `task_kind`, `target_server_id`, `cancel_reason`. denied: `reason in {permission_denied, system_task_admin_required, task_not_found_or_cross_dept}` (+ `task_kind`, `target_server_id` где известно). failure: `reason in {task_not_found, not_cancellable}` (+ `previous_status` для `not_cancellable`) |
+
+> **denied vs failure semantics:** `denied` пишется когда caller не прошёл прав/видимости (нет `(task, cancel)`; системная task без `account_admin`; cross-dept по `target_server_id`) — попытка отлавливается ДО обращения к worker-DB. `failure` пишется когда права прошли, но row либо исчез между check'ом и cancel'ом (`task_not_found` race), либо уже в терминальном статусе (`not_cancellable` — 409).
+>
+> **Mid-run cancel side-effect** — отдельного server_service-события нет, но worker (см. `server_worker/src/tasks/_runner.py`) при попытке terminal write'а на cancelled row пишет audit с `action=<task_kind>` (например `power.on`, `account.rotate_password`), `status=failure`, `details.reason=cancelled_midrun` и `details.observed_status=cancelled`. Это покрывает все три ветки (success / failure / retry, последняя re-kick подавляется). SIEM может джойнить `task.cancelled (success)` с парным `<task_kind> (failure, reason=cancelled_midrun)` по `target_id=task_id` / `target_server_id`, чтобы видеть полную картину «оператор отменил, worker зафиксировал отмену в полёте».
+
+---
+
 ## Что НЕ аудитится (by design)
 
 - **Health/Ready endpoints** (`/health`, `/ready`) — k8s probes, шумно.
@@ -222,6 +236,9 @@ dispatch-событие, server_worker (`tasks/installed_packages.py`) —
 - `action in {ipmi_controller.view_credentials, server_account.view_password, server_account.rotate_password, server.inventory_received, ipmi_controller.credentials_rotated_callback} AND status=denied AND details.reason=actor_department_mismatch` — caller (worker_bot или admin) пытается работать с сервером чужого отдела через `/internal/*`. Высокий приоритет — компрометированный/неправильно выданный PAT.
 - `action=secrets.reencrypt_batch AND status=failure` — total-failure батча (все строки упали с decrypt/encrypt). Сигнал битого ciphertext или неправильной версии master-key.
 - `action=ipmi_controller.credentials_rotated_callback` — каждое подтверждение BMC-ротации worker'ом. CRITICAL-cross-check с dispatch'ем.
+- `action=task.cancelled AND status=denied AND details.reason=system_task_admin_required` — dept-admin с (task, cancel) пытался отменить системную task'у (heartbeat / sweep / cleanup_completed). Заслуживает проверки: либо admin неправильно понимает scope разрешения, либо это попытка повлиять на cluster-wide worker.
+- `action=task.cancelled AND status=failure AND details.reason=task_not_found` — гонка между fetch_status_and_meta и cancel: row исчез. В норме маловероятно (cleanup трогает только terminal). Если повторяется — баг в задаче cleanup'а или ручной DELETE в worker-БД.
+- `action=<task_kind> AND status=failure AND details.reason=cancelled_midrun` — worker зафиксировал, что задача отменилась в полёте. Парный к `task.cancelled (success)` — джойнить по `task_id`.
 
 ---
 

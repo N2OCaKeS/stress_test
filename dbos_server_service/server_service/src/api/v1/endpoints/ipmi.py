@@ -84,7 +84,7 @@ async def _dispatch_power(
     `http.access_denied` middleware'а — SIEM не отличил бы её от любой 403.
     """
     audit_action = _POWER_ACTION_TO_AUDIT[action]
-    # canon: permission first, visibility second — см. TODO L427 closure.
+    # canon: permission first, visibility second.
     with emit_denied_on_authz_error(
         audit_action,
         target_id=server_id,

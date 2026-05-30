@@ -27,6 +27,7 @@ dev/test/CI не делали лишних запросов.
 
 import asyncio
 import logging
+import sys
 
 from taskiq import TaskiqEvents, TaskiqScheduler, TaskiqState
 from taskiq.schedule_sources import LabelScheduleSource
@@ -34,7 +35,22 @@ from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from src.core.config import get_settings
 
-_settings = get_settings()
+try:
+    _settings = get_settings()
+except ValueError as _exc:
+    # Settings-валидатор бьёт ValueError'ом, если обязательный env не
+    # выставлен под текущий APP_ENV (например, WORKER_BOT_TOKEN пуст
+    # в dev/staging/production). taskiq при импорте broker'а покажет
+    # длинный pydantic traceback; перехватываем и пишем человекочитаемую
+    # строку в stderr/journald, потом выходим с кодом 1.
+    logging.basicConfig(
+        level="ERROR",
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    logging.getLogger(__name__).critical(
+        "server_worker startup aborted: %s", _exc,
+    )
+    sys.exit(1)
 
 logging.basicConfig(
     level=_settings.worker_log_level,

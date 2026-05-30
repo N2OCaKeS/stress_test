@@ -2,7 +2,8 @@
 
 * 200 → JSON; не-200 → типизированный CredentialFetchError;
 * httpx.HTTPError → SERVER_SERVICE_UNREACHABLE;
-* PAT (`worker_bot_token`) попадает в Authorization, пустой токен → пустые headers;
+* PAT (`worker_bot_token`) попадает в Authorization безусловно (пустой токен
+  отсекает startup-валидатор Settings, тест проверяет happy-path с placeholder);
 * `submit_rotated_password` НЕ логирует plaintext в exception.details.
 """
 
@@ -111,17 +112,14 @@ class TestFetchIpmi:
             await server_service_client.fetch_ipmi_credentials("srv_1")
         assert exc.value.error_code == "SERVER_SERVICE_UNREACHABLE"
 
-    async def test_empty_pat_no_auth_header(self, monkeypatch):
-        class _S:
-            server_service_url = "http://srv.test"
-            worker_bot_token = ""
-            http_request_timeout_seconds = 5.0
-
-        monkeypatch.setattr("src.services.server_service_client.get_settings", lambda: _S())
+    async def test_authorization_header_always_present(self, settings_stub, monkeypatch):
+        """`_headers` всегда добавляет Bearer — пустой токен отсекает
+        Settings-валидатор на старте (см. test_worker_bot_token_required.py).
+        """
         cap = {}
         monkeypatch.setattr(httpx, "AsyncClient", _Client(_Resp(200, {}), cap))
         await server_service_client.fetch_ipmi_credentials("srv_1")
-        assert "Authorization" not in cap["headers"]
+        assert cap["headers"]["Authorization"] == "Bearer wbt-1"
 
     async def test_target_department_id_forwarded_as_header(self, settings_stub, monkeypatch):
         """Worker forwards `target_department_id` arg as X-Target-Department-Id header."""

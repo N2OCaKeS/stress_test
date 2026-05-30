@@ -401,6 +401,30 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
+    def _require_worker_bot_token_outside_dev(self) -> "Settings":
+        """Пустой `WORKER_BOT_TOKEN` валит старт везде, кроме local/test.
+
+        Без PAT каждый internal-вызов в server_service возвращает 401, и
+        worker молча выдаёт `IPMI_CREDENTIALS_UNAVAILABLE` /
+        `ACCOUNT_PASSWORD_UNAVAILABLE` без подсказки про корневую причину.
+        В dev/staging/production это материальная дыра — все power/SSH
+        задачи фейлятся одинаково, оператор тратит час на диагностику.
+
+        В `local`/`test` пусто разрешено — conftest и dev-стек поднимаются
+        без secret-rotation, а HTTP-моки на стороне тестов не проверяют
+        Authorization.
+        """
+        if self.app_env.lower() in ("local", "test"):
+            return self
+        if not self.worker_bot_token:
+            raise ValueError(
+                "WORKER_BOT_TOKEN env required "
+                f"(empty token would cause every server_service call to fail "
+                f"with 401 in app_env={self.app_env!r})"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _require_redis_auth_in_prod(self) -> "Settings":
         """В продакшене REDIS_URL обязан содержать password.
 

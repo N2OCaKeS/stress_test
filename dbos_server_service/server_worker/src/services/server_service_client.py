@@ -20,32 +20,21 @@ from src.services.http_pool import get_server_service_client
 
 logger = logging.getLogger(__name__)
 
-_warned_empty_token = False
-
 
 def _headers(target_department_id: str | None = None) -> dict[str, str]:
     """Собрать HTTP-заголовки для запроса к server_service.
 
-    Включает `Authorization: Bearer <worker_bot_token>` если PAT
-    выставлен, плюс `X-Target-Department-Id` если caller передал dept
-    (для cross-tenant cross-check'а в internal-эндпоинтах).
-
-    При пустом `worker_bot_token` один раз пишет WARNING в лог: без PAT
-    server_service отдаст 401 на любой internal-вызов, и worker увидит
-    только `IPMI_CREDENTIALS_UNAVAILABLE`/`ACCOUNT_PASSWORD_UNAVAILABLE`
-    без подсказки про причину. Повторные вызовы не warn'ят — иначе при
-    burst'е тасков лог зальёт одной и той же строкой.
+    Включает `Authorization: Bearer <worker_bot_token>` (наличие токена
+    гарантируется startup-валидатором в `src.core.config.Settings`: в
+    dev/staging/production пустой `WORKER_BOT_TOKEN` валит старт воркера,
+    в local/test conftest подставляет placeholder), плюс
+    `X-Target-Department-Id` если caller передал dept (для cross-tenant
+    cross-check'а в internal-эндпоинтах).
     """
-    global _warned_empty_token
     settings = get_settings()
-    headers: dict[str, str] = {}
-    if settings.worker_bot_token:
-        headers["Authorization"] = f"Bearer {settings.worker_bot_token}"
-    elif not _warned_empty_token:
-        logger.warning(
-            "worker_bot_token is empty — internal calls will fail with 401",
-        )
-        _warned_empty_token = True
+    headers: dict[str, str] = {
+        "Authorization": f"Bearer {settings.worker_bot_token}",
+    }
     if target_department_id is not None:
         headers["X-Target-Department-Id"] = target_department_id
     return headers

@@ -71,14 +71,16 @@ def decode_cursor(token: str) -> Cursor:
 
 
 _DEFAULT_LIMIT = 50
-_MAX_LIMIT = 200
+_MAX_LIMIT = 500
 
 
 def normalize_limit(limit: int | None) -> int:
-    """Зажать `limit` в [1, 200] с дефолтом 50.
+    """Зажать `limit` в [1, 500] с дефолтом 50.
 
-    Endpoint-уровень уже валидирует диапазон через `Query(ge=1, le=200)`, но
-    сервис-слой держит свою защиту от прямых вызовов из тестов/CLI.
+    Endpoint-уровень валидирует диапазон через `Query(ge=1, le=500)` —
+    верхняя граница согласована с FastAPI-валидатором, чтобы list-эндпоинты
+    не получали молча урезанную страницу при limit > 200. Сервис-слой
+    держит свою защиту на случай прямых вызовов из тестов/CLI.
     """
     if limit is None:
         return _DEFAULT_LIMIT

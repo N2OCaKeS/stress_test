@@ -223,7 +223,10 @@ class TestTaskCancelRaceCondition:
 
         ev = [e for e in captured if e["action"] == "task.cancelled"]
         assert len(ev) == 1
-        assert ev[0]["status"] == "denied"
+        # Caller прошёл permission/visibility — это уже не denied, а failure
+        # (row исчез между _fetch и cancel_task).
+        assert ev[0]["status"] == "failure"
+        assert ev[0]["allowed"] is True
         assert ev[0]["details"]["reason"] == "task_not_found"
 
 

@@ -438,17 +438,21 @@ async def cancel_task(
         if (result.rowcount or 0) == 0:
             await session.rollback()
             # SELECT увидел cancellable, UPDATE — нет: race с worker'ом,
-            # успевшим finalize'нуть task. Перечитаем фактический статус.
+            # успевшим finalize'нуть task. Перечитаем фактический статус,
+            # чтобы и response, и audit получили актуальное значение, а не
+            # устаревшее queued/running, которое мы успели прочитать первым.
             re_meta = (
                 await session.execute(
                     text("SELECT status FROM tasks WHERE id = :id"),
                     {"id": task_id_value},
                 )
             ).first()
+            if re_meta is not None:
+                previous_status = re_meta[0]
             return {
                 "found": True,
                 "cancelled": False,
-                "previous_status": re_meta[0] if re_meta else previous_status,
+                "previous_status": previous_status,
                 "task_kind": task_kind,
                 "target_server_id": target_server_id,
             }

@@ -80,7 +80,14 @@ class TestNormalizeLimit:
         assert normalize_limit(-5) == 1
 
     def test_above_max_clamped(self):
-        assert normalize_limit(1000) == 200
+        assert normalize_limit(1000) == 500
 
     def test_in_range_passes(self):
         assert normalize_limit(75) == 75
+
+    def test_max_matches_endpoint_query_cap(self):
+        """Service-cap синхронен с endpoint'ным `Query(le=500)` — limit=500
+        не должен молча урезаться до 200.
+        """
+        assert normalize_limit(500) == 500
+        assert normalize_limit(499) == 499

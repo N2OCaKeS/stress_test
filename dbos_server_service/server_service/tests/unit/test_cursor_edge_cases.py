@@ -3,7 +3,7 @@
 Покрывает сценарии, не вошедшие в test_cursor.py:
 * encode_cursor с нулевым row_id и с row_id из произвольных unicode-символов;
 * decode_cursor с padding-вариантами (токены с разной длиной mod 4);
-* normalize_limit на граничных значениях 1 и 200;
+* normalize_limit на граничных значениях 1 и 500;
 * parse_cursor_datetime с aware-строкой не-UTC (должна не упасть);
 * json с лишними ключами (k и i присутствуют — должен пройти).
 """
@@ -99,17 +99,17 @@ class TestNormalizeLimitBoundary:
         assert normalize_limit(1) == 1
 
     def test_exactly_max(self):
-        assert normalize_limit(200) == 200
+        assert normalize_limit(500) == 500
 
     def test_one_below_min(self):
         assert normalize_limit(0) == 1
 
     def test_one_above_max(self):
-        assert normalize_limit(201) == 200
+        assert normalize_limit(501) == 500
 
     def test_mid_range(self):
-        for v in [1, 50, 100, 150, 200]:
-            assert 1 <= normalize_limit(v) <= 200
+        for v in [1, 50, 100, 250, 500]:
+            assert 1 <= normalize_limit(v) <= 500
 
 
 class TestParseCursorDatetime:

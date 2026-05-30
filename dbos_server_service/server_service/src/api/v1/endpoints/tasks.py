@@ -134,9 +134,11 @@ async def cancel_task_endpoint(
         # Гонка: row исчез между _fetch_task_status_and_meta и cancel_task.
         # Маловероятно (cleanup task'а удаляет только terminal succeeded/
         # failed), но проще честно вернуть 404 чем притворяться.
+        # `failure`, не `denied`: caller уже прошёл permission/visibility,
+        # отказ — из-за исчезновения row, а не из-за прав.
         audit_service.emit(
             audit_action, target_id=task_id, target_type="task",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "task_not_found"},
         )
         raise NotFoundError(

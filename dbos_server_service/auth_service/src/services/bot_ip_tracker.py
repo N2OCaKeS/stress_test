@@ -1,0 +1,124 @@
+"""Детектор подозрительной активности bot-токена с нескольких IP.
+
+Каждый раз, когда сервис вызывает `/authorization/introspect` с bot-токеном,
+sidecar-логика сюда записывает caller IP в `bot_accounts.last_known_ips`.
+Если за последний час с этого бота прилетело >=2 разных IP — эмитим CRITICAL
+audit `bot.suspicious_multi_ip`.
+
+Окно `last_known_ips` ограничено `BOT_LAST_KNOWN_IPS_WINDOW` записями (FIFO):
+для долго-живущего бота с большим парком CI-агентов нам важна только свежая
+история, не вся жизнь токена. Старые записи вытесняются по timestamp.
+
+Алерт не дедупится sidecar'ом — каждое «новое второе IP в часовом окне» даёт
+своё событие. Suppress'ом занимается loging_service rule-engine, если SOC
+посчитает шум избыточным.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.models.bot_account import BOT_LAST_KNOWN_IPS_WINDOW, BotAccount
+from src.services import audit_service
+
+# Длительность окна, внутри которого "несколько IP" считается подозрением.
+SUSPICIOUS_IP_WINDOW = timedelta(hours=1)
+
+
+def _parse_ts(raw: str | None) -> datetime | None:
+    """Распарсить ISO-timestamp из record'а `last_known_ips`. None при невалидном."""
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+async def track_bot_ip(
+    db: AsyncSession,
+    bot: BotAccount,
+    caller_ip: str | None,
+    request_id: str | None = None,
+) -> bool:
+    """Записать caller_ip в `bot.last_known_ips`, при необходимости — алертить.
+
+    Возвращает True, если был эмитен `bot.suspicious_multi_ip` (для тестов).
+
+    `caller_ip is None` — пропускаем (внутренние вызовы без проброса IP, либо
+    отключенный trusted-proxy allow-list). Не считаем "новым IP" значение
+    None, чтобы не путать счётчик уникальных адресов.
+
+    Алгоритм:
+      1. Берём `bot.last_known_ips` как есть, дописываем в хвост новую пару
+         `{"ip": <ip>, "ts": <now iso>}`. Если последний хвостовой элемент
+         с тем же IP — обновляем его ts (не плодим дубли подряд).
+      2. Триммим окно до `BOT_LAST_KNOWN_IPS_WINDOW` элементов с конца.
+      3. Считаем уникальные IP среди элементов с `ts >= now - 1h`.
+      4. Если уникальных >=2 — emit CRITICAL `bot.suspicious_multi_ip` с
+         деталями `{ips, bot_id, time_window: "1h"}`.
+
+    Замечание про concurrency: два параллельных introspect'а одного бота
+    могут перетереть `last_known_ips` друг друга (last-write-wins). Это OK:
+    окно из 5 IP — observability-сигнал, не security-инвариант; даже при
+    потере одной записи следующий introspect её догонит. CAS не нужен.
+    """
+    if not caller_ip:
+        return False
+
+    now = datetime.now(timezone.utc)
+    window: list[dict] = list(bot.last_known_ips or [])
+
+    # Если последняя запись — тот же самый IP, просто обновляем её ts.
+    # Long-poll CI-агент с фиксированного IP не должен забивать окно.
+    if window and window[-1].get("ip") == caller_ip:
+        window[-1]["ts"] = now.isoformat()
+    else:
+        window.append({"ip": caller_ip, "ts": now.isoformat()})
+
+    if len(window) > BOT_LAST_KNOWN_IPS_WINDOW:
+        window = window[-BOT_LAST_KNOWN_IPS_WINDOW:]
+
+    bot.last_known_ips = window
+    # Без явного flag_modified ORM не всегда видит мутацию JSONB-колонки
+    # (in-place изменение списка). Перезаписываем атрибут целиком — это
+    # гарантированно отметит attribute как dirty.
+    await db.flush()
+
+    cutoff = now - SUSPICIOUS_IP_WINDOW
+    recent_ips: list[str] = []
+    for entry in window:
+        ts = _parse_ts(entry.get("ts"))
+        if ts is None:
+            continue
+        # Naive datetime в JSON быть не должно (пишем с tz), но защищаемся.
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        if ts >= cutoff:
+            ip = entry.get("ip")
+            if ip and ip not in recent_ips:
+                recent_ips.append(ip)
+
+    if len(recent_ips) >= 2:
+        audit_service.emit(
+            "bot.suspicious_multi_ip",
+            bot.id,
+            actor_type="bot",
+            department_id=bot.department_id,
+            target_id=bot.id,
+            target_type="bot",
+            status="failure",
+            allowed=False,
+            details={
+                "bot_id": bot.id,
+                "bot_name": bot.name,
+                "ips": recent_ips,
+                "time_window": "1h",
+            },
+            request_id=request_id,
+        )
+        return True
+
+    return False

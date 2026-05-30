@@ -442,8 +442,18 @@ async def login(
     )
 
 
-async def refresh(db: AsyncSession, raw_refresh_token: str, request_id: str | None = None) -> RefreshResponse:
-    """Ротация refresh: старый → новая пара. Reuse-detection через `previous_token_hash`."""
+async def refresh(
+    db: AsyncSession,
+    raw_refresh_token: str,
+    request_id: str | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> RefreshResponse:
+    """Ротация refresh: старый → новая пара. Reuse-detection через `previous_token_hash`.
+
+    `ip_address` / `user_agent` пишутся в `Session` атомарно с ротацией, если
+    переданы. None — сохраняем то, что было записано на login.
+    """
     settings = get_settings()
     session_repo = SessionRepository(db)
     user_repo = UserRepository(db)
@@ -487,7 +497,13 @@ async def refresh(db: AsyncSession, raw_refresh_token: str, request_id: str | No
 
     new_raw, new_hash = generate_refresh_token()
     new_expires = expires_at(days=settings.refresh_token_ttl_days)
-    rotated = await session_repo.rotate(sess, new_hash, new_expires)
+    rotated = await session_repo.rotate(
+        sess,
+        new_hash,
+        new_expires,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
     if not rotated:
         # CAS-miss: другой concurrent /refresh уже ротировал эту сессию (оба
         # запроса прочитали одну строку до того, как кто-то её UPDATE'нул).

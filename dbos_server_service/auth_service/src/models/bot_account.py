@@ -8,11 +8,16 @@
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.constants import BotStatus
 from src.db.base import Base
+
+# Сколько последних уникальных (ip, ts) пар держим в `last_known_ips`. Окно
+# фиксированное, чтобы строка bot_accounts не пухла от long-living бота с
+# тысячами CI-агентов; новые пары вытесняют старые по FIFO.
+BOT_LAST_KNOWN_IPS_WINDOW = 5
 
 
 class BotAccount(Base):
@@ -43,6 +48,14 @@ class BotAccount(Base):
         nullable=False,
     )
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Лента последних IP'шников, с которых видели бот-токен (`introspect`).
+    # Каждый элемент — `{"ip": "1.2.3.4", "ts": "2026-05-30T12:34:56+00:00"}`.
+    # Используется детектором `bot.suspicious_multi_ip`: если за час бот
+    # засветился с >=2 разных IP, эмитим CRITICAL audit. Window — последние
+    # `BOT_LAST_KNOWN_IPS_WINDOW` записей по FIFO; старше окна выпадает.
+    last_known_ips: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
 
     department: Mapped["Department"] = relationship("Department", back_populates="bots")  # noqa: F821
     tokens: Mapped[list["BotToken"]] = relationship(  # noqa: F821

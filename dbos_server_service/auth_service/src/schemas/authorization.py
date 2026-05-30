@@ -6,6 +6,15 @@ from pydantic import BaseModel, Field
 class IntrospectRequest(BaseModel):
     """Тело `POST /authorization/introspect`."""
     token: str = Field(description="Токен для валидации (JWT / PAT / bot).")
+    caller_ip: str | None = Field(
+        default=None,
+        description=(
+            "IP конечного клиента, который предъявил `token` вызывающему "
+            "сервису. Опциональный — но для bot-токенов нужен детектору "
+            "`bot.suspicious_multi_ip` (multi-IP алерт). Если сервис не "
+            "пробрасывает — детектор тихо пропускает."
+        ),
+    )
 
 
 class IntrospectResponse(BaseModel):

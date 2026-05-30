@@ -147,6 +147,8 @@ async def refresh(
         db=db,
         raw_refresh_token=body.refresh_token,
         request_id=getattr(request.state, "request_id", None),
+        ip_address=extract_client_ip(request),
+        user_agent=request.headers.get("User-Agent"),
     )
 
 

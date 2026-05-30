@@ -84,7 +84,14 @@ class SessionRepository:
         await self._db.flush()
         return sess
 
-    async def rotate(self, sess: Session, new_hash: str, new_expires_at) -> bool:
+    async def rotate(
+        self,
+        sess: Session,
+        new_hash: str,
+        new_expires_at,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> bool:
         """Атомарная замена `refresh_token_hash` через CAS.
 
         UPDATE матчит по `id` И ожидаемому текущему `refresh_token_hash`.
@@ -113,6 +120,22 @@ class SessionRepository:
         if len(prev_window) > PREVIOUS_TOKEN_HASH_WINDOW:
             prev_window = prev_window[-PREVIOUS_TOKEN_HASH_WINDOW:]
 
+        update_values: dict = {
+            "previous_token_hash": expected_hash,
+            "previous_token_hashes": prev_window,
+            "refresh_token_hash": new_hash,
+            "token_generation": Session.token_generation + 1,
+            "expires_at": new_expires_at,
+            "last_used_at": now,
+        }
+        # ip_address/user_agent обновляем только если передали — иначе
+        # сессия теряла бы исходное значение, если клиент refresh'ит без
+        # известного IP (например, internal call). None — "не трогать".
+        if ip_address is not None:
+            update_values["ip_address"] = ip_address
+        if user_agent is not None:
+            update_values["user_agent"] = user_agent
+
         # `token_generation = Session.token_generation + 1` — это column-expr,
         # `.values(**dict)` нормально его принимает.
         won = await atomic_transition(
@@ -124,14 +147,7 @@ class SessionRepository:
                 Session.refresh_token_hash == expected_hash,
                 Session.is_active.is_(True),
             ),
-            update_values={
-                "previous_token_hash": expected_hash,
-                "previous_token_hashes": prev_window,
-                "refresh_token_hash": new_hash,
-                "token_generation": Session.token_generation + 1,
-                "expires_at": new_expires_at,
-                "last_used_at": now,
-            },
+            update_values=update_values,
         )
         if not won:
             return False
@@ -143,6 +159,10 @@ class SessionRepository:
         sess.token_generation += 1
         sess.expires_at = new_expires_at
         sess.last_used_at = now
+        if ip_address is not None:
+            sess.ip_address = ip_address
+        if user_agent is not None:
+            sess.user_agent = user_agent
         return True
 
     async def revoke(self, sess: Session) -> None:

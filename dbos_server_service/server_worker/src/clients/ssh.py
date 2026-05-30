@@ -506,9 +506,17 @@ class SshClient:
                 'grep -qxF "$key" "$home/.ssh/authorized_keys" || '
                 'printf "%s\\n" "$key" >> "$home/.ssh/authorized_keys"'
             )
+        # getent возвращает пустую строку, если пользователь не существует
+        # (удалён между provision'ом и установкой ключа, либо вообще не
+        # создан). Без guard'а home="" приводил бы к `mkdir -p /.ssh`
+        # под sudo и порче корневой ФС. Явный exit 1 с сообщением в stderr
+        # ловится caller'ом как обычный SSH_*_FAILED.
         rc, _out, stderr = await self.run(
             f"bash -c 'set -e; "
             f"home=$(getent passwd {target_user} | cut -d: -f6); "
+            'if [ -z "$home" ] || [ "$home" = "/" ]; then '
+            f'echo "user {target_user} not found or has invalid home" >&2; '
+            'exit 1; fi; '
             'mkdir -p "$home/.ssh"; '
             "key=$(cat); "
             f"{write_cmd}; "

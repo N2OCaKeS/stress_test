@@ -129,6 +129,23 @@ def _filter_result_for_audit(
     return {k: v for k, v in result.items() if k in safe_fields}
 
 
+def _cancel_timestamp(task) -> str | None:
+    """Вернуть `task.cancelled_at` в ISO-формате, если поле выставлено.
+
+    Используется как override для `audit.timestamp` на cancel-путях:
+    оператор дёрнул cancel в момент T, worker увидел row позже в момент
+    T+Δ (sweep / next enqueue). Без override audit-event получит worker's
+    now(), а не время решения оператора, и операторские дашборды покажут
+    рассогласование с server_service'овским cancel-event'ом.
+    """
+    if task is None:
+        return None
+    cancelled_at = getattr(task, "cancelled_at", None)
+    if cancelled_at is None:
+        return None
+    return cancelled_at.isoformat()
+
+
 def _attach_cancel_metadata(details: dict, task) -> None:
     """Доклеить `cancelled_by`/`cancel_reason` в details cancel-audit'а.
 
@@ -235,20 +252,24 @@ async def run_task(
                 "observed_status": current_status,
             }
             _attach_cancel_metadata(cancel_details, task)
+            cancel_payload = {
+                "action": audit_action,
+                "status": "failure",
+                "allowed": False,
+                "target_id": target_id,
+                "target_type": audit_target_type,
+                "request_id": request_id,
+                "actor_id": actor_id,
+                "details": cancel_details,
+                "severity": "WARNING",
+            }
+            cancel_ts = _cancel_timestamp(task)
+            if cancel_ts is not None:
+                cancel_payload["timestamp"] = cancel_ts
             await task_repo.enqueue_audit(
                 session,
                 task_id=task_id,
-                payload={
-                    "action": audit_action,
-                    "status": "failure",
-                    "allowed": False,
-                    "target_id": target_id,
-                    "target_type": audit_target_type,
-                    "request_id": request_id,
-                    "actor_id": actor_id,
-                    "details": cancel_details,
-                    "severity": "WARNING",
-                },
+                payload=cancel_payload,
             )
             await session.commit()
             await _safe_flush_outbox()
@@ -349,9 +370,26 @@ async def run_task(
             # `observed_status=cancelled`. Без этого guard'а cancelled
             # row перетёрся бы failed/queued и cancel был бы потерян.
             cancelled_midrun = False
+            deleted_midrun = False
             async with AsyncSessionLocal() as fail_session:
                 fresh = await task_repo.get_by_id(fail_session, task_id)
-                if fresh is not None:
+                if fresh is None:
+                    # Row удалена между mark_running и terminal write —
+                    # retention cleanup'ом, ручным DELETE из БД или
+                    # автотестом. Терминальный mark_* делать не на чем,
+                    # retry шедулить тоже бессмысленно — kiq положит
+                    # task_id в Redis, worker подберёт, увидит fresh=None
+                    # снова и зациклится. Пишем отдельный audit-event,
+                    # оператор увидит, что task пропала прямо во время
+                    # выполнения.
+                    deleted_midrun = True
+                    logger.warning(
+                        "task row deleted mid-run, terminal write skipped "
+                        "task_id=%s should_retry=%s",
+                        task_id,
+                        should_retry,
+                    )
+                else:
                     if should_retry:
                         marked = await task_repo.mark_pending_for_retry(
                             fail_session,
@@ -382,7 +420,23 @@ async def run_task(
                 # observed_status=cancelled — оператору сразу видно,
                 # что cancel случился во время выполнения.
                 audit_status = "failure"
-                if cancelled_midrun:
+                cancel_audit_ts: str | None = None
+                audit_action_override: str | None = None
+                if deleted_midrun:
+                    # Спец-action `task.deleted_midrun`: не путаем
+                    # оператора с server.power_on/ipmi_* status=failure,
+                    # которое подразумевает, что row ещё существует.
+                    audit_action_override = "task.deleted_midrun"
+                    audit_severity = "WARNING"
+                    audit_details = {
+                        "task_id": task_id,
+                        "error": error_message,
+                        "attempt": current_attempt,
+                        "max_attempts": max_attempts,
+                        "original_action": audit_action,
+                        "reason": "task_deleted_midrun",
+                    }
+                elif cancelled_midrun:
                     audit_severity = "WARNING"
                     # Перечитываем row: cancel мог прийти между первым
                     # `get_by_id` и `mark_*` (CAS), тогда у `fresh`
@@ -400,6 +454,7 @@ async def run_task(
                         "reason": "cancelled_midrun",
                     }
                     _attach_cancel_metadata(audit_details, refreshed)
+                    cancel_audit_ts = _cancel_timestamp(refreshed)
                 elif should_retry:
                     audit_severity = "WARNING"
                     audit_details = {
@@ -418,20 +473,23 @@ async def run_task(
                         "max_attempts": max_attempts,
                         "will_retry": False,
                     }
+                fail_payload = {
+                    "action": audit_action_override or audit_action,
+                    "status": audit_status,
+                    "allowed": False,
+                    "target_id": target_id,
+                    "target_type": audit_target_type,
+                    "request_id": request_id,
+                    "actor_id": actor_id,
+                    "details": audit_details,
+                    "severity": audit_severity,
+                }
+                if cancel_audit_ts is not None:
+                    fail_payload["timestamp"] = cancel_audit_ts
                 await task_repo.enqueue_audit(
                     fail_session,
                     task_id=task_id,
-                    payload={
-                        "action": audit_action,
-                        "status": audit_status,
-                        "allowed": False,
-                        "target_id": target_id,
-                        "target_type": audit_target_type,
-                        "request_id": request_id,
-                        "actor_id": actor_id,
-                        "details": audit_details,
-                        "severity": audit_severity,
-                    },
+                    payload=fail_payload,
                 )
                 await fail_session.commit()
 
@@ -441,7 +499,10 @@ async def run_task(
             # таски не помешает publisher'у дописать audit. Если row
             # был cancelled mid-run — re-kick не нужен (mark_pending_for_retry
             # вернул None, status в БД остался cancelled, оживлять нечего).
-            if should_retry and not cancelled_midrun:
+            # Если row был удалён mid-run — re-kick положит task_id в Redis,
+            # worker подберёт, увидит fresh=None и зациклится → re-kick
+            # тоже подавляем.
+            if should_retry and not cancelled_midrun and not deleted_midrun:
                 await _schedule_retry(
                     task_kind, task_id, current_attempt, delay=retry_delay,
                 )
@@ -455,9 +516,20 @@ async def run_task(
         # отбрасываем (его поведение оператор отменил сознательно).
         filtered_result = _filter_result_for_audit(result, audit_safe_fields)
         success_cancelled_midrun = False
+        success_deleted_midrun = False
         async with AsyncSessionLocal() as success_session:
             fresh = await task_repo.get_by_id(success_session, task_id)
-            if fresh is not None:
+            if fresh is None:
+                # Row удалена между mark_running и mark_succeeded.
+                # Аналогично failure-пути: пишем `task.deleted_midrun`,
+                # не success — иначе audit врёт, будто task ещё жива.
+                success_deleted_midrun = True
+                logger.warning(
+                    "task row deleted mid-run, terminal write skipped "
+                    "task_id=%s phase=success",
+                    task_id,
+                )
+            else:
                 marked = await task_repo.mark_succeeded(
                     success_session, fresh, result,
                 )
@@ -471,7 +543,24 @@ async def run_task(
             # Outbox-row пишем ВСЕГДА, даже если Task-row исчез между
             # сессиями (защита от silent no-op: владелец task'и удалил
             # row → пусть audit об этом останется).
-            if success_cancelled_midrun:
+            if success_deleted_midrun:
+                audit_payload = {
+                    "action": "task.deleted_midrun",
+                    "status": "failure",
+                    "allowed": False,
+                    "target_id": target_id,
+                    "target_type": audit_target_type,
+                    "request_id": request_id,
+                    "actor_id": actor_id,
+                    "details": {
+                        "task_id": task_id,
+                        "original_action": audit_action,
+                        "phase": "success",
+                        "reason": "task_deleted_midrun",
+                    },
+                    "severity": "WARNING",
+                }
+            elif success_cancelled_midrun:
                 refreshed = await task_repo.get_by_id(success_session, task_id)
                 success_cancel_details = {
                     "task_id": task_id,
@@ -490,6 +579,9 @@ async def run_task(
                     "details": success_cancel_details,
                     "severity": "WARNING",
                 }
+                success_cancel_ts = _cancel_timestamp(refreshed)
+                if success_cancel_ts is not None:
+                    audit_payload["timestamp"] = success_cancel_ts
             else:
                 audit_payload = {
                     "action": audit_action,

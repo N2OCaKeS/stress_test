@@ -310,7 +310,6 @@ async def ipmi_rotate_password(task_id: str) -> None:
             await _store_ipmi_rotate_password(task_id, new_password)
         else:
             new_password = stashed_password
-        rotated_at = datetime.now(timezone.utc).isoformat()
 
         # ── BMC apply: Redfish PATCH либо ipmitool user set password ───
         host = _extract_bmc_host(creds["endpoint_url"])
@@ -325,6 +324,13 @@ async def ipmi_rotate_password(task_id: str) -> None:
             await _breaker.record_success(host)
         finally:
             await _aclose_bmc(client)
+
+        # rotated_at фиксируем ПОСЛЕ успешного apply на BMC. Если apply
+        # упал — исключение пробрасывается выше, в storage rotated_at не
+        # уходит, и retry-цикл считает новый timestamp на следующей
+        # попытке. Без этого порядка storage помечал бы ротацию моментом
+        # старта, что расходится с реальным временем смены пароля на BMC.
+        rotated_at = datetime.now(timezone.utc).isoformat()
 
         # ── BMC verify: read-only call с НОВЫМ паролем ──────────────────
         # Доказательство, что BMC действительно сохранил новый пароль —

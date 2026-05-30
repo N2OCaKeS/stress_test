@@ -146,7 +146,8 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `bot.roles_assign` | WARNING | `bot_service.assign_bot_roles` | `service_name`, `roles`. |
 | `bot.roles_list` | INFO | `GET /bots/{id}/roles` | — |
 | `bot.roles_revoke` | WARNING | `bot_service.revoke_bot_roles` | `service_name`. |
-| `bot.suspicious_multi_ip` | CRITICAL | `bot_ip_tracker.track_bot_ip` (sidecar в `/authorization/introspect`) | `bot_id`, `bot_name`, `ips` (уникальные IP за окно), `time_window` (`"1h"`). Эмитим, когда за 1 час один bot-токен видели с >=2 разных IP. |
+| `bot.roles_purged_on_services_narrowed` | WARNING | `bot_service.update_bot` | `bot_id`, `bot_name`, `department_id`, `removed_services` (выкинутые из `allowed_services`), `removed_role_count`. Эмитим, когда сужение `allowed_services` обнуляет роли на ушедшие сервисы. |
+| `bot.suspicious_multi_ip` | CRITICAL | `bot_ip_tracker.track_bot_ip` (sidecar в `/authorization/introspect`) | `bot_id`, `bot_name`, `ips` (уникальные IP за окно), `time_window_seconds` (длина окна из `BOT_SUSPICIOUS_IP_WINDOW_SECONDS`). Эмитим, когда за окно один bot-токен видели с >=2 разных IP. |
 
 ## OAuth2
 

@@ -181,9 +181,18 @@ async def update_bot(
             raise AuthorizationError(error_code="BOT_UPDATE_FORBIDDEN", message="Cannot update bot outside your department")
 
     updates = {k: v for k, v in data.model_dump(exclude_none=True).items()}
+    removed_services: list[str] = []
     if "allowed_services" in updates:
         dept_repo = DepartmentRepository(db)
         await _validate_bot_services(dept_repo, bot.department_id, updates["allowed_services"])
+        # Вычисляем сервисы, выкинутые из allowed_services. Любые BotServiceRole
+        # на них становятся бесхозными: introspect отфильтрует их через
+        # пересечение с allowed_services, а GET /bots/{id}/roles до фикса
+        # отдавал их как призраков. Чистим явно, чтобы и каталог ролей был
+        # консистентен, и аудиту было что эмитнуть.
+        old_set = set(bot.allowed_services or [])
+        new_set = set(updates["allowed_services"])
+        removed_services = sorted(old_set - new_set)
     if "name" in updates and updates["name"] != bot.name:
         # Зеркало create_bot: имя глобально-уникально, иначе кто-то перетрёт
         # чужого бота для целей docker basic-auth.
@@ -196,6 +205,10 @@ async def update_bot(
     if "status" in updates:
         updates["is_active"] = updates["status"] == "active"
     await bot_repo.update(bot, **updates)
+    removed_role_count = 0
+    if removed_services:
+        role_repo = BotRoleRepository(db)
+        removed_role_count = await role_repo.delete_for_bot_services(bot.id, removed_services)
     await db.commit()
     audit_service.emit(
         "bot.update", actor_id, target_id=bot_id, target_type="bot",
@@ -207,6 +220,21 @@ async def update_bot(
             "fields_changed": sorted(updates.keys()),
         },
     )
+    if removed_services:
+        audit_service.emit(
+            "bot.roles_purged_on_services_narrowed",
+            actor_id,
+            target_id=bot_id,
+            target_type="bot",
+            request_id=request_id,
+            details={
+                "bot_id": bot.id,
+                "bot_name": bot.name,
+                "department_id": bot.department_id,
+                "removed_services": removed_services,
+                "removed_role_count": removed_role_count,
+            },
+        )
     return _to_response(bot)
 
 
@@ -219,7 +247,12 @@ async def create_bot_token(
     expires_at=None,
     request_id: str | None = None,
 ) -> BotTokenCreateResponse:
-    """Создать новый bot-токен. Raw возвращается один раз — больше нигде не покажем."""
+    """Создать новый bot-токен. Raw возвращается один раз — больше нигде не покажем.
+
+    Уникальность `name` держим только в рамках **активных** токенов бота:
+    после revoke имя освобождается, dept_admin может пересоздать токен
+    с прежним name (штатный flow ротации раз в полгода).
+    """
     user_repo = UserRepository(db)
     bot_repo = BotRepository(db)
     token_repo = BotTokenRepository(db)

@@ -56,7 +56,7 @@ async def track_bot_ip(
       2. Триммим окно до `BOT_LAST_KNOWN_IPS_WINDOW` элементов с конца.
       3. Считаем уникальные IP среди элементов с `ts >= now - 1h`.
       4. Если уникальных >=2 — emit CRITICAL `bot.suspicious_multi_ip` с
-         деталями `{ips, bot_id, time_window: "1h"}`.
+         деталями `{ips, bot_id, time_window_seconds: <окно>}`.
 
     Замечание про concurrency: два параллельных introspect'а одного бота
     могут перетереть `last_known_ips` друг друга (last-write-wins). Это OK:
@@ -121,7 +121,7 @@ async def track_bot_ip(
                 "bot_id": bot.id,
                 "bot_name": bot.name,
                 "ips": recent_ips,
-                "time_window": "1h",
+                "time_window_seconds": settings.bot_suspicious_ip_window_seconds,
             },
             request_id=request_id,
         )

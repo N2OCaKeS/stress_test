@@ -44,10 +44,18 @@ class TokenRepository:
         return list(result)
 
     async def exists_name(self, user_id: str, name: str) -> bool:
+        """True если у юзера есть **активный** (не revoked) PAT с этим именем.
+
+        После revoke имя освобождается — это нужно, чтобы юзер мог пересоздать
+        PAT с прежним именем (типичный flow при ротации). Уникальность по
+        revoked-строкам не держим: история сохраняется в `revoked_reason` /
+        `revoked_at`, но не блокирует новое имя.
+        """
         return await self._db.scalar(
             select(PersonalAccessToken.id).where(
                 PersonalAccessToken.user_id == user_id,
                 PersonalAccessToken.name == name,
+                PersonalAccessToken.revoked_at.is_(None),
             )
         ) is not None
 

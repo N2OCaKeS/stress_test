@@ -1,6 +1,6 @@
 """Эндпоинты ботов и service-account'ов."""
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import AnyAdmin
@@ -68,17 +68,23 @@ async def list_bots(
     response: Response,
     identity: AnyAdmin,
     pagination: PaginationParams = Depends(pagination_params),
+    department_id: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> list[BotResponse]:
     """Список ботов с учётом scope-а смотрящего.
 
     Пагинация:
         Query-параметры `limit`/`offset`; общее число — в `X-Total-Count`.
+
+    Фильтр `department_id` уважается для `account_admin` (он видит все отделы
+    и хочет сузить выдачу). Для `department_admin` фильтр игнорируется — он и
+    так залочен на свой отдел.
     """
     items, total = await bot_service.list_bots(
         db=db,
         actor_id=identity.user_id,
         actor_role=identity.platform_role,
+        department_id=department_id,
         pagination=pagination,
         request_id=getattr(request.state, "request_id", None),
     )

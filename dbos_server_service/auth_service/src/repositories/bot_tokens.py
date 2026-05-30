@@ -32,10 +32,17 @@ class BotTokenRepository:
         return list(result)
 
     async def exists_name(self, bot_id: str, name: str) -> bool:
+        """True если у бота есть **активный** (не revoked) токен с этим именем.
+
+        После revoke имя освобождается — это позволяет пересоздавать bot-токен
+        с прежним именем при штатной ротации (раз в 6 месяцев). Уникальность по
+        revoked-строкам не держим, история живёт в `revoked_at`.
+        """
         return await self._db.scalar(
             select(BotToken.id).where(
                 BotToken.bot_id == bot_id,
                 BotToken.name == name,
+                BotToken.revoked_at.is_(None),
             )
         ) is not None
 

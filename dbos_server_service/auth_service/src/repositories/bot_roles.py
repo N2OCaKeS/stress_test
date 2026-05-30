@@ -69,6 +69,28 @@ class BotRoleRepository:
         )
         await self._db.flush()
 
+    async def delete_for_bot_services(
+        self, bot_id: str, service_names: list[str]
+    ) -> int:
+        """Снести все BotServiceRole для бота по списку сервисов.
+
+        Используется при сужении `bot.allowed_services`: роли на выкинутые
+        сервисы должны исчезнуть, иначе GET `/bots/{id}/roles` будет показывать
+        призраков, а introspect — пересчитывать их с эффективным фильтром по
+        `allowed_services` (то есть всё равно отдавать пусто, но мусор в БД
+        копится). Пустой список — no-op. Возвращает число удалённых строк.
+        """
+        if not service_names:
+            return 0
+        result = await self._db.execute(
+            delete(BotServiceRole).where(
+                BotServiceRole.bot_id == bot_id,
+                BotServiceRole.service_name.in_(service_names),
+            )
+        )
+        await self._db.flush()
+        return result.rowcount or 0
+
     async def deactivate_all_for_service(self, service_name: str) -> list[str]:
         """Деактивировать все bot→role связи для сервиса (across all depts).
 

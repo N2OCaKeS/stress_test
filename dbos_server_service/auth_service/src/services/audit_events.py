@@ -87,6 +87,7 @@ SERVICE_EVENTS = [
     {"action": "bot.roles_assign", "description": "Bot service-roles assigned", "default_severity": "WARNING"},
     {"action": "bot.roles_list", "description": "Bot service-roles retrieved", "default_severity": "INFO"},
     {"action": "bot.roles_revoke", "description": "Bot service-roles revoked", "default_severity": "WARNING"},
+    {"action": "bot.roles_purged_on_services_narrowed", "description": "Bot service-roles purged because allowed_services was narrowed", "default_severity": "WARNING"},
     {"action": "bot.suspicious_multi_ip", "description": "Bot token used from multiple distinct IPs within short window", "default_severity": "CRITICAL"},
     # OAuth2 clients
     {"action": "oauth_client.create", "description": "OAuth2 client registered", "default_severity": "CRITICAL"},

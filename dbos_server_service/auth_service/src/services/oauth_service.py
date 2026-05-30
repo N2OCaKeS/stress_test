@@ -393,6 +393,12 @@ async def exchange_code(
         await _verify_client_secret_with_lockout(db, client_repo, client, client_secret)
         if client.failed_secret_attempts:
             await client_repo.reset_failed_attempts(client)
+            # Reset фиксируем сразу: дальше идут pre-CAS проверки (code lookup,
+            # PKCE, redirect_uri), любая из которых может поднять exception
+            # и спровоцировать rollback в `get_db()`. Без явного commit
+            # счётчик неудач не обнулится, легитимный успешный verify зря
+            # пропадёт. Зеркало `client_credentials_token`.
+            await db.commit()
 
     code_hash = hash_opaque_token(code)
     code_repo = OAuthCodeRepository(db)

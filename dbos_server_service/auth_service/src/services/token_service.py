@@ -30,6 +30,9 @@ async def create_pat(
       минтить токены под чужие сервисы и подгонять под cross-tenant scope.
     * `expires_at > now()` — мёртвый токен с ttl в прошлом мусорит БД.
       account_admin без отдела — пропускаем dept-чек (у них нет dept).
+
+    Уникальность имени держим только в рамках **активных** PAT юзера: после
+    revoke имя свободно для пересоздания — это штатный flow ротации.
     """
     token_repo = TokenRepository(db)
     dept_repo = DepartmentRepository(db)

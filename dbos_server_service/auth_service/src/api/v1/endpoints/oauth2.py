@@ -1,6 +1,6 @@
 """Эндпоинты OAuth2: client management и authorize/token flow."""
 
-from urllib.parse import quote
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse
@@ -179,9 +179,18 @@ async def authorize(
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
     )
-    location = f"{redirect_uri}?code={code}"
+    # `redirect_uri` уже валидирован whitelist'ом клиента в issue_authorization_code,
+    # но в whitelist может лежать URI с собственными query-параметрами
+    # (`https://app/cb?env=prod`). Тупой `f"{redirect_uri}?code=…"` тогда даёт
+    # `…?env=prod?code=…` — второй `?` сламывает парсинг на клиенте. Разбираем
+    # URI, дописываем `code`/`state` в существующий query (RFC 6749 §4.1.2)
+    # и пересобираем обратно.
+    parsed = urlparse(redirect_uri)
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    query_pairs.append(("code", code))
     if state:
-        location += f"&state={quote(state, safe='')}"
+        query_pairs.append(("state", state))
+    location = urlunparse(parsed._replace(query=urlencode(query_pairs)))
     return RedirectResponse(url=location, status_code=302)
 
 

@@ -307,7 +307,12 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
         # bot.name глобально уникален (UNIQUE constraint), поэтому имя
         # однозначно адресует конкретного бота. Симметрия с user-password путём.
         target_bot = await bot_repo.first_by_name(username) if username else None
-        if target_bot is not None:
+        if target_bot is not None and target_bot.is_active:
+            # Inactive (disabled/archived) бота не лочим: счётчик и так не
+            # пускает к happy-path выше, а инкремент превращает disable-flag в
+            # DoS-вектор — любой запрос с правильным username и любым токеном
+            # навсегда забивает `failed_token_attempts`, и после реактивации
+            # бот сразу под лок попадает. Сам fail отдаём, но без побочек.
             if await _lockout.release_principal_if_expired(
                 bot_repo, target_bot,
                 reset_attr="reset_failed_token_attempts",

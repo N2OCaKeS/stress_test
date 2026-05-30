@@ -485,14 +485,31 @@ async def refresh(
     if user is None:
         await session_repo.revoke(sess)
         await db.commit()
+        audit_service.emit(
+            "user.refresh", sess.user_id, status="failure", allowed=False,
+            details={"session_id": sess.id, "reason": "user_not_found"},
+            request_id=request_id,
+        )
         raise AuthorizationError(error_code="USER_NOT_FOUND", message="User not found")
     if user.status == UserStatus.BANNED:
         await session_repo.revoke(sess)
         await db.commit()
+        audit_service.emit(
+            "user.refresh", user.id, status="failure", allowed=False,
+            username=user.username,
+            details={"session_id": sess.id, "reason": "banned"},
+            request_id=request_id,
+        )
         raise AuthorizationError(error_code="USER_BANNED", message="User is banned")
     if user.status == UserStatus.BLOCKED:
         await session_repo.revoke(sess)
         await db.commit()
+        audit_service.emit(
+            "user.refresh", user.id, status="failure", allowed=False,
+            username=user.username,
+            details={"session_id": sess.id, "reason": "blocked"},
+            request_id=request_id,
+        )
         raise AuthorizationError(error_code="USER_BLOCKED", message="User is blocked")
 
     new_raw, new_hash = generate_refresh_token()

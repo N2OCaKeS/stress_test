@@ -586,6 +586,7 @@ def _http_status_to_category(status: int) -> str:
         403: "forbidden",
         404: "not_found",
         409: "conflict",
+        410: "gone",
         422: "validation_error",
         429: "too_many_requests",
         503: "service_unavailable",

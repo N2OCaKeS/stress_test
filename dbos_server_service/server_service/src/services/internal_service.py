@@ -98,6 +98,9 @@ def _check_target_department(
     header_department_id: str | None,
     actor_department_id: str | None,
     extra_details: dict | None = None,
+    mask_as_not_found: bool = False,
+    not_found_error_code: str | None = None,
+    not_found_message: str | None = None,
 ) -> None:
     """Cross-check caller department + `X-Target-Department-Id` header против
     server.department_id.
@@ -140,6 +143,26 @@ def _check_target_department(
             details={**extra, "reason": reason},
         )
 
+    def _mask_or_403(message: str) -> None:
+        """Поднимает 404 если caller просил `mask_as_not_found`, иначе 403.
+
+        Маска применяется только к actor-mismatch'у: разница 403-vs-404 для
+        cross-dept caller'а работает enumeration-oracle'ом. Header mismatch
+        (worker bug-signal) оставляем 403 в strict-mode — это сигнал
+        misconfig'а, не enumeration.
+        """
+        if mask_as_not_found:
+            raise NotFoundError(
+                error_code=not_found_error_code or "RESOURCE_NOT_FOUND",
+                message=not_found_message or message,
+                details={"server_id": target_id},
+            )
+        raise AuthorizationError(
+            error_code="TARGET_DEPARTMENT_MISMATCH",
+            message=message,
+            details={"server_id": target_id},
+        )
+
     # Actor-vs-server check: всегда блокирующий, не зависит от soft/strict.
     # Closes cross-department password/credentials leak в soft-mode, где
     # отсутствие/несовпадение `X-Target-Department-Id` header'а не отбивалось.
@@ -147,12 +170,8 @@ def _check_target_department(
     # которых platform_admin_guard должен был отбить раньше; defense-in-depth.
     if actor_department_id is None or actor_department_id != server_department_id:
         _emit("actor_department_mismatch", denied=True)
-        raise AuthorizationError(
-            error_code="TARGET_DEPARTMENT_MISMATCH",
-            message=(
-                "Caller department does not match the server's actual department"
-            ),
-            details={"server_id": target_id},
+        _mask_or_403(
+            "Caller department does not match the server's actual department",
         )
 
     if header_department_id is None:
@@ -175,7 +194,9 @@ def _check_target_department(
     if header_department_id != server_department_id:
         # Mismatch эмитим всегда, независимо от режима — это сигнал бага в
         # worker'е (stale payload) или, хуже, PAT'а, который щупает чужие
-        # отделы.
+        # отделы. Header mismatch остаётся 403 даже при `mask_as_not_found` —
+        # actor уже подтвердил, что он в правильном dept'е (проверка выше),
+        # так что oracle'а тут нет, а 403 правильнее сигналит о misconfig'е.
         _emit("target_department_mismatch", denied=strict)
         if strict:
             raise AuthorizationError(
@@ -211,6 +232,23 @@ async def fetch_ipmi_credentials(
         )
         raise
     server = await server_repo.get_by_id(db, server_id)
+    # Dept-check фактически объединяем с existence-check: если сервера нет
+    # (server=None → server_department_id=None) или dept у caller'а другой —
+    # выдаём один и тот же SERVER_NOT_FOUND, не выделяя 403 в отдельный
+    # сигнал. Иначе по разнице 403 vs 404 caller угадывал бы, что сервер
+    # есть в чужом dept'е.
+    server_department_id = server.department_id if server is not None else None
+    _check_target_department(
+        audit_action="ipmi_controller.view_credentials",
+        target_id=server_id,
+        target_type="ipmi_controller",
+        server_department_id=server_department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        mask_as_not_found=True,
+        not_found_error_code="SERVER_NOT_FOUND",
+        not_found_message="Server not found",
+    )
     if server is None:
         audit_service.emit(
             "ipmi_controller.view_credentials",
@@ -219,14 +257,6 @@ async def fetch_ipmi_credentials(
             details={"reason": "server_not_found"},
         )
         raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
-    _check_target_department(
-        audit_action="ipmi_controller.view_credentials",
-        target_id=server_id,
-        target_type="ipmi_controller",
-        server_department_id=server.department_id,
-        header_department_id=target_department_id,
-        actor_department_id=identity.department_id,
-    )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.fetch_ipmi_credentials",
@@ -295,6 +325,33 @@ async def fetch_account_password(
             },
         )
         raise
+    # Dept-check РАНЬШЕ existence-проверок: иначе разная реакция
+    # (404 ACCOUNT_NOT_FOUND vs 403 TARGET_DEPARTMENT_MISMATCH) сама по себе
+    # сливает caller'у, привязан ли account_id к серверу чужого dept.
+    # mask_as_not_found унифицирует все «не твой dept» сценарии в 404,
+    # 403 остаётся только для permission_denied.
+    server = await server_repo.get_by_id(db, server_id)
+    server_department_id = server.department_id if server is not None else None
+    _check_target_department(
+        audit_action="server_account.view_password",
+        target_id=account_id,
+        target_type="server_account",
+        server_department_id=server_department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        extra_details={"server_id": server_id},
+        mask_as_not_found=True,
+        not_found_error_code="ACCOUNT_NOT_FOUND",
+        not_found_message="Server account not found on this server",
+    )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.fetch_account_password",
+            identity=identity,
+            target_id=account_id,
+            target_type="server_account",
+            extra={"server_id": server_id},
+        )
     account = await account_repo.get_by_id(db, account_id)
     if account is None or not await account_repo.is_linked(db, account_id, server_id):
         audit_service.emit(
@@ -306,28 +363,6 @@ async def fetch_account_password(
         raise NotFoundError(
             error_code="ACCOUNT_NOT_FOUND",
             message="Server account not found on this server",
-        )
-    # Server lookup делаем безусловно — нужен `server.department_id` для
-    # actor-vs-server dept check'а, который блокирует cross-department
-    # утечку даже в soft-mode. Симметрично с `fetch_ipmi_credentials`.
-    server = await server_repo.get_by_id(db, server_id)
-    server_department_id = server.department_id if server is not None else None
-    _check_target_department(
-        audit_action="server_account.view_password",
-        target_id=account_id,
-        target_type="server_account",
-        server_department_id=server_department_id,
-        header_department_id=target_department_id,
-        actor_department_id=identity.department_id,
-        extra_details={"server_id": server_id},
-    )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.fetch_account_password",
-            identity=identity,
-            target_id=account_id,
-            target_type="server_account",
-            extra={"server_id": server_id},
         )
     if account.password_encrypted is None:
         # Discovered-аккаунт (`source=discovered`) приходит в БД без пароля —
@@ -401,6 +436,31 @@ async def rotate_account_password(
             },
         )
         raise
+    # Dept-check РАНЬШЕ existence-проверок: иначе 404 ACCOUNT_NOT_FOUND vs
+    # 403 TARGET_DEPARTMENT_MISMATCH сами по себе сливают caller'у, чей
+    # отдел держит account_id. Симметрично с `fetch_account_password`.
+    server = await server_repo.get_by_id(db, server_id)
+    server_department_id = server.department_id if server is not None else None
+    _check_target_department(
+        audit_action="server_account.rotate_password",
+        target_id=account_id,
+        target_type="server_account",
+        server_department_id=server_department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        extra_details={"server_id": server_id},
+        mask_as_not_found=True,
+        not_found_error_code="ACCOUNT_NOT_FOUND",
+        not_found_message="Server account not found on this server",
+    )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.rotate_account_password",
+            identity=identity,
+            target_id=account_id,
+            target_type="server_account",
+            extra={"server_id": server_id},
+        )
     account = await account_repo.get_by_id(db, account_id)
     if account is None or not await account_repo.is_linked(db, account_id, server_id):
         audit_service.emit(
@@ -412,28 +472,6 @@ async def rotate_account_password(
         raise NotFoundError(
             error_code="ACCOUNT_NOT_FOUND",
             message="Server account not found on this server",
-        )
-    # Server lookup безусловный — actor-vs-server dept check блокирует
-    # cross-department rotate в soft-mode (worker без header'а из чужого
-    # отдела ранее проходил без проверки). Симметрично с `fetch_ipmi_credentials`.
-    server = await server_repo.get_by_id(db, server_id)
-    server_department_id = server.department_id if server is not None else None
-    _check_target_department(
-        audit_action="server_account.rotate_password",
-        target_id=account_id,
-        target_type="server_account",
-        server_department_id=server_department_id,
-        header_department_id=target_department_id,
-        actor_department_id=identity.department_id,
-        extra_details={"server_id": server_id},
-    )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.rotate_account_password",
-            identity=identity,
-            target_id=account_id,
-            target_type="server_account",
-            extra={"server_id": server_id},
         )
     encrypted = secrets_service.encrypt(
         new_password,

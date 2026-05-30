@@ -129,6 +129,7 @@ def _identity_body(
     allowed_services: list[str] | None = None,
     active: bool = True,
     is_banned: bool = False,
+    subject_type: str | None = None,
 ) -> dict:
     # Дефолт allowed_services: обычным пользователям и department_admin
     # отдаём `["server_service"]`, чтобы они проходили `SERVICE_ACCESS_DENIED`
@@ -150,6 +151,7 @@ def _identity_body(
         "allowed_services": allowed_services,
         "service_roles": service_roles or {},
         "is_banned": is_banned,
+        "subject_type": subject_type,
     }
 
 
@@ -209,6 +211,7 @@ def make_token():
         username: str = "tester",
         active: bool = True,
         is_banned: bool = False,
+        subject_type: str | None = None,
     ) -> str:
         token = f"tok_{uuid.uuid4().hex}"
         register_token(token, _identity_body(
@@ -220,6 +223,7 @@ def make_token():
             allowed_services=allowed_services,
             active=active,
             is_banned=is_banned,
+            subject_type=subject_type,
         ))
         return token
 
@@ -556,6 +560,7 @@ async def worker_pat_token(make_token, dept_a):
     return make_token(
         department_id=dept_a,
         service_roles={"server_service": ["admin"]},
+        subject_type="bot",
     )
 
 
@@ -575,4 +580,5 @@ async def worker_bot_token_a(make_token, dept_a):
     return make_token(
         department_id=dept_a,
         service_roles={"server_service": ["worker_bot"]},
+        subject_type="bot",
     )

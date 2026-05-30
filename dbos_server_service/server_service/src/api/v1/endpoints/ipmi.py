@@ -17,6 +17,7 @@ from src.core.exceptions import (
     AuthorizationError,
     BadRequestError,
     ConflictError,
+    GoneError,
     NotFoundError,
     ServiceUnavailableError,
 )
@@ -378,18 +379,26 @@ async def delete_controller(
 @router.post(
     "/credentials/rotate",
     response_model=IpmiCredentialsRotateResponse,
-    summary="Ротация IPMI-пароля (CRITICAL аудит)",
+    summary="Ротация IPMI-пароля (deprecated, 410 GONE для user-facing вызовов)",
     description=(
-        "Генерирует новый пароль (если в body не передан) или принимает "
-        "уже применённый worker'ом, шифрует и сохраняет. Plaintext в ответ "
-        "не возвращается. Доступ: `(ipmi_controller, *, rotate_credentials)`. "
-        "Per-IP rate-limit см. `IPMI_CREDENTIALS_ROTATE_RATE_LIMIT` (5/мин по "
-        "умолчанию) — частый burst пишет CRITICAL-аудит и может разойтись с "
-        "BMC."
+        "Endpoint снят с обслуживания: писал произвольный plaintext в "
+        "`password_encrypted` БЕЗ apply/verify на BMC, что могло убить "
+        "out-of-band доступ. User-facing вызовы отбиваются 410 GONE с "
+        "CRITICAL-аудитом.\n\n"
+        "Каноничный путь ротации:\n"
+        "- инициировать через `POST /api/server/v1/ipmi-controllers/{id}/rotate`\n"
+        "  (worker dispatch с BMC apply + verify);\n"
+        "- worker по завершении вызывает internal callback "
+        "  `internal_service.record_ipmi_credentials_rotated`, который проверяет "
+        "  свежий verify-proof и шифрует ciphertext.\n\n"
+        "Bot-callback (subject_type='bot') пока сохраняется как backwards-compat "
+        "для уже задеплоенных worker'ов; новые интеграции должны ходить через "
+        "internal endpoint."
     ),
     responses={
         403: {"description": "Нет `rotate_credentials`."},
         404: {"description": "Сервер не найден / чужой dept, либо контроллер не зарегистрирован."},
+        410: {"description": "User-facing endpoint снят; используйте `/ipmi-controllers/{id}/rotate`."},
         429: {"description": "Per-IP rotate-rate-limit пробит."},
     },
 )
@@ -401,7 +410,39 @@ async def rotate_credentials(
     body: IpmiCredentialsRotateRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> IpmiCredentialsRotateResponse:
-    """Rotate-эндпоинт. Доступ: `(ipmi_controller, *, rotate_credentials)`. Аудит — CRITICAL."""
+    """Rotate-эндпоинт. Доступ: `(ipmi_controller, *, rotate_credentials)`. Аудит — CRITICAL.
+
+    User-facing вызов отбивается 410 GONE — он писал ciphertext без apply/verify
+    на BMC и мог разорвать out-of-band доступ. Через worker-dispatch
+    (`/ipmi-controllers/{id}/rotate`) BMC-apply гарантирован, verify-proof
+    проверяется в `internal_service.record_ipmi_credentials_rotated`.
+
+    Bot-callback (subject_type='bot') проходит как backwards-compat для
+    уже задеплоенных worker'ов; в норме worker должен ходить через internal
+    endpoint.
+    """
+    if identity.subject_type != "bot":
+        audit_service.emit(
+            "ipmi_controller.rotate_credentials",
+            target_id=server_id, target_type="ipmi_controller",
+            status="warning", allowed=False,
+            details={
+                "reason": "user_facing_endpoint_deprecated",
+                "server_id": server_id,
+                "caller_type": identity.subject_type,
+                "migration": "use POST /ipmi-controllers/{id}/rotate",
+            },
+        )
+        raise GoneError(
+            error_code="IPMI_ROTATE_USER_FACING_DEPRECATED",
+            message=(
+                "User-facing /ipmi/credentials/rotate is deprecated: it stored "
+                "plaintext without BMC apply/verify. Use "
+                "POST /api/server/v1/ipmi-controllers/{id}/rotate (worker "
+                "dispatch with BMC apply + verify)."
+            ),
+            details={"server_id": server_id},
+        )
     new_password = body.password if body is not None else None
     obj = await ipmi_svc.rotate_credentials(db, identity, server_id, new_password)
     return IpmiCredentialsRotateResponse(

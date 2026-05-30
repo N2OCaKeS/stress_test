@@ -642,12 +642,19 @@ async def acquire_server(
         busy_note_parts.append(f"lease_until={payload.lease_until.isoformat()}")
     busy_note = " | ".join(busy_note_parts) if busy_note_parts else None
     now = datetime.now(timezone.utc)
-    # Атомарный CAS: UPDATE ... WHERE busy_state='free'. rowcount==0 → 409,
-    # потому что либо сервер уже busy/testing, либо параллельный acquire успел
-    # первым. Symmetric с CAS-паттерном в auth_service (refresh rotation).
+    # Атомарный CAS: UPDATE ... WHERE busy_state='free' AND status<>decommissioned.
+    # status в WHERE'е закрывает race: между `load_visible_server` и UPDATE'ом
+    # параллельный decommission успел бы перевести сервер в DECOMMISSIONED,
+    # а старая CAS условие (только по busy_state) спокойно прошла бы и оставила
+    # сервер busy+decommissioned. rowcount==0 теперь означает «либо уже busy,
+    # либо decommissioned, либо нет вообще»; точную причину достаём re-fetch'ем.
     result = await db.execute(
         sa_update(Server)
-        .where(Server.id == server_id, Server.busy_state == BusyState.FREE)
+        .where(
+            Server.id == server_id,
+            Server.busy_state == BusyState.FREE,
+            Server.status != ServerStatus.DECOMMISSIONED,
+        )
         .values(
             busy_state=BusyState.BUSY,
             busy_user_id=identity.user_id,
@@ -656,20 +663,52 @@ async def acquire_server(
         )
     )
     if result.rowcount == 0:
+        # Re-fetch без кэша — нужно увидеть, что положил параллельный writer.
+        # Сессия SQLAlchemy могла бы вернуть закэшированный obj; expire
+        # принудительно перечитывает (sync API на AsyncSession).
+        db.expire(obj)
+        current = await repo.get_by_id(db, server_id)
+        if current is None:
+            # Сервер исчез между load_visible_server и CAS — крайне маловероятно
+            # (hard-delete не предусмотрен), но фиксируем явный 404.
+            audit_service.emit(
+                "server.acquire",
+                target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "vanished_during_acquire"},
+            )
+            raise NotFoundError(
+                error_code="SERVER_NOT_FOUND",
+                message="Server not found",
+            )
+        if current.status == ServerStatus.DECOMMISSIONED:
+            audit_service.emit(
+                "server.acquire",
+                target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={
+                    "reason": "decommissioned_race",
+                    "department_id": current.department_id,
+                },
+            )
+            raise ConflictError(
+                error_code="SERVER_DECOMMISSIONED",
+                message="Server is decommissioned and cannot be acquired",
+            )
         audit_service.emit(
             "server.acquire",
             target_id=server_id, target_type="server",
             status="failure", allowed=True,
             details={
                 "reason": "already_busy",
-                "department_id": obj.department_id,
-                "current_state": obj.busy_state,
+                "department_id": current.department_id,
+                "current_state": current.busy_state,
             },
         )
         raise ConflictError(
             error_code="SERVER_ALREADY_BUSY",
             message="Server is already busy or being tested",
-            details={"current_state": obj.busy_state},
+            details={"current_state": current.busy_state},
         )
     await db.commit()
     await db.refresh(obj)

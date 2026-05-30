@@ -379,84 +379,57 @@ class TestDeleteController:
 
 
 class TestRotateCredentials:
-    async def test_admin_rotates_password(
-        self, client, admin_token, make_server, make_ipmi, db,
-    ):
-        from src.models import IpmiController
-        from sqlalchemy import select
+    """User-facing /credentials/rotate теперь 410 GONE.
 
+    Endpoint писал произвольный plaintext в `password_encrypted` без BMC
+    apply/verify — это могло разорвать out-of-band доступ. Корректный путь —
+    worker-dispatch (`POST /ipmi-controllers/{id}/rotate`), который применяет
+    пароль на BMC через Redfish/ipmitool и шлёт callback с verify-proof.
+    Bot-callback оставлен как backwards-compat для уже задеплоенных worker'ов.
+    """
+
+    async def test_admin_gets_410(
+        self, client, admin_token, make_server, make_ipmi,
+    ):
         srv = await make_server(department_id="dep_a")
-        ctrl = await make_ipmi(server_id=srv.id, password="initial-secret")
-        original_encrypted = ctrl.password_encrypted
+        await make_ipmi(server_id=srv.id, password="initial-secret")
 
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
             headers=_hdr(admin_token),
             json={},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 410
         body = resp.json()
-        assert body["id"] == ctrl.id
-        assert "rotated_at" in body
-        # plaintext не возвращается
-        assert "password" not in body
+        assert body["error_code"] == "IPMI_ROTATE_USER_FACING_DEPRECATED"
 
-        row = (
-            await db.execute(
-                select(IpmiController).where(IpmiController.server_id == srv.id)
-            )
-        ).scalar_one()
-        assert row.password_encrypted != original_encrypted
-        assert row.password_rotated_at is not None
-        # Расшифрованный новый пароль — не original
-        new_plain = secrets_service.decrypt(
-            row.password_encrypted,
-            aad=secrets_service.aad_for_ipmi_credential(row.id),
-        )
-        assert new_plain != "initial-secret"
-        assert len(new_plain) > 16  # token_urlsafe(32) сильно длиннее
-
-    async def test_operator_can_rotate(
+    async def test_operator_gets_410(
         self, client, operator_token_a, make_server, make_ipmi,
     ):
-        """operator имеет rotate_credentials по дефолту."""
         srv = await make_server(department_id="dep_a")
         await make_ipmi(server_id=srv.id)
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 410
 
-    async def test_reader_cannot_rotate(
+    async def test_reader_gets_410(
         self, client, reader_token_a, make_server, make_ipmi,
     ):
+        # reader всё равно user-facing — 410 раньше permission-check'а.
         srv = await make_server(department_id="dep_a")
         await make_ipmi(server_id=srv.id)
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 410
 
-    async def test_worker_bot_can_rotate(
-        self, client, worker_bot_token_a, make_server, make_ipmi,
+    async def test_worker_bot_callback_still_allowed(
+        self, client, worker_bot_token_a, make_server, make_ipmi, db,
     ):
-        """worker_bot least-privilege роль включает rotate_credentials."""
-        srv = await make_server(department_id="dep_a")
-        await make_ipmi(server_id=srv.id)
-        resp = await client.post(
-            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(worker_bot_token_a),
-            json={"password": "applied-by-worker-via-redfish-1"},
-        )
-        assert resp.status_code == 200
-
-    async def test_worker_callback_uses_provided_password(
-        self, client, admin_token, make_server, make_ipmi, db,
-    ):
-        """Если в body передан password — сохраняется именно он (worker callback
-        после Redfish-apply'я)."""
+        """Bot-callback (subject_type='bot') пока проходит для backwards-compat."""
         from src.models import IpmiController
         from sqlalchemy import select
 
@@ -464,8 +437,8 @@ class TestRotateCredentials:
         await make_ipmi(server_id=srv.id)
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(admin_token),
-            json={"password": "applied-by-redfish-9876"},
+            headers=_hdr(worker_bot_token_a),
+            json={"password": "applied-by-worker-via-redfish-1"},
         )
         assert resp.status_code == 200
         row = (
@@ -476,30 +449,7 @@ class TestRotateCredentials:
         assert secrets_service.decrypt(
             row.password_encrypted,
             aad=secrets_service.aad_for_ipmi_credential(row.id),
-        ) == "applied-by-redfish-9876"
-
-    async def test_cross_dept_returns_404(
-        self, client, operator_token_b, make_server, make_ipmi,
-    ):
-        srv = await make_server(department_id="dep_a")
-        await make_ipmi(server_id=srv.id)
-        resp = await client.post(
-            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(operator_token_b),
-        )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "SERVER_NOT_FOUND"
-
-    async def test_no_controller_returns_404(
-        self, client, admin_token, make_server,
-    ):
-        srv = await make_server(department_id="dep_a")
-        resp = await client.post(
-            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(admin_token),
-        )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "IPMI_NOT_FOUND"
+        ) == "applied-by-worker-via-redfish-1"
 
 
 # ── Парольная политика на create / rotate ────────────────────────────────────
@@ -551,19 +501,21 @@ class TestPasswordPolicy:
         ids=["too_short", "no_digit", "no_letter"],
     )
     async def test_rotate_rejects_weak_password(
-        self, client, admin_token, make_server, make_ipmi, bad_password,
+        self, client, worker_bot_token_a, make_server, make_ipmi, bad_password,
     ):
+        # User-facing rotate теперь 410, поэтому политика проверяется на
+        # bot-callback пути (backwards-compat для уже задеплоенных worker'ов).
         srv = await make_server(department_id="dep_a")
         await make_ipmi(server_id=srv.id)
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(admin_token),
+            headers=_hdr(worker_bot_token_a),
             json={"password": bad_password},
         )
         assert resp.status_code == 422
 
     async def test_rotate_accepts_compliant_password(
-        self, client, admin_token, make_server, make_ipmi, db,
+        self, client, worker_bot_token_a, make_server, make_ipmi, db,
     ):
         from src.models import IpmiController
         from sqlalchemy import select
@@ -572,7 +524,7 @@ class TestPasswordPolicy:
         await make_ipmi(server_id=srv.id)
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(admin_token),
+            headers=_hdr(worker_bot_token_a),
             json={"password": "manual-rotate-7"},
         )
         assert resp.status_code == 200
@@ -587,7 +539,7 @@ class TestPasswordPolicy:
         ) == "manual-rotate-7"
 
     async def test_rotate_without_body_generates(
-        self, client, admin_token, make_server, make_ipmi, db,
+        self, client, worker_bot_token_a, make_server, make_ipmi, db,
     ):
         from src.models import IpmiController
         from sqlalchemy import select
@@ -597,7 +549,7 @@ class TestPasswordPolicy:
         original_encrypted = ctrl.password_encrypted
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(admin_token),
+            headers=_hdr(worker_bot_token_a),
         )
         assert resp.status_code == 200
         row = (
@@ -703,13 +655,15 @@ class TestAuditEmission:
         assert ev["details"]["department_id"] == "dep_a"
 
     async def test_rotate_emits_success(
-        self, client, admin_token, make_server, make_ipmi, captured_emits,
+        self, client, worker_bot_token_a, make_server, make_ipmi, captured_emits,
     ):
+        # Через bot-callback путь — user-facing вызовы отбиваются 410 до
+        # эмита success'а.
         srv = await make_server(department_id="dep_a")
         ctrl = await make_ipmi(server_id=srv.id)
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(admin_token),
+            headers=_hdr(worker_bot_token_a),
         )
         assert resp.status_code == 200
         events = [
@@ -724,13 +678,13 @@ class TestAuditEmission:
         assert ev["details"]["department_id"] == "dep_a"
 
     async def test_rotate_with_password_emits_worker_callback_reason(
-        self, client, admin_token, make_server, make_ipmi, captured_emits,
+        self, client, worker_bot_token_a, make_server, make_ipmi, captured_emits,
     ):
         srv = await make_server(department_id="dep_a")
         await make_ipmi(server_id=srv.id)
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(admin_token),
+            headers=_hdr(worker_bot_token_a),
             json={"password": "applied-pw-1"},
         )
         assert resp.status_code == 200

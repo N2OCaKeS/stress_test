@@ -428,11 +428,15 @@ class TestActorDeptCrossCheckSoftMode:
     cross-department leak, при котором worker_bot из dep_b мог читать секреты
     серверов dep_a, пока worker не научен форвардить header.
 
+    Cross-dept actor отдаёт **404** (а не 403): разница 403-vs-404 сама была
+    enumeration-oracle'ом (caller'у выдавалось «есть в чужом dept»). Теперь
+    унифицировано с обычным «not found».
+
     Header-mismatch остаётся soft-mode warning (тестируется в
     ``TestTargetDeptHeaderSoftMode``). Здесь актуальна именно actor-проверка.
     """
 
-    async def test_ipmi_credentials_actor_mismatch_returns_403_soft(
+    async def test_ipmi_credentials_actor_mismatch_returns_404_soft(
         self, client, make_token, make_server, make_ipmi,
     ):
         srv = await make_server(department_id="dep_a")
@@ -446,12 +450,12 @@ class TestActorDeptCrossCheckSoftMode:
             f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr_with_dept(foreign_token, "dep_a"),
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 404
         body = resp.json()
-        assert body["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        assert body["error_code"] == "SERVER_NOT_FOUND"
         assert "dep-a-only-secret" not in resp.text
 
-    async def test_account_password_actor_mismatch_returns_403_soft(
+    async def test_account_password_actor_mismatch_returns_404_soft(
         self, client, make_token, make_server, make_account,
     ):
         srv = await make_server(department_id="dep_a")
@@ -464,11 +468,11 @@ class TestActorDeptCrossCheckSoftMode:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr_with_dept(foreign_token, "dep_a"),
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
         assert "dep-a-only-pwd" not in resp.text
 
-    async def test_account_password_actor_mismatch_no_header_returns_403_soft(
+    async def test_account_password_actor_mismatch_no_header_returns_404_soft(
         self, client, make_token, make_server, make_account,
     ):
         """Самый опасный кейс — soft-mode без header'а ранее пропускал
@@ -483,11 +487,11 @@ class TestActorDeptCrossCheckSoftMode:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr(foreign_token),
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
         assert "leak-target" not in resp.text
 
-    async def test_rotate_actor_mismatch_no_header_returns_403_soft(
+    async def test_rotate_actor_mismatch_no_header_returns_404_soft(
         self, client, make_token, make_server, make_account,
     ):
         srv = await make_server(department_id="dep_a")
@@ -501,10 +505,10 @@ class TestActorDeptCrossCheckSoftMode:
             headers=_hdr(foreign_token),
             json={"password": "CrossDeptInj1234"},
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
 
-    async def test_rotate_actor_mismatch_matched_header_still_403_soft(
+    async def test_rotate_actor_mismatch_matched_header_still_404_soft(
         self, client, make_token, make_server, make_account,
     ):
         """Даже если caller подсунул правильный header'ом — actor-check всё
@@ -520,5 +524,5 @@ class TestActorDeptCrossCheckSoftMode:
             headers=_hdr_with_dept(foreign_token, "dep_a"),
             json={"password": "CrossDeptInj5678"},
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"

@@ -58,6 +58,17 @@ class ConflictError(AppException):
 
 
 @dataclass
+class GoneError(AppException):
+    """410 — endpoint снят (deprecated), но client ещё может на него прийти.
+
+    Отличается от 404: ресурс «когда-то был и больше его не будет», это
+    осознанная депрекация — caller должен переехать на новый путь.
+    """
+
+    http_status: int = 410
+
+
+@dataclass
 class DomainValidationError(AppException):
     """422 — невалидное значение поля, неизвестный entity_type/action и т.п."""
 

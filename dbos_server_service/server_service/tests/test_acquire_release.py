@@ -109,6 +109,63 @@ class TestAcquireServer:
         assert resp.status_code == 409
         assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
 
+    async def test_decommission_race_does_not_busy_decommissioned(
+        self, client, operator_token_a, make_server, db, monkeypatch,
+    ):
+        """Race: load_visible_server вернул FREE/ACTIVE, до CAS параллельный
+        decommission успел перевести сервер в DECOMMISSIONED.
+
+        Симулируем гонку, патча `load_visible_server` так, чтобы ПОСЛЕ
+        возврата ACTIVE-объекта он же на следующем вызове `flush`'нул статус
+        DECOMMISSIONED в БД (как если бы это сделал другой воркер).
+        Старый код (CAS только по busy_state) переводил сервер в
+        busy+decommissioned. После фикса CAS дополнительно фильтрует по
+        status<>DECOMMISSIONED → rowcount=0 → re-fetch → 409
+        SERVER_DECOMMISSIONED.
+        """
+        from src.core.constants import ServerStatus
+        from src.services import server as server_svc
+        from sqlalchemy import update as sa_update
+        from src.models import Server
+
+        srv = await make_server(department_id="dep_a")
+        original_load = server_svc.load_visible_server
+
+        async def racy_load(db_, identity, sid):
+            obj = await original_load(db_, identity, sid)
+            # Параллельный writer успел декомиссионить сервер между
+            # load_visible_server и CAS. Эмулируем через отдельный UPDATE,
+            # коммит делаем сразу — теперь в БД status=DECOMMISSIONED, но
+            # `obj` (отдан caller'у) всё ещё держит ACTIVE.
+            await db_.execute(
+                sa_update(Server)
+                .where(Server.id == sid)
+                .values(status=ServerStatus.DECOMMISSIONED)
+            )
+            await db_.commit()
+            return obj
+
+        monkeypatch.setattr(server_svc, "load_visible_server", racy_load)
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a),
+        )
+        # Гонка должна быть пойдана: либо 409 SERVER_DECOMMISSIONED (после
+        # re-fetch'а), либо мы вообще не дошли до CAS (если load увидел уже
+        # decommissioned). 200 (busy+decommissioned) был бы багом.
+        assert resp.status_code == 409
+        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+
+        # Проверяем итоговое состояние строки — busy НЕ должен встать.
+        from sqlalchemy import select
+        from src.core.constants import BusyState
+
+        row = (
+            await db.execute(select(Server).where(Server.id == srv.id))
+        ).scalar_one()
+        assert row.status == ServerStatus.DECOMMISSIONED
+        assert row.busy_state == BusyState.FREE
+
     async def test_reader_cannot_acquire(
         self, client, reader_token_a, make_server,
     ):

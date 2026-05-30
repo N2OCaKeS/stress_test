@@ -226,7 +226,8 @@ def test_audit_events_catalog_contains_dept_header_missing():
 async def test_fetch_account_password_actor_mismatch_soft_emits_denied(
     monkeypatch, captured_emits, db,
 ):
-    """Soft mode + actor.dept != server.dept → 403 + denied audit с
+    """Soft mode + actor.dept != server.dept → 404 ACCOUNT_NOT_FOUND
+    (унификация cross-dept под существование) + denied audit с
     `reason=actor_department_mismatch`. Header-missing warning **не** должен
     эмититься: actor-проверка падает раньше.
     """
@@ -243,7 +244,7 @@ async def test_fetch_account_password_actor_mismatch_soft_emits_denied(
 
     monkeypatch.setattr(internal_service.server_repo, "get_by_id", get_by_id)
 
-    from src.core.exceptions import AuthorizationError
+    from src.core.exceptions import NotFoundError
     from src.schemas.identity import IdentityContext
 
     foreign_identity = IdentityContext(
@@ -254,12 +255,12 @@ async def test_fetch_account_password_actor_mismatch_soft_emits_denied(
         subject_type="bot",
     )
 
-    with pytest.raises(AuthorizationError) as ei:
+    with pytest.raises(NotFoundError) as ei:
         await internal_service.fetch_account_password(
             db, foreign_identity, server_id="srv_1", account_id="acc_1",
             target_department_id=None,
         )
-    assert ei.value.error_code == "TARGET_DEPARTMENT_MISMATCH"
+    assert ei.value.error_code == "ACCOUNT_NOT_FOUND"
 
     denied = [
         e for e in captured_emits
@@ -278,7 +279,10 @@ async def test_fetch_account_password_actor_mismatch_soft_emits_denied(
 async def test_rotate_account_password_actor_mismatch_soft_emits_denied(
     monkeypatch, captured_emits, db,
 ):
-    """Симметрично для rotate-callback'а — actor-mismatch блокирует в soft."""
+    """Симметрично для rotate-callback'а — actor-mismatch блокирует в soft.
+    Cross-dept унифицирован под ACCOUNT_NOT_FOUND, чтобы не выдавать
+    enumeration-oracle по разнице 403/404.
+    """
     _settings(monkeypatch, strict=False)
     _stub_permissions_ok(monkeypatch)
     _stub_secrets(monkeypatch)
@@ -292,7 +296,7 @@ async def test_rotate_account_password_actor_mismatch_soft_emits_denied(
 
     monkeypatch.setattr(internal_service.server_repo, "get_by_id", get_by_id)
 
-    from src.core.exceptions import AuthorizationError
+    from src.core.exceptions import NotFoundError
     from src.schemas.identity import IdentityContext
 
     foreign_identity = IdentityContext(
@@ -303,12 +307,12 @@ async def test_rotate_account_password_actor_mismatch_soft_emits_denied(
         subject_type="bot",
     )
 
-    with pytest.raises(AuthorizationError) as ei:
+    with pytest.raises(NotFoundError) as ei:
         await internal_service.rotate_account_password(
             db, foreign_identity, server_id="srv_1", account_id="acc_1",
             new_password="injected", target_department_id=None,
         )
-    assert ei.value.error_code == "TARGET_DEPARTMENT_MISMATCH"
+    assert ei.value.error_code == "ACCOUNT_NOT_FOUND"
 
     denied = [
         e for e in captured_emits

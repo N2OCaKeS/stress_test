@@ -497,18 +497,22 @@ async def issue_token(
             )
 
     allowed_access: list[dict] = []
-    legacy_cfg = None  # кеш конфига caller-отдела для legacy-scope без `/`
+    # Legacy-scope (`repository:myapp:pull` без `<dept>/`) всегда сводится к
+    # конфигу caller-отдела; считаем один раз, чтобы не дёргать
+    # dept_repo + docker_repo на каждом таком entry.
+    legacy_dept = None
+    legacy_cfg = None
+    if not anonymous and department_id is not None and any(
+        _parse_registry_name(e["name"]) is None for e in requested_access
+    ):
+        legacy_dept, legacy_cfg = await _resolve_registry(db, None, department_id)
 
     for entry in requested_access:
         registry_name = _parse_registry_name(entry["name"])
-        dept, cfg = await _resolve_registry(db, registry_name, department_id)
-
-        # Legacy fallback: scope без `/` и caller аутентифицирован —
-        # пускаем по конфигу его собственного отдела (старое поведение).
-        if cfg is None and registry_name is None and not anonymous:
-            cfg = legacy_cfg
-        if registry_name is None and cfg is not None:
-            legacy_cfg = cfg
+        if registry_name is None:
+            dept, cfg = legacy_dept, legacy_cfg
+        else:
+            dept, cfg = await _resolve_registry(db, registry_name, department_id)
 
         actions = entry["actions"]
         granted: list[str] = []

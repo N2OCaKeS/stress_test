@@ -785,6 +785,7 @@ async def ban_user(
     await user_repo.update(user, status=UserStatus.BANNED, is_active=False)
     new_ban = await ban_repo.create(user_id=user_id, banned_by=actor_id, ban_type=ban_type, reason=reason, expires_at=expires_at)
     await session_repo.revoke_all_for_user(user_id)
+    ban_id = new_ban.id
     # ── PAT revoke ───────────────────────────────────────────────────────────
     # Без revoke'а PAT'ы юзера переживали ban: introspect показывал
     # `is_banned=True`, но live-токен проходил по hash'у — стянутый PAT
@@ -805,6 +806,7 @@ async def ban_user(
         "target_type": "user",
         "details": {
             "target_username": user.username,
+            "ban_id": ban_id,
             "ban_type": ban_type,
             "reason": reason,
             "expires_at": expires_at.isoformat() if expires_at else None,

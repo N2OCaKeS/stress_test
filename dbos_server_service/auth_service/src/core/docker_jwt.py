@@ -69,7 +69,6 @@ def _key_id(public_key) -> str:
 
 def sign_docker_token(payload: dict) -> str:
     """Подписать Docker JWT через RS256 (HS256 fallback в dev — Docker registry его не поймёт)."""
-    settings = get_settings()
     private_key = _get_rsa_private_key()
     kid = _key_id(_get_rsa_public_key())
 

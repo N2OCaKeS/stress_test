@@ -143,3 +143,39 @@ class TestTrackBotIp:
         assert alerted is False
         assert list(bot.last_known_ips) == []
         assert [e for e in captured if e["action"] == "bot.suspicious_multi_ip"] == []
+
+    async def test_repeat_same_ip_does_not_mutate_original_entry(self, db, dept_a):
+        """Refresh ts для повторного IP не должен мутировать словарь, на который
+        могла остаться ссылка вне tracker'а (защита от shallow-copy ловушки)."""
+        bot = await _make_bot(db, dept_a.id, "shared_ref_bot")
+        await bot_ip_tracker.track_bot_ip(db, bot, "10.0.0.1")
+
+        # Снимок исходной записи: до фикса tracker писал в `window[-1]["ts"]`
+        # in-place, и snapshot тоже бы менялся.
+        original_entry = bot.last_known_ips[0]
+        snapshot_ts = original_entry["ts"]
+
+        await bot_ip_tracker.track_bot_ip(db, bot, "10.0.0.1")
+
+        # Внешний snapshot остался нетронутым; в bot теперь новый dict.
+        assert original_entry["ts"] == snapshot_ts
+        assert bot.last_known_ips[0] is not original_entry
+
+    async def test_window_size_respects_settings(self, db, dept_a, monkeypatch):
+        """`bot_last_known_ips_window` из Settings рулит размером окна."""
+        from src.core import config as config_mod
+
+        # Уменьшаем окно до 2, чтобы не зависеть от дефолта.
+        original = config_mod.get_settings()
+        monkeypatch.setattr(
+            original, "bot_last_known_ips_window", 2,
+        )
+        # get_settings()@lru_cache отдаёт тот же объект, мутации хватит.
+
+        bot = await _make_bot(db, dept_a.id, "window_size_bot")
+        for ip in ("10.0.0.1", "10.0.0.2", "10.0.0.3"):
+            await bot_ip_tracker.track_bot_ip(db, bot, ip)
+
+        assert len(bot.last_known_ips) == 2
+        # FIFO: самый старый (.1) вытеснен.
+        assert [e["ip"] for e in bot.last_known_ips] == ["10.0.0.2", "10.0.0.3"]

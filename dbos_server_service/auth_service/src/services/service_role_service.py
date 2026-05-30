@@ -329,6 +329,10 @@ async def bulk_assign(
             ),
         )
 
+    # Дедуп с сохранением порядка: дубликат `user_id` в запросе на repo-уровне
+    # шёл бы в две вставки `UserServiceRole` и ловил UNIQUE 500.
+    user_ids = list(dict.fromkeys(user_ids))
+
     user_repo = UserRepository(db)
     role_repo = RoleRepository(db)
     # Один SELECT по списку вместо N×get_by_id.

@@ -20,11 +20,9 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.bot_account import BOT_LAST_KNOWN_IPS_WINDOW, BotAccount
+from src.core.config import get_settings
+from src.models.bot_account import BotAccount
 from src.services import audit_service
-
-# Длительность окна, внутри которого "несколько IP" считается подозрением.
-SUSPICIOUS_IP_WINDOW = timedelta(hours=1)
 
 
 def _parse_ts(raw: str | None) -> datetime | None:
@@ -68,18 +66,26 @@ async def track_bot_ip(
     if not caller_ip:
         return False
 
+    settings = get_settings()
+    max_window = settings.bot_last_known_ips_window
+    suspicious_window = timedelta(seconds=settings.bot_suspicious_ip_window_seconds)
+
     now = datetime.now(timezone.utc)
+    # Берём поверхностный список, но мутируем только через новые dict'ы:
+    # in-place правка `window[-1]["ts"] = ...` модифицировала бы тот же
+    # объект, что лежит в `bot.last_known_ips`, и ORM не всегда видит
+    # такую мутацию JSONB как изменение атрибута.
     window: list[dict] = list(bot.last_known_ips or [])
 
     # Если последняя запись — тот же самый IP, просто обновляем её ts.
     # Long-poll CI-агент с фиксированного IP не должен забивать окно.
     if window and window[-1].get("ip") == caller_ip:
-        window[-1]["ts"] = now.isoformat()
+        window[-1] = {**window[-1], "ts": now.isoformat()}
     else:
         window.append({"ip": caller_ip, "ts": now.isoformat()})
 
-    if len(window) > BOT_LAST_KNOWN_IPS_WINDOW:
-        window = window[-BOT_LAST_KNOWN_IPS_WINDOW:]
+    if len(window) > max_window:
+        window = window[-max_window:]
 
     bot.last_known_ips = window
     # Без явного flag_modified ORM не всегда видит мутацию JSONB-колонки
@@ -87,7 +93,7 @@ async def track_bot_ip(
     # гарантированно отметит attribute как dirty.
     await db.flush()
 
-    cutoff = now - SUSPICIOUS_IP_WINDOW
+    cutoff = now - suspicious_window
     recent_ips: list[str] = []
     for entry in window:
         ts = _parse_ts(entry.get("ts"))

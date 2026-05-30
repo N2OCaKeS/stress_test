@@ -468,3 +468,31 @@ async def test_docker_token_failed_attempt_increments_counter_in_db(
         f"counter not persisted: got {fresh.failed_login_attempts}, expected 3"
     )
     assert fresh.locked_until is None
+
+
+# ── Multi legacy scope (без `<dept>/`) ────────────────────────────────────────
+
+async def test_multi_legacy_scope_resolves_caller_dept_for_each_entry(
+    client, admin_token, user_a, dept_a,
+):
+    """Несколько legacy-scope entries в одном запросе должны корректно
+    разрешиться в конфиг caller-отдела для каждого.
+
+    Регрессионный тест на старый код, где `legacy_cfg = None` инициализировался
+    до цикла и фактически никогда не использовался — каждый legacy-entry бил по
+    БД дважды (dept_repo + docker_repo). Сейчас caller-cfg считается один раз
+    перед циклом, и оба entries получают одинаковый успешный pull.
+    """
+    await _enable_docker(client, admin_token, dept_a.id, pull_policy="all")
+    resp = await client.get(
+        TOKEN_URL,
+        headers=_basic("t_user_a", "User1234!"),
+        params={
+            "service": "registry.test",
+            "scope": "repository:foo:pull repository:bar:pull",
+        },
+    )
+    assert resp.status_code == 200
+    access = _decode_access(resp.json()["access_token"])
+    names = {entry["name"] for entry in access if "pull" in entry.get("actions", [])}
+    assert {"foo", "bar"}.issubset(names)

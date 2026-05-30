@@ -94,6 +94,20 @@ class Settings(BaseSettings):
         description="Длительность bot-lockout в минутах.",
     )
 
+    # Окно для детектора `bot.suspicious_multi_ip`: если за это время бот
+    # засветился с >=2 разных IP — CRITICAL audit.
+    bot_suspicious_ip_window_seconds: int = Field(
+        default=3600,
+        alias="BOT_SUSPICIOUS_IP_WINDOW_SECONDS",
+        description="Длина окна (сек) для детектора подозрительной мульти-IP активности бота.",
+    )
+    # Сколько последних (ip, ts) пар держим в `bot_accounts.last_known_ips` (FIFO).
+    bot_last_known_ips_window: int = Field(
+        default=5,
+        alias="BOT_LAST_KNOWN_IPS_WINDOW",
+        description="Размер FIFO-окна last_known_ips бота.",
+    )
+
     # TTL для identity-cache (sha256(token) → IdentityContext) в
     # `dependencies/auth.py`. Default 5s — окно burst'а одной UI-сессии, но
     # недостаточно для долгого stale-доступа забаненного.

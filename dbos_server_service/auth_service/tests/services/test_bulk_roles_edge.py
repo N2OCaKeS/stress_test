@@ -97,3 +97,28 @@ class TestTargetValidation:
         )
         # Текущая реализация не проверяет существование роли для revoke — фиксируем.
         assert resp.status_code == 200
+
+
+# ── Duplicates in user_ids ───────────────────────────────────────────────────
+
+class TestDuplicateUserIds:
+    async def test_assign_with_duplicate_user_id_idempotent(
+        self, client, admin_token, user_a, dept_a_with_service, service_x, db,
+    ):
+        """Дубль user_id в batch не должен бить UNIQUE и валиться 500.
+
+        До фикса: цикл по input создавал 2 строки `UserServiceRole` с одинаковым
+        `(user_id, service, role)` → второй INSERT триггерил UNIQUE → 500.
+        Теперь дубликаты схлопываются на входе, ответ 200, в БД одна запись.
+        """
+        url = f"{_roles_url(dept_a_with_service.id, service_x.service_name)}/operator/assign"
+        resp = await client.post(
+            url, headers={"Authorization": f"Bearer {admin_token}"},
+            json={"user_ids": [user_a.id, user_a.id]},
+        )
+        assert resp.status_code == 200
+
+        from src.repositories.roles import RoleRepository
+        roles = await RoleRepository(db).get_roles_by_service(user_a.id, service_x.service_name)
+        # Operator проставлен ровно один раз; дубликат не уронил транзакцию.
+        assert "operator" in roles

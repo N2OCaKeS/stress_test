@@ -1,16 +1,21 @@
 """Репозиторий `AuditEvent` — только insert и query, никогда update/delete."""
 
+import logging
 import re
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
+from src.core.config import get_settings
 from src.core.exceptions import DomainValidationError
 from src.models.audit_event import AuditEvent
 from src.schemas.events import EventCreate
 from src.utils.ids import audit_event_id
+
+_log = logging.getLogger(__name__)
 
 # Defence-in-depth: схема `EventCreate` уже валидирует request_id, но
 # репозиторий могут дёрнуть напрямую из миграции, фоновой задачи или
@@ -191,7 +196,40 @@ def query(
         count_stmt = select(func.count()).select_from(AuditEvent)
         for f in filters:
             count_stmt = count_stmt.where(f)
-        total = db.execute(count_stmt).scalar_one()
+        # COUNT по миллионам строк — отдельный seq-scan, который легко
+        # держит pooled-коннект 10+ секунд. Ограничиваем длительность
+        # сессионным `statement_timeout`; на превышении Postgres шлёт
+        # `57014 query_canceled`, мы возвращаем `total=None` (caller
+        # документирован как "None = точное число неизвестно") и не
+        # ломаем основной выпуск страницы. SAVEPOINT нужен, чтобы
+        # отменённый стейтмент не повалил активную транзакцию.
+        settings = get_settings()
+        timeout_ms = settings.audit_count_statement_timeout_ms
+        if timeout_ms > 0:
+            # Postgres не принимает bind-параметры в SET LOCAL, инлайним
+            # int — значение приходит из Settings (int validator), SQL-инъекция
+            # невозможна.
+            timeout_sql = f"SET LOCAL statement_timeout = {int(timeout_ms)}"
+            nested = db.begin_nested()
+            try:
+                db.execute(text(timeout_sql))
+                total = db.execute(count_stmt).scalar_one()
+                nested.commit()
+            except DBAPIError as exc:
+                nested.rollback()
+                # `57014` — query_canceled (включая statement_timeout).
+                pgcode = getattr(getattr(exc.orig, "pgcode", None), "value", None) \
+                    or getattr(exc.orig, "pgcode", None)
+                if pgcode == "57014":
+                    _log.warning(
+                        "audit COUNT exceeded statement_timeout=%dms; returning total=None",
+                        timeout_ms,
+                    )
+                    total = None
+                else:
+                    raise
+        else:
+            total = db.execute(count_stmt).scalar_one()
     else:
         total = None
 

@@ -76,6 +76,45 @@ class TestRedactRecursion:
         # ключ "tokens" — список, не подходящий к маскированию по имени → внутрь
         assert out == {"tokens": [{"token": "<TOKEN>"}, {"token": "<TOKEN>"}]}
 
+    def test_deep_nested_does_not_recurse_stack(self):
+        # Рекурсивная версия падала с RecursionError на ~1000 уровнях; новая
+        # итеративная c явным стеком должна спокойно ходить вглубь до
+        # `_MAX_DEPTH` (64). Кладём password на дно в пределах лимита,
+        # чтобы убедиться, что маскирование работает на любой допустимой
+        # глубине, а не валится по stack overflow.
+        from src.utils.redaction import _MAX_DEPTH
+
+        deep_levels = _MAX_DEPTH - 1
+        payload: dict = {"password": "secret"}
+        for _ in range(deep_levels):
+            payload = {"nested": payload}
+
+        out = redact(payload)
+
+        cursor = out
+        for _ in range(deep_levels):
+            cursor = cursor["nested"]
+        assert cursor == {"password": "<PASSWORD>"}
+
+    def test_depth_overflow_truncated(self):
+        # На глубине > _MAX_DEPTH (64) обход режется явным плейсхолдером.
+        payload: dict = {"leaf": "value"}
+        for _ in range(200):
+            payload = {"nested": payload}
+
+        out = redact(payload)
+
+        cursor = out
+        depth = 0
+        # Идём вниз пока встречаем dict с ключом "nested"; на каком-то шаге
+        # значение должно стать строкой "<TRUNCATED>".
+        while isinstance(cursor, dict) and "nested" in cursor:
+            cursor = cursor["nested"]
+            depth += 1
+            if depth > 70:
+                break
+        assert cursor == "<TRUNCATED>"
+
 
 class TestRedactLongStrings:
     def test_truncated(self):

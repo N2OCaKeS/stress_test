@@ -58,6 +58,14 @@ _OPAQUE_TOKEN_RE = re.compile(r"^dbos_(pat|bot)_[A-Za-z0-9_\-]{12,}$")
 
 _MAX_STRING_LEN = 2048
 
+# Жёсткий cap на глубину обхода `redact()`. Caller'ы (например
+# `record_admin_action → _redact_payload`) могут принять подготовленный
+# не-нами dict/list, у которого глубина не ограничена ни схемой, ни
+# `EventCreate._details_size` (тот считает байты, не nesting). Без
+# верхнего предела рекурсия (а теперь итерация) уходит в линейный рост
+# памяти на cyclic-friendly nested структуре; обрезаем явно.
+_MAX_DEPTH = 64
+
 
 def _classify_key(key: str) -> str | None:
     k = key.lower()
@@ -97,21 +105,53 @@ def _redact_value(value: Any, key_placeholder: str | None) -> Any:
 
 
 def redact(payload: Any) -> Any:
-    """Рекурсивно санитизирует dict/list. Не мутирует вход."""
-    if isinstance(payload, dict):
-        out: dict[str, Any] = {}
-        for k, v in payload.items():
-            key_str = str(k)
-            holder = _classify_key(key_str)
-            if isinstance(v, (dict, list)):
-                out[key_str] = holder if holder is not None else redact(v)
-            else:
-                out[key_str] = _redact_value(v, holder)
-        return out
-    if isinstance(payload, list):
-        return [
-            redact(item) if isinstance(item, (dict, list))
-            else _redact_value(item, None)
-            for item in payload
-        ]
-    return payload
+    """Санитизирует dict/list без рекурсии. Не мутирует вход.
+
+    Обход — итеративный через explicit-стек: на глубоком payload'е
+    рекурсивная версия упиралась в `RecursionError` (limit ≈ 1000) ещё
+    до того, как срабатывали upstream-каппы на размер тела. Стек хранит
+    кортежи `(src, dst, key_or_index)`, где `dst[key]` будет заполнен
+    результатом обработки `src`. На глубине `_MAX_DEPTH` подставляем
+    `"<TRUNCATED>"` плейсхолдер — экраним bombing на pathological-вложенности.
+    """
+    if not isinstance(payload, (dict, list)):
+        return payload
+
+    # Корневой holder — list-обёртка из одного элемента: после прохода
+    # `root[0]` хранит готовый результат. Так дальше всегда работаем
+    # через единый `parent[key] = ...` контракт, без спец-кейса для root.
+    root: list[Any] = [None]
+    stack: list[tuple[Any, Any, Any, int]] = [(payload, root, 0, 0)]
+
+    while stack:
+        src, dst, key, depth = stack.pop()
+
+        if depth > _MAX_DEPTH:
+            dst[key] = "<TRUNCATED>"
+            continue
+
+        if isinstance(src, dict):
+            new_dict: dict[str, Any] = {}
+            dst[key] = new_dict
+            for k, v in src.items():
+                k_str = str(k)
+                holder = _classify_key(k_str)
+                if isinstance(v, (dict, list)):
+                    if holder is not None:
+                        new_dict[k_str] = holder
+                    else:
+                        stack.append((v, new_dict, k_str, depth + 1))
+                else:
+                    new_dict[k_str] = _redact_value(v, holder)
+        elif isinstance(src, list):
+            new_list: list[Any] = [None] * len(src)
+            dst[key] = new_list
+            for i, item in enumerate(src):
+                if isinstance(item, (dict, list)):
+                    stack.append((item, new_list, i, depth + 1))
+                else:
+                    new_list[i] = _redact_value(item, None)
+        else:
+            dst[key] = src
+
+    return root[0]

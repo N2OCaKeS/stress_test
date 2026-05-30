@@ -69,9 +69,9 @@ class Settings(BaseSettings):
 
     # Outbound bearer для POST /introspect в auth_service. Должен быть отличным
     # от любого значения `SERVICE_API_KEYS` (см. key-separation guard ниже).
-    # В production обязателен; в local/dev допустимо оставить пустым только
-    # если auth_service использует legacy single-key конфиг и принимает
-    # любой service-token.
+    # В production обязателен; в local/dev допустимо оставить пустым — тогда
+    # JWT-защищённые эндпоинты вернут 503 INTROSPECT_NOT_INITIALIZED при
+    # первом же запросе (введено в `_fetch_identity`).
     introspect_service_api_key: str = Field(
         default="", alias="INTROSPECT_SERVICE_API_KEY"
     )
@@ -220,6 +220,18 @@ class Settings(BaseSettings):
     # write через session_factory, что эквивалентно старому поведению).
     audit_outbox_enabled: bool = Field(
         default=True, alias="AUDIT_OUTBOX_ENABLED"
+    )
+
+    # Hard cap на длительность COUNT(*) при `include_total=True` в
+    # `GET /events`. На multi-million журнале фильтрованный COUNT — второй
+    # полный seq-scan, который держит pooled-коннект ~10s и легко
+    # превращается в DoS-вектор для admin-дашбордов (один тяжёлый запрос
+    # перекрывает остальные читатели). Окружаем COUNT-стейтмент
+    # `SET LOCAL statement_timeout`; на превышении репо ловит
+    # `QueryCanceled` и возвращает `total=None` — caller трактует None как
+    # "точное число неизвестно" и продолжает рендер страницы.
+    audit_count_statement_timeout_ms: int = Field(
+        default=10000, alias="AUDIT_COUNT_STATEMENT_TIMEOUT_MS", ge=0
     )
 
     # Запускать ли retention-cleanup loop в lifespan'е. По умолчанию True —

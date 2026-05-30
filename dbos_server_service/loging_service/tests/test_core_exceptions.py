@@ -237,24 +237,22 @@ class TestFetchIdentityNetworkErrors:
         assert exc.value.error_code == "AUTH_SERVICE_UNREACHABLE"
 
     def test_non_200_response_returns_503(self, monkeypatch):
+        # После удаления httpx-fallback (W8) на `_introspect_client.pool=None`
+        # сразу поднимается INTROSPECT_NOT_INITIALIZED (503) — non-200 ветка
+        # достижима только через настоящий pooled client, который здесь не
+        # инициализирован. Тест зафиксирован под новый контракт.
         from src.core.config import get_settings
-        import httpx
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.setattr(auth_dep, "_introspect_client", None)
         monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth")
         monkeypatch.setenv("INTROSPECT_SERVICE_API_KEY", "introspect-x")
 
-        class _R:
-            status_code = 500
-            def json(self): return {}
-
-        monkeypatch.setattr(httpx, "post", lambda *a, **kw: _R())
         class _Creds:
             credentials = "tok"
 
         with pytest.raises(AppException) as exc:
             _run(auth_dep._fetch_identity(_Creds(), _FakeRequest()))
-        assert exc.value.error_code == "AUTH_SERVICE_ERROR"
+        assert exc.value.error_code == "INTROSPECT_NOT_INITIALIZED"
 
     def test_inactive_token_returns_401(self, monkeypatch, mock_introspect):
         from src.core.config import get_settings

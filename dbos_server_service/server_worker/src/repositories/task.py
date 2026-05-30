@@ -126,24 +126,67 @@ async def scrub_payload_keys(
         )
 
 
-async def mark_succeeded(db: AsyncSession, task: Task, result: dict | None) -> Task:
-    """Terminal success: status=SUCCEEDED, сохранить result, completed_at=now."""
+async def mark_succeeded(
+    db: AsyncSession, task: Task, result: dict | None,
+) -> Task | None:
+    """Terminal success: status=SUCCEEDED, сохранить result, completed_at=now.
+
+    CAS-guard на ``status != 'cancelled'``. Если оператор успел дёрнуть
+    cancel пока impl выполнялся — terminal write пропускаем, чтобы не
+    перетереть CANCELLED. В этом случае возвращаем ``None``, caller
+    должен залогировать и пропустить audit terminal-event (см.
+    `_runner.run_task`).
+    """
+    now = datetime.now(timezone.utc)
+    stmt = (
+        update(Task)
+        .where(Task.id == task.id, Task.status != TaskStatus.CANCELLED)
+        .values(
+            status=TaskStatus.SUCCEEDED,
+            result=result,
+            completed_at=now,
+        )
+        .returning(Task.id)
+    )
+    res = await db.execute(stmt)
+    if res.scalar_one_or_none() is None:
+        return None
     task.status = TaskStatus.SUCCEEDED
     task.result = result
-    task.completed_at = datetime.now(timezone.utc)
+    task.completed_at = now
     await db.flush()
     return task
 
 
-async def mark_failed(db: AsyncSession, task: Task, error_message: str) -> Task:
+async def mark_failed(
+    db: AsyncSession, task: Task, error_message: str,
+) -> Task | None:
     """Terminal failure: status=FAILED, last_error, completed_at=now.
 
     `error_message` должно быть уже redact'нутым caller'ом (см.
     `_runner.run_task` → `redact_error_message`).
+
+    CAS-guard на ``status != 'cancelled'`` — см. ``mark_succeeded``.
+    Возвращает ``None`` если row был cancel'нут во время выполнения impl;
+    caller должен пропустить terminal audit.
     """
+    now = datetime.now(timezone.utc)
+    stmt = (
+        update(Task)
+        .where(Task.id == task.id, Task.status != TaskStatus.CANCELLED)
+        .values(
+            status=TaskStatus.FAILED,
+            last_error=error_message,
+            completed_at=now,
+        )
+        .returning(Task.id)
+    )
+    res = await db.execute(stmt)
+    if res.scalar_one_or_none() is None:
+        return None
     task.status = TaskStatus.FAILED
     task.last_error = error_message
-    task.completed_at = datetime.now(timezone.utc)
+    task.completed_at = now
     await db.flush()
     return task
 
@@ -154,7 +197,7 @@ async def mark_pending_for_retry(
     error_message: str,
     *,
     scheduled_retry_at: datetime | None = None,
-) -> Task:
+) -> Task | None:
     """Сбросить task в ``queued`` для повторной попытки.
 
     Используется `_runner` когда `attempt < max_attempts` после exception
@@ -177,7 +220,26 @@ async def mark_pending_for_retry(
     Сбрасываем ``worker_id`` обратно в NULL — task больше «ничейная»,
     sweep её не должен ловить как orphan, пока следующий mark_running
     не назначит нового владельца.
+
+    CAS-guard на ``status != 'cancelled'``. Cancel во время impl должен
+    оставить task cancelled, а не вернуть её в queued (иначе re-kick
+    оживит уже отменённую задачу). Возвращает ``None`` если row был
+    отменён — caller также должен подавить re-kick (см. `_runner`).
     """
+    stmt = (
+        update(Task)
+        .where(Task.id == task.id, Task.status != TaskStatus.CANCELLED)
+        .values(
+            status=TaskStatus.QUEUED,
+            last_error=error_message,
+            scheduled_retry_at=scheduled_retry_at,
+            worker_id=None,
+        )
+        .returning(Task.id)
+    )
+    res = await db.execute(stmt)
+    if res.scalar_one_or_none() is None:
+        return None
     task.status = TaskStatus.QUEUED
     task.last_error = error_message
     task.scheduled_retry_at = scheduled_retry_at

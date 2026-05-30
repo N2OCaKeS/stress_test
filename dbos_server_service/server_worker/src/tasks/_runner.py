@@ -322,26 +322,58 @@ async def run_task(
             )
 
             # ── session 2 (failure path): mark_* + audit_outbox atomic ──
+            #
+            # `mark_*` теперь CAS на ``status != 'cancelled'``: если
+            # оператор успел дёрнуть cancel пока impl падал — terminal
+            # write пропускается, retry не шедулится, audit идёт с
+            # `observed_status=cancelled`. Без этого guard'а cancelled
+            # row перетёрся бы failed/queued и cancel был бы потерян.
+            cancelled_midrun = False
             async with AsyncSessionLocal() as fail_session:
                 fresh = await task_repo.get_by_id(fail_session, task_id)
                 if fresh is not None:
                     if should_retry:
-                        await task_repo.mark_pending_for_retry(
+                        marked = await task_repo.mark_pending_for_retry(
                             fail_session,
                             fresh,
                             error_message,
                             scheduled_retry_at=scheduled_retry_at,
                         )
                     else:
-                        await task_repo.mark_failed(
+                        marked = await task_repo.mark_failed(
                             fail_session, fresh, error_message
+                        )
+                    if marked is None:
+                        cancelled_midrun = True
+                        logger.warning(
+                            "task cancelled mid-run, terminal write skipped "
+                            "task_id=%s should_retry=%s",
+                            task_id,
+                            should_retry,
                         )
                 # severity отличается: retry — WARNING (transient),
                 # exhausted — ERROR (terminal). Status в audit во всех
                 # случаях — failure (impl упал именно сейчас), но детали
                 # говорят оператору про будущий retry.
+                #
+                # cancelled_midrun: row уже cancelled, terminal write
+                # пропустили. Audit пишем со статусом failure (impl
+                # действительно упал), но will_retry=False и
+                # observed_status=cancelled — оператору сразу видно,
+                # что cancel случился во время выполнения.
                 audit_status = "failure"
-                if should_retry:
+                if cancelled_midrun:
+                    audit_severity = "WARNING"
+                    audit_details = {
+                        "task_id": task_id,
+                        "error": error_message,
+                        "attempt": current_attempt,
+                        "max_attempts": max_attempts,
+                        "will_retry": False,
+                        "observed_status": TaskStatus.CANCELLED.value,
+                        "reason": "cancelled_midrun",
+                    }
+                elif should_retry:
                     audit_severity = "WARNING"
                     audit_details = {
                         "task_id": task_id,
@@ -379,26 +411,57 @@ async def run_task(
             await _safe_flush_outbox()
 
             # Schedule re-kick после commit'а — иначе back-off асинкронной
-            # таски не помешает publisher'у дописать audit.
-            if should_retry:
+            # таски не помешает publisher'у дописать audit. Если row
+            # был cancelled mid-run — re-kick не нужен (mark_pending_for_retry
+            # вернул None, status в БД остался cancelled, оживлять нечего).
+            if should_retry and not cancelled_midrun:
                 await _schedule_retry(
                     task_kind, task_id, current_attempt, delay=retry_delay,
                 )
             return
 
         # ── session 2 (happy path): mark_succeeded + audit_outbox atomic ─
+        #
+        # mark_succeeded CAS на ``status != 'cancelled'``. Если оператор
+        # успел отменить task пока impl работал — terminal write пропускаем,
+        # audit пишем как failure/cancelled_midrun, success-результат
+        # отбрасываем (его поведение оператор отменил сознательно).
         filtered_result = _filter_result_for_audit(result, audit_safe_fields)
+        success_cancelled_midrun = False
         async with AsyncSessionLocal() as success_session:
             fresh = await task_repo.get_by_id(success_session, task_id)
             if fresh is not None:
-                await task_repo.mark_succeeded(success_session, fresh, result)
+                marked = await task_repo.mark_succeeded(
+                    success_session, fresh, result,
+                )
+                if marked is None:
+                    success_cancelled_midrun = True
+                    logger.warning(
+                        "task cancelled mid-run, terminal write skipped "
+                        "task_id=%s phase=success",
+                        task_id,
+                    )
             # Outbox-row пишем ВСЕГДА, даже если Task-row исчез между
             # сессиями (защита от silent no-op: владелец task'и удалил
             # row → пусть audit об этом останется).
-            await task_repo.enqueue_audit(
-                success_session,
-                task_id=task_id,
-                payload={
+            if success_cancelled_midrun:
+                audit_payload = {
+                    "action": audit_action,
+                    "status": "failure",
+                    "allowed": False,
+                    "target_id": target_id,
+                    "target_type": audit_target_type,
+                    "request_id": request_id,
+                    "actor_id": actor_id,
+                    "details": {
+                        "task_id": task_id,
+                        "reason": "cancelled_midrun",
+                        "observed_status": TaskStatus.CANCELLED.value,
+                    },
+                    "severity": "WARNING",
+                }
+            else:
+                audit_payload = {
                     "action": audit_action,
                     "status": "success",
                     "allowed": True,
@@ -407,7 +470,11 @@ async def run_task(
                     "request_id": request_id,
                     "actor_id": actor_id,
                     "details": {"task_id": task_id, "result": filtered_result},
-                },
+                }
+            await task_repo.enqueue_audit(
+                success_session,
+                task_id=task_id,
+                payload=audit_payload,
             )
             await success_session.commit()
 

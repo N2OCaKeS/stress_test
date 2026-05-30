@@ -18,7 +18,9 @@ Submit-фейл (network / 4xx / 5xx) НЕ роняет task'у в FAILED: сп�
 import logging
 
 from src.core.exceptions import CredentialFetchError
+from src.db.session import AsyncSessionLocal
 from src.main import broker
+from src.repositories import task as task_repo
 from src.services import server_service_client, ssh_client
 from src.tasks._runner import run_task
 
@@ -218,6 +220,28 @@ async def account_provision(task_id: str) -> None:
         await server_service_client.submit_provision_status(
             server_id, account_id, "provision", True, target_dept,
         )
+        # Defense-in-depth: inline-креды из discovered-сценария (F23-B) —
+        # `password_plaintext` и `ssh_private_key_plaintext` — приходят
+        # прямо в payload и без явной зачистки остаются в `tasks.payload`
+        # до retention cleanup'а (до 30 дней). После успешного callback'а
+        # они уже не нужны: задача SUCCEEDED, retry не понадобится. Стираем
+        # их из строки, чтобы оператор с SELECT на worker.tasks не получил
+        # plaintext password и private SSH key. `ssh_public_key` — не секрет,
+        # его не трогаем (полезно для форенсики). Best-effort: если scrub
+        # упал, главную транзакцию не валим — task уже завершилась успешно.
+        try:
+            async with AsyncSessionLocal() as scrub_session:
+                await task_repo.scrub_payload_keys(
+                    scrub_session, task_id,
+                    ["password_plaintext", "ssh_private_key_plaintext"],
+                )
+                await scrub_session.commit()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "failed to scrub inline provision creds from payload",
+                exc_info=True,
+                extra={"task_id": task_id},
+            )
         return {
             "server_id": server_id,
             "account_id": account_id,

@@ -1,8 +1,10 @@
 """Бизнес-логика ботов: CRUD bot accounts + выдача/отзыв bot-токенов + service-роли."""
 
+from datetime import timedelta, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import PlatformRole
+from src.core.constants import BOT_TOKEN_TTL_SECONDS, PlatformRole
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -26,6 +28,7 @@ from src.schemas.bots import (
 )
 from src.services import audit_service
 from src.utils.pagination import PaginationParams
+from src.utils.time import utcnow
 
 
 async def _validate_bot_services(dept_repo: DepartmentRepository, department_id: str, requested: list[str]) -> None:
@@ -239,13 +242,32 @@ async def create_bot_token(
     if await token_repo.exists_name(bot_id, name):
         raise ConflictError(error_code="TOKEN_NAME_ALREADY_EXISTS", message=f"Token '{name}' already exists")
 
+    # Bot-токены живут 6 месяцев по умолчанию. Если caller передал явный
+    # expires_at — уважаем его (валидируем aware/naive и future-ness),
+    # иначе ставим now + 6mo. Бессрочные bot-токены запрещены: их сложно
+    # ротировать, dept_admin'у проще перевыпустить раз в полгода.
+    if expires_at is None:
+        effective_expires_at = utcnow() + timedelta(seconds=BOT_TOKEN_TTL_SECONDS)
+    else:
+        exp_dt = (
+            expires_at if expires_at.tzinfo is not None
+            else expires_at.replace(tzinfo=timezone.utc)
+        )
+        if exp_dt <= utcnow():
+            raise DomainValidationError(
+                error_code="INVALID_TOKEN_EXPIRY",
+                message="expires_at must be in the future",
+                details={"expires_at": exp_dt.isoformat()},
+            )
+        effective_expires_at = exp_dt
+
     raw, prefix, token_hash = generate_bot_token()
     token = await token_repo.create(
         bot_id=bot_id,
         name=name,
         token_hash=token_hash,
         token_prefix=prefix,
-        expires_at=expires_at,
+        expires_at=effective_expires_at,
     )
     await db.commit()
     # raw bot-токен в audit → sanitizer заменит на <TOKEN> по эвристике dbos_bot_…
@@ -257,7 +279,7 @@ async def create_bot_token(
             "token_name": name,
             "token_prefix": prefix,
             "token": raw,
-            "expires_at": expires_at.isoformat() if expires_at else None,
+            "expires_at": effective_expires_at.isoformat(),
         },
         request_id=request_id,
     )

@@ -94,8 +94,17 @@ async def _introspect_oauth_client_jwt(
     )
 
 
-async def introspect(db: AsyncSession, token: str, request_id: str | None = None) -> IntrospectResponse:
-    """Валидирует любой тип токена (JWT / PAT / bot) и возвращает контекст субъекта."""
+async def introspect(
+    db: AsyncSession,
+    token: str,
+    request_id: str | None = None,
+    caller_ip: str | None = None,
+) -> IntrospectResponse:
+    """Валидирует любой тип токена (JWT / PAT / bot) и возвращает контекст субъекта.
+
+    `caller_ip` — IP конечного клиента, проброшенный вызывающим сервисом.
+    Используется только в bot-ветке для детектора `bot.suspicious_multi_ip`.
+    """
 
     # 1. Пробуем JWT access token.
     #
@@ -374,6 +383,28 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
                 },
                 request_id=request_id,
             )
+            # Парный CRITICAL-сигнал для SIEM: легитимный путь — dept_admin
+            # должен перевыпустить токен; одиночное событие безобидно, но
+            # серия `bot.token_expired` от одного бота означает, что
+            # consumer не следит за TTL.
+            audit_service.emit(
+                "bot.token_expired",
+                bot_token.bot_id,
+                actor_type="bot",
+                target_id=bot_token.id,
+                target_type="bot_token",
+                status="failure",
+                allowed=False,
+                details={
+                    "bot_id": bot_token.bot_id,
+                    "bot_token_id": bot_token.id,
+                    "token_name": bot_token.name,
+                    "token_prefix": bot_token.token_prefix,
+                    "expires_at": bot_token.expires_at.isoformat(),
+                    "error_code": "BOT_TOKEN_EXPIRED",
+                },
+                request_id=request_id,
+            )
             return IntrospectResponse(active=False)
         await bot_token_repo.touch(bot_token)
         bot_repo = BotRepository(db)
@@ -393,6 +424,13 @@ async def introspect(db: AsyncSession, token: str, request_id: str | None = None
             )
             return IntrospectResponse(active=False)
         effective_services, effective_roles = await collect_bot_permissions(db, bot)
+
+        # Multi-IP detector: пишем caller_ip в `bot.last_known_ips`, при
+        # необходимости — эмитим CRITICAL audit. Lazy-import чтобы не тянуть
+        # модуль на cold start, когда bot-токенов в introspect ещё не было.
+        from src.services.bot_ip_tracker import track_bot_ip
+        await track_bot_ip(db, bot, caller_ip, request_id=request_id)
+
         await db.commit()
         audit_service.emit(
             "token.introspect",

@@ -56,6 +56,11 @@ BOT_TOKEN_PREFIX = "dbos_bot_"
 # первых символа secret'а).
 TOKEN_PREFIX_LEN = 12
 
+# Дефолтный TTL для bot-токенов — 6 месяцев (180 дней). Если caller не
+# передал `expires_at`, бот-токен живёт ровно столько с момента выдачи. После
+# истечения dept_admin перевыпускает токен через `POST /bots/{id}/tokens`.
+BOT_TOKEN_TTL_SECONDS = 6 * 30 * 24 * 3600  # 15_552_000
+
 
 # ── Service identity allow-list (mTLS-partial) ───────────────────────────────
 # Соседние сервисы (loging_service, server_service, config_service) ходят в наш

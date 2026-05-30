@@ -181,44 +181,30 @@ async def test_ban_revokes_active_pat(
     assert post_ban.json()["active"] is False
 
 
-# ── Bot-token revoke on ban ───────────────────────────────────────────────────
+# ── Bot-token survives ban (by-design) ────────────────────────────────────────
 #
-# `ban_user` revoke'ит и bot-токены ботов, созданных юзером
-# (`BotAccount.created_by == user_id`). Покрываем явно, чтобы regression
-# detector видел bot-token revoke не только через PAT-introspect (другой
-# code-path).
-#
-# Setup-обоснование: `user_a` — обычный юзер, эндпоинт `POST /bots` имеет
-# `AnyAdmin`-guard и не пустит user_a создать бота через HTTP. Поэтому
-# создаём `BotAccount` + `BotToken` напрямую через ORM, выставляя
-# `created_by=user_a.id` — это правомерное состояние (бот был создан
-# админом по поручению юзера, либо через legacy seed, либо через будущий
-# UI-флоу). Это в точности тот сценарий, который `ban_user` должен
-# закрыть: атакующий, контролирующий user_a, получил bot-токен и хочет
-# сохранить доступ после ban'а.
+# Поведение поменялось: `ban_user` больше НЕ revoke'ит токены ботов, созданных
+# забаненным юзером. Бот привязан к отделу и продолжает работать после ban'а
+# своего создателя — иначе ban одного человека валит CI/integrations всего
+# отдела. Если нужен полный lockdown — dept_admin перевыпустит токен через
+# `POST /bots/{id}/tokens` (или revoke через `DELETE /bots/{id}/tokens/{tid}`).
 
 
-async def test_ban_revokes_bot_tokens_for_owned_bots(
+async def test_ban_does_not_revoke_bot_tokens_of_owned_bots(
     client, admin_token, user_a, dept_a, db,
 ):
-    """`ban_user` revoke-ит токены ботов, у которых `created_by = user_id`.
+    """`ban_user` оставляет токены ботов с `created_by=user_id` живыми.
 
-    Проверяем напрямую (без bots HTTP API): создаём BotAccount c
-    `created_by=user_a.id` + BotToken c `revoked_at IS NULL`, баним юзера,
-    видим что введён `revoked_at` (физически в БД), а introspect возвращает
-    `active=False`. Это явное покрытие bot-token revoke chain'а из
-    `ban_user` (services/user_service.py:494-500), который раньше не имел
-    прямого теста.
+    Бот — отдельная identity. Создатель забанен → бот по-прежнему работает,
+    introspect возвращает `active=True`. Это by-design.
     """
     from src.core.security import generate_bot_token
     from src.models import BotAccount, BotToken
     from src.utils.ids import bot_id, bot_token_id
 
-    # 1. Создаём бот, у которого `created_by` указывает на user_a — этот
-    #    бот должен попасть в выборку `owned_bots` при ban_user(user_a).
     bot = BotAccount(
         id=bot_id(),
-        name="owned_by_user_a",
+        name="owned_by_user_a_survives",
         department_id=dept_a.id,
         allowed_services=[],
         is_active=True,
@@ -227,12 +213,11 @@ async def test_ban_revokes_bot_tokens_for_owned_bots(
     db.add(bot)
     await db.flush()
 
-    # 2. Bot-token для этого бота — без revoked_at, активный.
     raw_token, prefix, token_hash = generate_bot_token()
     token = BotToken(
         id=bot_token_id(),
         bot_id=bot.id,
-        name="active_token",
+        name="survives_ban",
         token_hash=token_hash,
         token_prefix=prefix,
     )
@@ -240,263 +225,42 @@ async def test_ban_revokes_bot_tokens_for_owned_bots(
     await db.flush()
     await db.commit()
 
-    # 3. Sanity до ban'а — introspect должен видеть токен как `active=True`.
     pre_ban = await client.post(INTROSPECT_URL, json={"token": raw_token})
     assert pre_ban.status_code == 200
-    assert pre_ban.json()["active"] is True, (
-        "bot-токен должен быть active ДО ban'а — иначе тест ложноположительный"
-    )
+    assert pre_ban.json()["active"] is True
 
-    # 4. Бан юзера.
     ban_resp = await _ban(client, admin_token, user_a.id)
     assert ban_resp.status_code == 200
 
-    # 5. После ban'а: `revoked_at` физически проставлен (sqlalchemy-уровень),
-    #    introspect возвращает `active=False` (HTTP-уровень).
     await db.refresh(token)
-    assert token.revoked_at is not None, (
-        "BotToken.revoked_at должен быть физически проставлен в БД после "
-        "ban_user (services/user_service.py:494-500)"
+    assert token.revoked_at is None, (
+        "by-design: bots survive ban — токен бота не должен быть отозван при "
+        "бане его создателя"
     )
 
     post_ban = await client.post(INTROSPECT_URL, json={"token": raw_token})
     assert post_ban.status_code == 200
-    assert post_ban.json()["active"] is False, (
-        "introspect после ban должен вернуть active=False — bot-token revoke "
-        "chain в ban_user сломан"
+    assert post_ban.json()["active"] is True, (
+        "введение ban_user не должно валить ботов — bot.is_active остался True"
     )
 
 
-async def test_ban_revokes_tokens_of_deactivated_owned_bot(
-    client, admin_token, user_a, dept_a, db,
-):
-    """Если бот владельца давно деактивирован (`is_active=False`), но у него
-    остался активный токен — `ban_user` всё равно должен его отозвать.
-
-    Был риск, что `list_by_creator` начнут фильтровать по `is_active`, и
-    «зомби»-токен деактивированного бота переживёт ban владельца. Тест
-    фиксирует: выборка по `created_by` идёт без is_active-фильтра.
-    """
-    from src.core.security import generate_bot_token
-    from src.models import BotAccount, BotToken
-    from src.utils.ids import bot_id, bot_token_id
-
-    bot = BotAccount(
-        id=bot_id(),
-        name="deactivated_owned",
-        department_id=dept_a.id,
-        allowed_services=[],
-        is_active=False,
-        status="blocked",
-        created_by=user_a.id,
-    )
-    db.add(bot)
-    await db.flush()
-
-    raw_token, prefix, token_hash = generate_bot_token()
-    token = BotToken(
-        id=bot_token_id(),
-        bot_id=bot.id,
-        name="ghost_token",
-        token_hash=token_hash,
-        token_prefix=prefix,
-    )
-    db.add(token)
-    await db.flush()
-    await db.commit()
-
-    ban_resp = await _ban(client, admin_token, user_a.id)
-    assert ban_resp.status_code == 200
-
-    await db.refresh(token)
-    assert token.revoked_at is not None, (
-        "Токен деактивированного бота с created_by=banned_user должен быть "
-        "отозван — list_by_creator не фильтрует по is_active"
-    )
-
-
-async def test_ban_revokes_all_tokens_when_bot_has_multiple(
-    client, admin_token, user_a, dept_a, db,
-):
-    """У одного бота может быть несколько активных токенов — ban владельца
-    должен отозвать ВСЕ, не только первый."""
-    from src.core.security import generate_bot_token
-    from src.models import BotAccount, BotToken
-    from src.utils.ids import bot_id, bot_token_id
-
-    bot = BotAccount(
-        id=bot_id(),
-        name="multi_token_bot",
-        department_id=dept_a.id,
-        allowed_services=[],
-        is_active=True,
-        created_by=user_a.id,
-    )
-    db.add(bot)
-    await db.flush()
-
-    tokens: list[BotToken] = []
-    for i in range(3):
-        _, prefix, token_hash = generate_bot_token()
-        t = BotToken(
-            id=bot_token_id(),
-            bot_id=bot.id,
-            name=f"tok_{i}",
-            token_hash=token_hash,
-            token_prefix=prefix,
-        )
-        db.add(t)
-        tokens.append(t)
-    await db.flush()
-    await db.commit()
-
-    ban_resp = await _ban(client, admin_token, user_a.id)
-    assert ban_resp.status_code == 200
-
-    for t in tokens:
-        await db.refresh(t)
-        assert t.revoked_at is not None, (
-            f"Токен {t.name} должен быть отозван — bulk revoke_all_for_bots "
-            "обязан покрыть все live-токены каждого бота"
-        )
-
-
-async def test_ban_skips_already_revoked_tokens(
+async def test_ban_audit_reports_zero_bot_revokes(
     client, admin_token, user_a, dept_a, db, monkeypatch,
 ):
-    """Уже отозванный токен (`revoked_at IS NOT NULL`) ban не должен трогать
-    повторно — счётчик `bot_tokens_revoked` в audit считает только свежие
-    отзывы."""
-    from src.core.security import generate_bot_token
-    from src.models import BotAccount, BotToken
-    from src.services import audit_service as audit_mod
-    from src.utils.ids import bot_id, bot_token_id
-    from src.utils.time import utcnow
+    """`user.ban` audit оставляет `bot_tokens_revoked=0`/`owned_bots_count=0`.
 
-    bot = BotAccount(
-        id=bot_id(),
-        name="mixed_token_bot",
-        department_id=dept_a.id,
-        allowed_services=[],
-        is_active=True,
-        created_by=user_a.id,
-    )
-    db.add(bot)
-    await db.flush()
-
-    # Активный токен — будет revoked'нут ban'ом.
-    _, prefix_a, hash_a = generate_bot_token()
-    live = BotToken(
-        id=bot_token_id(), bot_id=bot.id, name="live",
-        token_hash=hash_a, token_prefix=prefix_a,
-    )
-    # Уже отозванный токен — ban не должен переписать revoked_at.
-    _, prefix_d, hash_d = generate_bot_token()
-    prior_revoke = utcnow()
-    dead = BotToken(
-        id=bot_token_id(), bot_id=bot.id, name="dead",
-        token_hash=hash_d, token_prefix=prefix_d,
-        revoked_at=prior_revoke,
-    )
-    db.add_all([live, dead])
-    await db.flush()
-    await db.commit()
-
-    captured: list[dict] = []
-    original_emit = audit_mod.emit
-
-    def _capture(action, actor_id=None, **kw):
-        captured.append({"action": action, **kw})
-        return original_emit(action, actor_id, **kw)
-
-    monkeypatch.setattr(audit_mod, "emit", _capture)
-
-    resp = await _ban(client, admin_token, user_a.id)
-    assert resp.status_code == 200
-
-    await db.refresh(live)
-    await db.refresh(dead)
-    assert live.revoked_at is not None, "активный токен должен быть отозван"
-    # `dead.revoked_at` не должен быть переписан — bulk-update фильтрует по
-    # `revoked_at IS NULL`.
-    assert dead.revoked_at == prior_revoke, (
-        "уже отозванный токен не должен получить новое revoked_at"
-    )
-
-    ban_events = [e for e in captured if e["action"] == "user.ban"]
-    assert ban_events
-    # Counter учитывает только свежие отзывы — один live токен.
-    assert ban_events[0]["details"]["bot_tokens_revoked"] == 1
-
-
-async def test_ban_does_not_revoke_tokens_of_bots_owned_by_others(
-    client, admin_token, user_a, dept_a, db,
-):
-    """`ban_user(user_a)` НЕ трогает токены ботов, созданных другими юзерами.
-
-    Гарантирует, что фильтр `BotAccount.created_by == user_id` действительно
-    ограничивает revoke-набор: бот, созданный admin'ом, не должен страдать
-    при бане user_a. Это регрессия-страховка против over-revocation (которая
-    могла бы привести к outage всех ботов в отделе).
-    """
-    from src.core.security import generate_bot_token
-    from src.models import BotAccount, BotToken
-    from src.utils.ids import bot_id, bot_token_id
-
-    # Бот, созданный НЕ user_a (created_by — placeholder для admin'а):
-    other_owner = "usr_someone_else"
-    bot = BotAccount(
-        id=bot_id(),
-        name="not_owned_by_user_a",
-        department_id=dept_a.id,
-        allowed_services=[],
-        is_active=True,
-        created_by=other_owner,
-    )
-    db.add(bot)
-    await db.flush()
-
-    raw_token, prefix, token_hash = generate_bot_token()
-    token = BotToken(
-        id=bot_token_id(),
-        bot_id=bot.id,
-        name="untouched_token",
-        token_hash=token_hash,
-        token_prefix=prefix,
-    )
-    db.add(token)
-    await db.flush()
-    await db.commit()
-
-    # Бан user_a — не должен затронуть этот токен.
-    await _ban(client, admin_token, user_a.id)
-
-    await db.refresh(token)
-    assert token.revoked_at is None, (
-        "Чужой bot-token (created_by != user_a.id) НЕ должен revoke'иться "
-        "при ban'е user_a — это would break unrelated tenants"
-    )
-
-    resp = await client.post(INTROSPECT_URL, json={"token": raw_token})
-    assert resp.json()["active"] is True
-
-
-async def test_ban_audit_details_include_revoke_counters(
-    client, admin_token, user_a, dept_a, db, monkeypatch,
-):
-    """`user.ban` audit-event несёт `pat_revoked`, `bot_tokens_revoked`,
-    `owned_bots_count` — мониторинг по `user.ban` сможет видеть
-    «ban стоил N PAT'ов и M ботов».
+    Поля сохранены для обратной совместимости SIEM-правил; значения теперь
+    всегда нулевые — bots survive ban by design.
     """
     from src.core.security import generate_bot_token
     from src.models import BotAccount, BotToken
     from src.services import audit_service as audit_mod
     from src.utils.ids import bot_id, bot_token_id
 
-    # Один бот, один токен — для понятных значений в audit.
     bot = BotAccount(
         id=bot_id(),
-        name="audit_counter_bot",
+        name="audit_zero_bot",
         department_id=dept_a.id,
         allowed_services=[],
         is_active=True,
@@ -504,12 +268,11 @@ async def test_ban_audit_details_include_revoke_counters(
     )
     db.add(bot)
     await db.flush()
-
     _, prefix, token_hash = generate_bot_token()
     token = BotToken(
         id=bot_token_id(),
         bot_id=bot.id,
-        name="counted_token",
+        name="zero_counted",
         token_hash=token_hash,
         token_prefix=prefix,
     )
@@ -530,8 +293,8 @@ async def test_ban_audit_details_include_revoke_counters(
     assert resp.status_code == 200
 
     ban_events = [e for e in captured if e["action"] == "user.ban"]
-    assert ban_events, f"должен быть эмитнут user.ban, got: {[e['action'] for e in captured]}"
+    assert ban_events
     details = ban_events[0]["details"]
     assert details["pat_revoked"] is True
-    assert details["bot_tokens_revoked"] == 1
-    assert details["owned_bots_count"] == 1
+    assert details["bot_tokens_revoked"] == 0
+    assert details["owned_bots_count"] == 0

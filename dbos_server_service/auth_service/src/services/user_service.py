@@ -9,8 +9,6 @@ from src.core.constants import PlatformRole, UserStatus
 from src.core.exceptions import AuthenticationError, AuthorizationError, ConflictError, DomainValidationError, NotFoundError
 from src.core.security import hash_password, verify_password
 from src.repositories.bans import BanRepository
-from src.repositories.bot_tokens import BotTokenRepository
-from src.repositories.bots import BotRepository
 from src.repositories.departments import DepartmentRepository
 from src.repositories.groups import GroupRepository
 from src.repositories.roles import RoleRepository
@@ -736,8 +734,6 @@ async def ban_user(
     ban_repo = BanRepository(db)
     session_repo = SessionRepository(db)
     token_repo = TokenRepository(db)
-    bot_repo = BotRepository(db)
-    bot_token_repo = BotTokenRepository(db)
 
     user = await user_repo.get_by_id(user_id)
     if user is None:
@@ -761,15 +757,11 @@ async def ban_user(
     # `revoked_reason="ban"` нужен для `unban_user`: реактивирует именно
     # ban-revoked PAT, а не вручную отозванные через DELETE /tokens/{id}.
     pat_revoked_count = await token_repo.revoke_all_for_user(user_id, reason="ban")
-    # ── Bot tokens revoke ────────────────────────────────────────────────────
-    # `BotAccount.created_by` — единственная user→bot связь в текущей схеме.
-    # Если `created_by` пуст (бот старый или сделан account_admin'ом без UI)
-    # — бот в выборку не попадает. Выбираем ботов узко по `created_by` и
-    # отзываем их токены одним bulk-UPDATE вместо per-bot/per-token цикла.
-    owned_bots = await bot_repo.list_by_creator(user_id)
-    revoked_bot_tokens = await bot_token_repo.revoke_all_for_bots(
-        [bot.id for bot in owned_bots]
-    )
+    # by-design: bots survive ban. Ботов и их токены при бане владельца не
+    # трогаем — бот живёт отдельной identity'ю, привязан к отделу, и
+    # выпадение владельца не должно валить CI/integrations отдела. После
+    # бана dept_admin перевыпустит токен через `POST /bots/{id}/tokens`,
+    # если это нужно по compliance-причинам.
 
     pending_audit = {
         "action": "user.ban",
@@ -784,12 +776,13 @@ async def ban_user(
             # Метрики revoke'а в audit-trail — мониторинг по `user.ban` сможет
             # отслеживать «ban стоил N токенов» для compliance-отчётов.
             "pat_revoked": True,
-            # Явный counter, парный с `bot_tokens_revoked`. Поле `pat_revoked:
-            # True` оставлено для обратной совместимости тестов/мониторинга.
             "pat_revoked_count": pat_revoked_count,
-            "bot_tokens_revoked": revoked_bot_tokens,
-            "owned_bots_count": len(owned_bots),
-        },  # TODO: добавить severity=CRITICAL явно — сейчас тянем из дефолта SERVICE_EVENTS
+            # Боты намеренно остаются живыми (см. комментарий выше). Поля с
+            # bot-counter'ами оставляем нулевыми для обратной совместимости
+            # SIEM-правил, ожидающих эти ключи в `user.ban`.
+            "bot_tokens_revoked": 0,
+            "owned_bots_count": 0,
+        },
         "request_id": request_id,
     }
 

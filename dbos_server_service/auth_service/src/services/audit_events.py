@@ -82,9 +82,11 @@ SERVICE_EVENTS = [
     {"action": "bot.token_create", "description": "Bot token created", "default_severity": "WARNING"},
     {"action": "bot.token_list", "description": "Bot token list retrieved", "default_severity": "INFO"},
     {"action": "bot.token_revoke", "description": "Bot token revoked", "default_severity": "WARNING"},
+    {"action": "bot.token_expired", "description": "Expired bot token rejected at introspect", "default_severity": "WARNING"},
     {"action": "bot.roles_assign", "description": "Bot service-roles assigned", "default_severity": "WARNING"},
     {"action": "bot.roles_list", "description": "Bot service-roles retrieved", "default_severity": "INFO"},
     {"action": "bot.roles_revoke", "description": "Bot service-roles revoked", "default_severity": "WARNING"},
+    {"action": "bot.suspicious_multi_ip", "description": "Bot token used from multiple distinct IPs within short window", "default_severity": "CRITICAL"},
     # OAuth2 clients
     {"action": "oauth_client.create", "description": "OAuth2 client registered", "default_severity": "CRITICAL"},
     {"action": "oauth_client.list", "description": "OAuth2 client list retrieved", "default_severity": "INFO"},

@@ -1,10 +1,8 @@
-"""`ban_user` не делает N+1 по bot-токенам.
+"""`ban_user` не делает лишних запросов по bot-токенам.
 
-Раньше ban грузил всю таблицу `bot_accounts` (`list_all`), фильтровал в
-Python по `created_by`, затем per-bot `list_for_bot` + per-token `revoke`.
-Теперь — узкая выборка `list_by_creator` + один bulk `revoke_all_for_bots`.
-Проверяем именно характер запросов (spy на repo-методы), а не только
-end-to-end эффект (он покрыт в `test_ban.py`).
+Поведение поменялось: bots survive ban by design — `ban_user` больше НЕ
+вызывает ни `list_by_creator`, ни `revoke_all_for_bots`. Тесты проверяют
+именно это (отсутствие лишних touch'ей таблицы ботов при ban'е).
 """
 
 import pytest
@@ -25,7 +23,7 @@ async def _ban(client, token, user_id):
 
 @pytest.fixture()
 def spy_repos(monkeypatch):
-    """Считает вызовы методов выборки/отзыва на repo-классах."""
+    """Считает вызовы repo-методов, относящихся к bot-revoke chain'у."""
     counts = {
         "list_all": 0,
         "list_by_creator": 0,
@@ -89,11 +87,10 @@ async def _make_owned_bot_with_token(db, dept_id, owner_id, name):
     return bot, token
 
 
-async def test_ban_uses_bulk_revoke_not_per_token_loop(
+async def test_ban_does_not_touch_bot_tables_when_owner_has_bots(
     spy_repos, client, admin_token, user_a, dept_a, db,
 ):
-    """Несколько ботов с токенами → один bulk-revoke, ноль per-token revoke,
-    ноль full-scan `list_all`."""
+    """Несколько ботов с токенами → ноль вызовов bot-repo: bots survive ban."""
     for i in range(3):
         await _make_owned_bot_with_token(db, dept_a.id, user_a.id, f"owned_{i}")
     await db.commit()
@@ -101,38 +98,21 @@ async def test_ban_uses_bulk_revoke_not_per_token_loop(
     resp = await _ban(client, admin_token, user_a.id)
     assert resp.status_code == 200
 
-    assert spy_repos["list_by_creator"] == 1, "ожидали узкую выборку по created_by"
-    assert spy_repos["list_all"] == 0, "ban не должен делать full scan bot_accounts"
-    assert spy_repos["list_for_bot"] == 0, "per-bot token-loop устранён"
-    assert spy_repos["revoke"] == 0, "per-token revoke устранён"
-    assert spy_repos["revoke_all_for_bots"] == 1, "ожидали один bulk-revoke"
-
-
-async def test_ban_bulk_revoke_count_grows_with_bots_but_queries_constant(
-    spy_repos, client, admin_token, user_a, dept_a, db,
-):
-    """С ростом числа ботов число repo-запросов остаётся константным (O(1))."""
-    for i in range(6):
-        await _make_owned_bot_with_token(db, dept_a.id, user_a.id, f"many_{i}")
-    await db.commit()
-
-    resp = await _ban(client, admin_token, user_a.id)
-    assert resp.status_code == 200
-
-    # 6 ботов, но по-прежнему 1 выборка + 1 bulk-revoke, без per-item циклов.
-    assert spy_repos["list_by_creator"] == 1
-    assert spy_repos["revoke_all_for_bots"] == 1
+    assert spy_repos["list_by_creator"] == 0, (
+        "by-design: bots survive ban — выборка по created_by не нужна"
+    )
+    assert spy_repos["list_all"] == 0
     assert spy_repos["list_for_bot"] == 0
     assert spy_repos["revoke"] == 0
+    assert spy_repos["revoke_all_for_bots"] == 0
 
 
-async def test_ban_with_no_owned_bots_skips_bulk_revoke(
+async def test_ban_does_not_touch_bot_tables_when_owner_has_no_bots(
     spy_repos, client, admin_token, user_a, db,
 ):
-    """Без ботов: выборка случается (пустая), bulk-revoke не бьёт по БД зря."""
+    """Без ботов: ban_user также не должен трогать таблицу ботов."""
     resp = await _ban(client, admin_token, user_a.id)
     assert resp.status_code == 200
-    assert spy_repos["list_by_creator"] == 1
+    assert spy_repos["list_by_creator"] == 0
     assert spy_repos["list_all"] == 0
-    # `revoke_all_for_bots` вызывается, но с пустым списком — внутри early-return.
-    assert spy_repos["revoke_all_for_bots"] == 1
+    assert spy_repos["revoke_all_for_bots"] == 0

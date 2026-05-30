@@ -1,14 +1,33 @@
 """Репозиторий `AuditEvent` — только insert и query, никогда update/delete."""
 
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from src.core.exceptions import DomainValidationError
 from src.models.audit_event import AuditEvent
 from src.schemas.events import EventCreate
 from src.utils.ids import audit_event_id
+
+# Defence-in-depth: схема `EventCreate` уже валидирует request_id, но
+# репозиторий могут дёрнуть напрямую из миграции, фоновой задачи или
+# другого сервиса минуя Pydantic. CR/LF в request_id попадает в
+# `X-Request-ID` рефлектом middleware и колется header-injection,
+# поэтому страхуемся ещё одним фильтром перед самим INSERT.
+_REQUEST_ID_RE: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _validate_request_id(value: str | None) -> None:
+    if value is None:
+        return
+    if not _REQUEST_ID_RE.match(value):
+        raise DomainValidationError(
+            error_code="INVALID_REQUEST_ID",
+            message="request_id must match ^[A-Za-z0-9_-]{1,64}$",
+        )
 
 
 def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEvent:
@@ -28,6 +47,8 @@ def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEv
     `commit=False` — для атомарного admin-CRUD: основной DML и audit
     шарят одну транзакцию, единственный `db.commit()` делает caller.
     """
+    _validate_request_id(payload.request_id)
+
     new_id = audit_event_id()
     received = datetime.now(timezone.utc)
 

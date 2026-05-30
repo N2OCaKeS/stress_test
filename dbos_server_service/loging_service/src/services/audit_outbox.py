@@ -155,17 +155,19 @@ class AuditOutbox:
             # Сервис ещё не запустил lifespan (или уже остановил). На случай
             # in-process тестов фолбэчимся в синхронный writer прямо здесь —
             # это та же семантика, что у старого `to_thread(_emit_audit)`.
+            db = self._session_factory()
             try:
-                db = self._session_factory()
                 try:
                     self._writer(db, envelope)
-                finally:
-                    db.close()
-            except Exception as exc:
-                self._bump_failure()
-                logger.error(
-                    "audit outbox fallback write failed: %s", exc, exc_info=True
-                )
+                    db.commit()
+                except Exception as exc:
+                    db.rollback()
+                    self._bump_failure()
+                    logger.error(
+                        "audit outbox fallback write failed: %s", exc, exc_info=True
+                    )
+            finally:
+                db.close()
             return False
 
         try:

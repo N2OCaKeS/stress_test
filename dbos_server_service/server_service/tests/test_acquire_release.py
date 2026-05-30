@@ -433,3 +433,116 @@ class TestBusyAuditEmission:
         denied = [e for e in _events(captured_emits, "server.update_os_version") if e["status"] == "denied"]
         assert len(denied) == 1
         assert denied[0]["details"]["reason"] == "permission_denied"
+
+
+# ── acquire_server CAS-miss re-fetch: rollback() сбрасывает snapshot ────────
+
+
+class TestAcquireRaceRollback:
+    """`acquire_server` после rowcount==0 делает `db.rollback()` ПЕРЕД re-fetch'ем.
+
+    Без rollback'а READ COMMITTED-снапшот текущей tx может вернуть устаревшую
+    строку (pre-decommission), и причиной ошибки уезжает `already_busy` вместо
+    точного `decommissioned`. После фикса rollback гарантирует, что re-fetch
+    идёт в свежей tx и видит свежий commit конкурента.
+    """
+
+    async def test_decommission_committed_after_cas_miss_reports_decommissioned(
+        self, client, operator_token_a, make_server, monkeypatch, db,
+    ):
+        """Конкурент: busy_state=BUSY + status=DECOMMISSIONED, committed ПОСЛЕ load_visible.
+
+        Воспроизводим точный сценарий: load_visible_server увидел ACTIVE+FREE,
+        потом параллельный writer закоммитил busy+decommissioned (например,
+        ручной decommission в другом процессе). CAS промахнётся (busy не FREE
+        и status DECOMMISSIONED), мы должны вернуть DECOMMISSIONED, а не
+        ALREADY_BUSY. Если rollback() убрать — снапшот не обновится и
+        re-fetch вернёт старый ACTIVE+FREE объект из identity-map.
+        """
+        from sqlalchemy import update as sa_update
+        from src.core.constants import BusyState, ServerStatus
+        from src.models import Server
+        from src.services import server as server_svc
+
+        srv = await make_server(department_id="dep_a")
+        original_load = server_svc.load_visible_server
+
+        async def racy_load(db_, identity, sid):
+            obj = await original_load(db_, identity, sid)
+            # Конкурент закоммитил busy+decommissioned. После load_visible
+            # сессия caller'а держит snapshot со status=ACTIVE; rollback в
+            # acquire_server должен сбросить snapshot, чтобы re-fetch увидел
+            # свежий статус.
+            await db_.execute(
+                sa_update(Server)
+                .where(Server.id == sid)
+                .values(
+                    status=ServerStatus.DECOMMISSIONED,
+                    busy_state=BusyState.BUSY,
+                )
+            )
+            await db_.commit()
+            return obj
+
+        monkeypatch.setattr(server_svc, "load_visible_server", racy_load)
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 409
+        # Главное: reason — именно decommissioned, а не already_busy.
+        # Если rollback() отсутствует, re-fetch может вернуть кэшированный
+        # ACTIVE-objects → ветка `current.status == DECOMMISSIONED` не сработает,
+        # уйдёт в SERVER_ALREADY_BUSY.
+        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+
+    async def test_rollback_called_before_refetch(
+        self, client, operator_token_a, make_server, monkeypatch,
+    ):
+        """Прямая проверка: до re-fetch'а в CAS-miss ветке вызывается db.rollback().
+
+        Перехватываем `AsyncSession.rollback` через wrapper и фиксируем порядок:
+        rollback должен быть вызван минимум один раз после CAS-miss'а — иначе
+        свежий commit конкурента не виден.
+        """
+        from sqlalchemy import update as sa_update
+        from src.core.constants import BusyState
+        from src.models import Server
+        from src.services import server as server_svc
+
+        srv = await make_server(department_id="dep_a")
+        rollback_count = {"n": 0}
+
+        original_load = server_svc.load_visible_server
+
+        async def racy_load(db_, identity, sid):
+            obj = await original_load(db_, identity, sid)
+            # Конкурент закоммитил busy_state=BUSY.
+            await db_.execute(
+                sa_update(Server)
+                .where(Server.id == sid)
+                .values(busy_state=BusyState.BUSY)
+            )
+            await db_.commit()
+
+            # Оборачиваем rollback после load, чтобы не считать первый
+            # rollback внутри test-setup'а.
+            real_rollback = db_.rollback
+
+            async def counting_rollback():
+                rollback_count["n"] += 1
+                await real_rollback()
+
+            db_.rollback = counting_rollback
+            return obj
+
+        monkeypatch.setattr(server_svc, "load_visible_server", racy_load)
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 409
+        assert resp.json()["error_code"] == "SERVER_ALREADY_BUSY"
+        assert rollback_count["n"] >= 1, (
+            "expected db.rollback() to be called before CAS-miss re-fetch"
+        )

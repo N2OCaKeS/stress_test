@@ -509,3 +509,182 @@ class TestNewCallbacksHiddenFromOpenAPI:
         resp = await client.get("/openapi.json")
         paths = resp.json().get("paths", {})
         assert not any("inventory" in p and "/internal/" in p for p in paths)
+
+
+# ── Enum-oracle: actor-vs-server dept mismatch masked as 404 ────────────────
+#
+# Симметрия с `TestActorDeptCrossCheckSoftMode` для read-direction endpoints
+# (`fetch_account_password` / `rotate_account_password` / `fetch_ipmi_credentials`).
+# Write-direction callbacks тоже не должны разделять «не существует» и
+# «существует в чужом dept» — иначе compromised worker_bot из dep_b
+# проброcом id'шников из dep_a по разнице 403 vs 404 enum'ит cross-dept данные.
+
+
+@pytest.mark.usefixtures("soft_dept_mode")
+class TestInternalCallbacksActorDeptMaskedAs404:
+    async def test_inventory_actor_mismatch_returns_404_soft(
+        self, client, make_token, make_server, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        foreign_token = make_token(
+            department_id="dep_b",
+            service_roles={"server_service": ["admin"]},
+        )
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/inventory",
+            headers=_hdr(foreign_token),
+            json={
+                "hostname": "x", "kernel": "x",
+                "cpu_brand": "Intel", "cpu_model": "Foreign",
+                "cpu_cores": 1, "os_version": "x", "disks": [],
+            },
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+
+    async def test_users_inventory_actor_mismatch_returns_404_soft(
+        self, client, make_token, make_server, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        foreign_token = make_token(
+            department_id="dep_b",
+            service_roles={"server_service": ["admin"]},
+        )
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/users/inventory",
+            headers=_hdr(foreign_token),
+            json={"users": []},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+
+    async def test_provision_status_actor_mismatch_returns_404_soft(
+        self, client, make_token, make_server, make_account, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        acc = await make_account(server_id=srv.id, password="leak-target")
+        foreign_token = make_token(
+            department_id="dep_b",
+            service_roles={"server_service": ["admin"]},
+        )
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/provision_status",
+            headers=_hdr(foreign_token),
+            json={"operation": "useradd", "present": True},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        # Details должны нести `account_id`, не `server_id` — это
+        # account-scoped endpoint, mislabel ушёл бы в SIEM как server_id.
+        details = resp.json().get("details") or {}
+        assert details.get("account_id") == acc.id
+        assert "server_id" not in details
+
+    async def test_prepared_actor_mismatch_returns_404_soft(
+        self, client, make_token, make_server, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        foreign_token = make_token(
+            department_id="dep_b",
+            service_roles={"server_service": ["admin"]},
+        )
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/prepared",
+            headers=_hdr(foreign_token),
+            json={"management_user": "ops"},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+
+    async def test_credentials_rotated_actor_mismatch_returns_404_soft(
+        self, client, make_token, make_server, make_ipmi, dept_a,
+    ):
+        srv = await make_server(department_id=dept_a)
+        ctrl = await make_ipmi(server_id=srv.id)
+        foreign_token = make_token(
+            department_id="dep_b",
+            service_roles={"server_service": ["admin"]},
+        )
+        resp = await client.post(
+            f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
+            headers=_hdr(foreign_token),
+            json={
+                "new_password": "ForeignTry1234",
+                "rotated_at": _iso(),
+                "verified_at": _iso(),
+            },
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "IPMI_CONTROLLER_NOT_FOUND"
+        # Controller-scoped endpoint — details должны нести `controller_id`.
+        details = resp.json().get("details") or {}
+        assert details.get("controller_id") == ctrl.id
+        assert "server_id" not in details
+
+
+# ── target_field mislabel: account/controller id под правильным ключом ──────
+
+
+class TestCheckTargetDeptFieldLabel:
+    """`_check_target_department` пишет `details[<target_field>]=<target_id>`.
+
+    Дефолт `server_id` оставлен для server-scoped caller'ов; account/controller
+    caller'ы передают `account_id` / `controller_id`. Иначе `acc_*`/`ipm_*`
+    улетал бы в SIEM под именем `server_id` (mislabel).
+    """
+
+    async def test_account_password_header_required_uses_account_id_label(
+        self, client, worker_pat_token, make_server, make_account, strict_dept_mode,
+    ):
+        """Strict-mode: missing header → `details["account_id"]`, не `server_id`."""
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="leak-target")
+        resp = await client.get(
+            f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
+            headers=_hdr(worker_pat_token),
+        )
+        assert resp.status_code == 403
+        body = resp.json()
+        assert body["error_code"] == "TARGET_DEPARTMENT_HEADER_REQUIRED"
+        details = body.get("details") or {}
+        assert details.get("account_id") == acc.id
+        assert "server_id" not in details
+
+    async def test_account_rotate_mismatch_uses_account_id_label(
+        self, client, worker_pat_token, make_server, make_account, strict_dept_mode,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="old")
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password/rotate",
+            headers={
+                "Authorization": f"Bearer {worker_pat_token}",
+                "X-Target-Department-Id": "dep_b",
+            },
+            json={"password": "NewLabeled1234"},
+        )
+        assert resp.status_code == 403
+        body = resp.json()
+        assert body["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        details = body.get("details") or {}
+        assert details.get("account_id") == acc.id
+        assert "server_id" not in details
+
+    async def test_ipmi_credentials_keeps_server_id_label(
+        self, client, worker_pat_token, make_server, make_ipmi, strict_dept_mode,
+    ):
+        """`fetch_ipmi_credentials` target_id=server_id — default-метка
+        `server_id` сохраняется (не account/controller endpoint)."""
+        srv = await make_server(department_id="dep_a")
+        await make_ipmi(server_id=srv.id, password="ipmi-strict")
+        resp = await client.get(
+            f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
+            headers=_hdr(worker_pat_token),
+        )
+        assert resp.status_code == 403
+        details = (resp.json().get("details") or {})
+        assert details.get("server_id") == srv.id
+
+
+# ── strict_dept_mode reused in other modules' tests; ensure fixture access ──
+# (fixture определена выше в этом же файле; pytest её разрешит)

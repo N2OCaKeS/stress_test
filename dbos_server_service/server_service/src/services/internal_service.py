@@ -101,6 +101,7 @@ def _check_target_department(
     mask_as_not_found: bool = False,
     not_found_error_code: str | None = None,
     not_found_message: str | None = None,
+    target_field: str = "server_id",
 ) -> None:
     """Cross-check caller department + `X-Target-Department-Id` header против
     server.department_id.
@@ -121,6 +122,12 @@ def _check_target_department(
 
     `audit_action` — тот же action-key, что caller использует для
     success/denied/failure emit'ов, чтобы оператор мог корреллировать.
+
+    `target_field` — ключ, под которым `target_id` уезжает в `details`
+    (и в JSON-ошибки 403/header-required). Дефолт `server_id` оставлен
+    для server-scoped endpoint'ов; account/controller-scoped caller'ы
+    передают `account_id` / `controller_id`, иначе в audit/SIEM
+    `acc_*`/`ipm_*` улетал бы под ключом `server_id`.
     """
     strict = get_settings().internal_require_dept_header
     extra = dict(extra_details or {})
@@ -155,12 +162,12 @@ def _check_target_department(
             raise NotFoundError(
                 error_code=not_found_error_code or "RESOURCE_NOT_FOUND",
                 message=not_found_message or message,
-                details={"server_id": target_id},
+                details={target_field: target_id},
             )
         raise AuthorizationError(
             error_code="TARGET_DEPARTMENT_MISMATCH",
             message=message,
-            details={"server_id": target_id},
+            details={target_field: target_id},
         )
 
     # Actor-vs-server check: всегда блокирующий, не зависит от soft/strict.
@@ -183,7 +190,7 @@ def _check_target_department(
                     "X-Target-Department-Id header is required for internal "
                     "credential endpoints in strict mode"
                 ),
-                details={"server_id": target_id},
+                details={target_field: target_id},
             )
         # Soft mode: warning эмитит caller через `_emit_dept_header_missing_soft`
         # под отдельным action'ом `internal.dept_header_missing`. Дублировать
@@ -205,7 +212,7 @@ def _check_target_department(
                     "X-Target-Department-Id does not match the server's "
                     "actual department"
                 ),
-                details={"server_id": target_id},
+                details={target_field: target_id},
             )
 
 
@@ -343,6 +350,7 @@ async def fetch_account_password(
         mask_as_not_found=True,
         not_found_error_code="ACCOUNT_NOT_FOUND",
         not_found_message="Server account not found on this server",
+        target_field="account_id",
     )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
@@ -452,6 +460,7 @@ async def rotate_account_password(
         mask_as_not_found=True,
         not_found_error_code="ACCOUNT_NOT_FOUND",
         not_found_message="Server account not found on this server",
+        target_field="account_id",
     )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
@@ -589,7 +598,23 @@ async def receive_inventory(
         )
         raise
 
+    # Dept-check ВЫШЕ existence-проверки: разница 404 SERVER_NOT_FOUND vs
+    # 403 TARGET_DEPARTMENT_MISMATCH сама сливает caller'у факт существования
+    # сервера в чужом dept. `mask_as_not_found=True` унифицирует оба исхода
+    # «не твой dept» / «не существует» в 404 SERVER_NOT_FOUND.
     server = await server_repo.get_by_id(db, server_id)
+    server_department_id = server.department_id if server is not None else None
+    _check_target_department(
+        audit_action="server.inventory_received",
+        target_id=server_id,
+        target_type="server",
+        server_department_id=server_department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        mask_as_not_found=True,
+        not_found_error_code="SERVER_NOT_FOUND",
+        not_found_message="Server not found",
+    )
     if server is None:
         audit_service.emit(
             "server.inventory_received",
@@ -600,15 +625,6 @@ async def receive_inventory(
         raise NotFoundError(
             error_code="SERVER_NOT_FOUND", message="Server not found",
         )
-
-    _check_target_department(
-        audit_action="server.inventory_received",
-        target_id=server_id,
-        target_type="server",
-        server_department_id=server.department_id,
-        header_department_id=target_department_id,
-        actor_department_id=identity.department_id,
-    )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.receive_inventory",
@@ -731,7 +747,21 @@ async def receive_users_inventory(
         )
         raise
 
+    # Dept-check ВЫШЕ existence: разница 404 vs 403 — enumeration-oracle на
+    # факт существования сервера в чужом dept.
     server = await server_repo.get_by_id(db, server_id)
+    server_department_id = server.department_id if server is not None else None
+    _check_target_department(
+        audit_action="server_account.users_inventory_received",
+        target_id=server_id,
+        target_type="server",
+        server_department_id=server_department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        mask_as_not_found=True,
+        not_found_error_code="SERVER_NOT_FOUND",
+        not_found_message="Server not found",
+    )
     if server is None:
         audit_service.emit(
             "server_account.users_inventory_received",
@@ -742,15 +772,6 @@ async def receive_users_inventory(
         raise NotFoundError(
             error_code="SERVER_NOT_FOUND", message="Server not found",
         )
-
-    _check_target_department(
-        audit_action="server_account.users_inventory_received",
-        target_id=server_id,
-        target_type="server",
-        server_department_id=server.department_id,
-        header_department_id=target_department_id,
-        actor_department_id=identity.department_id,
-    )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.receive_users_inventory",
@@ -969,6 +990,34 @@ async def record_provision_status(
         )
         raise
 
+    # Dept-check ВЫШЕ existence: разница 404 ACCOUNT_NOT_FOUND vs 403
+    # TARGET_DEPARTMENT_MISMATCH сливает caller'у факт привязки account_id к
+    # серверу чужого dept. Симметрично с `fetch_account_password` /
+    # `rotate_account_password`.
+    server = await server_repo.get_by_id(db, server_id)
+    server_department_id = server.department_id if server is not None else None
+    _check_target_department(
+        audit_action="server_account.provision_status",
+        target_id=account_id,
+        target_type="server_account",
+        server_department_id=server_department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        extra_details={"server_id": server_id},
+        mask_as_not_found=True,
+        not_found_error_code="ACCOUNT_NOT_FOUND",
+        not_found_message="Server account not found on this server",
+        target_field="account_id",
+    )
+    if target_department_id is None:
+        _emit_dept_header_missing_soft(
+            handler_path="internal.record_provision_status",
+            identity=identity,
+            target_id=account_id,
+            target_type="server_account",
+            extra={"server_id": server_id},
+        )
+
     account = await account_repo.get_by_id(db, account_id)
     link = await account_repo.get_link(db, account_id, server_id)
     if account is None or link is None:
@@ -981,26 +1030,6 @@ async def record_provision_status(
         raise NotFoundError(
             error_code="ACCOUNT_NOT_FOUND",
             message="Server account not found on this server",
-        )
-
-    server = await server_repo.get_by_id(db, server_id)
-    server_department_id = server.department_id if server is not None else None
-    _check_target_department(
-        audit_action="server_account.provision_status",
-        target_id=account_id,
-        target_type="server_account",
-        server_department_id=server_department_id,
-        header_department_id=target_department_id,
-        actor_department_id=identity.department_id,
-        extra_details={"server_id": server_id},
-    )
-    if target_department_id is None:
-        _emit_dept_header_missing_soft(
-            handler_path="internal.record_provision_status",
-            identity=identity,
-            target_id=account_id,
-            target_type="server_account",
-            extra={"server_id": server_id},
         )
 
     await account_repo.set_link_presence(db, link, present=payload.present)
@@ -1050,7 +1079,21 @@ async def record_server_prepared(
         )
         raise
 
+    # Dept-check ВЫШЕ existence: разница 404 vs 403 — enumeration-oracle на
+    # cross-dept server_id.
     server = await server_repo.get_by_id(db, server_id)
+    server_department_id = server.department_id if server is not None else None
+    _check_target_department(
+        audit_action="server.prepared",
+        target_id=server_id,
+        target_type="server",
+        server_department_id=server_department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        mask_as_not_found=True,
+        not_found_error_code="SERVER_NOT_FOUND",
+        not_found_message="Server not found",
+    )
     if server is None:
         audit_service.emit(
             "server.prepared",
@@ -1061,15 +1104,6 @@ async def record_server_prepared(
         raise NotFoundError(
             error_code="SERVER_NOT_FOUND", message="Server not found",
         )
-
-    _check_target_department(
-        audit_action="server.prepared",
-        target_id=server_id,
-        target_type="server",
-        server_department_id=server.department_id,
-        header_department_id=target_department_id,
-        actor_department_id=identity.department_id,
-    )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.record_server_prepared",
@@ -1133,7 +1167,27 @@ async def record_ipmi_credentials_rotated(
         )
         raise
 
+    # Dept-check ВЫШЕ existence: разница 404 IPMI_CONTROLLER_NOT_FOUND vs 403
+    # сливает caller'у факт привязки controller_id к серверу чужого dept.
     ctrl = await ipmi_repo.get_by_id(db, controller_id)
+    server = None
+    server_dept = None
+    if ctrl is not None:
+        server = await server_repo.get_by_id(db, ctrl.server_id)
+        server_dept = server.department_id if server is not None else None
+    _check_target_department(
+        audit_action="ipmi_controller.credentials_rotated_callback",
+        target_id=controller_id,
+        target_type="ipmi_controller",
+        server_department_id=server_dept,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+        extra_details={"server_id": ctrl.server_id if ctrl is not None else None},
+        mask_as_not_found=True,
+        not_found_error_code="IPMI_CONTROLLER_NOT_FOUND",
+        not_found_message="IPMI controller not found",
+        target_field="controller_id",
+    )
     if ctrl is None:
         audit_service.emit(
             "ipmi_controller.credentials_rotated_callback",
@@ -1145,18 +1199,6 @@ async def record_ipmi_credentials_rotated(
             error_code="IPMI_CONTROLLER_NOT_FOUND",
             message="IPMI controller not found",
         )
-
-    server = await server_repo.get_by_id(db, ctrl.server_id)
-    server_dept = server.department_id if server is not None else None
-    _check_target_department(
-        audit_action="ipmi_controller.credentials_rotated_callback",
-        target_id=controller_id,
-        target_type="ipmi_controller",
-        server_department_id=server_dept,
-        header_department_id=target_department_id,
-        actor_department_id=identity.department_id,
-        extra_details={"server_id": ctrl.server_id},
-    )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.record_ipmi_credentials_rotated",

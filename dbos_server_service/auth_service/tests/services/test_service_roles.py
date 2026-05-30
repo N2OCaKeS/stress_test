@@ -245,6 +245,59 @@ async def test_system_admin_role_cannot_be_deleted(client, admin_token, dept_a_w
     assert resp.json()["error_code"] == "SERVICE_ROLE_SYSTEM_LOCKED"
 
 
+async def test_delete_role_invalidates_bot_identity_cache(
+    client, admin_token, dept_a_with_service, service_x, monkeypatch,
+):
+    """После delete_role identity-кэш ботов с этой ролью должен сброситься
+    оптом — иначе боты держат старые права до TTL."""
+    invalidated: list[str] = []
+
+    def _spy(actor_id):
+        invalidated.append(actor_id)
+
+    monkeypatch.setattr(
+        "src.services.service_role_service._invalidate_identity_cache", _spy
+    )
+
+    url = _roles_url(dept_a_with_service.id, service_x.service_name)
+    create_resp = await client.post(
+        url,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"role_name": "bot_role", "display_name": "Bot Role"},
+    )
+    assert create_resp.status_code == 201
+
+    bot_resp = await client.post(
+        "/api/auth/v1/bots",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "name": "role_holder_bot",
+            "department_id": dept_a_with_service.id,
+            "allowed_services": [service_x.service_name],
+        },
+    )
+    assert bot_resp.status_code == 201
+    bot_id = bot_resp.json()["bot_id"]
+
+    assign_resp = await client.post(
+        f"/api/auth/v1/bots/{bot_id}/roles",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"service_name": service_x.service_name, "roles": ["bot_role"]},
+    )
+    assert assign_resp.status_code == 201
+
+    invalidated.clear()
+
+    del_resp = await client.delete(
+        f"{url}/bot_role",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert del_resp.status_code == 200
+    assert bot_id in invalidated, (
+        f"identity-cache бота с прямой ролью должен быть сброшен после delete_role, got {invalidated}"
+    )
+
+
 # ── Auto-seed system admin on department grant ───────────────────────────────
 
 async def test_admin_role_seeded_on_department_service_grant(

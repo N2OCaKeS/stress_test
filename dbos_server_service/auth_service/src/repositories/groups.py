@@ -362,6 +362,17 @@ class GroupRepository:
         )
         return list(rows)
 
+    async def list_member_bot_ids(self, group_ids: list[str]) -> list[str]:
+        """Уникальные bot_id всех ботов-мемберов перечисленных групп."""
+        if not group_ids:
+            return []
+        rows = await self._db.scalars(
+            select(BotGroupMembership.bot_id)
+            .where(BotGroupMembership.group_id.in_(group_ids))
+            .distinct()
+        )
+        return list(rows)
+
     async def deactivate_all_dept_service_roles(
         self, department_id: str, service_name: str
     ) -> list[str]:

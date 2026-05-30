@@ -248,16 +248,23 @@ async def delete_role(
         department_id, service_name, role_name
     )
     bot_role_repo = BotRoleRepository(db)
-    await bot_role_repo.deactivate_by_role_name_in_dept(
+    affected_bot_ids = await bot_role_repo.deactivate_by_role_name_in_dept(
         department_id, service_name, role_name
     )
     # Юзеры-члены затронутых групп тоже теряют роль через group-binding —
     # их identity-cache надо сбросить так же, как у прямых носителей.
     group_member_ids = await group_repo.list_member_user_ids(affected_group_ids)
+    # То же для ботов: бот-член группы с group→role binding теряет роль; плюс
+    # боты с прямым (bot, role) binding. Identity-кэш на bot_id ключи —
+    # сбрасываем оптом, чтобы revoke вступил в силу до истечения TTL.
+    group_bot_ids = await group_repo.list_member_bot_ids(affected_group_ids)
     await db.commit()
     cache_targets = set(affected_user_ids) | set(group_member_ids)
     for uid in cache_targets:
         _invalidate_identity_cache(uid)
+    bot_cache_targets = set(affected_bot_ids) | set(group_bot_ids)
+    for bid in bot_cache_targets:
+        _invalidate_identity_cache(bid)
     audit_service.emit(
         "service_role.delete",
         identity.user_id,

@@ -79,16 +79,16 @@ class BotRoleRepository:
 
     async def deactivate_by_role_name_in_dept(
         self, department_id: str, service_name: str, role_name: str
-    ) -> None:
+    ) -> list[str]:
         """Деактивировать bot→role-связи только для ботов указанного отдела.
 
-        Один UPDATE-WHERE. Возвращаемые id никому не нужны (ботский identity не
-        кэшируется), поэтому не загружаем строки в Python.
+        Возвращает bot_id затронутых ботов — caller использует это для bulk
+        сброса identity-cache. Один UPDATE-WHERE ... RETURNING.
         """
         bot_ids_stmt = select(BotAccount.id).where(
             BotAccount.department_id == department_id
         )
-        await self._db.execute(
+        result = await self._db.scalars(
             update(BotServiceRole)
             .where(
                 BotServiceRole.bot_id.in_(bot_ids_stmt),
@@ -97,8 +97,11 @@ class BotRoleRepository:
                 BotServiceRole.is_active.is_(True),
             )
             .values(is_active=False)
+            .returning(BotServiceRole.bot_id)
         )
+        affected = list(result)
         await self._db.flush()
+        return affected
 
     async def deactivate_all_in_dept_for_service(
         self, department_id: str, service_name: str

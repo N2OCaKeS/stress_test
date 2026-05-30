@@ -59,7 +59,8 @@ services:
     init: true
     environment:
       DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_logging
-      SERVICE_API_KEY: dev-logging-api-key
+      SERVICE_API_KEYS: '{"auth_service":"dev-logging-api-key","server_service":"dev-logging-api-key","config_service":"dev-logging-api-key","server_worker":"dev-logging-api-key"}'
+      INTROSPECT_SERVICE_API_KEY: dev-logging-introspect-key
       AUTH_SERVICE_URL: http://auth_service:8000
       LOGGING_ADMIN_USERNAME: admin
       LOGGING_ADMIN_PASSWORD: "1234"

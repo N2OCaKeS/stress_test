@@ -54,12 +54,16 @@ spec:
             - name: LOGGING_DB_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_PASSWORD }
-            - name: SERVICE_API_KEY
+            # Per-service ingest keys (единственный режим service-to-service auth).
+            # JSON map identity → bearer. Operator должен синхронизировать ключи
+            # с outbound LOGGING_SERVICE_API_KEY каждого внутреннего caller'а:
+            # auth_service / server_service / config_service / server_worker.
+            - name: SERVICE_API_KEYS
               valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
-            # Outbound bearer для POST /introspect в auth_service. На per-service
-            # SERVICE_API_KEYS режиме обязателен — production-guard в Settings
-            # отвергает запуск без него, если SERVICE_API_KEYS заполнен.
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEYS_JSON }
+            # Outbound bearer для POST /introspect в auth_service. Production-
+            # guard в Settings отвергает запуск без него и при совпадении со
+            # значениями SERVICE_API_KEYS (key-separation).
             - name: INTROSPECT_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: LOGGING_INTROSPECT_SERVICE_API_KEY }

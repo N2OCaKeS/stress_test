@@ -158,7 +158,9 @@ conn.close()"
 	@cd server_service && DATABASE_URL=$(_DEV_SERVER_DB) SERVER_ENCRYPTION_KEY=$(_DEV_SERVER_KEY) PYTHONPATH=. alembic upgrade head
 	@echo "→ Запуск loging_service :8001..."
 	@cd loging_service && \
-		DATABASE_URL=$(_DEV_LOG_DB) SERVICE_API_KEY=$(_DEV_LOG_KEY) \
+		DATABASE_URL=$(_DEV_LOG_DB) \
+		SERVICE_API_KEYS='{"auth_service":"$(_DEV_LOG_KEY)","server_service":"$(_DEV_LOG_KEY)","config_service":"$(_DEV_LOG_KEY)","server_worker":"$(_DEV_LOG_KEY)"}' \
+		INTROSPECT_SERVICE_API_KEY=$(_DEV_LOG_KEY)-introspect \
 		AUTH_SERVICE_URL=http://localhost:8000 \
 		PYTHONPATH=. \
 		uvicorn src.main:app --host 0.0.0.0 --port 8001 \

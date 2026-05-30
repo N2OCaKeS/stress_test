@@ -246,9 +246,9 @@ async def _publish_one(
     Возвращает `(closed, audit_emit_error, was_published)`:
       * `closed=True, was_published=True` — успешный 2xx, row помечена published.
       * `closed=True, was_published=False` — row отбракована в DLQ
-        (missing_action / permanent_4xx / attempts_cap). Caller не должен
-        повторно подбирать её на этом тике, но и в счётчик published она
-        не идёт — это «потерянное» событие, не доставленное.
+        (missing_action / permanent_4xx / attempts_cap), либо breaker уже open
+        и HTTP-call пропущен. Caller не должен повторно подбирать её на этом
+        тике. В счётчик published такая row не идёт.
       * `closed=False, audit_emit_error=True` — `AuditEmitError` (HTTP/transport
         fail на стороне loging_service). Это сигнал для circuit breaker:
         нагружать loging_service дальше смысла нет.
@@ -269,30 +269,22 @@ async def _publish_one(
 
     # Shared circuit breaker перед HTTP-вызовом. Если loging_service уже
     # признан недоступным другими репликами — отбиваем запрос без сетевого
-    # roundtrip'а. CircuitBreakerOpenError ловится отдельно ниже и
-    # трактуется как transient HTTP-fail (row остаётся unpublished, attempts++,
-    # backoff). Самого breaker'а мы при этом НЕ дёргаем record_failure'ом:
-    # он уже open, инкрементировать счётчик не нужно.
+    # roundtrip'а. CircuitBreakerOpenError ловится отдельно ниже.
+    #
+    # Skip от breaker'а — это НЕ попытка доставки: HTTP-call не делался,
+    # `attempts` инкрементировать нельзя. Иначе row уезжает в DLQ через
+    # `_maybe_poison` после ~50 open-циклов, не сделав ни одного запроса
+    # к loging_service. Backoff тоже не выставляем: при закрытии breaker'а
+    # row должна сразу попасть в выборку. Логирование уже делается в
+    # `_maybe_open_circuit` / `record_failure`, дублировать на каждую row не нужно.
     try:
         await audit_publisher_breaker.check()
-    except CircuitBreakerOpenError as exc:
-        row.attempts = (row.attempts or 0) + 1
-        row.last_error = str(exc)[:LAST_ERROR_MAX_LEN]
-        if _maybe_poison(row):
-            await session.flush()
-            return True, False, False
-        _apply_backoff(row)
-        await session.flush()
-        logger.warning(
-            "audit_outbox publish skipped (breaker open) row=%s attempts=%s next_retry_at=%s",
-            row.id,
-            row.attempts,
-            row.next_retry_at,
-        )
-        # audit_emit_error=True: каждый skip от breaker'а — это симптом
-        # текущей аварии loging_service. Loop-level breaker (per-process)
-        # тоже должен видеть failure'ы, чтобы держать open-окно.
-        return False, True, False
+    except CircuitBreakerOpenError:
+        # was_published=False — событие не доставлено; closed=True — caller
+        # не должен повторять row в этом проходе; audit_emit_error=False —
+        # это не сигнал loop-level breaker'у, тот ведёт свой счёт по
+        # реальным HTTP-failure'ам.
+        return True, False, False
 
     try:
         # `audit_client.emit` сам решает, что считать неудачей:

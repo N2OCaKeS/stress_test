@@ -302,10 +302,10 @@ async def ipmi_rotate_password(task_id: str) -> None:
         # сходятся к одному и тому же ciphertext'у.
         stashed_password = await _read_ipmi_rotate_password(task_id)
         if stashed_password is None:
-            # CSPRNG-пароль: 24 байта ≈ 32-символьный URL-safe string. Лимит
-            # iDRAC9 — 40 символов, влезает с запасом. token_urlsafe не
-            # гарантирует «все 4 класса», но iDRAC принимает любой ASCII;
-            # PAM-чек тут не применим, BMC не часть OS.
+            # 20-символьный CSPRNG-пароль с гарантией lower/upper/digit/punct
+            # (см. `_generate_password`). Лимит iDRAC9 — 40 символов, влезает
+            # с запасом. Все 4 класса symbol'ов нужны для совместимости с
+            # iDRAC-policy'ями, где админ включил complexity check.
             new_password = _generate_password()
             await _store_ipmi_rotate_password(task_id, new_password)
         else:

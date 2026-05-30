@@ -23,21 +23,31 @@ from src.clients import get_bmc_client
 
 
 def extract_bmc_host(endpoint_url: str) -> str:
-    """Достать host/IP из `endpoint_url` IPMI-controller'а.
+    """Достать host[:port] из `endpoint_url` IPMI-controller'а.
 
-    `endpoint_url` приходит из server_service в формате `https://10.0.0.1`
-    либо просто `10.0.0.1`. `clients._probe_redfish` строит URL как
-    `https://{host}/redfish/v1/`, и если host уже содержит scheme — получим
-    `https://https://...` (404 на probe → fallback на ipmitool с такой же
-    битой строкой → connect-error). Отрезаем scheme заранее.
+    `endpoint_url` приходит из server_service в формате `https://10.0.0.1`,
+    `https://10.0.0.1:443`, `10.0.0.1:623` либо просто `10.0.0.1`.
+    `clients._probe_redfish` подставляет результат в `f"{scheme}://{host}{path}"`,
+    поэтому scheme нужно отрезать, а port — наоборот сохранить (включая
+    стандартные 80/443/623): разные iDRAC на одном IP могут висеть на
+    разных портах, и per-host circuit breaker должен видеть их раздельно.
 
-    Пустая строка / невалидный URL → возвращаем как есть, BMC-клиент упадёт
-    с понятной ошибкой connect'а.
+    `urlparse(...).hostname` теряет порт — используем `netloc` и срезаем
+    `user:pass@` префикс, если он есть. Для строк без scheme netloc пустой,
+    падаем на `split('/')[0]` (это уже host[:port]).
+
+    Пустая строка → возвращаем как есть, BMC-клиент упадёт с понятной
+    ошибкой connect'а.
     """
     if not endpoint_url:
         return ""
     parsed = urlparse(endpoint_url)
-    return parsed.hostname or endpoint_url.split("/")[0]
+    netloc = parsed.netloc
+    if not netloc:
+        return endpoint_url.split("/")[0]
+    if "@" in netloc:
+        netloc = netloc.rsplit("@", 1)[1]
+    return netloc
 
 
 async def get_bmc(creds: dict, *, prefer: str = "redfish"):

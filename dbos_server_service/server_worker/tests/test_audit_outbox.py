@@ -1291,3 +1291,110 @@ class TestOutboxClassify4xx:
 
         await audit_outbox_publisher.flush_outbox()
         assert audit_outbox_publisher.get_dlq_total() == baseline + 1
+
+
+# ── 7. Breaker-open skip не считается attempt'ом ─────────────────────────────
+
+
+class TestOutboxBreakerOpenSkip:
+    """Когда shared breaker уже open, `_publish_one` отбивает row без
+    HTTP-call'а. Это НЕ попытка доставки — `attempts` инкрементировать нельзя,
+    в DLQ через attempts-cap уезжать тоже не должна.
+
+    Регрессия: раньше каждый breaker-skip инкрементил `attempts` и проходил
+    через `_maybe_poison`; после ~50 циклов open-окна row уезжала в DLQ,
+    не сделав ни одного запроса к loging_service.
+    """
+
+    async def test_breaker_open_does_not_bump_attempts(
+        self, make_task, monkeypatch,
+    ):
+        from src.services.audit_outbox_publisher import _reset_breaker_state
+        from src.services.audit_publisher_breaker import CircuitBreakerOpenError
+
+        _reset_breaker_state()
+        baseline_dlq = audit_outbox_publisher.get_dlq_total()
+
+        tid = await make_task(task_kind="power.on")
+
+        # 1) Создаём outbox-row через успешный emit. Только потом подменяем
+        #    breaker.check на open — иначе inline-flush из _runner отбил бы
+        #    row сразу же и нам было бы не на чем проверять повтор.
+        async def ok_emit(action, **kw):
+            return None
+
+        monkeypatch.setattr(
+            "src.services.audit_outbox_publisher.audit_client.emit",
+            ok_emit,
+        )
+
+        async def ok_impl(_):
+            return {"power_state": "on"}
+
+        # Закрываем emit, чтобы row осталась unpublished: forced 5xx, attempts=1.
+        async def boom_5xx(action, **kw):
+            raise AuditEmitError("HTTP 503", status_code=503)
+
+        monkeypatch.setattr(
+            "src.services.audit_outbox_publisher.audit_client.emit",
+            boom_5xx,
+        )
+
+        await run_task(
+            tid,
+            audit_action="server.power_on",
+            audit_target_type="server",
+            impl=ok_impl,
+            audit_safe_fields={"power_state"},
+        )
+
+        rows = await _unpublished_outbox_rows()
+        assert len(rows) == 1
+        attempts_after_real_fail = rows[0].attempts
+        assert attempts_after_real_fail == 1
+
+        # 2) Теперь breaker open. Сбрасываем next_retry_at чтобы row снова
+        #    попала в выборку, и форсим check() → CircuitBreakerOpenError.
+        from sqlalchemy import update
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(AuditOutbox)
+                .where(AuditOutbox.id == rows[0].id)
+                .values(next_retry_at=None)
+            )
+            await session.commit()
+
+        emit_calls = []
+
+        async def tracking_emit(action, **kw):
+            emit_calls.append(action)
+            return None
+
+        monkeypatch.setattr(
+            "src.services.audit_outbox_publisher.audit_client.emit",
+            tracking_emit,
+        )
+
+        async def breaker_open_check():
+            raise CircuitBreakerOpenError(retry_after_seconds=30)
+
+        monkeypatch.setattr(
+            "src.services.audit_outbox_publisher.audit_publisher_breaker.check",
+            breaker_open_check,
+        )
+
+        # Прогоняем несколько flush'ей подряд — каждый должен skip'нуть row
+        # без инкремента attempts и без HTTP-call'а.
+        for _ in range(5):
+            await audit_outbox_publisher.flush_outbox()
+
+        after = await _unpublished_outbox_rows()
+        assert len(after) == 1
+        # attempts не сдвинулись с 1 — breaker-skip не считается попыткой.
+        assert after[0].attempts == attempts_after_real_fail
+        # Row не уехала в DLQ.
+        assert after[0].published_at is None
+        assert audit_outbox_publisher.get_dlq_total() == baseline_dlq
+        # HTTP-emit вообще не дёргался под open-breaker.
+        assert emit_calls == []

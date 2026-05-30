@@ -1,7 +1,7 @@
 """Unit tests for shared audit-publisher circuit breaker.
 
-Замокан Redis-клиент: вместо `redis.asyncio.from_url` подсовываем
-`FakeRedis` с in-memory dict'ом + py-репликой Lua-скриптов. Проверяется
+Замокан Redis-клиент: общий FakeRedis из `_breaker_test_helpers`
+(те же три Lua-скрипта живут в `_breaker_lua`). Проверяется
 state-machine: closed→open, open-rejects, half_open recovery, шаринг
 state между «репликами» и fail-open на ошибках Redis.
 
@@ -14,110 +14,21 @@ from __future__ import annotations
 import pytest
 
 from src.services import audit_publisher_breaker as cb
-
-
-# ── Минимальный fake Redis для Lua-скриптов breaker'а ────────────────────────
-
-
-class FakeRedis:
-    """In-memory Redis с py-реализацией трёх Lua-скриптов breaker'а.
-
-    `_store` — class-level: все инстансы шарят один dict, что моделирует
-    «N реплик worker'а смотрят в один Redis». TTL не симулируем — тестам
-    хватает явного advance через `frozen_clock`.
-    """
-
-    _store: dict[str, str] = {}
-
-    def __init__(self) -> None:
-        pass
-
-    @classmethod
-    def reset_store(cls) -> None:
-        cls._store.clear()
-
-    async def eval(self, script: str, n: int, *args: str):  # noqa: PLR0911
-        keys = list(args[:n])
-        argv = list(args[n:])
-
-        if script == cb._CHECK_SCRIPT:
-            now = int(argv[0])
-            cooldown = int(argv[1])
-            state = self._store.get(keys[1])
-            open_until_raw = self._store.get(keys[2], "0")
-            try:
-                open_until = int(open_until_raw)
-            except ValueError:
-                open_until = 0
-            if state == "open":
-                if open_until > now:
-                    return [state, open_until - now]
-                self._store[keys[1]] = "half_open"
-                self._store.pop(keys[2], None)
-                return ["half_open", 0]
-            if state is not None:
-                return [state, 0]
-            return ["closed", 0]
-
-        if script == cb._RECORD_SUCCESS_SCRIPT:
-            for k in keys:
-                self._store.pop(k, None)
-            return 1
-
-        if script == cb._RECORD_FAILURE_SCRIPT:
-            now = int(argv[0])
-            threshold = int(argv[1])
-            cooldown = int(argv[3])
-            try:
-                cur = int(self._store.get(keys[0], "0"))
-            except ValueError:
-                cur = 0
-            cur += 1
-            self._store[keys[0]] = str(cur)
-            if cur >= threshold:
-                self._store[keys[1]] = "open"
-                self._store[keys[2]] = str(now + cooldown)
-                self._store.pop(keys[0], None)
-                return ["open", cur]
-            return ["closed", cur]
-
-        raise AssertionError(f"unexpected script: {script[:40]!r}")
-
-    async def delete(self, *keys: str) -> int:
-        n = 0
-        for k in keys:
-            if k in self._store:
-                self._store.pop(k, None)
-                n += 1
-        return n
-
-    async def aclose(self) -> None:
-        return None
+from tests.unit._breaker_test_helpers import (
+    FakeRedis,
+    frozen_clock_fixture,
+    install_fake_redis,
+)
 
 
 @pytest.fixture
 def fake_redis(monkeypatch: pytest.MonkeyPatch) -> type[FakeRedis]:
-    """Подменяет `_get_client` в audit_publisher_breaker на FakeRedis-фабрику."""
-
-    FakeRedis.reset_store()
-
-    async def fake_get_client():
-        return FakeRedis()
-
-    monkeypatch.setattr(cb, "_get_client", fake_get_client)
-    return FakeRedis
+    return install_fake_redis(monkeypatch, cb)
 
 
 @pytest.fixture
 def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> dict:
-    """Контроль `time.time()` внутри breaker'а для проверок cooldown'а."""
-    state = {"now": 1_700_000_000.0}
-
-    def fake_time() -> float:
-        return state["now"]
-
-    monkeypatch.setattr(cb.time, "time", fake_time)
-    return state
+    return frozen_clock_fixture(monkeypatch, cb)
 
 
 # ── Тесты ────────────────────────────────────────────────────────────────────
@@ -233,3 +144,53 @@ class TestRedisFailureFailOpen:
         monkeypatch.setattr(cb, "_get_client", fake_get_client)
         # record_failure при упавшем Redis не должен ронять publisher.
         await cb.record_failure()
+
+    async def test_record_success_swallows_redis_error(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`record_success` после 2xx должен пережить падение Redis.
+
+        Симметрия `record_failure`: если у нас отвалился Redis ровно в
+        момент успешного публиша, мы не хотим вернуть исключение в
+        `_publish_one` и оставить outbox-row unpublished. Лучше log
+        WARNING и забыть про обновление breaker'а — следующий проход
+        сам обнаружит свежее состояние.
+        """
+
+        class BrokenRedis:
+            async def eval(self, *a, **kw):
+                raise ConnectionError("redis down")
+
+            async def aclose(self):
+                return None
+
+        async def fake_get_client():
+            return BrokenRedis()
+
+        monkeypatch.setattr(cb, "_get_client", fake_get_client)
+        # Не должен бросать.
+        await cb.record_success()
+
+
+class TestReset:
+    """Operator/test helper: `reset()` сбрасывает все три ключа."""
+
+    async def test_breaker_reset_clears_state(self, fake_redis, frozen_clock) -> None:
+        """После `reset()` breaker возвращается в closed: counter, state,
+        open_until — все снесены."""
+        # Доводим до open.
+        for _ in range(cb.DEFAULT_FAILURE_THRESHOLD):
+            await cb.record_failure()
+        with pytest.raises(cb.CircuitBreakerOpenError):
+            await cb.check()
+
+        # Operator-вмешательство: reset.
+        await cb.reset()
+
+        # Все три ключа снесены.
+        failures_key, state_key, open_until_key = cb._keys()
+        assert failures_key not in fake_redis._store
+        assert state_key not in fake_redis._store
+        assert open_until_key not in fake_redis._store
+        # И check после reset — closed, не бросает.
+        await cb.check()

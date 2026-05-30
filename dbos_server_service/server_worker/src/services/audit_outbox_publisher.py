@@ -20,17 +20,17 @@ Failure-mode: HTTP-ошибки логируются, `attempts` инкреме�
 `last_error` пишется, row остаётся unpublished.
 
 Circuit breaker: без него каскад audit-failures DoS'ит loging_service.
-После `_CB_FAILURE_THRESHOLD` подряд iteration'ов `run_publisher_loop`'а с
-хотя бы одним `AuditEmitError` — открываем breaker на exponential
-back-off (capped `_CB_MAX_OPEN_SECONDS`). В open-state цикл спит
-короткими порциями (≤5s) и не вызывает `flush_outbox` вовсе — снимает
-нагрузку с упавшего loging_service. Успешный iteration (или полностью
-пустой outbox) сбрасывает счётчик. Outbox-rows при этом остаются в DB
-и подхватятся, как только breaker закроется. Breaker не влияет на
-inline `_safe_flush_outbox()` из `_runner.py` — там важнее latency
-happy-path'а; если loging лежит, тот вызов всё равно бросит
-AuditEmitError → outbox-row останется unpublished, background loop
-разгребёт.
+Источник истины — shared `audit_publisher_breaker` в Redis: per-row
+`check()` отбивает HTTP-call до сети, `record_failure()` копит счётчик,
+`record_success()` сбрасывает. `run_publisher_loop` после каждого
+прохода читает `get_state()`: если open — спит короткими порциями
+(≤5s) до конца cooldown'а вместо обычного poll-interval'а; HTTP всё
+равно ушёл бы в `CircuitBreakerOpenError` на `_publish_one.check()`,
+но без adaptive-sleep loop бесполезно крутил бы пустые проходы.
+Breaker не влияет на inline `_safe_flush_outbox()` из `_runner.py` —
+там важнее latency happy-path'а; если loging лежит, тот вызов всё
+равно бросит AuditEmitError → outbox-row останется unpublished,
+background loop разгребёт.
 """
 
 from __future__ import annotations
@@ -38,7 +38,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import time
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 
@@ -104,30 +103,12 @@ def _max_publish_attempts() -> int:
         return 50
 
 # ── Circuit breaker tunables ─────────────────────────────────────────────────
-# Сколько подряд iteration'ов с AuditEmitError должно случиться, чтобы
-# breaker открылся. 5 = ~10s по умолчанию (poll 2s) — достаточно, чтобы
-# реальный transient blip (rolling-restart loging_service) не открыл
-# breaker, и достаточно мало, чтобы при серьёзной аварии не успеть
-# зафлудить логи.
-_CB_FAILURE_THRESHOLD = 5
-# Максимум, до которого растёт open-window. 5 мин = разумный потолок: даже
-# при долгой аварии loging_service остаётся возможность авто-восстановиться
-# без рестарта worker'а.
-_CB_MAX_OPEN_SECONDS = 300.0
 # В open-state цикл спит порциями ≤ этой — чтобы при «починке» loging'а
 # breaker закрылся быстро и можно было корректно остановить worker
 # (cancellation на длинном sleep'е работает, но мелкими порциями нагляднее
-# в логах).
+# в логах). Решение об open/closed принимает shared `audit_publisher_breaker`;
+# тут только sleep-стратегия poll-loop'а.
 _CB_SLEEP_CHUNK_SECONDS = 5.0
-
-# ── Circuit breaker state (module-level) ─────────────────────────────────────
-# Хранится в процессе worker'а; при рестарте сбрасывается — это приемлемо,
-# т.к. outbox-rows остаются в DB, и новый процесс сам увидит fail'ы и
-# заново откроет breaker, если loging ещё лежит. Состояние не разделяется
-# между replica'ами — каждая replica наблюдает свою долю outbox-rows
-# (skip-locked) и держит свой breaker.
-_consecutive_failures: int = 0
-_circuit_open_until: float = 0.0
 
 # DLQ counter (monotonic, per-process). Считаем все случаи, когда row
 # был отравлен (`_maybe_poison`) — и по cap'у attempts, и по 4xx-классу.
@@ -139,9 +120,10 @@ _dlq_total: int = 0
 # (~17 минут) между попытками, на 20 — ~12 дней. Cap'аем потолком,
 # чтобы row не «уезжал» на месяцы из-за случайно высокого attempts
 # (например, после ручного re-attempt'а из DLQ с не-обнулённым счётчиком).
-# Cap совпадает с `_CB_MAX_OPEN_SECONDS` — после 5 минут backoff'а
-# дальнейшее ожидание не имеет смысла: либо loging уже починили, либо
-# proper DLQ-обработка через `internal.outbox_re_attempt`.
+# 5 минут — потолок, дальше дальше row простаивает слишком долго; реальная
+# повторная отправка к этому моменту либо уже отработает через
+# `record_success` от другой строки, либо проблему лучше разгребать
+# через `internal.outbox_re_attempt`.
 _BACKOFF_MAX_SECONDS = 300.0
 
 
@@ -158,16 +140,15 @@ def get_dlq_total() -> int:
 
 
 def _reset_breaker_state() -> None:
-    """Test helper: вернуть breaker в closed-state + сбросить DLQ counter.
+    """Test helper: сбросить module-level DLQ counter.
 
-    Сбрасывает module-level globals `_consecutive_failures`,
-    `_circuit_open_until` и `_dlq_total`, чтобы тесты не наследовали
-    состояние от предыдущих прогонов. Альтернатива monkeypatch'у этих
-    переменных.
+    Shared breaker'ом владеет `audit_publisher_breaker`, его state живёт
+    в Redis и сбрасывается через `audit_publisher_breaker.reset()` —
+    это делает conftest autouse-фикстура. Здесь остался только
+    monotonic-счётчик DLQ, его тесты обнуляют сами, когда хотят
+    проверить дельту.
     """
-    global _consecutive_failures, _circuit_open_until, _dlq_total
-    _consecutive_failures = 0
-    _circuit_open_until = 0.0
+    global _dlq_total
     _dlq_total = 0
 
 
@@ -559,35 +540,24 @@ async def run_publisher_loop(
 
     Circuit breaker:
 
-      * После `_CB_FAILURE_THRESHOLD` подряд iteration'ов, где хоть один
-        publish упал с `AuditEmitError` (т.е. loging_service отверг
-        событие или сеть до него лежит) — breaker открывается на
-        `min(2 ** failures, 300)` секунд.
-      * Пока breaker open — цикл не вызывает `_flush_outbox_once`, спит
-        порциями по `_CB_SLEEP_CHUNK_SECONDS` (или меньше — если до окна
-        осталось меньше).
-      * Любой iteration, где не было `AuditEmitError` (включая пустой
-        outbox), сбрасывает счётчик в 0 — breaker остаётся/возвращается
-        в closed.
+      * Решение об open/closed принимает shared `audit_publisher_breaker`
+        (Redis). `_publish_one` дёргает `check()` перед каждым HTTP'ом,
+        `record_failure()` после 5xx/transport, `record_success()` после
+        2xx. Все реплики worker'а делят один счётчик.
+      * После прохода loop читает `get_state()`: если open — спит
+        порциями ≤ `_CB_SLEEP_CHUNK_SECONDS` до конца cooldown'а вместо
+        обычного poll-interval'а. Это адаптивный backoff: нет смысла
+        крутить `_flush_outbox_once` каждые 2s, если все row'ы отбьются
+        breaker'ом сразу же.
       * Программные ошибки `_publish_one` (сериализация и т.п.) breaker
         НЕ открывают: loging_service тут не виноват, добавлять задержки
-        бессмысленно.
+        бессмысленно. `audit_emit_errors` оставлен в API проходов
+        только для observability/тестов.
     """
-    global _consecutive_failures, _circuit_open_until
-
     logger.info("audit_outbox publisher loop started (interval=%ss)", interval_seconds)
     while True:
-        # ── Circuit breaker check ────────────────────────────────────────
-        now = time.monotonic()
-        if now < _circuit_open_until:
-            # Breaker open — пропускаем iteration, не нагружаем loging.
-            remaining = _circuit_open_until - now
-            sleep_for = min(remaining, _CB_SLEEP_CHUNK_SECONDS)
-            await asyncio.sleep(sleep_for)
-            continue
-
         try:
-            _published, audit_emit_errors = await _flush_outbox_once()
+            _published, _audit_emit_errors = await _flush_outbox_once()
         except Exception as exc:  # noqa: BLE001 — never crash the loop
             # Идёт в worker stdout/journald → k8s log-aggregator. Реальные
             # клиенты (httpx/requests/asyncpg) могут зашить в текст ошибки
@@ -600,37 +570,19 @@ async def run_publisher_loop(
                 type(exc).__name__,
                 redact_error_message(str(exc)),
             )
-            # Catastrophic — это скорее всего проблема с DB worker'а
-            # (audit_outbox недоступен), а не с loging. Breaker рассчитан
-            # именно на loging_service-аварию, поэтому счётчик не трогаем;
-            # просто спим обычный poll-interval.
+            # Catastrophic — скорее всего проблема с DB worker'а, не с
+            # loging. Спим обычный poll-interval, к breaker'у не лезем.
             await asyncio.sleep(interval_seconds)
             continue
 
-        # ── Update breaker state по результату прохода ───────────────────
-        if audit_emit_errors > 0:
-            _consecutive_failures += 1
-            if _consecutive_failures >= _CB_FAILURE_THRESHOLD:
-                # Open breaker: exponential back-off с потолком.
-                back_off = min(2 ** _consecutive_failures, _CB_MAX_OPEN_SECONDS)
-                _circuit_open_until = time.monotonic() + back_off
-                logger.warning(
-                    "audit_outbox publisher circuit breaker OPEN: "
-                    "consecutive_failures=%s back_off=%ss",
-                    _consecutive_failures,
-                    back_off,
-                )
+        # Sleep-strategy: если shared breaker open — спим до конца
+        # cooldown'а порциями. Так loop не тратит CPU на пустые проходы,
+        # которые `_publish_one` всё равно отобьёт через check(). Если
+        # closed/half_open — обычный poll-interval. Ошибки Redis в
+        # get_state() fail-open'ятся (возвращается closed), это ok.
+        state, retry_after = await audit_publisher_breaker.get_state()
+        if state == "open" and retry_after > 0:
+            sleep_for = min(retry_after, _CB_SLEEP_CHUNK_SECONDS)
+            await asyncio.sleep(sleep_for)
         else:
-            # Iteration без AuditEmitError → loging либо доступен, либо
-            # просто очередь пуста. В обоих случаях нет повода держать
-            # breaker.
-            if _consecutive_failures > 0:
-                logger.info(
-                    "audit_outbox publisher circuit breaker RESET "
-                    "(was at %s consecutive failures)",
-                    _consecutive_failures,
-                )
-            _consecutive_failures = 0
-            _circuit_open_until = 0.0
-
-        await asyncio.sleep(interval_seconds)
+            await asyncio.sleep(interval_seconds)

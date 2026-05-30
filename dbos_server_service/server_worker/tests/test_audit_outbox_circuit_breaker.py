@@ -1,29 +1,17 @@
-"""Circuit breaker для `run_publisher_loop`.
+"""Адаптивный sleep в `run_publisher_loop` под shared breaker.
 
-Регрессия: без breaker'а worker циклом ретраит `flush_outbox`, и если
-loging_service ляжет, нагружает
-его ещё больше. После `_CB_FAILURE_THRESHOLD` (=5) подряд iteration'ов
-с `AuditEmitError` breaker открывается на exponential back-off
-(`2 ** failures`, capped 5 min); пока open — `_flush_outbox_once` не
-зовётся вовсе. Успешный iteration (или пустой outbox) сбрасывает
-счётчик.
+После выноса единственного источника истины в Redis-breaker
+(`audit_publisher_breaker`) per-process counter из loop'а ушёл.
+Решение об open/closed принимает breaker, а loop читает `get_state()`
+после каждого прохода и подгоняет sleep:
 
-Тестируем именно `run_publisher_loop`, а не `flush_outbox` напрямую —
-breaker-state живёт на module-level и активизируется только в
-background-loop'е. Inline-вызов из `_runner._safe_flush_outbox()`
-breaker'у не подчиняется (см. docstring `flush_outbox`).
+  * `state == "open"` → sleep ≤ `_CB_SLEEP_CHUNK_SECONDS` (или меньше,
+    если до конца cooldown'а осталось меньше).
+  * `state in {"closed", "half_open"}` → обычный `interval_seconds`.
 
-Стратегия:
-  * Запускаем `run_publisher_loop` как asyncio.Task,
-    monkeypatch'им `time.monotonic` (детерминизм) и
-    `asyncio.sleep` (мгновенное прохождение времени),
-  * через несколько iteration'ов читаем module-level state и
-    счётчик вызовов `_flush_outbox_once`,
-  * cancel'им Task в finally.
-
-`asyncio.sleep` подменяется на no-op, который продвигает виртуальное
-время через shared `clock` — иначе тесты висели бы по реальным
-секундам.
+Тут проверяем именно эту sleep-стратегию через monkeypatch'нутый
+`audit_publisher_breaker.get_state` и счётчик `asyncio.sleep` для
+`audit_outbox_publisher`.
 """
 
 from __future__ import annotations
@@ -34,104 +22,38 @@ import pytest
 from src.services import audit_outbox_publisher
 
 
-# `pyproject.toml` ставит `asyncio_mode = "auto"` — async-функции
-# автоматически становятся asyncio-тестами.
+# `pyproject.toml` ставит `asyncio_mode = "auto"`.
 
 
 # ── Test rig ─────────────────────────────────────────────────────────────────
 
-
-# Сохраняем «настоящий» asyncio.sleep ДО монки-патчей. Иначе
-# `_FakeClock.sleep`, который сам зовёт `asyncio.sleep(0)`, попадёт в
-# себя же → infinite recursion. Используем raw-ссылку из модуля стандарт-
-# либы напрямую.
 _REAL_ASYNCIO_SLEEP = asyncio.sleep
 
 
-class _FakeClock:
-    """Монотонные часы под контролем теста.
+class _FakeAsyncio:
+    """Подмена `asyncio`-модуля publisher'а с записью sleep-длительностей."""
 
-    `time.monotonic()` → `now`, `asyncio.sleep(s)` → продвинуть `now` на
-    `s` и yield-нуть управление через `_REAL_ASYNCIO_SLEEP(0)` — даёт
-    другим корутинам шанс выполниться, не съедает реального времени и
-    не рекурсит в самого себя.
-    """
-
-    def __init__(self) -> None:
-        self.now: float = 1000.0  # старт с произвольной точки, не с 0
-
-    def monotonic(self) -> float:
-        return self.now
+    def __init__(self, recorder: list[float]) -> None:
+        self._recorder = recorder
 
     async def sleep(self, seconds: float) -> None:
-        self.now += max(seconds, 0.0)
-        # Даём loop'у шанс перейти к другим задачам — без этого
-        # `run_publisher_loop` крутился бы в одной корутине без point'а
-        # для cancel'а.
+        self._recorder.append(seconds)
         await _REAL_ASYNCIO_SLEEP(0)
 
 
-class _FakeAsyncio:
-    """Минимальная подмена `asyncio`-модуля для publisher'а.
-
-    Publisher использует только `asyncio.sleep` — подменяем именно
-    его, остальные атрибуты публишеру не нужны.
-    """
-
-    def __init__(self, sleep_fn):
-        self.sleep = sleep_fn
-
-
-class _FakeTime:
-    """Минимальная подмена `time`-модуля для publisher'а (только
-    `monotonic`)."""
-
-    def __init__(self, monotonic_fn):
-        self.monotonic = monotonic_fn
-
-
 @pytest.fixture
-def fake_clock(monkeypatch):
-    clock = _FakeClock()
-    # Патчим module-level attribute publisher'а (`audit_outbox_publisher.time`,
-    # `audit_outbox_publisher.asyncio`) — заменяем сами ссылки на наши
-    # stub'ы. Так monkeypatch на teardown'е восстановит оригиналы и не
-    # затронет глобальные `time`/`asyncio` (что сломало бы pytest_asyncio
-    # и другие тесты в том же процессе).
-    monkeypatch.setattr(audit_outbox_publisher, "time", _FakeTime(clock.monotonic))
-    monkeypatch.setattr(
-        audit_outbox_publisher, "asyncio", _FakeAsyncio(clock.sleep),
-    )
-    return clock
-
-
-@pytest.fixture(autouse=True)
-def reset_breaker():
-    """Изоляция: breaker-state — module-level, общий для процесса."""
-    audit_outbox_publisher._reset_breaker_state()
-    yield
-    audit_outbox_publisher._reset_breaker_state()
+def sleep_recorder(monkeypatch):
+    """Перехватывает `audit_outbox_publisher.asyncio.sleep` и пишет длительности."""
+    recorder: list[float] = []
+    monkeypatch.setattr(audit_outbox_publisher, "asyncio", _FakeAsyncio(recorder))
+    return recorder
 
 
 async def _run_iterations(n: int, *, interval: float = 2.0) -> None:
-    """Запустить `run_publisher_loop` и дать ему сделать ~`n` iteration'ов.
-
-    Под `_FakeClock.sleep` (no-op по реальному времени) — это
-    эквивалентно `await asyncio.sleep(0)` * (несколько раз). Чтобы
-    дать loop'у пройти ровно n iteration'ов, мы используем счётчик
-    вызовов через monkeypatch'нутый `_flush_outbox_once` либо
-    barrier-based подход. Здесь — простой подход: запускаем loop как
-    Task, делаем 4*n `await asyncio.sleep(0)` (учитывает и
-    `_flush_outbox_once`-await, и `await asyncio.sleep(interval)`), и
-    cancel'им.
-    """
     task = asyncio.create_task(
         audit_outbox_publisher.run_publisher_loop(interval_seconds=interval)
     )
     try:
-        # Каждая iteration loop'а имеет ~2 await-точки: _flush_outbox_once
-        # (или sleep на open-breaker) и финальный sleep(interval_seconds).
-        # 4*n yields — с запасом, чтобы все n iteration'ов прокрутились.
         for _ in range(max(4 * n, 8)):
             await asyncio.sleep(0)
     finally:
@@ -145,258 +67,168 @@ async def _run_iterations(n: int, *, interval: float = 2.0) -> None:
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 
-class TestBreakerOpensAfterConsecutiveFailures:
-    """5 подряд AuditEmitError → breaker open → следующий iteration не
-    зовёт `_flush_outbox_once`."""
+class TestAdaptiveSleepOnBreakerState:
+    """`run_publisher_loop` подстраивает sleep под состояние shared breaker'а."""
 
-    async def test_five_consecutive_audit_emit_errors_open_breaker(
-        self, monkeypatch, fake_clock,
-    ):
-        call_count = {"n": 0}
+    async def test_closed_state_uses_poll_interval(self, monkeypatch, sleep_recorder):
+        """Closed breaker → sleep длиной `interval_seconds`."""
 
-        async def fake_flush_audit_fail(*, limit=audit_outbox_publisher._BATCH_SIZE):
-            # Имитируем iteration с одним AuditEmitError'ом.
-            call_count["n"] += 1
-            return (0, 1)  # published=0, audit_emit_errors=1
+        async def fake_flush(*, limit=audit_outbox_publisher._BATCH_SIZE):
+            return (0, 0)
 
+        async def fake_get_state():
+            return ("closed", 0.0)
+
+        monkeypatch.setattr(audit_outbox_publisher, "_flush_outbox_once", fake_flush)
         monkeypatch.setattr(
-            audit_outbox_publisher, "_flush_outbox_once", fake_flush_audit_fail,
+            audit_outbox_publisher.audit_publisher_breaker, "get_state",
+            fake_get_state,
         )
 
-        # Прогоняем минимум 5 iteration'ов — counter должен дойти до 5
-        # и breaker открыться.
-        await _run_iterations(6)
+        await _run_iterations(3, interval=2.0)
 
-        # Breaker открыт: счётчик дошёл до threshold, окно установлено.
-        assert audit_outbox_publisher._consecutive_failures >= 5
-        # Окно было выставлено в какой-то момент; даже если fake_clock
-        # ушёл вперёд за время теста — само значение должно быть
-        # положительным (а не 0.0, как в closed state).
-        assert audit_outbox_publisher._circuit_open_until > 0.0, (
-            "breaker должен был открыться → _circuit_open_until != 0.0"
+        assert sleep_recorder, "loop должен был спать хотя бы раз"
+        # Все sleep'ы — длиной poll-interval'а (2.0).
+        assert all(s == 2.0 for s in sleep_recorder), (
+            f"closed-state должен спать interval_seconds; got={sleep_recorder}"
         )
 
-    async def test_open_breaker_skips_flush(self, monkeypatch, fake_clock):
-        """Пока breaker open — `_flush_outbox_once` не вызывается."""
+    async def test_open_state_caps_sleep_at_chunk(self, monkeypatch, sleep_recorder):
+        """Open breaker с длинным cooldown'ом → sleep = `_CB_SLEEP_CHUNK_SECONDS`."""
+
+        async def fake_flush(*, limit=audit_outbox_publisher._BATCH_SIZE):
+            return (0, 1)  # один AuditEmitError — не важен для loop-логики
+
+        async def fake_get_state():
+            return ("open", 100.0)  # cooldown ещё длинный
+
+        monkeypatch.setattr(audit_outbox_publisher, "_flush_outbox_once", fake_flush)
+        monkeypatch.setattr(
+            audit_outbox_publisher.audit_publisher_breaker, "get_state",
+            fake_get_state,
+        )
+
+        await _run_iterations(3, interval=2.0)
+
+        assert sleep_recorder
+        # Все sleep'ы кап'нуты `_CB_SLEEP_CHUNK_SECONDS` (5.0 по дефолту),
+        # обычный poll-interval (2.0) не выбирается.
+        assert all(
+            s == audit_outbox_publisher._CB_SLEEP_CHUNK_SECONDS
+            for s in sleep_recorder
+        ), f"open-state должен спать chunk-секунд; got={sleep_recorder}"
+
+    async def test_open_state_uses_retry_after_if_smaller_than_chunk(
+        self, monkeypatch, sleep_recorder,
+    ):
+        """Если до конца cooldown'а осталось меньше chunk'а — спим именно retry_after."""
+
+        async def fake_flush(*, limit=audit_outbox_publisher._BATCH_SIZE):
+            return (0, 0)
+
+        async def fake_get_state():
+            return ("open", 1.5)  # 1.5s < 5s chunk
+
+        monkeypatch.setattr(audit_outbox_publisher, "_flush_outbox_once", fake_flush)
+        monkeypatch.setattr(
+            audit_outbox_publisher.audit_publisher_breaker, "get_state",
+            fake_get_state,
+        )
+
+        await _run_iterations(3, interval=2.0)
+
+        assert sleep_recorder
+        assert all(s == 1.5 for s in sleep_recorder), (
+            f"остаток окна < chunk → спим именно retry_after; got={sleep_recorder}"
+        )
+
+    async def test_half_open_uses_normal_interval(self, monkeypatch, sleep_recorder):
+        """Half_open — это «попробуй один запрос», sleep обычный."""
+
+        async def fake_flush(*, limit=audit_outbox_publisher._BATCH_SIZE):
+            return (0, 0)
+
+        async def fake_get_state():
+            return ("half_open", 0.0)
+
+        monkeypatch.setattr(audit_outbox_publisher, "_flush_outbox_once", fake_flush)
+        monkeypatch.setattr(
+            audit_outbox_publisher.audit_publisher_breaker, "get_state",
+            fake_get_state,
+        )
+
+        await _run_iterations(3, interval=2.0)
+
+        assert sleep_recorder
+        assert all(s == 2.0 for s in sleep_recorder), (
+            f"half_open должен спать interval_seconds; got={sleep_recorder}"
+        )
+
+
+class TestFlushStillCalledOnOpenBreaker:
+    """Loop НЕ должен skip'ать `_flush_outbox_once` — он всегда вызывается.
+
+    Регрессия: раньше per-process breaker пропускал flush целиком в open-
+    state. Сейчас shared `_publish_one.check()` отбивает каждую row сам,
+    а loop полагается на это и просто spin'ит проход. Не должно быть
+    «зомби-проходов», когда published=0 и flush не вызывался ни разу.
+    """
+
+    async def test_open_state_still_calls_flush(self, monkeypatch, sleep_recorder):
         call_count = {"n": 0}
 
-        async def fake_flush_audit_fail(*, limit=audit_outbox_publisher._BATCH_SIZE):
+        async def fake_flush(*, limit=audit_outbox_publisher._BATCH_SIZE):
             call_count["n"] += 1
             return (0, 1)
 
+        async def fake_get_state():
+            return ("open", 30.0)
+
+        monkeypatch.setattr(audit_outbox_publisher, "_flush_outbox_once", fake_flush)
         monkeypatch.setattr(
-            audit_outbox_publisher, "_flush_outbox_once", fake_flush_audit_fail,
+            audit_outbox_publisher.audit_publisher_breaker, "get_state",
+            fake_get_state,
         )
 
-        # Принудительно открываем breaker на «далеко вперёд» — чтобы
-        # iteration'ы 100% попадали в open-window.
-        audit_outbox_publisher._consecutive_failures = 5
-        audit_outbox_publisher._circuit_open_until = fake_clock.now + 1000.0
+        await _run_iterations(3, interval=2.0)
 
-        await _run_iterations(10)
-
-        # `_flush_outbox_once` не вызвался ни разу — все iteration'ы
-        # ушли в continue по open-проверке.
-        assert call_count["n"] == 0, (
-            f"open breaker не должен вызывать flush; calls={call_count['n']}"
+        # Flush вызывается каждой iteration'ью; решение «не нагружать
+        # loging» принимает _publish_one.check(), не loop.
+        assert call_count["n"] >= 1, (
+            f"flush должен был вызваться хотя бы раз; calls={call_count['n']}"
         )
 
 
-class TestBreakerClosesAfterCooldown:
-    """После `_circuit_open_until` breaker закрывается → emit пытается
-    снова."""
+class TestLoopSurvivesFlushCrash:
+    """`_flush_outbox_once` raise'ит → loop ловит, спит обычный interval."""
 
-    async def test_breaker_closes_when_window_expires(self, monkeypatch, fake_clock):
-        flush_calls = []
-
-        async def fake_flush_success(*, limit=audit_outbox_publisher._BATCH_SIZE):
-            flush_calls.append(fake_clock.now)
-            # Успешный iteration — пустой outbox или всё опубликовано,
-            # audit_emit_errors=0.
-            return (0, 0)
-
-        monkeypatch.setattr(
-            audit_outbox_publisher, "_flush_outbox_once", fake_flush_success,
-        )
-
-        # Открываем breaker на короткое окно — после прохождения времени
-        # loop должен снова вызвать flush.
-        open_window = 10.0
-        audit_outbox_publisher._consecutive_failures = 5
-        audit_outbox_publisher._circuit_open_until = fake_clock.now + open_window
-
-        # Прогон: пока `now < open_until` — flush не зовётся.
-        # `_FakeClock.sleep` ускоренное виртуальное время; кол-во
-        # iteration'ов loop'а > open_window / _CB_SLEEP_CHUNK_SECONDS.
-        await _run_iterations(15)
-
-        # Хоть один вызов flush должен случиться после того, как окно
-        # истекло.
-        assert len(flush_calls) >= 1, (
-            "после истечения окна breaker должен закрыться и вызвать flush"
-        )
-        # И все вызовы — после открытого окна.
-        assert all(t >= 1000.0 + open_window for t in flush_calls), (
-            f"flush до истечения окна: calls={flush_calls}, "
-            f"window_end={1000.0 + open_window}"
-        )
-
-        # После успешного flush'а breaker сброшен.
-        assert audit_outbox_publisher._consecutive_failures == 0
-        assert audit_outbox_publisher._circuit_open_until == 0.0
-
-
-class TestBreakerResetsOnSuccess:
-    """Success после первого fail → счётчик сбрасывается, breaker не
-    открывается."""
-
-    async def test_single_failure_then_success_resets_counter(
-        self, monkeypatch, fake_clock,
-    ):
-        results = iter([
-            (0, 1),  # 1-я iteration: один AuditEmitError → failures=1
-            (1, 0),  # 2-я iteration: успех → failures=0
-            (1, 0),
-            (1, 0),
-            (1, 0),
-            (1, 0),  # ещё несколько успешных
-        ])
+    async def test_flush_crash_does_not_kill_loop(self, monkeypatch, sleep_recorder):
+        call_count = {"n": 0}
 
         async def fake_flush(*, limit=audit_outbox_publisher._BATCH_SIZE):
-            try:
-                return next(results)
-            except StopIteration:
-                # После того как сценарий проигран — возвращаем «пусто»,
-                # чтобы loop спокойно крутился до cancel'а.
-                return (0, 0)
+            call_count["n"] += 1
+            raise RuntimeError("db down")
 
+        async def fake_get_state():
+            return ("closed", 0.0)
+
+        monkeypatch.setattr(audit_outbox_publisher, "_flush_outbox_once", fake_flush)
         monkeypatch.setattr(
-            audit_outbox_publisher, "_flush_outbox_once", fake_flush,
+            audit_outbox_publisher.audit_publisher_breaker, "get_state",
+            fake_get_state,
         )
 
-        await _run_iterations(8)
+        await _run_iterations(3, interval=2.0)
 
-        # Breaker никогда не открывался: ни одной серии из 5.
-        assert audit_outbox_publisher._consecutive_failures == 0
-        assert audit_outbox_publisher._circuit_open_until == 0.0
-
-    async def test_empty_outbox_resets_failure_counter(
-        self, monkeypatch, fake_clock,
-    ):
-        """Пустой outbox = успешный iteration; даже после нескольких
-        fail'ов одно «пусто» сбрасывает счётчик."""
-        # 3 fail'а подряд (не дотягивает до threshold=5), потом «пусто».
-        results = iter([
-            (0, 1),
-            (0, 1),
-            (0, 1),
-            (0, 0),  # outbox empty — reset
-            (0, 0),
-        ])
-
-        async def fake_flush(*, limit=audit_outbox_publisher._BATCH_SIZE):
-            try:
-                return next(results)
-            except StopIteration:
-                return (0, 0)
-
-        monkeypatch.setattr(
-            audit_outbox_publisher, "_flush_outbox_once", fake_flush,
-        )
-
-        await _run_iterations(8)
-
-        assert audit_outbox_publisher._consecutive_failures == 0
+        # Loop пережил несколько iteration'ов после crash'а — счётчик > 1.
+        assert call_count["n"] >= 1
+        assert sleep_recorder, "после crash'а loop должен поспать обычный interval"
 
 
-class TestBreakerIgnoresNonAuditEmitErrors:
-    """Программные ошибки (сериализация и т.п.) breaker НЕ открывают —
-    у них audit_emit_errors=0 даже если published=0."""
+class TestResetClearsDlqCounter:
+    """Sanity: `_reset_breaker_state` сбрасывает per-process DLQ counter."""
 
-    async def test_programming_errors_do_not_open_breaker(
-        self, monkeypatch, fake_clock,
-    ):
-        async def fake_flush_programming_error(
-            *, limit=audit_outbox_publisher._BATCH_SIZE,
-        ):
-            # published=0, audit_emit_errors=0 — означает «была программная
-            # ошибка, не HTTP/transport» (или просто пусто).
-            return (0, 0)
-
-        monkeypatch.setattr(
-            audit_outbox_publisher,
-            "_flush_outbox_once",
-            fake_flush_programming_error,
-        )
-
-        # 20 iteration'ов с «программной ошибкой» — breaker остаётся
-        # закрытым (failures всегда сбрасываются в 0).
-        await _run_iterations(20)
-
-        assert audit_outbox_publisher._consecutive_failures == 0
-        assert audit_outbox_publisher._circuit_open_until == 0.0
-
-
-class TestBreakerBackOffCappedAtMax:
-    """Exponential back-off не уезжает выше `_CB_MAX_OPEN_SECONDS`."""
-
-    async def test_back_off_capped_at_5_minutes(self, monkeypatch, fake_clock):
-        """При большом числе подряд fail'ов окно не превышает
-        `_CB_MAX_OPEN_SECONDS` (=300s)."""
-
-        async def fake_flush_audit_fail(*, limit=audit_outbox_publisher._BATCH_SIZE):
-            return (0, 1)
-
-        monkeypatch.setattr(
-            audit_outbox_publisher, "_flush_outbox_once", fake_flush_audit_fail,
-        )
-
-        # Симулируем «очень много» fail'ов: 20 подряд → 2**20 = 1M секунд,
-        # но cap = 300.
-        audit_outbox_publisher._consecutive_failures = 19
-        # Дальше один iteration loop'а добавит ещё один fail и пересчитает
-        # окно.
-        # Принудительно «закрываем» окно, чтобы loop вошёл в flush.
-        audit_outbox_publisher._circuit_open_until = 0.0
-
-        # Запускаем как Task на один-два iteration'а — достаточно, чтобы
-        # обновить failure-счётчик и пересчитать open_until.
-        task = asyncio.create_task(
-            audit_outbox_publisher.run_publisher_loop(interval_seconds=2.0)
-        )
-        try:
-            # Дать loop'у успеть одну iteration после flush'а.
-            for _ in range(6):
-                await asyncio.sleep(0)
-        finally:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-        # 2 ** 20 = 1_048_576 >> 300 → должно cap'нуться.
-        open_for = (
-            audit_outbox_publisher._circuit_open_until - 1000.0  # старт fake_clock
-        )
-        # `_FakeClock` может уже продвинуться от sleep'ов внутри loop'а,
-        # поэтому проверяем длину окна относительно момента, когда
-        # _circuit_open_until был назначен. Грубая проверка:
-        # back_off <= _CB_MAX_OPEN_SECONDS + (минимальный сдвиг от sleep'ов).
-        assert audit_outbox_publisher._consecutive_failures >= 20
-        # Reasonable upper bound: cap + допустимый дрейф «фейк-часов».
-        assert open_for <= audit_outbox_publisher._CB_MAX_OPEN_SECONDS + 60, (
-            f"back_off не должен превышать cap; open_until - start = {open_for}"
-        )
-
-
-class TestBreakerStateIsModuleLevel:
-    """Sanity: `_reset_breaker_state` действительно сбрасывает то, что
-    нужно — гарантия для других тестов, которые на это полагаются."""
-
-    def test_reset_clears_failures_and_open_until(self):
-        audit_outbox_publisher._consecutive_failures = 99
-        audit_outbox_publisher._circuit_open_until = 1e9
+    def test_reset_clears_dlq_counter(self):
+        audit_outbox_publisher._dlq_total = 99
         audit_outbox_publisher._reset_breaker_state()
-        assert audit_outbox_publisher._consecutive_failures == 0
-        assert audit_outbox_publisher._circuit_open_until == 0.0
+        assert audit_outbox_publisher.get_dlq_total() == 0

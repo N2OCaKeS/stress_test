@@ -59,7 +59,8 @@ class TestInstallAuthorizedKeyTruncateFlag:
         assert "grep -qxF" not in cmd
         # И ключ всё равно идёт на stdin, а не argv.
         assert _PUBKEY not in cmd
-        assert call.kwargs.get("input", "").startswith(_PUBKEY)
+        # sudo -S -p '' получает пароль на stdin перед public_key.
+        assert _PUBKEY in call.kwargs.get("input", "")
 
     async def test_truncate_false_uses_idempotent_append(self):
         """`truncate=False` → `grep -qxF` + `>>`, ключ не дублируется."""
@@ -78,7 +79,8 @@ class TestInstallAuthorizedKeyTruncateFlag:
         assert ">> \"$home/.ssh/authorized_keys\"" in cmd
         # Ключ — на stdin, не в argv.
         assert _PUBKEY not in cmd
-        assert call.kwargs.get("input", "").startswith(_PUBKEY)
+        # sudo -S -p '' получает пароль на stdin перед public_key.
+        assert _PUBKEY in call.kwargs.get("input", "")
 
 
 class TestInstallAuthorizedKeyValidation:
@@ -101,6 +103,29 @@ class TestInstallAuthorizedKeyValidation:
             await ssh._install_authorized_key(
                 target_user="dbos",
                 public_key="ssh-ed25519 AAA\nssh-ed25519 BBB",
+                truncate=False,
+                error_code="SSH_AUTHORIZED_KEYS_FAILED",
+            )
+        assert exc.value.error_code == "SSH_INVALID_ARG"
+        ssh._conn.run.assert_not_awaited()
+
+    async def test_multiline_key_with_crlf_and_trailing_newline_rejected(self):
+        """Атака «спрятать вторую строку через CRLF» отбивается.
+
+        Без явной проверки `\\r` злоумышленник мог бы оформить ключ как
+        `ssh-ed25519 AAA\\r\\nssh-rsa BBB`: shell-формирование команды
+        могло бы протащить вторую строку в `authorized_keys`. SSH-клиент
+        проверяет оба символа — `\\n` и `\\r`. Без trailing-`\\n` тоже
+        отбивается: один embedded `\\r` уже делает ключ multiline.
+        """
+        ssh = _make_client_with_conn([])
+        with pytest.raises(SshError) as exc:
+            await ssh._install_authorized_key(
+                target_user="dbos",
+                public_key=(
+                    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKey\r\n"
+                    "ssh-rsa AAAAB3NzaC1yc2EAAAADAQAB hidden\n"
+                ),
                 truncate=False,
                 error_code="SSH_AUTHORIZED_KEYS_FAILED",
             )

@@ -50,6 +50,7 @@ import redis.asyncio as aioredis
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
+from src.services import _breaker_lua
 
 logger = logging.getLogger(__name__)
 
@@ -121,79 +122,13 @@ class CircuitBreakerOpenError(AppException):
 
 # ── Lua-скрипты ─────────────────────────────────────────────────────────────
 # Все переходы атомарны на стороне Redis. KEYS[1]=failures, KEYS[2]=state,
-# KEYS[3]=open_until. ARGV — параметры конкретного вызова.
-
-# check(): вернуть `{state, retry_after}`.
-#   state ∈ {"closed", "open", "half_open"}
-#   retry_after — секунды до конца open-window (только при state="open").
-#
-# Логика:
-#   - читаем open_until (TIME ARGV[1]=now-секунды);
-#   - если state="open" И open_until > now → возвращаем open;
-#   - если state="open" И open_until <= now → переводим в half_open
-#     (атомарно: SET state=half_open EX cooldown, DEL open_until);
-#   - иначе (отсутствие state или half_open) → возвращаем что есть.
-#
-# Полу-открытый пробный запрос даём ровно один — state="half_open" висит
-# с TTL=cooldown, и пока следующий вызов не закроет breaker через
-# record_success(), новые check() видят half_open и… тоже пропускают.
-# Это допустимый компромисс: при множественных репликах одновременно
-# пройдёт несколько проб. Альтернатива (single-token via INCR) усложняет
-# восстановление в half_open после fail'а и без выгод в нашей нагрузке —
-# доли запросов в секунду на host.
-_CHECK_SCRIPT = """
-local now = tonumber(ARGV[1])
-local cooldown = tonumber(ARGV[2])
-local state = redis.call('GET', KEYS[2])
-local open_until = tonumber(redis.call('GET', KEYS[3]) or '0')
-if state == 'open' then
-  if open_until > now then
-    return {state, open_until - now}
-  end
-  redis.call('SET', KEYS[2], 'half_open', 'EX', cooldown)
-  redis.call('DEL', KEYS[3])
-  return {'half_open', 0}
-end
-if state then
-  return {state, 0}
-end
-return {'closed', 0}
-"""
-
-# record_success(): сбросить state и счётчик failures.
-#   Никаких условий: успех закрывает breaker всегда. Это OK даже если
-#   реплика A видит half_open, а реплика B параллельно пишет fail —
-#   следующий же failure снова откроет breaker.
-_RECORD_SUCCESS_SCRIPT = """
-redis.call('DEL', KEYS[1])
-redis.call('DEL', KEYS[2])
-redis.call('DEL', KEYS[3])
-return 1
-"""
-
-# record_failure(): инкрементить счётчик; если ≥ threshold → open(cooldown).
-# Возвращает {state_after, current_count}.
-#
-# EXPIRE на счётчик ставим только при первом INCR (когда возвращается 1) —
-# rolling window: 5 fail'ов за 60s; если 6-й пришёл через 70s, счётчик
-# уже истёк, новый INCR начнёт с 1.
-_RECORD_FAILURE_SCRIPT = """
-local now = tonumber(ARGV[1])
-local threshold = tonumber(ARGV[2])
-local window = tonumber(ARGV[3])
-local cooldown = tonumber(ARGV[4])
-local count = redis.call('INCR', KEYS[1])
-if count == 1 then
-  redis.call('EXPIRE', KEYS[1], window)
-end
-if count >= threshold then
-  redis.call('SET', KEYS[2], 'open', 'EX', cooldown)
-  redis.call('SET', KEYS[3], tostring(now + cooldown), 'EX', cooldown)
-  redis.call('DEL', KEYS[1])
-  return {'open', count}
-end
-return {'closed', count}
-"""
+# KEYS[3]=open_until. ARGV — параметры конкретного вызова. Сами скрипты
+# живут в `_breaker_lua` — общие с audit_publisher_breaker. Локальные
+# алиасы оставлены для обратной совместимости (FakeRedis в тестах
+# матчит скрипт по объекту-строке).
+_CHECK_SCRIPT = _breaker_lua.CHECK_SCRIPT
+_RECORD_SUCCESS_SCRIPT = _breaker_lua.RECORD_SUCCESS_SCRIPT
+_RECORD_FAILURE_SCRIPT = _breaker_lua.RECORD_FAILURE_SCRIPT
 
 
 def _keys(host: str) -> tuple[str, str, str]:

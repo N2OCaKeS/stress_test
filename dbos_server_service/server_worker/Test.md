@@ -52,9 +52,9 @@ Defaults (`status=queued`, `attempt=0`, `max_attempts=3`, `payload={}`), `enqueu
 
 Lifecycle ломал audit-инвариант: `_runner.run_task` пишет audit-row в `audit_outbox` **в той же транзакции**, что `mark_succeeded/mark_failed`. Publisher (`run_publisher_loop`) отправляет в `loging_service` и проставляет `published_at`. Покрыто: at-least-once семантика, дубль publish безопасен (idempotency через `(task_id, action)`), whitelist `details.result` (не утекают сырые BMC-payload'ы), DLQ при превышении `max_attempts`, retry на 5xx, no-retry на 4xx, truncation `last_error` до `LAST_ERROR_MAX_LEN`.
 
-### `test_audit_outbox_circuit_breaker.py` — circuit breaker publisher'а
+### `test_audit_outbox_circuit_breaker.py` — adaptive sleep publisher'а
 
-Без breaker'а worker DDoSит лёгший `loging_service`. После `_CB_FAILURE_THRESHOLD=5` подряд `AuditEmitError` → breaker open на `2 ** failures` сек (capped 5 мин); пока open — `_flush_outbox_once` не зовётся. Успех или пустой outbox → reset. Breaker не реагирует на не-`AuditEmitError`. State хранится на module-уровне (общий для всех publisher-tasks воркера).
+Решение об open/closed принимает shared `audit_publisher_breaker` в Redis (см. `unit/test_audit_publisher_breaker.py` про state-machine). `run_publisher_loop` после каждого прохода читает `get_state()`: open → sleep кап'нут `_CB_SLEEP_CHUNK_SECONDS` (или `retry_after`, что меньше); closed/half_open → обычный poll-interval. `_flush_outbox_once` всегда вызывается — отказ от HTTP'а делает `_publish_one.check()`, не loop.
 
 ### `unit/test_publisher_stdout_redaction.py` — redaction stdout-логов
 

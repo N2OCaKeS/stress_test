@@ -38,6 +38,7 @@ import redis.asyncio as aioredis
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
+from src.services import _breaker_lua
 
 logger = logging.getLogger(__name__)
 
@@ -103,53 +104,11 @@ class CircuitBreakerOpenError(AppException):
 
 
 # ── Lua-скрипты ─────────────────────────────────────────────────────────────
-# Полностью повторяют BMC-вариант. Не переиспользуем через import — каждая
-# breaker-реализация держит свои keys/argv-контракт, общий код был бы
-# натянут (см. obsidian/reports/ если когда-то решим выделить shared lib).
-
-_CHECK_SCRIPT = """
-local now = tonumber(ARGV[1])
-local cooldown = tonumber(ARGV[2])
-local state = redis.call('GET', KEYS[2])
-local open_until = tonumber(redis.call('GET', KEYS[3]) or '0')
-if state == 'open' then
-  if open_until > now then
-    return {state, open_until - now}
-  end
-  redis.call('SET', KEYS[2], 'half_open', 'EX', cooldown)
-  redis.call('DEL', KEYS[3])
-  return {'half_open', 0}
-end
-if state then
-  return {state, 0}
-end
-return {'closed', 0}
-"""
-
-_RECORD_SUCCESS_SCRIPT = """
-redis.call('DEL', KEYS[1])
-redis.call('DEL', KEYS[2])
-redis.call('DEL', KEYS[3])
-return 1
-"""
-
-_RECORD_FAILURE_SCRIPT = """
-local now = tonumber(ARGV[1])
-local threshold = tonumber(ARGV[2])
-local window = tonumber(ARGV[3])
-local cooldown = tonumber(ARGV[4])
-local count = redis.call('INCR', KEYS[1])
-if count == 1 then
-  redis.call('EXPIRE', KEYS[1], window)
-end
-if count >= threshold then
-  redis.call('SET', KEYS[2], 'open', 'EX', cooldown)
-  redis.call('SET', KEYS[3], tostring(now + cooldown), 'EX', cooldown)
-  redis.call('DEL', KEYS[1])
-  return {'open', count}
-end
-return {'closed', count}
-"""
+# Общие с bmc_circuit_breaker, лежат в `_breaker_lua`. Алиасы оставлены —
+# тестовый FakeRedis матчит скрипты по объекту-строке.
+_CHECK_SCRIPT = _breaker_lua.CHECK_SCRIPT
+_RECORD_SUCCESS_SCRIPT = _breaker_lua.RECORD_SUCCESS_SCRIPT
+_RECORD_FAILURE_SCRIPT = _breaker_lua.RECORD_FAILURE_SCRIPT
 
 
 def _keys() -> tuple[str, str, str]:
@@ -200,6 +159,43 @@ async def check() -> None:
             int(retry_after),
         )
         raise CircuitBreakerOpenError(retry_after)
+
+
+async def get_state() -> tuple[str, float]:
+    """Read-only snapshot breaker'а: `(state, retry_after_seconds)`.
+
+    Возвращает то же что вернул бы `check()` Lua-скрипт, но без raise'а
+    при open. Нужен `run_publisher_loop` — он хочет узнать «надо ли
+    спать длиннее обычного», но без побочного эффекта (не дёргать
+    half_open-переход уже на старте цикла).
+
+    Сейчас get_state — это тот же `_CHECK_SCRIPT`: он действительно
+    может транзитить open → half_open, если cooldown истёк. Это
+    приемлемо: loop всё равно делает попытку публикации (пробный
+    запрос в half_open), и при успехе breaker закрывается. Если
+    Redis недоступен — fail-open: возвращаем `("closed", 0.0)`.
+    """
+    thresholds = _thresholds_from_settings()
+    client = await _get_client()
+    try:
+        try:
+            keys = _keys()
+            result = await client.eval(
+                _CHECK_SCRIPT, 3, *keys,
+                str(int(time.time())), str(thresholds.cooldown_seconds),
+            )
+        except Exception:  # noqa: BLE001 — fail-open
+            logger.warning(
+                "audit_publisher_breaker: get_state failed, defaulting to closed",
+                exc_info=True,
+            )
+            return ("closed", 0.0)
+    finally:
+        await client.aclose()
+
+    state_raw, retry_after_raw = result[0], result[1]
+    state = state_raw.decode() if isinstance(state_raw, bytes) else state_raw
+    return (state, float(retry_after_raw))
 
 
 async def record_success() -> None:

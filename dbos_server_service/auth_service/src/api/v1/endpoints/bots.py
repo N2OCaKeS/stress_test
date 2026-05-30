@@ -54,6 +54,7 @@ async def create_bot(
         actor_role=identity.platform_role,
         data=body,
         request_id=getattr(request.state, "request_id", None),
+        actor_department_id=identity.department_id,
     )
 
 
@@ -87,6 +88,7 @@ async def list_bots(
         department_id=department_id,
         pagination=pagination,
         request_id=getattr(request.state, "request_id", None),
+        actor_department_id=identity.department_id,
     )
     response.headers["X-Total-Count"] = str(total)
     return items
@@ -117,6 +119,7 @@ async def update_bot(
         bot_id=bot_id,
         data=body,
         request_id=getattr(request.state, "request_id", None),
+        actor_department_id=identity.department_id,
     )
 
 
@@ -152,6 +155,7 @@ async def create_bot_token(
         name=body.name,
         expires_at=body.expires_at,
         request_id=getattr(request.state, "request_id", None),
+        actor_department_id=identity.department_id,
     )
 
 
@@ -174,6 +178,7 @@ async def list_bot_tokens(
         actor_id=identity.user_id,
         actor_role=identity.platform_role,
         request_id=getattr(request.state, "request_id", None),
+        actor_department_id=identity.department_id,
     )
 
 
@@ -199,6 +204,7 @@ async def list_bot_roles(
         actor_role=identity.platform_role,
         bot_id=bot_id,
         request_id=getattr(request.state, "request_id", None),
+        actor_department_id=identity.department_id,
     )
 
 
@@ -234,6 +240,7 @@ async def assign_bot_roles(
         service_name=body.service_name,
         roles=body.roles,
         request_id=getattr(request.state, "request_id", None),
+        actor_department_id=identity.department_id,
     )
 
 
@@ -257,6 +264,7 @@ async def revoke_bot_roles(
         bot_id=bot_id,
         service_name=service_name,
         request_id=getattr(request.state, "request_id", None),
+        actor_department_id=identity.department_id,
     )
     return OkResponse()
 
@@ -281,5 +289,6 @@ async def revoke_bot_token(
         bot_id=bot_id,
         token_id=token_id,
         request_id=getattr(request.state, "request_id", None),
+        actor_department_id=identity.department_id,
     )
     return OkResponse()

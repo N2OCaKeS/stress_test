@@ -265,7 +265,6 @@ async def introspect(
                 request_id=request_id,
             )
             return IntrospectResponse(active=False)
-        await token_repo.touch(pat)
         user_repo = UserRepository(db)
         user = await user_repo.get_by_id(pat.user_id)
         if user is None:
@@ -306,6 +305,10 @@ async def introspect(
                 request_id=request_id,
             )
             return IntrospectResponse(active=False)
+        # last_used_at дёргаем только после revalidate'а юзера: для banned/blocked
+        # introspect отвечает active=False, "касаться" такой PAT смысла нет —
+        # лишний UPDATE и недостоверная статистика "недавно использован".
+        await token_repo.touch(pat)
         # Effective view юзера revalidate'им из БД через тот же путь, что и
         # JWT-ветка: collect_user_permissions учитывает dept-access И
         # group-derived service-access (group_services + group_roles). Без этого

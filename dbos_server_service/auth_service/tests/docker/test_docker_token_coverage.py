@@ -1,5 +1,5 @@
 """Coverage gap для docker_registry_service: deny-audits, anonymous edges,
-resolve-NOT_FOUND, list_docker_registry_permissions.
+resolve-NOT_FOUND.
 
 Фокус — ветки, которые не покрывали ни `test_docker_token.py`, ни
 `test_docker_per_dept_push.py`, ни `test_docker_bot_lockout.py`.
@@ -11,7 +11,6 @@ import jwt as _jwt
 import pytest_asyncio
 
 from src.models.department_docker_registry import DepartmentDockerRegistry
-from src.services import docker_registry_service
 from src.utils.ids import _new_id
 
 TOKEN_URL = "/api/auth/v1/docker/token"
@@ -198,31 +197,6 @@ class TestResolveRegistryNotFound:
         ev = push_denied[0]
         assert ev["details"]["reason"] == "REGISTRY_NOT_FOUND"
         assert ev["details"]["registry_name"] == "ghost_registry_xyz"
-
-
-# ── GAP-15: list_docker_registry_permissions — без тестов сейчас ─────────────
-
-class TestListDockerRegistryPermissions:
-    def test_returns_pull_and_push_per_name(self):
-        out = docker_registry_service.list_docker_registry_permissions(
-            ["dept_alpha", "dept_beta"]
-        )
-        # Для каждого имени — ровно две строки, .pull и .push.
-        assert out == [
-            "docker_registry.dept_alpha.pull",
-            "docker_registry.dept_alpha.push",
-            "docker_registry.dept_beta.pull",
-            "docker_registry.dept_beta.push",
-        ]
-
-    def test_empty_list_returns_empty(self):
-        assert docker_registry_service.list_docker_registry_permissions([]) == []
-
-    def test_single_registry(self):
-        assert docker_registry_service.list_docker_registry_permissions(["foo"]) == [
-            "docker_registry.foo.pull",
-            "docker_registry.foo.push",
-        ]
 
 
 # ── GAP-16: empty scope (docker login без последующего pull/push) ──────────

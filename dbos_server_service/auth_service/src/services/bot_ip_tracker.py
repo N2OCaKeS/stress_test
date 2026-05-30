@@ -26,12 +26,17 @@ from src.services import audit_service
 
 
 def _parse_ts(raw: str | None) -> datetime | None:
-    """Распарсить ISO-timestamp из record'а `last_known_ips`. None при невалидном."""
+    """Распарсить ISO-timestamp из record'а `last_known_ips`. None при невалидном.
+
+    JSONB-колонка теоретически может вернуть что угодно (int, dict, list) если
+    кто-то записал кривой entry мимо нашего кода. Ловим TypeError помимо
+    ValueError, чтобы битый row не валил весь трекер.
+    """
     if not raw:
         return None
     try:
         return datetime.fromisoformat(raw)
-    except ValueError:
+    except (ValueError, TypeError):
         return None
 
 

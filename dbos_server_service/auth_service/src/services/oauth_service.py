@@ -517,11 +517,16 @@ async def client_credentials_token(
 ) -> OAuthTokenResponse:
     """Выдать access_token по client_credentials grant (machine-to-machine, без user_id).
 
-    No state mutated: функция чисто read — клиентских counter'ов вроде
-    `last_token_issued_at` или per-request тротлинга в `OAuthClient` нет,
-    поэтому `db.commit()` не нужен (в отличие от `exchange_code`). Если в
-    будущем добавится usage-tracking — обязательно положить `await db.commit()`
-    перед `return`, иначе update уйдёт в rollback через `get_db()`.
+    Mutating writes:
+        * `_verify_client_secret_with_lockout` инкрементит `failed_secret_attempts`
+          и при превышении лимита ставит `locked_until` — успешные/неуспешные
+          попытки оба идут с `db.commit()` внутри хелпера.
+        * После успешной верификации, если счётчик был ненулевой, тут же
+          ресетим его через `reset_failed_attempts` + `db.commit()`.
+
+    Чего нет — usage-tracking-полей в самом `OAuthClient` (`last_token_issued_at`,
+    счётчик выпущенных токенов и т.п.); добавишь — не забудь свой
+    `await db.commit()`, иначе update уйдёт в rollback через `get_db()`.
     """
     client_repo = OAuthClientRepository(db)
     client = await client_repo.get_by_client_id(client_id)

@@ -216,3 +216,48 @@ async def test_bot_token_scope_limited_by_dept_access(client, admin_token, dept_
                         headers={"Authorization": f"Bearer {admin_token}"})
     resp = await client.post(INTROSPECT_URL, json={"token": raw_token})
     assert service_x.service_name not in resp.json().get("allowed_services", [])
+
+
+# ── actor_department_id shortcut: skip extra SELECT при known identity ───────
+
+
+async def test_resolve_actor_dept_uses_provided_value_without_select(db, dept_a, monkeypatch):
+    """Когда endpoint прокинул actor_department_id из IdentityContext —
+    хелпер не должен дёргать UserRepository.get_by_id (лишний SELECT)."""
+    from src.repositories import users as users_module
+    from src.services import bot_service
+
+    calls = {"count": 0}
+    original = users_module.UserRepository.get_by_id
+
+    async def spy(self, user_id):  # pragma: no cover — мониторинг
+        calls["count"] += 1
+        return await original(self, user_id)
+
+    monkeypatch.setattr(users_module.UserRepository, "get_by_id", spy)
+
+    dept_id = await bot_service._resolve_actor_dept(db, "usr_some_actor", dept_a.id)
+    assert dept_id == dept_a.id
+    assert calls["count"] == 0
+
+
+async def test_resolve_actor_dept_fallbacks_to_select_when_missing(
+    db, account_admin, monkeypatch,
+):
+    """Если actor_department_id=None — фолбэк на SELECT (для legacy-callers
+    и прямых вызовов из других сервисов, не через endpoint)."""
+    from src.repositories import users as users_module
+    from src.services import bot_service
+
+    calls = {"count": 0}
+    original = users_module.UserRepository.get_by_id
+
+    async def spy(self, user_id):
+        calls["count"] += 1
+        return await original(self, user_id)
+
+    monkeypatch.setattr(users_module.UserRepository, "get_by_id", spy)
+
+    # account_admin фикстурно имеет department_id=None, но get_by_id обязан быть вызван.
+    await bot_service._resolve_actor_dept(db, account_admin.id, None)
+    assert calls["count"] == 1

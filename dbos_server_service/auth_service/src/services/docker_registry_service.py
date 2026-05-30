@@ -397,20 +397,6 @@ def _parse_registry_name(resource_name: str) -> str | None:
     return resource_name.split("/", 1)[0]
 
 
-def list_docker_registry_permissions(registry_names: list[str]) -> list[str]:
-    """Динамические права `docker_registry.<name>.pull|push` для каталога permissions.
-
-    Per-dept push enforcement: право `.push` имеет смысл только в связке с
-    отделом-владельцем registry; сама строка тут — справочный каталог,
-    проверка владения уезжает в `issue_token`.
-    """
-    out: list[str] = []
-    for name in registry_names:
-        out.append(f"docker_registry.{name}.pull")
-        out.append(f"docker_registry.{name}.push")
-    return out
-
-
 async def _resolve_registry(
     db: AsyncSession, registry_name: str | None, fallback_department_id: str | None
 ):

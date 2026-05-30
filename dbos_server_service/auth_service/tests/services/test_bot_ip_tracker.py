@@ -175,6 +175,21 @@ class TestTrackBotIp:
         # .1 (самый старый) вытеснен; .2..6 остались в FIFO-порядке.
         assert [e["ip"] for e in bot.last_known_ips] == ips[1:]
 
+    def test_parse_ts_handles_non_string_inputs(self):
+        """_parse_ts ловит TypeError, если в JSONB лежит не строка (int, dict, list).
+
+        fromisoformat для не-строки кидает TypeError, не ValueError — без явного
+        `except (ValueError, TypeError)` битый row уронил бы весь tracker.
+        """
+        assert bot_ip_tracker._parse_ts(None) is None
+        assert bot_ip_tracker._parse_ts("") is None
+        assert bot_ip_tracker._parse_ts("not-an-iso") is None
+        # Не-строковые значения — самое интересное: PostgreSQL JSONB и кривой
+        # production-row теоретически могут вернуть что угодно.
+        assert bot_ip_tracker._parse_ts(123) is None  # type: ignore[arg-type]
+        assert bot_ip_tracker._parse_ts({"x": 1}) is None  # type: ignore[arg-type]
+        assert bot_ip_tracker._parse_ts(["2024-01-01"]) is None  # type: ignore[arg-type]
+
     async def test_invalid_ts_record_does_not_break_tracker(self, db, dept_a, monkeypatch):
         """Запись с невалидным `ts` (не ISO) — игнорируется при подсчёте уникальных IP,
         не падает, но FIFO-trim её всё ещё двигает как обычный элемент окна."""

@@ -531,3 +531,54 @@ class TestXServiceIdentityValidation:
             assert resp.status_code == 200
         finally:
             config.get_settings.cache_clear()
+
+
+class TestPatTouchOrdering:
+    """`last_used_at` PAT'а апдейтится только после валидации юзера.
+
+    Раньше touch шёл первым: introspect банутого юзера всё равно дёргал
+    UPDATE на PAT, портил статистику "недавно использован" и зря писал в БД.
+    Сейчас порядок: get_active_by_hash → expires_at → get user → status check
+    → touch.
+    """
+
+    async def test_banned_user_pat_introspect_does_not_touch(
+        self, client, user_a, user_a_token, db,
+    ):
+        from sqlalchemy import select, update
+
+        from src.core.constants import UserStatus
+        from src.models import PersonalAccessToken, User
+
+        # PAT через API.
+        tok = await client.post(
+            "/api/auth/v1/tokens",
+            headers={"Authorization": f"Bearer {user_a_token}"},
+            json={"name": "touch_order_pat", "allowed_services": []},
+        )
+        assert tok.status_code == 201, tok.text
+        raw = tok.json()["token"]
+        pat_id = tok.json()["token_id"]
+
+        # Снимем baseline last_used_at (после create обычно None).
+        row = (await db.execute(
+            select(PersonalAccessToken).where(PersonalAccessToken.id == pat_id)
+        )).scalar_one()
+        baseline_last_used = row.last_used_at
+
+        # Банним юзера.
+        await db.execute(
+            update(User).where(User.id == user_a.id).values(status=UserStatus.BANNED)
+        )
+        await db.commit()
+
+        # introspect PAT — должен ответить active=false и НЕ обновить last_used_at.
+        resp = await client.post(INTROSPECT_URL, json={"token": raw})
+        assert resp.status_code == 200
+        assert resp.json()["active"] is False
+
+        await db.expire_all()
+        row_after = (await db.execute(
+            select(PersonalAccessToken).where(PersonalAccessToken.id == pat_id)
+        )).scalar_one()
+        assert row_after.last_used_at == baseline_last_used

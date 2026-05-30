@@ -316,3 +316,91 @@ class TestBatchCommitSemantics:
                 f"Row {row.id} must be published after flush"
             )
         assert (await _unpublished_rows()) == []
+
+
+class TestDlqLastErrorPrefix:
+    async def test_missing_action_marks_last_error_with_dlq_prefix(
+        self, make_task,
+    ):
+        """missing_action: last_error префиксуется `[DLQ:missing_action]`.
+
+        Без префикса оператор по записи в БД не отличит DLQ-row (drop)
+        от строки, доставленной успешно после прошлой ошибки — у обеих
+        published_at стоит. Префикс делает причину видимой сразу.
+        """
+        audit_outbox_publisher._reset_breaker_state()
+
+        tid = await make_task(task_kind="power.on")
+        async with AsyncSessionLocal() as session:
+            broken_row = AuditOutbox(
+                task_id=tid,
+                payload={"status": "success"},
+            )
+            session.add(broken_row)
+            await session.commit()
+            broken_id = broken_row.id
+
+        await audit_outbox_publisher.flush_outbox(limit=10)
+
+        async with AsyncSessionLocal() as session:
+            row = await session.get(AuditOutbox, broken_id)
+            assert row is not None
+            assert row.published_at is not None
+            assert (row.last_error or "").startswith("[DLQ:missing_action]")
+
+    async def test_permanent_4xx_marks_last_error_with_dlq_prefix(
+        self, make_task, monkeypatch,
+    ):
+        """permanent_4xx: HTTP-error message получает `[DLQ:permanent_4xx]` prefix."""
+        audit_outbox_publisher._reset_breaker_state()
+
+        async def fail_4xx(action, **kw):
+            raise AuditEmitError(
+                error_message="422 unprocessable",
+                status_code=422,
+            )
+
+        monkeypatch.setattr(
+            "src.services.audit_outbox_publisher.audit_client.emit",
+            fail_4xx,
+        )
+
+        tid = await make_task(task_kind="power.on")
+
+        async def ok_impl(_):
+            return {"power_state": "on"}
+
+        await run_task(
+            tid,
+            audit_action="server.power_on",
+            audit_target_type="server",
+            impl=ok_impl,
+            audit_safe_fields={"power_state"},
+        )
+
+        async with AsyncSessionLocal() as session:
+            row = (await session.execute(
+                select(AuditOutbox).where(AuditOutbox.task_id == tid)
+            )).scalars().first()
+            assert row is not None
+            assert row.published_at is not None
+            last_error = row.last_error or ""
+            assert last_error.startswith("[DLQ:permanent_4xx]")
+            # Текст ошибки сохранился внутри префикса.
+            assert "422" in last_error
+
+    async def test_dlq_prefix_idempotent_on_re_send(self):
+        """Повторный вызов `_send_to_dlq` (теоретическая гонка) не
+        дублирует префикс `[DLQ:...]` — проверяем не накапливание."""
+        row = AuditOutbox(
+            task_id="t1",
+            payload={"action": "x"},
+            attempts=1,
+            last_error="500 internal",
+        )
+        audit_outbox_publisher._send_to_dlq(row, reason="attempts_cap")
+        first = row.last_error
+        assert first is not None and first.startswith("[DLQ:attempts_cap]")
+        # Повторный вызов с другим reason не должен переписать первый.
+        audit_outbox_publisher._send_to_dlq(row, reason="permanent_4xx")
+        assert row.last_error == first

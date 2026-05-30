@@ -27,10 +27,12 @@ Circuit breaker: без него каскад audit-failures DoS'ит loging_ser
 (≤5s) до конца cooldown'а вместо обычного poll-interval'а; HTTP всё
 равно ушёл бы в `CircuitBreakerOpenError` на `_publish_one.check()`,
 но без adaptive-sleep loop бесполезно крутил бы пустые проходы.
-Breaker не влияет на inline `_safe_flush_outbox()` из `_runner.py` —
-там важнее latency happy-path'а; если loging лежит, тот вызов всё
-равно бросит AuditEmitError → outbox-row останется unpublished,
-background loop разгребёт.
+Inline `_safe_flush_outbox()` из `_runner.py` идёт через тот же
+`_publish_one`, поэтому breaker распространяется и на него: при open
+breaker'е inline-вызов получит skip без HTTP-roundtrip'а (row
+останется unpublished, background loop разгребёт). Дополнительной
+защиты loging_service это не даёт, но симметрия между inline и
+background-путями упрощает рассуждения о состоянии очереди.
 """
 
 from __future__ import annotations
@@ -195,10 +197,12 @@ def _send_to_dlq(row: AuditOutbox, *, reason: str) -> None:
     """Mark row as «дропнут» (DLQ-семантика без отдельной таблицы).
 
     Ставим `published_at=now()`, чтобы SELECT по `published_at IS NULL`
-    его больше не подхватывал. last_error остаётся последним
-    redacted-сообщением. Инкрементим module-level counter и пишем ERROR
-    с явным `event=dlq` + причиной — operator увидит и в логах, и в
-    будущей метрике `audit_outbox_dead_total`.
+    его больше не подхватывал. Чтобы оператор по строке мог отличить
+    успешную доставку (`published_at` стоит, `last_error` пустой/старый)
+    от drop'а (`published_at` стоит, потому что row выбита из очереди),
+    префиксуем `last_error` маркером `[DLQ:<reason>]` — при выводе
+    DLQ-row в админке/SELECT'е причина видна сразу, без чтения логов.
+    Инкрементим module-level counter и пишем ERROR с явным `event=dlq`.
 
     Причины: `attempts_cap` (cap по attempts), `permanent_4xx` (4xx
     permanent-fail от loging_service), `missing_action` (битый payload
@@ -206,6 +210,11 @@ def _send_to_dlq(row: AuditOutbox, *, reason: str) -> None:
     """
     global _dlq_total
     row.published_at = datetime.now(timezone.utc)
+    dlq_marker = f"[DLQ:{reason}] "
+    existing = row.last_error or ""
+    if not existing.startswith("[DLQ:"):
+        prefixed = dlq_marker + existing
+        row.last_error = prefixed[:LAST_ERROR_MAX_LEN]
     _dlq_total += 1
     logger.error(
         "audit_outbox: row sent to DLQ event=dlq reason=%s attempts=%s "
@@ -540,10 +549,11 @@ async def flush_outbox(*, limit: int = _BATCH_SIZE) -> int:
 
     Возвращает количество строк, которые удалось опубликовать.
 
-    Inline-вызовы из `_runner._safe_flush_outbox()` намеренно НЕ проходят
-    через circuit breaker — happy-path latency важнее, чем защита
-    loging_service от случайного лишнего запроса; background loop сам
-    открывает breaker, когда видит устойчивые fail'ы.
+    Inline-вызовы из `_runner._safe_flush_outbox()` идут через ту же
+    `_publish_one`, поэтому breaker применяется к ним симметрично с
+    background loop'ом: при open breaker'е inline-вызов скипнет row
+    без HTTP-call'а и вернёт 0; row останется unpublished, фон
+    добьёт после закрытия breaker'а.
     """
     published, _audit_emit_errors = await _flush_outbox_once(limit=limit)
     return published

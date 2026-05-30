@@ -120,6 +120,22 @@ _GROUP_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
 # и shell-метасимволов — защита от инъекции.
 _PATH_RE = re.compile(r"^[A-Za-z0-9/._\-]+$")
 
+# Whitelist префиксов SSH-public-key, которые принимаем для записи в
+# authorized_keys. Включает классические `ssh-rsa`/`ssh-ed25519`/`ssh-dss`,
+# elliptic-curve ECDSA трёх размеров и FIDO/U2F (`sk-*`). Trailing space — часть
+# матчинга через `startswith`: гарантирует, что после prefix'а есть разделитель
+# и мы не примем строку вида `ssh-rsasomething`.
+_VALID_SSH_KEY_PREFIXES = (
+    "ssh-rsa ",
+    "ssh-ed25519 ",
+    "ssh-dss ",
+    "ecdsa-sha2-nistp256 ",
+    "ecdsa-sha2-nistp384 ",
+    "ecdsa-sha2-nistp521 ",
+    "sk-ssh-ed25519@openssh.com ",
+    "sk-ecdsa-sha2-nistp256@openssh.com ",
+)
+
 
 class SshClient:
     """Wrapper над `asyncssh.connect` с тремя бизнес-операциями.
@@ -485,11 +501,7 @@ class SshClient:
                 cmd_sanitized=cmd_label,
                 message="public key must be a single line",
             )
-        if not key_line.startswith((
-            "ssh-rsa ", "ssh-ed25519 ", "ssh-dss ",
-            "ecdsa-sha2-nistp256 ", "ecdsa-sha2-nistp384 ", "ecdsa-sha2-nistp521 ",
-            "sk-ssh-ed25519@openssh.com ", "sk-ecdsa-sha2-nistp256@openssh.com ",
-        )):
+        if not key_line.startswith(_VALID_SSH_KEY_PREFIXES):
             raise SshError(
                 error_code="SSH_INVALID_ARG",
                 host=self.host,
@@ -657,11 +669,7 @@ class SshClient:
                 cmd_sanitized="prepare authorized_keys",
                 message="management public key must be a single line",
             )
-        if not key_line.startswith((
-            "ssh-rsa ", "ssh-ed25519 ", "ssh-dss ",
-            "ecdsa-sha2-nistp256 ", "ecdsa-sha2-nistp384 ", "ecdsa-sha2-nistp521 ",
-            "sk-ssh-ed25519@openssh.com ", "sk-ecdsa-sha2-nistp256@openssh.com ",
-        )):
+        if not key_line.startswith(_VALID_SSH_KEY_PREFIXES):
             raise SshError(
                 error_code="SSH_INVALID_ARG",
                 host=self.host,

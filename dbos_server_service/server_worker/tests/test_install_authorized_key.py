@@ -158,3 +158,39 @@ class TestInstallAuthorizedKeyValidation:
             )
         assert exc.value.error_code == "SSH_PREPARE_FAILED"
         assert exc.value.returncode == 1
+
+
+class TestValidSshKeyPrefixesShared:
+    """Whitelist префиксов вынесен в module-level и используется в обоих
+    путях записи ключа: `_install_authorized_key` (server_account) и
+    `bootstrap_management_user` (pre-check management user'а).
+    """
+
+    async def test_constant_covers_expected_algorithms(self):
+        from src.clients import ssh as ssh_module
+
+        prefixes = ssh_module._VALID_SSH_KEY_PREFIXES
+        # Каждый prefix должен оканчиваться пробелом — startswith-матч
+        # с обязательным разделителем.
+        assert all(p.endswith(" ") for p in prefixes)
+        # Базовые алгоритмы, без которых production не взлетит.
+        assert "ssh-rsa " in prefixes
+        assert "ssh-ed25519 " in prefixes
+        # FIDO/U2F — поддерживаем оба варианта.
+        assert "sk-ssh-ed25519@openssh.com " in prefixes
+        assert "sk-ecdsa-sha2-nistp256@openssh.com " in prefixes
+
+    async def test_bootstrap_rejects_unknown_prefix_via_same_whitelist(self):
+        """Pre-check в `bootstrap_management_user` берёт ту же константу —
+        неизвестный префикс отбивается до useradd/sudoers (без
+        побочных эффектов на /etc).
+        """
+        ssh = _make_client_with_conn([])
+        with pytest.raises(SshError) as exc:
+            await ssh.bootstrap_management_user(
+                management_user="dbos",
+                public_key="garbage-key-without-known-prefix data",
+            )
+        assert exc.value.error_code == "SSH_INVALID_ARG"
+        assert "unsupported algorithm prefix" in exc.value.message
+        ssh._conn.run.assert_not_awaited()

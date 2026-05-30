@@ -2,7 +2,6 @@
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
 from sqlalchemy import update
 
 from src.core.security import create_access_token, hash_opaque_token
@@ -152,6 +151,50 @@ async def test_service_access_dept_b_no_access_to_svc_x(client, user_b_token, se
     """user_b is in dept_b which has no access to service_x."""
     resp = await client.post(ACCESS_URL, json={"subject_token": user_b_token, "service_name": service_x.service_name})
     assert resp.json()["allowed"] is False
+
+
+async def test_introspect_bot_token_forwards_caller_ip_to_tracker(
+    client, admin_token, dept_a, monkeypatch,
+):
+    """HTTP `/introspect` с `caller_ip` пробрасывает его в `track_bot_ip`.
+
+    Регрессия: до фикса IntrospectRequest.caller_ip терялся между endpoint'ом
+    и authorization_service.introspect → multi-IP детектор всегда видел None.
+    """
+    captured: list[dict] = []
+    import src.services.bot_ip_tracker as tracker_mod
+    original = tracker_mod.track_bot_ip
+
+    async def _spy(db, bot, caller_ip, request_id=None):
+        captured.append({"bot_id": bot.id, "caller_ip": caller_ip})
+        return await original(db, bot, caller_ip, request_id=request_id)
+
+    # `authorization_service.introspect` делает lazy `from ... import track_bot_ip`
+    # внутри bot-ветки, поэтому подмена должна жить в самом модуле tracker'а.
+    monkeypatch.setattr(tracker_mod, "track_bot_ip", _spy)
+
+    bot_id = (await client.post(
+        BOTS_URL,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"name": "caller_ip_bot", "department_id": dept_a.id, "allowed_services": []},
+    )).json()["bot_id"]
+    raw = (await client.post(
+        f"{BOTS_URL}/{bot_id}/tokens",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"name": "cip_tok"},
+    )).json()["token"]
+
+    resp = await client.post(
+        INTROSPECT_URL,
+        json={"token": raw, "caller_ip": "203.0.113.7"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["active"] is True
+
+    # tracker должен быть позван ровно один раз с тем IP, что прислали.
+    bot_calls = [c for c in captured if c["bot_id"] == bot_id]
+    assert len(bot_calls) == 1, bot_calls
+    assert bot_calls[0]["caller_ip"] == "203.0.113.7"
 
 
 async def test_service_access_includes_roles(client, user_a_token, service_x):

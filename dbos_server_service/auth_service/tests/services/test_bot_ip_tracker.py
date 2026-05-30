@@ -161,6 +161,36 @@ class TestTrackBotIp:
         assert original_entry["ts"] == snapshot_ts
         assert bot.last_known_ips[0] is not original_entry
 
+    async def test_fifo_trim_at_default_window_size(self, db, dept_a):
+        """С дефолтным окном 5 шестой IP вытесняет первый, размер списка не растёт."""
+        bot = await _make_bot(db, dept_a.id, "fifo_default_bot")
+
+        ips = [f"10.0.0.{i}" for i in range(1, 7)]  # .1..6
+        for ip in ips:
+            await bot_ip_tracker.track_bot_ip(db, bot, ip)
+
+        assert len(bot.last_known_ips) == 5
+        # .1 (самый старый) вытеснен; .2..6 остались в FIFO-порядке.
+        assert [e["ip"] for e in bot.last_known_ips] == ips[1:]
+
+    async def test_invalid_ts_record_does_not_break_tracker(self, db, dept_a, monkeypatch):
+        """Запись с невалидным `ts` (не ISO) — игнорируется при подсчёте уникальных IP,
+        не падает, но FIFO-trim её всё ещё двигает как обычный элемент окна."""
+        bot = await _make_bot(db, dept_a.id, "bad_ts_bot")
+        # Подсовываем мусорную запись напрямую в JSONB — такая может остаться
+        # от старого формата или ручной правки в БД.
+        bot.last_known_ips = [{"ip": "10.0.0.99", "ts": "not-an-iso-string"}]
+        await db.flush()
+
+        captured = _capture_emits(monkeypatch)
+        alerted = await bot_ip_tracker.track_bot_ip(db, bot, "10.0.0.1")
+
+        # Невалидный ts → запись не учитывается как уникальный IP, алерт не сработал.
+        assert alerted is False
+        # Сам tracker не упал, новая запись добавлена в окно.
+        assert any(e["ip"] == "10.0.0.1" for e in bot.last_known_ips)
+        assert [e for e in captured if e["action"] == "bot.suspicious_multi_ip"] == []
+
     async def test_window_size_respects_settings(self, db, dept_a, monkeypatch):
         """`bot_last_known_ips_window` из Settings рулит размером окна."""
         from src.core import config as config_mod

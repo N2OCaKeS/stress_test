@@ -157,6 +157,16 @@ def register_events(
     payload: RegisterEventsRequest = ...,
     db: Session = Depends(get_db),
 ) -> RegisterEventsResponse:
+    # Нормализуем path-параметр на входе: тот же NFKC+invisibles+confusables+
+    # lower, что и `EventCreate._normalize_service` на ingest-пути. Без этого
+    # catalog (`service_events.service`) пишется raw, а `audit_events.service`
+    # уже нормализован — две таблицы расходятся: `GET /services/{svc}/events`
+    # ищет по raw-имени, тогда как `GET /events?service=...` по нормализованному.
+    # Все downstream проверки и repo-вызовы используют именно `service` (после
+    # переприсваивания), чтобы reserved-guard, identity-match и upsert работали
+    # с одним и тем же значением.
+    service = normalize_service_name(service)
+
     # Per-service идентификация пока не реализована: shared
     # SERVICE_API_KEY не привязывает caller'а к конкретному `service` в пути.
     # До этого момента блокируем внешнее impersonation сервисов, чей
@@ -167,7 +177,7 @@ def register_events(
     # `normalize_service_name` (NFKC + invisibles strip + homoglyph fold +
     # lower), так что Unicode-bypass'ы (кириллица `о`, ZWSP-padding, …)
     # тоже отбиваются.
-    if normalize_service_name(service) in RESERVED_SERVICE_NAMES:
+    if service in RESERVED_SERVICE_NAMES:
         raise AppException(
             http_status=403,
             error_code="RESERVED_SERVICE_NAME",
@@ -187,7 +197,7 @@ def register_events(
     # `require_service_token`; strict mode кидает 401
     # ещё в зависимости).
     advertised = getattr(request.state, "service_identity", None)
-    if advertised is not None and normalize_service_name(advertised) != normalize_service_name(service):
+    if advertised is not None and normalize_service_name(advertised) != service:
         raise AppException(
             http_status=403,
             error_code="SERVICE_IDENTITY_PATH_MISMATCH",
@@ -226,6 +236,10 @@ def list_service_events(
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> ServiceEventsResponse:
+    # Симметрия с register_events: catalog хранится с нормализованным именем,
+    # query по raw path-параметру не нашёл бы row, зарегистрированную через
+    # `AUTH_SERVICE` / `lоging_service` / `auth_service​`.
+    service = normalize_service_name(service)
     rows, total = se_repo.list_for_service(db, service, limit=limit, offset=offset)
     return ServiceEventsResponse(
         service=service,

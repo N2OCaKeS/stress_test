@@ -198,3 +198,77 @@ class TestPatchInvalidatesCache:
         # А user.login — нет
         assert client.post(EVENTS_URL, headers=auth_headers,
                            json=make_event(action="user.login")).status_code == 201
+
+
+# ── IntegrityError без `name` в payload ───────────────────────────────────
+
+
+class TestPatchIntegrityErrorWithoutName:
+    """PATCH без поля `name` не должен врать клиенту `RULE_NAME_CONFLICT`.
+
+    Раньше `except IntegrityError` слепо эмитил 409 с message
+    "Rule with name 'None' already exists" даже когда IntegrityError пришёл
+    от NOT NULL / FK / CHECK constraint'а на другом поле — SOC видит фейковый
+    конфликт имён, caller тратит время на поиск дубликата, которого нет.
+
+    После фикса: payload.name is None → 500 INTERNAL_ERROR с честным
+    error_code (caller знает, что нужно искать другую причину); payload.name
+    задан → нормальный 409 NAME_CONFLICT.
+    """
+
+    def test_integrity_error_without_name_returns_500_internal(
+        self, admin_client, monkeypatch
+    ):
+        from sqlalchemy.exc import IntegrityError
+
+        from src.api.v1.endpoints import rules as rules_endpoint
+
+        created = admin_client.post(
+            RULES_URL, json=make_rule(name="orig"),
+        ).json()
+
+        # Эмулируем не-name constraint violation (NOT NULL / FK / CHECK).
+        # `orig`-параметр у IntegrityError — `None`, чтобы конструктор не
+        # дёргался за driver-specific атрибутами.
+        def _boom(db, rule, payload, *, commit=True):
+            raise IntegrityError("simulated constraint", params=None, orig=None)
+
+        monkeypatch.setattr(rules_endpoint.rule_repo, "update", _boom)
+
+        # PATCH без `name` — меняем только priority.
+        r = admin_client.patch(
+            f"{RULES_URL}/{created['id']}",
+            json={"priority": 50},
+        )
+        assert r.status_code == 500, r.text
+        body = r.json()
+        assert body["error_code"] == "INTERNAL_ERROR"
+        # Сообщение не должно содержать вранья про конфликт имён "None".
+        assert "None" not in body["message"]
+        assert "name" not in body["message"].lower()
+
+    def test_integrity_error_with_name_still_returns_409_conflict(
+        self, admin_client, monkeypatch
+    ):
+        """Регрессия: легитимный rename-конфликт продолжает быть 409."""
+        from sqlalchemy.exc import IntegrityError
+
+        from src.api.v1.endpoints import rules as rules_endpoint
+
+        created = admin_client.post(
+            RULES_URL, json=make_rule(name="orig"),
+        ).json()
+
+        def _boom(db, rule, payload, *, commit=True):
+            raise IntegrityError("simulated unique-name", params=None, orig=None)
+
+        monkeypatch.setattr(rules_endpoint.rule_repo, "update", _boom)
+
+        r = admin_client.patch(
+            f"{RULES_URL}/{created['id']}",
+            json={"name": "renamed"},
+        )
+        assert r.status_code == 409
+        body = r.json()
+        assert body["error_code"] == "RULE_NAME_CONFLICT"
+        assert "renamed" in body["message"]

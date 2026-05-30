@@ -492,7 +492,9 @@ class TestRetentionAuditSnapshot:
             },
         )
 
-        # Перезаписываем — теперь old_snapshot должен описать все 4 прежних.
+        # Перезаписываем — теперь old_snapshot должен описать все 4 прежних
+        # (в grouped-форме: сервис-измерение схлопнуто в `services`/`count`,
+        # severity остаётся per-row).
         admin_client.put(URL, json={"retain_days": 60})
 
         events = (
@@ -504,12 +506,24 @@ class TestRetentionAuditSnapshot:
         assert events, "ожидался хотя бы один retention_write event"
         latest = events[0]
         old = latest.details.get("old", [])
-        # 4-элементный Cartesian, не одна представительская строка.
         assert isinstance(old, list)
-        assert len(old) == 4, (
-            f"old_snapshot должен описать весь активный набор, "
-            f"получили {len(old)} элементов"
+        # 2 severities × 2 services Cartesian → группировка по severity
+        # схлопывает 4 строки в 2 группы (INFO/WARNING), каждая с count=2
+        # и services=["auth_service","server_service"].
+        assert len(old) == 2, (
+            f"ожидаем 2 группы (по severity), получили {len(old)}: {old!r}"
         )
+        total_count = sum(item.get("count", 0) for item in old)
+        assert total_count == 4, (
+            f"total count в old должен равняться 4 (исходный Cartesian), "
+            f"получили {total_count}"
+        )
+        severities = {item["severity"] for item in old}
+        assert severities == {"INFO", "WARNING"}
+        for item in old:
+            assert item["services"] == ["auth_service", "server_service"]
+            assert item["count"] == 2
+            assert item["retain_days"] == 30
 
     def test_delete_audit_old_snapshot_lists_all_active_policies(
         self, admin_client, db
@@ -537,3 +551,83 @@ class TestRetentionAuditSnapshot:
         assert isinstance(old, list)
         assert len(old) == 2
         assert latest.details.get("new") is None
+
+
+# ── self-audit size-cap для filtered Cartesian ──────────────────────────────
+
+
+class TestRetentionSelfAuditSizeCap:
+    """Filtered-PUT с полным Cartesian (6 severity × 64 сервиса = 384 строк)
+    раздувал self-audit `details` за 64 KB лимит `EventCreate._details_size`
+    и валил легитимную операцию 422-кой. После фикса `_snapshot_list`
+    группирует по `(retain_days, severity)`, схлопывая сервис-измерение в
+    `services`/`count` — детали остаются в разумных рамках, audit проходит.
+    """
+
+    def test_large_filtered_put_does_not_overflow_details(
+        self, admin_client, db
+    ):
+        import json
+
+        from src.models.audit_event import AuditEvent
+
+        all_severities = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        # 64 уникальных snake_case-сервиса (без digits — service_filter validator
+        # требует [a-z_]). Кодируем индекс в двух буквах a..h × a..h = 64 шт.
+        import string
+
+        letters = string.ascii_lowercase[:8]  # a..h
+        services = [f"svc_{a}{b}" for a in letters for b in letters]
+
+        # Первый PUT — устанавливает большой Cartesian.
+        r1 = admin_client.put(
+            URL,
+            json={
+                "retain_days": 30,
+                "severity_filter": all_severities,
+                "service_filter": services,
+            },
+        )
+        assert r1.status_code == 200, r1.text
+
+        # Второй PUT — теперь old_snapshot должен описать все 384 row'и.
+        # Без фикса self-audit упал бы 422 «details must not exceed 64 KB».
+        r2 = admin_client.put(URL, json={"retain_days": 60})
+        assert r2.status_code == 200, (
+            f"PUT упал {r2.status_code} вместо 200; вероятно self-audit "
+            f"раздул details за 64 KB. Body: {r2.text}"
+        )
+
+        events = (
+            db.query(AuditEvent)
+            .filter_by(action="logging.retention_write")
+            .order_by(AuditEvent.received_at.desc())
+            .all()
+        )
+        # Должно быть как минимум два audit-row (первый PUT + второй PUT).
+        assert len(events) >= 2
+
+        latest = events[0]
+        old = latest.details.get("old", [])
+        # Group-by (retain_days × severity): 6 severity → 6 групп.
+        assert isinstance(old, list)
+        assert len(old) == 6, f"ожидаем 6 групп по severity, получили {len(old)}"
+
+        total_count = sum(item.get("count", 0) for item in old)
+        assert total_count == 6 * 64, (
+            f"сумма count должна быть 384 (полный Cartesian), "
+            f"получили {total_count}"
+        )
+
+        # Каждая группа содержит все 64 сервиса.
+        for item in old:
+            assert item["retain_days"] == 30
+            assert item["count"] == 64
+            assert item["services"] == sorted(services)
+
+        # Прямая проверка ограничения size-cap: сериализованный details
+        # должен умещаться в 64 KB.
+        details_json = json.dumps(latest.details, default=str)
+        assert len(details_json) <= 65_536, (
+            f"details сериализуется в {len(details_json)} байт, лимит 65536"
+        )

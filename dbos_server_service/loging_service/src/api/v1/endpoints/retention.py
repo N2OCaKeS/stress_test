@@ -81,14 +81,55 @@ def _snapshot(policy) -> dict | None:
 
 
 def _snapshot_list(policies) -> list[dict]:
-    """Полный снимок набора политик для audit-details.
+    """Компактный снимок набора политик для audit-details.
 
-    Filtered-PUT/DELETE затрагивает Cartesian product (N×M строк). `get_active`
-    возвращает только одну (limit 1) — audit-events с `details.old` показывали
-    бы лишь представительскую строку. SOC видит частичную картину изменения
-    политики хранения.
+    Filtered-PUT/DELETE затрагивает Cartesian product (severity × service)
+    политик: одна PUT с 6 severity × 64 сервиса — это 384 row'и. Полная
+    сериализация раздувала бы `details` за 64 KB лимит
+    `EventCreate._details_size` и легитимный admin-PUT падал бы с 422 в
+    self-audit.
+
+    Группируем по `(retain_days, severity, description, is_active)`,
+    схлопывая только сервис-измерение: для каждой группы выводим один
+    summary с агрегированным списком `services` (отсортированный, NULL → "*")
+    и `count`. Severity оставляем разным row'ам — для SOC важно видеть, что,
+    скажем, ERROR-события стали хранить иначе, чем INFO.
+
+    SOC видит изменение целиком: какие пары (severity, retain_days)
+    действовали для каких сервисов до и после PUT — без 384 одинаковых
+    row'ей в JSON-простыне.
     """
-    return [_snapshot(p) for p in policies if p is not None]
+    if not policies:
+        return []
+
+    groups: dict[tuple, dict] = {}
+    for p in policies:
+        if p is None:
+            continue
+        key = (p.retain_days, p.severity, p.description, p.is_active)
+        bucket = groups.setdefault(
+            key,
+            {
+                "retain_days": p.retain_days,
+                "severity": p.severity,
+                "description": p.description,
+                "is_active": p.is_active,
+                "services": set(),
+                "count": 0,
+                "sample_id": p.id,
+            },
+        )
+        bucket["services"].add(p.service if p.service is not None else "*")
+        bucket["count"] += 1
+
+    summaries: list[dict] = []
+    for bucket in groups.values():
+        bucket["services"] = sorted(bucket["services"])
+        summaries.append(bucket)
+    # Детерминированный порядок: retain_days, потом severity (None → пустая
+    # строка, чтобы сортировка не падала на смешанных типах).
+    summaries.sort(key=lambda b: (b["retain_days"], b["severity"] or ""))
+    return summaries
 
 
 @router.get(

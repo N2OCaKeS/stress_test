@@ -815,3 +815,49 @@ class TestListServicesDeptScope:
         # Scoped to a department with no events — empty list.
         dep_c_rows = events_repo.list_services(db, department_id="dep_c")
         assert dep_c_rows == []
+
+
+# ── catalog/ingest нормализация path-параметра ──────────────────────────────
+
+
+class TestServiceEventsCatalogNormalization:
+    """Реестр в `service_events` и события в `audit_events` должны храниться
+    под одним и тем же каноническим именем сервиса.
+
+    До фикса `register_events` писал path-параметр raw, а ingest `POST /events`
+    нормализовал `EventCreate.service` через NFKC+confusables+lower. Caller,
+    зарегистрировавший события через `AUTH_SERVICE`, потом не находил их в
+    `GET /services/auth_service/events` — реестр и журнал жили в разных
+    «вселенных».
+    """
+
+    def test_uppercase_path_normalised_in_response_and_db(
+        self, client, admin_client, auth_headers
+    ):
+        # Регистрируем через uppercase-путь, identity тоже uppercase
+        # (нормализация в auth_dependency сравнит обе стороны).
+        headers = {**auth_headers, "X-Service-Identity": "AUTH_SERVICE"}
+        r = client.post(
+            f"{SERVICES_URL}/AUTH_SERVICE/events",
+            json={"events": [make_event_def(action="user.login")]},
+            headers=headers,
+        )
+        assert r.status_code == 200
+        # Ответ возвращает уже нормализованное имя.
+        assert r.json()["service"] == "auth_service"
+
+        # GET под нормализованным path возвращает зарегистрированный action,
+        # доказывая, что catalog хранит запись под каноническим именем.
+        r_get = admin_client.get(f"{SERVICES_URL}/auth_service/events")
+        assert r_get.status_code == 200
+        body = r_get.json()
+        assert body["total"] == 1
+        assert body["service"] == "auth_service"
+        assert {e["action"] for e in body["items"]} == {"user.login"}
+
+        # И симметрично: GET под uppercase-path находит ту же запись
+        # (path тоже нормализуется на чтении).
+        r_upper = admin_client.get(f"{SERVICES_URL}/AUTH_SERVICE/events")
+        assert r_upper.status_code == 200
+        assert r_upper.json()["total"] == 1
+        assert r_upper.json()["service"] == "auth_service"

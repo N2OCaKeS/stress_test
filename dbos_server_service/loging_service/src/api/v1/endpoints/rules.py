@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.core.exceptions import (
+    AppException,
     ConflictError,
     DomainValidationError,
     NotFoundError,
@@ -209,6 +210,21 @@ def update_rule(
         db.refresh(updated)
     except IntegrityError:
         db.rollback()
+        # PATCH без `name` тоже может ловить IntegrityError (NOT NULL / FK /
+        # CHECK на другом поле). Слепой emit RULE_NAME_CONFLICT отдавал бы
+        # клиенту "Rule with name 'None' already exists" — врёт SOC'у и
+        # путает caller'а, которому нужно искать настоящую причину.
+        # Если имя в payload есть — это легитимный rename, 409 NAME_CONFLICT.
+        # Если name не менялся — IntegrityError пришёл от другого constraint,
+        # отдаём 500 с честным error_code, чтобы caller не тратил время на
+        # поиск несуществующего конфликта имён.
+        if payload.name is None:
+            raise AppException(
+                http_status=500,
+                error_code="INTERNAL_ERROR",
+                message="Database constraint violation during rule update",
+                details={"rule_id": rule_id},
+            )
         raise ConflictError(
             error_code="RULE_NAME_CONFLICT",
             message=f"Rule with name '{payload.name}' already exists",

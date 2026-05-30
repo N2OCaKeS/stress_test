@@ -110,27 +110,25 @@ class TestHalfOpenRecovery:
         # И ничего не бросает.
         await cb.check(host)
 
-    async def test_half_open_failure_reopens(
+    async def test_half_open_failure_reopens_immediately(
         self, fake_redis, frozen_clock,
     ) -> None:
-        """Fail в half_open должен заново открыть breaker.
+        """Один fail в half_open должен сразу вернуть breaker в open.
 
-        Это менее очевидный case: после cooldown'а пробный запрос в реальном
-        BMC может снова упасть (контроллер не починили). С `record_failure`
-        мы накопим threshold заново, но т.к. half_open уже близок к open —
-        одного fail'а часто хватает. Реализация: record_failure инкрементит
-        счётчик failures с нуля (мы его сбросили при open-transition);
-        тут проверяем что для повторного open нужно опять threshold fail'ов,
-        и тогда breaker уйдёт в open снова.
+        Стандартный CB-pattern: в half_open пропускается ровно один
+        пробный запрос. Если он провалился — канал ещё не починен,
+        нужно сразу обратно в open на полный cooldown. Без этой
+        семантики breaker за cooldown пропустил бы до `threshold`
+        проваливающихся запросов (раз накопить счётчик failures с
+        нуля), что в проде даёт лишнюю нагрузку на упавший BMC.
         """
         host = "10.0.0.7"
         for _ in range(cb.DEFAULT_FAILURE_THRESHOLD):
             await cb.record_failure(host)
         frozen_clock["now"] += cb.DEFAULT_COOLDOWN_SECONDS + 1
         await cb.check(host)  # half_open
-        # Снова N failure'ов — breaker открывается.
-        for _ in range(cb.DEFAULT_FAILURE_THRESHOLD):
-            await cb.record_failure(host)
+        # Один fail в half_open — этого достаточно.
+        await cb.record_failure(host)
         with pytest.raises(cb.CircuitBreakerOpenError):
             await cb.check(host)
 

@@ -68,6 +68,14 @@ class FakeRedis:
             now = int(argv[0])
             threshold = int(argv[1])
             cooldown = int(argv[3])
+            current_state = self._store.get(keys[1])
+            if current_state == "half_open":
+                # Пробный запрос провалился — сразу обратно в open,
+                # счётчик failures обнуляем (нет смысла копить заново).
+                self._store[keys[1]] = "open"
+                self._store[keys[2]] = str(now + cooldown)
+                self._store.pop(keys[0], None)
+                return ["open", 1]
             try:
                 cur = int(self._store.get(keys[0], "0"))
             except ValueError:

@@ -57,8 +57,8 @@ logger = logging.getLogger(__name__)
 class PublishResult(NamedTuple):
     """Исход одной попытки `_publish_one`.
 
-    Три независимых сигнала, которые caller использует по-разному, и три
-    позиционных bool'а легко путаются местами — отсюда NamedTuple.
+    Четыре независимых сигнала, которые caller использует по-разному —
+    позиционные bool'ы легко путаются местами, отсюда NamedTuple.
 
     * `closed` — row завершила свой цикл в этом проходе (опубликована, в
       DLQ или skip'нута breaker'ом). Caller не должен повторно её
@@ -67,11 +67,18 @@ class PublishResult(NamedTuple):
       (5xx/timeout/connect). Сигнал loop-level breaker'у.
     * `was_published` — row пометилась `published_at=NOW()` после 2xx. Не
       путать с `closed`: DLQ-row тоже `closed`, но `was_published=False`.
+    * `breaker_skipped` — `check()` отбил row до HTTP-вызова (canал open).
+      Отдельный флаг, потому что DLQ и breaker-skip оба возвращают
+      `(closed=True, was_published=False, audit_emit_error=False)`, но
+      caller'у с ними нужно разное: DLQ row уже выпала из SELECT'а
+      (published_at!=None), а breaker-skip означает «канал глух, дальше
+      перебирать row'ы бессмысленно, bail-out из flush-loop'а».
     """
 
     closed: bool
     audit_emit_error: bool
     was_published: bool
+    breaker_skipped: bool = False
 
 
 # Сколько строк за один проход. Размер выбран маленьким сознательно:
@@ -285,8 +292,13 @@ async def _publish_one(
         # was_published=False — событие не доставлено; closed=True — caller
         # не должен повторять row в этом проходе; audit_emit_error=False —
         # это не сигнал loop-level breaker'у, тот ведёт свой счёт по
-        # реальным HTTP-failure'ам.
-        return PublishResult(closed=True, audit_emit_error=False, was_published=False)
+        # реальным HTTP-failure'ам. breaker_skipped=True — caller bail-out'ит
+        # из flush-loop'а, остальные row'ы под open breaker'ом всё равно
+        # отскочат без HTTP'а.
+        return PublishResult(
+            closed=True, audit_emit_error=False, was_published=False,
+            breaker_skipped=True,
+        )
 
     try:
         # `audit_client.emit` сам решает, что считать неудачей:
@@ -501,6 +513,15 @@ async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
             # не дожидаясь обработки остальных. Другая replica может
             # подхватить следующую row'ю в тот же момент.
             await session.commit()
+            # Breaker-skip — bail-out из batch'а. Дальнейшие row'ы под open
+            # breaker'ом всё равно отскочат от check() без HTTP'а, проход
+            # просто молотил бы SELECT'ы по БД. Background poll-loop вернётся
+            # через `_CB_SLEEP_CHUNK_SECONDS` или меньше (adaptive sleep по
+            # `get_state()`), к тому моменту канал либо в half_open, либо
+            # cooldown ещё не истёк — и тогда снова bail-out, что ровно
+            # то поведение, которое нам нужно.
+            if publish_res.breaker_skipped:
+                break
     return published, audit_emit_errors
 
 

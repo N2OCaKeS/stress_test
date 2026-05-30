@@ -197,57 +197,62 @@ async def account_provision(task_id: str) -> None:
         inline_public_key = payload.get("ssh_public_key")
         force_replace = bool(payload.get("force_replace"))
 
-        creds = await _account_creds(payload, server_id, account_id, target_dept)
-        # На управляемом сервере пароль для входа не нужен (ключ), но если у
-        # аккаунта есть хранимый пароль — ставим его на боксе. Тянем best-effort:
-        # discovered-аккаунт без пароля заводим без смены пароля, не падаем.
-        new_password = inline_password or creds.get("password")
-        if payload.get("is_managed") and new_password is None:
-            new_password = await _fetch_password_to_set(
-                server_id, account_id, target_dept,
-            )
-        await ssh_client.provision_user(
-            creds, server_id,
-            login=creds["login"],
-            new_password=new_password,
-            groups=payload.get("unix_groups") or [],
-            has_sudo=bool(payload.get("has_sudo")),
-            shell=payload.get("shell"),
-            home_dir=payload.get("home_dir"),
-            public_key=inline_public_key,
-            force_replace=force_replace,
-        )
-        await server_service_client.submit_provision_status(
-            server_id, account_id, "provision", True, target_dept,
-        )
         # Defense-in-depth: inline-креды из discovered-сценария (F23-B) —
         # `password_plaintext` и `ssh_private_key_plaintext` — приходят
         # прямо в payload и без явной зачистки остаются в `tasks.payload`
-        # до retention cleanup'а (до 30 дней). После успешного callback'а
-        # они уже не нужны: задача SUCCEEDED, retry не понадобится. Стираем
-        # их из строки, чтобы оператор с SELECT на worker.tasks не получил
-        # plaintext password и private SSH key. `ssh_public_key` — не секрет,
-        # его не трогаем (полезно для форенсики). Best-effort: если scrub
-        # упал, главную транзакцию не валим — task уже завершилась успешно.
+        # до retention cleanup'а (до 30 дней). Стираем их в `finally` —
+        # тогда scrub срабатывает и на happy-path'е, и на любом исключении
+        # из ssh_client / submit_provision_status. Иначе при первой неудаче
+        # plaintext остаётся в payload и доступен ещё три retry × минуты,
+        # хотя сами эти retry уже используют только то, что в payload'е
+        # лежало в момент enqueue — secret-rotate'у этот scrub не мешает.
+        # `ssh_public_key` — не секрет, его оставляем для форенсики.
+        # Best-effort: если scrub упал, основной поток не валим.
         try:
-            async with AsyncSessionLocal() as scrub_session:
-                await task_repo.scrub_payload_keys(
-                    scrub_session, task_id,
-                    ["password_plaintext", "ssh_private_key_plaintext"],
+            creds = await _account_creds(payload, server_id, account_id, target_dept)
+            # На управляемом сервере пароль для входа не нужен (ключ), но если у
+            # аккаунта есть хранимый пароль — ставим его на боксе. Тянем
+            # best-effort: discovered-аккаунт без пароля заводим без смены
+            # пароля, не падаем.
+            new_password = inline_password or creds.get("password")
+            if payload.get("is_managed") and new_password is None:
+                new_password = await _fetch_password_to_set(
+                    server_id, account_id, target_dept,
                 )
-                await scrub_session.commit()
-        except Exception:  # noqa: BLE001
-            logger.warning(
-                "failed to scrub inline provision creds from payload",
-                exc_info=True,
-                extra={"task_id": task_id},
+            await ssh_client.provision_user(
+                creds, server_id,
+                login=creds["login"],
+                new_password=new_password,
+                groups=payload.get("unix_groups") or [],
+                has_sudo=bool(payload.get("has_sudo")),
+                shell=payload.get("shell"),
+                home_dir=payload.get("home_dir"),
+                public_key=inline_public_key,
+                force_replace=force_replace,
             )
-        return {
-            "server_id": server_id,
-            "account_id": account_id,
-            "operation": "provision",
-            "present_on_server": True,
-        }
+            await server_service_client.submit_provision_status(
+                server_id, account_id, "provision", True, target_dept,
+            )
+            return {
+                "server_id": server_id,
+                "account_id": account_id,
+                "operation": "provision",
+                "present_on_server": True,
+            }
+        finally:
+            try:
+                async with AsyncSessionLocal() as scrub_session:
+                    await task_repo.scrub_payload_keys(
+                        scrub_session, task_id,
+                        ["password_plaintext", "ssh_private_key_plaintext"],
+                    )
+                    await scrub_session.commit()
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "failed to scrub inline provision creds from payload",
+                    exc_info=True,
+                    extra={"task_id": task_id},
+                )
 
     await run_task(
         task_id,

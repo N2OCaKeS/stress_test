@@ -76,11 +76,24 @@ return 1
 #   ARGV[4] = cooldown_seconds
 # Возвращает {state_after, current_count}. EXPIRE на счётчик ставим
 # только при первом INCR — rolling window.
+#
+# Fail в half_open сразу возвращает breaker в open — пробный запрос
+# подтвердил, что канал ещё не починен, нет смысла собирать threshold
+# с нуля и пропускать в этот раз до threshold-1 пробных запросов через
+# тот же cooldown. Это стандартный CB-pattern (half_open — ровно один
+# пробный запрос на cycle).
 RECORD_FAILURE_SCRIPT = """
 local now = tonumber(ARGV[1])
 local threshold = tonumber(ARGV[2])
 local window = tonumber(ARGV[3])
 local cooldown = tonumber(ARGV[4])
+local current_state = redis.call('GET', KEYS[2])
+if current_state == 'half_open' then
+  redis.call('SET', KEYS[2], 'open', 'EX', cooldown)
+  redis.call('SET', KEYS[3], tostring(now + cooldown), 'EX', cooldown)
+  redis.call('DEL', KEYS[1])
+  return {'open', 1}
+end
 local count = redis.call('INCR', KEYS[1])
 if count == 1 then
   redis.call('EXPIRE', KEYS[1], window)

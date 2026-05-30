@@ -56,10 +56,13 @@ class TestPublishResultShape:
         assert res.closed is True
         assert res.audit_emit_error is False
         assert res.was_published is True
+        assert res.breaker_skipped is False
         # Positional access всё ещё работает — NamedTuple это даёт бесплатно,
         # держим как safety-net на случай legacy-кода в integration-тестах.
-        closed, audit_emit_error, was_published = res
-        assert (closed, audit_emit_error, was_published) == (True, False, True)
+        closed, audit_emit_error, was_published, breaker_skipped = res
+        assert (closed, audit_emit_error, was_published, breaker_skipped) == (
+            True, False, True, False,
+        )
 
 
 class TestPublishResultBranches:

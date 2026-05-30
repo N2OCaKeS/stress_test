@@ -364,3 +364,98 @@ class TestMatrixByRole:
             f"{BASE}?role=admin&describe=true", headers=_hdr(guest_token_a)
         )
         assert resp.status_code == 403
+
+
+# ── Department scope on read (list_all / list_for_entity / list_for_role) ────
+
+class TestListScopeByDepartment:
+    """GET /permissions фильтруется по dept caller'а.
+
+    department_admin / service-role `admin` своего отдела видят свои строки
+    плюс system-wide; чужие dept-строки невидимы. Platform-уровневые роли
+    блокируются `platform_admin_guard` middleware ещё до endpoint'а, поэтому
+    «account_admin видит всё» проверяется на уровне unit-теста сервиса.
+    """
+
+    async def _seed_cross_dept_rows(self, client, admin_token, admin_token_b):
+        """Создаёт по одной per-dept строке в dep_a и dep_b через PUT /permissions.
+
+        Каждый department_admin пишет в свой scope (другое запрещено).
+        Возвращает (row_a, row_b).
+        """
+        a = await client.put(f"{BASE}/server/role_a_only/view", headers=_hdr(admin_token))
+        assert a.status_code == 200, a.text
+        b = await client.put(f"{BASE}/server/role_b_only/view", headers=_hdr(admin_token_b))
+        assert b.status_code == 200, b.text
+        return a.json(), b.json()
+
+    async def test_dept_admin_sees_own_dept_and_system_wide_only(
+        self, client, admin_token, admin_token_b, dept_a,
+    ):
+        row_a, row_b = await self._seed_cross_dept_rows(client, admin_token, admin_token_b)
+        resp = await client.get(BASE, headers=_hdr(admin_token))
+        assert resp.status_code == 200
+        rows = resp.json()["items"]
+        dept_ids = {r["department_id"] for r in rows}
+        # видимы только свой dept_a и system-wide (None)
+        assert dept_ids <= {None, dept_a}
+        # своя строка есть
+        assert any(r["id"] == row_a["id"] for r in rows)
+        # чужая невидима
+        assert not any(r["id"] == row_b["id"] for r in rows)
+
+    async def test_dept_admin_cannot_see_other_dept_via_role_filter(
+        self, client, admin_token, admin_token_b,
+    ):
+        _, row_b = await self._seed_cross_dept_rows(client, admin_token, admin_token_b)
+        # фильтр по чужой role_b_only из dep_a → пусто (есть только в dep_b)
+        resp = await client.get(f"{BASE}?role=role_b_only", headers=_hdr(admin_token))
+        assert resp.status_code == 200
+        assert resp.json()["items"] == []
+
+    async def test_dept_admin_cannot_see_other_dept_via_entity_filter(
+        self, client, admin_token, admin_token_b, dept_a,
+    ):
+        _, row_b = await self._seed_cross_dept_rows(client, admin_token, admin_token_b)
+        resp = await client.get(f"{BASE}/server", headers=_hdr(admin_token))
+        assert resp.status_code == 200
+        rows = resp.json()["items"]
+        ids = {r["id"] for r in rows}
+        assert row_b["id"] not in ids
+        # все department_id у возвращённых строк — либо None, либо свой dep
+        for r in rows:
+            assert r["department_id"] in (None, dept_a)
+
+
+class TestListScopeServiceLayer:
+    """Юнит-проверка scope-логики service-слоя, минующая guard middleware.
+
+    Через HTTP `account_admin` блокируется guard'ом — поэтому ветка
+    «platform-уровневый видит всё» проверяется прямым вызовом
+    `permission_service.list_all` с фейковым identity.
+    """
+
+    async def test_account_admin_identity_sees_all_depts(
+        self, db, admin_token, admin_token_b, client,
+    ):
+        from src.schemas.identity import IdentityContext
+        from src.services import permission_service
+
+        # развести per-dept строки через обычный grant-API
+        a = await client.put(f"{BASE}/server/role_a_only/view", headers=_hdr(admin_token))
+        b = await client.put(f"{BASE}/server/role_b_only/view", headers=_hdr(admin_token_b))
+        assert a.status_code == 200 and b.status_code == 200
+
+        identity = IdentityContext(
+            user_id="usr_account_admin",
+            username="account_admin",
+            department_id=None,
+            allowed_services=["server_service"],
+            # admin сервисная роль на permission view — чтобы пройти require_action
+            service_roles={"server_service": ["admin"]},
+            platform_role="account_admin",
+        )
+        rows = await permission_service.list_all(db, identity)
+        ids = {r.id for r in rows}
+        assert a.json()["id"] in ids
+        assert b.json()["id"] in ids

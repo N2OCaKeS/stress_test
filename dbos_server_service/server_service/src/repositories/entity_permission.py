@@ -83,12 +83,41 @@ async def has_action(
     return (await db.execute(stmt)).scalar_one_or_none() is not None
 
 
-async def list_all(db: AsyncSession) -> list[EntityPermission]:
-    """Список всех grants — без department-фильтра, для просмотра матрицы.
+def _visible_scope_clause(department_id: str | None):
+    """WHERE-условие для list-выборки в скоупе одного department'а.
+
+    `department_id is None` → caller — platform-уровневый (без отдела),
+    видит ВСЕ строки (фильтр не накладывается). Иначе — caller видит только
+    system-wide строки и строки своего отдела.
+
+    Возвращает либо SQL-условие, либо None (для случая «без фильтра»).
+    """
+    if department_id is None:
+        return None
+    return or_(
+        EntityPermission.department_id.is_(None),
+        EntityPermission.department_id == department_id,
+    )
+
+
+async def list_all(
+    db: AsyncSession,
+    *,
+    department_id: str | None = None,
+) -> list[EntityPermission]:
+    """Список grants в скоупе видимости caller'а.
+
+    `department_id=None` → выдаём всю матрицу (только для platform-админов,
+    не привязанных к отделу). `department_id="dep_X"` → отдаём system-wide
+    строки плюс строки этого отдела; чужие отделы невидимы.
 
     Order: (entity_type, role, action, system_first, department_id).
     """
-    stmt = select(EntityPermission).order_by(
+    stmt = select(EntityPermission)
+    scope = _visible_scope_clause(department_id)
+    if scope is not None:
+        stmt = stmt.where(scope)
+    stmt = stmt.order_by(
         EntityPermission.entity_type,
         EntityPermission.role,
         EntityPermission.action,
@@ -98,32 +127,44 @@ async def list_all(db: AsyncSession) -> list[EntityPermission]:
     return list((await db.execute(stmt)).scalars())
 
 
-async def list_for_entity(db: AsyncSession, entity_type: str) -> list[EntityPermission]:
-    """Список grants одного entity_type, в стабильном порядке."""
-    stmt = (
-        select(EntityPermission)
-        .where(EntityPermission.entity_type == entity_type)
-        .order_by(
-            EntityPermission.role,
-            EntityPermission.action,
-            EntityPermission.department_id.is_(None).desc(),
-            EntityPermission.department_id,
-        )
+async def list_for_entity(
+    db: AsyncSession,
+    entity_type: str,
+    *,
+    department_id: str | None = None,
+) -> list[EntityPermission]:
+    """Список grants одного entity_type, в скоупе видимости caller'а."""
+    stmt = select(EntityPermission).where(
+        EntityPermission.entity_type == entity_type,
+    )
+    scope = _visible_scope_clause(department_id)
+    if scope is not None:
+        stmt = stmt.where(scope)
+    stmt = stmt.order_by(
+        EntityPermission.role,
+        EntityPermission.action,
+        EntityPermission.department_id.is_(None).desc(),
+        EntityPermission.department_id,
     )
     return list((await db.execute(stmt)).scalars())
 
 
-async def list_for_role(db: AsyncSession, role: str) -> list[EntityPermission]:
-    """Список grants одной роли — что роль умеет в принципе."""
-    stmt = (
-        select(EntityPermission)
-        .where(EntityPermission.role == role)
-        .order_by(
-            EntityPermission.entity_type,
-            EntityPermission.action,
-            EntityPermission.department_id.is_(None).desc(),
-            EntityPermission.department_id,
-        )
+async def list_for_role(
+    db: AsyncSession,
+    role: str,
+    *,
+    department_id: str | None = None,
+) -> list[EntityPermission]:
+    """Список grants одной роли в скоупе видимости caller'а."""
+    stmt = select(EntityPermission).where(EntityPermission.role == role)
+    scope = _visible_scope_clause(department_id)
+    if scope is not None:
+        stmt = stmt.where(scope)
+    stmt = stmt.order_by(
+        EntityPermission.entity_type,
+        EntityPermission.action,
+        EntityPermission.department_id.is_(None).desc(),
+        EntityPermission.department_id,
     )
     return list((await db.execute(stmt)).scalars())
 

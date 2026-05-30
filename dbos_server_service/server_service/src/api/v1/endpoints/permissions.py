@@ -38,7 +38,10 @@ router = APIRouter(prefix="/permissions")
         "обогащает каждую строку описаниями сущности/действия и флагом "
         "`sensitive` из каталога (в этом случае `described=true` в ответе). "
         "Доступ: `(permission, *, view)` (department_admin своего отдела или "
-        "сервисная роль `admin` своего отдела)."
+        "сервисная роль `admin` своего отдела). "
+        "Scope: department-bound caller получает system-wide + свой dept; "
+        "platform-уровневые (`account_admin`/`loging_admin`) видят всю "
+        "матрицу, но до endpoint'а не доходят — их режет middleware."
     ),
     responses={
         403: {"description": "Нет роли с `view` на permission либо platform-админ заблокирован middleware'ом."},

@@ -26,7 +26,13 @@ denied.
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, EntityType, ENTITY_ACTIONS, is_valid_action
+from src.core.constants import (
+    Action,
+    EntityType,
+    ENTITY_ACTIONS,
+    PlatformRole,
+    is_valid_action,
+)
 from src.core.permission_catalog import (
     ACTION_DESCRIPTIONS,
     ENTITY_DESCRIPTIONS,
@@ -117,6 +123,30 @@ def _resolve_target_department_id(
     return actor_dept
 
 
+_PLATFORM_GLOBAL_VIEWERS: frozenset[PlatformRole] = frozenset(
+    {PlatformRole.ACCOUNT_ADMIN, PlatformRole.LOGING_ADMIN}
+)
+
+
+def _read_scope(identity: IdentityContext) -> str | None:
+    """Scope для list-выборок матрицы.
+
+    Возвращает `None` → caller видит всю матрицу (platform-уровневые админы
+    `account_admin`/`loging_admin`, не привязанные к отделу). Иначе —
+    `identity.department_id`, и caller видит только system-wide строки плюс
+    строки своего отдела.
+
+    На практике `account_admin`/`loging_admin` блокируются
+    `platform_admin_guard` middleware ещё до endpoint'а, поэтому в обычном
+    потоке сюда дойдут только department-bound caller'ы. Branch оставлен
+    как fallback и единая точка истины: если middleware снимут или появится
+    новая platform-роль без отдела, scope-логика останется корректной.
+    """
+    if identity.platform_role in _PLATFORM_GLOBAL_VIEWERS:
+        return None
+    return identity.department_id
+
+
 async def list_all(
     db: AsyncSession,
     identity: IdentityContext,
@@ -126,11 +156,14 @@ async def list_all(
     """Список grants. Требует `view` на entity `permission`.
 
     `role` сужает выборку до грантов одной роли (срез матрицы для UI/ИБ).
+    Scope: department-bound caller видит свой отдел + system-wide строки;
+    platform-уровневый (account_admin / loging_admin) — всю матрицу.
     """
     await permissions.require_action(db, identity, EntityType.PERMISSION, Action.VIEW)
+    scope = _read_scope(identity)
     if role is not None:
-        return await repo.list_for_role(db, role)
-    return await repo.list_all(db)
+        return await repo.list_for_role(db, role, department_id=scope)
+    return await repo.list_all(db, department_id=scope)
 
 
 async def get_catalog(
@@ -195,7 +228,7 @@ async def list_for_entity(
             error_code="UNKNOWN_ENTITY_TYPE",
             message=f"Unknown entity_type '{entity_type}'",
         )
-    return await repo.list_for_entity(db, entity_type)
+    return await repo.list_for_entity(db, entity_type, department_id=_read_scope(identity))
 
 
 async def grant_action(

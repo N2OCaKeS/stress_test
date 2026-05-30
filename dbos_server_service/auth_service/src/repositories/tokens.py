@@ -113,9 +113,11 @@ class TokenRepository:
           * `user_id` совпадает;
           * `revoked_reason == "ban"` — отделяет от "user"/"admin_reset"
             и от legacy без reason;
-          * `revoked_at > since` — если задан (timestamp последнего ban'а),
+          * `revoked_at >= since` — если задан (timestamp последнего ban'а),
             отбрасывает PAT'ы предыдущих ban'ов. Окно «ban → юзер создал
             ещё PAT → второй ban → unban» возвращает только последние.
+            Граница включающая — PAT, отозванный в ту же микросекунду, что
+            и сам ban (массовый revoke внутри `ban_user`), должен попадать.
 
         Одним UPDATE ставим `revoked_at=NULL`, `revoked_reason=NULL`. CAS не
         нужен — мы уже под exclusive lock'ом unban'а, параллельных ban-worker'ов
@@ -128,7 +130,7 @@ class TokenRepository:
             PersonalAccessToken.revoked_reason == "ban",
         ]
         if since is not None:
-            conds.append(PersonalAccessToken.revoked_at > since)
+            conds.append(PersonalAccessToken.revoked_at >= since)
 
         stmt = (
             _update(PersonalAccessToken)

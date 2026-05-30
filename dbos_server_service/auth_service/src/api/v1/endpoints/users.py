@@ -1,8 +1,9 @@
 """Эндпоинты CRUD пользователей и управления ролями/группами."""
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.constants import UserStatus
 from src.dependencies.auth import AccountAdmin, AnyAdmin, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.utils.pagination import PaginationParams, pagination_params
@@ -242,6 +243,20 @@ async def list_users(
     response: Response,
     identity: AccountAdmin,
     pagination: PaginationParams = Depends(pagination_params),
+    include_banned: bool = Query(
+        False,
+        description=(
+            "Снять фильтр `is_active`: вернуть и забаненных/заблокированных. "
+            "Без флага — только active (поведение UI по умолчанию)."
+        ),
+    ),
+    status: str | None = Query(
+        None,
+        description=(
+            "Пост-фильтр по статусу: `active` / `banned` / `blocked`. "
+            "Если задан — `include_banned` неявно True."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserResponse]:
     """Глобальный список юзеров.
@@ -254,11 +269,21 @@ async def list_users(
         Query-параметры `limit`/`offset`. Полное число записей — в заголовке
         `X-Total-Count`.
     """
+    if status is not None:
+        try:
+            UserStatus(status)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"invalid status filter: {status!r}",
+            )
     items, total = await user_service.list_users(
         db=db,
         actor_id=identity.user_id,
         pagination=pagination,
         request_id=getattr(request.state, "request_id", None),
+        include_banned=include_banned,
+        status_filter=status,
     )
     response.headers["X-Total-Count"] = str(total)
     return items
@@ -276,6 +301,19 @@ async def list_users_by_department(
     response: Response,
     identity: AnyAdmin,
     pagination: PaginationParams = Depends(pagination_params),
+    include_banned: bool = Query(
+        False,
+        description=(
+            "Снять фильтр `is_active`: вернуть забаненных/заблокированных тоже."
+        ),
+    ),
+    status: str | None = Query(
+        None,
+        description=(
+            "Пост-фильтр по статусу: `active` / `banned` / `blocked`. "
+            "Если задан — `include_banned` неявно True."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserResponse]:
     """Юзеры одного отдела.
@@ -291,6 +329,14 @@ async def list_users_by_department(
         * `DEPARTMENT_NOT_FOUND` (404) — нет такого отдела, либо
           department_admin попросил чужой.
     """
+    if status is not None:
+        try:
+            UserStatus(status)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"invalid status filter: {status!r}",
+            )
     items, total = await user_service.list_users_by_department(
         db=db,
         actor_id=identity.user_id,
@@ -298,6 +344,8 @@ async def list_users_by_department(
         department_id=department_id,
         pagination=pagination,
         request_id=getattr(request.state, "request_id", None),
+        include_banned=include_banned,
+        status_filter=status,
     )
     response.headers["X-Total-Count"] = str(total)
     return items

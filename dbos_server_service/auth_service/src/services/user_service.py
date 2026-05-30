@@ -54,20 +54,40 @@ async def list_users(
     actor_id: str,
     pagination: PaginationParams | None = None,
     request_id: str | None = None,
+    include_banned: bool = False,
+    status_filter: str | None = None,
 ) -> tuple[list[UserResponse], int]:
     """Глобальный список юзеров (страница). account_admin only.
 
     Возвращает `(страница, total)` — `total` идёт в `X-Total-Count`.
+
+    `include_banned=True` снимает фильтр `is_active`; админ-list видит
+    забаненных/заблокированных. `status_filter` (опционально) — пост-фильтр
+    по `UserStatus` (`active`/`banned`/`blocked`). Если задан — `include_banned`
+    автоматически считается True (иначе `banned`-фильтр давал бы пусто).
     """
     pagination = pagination or PaginationParams()
     user_repo = UserRepository(db)
     dept_repo = DepartmentRepository(db)
-    users = await user_repo.list_all(limit=pagination.limit, offset=pagination.offset)
-    total = await user_repo.count_active()
+    effective_include_banned = include_banned or status_filter is not None
+    users = await user_repo.list_all(
+        limit=pagination.limit,
+        offset=pagination.offset,
+        include_banned=effective_include_banned,
+    )
+    if status_filter is not None:
+        users = [u for u in users if u.status == status_filter]
+    total = await user_repo.count_active(include_banned=effective_include_banned)
     dept_names = {d.id: d.display_name for d in await dept_repo.list_all()}
     audit_service.emit(
         "user.list", actor_id, status="success", request_id=request_id,
-        details={"count": len(users), "total": total, "scope": "all"},
+        details={
+            "count": len(users),
+            "total": total,
+            "scope": "all",
+            "include_banned": effective_include_banned,
+            "status_filter": status_filter,
+        },
     )
     return [_to_response(u, dept_names.get(u.department_id)) for u in users], total
 
@@ -79,8 +99,13 @@ async def list_users_by_department(
     department_id: str,
     pagination: PaginationParams | None = None,
     request_id: str | None = None,
+    include_banned: bool = False,
+    status_filter: str | None = None,
 ) -> tuple[list[UserResponse], int]:
-    """Юзеры одного отдела (страница). department_admin — только свой; account_admin — любой."""
+    """Юзеры одного отдела (страница). department_admin — только свой; account_admin — любой.
+
+    `include_banned` / `status_filter` — см. `list_users`.
+    """
     pagination = pagination or PaginationParams()
     user_repo = UserRepository(db)
     dept_repo = DepartmentRepository(db)
@@ -97,10 +122,18 @@ async def list_users_by_department(
                 message="department_admin can only view users in their own department",
             )
 
+    effective_include_banned = include_banned or status_filter is not None
     users = await user_repo.list_by_department(
-        department_id, limit=pagination.limit, offset=pagination.offset
+        department_id,
+        limit=pagination.limit,
+        offset=pagination.offset,
+        include_banned=effective_include_banned,
     )
-    total = await user_repo.count_by_department(department_id)
+    if status_filter is not None:
+        users = [u for u in users if u.status == status_filter]
+    total = await user_repo.count_by_department(
+        department_id, include_banned=effective_include_banned
+    )
     audit_service.emit(
         "user.list", actor_id, status="success",
         details={
@@ -108,6 +141,8 @@ async def list_users_by_department(
             "count": len(users),
             "total": total,
             "scope": "department",
+            "include_banned": effective_include_banned,
+            "status_filter": status_filter,
         },
         request_id=request_id,
     )

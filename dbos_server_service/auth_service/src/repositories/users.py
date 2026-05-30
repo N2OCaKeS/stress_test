@@ -22,25 +22,41 @@ class UserRepository:
     async def get_by_email(self, email: str) -> User | None:
         return await self._db.scalar(select(User).where(User.email == email))
 
-    async def list_all(self, limit: int | None = None, offset: int = 0) -> list[User]:
-        stmt = (
-            select(User)
-            .where(User.is_active.is_(True))
-            .order_by(User.created_at, User.id)
-        )
+    async def list_all(
+        self,
+        limit: int | None = None,
+        offset: int = 0,
+        include_banned: bool = False,
+    ) -> list[User]:
+        """Список юзеров.
+
+        `include_banned=False` (default) — поведение UI до фикса: только
+        `is_active=True`. `include_banned=True` снимает фильтр `is_active` —
+        admin-список видит забаненных/заблокированных. Фильтрация по
+        `status` (e.g. только `banned`) — задача caller'а поверх результата.
+        """
+        stmt = select(User).order_by(User.created_at, User.id)
+        if not include_banned:
+            stmt = stmt.where(User.is_active.is_(True))
         if limit is not None:
             stmt = stmt.limit(limit).offset(offset)
         result = await self._db.scalars(stmt)
         return list(result)
 
     async def list_by_department(
-        self, department_id: str, limit: int | None = None, offset: int = 0
+        self,
+        department_id: str,
+        limit: int | None = None,
+        offset: int = 0,
+        include_banned: bool = False,
     ) -> list[User]:
         stmt = (
             select(User)
-            .where(User.department_id == department_id, User.is_active.is_(True))
+            .where(User.department_id == department_id)
             .order_by(User.created_at, User.id)
         )
+        if not include_banned:
+            stmt = stmt.where(User.is_active.is_(True))
         if limit is not None:
             stmt = stmt.limit(limit).offset(offset)
         result = await self._db.scalars(stmt)
@@ -53,17 +69,23 @@ class UserRepository:
         result = await self._db.scalars(select(User).where(User.id.in_(user_ids)))
         return list(result)
 
-    async def count_active(self) -> int:
-        return await self._db.scalar(
-            select(func.count()).select_from(User).where(User.is_active.is_(True))
-        ) or 0
+    async def count_active(self, include_banned: bool = False) -> int:
+        stmt = select(func.count()).select_from(User)
+        if not include_banned:
+            stmt = stmt.where(User.is_active.is_(True))
+        return await self._db.scalar(stmt) or 0
 
-    async def count_by_department(self, department_id: str) -> int:
-        return await self._db.scalar(
+    async def count_by_department(
+        self, department_id: str, include_banned: bool = False
+    ) -> int:
+        stmt = (
             select(func.count())
             .select_from(User)
-            .where(User.department_id == department_id, User.is_active.is_(True))
-        ) or 0
+            .where(User.department_id == department_id)
+        )
+        if not include_banned:
+            stmt = stmt.where(User.is_active.is_(True))
+        return await self._db.scalar(stmt) or 0
 
     async def create(
         self,

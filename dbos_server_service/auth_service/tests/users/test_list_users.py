@@ -89,3 +89,95 @@ class TestListUsersByDepartment:
         )
         assert resp.status_code == 200
         assert resp.json() == []
+
+
+# ── include_banned / status filter ─────────────────────────────────────────────
+
+
+BAN_URL = "/api/auth/v1/users/{user_id}/ban"
+
+
+async def _ban(client, admin_token, user_id):
+    return await client.post(
+        BAN_URL.format(user_id=user_id),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"ban_type": "permanent", "reason": "test"},
+    )
+
+
+class TestListIncludesBanned:
+    async def test_default_hides_banned_users(self, client, admin_token, user_a):
+        """Без флага — поведение до фикса: забаненный исчезает из списка."""
+        ban_resp = await _ban(client, admin_token, user_a.id)
+        assert ban_resp.status_code == 200
+
+        resp = await client.get(USERS_URL, headers={"Authorization": f"Bearer {admin_token}"})
+        assert resp.status_code == 200
+        usernames = [u["username"] for u in resp.json()]
+        assert "t_user_a" not in usernames
+
+    async def test_include_banned_returns_banned_in_global_list(
+        self, client, admin_token, user_a,
+    ):
+        await _ban(client, admin_token, user_a.id)
+
+        resp = await client.get(
+            USERS_URL,
+            params={"include_banned": "true"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        rows = {u["username"]: u for u in resp.json()}
+        assert "t_user_a" in rows
+        assert rows["t_user_a"]["status"] == "banned"
+        assert rows["t_user_a"]["is_active"] is False
+
+    async def test_status_banned_filter_returns_only_banned(
+        self, client, admin_token, user_a, user_b,
+    ):
+        """`status=banned` (без явного include_banned) возвращает только banned."""
+        await _ban(client, admin_token, user_a.id)
+
+        resp = await client.get(
+            USERS_URL,
+            params={"status": "banned"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        statuses = {u["status"] for u in body}
+        usernames = {u["username"] for u in body}
+        assert statuses == {"banned"}
+        assert "t_user_a" in usernames
+        assert "t_user_b" not in usernames
+
+    async def test_status_invalid_returns_422(self, client, admin_token):
+        resp = await client.get(
+            USERS_URL,
+            params={"status": "garbage"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 422
+
+    async def test_dept_list_include_banned(
+        self, client, admin_token, dept_admin_a_token, dept_a, user_a,
+    ):
+        await _ban(client, admin_token, user_a.id)
+
+        # default: dept_admin не видит забаненного
+        resp_default = await client.get(
+            DEPT_USERS_URL.format(department_id=dept_a.id),
+            headers={"Authorization": f"Bearer {dept_admin_a_token}"},
+        )
+        assert resp_default.status_code == 200
+        assert "t_user_a" not in [u["username"] for u in resp_default.json()]
+
+        # с флагом — видит
+        resp_flag = await client.get(
+            DEPT_USERS_URL.format(department_id=dept_a.id),
+            params={"include_banned": "true"},
+            headers={"Authorization": f"Bearer {dept_admin_a_token}"},
+        )
+        assert resp_flag.status_code == 200
+        names = [u["username"] for u in resp_flag.json()]
+        assert "t_user_a" in names

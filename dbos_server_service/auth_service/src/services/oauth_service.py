@@ -14,7 +14,7 @@ from datetime import timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.core.constants import PlatformRole
+from src.core.constants import PlatformRole, UserStatus
 from src.core.exceptions import AuthenticationError, AuthorizationError, ConflictError, NotFoundError
 from src.core.security import create_access_token, hash_opaque_token
 from src.repositories.departments import DepartmentRepository
@@ -435,6 +435,17 @@ async def exchange_code(
     user = await user_repo.get_by_id(auth_code.user_id)
     if user is None:
         raise AuthenticationError(error_code="OAUTH_USER_NOT_FOUND", message="User no longer exists")
+    # Окно между /authorize и /token: код выписан live-юзеру, но к моменту
+    # обмена админ мог его забанить/заблокировать. Без проверки code остаётся
+    # валидным до собственного expiry — third-party app получает JWT, который
+    # сразу же отбьётся introspect'ом, но сам факт обмена «помогает» атакующему
+    # узнать, что юзер существует. Симметрично login-флоу, где banned/blocked
+    # отбиваются прямо в /login.
+    if user.status != UserStatus.ACTIVE or not user.is_active:
+        raise AuthenticationError(
+            error_code="OAUTH_USER_INACTIVE",
+            message="User account is not active",
+        )
 
     settings = get_settings()
     ttl = timedelta(minutes=settings.access_token_ttl_minutes)

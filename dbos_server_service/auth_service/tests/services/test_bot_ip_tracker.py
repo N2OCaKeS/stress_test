@@ -79,7 +79,9 @@ class TestTrackBotIp:
         details = alert["details"]
         assert details["bot_id"] == bot.id
         assert details["bot_name"] == bot.name
-        assert details["time_window"] == "1h"
+        # W11-W2: hardcoded 'time_window: 1h' заменено на time_window_seconds
+        # из Settings (default 3600 = 1h).
+        assert details["time_window_seconds"] == 3600
         assert set(details["ips"]) == {"10.0.0.1", "10.0.0.2"}
 
     async def test_old_record_outside_window_ignored(self, db, dept_a, monkeypatch):

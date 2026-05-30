@@ -162,9 +162,17 @@ def create_rule(
         # `23505` — UniqueViolation, единственный UNIQUE на audit_rules —
         # `name`, значит это реальный конфликт имён → 409. Любой другой
         # pgcode (или отсутствие orig) → 500 INTERNAL_ERROR.
-        pgcode = getattr(getattr(exc.orig, "pgcode", None), "value", None) \
-            or getattr(exc.orig, "pgcode", None)
-        if pgcode == "23505":
+        # psycopg3 хранит SQLSTATE в `sqlstate` атрибуте orig; psycopg2/SA
+        # fallback — `pgcode`. Также имя класса orig может быть
+        # 'UniqueViolation' — третий fallback на случай custom dbapi.
+        orig = getattr(exc, "orig", None)
+        pgcode = (
+            getattr(orig, "sqlstate", None)
+            or getattr(getattr(orig, "pgcode", None), "value", None)
+            or getattr(orig, "pgcode", None)
+        )
+        orig_cls = type(orig).__name__ if orig is not None else ""
+        if pgcode == "23505" or orig_cls == "UniqueViolation":
             raise ConflictError(
                 error_code="RULE_NAME_CONFLICT",
                 message=f"Rule with name '{payload.name}' already exists",

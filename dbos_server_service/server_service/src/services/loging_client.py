@@ -7,6 +7,15 @@ loging принимает service-to-service identity ровно как на wri
 
 Если loging недоступен или API-key пуст — поднимаем `ServiceUnavailableError`,
 endpoint отдаст 503 (читать историю без upstream нельзя).
+
+### Connection pool
+
+`httpx.AsyncClient` — module-level (`core.http_clients.loging_read_client`),
+поднимается в `main.lifespan` startup и закрывается в shutdown. До перехода
+на пул каждый `GET /servers/{id}/drift` открывал свежий TCP+TLS до
+loging_service — на дашборде с N серверами это N handshake'ов на refresh.
+Outside the app lifecycle (unit-тесты до lifespan startup) — fall back to
+per-call client.
 """
 
 from __future__ import annotations
@@ -16,6 +25,7 @@ from datetime import datetime
 
 import httpx
 
+from src.core import http_clients
 from src.core.config import get_settings
 from src.core.exceptions import ServiceUnavailableError
 
@@ -56,7 +66,7 @@ async def fetch_drift_events(
             message="loging_service URL or API key is not configured",
         )
 
-    url = f"{base}/api/logging/v1/events"
+    events_path = "/api/logging/v1/events"
     params = {
         "action": "server_account.drift_detected",
         "from_time": since.isoformat(),
@@ -65,9 +75,19 @@ async def fetch_drift_events(
     }
     headers = {"Authorization": f"Bearer {api_key}"}
 
+    pooled = http_clients.loging_read_client
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(url, params=params, headers=headers)
+        if pooled is not None:
+            # Pooled путь: base_url уже на клиенте, дёргаем relative path.
+            resp = await pooled.get(events_path, params=params, headers=headers)
+        else:
+            # Lifespan ещё не поднялся (unit-тест без TestClient) —
+            # эфемерный AsyncClient ровно на один GET. Производственный
+            # путь всегда идёт через пул.
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(
+                    f"{base}{events_path}", params=params, headers=headers,
+                )
     except httpx.HTTPError as exc:
         logger.warning("loging GET /events failed: %s: %s", type(exc).__name__, exc)
         raise ServiceUnavailableError(

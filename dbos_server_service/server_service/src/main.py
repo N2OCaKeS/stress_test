@@ -18,6 +18,7 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.router import api_router
+from src.core import http_clients
 from src.core.config import get_settings
 from src.core.limiter import limiter
 from src.core.exceptions import AppException
@@ -151,6 +152,15 @@ def create_application() -> FastAPI:
                 timeout=2.0,
                 limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
             )
+            # Отдельный пул под read-канал к loging (drift-агрегация в
+            # GET /servers/{id}/drift). Read и write держим раздельно, чтобы
+            # дашборд-burst на drift-эндпоинт не выедал FD у audit-emit
+            # канала, и наоборот.
+            http_clients.loging_read_client = httpx.AsyncClient(
+                base_url=logging_url,
+                timeout=5.0,
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            )
         # Pooled aioredis-клиент для bootstrap-кред prepare'а. До этого
         # `store_prepare_creds` строил `aioredis.from_url(...)` per-call —
         # burst POST /prepare ронял Redis на connection-budget. Если
@@ -223,6 +233,14 @@ def create_application() -> FastAPI:
             audit_service._audit_client = None
             if audit_pool is not None:
                 await audit_pool.aclose()
+
+            # Read-канал к loging закрываем после audit-pool'а — оба
+            # держат соединения до того же хоста, но в раздельных пулах,
+            # порядок между ними не критичен.
+            loging_read = http_clients.loging_read_client
+            http_clients.loging_read_client = None
+            if loging_read is not None:
+                await loging_read.aclose()
 
             # Pooled prepare-creds Redis-клиент закрываем последним: с этого
             # момента входящих POST /prepare уже нет (uvicorn graceful drain

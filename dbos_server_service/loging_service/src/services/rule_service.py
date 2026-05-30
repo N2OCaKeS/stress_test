@@ -273,16 +273,16 @@ class _RuleCache:
                     not db_empty_now
                     and (first_load or db_updated_at > self._loaded_at)
                 )
-                if changed or (db_empty_now and not self._db_empty and not first_load):
+                # first_load (после invalidate или cold start) — всегда тянем
+                # фактический snapshot, даже если БД пустая. Это лишний SELECT
+                # на абсолютно пустой инсталляции один раз за TTL, но invalidate
+                # должен гарантированно сбросить кеш.
+                if changed or first_load or (db_empty_now and not self._db_empty):
                     fresh_orm = rule_repo.get_active_sorted(db)
                     # Снимаем frozen-dataclass с каждой ORM-row до выхода из
                     # session-скоупа — кеш не должен зависеть ни от Session,
                     # ни от lazy-loading'а добавленных в будущем relationship'ов.
                     self._rules = [_snapshot_rule(r) for r in fresh_orm]
-                elif first_load and db_empty_now:
-                    # Первая загрузка на пустой БД: фиксируем пустой кеш без
-                    # дополнительного SELECT'а.
-                    self._rules = []
                 self._db_empty = db_empty_now
                 self._loaded_at = datetime.now(timezone.utc)
                 self._loaded_monotonic = mono_now

@@ -81,6 +81,10 @@ worker дёргает после реальной работы.
 | `server_account.provision_status` | INFO | POST `/internal/servers/{id}/accounts/{aid}/provision-status` — worker отдал результат useradd/usermod/userdel, обновлён `present_on_server` (callback) | `server_account` | `server_id`, `account_id`, `department_id`, `operation`, `present_on_server` |
 | `ipmi_controller.credentials_rotated_callback` | WARNING | POST `/internal/ipmi-controllers/{id}/credentials_rotated` — worker подтвердил ротацию (отдал plaintext, server_service зашифровал) | `ipmi_controller` | `server_id`, `controller_id`, `department_id` |
 | `secrets.reencrypt_batch` | INFO | POST `/internal/secrets/reencrypt_batch` — фоновая ротация мастер-ключа (`processed=0 ∧ errors>0` → status=failure для эскалации severity) | `secret` | `limit`, `processed`, `errors` |
+| `secrets.reencrypt_seed` | INFO | POST `/internal/secrets/reencrypt_outbox/seed` — скан owner-таблиц, вставка pending outbox-row для row'ов с устаревшей версией ciphertext | `secret` | `inserted`, `scanned`, `active_version`, `limit` |
+| `secrets.reencrypt_done` | INFO | POST `/internal/secrets/reencrypt_outbox/{id}/done` — worker подтвердил, outbox-row закрыт, owner-row перешифрован активной версией ключа. `skipped=true` если owner-row уже перешифровался параллельно | `secret` | `outbox_id`, `status`, `skipped` |
+| `secrets.reencrypt_failed` | WARNING | POST `/internal/secrets/reencrypt_outbox/{id}/failed` — worker не смог закрыть outbox-row (decrypt/encrypt error), row помечен `failed` | `secret` | `outbox_id`, `status` |
+| `secrets.reencrypt_outbox_cleanup` | INFO | POST `/internal/secrets/reencrypt_outbox/cleanup` — удаление `done`-row'ов старше `older_than_hours` (bounded growth таблицы) | `secret` | `deleted`, `older_than_hours` |
 
 ---
 
@@ -176,14 +180,18 @@ Public endpoint'ы, через которые user (обычно admin) запу
 
 ## OS versions — глобальный каталог
 
-Чтение каталога (`list` / `get` по id / по имени) — публичное (без auth) и
-без аудита, поэтому `view`/`list`-событий нет. Под аудитом только запись.
+Чтение каталога (`list` / `get` по id / по имени) — публичное (без auth).
+Authenticated read'ы не аудитятся (шум на rendering UI), но anonymous read'ы
+эмитят `os_version.list_anonymous` / `os_version.view_anonymous` —
+enumeration-trail для SIEM (с rate-limit'ом для защиты от bot'ов).
 
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
 | `os_version.create` | INFO | INSERT в `os_versions` | `os_version` | `name` |
 | `os_version.update` | INFO | PATCH | `os_version` | поля diff'а |
 | `os_version.delete` | WARNING | DELETE | `os_version` | `name` |
+| `os_version.list_anonymous` | INFO | анонимный (без bearer) GET `/os-versions` — enumeration-trail для SIEM; rate-limit отдельный (`_ANON_LIMIT`) | `os_version` | `caller_type=anonymous`, `page_size`/`total`, `has_more` (keyset) |
+| `os_version.view_anonymous` | INFO | анонимный GET `/os-versions/{id}` или `/os-versions/by-name/{name}` — карточка | `os_version` | `caller_type=anonymous`, `lookup in {by_id, by_name}`, `name` (для by_name) |
 
 ---
 

@@ -379,21 +379,22 @@ async def delete_controller(
 @router.post(
     "/credentials/rotate",
     response_model=IpmiCredentialsRotateResponse,
-    summary="Ротация IPMI-пароля (deprecated, 410 GONE для user-facing вызовов)",
+    summary="Ротация IPMI-пароля (legacy: 410 GONE для user, bot-only fallback)",
     description=(
-        "Endpoint снят с обслуживания: писал произвольный plaintext в "
-        "`password_encrypted` БЕЗ apply/verify на BMC, что могло убить "
-        "out-of-band доступ. User-facing вызовы отбиваются 410 GONE с "
-        "CRITICAL-аудитом.\n\n"
-        "Каноничный путь ротации:\n"
-        "- инициировать через `POST /api/server/v1/ipmi-controllers/{id}/rotate`\n"
-        "  (worker dispatch с BMC apply + verify);\n"
-        "- worker по завершении вызывает internal callback "
-        "  `internal_service.record_ipmi_credentials_rotated`, который проверяет "
-        "  свежий verify-proof и шифрует ciphertext.\n\n"
-        "Bot-callback (subject_type='bot') пока сохраняется как backwards-compat "
-        "для уже задеплоенных worker'ов; новые интеграции должны ходить через "
-        "internal endpoint."
+        "User-facing вызовы (`subject_type != 'bot'`) отбиваются 410 GONE с "
+        "CRITICAL-аудитом: endpoint писал plaintext в `password_encrypted` "
+        "БЕЗ apply/verify на BMC, что могло убить out-of-band доступ.\n\n"
+        "Канонический путь ротации:\n"
+        "- инициируется через `POST /api/server/v1/ipmi-controllers/{id}/rotate` "
+        "  (worker dispatch с BMC apply);\n"
+        "- worker по завершении ходит во внутренний callback "
+        "  `POST /internal/ipmi-controllers/{id}/credentials/rotated`, который "
+        "  проверяет свежесть `verified_at` против `IPMI_VERIFY_MAX_AGE_SECONDS` "
+        "  и только тогда шифрует и сохраняет ciphertext.\n\n"
+        "Этот endpoint оставлен исключительно как fallback для bot-токенов "
+        "(`subject_type='bot'`) — backwards-compat для уже задеплоенных "
+        "worker'ов до их миграции на internal callback. Сам он verify-proof "
+        "НЕ проверяет — у новых интеграций должен быть путь через internal."
     ),
     responses={
         403: {"description": "Нет `rotate_credentials`."},
@@ -412,14 +413,16 @@ async def rotate_credentials(
 ) -> IpmiCredentialsRotateResponse:
     """Rotate-эндпоинт. Доступ: `(ipmi_controller, *, rotate_credentials)`. Аудит — CRITICAL.
 
-    User-facing вызов отбивается 410 GONE — он писал ciphertext без apply/verify
-    на BMC и мог разорвать out-of-band доступ. Через worker-dispatch
-    (`/ipmi-controllers/{id}/rotate`) BMC-apply гарантирован, verify-proof
-    проверяется в `internal_service.record_ipmi_credentials_rotated`.
+    Контракт после P0-фикса:
 
-    Bot-callback (subject_type='bot') проходит как backwards-compat для
-    уже задеплоенных worker'ов; в норме worker должен ходить через internal
-    endpoint.
+    * `subject_type != 'bot'` → 410 GONE + CRITICAL-audit. User-facing путь
+      убран, потому что писал ciphertext без apply/verify на BMC и мог
+      разорвать out-of-band доступ. Caller должен переехать на
+      `POST /ipmi-controllers/{id}/rotate` (worker dispatch).
+    * `subject_type == 'bot'` → fallback для legacy worker-токенов: пишет
+      ciphertext в БД без verify-proof. Новые worker'ы должны ходить через
+      internal callback `record_ipmi_credentials_rotated`, который ПРОВЕРЯЕТ
+      свежесть `verified_at` и только потом сохраняет.
     """
     if identity.subject_type != "bot":
         audit_service.emit(

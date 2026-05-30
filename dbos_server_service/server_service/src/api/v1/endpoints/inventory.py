@@ -23,6 +23,7 @@ from src.dependencies.db import get_db
 from src.schemas.server import ServerTaskDispatchResponse
 from src.services import audit_service, permissions, worker_client
 from src.services import server as server_svc
+from src.services.audit_helpers import emit_denied_on_authz_error
 
 
 # ── /servers/{id}/users/inventory — OS-user inventory via SSH ───────────────
@@ -62,11 +63,24 @@ async def trigger_users_inventory(
 ) -> ServerTaskDispatchResponse:
     """Dispatch инвентаризации OS-пользователей. Доступ: `(server, *, inventory_trigger)`.
 
-    Тот же паттерн, что у `inventory.sync`: visibility → role → decommissioned →
-    SSH-сбор без BMC. task_kind = `users.inventory`, audit-action =
-    `server_account.users_inventory`.
+    Тот же паттерн, что у `_dispatch_for_server` (см. `endpoints/worker_dispatch.py`):
+    permission → visibility → decommissioned → SSH-сбор без BMC. Permission ДО
+    visibility — чтобы 403 не превращался в existence-oracle по `server_id`.
+    task_kind = `users.inventory`, audit-action = `server_account.users_inventory`.
     """
     audit_action = "server_account.users_inventory"
+    # 1. Role-check — раньше visibility, чтобы caller без права не отличал
+    # «нет сервера» от «нет роли» по статус-коду.
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+    ):
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.INVENTORY_TRIGGER,
+        )
+    # 2. Visibility + dept isolation.
     try:
         server = await server_svc.get_server(db, identity, server_id)
     except (NotFoundError, AuthorizationError) as exc:
@@ -78,17 +92,6 @@ async def trigger_users_inventory(
             audit_action, target_id=server_id, target_type="server",
             status="denied", allowed=False,
             details={"reason": reason},
-        )
-        raise
-    try:
-        await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.INVENTORY_TRIGGER,
-        )
-    except AuthorizationError:
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied", "department_id": server.department_id},
         )
         raise
     if server.status == ServerStatus.DECOMMISSIONED:

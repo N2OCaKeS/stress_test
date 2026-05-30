@@ -59,8 +59,10 @@ class TestProvisionGeneratesCredentials:
         assert acc.ssh_public_key is None
         assert acc.ssh_private_key_encrypted is None
 
+        # Discovered-аккаунт без пароля требует явного force_password=true —
+        # без него endpoint отбивает 422 (см. `TestProvisionForcePasswordGuard`).
         resp = await client.post(
-            f"{BASE}/{acc.id}/provision?server_id={srv.id}",
+            f"{BASE}/{acc.id}/provision?server_id={srv.id}&force_password=true",
             headers=_hdr(operator_token_a),
         )
         assert resp.status_code == 202, resp.text

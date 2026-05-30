@@ -852,14 +852,23 @@ async def receive_users_inventory(
                 })
 
     # Привязанные в API, но не найденные на сервере — drift.
+    # Emit идёт только при переходе present_on_server: True → False — это
+    # «свежий» drift на конкретном скане. Если link уже был помечен False в
+    # прошлый раз и юзера на боксе всё ещё нет, повторно эмитить нечего:
+    # иначе каждый периодический скан плодил бы дубликат warning'ов в audit.
+    # `is_new_drift` уезжает в details, чтобы потребители (loging_service /
+    # отчёты) могли отличить первое срабатывание от прежнего состояния.
     for link in links:
         if link.login not in seen_logins:
             missing_account_ids.append(link.account_id)
-            drifted += 1
-            drift_emits.append({
-                "login": link.login,
-                "drift": "missing_on_box",
-            })
+            is_new_drift = link.present_on_server is True
+            if is_new_drift:
+                drifted += 1
+                drift_emits.append({
+                    "login": link.login,
+                    "drift": "missing_on_box",
+                    "is_new_drift": True,
+                })
 
     # Bulk-flush presence: два statement'а вместо N flush'ей в цикле.
     if present_account_ids:
@@ -885,6 +894,8 @@ async def receive_users_inventory(
         if "diff" in emit:
             details["expected"] = {f: v["expected"] for f, v in emit["diff"].items()}
             details["found"] = {f: v["found"] for f, v in emit["diff"].items()}
+        if "is_new_drift" in emit:
+            details["is_new_drift"] = emit["is_new_drift"]
         audit_service.emit(
             "server_account.drift_detected",
             target_id=server_id, target_type="server",

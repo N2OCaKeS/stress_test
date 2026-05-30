@@ -12,12 +12,14 @@
   получают 403.
 * visibility: если у task есть `target_server_id`, проверяем dept-isolation
   на этом сервере (cross-dept → 404 ``TASK_NOT_FOUND``, как обычно).
-  Системные task'и (`target_server_id IS NULL` И `created_by IS NULL` —
+  Системные task'и (``task_kind`` ∈ ``_SYSTEM_TASK_KINDS`` — сейчас это
   heartbeat/sweep/cleanup_completed) требуют платформенной роли
   ``account_admin``: dept-admin с (task, cancel) может ходить в свои
   серверные task'и, но не должен ломать кластерный worker health
   отменой heartbeat'а. Не account_admin → 403 ``denied`` с
-  ``reason=system_task_admin_required``.
+  ``reason=system_task_admin_required``. Whitelist по kind — явный
+  контракт: новый системный kind должен явно попасть в множество,
+  иначе работает обычный dept-isolation путь.
 * cancellable-precondition: pending/running. Terminal (succeeded/failed/
   cancelled) → 409 ``TASK_NOT_CANCELLABLE``.
 * применяется немедленно: queued — сразу cancelled, running — worker
@@ -50,6 +52,16 @@ from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
 
 logger = logging.getLogger(__name__)
+
+# Whitelist системных task'ов — `cancel_task_endpoint` требует
+# `account_admin` только для этих kind'ов. Раньше критерий был
+# `(target_server_id IS NULL AND created_by IS NULL)` — неявный признак,
+# который ломался, как только scheduler заводил бы новую системную task'у
+# с не-NULL target_server_id (например, per-server probe). Явный whitelist
+# делает контракт стабильным и упрощает аудит. Если в worker'е появится
+# новый системный kind — он сначала добавляется сюда, иначе по нему
+# свалит default dept-isolation путь.
+_SYSTEM_TASK_KINDS = frozenset({"heartbeat", "sweep", "cleanup_completed"})
 
 router = APIRouter(prefix="/tasks")
 
@@ -107,14 +119,17 @@ async def cancel_task_endpoint(
 
     target_server_id = meta.get("target_server_id")
     task_kind = meta.get("task_kind")
-    created_by = meta.get("created_by")
 
-    # 3. Системные task'и (target_server_id IS NULL И created_by IS NULL —
-    #    heartbeat/sweep/cleanup_completed, заведённые scheduler'ом без актора)
-    #    отменяются только платформенным account_admin'ом. Любой dept-admin
-    #    с (task, cancel) на этой стадии — 403, иначе он может затушить
-    #    кластерный worker health для всех отделов.
-    is_system_task = target_server_id is None and created_by is None
+    # 3. Системные task'и (kind ∈ _SYSTEM_TASK_KINDS — heartbeat/sweep/
+    #    cleanup_completed, заведённые scheduler'ом без актора) отменяются
+    #    только платформенным account_admin'ом. Любой dept-admin с (task,
+    #    cancel) на этой стадии — 403, иначе он может затушить кластерный
+    #    worker health для всех отделов. Критерий — явный whitelist по
+    #    `task_kind`, не неявный `target_server_id IS NULL AND created_by
+    #    IS NULL`: новые системные kind'ы вписываются в whitelist, а пара
+    #    NULL/NULL у user-task (например, тестовый dispatch без актора) не
+    #    превращается в случайный 403.
+    is_system_task = task_kind in _SYSTEM_TASK_KINDS
     if is_system_task and identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
         audit_service.emit(
             audit_action, target_id=task_id, target_type="task",

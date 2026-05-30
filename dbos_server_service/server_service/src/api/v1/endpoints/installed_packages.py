@@ -103,7 +103,17 @@ async def list_installed_packages(
             message="pattern must match [A-Za-z0-9._\\-+*?\\[\\]]+",
         )
 
-    # 1. Visibility + dept isolation.
+    # 1. Role-check на (server, view) — ДО visibility, чтобы 403 не работал
+    # как existence-oracle (canon permission → visibility, как в `_dispatch_for_server`).
+    with emit_denied_on_authz_error(
+        audit_action,
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+    ):
+        await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
+
+    # 2. Visibility + dept isolation.
     try:
         server = await server_svc.get_server(db, identity, server_id)
     except (NotFoundError, AuthorizationError) as exc:
@@ -114,15 +124,6 @@ async def list_installed_packages(
             details={"reason": reason},
         )
         raise
-
-    # 2. Role-check на (server, view).
-    with emit_denied_on_authz_error(
-        audit_action,
-        target_id=server_id,
-        target_type="server",
-        extra_details={"department_id": server.department_id},
-    ):
-        await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
 
     # 3. Decommissioned-gate — на списанном сервере SSH всё равно не пройдёт.
     if server.status == ServerStatus.DECOMMISSIONED:

@@ -57,11 +57,12 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.core.constants import Action, EntityType, ServerStatus
+from src.core.constants import AccountSource, Action, EntityType, ServerStatus
 from src.core.limiter import endpoint_limiter
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
+    DomainValidationError,
     NotFoundError,
     ServiceUnavailableError,
 )
@@ -305,6 +306,7 @@ async def _dispatch_account_on_host(
     extra_payload: dict | None = None,
     include_home_dir: bool | None = None,
     inject_provision_creds: bool = False,
+    force_password: bool = False,
 ) -> dict:
     """Общая логика per-server provision/update/deprovision OS-пользователя.
 
@@ -315,6 +317,12 @@ async def _dispatch_account_on_host(
     Operation триггерится разными CRUD-действиями на `server_account`:
     provision → `create`, update → `update`, deprovision → `delete`.
     worker_bot широкого CRUD не получает — только callback `provision_on_host`.
+
+    `force_password` действует только в паре с `inject_provision_creds=True`
+    и нужен для discovered-аккаунтов: у них в БД пароля нет, и если caller
+    хочет, чтобы worker сгенерил новый и принудительно записал его на боксе
+    через chpasswd, он должен явно передать `force_password=true`. Иначе
+    discovered-аккаунт без пароля → 422 `DISCOVERED_NO_PASSWORD_NEEDS_EXPLICIT_FORCE`.
     """
     with emit_denied_on_authz_error(
         audit_action,
@@ -402,6 +410,34 @@ async def _dispatch_account_on_host(
         # сохраняем зашифрованным, и поднимаем force_replace=True: на боксе
         # надо перезаписать пароль и ключ. Commit ниже (`dispatch_task` не
         # пишет в server-БД).
+        #
+        # Discovered-аккаунт без пароля — особый случай: предыдущая версия молча
+        # генерила strong-password и заливала его через chpasswd, перетирая
+        # пароль, который оператор сервера выставил руками. Теперь требуем
+        # явный `?force_password=true`. caller знает что делает.
+        if (
+            account.source == AccountSource.DISCOVERED.value
+            and account.password_encrypted is None
+            and not force_password
+        ):
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="denied", allowed=False,
+                details={
+                    "reason": "discovered_no_password_needs_explicit_force",
+                    "server_id": server.id,
+                    "operation": operation,
+                    "department_id": server.department_id,
+                },
+            )
+            raise DomainValidationError(
+                error_code="DISCOVERED_NO_PASSWORD_NEEDS_EXPLICIT_FORCE",
+                message=(
+                    "Discovered account has no stored password; pass "
+                    "?force_password=true to generate a new one and overwrite "
+                    "the on-host password via chpasswd"
+                ),
+            )
         _, creds, generated = await account_svc.ensure_provision_credentials(
             db, account,
         )
@@ -1137,6 +1173,18 @@ async def account_provision_dispatch(
     server_id: str = Query(
         ..., description="Привязанный сервер, на котором завести пользователя.",
     ),
+    force_password: bool = Query(
+        default=False,
+        description=(
+            "Для discovered-аккаунтов без сохранённого пароля: "
+            "сгенерировать новый и принудительно перезаписать его на боксе "
+            "через chpasswd. Без этого флага discovered-аккаунт без пароля "
+            "отбивается 422 (`DISCOVERED_NO_PASSWORD_NEEDS_EXPLICIT_FORCE`), "
+            "чтобы случайно не затереть руками выставленный пароль. "
+            "Managed-аккаунт и discovered с уже сохранённым паролем игнорируют "
+            "этот флаг."
+        ),
+    ),
 ) -> AccountProvisionDispatchResponse:
     """Ставит `account.provision` (useradd) в очередь worker'а.
 
@@ -1151,6 +1199,7 @@ async def account_provision_dispatch(
         task_kind="account.provision",
         operation="provision",
         inject_provision_creds=True,
+        force_password=force_password,
     )
     return AccountProvisionDispatchResponse(**result)
 

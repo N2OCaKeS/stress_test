@@ -27,17 +27,23 @@ class UserRepository:
         limit: int | None = None,
         offset: int = 0,
         include_banned: bool = False,
+        status_filter: str | None = None,
     ) -> list[User]:
         """Список юзеров.
 
         `include_banned=False` (default) — поведение UI до фикса: только
         `is_active=True`. `include_banned=True` снимает фильтр `is_active` —
-        admin-список видит забаненных/заблокированных. Фильтрация по
-        `status` (e.g. только `banned`) — задача caller'а поверх результата.
+        admin-список видит забаненных/заблокированных.
+
+        `status_filter` (опционально) — точное совпадение `User.status`.
+        Применяется на уровне SQL до limit/offset, чтобы пагинация и
+        `count_by_status` отдавали согласованные числа.
         """
         stmt = select(User).order_by(User.created_at, User.id)
         if not include_banned:
             stmt = stmt.where(User.is_active.is_(True))
+        if status_filter is not None:
+            stmt = stmt.where(User.status == status_filter)
         if limit is not None:
             stmt = stmt.limit(limit).offset(offset)
         result = await self._db.scalars(stmt)
@@ -49,6 +55,7 @@ class UserRepository:
         limit: int | None = None,
         offset: int = 0,
         include_banned: bool = False,
+        status_filter: str | None = None,
     ) -> list[User]:
         stmt = (
             select(User)
@@ -57,6 +64,8 @@ class UserRepository:
         )
         if not include_banned:
             stmt = stmt.where(User.is_active.is_(True))
+        if status_filter is not None:
+            stmt = stmt.where(User.status == status_filter)
         if limit is not None:
             stmt = stmt.limit(limit).offset(offset)
         result = await self._db.scalars(stmt)
@@ -69,14 +78,29 @@ class UserRepository:
         result = await self._db.scalars(select(User).where(User.id.in_(user_ids)))
         return list(result)
 
-    async def count_active(self, include_banned: bool = False) -> int:
+    async def count_active(
+        self,
+        include_banned: bool = False,
+        status_filter: str | None = None,
+    ) -> int:
+        """Полное число юзеров в скоупе списка.
+
+        `status_filter` фильтрует на SQL — должен соответствовать тому же
+        фильтру, что и `list_all`, иначе `total` для `X-Total-Count` разойдётся
+        со страницей.
+        """
         stmt = select(func.count()).select_from(User)
         if not include_banned:
             stmt = stmt.where(User.is_active.is_(True))
+        if status_filter is not None:
+            stmt = stmt.where(User.status == status_filter)
         return await self._db.scalar(stmt) or 0
 
     async def count_by_department(
-        self, department_id: str, include_banned: bool = False
+        self,
+        department_id: str,
+        include_banned: bool = False,
+        status_filter: str | None = None,
     ) -> int:
         stmt = (
             select(func.count())
@@ -85,6 +109,8 @@ class UserRepository:
         )
         if not include_banned:
             stmt = stmt.where(User.is_active.is_(True))
+        if status_filter is not None:
+            stmt = stmt.where(User.status == status_filter)
         return await self._db.scalar(stmt) or 0
 
     async def create(

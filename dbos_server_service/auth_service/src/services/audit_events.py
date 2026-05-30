@@ -40,6 +40,7 @@ SERVICE_EVENTS = [
     {"action": "user.ban_deactivated_via_status_change", "description": "Active ban deactivated as side-effect of PATCH /users/{id}/status", "default_severity": "WARNING"},
     {"action": "user.permissions_view", "description": "User permissions snapshot retrieved (GET /users/{id}/permissions)", "default_severity": "INFO"},
     {"action": "user.roles_purged_on_transfer", "description": "User service-roles purged after department transfer", "default_severity": "WARNING"},
+    {"action": "user.groups_purged_on_transfer", "description": "User group memberships of the old department purged after transfer", "default_severity": "WARNING"},
     {"action": "user.sessions_listed", "description": "User listed own active sessions (GET /users/me/sessions)", "default_severity": "INFO"},
     {"action": "user.sessions_revoked_all", "description": "User revoked all own sessions (POST /users/me/sessions/revoke)", "default_severity": "CRITICAL"},
     {"action": "user.session_revoked_one", "description": "User revoked one own session (DELETE /users/me/sessions/{id})", "default_severity": "WARNING"},

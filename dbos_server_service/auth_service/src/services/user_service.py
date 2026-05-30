@@ -74,10 +74,12 @@ async def list_users(
         limit=pagination.limit,
         offset=pagination.offset,
         include_banned=effective_include_banned,
+        status_filter=status_filter,
     )
-    if status_filter is not None:
-        users = [u for u in users if u.status == status_filter]
-    total = await user_repo.count_active(include_banned=effective_include_banned)
+    total = await user_repo.count_active(
+        include_banned=effective_include_banned,
+        status_filter=status_filter,
+    )
     dept_names = {d.id: d.display_name for d in await dept_repo.list_all()}
     audit_service.emit(
         "user.list", actor_id, status="success", request_id=request_id,
@@ -128,11 +130,12 @@ async def list_users_by_department(
         limit=pagination.limit,
         offset=pagination.offset,
         include_banned=effective_include_banned,
+        status_filter=status_filter,
     )
-    if status_filter is not None:
-        users = [u for u in users if u.status == status_filter]
     total = await user_repo.count_by_department(
-        department_id, include_banned=effective_include_banned
+        department_id,
+        include_banned=effective_include_banned,
+        status_filter=status_filter,
     )
     audit_service.emit(
         "user.list", actor_id, status="success",
@@ -401,6 +404,7 @@ async def update_user(
     # необходимости. Старые dept_id/new_dept_id запоминаем для audit.
     old_dept_id = user.department_id
     pending_roles_purged_audit: dict | None = None
+    pending_groups_purged_audit: dict | None = None
     new_dept_id = filtered.get("department_id")
     if new_dept_id is not None and new_dept_id != old_dept_id:
         role_repo_local = RoleRepository(db)
@@ -420,6 +424,30 @@ async def update_user(
                 "request_id": request_id,
             }
 
+        # Симметрично с roles purge: членство юзера в группах старого отдела
+        # после transfer'а оставляет за ним доступы и роли через
+        # `GroupServiceAccess` / `GroupServiceRole` тех групп (privilege
+        # retention). Удаляем memberships, привязанные к группам прежнего
+        # dept_id, новый dept админ перевыдаст вручную.
+        group_repo_local = GroupRepository(db)
+        removed_group_ids = await group_repo_local.remove_user_memberships_in_department(
+            user_id, old_dept_id,
+        )
+        if removed_group_ids:
+            pending_groups_purged_audit = {
+                "action": "user.groups_purged_on_transfer",
+                "actor_id": actor_id,
+                "target_id": user_id,
+                "target_type": "user",
+                "details": {
+                    "target_username": user.username,
+                    "old_dept_id": old_dept_id,
+                    "new_dept_id": new_dept_id,
+                    "removed_group_ids": removed_group_ids,
+                },
+                "request_id": request_id,
+            }
+
     # Применяем остаток filtered (email/department_id/platform_role или
     # status=BLOCKED) поверх той же сессии — ban_user/unban_user уже сделали
     # `flush()`, но НЕ `commit()`. SQLAlchemy identity-map отдаёт нам тот же
@@ -435,6 +463,7 @@ async def update_user(
         pending_ban_audit is not None
         or pending_ban_deactivation_audit is not None
         or pending_roles_purged_audit is not None
+        or pending_groups_purged_audit is not None
         or filtered
     ):
         await db.commit()
@@ -448,6 +477,7 @@ async def update_user(
         pending_ban_audit is not None
         or pending_ban_deactivation_audit is not None
         or pending_roles_purged_audit is not None
+        or pending_groups_purged_audit is not None
         or (filtered and privilege_fields & set(filtered.keys()))
     ):
         _invalidate_identity_cache(user_id)
@@ -484,6 +514,15 @@ async def update_user(
             target_type=pending_roles_purged_audit["target_type"],
             details=pending_roles_purged_audit["details"],
             request_id=pending_roles_purged_audit["request_id"],
+        )
+    if pending_groups_purged_audit is not None:
+        audit_service.emit(
+            pending_groups_purged_audit["action"],
+            pending_groups_purged_audit["actor_id"],
+            target_id=pending_groups_purged_audit["target_id"],
+            target_type=pending_groups_purged_audit["target_type"],
+            details=pending_groups_purged_audit["details"],
+            request_id=pending_groups_purged_audit["request_id"],
         )
 
     # `user.update`-audit имеет смысл только если были реальные не-ban

@@ -135,6 +135,33 @@ class GroupRepository:
         await self._db.delete(membership)
         await self._db.flush()
 
+    async def remove_user_memberships_in_department(
+        self, user_id: str, department_id: str
+    ) -> list[str]:
+        """Снести все membership'ы юзера в группах указанного отдела.
+
+        Используется при PATCH `department_id` юзера: членство в группах
+        старого отдела не должно тянуть за юзером права через
+        `GroupServiceAccess`/`GroupServiceRole`. Возвращает список group_id,
+        из которых юзер был удалён (для audit-trail).
+        """
+        result = await self._db.scalars(
+            select(UserGroupMembership)
+            .join(UserGroup, UserGroup.id == UserGroupMembership.group_id)
+            .where(
+                UserGroupMembership.user_id == user_id,
+                UserGroup.department_id == department_id,
+            )
+        )
+        memberships = list(result)
+        if not memberships:
+            return []
+        removed_group_ids = [m.group_id for m in memberships]
+        for m in memberships:
+            await self._db.delete(m)
+        await self._db.flush()
+        return removed_group_ids
+
     # ── Bot membership ──────────────────────────────────────────────────────────
 
     async def get_bot_membership(self, group_id_: str, bot_id: str) -> BotGroupMembership | None:

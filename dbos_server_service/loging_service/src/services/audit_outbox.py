@@ -217,7 +217,30 @@ class AuditOutbox:
                         batch.append(self._queue.get_nowait())
                     except asyncio.QueueEmpty:
                         break
-                await self._flush_batch(batch)
+                try:
+                    await self._flush_batch(batch)
+                except asyncio.CancelledError:
+                    # `stop()` отменил задачу прямо во время flush — батч уже
+                    # выдернут из очереди, но в БД может быть не записан
+                    # (или записан частично — `_write_batch_sync` либо
+                    # коммитнулся целиком, либо ничего; `to_thread` отменить
+                    # на полпути нельзя). Возвращаем events обратно в
+                    # очередь, чтобы `_drain_remaining` подобрал их под
+                    # shutdown-бюджет. Если очередь уже не помещает —
+                    # считаем потерянными и инкрементим `_dropped_total`,
+                    # чтобы факт потери не маскировался.
+                    requeued = 0
+                    for envelope in batch:
+                        try:
+                            self._queue.put_nowait(envelope)
+                            requeued += 1
+                        except asyncio.QueueFull:
+                            break
+                    lost = len(batch) - requeued
+                    if lost:
+                        with self._counters_lock:
+                            self._dropped_total += lost
+                    raise
                 # Маленькая пауза, чтобы не молотить процессор, если queue
                 # пуст. `asyncio.Queue.get()` сам await'ит до появления
                 # элемента — пауза нужна только под нагрузкой как back-pressure

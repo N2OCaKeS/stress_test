@@ -139,6 +139,26 @@ def create_event(
             ),
         )
 
+    # Симметрия с `services.py::register_events` (path-vs-identity гард):
+    # держатель shared SERVICE_API_KEY, представляясь `auth_service` через
+    # `X-Service-Identity`, не должен иметь возможности минтить события под
+    # именем чужого сервиса (`payload.service="server_service"`) — иначе
+    # idempotency-namespace одного сервиса травится из бакета другого, и
+    # downstream-аналитика по `service=` показывает приписанные события у
+    # того, кто их не писал. Per-service API keys сделают этот soft-check
+    # излишним.
+    advertised = getattr(request.state, "service_identity", None)
+    if advertised is not None and payload.service != advertised:
+        raise AppException(
+            http_status=403,
+            error_code="SERVICE_IDENTITY_PAYLOAD_MISMATCH",
+            message=(
+                "service in payload does not match X-Service-Identity "
+                f"(identity={advertised!r}, payload={payload.service!r}); a "
+                "service-token caller may only write events under its own service"
+            ),
+        )
+
     event = event_service.record(db, payload)
     if event is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -202,6 +222,18 @@ def list_events(
                 details={"requested": department_id, "allowed": dept_scope},
             )
         department_id = dept_scope
+
+    # Ingest нормализует service/action через `normalize_service_name`
+    # (NFKC + invisibles + homoglyph fold + lower), а query до сих пор гнал
+    # raw query-string в repo. Запрос `?service=AUTH_SERVICE` или
+    # `?service=lоging_service` (кир. `о`) попадал в БД as-is и не находил
+    # уже нормализованные строки — confusable hide-trail: caller с виду
+    # запросил «свои» события, а получил пусто, потому что в БД они под
+    # каноническим именем. Нормализуем здесь зеркально ingest'у.
+    if service is not None:
+        service = normalize_service_name(service)
+    if action is not None:
+        action = normalize_service_name(action)
 
     return event_service.query(
         db,

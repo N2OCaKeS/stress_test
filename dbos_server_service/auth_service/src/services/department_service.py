@@ -138,27 +138,36 @@ async def revoke_service_access(
         department_id, service_name,
     )
     bot_role_repo = BotRoleRepository(db)
-    await bot_role_repo.deactivate_all_in_dept_for_service(department_id, service_name)
+    affected_direct_bot_ids = await bot_role_repo.deactivate_all_in_dept_for_service(
+        department_id, service_name,
+    )
 
     # Собираем юзеров, которым нужен cache-invalidation: прямые носители роли
     # + члены групп, у которых сняли group→role binding. Без сброса они до
     # TTL=5s могли бы продолжать обращаться к сервису, у которого отдел уже
     # не имеет доступа — `_merge_permissions` INTERSECT-инвариант нарушался.
     affected_user_ids: set[str] = set(affected_direct_user_ids)
+    affected_bot_ids: set[str] = set(affected_direct_bot_ids)
     if affected_group_ids:
         affected_user_ids.update(
             await group_repo.list_member_user_ids(affected_group_ids)
+        )
+        affected_bot_ids.update(
+            await group_repo.list_member_bot_ids(affected_group_ids)
         )
 
     await db.commit()
     for uid in affected_user_ids:
         _invalidate_identity_cache(uid)
+    for bid in affected_bot_ids:
+        _invalidate_identity_cache(bid)
     audit_service.emit(
         "department.service_revoke", actor_id, target_id=department_id, target_type="department",
         details={
             "service_name": service_name,
             "cascade_deactivated_roles": True,
             "affected_user_count": len(affected_user_ids),
+            "affected_bot_count": len(affected_bot_ids),
         },
         request_id=request_id,
     )

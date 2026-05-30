@@ -9,6 +9,7 @@ from src.repositories.service_role_definitions import ServiceRoleDefinitionRepos
 from src.repositories.services import ServiceRepository
 from src.schemas.services import ServiceResponse
 from src.services import audit_service
+from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 
 
 async def create_service(
@@ -71,9 +72,15 @@ async def delete_service(
     await role_def_repo.deactivate_all_for_service(service_name)
     from src.repositories.bot_roles import BotRoleRepository
     bot_role_repo = BotRoleRepository(db)
-    await bot_role_repo.deactivate_all_for_service(service_name)
+    affected_bot_ids = await bot_role_repo.deactivate_all_for_service(service_name)
     await svc_repo.deactivate(svc)
     await db.commit()
+    # Сервис снесён глобально — у ботов с прямой ролью на нём нужно сбросить
+    # identity-cache, иначе до истечения TTL они продолжат видеть роль в
+    # introspect. Группомемберский путь покрыт через каскад на dept-revoke,
+    # вызванный выше для каждого отдела.
+    for bid in affected_bot_ids:
+        _invalidate_identity_cache(bid)
     audit_service.emit(
         "service.delete", actor_id, target_id=service_name, target_type="service",
         request_id=request_id,
@@ -82,6 +89,7 @@ async def delete_service(
             "display_name": svc.display_name,
             "cascade_revoked_department_access": True,
             "cascade_deactivated_roles": True,
+            "affected_bot_count": len(affected_bot_ids),
         },
     )
 

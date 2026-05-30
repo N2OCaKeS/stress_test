@@ -69,13 +69,22 @@ class BotRoleRepository:
         )
         await self._db.flush()
 
-    async def deactivate_all_for_service(self, service_name: str) -> None:
+    async def deactivate_all_for_service(self, service_name: str) -> list[str]:
+        """Деактивировать все bot→role связи для сервиса (across all depts).
+
+        Возвращает уникальные bot_id затронутых ботов — caller использует это
+        для сброса identity-cache.
+        """
         rows = await self._db.scalars(
             select(BotServiceRole).where(BotServiceRole.service_name == service_name)
         )
+        affected: set[str] = set()
         for row in rows:
+            if row.is_active:
+                affected.add(row.bot_id)
             row.is_active = False
         await self._db.flush()
+        return list(affected)
 
     async def deactivate_by_role_name_in_dept(
         self, department_id: str, service_name: str, role_name: str
@@ -105,7 +114,12 @@ class BotRoleRepository:
 
     async def deactivate_all_in_dept_for_service(
         self, department_id: str, service_name: str
-    ) -> None:
+    ) -> list[str]:
+        """Деактивировать все bot→role связи для (dept, service).
+
+        Возвращает уникальные bot_id затронутых ботов — caller использует это
+        для сброса identity-cache.
+        """
         rows = await self._db.scalars(
             select(BotServiceRole)
             .join(BotAccount, BotAccount.id == BotServiceRole.bot_id)
@@ -114,6 +128,10 @@ class BotRoleRepository:
                 BotServiceRole.service_name == service_name,
             )
         )
+        affected: set[str] = set()
         for row in rows:
+            if row.is_active:
+                affected.add(row.bot_id)
             row.is_active = False
         await self._db.flush()
+        return list(affected)

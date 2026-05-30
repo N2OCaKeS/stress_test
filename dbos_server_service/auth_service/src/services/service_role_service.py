@@ -213,6 +213,33 @@ async def update_role(
     return _to_response(obj)
 
 
+async def _collect_affected_bots_for_role(
+    db: AsyncSession,
+    department_id: str,
+    service_name: str,
+    role_name: str,
+) -> set[str]:
+    """Снести bot→role связи (прямые и через группы) для роли в scope (dept, service).
+
+    Делает:
+      * UPDATE `bot_service_roles` → is_active=False для ботов отдела
+        с этой ролью (прямые носители).
+      * Возвращает union(bot_id'ы прямых носителей, bot_id'ы членов групп,
+        у которых group→role binding был только что деактивирован caller'ом).
+
+    Caller отдельно дёргает `group_repo.deactivate_roles_by_role_name_in_dept`
+    и передаёт его результат через возвращаемый из этого хелпера набор. То есть
+    хелпер делает прямую часть и группомембер-часть, а group-side deactivate
+    остаётся в caller'е — там, где он уже собирает affected_user_ids для
+    юзеров-членов.
+    """
+    bot_role_repo = BotRoleRepository(db)
+    direct = await bot_role_repo.deactivate_by_role_name_in_dept(
+        department_id, service_name, role_name
+    )
+    return set(direct)
+
+
 async def delete_role(
     db: AsyncSession,
     identity: IdentityContext,
@@ -247,9 +274,8 @@ async def delete_role(
     affected_group_ids = await group_repo.deactivate_roles_by_role_name_in_dept(
         department_id, service_name, role_name
     )
-    bot_role_repo = BotRoleRepository(db)
-    affected_bot_ids = await bot_role_repo.deactivate_by_role_name_in_dept(
-        department_id, service_name, role_name
+    direct_bot_ids = await _collect_affected_bots_for_role(
+        db, department_id, service_name, role_name
     )
     # Юзеры-члены затронутых групп тоже теряют роль через group-binding —
     # их identity-cache надо сбросить так же, как у прямых носителей.
@@ -262,7 +288,7 @@ async def delete_role(
     cache_targets = set(affected_user_ids) | set(group_member_ids)
     for uid in cache_targets:
         _invalidate_identity_cache(uid)
-    bot_cache_targets = set(affected_bot_ids) | set(group_bot_ids)
+    bot_cache_targets = direct_bot_ids | set(group_bot_ids)
     for bid in bot_cache_targets:
         _invalidate_identity_cache(bid)
     audit_service.emit(

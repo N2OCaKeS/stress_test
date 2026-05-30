@@ -344,6 +344,10 @@ async def add_bot_member(db: AsyncSession, identity, group_id: str, bot_id: str,
 
     m = await repo.add_bot_member(group_id, bot_id, added_by=identity.user_id)
     await db.commit()
+    # Бот после добавления в группу мгновенно наследует её service-access и
+    # group→role bindings. Без сброса identity-cache до истечения TTL он не
+    # увидит новых прав в introspect.
+    _invalidate_identity_cache(bot_id)
     audit_service.emit(
         "group.bot_member_add", identity.user_id, target_id=group_id, target_type="group",
         details={
@@ -380,6 +384,9 @@ async def remove_bot_member(db: AsyncSession, identity, group_id: str, bot_id: s
 
     await repo.remove_bot_member(m)
     await db.commit()
+    # Симметрично add_bot_member: бот теряет наследуемые от группы service-access
+    # и роли — сбрасываем identity-cache.
+    _invalidate_identity_cache(bot_id)
     audit_service.emit(
         "group.bot_member_remove", identity.user_id, target_id=group_id, target_type="group",
         details={"group_name": grp.name, "bot_id": bot_id},
@@ -499,9 +506,13 @@ async def grant_service_to_group(
     else:
         obj = await repo.grant_service(group_id, service_name, granted_by=identity.user_id)
     members_before = await repo.list_members(group_id)
+    bot_members_before = await repo.list_bot_members(group_id)
     await db.commit()
     for m in members_before:
         _invalidate_identity_cache(m.user_id)
+    # Боты-мемберы тоже унаследуют новый service-access — симметрично юзерам.
+    for bm in bot_members_before:
+        _invalidate_identity_cache(bm.bot_id)
     audit_service.emit(
         "group.service_grant", identity.user_id, target_id=group_id,
         details={
@@ -530,10 +541,13 @@ async def revoke_service_from_group(
         raise NotFoundError(error_code="GROUP_SERVICE_NOT_FOUND",
                             message=f"Group does not have access to '{service_name}'")
     members_before = await repo.list_members(group_id)
+    bot_members_before = await repo.list_bot_members(group_id)
     await repo.revoke_service(access)
     await db.commit()
     for m in members_before:
         _invalidate_identity_cache(m.user_id)
+    for bm in bot_members_before:
+        _invalidate_identity_cache(bm.bot_id)
     audit_service.emit(
         "group.service_revoke", identity.user_id, target_id=group_id,
         details={"group_name": grp.name, "service_name": service_name},
@@ -601,10 +615,13 @@ async def assign_group_roles(
             )
 
     members_before = await repo.list_members(group_id)
+    bot_members_before = await repo.list_bot_members(group_id)
     await repo.set_roles(group_id, service_name, roles, assigned_by=identity.user_id)
     await db.commit()
     for m in members_before:
         _invalidate_identity_cache(m.user_id)
+    for bm in bot_members_before:
+        _invalidate_identity_cache(bm.bot_id)
     audit_service.emit(
         "group.roles_assign", identity.user_id, target_id=group_id,
         details={
@@ -626,10 +643,13 @@ async def revoke_group_roles(
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
     members_before = await repo.list_members(group_id)
+    bot_members_before = await repo.list_bot_members(group_id)
     await repo.clear_roles_for_service(group_id, service_name)
     await db.commit()
     for m in members_before:
         _invalidate_identity_cache(m.user_id)
+    for bm in bot_members_before:
+        _invalidate_identity_cache(bm.bot_id)
     audit_service.emit(
         "group.roles_revoke", identity.user_id, target_id=group_id,
         details={"group_name": grp.name, "service_name": service_name},

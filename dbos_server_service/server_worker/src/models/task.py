@@ -65,6 +65,18 @@ class Task(Base):
     # heartbeat'ы — упал OOM/node-failure'ом до drain'а. NULL = legacy-row
     # или тестовая запись.
     worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # ── Operator cancel ────────────────────────────────────────────────
+    # Заполняется server_service'ом через cross-DB UPDATE при дёрге
+    # `POST /api/server/v1/tasks/{id}/cancel`. Сам status переводится в
+    # CANCELLED тем же UPDATE'ом. Worker при подборе следующей попытки
+    # видит статус через CAS на `mark_running` и пропускает row; running-
+    # task'у это не убивает — graceful, она доживает текущий stage и
+    # просто не стартует следующий.
+    cancelled_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    cancel_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("idempotency_key", name="uq_task_idempotency_key"),

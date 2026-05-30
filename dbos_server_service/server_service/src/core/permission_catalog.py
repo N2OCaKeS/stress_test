@@ -36,6 +36,10 @@ ENTITY_DESCRIPTIONS: dict[str, str] = {
         "Сама матрица прав: смотреть список грантов, выдавать и отзывать "
         "действия ролям."
     ),
+    EntityType.TASK: (
+        "Worker-таска (power, inventory, prepare, rotate и т.д.) в dev_server_worker.tasks. "
+        "Под матрицей доступен только cancel — отмена pending/running задачи."
+    ),
 }
 
 ACTION_DESCRIPTIONS: dict[str, str] = {
@@ -69,6 +73,10 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
     Action.ROTATE_CREDENTIALS: "Ротация пароля BMC.",
     Action.PERMISSION_GRANT: "Выдать роли действие, добавив строку матрицы.",
     Action.PERMISSION_REVOKE: "Отозвать у роли действие.",
+    Action.CANCEL: (
+        "Отменить pending/running worker-task'у. Pending пропускается "
+        "перед запуском, running доживает текущий stage и не стартует следующий."
+    ),
 }
 
 # Чувствительные действия — раскрытие/ротация секретов, управление питанием,

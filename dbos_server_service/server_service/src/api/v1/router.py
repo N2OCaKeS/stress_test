@@ -13,6 +13,7 @@ from src.api.v1.endpoints.permissions import router as permissions_router
 from src.api.v1.endpoints.secrets_migration import router as secrets_migration_router
 from src.api.v1.endpoints.server_accounts import router as server_accounts_router
 from src.api.v1.endpoints.servers import router as servers_router
+from src.api.v1.endpoints.tasks import router as tasks_router
 from src.api.v1.endpoints.worker_dispatch import (
     router_accounts as worker_dispatch_accounts_router,
     router_ipmi as worker_dispatch_ipmi_router,
@@ -29,6 +30,9 @@ router.include_router(installed_packages_router, tags=["installed-packages"])
 router.include_router(users_inventory_router, tags=["server-accounts"])
 router.include_router(os_versions_router, tags=["os-versions"])
 router.include_router(permissions_router, tags=["permissions"])
+# Cancel worker-task'и. Один endpoint — POST /tasks/{id}/cancel. Сами
+# task-row'ы живут в server_worker (cross-DB engine из worker_client).
+router.include_router(tasks_router, tags=["tasks"])
 # Worker-dispatch endpoints: power.status / inventory.sync + admin-initiated
 # rotate'ы для server_account / ipmi_controller. Все — тонкие dispatch'еры
 # через `worker_client.dispatch_task` (см. `endpoints/worker_dispatch.py`).

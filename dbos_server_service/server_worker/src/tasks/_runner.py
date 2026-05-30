@@ -67,6 +67,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
+from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.repositories import task as task_repo
 from src.services import audit_outbox_publisher
@@ -198,6 +199,40 @@ async def run_task(
         task_kind = task.task_kind
         max_attempts = task.max_attempts
         current_status = task.status
+
+        # Cancel fast-path: оператор успел дёрнуть
+        # `POST /tasks/{id}/cancel` после dispatch'а, но до того, как
+        # worker подобрал сообщение из Redis. Status уже cancelled —
+        # `mark_running` CAS всё равно отбил бы её (фильтр по
+        # `status='queued'`), но мы хотим явный audit-event и log,
+        # а не общий `duplicate_dispatch`.
+        if current_status == TaskStatus.CANCELLED:
+            logger.info(
+                "task_id=%s status=cancelled — skipping dispatch (operator cancel)",
+                task_id,
+            )
+            await task_repo.enqueue_audit(
+                session,
+                task_id=task_id,
+                payload={
+                    "action": audit_action,
+                    "status": "failure",
+                    "allowed": False,
+                    "target_id": target_id,
+                    "target_type": audit_target_type,
+                    "request_id": request_id,
+                    "actor_id": actor_id,
+                    "details": {
+                        "task_id": task_id,
+                        "reason": "task_cancelled",
+                        "observed_status": current_status,
+                    },
+                    "severity": "WARNING",
+                },
+            )
+            await session.commit()
+            await _safe_flush_outbox()
+            return
 
         marked = await task_repo.mark_running(
             session, task, worker_id=get_worker_id(),

@@ -29,6 +29,7 @@ poller в worker'е) — нужна миграция и изменения в wo
 
 import asyncio
 import json
+from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
 from sqlalchemy import text
@@ -327,6 +328,138 @@ async def _insert_task_row(
             },
         )
         await session.commit()
+
+
+# Терминальные статусы taskiq lifecycle — task в любом из них уже закрыта
+# и не подлежит отмене. Дублируем имена из server_worker (нет общего пакета).
+_CANCELLABLE_STATUSES: frozenset[str] = frozenset({"queued", "running"})
+
+
+async def _fetch_task_status_and_meta(task_id_value: str) -> dict | None:
+    """Подгрузить статус и метаданные target'а task'и из dev_server_worker.tasks.
+
+    Возвращает dict со status / target_server_id / task_kind либо None,
+    если row не существует. Используется cancel-endpoint'ом для проверки
+    cancellable-precondition и в audit details.
+    """
+    session_factory = _engine_factory()
+    async with session_factory() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT status, target_server_id, task_kind "
+                    "FROM tasks WHERE id = :id"
+                ),
+                {"id": task_id_value},
+            )
+        ).first()
+        if row is None:
+            return None
+        return {
+            "status": row[0],
+            "target_server_id": row[1],
+            "task_kind": row[2],
+        }
+
+
+async def cancel_task(
+    *,
+    task_id_value: str,
+    cancelled_by: str | None,
+    cancel_reason: str | None,
+) -> dict:
+    """Atomic CAS-перевод задачи в CANCELLED. Возвращает финальное состояние.
+
+    Поведение:
+
+    * row нет → возвращаем ``{"found": False}``. Caller (endpoint) поднимет
+      404 ``TASK_NOT_FOUND``.
+    * row есть в `queued`/`running` → UPDATE WHERE status IN (...). Если
+      UPDATE затронул строку — возвращаем ``{"found": True, "cancelled":
+      True, "task_kind": ..., "target_server_id": ...}``.
+    * row есть, но статус уже terminal (`succeeded`/`failed`/`cancelled`) —
+      возвращаем ``{"found": True, "cancelled": False, "previous_status":
+      ...}``. Caller поднимет 409 ``TASK_NOT_CANCELLABLE``.
+
+    CAS условие пишется в `WHERE status IN ('queued','running')`, поэтому
+    параллельный mark_succeeded из worker'а либо мы — кто первый. Без CAS
+    можно было бы перетереть finalize'нувшийся row и потерять `last_error`.
+    """
+    now_iso = datetime.now(timezone.utc)
+    session_factory = _engine_factory()
+    async with session_factory() as session:
+        meta = (
+            await session.execute(
+                text(
+                    "SELECT status, task_kind, target_server_id "
+                    "FROM tasks WHERE id = :id FOR UPDATE"
+                ),
+                {"id": task_id_value},
+            )
+        ).first()
+        if meta is None:
+            await session.rollback()
+            return {"found": False}
+        previous_status = meta[0]
+        task_kind = meta[1]
+        target_server_id = meta[2]
+        if previous_status not in _CANCELLABLE_STATUSES:
+            await session.rollback()
+            return {
+                "found": True,
+                "cancelled": False,
+                "previous_status": previous_status,
+                "task_kind": task_kind,
+                "target_server_id": target_server_id,
+            }
+        # CAS-форма UPDATE на тот же `status IN (...)` — на случай, если
+        # между SELECT FOR UPDATE и UPDATE кто-то всё-таки умудрился
+        # finalize'нуть row (advisory-lock из FOR UPDATE не блокирует
+        # UPDATE из той же транзакции, но тут лишним не будет).
+        result = await session.execute(
+            text(
+                """
+                UPDATE tasks
+                SET status = 'cancelled',
+                    cancelled_by = :cancelled_by,
+                    cancelled_at = :cancelled_at,
+                    cancel_reason = :cancel_reason,
+                    completed_at = :cancelled_at
+                WHERE id = :id AND status IN ('queued', 'running')
+                """
+            ),
+            {
+                "id": task_id_value,
+                "cancelled_by": cancelled_by,
+                "cancelled_at": now_iso,
+                "cancel_reason": cancel_reason,
+            },
+        )
+        if (result.rowcount or 0) == 0:
+            await session.rollback()
+            # SELECT увидел cancellable, UPDATE — нет: race с worker'ом,
+            # успевшим finalize'нуть task. Перечитаем фактический статус.
+            re_meta = (
+                await session.execute(
+                    text("SELECT status FROM tasks WHERE id = :id"),
+                    {"id": task_id_value},
+                )
+            ).first()
+            return {
+                "found": True,
+                "cancelled": False,
+                "previous_status": re_meta[0] if re_meta else previous_status,
+                "task_kind": task_kind,
+                "target_server_id": target_server_id,
+            }
+        await session.commit()
+        return {
+            "found": True,
+            "cancelled": True,
+            "previous_status": previous_status,
+            "task_kind": task_kind,
+            "target_server_id": target_server_id,
+        }
 
 
 async def _delete_task_row(task_id_to_delete: str) -> None:

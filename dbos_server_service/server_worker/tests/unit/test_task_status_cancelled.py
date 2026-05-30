@@ -1,15 +1,12 @@
-"""Документационный тест: TaskStatus.CANCELLED существует, но не выставляется.
+"""Контракт `TaskStatus.CANCELLED` после F22-C — operator cancel реализован.
 
-`TaskStatus.CANCELLED` — зарезервированный член перечисления для будущего
-operator cancel из UI. Тест фиксирует:
-1. Член существует и имеет ожидаемое строковое значение.
-2. Ни один путь в `_runner.run_task` не выставляет этот статус.
-3. Репозиторий задач не имеет функции mark_cancelled (пока).
+F22-C добавил cancel fast-path в `_runner.run_task`: если status уже
+`CANCELLED` (выставлен через `POST /tasks/{id}/cancel` в server_service)
+— runner пропускает dispatch, эмитит результат `reason=task_cancelled`.
+Этот тест фиксирует наличие фичи (не её отсутствие, как было до F22-C).
 """
 
 from __future__ import annotations
-
-import pytest
 
 from src.core.constants import TaskStatus
 
@@ -31,18 +28,14 @@ class TestCancelledMemberExists:
             assert TaskStatus.CANCELLED != status
 
 
-class TestCancelledNotSetByRunner:
-    def test_runner_does_not_import_cancelled(self):
+class TestCancelledFastPathInRunner:
+    """После F22-C runner проверяет CANCELLED и эмитит результат-skip."""
+
+    def test_runner_references_cancelled(self):
         from src.tasks import _runner
         import inspect
         src = inspect.getsource(_runner)
-        # Ни mark_cancelled, ни TaskStatus.CANCELLED в коде runner'а нет.
-        assert "mark_cancelled" not in src
-        assert "CANCELLED" not in src
-
-    def test_task_repo_has_no_mark_cancelled(self):
-        from src.repositories import task as task_repo
-        assert not hasattr(task_repo, "mark_cancelled")
+        assert "CANCELLED" in src, "runner должен иметь cancel fast-path"
 
     def test_enum_all_values(self):
         values = {s.value for s in TaskStatus}

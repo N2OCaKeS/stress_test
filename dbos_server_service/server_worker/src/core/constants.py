@@ -36,8 +36,11 @@ class TaskStatus(StrEnum):
     """Lifecycle-статусы task'и.
 
     QUEUED → RUNNING → (SUCCEEDED | FAILED). RUNNING → QUEUED возможен при
-    retry'е (см. `mark_pending_for_retry`). CANCELLED — пока не используется,
-    зарезервирован под operator cancel из UI.
+    retry'е (см. `mark_pending_for_retry`). CANCELLED выставляется
+    server_service'ом через `POST /api/server/v1/tasks/{id}/cancel` —
+    graceful: pending пропускается перед запуском (CAS на mark_running
+    + явный fast-path в `_runner`), running доживает текущий stage и не
+    стартует следующий.
     """
 
     QUEUED = "queued"

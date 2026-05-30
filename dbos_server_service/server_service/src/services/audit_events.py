@@ -105,6 +105,10 @@ SERVICE_EVENTS = [
     # Read-only IPMI views (user-facing)
     {"action": "ipmi_controller.view_credentials_meta", "description": "IPMI credentials metadata viewed (no plaintext password)", "default_severity": "INFO"},
     {"action": "server.power_status_cached", "description": "Cached power_state viewed from server row (no live probe)", "default_severity": "INFO"},
+    # Worker-task cancel (POST /tasks/{id}/cancel). Помечает row CANCELLED;
+    # worker при подборе следующей попытки пропускает её через CAS на
+    # mark_running. running-task'у не убивает принудительно — graceful.
+    {"action": "task.cancelled", "description": "Worker task cancelled by operator (status set to CANCELLED in dev_server_worker.tasks; running task finishes current stage)", "default_severity": "WARNING"},
 ]
 
 

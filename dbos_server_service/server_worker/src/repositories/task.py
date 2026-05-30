@@ -323,26 +323,29 @@ async def delete_completed_older_than(
     *,
     cutoff: datetime,
 ) -> int:
-    """Удалить terminal task'и (SUCCEEDED/FAILED) с `completed_at < cutoff`.
+    """Удалить terminal task'и (SUCCEEDED/FAILED/CANCELLED) с `completed_at < cutoff`.
 
     Periodic `tasks.cleanup_completed_old` зовёт это раз в сутки — без
     cleanup таблица `tasks` растёт линейно по числу dispatch'ей. На стенде
     ~1k task/день это ~30k row'ов в месяц, индекс по `(status, enqueued_at)`
     распухает, history-запросы по target_server_id тормозят.
 
-    CANCELLED намеренно НЕ дропаем — этот терминальный статус сейчас
-    нигде в коде не выставляется, на всякий случай оставляем за порогом.
-    QUEUED/RUNNING тоже не трогаем, даже если они застряли надолго —
-    их разгребает orphan-sweep с правильным audit-trail'ом.
+    CANCELLED тоже терминальный и попадает под retention. server_service
+    cancel-endpoint выставляет `completed_at = cancelled_at` тем же UPDATE'ом
+    — IS NOT NULL фильтр сработает. QUEUED/RUNNING не трогаем, даже если
+    они застряли надолго — их разгребает orphan-sweep с правильным
+    audit-trail'ом.
 
     `completed_at IS NOT NULL` — explicit guard: для всех terminal task'ов
-    `mark_succeeded`/`mark_failed` ставит timestamp, но без `IS NOT NULL`
+    mark_succeeded/mark_failed/cancel ставит timestamp, но без `IS NOT NULL`
     случайный NULL в этом столбце сделал бы row кандидатом на удаление.
 
     Возвращает количество удалённых строк. Caller отвечает за commit.
     """
     stmt = delete(Task).where(
-        Task.status.in_((TaskStatus.SUCCEEDED, TaskStatus.FAILED)),
+        Task.status.in_(
+            (TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELLED)
+        ),
         Task.completed_at.is_not(None),
         Task.completed_at < cutoff,
     )

@@ -98,6 +98,11 @@ class EntityType(StrEnum):
     # service-ролями (создание/удаление имён ролей) живёт только в auth_service —
     # server_service сюда не лезет, мы только наполняем матрицу actions для них.
     PERMISSION = "permission"
+    # Worker-таска: единственное доступное действие — `cancel`. Сами task-row'ы
+    # живут в dev_server_worker.tasks; server_service ходит туда через cross-DB
+    # engine из `worker_client`, как и при dispatch'е. CRUD/view над таблицей
+    # tasks не предусмотрен — read идёт через server_worker напрямую.
+    TASK = "task"
 
 
 class Action(StrEnum):
@@ -150,6 +155,11 @@ class Action(StrEnum):
     PERMISSION_GRANT = "permission_grant"
     PERMISSION_REVOKE = "permission_revoke"
 
+    # Worker-таска: отмена pending/running задачи. Graceful — pending пропадает
+    # из dispatch'а через CAS, running доживает текущий stage и не стартует
+    # следующий. Force-kill через cancel нет.
+    CANCEL = "cancel"
+
 
 # Whitelist валидных пар (entity_type, action). Несовпадение → 422
 # INVALID_ACTION_FOR_ENTITY в permission_service.grant_action.
@@ -187,6 +197,11 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     }),
     EntityType.PERMISSION: frozenset({
         Action.VIEW, Action.PERMISSION_GRANT, Action.PERMISSION_REVOKE,
+    }),
+    # Worker-таска — только cancel. Подбирать tasks или просматривать историю
+    # через матрицу нельзя; для этого нужен прямой read из server_worker.
+    EntityType.TASK: frozenset({
+        Action.CANCEL,
     }),
 }
 

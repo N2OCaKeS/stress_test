@@ -75,10 +75,16 @@ class TestConstantsMigrationSync:
     def test_all_actions_keys_match_entity_actions_keys(self, seed):
         """Baseline seed мог содержать сущности, которые были выпилены
         follow-on миграциями (например `cpu_model` удалена миграцией
-        `b6f3a91d27e8`). Live `ENTITY_ACTIONS` должен быть подмножеством
-        ключей baseline'а, но не обязательно равенством.
+        `b6f3a91d27e8`). И наоборот — follow-on миграции могут добавлять
+        новые entity_type'ы (например `task` через a8d2b7c1e394). Поэтому
+        строгое subset-отношение в одну сторону больше не выполняется;
+        проверяем по обе стороны со списком известных исключений.
         """
-        assert set(ENTITY_ACTIONS).issubset(set(seed._ALL_ACTIONS))
+        # Entity-типы, добавленные follow-on миграциями ПОСЛЕ baseline 831ba55543e9.
+        added_after_baseline = {"task"}
+        assert (
+            set(ENTITY_ACTIONS) - added_after_baseline
+        ).issubset(set(seed._ALL_ACTIONS))
 
     def test_action_sets_match_per_entity(self, seed):
         """Baseline seed `_ALL_ACTIONS` — снимок матрицы на момент 831ba55543e9.
@@ -103,6 +109,10 @@ class TestConstantsMigrationSync:
             "os_version": {"view"},
         }
         for entity_type, actions in ENTITY_ACTIONS.items():
+            if entity_type not in seed._ALL_ACTIONS:
+                # Entity_type появился follow-on миграцией (например `task`).
+                # Своя seed-миграция её action'ов — `a8d2b7c1e394` и т.п.
+                continue
             migration_actions = set(seed._ALL_ACTIONS[entity_type])
             migration_actions -= removed_actions.get(entity_type, set())
             constants_actions = set(actions)

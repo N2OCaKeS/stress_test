@@ -409,7 +409,6 @@ async def introspect(
                 request_id=request_id,
             )
             return IntrospectResponse(active=False)
-        await bot_token_repo.touch(bot_token)
         bot_repo = BotRepository(db)
         bot = await bot_repo.get_by_id(bot_token.bot_id)
         if bot is None or not bot.is_active:
@@ -426,6 +425,11 @@ async def introspect(
                 request_id=request_id,
             )
             return IntrospectResponse(active=False)
+        # touch только после revalidate'а бота: для inactive bot введён ровно
+        # тот же приём, что и в PAT-ветке для banned/blocked юзера — лишний
+        # UPDATE для токена, который мы всё равно отклонили, искажает
+        # «недавно использован» в админке.
+        await bot_token_repo.touch(bot_token)
         effective_services, effective_roles = await collect_bot_permissions(db, bot)
 
         # Multi-IP detector: пишем caller_ip в `bot.last_known_ips`, при

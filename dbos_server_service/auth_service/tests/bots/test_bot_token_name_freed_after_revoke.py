@@ -1,16 +1,12 @@
 """Bot-токен: имя освобождается после revoke.
 
-exists_name(bot_id, name) фильтрует по `revoked_at IS NULL` — после явного
-revoke'а имя можно использовать повторно. Это штатный flow ротации
+exists_name(bot_id, name) фильтрует по `revoked_at IS NULL` + БД-уровень
+держит partial unique `(bot_id, name) WHERE revoked_at IS NULL` — после
+явного revoke'а имя можно использовать повторно. Это штатный flow ротации
 (dept_admin revoke → mint с тем же именем раз в полгода).
 
 Аналог `test_pat_recreate_after_revoke.py` для bot-токенов.
-Тесты на пересоздание помечены xfail: `uq_bot_token_name` в БД — не partial
-unique, блокирует даже revoked-строки. src-сторона (exists_name) корректна,
-нужна миграция UNIQUE (bot_id, name) WHERE revoked_at IS NULL.
 """
-
-import pytest
 
 BOTS_URL = "/api/auth/v1/bots"
 
@@ -40,14 +36,6 @@ async def _revoke_token(client, admin_token, bot_id, token_id):
     )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "uq_bot_token_name не partial — DB UNIQUE блокирует revoked-строки; "
-        "exists_name фильтрует revoked_at IS NULL корректно, нужна миграция "
-        "UNIQUE (bot_id, name) WHERE revoked_at IS NULL"
-    ),
-    strict=False,
-)
 async def test_bot_token_name_freed_after_revoke(client, admin_token, dept_a):
     """После revoke'а имя bot-токена можно использовать повторно — 201, не 409."""
     bot_id = await _make_bot(client, admin_token, dept_a.id, name="rn_name_test_bot")
@@ -68,13 +56,6 @@ async def test_bot_token_name_freed_after_revoke(client, admin_token, dept_a):
     assert second.json()["token_id"] != token_id
 
 
-@pytest.mark.xfail(
-    reason=(
-        "uq_bot_token_name не partial — цикл revoke→создать ломается на 2-м цикле "
-        "из-за DB UNIQUE на (bot_id, name) без WHERE revoked_at IS NULL"
-    ),
-    strict=False,
-)
 async def test_multiple_revoked_tokens_same_name_allowed(client, admin_token, dept_a):
     """Можно revoke → создать → revoke → создать с одним именем несколько раз."""
     bot_id = await _make_bot(client, admin_token, dept_a.id, name="rn_multi_revoke_bot")

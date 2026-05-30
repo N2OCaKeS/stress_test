@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db.base import Base
@@ -10,7 +10,18 @@ from src.db.base import Base
 
 class BotToken(Base):
     __tablename__ = "bot_tokens"
-    __table_args__ = (UniqueConstraint("bot_id", "name", name="uq_bot_token_name"),)
+    # Partial unique: имя занято только у активных токенов. После revoke
+    # dept_admin может выпустить новый токен с тем же именем (ротация раз
+    # в полгода). Code-уровень `exists_name` фильтрует так же.
+    __table_args__ = (
+        Index(
+            "uq_bot_token_name_active",
+            "bot_id",
+            "name",
+            unique=True,
+            postgresql_where="revoked_at IS NULL",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     bot_id: Mapped[str] = mapped_column(

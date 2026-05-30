@@ -444,6 +444,11 @@ async def exchange_code(
             error_code="INVALID_GRANT",
             message="Authorization code is invalid or already used",
         )
+    # Single-use инвариант RFC 6749 §4.1.2: код должен пометиться used сразу,
+    # независимо от исхода последующих проверок (user_not_found / inactive).
+    # Без явного commit'а raise в pre-JWT-проверках откатывает mark_used
+    # через rollback в get_db(), и тот же код можно обменять повторно.
+    await db.commit()
 
     user_repo = UserRepository(db)
     user = await user_repo.get_by_id(auth_code.user_id)

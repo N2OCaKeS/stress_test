@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,7 +11,18 @@ from src.db.base import Base
 
 class PersonalAccessToken(Base):
     __tablename__ = "personal_access_tokens"
-    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_pat_user_name"),)
+    # Partial unique: имя занято только пока PAT активен. Revoke освобождает
+    # имя для повторной выписки (rotation flow). Совпадает с фильтром
+    # `exists_name` на code-уровне.
+    __table_args__ = (
+        Index(
+            "uq_pat_user_name_active",
+            "user_id",
+            "name",
+            unique=True,
+            postgresql_where="revoked_at IS NULL",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     user_id: Mapped[str] = mapped_column(

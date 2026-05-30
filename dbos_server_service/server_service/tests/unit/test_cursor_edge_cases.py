@@ -17,7 +17,6 @@ from datetime import datetime, timezone, timedelta
 import pytest
 
 from src.utils.cursor import (
-    Cursor,
     InvalidCursorError,
     decode_cursor,
     encode_cursor,
@@ -27,17 +26,22 @@ from src.utils.cursor import (
 
 
 class TestEncodeDecodeEdgeCases:
-    def test_empty_row_id_round_trip(self):
-        """row_id из пустой строки — технически допустим, не бросает."""
+    def test_empty_row_id_rejected(self):
+        """row_id из пустой строки — отбрасывается валидацией формата
+        (минимум 1 символ). Защита от sentinel-курсоров.
+        """
         ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
         token = encode_cursor(ts, "")
-        cur = decode_cursor(token)
-        assert cur.row_id == ""
+        with pytest.raises(InvalidCursorError):
+            decode_cursor(token)
 
-    def test_unicode_row_id_round_trip(self):
+    def test_unicode_row_id_rejected(self):
+        """row_id с не-ASCII — отбрасывается. Наши id'шники базируются на
+        base32hex (см. `src/utils/ids.py`), unicode из вне быть не может.
+        """
         token = encode_cursor("some-sort-value", "srv_АБВ_123")
-        cur = decode_cursor(token)
-        assert cur.row_id == "srv_АБВ_123"
+        with pytest.raises(InvalidCursorError):
+            decode_cursor(token)
 
     def test_payload_with_extra_keys_accepted(self):
         """JSON с лишними ключами — допустим, decode берёт только k и i."""

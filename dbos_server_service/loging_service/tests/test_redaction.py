@@ -29,6 +29,13 @@ class TestRedactKeyBased:
         for k in ("secret", "api_key", "client_secret", "private_key"):
             assert redact({k: "v"})[k] == "<SECRET>"
 
+    def test_secret_keys_cover_s2s_ingest_names(self):
+        # Auth/server-сервисы аудитят rotate-операции с полями
+        # `service_api_key` / `service_key` / `introspect_key` в `details`;
+        # без exact-set lookup'а secret уезжал бы в БД в plaintext.
+        for k in ("service_api_key", "service_key", "introspect_key"):
+            assert redact({k: "rotated-secret-value"})[k] == "<SECRET>"
+
     def test_hash_keys(self):
         for k in ("password_hash", "hash", "token_hash"):
             assert redact({k: "v"})[k] == "<HASH>"

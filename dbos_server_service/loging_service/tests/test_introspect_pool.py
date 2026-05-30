@@ -7,9 +7,9 @@
 * startup → builds a single pooled client with ``base_url=auth_service_url``,
   bounded ``Limits(max_connections=20, max_keepalive_connections=10)``, and
   ``verify=settings.introspect_tls_verify``;
-* ``_fetch_identity`` uses the pool when set; иначе (ad-hoc, lifespan не
-  стартовал) открывает эфемерный ``AsyncClient`` ровно на один запрос —
-  sync httpx нигде не используется;
+* ``_fetch_identity`` использует pool, когда он поднят; pool=None →
+  ``AppException(503, INTROSPECT_NOT_INITIALIZED)`` — эфемерный fallback
+  снят;
 * shutdown → ``await _introspect_client.aclose()``.
 
 Тесты покрывают:
@@ -17,8 +17,8 @@
 * lifespan startup/shutdown семантику на реальном ``create_application()``;
 * pooled-path использует существующий ``AsyncClient`` под N параллельных
   ``_fetch_identity`` вместо создания новых;
-* fallback-path (pool=None) открывает эфемерный ``AsyncClient`` с тем же
-  wire-format'ом, что pooled — и с тем же ``verify``-флагом;
+* pool=None → 503 ``INTROSPECT_NOT_INITIALIZED`` без открытия эфемерного
+  клиента;
 * sanity: pooled-path шлёт ``X-Service-Identity`` + ``Authorization``;
 * TLS-verify флаг доходит до pooled-клиента.
 
@@ -370,103 +370,37 @@ def test_pooled_introspect_active_false_raises_invalid_token(monkeypatch):
         asyncio.run(pooled.aclose())
 
 
-# ── _fetch_identity fallback path (backward compat) ─────────────────────────
+# ── _fetch_identity без pool'а: 503 INTROSPECT_NOT_INITIALIZED ──────────────
 
 
-def test_fallback_path_uses_ephemeral_async_client_when_pool_none(monkeypatch):
-    """When ``_introspect_client is None`` (ad-hoc, lifespan не запускался),
-    `_fetch_identity` открывает короткоживущий `AsyncClient` ровно на один
-    запрос — sync `httpx.post` нигде не используется.
+def test_fetch_identity_raises_when_pool_is_none(monkeypatch):
+    """`_introspect_client is None` (lifespan не отработал — ad-hoc вне
+    TestClient'а) — `_fetch_identity` отдаёт 503 `INTROSPECT_NOT_INITIALIZED`,
+    не пытается открыть эфемерный клиент и не зовёт sync `httpx.post`.
 
-    Регрессия: pool=None НЕ должен молча проваливаться или блокировать
-    event-loop sync-вызовом.
+    Production-инвариант: ingest и read-эндпоинты всегда идут через pool,
+    собранный lifespan'ом. Молча открывать эфемеру в hot-path — путь к
+    handshake-storm'у и slowloris-fan-out'у, ради которого pool и заведён.
     """
     monkeypatch.setattr(auth_dep, "_introspect_client", None)
     monkeypatch.setattr(auth_dep, "get_settings", lambda: _fake_settings())
 
-    captured: dict = {}
+    # Жёсткая страховка: фабрика AsyncClient'а не должна быть вызвана.
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("ephemeral AsyncClient must not be constructed")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["authorization"] = request.headers.get("Authorization")
-        captured["x_service_identity"] = request.headers.get("X-Service-Identity")
-        import json as _json
-        captured["body"] = _json.loads(request.content.decode())
-        return httpx.Response(200, json={
-            "active": True, "sub": "usr_fallback",
-            "username": "fb", "platform_role": "loging_admin",
-        })
-
-    real_async_client = httpx.AsyncClient
-    ephemeral_count = {"n": 0}
-
-    def factory(*args, **kwargs):
-        ephemeral_count["n"] += 1
-        # Подсовываем MockTransport, чтобы запрос не ушёл в реальную сеть.
-        kwargs["transport"] = httpx.MockTransport(handler)
-        return real_async_client(*args, **kwargs)
-
-    monkeypatch.setattr(auth_dep.httpx, "AsyncClient", factory)
+    monkeypatch.setattr(auth_dep.httpx, "AsyncClient", _forbidden)
 
     async def _drive():
         return await auth_dep._fetch_identity(
-            _make_credentials("eyJfallback_token_long_enough_xxx"),
+            _make_credentials("eyJpool_missing_token_long_enough"),
             _fake_request(),
         )
 
-    result = asyncio.run(_drive())
-    assert result["user_id"] == "usr_fallback"
-    # Ровно один эфемерный AsyncClient на запрос.
-    assert ephemeral_count["n"] == 1
-    # Wire-format совпадает с pooled-путём.
-    assert captured["body"] == {"token": "eyJfallback_token_long_enough_xxx"}
-    assert captured["authorization"] == "Bearer pool-test-key"
-    assert captured["x_service_identity"] == "loging_service"
-    assert captured["url"].endswith("/api/auth/v1/authorization/introspect")
-
-
-def test_fallback_path_honours_introspect_tls_verify(monkeypatch):
-    """``introspect_tls_verify`` пробрасывается в эфемерный `AsyncClient`
-    (как kwarg `verify=` при создании). Default True — production. False —
-    devcontainer/local с self-signed.
-    """
-    monkeypatch.setattr(auth_dep, "_introspect_client", None)
-    monkeypatch.setattr(
-        auth_dep,
-        "get_settings",
-        lambda: _fake_settings(api_key="tls-verify-key", verify=False),
-    )
-
-    captured: dict = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={
-            "active": True, "sub": "usr_v",
-            "username": "v", "platform_role": "loging_admin",
-        })
-
-    real_async_client = httpx.AsyncClient
-
-    def factory(*args, **kwargs):
-        captured["verify"] = kwargs.get("verify")
-        captured["timeout"] = kwargs.get("timeout")
-        kwargs["transport"] = httpx.MockTransport(handler)
-        return real_async_client(*args, **kwargs)
-
-    monkeypatch.setattr(auth_dep.httpx, "AsyncClient", factory)
-
-    async def _drive():
-        return await auth_dep._fetch_identity(
-            _make_credentials("eyJverify_test_token_long_enough_x"),
-            _fake_request(),
-        )
-
-    asyncio.run(_drive())
-    assert captured["verify"] is False
-    # Timeout пробрасывается как httpx.Timeout(read=..., connect=...).
-    assert isinstance(captured["timeout"], httpx.Timeout)
-    assert captured["timeout"].read == 3.0
-    assert captured["timeout"].connect == 2.0
+    with pytest.raises(AppException) as exc_info:
+        asyncio.run(_drive())
+    assert exc_info.value.http_status == 503
+    assert exc_info.value.error_code == "INTROSPECT_NOT_INITIALIZED"
 
 
 # ── TLS verify flag is propagated into the pooled client ────────────────────

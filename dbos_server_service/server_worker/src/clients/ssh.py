@@ -432,21 +432,49 @@ class SshClient:
     ) -> None:
         """Записать `public_key` в `~/.ssh/authorized_keys` пользователя `login`.
 
-        Валидирует, что ключ — однострочная строка с известным prefix'ом
-        (rsa/ed25519/ecdsa/sk-*), затем кладёт через stdin (без подстановки
-        в argv — спецсимволы комментария ключа не попадают в shell).
-
         `force_replace=True` создаёт `authorized_keys` с нуля одним этим
         ключом (re-provision после переустановки ОС: старые записи теряют
         смысл). `force_replace=False` — идемпотентно дописывает ключ, если
         точного совпадения строки не нашлось через `grep -qxF`.
         """
         self._validate_login(login)
+        await self._install_authorized_key(
+            target_user=login,
+            public_key=public_key,
+            truncate=force_replace,
+            error_code="SSH_AUTHORIZED_KEYS_FAILED",
+        )
+
+    async def _install_authorized_key(
+        self,
+        *,
+        target_user: str,
+        public_key: str,
+        truncate: bool,
+        error_code: str,
+    ) -> None:
+        """Общая реализация записи ключа в `~/<user>/.ssh/authorized_keys`.
+
+        Используется и обычным `_write_authorized_key` для server_account,
+        и `bootstrap_management_user` для управляющего пользователя. На
+        подходе третий call-site — ротация ключа управляющего пользователя.
+
+        `target_user` обязан быть уже провалидирован caller'ом
+        (`_validate_login` или эквивалент): подставляется в shell-команду,
+        не через stdin.
+
+        Валидирует ключ (single-line, известный prefix), собирает home
+        через `getent passwd`, кладёт ключ на stdin (`$(cat)`), правит
+        права 700/600 и chown. На `truncate=True` файл перезаписывается
+        одним ключом; на `truncate=False` — идемпотентный append через
+        `grep -qxF`.
+        """
+        cmd_label = f"prepare authorized_keys <{target_user}>"
         if not public_key or not public_key.strip():
             raise SshError(
                 error_code="SSH_INVALID_ARG",
                 host=self.host,
-                cmd_sanitized=f"prepare authorized_keys <{login}>",
+                cmd_sanitized=cmd_label,
                 message="public key is empty",
             )
         key_line = public_key.strip()
@@ -454,7 +482,7 @@ class SshClient:
             raise SshError(
                 error_code="SSH_INVALID_ARG",
                 host=self.host,
-                cmd_sanitized=f"prepare authorized_keys <{login}>",
+                cmd_sanitized=cmd_label,
                 message="public key must be a single line",
             )
         if not key_line.startswith((
@@ -465,14 +493,10 @@ class SshClient:
             raise SshError(
                 error_code="SSH_INVALID_ARG",
                 host=self.host,
-                cmd_sanitized=f"prepare authorized_keys <{login}>",
+                cmd_sanitized=cmd_label,
                 message="public key has unsupported algorithm prefix",
             )
-        # Та же конструкция, что и в `bootstrap_management_user`: home через
-        # `getent passwd`, ключ — на stdin (`$(cat)`), chmod 700/600 в конце.
-        # Разница — флаг `force_replace`: при True перезаписываем файл целиком
-        # (truncate), иначе идемпотентно дописываем при отсутствии совпадения.
-        if force_replace:
+        if truncate:
             write_cmd = (
                 'printf "%s\\n" "$key" > "$home/.ssh/authorized_keys"'
             )
@@ -484,11 +508,11 @@ class SshClient:
             )
         rc, _out, stderr = await self.run(
             f"bash -c 'set -e; "
-            f"home=$(getent passwd {login} | cut -d: -f6); "
+            f"home=$(getent passwd {target_user} | cut -d: -f6); "
             'mkdir -p "$home/.ssh"; '
             "key=$(cat); "
             f"{write_cmd}; "
-            f'chown -R {login}: "$home/.ssh"; '
+            f'chown -R {target_user}: "$home/.ssh"; '
             'chmod 700 "$home/.ssh"; '
             'chmod 600 "$home/.ssh/authorized_keys"\'',
             sudo=True,
@@ -496,9 +520,9 @@ class SshClient:
         )
         if rc != 0:
             raise SshError(
-                error_code="SSH_AUTHORIZED_KEYS_FAILED",
+                error_code=error_code,
                 host=self.host,
-                cmd_sanitized=f"prepare authorized_keys <{login}>",
+                cmd_sanitized=cmd_label,
                 returncode=rc,
                 stderr=stderr.strip(),
                 message=f"authorized_keys setup exit code {rc}",
@@ -607,6 +631,9 @@ class SshClient:
         комментария не ломали shell).
         """
         self._validate_login(management_user)
+        # Pre-валидируем ключ ДО useradd/sudoers (битый ключ — фейл setup'а
+        # без побочных эффектов на /etc). Сам install ниже повторит проверку
+        # в `_install_authorized_key` — это OK, regex дешёвый, дубль не мешает.
         if not public_key or not public_key.strip():
             raise SshError(
                 error_code="SSH_INVALID_ARG",
@@ -622,10 +649,6 @@ class SshClient:
                 cmd_sanitized="prepare authorized_keys",
                 message="management public key must be a single line",
             )
-        # Defence-in-depth: ключ уходит через stdin (не argv), shell-инъекция
-        # невозможна, но если payload подменён на произвольную строку — она
-        # окажется в authorized_keys рабочего сервера. Префикс отбивает
-        # очевидный мусор и явно требует поддерживаемый формат.
         if not key_line.startswith((
             "ssh-rsa ", "ssh-ed25519 ", "ssh-dss ",
             "ecdsa-sha2-nistp256 ", "ecdsa-sha2-nistp384 ", "ecdsa-sha2-nistp521 ",
@@ -734,34 +757,18 @@ class SshClient:
                 message=f"sudoers setup exit code {rc}",
             )
 
-        # 3-4. ~/.ssh + authorized_keys и дозапись ключа. Делаем одной
-        # sudo-командой через bash, чтобы не плодить раунд-трипы. Путь к home
-        # резолвим через `getent passwd` внутри bash (домашняя директория
-        # управляющего юзера). `grep -qxF` проверяет точное совпадение строки —
-        # без него повторный prepare дублировал бы ключ.
-        rc, _out, stderr = await self.run(
-            f"bash -c 'set -e; "
-            f"home=$(getent passwd {management_user} | cut -d: -f6); "
-            'mkdir -p "$home/.ssh"; '
-            'touch "$home/.ssh/authorized_keys"; '
-            "key=$(cat); "
-            'grep -qxF "$key" "$home/.ssh/authorized_keys" || '
-            'printf "%s\\n" "$key" >> "$home/.ssh/authorized_keys"; '
-            f'chown -R {management_user}: "$home/.ssh"; '
-            'chmod 700 "$home/.ssh"; '
-            'chmod 600 "$home/.ssh/authorized_keys"\'',
-            sudo=True,
-            stdin_payload=f"{key_line}\n",
+        # 3-4. ~/.ssh + authorized_keys и дозапись ключа. Повторный prepare
+        # должен быть идемпотентным — `truncate=False` дописывает ключ только
+        # при отсутствии точного совпадения (grep -qxF). Сам `_install_*` на
+        # ошибке поднимает SshError с `error_code="SSH_PREPARE_FAILED"` —
+        # bootstrap'у удобнее, чтобы оператор отличал сетап управляющего
+        # пользователя от обычного account-flow'а.
+        await self._install_authorized_key(
+            target_user=management_user,
+            public_key=public_key,
+            truncate=False,
+            error_code="SSH_PREPARE_FAILED",
         )
-        if rc != 0:
-            raise SshError(
-                error_code="SSH_PREPARE_FAILED",
-                host=self.host,
-                cmd_sanitized=f"prepare authorized_keys <{management_user}>",
-                returncode=rc,
-                stderr=stderr.strip(),
-                message=f"authorized_keys setup exit code {rc}",
-            )
 
     async def _sudo_group_membership(self, login: str) -> set[str]:
         """Вернуть подмножество `{sudo, wheel}`, в которых состоит login.

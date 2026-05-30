@@ -1,8 +1,9 @@
 """Дополнительные тесты cancel-endpoint'а, не вошедшие в test_task_cancel_endpoint.py.
 
 Покрывает:
-* task без target_server_id (heartbeat-like) — dept-isolation не применяется,
-  только permission-check;
+* task с target_server_id=None, но **с** created_by — пользовательская задача
+  без серверного контекста (например, прерванный dispatch до выбора target'а);
+  dept-isolation не применяется, гарда системных task'ов тоже не срабатывает;
 * worker-DB unavailable (ServiceUnavailableError из _fetch) → 503 без denied-аудита;
 * task_id граничные значения: минимум (1 символ) и максимум (64 символа);
 * task_id длиннее 64 символов → 422;
@@ -70,24 +71,31 @@ def _events(captured, action):
     return [e for e in captured if e["action"] == action]
 
 
-class TestTaskCancelNoTargetServer:
-    """Task без target_server_id — dept-isolation не применяется."""
+class TestTaskCancelNoTargetServerUserCreated:
+    """Task без target_server_id, но с created_by — пользовательская, не системная.
 
-    async def test_admin_cancels_heartbeat_task(
+    Системные task'и (heartbeat/sweep/cleanup_completed) дополнительно требуют
+    account_admin (см. ``unit/test_task_cancel_system_task_guard.py``); здесь
+    проверяем, что не-системная task с target_server_id=None обычным
+    dept-admin'ом всё ещё отменяется без отдельной гарды.
+    """
+
+    async def test_admin_cancels_user_task_without_target(
         self, client, admin_role_token_a, fake_worker, captured_audit,
     ):
-        fake_worker["tasks"]["tsk_heartbeat_1"] = {
+        fake_worker["tasks"]["tsk_no_target_1"] = {
             "status": "queued",
             "target_server_id": None,
-            "task_kind": "heartbeat",
+            "task_kind": "inventory.sync",
+            "created_by": "usr_someone",
         }
         resp = await client.post(
-            f"{BASE}/tasks/tsk_heartbeat_1/cancel",
+            f"{BASE}/tasks/tsk_no_target_1/cancel",
             headers=_hdr(admin_role_token_a),
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["task_id"] == "tsk_heartbeat_1"
+        assert body["task_id"] == "tsk_no_target_1"
         assert body["previous_status"] == "queued"
 
         ev = _events(captured_audit, "task.cancelled")
@@ -98,13 +106,14 @@ class TestTaskCancelNoTargetServer:
     async def test_task_without_server_id_terminal_gives_409(
         self, client, admin_role_token_a, fake_worker,
     ):
-        fake_worker["tasks"]["tsk_heartbeat_done"] = {
+        fake_worker["tasks"]["tsk_no_target_done"] = {
             "status": "succeeded",
             "target_server_id": None,
-            "task_kind": "heartbeat",
+            "task_kind": "inventory.sync",
+            "created_by": "usr_someone",
         }
         resp = await client.post(
-            f"{BASE}/tasks/tsk_heartbeat_done/cancel",
+            f"{BASE}/tasks/tsk_no_target_done/cancel",
             headers=_hdr(admin_role_token_a),
         )
         assert resp.status_code == 409

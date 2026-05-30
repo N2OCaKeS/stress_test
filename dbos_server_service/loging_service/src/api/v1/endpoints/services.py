@@ -122,7 +122,7 @@ def list_services(
         "события только под собственным именем (защита от cross-tenant "
         "audit-trail poisoning).\n\n"
         "**Возможные ошибки:**\n"
-        "- 401 `INVALID_SERVICE_TOKEN` — нет или неверный SERVICE_API_KEY.\n"
+        "- 401 `INVALID_SERVICE_KEY` — нет или неверный SERVICE_API_KEY.\n"
         "- 403 `RESERVED_SERVICE_NAME` — попытка зарегистрировать события "
         "под `loging_service` (зарезервировано для self-audit).\n"
         "- 403 `SERVICE_IDENTITY_PATH_MISMATCH` — `X-Service-Identity` "

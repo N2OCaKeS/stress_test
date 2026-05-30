@@ -12,14 +12,19 @@
   получают 403.
 * visibility: если у task есть `target_server_id`, проверяем dept-isolation
   на этом сервере (cross-dept → 404 ``TASK_NOT_FOUND``, как обычно).
-  Task без target_server_id (heartbeat и подобные) доступен только тем,
-  у кого есть `(task, cancel)` — таких тасок оператор обычно не отменяет.
+  Системные task'и (`target_server_id IS NULL` И `created_by IS NULL` —
+  heartbeat/sweep/cleanup_completed) требуют платформенной роли
+  ``account_admin``: dept-admin с (task, cancel) может ходить в свои
+  серверные task'и, но не должен ломать кластерный worker health
+  отменой heartbeat'а. Не account_admin → 403 ``denied`` с
+  ``reason=system_task_admin_required``.
 * cancellable-precondition: pending/running. Terminal (succeeded/failed/
   cancelled) → 409 ``TASK_NOT_CANCELLABLE``.
-* graceful: row помечается status=cancelled + cancelled_by/cancelled_at/
-  cancel_reason. Running-task'у не убивает принудительно — worker сам
-  доживёт текущий stage и не стартанёт следующий (CAS на mark_running
-  в `_runner` отобьёт повторный pickup).
+* применяется немедленно: queued — сразу cancelled, running — worker
+  завершает текущий stage и видит status=cancelled при попытке terminal
+  mark_succeeded/failed (CAS отбрасывает финализацию, финальный статус
+  остаётся cancelled). Re-kick подавляется CAS'ом на mark_running в
+  `_runner`. Force-kill процесса нет.
 * audit: `task.cancelled` (WARNING по дефолту) с details.task_kind /
   target_server_id / previous_status.
 """
@@ -30,7 +35,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Body, Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, EntityType
+from src.core.constants import Action, EntityType, PlatformRole
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -60,7 +65,7 @@ router = APIRouter(prefix="/tasks")
         "Force-kill нет. Доступ: `(task, cancel)` — по-дефолту только `admin`."
     ),
     responses={
-        403: {"description": "Нет роли с `cancel` на task."},
+        403: {"description": "Нет роли с `cancel` на task либо системная task требует account_admin."},
         404: {"description": "Task не найдена (нет row либо cross-dept по target_server_id)."},
         409: {"description": "Task в терминальном статусе (succeeded/failed/cancelled) и не подлежит отмене."},
     },
@@ -102,8 +107,30 @@ async def cancel_task_endpoint(
 
     target_server_id = meta.get("target_server_id")
     task_kind = meta.get("task_kind")
+    created_by = meta.get("created_by")
 
-    # 3. Dept-isolation по target_server_id, если есть. Cross-dept маскируем
+    # 3. Системные task'и (target_server_id IS NULL И created_by IS NULL —
+    #    heartbeat/sweep/cleanup_completed, заведённые scheduler'ом без актора)
+    #    отменяются только платформенным account_admin'ом. Любой dept-admin
+    #    с (task, cancel) на этой стадии — 403, иначе он может затушить
+    #    кластерный worker health для всех отделов.
+    is_system_task = target_server_id is None and created_by is None
+    if is_system_task and identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
+        audit_service.emit(
+            audit_action, target_id=task_id, target_type="task",
+            status="denied", allowed=False,
+            details={
+                "reason": "system_task_admin_required",
+                "task_kind": task_kind,
+                "target_server_id": target_server_id,
+            },
+        )
+        raise AuthorizationError(
+            error_code="SYSTEM_TASK_ADMIN_REQUIRED",
+            message="System tasks can only be cancelled by account_admin",
+        )
+
+    # 4. Dept-isolation по target_server_id, если есть. Cross-dept маскируем
     #    под 404 — стандартный enumeration-guard.
     if target_server_id is not None:
         try:
@@ -123,7 +150,7 @@ async def cancel_task_endpoint(
                 message="Task not found",
             )
 
-    # 4. Atomic UPDATE через cross-DB engine.
+    # 5. Atomic UPDATE через cross-DB engine.
     result = await worker_client.cancel_task(
         task_id_value=task_id,
         cancelled_by=identity.user_id,

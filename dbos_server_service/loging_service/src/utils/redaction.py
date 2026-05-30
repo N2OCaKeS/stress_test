@@ -16,6 +16,12 @@ TODO (см. obsidian/TODO.md P4): вынести в общий пакет — sd
 руками в синхронности).
 
 Плейсхолдеры: `<PASSWORD>`, `<TOKEN>`, `<SECRET>`, `<HASH>`, `<CREDENTIAL>`.
+
+Списки ключей — exact-set lookup по нижнему регистру. В частности,
+`_SECRET_KEYS` включает имена ключей S2S-ингеста (`service_api_key`,
+`service_key`, `introspect_key`) и `bearer` — auth_service / server_service
+аудитят rotate-операции с этими именами в `details`, без них secret уезжал
+бы в БД в plaintext.
 """
 
 from __future__ import annotations
@@ -36,6 +42,7 @@ _TOKEN_KEYS = {
 _SECRET_KEYS = {
     "secret", "secret_key", "api_key", "apikey",
     "client_secret", "private_key", "signing_key",
+    "service_api_key", "service_key", "introspect_key", "bearer",
 }
 _HASH_KEYS = {
     "password_hash", "hash", "token_hash", "pwd_hash",

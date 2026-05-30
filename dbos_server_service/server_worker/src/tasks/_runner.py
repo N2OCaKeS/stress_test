@@ -129,6 +129,24 @@ def _filter_result_for_audit(
     return {k: v for k, v in result.items() if k in safe_fields}
 
 
+def _attach_cancel_metadata(details: dict, task) -> None:
+    """Доклеить `cancelled_by`/`cancel_reason` в details cancel-audit'а.
+
+    Поля приходят из `POST /tasks/{id}/cancel` (см. migration 0005). Если
+    оператор не указал reason или server_service не пробросил actor_id — в
+    DB лежит NULL, в audit такие поля просто не попадают: пустые значения
+    в audit-payload только захламляют дашборды.
+    """
+    if task is None:
+        return
+    cancelled_by = getattr(task, "cancelled_by", None)
+    if cancelled_by is not None:
+        details["cancelled_by"] = cancelled_by
+    cancel_reason = getattr(task, "cancel_reason", None)
+    if cancel_reason is not None:
+        details["cancel_reason"] = cancel_reason
+
+
 async def run_task(
     task_id: str,
     *,
@@ -211,6 +229,12 @@ async def run_task(
                 "task_id=%s status=cancelled — skipping dispatch (operator cancel)",
                 task_id,
             )
+            cancel_details = {
+                "task_id": task_id,
+                "reason": "task_cancelled",
+                "observed_status": current_status,
+            }
+            _attach_cancel_metadata(cancel_details, task)
             await task_repo.enqueue_audit(
                 session,
                 task_id=task_id,
@@ -222,11 +246,7 @@ async def run_task(
                     "target_type": audit_target_type,
                     "request_id": request_id,
                     "actor_id": actor_id,
-                    "details": {
-                        "task_id": task_id,
-                        "reason": "task_cancelled",
-                        "observed_status": current_status,
-                    },
+                    "details": cancel_details,
                     "severity": "WARNING",
                 },
             )
@@ -364,6 +384,12 @@ async def run_task(
                 audit_status = "failure"
                 if cancelled_midrun:
                     audit_severity = "WARNING"
+                    # Перечитываем row: cancel мог прийти между первым
+                    # `get_by_id` и `mark_*` (CAS), тогда у `fresh`
+                    # cancel-поля ещё пустые. Лишний SELECT на уже редкой
+                    # ветке не страшен — зато в audit попадёт актуальный
+                    # `cancelled_by` / `cancel_reason`.
+                    refreshed = await task_repo.get_by_id(fail_session, task_id)
                     audit_details = {
                         "task_id": task_id,
                         "error": error_message,
@@ -373,6 +399,7 @@ async def run_task(
                         "observed_status": TaskStatus.CANCELLED.value,
                         "reason": "cancelled_midrun",
                     }
+                    _attach_cancel_metadata(audit_details, refreshed)
                 elif should_retry:
                     audit_severity = "WARNING"
                     audit_details = {
@@ -445,6 +472,13 @@ async def run_task(
             # сессиями (защита от silent no-op: владелец task'и удалил
             # row → пусть audit об этом останется).
             if success_cancelled_midrun:
+                refreshed = await task_repo.get_by_id(success_session, task_id)
+                success_cancel_details = {
+                    "task_id": task_id,
+                    "reason": "cancelled_midrun",
+                    "observed_status": TaskStatus.CANCELLED.value,
+                }
+                _attach_cancel_metadata(success_cancel_details, refreshed)
                 audit_payload = {
                     "action": audit_action,
                     "status": "failure",
@@ -453,11 +487,7 @@ async def run_task(
                     "target_type": audit_target_type,
                     "request_id": request_id,
                     "actor_id": actor_id,
-                    "details": {
-                        "task_id": task_id,
-                        "reason": "cancelled_midrun",
-                        "observed_status": TaskStatus.CANCELLED.value,
-                    },
+                    "details": success_cancel_details,
                     "severity": "WARNING",
                 }
             else:

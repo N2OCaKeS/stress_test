@@ -29,11 +29,11 @@ FastAPI-`lifespan`'ом в `src/main.py`:
 slowdown auth_service в 503 fan-out. Один pooled client кэпает количество
 исходящих коннектов и амортизирует TLS-handshake по запросам — симметрично `server_service`.
 
-Fallback (`_introspect_client is None`) — эфемерный `AsyncClient`, открытый
-и закрытый ровно на один запрос. Это путь для ad-hoc сценариев, где lifespan
-не стартовал (например, прямой вызов `_fetch_identity` в тестах без
-TestClient). Production всегда идёт через pool — lifespan отрабатывает до
-первого запроса.
+Pool обязателен: если `_introspect_client is None` при request-path
+(lifespan не запускался — ad-hoc/прямой вызов вне TestClient'а),
+`_fetch_identity` поднимает 503 `INTROSPECT_NOT_INITIALIZED`. Эфемерного
+fallback'а нет: production всегда идёт через lifespan; тесты, которым
+нужен introspect, обязаны подменить pool monkeypatch'ом.
 """
 
 import logging
@@ -77,11 +77,9 @@ _bearer = HTTPBearer(auto_error=False)
 _DEPT_SCOPED_ROLES = {"loging_reader", "department_admin"}
 
 # Module-level pooled client. Инициализируется в `main.lifespan` (startup),
-# закрывается в shutdown. Остаётся `None` вне app-lifecycle (например, при
-# раннем импорте в ad-hoc тестах, где lifespan не запускается) —
-# `_fetch_identity` в этом случае открывает эфемерный `AsyncClient` ровно
-# на один запрос (см. ниже). Production request-path всегда через pool —
-# lifespan отрабатывает до первого запроса.
+# закрывается в shutdown. Остаётся `None` вне app-lifecycle — в этом случае
+# `_fetch_identity` отбивает 503 `INTROSPECT_NOT_INITIALIZED`. Production
+# request-path всегда через pool, lifespan отрабатывает до первого запроса.
 _introspect_client: httpx.AsyncClient | None = None
 
 # Pooled клиент для проксирования Swagger-логина (`POST /token`). Тоже
@@ -91,8 +89,7 @@ _introspect_client: httpx.AsyncClient | None = None
 _token_proxy_client: httpx.AsyncClient | None = None
 
 # Где живёт introspect на auth_service. Pooled-клиент использует
-# base_url + этот относительный путь; fallback конкатенирует с
-# `settings.auth_service_url`.
+# base_url + этот относительный путь.
 _INTROSPECT_PATH = "/api/auth/v1/authorization/introspect"
 
 
@@ -197,10 +194,10 @@ async def _fetch_identity(
     кладёт subject id в `sub`; мы экспозим его как `user_id`, чтобы остальной
     loging_service не трогать (audit middleware, эндпоинт-хендлеры).
 
-    Production-path — pooled `_introspect_client`. Fallback (ad-hoc
-    тесты, где lifespan не запускался) — эфемерный `AsyncClient` ровно
-    на один запрос (open → POST → aclose). Sync `httpx.post` нигде не
-    используется.
+    Production-path — pooled `_introspect_client`. Если pool не поднят
+    (lifespan не запускался — ad-hoc вызов вне TestClient'а), отдаём
+    503 `INTROSPECT_NOT_INITIALIZED`. Тесты, которым нужен introspect,
+    обязаны подменить pool monkeypatch'ом.
     """
     if credentials is None:
         raise AppException(http_status=401, error_code="MISSING_TOKEN",
@@ -231,31 +228,14 @@ async def _fetch_identity(
     }
 
     client = _introspect_client
+    if client is None:
+        raise AppException(
+            http_status=503,
+            error_code="INTROSPECT_NOT_INITIALIZED",
+            message="Introspect HTTP client is not initialised (lifespan did not run)",
+        )
     try:
-        if client is not None:
-            # Pooled (production) path: base_url выставлен на клиенте.
-            resp = await client.post(_INTROSPECT_PATH, json=payload, headers=headers)
-        else:
-            # Fallback (ad-hoc, lifespan не запускался): эфемерный AsyncClient
-            # ровно на один запрос. Sync `httpx.post` не используем —
-            # вне event-loop'а live-сессии это блокировало бы threadpool,
-            # а внутри loop'а sync вызов недоступен совсем. Эфемерный
-            # клиент дороже pooled'а (один handshake), но это test/ad-hoc
-            # путь, не hot-path.
-            base = settings.auth_service_url.rstrip("/")
-            timeout = httpx.Timeout(
-                settings.introspect_timeout_seconds,
-                connect=settings.introspect_connect_timeout_seconds,
-            )
-            async with httpx.AsyncClient(
-                timeout=timeout,
-                verify=settings.introspect_tls_verify,
-            ) as ephemeral:
-                resp = await ephemeral.post(
-                    f"{base}{_INTROSPECT_PATH}",
-                    json=payload,
-                    headers=headers,
-                )
+        resp = await client.post(_INTROSPECT_PATH, json=payload, headers=headers)
     except httpx.TimeoutException:
         raise AppException(http_status=503, error_code="AUTH_SERVICE_TIMEOUT",
                            message="Auth service did not respond in time")
@@ -289,9 +269,11 @@ async def _fetch_identity(
     # (PAT/bot/oauth m2m) писались бы `actor_type="user"`, и SOC видел
     # бы fake user-активность на каждом service-вызове.
     # Anonymous (без токена) сюда не попадает — обрабатывается в
-    # `main._emit_audit`, где `identity is None`.
+    # `main._emit_audit`, где `identity is None`. `service` тоже не
+    # приходит через introspect: service-to-service caller'ы аутенти-
+    # фицируются через `require_service_token`, не через JWT.
     subject_type = body.get("subject_type")
-    if subject_type in ("user", "bot", "oauth_client", "service"):
+    if subject_type in ("user", "bot", "oauth_client"):
         identity["actor_type"] = subject_type
     else:
         # Старый introspect мог не присылать `subject_type` — backward-compat.

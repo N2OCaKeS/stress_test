@@ -17,8 +17,17 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
+
+# row_id в декодированном курсоре должен соответствовать общему формату
+# id'шников проекта (см. `src/utils/ids.py` — префикс + base32hex). Без явной
+# валидации длинный/junk row_id проходит decode и уходит в WHERE-условие,
+# где даёт пустую страницу вместо честной 400 INVALID_CURSOR. Длина 64 —
+# с запасом (наши id ~16 символов), но защищает от мегабайтных payload'ов
+# через manually-сконструированный курсор.
+_ROW_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 class InvalidCursorError(ValueError):
@@ -67,6 +76,8 @@ def decode_cursor(token: str) -> Cursor:
     row_id = data.get("i")
     if not isinstance(sort_value, str) or not isinstance(row_id, str):
         raise InvalidCursorError("cursor payload is missing 'k' or 'i'")
+    if not _ROW_ID_RE.match(row_id):
+        raise InvalidCursorError("row_id format invalid")
     return Cursor(sort_value=sort_value, row_id=row_id)
 
 

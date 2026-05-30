@@ -40,6 +40,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,6 +54,26 @@ from src.services.audit_publisher_breaker import CircuitBreakerOpenError
 from src.utils.redaction import redact_error_message
 
 logger = logging.getLogger(__name__)
+
+class PublishResult(NamedTuple):
+    """Исход одной попытки `_publish_one`.
+
+    Три независимых сигнала, которые caller использует по-разному, и три
+    позиционных bool'а легко путаются местами — отсюда NamedTuple.
+
+    * `closed` — row завершила свой цикл в этом проходе (опубликована, в
+      DLQ или skip'нута breaker'ом). Caller не должен повторно её
+      SELECT'ить в рамках текущего `_flush_outbox_once`.
+    * `audit_emit_error` — была реальная HTTP-failure от loging_service
+      (5xx/timeout/connect). Сигнал loop-level breaker'у.
+    * `was_published` — row пометилась `published_at=NOW()` после 2xx. Не
+      путать с `closed`: DLQ-row тоже `closed`, но `was_published=False`.
+    """
+
+    closed: bool
+    audit_emit_error: bool
+    was_published: bool
+
 
 # Сколько строк за один проход. Размер выбран маленьким сознательно:
 # `_publish_one` делает HTTP-запрос в loging_service на каждую строку, при
@@ -240,10 +261,10 @@ def _apply_backoff(row: AuditOutbox) -> None:
 
 async def _publish_one(
     session: AsyncSession, row: AuditOutbox,
-) -> tuple[bool, bool, bool]:
+) -> PublishResult:
     """Попытка отправить одну строку.
 
-    Возвращает `(closed, audit_emit_error, was_published)`:
+    Возвращает `PublishResult(closed, audit_emit_error, was_published)`:
       * `closed=True, was_published=True` — успешный 2xx, row помечена published.
       * `closed=True, was_published=False` — row отбракована в DLQ
         (missing_action / permanent_4xx / attempts_cap), либо breaker уже open
@@ -265,7 +286,7 @@ async def _publish_one(
         row.last_error = "missing_action"
         _send_to_dlq(row, reason="missing_action")
         await session.flush()
-        return True, False, False
+        return PublishResult(closed=True, audit_emit_error=False, was_published=False)
 
     # Shared circuit breaker перед HTTP-вызовом. Если loging_service уже
     # признан недоступным другими репликами — отбиваем запрос без сетевого
@@ -284,7 +305,7 @@ async def _publish_one(
         # не должен повторять row в этом проходе; audit_emit_error=False —
         # это не сигнал loop-level breaker'у, тот ведёт свой счёт по
         # реальным HTTP-failure'ам.
-        return True, False, False
+        return PublishResult(closed=True, audit_emit_error=False, was_published=False)
 
     try:
         # `audit_client.emit` сам решает, что считать неудачей:
@@ -321,7 +342,7 @@ async def _publish_one(
         if exc.status_code is not None and 400 <= exc.status_code < 500:
             _send_to_dlq(row, reason="permanent_4xx")
             await session.flush()
-            return True, False, False
+            return PublishResult(closed=True, audit_emit_error=False, was_published=False)
 
         if _maybe_poison(row):
             # Cap по attempts — row закрыта в DLQ. Breaker НЕ открываем:
@@ -329,7 +350,7 @@ async def _publish_one(
             # себе ядовитая, нет смысла обвинять канал. Если loging
             # реально лежит, следующие row'ы это покажут.
             await session.flush()
-            return True, False, False
+            return PublishResult(closed=True, audit_emit_error=False, was_published=False)
         _apply_backoff(row)
         await session.flush()
         # Transient HTTP-failure от loging_service (5xx/timeout/connect) —
@@ -343,7 +364,7 @@ async def _publish_one(
             exc.status_code,
             row.next_retry_at,
         )
-        return False, True, False
+        return PublishResult(closed=False, audit_emit_error=True, was_published=False)
     except Exception as exc:  # noqa: BLE001
         # Программные ошибки (сериализация, неожиданные exception'ы) —
         # тоже не маркируем published, publisher повторит на следующем
@@ -354,7 +375,7 @@ async def _publish_one(
         row.last_error = error_message[:LAST_ERROR_MAX_LEN]
         if _maybe_poison(row):
             await session.flush()
-            return True, False, False
+            return PublishResult(closed=True, audit_emit_error=False, was_published=False)
         _apply_backoff(row)
         await session.flush()
         logger.warning(
@@ -364,7 +385,7 @@ async def _publish_one(
             type(exc).__name__,
             row.next_retry_at,
         )
-        return False, False, False
+        return PublishResult(closed=False, audit_emit_error=False, was_published=False)
 
     row.published_at = datetime.now(timezone.utc)
     # На успех — обнуляем backoff (был выставлен предыдущей попыткой,
@@ -375,7 +396,7 @@ async def _publish_one(
     # Дёргается на каждый успех — Redis-команда дешёвая (DEL × 3), а
     # симметрия с record_failure упрощает чтение кода.
     await audit_publisher_breaker.record_success()
-    return True, False, True
+    return PublishResult(closed=True, audit_emit_error=False, was_published=True)
 
 
 def _select_unpublished(limit: int):
@@ -477,23 +498,23 @@ async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
     for _ in range(limit):
         async with AsyncSessionLocal() as session:
             stmt = _select_unpublished_excluding(1, failed_ids)
-            result = await session.execute(stmt)
-            row = result.scalars().first()
+            select_res = await session.execute(stmt)
+            row = select_res.scalars().first()
             if row is None:
                 # Очередь пуста (либо все оставшиеся row'ы в `failed_ids`) —
                 # выходим, не нужно бить лишний SELECT.
                 break
             row_id = row.id
-            closed, audit_emit_error, was_published = await _publish_one(session, row)
-            if was_published:
+            publish_res = await _publish_one(session, row)
+            if publish_res.was_published:
                 published += 1
-            if not closed:
+            if not publish_res.closed:
                 # Row осталась unpublished — не SELECT'им её повторно в
                 # этом проходе. DLQ-row (closed=True, was_published=False)
                 # тоже исчезает из выборки (через `published_at`), её не
                 # надо отдельно exclude'ить.
                 failed_ids.append(row_id)
-            if audit_emit_error:
+            if publish_res.audit_emit_error:
                 audit_emit_errors += 1
             # commit отпускает SKIP LOCKED-lock этой одной row'и сразу,
             # не дожидаясь обработки остальных. Другая replica может

@@ -161,6 +161,8 @@ Auth: AnyAdmin. Body:
 
 `department_id` обязателен для всех, кроме `account_admin`. `department_admin` может создавать только в своём отделе и **не** account_admin. Назначать любую `platform_role` может только `account_admin`.
 
+**`loging_reader` обязан иметь `department_id`** — это dept-scoped reader (видит аудит только своего отдела). Если пользователя с `platform_role=loging_reader` создать без `department_id`, на первом же GET в `loging_service` он получит **403 `NO_DEPARTMENT`** — это by design, fallback «нет dept → видеть всё» не сделан. Для глобального read-only по аудиту используется `platform_role=loging_admin` или `platform_role=account_admin` (обе создаются без `department_id`).
+
 Errors: `USERNAME_TAKEN` (409), `DEPARTMENT_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin создаёт в чужом отделе, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin пытается выдать `platform_role`.
 
 ### `PATCH /users/{user_id}`

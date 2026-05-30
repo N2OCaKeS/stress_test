@@ -250,7 +250,12 @@ class TestPatchIntegrityErrorWithoutName:
     def test_integrity_error_with_name_still_returns_409_conflict(
         self, admin_client, monkeypatch
     ):
-        """Регрессия: легитимный rename-конфликт продолжает быть 409."""
+        """Регрессия: легитимный rename-конфликт продолжает быть 409.
+
+        Симметрично с `create_rule` — pgcode `23505` + наличие `payload.name`
+        мапим в 409. Голый `orig=None` после fw11 уходит в 500, чтобы не врать
+        SOC'у про конфликт имён при неизвестной причине IntegrityError'а.
+        """
         from sqlalchemy.exc import IntegrityError
 
         from src.api.v1.endpoints import rules as rules_endpoint
@@ -259,8 +264,11 @@ class TestPatchIntegrityErrorWithoutName:
             RULES_URL, json=make_rule(name="orig"),
         ).json()
 
+        class _Orig:
+            pgcode = "23505"  # настоящий UniqueViolation
+
         def _boom(db, rule, payload, *, commit=True):
-            raise IntegrityError("simulated unique-name", params=None, orig=None)
+            raise IntegrityError("simulated unique-name", params=None, orig=_Orig())
 
         monkeypatch.setattr(rules_endpoint.rule_repo, "update", _boom)
 

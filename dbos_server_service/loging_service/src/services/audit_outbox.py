@@ -219,29 +219,36 @@ class AuditOutbox:
                         batch.append(self._queue.get_nowait())
                     except asyncio.QueueEmpty:
                         break
+                # `committed_ids` — общий между корутиной и thread-target'ом
+                # set. `_write_batch_sync` ПОСЛЕ успешного `db.commit()` кладёт
+                # туда `id(envelope)` каждого закоммитнутого события. Если в
+                # этот момент прилетает `CancelledError` (между returning из
+                # `to_thread` и +=`_drained_total`), мы по этому set'у узнаём,
+                # какие envelope'ы УЖЕ в БД, и не дублируем их при requeue.
+                committed_ids: set[int] = set()
                 try:
-                    await self._flush_batch(batch)
+                    await self._flush_batch(batch, committed_ids)
                 except asyncio.CancelledError:
                     # `stop()` отменил задачу прямо во время flush — батч уже
-                    # выдернут из очереди, но в БД может быть не записан
-                    # (или записан частично — `_write_batch_sync` либо
-                    # коммитнулся целиком, либо ничего; `to_thread` отменить
-                    # на полпути нельзя). Возвращаем events обратно в
-                    # очередь, чтобы `_drain_remaining` подобрал их под
-                    # shutdown-бюджет. Если очередь уже не помещает —
-                    # считаем потерянными и инкрементим `_dropped_total`,
-                    # чтобы факт потери не маскировался.
+                    # выдернут из очереди, БД могла принять часть или весь
+                    # commit. `committed_ids` — то, что точно в БД; всё
+                    # остальное возвращаем в очередь под `_drain_remaining`.
                     requeued = 0
                     for envelope in batch:
+                        if id(envelope) in committed_ids:
+                            continue
                         try:
                             self._queue.put_nowait(envelope)
                             requeued += 1
                         except asyncio.QueueFull:
                             break
-                    lost = len(batch) - requeued
-                    if lost:
+                    lost = len(batch) - len(committed_ids) - requeued
+                    if lost > 0:
                         with self._counters_lock:
                             self._dropped_total += lost
+                    if committed_ids:
+                        with self._counters_lock:
+                            self._drained_total += len(committed_ids)
                     raise
                 # Маленькая пауза, чтобы не молотить процессор, если queue
                 # пуст. `asyncio.Queue.get()` сам await'ит до появления
@@ -293,12 +300,26 @@ class AuditOutbox:
                 )
                 return
 
-    async def _flush_batch(self, batch: list[AuditEnvelope]) -> None:
-        """Пишет батч одной транзакцией в `asyncio.to_thread`."""
+    async def _flush_batch(
+        self,
+        batch: list[AuditEnvelope],
+        committed_ids: set[int] | None = None,
+    ) -> None:
+        """Пишет батч одной транзакцией в `asyncio.to_thread`.
+
+        `committed_ids` — опциональный shared set, который `_write_batch_sync`
+        заполняет `id(envelope)`'ами ПОСЛЕ `db.commit()`. Нужен `_drain_loop`'у,
+        чтобы при `CancelledError` между `to_thread` returning и `_drained_total +=`
+        не requeue'ить уже закоммитнутые события.
+        """
         if not batch:
             return
+        if committed_ids is None:
+            committed_ids = set()
         try:
-            succeeded = await asyncio.to_thread(self._write_batch_sync, batch)
+            succeeded = await asyncio.to_thread(
+                self._write_batch_sync, batch, committed_ids
+            )
             # `succeeded` — сколько savepoint'ов закоммитилось. Failures за
             # отказавшие savepoint'ы уже забампил `_write_batch_sync` через
             # `_bump_failure`, отдельно не считаем. Инвариант:
@@ -315,7 +336,11 @@ class AuditOutbox:
                 len(batch), exc, exc_info=True,
             )
 
-    def _write_batch_sync(self, batch: list[AuditEnvelope]) -> int:
+    def _write_batch_sync(
+        self,
+        batch: list[AuditEnvelope],
+        committed_ids: set[int],
+    ) -> int:
         """Sync-часть flush'а: одна сессия, savepoint на событие, один commit.
 
         `record_admin_action(commit=False)` живёт в общей транзакции, каждый
@@ -326,16 +351,21 @@ class AuditOutbox:
 
         Возвращает число успешно записанных событий — caller использует это
         значение для `_drained_total`, чтобы partial-failure не приводил к
-        перерасчёту `drained + failures > enqueued`.
+        перерасчёту `drained + failures > enqueued`. Дополнительно после
+        успешного `db.commit()` кладёт `id(envelope)` каждого закоммитнутого
+        события в shared `committed_ids` — это нужно `_drain_loop`'у, чтобы
+        корректно отработать `CancelledError`, прилетевший уже после commit'а.
         """
         db = self._session_factory()
         succeeded = 0
+        succeeded_envs: list[AuditEnvelope] = []
         try:
             for envelope in batch:
                 try:
                     with db.begin_nested():
                         self._writer(db, envelope)
                     succeeded += 1
+                    succeeded_envs.append(envelope)
                 except Exception as exc:
                     self._bump_failure()
                     logger.error(
@@ -343,6 +373,12 @@ class AuditOutbox:
                         envelope.action, exc, exc_info=True,
                     )
             db.commit()
+            # ВАЖНО: помечаем commit-success ДО возврата, чтобы async-caller
+            # мог отличить «to_thread вернулся, commit прошёл» от «cancelled
+            # до commit'а» даже если `CancelledError` прилетит между этим
+            # моментом и returning из `to_thread`.
+            for env in succeeded_envs:
+                committed_ids.add(id(env))
         finally:
             db.close()
         return succeeded

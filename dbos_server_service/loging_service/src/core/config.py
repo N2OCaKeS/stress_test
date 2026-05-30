@@ -134,6 +134,16 @@ class Settings(BaseSettings):
     # исключены в `main.py` (см. `_RATE_LIMIT_EXEMPT_PATHS`).
     ingest_rate_limit: str = Field(default="100/minute", alias="INGEST_RATE_LIMIT")
 
+    # Per-IP rate-limit на `GET /events` (read-канал admin/reader).
+    # Закрывает Low DoS-вектор: даже без write-доступа атакующий с валидным
+    # reader-JWT может вычерпать pgsql-пул широкими COUNT/SELECT'ами по
+    # многомиллионному журналу. `audit_count_statement_timeout_ms` ограничивает
+    # каждую отдельную query, лимит — частоту таких query от одного клиента.
+    # Default консервативный — admin-дашборды редко смотрят чаще 1 req/s.
+    audit_query_rate_limit: str = Field(
+        default="60/minute", alias="AUDIT_QUERY_RATE_LIMIT"
+    )
+
     # Per-service-identity rate-limit на `POST /services/{service}/events`.
     # Симметрия с `INGEST_RATE_LIMIT`, но key'ится по `X-Service-Identity`,
     # а не IP — batch-канал доступен только internal caller'ам через k8s

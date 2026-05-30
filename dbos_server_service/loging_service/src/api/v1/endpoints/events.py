@@ -178,7 +178,17 @@ def create_event(
         "только при `include_total=true`, иначе null."
     ),
 )
+# Per-IP лимит на read-канал: даже валидный reader-JWT не должен иметь права
+# выжимать pgsql-пул широкими SELECT'ами по multi-million журналу. Лимит
+# отдельный от ingest'а, ключуется по IP (reader'ов мало, идут с разных
+# IP — глобальный bucket был бы over-restrictive). slowapi требует
+# `request: Request` параметром эндпоинта (см. комментарий у `create_event`).
+@limiter.limit(
+    lambda: get_settings().audit_query_rate_limit,
+)
 def list_events(
+    request: Request,
+    response: Response,
     identity: ReaderIdentity,
     db: Session = Depends(get_db),
     department_id: str | None = Query(default=None, description="Фильтр по ID отдела"),

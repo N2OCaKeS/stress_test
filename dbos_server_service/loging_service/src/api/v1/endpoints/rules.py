@@ -233,27 +233,35 @@ def update_rule(
         _audit(db, identity, "logging_rule.update", {"rule_id": rule_id, "changes": payload.model_dump(exclude_unset=True)})
         db.commit()
         db.refresh(updated)
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
-        # PATCH без `name` тоже может ловить IntegrityError (NOT NULL / FK /
-        # CHECK на другом поле). Слепой emit RULE_NAME_CONFLICT отдавал бы
-        # клиенту "Rule with name 'None' already exists" — врёт SOC'у и
-        # путает caller'а, которому нужно искать настоящую причину.
-        # Если имя в payload есть — это легитимный rename, 409 NAME_CONFLICT.
-        # Если name не менялся — IntegrityError пришёл от другого constraint,
-        # отдаём 500 с честным error_code, чтобы caller не тратил время на
-        # поиск несуществующего конфликта имён.
-        if payload.name is None:
-            raise AppException(
-                http_status=500,
-                error_code="INTERNAL_ERROR",
-                message="Database constraint violation during rule update",
-                details={"rule_id": rule_id},
+        # PATCH ловит IntegrityError по двум осям: имя (UNIQUE на name) и
+        # любые другие constraint'ы (NOT NULL / FK / CHECK на других полях).
+        # Слепой 409 RULE_NAME_CONFLICT для всех случаев врёт SOC'у про
+        # дубликат, которого может не быть. Симметрично с `create_rule`:
+        # разбираем pgcode из orig, и только pgcode `23505` + наличие
+        # `payload.name` мапим в 409. Если `payload.name is None` и пришёл
+        # 23505 — это уже странно (UNIQUE на NULL не имеет смысла) → 500.
+        # Любой pgcode ≠ 23505 → 500 INTERNAL_ERROR без вранья про имя.
+        orig = getattr(exc, "orig", None)
+        pgcode = (
+            getattr(orig, "sqlstate", None)
+            or getattr(getattr(orig, "pgcode", None), "value", None)
+            or getattr(orig, "pgcode", None)
+        )
+        orig_cls = type(orig).__name__ if orig is not None else ""
+        is_unique = pgcode == "23505" or orig_cls == "UniqueViolation"
+        if is_unique and payload.name is not None:
+            raise ConflictError(
+                error_code="RULE_NAME_CONFLICT",
+                message=f"Rule with name '{payload.name}' already exists",
+                details={"name": payload.name},
             )
-        raise ConflictError(
-            error_code="RULE_NAME_CONFLICT",
-            message=f"Rule with name '{payload.name}' already exists",
-            details={"name": payload.name},
+        raise AppException(
+            http_status=500,
+            error_code="INTERNAL_ERROR",
+            message="Database constraint violation during rule update",
+            details={"rule_id": rule_id},
         )
     rule_service.invalidate_cache()
     return RuleResponse.model_validate(updated)

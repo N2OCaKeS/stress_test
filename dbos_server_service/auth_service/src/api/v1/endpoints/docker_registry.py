@@ -30,9 +30,15 @@ from src.services import docker_registry_service
 router = APIRouter(prefix="/docker")
 
 
-def _parse_basic_auth(authorization: str | None) -> tuple[str, str]:
-    """Распарсить Basic Authorization header. Падает с AuthenticationError если что-то не так."""
-    if not authorization or not authorization.lower().startswith("basic "):
+def _parse_basic_auth(authorization: str) -> tuple[str, str]:
+    """Распарсить Basic Authorization header.
+
+    Caller обязан проверить, что header вообще пришёл — None/пустую строку
+    сюда передавать нельзя (для анонимного flow `docker_token` отдельно
+    выбирает ветку `anonymous=True`). Non-Basic header (например `Bearer …`)
+    → MISSING_CREDENTIALS.
+    """
+    if not authorization.lower().startswith("basic "):
         raise AuthenticationError(
             error_code="MISSING_CREDENTIALS",
             message="Basic authentication required",
@@ -43,6 +49,23 @@ def _parse_basic_auth(authorization: str | None) -> tuple[str, str]:
         return username, password
     except Exception:
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Malformed Basic auth header")
+
+
+def _scope_has_push(scope: str) -> bool:
+    """Грубая проверка: пушит ли клиент. Чистый pull-only scope разрешает anon."""
+    for part in scope.split():
+        segments = part.split(":")
+        if len(segments) >= 3 and "push" in segments[-1].split(","):
+            return True
+    return False
+
+
+def _scope_has_pull(scope: str) -> bool:
+    for part in scope.split():
+        segments = part.split(":")
+        if len(segments) >= 3 and "pull" in segments[-1].split(","):
+            return True
+    return False
 
 
 # ── Управление конфигом (dept_admin или account_admin) ───────────────────────
@@ -183,10 +206,33 @@ async def docker_token(
         * `username:dbos_pat_…` — PAT как пароль;
         * `botname:dbos_bot_…` — bot-токен как пароль.
 
+    Анонимный pull:
+        Если `Authorization` не прислан и scope состоит только из
+        `pull`-action'ов — issuer вернёт JWT с `access`, ограниченным
+        registry с `pull_policy='all'`. Пустой scope без header → 401
+        (нечего выдавать, и legacy-тесты на пустой scope этого ждут).
+
     Возможные ошибки:
         * `MISSING_CREDENTIALS` / `INVALID_CREDENTIALS` (401).
         * `ACCOUNT_TEMPORARILY_LOCKED` (429) — lockout после 5 неудач.
+        * `PUSH_DEPT_MISMATCH` (403) — push в registry чужого отдела.
     """
+    if not authorization:
+        # Анонимный путь — только если scope чисто pull (и не пустой).
+        if scope and _scope_has_pull(scope) and not _scope_has_push(scope):
+            return await docker_registry_service.issue_token(
+                db=db,
+                username="",
+                password="",
+                service=service,
+                scope=scope,
+                request_id=getattr(request.state, "request_id", None),
+                anonymous=True,
+            )
+        raise AuthenticationError(
+            error_code="MISSING_CREDENTIALS",
+            message="Basic authentication required",
+        )
     username, password = _parse_basic_auth(authorization)
     return await docker_registry_service.issue_token(
         db=db,

@@ -380,6 +380,59 @@ def _resolve_actions(cfg, subject_id: str, requested_actions: list[str]) -> list
     return allowed
 
 
+def _parse_registry_name(resource_name: str) -> str | None:
+    """Из `<registry_name>/<image>[/<sub>]` достаём `registry_name`.
+
+    Legacy-scope без `/` (например `repository:myapp:pull`) — registry_name
+    не задан, возвращаем None: вызывающий код фолбэкается на конфиг отдела
+    caller'а.
+    """
+    if "/" not in resource_name:
+        return None
+    return resource_name.split("/", 1)[0]
+
+
+def list_docker_registry_permissions(registry_names: list[str]) -> list[str]:
+    """Динамические права `docker_registry.<name>.pull|push` для каталога permissions.
+
+    Per-dept push enforcement: право `.push` имеет смысл только в связке с
+    отделом-владельцем registry; сама строка тут — справочный каталог,
+    проверка владения уезжает в `issue_token`.
+    """
+    out: list[str] = []
+    for name in registry_names:
+        out.append(f"docker_registry.{name}.pull")
+        out.append(f"docker_registry.{name}.push")
+    return out
+
+
+async def _resolve_registry(
+    db: AsyncSession, registry_name: str | None, fallback_department_id: str | None
+):
+    """Найти `(department, cfg)` по имени registry или по department_id caller'а.
+
+    `registry_name` берётся из scope (`<name>/<image>`). Если в scope нет
+    `/`, registry_name отсутствует — возвращаем конфиг отдела caller'а
+    (legacy-поведение `repository:myapp:pull`). Возвращаем `(None, None)`,
+    если ничего не нашли.
+    """
+    docker_repo = DockerRegistryRepository(db)
+    dept_repo = DepartmentRepository(db)
+
+    if registry_name is not None:
+        dept = await dept_repo.get_by_name(registry_name)
+        if dept is None:
+            return None, None
+        cfg = await docker_repo.get_by_department(dept.id)
+        return dept, cfg
+
+    if fallback_department_id is None:
+        return None, None
+    dept = await dept_repo.get_by_id(fallback_department_id)
+    cfg = await docker_repo.get_by_department(fallback_department_id)
+    return dept, cfg
+
+
 async def issue_token(
     db: AsyncSession,
     username: str,
@@ -387,11 +440,269 @@ async def issue_token(
     service: str,
     scope: str,
     request_id: str | None = None,
+    anonymous: bool = False,
 ) -> DockerTokenResponse:
-    """Выдать scoped Docker JWT (RS256, TTL ~5 мин) с access-claims по запрошенному scope."""
+    """Выдать scoped Docker JWT (RS256, TTL ~5 мин) с access-claims по запрошенному scope.
+
+    `anonymous=True` — клиент не прислал `Authorization`. В этом режиме
+    Docker registry token endpoint всё равно возвращает JWT, но `access`
+    включает `pull` только для registry с `pull_policy='all'`; push в анон
+    режиме невозможен. Эндпоинт должен сам решать, пускать ли анон —
+    исторически `/docker/token` требовал Basic для всех путей, но docker
+    registry protocol штатно ходит без header'а за anonymous-pull токеном.
+    """
     settings = get_settings()
+    if anonymous:
+        subject_id, department_id = None, None
+    else:
+        subject_id, department_id = await _authenticate_with_audit(
+            db, username, password, service, scope, request_id, settings
+        )
+
+    requested_access = _parse_scope(scope)
+
+    # Legacy guard: scope без `<registry_name>/` (форма `repository:myapp:pull`)
+    # = fallback на конфиг отдела caller'а. Если caller аутентифицирован, но
+    # у его отдела вообще нет docker registry — раньше тут отбивалось 403
+    # DOCKER_ACCESS_DENIED ещё до парсинга. Сохраняем поведение для legacy-
+    # scope, чтобы не ломать клиентов, не переехавших на `<dept>/<image>`.
+    legacy_only_scope = bool(requested_access) and all(
+        _parse_registry_name(e["name"]) is None for e in requested_access
+    )
+    if not anonymous and legacy_only_scope:
+        docker_repo = DockerRegistryRepository(db)
+        caller_cfg = (
+            await docker_repo.get_by_department(department_id) if department_id else None
+        )
+        if caller_cfg is None or not caller_cfg.is_enabled:
+            audit_service.emit(
+                "docker.token_issued",
+                subject_id,
+                department_id=department_id,
+                target_id=service or settings.docker_registry_service,
+                target_type="docker_registry",
+                status="failure",
+                allowed=False,
+                details={
+                    "reason": "NO_CFG" if caller_cfg is None else "DISABLED",
+                    "username": username,
+                    "service": service or settings.docker_registry_service,
+                    "requested_scope": scope,
+                },
+                request_id=request_id,
+            )
+            raise AuthorizationError(
+                error_code="DOCKER_ACCESS_DENIED",
+                message="Docker registry is not enabled for this department",
+            )
+
+    allowed_access: list[dict] = []
+    legacy_cfg = None  # кеш конфига caller-отдела для legacy-scope без `/`
+
+    for entry in requested_access:
+        registry_name = _parse_registry_name(entry["name"])
+        dept, cfg = await _resolve_registry(db, registry_name, department_id)
+
+        # Legacy fallback: scope без `/` и caller аутентифицирован —
+        # пускаем по конфигу его собственного отдела (старое поведение).
+        if cfg is None and registry_name is None and not anonymous:
+            cfg = legacy_cfg
+        if registry_name is None and cfg is not None:
+            legacy_cfg = cfg
+
+        actions = entry["actions"]
+        granted: list[str] = []
+
+        # ── PUSH ─────────────────────────────────────────────────────────
+        if "push" in actions:
+            if anonymous:
+                # Анон push физически невозможен — не аудируем, просто
+                # выкидываем action (docker daemon получит 401 на push после
+                # проверки токена registry'ём).
+                pass
+            elif cfg is None or not cfg.is_enabled:
+                audit_service.emit(
+                    "docker.push_denied", subject_id,
+                    department_id=department_id,
+                    target_id=registry_name or "",
+                    target_type="docker_registry",
+                    status="failure", allowed=False,
+                    details={
+                        "reason": "REGISTRY_NOT_FOUND" if cfg is None else "REGISTRY_DISABLED",
+                        "registry_name": registry_name,
+                        "scope": entry,
+                    },
+                    request_id=request_id,
+                )
+            elif dept is not None and dept.id != department_id:
+                # Hard-fail: caller из чужого отдела ломится в чужой registry.
+                audit_service.emit(
+                    "docker.push_denied", subject_id,
+                    department_id=department_id,
+                    target_id=registry_name or "",
+                    target_type="docker_registry",
+                    status="failure", allowed=False,
+                    details={
+                        "reason": "PUSH_DEPT_MISMATCH",
+                        "registry_name": registry_name,
+                        "registry_owner_dept_id": dept.id,
+                        "caller_dept_id": department_id,
+                        "scope": entry,
+                    },
+                    request_id=request_id,
+                )
+                raise AuthorizationError(
+                    error_code="PUSH_DEPT_MISMATCH",
+                    message="Push allowed only for members of registry owner department",
+                )
+            elif subject_id in (cfg.push_user_ids or []):
+                granted.append("push")
+            else:
+                # Право не выдано, отделы совпадают — soft-omit (без 403),
+                # как делалось до per-dept enforcement.
+                audit_service.emit(
+                    "docker.push_denied", subject_id,
+                    department_id=department_id,
+                    target_id=registry_name or "",
+                    target_type="docker_registry",
+                    status="failure", allowed=False,
+                    details={
+                        "reason": "PUSH_PERMISSION_DENIED",
+                        "registry_name": registry_name,
+                        "scope": entry,
+                    },
+                    request_id=request_id,
+                )
+
+        # ── PULL ─────────────────────────────────────────────────────────
+        if "pull" in actions:
+            if cfg is None or not cfg.is_enabled:
+                # Анон без registry — тихо мимо; auth'ed — INFO-аудит.
+                if not anonymous:
+                    audit_service.emit(
+                        "docker.pull_denied", subject_id,
+                        department_id=department_id,
+                        target_id=registry_name or "",
+                        target_type="docker_registry",
+                        status="failure", allowed=False,
+                        details={
+                            "reason": "REGISTRY_NOT_FOUND" if cfg is None else "REGISTRY_DISABLED",
+                            "registry_name": registry_name,
+                            "scope": entry,
+                        },
+                        request_id=request_id,
+                    )
+            elif anonymous:
+                if cfg.pull_policy == PULL_POLICY_ALL:
+                    granted.append("pull")
+                # restricted policy + anon → нет права, тихо опускаем
+            else:
+                if cfg.pull_policy == PULL_POLICY_ALL or subject_id in (cfg.pull_user_ids or []):
+                    granted.append("pull")
+                else:
+                    audit_service.emit(
+                        "docker.pull_denied", subject_id,
+                        department_id=department_id,
+                        target_id=registry_name or "",
+                        target_type="docker_registry",
+                        status="failure", allowed=False,
+                        details={
+                            "reason": "PULL_PERMISSION_DENIED",
+                            "registry_name": registry_name,
+                            "scope": entry,
+                        },
+                        request_id=request_id,
+                    )
+
+        if granted:
+            allowed_access.append({**entry, "actions": granted})
+
+    # Legacy guard: scope-less authenticated path — если у caller'а нет
+    # docker конфига отдела, держим старый 403 (тесты на «no config» это
+    # фиксируют, плюс симметрия с прежним поведением для пустого scope).
+    if not anonymous and not requested_access:
+        docker_repo = DockerRegistryRepository(db)
+        cfg = await docker_repo.get_by_department(department_id) if department_id else None
+        if cfg is None or not cfg.is_enabled:
+            audit_service.emit(
+                "docker.token_issued",
+                subject_id,
+                department_id=department_id,
+                target_id=service or settings.docker_registry_service,
+                target_type="docker_registry",
+                status="failure",
+                allowed=False,
+                details={
+                    "reason": "NO_CFG" if cfg is None else "DISABLED",
+                    "username": username,
+                    "service": service or settings.docker_registry_service,
+                    "requested_scope": scope,
+                },
+                request_id=request_id,
+            )
+            raise AuthorizationError(
+                error_code="DOCKER_ACCESS_DENIED",
+                message="Docker registry is not enabled for this department",
+            )
+
+    now = datetime.now(timezone.utc)
+    ttl = timedelta(minutes=settings.docker_token_ttl_minutes)
+    exp = int((now + ttl).timestamp())
+
+    token = sign_docker_token({
+        "iss": settings.docker_registry_issuer,
+        "sub": subject_id or "anonymous",
+        "aud": service or settings.docker_registry_service,
+        "iat": int(now.timestamp()),
+        "exp": exp,
+        "jti": uuid.uuid4().hex,
+        "access": allowed_access,
+    })
+
+    audit_service.emit(
+        "docker.token_issued",
+        subject_id,
+        department_id=department_id,
+        target_id=service or settings.docker_registry_service,
+        target_type="docker_registry",
+        status="success",
+        allowed=True,
+        details={
+            "username": username if not anonymous else None,
+            "anonymous": anonymous,
+            "service": service or settings.docker_registry_service,
+            "requested_scope": scope,
+            "requested_access": requested_access,
+            "granted_access": allowed_access,
+            "granted_action_count": sum(len(a["actions"]) for a in allowed_access),
+            "ttl_seconds": int(ttl.total_seconds()),
+        },
+        request_id=request_id,
+    )
+    return DockerTokenResponse(
+        token=token,
+        access_token=token,
+        expires_in=int(ttl.total_seconds()),
+        issued_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+
+
+async def _authenticate_with_audit(
+    db: AsyncSession,
+    username: str,
+    password: str,
+    service: str,
+    scope: str,
+    request_id: str | None,
+    settings,
+) -> tuple[str, str | None]:
+    """Обёртка вокруг `_authenticate_subject` с аудитом всех негативных веток.
+
+    Вытащено из `issue_token`, чтобы анон-ветка не дёргала Argon2id и не
+    наследовала ACCOUNT_TEMPORARILY_LOCKED / INVALID_CREDENTIALS аудит.
+    """
     try:
-        subject_id, department_id = await _authenticate_subject(db, username, password)
+        return await _authenticate_subject(db, username, password)
     except AuthorizationError as exc:
         # Симметрия с `/login`: lockout-кейс должен оставлять audit-след,
         # иначе SOC слеп на brute-force через docker auth (на /login-канале
@@ -459,78 +770,3 @@ async def issue_token(
             request_id=request_id,
         )
         raise
-
-    docker_repo = DockerRegistryRepository(db)
-    cfg = await docker_repo.get_by_department(department_id)
-
-    if cfg is None or not cfg.is_enabled:
-        # Симметрично lockout/INVALID_CREDENTIALS веткам: SOC должен видеть
-        # явный фейл с subject_id и причиной NO_CFG, иначе password-путь
-        # отбьётся middleware'ом `http.access_denied` без полезного контекста.
-        audit_service.emit(
-            "docker.token_issued",
-            subject_id,
-            department_id=department_id,
-            target_id=service or settings.docker_registry_service,
-            target_type="docker_registry",
-            status="failure",
-            allowed=False,
-            details={
-                "reason": "NO_CFG" if cfg is None else "DISABLED",
-                "username": username,
-                "service": service or settings.docker_registry_service,
-                "requested_scope": scope,
-            },
-            request_id=request_id,
-        )
-        raise AuthorizationError(
-            error_code="DOCKER_ACCESS_DENIED",
-            message="Docker registry is not enabled for this department",
-        )
-
-    requested_access = _parse_scope(scope)
-    allowed_access = []
-    for entry in requested_access:
-        permitted = _resolve_actions(cfg, subject_id, entry["actions"])
-        if permitted:
-            allowed_access.append({**entry, "actions": permitted})
-
-    now = datetime.now(timezone.utc)
-    ttl = timedelta(minutes=settings.docker_token_ttl_minutes)
-    exp = int((now + ttl).timestamp())
-
-    token = sign_docker_token({
-        "iss": settings.docker_registry_issuer,
-        "sub": subject_id,
-        "aud": service or settings.docker_registry_service,
-        "iat": int(now.timestamp()),
-        "exp": exp,
-        "jti": uuid.uuid4().hex,
-        "access": allowed_access,
-    })
-
-    audit_service.emit(
-        "docker.token_issued",
-        subject_id,
-        department_id=department_id,
-        target_id=service or settings.docker_registry_service,
-        target_type="docker_registry",
-        status="success",
-        allowed=True,
-        details={
-            "username": username,
-            "service": service or settings.docker_registry_service,
-            "requested_scope": scope,
-            "requested_access": requested_access,
-            "granted_access": allowed_access,
-            "granted_action_count": sum(len(a["actions"]) for a in allowed_access),
-            "ttl_seconds": int(ttl.total_seconds()),
-        },
-        request_id=request_id,
-    )
-    return DockerTokenResponse(
-        token=token,
-        access_token=token,
-        expires_in=int(ttl.total_seconds()),
-        issued_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-    )

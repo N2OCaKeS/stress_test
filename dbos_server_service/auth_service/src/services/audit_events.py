@@ -102,6 +102,8 @@ SERVICE_EVENTS = [
     {"action": "docker_registry.get_config", "description": "Docker registry configuration retrieved", "default_severity": "INFO"},
     {"action": "docker_registry.disable", "description": "Docker registry disabled", "default_severity": "CRITICAL"},
     {"action": "docker.token_issued", "description": "Docker registry JWT token issued", "default_severity": "INFO"},
+    {"action": "docker.push_denied", "description": "Docker registry push action denied", "default_severity": "WARNING"},
+    {"action": "docker.pull_denied", "description": "Docker registry pull action denied", "default_severity": "INFO"},
 ]
 
 

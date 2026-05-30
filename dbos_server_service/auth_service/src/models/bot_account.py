@@ -1,8 +1,9 @@
 """ORM-модель `BotAccount` — service-account внутри отдела.
 
 `allowed_services` ограничивает, к каким сервисам бот может получать токены.
-`created_by` хранит user_id создавшего — используется при ban'е юзера для
-каскадного revoke всех bot-токенов owned-ботов (см. `user_service.ban_user`).
+`created_by` хранит user_id создавшего — справочное поле для аудита и
+deeplink'ов «кто завёл бота»; на жизненный цикл бот-токенов не влияет
+(бот живёт отдельно от создателя).
 """
 
 from datetime import datetime

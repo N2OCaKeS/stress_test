@@ -329,32 +329,40 @@ async def _verify_client_secret_with_lockout(
     """Проверить client_secret с lockout-пайплайном.
 
     Зеркалит `verify_password_with_lockout`: release_if_expired → assert_not_locked
-    → compare_digest. При неудаче — атомарный инкремент + commit, при
-    превышении лимита — locked_until. Любая неудача поднимает
-    `OAUTH_CLIENT_INVALID` (без раскрытия того, что lockout сработал на
-    конкретно этом промахе; залоченный клиент получит 429 на следующем
-    запросе через assert_not_locked).
+    → compare_digest. При неудаче — атомарный инкремент, при превышении лимита
+    — locked_until. Любая неудача поднимает `OAUTH_CLIENT_INVALID` (без
+    раскрытия того, что lockout сработал на конкретно этом промахе; залоченный
+    клиент получит 429 на следующем запросе через assert_not_locked).
+
+    Транзакция: одиночный commit перед raise — он закрывает и JIT-release
+    устаревшего lockout'а, и register_failure'ы (counter + опциональный
+    locked_until). При raise SQLAlchemy выполнит rollback незакоммиченного
+    состояния, но к моменту вызова compare_digest всё, что должно остаться в
+    БД, уже включено в pending changes.
     """
-    if await _lockout.release_principal_if_expired(client_repo, client):
-        await db.commit()
+    released_expired = await _lockout.release_principal_if_expired(client_repo, client)
 
     _lockout.assert_principal_not_locked(client)
 
-    if not hmac.compare_digest(hash_opaque_token(client_secret), client.client_secret_hash):
-        settings = get_settings()
-        await _lockout.register_principal_failure(
-            client_repo,
-            client,
-            counter_attr="failed_secret_attempts",
-            increment_method="increment_failed_secret_attempts",
-            max_attempts=settings.oauth_client_max_failed_secret_attempts,
-            lockout_minutes=settings.oauth_client_lockout_minutes,
-        )
-        await db.commit()
-        raise AuthenticationError(
-            error_code="OAUTH_CLIENT_INVALID",
-            message="Invalid client credentials",
-        )
+    if hmac.compare_digest(hash_opaque_token(client_secret), client.client_secret_hash):
+        if released_expired:
+            await db.commit()
+        return
+
+    settings = get_settings()
+    await _lockout.register_principal_failure(
+        client_repo,
+        client,
+        counter_attr="failed_secret_attempts",
+        increment_method="increment_failed_secret_attempts",
+        max_attempts=settings.oauth_client_max_failed_secret_attempts,
+        lockout_minutes=settings.oauth_client_lockout_minutes,
+    )
+    await db.commit()
+    raise AuthenticationError(
+        error_code="OAUTH_CLIENT_INVALID",
+        message="Invalid client credentials",
+    )
 
 
 async def exchange_code(
@@ -523,13 +531,16 @@ async def client_credentials_token(
             message="client_credentials grant is not available for public clients",
         )
 
+    # Grant-types — раньше Argon2-verify: клиент без `client_credentials` всё
+    # равно получит 403, незачем платить за hash и трогать lockout-счётчик
+    # (заодно симметрично `issue_authorization_code`).
+    if "client_credentials" not in client.grant_types:
+        raise AuthorizationError(error_code="GRANT_TYPE_NOT_ALLOWED", message="client_credentials grant not enabled for this client")
+
     await _verify_client_secret_with_lockout(db, client_repo, client, client_secret)
     if client.failed_secret_attempts:
         await client_repo.reset_failed_attempts(client)
         await db.commit()
-
-    if "client_credentials" not in client.grant_types:
-        raise AuthorizationError(error_code="GRANT_TYPE_NOT_ALLOWED", message="client_credentials grant not enabled for this client")
 
     dept_repo = DepartmentRepository(db)
     allowed = await dept_repo.list_active_services(client.department_id)

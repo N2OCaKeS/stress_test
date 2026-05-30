@@ -77,6 +77,13 @@ def _rate_limit_exceeded_response(request: Request, exc) -> JSONResponse:
 #
 # `key_func` берёт client IP через trusted-proxy allow-list; без allow-list
 # X-Forwarded-For игнорится и используется `request.client.host`.
+#
+# TODO storage_uri (Redis) для prod: дефолтный slowapi-backend — in-memory,
+# счётчики локальны для каждого uvicorn-процесса. В K8s с 2+ репликами
+# атакующий получает N×limit, потому что round-robin раскладывает попытки
+# по pod'ам. Варианты: общий Redis (`Limiter(storage_uri="redis://...")`) или
+# sticky sessions на ingress'е. Подробнее — `obsidian/services/auth_service.md`,
+# раздел Production hardening.
 limiter = Limiter(key_func=_rate_limit_key_func, headers_enabled=True)
 
 # Маршруты с per-endpoint rate-limit'ом. Значения подставляются из

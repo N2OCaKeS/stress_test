@@ -165,7 +165,7 @@ class TestUsersInventoryTrigger:
         await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )
-        ok = [e for e in _events(captured_emits, "server_account.users_inventory")
+        ok = [e for e in _events(captured_emits, "server.users_inventory_triggered")
               if e["status"] == "success"]
         assert len(ok) == 1
         assert ok[0]["details"]["task_kind"] == "users.inventory"

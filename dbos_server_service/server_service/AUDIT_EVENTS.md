@@ -114,7 +114,7 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | `server_account.provision` | WARNING | POST `/api/server/v1/server-accounts/{id}/provision` — dispatch useradd на боксе | `server_account` | `task_id`, `task_kind=account.provision` |
 | `server_account.update_on_host` | INFO | POST `/api/server/v1/server-accounts/{id}/update-on-host` — dispatch usermod (синк атрибутов) | `server_account` | `task_id`, `task_kind=account.update_on_host` |
 | `server_account.deprovision` | WARNING | POST `/api/server/v1/server-accounts/{id}/deprovision` — dispatch userdel | `server_account` | `task_id`, `task_kind=account.deprovision` |
-| `server_account.users_inventory` | INFO | POST `/api/server/v1/servers/{id}/users-inventory` — dispatch инвентаризации OS-пользователей (SSH getent) | `server` | `task_id`, `task_kind=account.users_inventory` |
+| `server.users_inventory_triggered` | INFO | POST `/api/server/v1/servers/{id}/users-inventory` — dispatch инвентаризации OS-пользователей (SSH getent). target=server: kick'ается со стороны сервера, аккаунты — только результат | `server` | `task_id`, `task_kind=account.users_inventory` |
 | `ipmi_controller.rotate_dispatch` | CRITICAL | POST `/api/server/v1/ipmi-controllers/{id}/rotate` — dispatch BMC-rotation (currently safety-guarded; worker fails fast пока storage round-trip не реализован) | `ipmi_controller` | `task_id`, `task_kind=ipmi.rotate_password` |
 
 ---

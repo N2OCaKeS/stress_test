@@ -5,9 +5,9 @@ junk-row_id (megabyte string, ascii-spam, специальные символы)
 и улетал в WHERE-условие repo-слоя, где давал пустую страницу — клиент видел
 end-of-stream вместо честной 400 INVALID_CURSOR.
 
-После — row_id ограничен регуляркой `^[A-Za-z0-9_\\-]{1,64}$` (наши id'шники
-из `src/utils/ids.py` базируются на base32hex + ASCII-префикс, длина ~16
-символов).
+После — row_id ограничен регуляркой `^[a-z0-9_]{1,64}$` (наши id'шники
+из `src/utils/ids.py` — lowercase префикс + uuid4.hex). Uppercase/дефис
+не допускаются — реальные id их не содержат.
 """
 
 from __future__ import annotations
@@ -42,11 +42,17 @@ class TestRowIdFormat:
         cur = decode_cursor(token)
         assert cur.row_id == "srv_abc123def456"
 
-    def test_hyphenated_id_passes(self):
-        """Tier-2: id'шники с дефисами (uuid-подобные) — допустимы."""
+    def test_hyphenated_id_rejected(self):
+        """Дефис не входит в алфавит — реальные id (`srv_<hex>`) дефис не содержат."""
         token = _make_token("srv-abc-123")
-        cur = decode_cursor(token)
-        assert cur.row_id == "srv-abc-123"
+        with pytest.raises(InvalidCursorError, match="row_id format invalid"):
+            decode_cursor(token)
+
+    def test_uppercase_rejected(self):
+        """Uppercase не входит в алфавит — реальные id всегда lowercase."""
+        token = _make_token("SRV_abc123")
+        with pytest.raises(InvalidCursorError, match="row_id format invalid"):
+            decode_cursor(token)
 
     def test_empty_row_id_rejected(self):
         """row_id="" — мин. длина 1."""

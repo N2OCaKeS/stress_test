@@ -66,9 +66,12 @@ async def trigger_users_inventory(
     Тот же паттерн, что у `_dispatch_for_server` (см. `endpoints/worker_dispatch.py`):
     permission → visibility → decommissioned → SSH-сбор без BMC. Permission ДО
     visibility — чтобы 403 не превращался в existence-oracle по `server_id`.
-    task_kind = `users.inventory`, audit-action = `server_account.users_inventory`.
+    task_kind = `users.inventory`, audit-action = `server.users_inventory_triggered`
+    (target=server — namespace ожидает server-target для server-scoped действий;
+    SIEM-фильтр по `server_account.*` относится к самим аккаунтам, dispatch же
+    кикается со стороны сервера).
     """
-    audit_action = "server_account.users_inventory"
+    audit_action = "server.users_inventory_triggered"
     # 1. Role-check — раньше visibility, чтобы caller без права не отличал
     # «нет сервера» от «нет роли» по статус-коду.
     with emit_denied_on_authz_error(

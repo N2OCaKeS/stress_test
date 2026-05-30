@@ -1180,13 +1180,28 @@ async def record_ipmi_credentials_rotated(
     now = datetime.now(timezone.utc)
     max_age = get_settings().ipmi_verify_max_age_seconds
     verify_age = (now - verified_at).total_seconds()
-    if verify_age > max_age or verify_age < -max_age:
+    if abs(verify_age) > max_age:
+        # Future-dated verified_at — отдельная ветка: worker'у не доверяем,
+        # если он шлёт «доказательство из будущего» (часы поплыли / умышленный
+        # spoof). Reason и message отличаются от обычного stale-случая, чтобы
+        # оператор в loging_service сразу видел причину.
+        is_future = verify_age < 0
+        reason = "verify_in_future" if is_future else "verify_stale"
+        if is_future:
+            message = (
+                f"BMC verified_at is in the future: must be within {max_age}s of now"
+            )
+        else:
+            message = (
+                "Stale or missing BMC verify proof: verified_at must be "
+                f"within {max_age}s of now"
+            )
         audit_service.emit(
             "ipmi_controller.credentials_rotated_callback",
             target_id=controller_id, target_type="ipmi_controller",
             status="failure", allowed=True,
             details={
-                "reason": "verify_stale",
+                "reason": reason,
                 "server_id": ctrl.server_id,
                 "verified_at": verified_at.isoformat(),
                 "verify_age_seconds": round(verify_age, 3),
@@ -1195,10 +1210,7 @@ async def record_ipmi_credentials_rotated(
         )
         raise BadRequestError(
             error_code="BMC_VERIFY_REQUIRED",
-            message=(
-                "Stale or missing BMC verify proof: verified_at must be "
-                f"within {max_age}s of now"
-            ),
+            message=message,
             details={
                 "verified_at": verified_at.isoformat(),
                 "max_age_seconds": max_age,

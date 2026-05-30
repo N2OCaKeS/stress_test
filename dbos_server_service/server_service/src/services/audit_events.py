@@ -92,7 +92,7 @@ SERVICE_EVENTS = [
     {"action": "os_version.view_anonymous", "description": "Public OS-version card read without bearer token (enumeration trail for SIEM)", "default_severity": "INFO"},
     # Worker-dispatch endpoints (см. endpoints/worker_dispatch.py).
     {"action": "server.inventory_sync", "description": "Inventory-sync (SSH-probe) dispatched to worker", "default_severity": "INFO"},
-    {"action": "server_account.users_inventory", "description": "OS-user inventory (SSH getent) dispatched to worker", "default_severity": "INFO"},
+    {"action": "server.users_inventory_triggered", "description": "OS-user inventory (SSH getent) dispatched to worker — target=server (kick'ается со стороны сервера, аккаунты только результат)", "default_severity": "INFO"},
     {"action": "server_account.rotate_password_dispatch", "description": "Server account password rotation dispatched to worker (SSH apply + storage round-trip)", "default_severity": "CRITICAL"},
     {"action": "server_account.provision", "description": "OS-user provision (useradd) dispatched to worker", "default_severity": "WARNING"},
     {"action": "server_account.update_on_host", "description": "OS-user attribute sync (usermod) dispatched to worker", "default_severity": "INFO"},

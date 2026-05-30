@@ -272,8 +272,15 @@ async def _ensure_broker_started() -> None:
         _broker_started = True
 
 
-async def _get_task_id_by_idempotency_key(key: str) -> str | None:
-    """SELECT существующего tasks.id по idempotency_key. None если не нашли.
+async def _get_task_id_by_idempotency_key(key: str) -> tuple[str | None, bool]:
+    """SELECT существующего tasks.id по idempotency_key.
+
+    Возвращает `(task_id_or_none, idempotent_hit)`. `idempotent_hit` — True,
+    когда строка найдена и dispatch_task вернёт существующий id без новой
+    публикации в брокер. Caller (см. `dispatch_task` с `return_hit=True`)
+    пробрасывает флаг наверх — `_dispatch_power` / `worker_dispatch`
+    добавляют его в audit details, чтобы SIEM отличал «новый task» от
+    «idempotent replay».
 
     Используется cross-DB worker-engine — `tasks` живёт в dev_server_worker.
     """
@@ -285,7 +292,9 @@ async def _get_task_id_by_idempotency_key(key: str) -> str | None:
                 {"key": key},
             )
         ).first()
-        return row[0] if row else None
+        if row is None:
+            return None, False
+        return row[0], True
 
 
 async def _insert_task_row(
@@ -566,7 +575,8 @@ async def dispatch_task(
     request_id: str | None,
     target_resource_id: str | None = None,
     idempotency_key: str | None = None,
-) -> str:
+    return_hit: bool = False,
+) -> str | tuple[str, bool]:
     """INSERT task row + kick worker'а. Возвращает новый task_id.
 
     Если передан ``idempotency_key`` — сначала ищем существующий task с этим
@@ -594,11 +604,18 @@ async def dispatch_task(
     Клиент видит 503 envelope с конкретным error_code, может retry —
     например, с тем же `Idempotency-Key` (после rollback'а lookup вернёт None,
     dispatch создаст новую попытку).
+
+    Если `return_hit=True` — возвращается `(task_id, idempotent_hit)`. Флаг
+    True, когда idempotency_key совпал с уже существующей строкой и новой
+    публикации в брокер не было. Caller (`_dispatch_power` и аналоги в
+    `worker_dispatch.py`) кладёт `idempotent_hit` в audit details, чтобы
+    SIEM отличал «новая task» от «idempotent replay» — иначе оба сценария
+    выглядят одинаково и нельзя посчитать долю реальных повторов.
     """
     if idempotency_key is not None:
-        existing_id = await _get_task_id_by_idempotency_key(idempotency_key)
+        existing_id, hit = await _get_task_id_by_idempotency_key(idempotency_key)
         if existing_id is not None:
-            return existing_id
+            return (existing_id, hit) if return_hit else existing_id
 
     new_id = task_id()
     try:
@@ -618,9 +635,9 @@ async def dispatch_task(
         # должен её увидеть и вернуть существующий id — это идемпотентный
         # путь, никакого нового kick'а worker'у.
         if idempotency_key is not None:
-            existing_id = await _get_task_id_by_idempotency_key(idempotency_key)
+            existing_id, hit = await _get_task_id_by_idempotency_key(idempotency_key)
             if existing_id is not None:
-                return existing_id
+                return (existing_id, hit) if return_hit else existing_id
         raise ConflictError(
             error_code="TASK_IDEMPOTENT_CONFLICT",
             message="Task insert failed and idempotent retry did not resolve",
@@ -669,4 +686,4 @@ async def dispatch_task(
             error_code="WORKER_UNREACHABLE",
             message=f"Failed to publish task to worker broker: {exc.__class__.__name__}",
         ) from exc
-    return new_id
+    return (new_id, False) if return_hit else new_id

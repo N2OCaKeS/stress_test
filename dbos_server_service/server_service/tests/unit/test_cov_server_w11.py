@@ -85,16 +85,22 @@ class TestRowIdBoundaryExtra:
         assert cur.row_id == "z"
 
     def test_single_digit_accepted(self):
-        """Одна цифра — тоже в алфавите [A-Za-z0-9_\\-]."""
+        """Одна цифра — тоже в алфавите [a-z0-9_]."""
         token = _make_raw_token("0")
         cur = decode_cursor(token)
         assert cur.row_id == "0"
 
-    def test_underscore_and_hyphen_in_id_accepted(self):
-        """Оба допустимых спецсимвола."""
-        token = _make_raw_token("srv_foo-bar")
+    def test_underscore_in_id_accepted(self):
+        """Подчёркивание — единственный разрешённый спецсимвол."""
+        token = _make_raw_token("srv_foo_bar")
         cur = decode_cursor(token)
-        assert cur.row_id == "srv_foo-bar"
+        assert cur.row_id == "srv_foo_bar"
+
+    def test_hyphen_in_id_rejected(self):
+        """Дефис не входит в алфавит row_id — реальные id его не содержат."""
+        token = _make_raw_token("srv-foo")
+        with pytest.raises(InvalidCursorError, match="row_id format invalid"):
+            decode_cursor(token)
 
     def test_dot_in_id_rejected(self):
         """Точка не входит в алфавит row_id."""
@@ -126,11 +132,11 @@ class TestRowIdBoundaryExtra:
         with pytest.raises(InvalidCursorError, match="row_id format invalid"):
             decode_cursor(token)
 
-    def test_mixed_case_accepted(self):
-        """Верхний и нижний регистр — оба в алфавите."""
+    def test_uppercase_rejected(self):
+        """Верхний регистр не входит в алфавит — реальные id всегда lowercase."""
         token = _make_raw_token("SrvABC123xyz")
-        cur = decode_cursor(token)
-        assert cur.row_id == "SrvABC123xyz"
+        with pytest.raises(InvalidCursorError, match="row_id format invalid"):
+            decode_cursor(token)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

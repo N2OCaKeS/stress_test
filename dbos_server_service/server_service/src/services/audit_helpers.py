@@ -34,6 +34,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from src.core.exceptions import AuthorizationError
+from src.schemas.identity import IdentityContext
 from src.services import audit_service
 
 
@@ -44,6 +45,7 @@ def emit_denied_on_authz_error(
     target_type: str,
     target_id: str | None = None,
     extra_details: dict | None = None,
+    identity: IdentityContext | None = None,
 ) -> Iterator[None]:
     """Перехватить AuthorizationError, эмитнуть denied-audit и пробросить дальше.
 
@@ -60,6 +62,11 @@ def emit_denied_on_authz_error(
     )
     ```
 
+    `identity` опционален: если задан — в details попадает `subject_type`
+    (user / bot / pat / oauth_client). Помогает SIEM'у фильтровать denied'ы
+    по типу caller'а (например, искать аномалии в bot-traffic). Без identity
+    остаёмся обратно-совместимыми с call-site'ами, которые его не пробрасывают.
+
     Контекст-менеджер sync, потому что `audit_service.emit` сам sync (он
     fire-and-forget'ит httpx-task внутри). Тело `with` может быть `await`
     или sync — нам важно только перехватить исключение.
@@ -73,6 +80,10 @@ def emit_denied_on_authz_error(
         # в permission_service.
         details: dict = dict(extra_details) if extra_details else {}
         details["reason"] = "permission_denied"
+        if identity is not None and identity.subject_type is not None:
+            # Не перетираем явный subject_type в extra_details (если call-site уже
+            # положил его руками — он имеет приоритет).
+            details.setdefault("subject_type", identity.subject_type)
         audit_service.emit(
             action,
             target_id=target_id,

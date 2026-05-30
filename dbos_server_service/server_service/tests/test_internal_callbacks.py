@@ -412,6 +412,8 @@ class TestIpmiCredentialsRotatedCallback:
         )
         assert resp.status_code == 400, resp.text
         assert resp.json()["error_code"] == "BMC_VERIFY_REQUIRED"
+        # Message в обычном stale-случае без future-формулировки.
+        assert "future" not in resp.json()["message"].lower()
 
         # Storage не должен мутироваться.
         await db.commit()
@@ -425,6 +427,34 @@ class TestIpmiCredentialsRotatedCallback:
             refreshed.password_encrypted,
             aad=secrets_service.aad_for_ipmi_credential(refreshed.id),
         ) == "old-pwd-stable"
+
+    async def test_future_verified_at_rejected_with_future_message(
+        self, client, admin_role_token_a, make_server, make_ipmi, dept_a,
+    ):
+        """`verified_at` в будущем → отдельный message «in the future».
+
+        Часы worker'а могут уехать вперёд, либо это сознательный spoof.
+        В обоих случаях верить proof'у нельзя; reply должен отличаться от
+        обычного stale-случая, чтобы оператор в logs сразу видел причину.
+        """
+        from datetime import timedelta
+
+        srv = await make_server(department_id=dept_a)
+        ctrl = await make_ipmi(server_id=srv.id, password="old-pwd-stable")
+        # 1 час вперёд — за пределами 60s окна с другой стороны.
+        future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        resp = await client.post(
+            f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "new_password": "FutureVerify1234",
+                "rotated_at": _iso(),
+                "verified_at": future,
+            },
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error_code"] == "BMC_VERIFY_REQUIRED"
+        assert "future" in resp.json()["message"].lower()
 
 
 # ── X-Target-Department-Id strict mode ──────────────────────────────────────

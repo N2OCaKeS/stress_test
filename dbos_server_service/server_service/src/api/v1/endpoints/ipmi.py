@@ -153,7 +153,7 @@ async def _dispatch_power(
     # ломает инвариант «любая попытка power-операции → audit-событие».
     # Поэтому эмитим failure ДО re-raise.
     try:
-        task_id = await worker_client.dispatch_task(
+        task_id, idempotent_hit = await worker_client.dispatch_task(
             task_kind=task_kind,
             target_server_id=server_id,
             # `target_department_id` нужен worker'у чтобы echo'нуть этот dept в
@@ -165,6 +165,7 @@ async def _dispatch_power(
             created_by=identity.user_id,
             request_id=getattr(request.state, "request_id", None),
             idempotency_key=idempotency_key,
+            return_hit=True,
         )
     except ConflictError:
         # TASK_IDEMPOTENT_CONFLICT — два POST'а с одним Idempotency-Key
@@ -204,6 +205,7 @@ async def _dispatch_power(
             "task_id": task_id,
             "task_kind": task_kind,
             "department_id": server.department_id,
+            "idempotent_hit": idempotent_hit,
         },
     )
     return {"task_id": task_id, "status": "queued"}

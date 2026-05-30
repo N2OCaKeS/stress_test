@@ -85,7 +85,8 @@ def captured_dispatch(monkeypatch):
 
     async def fake_dispatch(*, task_kind, target_server_id, payload,
                             created_by, request_id,
-                            target_resource_id=None, idempotency_key=None):
+                            target_resource_id=None, idempotency_key=None,
+                            return_hit=False):
         calls.append({
             "task_kind": task_kind,
             "target_server_id": target_server_id,
@@ -94,7 +95,8 @@ def captured_dispatch(monkeypatch):
             "request_id": request_id,
             "idempotency_key": idempotency_key,
         })
-        return f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
+        new_id = f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
+        return (new_id, False) if return_hit else new_id
 
     monkeypatch.setattr(
         "src.api.v1.endpoints.ipmi.worker_client.dispatch_task", fake_dispatch

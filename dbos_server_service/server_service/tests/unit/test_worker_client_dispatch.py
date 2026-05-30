@@ -308,8 +308,8 @@ class TestDispatchTaskRollbackDoesNotBreakIdempotency:
         # Замокаем `_get_task_id_by_idempotency_key` — в unit-окружении нет
         # реальной БД. Эмулируем «нет такой строки» → dispatch пойдёт через
         # INSERT, как и в production после rollback'а.
-        async def fake_lookup(key: str) -> str | None:
-            return None
+        async def fake_lookup(key: str) -> tuple[str | None, bool]:
+            return None, False
 
         monkeypatch.setattr(
             worker_client, "_get_task_id_by_idempotency_key", fake_lookup,

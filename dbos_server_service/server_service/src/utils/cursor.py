@@ -22,12 +22,13 @@ from dataclasses import dataclass
 from datetime import datetime
 
 # row_id в декодированном курсоре должен соответствовать общему формату
-# id'шников проекта (см. `src/utils/ids.py` — префикс + base32hex). Без явной
-# валидации длинный/junk row_id проходит decode и уходит в WHERE-условие,
-# где даёт пустую страницу вместо честной 400 INVALID_CURSOR. Длина 64 —
-# с запасом (наши id ~16 символов), но защищает от мегабайтных payload'ов
-# через manually-сконструированный курсор.
-_ROW_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+# id'шников проекта (см. `src/utils/ids.py` — lowercase префикс + uuid4.hex).
+# Алфавит — `[a-z0-9_]`, длина ~36 символов. Шире 64 не пускаем, чтобы
+# не пускать мегабайтные payload'ы через manually-сконструированный курсор;
+# uppercase/дефис исключены — реальные id их не содержат, любой mixed-case
+# row_id — junk-from-the-wire, ловим его честной 400 INVALID_CURSOR
+# вместо пустой страницы из WHERE-условия.
+_ROW_ID_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 
 
 class InvalidCursorError(ValueError):

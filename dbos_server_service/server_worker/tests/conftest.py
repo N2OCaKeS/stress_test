@@ -88,13 +88,25 @@ async def _truncate_tasks():
     `worker_heartbeats` тоже truncate'аем — sweep-тесты опираются на
     «нет активных воркеров» как orphan-условие; stale row из предыдущего
     теста ломал бы изоляцию.
+
+    Shared circuit breaker для audit-publisher хранит state в Redis с
+    единственным набором ключей (канал один, не per-host). Без сброса
+    тест A, который заставил emit() падать N раз, оставил бы breaker
+    open для теста B, и B увидел бы `CircuitBreakerOpenError` вместо
+    своих ожидаемых HTTP-исключений. Сбрасываем best-effort: если
+    Redis недоступен — breaker и так fail-open'ит, тесту это не помешает.
     """
     from src.db.session import engine
+    from src.services import audit_publisher_breaker
     from src.tasks._runner_state import reset_for_tests
     async with engine.begin() as conn:
         await conn.execute(text("TRUNCATE tasks CASCADE"))
         await conn.execute(text("TRUNCATE audit_outbox RESTART IDENTITY CASCADE"))
         await conn.execute(text("TRUNCATE worker_heartbeats CASCADE"))
+    try:
+        await audit_publisher_breaker.reset()
+    except Exception:
+        pass
     reset_for_tests()
     yield
     reset_for_tests()

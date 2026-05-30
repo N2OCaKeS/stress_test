@@ -47,8 +47,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.constants import LAST_ERROR_MAX_LEN
 from src.db.session import AsyncSessionLocal
 from src.models import AuditOutbox
-from src.services import audit_client
+from src.services import audit_client, audit_publisher_breaker
 from src.services.audit_client import AuditEmitError
+from src.services.audit_publisher_breaker import CircuitBreakerOpenError
 from src.utils.redaction import redact_error_message
 
 logger = logging.getLogger(__name__)
@@ -266,6 +267,33 @@ async def _publish_one(
         await session.flush()
         return True, False, False
 
+    # Shared circuit breaker перед HTTP-вызовом. Если loging_service уже
+    # признан недоступным другими репликами — отбиваем запрос без сетевого
+    # roundtrip'а. CircuitBreakerOpenError ловится отдельно ниже и
+    # трактуется как transient HTTP-fail (row остаётся unpublished, attempts++,
+    # backoff). Самого breaker'а мы при этом НЕ дёргаем record_failure'ом:
+    # он уже open, инкрементировать счётчик не нужно.
+    try:
+        await audit_publisher_breaker.check()
+    except CircuitBreakerOpenError as exc:
+        row.attempts = (row.attempts or 0) + 1
+        row.last_error = str(exc)[:LAST_ERROR_MAX_LEN]
+        if _maybe_poison(row):
+            await session.flush()
+            return True, False, False
+        _apply_backoff(row)
+        await session.flush()
+        logger.warning(
+            "audit_outbox publish skipped (breaker open) row=%s attempts=%s next_retry_at=%s",
+            row.id,
+            row.attempts,
+            row.next_retry_at,
+        )
+        # audit_emit_error=True: каждый skip от breaker'а — это симптом
+        # текущей аварии loging_service. Loop-level breaker (per-process)
+        # тоже должен видеть failure'ы, чтобы держать open-окно.
+        return False, True, False
+
     try:
         # `audit_client.emit` сам решает, что считать неудачей:
         #   * 4xx из loging_service → `AuditEmitError(status_code=4xx)`
@@ -312,6 +340,10 @@ async def _publish_one(
             return True, False, False
         _apply_backoff(row)
         await session.flush()
+        # Transient HTTP-failure от loging_service (5xx/timeout/connect) —
+        # сигнал shared breaker'у. 4xx не доходят сюда: они уходят в DLQ
+        # выше и не нагружают канал в смысле «он лежит».
+        await audit_publisher_breaker.record_failure()
         logger.warning(
             "audit_outbox publish HTTP-failed row=%s attempts=%s status=%s next_retry_at=%s",
             row.id,
@@ -347,6 +379,10 @@ async def _publish_one(
     # но row всё равно уйдёт из выборки по `published_at IS NOT NULL`).
     row.next_retry_at = None
     await session.flush()
+    # Закрываем shared breaker: канал отвечает 2xx, дальше работаем штатно.
+    # Дёргается на каждый успех — Redis-команда дешёвая (DEL × 3), а
+    # симметрия с record_failure упрощает чтение кода.
+    await audit_publisher_breaker.record_success()
     return True, False, True
 
 

@@ -293,6 +293,35 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Audit-publisher circuit breaker ──────────────────────────────────
+    # Shared breaker для канала worker → loging_service /events (см.
+    # services/audit_publisher_breaker.py). Per-process breaker в
+    # audit_outbox_publisher остаётся — он защищает loop-level back-off на
+    # длительные аварии; этот guard режет per-row HTTP-roundtrip'ы между
+    # репликами, чтобы при N pod'ах в кластере один и тот же лежащий
+    # loging_service не получал N × threshold лишних запросов.
+    audit_publisher_breaker_failure_threshold: int = Field(
+        default=5, ge=1,
+        description=(
+            "Сколько failure'ов POST'а в loging_service за окно "
+            "window_seconds должно случиться, чтобы breaker замкнулся."
+        ),
+    )
+    audit_publisher_breaker_window_seconds: int = Field(
+        default=60, ge=1,
+        description=(
+            "Rolling-окно счётчика failures для audit-publisher breaker'а. "
+            "TTL ключа cb:audit_publisher:failures."
+        ),
+    )
+    audit_publisher_breaker_cooldown_seconds: int = Field(
+        default=30, ge=1,
+        description=(
+            "На сколько секунд breaker отбивает POST'ы до перехода в "
+            "half-open. После cooldown один POST проходит как пробный."
+        ),
+    )
+
     # ── Management user / bootstrap (prepare) ────────────────────────────
     # Бутстрап управления (#14): задача `server.prepare` заходит на сервер
     # под одноразовыми bootstrap-кредами (password-auth), заводит системного

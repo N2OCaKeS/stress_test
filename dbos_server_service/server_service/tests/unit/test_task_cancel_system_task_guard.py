@@ -1,9 +1,14 @@
-"""Гарда на отмену системных task'ов (heartbeat/sweep/cleanup_completed).
+"""Гарда на отмену системных task'ов (scheduler-registered autostart kind'ы).
 
 Системные task'и заводятся scheduler'ом в `server_worker` без `created_by` и
 без `target_server_id`. До этого фикса любой dept-admin с (task, cancel)
 мог их отменить и положить кластерный worker health. После — для системных
 требуется платформенная роль `account_admin`.
+
+Реальные имена системных task'ов — те же, что зарегистрированы в
+`server_worker/src/main.py` через `@broker.task(...)` со `schedule=[...]`
+(`system.heartbeat`, `worker.heartbeat`, `tasks.sweep_orphaned`,
+`tasks.cleanup_completed_old` и т.д.). Тесты используют их полные имена.
 
 Платформенная роль реально режется ещё до endpoint'а в `platform_admin_guard`
 middleware (см. `src/middleware/platform_admin_guard.py`), но endpoint держит
@@ -91,7 +96,7 @@ class TestSystemTaskGuard:
             return {
                 "status": "queued",
                 "target_server_id": None,
-                "task_kind": "heartbeat",
+                "task_kind": "worker.heartbeat",
                 "created_by": None,
             }
 
@@ -124,7 +129,7 @@ class TestSystemTaskGuard:
         assert len(ev) == 1
         assert ev[0]["status"] == "denied"
         assert ev[0]["details"]["reason"] == "system_task_admin_required"
-        assert ev[0]["details"]["task_kind"] == "heartbeat"
+        assert ev[0]["details"]["task_kind"] == "worker.heartbeat"
         assert ev[0]["details"]["target_server_id"] is None
 
     async def test_account_admin_passes_system_task_guard(
@@ -135,7 +140,7 @@ class TestSystemTaskGuard:
             return {
                 "status": "queued",
                 "target_server_id": None,
-                "task_kind": "sweep",
+                "task_kind": "tasks.sweep_orphaned",
                 "created_by": None,
             }
 
@@ -144,7 +149,7 @@ class TestSystemTaskGuard:
                 "found": True,
                 "cancelled": True,
                 "previous_status": "queued",
-                "task_kind": "sweep",
+                "task_kind": "tasks.sweep_orphaned",
                 "target_server_id": None,
             }
 

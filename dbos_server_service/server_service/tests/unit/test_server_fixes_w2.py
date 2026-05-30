@@ -276,7 +276,14 @@ class TestSystemTaskWhitelist:
         from src.api.v1.endpoints.tasks import _SYSTEM_TASK_KINDS
 
         assert _SYSTEM_TASK_KINDS == frozenset({
-            "heartbeat", "sweep", "cleanup_completed",
+            "system.heartbeat",
+            "worker.heartbeat",
+            "tasks.sweep_orphaned",
+            "tasks.recover_scheduled_retries",
+            "tasks.cleanup_completed_old",
+            "worker.cleanup_stale_heartbeats",
+            "audit_outbox.cleanup_published_old",
+            "secrets.reencrypt_lazy",
         })
 
     async def test_user_task_with_both_nulls_no_longer_blocked(
@@ -329,12 +336,12 @@ class TestSystemTaskWhitelist:
     async def test_heartbeat_kind_still_requires_account_admin(
         self, db, patch_permissions, monkeypatch,
     ):
-        """`heartbeat` остаётся в whitelist — dept_admin его НЕ отменяет."""
+        """`worker.heartbeat` остаётся в whitelist — dept_admin его НЕ отменяет."""
         async def fake_fetch(task_id_value):
             return {
                 "status": "queued",
                 "target_server_id": None,
-                "task_kind": "heartbeat",
+                "task_kind": "worker.heartbeat",
                 "created_by": None,
             }
 

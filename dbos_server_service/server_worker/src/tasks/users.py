@@ -186,11 +186,20 @@ async def account_provision(task_id: str) -> None:
         account_id = payload["account_id"]
         target_dept = payload.get("target_department_id")
 
+        # F23-B: discovered-сценарий — server_service кладёт сгенерированные
+        # креды (`password_plaintext` + `ssh_public_key` + `force_replace`)
+        # прямо в payload. Тот же канал используется для re-provision после
+        # переустановки ОС (`force_replace=True`). Если поля есть — берём
+        # их без отдельного fetch'а internal-ручки.
+        inline_password = payload.get("password_plaintext")
+        inline_public_key = payload.get("ssh_public_key")
+        force_replace = bool(payload.get("force_replace"))
+
         creds = await _account_creds(payload, server_id, account_id, target_dept)
         # На управляемом сервере пароль для входа не нужен (ключ), но если у
         # аккаунта есть хранимый пароль — ставим его на боксе. Тянем best-effort:
         # discovered-аккаунт без пароля заводим без смены пароля, не падаем.
-        new_password = creds.get("password")
+        new_password = inline_password or creds.get("password")
         if payload.get("is_managed") and new_password is None:
             new_password = await _fetch_password_to_set(
                 server_id, account_id, target_dept,
@@ -203,6 +212,8 @@ async def account_provision(task_id: str) -> None:
             has_sudo=bool(payload.get("has_sudo")),
             shell=payload.get("shell"),
             home_dir=payload.get("home_dir"),
+            public_key=inline_public_key,
+            force_replace=force_replace,
         )
         await server_service_client.submit_provision_status(
             server_id, account_id, "provision", True, target_dept,

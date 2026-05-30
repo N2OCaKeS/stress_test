@@ -96,6 +96,13 @@ class ServerAccount(Base):
     # Формат: `v<key>$<nonce>$<ciphertext>` (см. secrets_service.py).
     password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # SSH-ключ для входа под аккаунтом. Public — в открытом виде, кладётся в
+    # `~/.ssh/authorized_keys` на боксе при provision'е. Private — зашифрован
+    # тем же `secrets_service.encrypt()`, что и пароль, по своему AAD.
+    # Оба поля NULL у managed-аккаунтов, заведённых до фичи, и у discovered —
+    # на provision-вызове они заполняются автогенерацией Ed25519.
+    ssh_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ssh_private_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     has_sudo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     unix_groups: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, default=list

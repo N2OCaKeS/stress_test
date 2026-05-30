@@ -15,7 +15,10 @@ Visibility-check (cross-department) скрывает чужие аккаунты
 import base64
 import logging
 import secrets
+import string
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,6 +89,128 @@ async def _load_account_visible_for_update(
 def _generate_password() -> str:
     """Дефолтный генератор паролей для новых аккаунтов и rotate'а."""
     return secrets.token_urlsafe(32)
+
+
+# Алфавит для авто-сгенерированных кред под provision: digit/letter/symbol —
+# чтобы результат сразу удовлетворял `is_strong` (16+ chars + три класса).
+_STRONG_PWD_SYMBOLS = "!@#$%^&*-_=+?"
+_STRONG_PWD_LENGTH = 24
+
+
+def _generate_strong_password() -> str:
+    """Сгенерировать пароль под provision: 24 символа, буква + цифра + символ.
+
+    Длина с запасом над `MIN_STRONG_PASSWORD_LENGTH` (16) — энтропии хватает,
+    а полисная проверка проходит при любой перестановке. Алфавит — латиница +
+    цифры + ограниченный набор спецсимволов: те, что не ломают shell-цитирование
+    (исключены кавычки, бэктики, $ и обратный слэш).
+    """
+    alphabet = string.ascii_letters + string.digits + _STRONG_PWD_SYMBOLS
+    while True:
+        candidate = "".join(secrets.choice(alphabet) for _ in range(_STRONG_PWD_LENGTH))
+        has_letter = any(ch.isalpha() for ch in candidate)
+        has_digit = any(ch.isdigit() for ch in candidate)
+        has_symbol = any(ch in _STRONG_PWD_SYMBOLS for ch in candidate)
+        if has_letter and has_digit and has_symbol:
+            return candidate
+
+
+def _generate_ssh_keypair() -> tuple[str, str]:
+    """Сгенерировать Ed25519-пару. Возвращает `(private_pem, public_openssh)`.
+
+    Ed25519 короче и быстрее RSA, и большинство современных sshd его понимает.
+    Private — OpenSSH-формат без passphrase (ключ дальше шифруется AES-GCM на
+    стороне server_service'а перед записью в БД, отдельный wrap паролем смысла
+    не имеет). Public — однострочная строка, готовая к укладке в authorized_keys.
+    """
+    private = ed25519.Ed25519PrivateKey.generate()
+    private_pem = private.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.OpenSSH,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("ascii")
+    public_openssh = private.public_key().public_bytes(
+        encoding=serialization.Encoding.OpenSSH,
+        format=serialization.PublicFormat.OpenSSH,
+    ).decode("ascii")
+    return private_pem, public_openssh
+
+
+async def ensure_provision_credentials(
+    db: AsyncSession,
+    account: ServerAccount,
+) -> tuple[ServerAccount, dict, bool]:
+    """Гарантировать наличие пары `(password, ssh_keypair)` у аккаунта.
+
+    Идемпотентно: если у аккаунта уже есть и пароль, и публичный ключ —
+    возвращаем существующие. Если пусто или один из секретов отсутствует —
+    генерируем новые (strong-password + Ed25519), шифруем и сохраняем оба
+    в одну транзакцию (commit на caller'е).
+
+    Возвращает `(account, creds, generated)`:
+      * `creds = {password, ssh_public_key, ssh_private_key}` (plaintext);
+      * `generated=True`, если генерировали новый материал в этом вызове
+        (caller использует флаг для `force_replace` в worker payload —
+        переустановка ОС инициирует новый прогон и должна затереть
+        authorized_keys на боксе).
+
+    Контракт «один аккаунт — одна пара» держится на уровне строки. Если
+    провизим переустановленный сервер и нужны свежие креды — caller сначала
+    обнуляет поля у аккаунта (см. `reset_provision_credentials`), потом зовёт
+    этот метод.
+    """
+    if account.password_encrypted is not None and account.ssh_public_key is not None:
+        password = secrets_service.decrypt(
+            account.password_encrypted,
+            aad=secrets_service.aad_for_server_account_password(account.id),
+        )
+        ssh_private = secrets_service.decrypt(
+            account.ssh_private_key_encrypted,
+            aad=secrets_service.aad_for_server_account_ssh_key(account.id),
+        ) if account.ssh_private_key_encrypted else ""
+        creds = {
+            "password": password,
+            "ssh_public_key": account.ssh_public_key,
+            "ssh_private_key": ssh_private,
+        }
+        return account, creds, False
+
+    password = _generate_strong_password()
+    private_pem, public_openssh = _generate_ssh_keypair()
+    account.password_encrypted = secrets_service.encrypt(
+        password,
+        aad=secrets_service.aad_for_server_account_password(account.id),
+    )
+    account.ssh_public_key = public_openssh
+    account.ssh_private_key_encrypted = secrets_service.encrypt(
+        private_pem,
+        aad=secrets_service.aad_for_server_account_ssh_key(account.id),
+    )
+    await db.flush()
+    creds = {
+        "password": password,
+        "ssh_public_key": public_openssh,
+        "ssh_private_key": private_pem,
+    }
+    return account, creds, True
+
+
+async def reset_provision_credentials(
+    db: AsyncSession,
+    account: ServerAccount,
+) -> ServerAccount:
+    """Снести password+ssh-keypair у аккаунта — следующий `ensure_provision_credentials`
+    сгенерирует новые.
+
+    Используется при переустановке ОС: сервер начинает с чистого листа, старые
+    креды (которые могут утечь через образ) теряют смысл, и worker должен
+    залить свежий public_key и chpasswd на боксе.
+    """
+    account.password_encrypted = None
+    account.ssh_public_key = None
+    account.ssh_private_key_encrypted = None
+    await db.flush()
+    return account
 
 
 async def _resolve_same_dept_servers(

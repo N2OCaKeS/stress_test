@@ -80,7 +80,12 @@ from src.schemas.server_account import (
     AccountRotateSkipped,
     AccountRotateTask,
 )
-from src.services import audit_service, permissions, worker_client
+from src.services import (
+    audit_service,
+    permissions,
+    server_account as account_svc,
+    worker_client,
+)
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.utils.ids import prepare_creds_id
@@ -299,6 +304,7 @@ async def _dispatch_account_on_host(
     operation: str,
     extra_payload: dict | None = None,
     include_home_dir: bool | None = None,
+    inject_provision_creds: bool = False,
 ) -> dict:
     """Общая логика per-server provision/update/deprovision OS-пользователя.
 
@@ -386,6 +392,26 @@ async def _dispatch_account_on_host(
         server=server, account=account, include_attrs=True,
         include_home_dir=include_home_dir,
     )
+    if inject_provision_creds:
+        # Discovered-аккаунты идут в provision из инвентаризации — у них пароля
+        # в БД нет, и SSH-ключа тоже. Managed-аккаунт может попасть в provision
+        # повторно (переустановка ОС): credentials уже есть, отдаём те же, без
+        # force_replace — воркеру они нужны только чтобы установить chpasswd и
+        # дополить authorized_keys (если grep по строке не нашёл точного
+        # совпадения). Если кред нет — генерим Ed25519 + strong-password,
+        # сохраняем зашифрованным, и поднимаем force_replace=True: на боксе
+        # надо перезаписать пароль и ключ. Commit ниже (`dispatch_task` не
+        # пишет в server-БД).
+        _, creds, generated = await account_svc.ensure_provision_credentials(
+            db, account,
+        )
+        if generated:
+            await db.commit()
+            await db.refresh(account)
+        payload["password_plaintext"] = creds["password"]
+        payload["ssh_public_key"] = creds["ssh_public_key"]
+        payload["ssh_private_key_plaintext"] = creds["ssh_private_key"]
+        payload["force_replace"] = generated
     if extra_payload:
         payload.update(extra_payload)
     try:
@@ -1124,6 +1150,7 @@ async def account_provision_dispatch(
         audit_action="server_account.provision",
         task_kind="account.provision",
         operation="provision",
+        inject_provision_creds=True,
     )
     return AccountProvisionDispatchResponse(**result)
 

@@ -261,6 +261,8 @@ async def provision_user(
     has_sudo: bool = False,
     shell: str | None = None,
     home_dir: str | None = None,
+    public_key: str | None = None,
+    force_replace: bool = False,
 ) -> dict:
     """Завести OS-пользователя `login` на удалённом хосте (`useradd`).
 
@@ -268,6 +270,11 @@ async def provision_user(
     + login/password для self-сессии). На управляемом сервере
     (`credentials['is_managed']`) сессия идёт под управляющим пользователем по
     ключу с sudo; иначе — под самим аккаунтом. Заводим всегда `login`.
+
+    Если задан `public_key` — после useradd пишем его в
+    `~/.ssh/authorized_keys` аккаунта; `force_replace=True` затирает
+    существующий файл (re-provision после переустановки ОС), иначе ключ
+    добавляется идемпотентно (grep по точному совпадению).
 
     Idempotent: уже существующий пользователь синхронизируется, не падает.
 
@@ -282,6 +289,8 @@ async def provision_user(
             has_sudo=has_sudo,
             shell=shell,
             home_dir=home_dir,
+            public_key=public_key,
+            force_replace=force_replace,
         )
     return {"provisioned": True}
 

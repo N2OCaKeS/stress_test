@@ -364,6 +364,8 @@ class SshClient:
         has_sudo: bool = False,
         shell: str | None = None,
         home_dir: str | None = None,
+        public_key: str | None = None,
+        force_replace: bool = False,
     ) -> None:
         """Завести OS-пользователя через `useradd` + опционально задать пароль.
 
@@ -372,6 +374,10 @@ class SshClient:
         `-s <shell>`, `-d <home>`, `-G <groups>` (sudo-группа доклеивается при
         `has_sudo`). После create'а, если задан `new_password`, ставим его
         через `chpasswd` (тот же путь, что `set_password`).
+
+        Если задан `public_key` — пишем его в `~/.ssh/authorized_keys` юзера.
+        `force_replace=True` затирает файл целиком (re-provision после
+        переустановки ОС), иначе ключ добавляется idempotent'но (`grep -qxF`).
 
         Безопасность: все аргументы (login/shell/home/groups) валидируются
         regex'ами до подстановки в команду — это защита от shell-инъекции.
@@ -387,6 +393,10 @@ class SshClient:
             )
             if new_password is not None:
                 await self.set_password(login, new_password)
+            if public_key is not None:
+                await self._write_authorized_key(
+                    login, public_key, force_replace=force_replace,
+                )
             return
 
         opts = ["-m"]
@@ -412,6 +422,87 @@ class SshClient:
             )
         if new_password is not None:
             await self.set_password(login, new_password)
+        if public_key is not None:
+            await self._write_authorized_key(
+                login, public_key, force_replace=force_replace,
+            )
+
+    async def _write_authorized_key(
+        self, login: str, public_key: str, *, force_replace: bool,
+    ) -> None:
+        """Записать `public_key` в `~/.ssh/authorized_keys` пользователя `login`.
+
+        Валидирует, что ключ — однострочная строка с известным prefix'ом
+        (rsa/ed25519/ecdsa/sk-*), затем кладёт через stdin (без подстановки
+        в argv — спецсимволы комментария ключа не попадают в shell).
+
+        `force_replace=True` создаёт `authorized_keys` с нуля одним этим
+        ключом (re-provision после переустановки ОС: старые записи теряют
+        смысл). `force_replace=False` — идемпотентно дописывает ключ, если
+        точного совпадения строки не нашлось через `grep -qxF`.
+        """
+        self._validate_login(login)
+        if not public_key or not public_key.strip():
+            raise SshError(
+                error_code="SSH_INVALID_ARG",
+                host=self.host,
+                cmd_sanitized=f"prepare authorized_keys <{login}>",
+                message="public key is empty",
+            )
+        key_line = public_key.strip()
+        if "\n" in key_line or "\r" in key_line:
+            raise SshError(
+                error_code="SSH_INVALID_ARG",
+                host=self.host,
+                cmd_sanitized=f"prepare authorized_keys <{login}>",
+                message="public key must be a single line",
+            )
+        if not key_line.startswith((
+            "ssh-rsa ", "ssh-ed25519 ", "ssh-dss ",
+            "ecdsa-sha2-nistp256 ", "ecdsa-sha2-nistp384 ", "ecdsa-sha2-nistp521 ",
+            "sk-ssh-ed25519@openssh.com ", "sk-ecdsa-sha2-nistp256@openssh.com ",
+        )):
+            raise SshError(
+                error_code="SSH_INVALID_ARG",
+                host=self.host,
+                cmd_sanitized=f"prepare authorized_keys <{login}>",
+                message="public key has unsupported algorithm prefix",
+            )
+        # Та же конструкция, что и в `bootstrap_management_user`: home через
+        # `getent passwd`, ключ — на stdin (`$(cat)`), chmod 700/600 в конце.
+        # Разница — флаг `force_replace`: при True перезаписываем файл целиком
+        # (truncate), иначе идемпотентно дописываем при отсутствии совпадения.
+        if force_replace:
+            write_cmd = (
+                'printf "%s\\n" "$key" > "$home/.ssh/authorized_keys"'
+            )
+        else:
+            write_cmd = (
+                'touch "$home/.ssh/authorized_keys"; '
+                'grep -qxF "$key" "$home/.ssh/authorized_keys" || '
+                'printf "%s\\n" "$key" >> "$home/.ssh/authorized_keys"'
+            )
+        rc, _out, stderr = await self.run(
+            f"bash -c 'set -e; "
+            f"home=$(getent passwd {login} | cut -d: -f6); "
+            'mkdir -p "$home/.ssh"; '
+            "key=$(cat); "
+            f"{write_cmd}; "
+            f'chown -R {login}: "$home/.ssh"; '
+            'chmod 700 "$home/.ssh"; '
+            'chmod 600 "$home/.ssh/authorized_keys"\'',
+            sudo=True,
+            stdin_payload=f"{key_line}\n",
+        )
+        if rc != 0:
+            raise SshError(
+                error_code="SSH_AUTHORIZED_KEYS_FAILED",
+                host=self.host,
+                cmd_sanitized=f"prepare authorized_keys <{login}>",
+                returncode=rc,
+                stderr=stderr.strip(),
+                message=f"authorized_keys setup exit code {rc}",
+            )
 
     async def modify_user(
         self,

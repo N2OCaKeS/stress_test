@@ -317,3 +317,140 @@ class TestProvisionHandlers:
 
         await users.account_provision.original_func(tid)
         assert "sess-pwd" not in str(captured_audit)
+
+
+# ── SSH-key bootstrap (F23-B): writing public_key + force_replace ────────────
+
+
+_ED25519_PUB = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITESTKEY dbos-account"
+
+
+class TestAuthorizedKeyWrite:
+    """`SshClient.create_user(public_key=...)` пишет ключ в authorized_keys.
+
+    Идемпотентно (`force_replace=False`, default) или с перезаписью
+    (`force_replace=True`, re-provision после переустановки ОС).
+    """
+
+    async def test_new_user_with_key_appends(self, monkeypatch):
+        # getent (not found) → useradd → bash setup authorized_keys
+        conn = _conn([
+            _run_result("", "", 2),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async with SshClient("h", "ops", "p") as ssh:
+            await ssh.create_user("deploy", public_key=_ED25519_PUB)
+        # Третий run — bash-команда с grep|append (не truncate).
+        bash_cmd = conn.run.await_args_list[2].args[0]
+        assert "authorized_keys" in bash_cmd
+        assert "grep -qxF" in bash_cmd
+        assert ">>" in bash_cmd
+        # Ключ ушёл на stdin, не argv.
+        stdin = conn.run.await_args_list[2].kwargs["input"]
+        assert _ED25519_PUB in stdin
+        assert _ED25519_PUB not in bash_cmd
+
+    async def test_new_user_force_replace_truncates(self, monkeypatch):
+        conn = _conn([
+            _run_result("", "", 2),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async with SshClient("h", "ops", "p") as ssh:
+            await ssh.create_user(
+                "deploy", public_key=_ED25519_PUB, force_replace=True,
+            )
+        bash_cmd = conn.run.await_args_list[2].args[0]
+        # force_replace → truncate (`>`), не append.
+        assert "authorized_keys" in bash_cmd
+        assert "grep -qxF" not in bash_cmd
+        assert " > " in bash_cmd
+
+    async def test_existing_user_with_key_runs_authorized_keys_step(self, monkeypatch):
+        # getent found → usermod (no-op) → authorized_keys
+        conn = _conn([
+            _run_result("deploy:x:1001:1001::/home/deploy:/bin/bash", "", 0),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        async with SshClient("h", "ops", "p") as ssh:
+            await ssh.create_user("deploy", public_key=_ED25519_PUB)
+        # usermod не дёргается (нечего менять) — sразу authorized_keys.
+        cmds = [c.args[0] for c in conn.run.await_args_list]
+        assert any("authorized_keys" in c for c in cmds)
+
+    async def test_invalid_key_prefix_rejected(self, monkeypatch):
+        conn = _conn([
+            _run_result("", "", 2),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        with pytest.raises(SshError) as ei:
+            async with SshClient("h", "ops", "p") as ssh:
+                await ssh.create_user("deploy", public_key="not-a-key")
+        assert ei.value.error_code == "SSH_INVALID_ARG"
+
+
+class TestProvisionTaskWithInlineCreds:
+    """`account.provision` принимает inline-креды из payload (F23-B)."""
+
+    async def test_inline_password_and_pubkey_used(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        # Provision с inline password+pubkey: воркер не должен дёргать
+        # `fetch_account_password` — креды уже в payload'е.
+        tid = await make_task(
+            task_kind="account.provision", target_server_id="srv_inline",
+            payload={
+                "server_id": "srv_inline", "account_id": "acc_inline",
+                "login": "ops",
+                "password_plaintext": "GenStrongPwd!9X" * 2,
+                "ssh_public_key": _ED25519_PUB,
+                "ssh_private_key_plaintext": (
+                    "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n"
+                    "-----END OPENSSH PRIVATE KEY-----\n"
+                ),
+                "force_replace": True,
+            },
+        )
+        fetch_calls: list = []
+
+        async def fake_fetch(server_id, account_id, target_department_id=None):
+            fetch_calls.append((server_id, account_id))
+            return {"login": "ops", "password": "sess-pwd"}
+
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.fetch_account_password",
+            fake_fetch,
+        )
+        # getent (not found) → useradd → chpasswd → authorized_keys
+        conn = _conn([
+            _run_result("", "", 2),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+            _run_result("", "", 0),
+        ])
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+
+        monkeypatch.setattr(
+            "src.tasks.users.server_service_client.submit_provision_status",
+            fake_submit,
+        )
+
+        await users.account_provision.original_func(tid)
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # `_account_creds` всё равно тянет creds (для self-сессии) — но новый
+        # пароль на chpasswd идёт из inline.
+        chpasswd_stdin = conn.run.await_args_list[2].kwargs["input"]
+        assert "ops:" + ("GenStrongPwd!9X" * 2) in chpasswd_stdin
+        # Четвёртая команда — authorized_keys с truncate (force_replace=True).
+        bash_cmd = conn.run.await_args_list[3].args[0]
+        assert "authorized_keys" in bash_cmd
+        assert " > " in bash_cmd  # truncate, не append

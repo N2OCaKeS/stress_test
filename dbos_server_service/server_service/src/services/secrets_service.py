@@ -149,6 +149,16 @@ def aad_for_server_account_password(account_id: str) -> bytes:
     return f"server_account_password|server_accounts|{account_id}".encode("utf-8")
 
 
+def aad_for_server_account_ssh_key(account_id: str) -> bytes:
+    """AAD для `server_accounts.ssh_private_key_encrypted` строки `account_id`.
+
+    Формат — `"server_account_ssh_key|server_accounts|<id>"`. Отдельный kind от
+    пароля, чтобы swap ciphertext'а password↔private_key в одной и той же
+    строке тоже отбивался InvalidTag.
+    """
+    return f"server_account_ssh_key|server_accounts|{account_id}".encode("utf-8")
+
+
 def aad_for_ipmi_credential(controller_id: str) -> bytes:
     """AAD для `ipmi_controllers.password_encrypted` строки `controller_id`.
 

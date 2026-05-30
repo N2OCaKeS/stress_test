@@ -142,57 +142,62 @@ async def ensure_provision_credentials(
 ) -> tuple[ServerAccount, dict, bool]:
     """Гарантировать наличие пары `(password, ssh_keypair)` у аккаунта.
 
-    Идемпотентно: если у аккаунта уже есть и пароль, и публичный ключ —
-    возвращаем существующие. Если пусто или один из секретов отсутствует —
-    генерируем новые (strong-password + Ed25519), шифруем и сохраняем оба
-    в одну транзакцию (commit на caller'е).
+    Sticky по каждому секрету в отдельности: если у аккаунта уже есть пароль —
+    оставляем именно его (и расшифровываем для caller'а); если есть SSH-ключ —
+    оставляем существующую пару. Отсутствующий секрет догенерируем, шифруем и
+    сохраняем — flush в этой же транзакции, commit делает caller. Это нужно
+    для legacy-аккаунтов до миграции b9c2e7d4a8f1: там пароль уже мог быть
+    выставлен через rotate_password или create_account, а ssh-пары ещё нет.
 
     Возвращает `(account, creds, generated)`:
       * `creds = {password, ssh_public_key, ssh_private_key}` (plaintext);
-      * `generated=True`, если генерировали новый материал в этом вызове
-        (caller использует флаг для `force_replace` в worker payload —
-        переустановка ОС инициирует новый прогон и должна затереть
-        authorized_keys на боксе).
+      * `generated=True`, если хотя бы один секрет был сгенерирован в этом
+        вызове (caller использует флаг для `force_replace` в worker payload —
+        новый материал на боксе надо принудительно перезаписать поверх того,
+        что там лежит).
 
-    Контракт «один аккаунт — одна пара» держится на уровне строки. Если
-    провизим переустановленный сервер и нужны свежие креды — caller сначала
-    обнуляет поля у аккаунта (см. `reset_provision_credentials`), потом зовёт
-    этот метод.
+    Если нужно принудительно сменить и пароль и SSH (переустановка ОС) —
+    caller сначала зовёт `reset_provision_credentials`, потом этот метод.
     """
-    if account.password_encrypted is not None and account.ssh_public_key is not None:
+    generated = False
+
+    if account.password_encrypted is not None:
         password = secrets_service.decrypt(
             account.password_encrypted,
             aad=secrets_service.aad_for_server_account_password(account.id),
         )
-        ssh_private = secrets_service.decrypt(
+    else:
+        password = _generate_strong_password()
+        account.password_encrypted = secrets_service.encrypt(
+            password,
+            aad=secrets_service.aad_for_server_account_password(account.id),
+        )
+        generated = True
+
+    if account.ssh_public_key is not None:
+        public_openssh = account.ssh_public_key
+        private_pem = secrets_service.decrypt(
             account.ssh_private_key_encrypted,
             aad=secrets_service.aad_for_server_account_ssh_key(account.id),
         ) if account.ssh_private_key_encrypted else ""
-        creds = {
-            "password": password,
-            "ssh_public_key": account.ssh_public_key,
-            "ssh_private_key": ssh_private,
-        }
-        return account, creds, False
+    else:
+        private_pem, public_openssh = _generate_ssh_keypair()
+        account.ssh_public_key = public_openssh
+        account.ssh_private_key_encrypted = secrets_service.encrypt(
+            private_pem,
+            aad=secrets_service.aad_for_server_account_ssh_key(account.id),
+        )
+        generated = True
 
-    password = _generate_strong_password()
-    private_pem, public_openssh = _generate_ssh_keypair()
-    account.password_encrypted = secrets_service.encrypt(
-        password,
-        aad=secrets_service.aad_for_server_account_password(account.id),
-    )
-    account.ssh_public_key = public_openssh
-    account.ssh_private_key_encrypted = secrets_service.encrypt(
-        private_pem,
-        aad=secrets_service.aad_for_server_account_ssh_key(account.id),
-    )
-    await db.flush()
+    if generated:
+        await db.flush()
+
     creds = {
         "password": password,
         "ssh_public_key": public_openssh,
         "ssh_private_key": private_pem,
     }
-    return account, creds, True
+    return account, creds, generated
 
 
 async def reset_provision_credentials(

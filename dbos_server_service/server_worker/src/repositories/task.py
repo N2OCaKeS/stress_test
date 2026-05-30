@@ -105,6 +105,15 @@ async def scrub_payload_keys(
 
     Перечитываем актуальный payload и переписываем. Идемпотентно —
     отсутствующие ключи и уже-замаскированные значения пропускаются.
+
+    Race-семантика: read-modify-write без SELECT FOR UPDATE и без
+    payload-версии (CAS). Сейчас это безопасно — после dispatch'а никто,
+    кроме самого handler'а, payload не правит, и concurrent scrub из
+    двух path'ов одного handler'а даёт ту же итоговую маску. FIXME:
+    если server_service научится патчить payload в полёте (например,
+    подкинуть свежий ssh_public_key после ротации, пока retry ещё не
+    подобрался) — этот UPDATE затрёт чужие изменения. Тогда переехать
+    либо на SELECT FOR UPDATE, либо на CAS по `payload_version`.
     """
     task = await get_by_id(db, task_id)
     if task is None or not task.payload:

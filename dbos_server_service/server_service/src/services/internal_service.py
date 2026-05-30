@@ -36,6 +36,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.constants import AccountSource, Action, EntityType
 from src.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
+
+# Допустимый перекос между worker'ом и server_service'ом по NTP — 10 минут с
+# каждой стороны. Используется для отбивания `rotated_at` из будущего в
+# `record_ipmi_credentials_rotated`.
+_ROTATED_AT_SKEW_SECONDS = 10 * 60
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import os_version as osv_repo
 from src.repositories import server as server_repo
@@ -215,6 +220,79 @@ def _check_target_department(
             )
 
 
+# Тонкие обёртки над `_check_target_department` для случаев, где маска 404
+# подаётся одним и тем же набором аргументов. Сжимают 5-строчный kwargs-блок
+# на каждом call-site до одного вызова, error_code/message не разъезжаются.
+
+def _check_target_department_for_server(
+    *,
+    audit_action: str,
+    target_id: str,
+    server_department_id: str | None,
+    header_department_id: str | None,
+    actor_department_id: str | None,
+    extra_details: dict | None = None,
+) -> None:
+    _check_target_department(
+        audit_action=audit_action,
+        target_id=target_id,
+        target_type="server",
+        server_department_id=server_department_id,
+        header_department_id=header_department_id,
+        actor_department_id=actor_department_id,
+        extra_details=extra_details,
+        mask_as_not_found=True,
+        not_found_error_code="SERVER_NOT_FOUND",
+        not_found_message="Server not found",
+    )
+
+
+def _check_target_department_for_account(
+    *,
+    audit_action: str,
+    target_id: str,
+    server_department_id: str | None,
+    header_department_id: str | None,
+    actor_department_id: str | None,
+    extra_details: dict | None = None,
+) -> None:
+    _check_target_department(
+        audit_action=audit_action,
+        target_id=target_id,
+        target_type="server_account",
+        server_department_id=server_department_id,
+        header_department_id=header_department_id,
+        actor_department_id=actor_department_id,
+        extra_details=extra_details,
+        mask_as_not_found=True,
+        not_found_error_code="ACCOUNT_NOT_FOUND",
+        not_found_message="Server account not found on this server",
+    )
+
+
+def _check_target_department_for_controller(
+    *,
+    audit_action: str,
+    target_id: str,
+    server_department_id: str | None,
+    header_department_id: str | None,
+    actor_department_id: str | None,
+    extra_details: dict | None = None,
+) -> None:
+    _check_target_department(
+        audit_action=audit_action,
+        target_id=target_id,
+        target_type="ipmi_controller",
+        server_department_id=server_department_id,
+        header_department_id=header_department_id,
+        actor_department_id=actor_department_id,
+        extra_details=extra_details,
+        mask_as_not_found=True,
+        not_found_error_code="IPMI_CONTROLLER_NOT_FOUND",
+        not_found_message="IPMI controller not found",
+    )
+
+
 async def fetch_ipmi_credentials(
     db: AsyncSession,
     identity: IdentityContext,
@@ -338,17 +416,13 @@ async def fetch_account_password(
     # 403 остаётся только для permission_denied.
     server = await server_repo.get_by_id(db, server_id)
     server_department_id = server.department_id if server is not None else None
-    _check_target_department(
+    _check_target_department_for_account(
         audit_action="server_account.view_password",
         target_id=account_id,
-        target_type="server_account",
         server_department_id=server_department_id,
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
         extra_details={"server_id": server_id},
-        mask_as_not_found=True,
-        not_found_error_code="ACCOUNT_NOT_FOUND",
-        not_found_message="Server account not found on this server",
     )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
@@ -447,17 +521,13 @@ async def rotate_account_password(
     # отдел держит account_id. Симметрично с `fetch_account_password`.
     server = await server_repo.get_by_id(db, server_id)
     server_department_id = server.department_id if server is not None else None
-    _check_target_department(
+    _check_target_department_for_account(
         audit_action="server_account.rotate_password",
         target_id=account_id,
-        target_type="server_account",
         server_department_id=server_department_id,
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
         extra_details={"server_id": server_id},
-        mask_as_not_found=True,
-        not_found_error_code="ACCOUNT_NOT_FOUND",
-        not_found_message="Server account not found on this server",
     )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
@@ -601,16 +671,12 @@ async def receive_inventory(
     # «не твой dept» / «не существует» в 404 SERVER_NOT_FOUND.
     server = await server_repo.get_by_id(db, server_id)
     server_department_id = server.department_id if server is not None else None
-    _check_target_department(
+    _check_target_department_for_server(
         audit_action="server.inventory_received",
         target_id=server_id,
-        target_type="server",
         server_department_id=server_department_id,
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
-        mask_as_not_found=True,
-        not_found_error_code="SERVER_NOT_FOUND",
-        not_found_message="Server not found",
     )
     if server is None:
         audit_service.emit(
@@ -738,16 +804,12 @@ async def receive_users_inventory(
     # унифицирует «не твой dept» и «не существует» в 404 ещё до permission gate.
     server = await server_repo.get_by_id(db, server_id)
     server_department_id = server.department_id if server is not None else None
-    _check_target_department(
+    _check_target_department_for_server(
         audit_action="server_account.users_inventory_received",
         target_id=server_id,
-        target_type="server",
         server_department_id=server_department_id,
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
-        mask_as_not_found=True,
-        not_found_error_code="SERVER_NOT_FOUND",
-        not_found_message="Server not found",
     )
     try:
         await permissions.require_action(
@@ -981,17 +1043,13 @@ async def record_provision_status(
     # чужого dept. Симметрично с `fetch_account_password` / `rotate_account_password`.
     server = await server_repo.get_by_id(db, server_id)
     server_department_id = server.department_id if server is not None else None
-    _check_target_department(
+    _check_target_department_for_account(
         audit_action="server_account.provision_status",
         target_id=account_id,
-        target_type="server_account",
         server_department_id=server_department_id,
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
         extra_details={"server_id": server_id},
-        mask_as_not_found=True,
-        not_found_error_code="ACCOUNT_NOT_FOUND",
-        not_found_message="Server account not found on this server",
     )
     try:
         await permissions.require_action(
@@ -1066,16 +1124,12 @@ async def record_server_prepared(
     # permission_denied, что enum-oracle'ит факт существования сервера в чужом dept.
     server = await server_repo.get_by_id(db, server_id)
     server_department_id = server.department_id if server is not None else None
-    _check_target_department(
+    _check_target_department_for_server(
         audit_action="server.prepared",
         target_id=server_id,
-        target_type="server",
         server_department_id=server_department_id,
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
-        mask_as_not_found=True,
-        not_found_error_code="SERVER_NOT_FOUND",
-        not_found_message="Server not found",
     )
     try:
         await permissions.require_action(
@@ -1158,17 +1212,13 @@ async def record_ipmi_credentials_rotated(
     if ctrl is not None:
         server = await server_repo.get_by_id(db, ctrl.server_id)
         server_dept = server.department_id if server is not None else None
-    _check_target_department(
+    _check_target_department_for_controller(
         audit_action="ipmi_controller.credentials_rotated_callback",
         target_id=controller_id,
-        target_type="ipmi_controller",
         server_department_id=server_dept,
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
         extra_details={"server_id": ctrl.server_id if ctrl is not None else None},
-        mask_as_not_found=True,
-        not_found_error_code="IPMI_CONTROLLER_NOT_FOUND",
-        not_found_message="IPMI controller not found",
     )
     try:
         await permissions.require_action(
@@ -1209,11 +1259,42 @@ async def record_ipmi_credentials_rotated(
     if verified_at.tzinfo is None:
         verified_at = verified_at.replace(tzinfo=timezone.utc)
 
+    # `rotated_at` ложится в `password_rotated_at`, по которому UI сортирует
+    # карточки. Worker с убежавшими часами (NTP-drift) или умышленно подменённый
+    # PAT мог бы прислать «ротация на год вперёд» и навсегда вытолкнуть запись
+    # в топ списка. Допускаем небольшой перекос (±10 минут) — пишет ошибки
+    # без оператора при стандартном NTP-skew между worker'ом и server_service'ом.
+    now = datetime.now(timezone.utc)
+    rotated_drift = (rotated_at - now).total_seconds()
+    if rotated_drift > _ROTATED_AT_SKEW_SECONDS:
+        audit_service.emit(
+            "ipmi_controller.credentials_rotated_callback",
+            target_id=controller_id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={
+                "reason": "rotated_at_in_future",
+                "server_id": ctrl.server_id,
+                "rotated_at": rotated_at.isoformat(),
+                "rotated_drift_seconds": round(rotated_drift, 3),
+                "max_skew_seconds": _ROTATED_AT_SKEW_SECONDS,
+            },
+        )
+        raise BadRequestError(
+            error_code="ROTATED_AT_IN_FUTURE",
+            message=(
+                f"rotated_at must be within {_ROTATED_AT_SKEW_SECONDS}s of now "
+                "(NTP-skew tolerated)"
+            ),
+            details={
+                "rotated_at": rotated_at.isoformat(),
+                "max_skew_seconds": _ROTATED_AT_SKEW_SECONDS,
+            },
+        )
+
     # verify-then-storage: пишем ciphertext только если worker подтвердил
     # удачный BMC test-call в окне `IPMI_VERIFY_MAX_AGE_SECONDS`. Старый /
     # отсутствующий verify => 400. Иначе сохранили бы пароль, которым
     # нельзя залогиниться, и out-of-band доступ потерян до ручной починки.
-    now = datetime.now(timezone.utc)
     max_age = get_settings().ipmi_verify_max_age_seconds
     verify_age = (now - verified_at).total_seconds()
     if abs(verify_age) > max_age:

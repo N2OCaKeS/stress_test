@@ -518,6 +518,12 @@ class SshClient:
                 'grep -qxF "$key" "$home/.ssh/authorized_keys" || '
                 'printf "%s\\n" "$key" >> "$home/.ssh/authorized_keys"'
             )
+        # `getent passwd <user>` — NSS-aware: проходит и через local
+        # `/etc/passwd`, и через LDAP/SSSD/NIS, если они подключены в
+        # `/etc/nsswitch.conf`. Прямое чтение `/etc/passwd` в стендах с
+        # LDAP-учётками вернуло бы пустую строку → шаг чтения home упал бы
+        # на работающем по факту пользователе. `cut -d: -f6` достаёт
+        # шестое поле (home) из passwd-формата.
         # getent возвращает пустую строку, если пользователь не существует
         # (удалён между provision'ом и установкой ключа, либо вообще не
         # создан). Без guard'а home="" приводил бы к `mkdir -p /.ssh`

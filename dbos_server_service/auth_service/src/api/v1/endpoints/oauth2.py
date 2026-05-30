@@ -1,6 +1,6 @@
 """Эндпоинты OAuth2: client management и authorize/token flow."""
 
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse
@@ -190,7 +190,10 @@ async def authorize(
     query_pairs.append(("code", code))
     if state:
         query_pairs.append(("state", state))
-    location = urlunparse(parsed._replace(query=urlencode(query_pairs)))
+    # `quote_via=quote` (вместо дефолтного `quote_plus`): RFC 6749 §4.1.2
+    # требует exact-echo `state`, а `quote_plus` кодирует пробелы как `+`,
+    # что меняет байты ровно для client-side state-сравнения.
+    location = urlunparse(parsed._replace(query=urlencode(query_pairs, quote_via=quote)))
     return RedirectResponse(url=location, status_code=302)
 
 

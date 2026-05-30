@@ -11,7 +11,8 @@ Outbox-паттерн: `push_nowait()` кладёт payload во внутрен�
 без обращения к БД. Фоновая корутина `drain_loop()`, поднятая в lifespan'е,
 выгребает события батчами и пишет их одной транзакцией под одним pooled
 коннектом. Bounded buffer — при переполнении старейший элемент дропается,
-счётчик `dropped_total` инкрементится, чтобы факт потери не маскировался.
+счётчик потерь инкрементится по причине (overflow / cancel / shutdown),
+чтобы факт потери не маскировался и cause легко разнести в метриках.
 
 Sync-однострочник `_emit_audit` остаётся (его дёргают тесты и retention
 sweep с собственной сессией), но горячий путь middleware теперь идёт через
@@ -61,8 +62,8 @@ class AuditOutbox:
       * `start(loop)` — создаёт `asyncio.Queue(maxsize=max_size)` на указанной
         event loop и поднимает background `drain_loop`-task.
       * `push_nowait(envelope)` — non-blocking enqueue. При переполнении
-        дропает старейший элемент и инкрементит `dropped_total`. Может
-        вызываться из любого корутинного контекста на той же event loop.
+        дропает старейший элемент и инкрементит `dropped_overflow_total`.
+        Может вызываться из любого корутинного контекста на той же event loop.
       * `stop(timeout)` — отменяет drain-task'у и финально выгребает буфер
         под выделенным бюджетом времени (graceful shutdown).
 
@@ -104,8 +105,15 @@ class AuditOutbox:
         # Счётчики — под `threading.Lock`, чтобы тесты могли читать их с
         # другого треда (ThreadPoolExecutor) без data race на `+=`. Симметрия
         # с `self_audit_failures_total` в `main.py`.
+        #
+        # Потери разнесены по причинам: overflow — буфер переполнен,
+        # cancel — drain отменён уже забравшим батчем, shutdown — финальный
+        # drain не уложился в бюджет `stop(timeout=...)`. Из warning-логов
+        # cause раньше восстанавливался руками.
         self._counters_lock = threading.Lock()
-        self._dropped_total = 0
+        self._dropped_overflow_total = 0
+        self._dropped_cancel_total = 0
+        self._dropped_shutdown_total = 0
         self._drained_total = 0
 
     # ── lifecycle ────────────────────────────────────────────────────────
@@ -149,8 +157,9 @@ class AuditOutbox:
         свежее событие имело шанс попасть на drain. Старейшее обычно
         наименее ценно (его уже могли успеть отдать) — и это лучше, чем
         отбрасывать свежее, которое атакующий тут же мог бы использовать
-        как «событие исчезло, audit не сработал». Counter `_dropped_total`
-        растёт ровно один раз на каждое потерянное событие.
+        как «событие исчезло, audit не сработал». Counter
+        `_dropped_overflow_total` растёт ровно один раз на каждое потерянное
+        событие из-за переполнения буфера.
         """
         queue = self._queue
         if queue is None:
@@ -188,7 +197,7 @@ class AuditOutbox:
             # пробуем повторить put.
             pass
         with self._counters_lock:
-            self._dropped_total += 1
+            self._dropped_overflow_total += 1
         try:
             queue.put_nowait(envelope)
             return True
@@ -197,7 +206,7 @@ class AuditOutbox:
             # снова забил слот. Возвращаем False, чтобы caller знал, что
             # событие не сохранено.
             with self._counters_lock:
-                self._dropped_total += 1
+                self._dropped_overflow_total += 1
             return False
 
     # ── drain ────────────────────────────────────────────────────────────
@@ -245,7 +254,7 @@ class AuditOutbox:
                     lost = len(batch) - len(committed_ids) - requeued
                     if lost > 0:
                         with self._counters_lock:
-                            self._dropped_total += lost
+                            self._dropped_cancel_total += lost
                     if committed_ids:
                         with self._counters_lock:
                             self._drained_total += len(committed_ids)
@@ -287,7 +296,7 @@ class AuditOutbox:
                     lost = len(batch) + self._queue.qsize()
                     if lost:
                         with self._counters_lock:
-                            self._dropped_total += lost
+                            self._dropped_shutdown_total += lost
                         logger.warning(
                             "audit outbox shutdown drain timed out, %d events lost",
                             lost,
@@ -389,17 +398,45 @@ class AuditOutbox:
         return self._queue.qsize() if self._queue is not None else 0
 
     def dropped_total(self) -> int:
+        """Сумма всех потерь — overflow + cancel + shutdown.
+
+        Сохранён как агрегат для совместимости со старыми вызовами и
+        существующими дашбордами; для разбора cause'а — отдельные геттеры
+        `dropped_overflow_total` / `dropped_cancel_total`
+        / `dropped_shutdown_total`.
+        """
         with self._counters_lock:
-            return self._dropped_total
+            return (
+                self._dropped_overflow_total
+                + self._dropped_cancel_total
+                + self._dropped_shutdown_total
+            )
+
+    def dropped_overflow_total(self) -> int:
+        """События, выброшенные из-за переполнения bounded buffer'а."""
+        with self._counters_lock:
+            return self._dropped_overflow_total
+
+    def dropped_cancel_total(self) -> int:
+        """События, потерянные на cancellation активного drain'а."""
+        with self._counters_lock:
+            return self._dropped_cancel_total
+
+    def dropped_shutdown_total(self) -> int:
+        """События, не уложившиеся в бюджет финального drain'а в shutdown'е."""
+        with self._counters_lock:
+            return self._dropped_shutdown_total
 
     def drained_total(self) -> int:
         with self._counters_lock:
             return self._drained_total
 
     def reset_counters_for_tests(self) -> None:
-        """Только для тестов: обнуляет dropped/drained."""
+        """Только для тестов: обнуляет все cause-counters и drained."""
         with self._counters_lock:
-            self._dropped_total = 0
+            self._dropped_overflow_total = 0
+            self._dropped_cancel_total = 0
+            self._dropped_shutdown_total = 0
             self._drained_total = 0
 
 

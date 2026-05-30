@@ -93,9 +93,8 @@ async def track_bot_ip(
         window = window[-max_window:]
 
     bot.last_known_ips = window
-    # Без явного flag_modified ORM не всегда видит мутацию JSONB-колонки
-    # (in-place изменение списка). Перезаписываем атрибут целиком — это
-    # гарантированно отметит attribute как dirty.
+    # Атрибут переприсваиваем целиком (а не мутируем in-place), поэтому ORM
+    # сам видит dirty — flag_modified тут не нужен.
     await db.flush()
 
     cutoff = now - suspicious_window

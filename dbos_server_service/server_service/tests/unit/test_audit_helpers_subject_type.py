@@ -12,12 +12,6 @@ from unittest.mock import patch
 
 import pytest
 
-pytestmark = pytest.mark.xfail(
-    reason="W11-W3 own tests: mock setup для emit_denied_on_authz_error не "
-    "matches фактическую сигнатуру; src-фикс рабочий, тесты переписать в W12.",
-    strict=False,
-)
-
 from src.core.exceptions import AuthorizationError
 from src.schemas.identity import IdentityContext
 from src.services.audit_helpers import emit_denied_on_authz_error
@@ -37,6 +31,12 @@ def _identity(subject_type: str | None) -> IdentityContext:
     )
 
 
+def _raise_authz() -> None:
+    raise AuthorizationError(
+        error_code="PERMISSION_DENIED", message="no",
+    )
+
+
 class TestEmitDeniedSubjectType:
     def test_subject_type_emitted_when_identity_passed(self):
         ident = _identity("bot")
@@ -48,7 +48,7 @@ class TestEmitDeniedSubjectType:
                     target_id="srv_123",
                     identity=ident,
                 ):
-                    raise AuthorizationError("no")
+                    _raise_authz()
         assert mock_emit.called
         kwargs = mock_emit.call_args.kwargs
         assert kwargs["details"]["subject_type"] == "bot"
@@ -62,7 +62,7 @@ class TestEmitDeniedSubjectType:
                     target_type="server",
                     target_id="srv_123",
                 ):
-                    raise AuthorizationError("no")
+                    _raise_authz()
         kwargs = mock_emit.call_args.kwargs
         assert "subject_type" not in kwargs["details"]
 
@@ -75,7 +75,7 @@ class TestEmitDeniedSubjectType:
                     target_type="server",
                     identity=ident,
                 ):
-                    raise AuthorizationError("no")
+                    _raise_authz()
         kwargs = mock_emit.call_args.kwargs
         assert "subject_type" not in kwargs["details"]
 
@@ -90,6 +90,6 @@ class TestEmitDeniedSubjectType:
                     extra_details={"subject_type": "pat"},
                     identity=ident,
                 ):
-                    raise AuthorizationError("no")
+                    _raise_authz()
         kwargs = mock_emit.call_args.kwargs
         assert kwargs["details"]["subject_type"] == "pat"

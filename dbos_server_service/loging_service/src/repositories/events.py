@@ -3,6 +3,7 @@
 import logging
 import re
 from datetime import datetime, timezone
+from typing import Callable, TypeVar
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -15,7 +16,44 @@ from src.models.audit_event import AuditEvent
 from src.schemas.events import EventCreate
 from src.utils.ids import audit_event_id
 
-_log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+
+def _with_statement_timeout(
+    db: Session,
+    timeout_ms: int,
+    fn: Callable[[], _T],
+    *,
+    on_canceled: Callable[[], _T],
+    canceled_log_msg: str,
+) -> _T:
+    """Прогоняет `fn()` под `SET LOCAL statement_timeout = <ms>` в SAVEPOINT'е.
+
+    Postgres не принимает bind-параметры в `SET LOCAL`, поэтому `timeout_ms`
+    инлайнится — значение валидируется в Settings (int + ge=0), SQL-инъекция
+    исключена. SAVEPOINT нужен, чтобы query_canceled (57014) не повалил
+    активную внешнюю транзакцию.
+
+    На `57014` зовётся `on_canceled()` и пишется warning. Любая другая
+    DBAPIError пробрасывается caller'у.
+    """
+    timeout_sql = f"SET LOCAL statement_timeout = {int(timeout_ms)}"
+    nested = db.begin_nested()
+    try:
+        db.execute(text(timeout_sql))
+        result = fn()
+        nested.commit()
+        return result
+    except DBAPIError as exc:
+        nested.rollback()
+        pgcode = getattr(getattr(exc.orig, "pgcode", None), "value", None) \
+            or getattr(exc.orig, "pgcode", None)
+        if pgcode == "57014":
+            logger.warning(canceled_log_msg, timeout_ms)
+            return on_canceled()
+        raise
 
 # Defence-in-depth: схема `EventCreate` уже валидирует request_id, но
 # репозиторий могут дёрнуть напрямую из миграции, фоновой задачи или
@@ -173,6 +211,7 @@ def query(
     Возвращает `(events, total, has_more)`, где `total` равен None при
     `include_total=False`.
     """
+    settings = get_settings()
     stmt = select(AuditEvent)
 
     filters = []
@@ -201,33 +240,18 @@ def query(
         # сессионным `statement_timeout`; на превышении Postgres шлёт
         # `57014 query_canceled`, мы возвращаем `total=None` (caller
         # документирован как "None = точное число неизвестно") и не
-        # ломаем основной выпуск страницы. SAVEPOINT нужен, чтобы
-        # отменённый стейтмент не повалил активную транзакцию.
-        settings = get_settings()
+        # ломаем основной выпуск страницы.
         timeout_ms = settings.audit_count_statement_timeout_ms
         if timeout_ms > 0:
-            # Postgres не принимает bind-параметры в SET LOCAL, инлайним
-            # int — значение приходит из Settings (int validator), SQL-инъекция
-            # невозможна.
-            timeout_sql = f"SET LOCAL statement_timeout = {int(timeout_ms)}"
-            nested = db.begin_nested()
-            try:
-                db.execute(text(timeout_sql))
-                total = db.execute(count_stmt).scalar_one()
-                nested.commit()
-            except DBAPIError as exc:
-                nested.rollback()
-                # `57014` — query_canceled (включая statement_timeout).
-                pgcode = getattr(getattr(exc.orig, "pgcode", None), "value", None) \
-                    or getattr(exc.orig, "pgcode", None)
-                if pgcode == "57014":
-                    _log.warning(
-                        "audit COUNT exceeded statement_timeout=%dms; returning total=None",
-                        timeout_ms,
-                    )
-                    total = None
-                else:
-                    raise
+            total = _with_statement_timeout(
+                db,
+                timeout_ms,
+                lambda: db.execute(count_stmt).scalar_one(),
+                on_canceled=lambda: None,
+                canceled_log_msg=(
+                    "audit COUNT exceeded statement_timeout=%dms; returning total=None"
+                ),
+            )
         else:
             total = db.execute(count_stmt).scalar_one()
     else:
@@ -242,28 +266,17 @@ def query(
     # COUNT'у. Семантика на превышение — пустая страница + warning лог
     # (а не 500): caller продолжает работать с пустым результатом,
     # дашборд не падает целиком.
-    settings = get_settings()
     query_timeout_ms = settings.audit_query_statement_timeout_ms
     if query_timeout_ms > 0:
-        # SET LOCAL не принимает bind-параметры, значение — int из Settings.
-        timeout_sql = f"SET LOCAL statement_timeout = {int(query_timeout_ms)}"
-        nested = db.begin_nested()
-        try:
-            db.execute(text(timeout_sql))
-            rows = db.execute(page_stmt).scalars().all()
-            nested.commit()
-        except DBAPIError as exc:
-            nested.rollback()
-            pgcode = getattr(getattr(exc.orig, "pgcode", None), "value", None) \
-                or getattr(exc.orig, "pgcode", None)
-            if pgcode == "57014":
-                _log.warning(
-                    "audit SELECT exceeded statement_timeout=%dms; returning empty page",
-                    query_timeout_ms,
-                )
-                rows = []
-            else:
-                raise
+        rows = _with_statement_timeout(
+            db,
+            query_timeout_ms,
+            lambda: db.execute(page_stmt).scalars().all(),
+            on_canceled=lambda: [],
+            canceled_log_msg=(
+                "audit SELECT exceeded statement_timeout=%dms; returning empty page"
+            ),
+        )
     else:
         rows = db.execute(page_stmt).scalars().all()
 

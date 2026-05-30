@@ -194,6 +194,7 @@ async def _dispatch_for_server(
         target_id=server_id,
         target_type="server",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(db, identity, EntityType.SERVER, action)
 
@@ -332,6 +333,7 @@ async def _dispatch_account_on_host(
         target_id=account_id,
         target_type="server_account",
         extra_details={"server_id": server_id, "operation": operation},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, action,
@@ -441,6 +443,20 @@ async def _dispatch_account_on_host(
                     "the on-host password via chpasswd"
                 ),
             )
+        # `force_password=true` обещает overwrite через chpasswd. Для discovered-
+        # аккаунта со ВЖЕ сохранённым в БД паролем `ensure_provision_credentials`
+        # sticky'ит существующий ciphertext — worker применил бы старый пароль и
+        # переустановка ОС оставила бы коробку с тем же кредом, что был до. Сбрасываем
+        # пароль и ssh-keypair ДО ensure, чтобы получить свежесгенерированную пару и
+        # `force_replace=True` в payload'е. Managed-аккаунты этот reset не трогает —
+        # контракт `force_password` остаётся узким: только discovered.
+        had_password_before = account.password_encrypted is not None
+        force_overwrite = (
+            force_password
+            and account.source == AccountSource.DISCOVERED.value
+        )
+        if force_overwrite:
+            await account_svc.reset_provision_credentials(db, account)
         _, creds, generated = await account_svc.ensure_provision_credentials(
             db, account,
         )
@@ -450,7 +466,13 @@ async def _dispatch_account_on_host(
         payload["password_plaintext"] = creds["password"]
         payload["ssh_public_key"] = creds["ssh_public_key"]
         payload["ssh_private_key_plaintext"] = creds["ssh_private_key"]
-        payload["force_replace"] = generated
+        # force_replace говорит воркеру «chpasswd на боксе»: нужно когда
+        # (а) discovered + явный force_password — мы только что сбросили
+        # старый пароль через reset, либо (б) пароля в БД до ensure не было
+        # — ensure сгенерил новый, и его надо доставить на бокс. Managed-
+        # аккаунт со sticky-паролем (ensure только ssh-keypair дописал) сюда
+        # не попадает.
+        payload["force_replace"] = force_overwrite or not had_password_before
     if extra_payload:
         payload.update(extra_payload)
     try:
@@ -489,17 +511,24 @@ async def _dispatch_account_on_host(
             },
         )
         raise
+    success_details = {
+        "task_id": task_id,
+        "task_kind": task_kind,
+        "server_id": server.id,
+        "operation": operation,
+        "login": account.login,
+        "department_id": server.department_id,
+    }
+    if inject_provision_creds:
+        # `force_replace` уже в task-payload'е воркеру, но в success-аудите
+        # его не было — оператор видел только status=success и не отличал
+        # принудительный overwrite от штатного provision. SIEM-правила теперь
+        # фильтруют overwrite-кейсы по этому полю.
+        success_details["force_replace"] = payload.get("force_replace", False)
     audit_service.emit(
         audit_action, target_id=account_id, target_type="server_account",
         status="success", allowed=True,
-        details={
-            "task_id": task_id,
-            "task_kind": task_kind,
-            "server_id": server.id,
-            "operation": operation,
-            "login": account.login,
-            "department_id": server.department_id,
-        },
+        details=success_details,
     )
     return {"operation": operation, "server_id": server.id, "task_id": task_id, "status": "queued"}
 
@@ -769,6 +798,7 @@ async def server_prepare_dispatch(
         target_id=server_id,
         target_type="server",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
 
@@ -928,6 +958,7 @@ async def account_rotate_password_dispatch(
         audit_action,
         target_id=account_id,
         target_type="server_account",
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.ROTATE_PASSWORD,
@@ -1357,6 +1388,7 @@ async def ipmi_rotate_password_dispatch(
         audit_action,
         target_id=controller_id,
         target_type="ipmi_controller",
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.IPMI_CONTROLLER, Action.ROTATE_CREDENTIALS,

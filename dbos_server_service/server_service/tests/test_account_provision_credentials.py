@@ -135,6 +135,81 @@ class TestProvisionGeneratesCredentials:
         assert refreshed.ssh_private_key_encrypted == stored_priv_cipher
         assert refreshed.ssh_public_key == stored_pubkey
 
+    async def test_discovered_with_password_force_overwrites(
+        self, client, operator_token_a, make_server, make_account, captured_dispatch, db,
+    ):
+        """Discovered-аккаунт уже с сохранённым паролем + force_password=true →
+        старые credentials сбрасываются, генерится свежая пара, force_replace=True.
+
+        Раньше ensure_provision_credentials был sticky на каждый секрет в
+        отдельности: discovered с паролем и без ключа всё равно получал
+        force_replace=False (старый ciphertext оставался), и worker не делал
+        chpasswd, хотя оператор просил overwrite. После фикса для discovered
+        explicit force_password=true сбрасывает оба секрета и payload содержит
+        свежий пароль + ключ + force_replace=True.
+        """
+        from src.core.constants import AccountSource
+        from src.services import secrets_service
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="discovered_existing", password="legacy-pw")
+        # Сделать discovered.
+        acc.source = AccountSource.DISCOVERED.value
+        await db.flush()
+        await db.commit()
+        await db.refresh(acc)
+        original_pwd_cipher = acc.password_encrypted
+        assert original_pwd_cipher is not None
+        original_plain = secrets_service.decrypt(
+            original_pwd_cipher,
+            aad=secrets_service.aad_for_server_account_password(acc.id),
+        )
+
+        resp = await client.post(
+            f"{BASE}/{acc.id}/provision?server_id={srv.id}&force_password=true",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        payload = captured_dispatch[0]["payload"]
+        # Свежий пароль, не legacy.
+        assert payload["password_plaintext"] != original_plain
+        assert payload["force_replace"] is True
+        assert "ssh_public_key" in payload
+
+        # БД переписана — новый ciphertext не совпадает со старым.
+        refreshed = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc.id)
+        )).scalar_one()
+        assert refreshed.password_encrypted != original_pwd_cipher
+
+    async def test_managed_account_force_password_still_sticky(
+        self, client, operator_token_a, make_server, make_account, captured_dispatch, db,
+    ):
+        """Managed-аккаунт игнорирует force_password — credentials sticky, force_replace=False.
+
+        Контракт force_password по-прежнему узкий: только discovered. Managed
+        ходит через `/rotate` для смены пароля, через provision повторно — это
+        переустановка ОС, и worker не должен трогать пароль управляемого
+        аккаунта без отдельного rotate-вызова.
+        """
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="managed_existing", password="managed-pw")
+        original_cipher = acc.password_encrypted
+
+        resp = await client.post(
+            f"{BASE}/{acc.id}/provision?server_id={srv.id}&force_password=true",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        payload = captured_dispatch[0]["payload"]
+        assert payload["force_replace"] is False
+
+        refreshed = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc.id)
+        )).scalar_one()
+        # Managed-аккаунт не перезаписан.
+        assert refreshed.password_encrypted == original_cipher
+
     async def test_update_on_host_does_not_inject_creds(
         self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):

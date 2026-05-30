@@ -20,7 +20,7 @@ from src.dependencies.auth import ReaderIdentity, require_service_token
 from src.dependencies.db import get_db
 from src.schemas.events import EventCreate, EventListResponse, EventResponse
 from src.services import event_service
-from src.utils.normalization import normalize_service_name
+from src.utils.normalization import normalize_identifier
 
 # Лимитер вынесен в `core.limiter` ради разрыва цикла import'ов
 # (`src.main` собирает routers, эти routers импортили `src.main`).
@@ -125,11 +125,11 @@ def create_event(
     # навсегда запечь произвольные события в audit-журнал.
     #
     # pydantic-валидатор в `EventCreate.service` уже прогоняет
-    # `normalize_service_name`, так что `payload.service` уже в канонической
-    # форме. Повторная нормализация здесь — belt-and-braces: гард остаётся
+    # нормализацию, так что `payload.service` уже в канонической форме.
+    # Повторная нормализация здесь — belt-and-braces: гард остаётся
     # рабочим даже если кто-то однажды убьёт валидатор в schemas. Сравнить
     # ещё раз дёшево, и это плотнее связывает инвариант с этим эндпоинтом.
-    if normalize_service_name(payload.service) in RESERVED_SERVICE_NAMES:
+    if normalize_identifier(payload.service) in RESERVED_SERVICE_NAMES:
         raise AppException(
             http_status=403,
             error_code="RESERVED_SERVICE_NAME",
@@ -219,7 +219,7 @@ def list_events(
             )
         department_id = dept_scope
 
-    # Ingest нормализует service/action через `normalize_service_name`
+    # Ingest нормализует service/action через `normalize_identifier`
     # (NFKC + invisibles + homoglyph fold + lower), а query до сих пор гнал
     # raw query-string в repo. Запрос `?service=AUTH_SERVICE` или
     # `?service=lоging_service` (кир. `о`) попадал в БД as-is и не находил
@@ -227,9 +227,9 @@ def list_events(
     # запросил «свои» события, а получил пусто, потому что в БД они под
     # каноническим именем. Нормализуем здесь зеркально ingest'у.
     if service is not None:
-        service = normalize_service_name(service)
+        service = normalize_identifier(service)
     if action is not None:
-        action = normalize_service_name(action)
+        action = normalize_identifier(action)
 
     return event_service.query(
         db,

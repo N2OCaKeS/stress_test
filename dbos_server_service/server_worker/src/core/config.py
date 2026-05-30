@@ -322,6 +322,23 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Audit-outbox publisher cap ───────────────────────────────────────
+    # Soft-cap по `attempts` для одной outbox-row. После него publisher
+    # помечает row как DLQ (`published_at=now()`, `last_error="[DLQ:attempts_cap]"`)
+    # — событие потеряно, но row перестаёт засорять SKIP LOCKED-выборку.
+    # Защита от permanent-422: без cap'а ретрай вечный, attempts может
+    # перевалить за 2^31.
+    max_publish_attempts: int = Field(
+        default=50,
+        ge=1,
+        alias="MAX_PUBLISH_ATTEMPTS",
+        description=(
+            "Soft-cap на attempts в audit-outbox publisher. По достижении "
+            "row уходит в DLQ через `_send_to_dlq(reason='attempts_cap')`. "
+            "Override для операционных тестов и форс-дренажа."
+        ),
+    )
+
     # ── Management user / bootstrap (prepare) ────────────────────────────
     # Бутстрап управления (#14): задача `server.prepare` заходит на сервер
     # под одноразовыми bootstrap-кредами (password-auth), заводит системного

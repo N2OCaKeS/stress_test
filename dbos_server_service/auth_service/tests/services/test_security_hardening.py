@@ -72,10 +72,10 @@ async def two_depts_bot_setup(db):
     return {"dept_a": a, "dept_b": b, "service": svc, "bot": bot, "admin_b": dept_admin_b}
 
 
-async def test_bot_token_create_cross_tenant_emits_denied(
+async def test_bot_token_create_cross_tenant_emits_failure(
     db, two_depts_bot_setup, captured_audit,
 ):
-    """department_admin отдела B пытается выдать токен боту dept A → denied audit + raise."""
+    """department_admin отдела B пытается выдать токен боту dept A → failure audit + raise."""
     from src.services import bot_service
 
     bot = two_depts_bot_setup["bot"]
@@ -88,16 +88,16 @@ async def test_bot_token_create_cross_tenant_emits_denied(
         )
     assert ei.value.error_code == "BOT_ROLE_MGMT_FORBIDDEN"
 
-    denied = [e for e in captured_audit if e.get("status") == "denied"]
+    failed = [e for e in captured_audit if e.get("status") == "failure"]
     assert any(
         e["action"] == "bot.token_create"
         and e["details"]["reason"] == "cross_tenant_bot"
         and e["details"]["bot_id"] == bot.id
-        for e in denied
-    ), f"no denied event for bot.token_create: {denied}"
+        for e in failed
+    ), f"no failure event for bot.token_create: {failed}"
 
 
-async def test_bot_roles_assign_cross_tenant_emits_denied(
+async def test_bot_roles_assign_cross_tenant_emits_failure(
     db, two_depts_bot_setup, captured_audit,
 ):
     from src.services import bot_service
@@ -111,15 +111,15 @@ async def test_bot_roles_assign_cross_tenant_emits_denied(
             db=db, actor_id=admin_b.id, actor_role="department_admin",
             bot_id=bot.id, service_name=svc.service_name, roles=["reader"],
         )
-    denied = [
+    failed = [
         e for e in captured_audit
-        if e.get("status") == "denied" and e["action"] == "bot.roles_assign"
+        if e.get("status") == "failure" and e["action"] == "bot.roles_assign"
     ]
-    assert denied, f"no denied event for bot.roles_assign: {captured_audit}"
-    assert denied[0]["details"]["reason"] == "cross_tenant_bot"
+    assert failed, f"no failure event for bot.roles_assign: {captured_audit}"
+    assert failed[0]["details"]["reason"] == "cross_tenant_bot"
 
 
-async def test_bot_token_revoke_cross_tenant_emits_denied(
+async def test_bot_token_revoke_cross_tenant_emits_failure(
     db, two_depts_bot_setup, captured_audit,
 ):
     from src.services import bot_service
@@ -132,10 +132,10 @@ async def test_bot_token_revoke_cross_tenant_emits_denied(
             db=db, actor_id=admin_b.id, actor_role="department_admin",
             bot_id=bot.id, token_id="bot_token_x",
         )
-    denied_actions = [
-        e["action"] for e in captured_audit if e.get("status") == "denied"
+    failed_actions = [
+        e["action"] for e in captured_audit if e.get("status") == "failure"
     ]
-    assert "bot.token_revoke" in denied_actions
+    assert "bot.token_revoke" in failed_actions
 
 
 # ── AppException details redact ───────────────────────────────────────────────

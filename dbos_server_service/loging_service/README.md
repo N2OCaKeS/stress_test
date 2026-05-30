@@ -137,6 +137,8 @@ Daemon-thread (`src/main.py::_retention_loop`) считает время до с
 | `RATE_LIMIT_HEADERS_ENABLED` | `false` | включать ли `X-RateLimit-*` response headers |
 | `SECURITY_HSTS_ENABLED` | `false` | `Strict-Transport-Security` header — только за https-фронтом |
 | `AUDIT_DRAIN_TIMEOUT_SECONDS` | `2.0` | бюджет на draining pending self-audit задач при shutdown'е |
+| `AUDIT_COUNT_STATEMENT_TIMEOUT_MS` | `10000` | `SET LOCAL statement_timeout` для `COUNT(*)` в `GET /events?include_total=true`. На превышении (`57014`) репо возвращает `total=null`, страница рендерится. `0` — выключить guard. |
+| `AUDIT_QUERY_STATEMENT_TIMEOUT_MS` | `30000` | `SET LOCAL statement_timeout` для основного `SELECT ... ORDER BY timestamp DESC OFFSET LIMIT` в `GET /events`. На превышении репо возвращает пустую страницу + warning лог, 200 без 500. `0` — выключить guard. |
 | `RETENTION_LOOP_ENABLED` | `true` | запускать ли фоновый retention-cleanup daemon |
 
 ## Запуск

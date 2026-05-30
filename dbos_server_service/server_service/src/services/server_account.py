@@ -265,6 +265,7 @@ async def create_account(
         "server_account.create",
         target_type="server_account",
         extra_details={"server_ids": payload.server_ids},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.CREATE
@@ -371,6 +372,7 @@ async def get_account(
         "server_account.view",
         target_id=account_id,
         target_type="server_account",
+        identity=identity,
     ):
         if not has_password_action:
             await permissions.require_action(
@@ -423,6 +425,7 @@ async def list_accounts_cursor(
         "server_account.list",
         target_type="server_account",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
@@ -471,6 +474,7 @@ async def list_accounts(
         "server_account.list",
         target_type="server_account",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.VIEW
@@ -517,6 +521,7 @@ async def update_account(
         "server_account.update",
         target_id=account_id,
         target_type="server_account",
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
@@ -617,6 +622,7 @@ async def link_servers(
         "server_account.link_servers",
         target_id=account_id,
         target_type="server_account",
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
@@ -680,6 +686,7 @@ async def unlink_servers(
         "server_account.unlink_servers",
         target_id=account_id,
         target_type="server_account",
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.UPDATE
@@ -752,6 +759,7 @@ async def delete_account(
         "server_account.delete",
         target_id=account_id,
         target_type="server_account",
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.DELETE
@@ -803,6 +811,7 @@ async def rotate_password(
         "server_account.rotate_password",
         target_id=account_id,
         target_type="server_account",
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.ROTATE_PASSWORD

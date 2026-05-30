@@ -28,6 +28,14 @@ class BotRepository:
     async def list_by_department(
         self, department_id: str, limit: int | None = None, offset: int = 0
     ) -> list[BotAccount]:
+        """Боты отдела, включая `is_active=False`.
+
+        В отличие от `UserRepository.list_all` с `include_banned`, тут мы
+        не отфильтровываем выключенных ботов: admin / dept_admin должны
+        видеть и disabled-ботов, чтобы их можно было разлочить или
+        пересоздать токены. Счёт disabled в выдаче эмитим в `bot.list`
+        audit (`details.count_disabled`).
+        """
         stmt = (
             select(BotAccount)
             .where(BotAccount.department_id == department_id)
@@ -41,6 +49,7 @@ class BotRepository:
     async def list_all(
         self, limit: int | None = None, offset: int = 0
     ) -> list[BotAccount]:
+        """Все боты по всем отделам, включая `is_active=False` (см. `list_by_department`)."""
         stmt = select(BotAccount).order_by(BotAccount.created_at, BotAccount.id)
         if limit is not None:
             stmt = stmt.limit(limit).offset(offset)

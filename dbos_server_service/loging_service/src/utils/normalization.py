@@ -17,9 +17,14 @@ Threat model: держатель утёкшего `SERVICE_API_KEY` шлёт
 событий, чтобы замаскировать настоящие admin-действия, а потом ждём, пока
 retention выметет настоящие).
 
-`normalize_service_name` сворачивает invisibles, применяет NFKC и
+`normalize_identifier` сворачивает invisibles, применяет NFKC и
 маппит curated set homoglyph-confusables в ASCII-эквиваленты ДО
-case-insensitive сравнения.
+case-insensitive сравнения. Имя обобщённое: функция применяется не только
+к `service`, но и к `action` (`GET /events?action=...`), `X-Service-Identity`
+и path-параметру `/services/{service}/event_definitions`.
+
+Алиас `normalize_service_name` оставлен для backward-compat — несколько
+модулей и тестов исторически импортируют именно это имя.
 """
 
 from __future__ import annotations
@@ -89,10 +94,10 @@ _CONFUSABLES_MAP = {
 _CONFUSABLES_TRANSLATE = str.maketrans(_CONFUSABLES_MAP)
 
 
-def normalize_service_name_preserve_case(value: str) -> str:
+def normalize_identifier_preserve_case(value: str) -> str:
     """Security-нормализация без кейсфолда — для charset-проверки до lower().
 
-    Делает всё, что и `normalize_service_name`, кроме финального
+    Делает всё, что и `normalize_identifier`, кроме финального
     `str.lower()`. Нужно schema-валидатору `service`: charset
     `[a-z_]{1,64}` обязан срабатывать на `"ABC"` (uppercase не по
     snake_case-конвенции имён сервисов). Если случало lower раньше
@@ -107,7 +112,7 @@ def normalize_service_name_preserve_case(value: str) -> str:
     """
     if not isinstance(value, str):
         raise TypeError(
-            f"normalize_service_name_preserve_case expects str, got {type(value).__name__}"
+            f"normalize_identifier_preserve_case expects str, got {type(value).__name__}"
         )
 
     normalized = unicodedata.normalize("NFKC", value)
@@ -117,8 +122,8 @@ def normalize_service_name_preserve_case(value: str) -> str:
     return normalized
 
 
-def normalize_service_name(value: str) -> str:
-    """Возвращает каноническую lowercase-форму service-name строки.
+def normalize_identifier(value: str) -> str:
+    """Возвращает каноническую lowercase-форму идентификатора (service / action / …).
 
     Шаги (порядок важен):
       1. NFKC normalization — сворачивает compatibility-символы (full-width
@@ -134,5 +139,17 @@ def normalize_service_name(value: str) -> str:
     Защитно к не-`str` входу (рейзит `TypeError`) — caller'ы могут
     полагаться на schema-уровневую type-проверку, но misuse падает громко,
     а не молча обходит гард.
+
+    Совместимо с точкой и snake_case в `action` (`user.login_success`):
+    маппинг трогает только буквы, разделители не задевает.
     """
-    return normalize_service_name_preserve_case(value).lower()
+    return normalize_identifier_preserve_case(value).lower()
+
+
+# Backward-compat алиасы. Старое имя `normalize_service_name` исторически
+# использовалось в десятке мест (схемы, эндпоинты, тесты); функция всегда
+# применялась и к action, и к identity-header'у, не только к service-name.
+# Новое имя `normalize_identifier` точнее описывает скоуп; оставляем старое
+# доступным, чтобы не править весь репо разом.
+normalize_service_name = normalize_identifier
+normalize_service_name_preserve_case = normalize_identifier_preserve_case

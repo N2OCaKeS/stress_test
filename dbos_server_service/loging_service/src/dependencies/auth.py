@@ -47,7 +47,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from src.core.config import get_settings
 from src.core.exceptions import AppException
 
-_logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -162,7 +162,7 @@ def require_service_token(
         # должны быть сопоставимы; иначе фолбэк на 32 байта).
         sample_key = next(iter(settings.service_api_keys.values()), "x" * 32)
         secrets.compare_digest(credentials.credentials, sample_key)
-        _logger.warning(
+        logger.warning(
             "loging: X-Service-Identity %r is not present in "
             "SERVICE_API_KEYS map (path=%s) — rejecting",
             raw_identity,
@@ -247,7 +247,7 @@ async def _fetch_identity(
         # `RemoteProtocolError` / `WriteError` и узнавал детали транспортной
         # ошибки auth_service. Симметрично non-200 ветке ниже: наружу
         # константная фраза, имя класса остаётся в логе для SRE.
-        _logger.warning("introspect raised unexpected exception: %s", type(exc).__name__)
+        logger.warning("introspect raised unexpected exception: %s", type(exc).__name__)
         raise AppException(http_status=503, error_code="AUTH_SERVICE_ERROR",
                            message="Authentication service error")
 
@@ -256,7 +256,7 @@ async def _fetch_identity(
         # информация о внутренней инфре auth_service (вверх по стеку
         # клиент видит 503 от нас и не должен различать «auth вернул 500»
         # и «auth вернул 502»). Детальный статус — только в лог для SRE.
-        _logger.warning(
+        logger.warning(
             "introspect returned non-200 status: %d", resp.status_code,
         )
         raise AppException(http_status=503, error_code="AUTH_SERVICE_ERROR",

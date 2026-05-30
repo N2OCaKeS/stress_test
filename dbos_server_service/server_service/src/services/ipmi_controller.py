@@ -84,6 +84,7 @@ async def create_controller(
         "ipmi_controller.create",
         target_type="ipmi_controller",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.IPMI_CONTROLLER, Action.CREATE
@@ -159,6 +160,7 @@ async def get_controller(
         target_id=server_id,
         target_type="ipmi_controller",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         if not has_credentials_action:
             await permissions.require_action(
@@ -222,6 +224,7 @@ async def list_controllers_cursor(
     with emit_denied_on_authz_error(
         "ipmi_controller.list",
         target_type="ipmi_controller",
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.IPMI_CONTROLLER, Action.VIEW
@@ -266,6 +269,7 @@ async def list_controllers(
     with emit_denied_on_authz_error(
         "ipmi_controller.list",
         target_type="ipmi_controller",
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.IPMI_CONTROLLER, Action.VIEW
@@ -294,6 +298,7 @@ async def update_controller(
         target_id=server_id,
         target_type="ipmi_controller",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.IPMI_CONTROLLER, Action.UPDATE
@@ -362,7 +367,7 @@ async def delete_controller(
     server_id: str,
 ) -> None:
     """Hard-delete контроллера. После — power-операции на сервере будут
-    отбиваться 409 SERVER_NO_IPMI (см. `_dispatch_power` в endpoints/ipmi.py).
+    отбиваться 404 NO_IPMI_CONTROLLER (см. `_dispatch_power` в endpoints/ipmi.py).
 
     Audit `ipmi_controller.delete` с CRITICAL severity — это deliberately
     destructive: теряются учётки BMC, новая запись потребует знание актуального
@@ -373,6 +378,7 @@ async def delete_controller(
         target_id=server_id,
         target_type="ipmi_controller",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.IPMI_CONTROLLER, Action.DELETE
@@ -435,6 +441,7 @@ async def rotate_credentials(
         target_id=server_id,
         target_type="ipmi_controller",
         extra_details={"server_id": server_id},
+        identity=identity,
     ):
         await permissions.require_action(
             db, identity, EntityType.IPMI_CONTROLLER, Action.ROTATE_CREDENTIALS

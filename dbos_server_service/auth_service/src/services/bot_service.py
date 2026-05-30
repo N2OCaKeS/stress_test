@@ -89,10 +89,7 @@ async def create_bot(
     bot_repo = BotRepository(db)
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        if actor_department_id is None:
-            user_repo = UserRepository(db)
-            actor = await user_repo.get_by_id(actor_id)
-            actor_department_id = actor.department_id if actor else None
+        actor_department_id = await _resolve_actor_dept(db, actor_id, actor_department_id)
         if actor_department_id is not None and actor_department_id != data.department_id:
             raise AuthorizationError(error_code="BOT_CREATION_FORBIDDEN", message="department_admin can only create bots in their own department")
 
@@ -152,10 +149,7 @@ async def list_bots(
 
     effective_department_id: str | None
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        if actor_department_id is None:
-            user_repo = UserRepository(db)
-            actor = await user_repo.get_by_id(actor_id)
-            actor_department_id = actor.department_id if actor else None
+        actor_department_id = await _resolve_actor_dept(db, actor_id, actor_department_id)
         dept_id = actor_department_id
         effective_department_id = dept_id
         if dept_id:
@@ -176,10 +170,12 @@ async def list_bots(
         bots = await bot_repo.list_all(limit=pagination.limit, offset=pagination.offset)
         total = await bot_repo.count_all()
 
+    count_disabled = sum(1 for b in bots if not b.is_active)
     audit_service.emit(
         "bot.list", actor_id, status="success", allowed=True, request_id=request_id,
         details={
             "count": len(bots),
+            "count_disabled": count_disabled,
             "total": total,
             "filter_department_id": department_id,
             "filter_department_id_requested": department_id,
@@ -207,11 +203,22 @@ async def update_bot(
         raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        if actor_department_id is None:
-            user_repo = UserRepository(db)
-            actor = await user_repo.get_by_id(actor_id)
-            actor_department_id = actor.department_id if actor else None
-        if actor_department_id is not None and actor_department_id != bot.department_id:
+        actor_dept_id = await _resolve_actor_dept(db, actor_id, actor_department_id)
+        if actor_dept_id is not None and actor_dept_id != bot.department_id:
+            # Симметрия с прочими bot-функциями: cross-tenant попытка
+            # светится в audit как failure (а не теряется в 500), сохраняя
+            # стабильный error_code BOT_UPDATE_FORBIDDEN для API-контракта.
+            audit_service.emit(
+                "bot.update", actor_id, status="failure", allowed=False,
+                target_id=bot.id, target_type="bot",
+                request_id=request_id,
+                details={
+                    "reason": "cross_tenant_bot",
+                    "bot_id": bot.id,
+                    "bot_department_id": bot.department_id,
+                    "actor_department_id": actor_dept_id,
+                },
+            )
             raise AuthorizationError(error_code="BOT_UPDATE_FORBIDDEN", message="Cannot update bot outside your department")
 
     updates = {k: v for k, v in data.model_dump(exclude_none=True).items()}
@@ -236,9 +243,14 @@ async def update_bot(
                 error_code="BOT_NAME_TAKEN",
                 message=f"Bot with name '{updates['name']}' already exists",
             )
-    if "status" in updates:
-        updates["is_active"] = updates["status"] == "active"
-    await bot_repo.update(bot, **updates)
+    # `is_active` — derived от `status` (см. ORM-модель: оба поля живут рядом
+    # из legacy-времён). В БД пишем оба, но в audit-details показываем только
+    # то, что прислал caller, чтобы SIEM/оператор не видел "лишнего" поля,
+    # которого в payload'е не было.
+    db_updates = dict(updates)
+    if "status" in db_updates:
+        db_updates["is_active"] = db_updates["status"] == "active"
+    await bot_repo.update(bot, **db_updates)
     removed_role_count = 0
     if removed_services:
         role_repo = BotRoleRepository(db)
@@ -419,10 +431,12 @@ def _check_can_manage_bot_or_audit(
     request_id: str | None,
     extra_details: dict | None = None,
 ) -> None:
-    """То же, что `_require_can_manage_bot`, но эмитит `denied`-audit перед raise.
+    """То же, что `_require_can_manage_bot`, но эмитит `failure`-audit перед raise.
 
-    SIEM по `status="denied"` отличит cross-tenant попытку от 500 — без этого
+    SIEM по `status="failure"` отличит cross-tenant попытку от 500 — без этого
     `AuthorizationError` поднимался напрямую и денайды смешивались с server-error.
+    Конвенция status'а — единая по auth_service (см. остальные emit'ы), отдельный
+    `denied`-status для bot-зоны путал классификацию.
     """
     try:
         _require_can_manage_bot(actor_role, actor_dept_id, bot)
@@ -436,7 +450,7 @@ def _check_can_manage_bot_or_audit(
         if extra_details:
             details.update(extra_details)
         audit_service.emit(
-            action, actor_id, status="denied", allowed=False,
+            action, actor_id, status="failure", allowed=False,
             target_id=bot.id, target_type="bot",
             request_id=request_id, details=details,
         )

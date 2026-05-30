@@ -456,6 +456,65 @@ class TestIpmiCredentialsRotatedCallback:
         assert resp.json()["error_code"] == "BMC_VERIFY_REQUIRED"
         assert "future" in resp.json()["message"].lower()
 
+    async def test_rotated_at_far_future_rejected_400(
+        self, client, admin_role_token_a, make_server, make_ipmi, db, dept_a,
+    ):
+        """`rotated_at` сильно в будущем — 400 ROTATED_AT_IN_FUTURE, storage не трогаем.
+
+        Worker с убежавшими часами или подменённый PAT мог бы прислать «ротация
+        через год» и навсегда вытолкнуть запись в топ списка по
+        `password_rotated_at`. Допускаем ±10 минут на NTP-skew; больше — отбой.
+        """
+        from datetime import timedelta
+        from src.models import IpmiController
+
+        srv = await make_server(department_id=dept_a)
+        ctrl = await make_ipmi(server_id=srv.id, password="old-stable")
+        # 1 год вперёд — далеко за пределами skew 600s.
+        far_future = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
+        resp = await client.post(
+            f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "new_password": "FutureRotated1234",
+                "rotated_at": far_future,
+                "verified_at": _iso(),
+            },
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error_code"] == "ROTATED_AT_IN_FUTURE"
+
+        # Storage не мутируется — старый ciphertext на месте.
+        await db.commit()
+        refreshed = (await db.execute(
+            select(IpmiController).where(IpmiController.id == ctrl.id)
+        )).scalar_one()
+        assert secrets_service.decrypt(
+            refreshed.password_encrypted,
+            aad=secrets_service.aad_for_ipmi_credential(refreshed.id),
+        ) == "old-stable"
+
+    async def test_rotated_at_small_skew_accepted(
+        self, client, admin_role_token_a, make_server, make_ipmi, dept_a,
+    ):
+        """Малый NTP-перекос (≤10 минут) принимаем — иначе типовой clock-drift валит prod."""
+        from datetime import timedelta
+
+        srv = await make_server(department_id=dept_a)
+        ctrl = await make_ipmi(server_id=srv.id, password="ok")
+        # 2 минуты вперёд — внутри skew.
+        small_future = (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
+        resp = await client.post(
+            f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "new_password": "SmallSkewOk1234",
+                "rotated_at": small_future,
+                "verified_at": _iso(),
+            },
+        )
+        assert resp.status_code == 200, resp.text
+
 
 # ── X-Target-Department-Id strict mode ──────────────────────────────────────
 

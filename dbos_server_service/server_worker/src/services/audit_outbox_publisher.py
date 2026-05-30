@@ -39,13 +39,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import Settings
 from src.core.constants import LAST_ERROR_MAX_LEN
 from src.db.session import AsyncSessionLocal
 from src.models import AuditOutbox
@@ -103,13 +103,16 @@ def _max_publish_attempts() -> int:
     SKIP LOCKED выборку и attempts может перевалить за 2^31. Когда
     `attempts >= MAX_PUBLISH_ATTEMPTS`, publisher выставляет
     `published_at=now()` и пишет ERROR — событие потеряно, но row
-    перестаёт мозолить очередь. Override через env для операционных
-    тестов и форс-дренажа.
+    перестаёт мозолить очередь.
+
+    Значение читаем через свежий `Settings()` без LRU-кэша: pydantic
+    проводит ту же валидацию (`ge=1`, type=int), что и для прочих
+    конфиг-полей, и тесты могут менять `MAX_PUBLISH_ATTEMPTS` через
+    monkeypatch.setenv без `get_settings.cache_clear()`. Cap читается
+    редко (только когда `_publish_one` решает poison'ить row), оверхед
+    нового инстанса пренебрежимо мал.
     """
-    try:
-        return int(os.environ.get("MAX_PUBLISH_ATTEMPTS", "50"))
-    except ValueError:
-        return 50
+    return Settings().max_publish_attempts
 
 # ── Circuit breaker tunables ─────────────────────────────────────────────────
 # В open-state цикл спит порциями ≤ этой — чтобы при «починке» loging'а
@@ -518,19 +521,24 @@ async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
                 failed_ids.append(row_id)
             if publish_res.audit_emit_error:
                 audit_emit_errors += 1
+            if publish_res.breaker_skipped:
+                # Row не модифицирована (check() отбил до HTTP-вызова и до
+                # любых .flush() в `_publish_one`) — commit'ить нечего.
+                # Явный rollback отпускает SKIP LOCKED-lock и снимает row-
+                # level locks той же транзакции, что и `await session.commit()`
+                # ниже, но передаёт намерение «мы ничего не меняли» однозначно.
+                # Дальше bail-out из batch'а: остальные row'ы под open breaker'ом
+                # всё равно отскочат от check() без HTTP'а, и proход молотил бы
+                # SELECT'ы по БД впустую. Background poll-loop вернётся через
+                # `_CB_SLEEP_CHUNK_SECONDS` или раньше (adaptive sleep по
+                # `get_state()`); к тому моменту канал либо в half_open, либо
+                # cooldown ещё не истёк.
+                await session.rollback()
+                break
             # commit отпускает SKIP LOCKED-lock этой одной row'и сразу,
             # не дожидаясь обработки остальных. Другая replica может
             # подхватить следующую row'ю в тот же момент.
             await session.commit()
-            # Breaker-skip — bail-out из batch'а. Дальнейшие row'ы под open
-            # breaker'ом всё равно отскочат от check() без HTTP'а, проход
-            # просто молотил бы SELECT'ы по БД. Background poll-loop вернётся
-            # через `_CB_SLEEP_CHUNK_SECONDS` или меньше (adaptive sleep по
-            # `get_state()`), к тому моменту канал либо в half_open, либо
-            # cooldown ещё не истёк — и тогда снова bail-out, что ровно
-            # то поведение, которое нам нужно.
-            if publish_res.breaker_skipped:
-                break
     return published, audit_emit_errors
 
 

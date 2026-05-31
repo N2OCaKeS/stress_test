@@ -49,6 +49,13 @@ _SECRET_KEYS = {
     # идентифицирует actor'а. Маскируем в audit-details, чтобы не утекало в
     # SIEM в открытом виде.
     "ssh_public_key",
+    # creds_stash_key / bootstrap_creds_key — ссылки на Redis-stash, не
+    # сам секрет. Маскируем как defense-in-depth: если кто-то по ошибке
+    # положит ссылку в audit-details через произвольный путь, она не
+    # утечёт в SIEM (нельзя по ней притянуть plaintext — TTL короткий —
+    # но ссылка раскрывает factual схему хранения, прячем её).
+    "creds_stash_key",
+    "bootstrap_creds_key",
 }
 _HASH_KEYS = {
     "password_hash", "hash", "token_hash", "pwd_hash",

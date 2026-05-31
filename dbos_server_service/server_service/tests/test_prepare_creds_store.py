@@ -33,6 +33,9 @@ async def test_store_writes_creds_with_ttl(monkeypatch):
     fake_client.aclose = AsyncMock()
     from_url = MagicMock(return_value=fake_client)
 
+    # Conftest autouse-stub подкладывает pooled MagicMock; чтобы протестировать
+    # per-call fallback-путь (aioredis.from_url), сбрасываем pool явно.
+    monkeypatch.setattr(worker_client, "_prepare_redis_client", None)
     monkeypatch.setattr(worker_client, "get_settings", lambda: _FakeSettings(ttl=600))
     monkeypatch.setattr(worker_client.aioredis, "from_url", from_url)
 

@@ -90,7 +90,7 @@ from src.services import (
 )
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
-from src.utils.ids import prepare_creds_id
+from src.utils.ids import dispatch_creds_id, prepare_creds_id
 
 logger = logging.getLogger(__name__)
 
@@ -479,9 +479,61 @@ async def _dispatch_account_on_host(
         _, creds, generated = await account_svc.ensure_provision_credentials(
             db, account,
         )
-        payload["password_plaintext"] = creds["password"]
+        # Plaintext password + ssh_private_key НЕ кладём в payload — иначе они
+        # осели бы в `dev_server_worker.tasks.payload` (JSONB) до retention
+        # cleanup'а, и любой с read к worker-БД видел бы пароль. Кладём их в
+        # Redis под одноразовый ключ с TTL, в payload — только ссылка
+        # `creds_stash_key`. Воркер читает creds по ссылке, потом DEL'ит.
+        # Симметрия с `server.prepare` (bootstrap_creds_key).
+        # ssh_public_key — не секрет, едет в payload как раньше.
+        stash_key = worker_client.dispatch_creds_key(dispatch_creds_id())
+        try:
+            await worker_client.store_dispatch_creds(
+                stash_key,
+                {
+                    "password_plaintext": creds["password"],
+                    "ssh_private_key_plaintext": creds["ssh_private_key"],
+                },
+            )
+        except ServiceUnavailableError:
+            await creds_sp.rollback()
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "creds_store_unavailable",
+                    "task_kind": task_kind,
+                    "server_id": server.id,
+                    "operation": operation,
+                    "department_id": server.department_id,
+                },
+            )
+            raise
+        except Exception as exc:
+            # Любой runtime-фейл Redis (timeout/conn refused/etc) — best-effort
+            # rollback stash'а и savepoint'а, 503 наружу. Без этого
+            # plaintext-ciphertext в server-БД остался бы без доехавшей до
+            # worker'а задачи.
+            await worker_client.delete_dispatch_creds(stash_key)
+            await creds_sp.rollback()
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "creds_store_failed",
+                    "task_kind": task_kind,
+                    "server_id": server.id,
+                    "operation": operation,
+                    "department_id": server.department_id,
+                    "error_class": type(exc).__name__,
+                },
+            )
+            raise ServiceUnavailableError(
+                error_code="WORKER_REDIS_UNAVAILABLE",
+                message="Failed to stash provision credentials before dispatch",
+            ) from exc
+        payload["creds_stash_key"] = stash_key
         payload["ssh_public_key"] = creds["ssh_public_key"]
-        payload["ssh_private_key_plaintext"] = creds["ssh_private_key"]
         # force_replace говорит воркеру «chpasswd на боксе»: нужно когда
         # (а) discovered + явный force_password — мы только что сбросили
         # старый пароль через reset, либо (б) пароля в БД до ensure не было
@@ -542,6 +594,10 @@ async def _dispatch_account_on_host(
             raise
     finally:
         if inject_provision_creds and not dispatch_ok:
+            # Stash осиротел — task в Redis-broker не доехал, воркер за
+            # creds не пойдёт; чистим stash вручную, чтобы plaintext не висел
+            # до TTL. Симметрично `server_prepare_dispatch.delete_prepare_creds`.
+            await worker_client.delete_dispatch_creds(stash_key)
             await creds_sp.rollback()
     if inject_provision_creds:
         await creds_sp.commit()

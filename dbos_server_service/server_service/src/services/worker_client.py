@@ -52,6 +52,18 @@ def prepare_creds_key(task_id_value: str) -> str:
     return f"{PREPARE_CREDS_KEY_PREFIX}{task_id_value}"
 
 
+# Префикс Redis-ключа для inline-кред provision-таски (account.provision с
+# `inject_provision_creds=True`). Симметрично `PREPARE_CREDS_KEY_PREFIX`, но
+# своя scope: prepare держит bootstrap-логин/пароль ОС-юзера, dispatch держит
+# password+ssh_private_key аккаунта для useradd/chpasswd на боксе.
+DISPATCH_CREDS_KEY_PREFIX = "dbos:dispatch_creds:"
+
+
+def dispatch_creds_key(stash_id_value: str) -> str:
+    """Redis-ключ для inline-кред конкретного provision dispatch'а."""
+    return f"{DISPATCH_CREDS_KEY_PREFIX}{stash_id_value}"
+
+
 # Module-level state. При `uvicorn --workers >1` каждый воркер — отдельный
 # процесс с собственным event loop и своим module-level state (включая lock
 # и `_broker_started`); taskiq устроен так, что каждый воркер имеет свой
@@ -598,6 +610,71 @@ async def store_prepare_creds(creds_key: str, creds: dict) -> None:
     try:
         await client.set(
             creds_key, json.dumps(creds), ex=settings.prepare_creds_ttl_seconds,
+        )
+    finally:
+        await client.aclose()
+
+
+async def delete_dispatch_creds(stash_key: str) -> None:
+    """Снять inline-creds из Redis (best-effort).
+
+    Зовётся из `_dispatch_account_on_host` когда `dispatch_task` падает уже
+    после `store_dispatch_creds` — иначе plaintext password + private key висят
+    в Redis до истечения TTL. Сама операция не должна валить ответ клиенту:
+    если Redis недоступен или ключ уже исчез — глушим исключение.
+    """
+    settings = get_settings()
+    if not settings.server_worker_redis_url:
+        return
+    pooled = _prepare_redis_client
+    try:
+        if pooled is not None:
+            await pooled.delete(stash_key)
+            return
+        client = aioredis.from_url(settings.server_worker_redis_url)
+        try:
+            await client.delete(stash_key)
+        finally:
+            await client.aclose()
+    except Exception:  # noqa: BLE001
+        # Best-effort: TTL подчистит ключ, если DEL не прошёл.
+        pass
+
+
+async def store_dispatch_creds(stash_key: str, creds: dict) -> None:
+    """Положить inline-creds provision-таски в Redis под `stash_key` с TTL.
+
+    Сами секреты (`password_plaintext`, `ssh_private_key_plaintext`) в
+    task-payload не попадают — туда едет только `creds_stash_key`. Без этого
+    plaintext висел бы в `dev_server_worker.tasks.payload` JSONB до retention
+    cleanup'а (до 30 дней) и был бы виден любому с read к worker-БД.
+
+    TTL задаётся `dispatch_creds_ttl_seconds`; по его истечении ключ исчезает
+    сам. Воркер читает creds одной операцией, потом явно DEL'ит. Если на retry'е
+    stash потерян (TTL/Redis-restart), worker'ский inline-stash под task_id
+    (`_PROVISION_INLINE_KEY_PREFIX`) даёт второй слой — туда worker
+    переписывает creds на первой попытке, см. `tasks/users.py`.
+
+    Переиспользуем тот же Redis, что и taskiq-broker (`SERVER_WORKER_REDIS_URL`).
+    При незаданном URL — `ServiceUnavailableError(WORKER_REDIS_NOT_CONFIGURED)`,
+    как и остальной dispatch.
+    """
+    settings = get_settings()
+    if not settings.server_worker_redis_url:
+        raise ServiceUnavailableError(
+            error_code="WORKER_REDIS_NOT_CONFIGURED",
+            message="SERVER_WORKER_REDIS_URL is not set",
+        )
+    pooled = _prepare_redis_client
+    if pooled is not None:
+        await pooled.set(
+            stash_key, json.dumps(creds), ex=settings.dispatch_creds_ttl_seconds,
+        )
+        return
+    client = aioredis.from_url(settings.server_worker_redis_url)
+    try:
+        await client.set(
+            stash_key, json.dumps(creds), ex=settings.dispatch_creds_ttl_seconds,
         )
     finally:
         await client.aclose()

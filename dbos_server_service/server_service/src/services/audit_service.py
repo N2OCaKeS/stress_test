@@ -40,6 +40,7 @@ import httpx
 
 from src.core.config import get_settings
 from src.core.constants import SERVICE_NAME as _SERVICE_NAME
+from src.core.http import bearer_header
 from src.services import audit_context
 from src.services.redaction import redact
 
@@ -145,7 +146,7 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
     инкремент `_audit_dropped_429`. Любая транспортная ошибка → drop сразу
     (best-effort, не блокируем main-flow).
     """
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = bearer_header(api_key)
     client = _audit_client
     try:
         for attempt in range(len(_RETRY_DELAYS_ON_429) + 1):
@@ -272,7 +273,7 @@ def _send_sync(payload: dict, logging_url: str, api_key: str) -> None:
     229 — инкремент `_audit_dropped_429`, как и в async-пути.
     """
     url_full = f"{logging_url}/api/logging/v1/events"
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = bearer_header(api_key)
     try:
         for attempt in range(len(_SYNC_RETRY_DELAYS_ON_429) + 1):
             try:

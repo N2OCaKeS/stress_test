@@ -6,6 +6,7 @@
 """
 
 from src.core.config import get_settings
+from src.core.http import bearer_header
 
 import logging
 import httpx
@@ -126,7 +127,7 @@ def register_events() -> None:
         resp = httpx.post(
             f"{logging_url}/api/logging/v1/services/auth_service/events",
             json={"events": SERVICE_EVENTS},
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers=bearer_header(api_key),
             timeout=5.0,
         )
         if resp.status_code == 200:

@@ -16,6 +16,7 @@ import httpx
 
 from src.core.config import get_settings
 from src.core.exceptions import CredentialFetchError
+from src.core.http import bearer_header
 from src.core.identifiers import validate_outbox_id
 from src.services.http_pool import get_server_service_client
 
@@ -33,9 +34,7 @@ def _headers(target_department_id: str | None = None) -> dict[str, str]:
     cross-check'а в internal-эндпоинтах).
     """
     settings = get_settings()
-    headers: dict[str, str] = {
-        "Authorization": f"Bearer {settings.worker_bot_token}",
-    }
+    headers: dict[str, str] = bearer_header(settings.worker_bot_token)
     if target_department_id is not None:
         headers["X-Target-Department-Id"] = target_department_id
     return headers

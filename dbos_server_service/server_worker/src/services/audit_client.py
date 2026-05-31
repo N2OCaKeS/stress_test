@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 import httpx
 
 from src.core.config import get_settings
+from src.core.http import bearer_header
 from src.services.http_pool import get_audit_client
 
 logger = logging.getLogger(__name__)
@@ -165,7 +166,7 @@ async def emit(
         raise AuditEmitError(
             "LOGGING_SERVICE_API_KEY is not set; audit emit refused",
         )
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = bearer_header(api_key)
     client = get_audit_client()
     try:
         response = await client.post(url, json=payload, headers=headers)

@@ -59,3 +59,15 @@ def prepare_creds_id() -> str:
     `dbos:prepare_creds:<pcd_id>` с TTL, в task-payload едет только ссылка.
     """
     return _new_id("pcd_")
+
+
+def dispatch_creds_id() -> str:
+    """`dcd_<uuid>` — для одноразового Redis-ключа inline-кред provision-таски.
+
+    Plaintext password + ssh_private_key для `account.provision` (с
+    `inject_provision_creds=True`) кладутся в Redis под
+    `dbos:dispatch_creds:<dcd_id>` с TTL, в task-payload едет только ссылка.
+    Без этого plaintext оседал бы в `dev_server_worker.tasks.payload` (JSONB)
+    до retention cleanup'а — любой с read к worker-БД видел бы пароль.
+    """
+    return _new_id("dcd_")

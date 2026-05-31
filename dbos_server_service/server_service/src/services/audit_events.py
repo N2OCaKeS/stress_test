@@ -11,6 +11,7 @@ import httpx
 
 from src.core.config import get_settings
 from src.core.constants import SERVICE_NAME as _SERVICE_NAME
+from src.core.http import bearer_header
 
 logger = logging.getLogger("audit")
 
@@ -135,7 +136,7 @@ def register_events() -> None:
         resp = httpx.post(
             f"{logging_url}/api/logging/v1/services/{_SERVICE_NAME}/events",
             json={"events": SERVICE_EVENTS},
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers=bearer_header(api_key),
             timeout=5.0,
         )
         if resp.status_code == 200:

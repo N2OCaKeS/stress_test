@@ -17,6 +17,7 @@ Submit-фейл (network / 4xx / 5xx) НЕ роняет task'у в FAILED: сп�
 
 import json
 import logging
+import re
 
 import redis.asyncio as aioredis
 
@@ -40,6 +41,13 @@ logger = logging.getLogger(__name__)
 # хранилище server_service выдаёт inline-креды один раз через
 # dispatch-канал, повторно их запросить нельзя.
 _PROVISION_INLINE_KEY_PREFIX = "dbos:provision_inline:"
+
+# Префикс stash-ключа dispatch-creds, который пишет server_service ДО
+# постановки задачи в брокер (см. `worker_client.dispatch_creds_key`).
+# Воркер читает по этому ключу password + ssh_private_key плейнтексты на
+# первой попытке, потом DEL'ит. Жёсткий формат — чтобы guard не пустил
+# `creds_stash_key=":/admin"` в чужой keyspace.
+_DISPATCH_CREDS_KEY_RE = re.compile(r"^dbos:dispatch_creds:[A-Za-z0-9_\-]{1,128}$")
 
 
 async def _read_provision_inline(task_id: str) -> tuple[str | None, str | None]:
@@ -110,6 +118,74 @@ async def _delete_provision_inline(task_id: str) -> None:
         except Exception:  # noqa: BLE001
             logger.debug(
                 "failed to delete provision inline stash", exc_info=True,
+            )
+    finally:
+        await client.aclose()
+
+
+def _validate_dispatch_creds_key(stash_key: str) -> None:
+    """Жёсткий guard формата `creds_stash_key` из payload'а.
+
+    Reject всё, что не подходит под `dbos:dispatch_creds:<id>`. Без этого
+    атакующий, получивший контроль над dispatch-payload (compromised
+    server_service / Redis broker без AUTH), мог бы подсунуть
+    `creds_stash_key=":/admin/creds"` и заставить воркер читать чужой
+    keyspace.
+    """
+    if not isinstance(stash_key, str) or not _DISPATCH_CREDS_KEY_RE.fullmatch(stash_key):
+        raise ValueError("invalid creds_stash_key format")
+
+
+async def _read_dispatch_creds(stash_key: str) -> tuple[str | None, str | None]:
+    """Прочитать dispatch-creds, положенные server_service'ом перед dispatch'ем.
+
+    Возвращает `(password_plaintext, ssh_private_key_plaintext)`. Если ключа
+    нет в Redis (TTL истёк / уже прочитан и удалён) — оба поля None. Caller
+    должен распознать это и либо fall-back'нуться на task-local
+    `_PROVISION_INLINE_KEY_PREFIX`-stash (если первая попытка успела его
+    создать), либо fail'ить с `DISPATCH_STASH_MISSING`.
+    """
+    _validate_dispatch_creds_key(stash_key)
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        raw = await client.get(stash_key)
+    finally:
+        await client.aclose()
+    if raw is None:
+        return None, None
+    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    return data.get("password_plaintext"), data.get("ssh_private_key_plaintext")
+
+
+async def _delete_dispatch_creds(stash_key: str) -> None:
+    """Снять dispatch-creds из Redis (best-effort).
+
+    Зовём сразу после первого успешного чтения: пока stash жив, любой с
+    read к Redis видит plaintext password. TTL подстрахует, явный DEL
+    сокращает окно жизни plaintext'а.
+    """
+    try:
+        _validate_dispatch_creds_key(stash_key)
+    except ValueError:
+        # Malformed key — ничего не удаляем (guard защищает от прыжка в
+        # чужой keyspace; на malformed просто молча выходим, основной
+        # поток уже отработал).
+        return
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        try:
+            await client.delete(stash_key)
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "failed to delete dispatch creds stash", exc_info=True,
             )
     finally:
         await client.aclose()
@@ -301,54 +377,109 @@ async def account_provision(task_id: str) -> None:
         account_id = payload["account_id"]
         target_dept = payload.get("target_department_id")
 
-        # F23-B: discovered-сценарий — server_service кладёт сгенерированные
-        # креды (`password_plaintext` + `ssh_public_key` + `force_replace`)
-        # прямо в payload. Тот же канал используется для re-provision после
-        # переустановки ОС (`force_replace=True`).
+        # Discovered-сценарий + re-provision: server_service генерирует
+        # password + ssh-keypair и кладёт их в Redis ДО dispatch'а под
+        # `creds_stash_key` (`dbos:dispatch_creds:<id>`). В payload едет
+        # только ссылка — plaintext в `dev_server_worker.tasks.payload`
+        # JSONB больше не оседает. ssh_public_key и force_replace едут
+        # прямо в payload (не секреты).
         #
-        # Inline-секреты живут в Redis-stash под task_id'ом до конца ротации
-        # попыток: payload-row в БД мы чистим в `finally` (защита от утечки
-        # в `tasks.payload`), но retry-попытке те же значения нужны заново,
-        # а server_service отдаёт их разово через dispatch-канал. На retry'е
-        # `_impl` сначала смотрит в stash: если он есть — берёт оттуда, если
-        # пустой (первая попытка) — пишет туда то, что пришло в payload, и
-        # стартует scrub в `finally`. `_unscrub` глушит literal-sentinel
-        # `"<scrubbed>"` на случай, если stash потерян (TTL/Redis-restart),
-        # а retry уже видит scrubbed-payload: лучше не выставить пароль на
-        # хост, чем поставить literal `"<scrubbed>"` (chpasswd не различает).
+        # Lookup-порядок на каждой попытке:
+        #   1. task-local `_PROVISION_INLINE_KEY_PREFIX:<task_id>` — он
+        #      переживает retry (даже если оператор успел дёрнуть DEL на
+        #      dispatch-stash, retry'и ходят сюда);
+        #   2. dispatch-stash по `creds_stash_key` из payload — first
+        #      attempt: тут лежат свежесгенерированные креды от
+        #      server_service. Прочли — копируем в task-local-stash для
+        #      будущих retry'ев и сразу DEL'им dispatch-stash, чтобы
+        #      plaintext не висел до TTL;
+        #   3. payload-fallback (legacy `password_plaintext`/`ssh_private_key_plaintext`)
+        #      прогоняется через `_unscrub` — на случай если когда-то будет
+        #      выкатываться смешанная версия. Сейчас server_service эти
+        #      ключи в payload не кладёт, но guard остаётся.
+        # Если ни один источник не дал secrets — fail-fast: на боксе мы
+        # ничего полезного сделать не сможем, retry без secrets дал бы
+        # silent corruption (useradd без password / без public_key).
         stashed_password, stashed_private_key = await _read_provision_inline(task_id)
-        inline_password = stashed_password or _unscrub(payload.get("password_plaintext"))
-        inline_private_key = stashed_private_key or _unscrub(payload.get("ssh_private_key_plaintext"))
+        inline_password = stashed_password
+        inline_private_key = stashed_private_key
+        dispatch_stash_key = payload.get("creds_stash_key")
+        if inline_password is None and inline_private_key is None and dispatch_stash_key:
+            try:
+                _validate_dispatch_creds_key(dispatch_stash_key)
+            except ValueError as exc:
+                raise CredentialFetchError(
+                    error_code="DISPATCH_STASH_INVALID",
+                    message=(
+                        f"creds_stash_key in payload has unexpected format: "
+                        f"{type(dispatch_stash_key).__name__}"
+                    ),
+                ) from exc
+            dispatch_password, dispatch_private_key = await _read_dispatch_creds(
+                dispatch_stash_key,
+            )
+            if dispatch_password is not None or dispatch_private_key is not None:
+                inline_password = dispatch_password
+                inline_private_key = dispatch_private_key
+                # Сохраняем в task-local stash, чтобы retry'и нашли creds
+                # даже если dispatch-stash уже DEL'нут (см. ниже).
+                await _store_provision_inline(
+                    task_id, inline_password, inline_private_key,
+                )
+                # Plaintext в Redis больше не нужен — task-local stash
+                # принял эстафету. TTL подстрахует, но явный DEL сокращает
+                # окно жизни plaintext'а в dispatch-namespace.
+                await _delete_dispatch_creds(dispatch_stash_key)
+        # Legacy payload-fallback на случай смешанных деплоев. `_unscrub`
+        # глушит literal `"<scrubbed>"` — payload-row после первой попытки
+        # уже scrubbed, нельзя пускать sentinel в chpasswd.
+        legacy_path = False
+        if inline_password is None:
+            legacy_pwd = _unscrub(payload.get("password_plaintext"))
+            if legacy_pwd is not None:
+                inline_password = legacy_pwd
+                legacy_path = True
+        if inline_private_key is None:
+            legacy_pk = _unscrub(payload.get("ssh_private_key_plaintext"))
+            if legacy_pk is not None:
+                inline_private_key = legacy_pk
+                legacy_path = True
+        # Legacy-каноник: первая попытка с inline-полями в payload — кладём
+        # их в task-local stash до scrub'а, иначе retry прочтёт sentinel
+        # из БД и упадёт через `_unscrub`. Dispatch-stash branch выше уже
+        # написал в task-local stash явно, поэтому здесь только legacy.
+        if legacy_path and stashed_password is None and stashed_private_key is None:
+            await _store_provision_inline(task_id, inline_password, inline_private_key)
         inline_public_key = payload.get("ssh_public_key")
         force_replace = bool(payload.get("force_replace"))
 
-        # Пишем stash до первого внешнего вызова (а значит — до первого
-        # возможного исключения, после которого `finally` зачистит payload).
-        # Если ничего полезного в payload не было — `_store_provision_inline`
-        # сам no-op. Идемпотентно: если stash уже жил (повторный заход
-        # после crash'а ровно между store и scrub) — перезаписываем тем же
-        # значением.
-        #
-        # Условие `and` сознательно: «store только если в Redis вообще нет
-        # stash'а» (первая попытка). При наличии хоть одного непустого поля
-        # это уже не первый заход — payload в БД уже scrubbed, перезаписывать
-        # stash тем же значением смысла нет. Партиально-пустой stash
-        # (`password != None, private_key = None`) — корректное состояние:
-        # provision-payload изначально содержал только пароль, второй слот
-        # был None и так.
-        # При добавлении третьего inline-секрета это условие потребует
-        # пересмотра (сейчас оно жёстко завязано на ровно два слота).
-        if stashed_password is None and stashed_private_key is None:
-            await _store_provision_inline(task_id, inline_password, inline_private_key)
+        # Если в payload вообще нет ссылки на dispatch-stash и в task-local
+        # stash тоже пусто (TTL истёк / Redis-restart), а legacy-поля
+        # отсутствуют — fail-fast. Иначе chpasswd получил бы None / useradd
+        # пошёл бы без публичного ключа, и боксок остался бы с
+        # неконсистентным состоянием.
+        if (
+            dispatch_stash_key
+            and inline_password is None
+            and inline_private_key is None
+        ):
+            raise CredentialFetchError(
+                error_code="DISPATCH_STASH_MISSING",
+                message=(
+                    f"dispatch creds stash not found in Redis "
+                    f"(key={dispatch_stash_key}); TTL expired or already consumed"
+                ),
+            )
 
-        # Defense-in-depth: inline-креды из discovered-сценария (F23-B) —
-        # `password_plaintext` и `ssh_private_key_plaintext` — приходят
-        # прямо в payload и без явной зачистки остаются в `tasks.payload`
-        # до retention cleanup'а (до 30 дней). Стираем их в `finally` —
-        # тогда scrub срабатывает и на happy-path'е, и на любом исключении
-        # из ssh_client / submit_provision_status. Дубликат секрета между
-        # попытками держит Redis-stash, не payload-row.
+        # Defense-in-depth: на случай смешанных деплоев (старый
+        # server_service ещё кладёт plaintext-поля в payload) очищаем
+        # `password_plaintext`/`ssh_private_key_plaintext` через
+        # scrub_payload_keys в `finally`. Основной канал теперь —
+        # `creds_stash_key` (Redis-stash, plaintext в payload не оседает
+        # вовсе), но scrub оставляем как страховку от регресса.
         # `ssh_public_key` — не секрет, его оставляем для форенсики.
+        # `creds_stash_key` — это ссылка, не plaintext, но мы DEL'ним
+        # stash сразу после чтения, поэтому скрабить ссылку смысла нет.
         # Best-effort: если scrub упал, основной поток не валим.
         try:
             creds = await _account_creds(payload, server_id, account_id, target_dept)

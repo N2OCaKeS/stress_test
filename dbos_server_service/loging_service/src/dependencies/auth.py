@@ -46,6 +46,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
+from src.core.http import bearer_header
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +224,7 @@ async def _fetch_identity(
             message="INTROSPECT_SERVICE_API_KEY is not set",
         )
     headers = {
-        "Authorization": f"Bearer {settings.introspect_service_api_key}",
+        **bearer_header(settings.introspect_service_api_key),
         "X-Service-Identity": "loging_service",
     }
 

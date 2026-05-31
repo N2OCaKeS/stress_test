@@ -229,10 +229,13 @@ class TestProvisionForcePasswordGuard:
         )
         assert resp.status_code == 202, resp.text
         assert len(captured) == 1
-        # Сгенерированный пароль и ключи поехали воркеру, force_replace=True.
+        # Plaintext-креды теперь уходят через Redis-stash (W18-W1 P0 fix); payload
+        # несёт только stash-ключ + force_replace=True.
         payload = captured[0]["payload"]
-        assert "password_plaintext" in payload
-        assert "ssh_public_key" in payload
+        assert "creds_stash_key" in payload
+        assert payload["creds_stash_key"].startswith("dbos:dispatch_creds:dcd_")
+        assert "password_plaintext" not in payload
+        assert "ssh_private_key_plaintext" not in payload
         assert payload["force_replace"] is True
 
 

@@ -150,6 +150,20 @@ class Settings(BaseSettings):
             "back-off, после чего повторный prepare требует заново прислать креды."
         ),
     )
+    dispatch_creds_ttl_seconds: int = Field(
+        default=900,
+        ge=1,
+        description=(
+            "Время жизни inline-кред provision-таски (`account.provision` с "
+            "`inject_provision_creds=True`) в Redis. Plaintext password + "
+            "ssh_private_key кладутся под `dbos:dispatch_creds:<dcd_id>` с этим "
+            "TTL, в task-payload едет только `creds_stash_key`. Без stash'а "
+            "plaintext висел бы в `dev_server_worker.tasks.payload` JSONB до "
+            "retention cleanup'а. 15 минут — запас на несколько retry-попыток "
+            "воркера с back-off; после истечения worker fail'ит с "
+            "`DISPATCH_STASH_MISSING`, оператор инициирует новый dispatch."
+        ),
+    )
     logging_service_url: str = Field(
         default="",
         description=(

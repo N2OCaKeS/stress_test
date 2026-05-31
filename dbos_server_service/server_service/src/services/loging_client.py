@@ -28,6 +28,7 @@ import httpx
 from src.core import http_clients
 from src.core.config import get_settings
 from src.core.exceptions import ServiceUnavailableError
+from src.core.http import bearer_header
 
 logger = logging.getLogger("server_service.loging_client")
 
@@ -73,7 +74,7 @@ async def fetch_drift_events(
         "limit": _DRIFT_PAGE_LIMIT,
         "include_total": False,
     }
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = bearer_header(api_key)
 
     pooled = http_clients.loging_read_client
     try:

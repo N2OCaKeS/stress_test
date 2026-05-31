@@ -174,6 +174,62 @@ def _patch_introspect(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _stub_prepare_redis(monkeypatch):
+    """In-memory stub для `worker_client._prepare_redis_client`.
+
+    `store_prepare_creds` / `store_dispatch_creds` (W18-W1) обращаются к
+    pooled Redis-клиенту. В тестах без live-Redis это вылетало бы в
+    `WORKER_REDIS_NOT_CONFIGURED` 503. Подкладываем простой dict-storage
+    под все тесты; тесты, которым важно поведение storage явно, ставят
+    свой `stub_redis` (или подменяют его выше по приоритету).
+
+    Settings.server_worker_redis_url тоже выставляем непустой — иначе
+    `store_*_creds` отбивает `WORKER_REDIS_NOT_CONFIGURED` ДО подхвата
+    pool'а.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+    from src.services import worker_client
+    from src.core import config as config_mod
+
+    storage: dict[str, tuple[str, int | None]] = {}
+    pooled = MagicMock()
+
+    async def fake_set(key, value, ex=None):
+        storage[key] = (value, ex)
+
+    async def fake_get(key):
+        v = storage.get(key)
+        return v[0].encode("utf-8") if v else None
+
+    async def fake_delete(key):
+        return 1 if storage.pop(key, None) is not None else 0
+
+    pooled.set = AsyncMock(side_effect=fake_set)
+    pooled.get = AsyncMock(side_effect=fake_get)
+    pooled.delete = AsyncMock(side_effect=fake_delete)
+    pooled.aclose = AsyncMock()
+    monkeypatch.setattr(worker_client, "_prepare_redis_client", pooled)
+
+    # Settings override: store_*_creds читает `server_worker_redis_url`
+    # из get_settings(). Если URL пустой — поднимет WORKER_REDIS_NOT_CONFIGURED
+    # ДО подхвата pool'а. Делаем непустой dummy-URL.
+    real_get_settings = config_mod.get_settings
+    real_settings = real_get_settings()
+
+    class _SettingsWithRedis:
+        def __getattr__(self, name):
+            if name in ("server_worker_redis_url",):
+                return "redis://test:6379/0"
+            if name in ("prepare_creds_ttl_seconds", "dispatch_creds_ttl_seconds"):
+                return 900
+            return getattr(real_settings, name)
+
+    stub_settings = _SettingsWithRedis()
+    monkeypatch.setattr(worker_client, "get_settings", lambda: stub_settings)
+    yield storage
+
+
+@pytest.fixture(autouse=True)
 def _reset_rate_limiter():
     """Сбрасывает per-IP rate-limit между тестами.
 

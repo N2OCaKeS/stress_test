@@ -48,6 +48,7 @@ from fastapi import Depends, Request
 
 from src.core.config import get_settings
 from src.core.constants import SERVICE_NAME
+from src.core.http import bearer_header
 from src.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -131,7 +132,7 @@ async def _introspect(token: str) -> dict:
         )
 
     settings = get_settings()
-    headers = {"Authorization": f"Bearer {settings.service_api_key}"}
+    headers = bearer_header(settings.service_api_key)
 
     client = _introspect_client
     try:

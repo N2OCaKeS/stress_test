@@ -11,6 +11,13 @@ Limiter держит default-лимиты из `settings.global_rate_limit` (г�
 slowloris-защита 401-pipeline'а), а endpoint-декораторы добавляют более
 жёсткие лимиты поверх — slowapi применяет каждый лимит независимо
 (пробит хотя бы один → 429).
+
+**Start-time settings:** `_settings = get_settings()` читается ОДИН раз при
+импорте модуля. Значение `global_rate_limit` фиксируется тогда же и в
+дальнейшем не перечитывается — runtime-смена настроек требует перезапуска
+процесса. Это сознательный выбор: декораторы `@limiter.limit(...)` на
+endpoint'ах резолвят limit-expression при импорте handler'а, динамика на
+горячую всё равно бы потребовала пересборки routing-таблицы.
 """
 
 from slowapi import Limiter

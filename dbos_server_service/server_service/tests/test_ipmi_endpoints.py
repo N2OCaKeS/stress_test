@@ -60,8 +60,16 @@ def captured_dispatch(monkeypatch):
             _by_key[idempotency_key] = new_id
         return (new_id, False) if return_hit else new_id
 
+    async def fake_dispatch_with_hit(**kwargs):
+        kwargs["return_hit"] = True
+        return await fake_dispatch(**kwargs)
+
     monkeypatch.setattr(
         "src.api.v1.endpoints.ipmi.worker_client.dispatch_task", fake_dispatch
+    )
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.ipmi.worker_client.dispatch_task_with_hit",
+        fake_dispatch_with_hit,
     )
     return calls
 
@@ -618,6 +626,9 @@ class TestPowerDispatchFailureAudit:
         monkeypatch.setattr(
             "src.api.v1.endpoints.ipmi.worker_client.dispatch_task", boom,
         )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.ipmi.worker_client.dispatch_task_with_hit", boom,
+        )
 
         srv = await make_server(department_id="dep_a", with_ipmi=True)
         resp = await client.post(
@@ -655,6 +666,9 @@ class TestPowerDispatchFailureAudit:
 
         monkeypatch.setattr(
             "src.api.v1.endpoints.ipmi.worker_client.dispatch_task", boom,
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.ipmi.worker_client.dispatch_task_with_hit", boom,
         )
 
         srv = await make_server(department_id="dep_a", with_ipmi=True)
@@ -694,6 +708,9 @@ class TestPowerDispatchFailureAudit:
         monkeypatch.setattr(
             "src.api.v1.endpoints.ipmi.worker_client.dispatch_task", boom,
         )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.ipmi.worker_client.dispatch_task_with_hit", boom,
+        )
 
         srv = await make_server(department_id="dep_a", with_ipmi=True)
         resp = await client.post(
@@ -721,6 +738,9 @@ class TestPowerDispatchFailureAudit:
 
         monkeypatch.setattr(
             "src.api.v1.endpoints.ipmi.worker_client.dispatch_task", boom,
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.ipmi.worker_client.dispatch_task_with_hit", boom,
         )
 
         srv = await make_server(department_id="dep_a", with_ipmi=True)

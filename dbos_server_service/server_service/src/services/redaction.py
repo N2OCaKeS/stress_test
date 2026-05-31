@@ -45,6 +45,10 @@ _SECRET_KEYS = {
     "hkdf_salt", "hkdf_salt_hex",
     "service_api_key", "logging_service_api_key",
     "ssh_private_key", "ssh_private_key_plaintext",
+    # ssh_public_key — формально не секрет, но PII-adjacent: однозначно
+    # идентифицирует actor'а. Маскируем в audit-details, чтобы не утекало в
+    # SIEM в открытом виде.
+    "ssh_public_key",
 }
 _HASH_KEYS = {
     "password_hash", "hash", "token_hash", "pwd_hash",
@@ -103,7 +107,7 @@ def _redact_value(value: Any, key_placeholder: str | None) -> Any:
     return value
 
 
-def redact(payload: Any, *, _parent_key: str | None = None) -> Any:
+def redact(payload: Any) -> Any:
     """Рекурсивно санитизирует dict/list. Не мутирует вход — возвращает новый объект."""
     if isinstance(payload, dict):
         out: dict[str, Any] = {}
@@ -114,13 +118,13 @@ def redact(payload: Any, *, _parent_key: str | None = None) -> Any:
                 if holder is not None:
                     out[key_str] = holder
                 else:
-                    out[key_str] = redact(v, _parent_key=key_str)
+                    out[key_str] = redact(v)
             else:
                 out[key_str] = _redact_value(v, holder)
         return out
     if isinstance(payload, list):
         return [
-            redact(item, _parent_key=_parent_key) if isinstance(item, (dict, list))
+            redact(item) if isinstance(item, (dict, list))
             else _redact_value(item, None)
             for item in payload
         ]

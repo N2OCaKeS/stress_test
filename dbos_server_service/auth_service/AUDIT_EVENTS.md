@@ -58,9 +58,9 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 
 | Action | Default severity | Emitter | Target | Key details |
 |------|------|------|------|------|
-| `user.create` | INFO | `user_service.create_user` | user | `department_id`, `platform_role`, наличие `initial_roles`. |
+| `user.create` | INFO | `user_service.create_user` | user | `department_id`, `platform_role`, наличие `initial_roles`. `email` маскируется (`j***@corp.local`) — полный адрес считается PII и в audit-трассу не уходит. |
 | `user.list` | INFO | `user_service.list_users` / `list_users_by_department` | — | `count`, `scope` (`all` / `department`), `department_id` для per-dept. |
-| `user.update` | INFO | `user_service.update_user` | user | Diff обновлённых полей (без password). |
+| `user.update` | INFO | `user_service.update_user` | user | Diff обновлённых полей (без password). Если `email` входит в diff — значение в `changes.email` маскируется (`j***@corp.local`), `fields_changed` остаётся неизменённым. |
 | `user.roles_assign` | INFO | `user_service.assign_roles` | user | `service_name`, `roles` (новый набор). |
 | `user.password_reset` | CRITICAL | `user_service.reset_password` | user | Без plaintext пароля. |
 | `user.self_password_reset` | CRITICAL | `user_service.change_own_password` (`POST /users/me/password`) | user (== actor) | `caller_is_admin` (true для платформенных админ-ролей), `sessions_revoked`, `tokens_revoked=false`. Failure-вариант (`status="failure"`, `details.reason="invalid_old_password"`) эмитится при неверном `old_password` — для SIEM-сигнала о возможном угоне access-токена. |

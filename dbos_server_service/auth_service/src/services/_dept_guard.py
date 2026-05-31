@@ -63,3 +63,26 @@ async def assert_dept_admin_target_dept(
             error_code=error_code,
             message=message,
         )
+
+
+async def assert_actor_exists(
+    user_repo: UserRepository,
+    actor_id: str,
+):
+    """Read-side зеркало `assert_dept_admin_target_dept`.
+
+    Write-операции для DEPARTMENT_ADMIN уже бросают `ACTOR_VANISHED` через
+    `assert_dept_admin_target_dept`. Read-операции с тем же race-окном
+    (`actor = await user_repo.get_by_id(actor_id); actor.department_id`)
+    должны вести себя симметрично, а не отдавать тихий пустой список.
+
+    Возвращает actor (на случай, если caller сам хочет дальше работать
+    с `actor.department_id`), чтобы не делать второй SELECT.
+    """
+    actor = await user_repo.get_by_id(actor_id)
+    if actor is None:
+        raise AuthorizationError(
+            error_code="ACTOR_VANISHED",
+            message="Actor no longer exists",
+        )
+    return actor

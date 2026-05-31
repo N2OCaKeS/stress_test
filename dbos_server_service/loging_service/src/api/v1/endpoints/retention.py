@@ -20,9 +20,11 @@ engine) — изменение политики хранения не должн
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.orm import Session
 
+from src.core.config import get_settings
+from src.core.limiter import limiter
 from src.dependencies.auth import AdminIdentity, require_admin
 from src.dependencies.db import get_db
 from src.repositories import retention_policies as repo
@@ -143,7 +145,19 @@ def _snapshot_list(policies) -> list[dict]:
         "`DELETE /retention` — отключить ротацию (хранить вечно)."
     ),
 )
-def get_policy(db: Session = Depends(get_db)) -> RetentionPolicyResponse | None:
+# Симметрично остальным read-эндпоинтам (`GET /events`, `GET /rules`,
+# `GET /services`) ставим `audit_query_rate_limit`. `require_admin`
+# сужает поверхность до loging_admin, но без лимита единообразие read-
+# канала ломается — пусть лучше единый bucket за per-IP, чем
+# admin-JWT с правом крутить SELECT на active retention без потолка.
+@limiter.limit(
+    lambda: get_settings().audit_query_rate_limit,
+)
+def get_policy(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> RetentionPolicyResponse | None:
     policy = repo.get_active(db)
     return RetentionPolicyResponse.model_validate(policy) if policy else None
 

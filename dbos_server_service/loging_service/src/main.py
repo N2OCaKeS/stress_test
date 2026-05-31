@@ -821,18 +821,46 @@ def _retention_loop() -> None:
 
 
 def _action_for_path(method: str, path: str) -> str:
-    """Возвращает имя action для успешного обращения к admin-эндпоинту loging_service."""
-    if "/rules" in path:
-        return "logging.rules_read" if method == "GET" else "logging.rules_write"
-    # `/events` проверяем раньше `/services` — путь
-    # `/api/logging/v1/services/{svc}/events` содержит оба substring'а;
-    # без этого порядка SIEM атрибутировал бы чтение events конкретного
-    # сервиса как `logging.services_read`, теряя factum чтения событий.
-    if "/events" in path:
+    """Возвращает имя action для успешного обращения к admin-эндпоинту loging_service.
+
+    Раньше работало через `in` substring-matching, где порядок проверок
+    (`/events` ДО `/services`) был единственным, что отличало
+    `GET /services/{svc}/events` (чтение events) от `GET /services` (листинг
+    реестра). Любой будущий путь вида `/retention/events_archive` или
+    `/services/{svc}/rules` сломал бы атрибуцию без шума — middleware
+    послал бы в SIEM не тот action.
+
+    Здесь идём через segment walk: режем path на компоненты и берём первый
+    под `/v1/` как resource, а последний — для override'а на `events`
+    (специальный случай catalog'а: `/services/{svc}/events` — это всё-таки
+    чтение событий, а не реестра).
+    """
+    # Хвостовой `/` и пустые сегменты не должны мешать lookup'у:
+    # path вида `/api/logging/v1/rules/` после split'а даёт пустую финальную
+    # компоненту; фильтруем сразу.
+    segments = [s for s in path.split("/") if s]
+
+    # Финальный сегмент `events` всегда классифицируется как чтение events,
+    # даже если он висит под `/services/{svc}/events`. Сохраняет
+    # backwards-compat с прежним substring-порядком.
+    if segments and segments[-1] == "events":
         return "logging.events_queried"
-    if "/services" in path:
+
+    # Ищем resource'ный сегмент: первый после `v1`. На посторонних путях
+    # (`/api/logging/v1/health` или вовсе вне `/v1/`) fallback на admin_access.
+    resource = None
+    for i, seg in enumerate(segments):
+        if seg == "v1" and i + 1 < len(segments):
+            resource = segments[i + 1]
+            break
+
+    if resource == "rules":
+        return "logging.rules_read" if method == "GET" else "logging.rules_write"
+    if resource == "events":
+        return "logging.events_queried"
+    if resource == "services":
         return "logging.services_read"
-    if "/retention" in path:
+    if resource == "retention":
         # PUT/DELETE retention'а пишет self-audit прямо в endpoint'е
         # (`logging.retention_write` через `retention.py::_audit`), а
         # успех на write-методах из middleware скипается (см. `audit_access`).

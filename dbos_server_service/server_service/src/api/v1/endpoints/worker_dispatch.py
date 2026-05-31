@@ -963,14 +963,13 @@ async def server_prepare_dispatch(
         "bootstrap_creds_key": creds_key,
     }
     try:
-        task_id, idempotent_hit = await worker_client.dispatch_task(
+        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
             task_kind=task_kind,
             target_server_id=server_id,
             payload=payload,
             created_by=identity.user_id,
             request_id=getattr(request.state, "request_id", None),
             idempotency_key=idempotency_key,
-            return_hit=True,
         )
     except ConflictError:
         # Подчищаем Redis: воркер за креды не пойдёт, иначе plaintext висит до TTL.

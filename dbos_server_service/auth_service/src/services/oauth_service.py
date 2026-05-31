@@ -28,7 +28,7 @@ from src.schemas.oauth import (
 )
 from src.services import _lockout, audit_service
 from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
-from src.services._dept_guard import assert_dept_admin_target_dept
+from src.services._dept_guard import assert_actor_exists, assert_dept_admin_target_dept
 from src.utils.time import is_expired, utcnow
 
 _SECRET_PREFIX_LEN = 12
@@ -144,8 +144,12 @@ async def list_clients(
     user_repo = UserRepository(db)
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(actor_id)
-        dept_id = actor.department_id if actor else None
+        # Fail-closed: пустой список вместо `ACTOR_VANISHED` молча скрывал бы
+        # race-delete actor'а — write-операции (`create_client`/`delete_client`)
+        # уже отдают 403 ACTOR_VANISHED через `assert_dept_admin_target_dept`,
+        # read должен вести себя симметрично.
+        actor = await assert_actor_exists(user_repo, actor_id)
+        dept_id = actor.department_id
         clients = await client_repo.list_by_department(dept_id) if dept_id else []
     elif department_id:
         clients = await client_repo.list_by_department(department_id)

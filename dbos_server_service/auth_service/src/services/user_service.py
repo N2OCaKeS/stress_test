@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.constants import PlatformRole, UserStatus
 from src.core.exceptions import AuthenticationError, AuthorizationError, ConflictError, DomainValidationError, NotFoundError
-from src.core.security import hash_password, verify_password
+from src.core.security import hash_password, mask_email, verify_password
 from src.repositories.bans import BanRepository
 from src.repositories.departments import DepartmentRepository
 from src.repositories.groups import GroupRepository
@@ -248,7 +248,7 @@ async def create_user(
         details={
             "username": username,
             "password": password,
-            "email": email,
+            "email": mask_email(email),
             "department_id": department_id,
             "department_name": dept.display_name if dept else None,
             "platform_role": platform_role,
@@ -550,12 +550,18 @@ async def update_user(
     # изменения. Если PATCH нёс только status → BANNED/ACTIVE — audit уже
     # эмитнут (`user.ban`/`user.unban`), `user.update` дублировать не нужно.
     if filtered:
+        # email — PII, в audit-trail у loging_reader полный домен+local не
+        # нужен. Маскируем только для audit-snapshot, в БД сохраняется
+        # полный email через `user_repo.update(**filtered)` выше.
+        audit_changes = dict(filtered)
+        if "email" in audit_changes:
+            audit_changes["email"] = mask_email(audit_changes["email"])
         audit_service.emit(
             "user.update", actor_id, target_id=user_id, target_type="user",
             request_id=request_id,
             details={
                 "username": user.username,
-                "changes": filtered,
+                "changes": audit_changes,
                 "fields_changed": sorted(filtered.keys()),
             },
         )

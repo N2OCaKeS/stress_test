@@ -1,4 +1,4 @@
-"""dispatch_task return_hit=True — пробрасывает флаг idempotent_hit наверх.
+"""dispatch_task_with_hit — пробрасывает флаг idempotent_hit наверх.
 
 Caller (`_dispatch_power` и аналоги в `worker_dispatch.py`) кладёт флаг в
 audit details, чтобы SIEM отличал «новая task» от «idempotent replay» —
@@ -46,17 +46,14 @@ class TestReturnHit:
         monkeypatch.setattr(
             worker_client, "_get_task_by_idempotency_key", lookup,
         )
-        result = await worker_client.dispatch_task(
+        task_id, hit = await worker_client.dispatch_task_with_hit(
             task_kind="power.on",
             target_server_id="srv_abc",
             payload={"server_id": "srv_abc"},
             created_by="usr_x",
             request_id="req_1",
             idempotency_key="key-1",
-            return_hit=True,
         )
-        assert isinstance(result, tuple)
-        task_id, hit = result
         assert task_id.startswith("tsk_")
         assert hit is False
 
@@ -66,14 +63,13 @@ class TestReturnHit:
         monkeypatch.setattr(
             worker_client, "_get_task_by_idempotency_key", lookup,
         )
-        result = await worker_client.dispatch_task(
+        result = await worker_client.dispatch_task_with_hit(
             task_kind="power.on",
             target_server_id="srv_abc",
             payload={"server_id": "srv_abc"},
             created_by="usr_x",
             request_id="req_1",
             idempotency_key="key-existing",
-            return_hit=True,
         )
         assert result == ("tsk_existing", True)
         # INSERT не дёргался — идемпотентный путь
@@ -146,8 +142,8 @@ class TestReturnHit:
         assert result == "tsk_same"
         assert stub_dispatch_internals == []
 
-    async def test_return_hit_false_keeps_string_return(self, stub_dispatch_internals, monkeypatch):
-        """BC: без return_hit=True возвращается str, как раньше."""
+    async def test_dispatch_task_returns_plain_string(self, stub_dispatch_internals, monkeypatch):
+        """`dispatch_task` без `_with_hit` отдаёт чистый str — без union."""
         async def lookup(_key):
             return None
         monkeypatch.setattr(

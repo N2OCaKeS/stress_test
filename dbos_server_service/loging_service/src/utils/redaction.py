@@ -98,7 +98,20 @@ def _classify_value(value: str) -> str | None:
 
 def _redact_value(value: Any, key_placeholder: str | None) -> Any:
     if key_placeholder is not None:
+        # `bytes` под redacted-ключом не должны протечь как `str(b'...')`
+        # из json-сериализатора вниз по цепочке: сам holder уже сказал «маскируй»,
+        # возвращаем placeholder, raw-значение не уходит дальше.
         return key_placeholder
+    if isinstance(value, (bytes, bytearray)):
+        # Никто из легитимных caller'ов сейчас в `details` bytes не кладёт,
+        # но `record_admin_action` принимает произвольный dict — defence-in-depth.
+        # Без decode bytes уходили как `str(b'secret')` → `"b'secret'"` в JSON,
+        # минуя `_classify_value` (regex'ы там match'ат только str-репрезентацию
+        # без префикса b' и кавычек). Декодируем permissively через
+        # `errors="replace"` (utf-8 — самый частый case в питоновском stdlib;
+        # не-utf-8 байты заменятся на U+FFFD, но classify-pipeline всё равно
+        # отловит JWT/argon2/bcrypt по структуре).
+        value = bytes(value).decode("utf-8", errors="replace")
     if isinstance(value, str):
         v_holder = _classify_value(value)
         if v_holder is not None:

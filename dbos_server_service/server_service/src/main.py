@@ -88,18 +88,33 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 def _rate_limit_exceeded_response(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-    """Кастомный 429-ответ, совместимый по shape с `AppException`."""
+    """Кастомный 429-ответ, совместимый по shape с `AppException`.
+
+    Поверх envelope'а проставляем standard rate-limit заголовки: `Retry-After`
+    (фиксированные 60 сек — клиенту понятная пауза до повтора),
+    `X-RateLimit-Limit` (текстовое описание пробитого правила, как его видит
+    slowapi), плюс `X-RateLimit-Remaining: 0` / `X-RateLimit-Reset` для
+    совместимости с типовыми клиентами, ожидающими IETF-draft набор.
+    """
+    retry_after = 60
+    limit_repr = str(exc.detail)
+    reset_epoch = int(datetime.now(timezone.utc).timestamp()) + retry_after
     return JSONResponse(
         status_code=429,
         content={
             "error": "too_many_requests",
             "error_code": "RATE_LIMIT_EXCEEDED",
             "message": f"Rate limit exceeded: {exc.detail}",
-            "details": {"limit": str(exc.detail)},
+            "details": {"limit": limit_repr},
             "request_id": getattr(request.state, "request_id", None),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },
-        headers={"Retry-After": "60"},
+        headers={
+            "Retry-After": str(retry_after),
+            "X-RateLimit-Limit": limit_repr,
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": str(reset_epoch),
+        },
     )
 
 

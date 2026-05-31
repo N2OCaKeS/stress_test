@@ -181,7 +181,6 @@ async def list_bots(
             "count": len(bots),
             "count_disabled": count_disabled,
             "total": total,
-            "filter_department_id": department_id,
             "filter_department_id_requested": department_id,
             "filter_department_id_effective": effective_department_id,
             "scope": "department" if (actor_role == PlatformRole.DEPARTMENT_ADMIN or department_id) else "all",

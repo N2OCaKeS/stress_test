@@ -4,10 +4,21 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+# Жёсткая форма для role_name по той же причине, что и service_name:
+# split('.', 1) над ключами и связками "<service>.<role>" ломается на точках,
+# а заглавные буквы и спецсимволы расходятся с system-ролями (`admin`,
+# `operator`, `reader`, `worker_bot`). lower-snake_case, начинается с буквы.
+_ROLE_NAME_PATTERN = r"^[a-z][a-z0-9_]+$"
+
 
 class ServiceRoleCreate(BaseModel):
     """Тело `POST /departments/{dept_id}/services/{service}/roles`."""
-    role_name: str = Field(description="Машинно-читаемое имя роли (`admin`, `operator`, `reader`).")
+    role_name: str = Field(
+        description="Машинно-читаемое имя роли (`admin`, `operator`, `reader`).",
+        pattern=_ROLE_NAME_PATTERN,
+        min_length=2,
+        max_length=64,
+    )
     display_name: str = Field(description="Человеческое название.")
     description: str | None = Field(default=None)
 

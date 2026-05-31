@@ -93,10 +93,19 @@ def captured_dispatch(monkeypatch):
         "src.api.v1.endpoints.worker_dispatch.worker_client.delete_prepare_creds",
         fake_delete,
     )
+    async def fake_dispatch_with_hit(**kwargs):
+        kwargs["return_hit"] = True
+        return await fake_dispatch(**kwargs)
+
     monkeypatch.setattr(worker_mod, "dispatch_task", fake_dispatch)
     monkeypatch.setattr(
         "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
         fake_dispatch,
+    )
+    monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", fake_dispatch_with_hit)
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
+        fake_dispatch_with_hit,
     )
     return calls
 
@@ -489,6 +498,11 @@ class TestPrepareDispatch:
         monkeypatch.setattr(worker_mod, "dispatch_task", boom)
         monkeypatch.setattr(
             "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom,
         )
 

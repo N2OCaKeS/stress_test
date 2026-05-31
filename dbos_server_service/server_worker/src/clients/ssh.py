@@ -427,7 +427,9 @@ class SshClient:
                 await self.set_password(login, new_password)
             if public_key is not None:
                 await self._write_authorized_key(
-                    login, public_key, force_replace=force_replace,
+                    login, public_key,
+                    force_replace=force_replace,
+                    target_home=home_dir,
                 )
             return
 
@@ -456,11 +458,14 @@ class SshClient:
             await self.set_password(login, new_password)
         if public_key is not None:
             await self._write_authorized_key(
-                login, public_key, force_replace=force_replace,
+                login, public_key,
+                force_replace=force_replace,
+                target_home=home_dir,
             )
 
     async def _write_authorized_key(
         self, login: str, public_key: str, *, force_replace: bool,
+        target_home: str | None = None,
     ) -> None:
         """Записать `public_key` в `~/.ssh/authorized_keys` пользователя `login`.
 
@@ -468,6 +473,12 @@ class SshClient:
         ключом (re-provision после переустановки ОС: старые записи теряют
         смысл). `force_replace=False` — идемпотентно дописывает ключ, если
         точного совпадения строки не нашлось через `grep -qxF`.
+
+        `target_home` — если caller уже знает home аккаунта (пришёл через
+        provision payload), Python-guard отобьёт системные пути из
+        `_FORBIDDEN_HOMES` до отправки команды на хост. На bootstrap'е
+        home заранее неизвестен — оставляем `None` и полагаемся на bash-guard
+        после `getent passwd`.
         """
         self._validate_login(login)
         await self._install_authorized_key(
@@ -475,6 +486,7 @@ class SshClient:
             public_key=public_key,
             truncate=force_replace,
             error_code="SSH_AUTHORIZED_KEYS_FAILED",
+            target_home=target_home,
         )
 
     async def _install_authorized_key(

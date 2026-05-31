@@ -61,6 +61,10 @@ def captured_dispatch(monkeypatch):
         new_id = f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
         return (new_id, False) if return_hit else new_id
 
+    async def fake_dispatch_with_hit(**kwargs):
+        kwargs["return_hit"] = True
+        return await fake_dispatch(**kwargs)
+
     import src.services.worker_client as worker_mod
     monkeypatch.setattr(worker_mod, "dispatch_task", fake_dispatch)
     monkeypatch.setattr(
@@ -70,6 +74,15 @@ def captured_dispatch(monkeypatch):
     monkeypatch.setattr(
         "src.api.v1.endpoints.ipmi.worker_client.dispatch_task",
         fake_dispatch,
+    )
+    monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", fake_dispatch_with_hit)
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
+        fake_dispatch_with_hit,
+    )
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.ipmi.worker_client.dispatch_task_with_hit",
+        fake_dispatch_with_hit,
     )
     return calls
 

@@ -581,10 +581,19 @@ class TestPrepareDispatchIdempotentHitRaceCleanup:
             "src.api.v1.endpoints.worker_dispatch.worker_client.delete_prepare_creds",
             fake_delete,
         )
+        async def fake_dispatch_with_hit(**kwargs):
+            kwargs["return_hit"] = True
+            return await fake_dispatch(**kwargs)
+
         monkeypatch.setattr(wm, "dispatch_task", fake_dispatch)
         monkeypatch.setattr(
             "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
             fake_dispatch,
+        )
+        monkeypatch.setattr(wm, "dispatch_task_with_hit", fake_dispatch_with_hit)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
+            fake_dispatch_with_hit,
         )
         monkeypatch.setattr(wm, "_get_task_by_idempotency_key", fake_lookup)
         monkeypatch.setattr(

@@ -47,6 +47,14 @@ router = APIRouter(prefix="/servers/{server_id}")
 # и rpm их интерпретируют сами.
 _PATTERN_RE = re.compile(r"^[A-Za-z0-9._\-+*?\[\]]+$")
 
+# Жёсткий cap на число возвращаемых строк. На стандартной Astra-коробке
+# `dpkg -l` отдаёт порядка 2-3 тысяч пакетов; 10k с запасом покрывает
+# серверы с дополнительными репозиториями и одновременно отбивает явные
+# DoS-pattern'ы типа одиночной звёздочки против обслуживающих устройств с
+# распухшим pkg-DB. Worker применяет cap уже на стороне SSH-команды
+# (`head -n`), endpoint лишь прокидывает значение в payload.
+_MAX_INSTALLED_PACKAGES_ROWS = 10000
+
 
 @router.post(
     "/installed-packages",
@@ -154,6 +162,7 @@ async def list_installed_packages(
         "host": server.hostname,
         "ssh_port": server.ssh_port,
         "pattern": pattern,
+        "max_rows": _MAX_INSTALLED_PACKAGES_ROWS,
         "target_department_id": server.department_id,
     }
     try:

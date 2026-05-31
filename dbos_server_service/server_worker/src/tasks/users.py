@@ -328,6 +328,16 @@ async def account_provision(task_id: str) -> None:
         # сам no-op. Идемпотентно: если stash уже жил (повторный заход
         # после crash'а ровно между store и scrub) — перезаписываем тем же
         # значением.
+        #
+        # Условие `and` сознательно: «store только если в Redis вообще нет
+        # stash'а» (первая попытка). При наличии хоть одного непустого поля
+        # это уже не первый заход — payload в БД уже scrubbed, перезаписывать
+        # stash тем же значением смысла нет. Партиально-пустой stash
+        # (`password != None, private_key = None`) — корректное состояние:
+        # provision-payload изначально содержал только пароль, второй слот
+        # был None и так.
+        # При добавлении третьего inline-секрета это условие потребует
+        # пересмотра (сейчас оно жёстко завязано на ровно два слота).
         if stashed_password is None and stashed_private_key is None:
             await _store_provision_inline(task_id, inline_password, inline_private_key)
 

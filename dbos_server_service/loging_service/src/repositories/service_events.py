@@ -97,6 +97,19 @@ def list_for_service(
     return rows, total
 
 
+def count_for_service(db: Session, service: str) -> int:
+    """Сколько событий зарегистрировано для *service* (один SELECT COUNT).
+
+    `list_for_service` всегда читает count + page; вызов ради одного counter'а
+    (см. `register_events` → нужен только `total` для self-audit details)
+    раньше материализовал до 1000 row'ей. Здесь — голый агрегат.
+    """
+    from sqlalchemy import func
+    return db.execute(
+        select(func.count()).select_from(ServiceEvent).where(ServiceEvent.service == service)
+    ).scalar_one()
+
+
 def list_all(db: Session) -> list[ServiceEvent]:
     return list(
         db.execute(select(ServiceEvent).order_by(ServiceEvent.service, ServiceEvent.action)).scalars()

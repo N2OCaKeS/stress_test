@@ -330,7 +330,8 @@ class TestPatchStatusEmitsBanAudit:
         # email-изменение остаётся как `user.update` — но без status в changes.
         assert len(update_events) == 1
         changes = update_events[0]["details"]["changes"]
-        assert changes.get("email") == "banned_email@example.com"
+        # email маскируется в audit (PII не утекает в loging_reader); plaintext только в БД.
+        assert changes.get("email") == "b***@example.com"
         assert "status" not in changes, (
             "status уже обработан через user.ban, дублировать в user.update нельзя"
         )

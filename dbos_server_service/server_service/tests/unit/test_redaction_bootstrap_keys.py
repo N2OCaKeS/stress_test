@@ -79,5 +79,5 @@ def test_provision_payload_dict_masked():
     assert out["account_id"] == "acc_1"
     assert out["login"] == "ops"
     assert out["force_replace"] is True
-    # ssh_public_key намеренно не маскируется — это публичная половина пары.
-    assert out["ssh_public_key"] == "ssh-ed25519 AAAA..."
+    # ssh_public_key маскируется в audit-payload: actor-идентификатор не должен утекать в логи.
+    assert out["ssh_public_key"] == "<SECRET>"

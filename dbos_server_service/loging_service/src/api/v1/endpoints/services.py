@@ -223,7 +223,10 @@ def register_events(
 
     events_list = [ev.model_dump() for ev in payload.events]
     added, updated = se_repo.upsert_events(db, service, events_list, commit=False)
-    _, total = se_repo.list_for_service(db, service)
+    # Голый COUNT(*) вместо `list_for_service(..., limit=1000)`: total нужен
+    # только для audit-details, материализация row'ей — впустую. На сервисе с
+    # >1000 зарегистрированных action'ов прежний код ещё и врал бы (capped).
+    total = se_repo.count_for_service(db, service)
 
     # Self-audit: registry-mutation идёт от service-token caller'а, так что
     # actor_type=service, actor_id=верифицированная X-Service-Identity (или

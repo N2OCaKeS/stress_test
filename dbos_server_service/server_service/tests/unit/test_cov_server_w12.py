@@ -1199,7 +1199,11 @@ class TestIdempotentHitAudit:
                 return ("tsk_existing_123", True)
             return "tsk_existing_123"
 
+        async def fake_dispatch_with_hit(**kwargs):
+            return ("tsk_existing_123", True)
+
         monkeypatch.setattr(wc, "dispatch_task", fake_dispatch)
+        monkeypatch.setattr(wc, "dispatch_task_with_hit", fake_dispatch_with_hit)
 
         token = make_token(
             department_id=dept_a,
@@ -1245,7 +1249,11 @@ class TestIdempotentHitAudit:
                 return ("tsk_brand_new", False)
             return "tsk_brand_new"
 
+        async def fake_dispatch_with_hit(**kwargs):
+            return ("tsk_brand_new", False)
+
         monkeypatch.setattr(wc, "dispatch_task", fake_dispatch)
+        monkeypatch.setattr(wc, "dispatch_task_with_hit", fake_dispatch_with_hit)
 
         token = make_token(
             department_id=dept_a,
@@ -1300,14 +1308,13 @@ class TestIdempotentHitAudit:
         monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
         monkeypatch.setattr(wc, "_ensure_broker_started", fake_ensure)
 
-        result = await wc.dispatch_task(
+        result = await wc.dispatch_task_with_hit(
             task_kind="power.on",
             target_server_id="srv_abc",
             payload={},
             created_by="usr_x",
             request_id=None,
             idempotency_key="race-key",
-            return_hit=True,
         )
         assert result == ("tsk_race_winner", True)
 

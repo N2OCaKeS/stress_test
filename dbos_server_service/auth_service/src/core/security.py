@@ -136,6 +136,29 @@ def hash_opaque_token(raw: str) -> str:
     return _sha256(raw)
 
 
+def mask_email(email: str | None) -> str | None:
+    """Замаскировать email для audit-details.
+
+    Полный email — это PII; loging_reader не должен видеть его plaintext.
+    Формат: первый символ local-part + `***@domain`. Если на входе мусор
+    (без `@` или пустой local-part) — возвращаем `<EMAIL>` целиком, чтобы
+    не утечь даже хвост.
+
+        mask_email("john.doe@corp.local") == "j***@corp.local"
+        mask_email("a@x")                  == "a***@x"
+        mask_email("")                     is None
+        mask_email("notanemail")           == "<EMAIL>"
+    """
+    if not email:
+        return email
+    if "@" not in email:
+        return "<EMAIL>"
+    local, _, domain = email.partition("@")
+    if not local or not domain:
+        return "<EMAIL>"
+    return f"{local[0]}***@{domain}"
+
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _sha256(value: str) -> str:

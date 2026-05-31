@@ -190,6 +190,15 @@ async def get_controller(
             message="No IPMI controller is registered for this server",
         )
 
+    # view-success эмитим ПОСЛЕ reveal'а: иначе при сломанном ciphertext'е
+    # SIEM видит для одного зова success+failure (view ok / credentials_revealed
+    # failure) — однозначно интерпретировать такую пару нельзя. Если
+    # `_reveal_controller_password` поднимает `DECRYPT_FAILED`, success так и
+    # не пишется, остаётся только failure-аудит из самого reveal'а.
+    revealed: str | None = None
+    if has_credentials_action:
+        revealed = _reveal_controller_password(obj, server.department_id)
+
     audit_service.emit(
         "ipmi_controller.view",
         target_id=obj.id, target_type="ipmi_controller",
@@ -201,10 +210,7 @@ async def get_controller(
         },
     )
 
-    if not has_credentials_action:
-        return obj, None
-
-    return obj, _reveal_controller_password(obj, server.department_id)
+    return obj, revealed
 
 
 async def list_controllers_cursor(

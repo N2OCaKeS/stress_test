@@ -125,8 +125,16 @@ class TestWorkerBotForbiddenPower:
             new_id = "tsk_should_never_happen"
             return (new_id, False) if return_hit else new_id
 
+        async def fake_dispatch_with_hit(**kwargs):
+            kwargs["return_hit"] = True
+            return await fake_dispatch(**kwargs)
+
         monkeypatch.setattr(
             "src.api.v1.endpoints.ipmi.worker_client.dispatch_task", fake_dispatch
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.ipmi.worker_client.dispatch_task_with_hit",
+            fake_dispatch_with_hit,
         )
         return calls
 

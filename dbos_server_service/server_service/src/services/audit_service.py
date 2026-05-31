@@ -113,13 +113,37 @@ async def _post_once(
         )
 
 
+def _parse_retry_after_seconds(value: str | None) -> float | None:
+    """Распарсить `Retry-After`. Поддерживается только целочисленный delta-seconds.
+
+    HTTP-date форма (RFC 7231) намеренно игнорируется: некоторые прокси
+    отдают сломанный формат, а парсинг с учётом часовых поясов добавит
+    отдельный класс ошибок в hot-path аудита.
+    """
+    if not value:
+        return None
+    v = value.strip()
+    if not v:
+        return None
+    try:
+        seconds = float(v)
+    except ValueError:
+        return None
+    if seconds < 0:
+        return None
+    # Жёсткий cap, чтобы broken upstream не подвесил emit на минуты.
+    return min(seconds, 30.0)
+
+
 async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> None:
     """Async-отправка одного payload'а в loging_service. Все ошибки глушим в WARNING.
 
     На 429 от loging_service делаем до двух дополнительных попыток с
-    exponential backoff (0.5s, 1.5s) ± jitter. После трёх подряд 429 —
-    drop в WARNING + инкремент `_audit_dropped_429`. Любая транспортная
-    ошибка → drop сразу (best-effort, не блокируем main-flow).
+    exponential backoff (0.5s, 1.5s) ± jitter. Если в ответе есть числовой
+    `Retry-After` (delta-seconds) — берём `max(retry_after, backoff)`,
+    HTTP-date форма игнорируется. После трёх подряд 429 — drop в WARNING +
+    инкремент `_audit_dropped_429`. Любая транспортная ошибка → drop сразу
+    (best-effort, не блокируем main-flow).
     """
     headers = {"Authorization": f"Bearer {api_key}"}
     client = _audit_client
@@ -129,7 +153,9 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
             if response.status_code != 429:
                 return
             if attempt < len(_RETRY_DELAYS_ON_429):
-                delay = _RETRY_DELAYS_ON_429[attempt] * random.uniform(0.8, 1.2)
+                base_delay = _RETRY_DELAYS_ON_429[attempt] * random.uniform(0.8, 1.2)
+                hinted = _parse_retry_after_seconds(response.headers.get("Retry-After"))
+                delay = max(base_delay, hinted) if hinted is not None else base_delay
                 await asyncio.sleep(delay)
         global _audit_dropped_429
         _audit_dropped_429 += 1
@@ -230,16 +256,47 @@ def emit(
         task.add_done_callback(_pending_audit_tasks.discard)
     except RuntimeError:
         # Sync-контекст (asyncio.to_thread в middleware / startup hook).
-        try:
-            httpx.post(
-                f"{logging_url}/api/logging/v1/events",
-                json=payload,
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=2.0,
-            )
-        except httpx.HTTPError as exc:
-            logger.warning("audit_service: failed to send event (sync): %s", exc)
-            logger.info("audit_event_fallback %s", payload)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("audit_service: unexpected error (sync): %s", exc)
-            logger.info("audit_event_fallback %s", payload)
+        _send_sync(payload, logging_url, api_key)
+
+
+# Sync-path backoff'ы. Короче async-варианта: shutdown / startup-hook не
+# должен висеть на минуты, даже если loging_service режет rate-limit'ом.
+_SYNC_RETRY_DELAYS_ON_429 = (0.2, 0.5)
+
+
+def _send_sync(payload: dict, logging_url: str, api_key: str) -> None:
+    """Sync-отправка с симметричным async-пути ретраем на 429.
+
+    Используется в shutdown и других sync-контекстах. Backoff'ы короткие
+    (cap ~0.7s суммарно), чтобы не блокировать lifecycle. На финальном
+    229 — инкремент `_audit_dropped_429`, как и в async-пути.
+    """
+    url_full = f"{logging_url}/api/logging/v1/events"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        for attempt in range(len(_SYNC_RETRY_DELAYS_ON_429) + 1):
+            try:
+                response = httpx.post(url_full, json=payload, headers=headers, timeout=2.0)
+            except httpx.HTTPError as exc:
+                logger.warning("audit_service: failed to send event (sync): %s", exc)
+                logger.info("audit_event_fallback %s", payload)
+                return
+            if response.status_code != 429:
+                return
+            if attempt < len(_SYNC_RETRY_DELAYS_ON_429):
+                base_delay = _SYNC_RETRY_DELAYS_ON_429[attempt]
+                hinted = _parse_retry_after_seconds(response.headers.get("Retry-After"))
+                # Кап на 1.0s даже при щедром Retry-After — sync-path не вправе
+                # подвешивать shutdown больше пары секунд суммарно.
+                delay = min(max(base_delay, hinted) if hinted is not None else base_delay, 1.0)
+                import time as _time
+                _time.sleep(delay)
+        global _audit_dropped_429
+        _audit_dropped_429 += 1
+        logger.warning(
+            "audit_service: drop after 3x429 sync (action=%s)", payload.get("action"),
+        )
+        logger.info("audit_event_fallback %s", payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("audit_service: unexpected error (sync): %s", exc)
+        logger.info("audit_event_fallback %s", payload)

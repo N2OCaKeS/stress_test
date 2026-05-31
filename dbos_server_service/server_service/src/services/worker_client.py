@@ -603,51 +603,21 @@ async def store_prepare_creds(creds_key: str, creds: dict) -> None:
         await client.aclose()
 
 
-async def dispatch_task(
+async def _dispatch_task_inner(
     *,
     task_kind: str,
     target_server_id: str | None,
     payload: dict,
     created_by: str | None,
     request_id: str | None,
-    target_resource_id: str | None = None,
-    idempotency_key: str | None = None,
-    return_hit: bool = False,
-) -> str | tuple[str, bool]:
-    """INSERT task row + kick worker'а. Возвращает новый task_id.
+    target_resource_id: str | None,
+    idempotency_key: str | None,
+) -> tuple[str, bool]:
+    """Общее ядро dispatch'а. Возвращает `(task_id, idempotent_hit)`.
 
-    Если передан ``idempotency_key`` — сначала ищем существующий task с этим
-    ключом (через cross-DB engine). Найден — возвращаем его id без повторной
-    публикации в брокер (идемпотентный путь, защита от дубль-кликов клиента
-    и retries).
-
-    БД `dev_server_worker.tasks` имеет UNIQUE на ``idempotency_key`` —
-    при гонке между двумя процессами с одним ключом INSERT упадёт с
-    IntegrityError: ловим, делаем повторный SELECT, возвращаем найденный id.
-    Если после второй попытки строка всё ещё не найдена — поднимаем
-    ConflictError(409, TASK_IDEMPOTENT_CONFLICT) как сигнал «что-то пошло не
-    так на стороне worker-БД».
-
-    **Zombie-task protection:** если `broker.startup` или `stub.kiq` падают
-    после INSERT'а, `_delete_task_row(new_id)` откатывает строку. Иначе она
-    лежит `queued` навсегда, worker её всё равно не подбирает (см. module
-    docstring).
-    Поднимается `ServiceUnavailableError`:
-
-    * исходный error_code (`WORKER_DB_NOT_CONFIGURED` / `WORKER_REDIS_NOT_CONFIGURED`
-      / `UNKNOWN_TASK_KIND`) — пробрасывается без оборачивания;
-    * любая другая ошибка публикации → `WORKER_UNREACHABLE` (с chained __cause__).
-
-    Клиент видит 503 envelope с конкретным error_code, может retry —
-    например, с тем же `Idempotency-Key` (после rollback'а lookup вернёт None,
-    dispatch создаст новую попытку).
-
-    Если `return_hit=True` — возвращается `(task_id, idempotent_hit)`. Флаг
-    True, когда idempotency_key совпал с уже существующей строкой и новой
-    публикации в брокер не было. Caller (`_dispatch_power` и аналоги в
-    `worker_dispatch.py`) кладёт `idempotent_hit` в audit details, чтобы
-    SIEM отличал «новая task» от «idempotent replay» — иначе оба сценария
-    выглядят одинаково и нельзя посчитать долю реальных повторов.
+    Зовётся из публичных `dispatch_task` / `dispatch_task_with_hit`. Сами
+    публичные методы делятся ради явного контракта возврата, ядро их не
+    дублирует.
     """
     if idempotency_key is not None:
         existing = await _get_task_by_idempotency_key(idempotency_key)
@@ -657,8 +627,7 @@ async def dispatch_task(
                 task_kind=task_kind,
                 target_server_id=target_server_id,
             )
-            existing_id = existing[0]
-            return (existing_id, True) if return_hit else existing_id
+            return existing[0], True
 
     new_id = task_id()
     try:
@@ -686,28 +655,12 @@ async def dispatch_task(
                     task_kind=task_kind,
                     target_server_id=target_server_id,
                 )
-                existing_id = existing[0]
-                return (existing_id, True) if return_hit else existing_id
+                return existing[0], True
         raise ConflictError(
             error_code="TASK_IDEMPOTENT_CONFLICT",
             message="Task insert failed and idempotent retry did not resolve",
         )
 
-    # ── Каскадный rollback на Redis-failure (zombie-task fix) ─────────────
-    # `_insert_task_row` закоммитил row в `dev_server_worker.tasks`. Если
-    # ниже что-то упадёт (`broker.startup` отвалился на Redis-connect,
-    # `stub.kiq` не сделал RPUSH, или task_kind не зарегистрирован) —
-    # DELETE'им строку и поднимаем `ServiceUnavailableError("WORKER_UNREACHABLE")`.
-    # Без этого row лежит `queued` навсегда (zombie task).
-    #
-    # `ServiceUnavailableError` ловится в `endpoints/ipmi.py::_dispatch_power`
-    # и эмитит `audit_service.emit(reason="worker_unreachable")` — клиент
-    # получит 503 и сможет retry. `ServiceUnavailableError` из вложенных
-    # вызовов (`_ensure_broker_started` поднимает `WORKER_REDIS_NOT_CONFIGURED`
-    # при отсутствии env, `_engine_factory` — `WORKER_DB_NOT_CONFIGURED`,
-    # явный raise ниже — `UNKNOWN_TASK_KIND`) проходит через первый except —
-    # row откатан, исключение проброшено с оригинальным error_code, без
-    # маскирования универсальным `WORKER_UNREACHABLE` поверх точного диагноза.
     try:
         await _ensure_broker_started()
         stub = _task_stubs.get(task_kind)
@@ -718,22 +671,93 @@ async def dispatch_task(
             )
         await stub.kiq(new_id)
     except ServiceUnavailableError:
-        # Подтипы (`WORKER_DB_NOT_CONFIGURED` / `WORKER_REDIS_NOT_CONFIGURED`
-        # / `UNKNOWN_TASK_KIND`) уже несут точный error_code — откатываем row
-        # и пробрасываем исходное исключение без оборачивания.
         await _delete_task_row(new_id)
         raise
     except Exception as exc:  # noqa: BLE001
-        # Любая другая ошибка публикации (Redis-connect refused, RESP parse,
-        # network timeout, taskiq internal error) — это эффективно
-        # `WORKER_UNREACHABLE` с точки зрения клиента. Откатываем row и
-        # поднимаем `ServiceUnavailableError`, чтобы клиент получил 503
-        # (через app_exception_handler) и мог retry. Без оборачивания
-        # клиенту улетит 500 — менее информативно и нарушает контракт
-        # «инфраструктурные сбои = 503».
         await _delete_task_row(new_id)
         raise ServiceUnavailableError(
             error_code="WORKER_UNREACHABLE",
             message=f"Failed to publish task to worker broker: {exc.__class__.__name__}",
         ) from exc
-    return (new_id, False) if return_hit else new_id
+    return new_id, False
+
+
+async def dispatch_task(
+    *,
+    task_kind: str,
+    target_server_id: str | None,
+    payload: dict,
+    created_by: str | None,
+    request_id: str | None,
+    target_resource_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> str:
+    """INSERT task row + kick worker'а. Возвращает новый task_id.
+
+    Caller'ам, которым нужен флаг idempotent-replay'я (audit-details), —
+    использовать `dispatch_task_with_hit`. Разделение на два метода вместо
+    параметра `return_hit` сохраняет статическую типизацию: возврат
+    однозначно `str`, без union'а.
+
+    Если передан ``idempotency_key`` — сначала ищем существующий task с этим
+    ключом (через cross-DB engine). Найден — возвращаем его id без повторной
+    публикации в брокер (идемпотентный путь, защита от дубль-кликов клиента
+    и retries).
+
+    БД `dev_server_worker.tasks` имеет UNIQUE на ``idempotency_key`` —
+    при гонке между двумя процессами с одним ключом INSERT упадёт с
+    IntegrityError: ловим, делаем повторный SELECT, возвращаем найденный id.
+    Если после второй попытки строка всё ещё не найдена — поднимаем
+    ConflictError(409, TASK_IDEMPOTENT_CONFLICT) как сигнал «что-то пошло не
+    так на стороне worker-БД».
+
+    **Zombie-task protection:** если `broker.startup` или `stub.kiq` падают
+    после INSERT'а, `_delete_task_row(new_id)` откатывает строку. Иначе она
+    лежит `queued` навсегда, worker её всё равно не подбирает (см. module
+    docstring).
+
+    Поднимается `ServiceUnavailableError`:
+
+    * исходный error_code (`WORKER_DB_NOT_CONFIGURED` / `WORKER_REDIS_NOT_CONFIGURED`
+      / `UNKNOWN_TASK_KIND`) — пробрасывается без оборачивания;
+    * любая другая ошибка публикации → `WORKER_UNREACHABLE` (с chained __cause__).
+    """
+    new_id, _hit = await _dispatch_task_inner(
+        task_kind=task_kind,
+        target_server_id=target_server_id,
+        payload=payload,
+        created_by=created_by,
+        request_id=request_id,
+        target_resource_id=target_resource_id,
+        idempotency_key=idempotency_key,
+    )
+    return new_id
+
+
+async def dispatch_task_with_hit(
+    *,
+    task_kind: str,
+    target_server_id: str | None,
+    payload: dict,
+    created_by: str | None,
+    request_id: str | None,
+    target_resource_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> tuple[str, bool]:
+    """Как `dispatch_task`, но возвращает `(task_id, idempotent_hit)`.
+
+    `idempotent_hit=True`, когда `idempotency_key` совпал с уже существующей
+    строкой и новой публикации в брокер не было. Caller (`_dispatch_power` /
+    `server_prepare_dispatch`) кладёт флаг в audit details, чтобы SIEM
+    отличал «новая task» от «idempotent replay» — иначе оба сценария
+    неразличимы и нельзя посчитать долю реальных повторов.
+    """
+    return await _dispatch_task_inner(
+        task_kind=task_kind,
+        target_server_id=target_server_id,
+        payload=payload,
+        created_by=created_by,
+        request_id=request_id,
+        target_resource_id=target_resource_id,
+        idempotency_key=idempotency_key,
+    )

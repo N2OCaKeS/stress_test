@@ -93,6 +93,7 @@ class TestDispatchSuccess:
             "host": srv.hostname,
             "ssh_port": srv.ssh_port,
             "pattern": "linux-image*",
+            "max_rows": 10000,
             "target_department_id": "dep_a",
         }
 

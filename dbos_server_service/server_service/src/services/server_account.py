@@ -99,6 +99,9 @@ _STRONG_PWD_SYMBOLS = "!@#$%^&*-_=+?"
 _STRONG_PWD_LENGTH = 24
 
 
+_STRONG_PWD_MAX_ATTEMPTS = 32
+
+
 def _generate_strong_password() -> str:
     """Сгенерировать пароль под provision: 24 символа, буква + цифра + символ.
 
@@ -106,15 +109,21 @@ def _generate_strong_password() -> str:
     а полисная проверка проходит при любой перестановке. Алфавит — латиница +
     цифры + ограниченный набор спецсимволов: те, что не ломают shell-цитирование
     (исключены кавычки, бэктики, $ и обратный слэш).
+
+    На 24 символах вероятность не получить все три класса за один candidate
+    исчезающе мала (~10^-30), но цикл всё равно ограничен `_STRONG_PWD_MAX_ATTEMPTS`,
+    чтобы при сломанном `secrets`-источнике или странной перенастройке
+    алфавита не уйти в бесконечный цикл.
     """
     alphabet = string.ascii_letters + string.digits + _STRONG_PWD_SYMBOLS
-    while True:
+    for _ in range(_STRONG_PWD_MAX_ATTEMPTS):
         candidate = "".join(secrets.choice(alphabet) for _ in range(_STRONG_PWD_LENGTH))
         has_letter = any(ch.isalpha() for ch in candidate)
         has_digit = any(ch.isdigit() for ch in candidate)
         has_symbol = any(ch in _STRONG_PWD_SYMBOLS for ch in candidate)
         if has_letter and has_digit and has_symbol:
             return candidate
+    raise RuntimeError("could not generate password matching policy")
 
 
 def _generate_ssh_keypair() -> tuple[str, str]:
@@ -409,6 +418,13 @@ async def get_account(
         )
         raise
 
+    # view-success эмитим ПОСЛЕ reveal'а: при сломанном ciphertext'е SIEM
+    # иначе видит success+failure на один зов. Симметрично с
+    # `ipmi_controller.get_controller`.
+    revealed: str | None = None
+    if has_password_action:
+        revealed = _reveal_account_password(account)
+
     audit_service.emit(
         "server_account.view",
         target_id=account.id, target_type="server_account",
@@ -416,10 +432,7 @@ async def get_account(
         details={"login": account.login},
     )
 
-    if not has_password_action:
-        return account, None
-
-    return account, _reveal_account_password(account)
+    return account, revealed
 
 
 async def list_accounts_cursor(

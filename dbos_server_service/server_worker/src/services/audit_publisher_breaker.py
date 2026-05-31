@@ -173,18 +173,19 @@ async def check() -> None:
 
 
 async def get_state() -> tuple[str, float]:
-    """Read-only snapshot breaker'а: `(state, retry_after_seconds)`.
+    """Snapshot breaker'а с возможной мутацией: `(state, retry_after_seconds)`.
 
-    Имя misleading — метод НЕ pure-read: тот же `_CHECK_SCRIPT`
-    атомарно транзитит `open → half_open`, если cooldown истёк, и
-    может захватить probe-slot. Это сознательный компромисс: отдельный
-    «истинно read-only» Lua пришлось бы поддерживать параллельно с
-    `_CHECK_SCRIPT`, и они бы разъезжались по логике переходов.
-    Caller'у (`run_publisher_loop`) переход в half_open приемлем: он
-    всё равно сделает publish-попытку следующей итерацией, успех её
-    закроет breaker, fail — оставит open. Если когда-нибудь понадобится
-    действительно неинвазивный peek (например, для метрик) — придётся
-    делать отдельный скрипт.
+    WARNING: метод НЕ pure-read. Под капотом крутится тот же `_CHECK_SCRIPT`,
+    который атомарно транзитит `open → half_open`, если cooldown истёк, и
+    может захватить probe-slot. Не использовать из метрик/диагностики, где
+    ожидается чистый peek — он подменит state у других конкурирующих
+    реплик. Если нужен честный snapshot — нужен отдельный read-only Lua,
+    которого сейчас нет.
+
+    Сознательный компромисс: дублирующий read-only скрипт разъезжался бы с
+    `_CHECK_SCRIPT` по логике переходов. Caller'у (`run_publisher_loop`)
+    переход в half_open приемлем: следующая итерация всё равно сделает
+    publish-попытку, успех закроет breaker, fail оставит open.
 
     Возвращает то же что вернул бы `check()` Lua-скрипт, но без raise'а
     при open. Нужен `run_publisher_loop` — он хочет узнать «надо ли

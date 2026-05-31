@@ -10,36 +10,29 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from src.models import BotAccount
+from src.services import audit_service as audit_mod
 from src.services import bot_ip_tracker
 from src.utils.ids import bot_id as new_bot_id
 
 
 @pytest.fixture()
 def captured_audit(monkeypatch):
+    """Spy на `audit_service.emit` — без HTTP-обёрток.
+
+    Раньше тест патчил `httpx.post` + `httpx.AsyncClient` + `get_settings`
+    и ловил payload на сетевом уровне. Под emit'ом сидит
+    `loop.create_task(_send_to_logging_service(...))` — задача планируется
+    в фоне и до конца теста может не успеть `await` HTTP-call'у, capture
+    оставался пустым. Прямой spy на `emit` снимает payload синхронно.
+    """
     captured: list[dict] = []
+    original = audit_mod.emit
 
-    def fake_sync_post(url, json, headers, timeout):
-        captured.append(json)
+    def _spy(action, actor_id=None, **kw):
+        captured.append({"action": action, "actor_id": actor_id, **kw})
+        return original(action, actor_id, **kw)
 
-    class _AsyncClient:
-        def __init__(self, *a, **k): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *a): pass
-        async def post(self, url, json, headers):
-            captured.append(json)
-            class R:
-                status_code = 201
-            return R()
-
-    monkeypatch.setattr("src.services.audit_service.httpx.post", fake_sync_post)
-    monkeypatch.setattr("src.services.audit_service.httpx.AsyncClient", _AsyncClient)
-    monkeypatch.setattr(
-        "src.services.audit_service.get_settings",
-        lambda: type("S", (), {
-            "logging_service_url": "http://test",
-            "logging_service_api_key": "k",
-        })(),
-    )
+    monkeypatch.setattr(audit_mod, "emit", _spy)
     return captured
 
 
@@ -56,15 +49,15 @@ async def _make_bot(db, dept_id, name) -> BotAccount:
     return bot
 
 
-import pytest
-
-
-@pytest.mark.xfail(reason="settings monkeypatch не подтягивается до module-level cached read; fixture cleanup в W12", strict=False)
 async def test_suspicious_multi_ip_uses_window_from_settings(
     db, dept_a, monkeypatch, captured_audit,
 ):
     from src.core import config as config_mod
 
+    # `get_settings` — lru_cache-singleton, поэтому monkeypatch на сам объект
+    # подменяет значение для всех последующих читателей в этом тесте.
+    # `cache_clear()` тут не нужен: tracker берёт settings в runtime, и
+    # после fixture-teardown'а monkeypatch вернёт оригинал.
     settings = config_mod.get_settings()
     monkeypatch.setattr(settings, "bot_suspicious_ip_window_seconds", 1800)
 

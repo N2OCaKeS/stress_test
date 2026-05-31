@@ -105,7 +105,7 @@ class TestPushNonBlocking:
         assert all(s.closes == 1 for s in sessions)
 
 
-# ── bounded buffer + dropped_total ──────────────────────────────────────────
+# ── bounded buffer + dropped counters ───────────────────────────────────────
 
 
 class TestBoundedBuffer:
@@ -129,7 +129,10 @@ class TestBoundedBuffer:
             outbox.push_nowait(_env("third"))
 
             assert outbox.qsize() == 2
-            assert outbox.dropped_total() == 1
+            assert outbox.dropped_overflow_total() == 1
+            # cause-разделение: cancel/shutdown в этом сценарии не происходит
+            assert outbox.dropped_cancel_total() == 0
+            assert outbox.dropped_shutdown_total() == 0
 
             remaining = []
             while outbox.qsize():

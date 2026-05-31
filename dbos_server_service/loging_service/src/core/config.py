@@ -192,7 +192,7 @@ class Settings(BaseSettings):
     # Бюджет на draining self-audit outbox'а при shutdown'е (см.
     # `main.lifespan`). Lifespan ждёт до этого числа секунд, пока drain
     # допишет остаток `asyncio.Queue`; всё, что не успело, теряется и
-    # логируется как warning + инкремент `audit_outbox.dropped_total`.
+    # логируется как warning + инкремент `audit_outbox.dropped_shutdown_total`.
     # 2.0s — historic default; обычно достаточно для остатков http.*
     # events, но под нагрузкой / на slow БД полезно поднять.
     audit_drain_timeout_seconds: float = Field(
@@ -201,7 +201,7 @@ class Settings(BaseSettings):
 
     # Размер in-memory буфера self-audit outbox'а. На push-стороне
     # middleware ничего не блокирует: переполнение дропает старейший
-    # элемент и инкрементит `dropped_total`. 4096 рассчитано так, чтобы
+    # элемент и инкрементит `dropped_overflow_total`. 4096 рассчитано так, чтобы
     # на 4 uvicorn-воркерах × ~100 RPS spike'а у drain'а было ≥10 секунд
     # форы при пуле в 30 коннектов; поднимать под более тяжёлый трафик.
     audit_outbox_max_size: int = Field(

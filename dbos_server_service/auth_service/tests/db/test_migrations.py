@@ -215,17 +215,37 @@ class TestBotServiceRolesTable:
 
 # ── Downgrade ────────────────────────────────────────────────────────────────
 
+def _resolve_revision_before(target_revision: str) -> str:
+    """Найти ревизию-предка `target_revision` через alembic.script.
+
+    Возвращает `down_revision` указанной ревизии — нужен чтобы downgrade'ать
+    «до момента ПЕРЕД target», т.е. снести ровно её, не зависая от того,
+    сколько миграций поверх неё накатилось с момента написания теста.
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    service_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    cfg = Config(os.path.join(service_dir, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(service_dir, "src/db/migrations"))
+    sd = ScriptDirectory.from_config(cfg)
+    script = sd.get_revision(target_revision)
+    assert script is not None, f"revision {target_revision} not found"
+    down = script.down_revision
+    assert isinstance(down, str), f"expected single down_revision for {target_revision}, got {down!r}"
+    return down
+
+
 class TestDowngrade:
-    @pytest.mark.xfail(
-        reason="Хардкод `downgrade -1` ожидает что предпоследняя миграция — "
-        "bot_service_roles, но head сместился (теперь c7d8e9f0a1b2 / "
-        "b5c6d7e8f9a0 поверх). Чинится резолвом нужной ревизии через "
-        "alembic.script вместо хардкода dropdown шагов.",
-        strict=False,
-    )
+    # head ревизия, на которой `bot_service_roles` появилась. Резолв в
+    # `down_revision` через `_resolve_revision_before` даёт точку «прямо
+    # перед этой миграцией» — индекс шагов больше не считаем руками.
+    BOT_SERVICE_ROLES_REV = "a3b4c5d6e7f8"
+    DEPT_SCOPE_REV = "f2a3b4c5d6e7"
+
     def test_downgrade_one_step_drops_bot_service_roles(self, fresh_db):
         _alembic("upgrade", "head")
-        res = _alembic("downgrade", "-1")
+        target = _resolve_revision_before(self.BOT_SERVICE_ROLES_REV)
+        res = _alembic("downgrade", target)
         assert res.returncode == 0, res.stderr
         rows = _inspect(
             "SELECT table_name FROM information_schema.tables "
@@ -233,17 +253,11 @@ class TestDowngrade:
         )
         assert rows == []
 
-    @pytest.mark.xfail(
-        reason="Хардкод `downgrade -2` опирался на цепочку до bot_service_roles, "
-        "после новых миграций (PKCE, revoked_reason) -2 уже не доходит до "
-        "f2a3b4c5d6e7. Чинится резолвом revision-targeta через alembic.script.",
-        strict=False,
-    )
     def test_downgrade_dept_scope_restores_old_uniq(self, fresh_db):
         """Откат f2a3b4c5d6e7 убирает department_id и возвращает старый uniq."""
         _alembic("upgrade", "head")
-        # Откат на 2 шага: a3b4c5d6e7f8 → f2a3b4c5d6e7 → e1f2a3b4c5d6
-        res = _alembic("downgrade", "-2")
+        target = _resolve_revision_before(self.DEPT_SCOPE_REV)
+        res = _alembic("downgrade", target)
         assert res.returncode == 0, res.stderr
         rows = _inspect(
             "SELECT conname FROM pg_constraint "

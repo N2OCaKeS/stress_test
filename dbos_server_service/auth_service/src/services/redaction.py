@@ -45,6 +45,12 @@ _SECRET_KEYS = {
     "service_api_key", "logging_service_api_key",
 }
 _HASH_KEYS = {
+    # Конкретные ключи, под которыми лежат именно хэши секретов. `hash` —
+    # обобщённый, но в audit-details auth_service'а он используется только
+    # для password_hash/token_hash (исторические синонимы); в других
+    # доменах (`permission_hash`, `etag_hash`, `content_hash`) ключ не
+    # секретный и под `<HASH>` его маскировать не нужно — таких ключей в
+    # сетe ключей нет, и `_classify_key` отдаёт None.
     "password_hash", "hash", "token_hash", "pwd_hash",
 }
 _CREDENTIAL_KEYS = {

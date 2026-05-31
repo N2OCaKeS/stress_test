@@ -154,10 +154,10 @@ class TestAuditOutboxDoubleFull:
     def test_double_full_returns_false_and_bumps_dropped_once(self):
         """Симулируем ситуацию когда get_nowait даёт QueueEmpty (drain успел
         опустошить очередь между put и get), а повторный put_nowait снова
-        бросает QueueFull. push_nowait возвращает False и dropped_total
-        растёт на 1 — это потеря свежего envelope'а; eviction-промах не
-        считается, потому что drain легитимно забрал старый элемент.
-        Тест патчит Queue напрямую."""
+        бросает QueueFull. push_nowait возвращает False и
+        dropped_overflow_total растёт на 1 — это потеря свежего envelope'а;
+        eviction-промах не считается, потому что drain легитимно забрал
+        старый элемент. Тест патчит Queue напрямую."""
 
         async def run():
             outbox = AuditOutbox(
@@ -202,7 +202,7 @@ class TestAuditOutboxDoubleFull:
             outbox._queue.get_nowait = patched_get
 
             result = outbox.push_nowait(_env("new"))
-            return result, outbox.dropped_total(), call_log
+            return result, outbox.dropped_overflow_total(), call_log
 
         result, dropped, log = asyncio.run(run())
         assert result is False
@@ -242,9 +242,10 @@ class TestAuditOutboxDrainRemainingTimeout:
             for i in range(4):
                 outbox._queue.put_nowait(_env(f"ev.{i}"))
 
-            # Бюджет = 0 → сразу timeout, все события теряются
+            # Бюджет = 0 → сразу timeout, все события теряются как
+            # shutdown-cause (финальный _drain_remaining).
             await outbox._drain_remaining(timeout=0.0)
-            return outbox.dropped_total()
+            return outbox.dropped_shutdown_total()
 
         dropped = asyncio.run(run())
         # При timeout=0 и непустой очереди все события считаются потерянными
@@ -322,17 +323,24 @@ class TestAuditOutboxCounters:
             outbox._loop = asyncio.get_running_loop()
             outbox._queue = asyncio.Queue(maxsize=2)
 
-            # Переполнение — dropped_total += 1
+            # Переполнение — dropped_overflow_total += 1
             outbox._queue.put_nowait(_env("a"))
             outbox._queue.put_nowait(_env("b"))
             outbox.push_nowait(_env("c"))
 
             # Сбрасываем
             outbox.reset_counters_for_tests()
-            return outbox.dropped_total(), outbox.drained_total()
+            return (
+                outbox.dropped_overflow_total(),
+                outbox.dropped_cancel_total(),
+                outbox.dropped_shutdown_total(),
+                outbox.drained_total(),
+            )
 
-        dropped, drained = asyncio.run(run())
-        assert dropped == 0
+        overflow, cancel, shutdown, drained = asyncio.run(run())
+        assert overflow == 0
+        assert cancel == 0
+        assert shutdown == 0
         assert drained == 0
 
 

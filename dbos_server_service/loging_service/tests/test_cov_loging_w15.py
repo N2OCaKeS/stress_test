@@ -426,8 +426,13 @@ class TestDroppedCancelTotal:
         assert cancel_dropped == 0
         assert drained == 3
 
-    def test_dropped_total_aggregates_all_three_counters(self):
-        """dropped_total() = overflow + cancel + shutdown."""
+    def test_dropped_counters_are_independent(self):
+        """Каждая из трёх причин потерь доступна через свой геттер.
+
+        SIEM-дашборд сам решает, складывать ли их: cause-сигнал важнее
+        одной агрегированной цифры (overflow = перегрузка, cancel =
+        cancellation-race, shutdown = тесный grace-period).
+        """
         async def run():
             outbox = AuditOutbox(
                 max_size=1,
@@ -445,10 +450,16 @@ class TestDroppedCancelTotal:
                 outbox._dropped_cancel_total = 3
                 outbox._dropped_shutdown_total = 5
 
-            return outbox.dropped_total()
+            return (
+                outbox.dropped_overflow_total(),
+                outbox.dropped_cancel_total(),
+                outbox.dropped_shutdown_total(),
+            )
 
-        total = asyncio.run(run())
-        assert total == 10
+        overflow, cancel, shutdown = asyncio.run(run())
+        assert overflow == 2
+        assert cancel == 3
+        assert shutdown == 5
 
 
 # ── 5. audit_access: 429 на POST /services/{svc}/events ──────────────────────

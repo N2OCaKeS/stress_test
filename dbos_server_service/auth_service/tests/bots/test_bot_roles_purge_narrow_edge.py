@@ -63,14 +63,18 @@ def _capture(monkeypatch):
     return captured
 
 
-@pytest.mark.xfail(
-    reason="needs alignment after F-W12 src refactor: purge audit now also emits with removed_role_count=0",
-    strict=False,
-)
-async def test_narrowing_with_no_roles_emits_no_purge_audit(
+async def test_narrowing_with_no_roles_still_emits_purge_audit(
     client, db, admin_token, dept_a_with_service, service_x, monkeypatch,
 ):
-    """Сужение allowed_services у бота без ролей: removed_role_count=0, purge audit не эмитится."""
+    """Сужение allowed_services у бота без ролей: removed_role_count=0, purge audit всё равно эмитится.
+
+    Гейт в `bot_service` — `if removed_services:` (список не пуст), а не
+    `if removed_role_count > 0`. Сам факт сужения allowed_services уже
+    подлежит аудиту: SIEM хочет видеть, что у бота отняли сервис, даже
+    если ролей под него ещё не выдали. Поле `removed_role_count=0`
+    остаётся в details — оператор по нему отличит «сужение без потерь»
+    от «сужение с purge ролей».
+    """
     captured = _capture(monkeypatch)
     await _grant_service_to_dept(db, dept_a_with_service.id, "no_roles_svc")
     await db.commit()
@@ -100,9 +104,10 @@ async def test_narrowing_with_no_roles_emits_no_purge_audit(
         e for e in captured
         if e.get("action") == "bot.roles_purged_on_services_narrowed"
     ]
-    assert not purge_events, (
-        f"без ролей purge audit не должен эмититься: {purge_events}"
-    )
+    assert purge_events, "purge audit ожидается даже без удалённых ролей"
+    details = purge_events[-1]["details"]
+    assert details["removed_role_count"] == 0
+    assert details["removed_services"] == ["no_roles_svc"]
 
 
 async def test_narrowing_all_services_purges_all_roles(

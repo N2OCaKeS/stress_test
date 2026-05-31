@@ -33,10 +33,11 @@ Outbox-паттерн: `push_nowait()` кладёт payload во внутрен�
   медленнее обычного. SIEM по росту именно этого counter'а отличает
   «не успели на graceful shutdown» от «не успеваем под нагрузкой».
 
-Геттеры (`dropped_overflow_total()` / `dropped_cancel_total()` /
-`dropped_shutdown_total()` + агрегатор `dropped_total()`) — публичные;
-ожидаются к экспозу через будущий `/metrics`, до тех пор читаются тестами
-напрямую через инстанс outbox'а.
+Геттеры `dropped_overflow_total()` / `dropped_cancel_total()` /
+`dropped_shutdown_total()` — публичные; ожидаются к экспозу через будущий
+`/metrics`, до тех пор читаются тестами напрямую через инстанс outbox'а.
+Агрегата нет специально: SIEM по одному числу не отличит DoS-перегрузку от
+рваного shutdown'а — суммирование делается на стороне дашборда.
 
 Sync-однострочник `_emit_audit` остаётся (его дёргают тесты и retention
 sweep с собственной сессией), но горячий путь middleware теперь идёт через
@@ -494,25 +495,6 @@ class AuditOutbox:
 
     def qsize(self) -> int:
         return self._queue.qsize() if self._queue is not None else 0
-
-    def dropped_total(self) -> int:
-        """Сумма всех потерь — overflow + cancel + shutdown.
-
-        .. deprecated::
-            Аггрегат теряет cause-сигнал: оператор по одному числу не
-            отличит DoS-перегрузку (overflow) от рваного shutdown'а
-            (shutdown) или cancellation-race'а (cancel). Используй
-            отдельные геттеры `dropped_overflow_total` /
-            `dropped_cancel_total` / `dropped_shutdown_total`. Метод
-            оставлен для backward-compat с существующими тестами и
-            дашбордами, новые места не должны на него опираться.
-        """
-        with self._counters_lock:
-            return (
-                self._dropped_overflow_total
-                + self._dropped_cancel_total
-                + self._dropped_shutdown_total
-            )
 
     def dropped_overflow_total(self) -> int:
         """События, выброшенные из-за переполнения bounded buffer'а."""

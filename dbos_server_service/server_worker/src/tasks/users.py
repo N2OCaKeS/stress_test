@@ -384,6 +384,12 @@ async def account_provision(task_id: str) -> None:
                 "present_on_server": True,
             }
         finally:
+            # Оба ключа кладёт `worker_dispatch._dispatch_account_on_host`,
+            # когда `inject_provision_creds=True`. Других tasks (update_on_host,
+            # deprovision) этот dispatch-путь не использует — там в payload'е
+            # этих полей нет, поэтому отдельных scrub'ов им не делаем. Если
+            # когда-нибудь добавим inject в update/deprovision — список
+            # синхронизировать тоже там, не оставлять fallthrough.
             try:
                 async with AsyncSessionLocal() as scrub_session:
                     await task_repo.scrub_payload_keys(

@@ -15,9 +15,13 @@ Submit-фейл (network / 4xx / 5xx) НЕ роняет task'у в FAILED: сп�
 `submit_status=submit_failed:<code>`.
 """
 
+import json
 import logging
 
+import redis.asyncio as aioredis
+
 from src.clients.ssh import SshError
+from src.core.config import get_settings
 from src.core.exceptions import CredentialFetchError
 from src.db.session import AsyncSessionLocal
 from src.main import broker
@@ -26,6 +30,110 @@ from src.services import server_service_client, ssh_client
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
+
+# Маркер, которым `scrub_payload_keys` заменяет секретные значения в payload'е.
+# Если на retry-попытке `_impl` видит это значение в payload-поле — значит,
+# предыдущая попытка уже почистила inline-секреты, и доверять payload нельзя:
+# `chpasswd` или `authorized_keys` с literal'ом `"<scrubbed>"` тихо испортили
+# бы аккаунт. Должно строго совпадать с `replacement` в
+# `repositories/task.scrub_payload_keys`.
+SCRUBBED_SENTINEL = "<scrubbed>"
+
+# Префикс для Redis-stash'а inline-creds provision'а. Симметрично
+# `_ACCOUNT_ROTATE_KEY_PREFIX` в `tasks/passwords.py`: tasks/payload row в БД
+# чистим в `finally` (defense-in-depth от утечки в `tasks.payload`), но между
+# попытками те же `password_plaintext` / `ssh_private_key_plaintext` нужны —
+# хранилище server_service выдаёт inline-креды один раз через
+# dispatch-канал, повторно их запросить нельзя.
+_PROVISION_INLINE_KEY_PREFIX = "dbos:provision_inline:"
+
+# TTL stash'а покрывает максимальный exponential back-off (`_runner.
+# _compute_backoff_delay` capped 300s) с запасом на сетевые тормоза. Если
+# воркер всё-таки не успел дойти до submit'а за это окно — задача FAILED,
+# оператор инициирует новый provision и server_service сгенерит свежие креды.
+_PROVISION_INLINE_STASH_TTL_SECONDS = 1800
+
+
+async def _read_provision_inline(task_id: str) -> tuple[str | None, str | None]:
+    """Прочитать stash'енные inline-креды provision'а.
+
+    Возвращает `(password_plaintext, ssh_private_key_plaintext)`. None
+    для каждого поля означает «не было в payload первой попытки» либо
+    «TTL истёк». Поднимать новые retry'и при истечении TTL — задача
+    оператора (server_service сгенерирует новые креды).
+    """
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        raw = await client.get(_PROVISION_INLINE_KEY_PREFIX + task_id)
+    finally:
+        await client.aclose()
+    if raw is None:
+        return None, None
+    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    return data.get("password_plaintext"), data.get("ssh_private_key_plaintext")
+
+
+async def _store_provision_inline(
+    task_id: str,
+    password_plaintext: str | None,
+    ssh_private_key_plaintext: str | None,
+) -> None:
+    """Положить inline-креды provision'а в Redis ДО finally-scrub'а payload'а.
+
+    Stash переживает retry'и: на следующем заходе `_impl` payload в БД уже
+    содержит `"<scrubbed>"`, и единственный способ восстановить оригинал —
+    Redis. Если ни password, ни private_key не пришли — stash не пишем
+    (нечего сохранять, лишний ключ в Redis не нужен).
+    """
+    if password_plaintext is None and ssh_private_key_plaintext is None:
+        return
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        await client.set(
+            _PROVISION_INLINE_KEY_PREFIX + task_id,
+            json.dumps({
+                "password_plaintext": password_plaintext,
+                "ssh_private_key_plaintext": ssh_private_key_plaintext,
+            }),
+            ex=_PROVISION_INLINE_STASH_TTL_SECONDS,
+        )
+    finally:
+        await client.aclose()
+
+
+async def _delete_provision_inline(task_id: str) -> None:
+    """Дропнуть stash после успешного submit'а. TTL подстрахует."""
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        try:
+            await client.delete(_PROVISION_INLINE_KEY_PREFIX + task_id)
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "failed to delete provision inline stash", exc_info=True,
+            )
+    finally:
+        await client.aclose()
+
+
+def _unscrub(value):
+    """Вернуть None, если значение — sentinel `"<scrubbed>"`.
+
+    Защита от того, что на retry'е `_impl` прочтёт замаскированное значение
+    из persisted payload и использует его как валидный секрет (chpasswd
+    принял бы literal `"<scrubbed>"` и сломал бы вход на хост).
+    """
+    if value == SCRUBBED_SENTINEL:
+        return None
+    return value
 
 
 async def _account_creds(
@@ -44,7 +152,9 @@ async def _account_creds(
     """
     login = payload.get("login")
     is_managed = bool(payload.get("is_managed"))
-    if is_managed and not login:
+    # Whitespace-only также невалидно — login для useradd/usermod не может быть
+    # пустым после strip.
+    if is_managed and (not login or not login.strip()):
         # Managed-ветка ssh_client.modify_user/delete_user подставляет
         # `creds["login"]` в `useradd/usermod/userdel` через `_validate_login`,
         # который сразу падает на `None`/пустоте с TypeError из re.match.
@@ -203,21 +313,40 @@ async def account_provision(task_id: str) -> None:
         # F23-B: discovered-сценарий — server_service кладёт сгенерированные
         # креды (`password_plaintext` + `ssh_public_key` + `force_replace`)
         # прямо в payload. Тот же канал используется для re-provision после
-        # переустановки ОС (`force_replace=True`). Если поля есть — берём
-        # их без отдельного fetch'а internal-ручки.
-        inline_password = payload.get("password_plaintext")
+        # переустановки ОС (`force_replace=True`).
+        #
+        # Inline-секреты живут в Redis-stash под task_id'ом до конца ротации
+        # попыток: payload-row в БД мы чистим в `finally` (защита от утечки
+        # в `tasks.payload`), но retry-попытке те же значения нужны заново,
+        # а server_service отдаёт их разово через dispatch-канал. На retry'е
+        # `_impl` сначала смотрит в stash: если он есть — берёт оттуда, если
+        # пустой (первая попытка) — пишет туда то, что пришло в payload, и
+        # стартует scrub в `finally`. `_unscrub` глушит literal-sentinel
+        # `"<scrubbed>"` на случай, если stash потерян (TTL/Redis-restart),
+        # а retry уже видит scrubbed-payload: лучше не выставить пароль на
+        # хост, чем поставить literal `"<scrubbed>"` (chpasswd не различает).
+        stashed_password, stashed_private_key = await _read_provision_inline(task_id)
+        inline_password = stashed_password or _unscrub(payload.get("password_plaintext"))
+        inline_private_key = stashed_private_key or _unscrub(payload.get("ssh_private_key_plaintext"))
         inline_public_key = payload.get("ssh_public_key")
         force_replace = bool(payload.get("force_replace"))
+
+        # Пишем stash до первого внешнего вызова (а значит — до первого
+        # возможного исключения, после которого `finally` зачистит payload).
+        # Если ничего полезного в payload не было — `_store_provision_inline`
+        # сам no-op. Идемпотентно: если stash уже жил (повторный заход
+        # после crash'а ровно между store и scrub) — перезаписываем тем же
+        # значением.
+        if stashed_password is None and stashed_private_key is None:
+            await _store_provision_inline(task_id, inline_password, inline_private_key)
 
         # Defense-in-depth: inline-креды из discovered-сценария (F23-B) —
         # `password_plaintext` и `ssh_private_key_plaintext` — приходят
         # прямо в payload и без явной зачистки остаются в `tasks.payload`
         # до retention cleanup'а (до 30 дней). Стираем их в `finally` —
         # тогда scrub срабатывает и на happy-path'е, и на любом исключении
-        # из ssh_client / submit_provision_status. Иначе при первой неудаче
-        # plaintext остаётся в payload и доступен ещё три retry × минуты,
-        # хотя сами эти retry уже используют только то, что в payload'е
-        # лежало в момент enqueue — secret-rotate'у этот scrub не мешает.
+        # из ssh_client / submit_provision_status. Дубликат секрета между
+        # попытками держит Redis-stash, не payload-row.
         # `ssh_public_key` — не секрет, его оставляем для форенсики.
         # Best-effort: если scrub упал, основной поток не валим.
         try:
@@ -245,6 +374,9 @@ async def account_provision(task_id: str) -> None:
             await server_service_client.submit_provision_status(
                 server_id, account_id, "provision", True, target_dept,
             )
+            # Успех — stash больше не нужен. TTL подстрахует, явный DELETE
+            # сокращает окно жизни plaintext'а в Redis.
+            await _delete_provision_inline(task_id)
             return {
                 "server_id": server_id,
                 "account_id": account_id,

@@ -618,3 +618,44 @@ async def test_account_admin_can_ban_via_patch_status(client, admin_token, user_
     assert resp.json()["status"] == "banned"
     await db.refresh(user_a)
     assert user_a.status == UserStatus.BANNED
+
+
+# ── cross-department transfer guard ───────────────────────────────────────────
+
+
+async def test_dept_admin_cannot_transfer_user_to_other_dept(
+    client, dept_admin_a_token, user_a, dept_b,
+):
+    """DA dept_a → PATCH user_a (своего отдела) {"department_id": dept_b}.
+
+    Guard verifies actor.dept == user.dept, не new dept — без явной проверки
+    DA мог бы перевыкинуть юзера из своего отдела в чужой без согласия
+    target-dept'а. Cross-dept transfer должен быть привилегией только
+    account_admin'а.
+    """
+    resp = await _patch(
+        client, dept_admin_a_token, user_a.id, {"department_id": dept_b.id},
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["error_code"] == "USER_UPDATE_FORBIDDEN"
+
+
+async def test_dept_admin_same_dept_patch_without_dept_change_still_works(
+    client, dept_admin_a_token, user_a, dept_a,
+):
+    """DA своего отдела PATCH'ит user_a с тем же department_id — должно работать
+    (idempotent no-op). Гард не должен ловить self-transfer'ы."""
+    resp = await _patch(
+        client, dept_admin_a_token, user_a.id, {"department_id": dept_a.id},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_account_admin_can_still_transfer_user_cross_dept(
+    client, admin_token, user_a, dept_b,
+):
+    """account_admin не должен попадать под cross-dept guard — регрессия,
+    зеркало test_admin_moves_user_to_another_department выше."""
+    resp = await _patch(client, admin_token, user_a.id, {"department_id": dept_b.id})
+    assert resp.status_code == 200
+    assert resp.json()["department_id"] == dept_b.id

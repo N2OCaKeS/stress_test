@@ -382,7 +382,11 @@ class TestDrainRemainingCancelled:
             # Подменяем _flush_batch на корутину, которая всегда бросает
             # CancelledError — имитация force-cancel'а в await'е flush'а
             # после того, как drain_remaining уже выгребла batch из очереди.
-            async def cancelling_flush(batch):
+            # Сигнатура `(batch, committed_ids=None)` зеркалит реальную: с тех
+            # пор как `_drain_remaining` передаёт `committed_ids` для коррекции
+            # `dropped_shutdown` на cancel-after-commit, моки должны принимать
+            # второй аргумент, чтобы не падать на TypeError.
+            async def cancelling_flush(batch, committed_ids=None):
                 raise asyncio.CancelledError()
 
             outbox._flush_batch = cancelling_flush  # type: ignore[assignment]
@@ -420,7 +424,7 @@ class TestDrainRemainingCancelled:
             outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
             outbox._queue.put_nowait(_env("ev-1"))
 
-            async def cancelling_flush(batch):
+            async def cancelling_flush(batch, committed_ids=None):
                 raise asyncio.CancelledError()
 
             outbox._flush_batch = cancelling_flush  # type: ignore[assignment]
@@ -758,3 +762,140 @@ class TestBumpFailureNotDoubleCountedOnCommitFail:
 
         asyncio.run(run())
         assert failures["n"] == len(batch)
+
+
+# ── _drain_remaining: committed events не должны учитываться как dropped_shutdown ─
+
+
+class TestDrainRemainingCommittedNotDropped:
+    """До фикса `_drain_remaining` вызывал `_flush_batch(batch)` без `committed_ids`,
+    так что cancel-ветка считала весь батч `lost`, даже если sync-target успел
+    `db.commit()`. Это бампило `_dropped_shutdown_total` на уже записанных в БД
+    events — двойной учёт и ложный alert «потеряно N»."""
+
+    def test_cancel_after_commit_in_drain_remaining_does_not_bump_dropped_shutdown(self):
+        outbox = AuditOutbox(
+            max_size=8,
+            batch_size=4,
+            poll_interval_seconds=5.0,
+            session_factory=_FakeSession,
+            writer=lambda db, env: None,
+            bump_failure=lambda: 0,
+        )
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+            for i in range(3):
+                outbox._queue.put_nowait(_env(f"ev-{i}"))
+
+            # Подменяем `_flush_batch` так, чтобы он:
+            #   1) пометил все envelope'ы как committed (типа `db.commit()` успел);
+            #   2) пробросил CancelledError ровно как сделал бы реальный flush,
+            #      если cancel прилетел сразу после returning `to_thread`.
+            async def commit_then_cancel(batch, committed_ids=None):
+                if committed_ids is None:
+                    committed_ids = set()
+                for env in batch:
+                    committed_ids.add(id(env))
+                raise asyncio.CancelledError()
+
+            outbox._flush_batch = commit_then_cancel  # type: ignore[assignment]
+
+            try:
+                await outbox._drain_remaining(timeout=1.0)
+            except asyncio.CancelledError:
+                pass
+
+            return (
+                outbox.dropped_shutdown_total(),
+                outbox._queue.qsize() if outbox._queue is not None else -1,
+            )
+
+        dropped, residue = asyncio.run(run())
+        # batch_size=4, всего 3 envelope'а — все ушли в batch, committed_ids
+        # вернёт 3, queue residue = 0. lost = 3 - 3 + 0 = 0.
+        assert dropped == 0, (
+            f"committed-в-БД events не должны учитываться в dropped_shutdown "
+            f"(ожидали 0, получили {dropped})"
+        )
+        assert residue == 0
+
+    def test_cancel_partial_commit_in_drain_remaining_counts_only_uncommitted(self):
+        """Batch=3 envelope'а, sync-target успел закоммитить только 1, остальные
+        2 — нет (cancel посередине). dropped_shutdown_total должен учесть
+        ровно 2, не 3."""
+        outbox = AuditOutbox(
+            max_size=8,
+            batch_size=4,
+            poll_interval_seconds=5.0,
+            session_factory=_FakeSession,
+            writer=lambda db, env: None,
+            bump_failure=lambda: 0,
+        )
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+            envs = [_env(f"ev-{i}") for i in range(3)]
+            for env in envs:
+                outbox._queue.put_nowait(env)
+
+            async def partial_commit_then_cancel(batch, committed_ids=None):
+                if committed_ids is None:
+                    committed_ids = set()
+                # Только первый envelope успел в БД.
+                committed_ids.add(id(batch[0]))
+                raise asyncio.CancelledError()
+
+            outbox._flush_batch = partial_commit_then_cancel  # type: ignore[assignment]
+
+            try:
+                await outbox._drain_remaining(timeout=1.0)
+            except asyncio.CancelledError:
+                pass
+
+            return outbox.dropped_shutdown_total()
+
+        dropped = asyncio.run(run())
+        assert dropped == 2, (
+            f"один committed envelope не должен учитываться, "
+            f"остальные 2 — должны (ожидали 2, получили {dropped})"
+        )
+
+    def test_cancel_before_commit_in_drain_remaining_counts_full_batch(self):
+        """Регрессия: если sync-target НЕ успел до commit'а
+        (committed_ids пуст), `_drain_remaining` ДОЛЖЕН по-прежнему бампить
+        shutdown counter на весь batch — фикс не меняет это поведение."""
+        outbox = AuditOutbox(
+            max_size=16,
+            batch_size=2,
+            poll_interval_seconds=5.0,
+            session_factory=_FakeSession,
+            writer=lambda db, env: None,
+            bump_failure=lambda: 0,
+        )
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+            for i in range(5):
+                outbox._queue.put_nowait(_env(f"ev-{i}"))
+
+            async def cancel_before_commit(batch, committed_ids=None):
+                # committed_ids остаётся пустым — имитируем force-cancel
+                # до того, как sync-часть стартовала.
+                raise asyncio.CancelledError()
+
+            outbox._flush_batch = cancel_before_commit  # type: ignore[assignment]
+
+            try:
+                await outbox._drain_remaining(timeout=1.0)
+            except asyncio.CancelledError:
+                pass
+
+            return outbox.dropped_shutdown_total()
+
+        dropped = asyncio.run(run())
+        # batch=2, queue residue=3 → lost = 2 - 0 + 3 = 5.
+        assert dropped == 5

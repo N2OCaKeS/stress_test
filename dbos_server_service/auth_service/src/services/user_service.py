@@ -288,6 +288,23 @@ async def update_user(
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
         filtered.pop("platform_role", None)
 
+    # Cross-dept transfer = only account_admin. Guard выше сверял
+    # `actor.dept == user.dept` (DA своего отдела может PATCH'ить юзера),
+    # но не проверял целевой department_id — DA dept_alpha мог PATCH'ить
+    # юзера `{"department_id": dept_beta}` и выкинуть юзера из своего же
+    # отдела в чужой. Симметрия с `assign_roles` (роли — внутри dept'а
+    # юзера) и `create_user` (DA создаёт только в своём отделе).
+    requested_dept_id = filtered.get("department_id")
+    if (
+        requested_dept_id is not None
+        and requested_dept_id != user.department_id
+        and actor_role != PlatformRole.ACCOUNT_ADMIN
+    ):
+        raise AuthorizationError(
+            error_code="USER_UPDATE_FORBIDDEN",
+            message="Only account_admin can move users between departments",
+        )
+
     # ── Status transition: делегируем ban/unban side-effects ──────────────────
     # ACTIVE↔BANNED идёт через `ban_user`/`unban_user` — они эмитят правильный
     # audit, создают/деактивируют `Ban`-record и revoke-ят сессии. Иначе PATCH

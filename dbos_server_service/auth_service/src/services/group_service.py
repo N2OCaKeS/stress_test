@@ -158,21 +158,31 @@ async def delete_group(db: AsyncSession, identity, group_id: str, request_id=Non
 
     account_admin — любая группа; department_admin — только группы своего отдела
     (симметрия с `create_group`).
+
+    Soft-delete группы (is_active=False) сохраняет UserGroupMembership/
+    BotGroupMembership-row'ы для аудит-трейла, но `_group_ids_for_user`
+    / `_group_ids_for_bot` фильтруют JOIN'ом по `UserGroup.is_active=True`,
+    так что привилегии из неактивной группы (group_services и group_roles)
+    в effective view не попадают.
     """
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
     _require_dept_or_account_admin(identity, grp.department_id)
-    # Снимаем кэш до commit'а, чтобы списать членов до deactivate (после
-    # deactivate группа сама не используется в `_merge_permissions`, но
-    # group_services и group_roles остаются на ней — без сброса юзеры
-    # увидят их до TTL).
+    # Снимаем кэш до commit'а, чтобы списать членов и ботов-членов до
+    # deactivate. После deactivate группа сама не используется в
+    # `_merge_permissions` (фильтр по `UserGroup.is_active=True`), но
+    # закэшированные identity нужно сбросить, иначе юзеры/боты увидят
+    # privileges группы до истечения TTL.
     members_before = await repo.list_members(group_id)
+    bot_members_before = await repo.list_bot_members(group_id)
     await repo.deactivate(grp)
     await db.commit()
     for m in members_before:
         _invalidate_identity_cache(m.user_id)
+    for bm in bot_members_before:
+        _invalidate_identity_cache(bm.bot_id)
     audit_service.emit(
         "group.delete", identity.user_id, target_id=group_id, target_type="group",
         request_id=request_id,

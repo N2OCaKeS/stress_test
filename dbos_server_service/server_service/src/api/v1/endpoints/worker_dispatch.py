@@ -205,19 +205,22 @@ async def _dispatch_for_server(
     try:
         server = await server_svc.get_server(db, identity, server_id)
     except (NotFoundError, AuthorizationError) as exc:
-        # NotFoundError — visibility-404 (business), AuthorizationError — отказ VIEW (access-deny).
-        # Оба эмитим как failure (single convention), но allowed=True только для NotFoundError.
+        # NotFoundError — visibility-404 (cross-dept / нет row): caller прошёл
+        # permission, цель невидима → `failure`/`allowed=True`.
+        # AuthorizationError — отказ VIEW (роль с конкретным action, но без
+        # VIEW) → `denied`/`allowed=False`. Канон — `endpoints/ipmi.py::_dispatch_power`.
         if isinstance(exc, NotFoundError):
-            reason = "not_found_or_cross_dept"
-            allowed = True
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
         else:
-            reason = "no_view_permission"
-            allowed = False
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="failure", allowed=allowed,
-            details={"reason": reason},
-        )
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="denied", allowed=False,
+                details={"reason": "no_view_permission"},
+            )
         raise
 
     # 3. Decommissioned-gate.
@@ -865,6 +868,46 @@ async def server_prepare_dispatch(
             message="Server is decommissioned and cannot accept worker operations",
         )
 
+    idempotency_key = read_idempotency_key(request)
+
+    # Idempotency-replay должен идти ДО `store_prepare_creds`. Иначе любой
+    # повторный POST с тем же ключом плодит новые plaintext-stash'и в Redis
+    # под orphan-ключами, которые задача никогда не прочтёт — каждый висит
+    # PREPARE_CREDS_TTL_SECONDS (900s) до естественного истечения. Caller с
+    # валидным `update` за это окно может забить Redis plaintext'ом.
+    if idempotency_key is not None:
+        existing = await worker_client._get_task_by_idempotency_key(idempotency_key)
+        if existing is not None:
+            try:
+                worker_client._ensure_idempotency_matches(
+                    existing=existing,
+                    task_kind=task_kind,
+                    target_server_id=server_id,
+                )
+            except ConflictError:
+                audit_service.emit(
+                    audit_action, target_id=server_id, target_type="server",
+                    status="failure", allowed=True,
+                    details={
+                        "reason": "idempotency_key_reuse_conflict",
+                        "task_kind": task_kind,
+                        "department_id": server.department_id,
+                    },
+                )
+                raise
+            existing_id = existing[0]
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="success", allowed=True,
+                details={
+                    "task_id": existing_id,
+                    "task_kind": task_kind,
+                    "department_id": server.department_id,
+                    "idempotent_hit": True,
+                },
+            )
+            return ServerPrepareResponse(task_id=existing_id, status="queued")
+
     # base64 уже провалидирован схемой; декодируем plaintext для воркера.
     # Креды НЕ кладём в task-payload (иначе plaintext осел бы в worker-БД).
     # Пишем их в Redis под одноразовый ключ с TTL, в payload — только ссылка.
@@ -875,7 +918,6 @@ async def server_prepare_dispatch(
         {"bootstrap_login": body.username(), "bootstrap_password": body.password()},
     )
 
-    idempotency_key = read_idempotency_key(request)
     payload: dict = {
         "server_id": server_id,
         "target_department_id": server.department_id,
@@ -886,13 +928,14 @@ async def server_prepare_dispatch(
         "bootstrap_creds_key": creds_key,
     }
     try:
-        task_id = await worker_client.dispatch_task(
+        task_id, idempotent_hit = await worker_client.dispatch_task(
             task_kind=task_kind,
             target_server_id=server_id,
             payload=payload,
             created_by=identity.user_id,
             request_id=getattr(request.state, "request_id", None),
             idempotency_key=idempotency_key,
+            return_hit=True,
         )
     except ConflictError:
         # Подчищаем Redis: воркер за креды не пойдёт, иначе plaintext висит до TTL.
@@ -920,6 +963,13 @@ async def server_prepare_dispatch(
         )
         raise
 
+    # Race-окно: между нашим pre-check'ом и dispatch_task'ом конкурент успел
+    # вставить row с тем же idempotency_key. dispatch_task поймал
+    # IntegrityError и вернул существующий id — наш только что положенный
+    # stash осиротел, чистим его, иначе plaintext висит до TTL.
+    if idempotent_hit:
+        await worker_client.delete_prepare_creds(creds_key)
+
     audit_service.emit(
         audit_action, target_id=server_id, target_type="server",
         status="success", allowed=True,
@@ -927,6 +977,7 @@ async def server_prepare_dispatch(
             "task_id": task_id,
             "task_kind": task_kind,
             "department_id": server.department_id,
+            "idempotent_hit": idempotent_hit,
         },
     )
     return ServerPrepareResponse(task_id=task_id, status="queued")

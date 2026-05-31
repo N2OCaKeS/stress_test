@@ -67,9 +67,20 @@ logger = logging.getLogger(__name__)
 # системный kind через whitelist пройдёт только тогда, когда планировщик
 # сменит транспорт на dispatch_task.
 #
-# Defence-in-depth: даже если кто-то на тестовом стенде вручную поднимет
-# task-row с одним из этих kind'ов через dispatch_task, dept-admin не
-# сможет её отменить — нужен account_admin.
+# Defence-in-depth по двум фронтам:
+#   1. `account_admin` платформенный admin отрезается раньше нас в
+#      `platform_admin_guard` middleware (см. `src/middleware/
+#      platform_admin_guard.py` BLOCKED_PLATFORM_ROLES). До нашей проверки
+#      `identity.platform_role != ACCOUNT_ADMIN` доходит ТОЛЬКО dept-user
+#      (department_admin / service-role'овый). Для него условие всегда
+#      True → 403, и dept-admin с (task, cancel) не убивает кластерный
+#      worker health. Ветка «account_admin прошёл whitelist» в текущей
+#      сборке недостижима — это явная контрактная подпорка на случай
+#      сужения BLOCKED_PLATFORM_ROLES или замены middleware: тогда
+#      account_admin начнёт доходить сюда, и whitelist выдержит.
+#   2. Даже если кто-то на тестовом стенде вручную поднимет task-row с
+#      одним из этих kind'ов через dispatch_task, dept-admin не сможет
+#      её отменить.
 #
 # Источник истины по самим kind-именам — server_worker autostart tasks,
 # см. `server_worker/src/main.py` (`@broker.task(...)` с `schedule=[...]`).
@@ -147,13 +158,17 @@ async def cancel_task_endpoint(
     # 3. Системные task'и (kind ∈ _SYSTEM_TASK_KINDS — scheduler-registered
     #    autostart-задачи: heartbeat/sweep/recover/cleanup/reencrypt, см.
     #    `server_worker/src/main.py`) отменяются только платформенным
-    #    account_admin'ом. Любой dept-admin с (task, cancel) на этой стадии
-    #    — 403, иначе он может затушить кластерный worker health для всех
-    #    отделов. Критерий — явный whitelist по `task_kind`, не неявный
-    #    `target_server_id IS NULL AND created_by IS NULL`: новые системные
-    #    kind'ы вписываются в whitelist, а пара NULL/NULL у user-task
-    #    (например, тестовый dispatch без актора) не превращается в
-    #    случайный 403.
+    #    account_admin'ом. Сейчас account_admin отрезан от server_service
+    #    `platform_admin_guard`-middleware'ом раньше нас, поэтому в проде
+    #    эта ветка стабильно отдаёт 403 любому dept-admin'у с (task, cancel)
+    #    — нужная семантика, иначе он может затушить кластерный worker
+    #    health для всех отделов. Защита остаётся как явный контракт на
+    #    случай послабления middleware (см. развёрнутый комментарий у
+    #    `_SYSTEM_TASK_KINDS`). Критерий — явный whitelist по `task_kind`,
+    #    не неявный `target_server_id IS NULL AND created_by IS NULL`:
+    #    новые системные kind'ы вписываются в whitelist, а пара NULL/NULL
+    #    у user-task (например, тестовый dispatch без актора) не
+    #    превращается в случайный 403.
     is_system_task = task_kind in _SYSTEM_TASK_KINDS
     if is_system_task and identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
         audit_service.emit(

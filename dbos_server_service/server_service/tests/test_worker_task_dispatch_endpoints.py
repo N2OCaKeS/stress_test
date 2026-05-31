@@ -1026,3 +1026,115 @@ class TestIdempotencyKeyLength:
         assert resp.status_code == 202, resp.text
         assert captured_dispatch[0]["idempotency_key"] is None
 
+
+# ── AuthorizationError на VIEW → denied (не failure) ─────────────────────────
+
+
+class TestDispatchForServerAuthzErrorIsDenied:
+    """Когда у caller'а есть action-роль на dispatch (power.status/inventory.sync),
+    но нет VIEW на сервер, `get_server` поднимает `AuthorizationError`.
+    Это access-deny, не business-failure: audit обязан выйти со status="denied"
+    и allowed=False — симметрично канону в `endpoints/ipmi.py::_dispatch_power`.
+    """
+
+    async def test_authz_error_on_view_emits_denied_for_power_status(
+        self, client, operator_token_a, make_server, captured_emits,
+        captured_dispatch, monkeypatch,
+    ):
+        from src.core.exceptions import AuthorizationError
+
+        srv = await make_server(department_id="dep_a", with_ipmi=True)
+
+        async def deny_view(*_args, **_kwargs):
+            raise AuthorizationError(
+                error_code="PERMISSION_DENIED",
+                message="no VIEW",
+            )
+
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.server_svc.get_server",
+            deny_view,
+        )
+
+        resp = await client.post(
+            f"{BASE}/servers/{srv.id}/power/status",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 403, resp.text
+        assert captured_dispatch == []
+        denied = [
+            e for e in _events(captured_emits, "server.power_status")
+            if e.get("status") == "denied"
+        ]
+        assert len(denied) == 1, captured_emits
+        ev = denied[0]
+        assert ev["allowed"] is False
+        assert ev["details"]["reason"] == "no_view_permission"
+
+    async def test_authz_error_on_view_emits_denied_for_inventory_sync(
+        self, client, operator_token_a, make_server, captured_emits,
+        captured_dispatch, monkeypatch,
+    ):
+        from src.core.exceptions import AuthorizationError
+
+        srv = await make_server(department_id="dep_a")
+
+        async def deny_view(*_args, **_kwargs):
+            raise AuthorizationError(
+                error_code="PERMISSION_DENIED",
+                message="no VIEW",
+            )
+
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.server_svc.get_server",
+            deny_view,
+        )
+
+        resp = await client.post(
+            f"{BASE}/servers/{srv.id}/inventory/sync",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 403, resp.text
+        assert captured_dispatch == []
+        denied = [
+            e for e in _events(captured_emits, "server.inventory_sync")
+            if e.get("status") == "denied"
+        ]
+        assert len(denied) == 1
+        assert denied[0]["allowed"] is False
+        assert denied[0]["details"]["reason"] == "no_view_permission"
+
+    async def test_notfound_on_view_still_emits_failure(
+        self, client, operator_token_a, make_server, captured_emits,
+        captured_dispatch, monkeypatch,
+    ):
+        """NotFoundError (visibility-mask) остаётся `failure`/allowed=True —
+        caller прошёл permission, цель невидима, это business-not-found."""
+        from src.core.exceptions import NotFoundError
+
+        srv = await make_server(department_id="dep_a", with_ipmi=True)
+
+        async def hide(*_args, **_kwargs):
+            raise NotFoundError(
+                error_code="SERVER_NOT_FOUND",
+                message="hidden",
+            )
+
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.server_svc.get_server",
+            hide,
+        )
+        resp = await client.post(
+            f"{BASE}/servers/{srv.id}/power/status",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 404
+        assert captured_dispatch == []
+        failures = [
+            e for e in _events(captured_emits, "server.power_status")
+            if e.get("status") == "failure"
+        ]
+        assert len(failures) == 1
+        assert failures[0]["allowed"] is True
+        assert failures[0]["details"]["reason"] == "not_found_or_cross_dept"
+

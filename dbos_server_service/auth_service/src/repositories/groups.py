@@ -201,7 +201,12 @@ class GroupRepository:
 
     async def _group_ids_for_bot(self, bot_id: str) -> list[str]:
         rows = await self._db.scalars(
-            select(BotGroupMembership.group_id).where(BotGroupMembership.bot_id == bot_id)
+            select(BotGroupMembership.group_id)
+            .join(UserGroup, UserGroup.id == BotGroupMembership.group_id)
+            .where(
+                BotGroupMembership.bot_id == bot_id,
+                UserGroup.is_active.is_(True),
+            )
         )
         return list(rows)
 
@@ -426,7 +431,12 @@ class GroupRepository:
 
     async def _group_ids_for_user(self, user_id: str) -> list[str]:
         rows = await self._db.scalars(
-            select(UserGroupMembership.group_id).where(UserGroupMembership.user_id == user_id)
+            select(UserGroupMembership.group_id)
+            .join(UserGroup, UserGroup.id == UserGroupMembership.group_id)
+            .where(
+                UserGroupMembership.user_id == user_id,
+                UserGroup.is_active.is_(True),
+            )
         )
         return list(rows)
 

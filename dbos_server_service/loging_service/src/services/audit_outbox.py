@@ -321,6 +321,13 @@ class AuditOutbox:
         deadline = asyncio.get_running_loop().time() + max(0.0, timeout)
         while True:
             batch: list[AuditEnvelope] = []
+            # Per-batch shared set, в который `_write_batch_sync` положит
+            # `id(envelope)` каждого events, для которого `db.commit()`
+            # прошёл успешно. Если `CancelledError` прилетит между
+            # `to_thread` returning и обновлением счётчиков, мы по этому
+            # set'у узнаём, какие envelope'ы УЖЕ в БД, и не считаем их
+            # как `_dropped_shutdown_total`.
+            committed_ids: set[int] = set()
             try:
                 while len(batch) < self._batch_size:
                     try:
@@ -340,7 +347,7 @@ class AuditOutbox:
                             lost,
                         )
                     return
-                await self._flush_batch(batch)
+                await self._flush_batch(batch, committed_ids)
             except asyncio.CancelledError:
                 # Force-cancel во время финального drain'а: батч уже выдернут
                 # из очереди и в `_flush_batch` мог не дойти до commit'а. Без
@@ -348,10 +355,16 @@ class AuditOutbox:
                 # `enqueued = drained + failures + dropped`. `CancelledError`
                 # это `BaseException`, generic `except Exception` ниже его не
                 # ловит — отдельная ветка ОБЯЗАТЕЛЬНА перед re-raise.
-                lost = len(batch)
+                #
+                # Если sync-target успел `db.commit()` до отмены, эти envelope'ы
+                # уже в `committed_ids`: вычитаем их из `lost`, иначе тот же
+                # row уехал бы и в `drained_total` (через `_flush_batch`), и
+                # в `dropped_shutdown_total` — двойной учёт ломал бы инвариант
+                # выше.
+                lost = len(batch) - len(committed_ids)
                 if self._queue is not None:
                     lost += self._queue.qsize()
-                if lost:
+                if lost > 0:
                     with self._counters_lock:
                         self._dropped_shutdown_total += lost
                     logger.warning(

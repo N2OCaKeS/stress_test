@@ -68,7 +68,8 @@ def captured_dispatch(monkeypatch):
 
     async def fake_dispatch(*, task_kind, target_server_id, payload,
                             created_by, request_id,
-                            target_resource_id=None, idempotency_key=None):
+                            target_resource_id=None, idempotency_key=None,
+                            return_hit=False):
         creds_key = payload.get("bootstrap_creds_key")
         calls.append({
             "task_kind": task_kind,
@@ -76,7 +77,10 @@ def captured_dispatch(monkeypatch):
             "payload": payload,
             "stored_creds": stored.get(creds_key) if creds_key else None,
         })
-        return f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
+        new_id = f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
+        if return_hit:
+            return new_id, False
+        return new_id
 
     import src.services.worker_client as worker_mod
     monkeypatch.setattr(worker_mod, "store_prepare_creds", fake_store)
@@ -95,6 +99,23 @@ def captured_dispatch(monkeypatch):
         fake_dispatch,
     )
     return calls
+
+
+@pytest.fixture
+def captured_emits_prepare(monkeypatch):
+    """Захват `audit_service.emit` для prepare-эндпоинта."""
+    captured: list[dict] = []
+
+    def fake_emit(action, actor_id=None, **kwargs):
+        captured.append({"action": action, "actor_id": actor_id, **kwargs})
+
+    import src.services.audit_service as audit_mod
+    monkeypatch.setattr(audit_mod, "emit", fake_emit)
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
+        fake_emit,
+    )
+    return captured
 
 
 # ── Trigger: POST /servers/{id}/prepare ──────────────────────────────────────
@@ -353,6 +374,102 @@ class TestPrepareDispatch:
         )
         assert resp.status_code == 409, resp.text
         assert captured_dispatch.stored_creds_calls == []
+
+    async def test_idempotent_hit_does_not_store_creds_in_redis(
+        self, client, operator_token_a, make_server, captured_dispatch,
+        monkeypatch,
+    ):
+        """Повторный POST с тем же Idempotency-Key не должен класть второй
+        plaintext-stash в Redis. До фикса `store_prepare_creds` срабатывал
+        ДО idempotency-lookup'а, и каждый retry оставлял orphan-ключ с
+        bootstrap-паролем, висящий до TTL.
+        """
+        srv = await make_server(department_id="dep_a")
+        idem_key = "ik-prepare-replay"
+        existing_task_id = "tsk_server_prepare_existing"
+
+        # Первая попытка: ключа ещё нет, обычный путь. После неё _by_key
+        # в fake_dispatch запомнит idem_key → task_id; но эндпоинт теперь
+        # делает pre-check через `_get_task_by_idempotency_key`, который
+        # бьётся в реальную worker-БД. Мочим оба пути одним стейтом.
+        existing: dict[str, tuple[str, str, str | None]] = {}
+
+        async def fake_lookup(key):
+            return existing.get(key)
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "_get_task_by_idempotency_key", fake_lookup)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client._get_task_by_idempotency_key",
+            fake_lookup,
+        )
+
+        # Первая постановка должна положить креды и попасть в dispatch.
+        resp1 = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": idem_key},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
+        )
+        assert resp1.status_code == 202, resp1.text
+        first_task_id = resp1.json()["task_id"]
+        assert len(captured_dispatch.stored_creds_calls) == 1
+
+        # Симулируем что row создан и `_get_task_by_idempotency_key` теперь
+        # отдаёт его. Используем тот же task_id, что вернул endpoint.
+        existing[idem_key] = (first_task_id, "server.prepare", srv.id)
+
+        # Второй POST с тем же ключом — idempotent replay. Эндпоинт обязан
+        # вернуть тот же task_id и НЕ положить второй creds-stash в Redis.
+        resp2 = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": idem_key},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
+        )
+        assert resp2.status_code == 202, resp2.text
+        assert resp2.json()["task_id"] == first_task_id
+        # Главное: stored_creds_calls остался 1 — replay не плодит plaintext.
+        assert len(captured_dispatch.stored_creds_calls) == 1
+        # И dispatch_task на replay'е тоже не дёргался — он отбит pre-check'ом.
+        # captured_dispatch обновляется только при реальном вызове fake_dispatch.
+        assert len(captured_dispatch) == 1
+
+    async def test_idempotent_hit_with_kind_mismatch_emits_failure(
+        self, client, operator_token_a, make_server, captured_dispatch,
+        captured_emits_prepare, monkeypatch,
+    ):
+        """Re-use Idempotency-Key под другим task_kind — 409
+        IDEMPOTENCY_KEY_REUSE_CONFLICT, без store_prepare_creds."""
+        srv = await make_server(department_id="dep_a")
+        idem_key = "ik-conflict"
+
+        async def fake_lookup(key):
+            if key == idem_key:
+                return ("tsk_other_kind", "inventory.sync", srv.id)
+            return None
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "_get_task_by_idempotency_key", fake_lookup)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client._get_task_by_idempotency_key",
+            fake_lookup,
+        )
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": idem_key},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error_code"] == "IDEMPOTENCY_KEY_REUSE_CONFLICT"
+        # Креды не легли в Redis — pre-check сработал ДО store_prepare_creds.
+        assert captured_dispatch.stored_creds_calls == []
+        failures = [
+            e for e in captured_emits_prepare
+            if e.get("action") == "server.prepare"
+            and e.get("status") == "failure"
+        ]
+        assert len(failures) == 1
+        assert failures[0]["details"]["reason"] == "idempotency_key_reuse_conflict"
 
     async def test_dispatch_failure_cleans_up_creds_in_redis(
         self, client, operator_token_a, make_server, captured_dispatch,

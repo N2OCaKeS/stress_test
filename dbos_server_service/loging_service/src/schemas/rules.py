@@ -26,15 +26,23 @@ _RULE_NAME_PATTERN: re.Pattern[str] = re.compile(r"^[\x20-\x7E]{1,128}$")
 
 
 def _normalize_match_service(value: str | None) -> str | None:
+    """NFKC + invisibles/confusables + charset-проверка `[a-z_]{1,64}`.
+
+    Идёт через preserve-case вариант, потому что pattern `[a-z_]` сам обязан
+    отбивать uppercase: иначе `match_service="AUTH_SERVICE"` молча свернулся бы
+    в `auth_service` и тихо нарушил bijection с `EventCreate.service` (тоже
+    `[a-z_]`). Финальный `.lower()` тут излишен — pattern уже гарантирует
+    lower-case ASCII, — поэтому возвращаем normalized как есть.
+    """
     if value is None:
         return None
-    pre_lower = normalize_service_name_preserve_case(value)
-    if not _RULE_SERVICE_PATTERN.match(pre_lower):
+    normalized = normalize_service_name_preserve_case(value)
+    if not _RULE_SERVICE_PATTERN.match(normalized):
         raise ValueError(
             "match_service must match [a-z_]{1,64} after NFKC normalisation "
             "(lowercase snake_case, symmetric with EventCreate.service)"
         )
-    return pre_lower.lower()
+    return normalized
 
 
 def _validate_match_action(value: str | None) -> str | None:

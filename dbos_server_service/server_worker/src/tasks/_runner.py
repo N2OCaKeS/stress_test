@@ -94,6 +94,24 @@ Durable retry:
   (`request_id` + `action` + `timestamp` идемпотентны на ingest).
 * Параллельные воркеры на одном task_id — это исключено taskiq-broker'ом
   (по дизайну — один consumer на сообщение).
+
+Clock-skew на cancel-путях:
+
+* `cancelled_at` в БД пишет `server_service` своими часами (`func.now()`
+  на его Postgres'е) — это и есть «момент решения оператора». Worker
+  переиспользует это значение и для `audit.timestamp` (через
+  `_cancel_timestamp`), и в `details.cancel_request_received_at`. Из-за
+  этого dashboards с timeline'ом cancel-event'ов привязаны к clock'у
+  server_service, а не worker'а.
+* NTP-drift между подом server_service и worker'ом до ±N секунд считаем
+  ожидаемым: оба пода ловят time-sync на одном кластере, но Kubernetes
+  не даёт нам сильнее ±2-3s гарантии. Без NTP-инфраструктурного фикса
+  единственное, что worker может сделать — записать обе временные метки
+  рядом, чтобы SIEM/оператор сам видел расхождение. Это и делает
+  `_attach_cancel_metadata`: дублирует `cancel_request_received_at`
+  (server_service clock) рядом с `worker_clock_now` (worker clock) в
+  `details`. Источник истины для timeline'а — server_service; worker'ский
+  timestamp оставлен для диагностики drift'а.
 """
 
 import asyncio
@@ -181,6 +199,13 @@ def _cancel_timestamp(task) -> str | None:
     T+Δ (sweep / next enqueue). Без override audit-event получит worker's
     now(), а не время решения оператора, и операторские дашборды покажут
     рассогласование с server_service'овским cancel-event'ом.
+
+    `cancelled_at` пишется на стороне server_service его `func.now()` —
+    это server_service clock, не worker'а. NTP-drift между подами
+    (обычно ±1-3s) приемлем; worker фиксирует свой `worker_clock_now`
+    рядом в `details` (`_attach_cancel_metadata`), чтобы SIEM мог сам
+    увидеть расхождение. Источник истины для cancel-timeline — clock
+    server_service.
     """
     if task is None:
         return None

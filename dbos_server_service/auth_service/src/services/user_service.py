@@ -599,6 +599,15 @@ async def assign_roles(
             message="Cannot assign roles outside your department",
         )
 
+    # Забаненному/выключенному юзеру навешивать роль нельзя: при unban'е они
+    # резко становятся действующими (role-resurrection). Симметрично
+    # `group_service.add_bot_member`, где `is_active=False` → 404.
+    if not user.is_active:
+        raise ConflictError(
+            error_code="USER_INACTIVE",
+            message="Cannot assign roles to inactive user",
+        )
+
     if not await dept_repo.has_active_access(user.department_id, service_name):
         raise AuthorizationError(
             error_code="SERVICE_NOT_ALLOWED_FOR_DEPARTMENT",

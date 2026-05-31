@@ -110,6 +110,7 @@ class CircuitBreakerOpenError(AppException):
 # Общие с bmc_circuit_breaker, лежат в `_breaker_lua`. Алиасы оставлены —
 # тестовый FakeRedis матчит скрипты по объекту-строке.
 _CHECK_SCRIPT = _breaker_lua.CHECK_SCRIPT
+_GET_STATE_SCRIPT = _breaker_lua.GET_STATE_SCRIPT
 _RECORD_SUCCESS_SCRIPT = _breaker_lua.RECORD_SUCCESS_SCRIPT
 _RECORD_FAILURE_SCRIPT = _breaker_lua.RECORD_FAILURE_SCRIPT
 
@@ -173,34 +174,34 @@ async def check() -> None:
 
 
 async def get_state() -> tuple[str, float]:
-    """Snapshot breaker'а с возможной мутацией: `(state, retry_after_seconds)`.
+    """Pure-read snapshot breaker'а: `(state, retry_after_seconds)`.
 
-    WARNING: метод НЕ pure-read. Под капотом крутится тот же `_CHECK_SCRIPT`,
-    который атомарно транзитит `open → half_open`, если cooldown истёк, и
-    может захватить probe-slot. Не использовать из метрик/диагностики, где
-    ожидается чистый peek — он подменит state у других конкурирующих
-    реплик. Если нужен честный snapshot — нужен отдельный read-only Lua,
-    которого сейчас нет.
+    Под капотом крутится отдельный `_GET_STATE_SCRIPT`, который НЕ
+    транзитит state и не трогает probe-ключ. Безопасно дёргать из
+    observability/metrics-путей и из adaptive-sleep'а в `run_publisher_loop`
+    — конкуренция за probe-slot между репликами разрешается только в
+    `check()` перед реальным POST'ом.
 
-    Сознательный компромисс: дублирующий read-only скрипт разъезжался бы с
-    `_CHECK_SCRIPT` по логике переходов. Caller'у (`run_publisher_loop`)
-    переход в half_open приемлем: следующая итерация всё равно сделает
-    publish-попытку, успех закроет breaker, fail оставит open.
+    Возвращаемые значения:
 
-    Возвращает то же что вернул бы `check()` Lua-скрипт, но без raise'а
-    при open. Нужен `run_publisher_loop` — он хочет узнать «надо ли
-    спать длиннее обычного», без отдельного raise/catch.
+    * `("closed", 0.0)` — канал свободен, обычный poll-interval;
+    * `("open", retry_after)` — breaker открыт; `retry_after` > 0 —
+      cooldown ещё идёт; `retry_after` == 0 — cooldown истёк, но
+      transition в half_open сделает первый же `check()`. Caller в loop'е
+      использует это как сигнал спать дольше обычного poll-interval'а.
+    * Half_open state снаружи виден как `("open", ttl_probe)` —
+      пробный запрос у кого-то в полёте, остальным дёргать `check()`
+      бессмысленно, ttl probe-ключа = верхняя граница ожидания.
 
     Если Redis недоступен — fail-open: возвращаем `("closed", 0.0)`.
     """
-    thresholds = _thresholds_from_settings()
     client = await _get_client()
     try:
         try:
             keys = (*_keys(), _probe_key())
             result = await client.eval(
-                _CHECK_SCRIPT, 4, *keys,
-                str(int(time.time())), str(thresholds.cooldown_seconds),
+                _GET_STATE_SCRIPT, 4, *keys,
+                str(int(time.time())),
             )
         except Exception:  # noqa: BLE001 — fail-open
             logger.warning(

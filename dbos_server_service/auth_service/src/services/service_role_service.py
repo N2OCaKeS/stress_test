@@ -352,6 +352,15 @@ async def bulk_assign(
                     f"and cannot be granted roles in '{department_id}'"
                 ),
             )
+        # Забаненный/выключенный юзер: bulk-assign не должен «воскрешать»
+        # ему права при unban'е. Single-юзер ветка (`user_service.assign_roles`)
+        # тоже это отбивает; здесь — fail-fast на первом же inactive из батча,
+        # чтобы транзакция вообще не открывалась под bulk_assign.
+        if not user.is_active:
+            raise ConflictError(
+                error_code="USER_INACTIVE",
+                message=f"User '{user_id}' is inactive",
+            )
     await role_repo.bulk_assign(
         user_ids, service_name, role_name, assigned_by=identity.user_id
     )

@@ -227,16 +227,22 @@ async def finalize_reencrypt_outbox_done(
             message=f"outbox row {outbox_id!r} not found",
         )
 
+    # На skipped service-layer уже эмитит `secrets.migration.skipped` с
+    # деталями (owner_vanished / owner_ciphertext_changed / status_not_processing).
+    # Endpoint-уровень при этом всё равно успешно закрыл row, но семантически
+    # это не plain success — отдаём `warning`, чтобы SIEM правила не считали
+    # такие row'ы как чистые перешифровки.
+    is_skipped = bool(data.get("skipped"))
     audit_service.emit(
         "secrets.reencrypt_done",
         target_id=outbox_id,
         target_type="secret",
-        status="success",
+        status="warning" if is_skipped else "success",
         allowed=True,
         details={
             "outbox_id": outbox_id,
             "status": data["status"],
-            "skipped": data["skipped"],
+            "skipped": is_skipped,
         },
     )
     return OutboxFinalizeDoneResponse(**data)

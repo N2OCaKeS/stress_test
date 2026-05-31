@@ -132,14 +132,46 @@ def has_any(db: Session) -> bool:
 def action_is_registered(db: Session, match_action: str) -> bool:
     """True, если *match_action* совпадает хотя бы с одним зарегистрированным событием.
 
-    Точные строки требуют точного совпадения. Паттерны со `*` проверяются
-    через `action_matches_pattern` против всех зарегистрированных action'ов.
+    Точные строки требуют точного совпадения. Паттерны со `*` транслируются
+    в SQL `LIKE` с подстановкой `%` и фильтр идёт в БД: на каталоге в десятки
+    тысяч action'ов это `EXISTS (... LIMIT 1)` с index seek по `ix_service_events_action`
+    вместо `SELECT action FROM service_events` + python-цикл по всем row'ам.
+
+    `action_matches_pattern` (`user.*` совпадает только с одним сегментом)
+    допускает в pattern'е `*`, но не `%`/`_` — поэтому экранирование
+    LIKE-метасимволов сводится к escape'у `\\` для самой бэк-слэш-формы.
+    Финально подтверждаем совпадение в Python через `action_matches_pattern`,
+    чтобы DB-уровневый LIKE с `%` (который матчит `.`) не пропустил
+    `user.login.extra` для pattern'а `user.*`.
     """
+    from sqlalchemy import exists as sa_exists
+
     if "*" in match_action:
         from src.services.rule_service import action_matches_pattern
-        all_actions = list(db.execute(select(ServiceEvent.action)).scalars())
-        return any(action_matches_pattern(a, match_action) for a in all_actions)
-    exists = db.execute(
-        select(ServiceEvent.id).where(ServiceEvent.action == match_action).limit(1)
-    ).scalar()
-    return exists is not None
+
+        like_pattern = match_action.replace("\\", "\\\\").replace("*", "%")
+        candidates = list(
+            db.execute(
+                select(ServiceEvent.action).where(
+                    ServiceEvent.action.like(like_pattern, escape="\\")
+                )
+            ).scalars()
+        )
+        return any(action_matches_pattern(a, match_action) for a in candidates)
+
+    return bool(
+        db.execute(
+            select(sa_exists().where(ServiceEvent.action == match_action))
+        ).scalar()
+    )
+
+
+def has_any_registered(db: Session) -> bool:
+    """Алиас `has_any` со смысловой нагрузкой «есть хоть один зарегистрированный action».
+
+    `_validate_match_action` зовёт `has_any` дважды на разные ветки логики —
+    отдельная функция делает call-site короче и явнее: «если ни один сервис
+    ничего не зарегистрировал, не блокируем создание правила». Оставляем
+    `has_any` для backward-compat.
+    """
+    return has_any(db)

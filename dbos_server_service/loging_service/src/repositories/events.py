@@ -3,7 +3,6 @@
 import hashlib
 import json
 import logging
-import re
 from datetime import datetime, timezone
 from typing import Callable, TypeVar
 
@@ -15,7 +14,7 @@ from sqlalchemy.orm import Session
 from src.core.config import get_settings
 from src.core.exceptions import ConflictError, DomainValidationError
 from src.models.audit_event import AuditEvent
-from src.schemas.events import EventCreate
+from src.schemas.events import _REQUEST_ID_PATTERN, EventCreate
 from src.utils.ids import audit_event_id
 
 logger = logging.getLogger(__name__)
@@ -78,16 +77,14 @@ def _with_statement_timeout(
 # другого сервиса минуя Pydantic. CR/LF в request_id попадает в
 # `X-Request-ID` рефлектом middleware и колется header-injection,
 # поэтому страхуемся ещё одним фильтром перед самим INSERT.
-# Charset зеркалит `schemas.events._REQUEST_ID_PATTERN` — точка разрешена
-# (`req.<id>` / `trace.<span>` convention), без асимметрии не пропускали
-# бы request-id'шки, которые схема уже легально приняла.
-_REQUEST_ID_RE: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
+# Regex берём из схемы — раньше charset дублировался двумя файлами и
+# разъезжался при изменении одного из них.
 
 
 def _validate_request_id(value: str | None) -> None:
     if value is None:
         return
-    if not _REQUEST_ID_RE.match(value):
+    if not _REQUEST_ID_PATTERN.match(value):
         raise DomainValidationError(
             error_code="INVALID_REQUEST_ID",
             message="request_id must match ^[A-Za-z0-9_.-]{1,64}$",

@@ -64,9 +64,13 @@ async def track_bot_ip(
          деталями `{ips, bot_id, time_window_seconds: <окно>}`.
 
     Замечание про concurrency: два параллельных introspect'а одного бота
-    могут перетереть `last_known_ips` друг друга (last-write-wins). Это OK:
-    окно из 5 IP — observability-сигнал, не security-инвариант; даже при
-    потере одной записи следующий introspect её догонит. CAS не нужен.
+    могут перетереть `last_known_ips` друг друга (last-write-wins). При
+    N>1 одновременных запросов с разных IP счётчик уникальных IP за окно
+    может недосчитать одну-две записи — следующий introspect (или один из
+    концурентных, который попадёт в commit позже) её догонит, и алерт
+    `bot.suspicious_multi_ip` всё равно сработает. CAS через JSONB-update
+    с условным WHERE не оправдан: окно из N IP — observability-сигнал,
+    не security-инвариант; редкий миссинг одной записи терпим.
     """
     if not caller_ip:
         return False

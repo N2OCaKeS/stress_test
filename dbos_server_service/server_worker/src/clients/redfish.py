@@ -398,18 +398,19 @@ class RedfishClient:
         зависит от заводской конфигурации). PATCH идёт на
         `/Managers/{manager_id}/Accounts/{user_id}` с `{"Password": ...}`.
 
-        BMC отвечает 200 при успехе; новый пароль вступает в силу
+        BMC отвечает 200/204 при успехе; новый пароль вступает в силу
         немедленно — следующий запрос с старым паролем получит 401.
 
-        ВНИМАНИЕ: после успеха caller обязан надёжно сохранить
-        `new_password` ДО потери process'а — иначе доступ к BMC потерян.
-        Контракт `tasks/passwords.py::ipmi_rotate_password`:
-        генерируем пароль и кладём его в Redis-stash (`_store_ipmi_rotate_password`)
-        ДО вызова apply'а — это гарантирует, что при крэше worker'а между apply
-        и storage submit мы знаем, какой пароль уже на BMC. Затем apply
-        (этот метод) → verify тем же паролем → submit ciphertext'а в
+        Контракт `tasks/passwords.py::ipmi_rotate_password` — три шага в
+        строгом порядке: **apply on BMC → verify → submit to
+        server_service**. Этот метод закрывает только первый шаг (apply).
+        Перед вызовом caller обязан положить `new_password` в Redis-stash
+        (`_store_ipmi_rotate_password`), чтобы при крэше worker'а между
+        apply и submit'ом следующий retry знал, какой пароль уже на BMC.
+        После apply caller делает verify (read-only Redfish-вызов новым
+        паролем) и только после успешного verify шлёт ciphertext в
         server_service. Round-trip к server_service выполняется ПОСЛЕ
-        успешного apply+verify, не до.
+        apply+verify, не до и не вместо них.
         """
         manager_id = await self._resolve_manager_id()
         await self._request(

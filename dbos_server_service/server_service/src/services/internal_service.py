@@ -422,11 +422,18 @@ async def fetch_account_password(
     # не открывается.
     server = await server_repo.get_by_id(db, server_id)
     if server is None:
+        # Сервер отсутствует — реальная missing-entity это server, не account.
+        # Эмитим под `target_type="server"`, account_id уезжает в details как
+        # secondary. Иначе SIEM ловит server-level miss под account-меткой.
         audit_service.emit(
             "server_account.view_password",
-            target_id=account_id, target_type="server_account",
+            target_id=server_id, target_type="server",
             status="failure", allowed=True,
-            details={"reason": "server_not_found", "server_id": server_id},
+            details={
+                "reason": "server_not_found",
+                "server_id": server_id,
+                "account_id": account_id,
+            },
         )
         raise NotFoundError(
             error_code="ACCOUNT_NOT_FOUND",
@@ -540,11 +547,18 @@ async def rotate_account_password(
     # ДО dept-check'а, чтобы SIEM не ловил фейковый actor_department_mismatch.
     server = await server_repo.get_by_id(db, server_id)
     if server is None:
+        # Сервер отсутствует — missing-entity это server, не account.
+        # Эмитим под `target_type="server"`, account_id уезжает в details.
+        # Симметрично с `fetch_account_password`.
         audit_service.emit(
             "server_account.rotate_password",
-            target_id=account_id, target_type="server_account",
+            target_id=server_id, target_type="server",
             status="failure", allowed=True,
-            details={"reason": "server_not_found", "server_id": server_id},
+            details={
+                "reason": "server_not_found",
+                "server_id": server_id,
+                "account_id": account_id,
+            },
         )
         raise NotFoundError(
             error_code="ACCOUNT_NOT_FOUND",
@@ -1270,7 +1284,27 @@ async def record_ipmi_credentials_rotated(
             message="IPMI controller not found",
         )
     server = await server_repo.get_by_id(db, ctrl.server_id)
-    server_dept = server.department_id if server is not None else None
+    if server is None:
+        # Orphaned controller: controller-row жив, но server_id ссылается на
+        # удалённый сервер. Без явной ветки _check_target_department сравнил бы
+        # actor.department_id с None и эмитнул ложный `actor_department_mismatch`,
+        # будто caller лез в чужой dept — на деле dept-конфликта нет, просто
+        # сервер пропал. Пишем честный `orphaned_ipmi_controller` и отдаём 404,
+        # пусть оператор подчистит запись.
+        audit_service.emit(
+            "ipmi_controller.credentials_rotated_callback",
+            target_id=controller_id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={
+                "reason": "orphaned_ipmi_controller",
+                "server_id": ctrl.server_id,
+            },
+        )
+        raise NotFoundError(
+            error_code="NO_IPMI_CONTROLLER",
+            message="IPMI controller not found",
+        )
+    server_dept = server.department_id
     _check_target_department_for_controller(
         audit_action="ipmi_controller.credentials_rotated_callback",
         target_id=controller_id,

@@ -797,11 +797,30 @@ def _retention_loop() -> None:
                                 )
                             last_run = today
                         finally:
-                            db.execute(
-                                text("SELECT pg_advisory_unlock(:k)"),
-                                {"k": _RETENTION_ADVISORY_LOCK_KEY},
-                            )
-                            db.commit()
+                            # last_run уже выставлен выше до finally — отдельно
+                            # развязываем unlock и commit, чтобы упавший commit
+                            # не отменял факт, что sweep отработал. apply_active
+                            # коммитит per-chunk сам, record_admin_action — тоже
+                            # под `commit=True`, так что финальный db.commit()
+                            # здесь чистит хвост пустой транзакции и упасть может
+                            # только на disconnect'е.
+                            try:
+                                db.execute(
+                                    text("SELECT pg_advisory_unlock(:k)"),
+                                    {"k": _RETENTION_ADVISORY_LOCK_KEY},
+                                )
+                            except Exception as unlock_exc:
+                                logger.error(
+                                    "retention sweep advisory_unlock failed: %s",
+                                    unlock_exc,
+                                )
+                            try:
+                                db.commit()
+                            except Exception as commit_exc:
+                                logger.error(
+                                    "retention sweep trailing commit failed: %s",
+                                    commit_exc,
+                                )
                 finally:
                     db.close()
             except Exception as exc:

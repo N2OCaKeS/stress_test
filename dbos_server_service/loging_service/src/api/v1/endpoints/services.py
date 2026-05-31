@@ -234,7 +234,8 @@ def register_events(
     # admin не увидит, кто и когда переписал каталог action'ов (rules/retention
     # writes аудитируются — здесь была дыра в симметрии). Идём через ту же
     # tx, что и upsert (`commit=False` выше); единственный commit ниже.
-    advertised = getattr(request.state, "service_identity", None)
+    # `advertised` уже прочитан выше для path-vs-identity гарда — используем то же
+    # значение, чтобы две ветки гарантированно совпадали и одно атомарное чтение.
     # `service` path-param разрешает до 64 символов (snake_case + цифры по
     # _SERVICE_PATTERN), а `EventCreate.actor_id` / `target_id` ограничены
     # 48 — длинное service-имя без trim'а валило бы self-audit с 422.

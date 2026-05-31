@@ -17,12 +17,21 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Literal
 
 from sqlalchemy.orm import Session
 
 from src.models.audit_rule import AuditRule
 from src.repositories import rules as rule_repo
 from src.schemas.events import EventCreate
+
+# Канонические значения колонки `audit_rules.effect` ПОСЛЕ нормализации в
+# `RuleCreate`/`RuleUpdate` (`DROP` → `SUPPRESS` ещё на pydantic-уровне).
+# Держим тип здесь, а не в schemas/rules — snapshot живёт в кеше после
+# ORM-чтения и в БД лежит уже канонический набор; type-hint помогает
+# mypy/тестам, но runtime-проверки не делает — invariant сохраняется
+# pydantic-валидатором на ingest и check-constraint'ом в миграции.
+_EffectCanonical = Literal["SUPPRESS", "ALLOW", "OVERRIDE_SEVERITY"]
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +55,11 @@ class _RuleSnapshot:
     match_status: str | None
     match_severity: str | None
     match_allowed: bool | None
-    effect: str
+    # `effect` хранится в БД как varchar, тип сужен до канонического Literal
+    # после нормализации в RuleCreate/RuleUpdate (`DROP` → `SUPPRESS`).
+    # Type-hint только для статической проверки — runtime-валидация
+    # делается на ingest pydantic-моделями и check-constraint'ом.
+    effect: _EffectCanonical
     effect_severity: str | None
 
 

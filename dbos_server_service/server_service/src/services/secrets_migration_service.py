@@ -30,6 +30,7 @@ WHERE status IN ('pending','processing')` запрещает дубли акти
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -41,6 +42,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.models import IpmiController, ReencryptOutboxEntry, ServerAccount
 from src.services import audit_service, secrets_service
+
+logger = logging.getLogger(__name__)
 
 
 # Совпадает с wire-форматом `v<N>$...`. Если строка не начинается с `v` или
@@ -481,6 +484,12 @@ async def requeue_failed(db: AsyncSession, outbox_id: str) -> dict:
     entry.status = STATUS_PENDING
     entry.processed_at = None
     entry.last_error = None
+    # Сбрасываем счётчик попыток. Сейчас max-attempts cap у нас нет, но если
+    # его добавят (например, чтобы автоматически переводить «вечно падающие»
+    # row'ы в `failed-final`), оператор-инициированный requeue должен дать
+    # row'у честный fresh start, а не упереться в прошлый счётчик через
+    # один тик.
+    entry.attempts = 0
     await db.commit()
     return {"id": outbox_id, "status": STATUS_PENDING}
 
@@ -565,7 +574,14 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
             plain = secrets_service.decrypt(acc.password_encrypted, aad=aad)
             acc.password_encrypted = secrets_service.encrypt(plain, aad=aad)
             processed += 1
-        except Exception:  # noqa: BLE001 — любая ошибка decrypt/encrypt
+        except Exception as exc:  # noqa: BLE001 — любая ошибка decrypt/encrypt
+            # Тип эксепшна важен для диагностики (ключ ушёл из env vs битый
+            # ciphertext vs decrypt с чужим AAD'ом). Сам plaintext или ключ
+            # из exc-сообщений не достанем — пишем только класс.
+            logger.warning(
+                "reencrypt_batch server_account row %s failed: %s",
+                acc.id, type(exc).__name__,
+            )
             errors += 1
 
     for ipmi in ipmis:
@@ -574,7 +590,11 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
             plain = secrets_service.decrypt(ipmi.password_encrypted, aad=aad)
             ipmi.password_encrypted = secrets_service.encrypt(plain, aad=aad)
             processed += 1
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "reencrypt_batch ipmi_controller row %s failed: %s",
+                ipmi.id, type(exc).__name__,
+            )
             errors += 1
 
     if processed > 0:

@@ -498,7 +498,8 @@ async def exchange_code(
         },
         expires_delta=ttl,
     )
-    await db.commit()
+    # mark_used уже закоммитился выше. Между той точкой и сюда — только
+    # SELECT юзера и чистая выдача JWT (без writes), коммитить нечего.
     audit_service.emit(
         "oauth.code_exchanged",
         user.id,

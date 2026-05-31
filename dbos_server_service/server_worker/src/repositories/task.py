@@ -376,6 +376,20 @@ async def list_orphaned_running(
         .correlate(Task)
     )
 
+    # Сюда сознательно не вешаем `with_for_update(skip_locked=True)`:
+    # это read-only SELECT, на нём блокировка не нужна. Sweep двумя
+    # репликами идемпотентен на уровне статусов — `mark_failed` ниже
+    # делает CAS `WHERE status = 'running'`, так что второй sweep уже
+    # увидит row в `failed` и no-op'нет terminal-write.
+    #
+    # Остаётся узкое окно для дубля audit-row: если две реплики прошли
+    # `mark_failed` (одна успешно, вторая получила pre-CAS view и
+    # послала `enqueue_audit` до того, как первая закоммитила), в
+    # outbox'е могут лежать два «worker_orphaned» события на один
+    # task_id. Дедуп выполняется на стороне loging_service по
+    # `(action, target_id, timestamp)` — в worker'е этот сценарий
+    # держим как accepted trade-off (real-world частота — единицы за
+    # год, SIEM игнорирует совпадающие event'ы).
     stmt = (
         select(Task)
         .where(

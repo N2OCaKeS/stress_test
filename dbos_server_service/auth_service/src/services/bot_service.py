@@ -533,6 +533,16 @@ async def assign_bot_roles(
         extra_details={"service_name": service_name, "roles": list(roles)},
     )
 
+    # Деактивированному боту роль навешивать нельзя: при reactivate он сразу
+    # получит «воскресшие» права. group_service.add_bot_member ведёт себя
+    # так же — 404 BOT_NOT_FOUND. Здесь bot уже отдан bot_repo, поэтому
+    # отдельный код, чтобы caller отличал «нет бота» от «есть, но disabled».
+    if not bot.is_active:
+        raise ConflictError(
+            error_code="BOT_INACTIVE",
+            message="Cannot assign roles to inactive bot",
+        )
+
     dept_repo = DepartmentRepository(db)
     if not await dept_repo.has_active_access(bot.department_id, service_name):
         raise AuthorizationError(

@@ -86,6 +86,28 @@ class FakeRedis:
                 return [state, 0]
             return ["closed", 0]
 
+        if script == _breaker_lua.GET_STATE_SCRIPT:
+            now = int(argv[0])
+            probe_key = keys[3]
+            state = self._store.get(keys[1])
+            open_until_raw = self._store.get(keys[2], "0")
+            try:
+                open_until = int(open_until_raw)
+            except ValueError:
+                open_until = 0
+            if state == "open":
+                if open_until > now:
+                    return [state, open_until - now]
+                return ["open", 0]
+            if state == "half_open":
+                ttl = self._expiry.get(probe_key, now) - now
+                if ttl < 0:
+                    ttl = 0
+                return ["open", ttl]
+            if state is not None:
+                return [state, 0]
+            return ["closed", 0]
+
         if script == _breaker_lua.RECORD_SUCCESS_SCRIPT:
             for k in keys:
                 self._store.pop(k, None)

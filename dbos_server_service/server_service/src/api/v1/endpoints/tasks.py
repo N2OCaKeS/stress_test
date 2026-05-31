@@ -207,6 +207,14 @@ async def cancel_task_endpoint(
                 error_code="TASK_NOT_FOUND",
                 message="Task not found",
             )
+    # Task без target_server_id и не в whitelist'е — фактически
+    # глобальная row без dept-владельца. Сегодня штатно таких нет
+    # (см. test_user_task_with_both_nulls_no_longer_blocked), их
+    # генерируют только sandbox-dispatch'и без актора. Dept-admin с
+    # (task, cancel) может отменять — это документировано как
+    # сознательное послабление до появления настоящего владельца
+    # row. Если в будущем добавится новый kind, который должен быть
+    # системным, его пропишут в `_SYSTEM_TASK_KINDS`.
 
     # 5. Atomic UPDATE через cross-DB engine.
     result = await worker_client.cancel_task(

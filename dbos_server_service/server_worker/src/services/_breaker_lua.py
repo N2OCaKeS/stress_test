@@ -92,6 +92,46 @@ return 1
 """
 
 
+# get_state(): pure-read snapshot — `{state, retry_after_seconds}`.
+#   ARGV[1] = now (unix seconds)
+#
+# Отличается от `CHECK_SCRIPT` тем, что НЕ трогает ни probe-ключ, ни
+# state. Полезен для observability/sleep-стратегий в publisher-loop:
+# нам нужно знать «открыт ли канал и на сколько ещё», без побочного
+# эффекта transition'а open → half_open и захвата probe-slot'а.
+#
+# Логика:
+#   - state="open" и open_until > now → возвращаем open + остаток окна;
+#   - state="open" и open_until <= now → cooldown истёк, но мы НЕ
+#     транзитим в half_open; возвращаем `{"open", 0}` — следующий
+#     `check()` решит, кто пробует, мы лишь констатируем «cooldown
+#     истёк, можно пробовать»;
+#   - state="half_open" → probe in-flight у кого-то ещё; возвращаем
+#     `{"open", PTTL(probe) or 0}`, не вмешиваемся в его исход;
+#   - state есть, но не open/half_open → отдаём как есть;
+#   - state нет → "closed".
+GET_STATE_SCRIPT = """
+local now = tonumber(ARGV[1])
+local state = redis.call('GET', KEYS[2])
+local open_until = tonumber(redis.call('GET', KEYS[3]) or '0')
+if state == 'open' then
+  if open_until > now then
+    return {state, open_until - now}
+  end
+  return {'open', 0}
+end
+if state == 'half_open' then
+  local ttl = redis.call('TTL', KEYS[4])
+  if ttl < 0 then ttl = 0 end
+  return {'open', ttl}
+end
+if state then
+  return {state, 0}
+end
+return {'closed', 0}
+"""
+
+
 # record_failure(): INCR failures; >= threshold → open(cooldown).
 #   ARGV[1] = now (unix seconds)
 #   ARGV[2] = threshold

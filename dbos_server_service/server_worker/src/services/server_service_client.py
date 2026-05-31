@@ -528,8 +528,10 @@ async def finalize_reencrypt_outbox_done(outbox_id: str) -> dict:
         (включая `404 SECRETS_OUTBOX_ROW_NOT_FOUND` и `500
         SECRETS_REENCRYPT_FINALIZE_FAILED` при crypto-ошибке).
     """
-    # outbox_id — BIGINT в server_service; int-каст отбивает path-traversal
-    # (`../admin`) и любые не-числовые значения до подстановки в URL.
+    # `validate_outbox_id` пропускает только `[A-Za-z0-9_-]{1,64}` —
+    # формат `rox_<32 hex>` из server_service. `/` `.` `:` и пробелы
+    # отбиваются, поэтому путь-traversal (`../admin`) и SQLi-вставки до
+    # подстановки в URL не доходят.
     outbox_id = validate_outbox_id(outbox_id)
     settings = get_settings()
     url = (

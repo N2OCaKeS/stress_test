@@ -1,6 +1,6 @@
 """Эндпоинты OAuth2: client management и authorize/token flow."""
 
-from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse
@@ -183,19 +183,18 @@ async def authorize(
     # но в whitelist может лежать URI с собственными query-параметрами
     # (`https://app/cb?env=prod`). Тупой `f"{redirect_uri}?code=…"` тогда даёт
     # `…?env=prod?code=…` — второй `?` сламывает парсинг на клиенте. Разбираем
-    # URI, дописываем `code`/`state` в существующий query (RFC 6749 §4.1.2)
-    # и пересобираем обратно.
+    # URI и дописываем `code`/`state` к существующему query без переэкодирования.
+    #
+    # `state` echo'ится через `quote()` напрямую (RFC 6749 §4.1.2 — байт-в-байт),
+    # не через `parse_qsl`+`urlencode`: round-trip ломал `+` (parse_qsl декодит
+    # его в пробел, дальше `urlencode` ставит `%20`), а `quote()` оставляет `+`
+    # safe и не трогает уже-encoded последовательности из исходной query.
     parsed = urlparse(redirect_uri)
-    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-    query_pairs.append(("code", code))
+    appended = f"code={quote(code, safe='')}"
     if state:
-        query_pairs.append(("state", state))
-    # `quote_via=quote`: дефолтный `urlencode(quote_via=quote_plus)` кодирует
-    # пробел как `+`, а RFC 6749 §4.1.2 предписывает байт-в-байт echo
-    # `state`-параметра. Через `quote` пробел уходит как `%20`, и client-side
-    # сравнение `state` (CSRF-токена) не ломается. Применяется ко всему
-    # query — для `code` (опаковый, пробелов не имеет) разницы нет.
-    location = urlunparse(parsed._replace(query=urlencode(query_pairs, quote_via=quote)))
+        appended += f"&state={quote(state, safe='')}"
+    new_query = f"{parsed.query}&{appended}" if parsed.query else appended
+    location = urlunparse(parsed._replace(query=new_query))
     return RedirectResponse(url=location, status_code=302)
 
 

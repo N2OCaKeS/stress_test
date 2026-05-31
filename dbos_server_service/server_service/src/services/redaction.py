@@ -42,7 +42,8 @@ _SECRET_KEYS = {
     "secret", "secret_key", "api_key", "apikey",
     "client_secret", "private_key", "signing_key",
     "server_encryption_key", "master_key", "encryption_key",
-    "hkdf_salt", "hkdf_salt_hex",
+    "master_key_hex", "master_key_b64", "master_key_plaintext",
+    "hkdf_salt", "hkdf_salt_hex", "hkdf_salt_b64",
     "service_api_key", "logging_service_api_key",
     "ssh_private_key", "ssh_private_key_plaintext",
     # ssh_public_key — формально не секрет, но PII-adjacent: однозначно

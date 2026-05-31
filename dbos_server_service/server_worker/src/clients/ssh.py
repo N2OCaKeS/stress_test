@@ -136,6 +136,22 @@ _VALID_SSH_KEY_PREFIXES = (
     "sk-ecdsa-sha2-nistp256@openssh.com ",
 )
 
+# Home-каталоги, в которые писать authorized_keys запрещено. `/` — обычный
+# случай «getent не нашёл user'а» (home-поле пустое). Остальные — типичные
+# системные псевдо-учётки (`nobody`, `daemon`, заблокированные сервисные
+# аккаунты): если кто-то ошибочно подставит их login'ом, ключ ушёл бы в
+# директорию вроде `/var/empty/.ssh/authorized_keys`, чего быть не должно.
+# Guard сидит и в Python (на стороне _install_authorized_key), и в bash
+# (на стороне remote-команды, после getent passwd) — defence-in-depth.
+_FORBIDDEN_HOMES = frozenset({
+    "/",
+    "/dev",
+    "/var/empty",
+    "/usr/sbin/nologin",
+    "/sbin/nologin",
+    "/bin/false",
+})
+
 
 class SshClient:
     """Wrapper над `asyncssh.connect` с тремя бизнес-операциями.
@@ -468,6 +484,7 @@ class SshClient:
         public_key: str,
         truncate: bool,
         error_code: str,
+        target_home: str | None = None,
     ) -> None:
         """Общая реализация записи ключа в `~/<user>/.ssh/authorized_keys`.
 
@@ -512,6 +529,21 @@ class SshClient:
                 cmd_sanitized=cmd_label,
                 message="public key has unsupported algorithm prefix",
             )
+        # Защита от case'а «caller передал системного пользователя» (nobody,
+        # daemon, заблокированные сервисные аккаунты). Если caller знает
+        # home заранее — отсекаем по списку до отправки команды на хост.
+        # Парный bash-guard ниже отлавливает тот же класс ошибок, если
+        # home резолвится только удалённо через getent passwd.
+        if target_home is not None and target_home in _FORBIDDEN_HOMES:
+            raise SshError(
+                error_code="SSH_INVALID_HOME",
+                host=self.host,
+                cmd_sanitized=cmd_label,
+                message=(
+                    f"refusing to write authorized_keys into system home "
+                    f"{target_home!r} for user {target_user!r}"
+                ),
+            )
         if truncate:
             write_cmd = (
                 'printf "%s\\n" "$key" > "$home/.ssh/authorized_keys"'
@@ -533,12 +565,19 @@ class SshClient:
         # создан). Без guard'а home="" приводил бы к `mkdir -p /.ssh`
         # под sudo и порче корневой ФС. Явный exit 1 с сообщением в stderr
         # ловится caller'ом как обычный SSH_*_FAILED.
+        # Дополнительно отбиваем home-каталоги типичных системных учёток
+        # (`/dev`, `/var/empty`, заблокированные shell'ы `/usr/sbin/nologin`,
+        # `/sbin/nologin`, `/bin/false`) — если кто-то по ошибке протащит
+        # такой login через провижн server_account, ключ не уляжется в
+        # неожиданном месте. Список синхронизирован с `_FORBIDDEN_HOMES`.
         rc, _out, stderr = await self.run(
             f"bash -c 'set -e; "
             f"home=$(getent passwd {target_user} | cut -d: -f6); "
-            'if [ -z "$home" ] || [ "$home" = "/" ]; then '
+            'case "$home" in '
+            '""|"/"|"/dev"|"/var/empty"|"/usr/sbin/nologin"|"/sbin/nologin"|"/bin/false") '
             f'echo "user {target_user} not found or has invalid home" >&2; '
-            'exit 1; fi; '
+            'exit 1;; '
+            'esac; '
             'mkdir -p "$home/.ssh"; '
             "key=$(cat); "
             f"{write_cmd}; "

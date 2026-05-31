@@ -160,6 +160,97 @@ class TestInstallAuthorizedKeyValidation:
         assert exc.value.returncode == 1
 
 
+class TestForbiddenHomeGuard:
+    """Caller знает home заранее → отбиваем системные пути до отправки SSH.
+
+    Защита от случая, когда сверху приехал login типа `nobody` /
+    `daemon`: их home — `/var/empty` или `/dev`, и без guard'а ключ
+    лёг бы в неожиданное место. Bash-guard на стороне remote-команды
+    дублирует тот же набор путей.
+    """
+
+    @pytest.mark.parametrize(
+        "home",
+        [
+            "/",
+            "/dev",
+            "/var/empty",
+            "/usr/sbin/nologin",
+            "/sbin/nologin",
+            "/bin/false",
+        ],
+    )
+    async def test_known_system_home_rejected(self, home):
+        ssh = _make_client_with_conn([])
+        with pytest.raises(SshError) as exc:
+            await ssh._install_authorized_key(
+                target_user="nobody",
+                public_key=_PUBKEY,
+                truncate=False,
+                error_code="SSH_AUTHORIZED_KEYS_FAILED",
+                target_home=home,
+            )
+        assert exc.value.error_code == "SSH_INVALID_HOME"
+        # До SSH дело не дошло — guard сработал до bash-команды.
+        ssh._conn.run.assert_not_awaited()
+
+    async def test_legit_home_passes_python_guard(self):
+        # `/home/svc` не в списке → Python-guard молчит, команда уезжает
+        # на хост. Mock возвращает rc=0, чтобы не упасть на пути после.
+        ssh = _make_client_with_conn([run_result("", "", 0)])
+        await ssh._install_authorized_key(
+            target_user="svc",
+            public_key=_PUBKEY,
+            truncate=False,
+            error_code="SSH_AUTHORIZED_KEYS_FAILED",
+            target_home="/home/svc",
+        )
+        ssh._conn.run.assert_awaited_once()
+
+    async def test_no_target_home_keeps_legacy_path(self):
+        # Без явного target_home guard не активируется — проверка home
+        # остаётся на bash-стороне (`case` после getent passwd).
+        ssh = _make_client_with_conn([run_result("", "", 0)])
+        await ssh._install_authorized_key(
+            target_user="dbos",
+            public_key=_PUBKEY,
+            truncate=False,
+            error_code="SSH_AUTHORIZED_KEYS_FAILED",
+        )
+        ssh._conn.run.assert_awaited_once()
+
+
+class TestForbiddenHomeBashGuard:
+    """Bash-команда содержит case-список запрещённых home'ов.
+
+    Bash-guard ловит остаточный случай: caller не знал home, передал
+    только login, а getent passwd на удалённой стороне вернул системный
+    путь. Проверяем структурно — в собранной команде должны быть все
+    шаблоны из `_FORBIDDEN_HOMES`.
+    """
+
+    async def test_bash_case_lists_all_forbidden_homes(self):
+        ssh = _make_client_with_conn([run_result("", "", 0)])
+        await ssh._install_authorized_key(
+            target_user="dbos",
+            public_key=_PUBKEY,
+            truncate=False,
+            error_code="SSH_AUTHORIZED_KEYS_FAILED",
+        )
+        cmd = ssh._conn.run.await_args.args[0]
+        # Все запрещённые home'ы — в case-шаблонах.
+        from src.clients.ssh import _FORBIDDEN_HOMES
+        for home in _FORBIDDEN_HOMES:
+            assert f'"{home}"' in cmd, (
+                f"bash-guard должен содержать паттерн для {home!r}, "
+                f"иначе getent-результат проскочит без проверки"
+            )
+        # Пустой home (отсутствие user'а в passwd) — тоже отбивается.
+        assert '""' in cmd
+        # case/esac — структурно корректное.
+        assert "case " in cmd and "esac" in cmd
+
+
 class TestValidSshKeyPrefixesShared:
     """Whitelist префиксов вынесен в module-level и используется в обоих
     путях записи ключа: `_install_authorized_key` (server_account) и

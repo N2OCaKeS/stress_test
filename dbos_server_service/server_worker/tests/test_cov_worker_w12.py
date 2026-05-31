@@ -653,7 +653,12 @@ class TestInstallAuthorizedKeyHomeGuardEdge:
         assert exc.value.returncode == 1
 
     async def test_bash_cmd_contains_both_home_guard_conditions(self):
-        """Bash-команда содержит ОБА условия: empty-home и root-home."""
+        """Bash-команда содержит case-guard с пустым home и root-home.
+
+        Guard переехал с `[ -z ... ] || [ ... = / ]` на `case "$home" in
+        ""|"/"|...) ...` — список расширен системными псевдо-аккаунтами
+        (`/dev`, `/var/empty` и т.п.), см. `_FORBIDDEN_HOMES`.
+        """
         ssh = self._make_client([run_result("", "guard triggered", 1)])
         with pytest.raises(SshError):
             await ssh._install_authorized_key(
@@ -663,8 +668,9 @@ class TestInstallAuthorizedKeyHomeGuardEdge:
                 error_code="SSH_PREPARE_FAILED",
             )
         cmd = ssh._conn.run.await_args.args[0]
-        assert '[ -z "$home" ]' in cmd, "guard на пустой home должен присутствовать"
-        assert '[ "$home" = "/" ]' in cmd, "guard на root-home должен присутствовать"
+        assert "case " in cmd, "guard переехал на case-выражение"
+        assert '""' in cmd, "пустой home в шаблонах case должен присутствовать"
+        assert '"/"' in cmd, "root-home в шаблонах case должен присутствовать"
 
     async def test_error_code_propagated_correctly(self):
         """error_code из аргумента передаётся в SshError.error_code."""

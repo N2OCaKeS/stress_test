@@ -175,16 +175,22 @@ async def check() -> None:
 async def get_state() -> tuple[str, float]:
     """Read-only snapshot breaker'а: `(state, retry_after_seconds)`.
 
+    Имя misleading — метод НЕ pure-read: тот же `_CHECK_SCRIPT`
+    атомарно транзитит `open → half_open`, если cooldown истёк, и
+    может захватить probe-slot. Это сознательный компромисс: отдельный
+    «истинно read-only» Lua пришлось бы поддерживать параллельно с
+    `_CHECK_SCRIPT`, и они бы разъезжались по логике переходов.
+    Caller'у (`run_publisher_loop`) переход в half_open приемлем: он
+    всё равно сделает publish-попытку следующей итерацией, успех её
+    закроет breaker, fail — оставит open. Если когда-нибудь понадобится
+    действительно неинвазивный peek (например, для метрик) — придётся
+    делать отдельный скрипт.
+
     Возвращает то же что вернул бы `check()` Lua-скрипт, но без raise'а
     при open. Нужен `run_publisher_loop` — он хочет узнать «надо ли
-    спать длиннее обычного», но без побочного эффекта (не дёргать
-    half_open-переход уже на старте цикла).
+    спать длиннее обычного», без отдельного raise/catch.
 
-    Сейчас get_state — это тот же `_CHECK_SCRIPT`: он действительно
-    может транзитить open → half_open, если cooldown истёк. Это
-    приемлемо: loop всё равно делает попытку публикации (пробный
-    запрос в half_open), и при успехе breaker закрывается. Если
-    Redis недоступен — fail-open: возвращаем `("closed", 0.0)`.
+    Если Redis недоступен — fail-open: возвращаем `("closed", 0.0)`.
     """
     thresholds = _thresholds_from_settings()
     client = await _get_client()

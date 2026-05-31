@@ -351,12 +351,16 @@ class TestInstallAuthorizedKeyHomeGuard:
                 error_code="SSH_AUTHORIZED_KEYS_FAILED",
             )
 
-        # Команда содержит явный guard: если home пустой или "/" — exit 1.
+        # Команда содержит явный guard: если home пустой / "/" / системный
+        # псевдо-аккаунт (`/dev`, `/var/empty` и т.п.) — exit 1.
+        # Guard переехал с `[ -z ... ] || [ ... = / ]` на `case "$home" in
+        # ""|"/"|...)`, см. `_FORBIDDEN_HOMES` в `clients/ssh.py`.
         call = ssh._conn.run.await_args
         assert call is not None
         cmd = call.args[0]
-        assert '[ -z "$home" ]' in cmd
-        assert '[ "$home" = "/" ]' in cmd
+        assert "case " in cmd
+        assert '""' in cmd
+        assert '"/"' in cmd
         assert "exit 1" in cmd
         # mkdir идёт ПОСЛЕ guard'а — не раньше.
         guard_pos = cmd.find("exit 1")

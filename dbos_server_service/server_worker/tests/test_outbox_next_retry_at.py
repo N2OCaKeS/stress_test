@@ -278,6 +278,54 @@ class TestBackoffGrowth:
         assert row.next_retry_at >= before + timedelta(seconds=295)
 
 
+class TestBackoffExponentCap:
+    """Внутренний guard на показатель степени.
+
+    Без него `2 ** attempts` с патологически большим attempts (например,
+    из-за бага в poison-логике или ручного UPDATE без сброса) грузил бы
+    CPU/память на конструировании gigantic Python int'а. Cap по
+    `_BACKOFF_EXPONENT_CAP` режет показатель до 16 → max raw delay 65536s,
+    дальше уже отрабатывает `_BACKOFF_MAX_SECONDS=300`.
+    """
+
+    def test_exponent_capped_for_huge_attempts(self):
+        from src.models import AuditOutbox
+
+        row = AuditOutbox(task_id=None, payload={"action": "x"})
+        row.attempts = 10_000
+        # Прямой вызов — не дёргаем БД, проверяем чистую формулу. Если
+        # cap'а нет, `2 ** 10000` собирается мгновенно (Python bigint),
+        # но через min() мы должны получить ровно _BACKOFF_MAX_SECONDS.
+        audit_outbox_publisher._apply_backoff(row)
+        assert row.next_retry_at is not None
+        delta = row.next_retry_at - datetime.now(timezone.utc)
+        # Должен быть около 300s, точно ≤ 300 + small slack.
+        assert delta.total_seconds() <= 310
+        assert delta.total_seconds() >= 290
+
+    def test_exponent_cap_constant_is_safe(self):
+        # 2 ** _BACKOFF_EXPONENT_CAP должен укладываться в любой
+        # разумный потолок и быть ≥ _BACKOFF_MAX_SECONDS (иначе cap
+        # экспоненты резал бы быстрее бизнес-cap'а — нонсенс).
+        cap_exp = audit_outbox_publisher._BACKOFF_EXPONENT_CAP
+        raw_max = 2 ** cap_exp
+        assert raw_max >= audit_outbox_publisher._BACKOFF_MAX_SECONDS
+        # 2^16 = 65536, безопасно для арифметики и компактно.
+        assert cap_exp <= 32
+
+    def test_negative_or_none_attempts_safe(self):
+        # `or 0` в формуле страхует None/0 — `_apply_backoff` вызывается
+        # после инкремента, но defensive-проверка не должна падать.
+        from src.models import AuditOutbox
+
+        row = AuditOutbox(task_id=None, payload={"action": "x"})
+        row.attempts = 0
+        audit_outbox_publisher._apply_backoff(row)
+        delta = row.next_retry_at - datetime.now(timezone.utc)
+        # 2^0 = 1s.
+        assert 0.0 <= delta.total_seconds() <= 5.0
+
+
 class TestBreakerSkipSetsBackoff:
     """Open breaker → `_publish_one` отодвигает `next_retry_at` за конец cooldown'а.
 

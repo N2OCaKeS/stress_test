@@ -263,19 +263,34 @@ def _maybe_poison(row: AuditOutbox) -> bool:
     return False
 
 
+# Cap на показатель степени в backoff'е. attempts обычно ≤ MAX_PUBLISH_ATTEMPTS
+# (~50), но если cap сорвётся (баг в poison'е, ручной reset attempts с
+# сохранением old-value и т.п.) — `2 ** 10000` в Python работает (bigint
+# arithmetic), CPU/память съест. Cap'аем сам shift'ом: 2^16 = 65536 секунд
+# (~18 часов) уже за пределами любого разумного retry-окна, дальше всё
+# равно режется `_BACKOFF_MAX_SECONDS=300`. Дешёвле, чем доверять верхнему
+# `min(...)` останавливать рост exp'оненты.
+_BACKOFF_EXPONENT_CAP = 16
+
+
 def _apply_backoff(row: AuditOutbox) -> None:
     """Назначить `next_retry_at` после неуспешной попытки.
 
-    Формула: `now() + min(2^attempts, _BACKOFF_MAX_SECONDS)` секунд.
-    `attempts` уже инкрементнут к моменту вызова — берём текущее
-    значение. SELECT publisher'а потом не возьмёт row, пока время не
-    наступит.
+    Формула: `now() + min(2^min(attempts, _BACKOFF_EXPONENT_CAP),
+    _BACKOFF_MAX_SECONDS)` секунд. `attempts` уже инкрементнут к моменту
+    вызова — берём текущее значение. SELECT publisher'а потом не возьмёт
+    row, пока время не наступит.
+
+    Двойной cap: внутренний на показатель степени (CPU/memory guard на
+    случай accidental overflow attempts), внешний на результат в секундах
+    (бизнес-cap: row не должна простаивать дольше 5 минут).
 
     Не вызывается при поэтапной отбраковке (`missing_action`,
     `permanent_4xx`, `attempts_cap`) — там row уже закрыт через
     `_send_to_dlq` и `next_retry_at` смысла не имеет.
     """
-    delay = min(2 ** row.attempts, _BACKOFF_MAX_SECONDS)
+    exponent = min(row.attempts or 0, _BACKOFF_EXPONENT_CAP)
+    delay = min(2 ** exponent, _BACKOFF_MAX_SECONDS)
     row.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
 
 
@@ -633,6 +648,12 @@ async def run_publisher_loop(
     while True:
         try:
             _published, _audit_emit_errors = await _flush_outbox_once()
+        # `asyncio.CancelledError` в Python 3.8+ наследуется от `BaseException`,
+        # не от `Exception`, поэтому `except Exception` его не глотает и
+        # graceful shutdown (taskiq WORKER_SHUTDOWN → cancel этой task'и)
+        # отрабатывает штатно. Если когда-нибудь поднимется issue про
+        # «loop не останавливается на SIGTERM» — проверять надо `_runner`
+        # и taskiq-wiring, не этот блок.
         except Exception as exc:  # noqa: BLE001 — never crash the loop
             # Идёт в worker stdout/journald → k8s log-aggregator. Реальные
             # клиенты (httpx/requests/asyncpg) могут зашить в текст ошибки

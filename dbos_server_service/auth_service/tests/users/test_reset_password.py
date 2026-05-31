@@ -125,3 +125,74 @@ async def test_reset_password_invalidates_identity_cache(
     assert user_a.id in invalidated, (
         f"identity-cache юзера должен быть сброшен, got {invalidated}"
     )
+
+
+# ── actor_role / actor_department_id из IdentityContext'а ──────────────────
+#
+# Endpoint прокидывает оба поля в service-функцию, и она не идёт в БД за
+# actor.row, когда роль и dept_id уже известны. Проверяем service-функцию
+# напрямую (минуя endpoint, чтобы не считать SELECT'ы из identity-resolver'а).
+
+
+async def test_reset_password_account_admin_skips_actor_select(db, user_a):
+    """account_admin: guard не активен → лишний SELECT actor'а не происходит.
+
+    Сравниваем счётчик `UserRepository.get_by_id` вызовов внутри сервиса —
+    должен быть ровно один (для target'а).
+    """
+    from src.services import user_service
+    from src.repositories.users import UserRepository
+    from src.core.constants import PlatformRole
+
+    real_get_by_id = UserRepository.get_by_id
+    select_ids: list[str] = []
+
+    async def _spy(self, uid):
+        select_ids.append(uid)
+        return await real_get_by_id(self, uid)
+
+    UserRepository.get_by_id = _spy  # type: ignore[method-assign]
+    try:
+        await user_service.reset_password(
+            db=db,
+            actor_id="usr_fake_admin",
+            user_id=user_a.id,
+            new_password="NewPass1234!",
+            actor_role=PlatformRole.ACCOUNT_ADMIN,
+            actor_department_id=None,
+        )
+    finally:
+        UserRepository.get_by_id = real_get_by_id  # type: ignore[method-assign]
+
+    # SELECT'ов ровно один — target user.
+    assert select_ids == [user_a.id], select_ids
+
+
+async def test_reset_password_dept_admin_uses_identity_department(db, user_a):
+    """dept_admin: cross-dept guard читает dept_id из IdentityContext без SELECT'а actor'а."""
+    from src.services import user_service
+    from src.repositories.users import UserRepository
+    from src.core.constants import PlatformRole
+
+    real_get_by_id = UserRepository.get_by_id
+    select_ids: list[str] = []
+
+    async def _spy(self, uid):
+        select_ids.append(uid)
+        return await real_get_by_id(self, uid)
+
+    UserRepository.get_by_id = _spy  # type: ignore[method-assign]
+    try:
+        await user_service.reset_password(
+            db=db,
+            actor_id="usr_fake_dept_admin",
+            user_id=user_a.id,
+            new_password="NewPass1234!",
+            actor_role=PlatformRole.DEPARTMENT_ADMIN,
+            actor_department_id=user_a.department_id,
+        )
+    finally:
+        UserRepository.get_by_id = real_get_by_id  # type: ignore[method-assign]
+
+    # Опять — только target SELECT, actor берём из identity.
+    assert select_ids == [user_a.id], select_ids

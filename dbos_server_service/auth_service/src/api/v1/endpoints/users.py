@@ -507,6 +507,8 @@ async def reset_password(
         actor_id=identity.user_id,
         user_id=user_id,
         new_password=body.new_password,
+        actor_role=identity.platform_role,
+        actor_department_id=identity.department_id,
         request_id=getattr(request.state, "request_id", None),
     )
     return OkResponse()

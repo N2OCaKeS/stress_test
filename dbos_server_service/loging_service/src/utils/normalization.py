@@ -89,6 +89,11 @@ _CONFUSABLES_MAP = {
     "τ": "t", "Τ": "T",  # τ / Τ
     "β": "b", "Β": "B",  # β / Β
     "ζ": "z", "Ζ": "Z",  # ζ / Ζ
+    # IPA / расширенная латиница — выглядят как ASCII в большинстве шрифтов,
+    # NFKC их не сворачивает (нет compatibility-decomposition).
+    "ɡ": "g",                  # U+0261 LATIN SMALL LETTER SCRIPT G
+    "ı": "i",                  # U+0131 LATIN SMALL LETTER DOTLESS I
+    "ŋ": "n",                  # U+014B LATIN SMALL LETTER ENG
 }
 
 _CONFUSABLES_TRANSLATE = str.maketrans(_CONFUSABLES_MAP)

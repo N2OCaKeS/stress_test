@@ -584,3 +584,53 @@ class TestPrepareHandler:
         assert "bootadmin" not in str(captured_audit)
 
         get_settings.cache_clear()
+
+
+# ── _read_bootstrap_creds: устойчивость к битому payload'у ────────────────────
+
+
+class TestReadBootstrapCredsMalformed:
+    """Битый JSON / non-UTF8 в Redis-значении → SSH_BOOTSTRAP_CREDS_MISSING.
+
+    Конвертим в ту же ошибку, что и пустой ключ — task FAILED с понятным
+    last_error, а не traceback (json.JSONDecodeError / UnicodeDecodeError).
+    """
+
+    async def test_malformed_json_raises_creds_missing(self, monkeypatch):
+        from src.tasks import prepare as prepare_mod
+
+        class _Client:
+            async def get(self, key):
+                return b"{not valid json"
+
+            async def aclose(self):
+                pass
+
+        def _from_url(_url):
+            return _Client()
+
+        monkeypatch.setattr(prepare_mod.aioredis, "from_url", _from_url)
+
+        with pytest.raises(SshError) as ei:
+            await prepare_mod._read_bootstrap_creds("dbos:prepare_creds:pcd_x")
+        assert ei.value.error_code == "SSH_BOOTSTRAP_CREDS_MISSING"
+
+    async def test_non_utf8_raises_creds_missing(self, monkeypatch):
+        from src.tasks import prepare as prepare_mod
+
+        class _Client:
+            async def get(self, key):
+                # Заведомо невалидный UTF-8 — json.loads(bytes) сам декодит.
+                return b"\xff\xfe\xfd"
+
+            async def aclose(self):
+                pass
+
+        def _from_url(_url):
+            return _Client()
+
+        monkeypatch.setattr(prepare_mod.aioredis, "from_url", _from_url)
+
+        with pytest.raises(SshError) as ei:
+            await prepare_mod._read_bootstrap_creds("dbos:prepare_creds:pcd_x")
+        assert ei.value.error_code == "SSH_BOOTSTRAP_CREDS_MISSING"

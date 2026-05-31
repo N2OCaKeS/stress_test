@@ -88,7 +88,22 @@ async def _read_bootstrap_creds(creds_key: str) -> dict:
                 "re-run prepare to supply them again"
             ),
         )
-    return json.loads(raw)
+    # Битый payload (не-JSON, не-UTF8) обрабатываем как «креды отсутствуют»:
+    # task FAILED с понятным last_error, а не traceback в логи. Source — sender
+    # из server_service; в норме pickle/encoding-несовместимости быть не должно,
+    # но если что-то починили на той стороне криво, не хочется зависнуть на
+    # таске с непонятным `JSONDecodeError`.
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise SshError(
+            error_code="SSH_BOOTSTRAP_CREDS_MISSING",
+            host="",
+            message=(
+                "bootstrap credentials payload is malformed; "
+                "re-run prepare to supply them again"
+            ),
+        ) from exc
 
 
 async def _mark_bootstrap_succeeded(task_id: str) -> None:

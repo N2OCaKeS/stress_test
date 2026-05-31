@@ -103,6 +103,21 @@ class TestRedactErrorMessageKVForms:
         assert "hunter2" not in out
         assert "<PASSWORD>" in out
 
+    def test_secret_with_underscore_prefix_masked(self):
+        # `\b` не работал на границе `_api_key`: `_` — word-char. После фикса
+        # `service_api_key=...` редактится наравне с голым `api_key=...`.
+        msg = "config: service_api_key=topsecretvalue123"
+        out = redact_error_message(msg)
+        assert "topsecretvalue123" not in out
+        assert "<SECRET>" in out
+
+    def test_secret_inside_word_not_masked(self):
+        # Граница не должна теряться полностью: внутри буквенного слова
+        # секрет-ключ — это, скорее всего, артефакт другого имени, не утечка.
+        msg = "myapi_key=should_stay"
+        out = redact_error_message(msg)
+        assert "should_stay" in out
+
 
 class TestRedactErrorMessageBearer:
     def test_bearer_token_masked(self):

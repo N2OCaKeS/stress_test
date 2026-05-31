@@ -94,6 +94,20 @@ class TestConfusables:
         # Кириллическое 'а' и 'с'
         assert normalize_service_name("аuth_serviсe") == "auth_service"
 
+    def test_ipa_script_g(self):
+        # U+0261 LATIN SMALL LETTER SCRIPT G — выглядит как ASCII 'g',
+        # NFKC не сворачивает; маппится в `g` нашей таблицей.
+        assert normalize_service_name("loɡing_service") == "loging_service"
+
+    def test_ipa_dotless_i(self):
+        # U+0131 LATIN SMALL LETTER DOTLESS I → 'i'.
+        assert normalize_service_name("logıng_service") == "loging_service"
+
+    def test_latin_eng(self):
+        # U+014B LATIN SMALL LETTER ENG → 'n'.
+        # `logi` + ŋ + `g_service` → `login` + `g_service` = `loging_service`.
+        assert normalize_service_name("logiŋg_service") == "loging_service"
+
 
 class TestCombined:
     def test_unicode_plus_case_plus_invisible(self):

@@ -68,6 +68,11 @@ async def test_open_breaker_bails_out_after_first_row(
     """
     await _insert_outbox_rows(5)
 
+    # Чистый старт счётчика skip'ов: фикс'ы могли инкрементить его в
+    # предыдущих тестах модуля.
+    audit_outbox_publisher._reset_breaker_state()
+    skips_before = audit_outbox_publisher.get_breaker_skips_total()
+
     # Доводим breaker до open.
     for _ in range(audit_publisher_breaker.DEFAULT_FAILURE_THRESHOLD):
         await audit_publisher_breaker.record_failure()
@@ -122,3 +127,12 @@ async def test_open_breaker_bails_out_after_first_row(
             assert row.attempts == 0, (
                 f"breaker-skip ≠ попытка доставки, row {row.id} attempts={row.attempts}"
             )
+
+    # Метрика breaker-skip: ровно один skip (одна row дошла до check()),
+    # дальше flush bail-out'ит.
+    assert (
+        audit_outbox_publisher.get_breaker_skips_total() - skips_before == 1
+    ), (
+        "ровно один skip должен быть зарегистрирован; "
+        f"got delta={audit_outbox_publisher.get_breaker_skips_total() - skips_before}"
+    )

@@ -59,9 +59,14 @@ _KV_PASSWORD_RE = re.compile(
     r"(?i)\b(password|passwd|pwd|pass)\s*[=:]\s*"
     r"(?P<val>[^\s&,;]+)",
 )
+
+# `\b` не срабатывает на границе `_<key>`, потому что `_` — word-char.
+# Из-за этого `service_api_key=val` или `db_secret=val` проскакивали
+# без редакции. Меняем на негативный lookbehind по буквам: `_api_key`
+# матчится (перед `_` нет буквы), `myapi_key` — нет (перед `_` буква).
 _KV_SECRET_RE = re.compile(
-    r"(?i)\b(secret|secret_key|api_key|apikey|client_secret|private_key|"
-    r"signing_key)\s*[=:]\s*"
+    r"(?i)(?<![A-Za-z])(secret|secret_key|api_key|apikey|client_secret|"
+    r"private_key|signing_key)\s*[=:]\s*"
     r"(?P<val>[^\s&,;]+)",
 )
 _KV_TOKEN_RE = re.compile(

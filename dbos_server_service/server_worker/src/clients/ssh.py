@@ -477,7 +477,10 @@ class SshClient:
 
         `target_user` обязан быть уже провалидирован caller'ом
         (`_validate_login` или эквивалент): подставляется в shell-команду,
-        не через stdin.
+        не через stdin. На всякий случай дублируем валидацию здесь —
+        defense-in-depth: если в будущем появится call-site, забывший
+        вызвать `_validate_login`, мы всё равно отобьём injection до того,
+        как login попадёт в `getent passwd <user>` shell-команды.
 
         Валидирует ключ (single-line, известный prefix), собирает home
         через `getent passwd`, кладёт ключ на stdin (`$(cat)`), правит
@@ -485,6 +488,7 @@ class SshClient:
         одним ключом; на `truncate=False` — идемпотентный append через
         `grep -qxF`.
         """
+        self._validate_login(target_user)
         cmd_label = f"prepare authorized_keys <{target_user}>"
         if not public_key or not public_key.strip():
             raise SshError(

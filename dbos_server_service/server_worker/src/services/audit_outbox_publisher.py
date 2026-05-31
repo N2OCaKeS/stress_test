@@ -128,6 +128,14 @@ _CB_SLEEP_CHUNK_SECONDS = 5.0
 # доступен через `get_dlq_total()` для health-эндпоинтов и тестов.
 _dlq_total: int = 0
 
+# Counter skip'ов по open circuit breaker'у — отдельная метрика от DLQ.
+# Растёт при каждом `_publish_one`, где `audit_publisher_breaker.check()`
+# отбил row до HTTP-вызова. Полезно для health-эндпоинта: если breaker
+# open и счётчик уверенно растёт — loging_service лежит, надо разбираться,
+# а не ждать естественного recovery. Stub под Prometheus-метрику
+# `audit_outbox_breaker_skips_total`.
+_breaker_skips_total: int = 0
+
 # Backoff cap. 2^attempts растёт быстро: уже на 10 fail'ах = 1024s
 # (~17 минут) между попытками, на 20 — ~12 дней. Cap'аем потолком,
 # чтобы row не «уезжал» на месяцы из-за случайно высокого attempts
@@ -151,17 +159,29 @@ def get_dlq_total() -> int:
     return _dlq_total
 
 
+def get_breaker_skips_total() -> int:
+    """Сколько row'ов publisher пропустил из-за open circuit breaker'а.
+
+    Растёт при каждом `_publish_one`, где `audit_publisher_breaker.check()`
+    отбил row до HTTP-вызова. Сбрасывается только рестартом процесса
+    (тестовый `_reset_breaker_state` тоже обнуляет). Health-check может
+    репортить значение для алерта на «канал к loging_service глух».
+    """
+    return _breaker_skips_total
+
+
 def _reset_breaker_state() -> None:
-    """Test helper: сбросить module-level DLQ counter.
+    """Test helper: сбросить module-level DLQ counter и breaker-skip counter.
 
     Shared breaker'ом владеет `audit_publisher_breaker`, его state живёт
     в Redis и сбрасывается через `audit_publisher_breaker.reset()` —
-    это делает conftest autouse-фикстура. Здесь остался только
-    monotonic-счётчик DLQ, его тесты обнуляют сами, когда хотят
+    это делает conftest autouse-фикстура. Здесь остаются monotonic
+    счётчики DLQ и breaker-skip'ов, их тесты обнуляют сами, когда хотят
     проверить дельту.
     """
-    global _dlq_total
+    global _dlq_total, _breaker_skips_total
     _dlq_total = 0
+    _breaker_skips_total = 0
 
 
 async def re_attempt_row(row_id: int) -> bool:
@@ -307,6 +327,8 @@ async def _publish_one(
         # реальным HTTP-failure'ам. breaker_skipped=True — caller bail-out'ит
         # из flush-loop'а, остальные row'ы под open breaker'ом всё равно
         # отскочат без HTTP'а.
+        global _breaker_skips_total
+        _breaker_skips_total += 1
         return PublishResult(
             closed=True, audit_emit_error=False, was_published=False,
             breaker_skipped=True,

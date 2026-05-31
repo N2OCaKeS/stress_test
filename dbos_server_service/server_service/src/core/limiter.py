@@ -49,6 +49,31 @@ def _resolve_client_ip(request: Request) -> str:
         return ip
     return get_remote_address(request)
 
+
+def per_account_key(request: Request) -> str:
+    """Ключ для rate-limit'а IPMI/account-rotate'а: IP + path-param идентификатор.
+
+    Чистый per-IP лимит пробивается, если злоумышленник с одного аккаунта
+    бьёт ротации через несколько exit-IP — slowapi бакеты у разных IP
+    независимы. Комбинация `IP:account_or_controller_id` склеивает все
+    burst-попытки против одной целевой сущности в одну корзину, при этом
+    разные аккаунты не делят лимит между собой.
+
+    Поддерживаем оба распространённых имени path-параметра в server_service
+    (`account_id` и `controller_id`), плюс fallback на `server_id`. Если
+    ни одного нет — возвращаем чистый IP-ключ.
+    """
+    base = _resolve_client_ip(request)
+    params = request.path_params
+    target = (
+        params.get("account_id")
+        or params.get("controller_id")
+        or params.get("server_id")
+        or "unknown"
+    )
+    return f"{base}:{target}"
+
+
 # `headers_enabled=True` оставлено для compat с прежним поведением
 # (мы возвращаем кастомный 429 и сами ставим `Retry-After: 60`, остальные
 # `X-RateLimit-*` опциональны и помогают отлаживать клиенты).

@@ -290,6 +290,30 @@ class Settings(BaseSettings):
         ),
     )
 
+    # slowapi backend для счётчиков rate-limit'а.
+    #
+    # `None`/пусто → fallback на `memory://` (in-memory счётчик per-process).
+    # Для dev/test это норм, но в K8s с 2+ репликами каждый pod держит свой
+    # счётчик: brute-force получает фактически N × `LOGIN_RATE_LIMIT` попыток,
+    # round-robin ingress раскладывает их по pod'ам и per-IP лимит обходится.
+    #
+    # Для production укажи общий backend: `redis://host:6379/0`,
+    # `redis+unix:///var/run/redis.sock`, `memcached://host:11211` и т.д.
+    # Полный список схем — в документации `limits` (storage backends).
+    #
+    # Production-guard ниже не делает это поле обязательным (для совместимости
+    # с однопроцессным staging'ом), но `main.py` пишет WARNING на старте, если
+    # в prod выбран `memory://`.
+    rate_limit_storage_uri: str | None = Field(
+        default=None,
+        alias="RATE_LIMIT_STORAGE_URI",
+        description=(
+            "slowapi storage backend (например `redis://host:6379/0`). "
+            "Если не задан — fallback на `memory://` (dev/test only; "
+            "в K8s с 2+ репликами лимит обходится round-robin'ом)."
+        ),
+    )
+
     # ── CORS / security headers ─────────────────────────────────────────────
     cors_allowed_origins: list[str] = Field(
         default_factory=list,

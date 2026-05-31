@@ -58,7 +58,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.constants import AccountSource, Action, EntityType, ServerStatus
-from src.core.limiter import endpoint_limiter
+from src.core.limiter import endpoint_limiter, per_account_key
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -1545,11 +1545,14 @@ async def account_deprovision_dispatch(
         403: {"description": "Нет роли с `rotate_credentials` либо чужой department."},
         404: {"description": "IPMI-контроллер не найден / чужой dept."},
         409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
-        429: {"description": "Per-IP rotate-rate-limit пробит."},
+        429: {"description": "Rotate-rate-limit пробит (ключ — IP + controller_id)."},
         503: {"description": "Worker недоступен."},
     },
 )
-@endpoint_limiter.limit(get_settings().ipmi_rotate_per_server_rate_limit)
+@endpoint_limiter.limit(
+    get_settings().ipmi_rotate_per_server_rate_limit,
+    key_func=per_account_key,
+)
 async def ipmi_rotate_password_dispatch(
     request: Request,
     controller_id: str,

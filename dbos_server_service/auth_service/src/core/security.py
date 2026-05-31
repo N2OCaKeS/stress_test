@@ -3,6 +3,7 @@
 import hashlib
 import secrets
 from datetime import timedelta
+from urllib.parse import urlparse
 
 import jwt
 from argon2 import PasswordHasher
@@ -134,6 +135,43 @@ def generate_bot_token() -> tuple[str, str, str]:
 def hash_opaque_token(raw: str) -> str:
     """SHA-256 для любого opaque-токена (PAT / bot / OAuth client secret / authorization_code)."""
     return _sha256(raw)
+
+
+def mask_dsn(dsn: str | None) -> str | None:
+    """Замаскировать пароль в DSN-URL для безопасного логгирования.
+
+    Принимает любой URI с user:password@host-частью (`redis://`, `postgresql://`,
+    `memcached://`, `redis+unix://`). Возвращает строку с подменой password →
+    `***`. Если password нет — DSN возвращается как есть; невалидные строки
+    тоже не падают, возвращается `<DSN>` для случаев типа `memory://` или
+    пустого ввода.
+
+        mask_dsn("redis://user:secret@h:6379/0") == "redis://user:***@h:6379/0"
+        mask_dsn("redis://h:6379/0")             == "redis://h:6379/0"
+        mask_dsn("memory://")                    == "memory://"
+        mask_dsn(None)                           is None
+        mask_dsn("")                             is None
+    """
+    if not dsn:
+        return dsn
+    try:
+        parsed = urlparse(dsn)
+    except Exception:
+        return "<DSN>"
+    if not parsed.password:
+        return dsn
+    user = parsed.username or ""
+    host = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    creds = f"{user}:***@" if user else ":***@"
+    rebuilt = f"{parsed.scheme}://{creds}{host}{port}"
+    if parsed.path:
+        rebuilt += parsed.path
+    if parsed.query:
+        rebuilt += f"?{parsed.query}"
+    if parsed.fragment:
+        rebuilt += f"#{parsed.fragment}"
+    return rebuilt
 
 
 def mask_email(email: str | None) -> str | None:

@@ -190,9 +190,26 @@ PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 | `SERVICE_API_KEYS` | JSON env с per-service ключами (опционально, dual-mode) |
 | `STRICT_SERVICE_IDENTITY` | bool, default False — strict-режим `X-Service-Identity` |
 | `TRUSTED_PROXY_IPS` | CIDR list для XFF (default `[]`) |
+| `RATE_LIMIT_STORAGE_URI` | slowapi backend (например `redis://host:6379/0`); fallback `memory://` |
 | `INITIAL_ADMIN_USERNAME/PASSWORD/EMAIL` | одноразовый bootstrap |
 
 Полный список — в `.env.example`.
+
+### Rate-limit storage
+
+slowapi считает per-IP попытки в backend'е, который задаётся через
+`RATE_LIMIT_STORAGE_URI`. По умолчанию backend — `memory://` (per-process
+in-memory счётчик), который годится для dev/test и одиночного uvicorn'а. В
+K8s, где `auth_service` обычно крутится в 2+ репликах, in-memory backend
+ломает per-IP лимит: round-robin раскладывает попытки по pod'ам, каждый
+держит свой счётчик, и brute-force получает фактически `N × LOGIN_RATE_LIMIT`
+попыток за окно. Per-user lockout (`failed_login_attempts` в БД) при этом
+работает, но username-rotating атака обходит его за per-IP бюджет.
+
+Для production укажи общий backend: `RATE_LIMIT_STORAGE_URI=redis://host:6379/0`
+(либо unix-socket / memcached / любой другой backend из списка `limits`).
+Lifespan auth_service на старте пишет в лог `rate_limit_storage: <uri>` (без
+пароля) и WARN'ит, если в prod выбран `memory://`.
 
 ### Миграции (Alembic)
 

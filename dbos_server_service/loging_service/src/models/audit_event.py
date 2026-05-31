@@ -64,6 +64,17 @@ class AuditEvent(Base):
         String(128), nullable=True
     )
 
+    # SHA-256 от canonical-JSON payload'а, заполняется только когда
+    # `idempotency_key` задан. На retry с тем же ключом репозиторий
+    # сверяет хэш: совпало — idempotent replay (возвращаем существующий
+    # row), разошлось — 409 IDEMPOTENCY_KEY_CONFLICT. Без этой колонки
+    # ON CONFLICT DO NOTHING молча возвращал бы любой первый row под
+    # ключом, что позволяло держателю SERVICE_API_KEY застолбить
+    # idempotency_key чужим payload'ом ("idempotency poisoning").
+    idempotency_payload_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+
     __table_args__ = (
         # Композитный индекс под самый частый паттерн запроса.
         Index("ix_audit_events_service_timestamp", "service", "timestamp"),

@@ -1,5 +1,7 @@
 """Репозиторий `AuditEvent` — только insert и query, никогда update/delete."""
 
+import hashlib
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -11,7 +13,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from src.core.config import get_settings
-from src.core.exceptions import DomainValidationError
+from src.core.exceptions import ConflictError, DomainValidationError
 from src.models.audit_event import AuditEvent
 from src.schemas.events import EventCreate
 from src.utils.ids import audit_event_id
@@ -92,6 +94,48 @@ def _validate_request_id(value: str | None) -> None:
         )
 
 
+# Поля, входящие в hash payload'а для idempotency-poisoning защиты.
+# Сюда НЕ входят `received_at` и `id` (server-side defaults — на двух
+# ретраях будут разные значения). `request_id` тоже исключён: middleware
+# на ретраях может реассайнить его, а сама retry-семантика не должна
+# зависеть от значения трассировки. Все остальные поля EventCreate
+# участвуют в хэше: разные значения → разный logical event → 409.
+_HASH_FIELDS: tuple[str, ...] = (
+    "timestamp",
+    "service",
+    "action",
+    "actor_id",
+    "actor_type",
+    "username",
+    "department_id",
+    "target_id",
+    "target_type",
+    "status",
+    "allowed",
+    "severity",
+    "details",
+    "idempotency_key",
+)
+
+
+def _payload_hash(payload: EventCreate) -> str:
+    """SHA-256 от canonical-JSON repr того, что определяет логику события.
+
+    Canonical-JSON = `json.dumps(..., sort_keys=True, separators=(',', ':'),
+    default=str)`. Сортировка ключей и default=str гарантируют, что одинаковый
+    payload даст одинаковый хэш на любой Python-реализации, не зависящий от
+    insertion-order'а dict'ов и наличия datetime'ов в `details` / `timestamp`.
+
+    Используется на CONFLICT-ветке `insert()` для отличения легитимного
+    outbox-retry'я (one и тот же hash → 200, существующий row) от
+    idempotency-poisoning'а (другой hash → 409 IDEMPOTENCY_KEY_CONFLICT).
+    """
+    dumped = payload.model_dump(mode="json")
+    canonical = {k: dumped.get(k) for k in _HASH_FIELDS}
+    blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
 def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEvent:
     """Вставляет новое событие аудита с idempotency по `(service, idempotency_key)`.
 
@@ -144,13 +188,20 @@ def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEv
         return event
 
     # Idempotent path — INSERT … ON CONFLICT (service, idempotency_key) DO
-    # NOTHING. Если row с таким же ключом для этого сервиса уже есть,
-    # `RETURNING id` пустой, и мы достаём канонический row по natural key —
-    # caller увидит **first-write** id/received_at (outbox-retry safe).
+    # NOTHING + payload-hash compare. Если row с таким же ключом для этого
+    # сервиса уже есть, `RETURNING id` пустой; мы достаём существующий row
+    # и сверяем его `idempotency_payload_hash` с хэшем текущего запроса.
+    # Совпало → idempotent replay, возвращаем существующий (caller получит
+    # тот же id/received_at). Не совпало → 409 IDEMPOTENCY_KEY_CONFLICT —
+    # защита от idempotency-poisoning: атакующий с `SERVICE_API_KEY` мог бы
+    # заранее «застолбить» ключ X фейковым payload'ом, и легитимный сервис
+    # на ретрае молча получил бы чужое (а свой реальный audit-row терял).
+    #
     # `severity` на этой стадии может быть NULL, если default-severity
     # resolver не задел этот row — у ORM-колонки `default="INFO"`, но
     # `pg_insert.values(...)` python-side defaults скипает, так что
     # подставляем явно, чтобы держать NOT NULL invariant.
+    payload_hash = _payload_hash(payload)
     values = {
         "id": new_id,
         "timestamp": payload.timestamp,
@@ -169,6 +220,7 @@ def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEv
         "request_id": payload.request_id,
         "details": payload.details,
         "idempotency_key": payload.idempotency_key,
+        "idempotency_payload_hash": payload_hash,
     }
     # ON CONFLICT против PARTIAL UNIQUE индекса требует повторить index-предикат
     # (`WHERE idempotency_key IS NOT NULL`) в `index_where` — иначе PostgreSQL
@@ -196,14 +248,38 @@ def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEv
             select(AuditEvent).where(AuditEvent.id == result)
         ).scalar_one()
 
-    # Conflict — возвращаем канонический row (тот, с которым мы пытались
-    # дедупиться). Это row, который первый POST caller'а сохранил.
-    return db.execute(
+    # Conflict — достаём канонический row и сверяем hash payload'а.
+    existing = db.execute(
         select(AuditEvent).where(
             AuditEvent.service == payload.service,
             AuditEvent.idempotency_key == payload.idempotency_key,
         )
     ).scalar_one()
+
+    # Legacy row, записанный до миграции j0e1f2a3b4c5, мог не иметь hash'а.
+    # Это редкий backward-compat случай: возвращаем существующий row без
+    # 409, чтобы не ломать ingest на старых данных. Новые row'ы всегда
+    # получают hash при вставке выше.
+    if existing.idempotency_payload_hash is None:
+        return existing
+
+    if existing.idempotency_payload_hash != payload_hash:
+        # Idempotency poisoning detected — payload разошёлся с тем, что
+        # лежит под этим (service, idempotency_key). Caller увидит 409;
+        # warning-self-audit эмитит event_service слоем выше (репозиторий
+        # к self-audit не цепляем — это разрушит атомарность вызова).
+        raise ConflictError(
+            error_code="IDEMPOTENCY_KEY_CONFLICT",
+            message=(
+                "idempotency_key already used by a different payload "
+                "for this service"
+            ),
+            details={
+                "service": payload.service,
+                "idempotency_key": payload.idempotency_key,
+            },
+        )
+    return existing
 
 
 def query(

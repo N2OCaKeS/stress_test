@@ -49,7 +49,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -78,6 +79,12 @@ class AuditEnvelope:
     Намеренно не `EventCreate`: pydantic-валидация payload'а делается уже на
     drain'е, чтобы push_nowait был полностью non-blocking — middleware не
     должен платить за валидацию в hot-path'е.
+
+    `idempotency_key` — UUID4, генерится в `make_envelope`. Используется как
+    DB-level dedup-якорь, чтобы graceful-shutdown / requeue не записал
+    envelope дважды: партиционный UNIQUE индекс
+    `uq_audit_events_service_idempotency_key` отбрасывает второй INSERT,
+    даже если `_drain_remaining` после crash-loop повторно дёрнет writer.
     """
 
     action: str
@@ -89,6 +96,7 @@ class AuditEnvelope:
     request_id: str | None
     details: dict
     enqueued_at: datetime
+    idempotency_key: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
 class AuditOutbox:
@@ -534,8 +542,16 @@ def make_envelope(
     allowed: bool,
     request_id: str | None,
     details: dict,
+    idempotency_key: str | None = None,
 ) -> AuditEnvelope:
-    """Помощник: фиксирует `enqueued_at` в момент создания envelope'а."""
+    """Помощник: фиксирует `enqueued_at` и привязывает уникальный dedup-ключ.
+
+    Если caller не передал `idempotency_key` явно, генерится UUID4. Этот
+    ключ становится `audit_events.idempotency_key` при записи и гарантирует,
+    что shutdown-requeue / повторный `_drain_remaining` не запишет один и
+    тот же envelope дважды — partial UNIQUE на `(service, idempotency_key)`
+    отбросит retry на DB-уровне.
+    """
     return AuditEnvelope(
         action=action,
         actor_id=actor_id,
@@ -546,6 +562,7 @@ def make_envelope(
         request_id=request_id,
         details=details,
         enqueued_at=datetime.now(timezone.utc),
+        idempotency_key=idempotency_key or uuid.uuid4().hex,
     )
 
 
@@ -598,5 +615,6 @@ def write_envelope_to_db(db: Session, envelope: AuditEnvelope) -> Any:
         allowed=envelope.allowed,
         request_id=envelope.request_id,
         details=_coerce_details_keys(envelope.details),
+        idempotency_key=envelope.idempotency_key,
     )
     return record_admin_action(db, payload, commit=False)

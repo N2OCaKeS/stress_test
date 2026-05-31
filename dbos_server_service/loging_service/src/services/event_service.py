@@ -2,11 +2,11 @@
 
 import logging
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from src.core.exceptions import AppException
+from src.core.exceptions import AppException, ConflictError
 from src.models.audit_event import AuditEvent
 from src.repositories import events as event_repo
 from src.schemas.events import EventCreate, EventListResponse, EventDetail
@@ -29,12 +29,63 @@ def _redact_payload(payload: EventCreate) -> EventCreate:
 
 
 def record(db: Session, payload: EventCreate) -> AuditEvent | None:
-    """Применяет правила и сохраняет событие. Возвращает None если событие подавлено."""
+    """Применяет правила и сохраняет событие. Возвращает None если событие подавлено.
+
+    На `IDEMPOTENCY_KEY_CONFLICT` (хэш payload'а разошёлся с тем, что лежит
+    под этим (service, idempotency_key)) эмитим WARNING self-audit и
+    пробрасываем 409 caller'у. Self-audit писать ПОСЛЕ rollback'а основной
+    транзакции репозитория (insert завалил savepoint при raise) — иначе
+    sqlalchemy ругается на dirty session.
+    """
     payload = _redact_payload(payload)
     modified = rule_service.apply_rules(db, payload)
     if modified is None:
         return None
-    return event_repo.insert(db, modified)
+    try:
+        return event_repo.insert(db, modified)
+    except ConflictError as exc:
+        # Откат завалившейся вставки, чтобы self-audit писался в чистой сессии.
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        _emit_idempotency_conflict_audit(db, modified, exc)
+        raise
+
+
+def _emit_idempotency_conflict_audit(
+    db: Session, payload: EventCreate, exc: ConflictError
+) -> None:
+    """Самоаудит факта обнаружения poisoning'а на (service, idempotency_key).
+
+    Пишется отдельной транзакцией от основного insert'а (тот уже завалился).
+    Сценарий редкий, поэтому накладные расходы на second commit допустимы.
+    Любая ошибка тут проглатывается в лог — клиент всё равно должен получить
+    409, а потеря warning self-audit'а не должна мешать основной ошибке.
+    """
+    try:
+        warning_payload = EventCreate(
+            timestamp=datetime.now(timezone.utc),
+            service="loging_service",
+            action="audit.idempotency_conflict",
+            actor_id=None,
+            actor_type="service",
+            username=None,
+            status="warning",
+            allowed=True,
+            severity="WARNING",
+            details={
+                "claimed_service": payload.service,
+                "idempotency_key": payload.idempotency_key,
+                "claimed_action": payload.action,
+                "error_code": exc.error_code,
+            },
+        )
+        record_admin_action(db, warning_payload, commit=True)
+    except Exception as audit_exc:
+        logger.warning(
+            "self-audit for IDEMPOTENCY_KEY_CONFLICT failed: %s", audit_exc
+        )
 
 
 def record_admin_action(

@@ -1,6 +1,7 @@
 """Entrypoint auth_service: создание FastAPI-приложения, middleware, exception handlers."""
 
 import asyncio
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -78,13 +79,16 @@ def _rate_limit_exceeded_response(request: Request, exc) -> JSONResponse:
 # `key_func` берёт client IP через trusted-proxy allow-list; без allow-list
 # X-Forwarded-For игнорится и используется `request.client.host`.
 #
-# TODO storage_uri (Redis) для prod: дефолтный slowapi-backend — in-memory,
-# счётчики локальны для каждого uvicorn-процесса. В K8s с 2+ репликами
-# атакующий получает N×limit, потому что round-robin раскладывает попытки
-# по pod'ам. Варианты: общий Redis (`Limiter(storage_uri="redis://...")`) или
-# sticky sessions на ingress'е. Подробнее — `obsidian/services/auth_service.md`,
-# раздел Production hardening.
-limiter = Limiter(key_func=_rate_limit_key_func, headers_enabled=True)
+# `storage_uri` тянется из настройки `RATE_LIMIT_STORAGE_URI`. Если не задан —
+# fallback на `memory://` (per-process in-memory счётчик). В K8s с 2+ pod'ами
+# memory:// даёт N × лимит фактических попыток (round-robin), поэтому в prod
+# обязательно нужен общий backend: redis/memcached. Lifespan ниже логгирует
+# актуальный backend и пишет WARNING для prod при memory://.
+limiter = Limiter(
+    key_func=_rate_limit_key_func,
+    storage_uri=get_settings().rate_limit_storage_uri or "memory://",
+    headers_enabled=True,
+)
 
 # Маршруты с per-endpoint rate-limit'ом. Значения подставляются из
 # `Settings.{login,refresh,docker_token}_rate_limit` при сборке приложения.
@@ -170,6 +174,8 @@ def create_application() -> FastAPI:
         - поднять pooled `_audit_client` для emit'а в loging_service;
         - register audit events в фоне.
         """
+        _log_rate_limit_backend(settings)
+
         async for db in get_db():
             await bootstrap_admin(db)
 
@@ -466,6 +472,29 @@ def create_application() -> FastAPI:
 
     app.openapi = custom_openapi  # type: ignore[method-assign]
     return app
+
+
+_startup_logger = logging.getLogger(__name__)
+
+
+def _log_rate_limit_backend(settings) -> None:
+    """Сообщить в INFO/WARNING актуальный rate-limit backend.
+
+    Operator при запуске видит, какой storage активен (без password'а в DSN).
+    Если в prod выбран `memory://` — пишем WARNING: атакующий получает
+    N × лимит на N pod'ах, brute-force окно фактически расширяется.
+    """
+    from src.core.security import mask_dsn
+
+    storage_uri = settings.rate_limit_storage_uri or "memory://"
+    safe = mask_dsn(storage_uri) or storage_uri
+    _startup_logger.info("rate_limit_storage: %s", safe)
+
+    if storage_uri == "memory://" and settings.app_env in ("production", "prod"):
+        _startup_logger.warning(
+            "rate_limit_storage=memory:// in production: brute-force window "
+            "expands per-replica. Set RATE_LIMIT_STORAGE_URI=redis://..."
+        )
 
 
 async def _startup_sequence() -> None:

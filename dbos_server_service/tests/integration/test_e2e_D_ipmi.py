@@ -186,13 +186,13 @@ class TestIpmiGet:
         assert r.status_code == 404, r.text
 
     def test_get_no_controller_404(self, server_client, tenants: TenantBundle):
-        """Server exists, IPMI not registered → 404 IPMI_NOT_FOUND."""
+        """Server exists, IPMI not registered → 404 NO_IPMI_CONTROLLER."""
         srv = create_server_as(server_client, tenants.admin_a)
         r = server_client.get(
             _ipmi_url(srv["id"]), headers=tenants.admin_a.headers(),
         )
         assert r.status_code == 404, r.text
-        assert r.json()["error_code"] == "IPMI_NOT_FOUND"
+        assert r.json()["error_code"] == "NO_IPMI_CONTROLLER"
 
 
 @pytest.mark.usefixtures("reset_state")

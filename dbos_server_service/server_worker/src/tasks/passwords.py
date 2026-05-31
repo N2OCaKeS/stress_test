@@ -496,6 +496,12 @@ async def ipmi_rotate_password(task_id: str) -> None:
             except (RedfishError, IpmitoolError) as exc:
                 await _breaker.record_failure(host)
                 wrapped = wrap_bmc_error("ipmi_rotate_password", exc)
+                # error_code намеренно перетираем: оператору важна фаза
+                # (apply прошёл, упал verify), а transport-уровень
+                # (BMC_AUTH_FAILED / BMC_UNREACHABLE / ...) поднимаем
+                # выше через `__cause__` (`raise ... from exc`).
+                # `wrap_bmc_error` не кладёт `phase` в details — фаза
+                # читается из самого `error_code`.
                 wrapped.error_code = "BMC_VERIFY_AFTER_ROTATE_FAILED"
                 raise wrapped from exc
             await _breaker.record_success(host)

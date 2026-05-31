@@ -60,7 +60,10 @@ def _with_statement_timeout(
 # другого сервиса минуя Pydantic. CR/LF в request_id попадает в
 # `X-Request-ID` рефлектом middleware и колется header-injection,
 # поэтому страхуемся ещё одним фильтром перед самим INSERT.
-_REQUEST_ID_RE: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# Charset зеркалит `schemas.events._REQUEST_ID_PATTERN` — точка разрешена
+# (`req.<id>` / `trace.<span>` convention), без асимметрии не пропускали
+# бы request-id'шки, которые схема уже легально приняла.
+_REQUEST_ID_RE: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
 
 
 def _validate_request_id(value: str | None) -> None:
@@ -69,7 +72,7 @@ def _validate_request_id(value: str | None) -> None:
     if not _REQUEST_ID_RE.match(value):
         raise DomainValidationError(
             error_code="INVALID_REQUEST_ID",
-            message="request_id must match ^[A-Za-z0-9_-]{1,64}$",
+            message="request_id must match ^[A-Za-z0-9_.-]{1,64}$",
         )
 
 

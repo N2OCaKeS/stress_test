@@ -314,13 +314,13 @@ def create_application() -> FastAPI:
         # POST от сервисов (ingest событий, регистрация событий): успешный
         # приём НЕ аудитируем — это осознанный anti-amplification (loging не
         # должен писать audit-событие на каждое принятое событие, иначе
-        # рекурсия/усиление). Но auth-провалы (401/403) на этих путях
-        # пропускать нельзя: иначе перебор SERVICE_API_KEY не оставляет следа
-        # ни в журнале, ни у SOC. Проваленный ingest аудитируется ниже как
-        # обычный http.access_denied (actor_id=None), не как ingest-событие —
-        # петли не создаёт.
+        # рекурсия/усиление). Но auth-провалы (401/403) и rate-limit
+        # отбивы (429) на этих путях пропускать нельзя: иначе перебор
+        # SERVICE_API_KEY или flood утёкшим ключом не оставляет следа ни в
+        # журнале, ни у SOC. 429 идёт через ту же ветку, что и 401/403 —
+        # как http.client_error (см. mapping ниже), петли не создаёт.
         if request.method == "POST" and path.startswith(_INGEST_PREFIXES):
-            if status_code not in (401, 403):
+            if status_code not in (401, 403, 429):
                 return response
 
         # Successful retention writes покрываются endpoint-уровневым self-audit'ом;

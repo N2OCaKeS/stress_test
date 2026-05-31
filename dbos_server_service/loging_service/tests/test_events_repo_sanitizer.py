@@ -40,7 +40,6 @@ class TestRepoRequestIdSanitizer:
         "req\r",
         "req with space",
         "req/slash",
-        "req.dot",  # точка разрешена схемой, но repo-гард строже — repo-charset
         "req\x00null",
         "req\x1bescape",
         "a" * 65,
@@ -55,6 +54,8 @@ class TestRepoRequestIdSanitizer:
         "req_123",
         "REQ-abc",
         "abc_DEF-456",
+        "req.dot",
+        "trace.span.123",
         "a",
         "a" * 64,
     ])

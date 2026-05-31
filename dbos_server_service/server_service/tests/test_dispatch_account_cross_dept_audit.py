@@ -1,11 +1,13 @@
-"""Cross-dept dispatch on `_dispatch_account_on_host` — denied-аудит.
+"""Cross-dept dispatch on `_dispatch_account_on_host` — failure-аудит.
 
 Закрывает дырку в security-trail: `load_visible_server` поднимает
 `NotFoundError`, если department сервера изменили out-of-band уже после
 линковки аккаунта. Раньше эта ветка молча отдавала 404 без
-`audit_service.emit(status='denied', ...)`, security-trail терял evidence.
-Фикс: ловим `NotFoundError` после `load_visible_server` и эмитим denied
-(паттерн `services/server_account.py::get_account`).
+`audit_service.emit(...)`, security-trail терял evidence.
+Фикс: ловим `NotFoundError` после `load_visible_server` и эмитим
+`status="failure"` с reason=server_not_found_or_cross_dept (паттерн
+`services/server_account.py::get_account`; convention F-W4 — visibility-404
+это business-failure, не access-deny).
 
 Сценарий моделируем напрямую через monkeypatch `load_visible_server`:
 поднять рассинхронизированное состояние DB (поменять `server.dept` между
@@ -71,8 +73,8 @@ def _events(captured: list[dict], action: str) -> list[dict]:
 
 
 @pytest.mark.asyncio
-class TestDispatchAccountCrossDeptDeniedAudit:
-    async def test_cross_dept_server_emits_denied_on_provision(
+class TestDispatchAccountCrossDeptFailureAudit:
+    async def test_cross_dept_server_emits_failure_on_provision(
         self,
         client,
         operator_token_a,
@@ -82,7 +84,7 @@ class TestDispatchAccountCrossDeptDeniedAudit:
         stub_dispatch,
         monkeypatch,
     ):
-        """Symbol-уровень: `load_visible_server` raise → denied + 404, dispatch не зовётся."""
+        """Symbol-уровень: `load_visible_server` raise → failure + 404, dispatch не зовётся."""
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id, login="ops")
 
@@ -102,22 +104,22 @@ class TestDispatchAccountCrossDeptDeniedAudit:
         )
         assert resp.status_code == 404, resp.text
 
-        denied = [
+        failures = [
             e for e in _events(captured_emits, "server_account.provision")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
             and (e.get("details") or {}).get("reason") == "server_not_found_or_cross_dept"
         ]
-        assert len(denied) == 1, captured_emits
-        ev = denied[0]
+        assert len(failures) == 1, captured_emits
+        ev = failures[0]
         assert ev["target_id"] == acc.id
         assert ev["target_type"] == "server_account"
-        assert ev["allowed"] is False
+        assert ev["allowed"] is True
         assert ev["details"]["server_id"] == srv.id
         assert ev["details"]["operation"] == "provision"
         # dispatch_task НЕ должен был дёрнуться
         assert stub_dispatch == []
 
-    async def test_cross_dept_server_emits_denied_on_update_on_host(
+    async def test_cross_dept_server_emits_failure_on_update_on_host(
         self,
         client,
         operator_token_a,
@@ -146,13 +148,13 @@ class TestDispatchAccountCrossDeptDeniedAudit:
         )
         assert resp.status_code == 404
 
-        denied = [
+        failures = [
             e for e in _events(captured_emits, "server_account.update_on_host")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
             and (e.get("details") or {}).get("reason") == "server_not_found_or_cross_dept"
         ]
-        assert len(denied) == 1
-        ev = denied[0]
+        assert len(failures) == 1
+        ev = failures[0]
         assert ev["details"]["operation"] == "update"
         assert ev["details"]["server_id"] == srv.id
         assert stub_dispatch == []
@@ -186,13 +188,13 @@ class TestDispatchAccountCrossDeptDeniedAudit:
         )
         assert resp.status_code == 202
 
-        # Никаких ложных denied на счастливом пути
-        denied = [
+        # Никаких ложных failure на счастливом пути
+        failures = [
             e for e in _events(captured_emits, "server_account.provision")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
             and (e.get("details") or {}).get("reason") == "server_not_found_or_cross_dept"
         ]
-        assert denied == []
+        assert failures == []
         success = [
             e for e in _events(captured_emits, "server_account.provision")
             if e.get("status") == "success"

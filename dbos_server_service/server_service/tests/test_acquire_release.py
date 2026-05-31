@@ -404,9 +404,9 @@ class TestBusyAuditEmission:
         srv = await make_server(department_id="dep_a")
         resp = await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_b))
         assert resp.status_code == 404
-        denied = [e for e in _events(captured_emits, "server.acquire") if e["status"] == "denied"]
-        assert len(denied) == 1
-        assert denied[0]["details"]["reason"] == "not_found_or_cross_dept"
+        failures = [e for e in _events(captured_emits, "server.acquire") if e["status"] == "failure"]
+        assert len(failures) == 1
+        assert failures[0]["details"]["reason"] == "not_found_or_cross_dept"
 
     async def test_reader_release_emits_permission_denied(
         self, client, reader_token_a, operator_token_a, make_server, captured_emits,

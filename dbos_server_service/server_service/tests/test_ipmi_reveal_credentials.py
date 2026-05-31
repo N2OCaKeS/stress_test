@@ -94,7 +94,7 @@ class TestGetControllerCredentials:
         srv = await make_server(department_id="dep_a")  # без IPMI controller
         resp = await client.get(_ipmi_url(srv.id), headers=_hdr(operator_token_a))
         assert resp.status_code == 404
-        assert resp.json()["error_code"] == "IPMI_NOT_FOUND"
+        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
 
     async def test_no_token_returns_401(self, client, make_server):
         srv = await make_server(department_id="dep_a")

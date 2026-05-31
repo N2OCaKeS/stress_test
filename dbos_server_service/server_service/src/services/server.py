@@ -624,7 +624,7 @@ async def acquire_server(
         audit_service.emit(
             "server.acquire",
             target_id=server_id, target_type="server",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
@@ -738,7 +738,12 @@ async def release_server(
     identity: IdentityContext,
     server_id: str,
 ) -> Server:
-    """Снятие busy-флага. Освободить может сам захвативший либо роль с busy_release.
+    """Снятие busy-флага. Требует роль с `busy_release`.
+
+    Сам lessee без `busy_release` отпустить захват не может — это известный
+    зазор: операционно lessee должен уметь освободить «своё», но реализовать
+    self-release без открытия escalation-пути (выдать busy_release вообще
+    всем) нетривиально и оставлено как будущая фича.
 
     Если сервер уже free — 409 SERVER_NOT_BUSY (идемпотентный release клиенту
     осмыслен не очень — он сигналит о рассинхронизации состояния).
@@ -762,7 +767,7 @@ async def release_server(
         audit_service.emit(
             "server.release",
             target_id=server_id, target_type="server",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
@@ -848,7 +853,7 @@ async def update_os_version(
         audit_service.emit(
             "server.update_os_version",
             target_id=server_id, target_type="server",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise

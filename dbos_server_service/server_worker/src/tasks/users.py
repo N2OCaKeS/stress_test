@@ -17,6 +17,7 @@ Submit-фейл (network / 4xx / 5xx) НЕ роняет task'у в FAILED: сп�
 
 import logging
 
+from src.clients.ssh import SshError
 from src.core.exceptions import CredentialFetchError
 from src.db.session import AsyncSessionLocal
 from src.main import broker
@@ -42,11 +43,22 @@ async def _account_creds(
     запрашиваем — у discovered-аккаунта его может не быть вовсе.
     """
     login = payload.get("login")
-    if payload.get("is_managed") and login:
+    is_managed = bool(payload.get("is_managed"))
+    if is_managed and not login:
+        # Managed-ветка ssh_client.modify_user/delete_user подставляет
+        # `creds["login"]` в `useradd/usermod/userdel` через `_validate_login`,
+        # который сразу падает на `None`/пустоте с TypeError из re.match.
+        # Лучше отбить тут со стабильным error_code, чем тащить уродский
+        # traceback из re.
+        raise SshError(
+            error_code="SSH_INVALID_ARG",
+            host="",
+            message="login is required for managed account operations",
+        )
+    if is_managed and login:
         creds = {"login": login}
     else:
-        # Self-сессия (или managed без login в payload — fallback на старое
-        # поведение): пароль обязателен для входа под аккаунтом.
+        # Self-сессия: пароль обязателен для входа под аккаунтом.
         creds = await server_service_client.fetch_account_password(
             server_id, account_id, target_dept,
         )

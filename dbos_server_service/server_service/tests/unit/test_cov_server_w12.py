@@ -198,7 +198,7 @@ class TestIpmi404Unification:
     async def test_bot_rotate_no_ipmi_controller_returns_404(
         self, client, make_server, make_token, dept_a
     ):
-        """Bot rotate на сервере без IPMI controller → 404 IPMI_NOT_FOUND."""
+        """Bot rotate на сервере без IPMI controller → 404 NO_IPMI_CONTROLLER."""
         srv = await make_server(department_id=dept_a)  # no with_ipmi=True
         token = make_token(
             department_id=dept_a,
@@ -211,7 +211,7 @@ class TestIpmi404Unification:
             json={"password": "B0tR0tateP@ss1234567"},
         )
         assert resp.status_code == 404
-        assert resp.json()["error_code"] == "IPMI_NOT_FOUND"
+        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
 
     @pytest.mark.asyncio
     async def test_power_on_no_ipmi_controller_returns_404(
@@ -242,7 +242,7 @@ class TestIpmi404Unification:
     async def test_get_ipmi_no_controller_server_exists_returns_404(
         self, client, make_server, make_token, dept_a
     ):
-        """GET IPMI на сервере без controller → 404 IPMI_NOT_FOUND."""
+        """GET IPMI на сервере без controller → 404 NO_IPMI_CONTROLLER."""
         srv = await make_server(department_id=dept_a)
         token = make_token(
             department_id=dept_a,
@@ -253,7 +253,7 @@ class TestIpmi404Unification:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code == 404
-        assert resp.json()["error_code"] == "IPMI_NOT_FOUND"
+        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

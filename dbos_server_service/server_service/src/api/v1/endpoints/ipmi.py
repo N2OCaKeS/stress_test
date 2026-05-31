@@ -310,7 +310,7 @@ async def create_controller(
         "Возвращает kind/endpoint_url/username. Если у вызывающего есть "
         "`view_credentials`, поле `password_b64` несёт base64(plaintext); "
         "иначе оно `null`. Cross-dept сервер скрыт за 404 SERVER_NOT_FOUND. "
-        "Сервер без контроллера → 404 IPMI_NOT_FOUND. Раскрытие пароля пишет "
+        "Сервер без контроллера → 404 NO_IPMI_CONTROLLER. Раскрытие пароля пишет "
         "CRITICAL audit `ipmi_controller.credentials_revealed`."
     ),
     responses={
@@ -392,7 +392,7 @@ async def delete_controller(
         "- инициируется через `POST /api/server/v1/ipmi-controllers/{id}/rotate` "
         "  (worker dispatch с BMC apply);\n"
         "- worker по завершении ходит во внутренний callback "
-        "  `POST /internal/ipmi-controllers/{id}/credentials/rotated`, который "
+        "  `POST /internal/ipmi-controllers/{id}/credentials_rotated`, который "
         "  проверяет свежесть `verified_at` против `IPMI_VERIFY_MAX_AGE_SECONDS` "
         "  и только тогда шифрует и сохраняет ciphertext.\n\n"
         "Этот endpoint оставлен исключительно как fallback для bot-токенов "
@@ -512,7 +512,7 @@ async def view_credentials(
     except NotFoundError:
         audit_service.emit(
             audit_action, target_id=server_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
@@ -520,11 +520,11 @@ async def view_credentials(
     if ctrl is None:
         audit_service.emit(
             audit_action, target_id=server_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_registered", "department_id": server.department_id},
         )
         raise NotFoundError(
-            error_code="IPMI_NOT_FOUND",
+            error_code="NO_IPMI_CONTROLLER",
             message="No IPMI controller is registered for this server",
         )
     audit_service.emit(

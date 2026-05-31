@@ -288,7 +288,7 @@ def _check_target_department_for_controller(
         actor_department_id=actor_department_id,
         extra_details=extra_details,
         mask_as_not_found=True,
-        not_found_error_code="IPMI_CONTROLLER_NOT_FOUND",
+        not_found_error_code="NO_IPMI_CONTROLLER",
         not_found_message="IPMI controller not found",
     )
 
@@ -358,7 +358,7 @@ async def fetch_ipmi_credentials(
             details={"reason": "controller_not_registered"},
         )
         raise NotFoundError(
-            error_code="IPMI_CONTROLLER_NOT_FOUND",
+            error_code="NO_IPMI_CONTROLLER",
             message="No IPMI controller is registered for this server",
         )
     plain = secrets_service.decrypt(
@@ -1240,7 +1240,7 @@ async def record_ipmi_credentials_rotated(
             details={"reason": "controller_not_found"},
         )
         raise NotFoundError(
-            error_code="IPMI_CONTROLLER_NOT_FOUND",
+            error_code="NO_IPMI_CONTROLLER",
             message="IPMI controller not found",
         )
     if target_department_id is None:

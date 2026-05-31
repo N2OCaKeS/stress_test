@@ -81,7 +81,7 @@ class TestViewCredentialsMetadata:
             f"{BASE}/{srv.id}/ipmi/credentials", headers=_hdr(admin_token),
         )
         assert resp.status_code == 404
-        assert resp.json()["error_code"] == "IPMI_NOT_FOUND"
+        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
 
     async def test_cross_dept_returns_404(
         self, client, admin_token_b, make_server, make_ipmi,

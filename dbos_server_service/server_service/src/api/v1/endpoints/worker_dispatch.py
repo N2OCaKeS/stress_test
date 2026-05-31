@@ -202,10 +202,17 @@ async def _dispatch_for_server(
     try:
         server = await server_svc.get_server(db, identity, server_id)
     except (NotFoundError, AuthorizationError) as exc:
-        reason = "not_found_or_cross_dept" if isinstance(exc, NotFoundError) else "no_view_permission"
+        # NotFoundError — visibility-404 (business), AuthorizationError — отказ VIEW (access-deny).
+        # Оба эмитим как failure (single convention), но allowed=True только для NotFoundError.
+        if isinstance(exc, NotFoundError):
+            reason = "not_found_or_cross_dept"
+            allowed = True
+        else:
+            reason = "no_view_permission"
+            allowed = False
         audit_service.emit(
             audit_action, target_id=server_id, target_type="server",
-            status="denied", allowed=False,
+            status="failure", allowed=allowed,
             details={"reason": reason},
         )
         raise
@@ -343,7 +350,7 @@ async def _dispatch_account_on_host(
     if account is None or account.department_id != identity.department_id:
         audit_service.emit(
             audit_action, target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept", "operation": operation},
         )
         raise NotFoundError(
@@ -353,7 +360,7 @@ async def _dispatch_account_on_host(
     if server_id not in account_repo.linked_server_ids(account):
         audit_service.emit(
             audit_action, target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={
                 "reason": "server_not_linked",
                 "server_id": server_id,
@@ -367,14 +374,14 @@ async def _dispatch_account_on_host(
 
     # `load_visible_server` поднимает `NotFoundError` если сервер не найден
     # или его department изменили out-of-band уже после линковки с аккаунтом
-    # (cross-dept edge). Без явного denied-аудита эта ветка молча отдаёт 404,
+    # (cross-dept edge). Без явного failure-аудита эта ветка молча отдаёт 404,
     # security-trail теряет evidence — повторяем паттерн `server_account.get`.
     try:
         server = await server_svc.load_visible_server(db, identity, server_id)
     except NotFoundError:
         audit_service.emit(
             audit_action, target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={
                 "reason": "server_not_found_or_cross_dept",
                 "server_id": server_id,
@@ -988,7 +995,7 @@ async def account_rotate_password_dispatch(
     if account is None or account.department_id != identity.department_id:
         audit_service.emit(
             audit_action, target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise NotFoundError(
@@ -1003,7 +1010,7 @@ async def account_rotate_password_dispatch(
         if server_id not in linked_ids:
             audit_service.emit(
                 audit_action, target_id=account_id, target_type="server_account",
-                status="denied", allowed=False,
+                status="failure", allowed=True,
                 details={"reason": "server_not_linked", "server_id": server_id},
             )
             raise NotFoundError(
@@ -1415,26 +1422,26 @@ async def ipmi_rotate_password_dispatch(
     if controller is None:
         audit_service.emit(
             audit_action, target_id=controller_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise NotFoundError(
-            error_code="IPMI_CONTROLLER_NOT_FOUND",
+            error_code="NO_IPMI_CONTROLLER",
             message="IPMI controller not found",
         )
     # `load_visible_server` даёт consolidated dept-isolation, ловим 404 и
-    # перерапиваем в IPMI_CONTROLLER_NOT_FOUND, иначе SERVER_NOT_FOUND
+    # перерапиваем в NO_IPMI_CONTROLLER, иначе SERVER_NOT_FOUND
     # error_code раскрыл бы, что controller_id ссылается на чужой сервер.
     try:
         server = await server_svc.load_visible_server(db, identity, controller.server_id)
     except NotFoundError as exc:
         audit_service.emit(
             audit_action, target_id=controller_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise NotFoundError(
-            error_code="IPMI_CONTROLLER_NOT_FOUND",
+            error_code="NO_IPMI_CONTROLLER",
             message="IPMI controller not found",
         ) from exc
 

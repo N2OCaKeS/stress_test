@@ -9,7 +9,7 @@ controller всегда однозначно резолвится через ser
 отдельной reveal-ручки нет.
 
 Department-isolation скрывает cross-dept-сервер за 404 (`SERVER_NOT_FOUND`)
-и при наличии контроллера — `IPMI_NOT_FOUND` для контроллера. Это
+и при наличии контроллера — `NO_IPMI_CONTROLLER` для контроллера. Это
 симметрично с `services/server_account.py` и `services/server.py`.
 """
 
@@ -96,7 +96,7 @@ async def create_controller(
         audit_service.emit(
             "ipmi_controller.create",
             target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "server_not_found_or_cross_dept", "server_id": server_id},
         )
         raise
@@ -149,7 +149,7 @@ async def get_controller(
     `view_credentials`, иначе `None`. Раскрытие пишет CRITICAL-аудит
     `ipmi_controller.credentials_revealed`.
 
-    Возвращает 404 IPMI_NOT_FOUND если сервер видим, но контроллер не зарегистрирован.
+    Возвращает 404 NO_IPMI_CONTROLLER если сервер видим, но контроллер не зарегистрирован.
     Cross-dept или non-existent server → 404 SERVER_NOT_FOUND.
     """
     has_credentials_action = await permissions.has_action(
@@ -172,7 +172,7 @@ async def get_controller(
         audit_service.emit(
             "ipmi_controller.view",
             target_id=server_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "server_not_found_or_cross_dept", "server_id": server_id},
         )
         raise
@@ -181,11 +181,11 @@ async def get_controller(
         audit_service.emit(
             "ipmi_controller.view",
             target_id=server_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_registered", "server_id": server_id},
         )
         raise NotFoundError(
-            error_code="IPMI_NOT_FOUND",
+            error_code="NO_IPMI_CONTROLLER",
             message="No IPMI controller is registered for this server",
         )
 
@@ -309,7 +309,7 @@ async def update_controller(
         audit_service.emit(
             "ipmi_controller.update",
             target_id=server_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "server_not_found_or_cross_dept", "server_id": server_id},
         )
         raise
@@ -318,11 +318,11 @@ async def update_controller(
         audit_service.emit(
             "ipmi_controller.update",
             target_id=server_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_registered", "server_id": server_id},
         )
         raise NotFoundError(
-            error_code="IPMI_NOT_FOUND",
+            error_code="NO_IPMI_CONTROLLER",
             message="No IPMI controller is registered for this server",
         )
 
@@ -389,7 +389,7 @@ async def delete_controller(
         audit_service.emit(
             "ipmi_controller.delete",
             target_id=server_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "server_not_found_or_cross_dept", "server_id": server_id},
         )
         raise
@@ -398,11 +398,11 @@ async def delete_controller(
         audit_service.emit(
             "ipmi_controller.delete",
             target_id=server_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_registered", "server_id": server_id},
         )
         raise NotFoundError(
-            error_code="IPMI_NOT_FOUND",
+            error_code="NO_IPMI_CONTROLLER",
             message="No IPMI controller is registered for this server",
         )
     controller_id = obj.id
@@ -452,7 +452,7 @@ async def rotate_credentials(
         audit_service.emit(
             "ipmi_controller.rotate_credentials",
             target_id=server_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "server_not_found_or_cross_dept", "server_id": server_id},
         )
         raise
@@ -461,11 +461,11 @@ async def rotate_credentials(
         audit_service.emit(
             "ipmi_controller.rotate_credentials",
             target_id=server_id, target_type="ipmi_controller",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_registered", "server_id": server_id},
         )
         raise NotFoundError(
-            error_code="IPMI_NOT_FOUND",
+            error_code="NO_IPMI_CONTROLLER",
             message="No IPMI controller is registered for this server",
         )
     plaintext = new_password if new_password is not None else _generate_password()

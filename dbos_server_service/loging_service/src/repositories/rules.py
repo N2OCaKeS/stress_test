@@ -5,7 +5,9 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.core.config import get_settings
 from src.models.audit_rule import AuditRule
+from src.repositories.events import _with_statement_timeout
 from src.schemas.rules import RuleCreate, RuleUpdate
 
 
@@ -39,19 +41,55 @@ def get_all(
 ) -> tuple[list[AuditRule], int]:
     from sqlalchemy import func
     base = select(AuditRule).where(AuditRule.deleted_at.is_(None))
-    total = db.execute(
-        select(func.count()).select_from(base.subquery())
-    ).scalar_one()
-    rules = list(
-        db.execute(
-            base.order_by(AuditRule.priority.desc()).offset(offset).limit(limit)
-        ).scalars()
-    )
+    count_stmt = select(func.count()).select_from(base.subquery())
+    page_stmt = base.order_by(AuditRule.priority.desc()).offset(offset).limit(limit)
+
+    # SELECT и COUNT идут под `SET LOCAL statement_timeout` — таблица правил
+    # на порядок меньше audit-журнала, но read-канал всё равно должен иметь
+    # верхнюю границу, чтобы один тяжёлый запрос (lock от долгой админ-сессии,
+    # raised work_mem) не выжимал пул. Семантика на превышение симметрична
+    # `events.query`: COUNT → 0 (page-нагрузка не падает), SELECT → пустая
+    # страница + warning лог.
+    timeout_ms = get_settings().audit_query_statement_timeout_ms
+    if timeout_ms > 0:
+        total = _with_statement_timeout(
+            db,
+            timeout_ms,
+            lambda: db.execute(count_stmt).scalar_one(),
+            on_canceled=lambda: 0,
+            canceled_log_msg=(
+                "rules COUNT exceeded statement_timeout=%dms; returning total=0"
+            ),
+        )
+        rules = _with_statement_timeout(
+            db,
+            timeout_ms,
+            lambda: list(db.execute(page_stmt).scalars()),
+            on_canceled=lambda: [],
+            canceled_log_msg=(
+                "rules SELECT exceeded statement_timeout=%dms; returning empty page"
+            ),
+        )
+    else:
+        total = db.execute(count_stmt).scalar_one()
+        rules = list(db.execute(page_stmt).scalars())
     return rules, total
 
 
 def get_by_id(db: Session, rule_id: str) -> AuditRule | None:
-    rule = db.get(AuditRule, rule_id)
+    timeout_ms = get_settings().audit_query_statement_timeout_ms
+    if timeout_ms > 0:
+        rule = _with_statement_timeout(
+            db,
+            timeout_ms,
+            lambda: db.get(AuditRule, rule_id),
+            on_canceled=lambda: None,
+            canceled_log_msg=(
+                "rules GET-by-id exceeded statement_timeout=%dms; returning None"
+            ),
+        )
+    else:
+        rule = db.get(AuditRule, rule_id)
     if rule is None or rule.deleted_at is not None:
         return None
     return rule

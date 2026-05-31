@@ -7,16 +7,18 @@ engine, см. `record_admin_action`), чтобы админ не мог случ
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from src.core.config import get_settings
 from src.core.exceptions import (
     AppException,
     ConflictError,
     DomainValidationError,
     NotFoundError,
 )
+from src.core.limiter import limiter
 from src.dependencies.auth import AdminIdentity, ReaderIdentity, require_admin
 from src.dependencies.db import get_db
 from src.repositories import rules as rule_repo
@@ -104,7 +106,15 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
         "список action'ов, доступных для `match_action`."
     ),
 )
+# Read-канал rules чейнится в тот же per-IP bucket, что и GET /events
+# (`audit_query_rate_limit`). Без лимита reader-JWT мог бы крутить
+# постраничный листинг с большим offset'ом и держать пул коннектов.
+@limiter.limit(
+    lambda: get_settings().audit_query_rate_limit,
+)
 def list_rules(
+    request: Request,
+    response: Response,
     identity: ReaderIdentity,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
@@ -129,7 +139,16 @@ def list_rules(
         "**Возможные ошибки:** 404 — правила с таким ID нет."
     ),
 )
-def get_rule(rule_id: str, identity: ReaderIdentity, db: Session = Depends(get_db)) -> RuleResponse:
+@limiter.limit(
+    lambda: get_settings().audit_query_rate_limit,
+)
+def get_rule(
+    rule_id: str,
+    request: Request,
+    response: Response,
+    identity: ReaderIdentity,
+    db: Session = Depends(get_db),
+) -> RuleResponse:
     return RuleResponse.model_validate(_get_or_404(db, rule_id))
 
 

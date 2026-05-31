@@ -417,7 +417,7 @@ class TestIpmiControllerRotateDispatch:
             headers=_hdr(operator_token_b),
         )
         assert resp.status_code == 404
-        assert resp.json().get("error_code") == "IPMI_CONTROLLER_NOT_FOUND"
+        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
         assert captured_dispatch == []
 
     async def test_nonexistent_controller_returns_404(
@@ -428,7 +428,7 @@ class TestIpmiControllerRotateDispatch:
             headers=_hdr(admin_role_token_a),
         )
         assert resp.status_code == 404
-        assert resp.json().get("error_code") == "IPMI_CONTROLLER_NOT_FOUND"
+        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
         assert captured_dispatch == []
 
 

@@ -346,7 +346,7 @@ class TestIpmiCredentialsRotatedCallback:
             },
         )
         assert resp.status_code == 404
-        assert resp.json()["error_code"] == "IPMI_CONTROLLER_NOT_FOUND"
+        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
 
     async def test_audit_credentials_rotated_callback_emitted(
         self, client, admin_role_token_a, make_server, make_ipmi,
@@ -686,7 +686,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
             },
         )
         assert resp.status_code == 404
-        assert resp.json()["error_code"] == "IPMI_CONTROLLER_NOT_FOUND"
+        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
         # Controller-scoped endpoint — details несут `target_id` = controller_id.
         details = resp.json().get("details") or {}
         assert details.get("target_id") == ctrl.id

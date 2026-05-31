@@ -108,7 +108,7 @@ class TestCreateServerWithoutIpmi:
         srv_id = resp.json()["id"]
         get_ipmi = await client.get(f"{BASE}/{srv_id}/ipmi", headers=_hdr(admin_token))
         assert get_ipmi.status_code == 404
-        assert get_ipmi.json().get("error_code") == "IPMI_NOT_FOUND"
+        assert get_ipmi.json().get("error_code") == "NO_IPMI_CONTROLLER"
 
     async def test_explicit_null_ipmi_means_no_controller(self, client, admin_token):
         resp = await client.post(

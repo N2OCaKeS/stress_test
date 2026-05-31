@@ -6,7 +6,7 @@
 * POST / — happy path, шифрование пароля, dept-isolation (нельзя
   создать на чужой сервер), UNIQUE-конфликт (1:1), reader/guest → 403.
 * GET / — owner видит, чужой dept → 404 SERVER_NOT_FOUND, без записи →
-  404 IPMI_NOT_FOUND, audit на denied.
+  404 NO_IPMI_CONTROLLER, audit на denied.
 * GET (list /ipmi_controllers) — фильтр по dept, scope без department.
 * PATCH / — частичное обновление, dept-isolation, без записи → 404.
 * DELETE / — admin OK, operator → 403 (нет grant), cross-dept → 404.
@@ -192,7 +192,7 @@ class TestGetController:
         srv = await make_server(department_id="dep_a")
         resp = await client.get(f"{BASE}/{srv.id}/ipmi", headers=_hdr(reader_token_a))
         assert resp.status_code == 404
-        assert resp.json().get("error_code") == "IPMI_NOT_FOUND"
+        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
 
     async def test_cross_dept_returns_404(
         self, client, reader_token_b, make_server, make_ipmi,
@@ -330,7 +330,7 @@ class TestUpdateController:
             json={"username": "x"},
         )
         assert resp.status_code == 404
-        assert resp.json().get("error_code") == "IPMI_NOT_FOUND"
+        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
 
 
 # ── DELETE /ipmi ─────────────────────────────────────────────────────────────
@@ -344,12 +344,12 @@ class TestDeleteController:
             f"{BASE}/{srv.id}/ipmi", headers=_hdr(admin_token),
         )
         assert resp.status_code == 200
-        # После удаления — повторный GET → 404 IPMI_NOT_FOUND
+        # После удаления — повторный GET → 404 NO_IPMI_CONTROLLER
         get_resp = await client.get(
             f"{BASE}/{srv.id}/ipmi", headers=_hdr(admin_token),
         )
         assert get_resp.status_code == 404
-        assert get_resp.json().get("error_code") == "IPMI_NOT_FOUND"
+        assert get_resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
 
     async def test_operator_cannot_delete(
         self, client, operator_token_a, make_server, make_ipmi,

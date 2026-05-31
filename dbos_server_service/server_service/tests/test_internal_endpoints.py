@@ -96,7 +96,7 @@ class TestIpmiCredentials:
             headers=_hdr(worker_pat_token),
         )
         assert resp.status_code == 404
-        assert resp.json()["error_code"] == "IPMI_CONTROLLER_NOT_FOUND"
+        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
 
 
 # ── Account password ─────────────────────────────────────────────────────────

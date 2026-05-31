@@ -57,6 +57,24 @@ _EVENTS_PATH = "/api/logging/v1/events"
 # handle сюда на время жизни, снимаем по done-callback.
 _EMIT_TASKS: set[asyncio.Task] = set()
 
+# Потолок на одновременно живущие emit-таски. Под sustained 429 от loging
+# каждый emit держит коро в памяти 0.5+1.5s + jitter ≈ 2.4s до drop'а; при
+# 1000 req/s login-шторме это 2400 живых tasks и связанные с ними payload'ы.
+# При превышении выбрасываем самую старую in-flight task (cancel + discard)
+# и инкрементим counter, чтобы факт срезки был виден через метрики.
+_EMIT_TASKS_MAX = 1000
+_audit_emit_tasks_overflow: int = 0
+
+
+def get_emit_tasks_overflow_total() -> int:
+    """Сколько emit-task'ов было отменено из-за переполнения in-flight set'а."""
+    return _audit_emit_tasks_overflow
+
+
+def _reset_emit_tasks_overflow_for_tests() -> None:
+    global _audit_emit_tasks_overflow
+    _audit_emit_tasks_overflow = 0
+
 # Бэкоффы между попытками при 429 от loging_service. Длина списка задаёт
 # число дополнительных попыток сверх первой; итого 3 попытки.
 _RETRY_DELAYS_ON_429 = (0.5, 1.5)
@@ -215,6 +233,24 @@ def emit(
     if logging_url and api_key:
         try:
             loop = asyncio.get_running_loop()
+            # Cap на in-flight set. Если loging лежит и retry-задачи копятся
+            # быстрее, чем drop'аются, бэк-прешер: режем самую старую task
+            # (она вероятнее всего сидит в backoff-sleep и до записи не
+            # дойдёт). Без cap'а под sustained 429 set растёт неограниченно.
+            if len(_EMIT_TASKS) >= _EMIT_TASKS_MAX:
+                global _audit_emit_tasks_overflow
+                try:
+                    oldest = next(iter(_EMIT_TASKS))
+                except StopIteration:
+                    oldest = None
+                if oldest is not None:
+                    oldest.cancel()
+                    _EMIT_TASKS.discard(oldest)
+                _audit_emit_tasks_overflow += 1
+                logger.warning(
+                    "audit_service: _EMIT_TASKS overflow >= %d, drop oldest in-flight",
+                    _EMIT_TASKS_MAX,
+                )
             task = loop.create_task(_send_to_logging_service(payload, logging_url, api_key))
             _EMIT_TASKS.add(task)
             task.add_done_callback(_EMIT_TASKS.discard)

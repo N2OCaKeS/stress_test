@@ -67,6 +67,26 @@ class TestValueBasedRedaction:
         out = redact({"info": bcrypt})
         assert out == {"info": "<HASH>"}
 
+    def test_bcrypt_short_tail_masked(self):
+        # Нестандартные библиотеки иногда отдают усечённый bcrypt-хвост
+        # (50-52 символа). Префикс $2[aby]$ всё ещё узнаваем, не должен
+        # пройти мимо sanitizer'а.
+        bcrypt = "$2b$12$" + "a" * 50
+        out = redact({"info": bcrypt})
+        assert out == {"info": "<HASH>"}
+
+    def test_bcrypt_long_tail_masked(self):
+        # Padding-вариации до 60 символов — всё ещё bcrypt.
+        bcrypt = "$2a$10$" + "b" * 60
+        out = redact({"info": bcrypt})
+        assert out == {"info": "<HASH>"}
+
+    def test_bcrypt_too_short_not_masked(self):
+        # 49 — за пределами окна, не bcrypt.
+        not_bcrypt = "$2b$12$" + "a" * 49
+        out = redact({"info": not_bcrypt})
+        assert out == {"info": not_bcrypt}
+
     def test_argon2_value_masked(self):
         argon = "$argon2id$v=19$m=65536,t=3,p=4$..."
         out = redact({"info": argon})

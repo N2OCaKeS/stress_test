@@ -485,10 +485,14 @@ class AuditOutbox:
     def dropped_total(self) -> int:
         """Сумма всех потерь — overflow + cancel + shutdown.
 
-        Сохранён как агрегат для совместимости со старыми вызовами и
-        существующими дашбордами; для разбора cause'а — отдельные геттеры
-        `dropped_overflow_total` / `dropped_cancel_total`
-        / `dropped_shutdown_total`.
+        .. deprecated::
+            Аггрегат теряет cause-сигнал: оператор по одному числу не
+            отличит DoS-перегрузку (overflow) от рваного shutdown'а
+            (shutdown) или cancellation-race'а (cancel). Используй
+            отдельные геттеры `dropped_overflow_total` /
+            `dropped_cancel_total` / `dropped_shutdown_total`. Метод
+            оставлен для backward-compat с существующими тестами и
+            дашбордами, новые места не должны на него опираться.
         """
         with self._counters_lock:
             return (

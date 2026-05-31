@@ -311,6 +311,19 @@ async def _publish_one(
       * `closed=False, audit_emit_error=False` — программная ошибка
         (сериализация и т.п.). Breaker такие НЕ считает — это локальный
         баг, не проблема loging_service.
+
+    Контракт сессии (важно для callers):
+
+    Метод делает `session.flush()` после изменения row (published_at,
+    next_retry_at, attempts, DLQ-маркера) — но **commit оставляет на caller'е**.
+    Это сделано намеренно: `_flush_outbox_once` берёт SKIP LOCKED-lock на row
+    и держит его до commit'а. Раннее commit'нуть внутри `_publish_one` —
+    значит отпустить lock до того, как caller успеет залогировать/собрать
+    метрики, и потерять контроль над transaction boundary'ём в случае
+    multi-row пути в будущем. Caller обязан вызвать `await session.commit()`
+    после возврата (или `rollback()` при exception'е выше) — иначе
+    `next_retry_at` не приедет в БД и SELECT следующего poll-цикла подберёт
+    ту же row снова.
     """
     payload = dict(row.payload)
     action = payload.pop("action", None)

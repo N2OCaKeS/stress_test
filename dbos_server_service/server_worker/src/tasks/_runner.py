@@ -123,6 +123,16 @@ _RETRY_MAX_DELAY_SECONDS = 300.0
 # держит на task только weakref через event loop, поэтому на длинном back-off
 # (20с+) сборщик может собрать задачу до того, как она проснётся и сделает
 # re-kick. Кладём handle сюда на время жизни и снимаем по done-callback.
+#
+# На graceful shutdown эти таски НЕ отменяются явно: durability держится на
+# `_recover_scheduled_retries` — следующий worker увидит row со status=queued
+# и сам сделает kiq. Race-окно: если процесс падает в момент между
+# `_schedule_retry` (поставил row) и `kicker().kiq()` (положил в Redis-очередь),
+# task просто будет ждать следующего sweep'а. Раньше пытались `cancel()` на
+# shutdown — это било исключение CancelledError внутри backoff-sleep'а и
+# отрабатывало симметрично естественной отмене (см. handler ниже), так что
+# семантика не менялась, только добавляло шум в shutdown-логи. Оставляем как
+# есть, recovery берёт sweep.
 _RETRY_TASKS: set[asyncio.Task] = set()
 
 

@@ -53,7 +53,13 @@ _CREDENTIAL_KEYS = {
 # ── Эвристики по значению ─────────────────────────────────────────────────────
 
 _JWT_RE = re.compile(r"^[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}$")
-_BCRYPT_RE = re.compile(r"^\$2[aby]?\$\d{1,2}\$[./A-Za-z0-9]{53}$")
+# Хвост bcrypt'а формально 53 символа (22 salt + 31 hash, base64-modified
+# alphabet ./A-Za-z0-9). Разные библиотеки иногда дают 50-60 (обрезанный
+# вывод, padding-вариации, версии $2x$). Чтобы sanitizer не пропустил
+# нестандартный, но всё ещё узнаваемый hash в audit-details, расширяем
+# диапазон. False-positive на 50+ char base64-like строку без префикса
+# $2[aby]$ — практически невозможен (префикс жёсткий).
+_BCRYPT_RE = re.compile(r"^\$2[aby]?\$\d{1,2}\$[./A-Za-z0-9]{50,60}$")
 _ARGON2_RE = re.compile(r"^\$argon2(id|i|d)?\$")
 # Опаковые токены системы: pat = dbos_pat_<random>, bot = dbos_bot_<random>
 _OPAQUE_TOKEN_RE = re.compile(r"^dbos_(pat|bot)_[A-Za-z0-9_\-]{12,}$")

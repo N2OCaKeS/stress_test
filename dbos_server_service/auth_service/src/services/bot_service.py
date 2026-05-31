@@ -212,9 +212,14 @@ async def update_bot(
         # такая identity в принципе невалидна, и пускать её через guard
         # нельзя (None != bot.department_id корректно отдаёт 403).
         if actor_dept_id != bot.department_id:
-            # Симметрия с прочими bot-функциями: cross-tenant попытка
-            # светится в audit как failure (а не теряется в 500), сохраняя
-            # стабильный error_code BOT_UPDATE_FORBIDDEN для API-контракта.
+            # Не идём через `_check_can_manage_bot_or_audit`: тот raise'ит
+            # AuthorizationError с error_code=BOT_ROLE_MGMT_FORBIDDEN (общий
+            # код для управления ролями/токенами/удалением). А update_bot —
+            # это PATCH на саму сущность, и API-контракт фиксирует именно
+            # BOT_UPDATE_FORBIDDEN. Терять стабильный код нельзя — клиенты
+            # на него уже завязались. Inline-блок повторяет шаблон emit'а
+            # из общего хелпера, чтобы SIEM-сигнатура (status="failure",
+            # reason="cross_tenant_bot") совпадала.
             audit_service.emit(
                 "bot.update", actor_id, status="failure", allowed=False,
                 target_id=bot.id, target_type="bot",

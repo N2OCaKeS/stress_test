@@ -139,6 +139,96 @@ class TestBoundedBuffer:
         remaining = asyncio.run(run())
         assert remaining == ["second", "third"]
 
+    def test_overflow_drain_race_does_not_overcount(self):
+        """Race: между `put_nowait` (поймал QueueFull) и `get_nowait`
+        (eviction) drain успел выгрести очередь. Реальной потери не было,
+        повторный put прошёл — счётчик `_dropped_overflow_total` бампить
+        не нужно, иначе метрика over-counts."""
+
+        async def run():
+            outbox = AuditOutbox(
+                max_size=1,
+                batch_size=1,
+                poll_interval_seconds=0.5,
+                session_factory=_FakeSession,
+                writer=lambda db, env: None,
+                bump_failure=lambda: 0,
+            )
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=1)
+
+            # Заполняем очередь до отказа.
+            outbox.push_nowait(_env("a"))
+            assert outbox.qsize() == 1
+
+            # Эмулируем гонку: подменяем `put_nowait` так, чтобы он бросил
+            # QueueFull один раз, а перед `get_nowait` очередь оказалась
+            # пустой (drain опередил eviction).
+            real_put = outbox._queue.put_nowait
+            real_get = outbox._queue.get_nowait
+            calls = {"put": 0}
+
+            def fake_put(item):
+                calls["put"] += 1
+                if calls["put"] == 1:
+                    # Имитируем переполнение на первой попытке.
+                    raise asyncio.QueueFull
+                return real_put(item)
+
+            def fake_get():
+                # «Drain» успел выгрести между put и get.
+                # Чистим очередь сами и кидаем QueueEmpty.
+                while True:
+                    try:
+                        real_get()
+                    except asyncio.QueueEmpty:
+                        break
+                raise asyncio.QueueEmpty
+
+            outbox._queue.put_nowait = fake_put  # type: ignore[assignment]
+            outbox._queue.get_nowait = fake_get  # type: ignore[assignment]
+
+            accepted = outbox.push_nowait(_env("b"))
+            return accepted, outbox.dropped_overflow_total()
+
+        accepted, dropped = asyncio.run(run())
+        assert accepted is True
+        # Никакой потери не случилось — drain опередил eviction.
+        assert dropped == 0
+
+    def test_overflow_second_put_fails_bumps_once(self):
+        """Если первый put упал QueueFull, eviction прошёл, но второй put
+        тоже упал (конкурирующий push занял слот) — `_dropped_overflow_total`
+        растёт ровно на 1 (наше событие потеряно), а не на 2."""
+
+        async def run():
+            outbox = AuditOutbox(
+                max_size=1,
+                batch_size=1,
+                poll_interval_seconds=0.5,
+                session_factory=_FakeSession,
+                writer=lambda db, env: None,
+                bump_failure=lambda: 0,
+            )
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=1)
+            outbox.push_nowait(_env("a"))
+
+            # Подменяем put_nowait так, чтобы все вызовы кидали QueueFull.
+            def always_full(_item):
+                raise asyncio.QueueFull
+
+            outbox._queue.put_nowait = always_full  # type: ignore[assignment]
+
+            accepted = outbox.push_nowait(_env("b"))
+            return accepted, outbox.dropped_overflow_total()
+
+        accepted, dropped = asyncio.run(run())
+        assert accepted is False
+        # 1 за реальное вытеснение старейшего + 1 за провал второго put = 2.
+        # Главное: НЕ 3 (старая версия бампила безусловно после eviction-блока).
+        assert dropped == 2
+
 
 # ── fallback без started loop ───────────────────────────────────────────────
 

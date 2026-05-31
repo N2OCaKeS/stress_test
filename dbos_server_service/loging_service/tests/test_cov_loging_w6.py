@@ -151,12 +151,13 @@ class TestAuditOutboxStartIdempotency:
 class TestAuditOutboxDoubleFull:
     """push_nowait возвращает False когда очередь всё ещё полна после эвикции."""
 
-    def test_double_full_returns_false_and_bumps_dropped_twice(self):
+    def test_double_full_returns_false_and_bumps_dropped_once(self):
         """Симулируем ситуацию когда get_nowait даёт QueueEmpty (drain успел
         опустошить очередь между put и get), а повторный put_nowait снова
-        бросает QueueFull. В таком случае push_nowait должен вернуть False
-        и увеличить dropped_total на 2 (одна потеря при эвикции, одна при
-        финальном put). Тест патчит Queue напрямую."""
+        бросает QueueFull. push_nowait возвращает False и dropped_total
+        растёт на 1 — это потеря свежего envelope'а; eviction-промах не
+        считается, потому что drain легитимно забрал старый элемент.
+        Тест патчит Queue напрямую."""
 
         async def run():
             outbox = AuditOutbox(
@@ -205,7 +206,7 @@ class TestAuditOutboxDoubleFull:
 
         result, dropped, log = asyncio.run(run())
         assert result is False
-        assert dropped == 2
+        assert dropped == 1
         assert "put-1-full" in log
         assert "get-empty" in log
         assert "put-2-full" in log

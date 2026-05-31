@@ -356,15 +356,16 @@ async def create_bot_token(
         expires_at=effective_expires_at,
     )
     await db.commit()
-    # raw bot-токен в audit → sanitizer заменит на <TOKEN> по эвристике dbos_bot_…
+    # Plaintext bot-токен в audit не кладём: SOC получает событие создания с
+    # token_id/token_prefix, а raw отдаём только caller'у через response.
     audit_service.emit(
         "bot.token_create", actor_id, target_id=token.id, target_type="bot_token",
         details={
             "bot_id": bot_id,
             "bot_name": bot.name,
+            "token_id": token.id,
             "token_name": name,
             "token_prefix": prefix,
-            "token": raw,
             "expires_at": effective_expires_at.isoformat(),
         },
         request_id=request_id,

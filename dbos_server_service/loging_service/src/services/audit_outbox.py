@@ -222,24 +222,27 @@ class AuditOutbox:
         except asyncio.QueueFull:
             pass
 
-        # Полный буфер — освобождаем место. `get_nowait` гарантированно не
-        # блокирует: один-в-один с `QueueFull` означает len == maxsize.
+        # Полный буфер — пробуем освободить слот. Если drain опередил
+        # eviction (QueueEmpty), реальной потери не было: повторный put
+        # должен пройти, и счётчик трогать не нужно — иначе over-count.
+        evicted = False
         try:
             queue.get_nowait()
             queue.task_done()
+            evicted = True
         except asyncio.QueueEmpty:
-            # Гонка: drain успел выгрести между нашими ветками. Просто
-            # пробуем повторить put.
             pass
-        with self._counters_lock:
-            self._dropped_overflow_total += 1
+
+        if evicted:
+            with self._counters_lock:
+                self._dropped_overflow_total += 1
+
         try:
             queue.put_nowait(envelope)
             return True
         except asyncio.QueueFull:
-            # Совсем не повезло: drain не успевает, или конкурирующий push
-            # снова забил слот. Возвращаем False, чтобы caller знал, что
-            # событие не сохранено.
+            # Конкурирующий push занял освобождённый слот; нашего envelope'а
+            # не приняли. Бампим один раз именно за этот промах.
             with self._counters_lock:
                 self._dropped_overflow_total += 1
             return False

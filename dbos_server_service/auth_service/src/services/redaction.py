@@ -35,6 +35,9 @@ _TOKEN_KEYS = {
     "oauth_token", "bearer", "jwt", "jwt_token",
     "refresh_token_hash",  # тоже секрет, маскируем как TOKEN-уровень
     "session_token",
+    # defense-in-depth: если кто-то решит положить plaintext в явно
+    # названный ключ — маскируем по имени, не дожидаясь эвристики по dbos_*
+    "token_plaintext", "pat_token", "bot_token",
 }
 _SECRET_KEYS = {
     "secret", "secret_key", "api_key", "apikey",

@@ -231,3 +231,104 @@ class TestUpdateRuleIntegrityError:
         assert body["error_code"] == "RULE_NAME_CONFLICT"
         # Имя берётся из БД, не из payload'а (которого нет).
         assert "kept" in body["message"]
+
+    def test_integrity_error_with_orig_none_returns_500_not_attribute_error(
+        self, admin_client, monkeypatch
+    ):
+        """Race-condition или тестовый мок: `IntegrityError.orig is None`.
+        Без защиты `_is_unique_violation` ловил бы AttributeError на чтении
+        pgcode и эндпоинт уходил в 502/500 без полезного тела. Сейчас:
+        getattr-цепочка отдаёт pgcode=None → False → ветка 500
+        INTERNAL_ERROR с message про constraint violation.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        from src.api.v1.endpoints import rules as rules_endpoint
+
+        created = admin_client.post(RULES_URL, json=make_rule(name="orig-none"))
+        assert created.status_code == 201
+        rule_id = created.json()["id"]
+
+        def _boom(db, rule, payload, *, commit=True):
+            raise IntegrityError("simulated, orig=None", params=None, orig=None)
+
+        monkeypatch.setattr(rules_endpoint.rule_repo, "update", _boom)
+
+        r = admin_client.patch(
+            f"{RULES_URL}/{rule_id}",
+            json={"priority": 42},
+        )
+        assert r.status_code == 500, r.text
+        body = r.json()
+        assert body["error_code"] == "INTERNAL_ERROR"
+        # И никакой утечки про "конфликт имени None".
+        assert "None" not in body["message"]
+
+
+# ── Fix 5: register_events re-register (added=0, updated=N) ─────────────────
+
+
+class TestRegisterEventsReRegister:
+    def test_reregister_audit_carries_added_zero_updated_n(
+        self, client, db, auth_headers
+    ):
+        """Повторная регистрация тех же action'ов: первый POST = added=2/updated=0,
+        второй POST с тем же payload = added=0/updated=2. Self-audit-row на
+        втором вызове должна нести именно эти счётчики, не первичные.
+        """
+        from src.repositories import events as events_repo
+
+        headers = {**auth_headers, "X-Service-Identity": "auth_service"}
+        payload = {
+            "events": [
+                make_event_def(action="user.login"),
+                make_event_def(action="user.logout"),
+            ]
+        }
+
+        r1 = client.post(
+            f"{SERVICES_URL}/auth_service/events",
+            json=payload,
+            headers=headers,
+        )
+        assert r1.status_code == 200, r1.text
+        assert r1.json() == {
+            "service": "auth_service",
+            "added": 2,
+            "updated": 0,
+            "total": 2,
+        }
+
+        # Тот же payload — каталог уже содержит обе записи, идёт UPDATE.
+        r2 = client.post(
+            f"{SERVICES_URL}/auth_service/events",
+            json=payload,
+            headers=headers,
+        )
+        assert r2.status_code == 200, r2.text
+        assert r2.json() == {
+            "service": "auth_service",
+            "added": 0,
+            "updated": 2,
+            "total": 2,
+        }
+
+        # Должно быть две self-audit-row: первая (2/0), вторая (0/2).
+        rows, _, _ = events_repo.query(
+            db,
+            service="loging_service",
+            action="logging.service_events_registered",
+            include_total=False,
+        )
+        assert len(rows) == 2, (
+            f"expected two self-audit rows after re-register, got {len(rows)}"
+        )
+        details_by_added = sorted(rows, key=lambda r: r.details["added"])
+        # added=0, updated=2 — re-register.
+        assert details_by_added[0].details["added"] == 0
+        assert details_by_added[0].details["updated"] == 2
+        assert details_by_added[0].details["total"] == 2
+        # added=2, updated=0 — первичная регистрация.
+        assert details_by_added[1].details["added"] == 2
+        assert details_by_added[1].details["updated"] == 0
+        assert details_by_added[1].details["total"] == 2

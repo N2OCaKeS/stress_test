@@ -248,3 +248,42 @@ class TestDetailsAlwaysFilled:
         assert details["token"] == "<TOKEN>"
         # token_prefix виден — это безопасный идентификатор для поиска
         assert details["token_prefix"].startswith("dbos_pat_")
+
+    async def test_bot_token_create_does_not_emit_plaintext_token(
+        self, client, admin_token, dept_a, capture_audit_payloads
+    ):
+        """bot.token_create — plaintext bot-токен в audit-details НЕ попадает.
+
+        SOC получает token_id / token_prefix / token_name — достаточно для
+        корреляции; сам raw отдаётся caller'у только через response.
+        """
+        bot_resp = await client.post(
+            "/api/auth/v1/bots",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"name": "audit_bot", "department_id": dept_a.id, "allowed_services": []},
+        )
+        assert bot_resp.status_code == 201
+        bot_id = bot_resp.json()["bot_id"]
+
+        tok_resp = await client.post(
+            f"/api/auth/v1/bots/{bot_id}/tokens",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"name": "audit_bot_tok"},
+        )
+        assert tok_resp.status_code == 201
+        raw_token = tok_resp.json()["token"]
+        assert raw_token.startswith("dbos_bot_")
+
+        creates = [p for p in capture_audit_payloads if p["action"] == "bot.token_create"]
+        assert len(creates) == 1
+        details = creates[0]["details"]
+        assert "token" not in details
+        assert "token_plaintext" not in details
+        assert details["token_name"] == "audit_bot_tok"
+        assert details["token_prefix"].startswith("dbos_bot_")
+        assert details["bot_id"] == bot_id
+        assert details["token_id"] == tok_resp.json()["token_id"]
+        # Никакое другое поле не должно содержать plaintext
+        for k, v in details.items():
+            if isinstance(v, str):
+                assert raw_token not in v, f"plaintext token leaked into details[{k!r}]"

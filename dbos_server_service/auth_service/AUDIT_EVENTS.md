@@ -139,7 +139,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `bot.create` | WARNING | `bot_service.create_bot` | `name`, `department_id`, `allowed_services`. |
 | `bot.list` | INFO | `GET /bots` | `count`, `total`, `scope`, `filter_department_id_requested` (что прислал клиент), `filter_department_id_effective` (что реально применили — для dept_admin форсится на собственный отдел). |
 | `bot.update` | WARNING | `bot_service.update_bot` | Diff. |
-| `bot.token_create` | WARNING | `bot_service.create_bot_token` | `name`, `expires_at` (по умолчанию now + 6 мес). |
+| `bot.token_create` | WARNING | `bot_service.create_bot_token` | `bot_id`, `bot_name`, `token_id`, `token_name`, `token_prefix`, `expires_at` (по умолчанию now + 6 мес). Plaintext токен в audit не уходит — caller получает его через response. |
 | `bot.token_list` | INFO | `GET /bots/{id}/tokens` | — |
 | `bot.token_revoke` | WARNING | `bot_service.revoke_bot_token` | `token_id`. |
 | `bot.token_expired` | WARNING | `authorization_service.introspect_token` | Попытка использовать просроченный bot-токен (401 BOT_TOKEN_EXPIRED). `bot_id`, `bot_token_id`, `expires_at`. |

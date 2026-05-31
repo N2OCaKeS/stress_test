@@ -23,7 +23,8 @@ class TestKeyBasedRedaction:
     def test_token_keys(self):
         for key in ("token", "access_token", "refresh_token", "id_token",
                     "oauth_token", "bearer", "jwt", "jwt_token",
-                    "refresh_token_hash", "session_token"):
+                    "refresh_token_hash", "session_token",
+                    "token_plaintext", "pat_token", "bot_token"):
             out = redact({key: "abc.def.ghi"})
             assert out == {key: "<TOKEN>"}, f"failed for {key}"
 

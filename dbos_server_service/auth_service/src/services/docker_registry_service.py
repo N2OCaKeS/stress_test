@@ -33,6 +33,7 @@ from src.schemas.docker_registry import (
     DockerTokenResponse,
 )
 from src.services import _lockout, audit_service
+from src.services._dept_guard import assert_dept_admin_target_dept
 from src.utils.time import is_expired
 from src.core.docker_jwt import sign_docker_token
 
@@ -66,12 +67,11 @@ async def create_or_replace_config(
     docker_repo = DockerRegistryRepository(db)
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(actor_id)
-        if actor and actor.department_id != department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only configure Docker registry for their own department",
-            )
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, department_id,
+            error_code="DEPARTMENT_ACCESS_DENIED",
+            message="department_admin can only configure Docker registry for their own department",
+        )
 
     dept = await dept_repo.get_by_id(department_id)
     if dept is None:
@@ -131,12 +131,11 @@ async def update_config(
     docker_repo = DockerRegistryRepository(db)
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(actor_id)
-        if actor and actor.department_id != department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only update Docker registry for their own department",
-            )
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, department_id,
+            error_code="DEPARTMENT_ACCESS_DENIED",
+            message="department_admin can only update Docker registry for their own department",
+        )
 
     cfg = await docker_repo.get_by_department(department_id)
     if cfg is None:
@@ -205,12 +204,11 @@ async def delete_config(
     docker_repo = DockerRegistryRepository(db)
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(actor_id)
-        if actor and actor.department_id != department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only disable Docker registry for their own department",
-            )
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, department_id,
+            error_code="DEPARTMENT_ACCESS_DENIED",
+            message="department_admin can only disable Docker registry for their own department",
+        )
 
     cfg = await docker_repo.get_by_department(department_id)
     if cfg is None:

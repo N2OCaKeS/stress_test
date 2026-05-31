@@ -28,6 +28,7 @@ from src.schemas.oauth import (
 )
 from src.services import _lockout, audit_service
 from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
+from src.services._dept_guard import assert_dept_admin_target_dept
 from src.utils.time import is_expired, utcnow
 
 _SECRET_PREFIX_LEN = 12
@@ -68,12 +69,11 @@ async def create_client(
     user_repo = UserRepository(db)
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(actor_id)
-        if actor and actor.department_id != data.department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only create OAuth2 clients for their own department",
-            )
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, data.department_id,
+            error_code="DEPARTMENT_ACCESS_DENIED",
+            message="department_admin can only create OAuth2 clients for their own department",
+        )
 
     dept = await dept_repo.get_by_id(data.department_id)
     if dept is None:
@@ -180,12 +180,11 @@ async def delete_client(
         raise NotFoundError(error_code="OAUTH_CLIENT_NOT_FOUND", message="OAuth2 client not found")
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(actor_id)
-        if actor and actor.department_id != client.department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="Cannot delete OAuth2 client outside your department",
-            )
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, client.department_id,
+            error_code="DEPARTMENT_ACCESS_DENIED",
+            message="Cannot delete OAuth2 client outside your department",
+        )
 
     await client_repo.deactivate(client)
     await db.commit()

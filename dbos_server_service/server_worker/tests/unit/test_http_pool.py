@@ -70,6 +70,46 @@ class TestPoolLifecycle:
         # повторный — без падений
         await http_pool.aclose_all()
 
+    async def test_aclose_all_redacts_exception_message(self, monkeypatch, caplog):
+        """Если aclose() бросит исключение с URL-секретом в repr — лог должен
+        пройти через `redact_error_message`, не утечь password.
+
+        Симметрия с W15-фиксом CLI (там та же дыра была закрыта в shutdown-логе).
+        """
+        import logging
+
+        class _BoomClient:
+            def __init__(self, **kwargs):
+                self.is_closed = False
+
+            async def aclose(self):
+                raise RuntimeError(
+                    "broken pipe to "
+                    "https://user:hunter2_topsecret@logging.local/api/ingest"
+                )
+
+        monkeypatch.setattr("src.services.http_pool.httpx.AsyncClient", _BoomClient)
+
+        class _S:
+            audit_pool_max_connections = 20
+            audit_pool_max_keepalive_connections = 10
+            server_service_pool_max_connections = 20
+            server_service_pool_max_keepalive_connections = 10
+            http_request_timeout_seconds = 5.0
+
+        monkeypatch.setattr("src.services.http_pool.get_settings", lambda: _S())
+
+        http_pool.get_audit_client()
+        with caplog.at_level(logging.WARNING, logger="src.services.http_pool"):
+            await http_pool.aclose_all()
+
+        log_blob = " ".join(rec.getMessage() for rec in caplog.records)
+        assert "hunter2_topsecret" not in log_blob, (
+            "URL-пароль не должен утекать через shutdown-лог"
+        )
+        # Сам факт ошибки должен светиться (RuntimeError type).
+        assert "RuntimeError" in log_blob
+
     def test_reset_for_tests_drops_cache_without_aclose(self):
         a1 = http_pool.get_audit_client()
         http_pool.reset_for_tests()

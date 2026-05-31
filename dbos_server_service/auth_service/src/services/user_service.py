@@ -29,6 +29,7 @@ from src.schemas.users import (
 )
 from src.services import _lockout, audit_service
 from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
+from src.services._dept_guard import assert_dept_admin_target_dept
 from src.services.auth_service import collect_user_permissions
 from src.utils.pagination import PaginationParams
 from src.utils.time import utcnow
@@ -117,12 +118,11 @@ async def list_users_by_department(
         raise NotFoundError(error_code="DEPARTMENT_NOT_FOUND", message=f"Department '{department_id}' not found")
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(actor_id)
-        if actor and actor.department_id != department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only view users in their own department",
-            )
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, department_id,
+            error_code="DEPARTMENT_ACCESS_DENIED",
+            message="department_admin can only view users in their own department",
+        )
 
     effective_include_banned = include_banned or status_filter is not None
     users = await user_repo.list_by_department(
@@ -169,9 +169,11 @@ async def create_user(
     user_repo = UserRepository(db)
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(actor_id)
-        if actor and actor.department_id != department_id:
-            raise AuthorizationError(error_code="DEPARTMENT_ACCESS_DENIED", message="department_admin can only create users in their own department")
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, department_id,
+            error_code="DEPARTMENT_ACCESS_DENIED",
+            message="department_admin can only create users in their own department",
+        )
 
     # Только account_admin раздаёт платформенные роли. Без этой проверки
     # department_admin мог бы создать юзера с platform_role=account_admin и
@@ -279,9 +281,11 @@ async def update_user(
         raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(actor_id)
-        if actor and actor.department_id != user.department_id:
-            raise AuthorizationError(error_code="USER_UPDATE_FORBIDDEN", message="Cannot update user outside your department")
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, user.department_id,
+            error_code="USER_UPDATE_FORBIDDEN",
+            message="Cannot update user outside your department",
+        )
 
     allowed_fields = {"email", "department_id", "status", "platform_role"}
     filtered = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
@@ -596,9 +600,11 @@ async def assign_roles(
             )
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        actor = await user_repo.get_by_id(actor_id)
-        if actor and actor.department_id != user.department_id:
-            raise AuthorizationError(error_code="USER_ROLE_UPDATE_FORBIDDEN", message="Cannot assign roles outside your department")
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, user.department_id,
+            error_code="USER_ROLE_UPDATE_FORBIDDEN",
+            message="Cannot assign roles outside your department",
+        )
 
     await role_repo.set_roles(user_id, service_name, roles, assigned_by=actor_id)
     await db.commit()

@@ -505,6 +505,96 @@ class TestPrepareDispatch:
         creds_key, _ = captured_dispatch.stored_creds_calls[0]
         assert creds_key in captured_dispatch.deleted_keys
 
+    async def test_store_creds_runtime_failure_503_with_audit(
+        self, client, operator_token_a, make_server,
+        captured_dispatch, captured_emits_prepare, monkeypatch,
+    ):
+        """Redis-runtime фейл в store_prepare_creds (timeout/connect refused)
+        не должен утекать наружу как голый 500 без аудита.
+
+        Endpoint обязан поймать → emit failure → отдать 503
+        WORKER_REDIS_UNAVAILABLE. Иначе атакующий, который ронит Redis-связь,
+        получает execute-path без следов в журнале.
+        """
+        async def boom(*args, **kwargs):
+            raise RuntimeError("redis connection refused")
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "store_prepare_creds", boom)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.store_prepare_creds",
+            boom,
+        )
+
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64("Boot1234!StrongPwd"),
+            },
+        )
+        assert resp.status_code == 503, resp.text
+        assert resp.json()["error_code"] == "WORKER_REDIS_UNAVAILABLE"
+        # Dispatch до воркера не дошёл.
+        assert captured_dispatch == []
+        # Audit failure записан, plaintext в деталях нет.
+        failures = [
+            e for e in captured_emits_prepare
+            if e.get("action") == "server.prepare"
+            and e.get("status") == "failure"
+        ]
+        assert len(failures) == 1
+        details = failures[0]["details"]
+        assert details["reason"] == "creds_store_failed"
+        assert details["error_class"] == "RuntimeError"
+        # Никакого plaintext-парольа / логина в audit-деталях.
+        flat = repr(details)
+        assert "bootadmin" not in flat
+        assert "Boot1234" not in flat
+
+    async def test_store_creds_service_unavailable_keeps_audit(
+        self, client, operator_token_a, make_server,
+        captured_dispatch, captured_emits_prepare, monkeypatch,
+    ):
+        """Если store_prepare_creds сам кинул ServiceUnavailableError
+        (WORKER_REDIS_NOT_CONFIGURED) — пробрасываем оригинальную ошибку
+        и обязательно эмитим audit failure (раньше эмита не было)."""
+        from src.core.exceptions import ServiceUnavailableError
+
+        async def boom(*args, **kwargs):
+            raise ServiceUnavailableError(
+                error_code="WORKER_REDIS_NOT_CONFIGURED",
+                message="SERVER_WORKER_REDIS_URL is not set",
+            )
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "store_prepare_creds", boom)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.store_prepare_creds",
+            boom,
+        )
+
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers=_hdr(operator_token_a),
+            json={
+                "username_b64": _b64("bootadmin"),
+                "password_b64": _b64("Boot1234!StrongPwd"),
+            },
+        )
+        assert resp.status_code == 503, resp.text
+        assert resp.json()["error_code"] == "WORKER_REDIS_NOT_CONFIGURED"
+        failures = [
+            e for e in captured_emits_prepare
+            if e.get("action") == "server.prepare"
+            and e.get("status") == "failure"
+        ]
+        assert len(failures) == 1
+        assert failures[0]["details"]["reason"] == "creds_store_unavailable"
+
 
 # ── Callback: POST /internal/servers/{id}/prepared ───────────────────────────
 

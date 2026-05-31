@@ -87,9 +87,24 @@ class TestHttpsGuardProduction:
         # не 403 HTTPS_REQUIRED, означает что guard пропустил запрос дальше.
         assert resp.status_code != 403 or resp.json().get("error_code") != "HTTPS_REQUIRED"
 
-    async def test_x_forwarded_proto_multi_hop_passes(self, production_app):
-        # XFP за несколькими hop'ами выглядит как "https, http" — первое
-        # значение от ближайшего к клиенту прокси.
+    async def test_x_forwarded_proto_multi_hop_trusts_last(self, production_app):
+        # XFP за несколькими hop'ами выглядит как "client_value, ingress_value".
+        # Доверяем правому-крайнему токену — это closest-trusted-proxy
+        # (наш ingress); левее — клиент мог подделать.
+        async with AsyncClient(
+            transport=ASGITransport(app=production_app), base_url="http://test",
+        ) as ac:
+            resp = await ac.get(
+                f"{BASE}/servers",
+                headers={"X-Forwarded-Proto": "http, https"},
+            )
+        # last="https" → guard пропустил.
+        assert resp.status_code != 403 or resp.json().get("error_code") != "HTTPS_REQUIRED"
+
+    async def test_x_forwarded_proto_spoofed_first_token_rejected(self, production_app):
+        # Атакующий ставит `X-Forwarded-Proto: https` сам, ingress дописывает
+        # `, http` (фактическая схема hop'а). Раньше брали first → пускали;
+        # теперь берём last="http" → 403.
         async with AsyncClient(
             transport=ASGITransport(app=production_app), base_url="http://test",
         ) as ac:
@@ -97,7 +112,8 @@ class TestHttpsGuardProduction:
                 f"{BASE}/servers",
                 headers={"X-Forwarded-Proto": "https, http"},
             )
-        assert resp.status_code != 403 or resp.json().get("error_code") != "HTTPS_REQUIRED"
+        assert resp.status_code == 403
+        assert resp.json()["error_code"] == "HTTPS_REQUIRED"
 
 
 class TestHttpsGuardDev:

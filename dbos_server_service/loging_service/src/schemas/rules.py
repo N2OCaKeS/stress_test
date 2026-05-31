@@ -14,6 +14,16 @@ from src.utils.normalization import normalize_service_name_preserve_case
 # нормализованные на ingest event.service — SUPPRESS/OVERRIDE не работает.
 _RULE_SERVICE_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_]{1,64}$")
 
+# Симметричен `EventCreate.action` (`[a-z0-9_.]{1,128}`), плюс `*` для glob —
+# rule-движок матчит `match_action="user.*"`. CRLF/Unicode в имени или glob'е
+# уехали бы в admin-list endpoint и оттуда в JSON-логи / CSV — log-injection
+# при отображении правил.
+_RULE_ACTION_PATTERN: re.Pattern[str] = re.compile(r"^[a-z0-9_.*]{1,128}$")
+
+# Rule.name отдаётся клиентам as-is (UI/CSV/JSON), CRLF в имени подделывает
+# вторую строку в log-shipping pipeline. Печатные ASCII без CR/LF/TAB.
+_RULE_NAME_PATTERN: re.Pattern[str] = re.compile(r"^[\x20-\x7E]{1,128}$")
+
 
 def _normalize_match_service(value: str | None) -> str | None:
     if value is None:
@@ -25,6 +35,25 @@ def _normalize_match_service(value: str | None) -> str | None:
             "(lowercase snake_case, symmetric with EventCreate.service)"
         )
     return pre_lower.lower()
+
+
+def _validate_match_action(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not _RULE_ACTION_PATTERN.match(value):
+        raise ValueError(
+            "match_action must match [a-z0-9_.*]{1,128} "
+            "(no CR/LF, no uppercase, no Unicode; '*' allowed for glob)"
+        )
+    return value
+
+
+def _validate_rule_name(value: str) -> str:
+    if not _RULE_NAME_PATTERN.match(value):
+        raise ValueError(
+            "name must be printable ASCII (no CR/LF/TAB), 1..128 chars"
+        )
+    return value
 
 
 # `DROP` принимается как входной alias к `SUPPRESS` (модель безопасности
@@ -69,6 +98,16 @@ class RuleCreate(BaseModel):
     def _normalize_match_service(cls, v: str | None) -> str | None:
         return _normalize_match_service(v)
 
+    @field_validator("match_action", mode="after")
+    @classmethod
+    def _validate_match_action(cls, v: str | None) -> str | None:
+        return _validate_match_action(v)
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def _validate_name(cls, v: str) -> str:
+        return _validate_rule_name(v)
+
     @model_validator(mode="after")
     def _validate_effect(self) -> "RuleCreate":
         if self.effect == "DROP":
@@ -97,6 +136,18 @@ class RuleUpdate(BaseModel):
     @classmethod
     def _normalize_match_service(cls, v: str | None) -> str | None:
         return _normalize_match_service(v)
+
+    @field_validator("match_action", mode="after")
+    @classmethod
+    def _validate_match_action(cls, v: str | None) -> str | None:
+        return _validate_match_action(v)
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def _validate_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _validate_rule_name(v)
 
     @model_validator(mode="after")
     def _normalize_effect(self) -> "RuleUpdate":

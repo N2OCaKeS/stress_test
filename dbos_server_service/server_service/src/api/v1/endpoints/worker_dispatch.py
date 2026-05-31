@@ -913,10 +913,43 @@ async def server_prepare_dispatch(
     # Пишем их в Redis под одноразовый ключ с TTL, в payload — только ссылка.
     # Воркер читает креды по ссылке на каждой попытке, TTL чистит их сам.
     creds_key = worker_client.prepare_creds_key(prepare_creds_id())
-    await worker_client.store_prepare_creds(
-        creds_key,
-        {"bootstrap_login": body.username(), "bootstrap_password": body.password()},
-    )
+    try:
+        await worker_client.store_prepare_creds(
+            creds_key,
+            {"bootstrap_login": body.username(), "bootstrap_password": body.password()},
+        )
+    except ServiceUnavailableError:
+        # Redis отдал свою же категорию ошибки (например WORKER_REDIS_NOT_CONFIGURED) —
+        # пробрасываем как есть, только пишем audit-следом.
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "creds_store_unavailable",
+                "task_kind": task_kind,
+                "department_id": server.department_id,
+            },
+        )
+        raise
+    except Exception as exc:
+        # Любой runtime-фейл Redis (timeout, connection refused, etc.) до этого
+        # уходил наружу как 500 без audit-следа — атакующий мог ронять prepare
+        # без отметки в журнале. Best-effort rollback + audit_failure + 503.
+        await worker_client.delete_prepare_creds(creds_key)
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "creds_store_failed",
+                "task_kind": task_kind,
+                "department_id": server.department_id,
+                "error_class": type(exc).__name__,
+            },
+        )
+        raise ServiceUnavailableError(
+            error_code="WORKER_REDIS_UNAVAILABLE",
+            message="Failed to stash bootstrap credentials before dispatch",
+        ) from exc
 
     payload: dict = {
         "server_id": server_id,

@@ -71,23 +71,22 @@ def _is_request_https(request: Request) -> bool:
       (envoy, nginx-ingress, traefik). Если он ``https`` — клиент пришёл
       по TLS, мы за прокси.
 
-    Доверять XFP можно потому, что путь к сервису короткий: ingress —
-    единственный hop, который имеет право этот header выставлять.
-    Внешний клиент не может его подделать — ingress всегда перетирает
-    входящие XFP-заголовки.
+    Доверять можно только **последнему** значению в цепочке XFP: оно от
+    closest-hop'а (нашего ingress'а), а всё, что левее, — приходит от
+    клиента/внешних прокси, которые могут это значение подделать. Если
+    ingress не настроен правильно перетирать заголовок целиком, ставя
+    единственное значение, и сваливает входящий XFP в список — мы хотя
+    бы не доверяем чужому ``https`` в начале списка.
     """
     if request.url.scheme == "https":
         return True
     forwarded_proto = request.headers.get("X-Forwarded-Proto", "").strip().lower()
-    if forwarded_proto == "https":
-        return True
-    # XFP может быть списком (`https, http` если несколько hop'ов); берём
-    # первое значение — оно от ближайшего к клиенту прокси.
-    if "," in forwarded_proto:
-        first = forwarded_proto.split(",", 1)[0].strip()
-        if first == "https":
-            return True
-    return False
+    if not forwarded_proto:
+        return False
+    # XFP-список вида `https, http` или единичное значение `https`. Берём
+    # правый-крайний токен — он от closest-trusted-proxy (нашего ingress'а).
+    last = forwarded_proto.rsplit(",", 1)[-1].strip()
+    return last == "https"
 
 
 def _build_https_required_response(request: Request) -> JSONResponse:

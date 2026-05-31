@@ -30,6 +30,7 @@ from typing import Optional
 import httpx
 
 from src.core.config import get_settings
+from src.utils.redaction import redact_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -106,10 +107,9 @@ async def aclose_all() -> None:
             await client.aclose()
         except Exception as exc:  # noqa: BLE001 — shutdown best-effort
             logger.warning(
-                "http_pool: failed to close %s pool: %s: %s",
+                "http_pool: failed to close %s pool: %s",
                 slot_name,
-                type(exc).__name__,
-                exc,
+                redact_error_message(f"{type(exc).__name__}: {exc}"),
             )
     _audit_client = None
     _server_service_client = None

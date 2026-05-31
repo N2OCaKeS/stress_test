@@ -390,6 +390,106 @@ class TestFailureModes:
         assert tick[0]["details"]["errors"] == 1
         assert tick[0]["status"] == "warning"
 
+    async def test_finalize_unexpected_exception_marks_failed(
+        self, monkeypatch, captured_audit
+    ):
+        """finalize_done бросил произвольный Exception → finalize_failed зовётся.
+
+        Раньше Exception-ветка только логировала и инкрементила errors, но
+        не звала finalize_failed → row застревал в `processing` навсегда.
+        Симметрия с CredentialFetchError-веткой.
+        """
+        from src.main import _settings
+        from src.services import server_service_client
+
+        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
+
+        status_mock = AsyncMock(return_value={
+            "remaining": 1, "total": 1, "active_version": 2,
+            "by_version": {"1": 1},
+            "outbox": {"pending": 1, "processing": 0, "done": 0, "failed": 0},
+        })
+        claim_mock = AsyncMock(return_value=[
+            {"id": "rox_oops", "entity_type": "server_account",
+             "entity_id": "acc_oops", "legacy_ciphertext": "v1$n$c", "attempts": 0},
+        ])
+
+        async def boom_done(_id):
+            raise RuntimeError("unexpected network blip")
+
+        failed_mock = AsyncMock(return_value={"id": "rox_oops", "status": "failed"})
+
+        monkeypatch.setattr(
+            server_service_client, "fetch_secrets_migration_status", status_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "finalize_reencrypt_outbox_done", boom_done,
+        )
+        monkeypatch.setattr(
+            server_service_client, "finalize_reencrypt_outbox_failed", failed_mock,
+        )
+
+        await _invoke_task()
+
+        failed_mock.assert_awaited_once()
+        args, kwargs = failed_mock.call_args
+        # Сигнатура: finalize_reencrypt_outbox_failed(outbox_id, error=...)
+        assert (args and args[0] == "rox_oops") or kwargs.get("outbox_id") == "rox_oops"
+        # error должно содержать тип исключения для диагностики.
+        err = kwargs.get("error") or (args[1] if len(args) > 1 else "")
+        assert "RuntimeError" in err
+
+        tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
+        assert tick[0]["details"]["errors"] == 1
+        assert tick[0]["status"] == "warning"
+
+    async def test_finalize_unexpected_then_failed_also_throws_no_raise(
+        self, monkeypatch, captured_audit
+    ):
+        """Если и finalize_failed бросит — task не должен крашиться."""
+        from src.main import _settings
+        from src.services import server_service_client
+
+        monkeypatch.setattr(_settings, "secrets_reencrypt_enabled", True)
+
+        status_mock = AsyncMock(return_value={
+            "remaining": 1, "total": 1, "active_version": 2,
+            "by_version": {"1": 1},
+            "outbox": {"pending": 1, "processing": 0, "done": 0, "failed": 0},
+        })
+        claim_mock = AsyncMock(return_value=[
+            {"id": "rox_dbl", "entity_type": "server_account",
+             "entity_id": "acc_dbl", "legacy_ciphertext": "v1$n$c", "attempts": 0},
+        ])
+
+        async def boom_done(_id):
+            raise RuntimeError("boom-1")
+
+        async def boom_failed(_id, error=None):
+            raise RuntimeError("boom-2")
+
+        monkeypatch.setattr(
+            server_service_client, "fetch_secrets_migration_status", status_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "claim_reencrypt_outbox_pending", claim_mock,
+        )
+        monkeypatch.setattr(
+            server_service_client, "finalize_reencrypt_outbox_done", boom_done,
+        )
+        monkeypatch.setattr(
+            server_service_client, "finalize_reencrypt_outbox_failed", boom_failed,
+        )
+
+        # Should not raise.
+        await _invoke_task()
+
+        tick = [e for e in captured_audit if e["action"] == "secrets.reencrypt_tick"]
+        assert tick[0]["details"]["errors"] == 1
+
     async def test_claim_failure_does_not_raise(
         self, monkeypatch, captured_audit
     ):

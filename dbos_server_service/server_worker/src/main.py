@@ -1099,6 +1099,20 @@ async def secrets_reencrypt_lazy() -> None:
                 outbox_id,
                 redact_error_message(f"{type(exc).__name__}: {exc}"),
             )
+            # Зеркало CredentialFetchError-ветки: без finalize_failed row
+            # застрянет в `processing`, следующий scheduler-цикл claim не
+            # подберёт (claim берёт только pending), и cleanup'ом тоже не
+            # вытащим. Best-effort failed-маркер.
+            try:
+                await server_service_client.finalize_reencrypt_outbox_failed(
+                    outbox_id, error=f"{type(exc).__name__}: {exc}"
+                )
+            except Exception as inner:  # noqa: BLE001
+                logger.warning(
+                    "secrets.reencrypt_lazy: finalize_failed also failed id=%s: %s",
+                    outbox_id,
+                    redact_error_message(f"{type(inner).__name__}: {inner}"),
+                )
 
     logger.info(
         "secrets.reencrypt_lazy: processed=%s skipped=%s errors=%s "

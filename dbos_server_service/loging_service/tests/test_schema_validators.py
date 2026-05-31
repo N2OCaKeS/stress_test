@@ -401,6 +401,56 @@ class TestEventDefinition:
         with pytest.raises(ValidationError):
             EventDefinition(action="x", description="d" * 257)
 
+    def test_action_rejects_crlf_injection(self):
+        # Log-injection через каталог: action засветится в downstream CSV/SIEM
+        # экспортах admin-UI. `\r\n` в середине строки подделывает вторую
+        # запись и должен отбиваться 422.
+        with pytest.raises(ValidationError):
+            EventDefinition(action="user.login\r\n[ALERT] fake")
+
+    def test_action_normalises_uppercase(self):
+        # `normalize_identifier` свернёт `User.Login` к `user.login` — это
+        # ожидаемое поведение, симметрия с ingest-путём `EventCreate.action`
+        # (где schema-валидатор тоже идёт через NFKC + lower).
+        m = EventDefinition(action="User.Login")
+        assert m.action == "user.login"
+
+    def test_action_rejects_spaces(self):
+        with pytest.raises(ValidationError):
+            EventDefinition(action="user login")
+
+    def test_action_folds_cyrillic_homoglyph(self):
+        # Кириллическая `о` U+043E выглядит как ASCII `o`. normalize_identifier
+        # сворачивает её через _CONFUSABLES_MAP — иначе атакующий мог бы
+        # зарегистрировать "homoglyph-twin" в реестре под отдельной записью
+        # и подменить downstream-аналитику для собственного сервиса.
+        m = EventDefinition(action="user.lоgin")  # cyrillic о
+        assert m.action == "user.login"
+
+    def test_action_rejects_non_foldable_unicode(self):
+        # CJK и прочие символы не в _CONFUSABLES_MAP — после normalize
+        # всё ещё non-ASCII, charset должен отбить.
+        with pytest.raises(ValidationError):
+            EventDefinition(action="action中文")
+        with pytest.raises(ValidationError):
+            EventDefinition(action="ñaction")
+
+    def test_action_normalizes_invisibles(self):
+        # ZWSP между сегментами вырезается normalize_identifier'ом.
+        m = EventDefinition(action="user.login​")
+        assert m.action == "user.login"
+
+    def test_description_rejects_crlf(self):
+        with pytest.raises(ValidationError):
+            EventDefinition(action="user.login", description="line1\r\nline2")
+        with pytest.raises(ValidationError):
+            EventDefinition(action="user.login", description="bad\x00nul")
+
+    def test_description_accepts_unicode_text(self):
+        # Человекочитаемое поле — обычный текст с кириллицей допустим.
+        m = EventDefinition(action="user.login", description="Вход пользователя")
+        assert m.description == "Вход пользователя"
+
 
 # ── RetentionPolicy ──────────────────────────────────────────────────────────
 

@@ -920,3 +920,109 @@ class TestMassRotatePartialTolerance:
         assert len(agg["failed"]) == 1
         # Третий сервер остался непопытанным.
         assert agg["not_attempted"] == [srv3.id] or len(agg["not_attempted"]) == 1
+
+
+class TestIdempotencyKeyLength:
+    """`Idempotency-Key` header — guard на длину.
+
+    Worker-БД хранит `idempotency_key` в VARCHAR(128). Per-server fan-out
+    (mass rotate / `fanout_update_on_host`) дописывает `:<server.id>` —
+    без жёсткого лимита длинный клиентский ключ ронял INSERT с DataError
+    и валил массовый вызов 503 `WORKER_UNREACHABLE`. Guard режет на входе
+    с 400 `IDEMPOTENCY_KEY_TOO_LONG`.
+    """
+
+    async def test_oversized_key_rejected_400(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        srv = await make_server(department_id="dep_a", with_ipmi=True)
+        too_long = "x" * 90  # > 87
+        resp = await client.post(
+            f"{BASE}/servers/{srv.id}/power/status",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": too_long},
+        )
+        assert resp.status_code == 400, resp.text
+        body = resp.json()
+        assert body["error_code"] == "IDEMPOTENCY_KEY_TOO_LONG"
+        assert body["details"]["max_length"] == 87
+        assert body["details"]["got"] == 90
+        # dispatch_task не должен быть вызван — guard срабатывает раньше.
+        assert captured_dispatch == []
+
+    async def test_uuid_key_accepted(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        """Стандартный UUID-ключ (36 chars) проходит."""
+        import uuid
+
+        srv = await make_server(department_id="dep_a", with_ipmi=True)
+        key = str(uuid.uuid4())  # 36 chars
+        assert len(key) == 36
+        resp = await client.post(
+            f"{BASE}/servers/{srv.id}/power/status",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": key},
+        )
+        assert resp.status_code == 202, resp.text
+        assert len(captured_dispatch) == 1
+        assert captured_dispatch[0]["idempotency_key"] == key
+
+    async def test_boundary_key_at_max_len_accepted(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        """Ровно 87 символов — на границе, пропускаем."""
+        srv = await make_server(department_id="dep_a", with_ipmi=True)
+        boundary = "k" * 87
+        resp = await client.post(
+            f"{BASE}/servers/{srv.id}/power/status",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": boundary},
+        )
+        assert resp.status_code == 202, resp.text
+        assert len(captured_dispatch) == 1
+        assert captured_dispatch[0]["idempotency_key"] == boundary
+
+    async def test_mass_rotate_oversized_key_rejected_400(
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch,
+    ):
+        """Mass-rotate с длинным ключом — отдельно, т.к. именно fan-out был
+        точкой эксплуатации DoS (per_server_key = key + ":" + server.id
+        вылезал за VARCHAR(128) → 503 на весь батч). Guard ловит ещё до
+        первого dispatch'а."""
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[srv1.id, srv2.id], login="ops")
+        too_long = "y" * 100
+        resp = await client.post(
+            f"{BASE}/server-accounts/{acc.id}/rotate",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": too_long},
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error_code"] == "IDEMPOTENCY_KEY_TOO_LONG"
+        # Ни одна задача не поставилась — fan-out не запустился.
+        assert captured_dispatch == []
+
+    async def test_no_header_accepted(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        """Без header'а — dispatch проходит с `idempotency_key=None`."""
+        srv = await make_server(department_id="dep_a", with_ipmi=True)
+        resp = await client.post(
+            f"{BASE}/servers/{srv.id}/power/status",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        assert captured_dispatch[0]["idempotency_key"] is None
+
+    async def test_empty_header_treated_as_missing(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        """Пустая строка эквивалентна отсутствию header'а (сохранили
+        старое поведение `... or None`)."""
+        srv = await make_server(department_id="dep_a", with_ipmi=True)
+        resp = await client.post(
+            f"{BASE}/servers/{srv.id}/power/status",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": ""},
+        )
+        assert resp.status_code == 202, resp.text
+        assert captured_dispatch[0]["idempotency_key"] is None
+

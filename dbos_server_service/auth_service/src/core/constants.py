@@ -42,9 +42,16 @@ class SubjectType(StrEnum):
 
 
 class BotStatus(StrEnum):
-    """Статус бота. BLOCKED — отбивает использование токенов."""
+    """Статус бота. BLOCKED — отбивает использование токенов.
+
+    Wire-value `"disabled"` — синхронно с `BotUpdate.status` (`Literal["active",
+    "disabled"]`) и тем, что лежит в БД (колонка `status` — String, пишется
+    как есть из PATCH-body). Имя константы оставлено BLOCKED по доменной
+    семантике; ходить через `BotStatus(value)` теперь безопасно для строк
+    из API/БД.
+    """
     ACTIVE = "active"
-    BLOCKED = "blocked"
+    BLOCKED = "disabled"
 
 
 # Префиксы токенов — raw значение показываем один раз, в БД лежит только hash

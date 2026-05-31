@@ -200,29 +200,83 @@ class TestRuleCacheStaleFallback:
             cache.get(db)
 
     def test_stale_fallback_resets_ttl_to_avoid_db_hammer(self, db, monkeypatch):
-        """После stale-fallback _loaded_at сдвигается, чтобы не долбить БД до следующего TTL."""
+        """После stale-fallback _loaded_monotonic сдвигается (TTL backoff),
+        но _loaded_at и _db_empty остаются на последнем подтверждённом
+        значении — иначе cross-worker UPDATE, попавший в окно outage'а,
+        тихо терялся бы при восстановлении БД."""
         cache = _RuleCache(ttl_seconds=30)
         _make_rule(db, "r1")
         cache.get(db)
 
-        before = cache._loaded_at
+        before_loaded_at = cache._loaded_at
+        before_db_empty = cache._db_empty
         before_mono = cache._loaded_monotonic
 
-        # Сбрасываем TTL и роняем БД
-        cache._loaded_at = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        # Сбрасываем TTL и роняем БД (имитируем outage после успешной загрузки).
         cache._loaded_monotonic = 0.0
         monkeypatch.setattr(rule_repo, "get_max_updated_at",
                             lambda d: (_ for _ in ()).throw(RuntimeError("fail")))
 
         cache.get(db)
-        # _loaded_at должен быть обновлён (свежее, чем до stale-fallback)
-        assert cache._loaded_at > datetime(2000, 1, 1, tzinfo=timezone.utc)
-        assert cache._loaded_at != before  # обновился во время fallback
-        # _loaded_monotonic тоже двигается — иначе TTL не сбрасывается
-        # и на следующем get() мы снова полетим в упавшую БД.
+        # `_loaded_monotonic` двигается — иначе TTL не сбрасывается и на
+        # следующем get() мы снова полетим в упавшую БД.
         assert cache._loaded_monotonic is not None
         assert cache._loaded_monotonic > 0.0
         assert cache._loaded_monotonic != before_mono
+        # `_loaded_at` НЕ должен сдвинуться — это межсервисный watermark
+        # для сравнения с MAX(updated_at) из БД. Сдвиг к моменту провалившейся
+        # попытки скрыл бы UPDATE, попавший в окно outage'а.
+        assert cache._loaded_at == before_loaded_at
+        # `_db_empty` тоже сохраняем — мы не подтвердили текущее состояние БД.
+        assert cache._db_empty == before_db_empty
+
+    def test_db_outage_then_recovery_picks_up_crossworker_update(self, db, monkeypatch, TestSessionLocal):
+        """После outage'а cross-worker UPDATE, прилетевший пока БД лежала,
+        должен подхватиться при первом успешном tick'е. Если `_loaded_at`
+        двигался в exception-ветке, watermark обогнал бы UPDATE.updated_at,
+        и условие `db_updated_at > self._loaded_at` дало бы False до
+        следующего bump'а MAX."""
+        cache = _RuleCache(ttl_seconds=0)
+        _make_rule(db, "old-rule")
+        # Подтянули старое состояние.
+        rules = cache.get(db)
+        assert [r.name for r in rules] == ["old-rule"]
+
+        # Падение БД на одном tick'е.
+        boom_calls = {"n": 0}
+
+        def boom(*_args, **_kwargs):
+            boom_calls["n"] += 1
+            raise RuntimeError("connection lost")
+
+        monkeypatch.setattr(rule_repo, "get_max_updated_at", boom)
+        time.sleep(0.01)
+        # Stale fallback — отдаёт старый кеш, бампит monotonic TTL.
+        rules_during = cache.get(db)
+        assert [r.name for r in rules_during] == ["old-rule"]
+        assert boom_calls["n"] == 1
+
+        # Пока БД "лежала", другой воркер создал новое правило.
+        time.sleep(0.01)
+        other_session = TestSessionLocal()
+        try:
+            _make_rule(other_session, "new-rule-during-outage")
+        finally:
+            other_session.close()
+
+        # БД восстановилась — снимаем monkeypatch.
+        monkeypatch.undo()
+        time.sleep(0.01)
+        # `_loaded_monotonic` мы только что подвинули; чтобы новый tick реально
+        # пошёл в БД, опустим его (имитация прошло >TTL).
+        cache._loaded_monotonic = 0.0
+
+        rules_after = cache.get(db)
+        names = sorted(r.name for r in rules_after)
+        assert "new-rule-during-outage" in names, (
+            f"UPDATE, прилетевший во время outage'а, должен подхватиться "
+            f"после восстановления БД (есть: {names})"
+        )
 
 
 # ── invalidate() ──────────────────────────────────────────────────────────────

@@ -68,6 +68,7 @@ from src.core.exceptions import (
 )
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
+from src.dependencies.idempotency import read_idempotency_key
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import server_account as account_repo
 from src.schemas.server import (
@@ -246,7 +247,7 @@ async def _dispatch_for_server(
             )
 
     # 5. Dispatch + audit.
-    idempotency_key = request.headers.get("Idempotency-Key") or None
+    idempotency_key = read_idempotency_key(request)
     payload: dict = {
         "server_id": server_id,
         "target_department_id": server.department_id,
@@ -407,7 +408,7 @@ async def _dispatch_account_on_host(
             message="Server is decommissioned and cannot accept worker operations",
         )
 
-    idempotency_key = request.headers.get("Idempotency-Key") or None
+    idempotency_key = read_idempotency_key(request)
     # Non-secret атрибуты аккаунта едут в payload — воркеру не нужен отдельный
     # read карточки, пароль он тянет через internal view_password endpoint.
     payload = _build_account_task_payload(
@@ -581,7 +582,7 @@ async def fanout_update_on_host(
     Возвращает список поставленных задач `{server_id, task_id}`.
     """
     audit_action = "server_account.update_on_host"
-    idempotency_key = request.headers.get("Idempotency-Key") or None
+    idempotency_key = read_idempotency_key(request)
     request_id = getattr(request.state, "request_id", None)
 
     target_links = [
@@ -860,7 +861,7 @@ async def server_prepare_dispatch(
         {"bootstrap_login": body.username(), "bootstrap_password": body.password()},
     )
 
-    idempotency_key = request.headers.get("Idempotency-Key") or None
+    idempotency_key = read_idempotency_key(request)
     payload: dict = {
         "server_id": server_id,
         "target_department_id": server.department_id,
@@ -1025,7 +1026,7 @@ async def account_rotate_password_dispatch(
         target_ids = linked_ids
         mode = "all"
 
-    idempotency_key = request.headers.get("Idempotency-Key") or None
+    idempotency_key = read_idempotency_key(request)
     request_id = getattr(request.state, "request_id", None)
 
     # Пред-флайт: грузим все целевые серверы и раскладываем на пригодные к
@@ -1462,7 +1463,7 @@ async def ipmi_rotate_password_dispatch(
             message="Server is decommissioned, IPMI rotation not allowed",
         )
 
-    idempotency_key = request.headers.get("Idempotency-Key") or None
+    idempotency_key = read_idempotency_key(request)
     payload = {
         "server_id": server.id,
         "controller_id": controller_id,

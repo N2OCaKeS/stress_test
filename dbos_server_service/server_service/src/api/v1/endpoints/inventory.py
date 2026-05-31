@@ -20,6 +20,7 @@ from src.core.exceptions import (
 )
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
+from src.dependencies.idempotency import read_idempotency_key
 from src.schemas.server import ServerTaskDispatchResponse
 from src.services import audit_service, permissions, worker_client
 from src.services import server as server_svc
@@ -108,7 +109,7 @@ async def trigger_users_inventory(
             error_code="SERVER_DECOMMISSIONED",
             message="Server is decommissioned and cannot be inventoried",
         )
-    idempotency_key = request.headers.get("Idempotency-Key") or None
+    idempotency_key = read_idempotency_key(request)
     payload = {
         "server_id": server_id,
         "target_department_id": server.department_id,

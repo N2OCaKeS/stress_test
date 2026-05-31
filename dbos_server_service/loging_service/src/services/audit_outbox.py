@@ -320,8 +320,8 @@ class AuditOutbox:
             return
         deadline = asyncio.get_running_loop().time() + max(0.0, timeout)
         while True:
+            batch: list[AuditEnvelope] = []
             try:
-                batch: list[AuditEnvelope] = []
                 while len(batch) < self._batch_size:
                     try:
                         batch.append(self._queue.get_nowait())
@@ -341,6 +341,24 @@ class AuditOutbox:
                         )
                     return
                 await self._flush_batch(batch)
+            except asyncio.CancelledError:
+                # Force-cancel во время финального drain'а: батч уже выдернут
+                # из очереди и в `_flush_batch` мог не дойти до commit'а. Без
+                # явного учёта эти события молча терялись бы, нарушая инвариант
+                # `enqueued = drained + failures + dropped`. `CancelledError`
+                # это `BaseException`, generic `except Exception` ниже его не
+                # ловит — отдельная ветка ОБЯЗАТЕЛЬНА перед re-raise.
+                lost = len(batch)
+                if self._queue is not None:
+                    lost += self._queue.qsize()
+                if lost:
+                    with self._counters_lock:
+                        self._dropped_shutdown_total += lost
+                    logger.warning(
+                        "audit outbox shutdown drain cancelled, %d events lost",
+                        lost,
+                    )
+                raise
             except Exception as exc:
                 logger.error(
                     "audit outbox shutdown drain failed: %s", exc, exc_info=True

@@ -33,6 +33,7 @@ from src.core.exceptions import (
 )
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
+from src.dependencies.idempotency import read_idempotency_key
 from src.services import audit_service, permissions, worker_client
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
@@ -139,7 +140,7 @@ async def list_installed_packages(
         )
 
     # 4. Dispatch + audit.
-    idempotency_key = request.headers.get("Idempotency-Key") or None
+    idempotency_key = read_idempotency_key(request)
     payload: dict = {
         "server_id": server_id,
         "host": server.hostname,

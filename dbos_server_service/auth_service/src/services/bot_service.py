@@ -91,7 +91,10 @@ async def create_bot(
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
         actor_department_id = await _resolve_actor_dept(db, actor_id, actor_department_id)
-        if actor_department_id is not None and actor_department_id != data.department_id:
+        # `actor_department_id is None` для DEPARTMENT_ADMIN — broken identity:
+        # такая запись невалидна и пропускать её через guard нельзя. Симметрия
+        # с update_bot, который тоже падает 403 при None-dept (см. W14).
+        if actor_department_id != data.department_id:
             raise AuthorizationError(error_code="BOT_CREATION_FORBIDDEN", message="department_admin can only create bots in their own department")
 
     dept = await dept_repo.get_by_id(data.department_id)

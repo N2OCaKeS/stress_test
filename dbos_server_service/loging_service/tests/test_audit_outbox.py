@@ -353,6 +353,88 @@ class TestGracefulShutdown:
         assert captured == []
 
 
+# ── force-cancel внутри _drain_remaining должен бампить shutdown counter ─────
+
+
+class TestDrainRemainingCancelled:
+    """`CancelledError` это `BaseException`, generic `except Exception` его
+    не ловит. Без отдельной ветки события, выдернутые из очереди в `batch`
+    непосредственно перед force-cancel'ом, молча терялись бы — нарушая
+    инвариант `enqueued = drained + failures + dropped`."""
+
+    def test_force_cancel_during_flush_bumps_dropped_shutdown(self):
+        outbox = AuditOutbox(
+            max_size=16,
+            batch_size=2,
+            poll_interval_seconds=5.0,
+            session_factory=_FakeSession,
+            writer=lambda db, env: None,
+            bump_failure=lambda: 0,
+        )
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+            # Сами кладём envelope'ы в очередь — drain-loop не запускаем.
+            for i in range(5):
+                outbox._queue.put_nowait(_env(f"ev-{i}"))
+
+            # Подменяем _flush_batch на корутину, которая всегда бросает
+            # CancelledError — имитация force-cancel'а в await'е flush'а
+            # после того, как drain_remaining уже выгребла batch из очереди.
+            async def cancelling_flush(batch):
+                raise asyncio.CancelledError()
+
+            outbox._flush_batch = cancelling_flush  # type: ignore[assignment]
+
+            try:
+                await outbox._drain_remaining(timeout=1.0)
+            except asyncio.CancelledError:
+                pass
+
+            # batch_size=2 → в batch ушло 2 envelope'а, ещё 3 остались в
+            # очереди. После force-cancel'а все 5 должны быть учтены в
+            # `_dropped_shutdown_total`.
+            return outbox.dropped_shutdown_total()
+
+        dropped = asyncio.run(run())
+        assert dropped == 5, (
+            f"force-cancel в drain_remaining должен бампнуть shutdown counter "
+            f"на batch + queue residue (ожидали 5, получили {dropped})"
+        )
+
+    def test_cancelled_error_is_propagated(self):
+        """CancelledError ВСЁ ЕЩЁ должен пробрасываться (graceful shutdown
+        контракт): suppress'нём только counter-бамп."""
+        outbox = AuditOutbox(
+            max_size=4,
+            batch_size=2,
+            poll_interval_seconds=5.0,
+            session_factory=_FakeSession,
+            writer=lambda db, env: None,
+            bump_failure=lambda: 0,
+        )
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+            outbox._queue.put_nowait(_env("ev-1"))
+
+            async def cancelling_flush(batch):
+                raise asyncio.CancelledError()
+
+            outbox._flush_batch = cancelling_flush  # type: ignore[assignment]
+
+            raised = False
+            try:
+                await outbox._drain_remaining(timeout=1.0)
+            except asyncio.CancelledError:
+                raised = True
+            return raised
+
+        assert asyncio.run(run()) is True
+
+
 # ── cancel ПОСЛЕ commit'а не должен приводить к дублям через _drain_remaining ─
 
 

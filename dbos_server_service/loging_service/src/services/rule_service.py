@@ -299,9 +299,16 @@ class _RuleCache:
             except Exception:
                 if self._loaded_monotonic is not None:
                     logger.error("RuleCache: DB reload failed — serving stale cache")
-                    # Сдвигаем TTL чтобы не долбить БД до следующего окна.
+                    # Сдвигаем ТОЛЬКО TTL (monotonic), чтобы не долбить БД
+                    # до следующего окна. `_loaded_at` и `_db_empty` оставляем
+                    # на последнем подтверждённом значении: при восстановлении
+                    # БД следующий tick корректно сравнит `MAX(updated_at)`
+                    # с этим watermark'ом и подхватит любой cross-worker
+                    # UPDATE, прилетевший во время outage'а. Если двинуть
+                    # `_loaded_at` к моменту провалившейся попытки, UPDATE,
+                    # попавший в окно [last_good, failed_attempt], потерялся
+                    # бы до следующего bump'а MAX (т.е. ещё одного UPDATE).
                     self._loaded_monotonic = mono_now
-                    self._loaded_at = load_started_at
                 else:
                     raise
         return self._rules

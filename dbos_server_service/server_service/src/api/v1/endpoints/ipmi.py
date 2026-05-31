@@ -24,6 +24,7 @@ from src.core.exceptions import (
 from src.core.limiter import endpoint_limiter
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
+from src.dependencies.idempotency import read_idempotency_key
 from src.repositories import ipmi_controller as ipmi_repo
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.ipmi_controller import (
@@ -146,7 +147,7 @@ async def _dispatch_power(
     # draft-ietf-httpapi-idempotency-key). Если клиент его прислал —
     # пробрасываем в worker_client, чтобы dispatch_task мог дедупнуть
     # повторный POST (retry/двойной клик/redrive) и вернуть тот же task_id.
-    idempotency_key = request.headers.get("Idempotency-Key") or None
+    idempotency_key = read_idempotency_key(request)
     # ConflictError(TASK_IDEMPOTENT_CONFLICT) и ServiceUnavailableError
     # (WORKER_DB_NOT_CONFIGURED / WORKER_REDIS_NOT_CONFIGURED /
     # UNKNOWN_TASK_KIND) поднимаются из worker_client.dispatch_task и без

@@ -1,9 +1,12 @@
 """Схемы для эндпоинтов /services."""
 
+import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from src.utils.normalization import normalize_identifier
 
 
 # ── Сводка по сервису (из audit_events) ──────────────────────────────────────
@@ -20,6 +23,21 @@ class ServiceListResponse(BaseModel):
 
 
 # ── Реестр событий сервиса ────────────────────────────────────────────────────
+
+# Тот же charset, что у `EventCreate.action` в schemas/events.py. Каталоговый
+# путь (`POST /services/{service}/events`) пишет action в `service_events`,
+# откуда он потом светится в admin-UI и сравнивается с `audit_events.action`
+# на JOIN'ах. Без charset'а атакующий с SERVICE_API_KEY мог бы залить
+# `action="user.login\r\n[ALERT] fake"` в реестр (log-injection в downstream
+# CSV/SIEM-экспортах) или кириллический homoglyph (`u` U+0443) и подделать
+# реестр под чужой сервис без срабатывания фильтров.
+_ACTION_PATTERN: re.Pattern[str] = re.compile(r"^[a-z0-9_.]{1,128}$")
+
+# `description` рефлектится в admin-UI и в audit-event'е `logging.service_events_
+# registered` через target_type. Запрещаем CRLF / NUL / control-chars; обычные
+# Unicode-буквы и пробелы оставляем — это человекочитаемое поле.
+_DESCRIPTION_CONTROL_RE: re.Pattern[str] = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")
+
 
 class EventDefinition(BaseModel):
     """Описание одного события, которое сервис заявляет, что может эмитить."""
@@ -41,6 +59,32 @@ class EventDefinition(BaseModel):
         default=None,
         description="Дефолтная severity (TRACE/DEBUG/INFO/WARNING/ERROR/CRITICAL)",
     )
+
+    @field_validator("action")
+    @classmethod
+    def _action_charset(cls, v: str) -> str:
+        # Симметрия с `EventCreate._action_charset`: NFKC + invisibles strip +
+        # confusables fold сначала, потом charset. Без normalize кириллическая
+        # `u` (U+0443) или ZWSP-padding между точками тихо проходили бы regex
+        # и попадали в реестр.
+        normalised = normalize_identifier(v)
+        if not _ACTION_PATTERN.match(normalised):
+            raise ValueError(
+                "action must match [a-z0-9_.]{1,128} after NFKC normalisation "
+                "(no CR/LF, no uppercase, no Unicode homoglyphs)"
+            )
+        return normalised
+
+    @field_validator("description")
+    @classmethod
+    def _description_no_control_chars(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if _DESCRIPTION_CONTROL_RE.search(v):
+            raise ValueError(
+                "description must not contain CR/LF/NUL or other control characters"
+            )
+        return v
 
 
 class RegisterEventsRequest(BaseModel):

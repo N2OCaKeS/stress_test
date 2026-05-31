@@ -30,6 +30,7 @@ _PASSWORD_KEYS = {
     "old_password", "new_password", "current_password",
     "confirm_password", "user_password",
     "bootstrap_password", "bootstrap_login",
+    "password_plaintext",
 }
 _TOKEN_KEYS = {
     "token", "access_token", "refresh_token", "id_token",
@@ -41,6 +42,7 @@ _SECRET_KEYS = {
     "secret", "secret_key", "api_key", "apikey",
     "client_secret", "private_key", "signing_key",
     "server_encryption_key",
+    "ssh_private_key", "ssh_private_key_plaintext",
 }
 _HASH_KEYS = {
     "password_hash", "hash", "token_hash", "pwd_hash",

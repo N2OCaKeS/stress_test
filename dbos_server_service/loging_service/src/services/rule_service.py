@@ -262,6 +262,15 @@ class _RuleCache:
             mono_now = time.monotonic()
             if self._ttl_fresh(mono_now):
                 return self._rules
+            # Фиксируем «нижнюю границу» окна загрузки ДО SELECT'а MAX. Если
+            # другой worker сделает UPDATE между нашим MAX-snapshot'ом и
+            # концом загрузки — его UPDATE.updated_at будет строго БОЛЬШЕ
+            # этого `load_started_at`. На следующем TTL-tick мы возьмём
+            # `db_updated_at > self._loaded_at` и подтянем cross-worker
+            # change. Если бы `_loaded_at` ставился в конце (после `now`),
+            # UPDATE, попавший в окно (max-select, now), терялся бы до
+            # следующего bump'а MAX (т.е. ещё одного UPDATE).
+            load_started_at = datetime.now(timezone.utc)
             try:
                 db_updated_at = rule_repo.get_max_updated_at(db)
                 # Пустая БД (NULL MAX) при пустом кеше — стабильное состояние,
@@ -285,14 +294,14 @@ class _RuleCache:
                     # ни от lazy-loading'а добавленных в будущем relationship'ов.
                     self._rules = [_snapshot_rule(r) for r in fresh_orm]
                 self._db_empty = db_empty_now
-                self._loaded_at = datetime.now(timezone.utc)
+                self._loaded_at = load_started_at
                 self._loaded_monotonic = mono_now
             except Exception:
                 if self._loaded_monotonic is not None:
                     logger.error("RuleCache: DB reload failed — serving stale cache")
                     # Сдвигаем TTL чтобы не долбить БД до следующего окна.
                     self._loaded_monotonic = mono_now
-                    self._loaded_at = datetime.now(timezone.utc)
+                    self._loaded_at = load_started_at
                 else:
                     raise
         return self._rules

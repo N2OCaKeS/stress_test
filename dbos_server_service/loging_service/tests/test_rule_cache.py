@@ -287,3 +287,121 @@ class TestModuleLevelInvalidateCache:
         # его тоже сбрасывают. Проверяем что вызов идемпотентен и не падает.
         rule_service.invalidate_cache()
         rule_service.invalidate_cache()  # повторный вызов — без эффекта, не падает
+
+
+# ── Cross-worker UPDATE во время загрузки кеша ────────────────────────────────
+
+
+class TestRuleCacheLoadedAtCapturedBeforeMaxQuery:
+    """`_loaded_at` должен фиксироваться ДО `get_max_updated_at`, иначе
+    cross-worker UPDATE, попавший в окно (max-select, end-of-load), теряется
+    до следующего bump'а MAX — на следующем TTL-tick сравнение
+    `db_updated_at > self._loaded_at` даст False, и стек правил останется
+    устаревшим.
+
+    Симулируем: worker A считал MAX=t0, в этот момент worker B сделал UPDATE
+    (t1 > t0). Если `_loaded_at` фиксируется в КОНЦЕ загрузки (≈t2 > t1), то
+    cross-worker change подхватится только если кто-то снова двинет MAX
+    выше t2 — в пределе теряется UPDATE.
+    """
+
+    def test_loaded_at_captured_before_max_select(self, db, monkeypatch):
+        cache = _RuleCache(ttl_seconds=0)
+        _make_rule(db, "initial")
+        cache.get(db)
+
+        # `_loaded_at` после первой загрузки.
+        first_loaded_at = cache._loaded_at
+        assert first_loaded_at is not None
+
+        # Имитируем cross-worker UPDATE ВНУТРИ get_max_updated_at: возвращаем
+        # `db_updated_at`, который СТРОГО МЕНЬШЕ реального максимума, потому
+        # что вторая worker'а ещё не успела закоммитить, но коммитит между
+        # SELECT MAX и фиксацией `_loaded_at`. После фикса `_loaded_at` берётся
+        # ПЕРЕД SELECT'ом, поэтому даже если UPDATE.updated_at == момент SELECT'а
+        # — он строго больше `_loaded_at`, и следующий tick подхватит.
+
+        # Реальная имплементация: записываем правило с updated_at в БД, читаем
+        # max до фактической записи (внутри monkeypatched repo). Затем на
+        # следующем tick'е cache должен поднять «потерянный» UPDATE.
+        from src.models.audit_rule import AuditRule
+
+        # Шаг 1: явно сдвигаем `_loaded_at` в прошлое, чтобы updated_at нового
+        # правила гарантированно был БОЛЬШЕ него (TTL=0 → следующий get()
+        # пойдёт за MAX).
+        cache._loaded_monotonic = 0.0  # просрочили TTL
+        cache._loaded_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+        # Шаг 2: внутри get_max_updated_at эмулируем cross-worker UPDATE —
+        # коммитим новое правило ровно в момент SELECT'а MAX, но возвращаем
+        # старое значение MAX (как если бы наш SELECT прошёл до коммита B).
+        original_max = rule_repo.get_max_updated_at
+        original_active = rule_repo.get_active_sorted
+
+        cross_worker_committed = {"done": False}
+
+        def racing_max(session):
+            # Снапшотим текущий MAX (до UPDATE'а воркера B).
+            snapshot = original_max(session)
+            if not cross_worker_committed["done"]:
+                # Эмулируем UPDATE другого воркера, который коммитится ВО
+                # ВРЕМЯ нашего SELECT'а MAX. Без фикса `_loaded_at`
+                # фиксируется ПОСЛЕ этого момента, и UPDATE «теряется».
+                _make_rule(db, "cross-worker-rule")
+                cross_worker_committed["done"] = True
+            return snapshot
+
+        monkeypatch.setattr(rule_repo, "get_max_updated_at", racing_max)
+
+        # Шаг 3: первый get() после race — взял старый snapshot, cache видит
+        # «MAX не вырос», правил не перезагружает (старое поведение).
+        # Но `_loaded_at` теперь зафиксирован ДО racing_max, т.е. строго
+        # меньше нового updated_at в БД.
+        cache.get(db)
+
+        # Шаг 4: следующий tick (TTL истёк) — get_max_updated_at снова
+        # возвращает реальный максимум, и т.к. `_loaded_at` фиксировался ДО
+        # предыдущего SELECT'а, новое правило (updated_at > load_started_at)
+        # подхватывается.
+        monkeypatch.setattr(rule_repo, "get_max_updated_at", original_max)
+        monkeypatch.setattr(rule_repo, "get_active_sorted", original_active)
+        cache._loaded_monotonic = 0.0  # просрочили TTL ещё раз
+
+        rules = cache.get(db)
+        names = {r.name for r in rules}
+        assert "cross-worker-rule" in names, (
+            f"Cross-worker UPDATE должен подхватиться на следующем TTL-tick'е "
+            f"после фикса (loaded_at фиксируется ДО SELECT MAX). Видим: {names}"
+        )
+
+    def test_loaded_at_uses_pre_query_timestamp(self, db, monkeypatch):
+        """Прямая проверка: `_loaded_at` после get() меньше или равен моменту
+        перед вызовом, а не позже — отражает НАЧАЛО окна загрузки."""
+        cache = _RuleCache(ttl_seconds=0)
+        _make_rule(db, "r")
+
+        # Делаем get_active_sorted медленным, чтобы окно (начало, конец)
+        # было заметным.
+        original_active = rule_repo.get_active_sorted
+
+        def slow_active(d):
+            time.sleep(0.05)
+            return original_active(d)
+
+        monkeypatch.setattr(rule_repo, "get_active_sorted", slow_active)
+
+        before = datetime.now(timezone.utc)
+        cache.get(db)
+        after = datetime.now(timezone.utc)
+
+        assert cache._loaded_at is not None
+        # `_loaded_at` должен быть ближе к `before`, чем к `after` — фиксируется
+        # ДО медленного SELECT'а. Раньше фиксировался в конце, после задержки.
+        assert cache._loaded_at <= after
+        # Окно загрузки заняло ≥50ms — `_loaded_at` фиксируется в начале, значит
+        # `after - _loaded_at` должен включать всю задержку.
+        assert (after - cache._loaded_at).total_seconds() >= 0.04, (
+            f"_loaded_at должен отражать начало окна загрузки (≤ before), "
+            f"чтобы cross-worker UPDATE внутри окна подхватывался. "
+            f"before={before}, _loaded_at={cache._loaded_at}, after={after}"
+        )

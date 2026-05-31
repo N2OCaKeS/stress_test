@@ -227,3 +227,148 @@ class TestProvisionGeneratesCredentials:
         assert "ssh_public_key" not in payload
         assert "ssh_private_key_plaintext" not in payload
         assert "force_replace" not in payload
+
+
+class TestProvisionDispatchFailureRollsBackCreds:
+    """Креды генерятся ДО dispatch'а, но коммитятся только после успешной
+    постановки task'а. Если worker недоступен или idempotent-конфликт —
+    новые ciphertext'ы откатываются, БД остаётся в исходном состоянии.
+
+    Без этого фикса аккаунт получал свежий ciphertext в server-БД, а worker
+    задачу не получал → chpasswd на боксе не выполнялся, drift между
+    server-БД и реальным сервером ломал SSH.
+    """
+
+    async def test_worker_unreachable_rolls_back_generated_creds(
+        self, client, operator_token_a, make_server, make_account, db, monkeypatch,
+    ):
+        from src.core.constants import AccountSource
+        from src.core.exceptions import ServiceUnavailableError
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password=None)
+        acc.source = AccountSource.DISCOVERED.value
+        await db.flush()
+        await db.commit()
+        await db.refresh(acc)
+        assert acc.password_encrypted is None
+        assert acc.ssh_public_key is None
+        # Фиксируем id заранее — после rollback'а в endpoint'е объект expire'нут,
+        # `acc.id` без greenlet-обёртки попадёт в sync-reload.
+        acc_id = acc.id
+        srv_id = srv.id
+
+        async def boom(*args, **kwargs):
+            raise ServiceUnavailableError(
+                error_code="WORKER_UNREACHABLE",
+                message="redis down",
+            )
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "dispatch_task", boom)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+
+        resp = await client.post(
+            f"{BASE}/{acc_id}/provision?server_id={srv_id}&force_password=true",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 503, resp.text
+
+        # Свежий transactional read обязателен — текущая сессия откатилась,
+        # внутри неё `acc` уже expire'нут. Берём фактическое состояние из БД.
+        refreshed = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc_id)
+        )).scalar_one()
+        assert refreshed.password_encrypted is None
+        assert refreshed.ssh_public_key is None
+        assert refreshed.ssh_private_key_encrypted is None
+
+    async def test_idempotent_conflict_rolls_back_generated_creds(
+        self, client, operator_token_a, make_server, make_account, db, monkeypatch,
+    ):
+        from src.core.constants import AccountSource
+        from src.core.exceptions import ConflictError
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password=None)
+        acc.source = AccountSource.DISCOVERED.value
+        await db.flush()
+        await db.commit()
+        await db.refresh(acc)
+        acc_id = acc.id
+        srv_id = srv.id
+
+        async def boom(*args, **kwargs):
+            raise ConflictError(
+                error_code="TASK_IDEMPOTENT_CONFLICT",
+                message="duplicate",
+            )
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "dispatch_task", boom)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+
+        resp = await client.post(
+            f"{BASE}/{acc_id}/provision?server_id={srv_id}&force_password=true",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 409, resp.text
+
+        refreshed = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc_id)
+        )).scalar_one()
+        assert refreshed.password_encrypted is None
+        assert refreshed.ssh_public_key is None
+        assert refreshed.ssh_private_key_encrypted is None
+
+    async def test_force_overwrite_rolls_back_on_dispatch_failure(
+        self, client, operator_token_a, make_server, make_account, db, monkeypatch,
+    ):
+        """Discovered + force_password=true сначала reset'ит существующие creds,
+        потом ensure генерит свежие. Если dispatch падает — обе мутации откатываются,
+        старый ciphertext возвращается в БД.
+        """
+        from src.core.constants import AccountSource
+        from src.core.exceptions import ServiceUnavailableError
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password="legacy-pw")
+        acc.source = AccountSource.DISCOVERED.value
+        await db.flush()
+        await db.commit()
+        await db.refresh(acc)
+        original_cipher = acc.password_encrypted
+        assert original_cipher is not None
+        acc_id = acc.id
+        srv_id = srv.id
+
+        async def boom(*args, **kwargs):
+            raise ServiceUnavailableError(
+                error_code="WORKER_UNREACHABLE",
+                message="redis down",
+            )
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "dispatch_task", boom)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+
+        resp = await client.post(
+            f"{BASE}/{acc_id}/provision?server_id={srv_id}&force_password=true",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 503, resp.text
+
+        refreshed = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc_id)
+        )).scalar_one()
+        # Reset+ensure откатились — старый ciphertext на месте.
+        assert refreshed.password_encrypted == original_cipher

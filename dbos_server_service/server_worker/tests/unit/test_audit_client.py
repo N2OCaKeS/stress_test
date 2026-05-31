@@ -173,7 +173,8 @@ class TestAuthHeader:
         )
 
         with caplog.at_level("ERROR", logger="src.services.audit_client"):
-            await audit_client.emit("x.y")
+            with pytest.raises(audit_client.AuditEmitError, match="LOGGING_SERVICE_API_KEY"):
+                await audit_client.emit("x.y")
 
         # ни одного HTTP-запроса не должно быть
         assert capture.captured == []
@@ -184,7 +185,7 @@ class TestAuthHeader:
         )
 
     async def test_both_keys_empty_drops_event_gracefully(self, monkeypatch, caplog):
-        """Backward-compat: оба ключа пусты — graceful error без crash."""
+        """Оба ключа пусты — raise AuditEmitError (publisher уведёт в DLQ)."""
         class _S:
             logging_service_url = "http://logging.test"
             logging_service_api_key = ""
@@ -198,7 +199,8 @@ class TestAuthHeader:
         )
 
         with caplog.at_level("ERROR", logger="src.services.audit_client"):
-            await audit_client.emit("x.y")  # не должно падать
+            with pytest.raises(audit_client.AuditEmitError):
+                await audit_client.emit("x.y")
 
         assert capture.captured == []
         assert any("LOGGING_SERVICE_API_KEY" in r.message for r in caplog.records)

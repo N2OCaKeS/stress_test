@@ -59,6 +59,17 @@ from src.core.constants import VALID_ACTOR_TYPES
 logger = logging.getLogger(__name__)
 
 
+class _BatchCommitFailed(Exception):
+    """Маркер: outer-tx упала ПОСЛЕ того, как `_write_batch_sync` уже
+    вызвал `_bump_failure` по одному разу на каждое событие батча.
+
+    `_flush_batch` ловит этот тип отдельно, чтобы не бампить failure-counter
+    второй раз: иначе savepoint-failed envelope получает 2 bump'а (один — на
+    savepoint-rollback, второй — в общем `for _ in batch`), и метрики
+    self-audit_failures + DLQ-threshold двоятся.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class AuditEnvelope:
     """Снапшот self-audit события для очереди.
@@ -359,9 +370,18 @@ class AuditOutbox:
             # `drained + failures = enqueued`.
             with self._counters_lock:
                 self._drained_total += succeeded
+        except _BatchCommitFailed as exc:
+            # outer-tx упала; `_write_batch_sync` уже забампил `_bump_failure`
+            # ровно по одному разу на каждое событие батча (savepoint-failed
+            # + остальные в commit-fail ветке). Здесь — только лог, без
+            # повторного bump'а, иначе дублируем метрику и DLQ-threshold.
+            logger.error(
+                "audit outbox batch write failed (%d events): %s",
+                len(batch), exc.__cause__, exc_info=exc.__cause__,
+            )
         except Exception as exc:
-            # Катастрофа на уровне сессии (БД лежит / пул пуст). Все события
-            # батча — потерянные, бампим failure-counter за каждое.
+            # Катастрофа ДО commit'а (session_factory упала, to_thread сам
+            # не смог стартовать) — bump'ов в sync-части не было, бампим тут.
             for _ in batch:
                 self._bump_failure()
             logger.error(
@@ -388,24 +408,44 @@ class AuditOutbox:
         успешного `db.commit()` кладёт `id(envelope)` каждого закоммитнутого
         события в shared `committed_ids` — это нужно `_drain_loop`'у, чтобы
         корректно отработать `CancelledError`, прилетевший уже после commit'а.
+
+        Внутри держим set `bumped_ids` — id() envelope'ов, за которые уже
+        вызывался `_bump_failure`. Без него падение `db.commit()` на outer-tx
+        приводило бы к двойному учёту: savepoint-failed envelope получал
+        первый bump на свой `begin_nested()`-rollback, а потом второй — при
+        фолбэке в except-ветке коммита, который ходит по всему батчу.
         """
         db = self._session_factory()
-        succeeded = 0
         succeeded_envs: list[AuditEnvelope] = []
+        bumped_ids: set[int] = set()
         try:
             for envelope in batch:
                 try:
                     with db.begin_nested():
                         self._writer(db, envelope)
-                    succeeded += 1
                     succeeded_envs.append(envelope)
                 except Exception as exc:
                     self._bump_failure()
+                    bumped_ids.add(id(envelope))
                     logger.error(
                         "self-audit failed (action=%s): %s",
                         envelope.action, exc, exc_info=True,
                     )
-            db.commit()
+            try:
+                db.commit()
+            except Exception as commit_exc:
+                # outer-tx упала — все события, прошедшие savepoint, тоже
+                # потеряны (но bump'нуть нужно только тех, кого ещё не
+                # бампили). Savepoint-failed envelope'ы уже в `bumped_ids`,
+                # их пропускаем, чтобы не считать одно событие дважды.
+                for env in batch:
+                    if id(env) in bumped_ids:
+                        continue
+                    self._bump_failure()
+                # Пробрасываем под маркером, чтобы `_flush_batch` отличил
+                # «commit упал, sync уже забампил всех» от «session_factory
+                # упала на старте, никто не бампил».
+                raise _BatchCommitFailed() from commit_exc
             # ВАЖНО: помечаем commit-success ДО возврата, чтобы async-caller
             # мог отличить «to_thread вернулся, commit прошёл» от «cancelled
             # до commit'а» даже если `CancelledError` прилетит между этим
@@ -414,7 +454,7 @@ class AuditOutbox:
                 committed_ids.add(id(env))
         finally:
             db.close()
-        return succeeded
+        return len(succeeded_envs)
 
     # ── introspection ────────────────────────────────────────────────────
 

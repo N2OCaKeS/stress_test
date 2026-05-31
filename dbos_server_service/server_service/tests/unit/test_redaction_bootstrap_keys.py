@@ -36,3 +36,48 @@ def test_bootstrap_password_in_nested_audit_details_masked():
     assert out["details"]["bootstrap_password"] == "<PASSWORD>"
     assert out["details"]["department_id"] == "dep_1"
     assert out["task_id"] == "tsk_abc"
+
+
+def test_provision_password_plaintext_masked_by_key():
+    """provision-dispatch кладёт `password_plaintext` в worker payload. Если
+    кто-то добавит debug-emit с этим dict'ом — audit-trail не должен утечь.
+    """
+    out = redact({"password_plaintext": "g3n3rated-Str0ng!"})
+    assert out == {"password_plaintext": "<PASSWORD>"}
+
+
+def test_ssh_private_key_plaintext_masked_by_key():
+    """`ssh_private_key_plaintext` едет в worker payload и не должен светиться
+    в audit, если кто-то залогирует payload целиком.
+    """
+    out = redact({"ssh_private_key_plaintext": "-----BEGIN OPENSSH PRIVATE KEY-----..."})
+    assert out == {"ssh_private_key_plaintext": "<SECRET>"}
+
+
+def test_ssh_private_key_masked_by_key():
+    out = redact({"ssh_private_key": "-----BEGIN OPENSSH PRIVATE KEY-----..."})
+    assert out == {"ssh_private_key": "<SECRET>"}
+
+
+def test_provision_payload_dict_masked():
+    """Полный provision worker-payload: все три секрета замаскированы, нон-секрет-
+    поля как login/server_id остаются нетронуты.
+    """
+    payload = {
+        "server_id": "srv_1",
+        "account_id": "acc_1",
+        "login": "ops",
+        "password_plaintext": "Sup3rStr0ng!Pwd",
+        "ssh_public_key": "ssh-ed25519 AAAA...",
+        "ssh_private_key_plaintext": "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END...",
+        "force_replace": True,
+    }
+    out = redact(payload)
+    assert out["password_plaintext"] == "<PASSWORD>"
+    assert out["ssh_private_key_plaintext"] == "<SECRET>"
+    assert out["server_id"] == "srv_1"
+    assert out["account_id"] == "acc_1"
+    assert out["login"] == "ops"
+    assert out["force_replace"] is True
+    # ssh_public_key намеренно не маскируется — это публичная половина пары.
+    assert out["ssh_public_key"] == "ssh-ed25519 AAAA..."

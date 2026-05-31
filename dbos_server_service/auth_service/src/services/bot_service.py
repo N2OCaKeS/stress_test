@@ -27,6 +27,7 @@ from src.schemas.bots import (
     BotUpdate,
 )
 from src.services import audit_service
+from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 from src.utils.pagination import PaginationParams
 from src.utils.time import utcnow
 
@@ -204,7 +205,10 @@ async def update_bot(
 
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
         actor_dept_id = await _resolve_actor_dept(db, actor_id, actor_department_id)
-        if actor_dept_id is not None and actor_dept_id != bot.department_id:
+        # `actor_dept_id is None` для DEPARTMENT_ADMIN — data integrity bug:
+        # такая identity в принципе невалидна, и пускать её через guard
+        # нельзя (None != bot.department_id корректно отдаёт 403).
+        if actor_dept_id != bot.department_id:
             # Симметрия с прочими bot-функциями: cross-tenant попытка
             # светится в audit как failure (а не теряется в 500), сохраняя
             # стабильный error_code BOT_UPDATE_FORBIDDEN для API-контракта.
@@ -256,6 +260,9 @@ async def update_bot(
         role_repo = BotRoleRepository(db)
         removed_role_count = await role_repo.delete_for_bot_services(bot.id, removed_services)
     await db.commit()
+    # allowed_services / is_active / status / name могут влиять на ответ introspect'а —
+    # без сброса бот ходит со старыми правами до истечения identity TTL (~5s).
+    _invalidate_identity_cache(bot.id)
     audit_service.emit(
         "bot.update", actor_id, target_id=bot_id, target_type="bot",
         request_id=request_id,

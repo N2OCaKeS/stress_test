@@ -278,6 +278,103 @@ class TestBackoffGrowth:
         assert row.next_retry_at >= before + timedelta(seconds=295)
 
 
+class TestBreakerSkipSetsBackoff:
+    """Open breaker → `_publish_one` отодвигает `next_retry_at` за конец cooldown'а.
+
+    Без этого row остаётся eligible на следующем 2-секундном poll-цикле,
+    публикатор крутит check() по той же строке: breaker отбивает, attempts
+    не растут, но 5-секундный adaptive sleep всё равно бьёт DB через _select.
+    После фикса row уходит за горизонт cooldown'а до естественного закрытия
+    breaker'а.
+    """
+
+    async def test_breaker_skip_writes_next_retry_at(self, monkeypatch):
+        from src.services import audit_publisher_breaker
+        from tests.unit._breaker_test_helpers import (
+            FakeRedis,
+            frozen_clock_fixture,
+            install_fake_redis,
+        )
+
+        install_fake_redis(monkeypatch, audit_publisher_breaker)
+        frozen_clock_fixture(monkeypatch, audit_publisher_breaker)
+
+        audit_outbox_publisher._reset_breaker_state()
+        await _seed_one()
+
+        # Доводим breaker до open — DEFAULT_FAILURE_THRESHOLD=5.
+        for _ in range(audit_publisher_breaker.DEFAULT_FAILURE_THRESHOLD):
+            await audit_publisher_breaker.record_failure()
+
+        # emit падать не должен — check() отобьёт раньше.
+        async def boom(action, **kw):
+            raise AssertionError("emit must not be called under open breaker")
+
+        monkeypatch.setattr(
+            "src.services.audit_outbox_publisher.audit_client.emit", boom,
+        )
+
+        before = datetime.now(timezone.utc)
+        published = await audit_outbox_publisher.flush_outbox(limit=5)
+        assert published == 0
+
+        rows = await _all_rows()
+        assert len(rows) == 1
+        row = rows[0]
+        # Row остался unpublished, attempts не инкрементированы.
+        assert row.published_at is None
+        assert row.attempts == 0
+        # next_retry_at — за горизонт cooldown'а (DEFAULT_COOLDOWN_SECONDS=30).
+        assert row.next_retry_at is not None, (
+            "breaker_skipped должен выставлять next_retry_at, чтобы row не "
+            "spin'ил публикатор на каждом poll-цикле"
+        )
+        cooldown = audit_publisher_breaker.DEFAULT_COOLDOWN_SECONDS
+        # С запасом на frozen clock и slack — окно [cooldown-5, cooldown+5].
+        assert row.next_retry_at >= before + timedelta(seconds=cooldown - 5)
+        assert row.next_retry_at <= before + timedelta(seconds=cooldown + 5)
+
+
+class TestMissingApiKeyRaises:
+    """`audit_client.emit` без LOGGING_SERVICE_API_KEY должен raise'ить.
+
+    Раньше тихо возвращал None — `_publish_one` помечал row как published,
+    событие исчезало без DLQ-маркера. После фикса emit'у raise'ит
+    `AuditEmitError`, row остаётся unpublished, попадает в обычный
+    retry-loop и по cap'у attempts уезжает в DLQ.
+    """
+
+    async def test_missing_api_key_does_not_publish_row(self, monkeypatch):
+        from src.services import audit_client
+
+        audit_outbox_publisher._reset_breaker_state()
+        audit_client._reset_dropped_counter_for_tests()
+        await _seed_one()
+
+        # Подменяем settings.logging_service_api_key на пустую строку.
+        class _Settings:
+            logging_service_url = "http://logging.test"
+            logging_service_api_key = ""
+
+        monkeypatch.setattr(
+            "src.services.audit_client.get_settings", lambda: _Settings(),
+        )
+
+        dropped_before = audit_client.get_dropped_no_api_key_total()
+        await audit_outbox_publisher.flush_outbox(limit=1)
+
+        rows = await _all_rows()
+        # Row остался unpublished, attempts инкрементнут — попадёт в retry.
+        assert rows[0].published_at is None, (
+            "missing API key не должен помечать row как published"
+        )
+        assert rows[0].attempts == 1
+        # Счётчик dropped_no_api_key вырос — метрика видит мисконфиг.
+        assert (
+            audit_client.get_dropped_no_api_key_total() == dropped_before + 1
+        )
+
+
 class TestReAttemptRow:
     async def test_re_attempt_resets_dlq_row(self, monkeypatch):
         audit_outbox_publisher._reset_breaker_state()

@@ -455,14 +455,17 @@ async def _dispatch_account_on_host(
             force_password
             and account.source == AccountSource.DISCOVERED.value
         )
+        # Изоляция «creds-generation + dispatch» в одном savepoint'е: либо
+        # коммитим обе мутации после успешного dispatch'а, либо роллбэчим
+        # savepoint при ошибке dispatch'а — иначе свежий ciphertext в БД без
+        # доехавшей до worker'а задачи ломает SSH (drift между server-БД и
+        # реальным сервером).
+        creds_sp = await db.begin_nested()
         if force_overwrite:
             await account_svc.reset_provision_credentials(db, account)
         _, creds, generated = await account_svc.ensure_provision_credentials(
             db, account,
         )
-        if generated:
-            await db.commit()
-            await db.refresh(account)
         payload["password_plaintext"] = creds["password"]
         payload["ssh_public_key"] = creds["ssh_public_key"]
         payload["ssh_private_key_plaintext"] = creds["ssh_private_key"]
@@ -475,10 +478,16 @@ async def _dispatch_account_on_host(
         payload["force_replace"] = force_overwrite or not had_password_before
     if extra_payload:
         payload.update(extra_payload)
+    # Сохраняем неизменяемые поля server/account в локалки — после rollback'а
+    # savepoint'а ORM-атрибуты expire'нутся, и доступ к ним из audit-emit полез
+    # бы за sync-fetch в БД (greenlet-mismatch в async).
+    server_id_v = server.id
+    server_dept_v = server.department_id
+    account_login_v = account.login
     try:
         task_id = await worker_client.dispatch_task(
             task_kind=task_kind,
-            target_server_id=server.id,
+            target_server_id=server_id_v,
             target_resource_id=account_id,
             payload=payload,
             created_by=identity.user_id,
@@ -486,38 +495,46 @@ async def _dispatch_account_on_host(
             idempotency_key=idempotency_key,
         )
     except ConflictError:
+        if inject_provision_creds:
+            await creds_sp.rollback()
         audit_service.emit(
             audit_action, target_id=account_id, target_type="server_account",
             status="failure", allowed=True,
             details={
                 "reason": "idempotent_conflict",
                 "task_kind": task_kind,
-                "server_id": server.id,
+                "server_id": server_id_v,
                 "operation": operation,
-                "department_id": server.department_id,
+                "department_id": server_dept_v,
             },
         )
         raise
     except ServiceUnavailableError:
+        if inject_provision_creds:
+            await creds_sp.rollback()
         audit_service.emit(
             audit_action, target_id=account_id, target_type="server_account",
             status="failure", allowed=True,
             details={
                 "reason": "worker_unreachable",
                 "task_kind": task_kind,
-                "server_id": server.id,
+                "server_id": server_id_v,
                 "operation": operation,
-                "department_id": server.department_id,
+                "department_id": server_dept_v,
             },
         )
         raise
+    if inject_provision_creds:
+        await creds_sp.commit()
+        await db.commit()
+        await db.refresh(account)
     success_details = {
         "task_id": task_id,
         "task_kind": task_kind,
-        "server_id": server.id,
+        "server_id": server_id_v,
         "operation": operation,
-        "login": account.login,
-        "department_id": server.department_id,
+        "login": account_login_v,
+        "department_id": server_dept_v,
     }
     if inject_provision_creds:
         # `force_replace` уже в task-payload'е воркеру, но в success-аудите
@@ -530,7 +547,7 @@ async def _dispatch_account_on_host(
         status="success", allowed=True,
         details=success_details,
     )
-    return {"operation": operation, "server_id": server.id, "task_id": task_id, "status": "queued"}
+    return {"operation": operation, "server_id": server_id_v, "task_id": task_id, "status": "queued"}
 
 
 async def fanout_update_on_host(

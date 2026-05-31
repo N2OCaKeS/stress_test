@@ -402,3 +402,187 @@ class TestCancelAfterCommitNoRequeue:
 
         # Главный инвариант: каждое событие записано ровно один раз.
         assert writer_calls == ["ev-0", "ev-1"]
+
+
+# ── `_bump_failure` не дублируется на savepoint-fail + commit-fail ───────────
+
+
+class _CommitFailingSession:
+    """Session-stub: writer падает на «bad» envelope'ах, commit бросает.
+
+    Имитирует ровно тот сценарий, где `_write_batch_sync` сначала забампил
+    savepoint-failed envelope'ы, а потом outer `db.commit()` упал — раньше
+    `_flush_batch`'s `except Exception` бампил всех заново.
+    """
+
+    def __init__(self):
+        self.commits = 0
+
+    def begin_nested(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        # Никакого suppression — savepoint падает, исключение всплывает в
+        # writer-loop и попадает в `_bump_failure`-ветку.
+        return False
+
+    def commit(self):
+        self.commits += 1
+        raise RuntimeError("commit boom")
+
+    def rollback(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class TestBumpFailureNotDoubleCountedOnCommitFail:
+    """Регрессия: savepoint-failed envelope не должен получать второй bump,
+    если затем падает `db.commit()` outer-tx."""
+
+    def test_savepoint_fail_plus_commit_fail_one_bump_per_envelope(self):
+        failures: dict[str, int] = {}
+
+        def bump():
+            # Один общий счётчик: тест проверяет, что суммарно вызывается
+            # ровно по `len(batch)` раз, и ни один envelope не дважды.
+            failures.setdefault("n", 0)
+            failures["n"] += 1
+            return failures["n"]
+
+        bad_writes: set[str] = {"bad-1", "bad-2"}
+
+        def writer(_db, env):
+            if env.action in bad_writes:
+                raise RuntimeError(f"writer rejected {env.action}")
+
+        outbox = AuditOutbox(
+            max_size=8,
+            batch_size=8,
+            poll_interval_seconds=0.01,
+            session_factory=_CommitFailingSession,
+            writer=writer,
+            bump_failure=bump,
+        )
+
+        batch = [
+            _env("good-1"),
+            _env("bad-1"),
+            _env("good-2"),
+            _env("bad-2"),
+        ]
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+            await outbox._flush_batch(batch)
+
+        asyncio.run(run())
+
+        # Контракт: каждое из 4 events должно дать ровно один bump.
+        # Раньше bad-1/bad-2 бампились дважды (savepoint + commit-fail loop).
+        assert failures.get("n", 0) == len(batch), (
+            f"expected exactly {len(batch)} bumps (one per envelope), "
+            f"got {failures.get('n', 0)}"
+        )
+
+    def test_only_savepoint_fail_no_commit_fail_one_bump_each(self):
+        """Sanity: если commit прошёл, savepoint-failed получают ровно один bump."""
+        failures = {"n": 0}
+
+        def bump():
+            failures["n"] += 1
+            return failures["n"]
+
+        bad_writes = {"bad"}
+
+        def writer(_db, env):
+            if env.action in bad_writes:
+                raise RuntimeError("writer boom")
+
+        outbox = AuditOutbox(
+            max_size=8,
+            batch_size=8,
+            poll_interval_seconds=0.01,
+            session_factory=_FakeSession,
+            writer=writer,
+            bump_failure=bump,
+        )
+
+        batch = [_env("good"), _env("bad"), _env("good-2")]
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+            await outbox._flush_batch(batch)
+
+        asyncio.run(run())
+        # Только bad → один bump.
+        assert failures["n"] == 1
+
+    def test_commit_fail_without_savepoint_fails_bumps_all_once(self):
+        """Если все savepoint'ы прошли, а commit упал — каждый envelope
+        должен получить bump ровно один раз (всё содержимое потеряно)."""
+        failures = {"n": 0}
+
+        def bump():
+            failures["n"] += 1
+            return failures["n"]
+
+        def writer(_db, env):
+            return None  # все savepoint'ы успешны
+
+        outbox = AuditOutbox(
+            max_size=8,
+            batch_size=8,
+            poll_interval_seconds=0.01,
+            session_factory=_CommitFailingSession,
+            writer=writer,
+            bump_failure=bump,
+        )
+
+        batch = [_env("a"), _env("b"), _env("c")]
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+            await outbox._flush_batch(batch)
+
+        asyncio.run(run())
+        assert failures["n"] == len(batch)
+
+    def test_session_factory_failure_bumps_each_envelope_once(self):
+        """Регрессия: если `session_factory` падает до writes (катастрофа
+        уровня сессии), bump'аем каждое событие ровно один раз — sync-часть
+        не успела ничего забампить."""
+        failures = {"n": 0}
+
+        def bump():
+            failures["n"] += 1
+            return failures["n"]
+
+        def boom_factory():
+            raise RuntimeError("pool exhausted")
+
+        outbox = AuditOutbox(
+            max_size=8,
+            batch_size=8,
+            poll_interval_seconds=0.01,
+            session_factory=boom_factory,
+            writer=lambda db, env: None,
+            bump_failure=bump,
+        )
+
+        batch = [_env("a"), _env("b")]
+
+        async def run():
+            outbox._loop = asyncio.get_running_loop()
+            outbox._queue = asyncio.Queue(maxsize=outbox._max_size)
+            await outbox._flush_batch(batch)
+
+        asyncio.run(run())
+        assert failures["n"] == len(batch)

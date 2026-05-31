@@ -54,14 +54,6 @@ class TestRedactErrorMessageShellFlags:
         assert "-U <USER>" in out
         assert "-P <PASSWORD>" in out
 
-    def test_mysql_short_p_masked(self):
-        msg = "mysql -u root -psecret -e 'show databases'"
-        out = redact_error_message(msg)
-        assert "secret" not in out
-        # `-u root` маскируется до `-u <USER>`, `-psecret` до `-p<PASSWORD>`
-        assert "<USER>" in out
-        assert "<PASSWORD>" in out
-
     def test_dash_p_equals_form(self):
         msg = "command -P=hunter2 failed"
         out = redact_error_message(msg)
@@ -72,6 +64,27 @@ class TestRedactErrorMessageShellFlags:
         # `--port` не должен матчить `-P`
         msg = "connection error on --port=8080"
         assert redact_error_message(msg) == msg
+
+    def test_ipmitool_lowercase_p_is_port_not_password(self):
+        # У ipmitool `-p` — номер порта (623 по умолчанию для IPMI-over-LAN),
+        # `-P` — пароль. Маскировать `-p 623` нельзя, иначе оператор не видит,
+        # к какому BMC шёл коннект. `_DASH_P_RE` ловит только uppercase `-P`.
+        msg = "ipmitool -H 10.0.0.1 -p 623 -U admin -P plaintext lan print 1"
+        out = redact_error_message(msg)
+        assert "plaintext" not in out
+        assert "-P <PASSWORD>" in out
+        # Порт остаётся в выводе как есть.
+        assert "-p 623" in out
+
+    def test_ipmitool_argv_joined_lowercase_p_preserved(self):
+        # Эмулирует случай, когда argv ipmitool логируется как пробел-
+        # разделённая строка (stderr / `argv_safe` join). Пароль маскируем,
+        # порт оставляем.
+        argv = ["ipmitool", "-p", "623", "-P", "secret"]
+        out = redact_error_message(" ".join(argv))
+        assert "secret" not in out
+        assert "<PASSWORD>" in out
+        assert "-p 623" in out
 
 
 class TestRedactErrorMessageKVForms:

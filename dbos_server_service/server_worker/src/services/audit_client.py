@@ -143,24 +143,28 @@ async def emit(
     # fallback'аться на `worker_bot_token` — это PAT scoped в server_service
     # с global admin'ом, и любой `audit_client.emit()` смог бы выдать
     # событие от любого `service=` (audit-trail poisoning). Если
-    # выделенный ключ не выставлен — лучше drop event, чем мисъюзить PAT.
-    #
-    # NB: это единственная ветка с «тихим» возвратом из emit. Outbox-row
-    # при этом помечается published — корректно, т.к. без API-key мы
-    # НИКОГДА не доставим событие, retry бесполезен. Operator должен
-    # заметить по ERROR-логу + по тому, что outbox растёт быстрее, чем
-    # drain'ится (отдельный health-check, ещё не реализован).
+    # выделенный ключ не выставлен — поднимаем `AuditEmitError`, чтобы
+    # publisher НЕ пометил outbox-row как published. Раньше emit здесь
+    # тихо возвращал None — `_publish_one` считал это успехом и помечал
+    # row `published_at=now()` без реальной доставки → silent audit-loss
+    # на мисконфиге. Теперь row остаётся unpublished, попадает в общий
+    # retry-loop, по cap'у attempts → DLQ с маркером в last_error.
+    # Счётчик `_audit_dropped_no_api_key` всё ещё растёт — health/метрика
+    # видит мисконфиг сразу, оператор фиксит ENV и existing outbox-row
+    # разъедутся с обычным retry'ем после следующего пуша конфига.
     api_key = settings.logging_service_api_key
     if not api_key:
         global _audit_dropped_no_api_key
         _audit_dropped_no_api_key += 1
         logger.error(
-            "LOGGING_SERVICE_API_KEY is not set; audit event dropped for %s "
-            "(dropped_total=%s)",
+            "LOGGING_SERVICE_API_KEY is not set; audit event NOT delivered "
+            "for %s (dropped_total=%s)",
             action,
             _audit_dropped_no_api_key,
         )
-        return
+        raise AuditEmitError(
+            "LOGGING_SERVICE_API_KEY is not set; audit emit refused",
+        )
     headers = {"Authorization": f"Bearer {api_key}"}
     client = get_audit_client()
     try:

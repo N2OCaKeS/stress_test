@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 from src.services import audit_client
-from src.services.audit_client import get_dropped_no_api_key_total
+from src.services.audit_client import AuditEmitError, get_dropped_no_api_key_total
 
 
 class _NoKeySettings:
@@ -46,17 +46,20 @@ def no_key_env(monkeypatch):
 class TestDroppedCounterIncrement:
     async def test_single_emit_increments_by_one(self, no_key_env):
         before = get_dropped_no_api_key_total()
-        await audit_client.emit("x.y")
+        with pytest.raises(AuditEmitError):
+            await audit_client.emit("x.y")
         assert get_dropped_no_api_key_total() == before + 1
 
     async def test_multiple_emits_accumulate(self, no_key_env):
         before = get_dropped_no_api_key_total()
         for _ in range(5):
-            await audit_client.emit("x.y")
+            with pytest.raises(AuditEmitError):
+                await audit_client.emit("x.y")
         assert get_dropped_no_api_key_total() == before + 5
 
     async def test_counter_zero_after_reset(self, no_key_env):
-        await audit_client.emit("x.y")
+        with pytest.raises(AuditEmitError):
+            await audit_client.emit("x.y")
         assert get_dropped_no_api_key_total() > 0
         audit_client._reset_dropped_counter_for_tests()
         assert get_dropped_no_api_key_total() == 0
@@ -85,7 +88,7 @@ class TestDroppedCounterIncrement:
 
     async def test_different_actions_each_increment(self, no_key_env):
         before = get_dropped_no_api_key_total()
-        await audit_client.emit("action.a")
-        await audit_client.emit("action.b")
-        await audit_client.emit("action.c")
+        for action in ("action.a", "action.b", "action.c"):
+            with pytest.raises(AuditEmitError):
+                await audit_client.emit(action)
         assert get_dropped_no_api_key_total() == before + 3

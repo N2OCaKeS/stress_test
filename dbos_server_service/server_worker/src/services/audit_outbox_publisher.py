@@ -320,15 +320,29 @@ async def _publish_one(
     # `_maybe_open_circuit` / `record_failure`, дублировать на каждую row не нужно.
     try:
         await audit_publisher_breaker.check()
-    except CircuitBreakerOpenError:
+    except CircuitBreakerOpenError as exc:
         # was_published=False — событие не доставлено; closed=True — caller
         # не должен повторять row в этом проходе; audit_emit_error=False —
         # это не сигнал loop-level breaker'у, тот ведёт свой счёт по
         # реальным HTTP-failure'ам. breaker_skipped=True — caller bail-out'ит
         # из flush-loop'а, остальные row'ы под open breaker'ом всё равно
         # отскочат без HTTP'а.
+        #
+        # Параллельно отодвигаем `next_retry_at` до конца cooldown'а
+        # breaker'а. Без этого row остаётся eligible для SELECT'а уже на
+        # следующем 2-секундном poll-цикле и публикатор обновного крутит
+        # check() по той же неработающей строке. С `next_retry_at`
+        # background loop (и inline-flush из `_runner`) пропустит row,
+        # пока breaker не закроется естественным образом, что снимает
+        # spin на закрытом канале.
         global _breaker_skips_total
         _breaker_skips_total += 1
+        retry_after = float(exc.details.get("retry_after_seconds", 0) or 0)
+        if retry_after > 0:
+            row.next_retry_at = datetime.now(timezone.utc) + timedelta(
+                seconds=retry_after,
+            )
+            await session.flush()
         return PublishResult(
             closed=True, audit_emit_error=False, was_published=False,
             breaker_skipped=True,
@@ -544,18 +558,18 @@ async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
             if publish_res.audit_emit_error:
                 audit_emit_errors += 1
             if publish_res.breaker_skipped:
-                # Row не модифицирована (check() отбил до HTTP-вызова и до
-                # любых .flush() в `_publish_one`) — commit'ить нечего.
-                # Явный rollback отпускает SKIP LOCKED-lock и снимает row-
-                # level locks той же транзакции, что и `await session.commit()`
-                # ниже, но передаёт намерение «мы ничего не меняли» однозначно.
-                # Дальше bail-out из batch'а: остальные row'ы под open breaker'ом
-                # всё равно отскочат от check() без HTTP'а, и proход молотил бы
-                # SELECT'ы по БД впустую. Background poll-loop вернётся через
-                # `_CB_SLEEP_CHUNK_SECONDS` или раньше (adaptive sleep по
-                # `get_state()`); к тому моменту канал либо в half_open, либо
-                # cooldown ещё не истёк.
-                await session.rollback()
+                # `_publish_one` мог записать `next_retry_at = now + cooldown'
+                # на row — чтобы публикатор не дёргал её каждые 2s, пока
+                # breaker сидит в open. Поэтому commit'им, а не rollback'аем:
+                # без commit'а next_retry_at не приедет в БД, и следующий
+                # poll-цикл вернёт ту же строку в выборку.
+                # Дальше bail-out из batch'а: остальные row'ы под open
+                # breaker'ом всё равно отскочат от check() без HTTP'а, и
+                # проход молотил бы SELECT'ы по БД впустую. Background
+                # poll-loop вернётся через `_CB_SLEEP_CHUNK_SECONDS` или
+                # раньше (adaptive sleep по `get_state()`); к тому моменту
+                # канал либо в half_open, либо cooldown ещё не истёк.
+                await session.commit()
                 break
             # commit отпускает SKIP LOCKED-lock этой одной row'и сразу,
             # не дожидаясь обработки остальных. Другая replica может

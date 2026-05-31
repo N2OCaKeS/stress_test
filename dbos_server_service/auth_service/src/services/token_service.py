@@ -38,6 +38,7 @@ async def create_pat(
     dept_repo = DepartmentRepository(db)
     user_repo = UserRepository(db)
 
+    exp_dt = None
     if expires_at is not None:
         exp_dt = (
             expires_at if expires_at.tzinfo is not None
@@ -80,7 +81,7 @@ async def create_pat(
         token_hash=token_hash,
         token_prefix=prefix,
         allowed_services=allowed_services,
-        expires_at=expires_at,
+        expires_at=exp_dt,
     )
     await db.commit()
     # raw PAT уходит в details — sanitizer заменит на <TOKEN> по эвристике dbos_pat_…
@@ -92,7 +93,7 @@ async def create_pat(
             "token_prefix": prefix,
             "token": raw,
             "allowed_services": list(allowed_services),
-            "expires_at": expires_at.isoformat() if expires_at else None,
+            "expires_at": exp_dt.isoformat() if exp_dt else None,
         },
     )
     return PATCreateResponse(token_id=pat.id, token=raw, name=pat.name, expires_at=pat.expires_at)

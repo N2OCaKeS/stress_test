@@ -128,14 +128,21 @@ class TestValidActorTypesConstant:
         )
 
     def test_main_uses_constant(self):
-        """`main.py` импортирует `VALID_ACTOR_TYPES` из constants, локального
-        дубля `_VALID_ACTOR_TYPES` больше нет.
+        """`main.py` не держит локального дубля whitelist'а: резолв `actor_type`
+        делегирован `audit_outbox._resolve_actor_type`, который сам читает
+        `VALID_ACTOR_TYPES` из constants. Раньше `main` импортировал константу
+        и повторял if/else руками — теперь это один helper в одном месте.
         """
         from src import main as main_mod
-        from src.core.constants import VALID_ACTOR_TYPES
 
-        assert main_mod.VALID_ACTOR_TYPES is VALID_ACTOR_TYPES
+        # Локальный дубль whitelist'а в main.py запрещён.
         assert not hasattr(main_mod, "_VALID_ACTOR_TYPES")
+        # `_emit_audit` ходит через единый helper.
+        assert main_mod._resolve_actor_type is not None
+        # Сам helper читает источник истины из constants.
+        from src.core.constants import VALID_ACTOR_TYPES
+        from src.services import audit_outbox
+        assert audit_outbox.VALID_ACTOR_TYPES is VALID_ACTOR_TYPES
 
     def test_audit_outbox_uses_constant(self):
         """`audit_outbox` тоже идёт через единый константный набор."""

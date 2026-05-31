@@ -190,9 +190,11 @@ async def authorize(
     query_pairs.append(("code", code))
     if state:
         query_pairs.append(("state", state))
-    # `quote_via=quote` (вместо дефолтного `quote_plus`): RFC 6749 §4.1.2
-    # требует exact-echo `state`, а `quote_plus` кодирует пробелы как `+`,
-    # что меняет байты ровно для client-side state-сравнения.
+    # `quote_via=quote`: дефолтный `urlencode(quote_via=quote_plus)` кодирует
+    # пробел как `+`, а RFC 6749 §4.1.2 предписывает байт-в-байт echo
+    # `state`-параметра. Через `quote` пробел уходит как `%20`, и client-side
+    # сравнение `state` (CSRF-токена) не ломается. Применяется ко всему
+    # query — для `code` (опаковый, пробелов не имеет) разницы нет.
     location = urlunparse(parsed._replace(query=urlencode(query_pairs, quote_via=quote)))
     return RedirectResponse(url=location, status_code=302)
 

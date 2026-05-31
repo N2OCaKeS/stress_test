@@ -116,7 +116,9 @@ def redact_error_message(msg: str) -> str:
 
     Покрытие:
       * URL credentials → `<scheme>://<USER>:<PASSWORD>@host/...`
-      * `-U user`, `-P pass`, `-u user`, `-p pass` (с пробелом/`=`/слитно)
+      * `-U user`, `-u user`, `-P pass` (с пробелом/`=`/слитно). `-p`
+        (lowercase) в ipmitool — это номер BMC-порта, его НЕ маскируем,
+        чтобы не закрывать оператору структуру команды.
       * `password=...`, `secret=...`, `token=...` (и др. известные ключи)
       * `Bearer <token>` → `Bearer <TOKEN>`
       * `dbos_pat_*`, `dbos_bot_*`, `pat_*`, `bot_*` → `<TOKEN>`

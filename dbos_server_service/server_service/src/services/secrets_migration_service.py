@@ -40,7 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.models import IpmiController, ReencryptOutboxEntry, ServerAccount
-from src.services import secrets_service
+from src.services import audit_service, secrets_service
 
 
 # Совпадает с wire-форматом `v<N>$...`. Если строка не начинается с `v` или
@@ -355,7 +355,22 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
         return {"id": outbox_id, "status": "missing", "skipped": False}
     if entry.status != STATUS_PROCESSING:
         # Закрыта другой ветвью (race / повторный POST). Идемпотентность:
-        # не трогаем, отдаём текущий статус.
+        # не трогаем, отдаём текущий статус. Эмитим warning-audit, иначе
+        # массовые skip'ы (например, при двойном claim'е батча) тихо проходят
+        # мимо SIEM.
+        audit_service.emit(
+            "secrets.migration.skipped",
+            target_id=outbox_id,
+            target_type="secrets_reencrypt_outbox",
+            status="warning",
+            allowed=True,
+            details={
+                "reason": "status_not_processing",
+                "entity_type": entry.entity_type,
+                "entity_id": entry.entity_id,
+                "current_status": entry.status,
+            },
+        )
         return {"id": outbox_id, "status": entry.status, "skipped": True}
 
     aad = _aad_for_entry(entry.entity_type, entry.entity_id)
@@ -363,6 +378,7 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
     new_ciphertext = secrets_service.encrypt(plaintext, aad=aad)
 
     skipped = False
+    skip_reason: str | None = None
     if entry.entity_type == ENTITY_SERVER_ACCOUNT:
         owner_stmt = (
             select(ServerAccount)
@@ -370,8 +386,12 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
             .with_for_update()
         )
         owner = (await db.execute(owner_stmt)).scalar_one_or_none()
-        if owner is None or owner.password_encrypted != entry.legacy_ciphertext:
+        if owner is None:
             skipped = True
+            skip_reason = "owner_vanished"
+        elif owner.password_encrypted != entry.legacy_ciphertext:
+            skipped = True
+            skip_reason = "owner_ciphertext_changed"
         else:
             owner.password_encrypted = new_ciphertext
     elif entry.entity_type == ENTITY_IPMI_CONTROLLER:
@@ -381,13 +401,35 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
             .with_for_update()
         )
         owner = (await db.execute(owner_stmt)).scalar_one_or_none()
-        if owner is None or owner.password_encrypted != entry.legacy_ciphertext:
+        if owner is None:
             skipped = True
+            skip_reason = "owner_vanished"
+        elif owner.password_encrypted != entry.legacy_ciphertext:
+            skipped = True
+            skip_reason = "owner_ciphertext_changed"
         else:
             owner.password_encrypted = new_ciphertext
     else:
         # entity_type валидируется на seed; сюда не доедем штатно.
         raise ValueError(f"unknown entity_type {entry.entity_type!r}")
+
+    if skipped:
+        # Owner-row пропал / ротировал ciphertext параллельно — outbox-row всё
+        # равно закрываем `done`, но эмитим warning, чтобы оператор увидел
+        # массовые `vanished` (rare-edge mid-migration drop) или фоновые гонки
+        # с user-initiated rotate'ом.
+        audit_service.emit(
+            "secrets.migration.skipped",
+            target_id=outbox_id,
+            target_type="secrets_reencrypt_outbox",
+            status="warning",
+            allowed=True,
+            details={
+                "reason": skip_reason,
+                "entity_type": entry.entity_type,
+                "entity_id": entry.entity_id,
+            },
+        )
 
     entry.status = STATUS_DONE
     entry.processed_at = datetime.now(timezone.utc)

@@ -105,7 +105,7 @@ def _redact_value(value: Any, key_placeholder: str | None) -> Any:
     return value
 
 
-def redact(payload: Any, *, _parent_key: str | None = None) -> Any:
+def redact(payload: Any) -> Any:
     """Рекурсивно санитизирует dict/list. Не мутирует вход — возвращает новый объект.
 
     Применение:
@@ -122,13 +122,13 @@ def redact(payload: Any, *, _parent_key: str | None = None) -> Any:
                 if holder is not None:
                     out[key_str] = holder
                 else:
-                    out[key_str] = redact(v, _parent_key=key_str)
+                    out[key_str] = redact(v)
             else:
                 out[key_str] = _redact_value(v, holder)
         return out
     if isinstance(payload, list):
         return [
-            redact(item, _parent_key=_parent_key) if isinstance(item, (dict, list))
+            redact(item) if isinstance(item, (dict, list))
             else _redact_value(item, None)
             for item in payload
         ]

@@ -327,6 +327,75 @@ class TestProvisionDispatchFailureRollsBackCreds:
         assert refreshed.ssh_public_key is None
         assert refreshed.ssh_private_key_encrypted is None
 
+    async def test_bare_exception_in_dispatch_rolls_back_creds(
+        self, client, operator_token_a, make_server, make_account, db, monkeypatch,
+    ):
+        """Любое исключение из dispatch_task (не только Conflict/ServiceUnavailable)
+        должно откатывать creds-savepoint. Раньше try/except ловил только две
+        конкретные ветки; неожиданная RuntimeError оставляла savepoint висеть
+        до конца сессии.
+        """
+        from src.core.constants import AccountSource
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password=None)
+        acc.source = AccountSource.DISCOVERED.value
+        await db.flush()
+        await db.commit()
+        await db.refresh(acc)
+        assert acc.password_encrypted is None
+        acc_id = acc.id
+        srv_id = srv.id
+
+        async def boom(*args, **kwargs):
+            raise RuntimeError("unexpected wire-level failure")
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "dispatch_task", boom)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+
+        with pytest.raises(RuntimeError):
+            await client.post(
+                f"{BASE}/{acc_id}/provision?server_id={srv_id}&force_password=true",
+                headers=_hdr(operator_token_a),
+            )
+
+        refreshed = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc_id)
+        )).scalar_one()
+        # Свежие creds, выкаченные ensure_provision_credentials, должны быть
+        # откатаны savepoint.rollback() в finally.
+        assert refreshed.password_encrypted is None
+        assert refreshed.ssh_public_key is None
+        assert refreshed.ssh_private_key_encrypted is None
+
+    async def test_legacy_public_only_row_raises(
+        self, client, operator_token_a, make_server, make_account, db,
+    ):
+        """Legacy-row: public_key есть, private_key_encrypted — нет. ensure
+        раньше отдавал worker'у пустой private_pem, который заливал
+        authorized_keys без матчающего ключа. Теперь — DomainValidationError 422.
+        """
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password="pw1")
+        # Симулируем legacy state вручную: pub есть, priv нет.
+        acc.ssh_public_key = "ssh-ed25519 AAAA... legacy"
+        acc.ssh_private_key_encrypted = None
+        await db.flush()
+        await db.commit()
+        await db.refresh(acc)
+
+        resp = await client.post(
+            f"{BASE}/{acc.id}/provision?server_id={srv.id}",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 422, resp.text
+        body = resp.json()
+        assert body["error_code"] == "ACCOUNT_SSH_KEY_INCONSISTENT"
+
     async def test_force_overwrite_rolls_back_on_dispatch_failure(
         self, client, operator_token_a, make_server, make_account, db, monkeypatch,
     ):

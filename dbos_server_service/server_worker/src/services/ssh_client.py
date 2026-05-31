@@ -659,7 +659,9 @@ def os_users_facts_to_payload(facts: dict) -> dict:
 
     Парсит `getent passwd`, отфильтровывает системных по `UID >= UID_MIN` из
     `/etc/login.defs`, доклеивает группы (`getent group`) и помечает sudo по
-    членству в sudo/wheel/admin-группе либо по primary-группе из passwd.
+    членству в secondary-группах (sudo/wheel/admin), которые отдал `getent group`.
+    Primary-группу из passwd не учитываем: для inv-сценария достаточно
+    secondary, и оператор всегда даёт sudo через привычную membership.
 
     Возврат — `{"users": [{login, uid, shell, home_dir, unix_groups,
     has_sudo}, ...]}`. Записи с непроходящим по regex login'ом пропускаются.

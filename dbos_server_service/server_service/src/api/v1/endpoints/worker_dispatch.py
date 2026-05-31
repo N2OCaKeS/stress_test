@@ -494,46 +494,52 @@ async def _dispatch_account_on_host(
     server_id_v = server.id
     server_dept_v = server.department_id
     account_login_v = account.login
+    # Savepoint держим явно: на любом исключении из dispatch_task откатываем
+    # creds-savepoint (либо commit'им при успехе). До этого было ловлей только
+    # ConflictError/ServiceUnavailableError — другие исключения оставляли SP
+    # подвешенным до close session'а, контракт хрупкий.
+    dispatch_ok = False
     try:
-        task_id = await worker_client.dispatch_task(
-            task_kind=task_kind,
-            target_server_id=server_id_v,
-            target_resource_id=account_id,
-            payload=payload,
-            created_by=identity.user_id,
-            request_id=getattr(request.state, "request_id", None),
-            idempotency_key=idempotency_key,
-        )
-    except ConflictError:
-        if inject_provision_creds:
+        try:
+            task_id = await worker_client.dispatch_task(
+                task_kind=task_kind,
+                target_server_id=server_id_v,
+                target_resource_id=account_id,
+                payload=payload,
+                created_by=identity.user_id,
+                request_id=getattr(request.state, "request_id", None),
+                idempotency_key=idempotency_key,
+            )
+            dispatch_ok = True
+        except ConflictError:
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "idempotent_conflict",
+                    "task_kind": task_kind,
+                    "server_id": server_id_v,
+                    "operation": operation,
+                    "department_id": server_dept_v,
+                },
+            )
+            raise
+        except ServiceUnavailableError:
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "worker_unreachable",
+                    "task_kind": task_kind,
+                    "server_id": server_id_v,
+                    "operation": operation,
+                    "department_id": server_dept_v,
+                },
+            )
+            raise
+    finally:
+        if inject_provision_creds and not dispatch_ok:
             await creds_sp.rollback()
-        audit_service.emit(
-            audit_action, target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={
-                "reason": "idempotent_conflict",
-                "task_kind": task_kind,
-                "server_id": server_id_v,
-                "operation": operation,
-                "department_id": server_dept_v,
-            },
-        )
-        raise
-    except ServiceUnavailableError:
-        if inject_provision_creds:
-            await creds_sp.rollback()
-        audit_service.emit(
-            audit_action, target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={
-                "reason": "worker_unreachable",
-                "task_kind": task_kind,
-                "server_id": server_id_v,
-                "operation": operation,
-                "department_id": server_dept_v,
-            },
-        )
-        raise
     if inject_provision_creds:
         await creds_sp.commit()
         await db.commit()

@@ -254,10 +254,20 @@ async def server_prepare(task_id: str) -> None:
         await server_service_client.submit_prepared(
             server_id, management_user, target_dept,
         )
-        # Cleanup лучше делать только при наличии актуального creds_key —
-        # на retry'е через маркер он уже мог быть удалён, либо TTL стёр.
-        if creds_key and isinstance(creds_key, str) and _BOOTSTRAP_KEY_RE.fullmatch(creds_key):
-            await _delete_bootstrap_creds(creds_key)
+        # Cleanup ключа в Redis: ходим только при валидном формате, иначе
+        # рискнём задеть чужой keyspace при компрометации payload (тот же
+        # guard, что на чтении). Если ключ есть, но формат битый — пишем
+        # warning, оператор увидит «висящий до TTL» ключ. Это в основном
+        # случается на ретрае с маркером, где предварительный fullmatch на
+        # чтении уже не отрабатывал (already_bootstrapped=True).
+        if creds_key:
+            if isinstance(creds_key, str) and _BOOTSTRAP_KEY_RE.fullmatch(creds_key):
+                await _delete_bootstrap_creds(creds_key)
+            else:
+                logger.warning(
+                    "bootstrap_creds_key cleanup skipped: malformed key",
+                    extra={"task_id": task_id, "server_id": server_id},
+                )
         await _delete_bootstrap_succeeded(task_id)
         # Defense-in-depth: `bootstrap_creds_key` сам по себе — это ссылка
         # в Redis-неймспейс с одноразовыми bootstrap-кредами. TTL и явный

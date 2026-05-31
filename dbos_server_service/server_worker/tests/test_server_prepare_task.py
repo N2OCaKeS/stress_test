@@ -555,6 +555,68 @@ class TestPrepareHandler:
 
         get_settings.cache_clear()
 
+    async def test_marker_skips_ssh_and_logs_warning_on_malformed_key(
+        self, make_task, fetch_task, captured_audit, monkeypatch, caplog,
+    ):
+        """Edge case: на retry'е через маркер SSH-этап пропускается, но
+        bootstrap_creds_key в payload остался malformed. Cleanup в Redis НЕ
+        должен дёргаться (защита от чужого keyspace), но нужно явное
+        warning в логах, чтобы оператор увидел висящий до TTL ключ.
+        """
+        import logging
+
+        _set_mgmt_env(monkeypatch)
+        # creds в Redis не нужны — SSH пропускается через маркер.
+        _mock_creds(monkeypatch, None)
+        # Подмена _delete_bootstrap_creds — если cleanup задёргается, тест
+        # это увидит.
+        delete_calls: list[str] = []
+        async def fake_delete(creds_key):
+            delete_calls.append(creds_key)
+        monkeypatch.setattr(prepare, "_delete_bootstrap_creds", fake_delete)
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prep_bad_cleanup",
+            payload={
+                "server_id": "srv_prep_bad_cleanup",
+                # Малформатный ключ — fullmatch не сработает.
+                "bootstrap_creds_key": "other:keyspace:pcd_evil",
+            },
+        )
+
+        async def noop(*a, **kw):
+            pass
+        monkeypatch.setattr(_runner, "_schedule_retry", noop)
+
+        await prepare._mark_bootstrap_succeeded(tid)
+        # SSH connect не должен вызываться — маркер пропускает шаг.
+        monkeypatch.setattr(
+            asyncssh, "connect",
+            AsyncMock(side_effect=AssertionError("ssh must not be called")),
+        )
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        with caplog.at_level(logging.WARNING, logger="src.tasks.prepare"):
+            await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        # Cleanup пропущен — keyspace чужой.
+        assert delete_calls == []
+        # Warning записан в лог.
+        warn_msgs = [
+            r for r in caplog.records
+            if r.levelno >= logging.WARNING
+            and "bootstrap_creds_key cleanup skipped" in r.getMessage()
+        ]
+        assert warn_msgs, "expected a warning about skipped cleanup on malformed key"
+
+        get_settings.cache_clear()
+
     async def test_bootstrap_password_not_in_audit(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):

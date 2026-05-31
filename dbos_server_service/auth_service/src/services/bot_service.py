@@ -263,8 +263,10 @@ async def update_bot(
         role_repo = BotRoleRepository(db)
         removed_role_count = await role_repo.delete_for_bot_services(bot.id, removed_services)
     await db.commit()
-    # allowed_services / is_active / status / name могут влиять на ответ introspect'а —
-    # без сброса бот ходит со старыми правами до истечения identity TTL (~5s).
+    # Defence-in-depth: bot-токены не идут через JWT path и в `_identity_cache`
+    # не лежат (там ключ — sha256(JWT), а introspect ботов кэша не имеет).
+    # Но если будущий путь начнёт класть туда identity по bot_id — этот sweep
+    # сразу подхватится. Линейный скан O(N) дешёвый, держим как страховку.
     _invalidate_identity_cache(bot.id)
     audit_service.emit(
         "bot.update", actor_id, target_id=bot_id, target_type="bot",

@@ -50,6 +50,12 @@ def _rate_limit_key(request: Request) -> str:
 # `headers_enabled` по умолчанию off — `X-RateLimit-Remaining` утекает
 # атакующему live feedback его counter'а, и тот burst'ит ровно под
 # лимит. Включается через `RATE_LIMIT_HEADERS_ENABLED=true` для отладки.
+#
+# Значение фиксируется на module-import (snapshot `get_settings()`). Менять
+# `RATE_LIMIT_HEADERS_ENABLED` в рантайме без рестарта процесса нельзя —
+# slowapi сам не пересчитывает `headers_enabled` по запросу. Тестам это
+# не мешает: настройка переключается до первого импорта модуля либо
+# проверяется на уровне Settings (см. `TestRateLimitHeadersConfig`).
 limiter = Limiter(
     key_func=_rate_limit_key,
     default_limits=[],

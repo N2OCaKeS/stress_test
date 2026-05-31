@@ -186,3 +186,23 @@ class TestAuditScenarios:
     def test_authorization_header_in_details(self):
         out = redact({"request": {"authorization": "Bearer abcd"}})
         assert out == {"request": {"authorization": "<CREDENTIAL>"}}
+
+
+# ── Сигнатура: parent_key не пробрасывается наружу ─────────────────────────────
+
+
+def test_redact_signature_has_no_parent_key():
+    """`_parent_key` был приватным kwarg'ом для внутренней рекурсии и нигде не
+    использовался — сигнатура должна остаться чистой `(payload)`.
+    """
+    import inspect
+
+    sig = inspect.signature(redact)
+    assert list(sig.parameters.keys()) == ["payload"], (
+        f"redact signature drifted: {list(sig.parameters.keys())}"
+    )
+
+
+def test_redact_rejects_unknown_kwarg():
+    with pytest.raises(TypeError):
+        redact({"a": 1}, _parent_key="x")  # type: ignore[call-arg]

@@ -26,6 +26,7 @@ from src.core.constants import Action, EntityType
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
+    DomainValidationError,
     NotFoundError,
 )
 from src.models import Server, ServerAccount
@@ -176,10 +177,25 @@ async def ensure_provision_credentials(
 
     if account.ssh_public_key is not None:
         public_openssh = account.ssh_public_key
+        if not account.ssh_private_key_encrypted:
+            # Legacy / corrupted row: public_key есть, private — нет. Отдать
+            # worker'у пустой private_pem нельзя — он залил бы на бокс
+            # authorized_keys без матчающего private key, последующий SSH под
+            # этим ключом отвалится. Бьём 422, оператор разбирается вручную
+            # (либо сбрасывает через `reset_provision_credentials`, либо чинит
+            # restore из бэкапа).
+            raise DomainValidationError(
+                error_code="ACCOUNT_SSH_KEY_INCONSISTENT",
+                message=(
+                    "Account has ssh_public_key but no ssh_private_key_encrypted "
+                    "— legacy row needs to be reset before provision"
+                ),
+                details={"account_id": account.id},
+            )
         private_pem = secrets_service.decrypt(
             account.ssh_private_key_encrypted,
             aad=secrets_service.aad_for_server_account_ssh_key(account.id),
-        ) if account.ssh_private_key_encrypted else ""
+        )
     else:
         private_pem, public_openssh = _generate_ssh_keypair()
         account.ssh_public_key = public_openssh

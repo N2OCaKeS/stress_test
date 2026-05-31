@@ -1339,6 +1339,34 @@ async def record_ipmi_credentials_rotated(
                 "max_skew_seconds": _ROTATED_AT_SKEW_SECONDS,
             },
         )
+    # Симметрично — нижняя граница. Worker с очень отставшими часами либо
+    # подменённый PAT мог бы прислать `rotated_at` из глубокого прошлого и
+    # утопить новую запись в конце сортировки UI. Допускаем тот же ±10-мин
+    # NTP-skew, что и для верхней границы.
+    if rotated_drift < -_ROTATED_AT_SKEW_SECONDS:
+        audit_service.emit(
+            "ipmi_controller.credentials_rotated_callback",
+            target_id=controller_id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={
+                "reason": "rotated_at_too_old",
+                "server_id": ctrl.server_id,
+                "rotated_at": rotated_at.isoformat(),
+                "rotated_drift_seconds": round(rotated_drift, 3),
+                "max_skew_seconds": _ROTATED_AT_SKEW_SECONDS,
+            },
+        )
+        raise BadRequestError(
+            error_code="ROTATED_AT_TOO_OLD",
+            message=(
+                f"rotated_at must be within {_ROTATED_AT_SKEW_SECONDS}s of now "
+                "(NTP-skew tolerated)"
+            ),
+            details={
+                "rotated_at": rotated_at.isoformat(),
+                "max_skew_seconds": _ROTATED_AT_SKEW_SECONDS,
+            },
+        )
 
     # verify-then-storage: пишем ciphertext только если worker подтвердил
     # удачный BMC test-call в окне `IPMI_VERIFY_MAX_AGE_SECONDS`. Старый /

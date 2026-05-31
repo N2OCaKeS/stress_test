@@ -425,6 +425,88 @@ class TestOutboxRoundTrip:
         # либо 200 с done. Оба варианта валидны для shape-теста.
         assert finalize.status_code in (200, 500)
 
+    async def test_finalize_done_owner_vanished_emits_warning(
+        self, client, worker_pat_token, captured_emits, db,
+    ):
+        """`finalize_done` молчком закрывал outbox-row если owner-row пропал
+        mid-migration. Теперь — warning-audit `secrets.migration.skipped` с
+        `reason=owner_vanished`.
+        """
+        from src.models import ReencryptOutboxEntry
+
+        # processing-row, ссылающаяся на несуществующий account_id.
+        entry = ReencryptOutboxEntry(
+            id="rox_vanished_001",
+            entity_type="server_account",
+            entity_id="acc_does_not_exist",
+            legacy_ciphertext="v1$abc$def",
+            status="processing",
+        )
+        db.add(entry)
+        await db.commit()
+
+        # finalize_done в этом случае может упасть на decrypt'е (legacy_ciphertext
+        # ненастоящий), но проверка owner-vanished идёт раньше — после успешного
+        # decrypt'а. Используем валидный ciphertext, чтобы дойти до проверки.
+        from src.services import secrets_service
+        # Перешифровка любого plaintext'а — главное чтобы decrypt прошёл.
+        plain = "x"
+        aad = secrets_service.aad_for_server_account_password("acc_does_not_exist")
+        entry.legacy_ciphertext = secrets_service.encrypt(plain, aad=aad)
+        await db.commit()
+
+        finalize = await client.post(
+            f"{BASE}/reencrypt_outbox/{entry.id}/done",
+            headers=_hdr(worker_pat_token),
+        )
+        assert finalize.status_code == 200, finalize.text
+        body = finalize.json()
+        assert body["skipped"] is True
+
+        skipped_emits = [
+            e for e in captured_emits
+            if e["action"] == "secrets.migration.skipped"
+        ]
+        assert len(skipped_emits) == 1
+        emit = skipped_emits[0]
+        assert emit["details"]["reason"] == "owner_vanished"
+        assert emit["details"]["entity_type"] == "server_account"
+        assert emit["status"] == "warning"
+
+    async def test_finalize_done_status_not_processing_emits_warning(
+        self, client, worker_pat_token, captured_emits, db,
+    ):
+        """`finalize_done` на row со status≠processing раньше молча возвращал
+        skipped. Теперь — warning-audit с reason=status_not_processing.
+        """
+        from src.models import ReencryptOutboxEntry
+
+        entry = ReencryptOutboxEntry(
+            id="rox_done_already",
+            entity_type="server_account",
+            entity_id="acc_test_done",
+            legacy_ciphertext="v1$abc$def",
+            status="done",
+        )
+        db.add(entry)
+        await db.commit()
+
+        finalize = await client.post(
+            f"{BASE}/reencrypt_outbox/{entry.id}/done",
+            headers=_hdr(worker_pat_token),
+        )
+        assert finalize.status_code == 200, finalize.text
+
+        skipped_emits = [
+            e for e in captured_emits
+            if e["action"] == "secrets.migration.skipped"
+        ]
+        assert len(skipped_emits) == 1
+        emit = skipped_emits[0]
+        assert emit["details"]["reason"] == "status_not_processing"
+        assert emit["details"]["current_status"] == "done"
+        assert emit["status"] == "warning"
+
     async def test_claim_marks_row_processing(
         self, client, worker_pat_token, db,
     ):

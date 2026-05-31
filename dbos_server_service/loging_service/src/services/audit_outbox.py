@@ -550,6 +550,35 @@ def make_envelope(
     )
 
 
+def _resolve_actor_type(actor_type: str | None) -> str:
+    """Whitelist-резолв `actor_type`. Неизвестное → `anonymous`.
+
+    Единая точка резолва — используется и здесь, и в `main._emit_audit`.
+    Раньше код дублировался в двух местах: правка whitelist'а требовала
+    держать обе ветки в синхроне руками.
+    """
+    if actor_type in VALID_ACTOR_TYPES:
+        return actor_type
+    return "anonymous"
+
+
+def _coerce_details_keys(details: Any) -> Any:
+    """Рекурсивно приводит ключи dict'а к `str`.
+
+    `EventCreate._details_shadow_keys` проверяет только `isinstance(k, str)` —
+    int/tuple/прочие ключи проходят мимо guard'а. Внешние source'ы (middleware
+    `audit_access` строит details руками — там всё str, но fallback-paths и
+    record_admin_action могут получить смешанный dict, если контракт нарушен).
+    Приводим заранее, чтобы JSONB-сериализация и shadow-keys-валидатор
+    работали с однородным dict'ом.
+    """
+    if isinstance(details, dict):
+        return {str(k): _coerce_details_keys(v) for k, v in details.items()}
+    if isinstance(details, list):
+        return [_coerce_details_keys(v) for v in details]
+    return details
+
+
 def write_envelope_to_db(db: Session, envelope: AuditEnvelope) -> Any:
     """Writer-функция по умолчанию: envelope → EventCreate → record_admin_action.
 
@@ -559,22 +588,16 @@ def write_envelope_to_db(db: Session, envelope: AuditEnvelope) -> Any:
     from src.schemas.events import EventCreate
     from src.services.event_service import record_admin_action
 
-    # `actor_type` whitelist — повторяем семантику старого `_emit_audit`.
-    if envelope.actor_type in VALID_ACTOR_TYPES:
-        resolved_actor_type = envelope.actor_type
-    else:
-        resolved_actor_type = "anonymous"
-
     payload = EventCreate(
         timestamp=envelope.enqueued_at,
         service="loging_service",
         action=envelope.action,
         actor_id=envelope.actor_id,
-        actor_type=resolved_actor_type,
+        actor_type=_resolve_actor_type(envelope.actor_type),
         username=envelope.username,
         status=envelope.emit_status,
         allowed=envelope.allowed,
         request_id=envelope.request_id,
-        details=envelope.details,
+        details=_coerce_details_keys(envelope.details),
     )
     return record_admin_action(db, payload, commit=False)

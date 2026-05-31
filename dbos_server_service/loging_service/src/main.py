@@ -23,7 +23,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.router import api_router
 from src.core.config import get_settings
-from src.core.constants import ADVISORY_LOCKS, VALID_ACTOR_TYPES
+from src.core.constants import ADVISORY_LOCKS
 from src.core.exceptions import AppException
 from src.core.limiter import limiter
 from src.core.logging import configure_logging
@@ -31,6 +31,7 @@ from src.dependencies import auth as auth_deps
 from src.services.audit_outbox import (
     AuditEnvelope,
     AuditOutbox,
+    _resolve_actor_type,
     make_envelope,
     write_envelope_to_db,
 )
@@ -933,14 +934,11 @@ def _emit_audit(
     + non-null actor_id → `"user"`, но это false-positive: bot/oauth_client
     с слегка переименованным subject_type попадали бы в user-метрики.
     """
-    # Резолвим actor_type c whitelist'а. `VALID_ACTOR_TYPES` совпадает
-    # с `EventCreate.actor_type` Literal whitelist'ом. Неизвестные значения
-    # сваливаются в "anonymous" — лучше потерять атрибуцию, чем подмешать
+    # Резолв actor_type — единый whitelist (`_resolve_actor_type`).
+    # `VALID_ACTOR_TYPES` совпадает с `EventCreate.actor_type` Literal'ом;
+    # неизвестные значения сваливаются в "anonymous", чтобы не подмешивать
     # фейкового user'а в SIEM-агрегаты.
-    if actor_type in VALID_ACTOR_TYPES:
-        resolved_actor_type = actor_type
-    else:
-        resolved_actor_type = "anonymous"
+    resolved_actor_type = _resolve_actor_type(actor_type)
 
     from src.db.session import SessionLocal
     from src.schemas.events import EventCreate

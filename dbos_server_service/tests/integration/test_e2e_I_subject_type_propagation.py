@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -108,11 +109,24 @@ class TestSubjectTypePropagation:
 
         os_name = f"st_user_os_{sid}"
         since = datetime.now(timezone.utc)
-        r = server_client.post(
-            OS_VERSIONS_URL,
-            headers={"Authorization": f"Bearer {u_jwt}"},
-            json={"name": os_name},
-        )
+        # server_client иногда ловит httpx.ReadError на keep-alive соединении,
+        # когда server_service делает graceful reload между интеграционными
+        # тестами. Один retry на transient transport-error — без этого тест
+        # моргает на CI; bug в сервисе тут не ловим.
+        last_exc: Exception | None = None
+        r = None
+        for attempt in range(3):
+            try:
+                r = server_client.post(
+                    OS_VERSIONS_URL,
+                    headers={"Authorization": f"Bearer {u_jwt}"},
+                    json={"name": os_name},
+                )
+                break
+            except (httpx.ReadError, httpx.RemoteProtocolError) as exc:
+                last_exc = exc
+                time.sleep(0.5 * (attempt + 1))
+        assert r is not None, f"POST failed after retries: {last_exc!r}"
         assert r.status_code == 201, r.text
 
         ev = wait_for_event(

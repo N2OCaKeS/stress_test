@@ -165,16 +165,6 @@ class TestPermissionsList:
         r = server_client.get("/api/server/v1/permissions")
         assert r.status_code == 401, r.text
 
-    @pytest.mark.xfail(
-        reason=(
-            "service bug: GET /api/server/v1/permissions?role=<role> вызывает "
-            "permission_service.list_all → repo.list_for_role(role) без фильтра "
-            "по target_department_id. Per-dept строки чужого отдела протекают в "
-            "выдачу. Фикс на стороне server_service: dept-scope при list_for_role "
-            "(см. permission_service.py:131-132). До починки — xfail."
-        ),
-        strict=True,
-    )
     def test_cross_dept_custom_role_not_visible(
         self,
         cluster_c,

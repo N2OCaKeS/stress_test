@@ -64,6 +64,14 @@ def test_action_positive(
     action: str,
 ):
     """Роль `admin` (системные seed-grants) должна успешно выполнять action."""
+    if (entity, action) == ("ipmi_controller", "rotate_credentials"):
+        # User-facing POST /servers/{id}/ipmi/credentials/rotate помечен 410 GONE;
+        # реальная ротация ушла в POST /ipmi-controllers/{id}/rotate (bot-only),
+        # она покрыта отдельно в test_e2e_E_rotation.
+        pytest.skip(
+            "user-facing /ipmi/credentials/rotate is 410 GONE; "
+            "new dispatch endpoint /ipmi-controllers/{id}/rotate covered in E-rotation"
+        )
     case: SweepCase = ENTITY_ACTION_SWEEP[(entity, action)]
     ctx = case.setup(server_client, cluster_c.admin_token, cluster_c.dept_id)
     ctx["dept_id"] = cluster_c.dept_id
@@ -118,6 +126,11 @@ def test_action_negative_guest(
     action: str,
 ):
     """Роль `guest` (нулевые гранты) — 403 + audit denied с permission_denied."""
+    if (entity, action) == ("ipmi_controller", "rotate_credentials"):
+        pytest.skip(
+            "user-facing /ipmi/credentials/rotate is 410 GONE; "
+            "new dispatch endpoint /ipmi-controllers/{id}/rotate covered in E-rotation"
+        )
     case: SweepCase = ENTITY_ACTION_SWEEP[(entity, action)]
     ctx = case.setup(server_client, cluster_c.admin_token, cluster_c.dept_id)
     ctx["dept_id"] = cluster_c.dept_id
@@ -335,8 +348,11 @@ class TestCustomRoleEndToEnd:
         assign_user_roles(auth_client, admin_token, user_id, [])
 
         # 8. После revoke'а роли power_reboot тоже отбивается.
-        # У юзера больше нет даже view → _dispatch_power падает раньше
-        # power-гейта, reason="no_view_permission" вместо "permission_denied".
+        # Канонический порядок в `_dispatch_power`: сперва require_action на
+        # сам power_reboot (его у юзера больше нет) → emit denied с
+        # reason="permission_denied" через `emit_denied_on_authz_error`. До
+        # visibility-проверки (которая давала бы `no_view_permission`)
+        # выполнение не доходит.
         since = now_utc()
         r = server_client.post(
             f"/api/server/v1/servers/{srv['id']}/ipmi/power/reboot",
@@ -347,5 +363,5 @@ class TestCustomRoleEndToEnd:
         )
         expect_denied_audit(
             logging_client, "server.power_reboot", since,
-            reason="no_view_permission",
+            reason="permission_denied",
         )

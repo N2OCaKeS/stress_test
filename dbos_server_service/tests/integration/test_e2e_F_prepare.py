@@ -181,12 +181,15 @@ class TestPrepareApiContract:
         ssh_test_host: dict,
     ):
         srv = create_test_server(server_client, it_admin_token, dept_id=it_dept_id)
+        # Контракт-only: проверяем 202 + task_id. SSH-auth не выполняется, но
+        # password_b64 валидируется strong-policy'ей на API entry, поэтому
+        # подставляем строку, удовлетворяющую политике.
         r = server_client.post(
             f"/api/server/v1/servers/{srv['id']}/prepare",
             headers={"Authorization": f"Bearer {it_admin_token}"},
             json={
                 "username_b64": b64(ssh_test_host["root_login"]),
-                "password_b64": b64(ssh_test_host["root_password"]),
+                "password_b64": b64("TestRoot-Dispatch-2026!"),
             },
         )
         assert r.status_code == 202, r.text
@@ -262,7 +265,7 @@ class TestBootstrapCredsStorage:
             headers={"Authorization": f"Bearer {it_admin_token}"},
             json={
                 "username_b64": b64("ttl_probe_user"),
-                "password_b64": b64("ttl_probe_password"),
+                "password_b64": b64("TtlProbe-Pass-2026!"),
             },
         )
         assert r.status_code == 202, r.text
@@ -531,23 +534,28 @@ class TestPrepareNegativePaths:
         srv = create_test_server(server_client, it_admin_token, dept_id=it_dept_id)
 
         other_token, _ = other_dept_admin_token
+        # Cross-dept 404 ловится до реальной SSH-auth; password не используется,
+        # но валидатор схемы требует strong-policy.
         r = server_client.post(
             f"/api/server/v1/servers/{srv['id']}/prepare",
             headers={"Authorization": f"Bearer {other_token}"},
             json={
                 "username_b64": b64(ssh_test_host["root_login"]),
-                "password_b64": b64(ssh_test_host["root_password"]),
+                "password_b64": b64("CrossDept-Probe-2026!"),
             },
         )
         assert r.status_code == 404, (
             f"expected 404 cross-dept, got {r.status_code}: {r.text}"
         )
 
+        # Cross-dept/not-found пишется как status="failure" с allowed=True
+        # (W14-W3 канонизация: access-deny = denied, business not-found =
+        # failure). Прежняя версия теста ждала denied и тимаутилась.
         denied = wait_audit_event(
             loging_db_engine, action="server.prepare",
-            target_id=srv["id"], status="denied",
+            target_id=srv["id"], status="failure",
         )
-        assert denied["allowed"] is False
+        assert denied["allowed"] is True
         details = denied["details"]
         if isinstance(details, str):
             details = json.loads(details)
@@ -581,7 +589,7 @@ class TestPrepareNegativePaths:
             headers={"Authorization": f"Bearer {it_admin_token}"},
             json={
                 "username_b64": b64(ssh_test_host["root_login"]),
-                "password_b64": b64("totally-wrong-password-xyz"),
+                "password_b64": b64("TotallyWrong-Pass-2026!"),
             },
         )
         assert r.status_code == 202, r.text
@@ -696,12 +704,14 @@ class TestPrepareRetryWithinTtl:
             hostname=ssh_test_host["host"], ssh_port=int(ssh_test_host["port"]),
             server_db_engine=server_db_engine, point_at_ssh_target=True,
         )
+        # SSH-auth тут не доедет: мы намеренно сносим Redis-ключ до того, как
+        # worker подхватит креды. Достаточно strong-policy compliant строки.
         r = server_client.post(
             f"/api/server/v1/servers/{srv['id']}/prepare",
             headers={"Authorization": f"Bearer {it_admin_token}"},
             json={
                 "username_b64": b64(ssh_test_host["root_login"]),
-                "password_b64": b64(ssh_test_host["root_password"]),
+                "password_b64": b64("CredsGone-Probe-2026!"),
             },
         )
         assert r.status_code == 202, r.text

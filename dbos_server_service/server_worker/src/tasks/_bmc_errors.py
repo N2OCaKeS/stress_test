@@ -119,16 +119,54 @@ def _wrap_ipmitool_error(action: str, exc: IpmitoolError) -> AppException:
     )
 
 
+def _wrap_dispatch_error(action: str, exc: ValueError | RuntimeError) -> AppException:
+    """Маппинг `ValueError`/`RuntimeError` из `dispatch_*` хелперов.
+
+    `dispatch_power_action` / `dispatch_rotate_user_password` /
+    `dispatch_get_power_state` бросают:
+      * `ValueError("BMC_UNSUPPORTED_ACTION: ...")` — power-action нет в
+        ipmitool-карте.
+      * `RuntimeError("BMC_CLIENT_INCOMPATIBLE: ...")` — у клиента нет
+        ни Redfish-метода, ни ipmitool-метода.
+
+    Без этой ветки оба исключения уходили мимо `except (RedfishError,
+    IpmitoolError)` в handler'ах — breaker.record_failure не вызывался,
+    raw text исключения попадал в `task.last_error` вместо стабильного
+    BMC_*-кода.
+
+    Берём префикс до двоеточия как `error_code`; остальная строка идёт
+    как `message`. Fallback на `BMC_ERROR`, если префикс отсутствует.
+    """
+    raw = str(exc) or type(exc).__name__
+    if ":" in raw:
+        code, _, msg = raw.partition(":")
+        code = code.strip()
+        msg = msg.strip() or raw
+    else:
+        code, msg = "BMC_ERROR", raw
+    if not code.startswith("BMC_"):
+        code, msg = "BMC_ERROR", raw
+    return AppException(
+        error_code=code,
+        message=f"{action}: {msg}",
+        details={"transport": "dispatch", "exc_type": type(exc).__name__},
+    )
+
+
 def wrap_bmc_error(action: str, exc: BaseException) -> AppException:
     """Единая точка маппинга BMC-ошибок.
 
-    Принимает либо `RedfishError`, либо `IpmitoolError` (включая `IpmitoolTimeout`).
-    Любой другой тип → пробрасываем как есть: caller обернёт через `raise ... from`.
+    Принимает `RedfishError` / `IpmitoolError` (включая `IpmitoolTimeout`),
+    а также `ValueError` / `RuntimeError` из `dispatch_*` хелперов (UNSUPPORTED_ACTION,
+    CLIENT_INCOMPATIBLE). Любой другой тип → `TypeError`: caller не должен
+    подсовывать сюда что попало.
     """
     if isinstance(exc, RedfishError):
         return _wrap_redfish_error(action, exc)
     if isinstance(exc, IpmitoolError):
         return _wrap_ipmitool_error(action, exc)
+    if isinstance(exc, (ValueError, RuntimeError)):
+        return _wrap_dispatch_error(action, exc)
     raise TypeError(f"wrap_bmc_error: unsupported exception type {type(exc).__name__}")
 
 

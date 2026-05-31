@@ -94,7 +94,7 @@ async def power_on(task_id: str) -> None:
             try:
                 await dispatch_power_action(client, "On")
                 state = await dispatch_get_power_state(client)
-            except (RedfishError, IpmitoolError) as exc:
+            except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
                 await _breaker.record_failure(host)
                 raise wrap_bmc_error("power_on", exc) from exc
             await _breaker.record_success(host)
@@ -141,7 +141,7 @@ async def power_off(task_id: str) -> None:
                 previous = await dispatch_get_power_state(client)
                 await dispatch_power_action(client, "ForceOff")
                 state = await dispatch_get_power_state(client)
-            except (RedfishError, IpmitoolError) as exc:
+            except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
                 await _breaker.record_failure(host)
                 raise wrap_bmc_error("power_off", exc) from exc
             await _breaker.record_success(host)
@@ -192,7 +192,7 @@ async def power_reboot(task_id: str) -> None:
                     client, "ForceRestart" if force else "GracefulRestart",
                 )
                 state = await dispatch_get_power_state(client)
-            except (RedfishError, IpmitoolError) as exc:
+            except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
                 await _breaker.record_failure(host)
                 raise wrap_bmc_error("power_reboot", exc) from exc
             await _breaker.record_success(host)
@@ -238,7 +238,7 @@ async def power_status(task_id: str) -> None:
         try:
             try:
                 state = await dispatch_get_power_state(client)
-            except (RedfishError, IpmitoolError) as exc:
+            except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
                 await _breaker.record_failure(host)
                 raise wrap_bmc_error("power_status", exc) from exc
             await _breaker.record_success(host)

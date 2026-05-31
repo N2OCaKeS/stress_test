@@ -728,4 +728,30 @@ class TestWrapIpmitoolError:
         from src.tasks._bmc_errors import wrap_bmc_error
 
         with pytest.raises(TypeError):
-            wrap_bmc_error("power_on", ValueError("nope"))
+            wrap_bmc_error("power_on", KeyError("nope"))
+
+    def test_value_error_unsupported_action_mapped(self):
+        """ValueError из dispatch_power_action → BMC_UNSUPPORTED_ACTION."""
+        from src.tasks._bmc_errors import wrap_bmc_error
+
+        exc = ValueError("BMC_UNSUPPORTED_ACTION: 'PushPowerButton' has no ipmitool equivalent")
+        wrapped = wrap_bmc_error("power_on", exc)
+        assert wrapped.error_code == "BMC_UNSUPPORTED_ACTION"
+        assert wrapped.details["transport"] == "dispatch"
+
+    def test_runtime_error_client_incompatible_mapped(self):
+        """RuntimeError из dispatch_* → BMC_CLIENT_INCOMPATIBLE."""
+        from src.tasks._bmc_errors import wrap_bmc_error
+
+        exc = RuntimeError(
+            "BMC_CLIENT_INCOMPATIBLE: FakeClient has no `power_action` nor `chassis_power_action`"
+        )
+        wrapped = wrap_bmc_error("power_on", exc)
+        assert wrapped.error_code == "BMC_CLIENT_INCOMPATIBLE"
+        assert wrapped.details["transport"] == "dispatch"
+
+    def test_runtime_error_no_prefix_falls_back_to_error(self):
+        from src.tasks._bmc_errors import wrap_bmc_error
+
+        wrapped = wrap_bmc_error("power_on", RuntimeError("неизвестно что"))
+        assert wrapped.error_code == "BMC_ERROR"

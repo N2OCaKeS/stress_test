@@ -630,7 +630,6 @@ async def reset_password(
     new_password: str,
     *,
     actor_role: str | None = None,
-    actor_department_id: str | None = None,
     request_id: str | None = None,
 ) -> None:
     """Сбросить пароль юзеру + revoke все его активные сессии и все PAT'ы.
@@ -646,38 +645,23 @@ async def reset_password(
     if user is None:
         raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
 
-    # ── Cross-department escalation guard ─────────────────────────────────────
-    # `AnyAdmin` пускает оба типа админов; без этой проверки department_admin
-    # dept_a мог бы сбросить пароль юзеру dept_b (плюс снести его сессии/PAT)
-    # и получить escalation через угадывание user_id. `update_user` делает
-    # то же самое — симметрия.
-    #
-    # `actor_role` / `actor_department_id` берём из IdentityContext'а
-    # endpoint'а — без них пришлось бы делать лишний SELECT actor'а на
-    # каждый вызов, даже когда actor — account_admin (cross-dept guard
-    # не активен). Fallback на SELECT остаётся: legacy-caller'ы без
-    # kwargs (тесты, внутренние вызовы) продолжают работать как раньше.
+    # Cross-dept escalation guard симметрично с update_user / assign_roles:
+    # DA одного отдела не должен сбрасывать пароль юзеру другого отдела
+    # (это снесло бы его сессии/PAT и дало takeover после установки нового
+    # пароля). Если actor_role не передан (legacy/service-level вызов),
+    # резолвим из БД — иначе DA с не-переданной ролью обошёл бы guard.
+    # Helper сам тянет actor'а и фейлит c ACTOR_VANISHED, если
+    # JWT валидный, а самого юзера уже нет.
+    if actor_role is None:
+        _actor = await user_repo.get_by_id(actor_id)
+        if _actor is not None:
+            actor_role = _actor.platform_role
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        dept_id = actor_department_id
-        if dept_id is None:
-            actor = await user_repo.get_by_id(actor_id)
-            dept_id = actor.department_id if actor is not None else None
-        if dept_id is not None and dept_id != user.department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ISOLATION",
-                message="department_admin can only reset passwords for users in their own department",
-            )
-    elif actor_role is None:
-        actor = await user_repo.get_by_id(actor_id)
-        if (
-            actor is not None
-            and actor.platform_role == PlatformRole.DEPARTMENT_ADMIN
-            and actor.department_id != user.department_id
-        ):
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ISOLATION",
-                message="department_admin can only reset passwords for users in their own department",
-            )
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, user.department_id,
+            error_code="USER_RESET_PASSWORD_FORBIDDEN",
+            message="department_admin can only reset passwords for users in their own department",
+        )
 
     # Admin-flow без current_password-confirm: actor != target по определению
     # (cross-dept guard выше + endpoint-level `AnyAdmin`). Self-reset идёт

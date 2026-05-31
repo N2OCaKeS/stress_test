@@ -456,7 +456,7 @@ async def ipmi_rotate_password(task_id: str) -> None:
         try:
             try:
                 await dispatch_rotate_user_password(client, user_id, new_password)
-            except (RedfishError, IpmitoolError) as exc:
+            except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
                 await _breaker.record_failure(host)
                 raise wrap_bmc_error("ipmi_rotate_password", exc) from exc
             await _breaker.record_success(host)
@@ -501,7 +501,7 @@ async def ipmi_rotate_password(task_id: str) -> None:
         try:
             try:
                 await dispatch_get_power_state(verify_client)
-            except (RedfishError, IpmitoolError) as exc:
+            except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
                 await _breaker.record_failure(host)
                 wrapped = wrap_bmc_error("ipmi_rotate_password", exc)
                 # error_code намеренно перетираем: оператору важна фаза

@@ -15,17 +15,38 @@ slowloris-защита 401-pipeline'а), а endpoint-декораторы доб
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from starlette.requests import Request
 
 from src.core.config import get_settings
+from src.services.audit_context import extract_client_ip
 
 
 _settings = get_settings()
+
+
+def _resolve_client_ip(request: Request) -> str:
+    """Ключ для rate-limit'а с учётом X-Forwarded-For за trusted ingress.
+
+    За k8s-ingress'ом `request.client.host` указывает на сам ingress — без
+    этой отвязки все per-IP-лимиты сваливались бы в одну корзину
+    (ingress = единый источник, лимиты выгорают на любом легитимном
+    трафике). Логика выбора совпадает с `audit_context.extract_client_ip`:
+    если direct IP в `trusted_proxy_ips` → берём левый non-trusted из XFF
+    (или X-Real-IP), иначе доверяем только `request.client.host`.
+
+    Fallback на `get_remote_address` нужен на случай, когда у request'а
+    нет `.client` (тесты с TestClient без транспорта, ASGI lifespan-фейки).
+    """
+    ip = extract_client_ip(request)
+    if ip:
+        return ip
+    return get_remote_address(request)
 
 # `headers_enabled=True` оставлено для compat с прежним поведением
 # (мы возвращаем кастомный 429 и сами ставим `Retry-After: 60`, остальные
 # `X-RateLimit-*` опциональны и помогают отлаживать клиенты).
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=_resolve_client_ip,
     default_limits=[_settings.global_rate_limit],
     headers_enabled=True,
 )
@@ -36,7 +57,7 @@ limiter = Limiter(
 # headers ни на /os-versions/anon, ни на /ipmi/rotate не нужны — клиент
 # получит наш стандартный `Retry-After: 60` через middleware-handler `_rate_limit_exceeded_response`.
 endpoint_limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=_resolve_client_ip,
     default_limits=[],
     headers_enabled=False,
 )

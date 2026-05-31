@@ -57,9 +57,17 @@ async def _introspect_oauth_client_jwt(
         return IntrospectResponse(active=False)
 
     dept_repo = DepartmentRepository(db)
-    dept_services = await dept_repo.list_active_services(client.department_id)
-    allowed_services = [s for s in dept_services if s in client.allowed_scopes]
-    dept = await dept_repo.get_by_id(client.department_id) if client.department_id else None
+    # Если у клиента не выставлен department_id — пропускаем SELECT с
+    # `WHERE department_id IS NULL` (он гарантированно вернёт []). Симметрично
+    # с `dependencies/auth._identity_from_oauth_client_jwt`, где такой же guard
+    # уже стоит на cold-пути.
+    if client.department_id:
+        dept_services = await dept_repo.list_active_services(client.department_id)
+        allowed_services = [s for s in dept_services if s in client.allowed_scopes]
+        dept = await dept_repo.get_by_id(client.department_id)
+    else:
+        allowed_services = []
+        dept = None
 
     audit_service.emit(
         "token.introspect",

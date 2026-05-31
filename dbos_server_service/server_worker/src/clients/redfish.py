@@ -403,9 +403,13 @@ class RedfishClient:
 
         ВНИМАНИЕ: после успеха caller обязан надёжно сохранить
         `new_password` ДО потери process'а — иначе доступ к BMC потерян.
-        Контракт: handler в `tasks/passwords.py` сначала генерит пароль,
-        делает round-trip к server_service для сохранения ciphertext'а,
-        и ТОЛЬКО потом вызывает этот метод.
+        Контракт `tasks/passwords.py::ipmi_rotate_password`:
+        генерируем пароль и кладём его в Redis-stash (`_store_ipmi_rotate_password`)
+        ДО вызова apply'а — это гарантирует, что при крэше worker'а между apply
+        и storage submit мы знаем, какой пароль уже на BMC. Затем apply
+        (этот метод) → verify тем же паролем → submit ciphertext'а в
+        server_service. Round-trip к server_service выполняется ПОСЛЕ
+        успешного apply+verify, не до.
         """
         manager_id = await self._resolve_manager_id()
         await self._request(

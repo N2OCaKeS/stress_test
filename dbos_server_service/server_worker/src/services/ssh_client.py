@@ -162,7 +162,11 @@ def _build_session(credentials: dict, server_id: str) -> SshClient:
         management_user = (
             credentials.get("management_user") or settings.ssh_management_user
         )
-        logger.info("ssh management session on %s as %s (key)", host, management_user)
+        # host + management_user — это topology disclosure для management-сети.
+        # В закрытой инфраструктуре с ACL по namespace это всё равно лишний шум
+        # в INFO-журнале. Сам факт sessions виден из аудита (mgmt-session
+        # выписывается отдельным событием), debug-уровень достаточен.
+        logger.debug("ssh management session on %s as %s (key)", host, management_user)
         return SshClient(
             host=host,
             username=management_user,

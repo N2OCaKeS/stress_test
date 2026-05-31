@@ -42,6 +42,7 @@ _TOKEN_KEYS = {
 _SECRET_KEYS = {
     "secret", "secret_key", "api_key", "apikey",
     "client_secret", "private_key", "signing_key",
+    "service_api_key", "logging_service_api_key",
 }
 _HASH_KEYS = {
     "password_hash", "hash", "token_hash", "pwd_hash",
@@ -63,6 +64,10 @@ _BCRYPT_RE = re.compile(r"^\$2[aby]?\$\d{1,2}\$[./A-Za-z0-9]{50,60}$")
 _ARGON2_RE = re.compile(r"^\$argon2(id|i|d)?\$")
 # Опаковые токены системы: pat = dbos_pat_<random>, bot = dbos_bot_<random>
 _OPAQUE_TOKEN_RE = re.compile(r"^dbos_(pat|bot)_[A-Za-z0-9_\-]{12,}$")
+# OAuth client secret: cs_<token_ursafe(32)>. Маскируем по форме, чтобы plaintext
+# не утёк, даже если попадёт в audit-details под ключом без явного `secret`-имени
+# (например `raw_secret`, `payload`).
+_OAUTH_CLIENT_SECRET_RE = re.compile(r"^cs_[A-Za-z0-9_\-]{12,}$")
 
 # Длинные hex-строки/base64 без явного ключа обычно не маскируем — слишком много
 # ложноположительных. Делается только по контексту ключа.
@@ -92,6 +97,8 @@ def _classify_value(value: str) -> str | None:
         return "<TOKEN>"
     if _OPAQUE_TOKEN_RE.match(value):
         return "<TOKEN>"
+    if _OAUTH_CLIENT_SECRET_RE.match(value):
+        return "<SECRET>"
     if _BCRYPT_RE.match(value) or _ARGON2_RE.match(value):
         return "<HASH>"
     return None

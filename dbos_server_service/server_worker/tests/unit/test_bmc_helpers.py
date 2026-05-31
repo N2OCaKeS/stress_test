@@ -34,8 +34,14 @@ class TestExtractBmcHost:
             ("https://bmc.example.com:8000", "bmc.example.com:8000"),
             # path после host[:port] игнорируется
             ("https://bmc.example.com:8000/redfish/v1/", "bmc.example.com:8000"),
-            # IPv6 в скобках
+            # IPv6 в скобках со scheme — netloc срабатывает
             ("https://[2001:db8::1]:443", "[2001:db8::1]:443"),
+            ("https://[::1]:8443", "[::1]:8443"),
+            ("https://[::1]", "[::1]"),
+            # IPv6 без scheme — попадает на split-fallback, скобки сохраняются
+            ("[2001:db8::1]:443", "[2001:db8::1]:443"),
+            ("[::1]:623", "[::1]:623"),
+            ("[::1]", "[::1]"),
         ],
     )
     def test_preserves_port(self, endpoint, expected):
@@ -45,6 +51,10 @@ class TestExtractBmcHost:
         # basic-auth в URL'е не должен утечь в host-ключ breaker'а
         assert extract_bmc_host("https://admin:secret@10.0.0.1:443") == "10.0.0.1:443"
         assert extract_bmc_host("https://admin@10.0.0.1") == "10.0.0.1"
+        # IPv6 с userinfo
+        assert extract_bmc_host("https://user:pass@[2001:db8::1]:443") == "[2001:db8::1]:443"
+        # bare IPv6 с userinfo (без scheme) — fallback тоже должен резать userinfo
+        assert extract_bmc_host("admin@[::1]:623") == "[::1]:623"
 
     def test_empty_input(self):
         assert extract_bmc_host("") == ""

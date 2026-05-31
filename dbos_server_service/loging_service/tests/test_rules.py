@@ -120,6 +120,11 @@ class TestRulesCRUD:
         assert body["total"] == 5
         assert body["limit"] == 2
 
+    def test_offset_exceeds_max_returns_422(self, admin_client):
+        assert admin_client.get(
+            RULES_URL, params={"offset": 10_000_001}
+        ).status_code == 422
+
 
 # ── Применение правил ─────────────────────────────────────────────────────────
 

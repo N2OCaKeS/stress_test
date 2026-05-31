@@ -284,6 +284,31 @@ class TestEventCreateIdempotencyKey:
         with pytest.raises(ValidationError):
             EventCreate(**_BASE_EVENT, idempotency_key="x" * 129)
 
+    @pytest.mark.parametrize("bad", [
+        "abc\r\ndef",   # CRLF — log-injection в CSV
+        "abc\ndef",     # LF
+        "abc\tdef",     # TAB
+        "abc def",      # пробел
+        "abc\x00def",   # NUL
+        "abc/def",      # слэш
+        "ключ",         # кириллица
+    ])
+    def test_dangerous_idempotency_key_rejected(self, bad: str):
+        with pytest.raises(ValidationError):
+            EventCreate(**_BASE_EVENT, idempotency_key=bad)
+
+    def test_nfkc_fullwidth_normalised_then_validated(self):
+        """Fullwidth-латиница после NFKC даёт ASCII и проходит charset."""
+        m = EventCreate(**_BASE_EVENT, idempotency_key="ａｂｃ")
+        assert m.idempotency_key == "abc"
+
+    def test_uuid_key_accepted(self):
+        m = EventCreate(
+            **_BASE_EVENT,
+            idempotency_key="9d1a4f86-7c2d-4f1a-8b3e-1f2a3b4c5d6e",
+        )
+        assert m.idempotency_key == "9d1a4f86-7c2d-4f1a-8b3e-1f2a3b4c5d6e"
+
 
 # ── RuleCreate ───────────────────────────────────────────────────────────────
 
@@ -338,6 +363,11 @@ class TestRuleCreateLengths:
         with pytest.raises(ValidationError):
             RuleCreate(name="r", effect="ALLOW", match_action="a" * 129)
 
+    def test_description_max_length(self):
+        RuleCreate(name="r", effect="ALLOW", description="d" * 1024)
+        with pytest.raises(ValidationError):
+            RuleCreate(name="r", effect="ALLOW", description="d" * 1025)
+
 
 class TestRuleCreateLiterals:
     @pytest.mark.parametrize("effect", ["SUPPRESS", "ALLOW", "OVERRIDE_SEVERITY"])
@@ -368,6 +398,11 @@ class TestRuleUpdate:
             RuleUpdate(priority=0)
         with pytest.raises(ValidationError):
             RuleUpdate(priority=1001)
+
+    def test_description_max_length(self):
+        RuleUpdate(description="d" * 1024)
+        with pytest.raises(ValidationError):
+            RuleUpdate(description="d" * 1025)
 
     def test_update_does_not_enforce_override_invariant(self):
         """`RuleUpdate` НЕ имеет `_validate_effect` model_validator — это известный

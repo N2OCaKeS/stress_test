@@ -41,7 +41,9 @@ _TOKEN_KEYS = {
 _SECRET_KEYS = {
     "secret", "secret_key", "api_key", "apikey",
     "client_secret", "private_key", "signing_key",
-    "server_encryption_key",
+    "server_encryption_key", "master_key", "encryption_key",
+    "hkdf_salt", "hkdf_salt_hex",
+    "service_api_key", "logging_service_api_key",
     "ssh_private_key", "ssh_private_key_plaintext",
 }
 _HASH_KEYS = {

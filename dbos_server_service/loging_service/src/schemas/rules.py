@@ -72,7 +72,10 @@ RuleSeverity = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 class RuleCreate(BaseModel):
     name: str = Field(max_length=128, description="Уникальное имя правила")
-    description: str | None = Field(default=None)
+    # В БД description хранится как Text без явного limit'а; общий потолок
+    # тела запроса 1 MiB. Явный cap в схеме делает контракт очевидным и
+    # отбивает мусорные payload'ы до создания row'у.
+    description: str | None = Field(default=None, max_length=1024)
     is_active: bool = Field(default=True)
     priority: int = Field(default=100, ge=1, le=1000, description="Приоритет (выше = выполняется первым)")
 
@@ -121,7 +124,7 @@ class RuleCreate(BaseModel):
 
 class RuleUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=128)
-    description: str | None = Field(default=None)
+    description: str | None = Field(default=None, max_length=1024)
     is_active: bool | None = Field(default=None)
     priority: int | None = Field(default=None, ge=1, le=1000)
     match_service: str | None = Field(default=None, max_length=64)

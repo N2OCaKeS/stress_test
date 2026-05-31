@@ -30,6 +30,12 @@ from src.core.limiter import limiter
 router = APIRouter()
 
 _MAX_LIMIT = 1000
+# Верхняя граница для offset'а: при больших значениях PostgreSQL гоняет
+# постраничный proскролл до этого оффсета даже когда подходящих строк нет.
+# Десять миллионов — реалистичный потолок журнала на года вперёд и при этом
+# далёкий от patalogical-OFFSET, на котором statement_timeout начинает рвать
+# запросы.
+_MAX_OFFSET = 10_000_000
 
 
 def _ingest_rate_limit_key(request: Request) -> str:
@@ -198,7 +204,7 @@ def list_events(
     from_time: datetime | None = Query(default=None, description="Начало диапазона времени (ISO 8601)"),
     to_time: datetime | None = Query(default=None, description="Конец диапазона времени (ISO 8601)"),
     limit: int = Query(default=100, ge=1, le=_MAX_LIMIT),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=_MAX_OFFSET),
     include_total: bool = Query(
         default=False,
         description=(

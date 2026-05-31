@@ -20,11 +20,11 @@ MIN_PASSWORD_LENGTH = 8
 MIN_STRONG_PASSWORD_LENGTH = 16
 
 _POLICY_MESSAGE = (
-    "Password must be at least 8 characters long and contain "
+    f"Password must be at least {MIN_PASSWORD_LENGTH} characters long and contain "
     "both letters and digits"
 )
 _STRONG_POLICY_MESSAGE = (
-    "Password must be at least 16 characters long and contain "
+    f"Password must be at least {MIN_STRONG_PASSWORD_LENGTH} characters long and contain "
     "a letter, a digit and a symbol"
 )
 

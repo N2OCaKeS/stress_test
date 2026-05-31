@@ -29,6 +29,11 @@ from src.services import event_service, rule_service
 
 router = APIRouter()
 
+# Симметрично `_MAX_OFFSET` в `endpoints/events.py`: верхняя граница для
+# постраничного offset'а. На таблице `audit_rules` редко бывает много row'ов,
+# но гард единообразный и страхует от patalogical OFFSET.
+_MAX_OFFSET = 10_000_000
+
 
 def _is_unique_violation(exc: IntegrityError) -> bool:
     """True, если `IntegrityError` пришёл из UNIQUE-constraint'а (pgcode 23505).
@@ -118,7 +123,7 @@ def list_rules(
     identity: ReaderIdentity,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=_MAX_OFFSET),
 ) -> RuleListResponse:
     rules, total = rule_repo.get_all(db, limit=limit, offset=offset)
     return RuleListResponse(

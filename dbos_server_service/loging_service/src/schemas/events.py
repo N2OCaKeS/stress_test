@@ -70,6 +70,12 @@ _ID_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_\-]{1,48}$")
 # `ipmi_controller`, `service_role`). По проекту snake_case + точка для
 # namespaced-типов (`oauth.client`).
 _TARGET_TYPE_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_.]{1,64}$")
+# `idempotency_key` уходит в `audit_events.idempotency_key` (String(128)),
+# смотрит на UNIQUE-индекс и засвечивается в логах при дедупе. CR/LF/TAB и
+# другие control char'ы расщепили бы CSV-экспорт и испортили бы dedup-логику
+# (значение хранится as-is, а нормализуется только NFKC). Charset покрывает
+# UUID, opaque-токены и batch-id'ы (буквы, цифры, `_`, `-`, `.`).
+_IDEMPOTENCY_KEY_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_\-.]{1,128}$")
 
 
 class EventCreate(BaseModel):
@@ -237,7 +243,18 @@ class EventCreate(BaseModel):
         if not isinstance(v, str):
             return v
         normalised = unicodedata.normalize("NFKC", v).strip()
-        return normalised or None
+        if not normalised:
+            return None
+        # Charset-гард после NFKC. NFKC сворачивает fullwidth/совместимые
+        # формы, но не убирает CR/LF/TAB и прочие control-байты — те
+        # расщепили бы CSV-экспорт и сломали бы dedup на partial UNIQUE
+        # индексе.
+        if not _IDEMPOTENCY_KEY_PATTERN.match(normalised):
+            raise ValueError(
+                "idempotency_key must match [A-Za-z0-9_\\-.]{1,128} "
+                "after NFKC normalisation (no CR/LF, no control chars)"
+            )
+        return normalised
 
     @field_validator("request_id")
     @classmethod

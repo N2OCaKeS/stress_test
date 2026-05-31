@@ -201,6 +201,13 @@ class TestPagination:
             "/api/logging/v1/events", params={"offset": -1}
         ).status_code == 422
 
+    def test_offset_exceeds_max_returns_422(self, admin_client):
+        # Верхняя граница 10_000_000 — выше PostgreSQL зря крутил бы
+        # внутренний proскролл, statement_timeout рвал бы запрос.
+        assert admin_client.get(
+            "/api/logging/v1/events", params={"offset": 10_000_001}
+        ).status_code == 422
+
 
 class TestIncludeTotalAndHasMore:
     """total теперь опционален — COUNT не выполняется без `include_total=true`.

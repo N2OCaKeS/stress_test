@@ -832,12 +832,20 @@ async def server_prepare_dispatch(
     try:
         server = await server_svc.get_server(db, identity, server_id)
     except (NotFoundError, AuthorizationError) as exc:
-        reason = "not_found_or_cross_dept" if isinstance(exc, NotFoundError) else "no_view_permission"
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="denied", allowed=False,
-            details={"reason": reason},
-        )
+        # NotFoundError — visibility-404 (cross-dept / нет row): failure+allowed=True.
+        # AuthorizationError — нет VIEW: denied+allowed=False.
+        if isinstance(exc, NotFoundError):
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+        else:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="denied", allowed=False,
+                details={"reason": "no_view_permission"},
+            )
         raise
 
     if server.status == ServerStatus.DECOMMISSIONED:

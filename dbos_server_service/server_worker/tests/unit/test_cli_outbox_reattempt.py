@@ -116,6 +116,48 @@ class TestCmdOutboxReattempt:
         # enqueue_audit, и flush не нашёл бы ничего.
         assert emit_calls == []
 
+    async def test_audit_enqueue_exception_is_redacted(self, monkeypatch, caplog):
+        """Если `enqueue_audit` падает с exception'ом, в котором вшит URL с
+        basic-auth — лог НЕ должен содержать plaintext-credentials.
+
+        CLI вызывается через `kubectl exec`; репра БД/loging-клиента
+        может вшить в exception URL c пароль:юзером. Без `redact_error_message`
+        весь URL уходит в текст warning-лог.
+        """
+        import logging
+
+        audit_outbox_publisher._reset_breaker_state()
+        rid = await _seed_dlq_row()
+
+        async def boom_enqueue(*args, **kwargs):
+            raise RuntimeError(
+                "could not connect to "
+                "postgresql://admin:hunter2_secret@db.local:5432/audit",
+            )
+
+        monkeypatch.setattr(
+            "src.cli.outbox.task_repo.enqueue_audit",
+            boom_enqueue,
+        )
+
+        async def noop_flush():
+            return None
+
+        monkeypatch.setattr(
+            "src.services.audit_outbox_publisher.flush_outbox",
+            noop_flush,
+        )
+
+        with caplog.at_level(logging.WARNING, logger="src.cli.outbox"):
+            ok = await cli_outbox.cmd_outbox_reattempt(row_id=rid)
+
+        assert ok is True  # reset прошёл, audit best-effort
+        log_blob = " ".join(rec.getMessage() for rec in caplog.records)
+        # Пароль не должен утечь ни в виде plain, ни в виде куска URL.
+        assert "hunter2_secret" not in log_blob
+        # Sanitizer заменяет `<scheme>://user:pass@` на `<scheme>://<USER>:<PASSWORD>@`.
+        assert "<PASSWORD>" in log_blob
+
     async def test_already_unpublished_returns_false(self, monkeypatch):
         audit_outbox_publisher._reset_breaker_state()
 

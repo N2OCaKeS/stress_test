@@ -27,6 +27,7 @@ from src.schemas.oauth import (
     OAuthTokenResponse,
 )
 from src.services import _lockout, audit_service
+from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 from src.utils.time import is_expired, utcnow
 
 _SECRET_PREFIX_LEN = 12
@@ -188,6 +189,12 @@ async def delete_client(
 
     await client_repo.deactivate(client)
     await db.commit()
+    # Identity-кэш ключуется по `IdentityContext.user_id`, а для
+    # client_credentials туда уезжает `client.client_id` (см.
+    # `dependencies/auth._identity_from_oauth_client_jwt`). Без этого сброса
+    # старый m2m-JWT продолжал бы проходить `get_current_identity` до
+    # истечения TTL — симметрично user-side ban/role-change.
+    _invalidate_identity_cache(client.client_id)
     audit_service.emit(
         "oauth_client.delete", actor_id, target_id=client_db_id, target_type="oauth_client",
         request_id=request_id,

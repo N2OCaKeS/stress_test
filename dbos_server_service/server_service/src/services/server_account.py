@@ -234,10 +234,12 @@ async def _resolve_same_dept_servers(
         try:
             srv = await load_visible_server(db, identity, sid)
         except NotFoundError:
+            # Visibility-404 (cross-dept / отсутствует): failure+allowed=True,
+            # caller прошёл permission — отказ не из-за прав, а из-за невидимости.
             audit_service.emit(
                 audit_action,
                 target_type="server_account",
-                status="denied", allowed=False,
+                status="failure", allowed=True,
                 details={"reason": "server_not_found_or_cross_dept", "server_id": sid},
             )
             raise
@@ -381,10 +383,11 @@ async def get_account(
     try:
         account = await _load_account_visible(db, identity, account_id)
     except NotFoundError:
+        # Visibility-404: caller прошёл VIEW, target невидим → failure+allowed=True.
         audit_service.emit(
             "server_account.view",
             target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
@@ -433,10 +436,11 @@ async def list_accounts_cursor(
     try:
         await load_visible_server(db, identity, server_id)
     except NotFoundError:
+        # Visibility-404: server невидим (cross-dept / нет row), caller прошёл VIEW.
         audit_service.emit(
             "server_account.list",
             target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "server_not_found_or_cross_dept", "server_id": server_id},
         )
         raise
@@ -482,10 +486,11 @@ async def list_accounts(
     try:
         await load_visible_server(db, identity, server_id)
     except NotFoundError:
+        # Visibility-404: server невидим (cross-dept / нет row), caller прошёл VIEW.
         audit_service.emit(
             "server_account.list",
             target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "server_not_found_or_cross_dept", "server_id": server_id},
         )
         raise
@@ -529,10 +534,11 @@ async def update_account(
     try:
         obj = await _load_account_visible_for_update(db, identity, account_id)
     except NotFoundError:
+        # Visibility-404: account невидим (cross-dept / нет row), permission уже прошёл.
         audit_service.emit(
             "server_account.update",
             target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
@@ -630,10 +636,11 @@ async def link_servers(
     try:
         obj = await _load_account_visible_for_update(db, identity, account_id)
     except NotFoundError:
+        # Visibility-404: account невидим (cross-dept / нет row), permission уже прошёл.
         audit_service.emit(
             "server_account.link_servers",
             target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
@@ -694,10 +701,11 @@ async def unlink_servers(
     try:
         obj = await _load_account_visible_for_update(db, identity, account_id)
     except NotFoundError:
+        # Visibility-404: account невидим (cross-dept / нет row), permission уже прошёл.
         audit_service.emit(
             "server_account.unlink_servers",
             target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
@@ -767,10 +775,11 @@ async def delete_account(
     try:
         obj = await _load_account_visible(db, identity, account_id)
     except NotFoundError:
+        # Visibility-404: account невидим (cross-dept / нет row), permission уже прошёл.
         audit_service.emit(
             "server_account.delete",
             target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
@@ -819,10 +828,11 @@ async def rotate_password(
     try:
         obj = await _load_account_visible(db, identity, account_id)
     except NotFoundError:
+        # Visibility-404: account невидим (cross-dept / нет row), permission уже прошёл.
         audit_service.emit(
             "server_account.rotate_password",
             target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise

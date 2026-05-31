@@ -238,9 +238,9 @@ async def get_server(
     оба исхода — отказ доступа к ресурсу, оба должны попадать в audit
     с тем же action-key `server.view`.
     """
-    # Visibility-check: 404 для non-existent / cross-dept. Эмитим explicit `denied`
-    # audit ДО re-raise — симметрия с `create_server` / `update_server` / `delete_server`
-    # и `_dispatch_power` в endpoints/ipmi.py.
+    # Visibility-check: 404 для non-existent / cross-dept. Permission и visibility
+    # эмитятся разными status'ами — permission_denied → `denied`/`allowed=False`,
+    # visibility-404 (caller прошёл VIEW, цель невидима) → `failure`/`allowed=True`.
     try:
         await permissions.require_action(db, identity, EntityType.SERVER, Action.VIEW)
         obj = await repo.get_by_id(db, server_id)
@@ -248,19 +248,24 @@ async def get_server(
             raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
         _ensure_visible(identity, obj)
     except (NotFoundError, AuthorizationError) as exc:
-        reason = (
-            "not_found_or_cross_dept"
-            if isinstance(exc, NotFoundError)
-            else "permission_denied"
-        )
-        audit_service.emit(
-            "server.view",
-            target_id=server_id,
-            target_type="server",
-            status="denied",
-            allowed=False,
-            details={"reason": reason},
-        )
+        if isinstance(exc, NotFoundError):
+            audit_service.emit(
+                "server.view",
+                target_id=server_id,
+                target_type="server",
+                status="failure",
+                allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+        else:
+            audit_service.emit(
+                "server.view",
+                target_id=server_id,
+                target_type="server",
+                status="denied",
+                allowed=False,
+                details={"reason": "permission_denied"},
+            )
         raise
     audit_service.emit(
         "server.view",
@@ -366,11 +371,13 @@ async def create_server(
     ):
         await permissions.require_action(db, identity, EntityType.SERVER, Action.CREATE)
     if payload.department_id != identity.department_id:
+        # Caller с CREATE прошёл матрицу прав, но указал чужой department —
+        # cross-dept isolation, `failure`/`allowed=True` симметрично visibility-сайтам.
         audit_service.emit(
             "server.create",
             target_type="server",
-            status="denied",
-            allowed=False,
+            status="failure",
+            allowed=True,
             details={"reason": "department_isolation", "department_id": payload.department_id},
         )
         raise AuthorizationError(
@@ -466,9 +473,10 @@ async def update_server(
         identity=identity,
     ):
         await permissions.require_action(db, identity, EntityType.SERVER, Action.UPDATE)
-    # Visibility-check: 404 для non-existent / cross-dept. Эмитим explicit `denied`
-    # audit ДО re-raise — иначе попытка теряется в middleware'е как `http.client_error`
-    # без action-key (симметрия с create_server и _dispatch_power).
+    # Visibility-check: 404 для non-existent / cross-dept. Permission уже прошёл выше
+    # через `emit_denied_on_authz_error`, здесь — visibility, поэтому `failure`/
+    # `allowed=True`. Эмит ДО re-raise, иначе попытка теряется в middleware'е
+    # как `http.client_error` без action-key.
     try:
         obj = await repo.get_by_id(db, server_id)
         if obj is None:
@@ -479,8 +487,8 @@ async def update_server(
             "server.update",
             target_id=server_id,
             target_type="server",
-            status="denied",
-            allowed=False,
+            status="failure",
+            allowed=True,
             details={
                 "reason": (
                     "not_found_or_cross_dept"
@@ -550,9 +558,10 @@ async def delete_server(
         identity=identity,
     ):
         await permissions.require_action(db, identity, EntityType.SERVER, Action.DELETE)
-    # Visibility-check: 404 для non-existent / cross-dept. Эмитим explicit `denied`
-    # audit ДО re-raise — иначе попытка теряется в middleware'е как `http.client_error`
-    # без action-key (симметрия с create_server и _dispatch_power).
+    # Visibility-check: 404 для non-existent / cross-dept. Permission уже прошёл выше
+    # через `emit_denied_on_authz_error`, здесь — visibility, поэтому `failure`/
+    # `allowed=True`. Эмит ДО re-raise, иначе попытка теряется в middleware'е
+    # как `http.client_error` без action-key.
     try:
         obj = await repo.get_by_id(db, server_id)
         if obj is None:
@@ -563,8 +572,8 @@ async def delete_server(
             "server.delete",
             target_id=server_id,
             target_type="server",
-            status="denied",
-            allowed=False,
+            status="failure",
+            allowed=True,
             details={
                 "reason": (
                     "not_found_or_cross_dept"

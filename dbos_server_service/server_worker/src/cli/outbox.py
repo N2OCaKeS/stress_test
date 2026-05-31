@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from src.db.session import AsyncSessionLocal
 from src.repositories import task as task_repo
 from src.services import audit_outbox_publisher
+from src.utils.redaction import redact_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +86,12 @@ async def cmd_outbox_reattempt(
             )
             await session.commit()
     except Exception as exc:  # noqa: BLE001 — audit best-effort, не валим reset
+        # CLI вызывается через `kubectl exec`; репра клиента или DSN из
+        # `.env` могут вшить в exception URL c basic-auth/Bearer. Прогоняем
+        # через тот же sanitizer, что и остальные worker-call-site'ы.
         logger.warning(
             "outbox-reattempt: audit enqueue failed row=%s: %s: %s",
-            row_id, type(exc).__name__, exc,
+            row_id, type(exc).__name__, redact_error_message(str(exc)),
         )
 
     try:
@@ -95,7 +99,7 @@ async def cmd_outbox_reattempt(
     except Exception as exc:  # noqa: BLE001 — happy-path push, не критично
         logger.debug(
             "outbox-reattempt: audit flush failed row=%s: %s: %s",
-            row_id, type(exc).__name__, exc,
+            row_id, type(exc).__name__, redact_error_message(str(exc)),
         )
 
     print(

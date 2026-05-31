@@ -316,12 +316,21 @@ async def fetch_ipmi_credentials(
         )
         raise
     server = await server_repo.get_by_id(db, server_id)
-    # Dept-check фактически объединяем с existence-check: если сервера нет
-    # (server=None → server_department_id=None) или dept у caller'а другой —
-    # выдаём один и тот же SERVER_NOT_FOUND, не выделяя 403 в отдельный
-    # сигнал. Иначе по разнице 403 vs 404 caller угадывал бы, что сервер
-    # есть в чужом dept'е.
-    server_department_id = server.department_id if server is not None else None
+    # Dept-check фактически объединяем с existence-check: если сервера нет или
+    # dept у caller'а другой — выдаём один и тот же SERVER_NOT_FOUND, не
+    # выделяя 403 в отдельный сигнал. Иначе по разнице 403 vs 404 caller
+    # угадывал бы, что сервер есть в чужом dept'е. Несуществующий server_id
+    # обрабатываем ДО dept-check'а: SIEM иначе ловит фейковый
+    # actor_department_mismatch, которого фактически нет.
+    if server is None:
+        audit_service.emit(
+            "ipmi_controller.view_credentials",
+            target_id=server_id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
+    server_department_id = server.department_id
     _check_target_department(
         audit_action="ipmi_controller.view_credentials",
         target_id=server_id,
@@ -333,14 +342,6 @@ async def fetch_ipmi_credentials(
         not_found_error_code="SERVER_NOT_FOUND",
         not_found_message="Server not found",
     )
-    if server is None:
-        audit_service.emit(
-            "ipmi_controller.view_credentials",
-            target_id=server_id, target_type="ipmi_controller",
-            status="failure", allowed=True,
-            details={"reason": "server_not_found"},
-        )
-        raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.fetch_ipmi_credentials",
@@ -414,8 +415,24 @@ async def fetch_account_password(
     # сливает caller'у, привязан ли account_id к серверу чужого dept.
     # mask_as_not_found унифицирует все «не твой dept» сценарии в 404,
     # 403 остаётся только для permission_denied.
+    # Исключение: если server_id фактически не существует — эмитим честный
+    # `server_not_found` ДО dept-check'а. Иначе SIEM ловит фейковый
+    # `actor_department_mismatch` на каждом тычке несуществующим server_id.
+    # Клиенту всё равно уходит 404 ACCOUNT_NOT_FOUND/SERVER_NOT_FOUND, oracle
+    # не открывается.
     server = await server_repo.get_by_id(db, server_id)
-    server_department_id = server.department_id if server is not None else None
+    if server is None:
+        audit_service.emit(
+            "server_account.view_password",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found", "server_id": server_id},
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND",
+            message="Server account not found on this server",
+        )
+    server_department_id = server.department_id
     _check_target_department_for_account(
         audit_action="server_account.view_password",
         target_id=account_id,
@@ -519,8 +536,21 @@ async def rotate_account_password(
     # Dept-check РАНЬШЕ existence-проверок: иначе 404 ACCOUNT_NOT_FOUND vs
     # 403 TARGET_DEPARTMENT_MISMATCH сами по себе сливают caller'у, чей
     # отдел держит account_id. Симметрично с `fetch_account_password`.
+    # Исключение: если server отсутствует — эмитим честный `server_not_found`
+    # ДО dept-check'а, чтобы SIEM не ловил фейковый actor_department_mismatch.
     server = await server_repo.get_by_id(db, server_id)
-    server_department_id = server.department_id if server is not None else None
+    if server is None:
+        audit_service.emit(
+            "server_account.rotate_password",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found", "server_id": server_id},
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND",
+            message="Server account not found on this server",
+        )
+    server_department_id = server.department_id
     _check_target_department_for_account(
         audit_action="server_account.rotate_password",
         target_id=account_id,
@@ -668,16 +698,10 @@ async def receive_inventory(
     # Dept-check ВЫШЕ existence-проверки: разница 404 SERVER_NOT_FOUND vs
     # 403 TARGET_DEPARTMENT_MISMATCH сама сливает caller'у факт существования
     # сервера в чужом dept. `mask_as_not_found=True` унифицирует оба исхода
-    # «не твой dept» / «не существует» в 404 SERVER_NOT_FOUND.
+    # «не твой dept» / «не существует» в 404 SERVER_NOT_FOUND. Несуществующий
+    # server_id обрабатываем ДО dept-check'а — иначе SIEM ловит фейковый
+    # actor_department_mismatch (server_dept=None vs actor.dept != None).
     server = await server_repo.get_by_id(db, server_id)
-    server_department_id = server.department_id if server is not None else None
-    _check_target_department_for_server(
-        audit_action="server.inventory_received",
-        target_id=server_id,
-        server_department_id=server_department_id,
-        header_department_id=target_department_id,
-        actor_department_id=identity.department_id,
-    )
     if server is None:
         audit_service.emit(
             "server.inventory_received",
@@ -688,6 +712,14 @@ async def receive_inventory(
         raise NotFoundError(
             error_code="SERVER_NOT_FOUND", message="Server not found",
         )
+    server_department_id = server.department_id
+    _check_target_department_for_server(
+        audit_action="server.inventory_received",
+        target_id=server_id,
+        server_department_id=server_department_id,
+        header_department_id=target_department_id,
+        actor_department_id=identity.department_id,
+    )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.receive_inventory",
@@ -802,8 +834,20 @@ async def receive_users_inventory(
     # 403 vs 404 для cross-dept caller'а работает enumeration-oracle'ом на
     # факт существования сервера в чужом dept. `mask_as_not_found=True`
     # унифицирует «не твой dept» и «не существует» в 404 ещё до permission gate.
+    # Несуществующий server_id обрабатываем ДО dept-check'а — иначе SIEM ловит
+    # фейковый actor_department_mismatch на тычках в air.
     server = await server_repo.get_by_id(db, server_id)
-    server_department_id = server.department_id if server is not None else None
+    if server is None:
+        audit_service.emit(
+            "server_account.users_inventory_received",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+    server_department_id = server.department_id
     _check_target_department_for_server(
         audit_action="server_account.users_inventory_received",
         target_id=server_id,
@@ -823,16 +867,6 @@ async def receive_users_inventory(
             details={"reason": "permission_denied"},
         )
         raise
-    if server is None:
-        audit_service.emit(
-            "server_account.users_inventory_received",
-            target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={"reason": "server_not_found"},
-        )
-        raise NotFoundError(
-            error_code="SERVER_NOT_FOUND", message="Server not found",
-        )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.receive_users_inventory",
@@ -1041,8 +1075,21 @@ async def record_provision_status(
     # Dept-check ВЫШЕ permission: cross-dept caller без grant'а иначе ловит 403
     # permission_denied, что enum-oracle'ит факт привязки account_id к серверу
     # чужого dept. Симметрично с `fetch_account_password` / `rotate_account_password`.
+    # Несуществующий server_id обрабатываем ДО dept-check'а — иначе SIEM ловит
+    # фейковый actor_department_mismatch на тычках в air.
     server = await server_repo.get_by_id(db, server_id)
-    server_department_id = server.department_id if server is not None else None
+    if server is None:
+        audit_service.emit(
+            "server_account.provision_status",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found", "server_id": server_id},
+        )
+        raise NotFoundError(
+            error_code="ACCOUNT_NOT_FOUND",
+            message="Server account not found on this server",
+        )
+    server_department_id = server.department_id
     _check_target_department_for_account(
         audit_action="server_account.provision_status",
         target_id=account_id,
@@ -1122,8 +1169,20 @@ async def record_server_prepared(
     """
     # Dept-check ВЫШЕ permission: cross-dept caller без grant'а иначе ловит 403
     # permission_denied, что enum-oracle'ит факт существования сервера в чужом dept.
+    # Несуществующий server_id обрабатываем ДО dept-check'а — иначе SIEM ловит
+    # фейковый actor_department_mismatch на тычках в air.
     server = await server_repo.get_by_id(db, server_id)
-    server_department_id = server.department_id if server is not None else None
+    if server is None:
+        audit_service.emit(
+            "server.prepared",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "server_not_found"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND", message="Server not found",
+        )
+    server_department_id = server.department_id
     _check_target_department_for_server(
         audit_action="server.prepared",
         target_id=server_id,
@@ -1143,16 +1202,6 @@ async def record_server_prepared(
             details={"reason": "permission_denied"},
         )
         raise
-    if server is None:
-        audit_service.emit(
-            "server.prepared",
-            target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={"reason": "server_not_found"},
-        )
-        raise NotFoundError(
-            error_code="SERVER_NOT_FOUND", message="Server not found",
-        )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.record_server_prepared",
@@ -1205,20 +1254,31 @@ async def record_ipmi_credentials_rotated(
     """
     # Dept-check ВЫШЕ permission: cross-dept caller без grant'а иначе ловит 403
     # permission_denied, что enum-oracle'ит факт привязки controller_id к
-    # серверу чужого dept.
+    # серверу чужого dept. Но если controller_id фактически не существует —
+    # эмитим честный `controller_not_found` ДО dept-check'а, иначе SIEM ловит
+    # фейковый `actor_department_mismatch` на каждом тычке несуществующим id.
+    # Клиенту всё равно уходит 404 NO_IPMI_CONTROLLER, oracle не открывается.
     ctrl = await ipmi_repo.get_by_id(db, controller_id)
-    server = None
-    server_dept = None
-    if ctrl is not None:
-        server = await server_repo.get_by_id(db, ctrl.server_id)
-        server_dept = server.department_id if server is not None else None
+    if ctrl is None:
+        audit_service.emit(
+            "ipmi_controller.credentials_rotated_callback",
+            target_id=controller_id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={"reason": "controller_not_found"},
+        )
+        raise NotFoundError(
+            error_code="NO_IPMI_CONTROLLER",
+            message="IPMI controller not found",
+        )
+    server = await server_repo.get_by_id(db, ctrl.server_id)
+    server_dept = server.department_id if server is not None else None
     _check_target_department_for_controller(
         audit_action="ipmi_controller.credentials_rotated_callback",
         target_id=controller_id,
         server_department_id=server_dept,
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
-        extra_details={"server_id": ctrl.server_id if ctrl is not None else None},
+        extra_details={"server_id": ctrl.server_id},
     )
     try:
         await permissions.require_action(
@@ -1232,17 +1292,6 @@ async def record_ipmi_credentials_rotated(
             details={"reason": "permission_denied"},
         )
         raise
-    if ctrl is None:
-        audit_service.emit(
-            "ipmi_controller.credentials_rotated_callback",
-            target_id=controller_id, target_type="ipmi_controller",
-            status="failure", allowed=True,
-            details={"reason": "controller_not_found"},
-        )
-        raise NotFoundError(
-            error_code="NO_IPMI_CONTROLLER",
-            message="IPMI controller not found",
-        )
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.record_ipmi_credentials_rotated",

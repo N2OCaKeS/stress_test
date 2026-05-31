@@ -267,7 +267,10 @@ class TestTaskCancelNotFound:
         assert resp.json()["error_code"] == "TASK_NOT_FOUND"
         ev = _events(captured_audit, "task.cancelled")
         assert len(ev) == 1
-        assert ev[0]["status"] == "denied"
+        # Permission прошёл, row отсутствует — visibility-404 → failure.
+        assert ev[0]["status"] == "failure"
+        assert ev[0]["allowed"] is True
+        assert ev[0]["details"]["reason"] == "task_not_found"
 
     async def test_cross_dept_target_returns_404(
         self, client, admin_token_b, make_server, fake_worker, captured_audit,
@@ -289,7 +292,9 @@ class TestTaskCancelNotFound:
         assert fake_worker["cancel_calls"] == []
         ev = _events(captured_audit, "task.cancelled")
         assert len(ev) == 1
-        assert ev[0]["status"] == "denied"
+        # Permission прошёл, target невидим — visibility-404 → failure.
+        assert ev[0]["status"] == "failure"
+        assert ev[0]["allowed"] is True
         assert "cross_dept" in ev[0]["details"]["reason"]
 
 

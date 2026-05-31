@@ -99,16 +99,22 @@ async def _dispatch_power(
     try:
         server = await server_svc.get_server(db, identity, server_id)
     except (NotFoundError, AuthorizationError) as exc:
-        # NotFoundError — cross-dept или несуществующий сервер. AuthorizationError —
-        # нет VIEW (теоретически возможен, если у роли есть POWER_*, но не VIEW).
-        # В обоих случаях фиксируем попытку power-операции (security-важно: иначе
-        # guest/cross-dept attempts уходят без следа).
-        reason = "not_found_or_cross_dept" if isinstance(exc, NotFoundError) else "no_view_permission"
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="denied", allowed=False,
-            details={"reason": reason},
-        )
+        # NotFoundError — cross-dept или несуществующий сервер: business not-found,
+        # caller прошёл permission, но цель невидима — `failure`/`allowed=True`.
+        # AuthorizationError — нет VIEW (роль с POWER_* без VIEW): `denied`/`allowed=False`.
+        # Любая ветка пишет audit, иначе guest/cross-dept attempts уходят без следа.
+        if isinstance(exc, NotFoundError):
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={"reason": "not_found_or_cross_dept"},
+            )
+        else:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="denied", allowed=False,
+                details={"reason": "no_view_permission"},
+            )
         raise
     if server.status == ServerStatus.DECOMMISSIONED:
         audit_service.emit(
@@ -591,9 +597,12 @@ async def power_status(
     try:
         server = await server_svc.load_visible_server(db, identity, server_id)
     except NotFoundError:
+        # Visibility-404: caller прошёл VIEW-permission, цель просто не видна
+        # (несуществующий id или cross-dept). `failure`/`allowed=True`, не `denied` —
+        # права не отказаны, конвенция симметрична остальным visibility-сайтам.
         audit_service.emit(
             audit_action, target_id=server_id, target_type="server",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found_or_cross_dept"},
         )
         raise

@@ -5,7 +5,7 @@
 
 Покрытие:
 * `server.create / update / delete` → success;
-* `server.view` → denied на cross-dept / nonexistent (GET-asymmetry tail);
+* `server.view` → failure на cross-dept / nonexistent (GET-asymmetry tail);
 * `server.power_on / off / reboot` → success + permission_denied;
 * `ipmi_controller.view_credentials` → success + permission_denied;
 * `server_account.view_password` → success + permission_denied;
@@ -88,7 +88,7 @@ class TestServerCrudAudit:
         assert ev.get("allowed") is True
         assert ev["target_id"] == resp.json()["id"]
 
-    async def test_create_server_cross_dept_emits_denied(
+    async def test_create_server_cross_dept_emits_failure(
         self, client, admin_role_token_a, captured_emits, dept_b,
     ):
         # admin роль в dep_a, но пытается создать в dep_b
@@ -103,12 +103,13 @@ class TestServerCrudAudit:
             headers=_hdr(admin_role_token_a),
         )
         assert resp.status_code == 403
-        denied = [
+        failures = [
             e for e in _events(captured_emits, "server.create")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
         ]
-        assert len(denied) == 1
-        assert denied[0].get("allowed") is False
+        assert len(failures) == 1
+        assert failures[0].get("allowed") is True
+        assert failures[0]["details"]["reason"] == "department_isolation"
 
     async def test_update_server_emits_success(
         self, client, admin_role_token_a, make_server, captured_emits,
@@ -143,14 +144,13 @@ class TestServerCrudAudit:
         assert success[0]["target_id"] == srv.id
         assert success[0]["target_type"] == "server"
 
-    # ── update/delete cross-dept и non-existent → explicit `denied` ──────────
+    # ── update/delete cross-dept и non-existent → explicit `failure` ─────────
     # `_ensure_visible` прячет cross-dept за 404 (anti-enumeration); раньше
     # update/delete на этом пути не эмитили action-specific audit — попытка
-    # терялась в middleware'е как `http.client_error` без action key. Фикс:
-    # симметрия с `create_server` (department_isolation/denied) и
-    # `_dispatch_power` (not_found_or_cross_dept/denied).
+    # терялась в middleware'е как `http.client_error` без action key. Permission
+    # уже прошёл выше — здесь visibility-404, `failure`/`allowed=True`.
 
-    async def test_update_cross_dept_emits_denied(
+    async def test_update_cross_dept_emits_failure(
         self, client, admin_role_token_a, make_server, captured_emits,
     ):
         srv = await make_server(department_id="dep_b")
@@ -160,18 +160,18 @@ class TestServerCrudAudit:
             headers=_hdr(admin_role_token_a),
         )
         assert resp.status_code == 404
-        denied = [
+        failures = [
             e for e in _events(captured_emits, "server.update")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
         ]
-        assert len(denied) == 1
-        ev = denied[0]
+        assert len(failures) == 1
+        ev = failures[0]
         assert ev["target_id"] == srv.id
         assert ev["target_type"] == "server"
-        assert ev["allowed"] is False
+        assert ev["allowed"] is True
         assert ev["details"]["reason"] == "not_found_or_cross_dept"
 
-    async def test_update_nonexistent_emits_denied(
+    async def test_update_nonexistent_emits_failure(
         self, client, admin_role_token_a, captured_emits,
     ):
         resp = await client.patch(
@@ -180,17 +180,17 @@ class TestServerCrudAudit:
             headers=_hdr(admin_role_token_a),
         )
         assert resp.status_code == 404
-        denied = [
+        failures = [
             e for e in _events(captured_emits, "server.update")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
         ]
-        assert len(denied) == 1
-        ev = denied[0]
+        assert len(failures) == 1
+        ev = failures[0]
         assert ev["target_id"] == "srv_ghost"
-        assert ev["allowed"] is False
+        assert ev["allowed"] is True
         assert ev["details"]["reason"] == "not_found_or_cross_dept"
 
-    async def test_delete_cross_dept_emits_denied(
+    async def test_delete_cross_dept_emits_failure(
         self, client, admin_role_token_a, make_server, captured_emits,
     ):
         srv = await make_server(department_id="dep_b")
@@ -198,41 +198,40 @@ class TestServerCrudAudit:
             f"{BASE}/servers/{srv.id}", headers=_hdr(admin_role_token_a),
         )
         assert resp.status_code == 404
-        denied = [
+        failures = [
             e for e in _events(captured_emits, "server.delete")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
         ]
-        assert len(denied) == 1
-        ev = denied[0]
+        assert len(failures) == 1
+        ev = failures[0]
         assert ev["target_id"] == srv.id
         assert ev["target_type"] == "server"
-        assert ev["allowed"] is False
+        assert ev["allowed"] is True
         assert ev["details"]["reason"] == "not_found_or_cross_dept"
 
-    async def test_delete_nonexistent_emits_denied(
+    async def test_delete_nonexistent_emits_failure(
         self, client, admin_role_token_a, captured_emits,
     ):
         resp = await client.delete(
             f"{BASE}/servers/srv_ghost", headers=_hdr(admin_role_token_a),
         )
         assert resp.status_code == 404
-        denied = [
+        failures = [
             e for e in _events(captured_emits, "server.delete")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
         ]
-        assert len(denied) == 1
-        ev = denied[0]
+        assert len(failures) == 1
+        ev = failures[0]
         assert ev["target_id"] == "srv_ghost"
-        assert ev["allowed"] is False
+        assert ev["allowed"] is True
         assert ev["details"]["reason"] == "not_found_or_cross_dept"
 
-    # ── GET cross-dept и non-existent → explicit `denied` ────────────────────
+    # ── GET cross-dept и non-existent → explicit `failure` ───────────────────
     # `get_server` исторически молчал при cross-dept / nonexistent — попытка
     # чтения чужого сервера терялась как `http.client_error` без action-key.
-    # Фикс: симметрия с update/delete (not_found_or_cross_dept/denied) и
-    # `_dispatch_power` в endpoints/ipmi.py.
+    # Permission уже прошёл — здесь visibility-404, `failure`/`allowed=True`.
 
-    async def test_get_cross_dept_emits_denied(
+    async def test_get_cross_dept_emits_failure(
         self, client, reader_token_a, make_server, captured_emits,
     ):
         srv = await make_server(department_id="dep_b")
@@ -240,33 +239,33 @@ class TestServerCrudAudit:
             f"{BASE}/servers/{srv.id}", headers=_hdr(reader_token_a),
         )
         assert resp.status_code == 404
-        denied = [
+        failures = [
             e for e in _events(captured_emits, "server.view")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
         ]
-        assert len(denied) == 1
-        ev = denied[0]
+        assert len(failures) == 1
+        ev = failures[0]
         assert ev["target_id"] == srv.id
         assert ev["target_type"] == "server"
-        assert ev["allowed"] is False
+        assert ev["allowed"] is True
         assert ev["details"]["reason"] == "not_found_or_cross_dept"
 
-    async def test_get_nonexistent_emits_denied(
+    async def test_get_nonexistent_emits_failure(
         self, client, reader_token_a, captured_emits,
     ):
         resp = await client.get(
             f"{BASE}/servers/srv_ghost", headers=_hdr(reader_token_a),
         )
         assert resp.status_code == 404
-        denied = [
+        failures = [
             e for e in _events(captured_emits, "server.view")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
         ]
-        assert len(denied) == 1
-        ev = denied[0]
+        assert len(failures) == 1
+        ev = failures[0]
         assert ev["target_id"] == "srv_ghost"
         assert ev["target_type"] == "server"
-        assert ev["allowed"] is False
+        assert ev["allowed"] is True
         assert ev["details"]["reason"] == "not_found_or_cross_dept"
 
     async def test_get_permission_denied_emits_denied(
@@ -414,22 +413,26 @@ class TestPowerAudit:
         ]
         assert len(denied) == 1
 
-    async def test_power_on_denied_for_operator_role_in_other_dept_emits_denied(
+    async def test_power_on_cross_dept_emits_failure(
         self, client, operator_token_b, make_server,
         captured_emits, captured_dispatch,
     ):
-        """Operator из dep_b пытается выключить сервер dep_a — 404 (hidden cross-dept)."""
+        """Operator из dep_b пытается выключить сервер dep_a — 404 (hidden cross-dept).
+
+        Permission уже прошёл — это visibility-404, `failure`/`allowed=True`.
+        """
         srv = await make_server(department_id="dep_a")
         resp = await client.post(
             f"{BASE}/servers/{srv.id}/ipmi/power/on",
             headers=_hdr(operator_token_b),
         )
         assert resp.status_code == 404
-        denied = [
+        failures = [
             e for e in _events(captured_emits, "server.power_on")
-            if e.get("status") == "denied"
+            if e.get("status") == "failure"
         ]
-        assert len(denied) == 1
+        assert len(failures) == 1
+        assert failures[0]["details"]["reason"] == "not_found_or_cross_dept"
 
 
 # ── Internal: view_credentials / view_password / rotate_password ────────────

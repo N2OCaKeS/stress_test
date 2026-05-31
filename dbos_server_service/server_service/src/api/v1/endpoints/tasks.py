@@ -129,9 +129,11 @@ async def cancel_task_endpoint(
         # без денайд-аудита (это не отказ доступа caller'у, это infra).
         raise
     if meta is None:
+        # caller прошёл permission, row task'и просто отсутствует — visibility-404.
+        # `failure`/`allowed=True` симметрично emit'ам на 204 и worker-dispatch'у.
         audit_service.emit(
             audit_action, target_id=task_id, target_type="task",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "task_not_found"},
         )
         raise NotFoundError(
@@ -174,9 +176,12 @@ async def cancel_task_endpoint(
         try:
             await server_svc.load_visible_server(db, identity, target_server_id)
         except (NotFoundError, AuthorizationError):
+            # target_server невидим (cross-dept / removed) → 404, маскируется под
+            # task-not-found чтобы не светить факт чужого сервера. Visibility-404 →
+            # `failure`/`allowed=True`, симметрично с 132 и блоком на 204.
             audit_service.emit(
                 audit_action, target_id=task_id, target_type="task",
-                status="denied", allowed=False,
+                status="failure", allowed=True,
                 details={
                     "reason": "task_not_found_or_cross_dept",
                     "target_server_id": target_server_id,

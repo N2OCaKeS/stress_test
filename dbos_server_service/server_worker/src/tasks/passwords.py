@@ -488,7 +488,15 @@ async def ipmi_rotate_password(task_id: str) -> None:
         # зайти ciphertext'ом, который никогда не работал.
         verify_creds = dict(creds)
         verify_creds["password"] = new_password
-        await _breaker.check(host)
+        # Pre-check breaker'а здесь сознательно не зовём. Apply только что
+        # отстрелял `record_success` — breaker для этого host'а закрыт. Если
+        # между apply и verify соседняя replica успеет сбить breaker в open,
+        # `_breaker.check` бросит `CircuitBreakerOpenError` мимо
+        # `except (RedfishError, IpmitoolError)` — apply прошёл, BMC уже c
+        # новым паролем, а submit в storage не уйдёт. Storage разъедется с
+        # BMC из-за чужого circuit-state. Сам verify-вызов всё ещё гоняет
+        # `record_failure/success` в except'е — реальные network/auth
+        # сбои останутся видимы breaker'у.
         verify_client = await _get_bmc(verify_creds)
         try:
             try:

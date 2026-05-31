@@ -171,10 +171,11 @@ async def update_os_version(
         raise
     obj = await repo.get_by_id(db, os_version_id)
     if obj is None:
+        # Permission уже прошёл — отказ из-за отсутствия row, не из-за прав.
         audit_service.emit(
             "os_version.update",
             target_id=os_version_id, target_type="os_version",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found"},
         )
         raise NotFoundError(
@@ -229,10 +230,11 @@ async def delete_os_version(
         raise
     obj = await repo.get_by_id(db, os_version_id)
     if obj is None:
+        # Permission уже прошёл — отказ из-за отсутствия row, не из-за прав.
         audit_service.emit(
             "os_version.delete",
             target_id=os_version_id, target_type="os_version",
-            status="denied", allowed=False,
+            status="failure", allowed=True,
             details={"reason": "not_found"},
         )
         raise NotFoundError(

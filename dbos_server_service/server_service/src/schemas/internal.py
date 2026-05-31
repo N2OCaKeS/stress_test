@@ -1,5 +1,6 @@
 """Схемы для internal-эндпоинтов, которые зовёт server_worker."""
 
+import re
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator
@@ -135,8 +136,29 @@ class InventoryUserItem(BaseModel):
     shell: str | None = Field(default=None, max_length=64, description="Login shell.")
     home_dir: str | None = Field(default=None, max_length=256, description="Home-директория.")
     unix_groups: list[str] = Field(
-        default_factory=list, description="Список групп (getent group)."
+        default_factory=list,
+        max_length=64,
+        description=(
+            "Список групп (getent group). Cap=64 — реальный POSIX-аккаунт не "
+            "состоит в десятках групп, ограничение защищает reconcile от "
+            "вздутого payload'а."
+        ),
     )
+
+    @field_validator("unix_groups")
+    @classmethod
+    def _validate_unix_groups(cls, value: list[str]) -> list[str]:
+        # POSIX group name: начинается с [a-z_], дальше [a-z0-9_-], общая длина
+        # до 32 символов (login.defs default). Имена за пределами этого
+        # шаблона — мусор из getent (битый UTF-8 / inline-CR) или попытка
+        # инъекции в audit details.
+        pattern = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+        for name in value:
+            if len(name) > 32 or not pattern.match(name):
+                raise ValueError(
+                    f"unix_groups: '{name}' не соответствует POSIX group name pattern"
+                )
+        return value
     has_sudo: bool = Field(
         default=False, description="Состоит в sudo/admin-группе либо есть запись в sudoers."
     )

@@ -675,9 +675,8 @@ async def run_publisher_loop(
             # логи контейнера. Симметрично `_publish_one` (для
             # `last_error`) и `_runner.py` (для `task.last_error`).
             logger.warning(
-                "audit_outbox publisher loop iteration failed: %s: %s",
-                type(exc).__name__,
-                redact_error_message(str(exc)),
+                "audit_outbox publisher loop iteration failed: %s",
+                redact_error_message(f"{type(exc).__name__}: {exc}"),
             )
             # Catastrophic — скорее всего проблема с DB worker'а, не с
             # loging. Спим обычный poll-interval, к breaker'у не лезем.

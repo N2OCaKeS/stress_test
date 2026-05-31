@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from src.core.config import get_settings
 from src.core.constants import RESERVED_SERVICE_NAMES
 from src.core.exceptions import AppException
+from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
 from src.dependencies.auth import ReaderIdentity, require_service_token
 from src.dependencies.db import get_db
 from src.repositories import events as events_repo
@@ -85,7 +86,15 @@ def _register_events_rate_limit_key(request: Request) -> str:
         "конкретного сервиса; `GET /events` — собственно события."
     ),
 )
+# Per-IP лимит на read-канал реестра сервисов. Симметрия с `GET /events`:
+# даже валидный reader-JWT не должен иметь права burst'ом выжимать pgsql-пул
+# через group-by COUNT(*) агрегат по миллионному журналу.
+@limiter.limit(
+    lambda: get_settings().audit_query_rate_limit,
+)
 def list_services(
+    request: Request,
+    response: Response,
     identity: ReaderIdentity,
     db: Session = Depends(get_db),
 ) -> ServiceListResponse:
@@ -223,7 +232,13 @@ def register_events(
     # writes аудитируются — здесь была дыра в симметрии). Идём через ту же
     # tx, что и upsert (`commit=False` выше); единственный commit ниже.
     advertised = getattr(request.state, "service_identity", None)
-    actor_id = advertised or service
+    # `service` path-param разрешает до 64 символов (snake_case + цифры по
+    # _SERVICE_PATTERN), а `EventCreate.actor_id` / `target_id` ограничены
+    # 48 — длинное service-имя без trim'а валило бы self-audit с 422.
+    # Truncate'аем детерминированно: легитимный actor совпадает с identity
+    # на префиксе, downstream-аналитика не теряет атрибуцию.
+    actor_id = (advertised or service)[:48]
+    target_id_trunc = service[:48]
     event_service.record_admin_action(
         db,
         EventCreate(
@@ -232,7 +247,7 @@ def register_events(
             action="logging.service_events_registered",
             actor_id=actor_id,
             actor_type="service",
-            target_id=service,
+            target_id=target_id_trunc,
             target_type="service_event",
             status="success",
             allowed=True,
@@ -265,12 +280,17 @@ def register_events(
         "action'ов; `POST /rules` — правила на эти action'ы."
     ),
 )
+@limiter.limit(
+    lambda: get_settings().audit_query_rate_limit,
+)
 def list_service_events(
+    request: Request,
+    response: Response,
     identity: ReaderIdentity,
     service: str = Path(description="Имя сервиса, например 'auth_service'"),
     db: Session = Depends(get_db),
-    limit: int = Query(default=100, ge=1, le=1000),
-    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=MAX_QUERY_LIMIT),
+    offset: int = Query(default=0, ge=0, le=MAX_QUERY_OFFSET),
 ) -> ServiceEventsResponse:
     # Симметрия с register_events: catalog хранится с нормализованным именем,
     # query по raw path-параметру не нашёл бы row, зарегистрированную через

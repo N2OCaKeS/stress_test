@@ -829,13 +829,24 @@ async def receive_users_inventory(
       * привязан в API, но не найден на сервере → drift + пометить связку
         `present_on_server=False`, запись НЕ удаляем.
     """
-    # Dept-check ВЫШЕ permission: cross-dept caller без нужного grant'а иначе
-    # ловит 403 permission_denied, а same-dept без grant'а — тоже 403. Разница
-    # 403 vs 404 для cross-dept caller'а работает enumeration-oracle'ом на
-    # факт существования сервера в чужом dept. `mask_as_not_found=True`
-    # унифицирует «не твой dept» и «не существует» в 404 ещё до permission gate.
-    # Несуществующий server_id обрабатываем ДО dept-check'а — иначе SIEM ловит
-    # фейковый actor_department_mismatch на тычках в air.
+    # Permission ВЫШЕ existence/dept: caller без grant'а получает 403 ровно
+    # такой же, как same-dept caller без grant'а, и факт существования
+    # сервера в чужом dept не утекает. Same-dept caller с grant'ом проходит
+    # дальше к existence+dept-check'у — там 404 SERVER_NOT_FOUND под маской
+    # `mask_as_not_found=True` одинаково покрывает «не твой dept» и «не
+    # существует».
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.INVENTORY_SUBMIT,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server_account.users_inventory_received",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
     server = await server_repo.get_by_id(db, server_id)
     if server is None:
         audit_service.emit(
@@ -855,18 +866,6 @@ async def receive_users_inventory(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
-    try:
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.INVENTORY_SUBMIT,
-        )
-    except AuthorizationError:
-        audit_service.emit(
-            "server_account.users_inventory_received",
-            target_id=server_id, target_type="server",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.receive_users_inventory",
@@ -1072,11 +1071,23 @@ async def record_provision_status(
     → True, deprovision → False. `last_inventory_at` не трогается — это не
     инвентаризация. Аккаунт обязан быть привязан к серверу, иначе 404.
     """
-    # Dept-check ВЫШЕ permission: cross-dept caller без grant'а иначе ловит 403
-    # permission_denied, что enum-oracle'ит факт привязки account_id к серверу
-    # чужого dept. Симметрично с `fetch_account_password` / `rotate_account_password`.
-    # Несуществующий server_id обрабатываем ДО dept-check'а — иначе SIEM ловит
-    # фейковый actor_department_mismatch на тычках в air.
+    # Permission ВЫШЕ existence/dept: caller без grant'а получает 403
+    # permission_denied вне зависимости от того, в каком dept'е сервер —
+    # факт привязки account_id к серверу чужого dept не утекает. Само
+    # cross-dept смешение остаётся скрытым за 404 ACCOUNT_NOT_FOUND ниже
+    # (`mask_as_not_found=True` в `_check_target_department_for_account`).
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER_ACCOUNT, Action.PROVISION_ON_HOST,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server_account.provision_status",
+            target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "server_id": server_id},
+        )
+        raise
     server = await server_repo.get_by_id(db, server_id)
     if server is None:
         audit_service.emit(
@@ -1098,18 +1109,6 @@ async def record_provision_status(
         actor_department_id=identity.department_id,
         extra_details={"server_id": server_id},
     )
-    try:
-        await permissions.require_action(
-            db, identity, EntityType.SERVER_ACCOUNT, Action.PROVISION_ON_HOST,
-        )
-    except AuthorizationError:
-        audit_service.emit(
-            "server_account.provision_status",
-            target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied", "server_id": server_id},
-        )
-        raise
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.record_provision_status",

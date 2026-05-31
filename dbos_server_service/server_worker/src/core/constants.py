@@ -9,6 +9,20 @@ from enum import StrEnum
 LAST_ERROR_MAX_LEN = 512
 
 
+# TTL для in-flight stash'ей секретов в Redis (provision inline-creds,
+# account/ipmi rotate-пароли). Покрывает суммарное окно exponential back-off'а
+# (`_runner._compute_backoff_delay` capped 300s) с запасом на сетевые тормоза.
+# По истечении ключ исчезает сам, оператор инициирует новый dispatch.
+STASH_TTL_SECONDS = 1800
+
+
+# Sentinel-значение, которым `repositories.task.scrub_payload_keys` заменяет
+# секреты в персистентном payload. Reader (`tasks/users._unscrub`) сверяется
+# с этой константой, чтобы не использовать sentinel как валидный пароль на
+# retry'е. Если поменять — поменять одновременно и в обоих местах.
+SCRUBBED_SENTINEL = "<scrubbed>"
+
+
 class TaskKind(StrEnum):
     """Поддерживаемые типы task'ов. Значения совпадают с taskiq broker labels.
 

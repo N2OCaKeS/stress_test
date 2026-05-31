@@ -4,7 +4,7 @@ from datetime import timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import ConflictError, DomainValidationError, NotFoundError
+from src.core.exceptions import AuthorizationError, ConflictError, DomainValidationError, NotFoundError
 from src.core.security import generate_pat
 from src.repositories.departments import DepartmentRepository
 from src.repositories.tokens import TokenRepository
@@ -53,8 +53,22 @@ async def create_pat(
 
     if allowed_services:
         actor = await user_repo.get_by_id(actor_id)
-        # account_admin без dept — глобальный scope, не проверяем.
-        if actor is not None and actor.department_id:
+        # Fail-closed: JWT валидный, actor-row уже удалён (race delete →
+        # token issue) — иначе validation скипалась бы по `actor is None`
+        # и юзер минтил бы PAT под любые сервисы. Зеркало `ACTOR_VANISHED`
+        # в `_dept_guard.assert_dept_admin_target_dept`.
+        if actor is None:
+            raise AuthorizationError(
+                error_code="ACTOR_VANISHED",
+                message="Actor no longer exists",
+            )
+        # actor.department_id is None — два кейса:
+        #   * platform admin (account_admin / loging_admin / loging_reader) —
+        #     by-design без отдела, scope глобальный, скип валидации.
+        #   * обычный юзер без отдела (legacy/seed-edge) — отдела нет,
+        #     значит и `dept.services` нет; считаем глобальный scope.
+        # Оба кейса трактуем одинаково, без раздельной ветки.
+        if actor.department_id:
             dept_services_list = await dept_repo.list_active_services(actor.department_id)
             dept_services = set(dept_services_list)
             forbidden = sorted(set(allowed_services) - dept_services)

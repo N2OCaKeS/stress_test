@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, exists, func, not_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import TaskStatus
+from src.core.constants import SCRUBBED_SENTINEL, TaskStatus
 from src.models import AuditOutbox, Task, WorkerHeartbeat
 
 
@@ -90,7 +90,7 @@ async def scrub_payload_keys(
     task_id: str,
     keys: list[str],
     *,
-    replacement: str | None = "<scrubbed>",
+    replacement: str | None = SCRUBBED_SENTINEL,
 ) -> None:
     """Стереть секретные значения из персистентного `tasks.payload`.
 

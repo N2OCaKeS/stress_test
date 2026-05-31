@@ -16,6 +16,7 @@ import httpx
 
 from src.core.config import get_settings
 from src.core.exceptions import CredentialFetchError
+from src.core.identifiers import validate_outbox_id
 from src.services.http_pool import get_server_service_client
 
 logger = logging.getLogger(__name__)
@@ -528,6 +529,9 @@ async def finalize_reencrypt_outbox_done(outbox_id: str) -> dict:
         (включая `404 SECRETS_OUTBOX_ROW_NOT_FOUND` и `500
         SECRETS_REENCRYPT_FINALIZE_FAILED` при crypto-ошибке).
     """
+    # outbox_id — BIGINT в server_service; int-каст отбивает path-traversal
+    # (`../admin`) и любые не-числовые значения до подстановки в URL.
+    outbox_id = validate_outbox_id(outbox_id)
     settings = get_settings()
     url = (
         f"{settings.server_service_url.rstrip('/')}"
@@ -559,6 +563,7 @@ async def finalize_reencrypt_outbox_failed(outbox_id: str, error: str) -> dict:
 
     Возвращает: `{id, status}`.
     """
+    outbox_id = validate_outbox_id(outbox_id)
     settings = get_settings()
     url = (
         f"{settings.server_service_url.rstrip('/')}"

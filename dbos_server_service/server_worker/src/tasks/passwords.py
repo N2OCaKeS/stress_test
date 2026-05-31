@@ -53,6 +53,8 @@ import redis.asyncio as aioredis
 from src.clients.ipmitool import IpmitoolError
 from src.clients.redfish import RedfishError
 from src.core.config import get_settings
+from src.core.constants import STASH_TTL_SECONDS
+from src.core.identifiers import validate_task_id
 from src.main import broker
 from src.services import server_service_client, ssh_client
 from src.tasks._bmc_errors import (
@@ -100,14 +102,6 @@ _PASSWORD_ALPHABET = (
 )
 
 
-# TTL для in-flight rotate-пароля в Redis (общий для IPMI и account
-# stash'ей). Покрывает суммарное окно back-off'а exponential retry'я
-# (`_compute_backoff_delay` capped 300s) с запасом на сетевые тормоза.
-# По истечении TTL `mark_failed` уже отработал — storage хранит
-# «висящий» пароль, оператор повторяет rotate, который сгенерит новый
-# ключ и попадёт в обычный happy-path.
-_ROTATE_PASSWORD_STASH_TTL_SECONDS = 1800
-
 # Префикс ключа задаём явный — отделяет от bootstrap-creds в Redis-namespace.
 _IPMI_ROTATE_KEY_PREFIX = "dbos:ipmi_rotate_pw:"
 
@@ -129,9 +123,12 @@ def _ipmi_stash_value(password: str, rotated_at: str | None) -> str:
 def _ipmi_stash_parse(raw: bytes | bytearray | str) -> tuple[str | None, str | None]:
     """Разобрать stash из Redis.
 
-    Поддерживает два формата: новый JSON `{"password": ..., "rotated_at": ...}`
-    и старый plain-string (пароль без timestamp'а) — на случай retry'я после
-    апгрейда воркера с уже живущим in-flight ключом.
+    Writer (`_store_ipmi_rotate_password`) всегда пишет JSON-dict, поэтому
+    plain-string fallback больше не нужен. Если в Redis вдруг лежит чужой
+    или старый формат (не валидный JSON либо не dict) — возвращаем
+    `(None, None)`: caller увидит «как будто stash пустой», сгенерит
+    новый пароль через `_generate_password` и пойдёт штатным путём
+    (storage перезапишет ciphertext). Старый format сам выпадет по TTL.
     """
     if isinstance(raw, (bytes, bytearray)):
         text = raw.decode("utf-8")
@@ -140,10 +137,10 @@ def _ipmi_stash_parse(raw: bytes | bytearray | str) -> tuple[str | None, str | N
     try:
         data = json.loads(text)
     except (ValueError, TypeError):
-        return text, None
-    if isinstance(data, dict):
-        return data.get("password"), data.get("rotated_at")
-    return text, None
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    return data.get("password"), data.get("rotated_at")
 
 
 async def _read_ipmi_rotate_password(task_id: str) -> str | None:
@@ -166,6 +163,7 @@ async def _read_ipmi_rotate_state(task_id: str) -> tuple[str | None, str | None]
     без этого rotated_at дрейфил бы между BMC apply и записью в storage
     на каждой повторной submit-попытке (drift до десятков секунд).
     """
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:
@@ -191,13 +189,14 @@ async def _store_ipmi_rotate_password(
     `rotated_at` опционален для обратной совместимости с тестами,
     которые предзаполняют stash перед запуском handler'а.
     """
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:
         await client.set(
             _IPMI_ROTATE_KEY_PREFIX + task_id,
             _ipmi_stash_value(password, rotated_at),
-            ex=_ROTATE_PASSWORD_STASH_TTL_SECONDS,
+            ex=STASH_TTL_SECONDS,
         )
     finally:
         await client.aclose()
@@ -210,6 +209,7 @@ async def _delete_ipmi_rotate_password(task_id: str) -> None:
     Redis. Ошибки глушим — это посмертный cleanup, неуспех не должен
     провалить и без того happy-path задачу.
     """
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:
@@ -227,6 +227,7 @@ async def _read_account_rotate_password(task_id: str) -> str | None:
     Симметрично `_read_ipmi_rotate_password`. Возвращает plaintext или
     None, если ключа нет.
     """
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:
@@ -246,13 +247,14 @@ async def _store_account_rotate_password(task_id: str, password: str) -> None:
     бы пароль на хосте новым случайным секретом, ломая self-сессии и
     рассинхронизируя storage с реальностью на хосте.
     """
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:
         await client.set(
             _ACCOUNT_ROTATE_KEY_PREFIX + task_id,
             password,
-            ex=_ROTATE_PASSWORD_STASH_TTL_SECONDS,
+            ex=STASH_TTL_SECONDS,
         )
     finally:
         await client.aclose()
@@ -260,6 +262,7 @@ async def _store_account_rotate_password(task_id: str, password: str) -> None:
 
 async def _delete_account_rotate_password(task_id: str) -> None:
     """Дропнуть in-flight account-ключ после успешного submit'а."""
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:

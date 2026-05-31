@@ -24,26 +24,17 @@ from src.utils.redaction import redact_error_message
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-class TestIpmiStashParseBackwardCompat:
-    """Парсер stash поддерживает старый формат (plain string) и новый (JSON dict)."""
+class TestIpmiStashParseFormats:
+    """Парсер stash: новый JSON-формат → значения, всё прочее → (None, None).
+
+    Старый plain-string путь удалён — writer всегда пишет JSON dict.
+    Если в Redis вдруг лежит чужой/устаревший формат — caller получит
+    `(None, None)`, сгенерит новый пароль и пойдёт штатным retry-путём.
+    """
 
     def _parse(self, raw):
         from src.tasks.passwords import _ipmi_stash_parse
         return _ipmi_stash_parse(raw)
-
-    def test_plain_string_bytes_returns_text_and_none(self):
-        """Байты не-JSON → (text, None) — backward-compat с версиями до JSON-stash."""
-        raw = b"plaintext_password_123"
-        pw, ts = self._parse(raw)
-        assert pw == "plaintext_password_123"
-        assert ts is None
-
-    def test_plain_string_str_returns_text_and_none(self):
-        """Строка не-JSON → (text, None)."""
-        raw = "hunter2-secret"
-        pw, ts = self._parse(raw)
-        assert pw == "hunter2-secret"
-        assert ts is None
 
     def test_json_dict_with_both_fields(self):
         """Новый формат: JSON dict с password и rotated_at."""
@@ -61,41 +52,40 @@ class TestIpmiStashParseBackwardCompat:
         assert pw == "onlypass"
         assert ts is None
 
-    def test_json_non_dict_list_returns_text_and_none(self):
-        """JSON, но не dict (список) → (text, None) — non-dict path."""
+    def test_plain_string_bytes_returns_none_pair(self):
+        """Не-JSON байты → (None, None) — graceful, caller regenerates."""
+        raw = b"plaintext_password_123"
+        pw, ts = self._parse(raw)
+        assert pw is None
+        assert ts is None
+
+    def test_plain_string_str_returns_none_pair(self):
+        """Не-JSON строка → (None, None)."""
+        raw = "hunter2-secret"
+        pw, ts = self._parse(raw)
+        assert pw is None
+        assert ts is None
+
+    def test_json_non_dict_list_returns_none_pair(self):
+        """JSON-list (не dict) → (None, None)."""
         import json
         raw = json.dumps(["not", "a", "dict"]).encode()
         pw, ts = self._parse(raw)
-        # Весь JSON-текст возвращается как пароль (old-format fallback).
+        assert pw is None
         assert ts is None
-        assert pw is not None
-        assert "not" in pw
 
-    def test_json_non_dict_scalar_returns_text_and_none(self):
-        """JSON scalar (число) → (text, None)."""
+    def test_json_non_dict_scalar_returns_none_pair(self):
+        """JSON scalar (число) → (None, None)."""
         raw = b"42"
         pw, ts = self._parse(raw)
-        assert ts is None
-        # Число десериализуется, но не dict → возвращается как текст.
-        assert pw == "42"
-
-    def test_invalid_utf8_bytearray_fallback(self):
-        """Невалидный UTF-8 в bytearray → UnicodeDecodeError → обернут или safe."""
-        # _ipmi_stash_parse декодирует через .decode("utf-8").
-        # Если raw содержит недопустимые байты — UnicodeDecodeError; parse не ловит
-        # его явно, поэтому он поднимается выше. Это задокументированное поведение
-        # (caller должен обёртывать в SshError через except). Проверяем только
-        # что функция не глотает BytesWarning или TypeError на bytearray.
-        raw_str = bytearray(b"some_valid_bytes_stash_00")
-        pw, ts = self._parse(raw_str)
-        assert pw == "some_valid_bytes_stash_00"
+        assert pw is None
         assert ts is None
 
-    def test_empty_bytes_returns_empty_text(self):
-        """Пустые байты → ('', None)."""
+    def test_empty_bytes_returns_none_pair(self):
+        """Пустые байты → (None, None)."""
         raw = b""
         pw, ts = self._parse(raw)
-        assert pw == ""
+        assert pw is None
         assert ts is None
 
 

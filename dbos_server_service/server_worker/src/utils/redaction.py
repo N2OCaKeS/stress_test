@@ -27,6 +27,18 @@ from __future__ import annotations
 
 import re
 
+# ── Многострочный PEM-блок (private key) ─────────────────────────────────────
+#
+# `-----BEGIN ... PRIVATE KEY----- ... -----END ... PRIVATE KEY-----`. Если
+# asyncssh/cryptography когда-нибудь вставит plaintext-ключа в repr исключения
+# — без этого паттерна он попадёт в `task.last_error` и audit `details.error`.
+# Сегодня asyncssh передаёт ключи через path, в repr не кладёт; правило —
+# defence-in-depth. Также покрывает `BEGIN OPENSSH PRIVATE KEY`, `BEGIN RSA
+# PRIVATE KEY`, `BEGIN EC PRIVATE KEY` и любые BEGIN…END с латинскими словами.
+_PEM_BLOCK_RE = re.compile(
+    r"-----BEGIN [A-Z ]+-----[\s\S]+?-----END [A-Z ]+-----",
+)
+
 # ── URL credentials: scheme://user:pass@host/... ─────────────────────────────
 #
 # Поддерживаем любой scheme (http/https/redfish/ssh/redis/postgres/...).
@@ -56,7 +68,13 @@ _URL_CREDS_RE = re.compile(
 # Чтобы не съесть следующий флаг, значение ограничиваем символами, не
 # являющимися пробелом.
 _DASH_U_RE = re.compile(r"(?<![\w\-])(-[Uu])(\s+|=)(\S+)")
-_DASH_P_RE = re.compile(r"(?<![\w\-])(-P)(\s+|=|)(\S+)")
+# Сепаратор `\s+|=` — обязательный. Старый вариант с пустым третьим
+# членом давал false-positive на `-Path /foo` (matched `-P` + `ath`),
+# который встречается в PowerShell-трейсах. Слитный `-Psecret`
+# (короткая форма ipmitool) ловится отдельным паттерном ниже: после
+# `-P` должна идти НЕ буква, иначе это другая опция вроде `-Path`.
+_DASH_P_RE = re.compile(r"(?<![\w\-])(-P)(\s+|=)(\S+)")
+_DASH_P_JOINED_RE = re.compile(r"(?<![\w\-])(-P)(?=[^A-Za-z\s=])(\S+)")
 
 # ── key=value формы ──────────────────────────────────────────────────────────
 #
@@ -115,10 +133,12 @@ def redact_error_message(msg: str) -> str:
     immutable). На вход допускается любая строка, в том числе пустая.
 
     Покрытие:
+      * `-----BEGIN ... PRIVATE KEY-----` многострочный PEM-блок → `<PRIVATE_KEY>`
       * URL credentials → `<scheme>://<USER>:<PASSWORD>@host/...`
-      * `-U user`, `-u user`, `-P pass` (с пробелом/`=`/слитно). `-p`
-        (lowercase) в ipmitool — это номер BMC-порта, его НЕ маскируем,
-        чтобы не закрывать оператору структуру команды.
+      * `-U user`, `-u user`, `-P pass` (с пробелом/`=`) и слитная форма
+        `-P<non-letter><value>` (`-P!secret123`). `-Path /foo` НЕ
+        матчится (после `-P` стоит буква). `-p` (lowercase) в ipmitool —
+        это номер BMC-порта, его НЕ маскируем.
       * `password=...`, `secret=...`, `token=...` (и др. известные ключи)
       * `Bearer <token>` → `Bearer <TOKEN>`
       * `dbos_pat_*`, `dbos_bot_*`, `pat_*`, `bot_*` → `<TOKEN>`
@@ -133,6 +153,10 @@ def redact_error_message(msg: str) -> str:
 
     result = msg
 
+    # 0. Многострочный PEM-блок — до URL/KV, иначе содержимое ключа может
+    # содержать base64-сегменты, похожие на JWT, и съестся другим regex'ом.
+    result = _PEM_BLOCK_RE.sub("<PRIVATE_KEY>", result)
+
     # 1. URL credentials — раньше всего, иначе password/token-regex могут
     # съесть часть URL.
     result = _URL_CREDS_RE.sub(
@@ -142,7 +166,8 @@ def redact_error_message(msg: str) -> str:
 
     # 2. Shell-style флаги.
     result = _DASH_U_RE.sub(lambda m: f"{m.group(1)}{m.group(2) or ' '}<USER>", result)
-    result = _DASH_P_RE.sub(lambda m: f"{m.group(1)}{m.group(2) or ' '}<PASSWORD>", result)
+    result = _DASH_P_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}<PASSWORD>", result)
+    result = _DASH_P_JOINED_RE.sub(lambda m: f"{m.group(1)}<PASSWORD>", result)
 
     # 3. Цитированные пароли (до key=value, чтобы кавычки не съели регэксп KV).
     result = _QUOTED_PASSWORD_RE.sub(

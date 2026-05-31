@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import Action, EntityType
 from src.core.exceptions import (
+    AppException,
     ConflictError,
     NotFoundError,
 )
@@ -525,7 +526,7 @@ def _reveal_controller_password(
             obj.password_encrypted,
             aad=secrets_service.aad_for_ipmi_credential(obj.id),
         )
-    except Exception:
+    except AppException:
         audit_service.emit(
             audit_action,
             target_id=obj.id, target_type="ipmi_controller",
@@ -537,6 +538,26 @@ def _reveal_controller_password(
             },
         )
         raise
+    except Exception as exc:
+        # secrets_service.decrypt сам бросает AppException(DECRYPT_FAILED) —
+        # ловим этот путь выше. Любой нестандартный сбой в crypto-pipeline
+        # (threadpool wrapper, неожиданный subclass) иначе утечёт наружу как
+        # 500 без error_code. Оборачиваем в тот же ключ для FastAPI envelope.
+        audit_service.emit(
+            audit_action,
+            target_id=obj.id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={
+                "reason": "decrypt_failed",
+                "server_id": obj.server_id,
+                "department_id": department_id,
+            },
+        )
+        raise AppException(
+            error_code="DECRYPT_FAILED",
+            message=f"Failed to decrypt IPMI password: {type(exc).__name__}",
+            http_status=500,
+        ) from exc
 
     audit_service.emit(
         audit_action,

@@ -103,6 +103,19 @@ def list_all(db: Session) -> list[ServiceEvent]:
     )
 
 
+def has_any(db: Session) -> bool:
+    """True, если в `service_events` есть хотя бы одна запись.
+
+    Дешевле, чем `list_all(db)` ради `if rows:` — Postgres исполняет
+    `SELECT EXISTS (...)` через index-only scan и останавливается на первой
+    row'е. На пустой таблице различия нет, но при ~10k+ зарегистрированных
+    action'ах материализация всего списка ради boolean'а ест и память,
+    и pgsql round-trip.
+    """
+    from sqlalchemy import exists
+    return bool(db.execute(select(exists().where(ServiceEvent.id.is_not(None)))).scalar())
+
+
 def action_is_registered(db: Session, match_action: str) -> bool:
     """True, если *match_action* совпадает хотя бы с одним зарегистрированным событием.
 

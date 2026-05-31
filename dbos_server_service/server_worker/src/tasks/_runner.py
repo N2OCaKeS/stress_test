@@ -98,7 +98,7 @@ Durable retry:
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
 from src.core.constants import TaskStatus
@@ -413,10 +413,7 @@ async def run_task(
             # по `scheduled_retry_at <= now()`.
             retry_delay = _compute_backoff_delay(current_attempt) if should_retry else 0.0
             scheduled_retry_at = (
-                datetime.fromtimestamp(
-                    datetime.now(timezone.utc).timestamp() + retry_delay,
-                    tz=timezone.utc,
-                )
+                datetime.now(timezone.utc) + timedelta(seconds=retry_delay)
                 if should_retry
                 else None
             )

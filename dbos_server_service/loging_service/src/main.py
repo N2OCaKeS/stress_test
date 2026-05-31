@@ -458,43 +458,43 @@ def create_application() -> FastAPI:
                         },
                     )
             else:
-                # Chunked / Transfer-Encoding: оборачиваем receive, считаем
-                # байты по потоку, абортим на overflow. Без этого атакующий
-                # с HTTP/1.1 chunked-кодированием обходит cheap path и шлёт
-                # сколько угодно body — единственный hard-cap дальше — это
+                # Chunked / Transfer-Encoding: считаем байты по потоку до
+                # `max_size + 1`. Без этого атакующий с HTTP/1.1 chunked-
+                # кодированием обходит cheap path по Content-Length и шлёт
+                # сколько угодно body — единственный hard-cap дальше это
                 # 64 KiB на `details`, но `EventCreate` его видит уже после
-                # ASGI'еного буфера. Ловим на стриме до того, как ASGI
-                # дочитает body.
+                # ASGI'еного буфера.
+                #
+                # Раньше middleware подменял receive lazy-обёрткой и принимал
+                # решение об overflow ПОСЛЕ возврата route'а. На truncate'нутом
+                # body route отвечал 422 (pydantic не парсит пустую строку),
+                # и middleware перетирал этот 422 на 413. Проблема: легитимный
+                # 4xx, который шёл бы по pre-body-path (auth fail / rate-limit /
+                # invalid Content-Type), точно так же терялся под 413 — caller
+                # вместо реальной причины получал «слишком большой запрос».
+                #
+                # Сейчас читаем стрим в буфер в самом middleware и решаем ДО
+                # route'а: overflow → 413 сразу, без route call'а; в норме
+                # подкладываем буфер обратно через receive-replay, чтобы
+                # route видел нормальный http.request-стрим.
+                buffered: list[bytes] = []
                 received = 0
                 overflow = False
                 original_receive = request.receive
-
-                async def limited_receive():
-                    nonlocal received, overflow
+                while True:
                     message = await original_receive()
-                    if message["type"] == "http.request":
-                        body = message.get("body", b"")
-                        if body:
-                            received += len(body)
-                            if received > max_size:
-                                overflow = True
-                                # Помечаем поток завершённым, чтобы downstream
-                                # не залип в ожидании; реальный 413 вернём
-                                # сразу после прохода через call_next.
-                                return {
-                                    "type": "http.request",
-                                    "body": b"",
-                                    "more_body": False,
-                                }
-                    return message
-
-                # Подменяем receive у Starlette Request — он передаст его дальше
-                # в route handler через ASGI scope. В Starlette `request._receive`
-                # — приватный атрибут, но это единственная точка подмены без
-                # переписывания scope руками.
-                request._receive = limited_receive  # type: ignore[attr-defined]
-
-                response = await call_next(request)
+                    if message["type"] != "http.request":
+                        # http.disconnect и прочее — выходим, тело уже не дочитаем.
+                        break
+                    body = message.get("body", b"")
+                    if body:
+                        received += len(body)
+                        if received > max_size:
+                            overflow = True
+                            break
+                        buffered.append(body)
+                    if not message.get("more_body", False):
+                        break
                 if overflow:
                     return JSONResponse(
                         status_code=413,
@@ -512,7 +512,23 @@ def create_application() -> FastAPI:
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
                     )
-                return response
+
+                # Стрим уместился — replay'им буфер одним сообщением вниз
+                # по стеку. Делать ровно один http.request-message достаточно:
+                # Starlette просто конкатенирует `body` до `more_body=False`.
+                replay = [{
+                    "type": "http.request",
+                    "body": b"".join(buffered),
+                    "more_body": False,
+                }]
+
+                async def replay_receive():
+                    if replay:
+                        return replay.pop(0)
+                    return {"type": "http.request", "body": b"", "more_body": False}
+
+                request._receive = replay_receive  # type: ignore[attr-defined]
+                return await call_next(request)
         return await call_next(request)
 
     # SecurityHeadersMiddleware регистрируем последним → outermost слой.

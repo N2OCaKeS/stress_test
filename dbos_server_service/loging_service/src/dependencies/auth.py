@@ -288,13 +288,21 @@ async def _fetch_identity(
     if subject_type in ("user", "bot", "oauth_client"):
         identity["actor_type"] = subject_type
     else:
-        # Старый introspect мог не присылать `subject_type` — backward-compat.
-        # TODO: убрать fallback после того как все инсталляции auth_service
-        # обновятся до версии, которая всегда возвращает `subject_type`
-        # из /introspect. Сейчас оставлен для совместимости с пред-релизными
-        # стендами; следствие — старый auth без поля будет писать любой PAT
-        # как actor_type="user", искажая audit-атрибуцию для bot/oauth m2m.
-        identity["actor_type"] = "user"
+        # Unknown / отсутствующий `subject_type` — фолбэк на `anonymous`,
+        # симметрично `audit_outbox._resolve_actor_type`. Раньше тут писали
+        # `"user"`: на старом introspect без поля любой PAT/bot/oauth m2m
+        # затыкался под `user`, искажая SOC-атрибуцию. Audit с
+        # `actor_type="anonymous"` честнее: видно, что introspect не вернул
+        # subject_type, и таких событий легко найти grep'ом для миграции
+        # стендов. Лог-предупреждение помогает выловить устаревшие
+        # auth_service инстансы.
+        if subject_type is not None:
+            logger.warning(
+                "introspect returned unknown subject_type=%r, "
+                "falling back to actor_type=anonymous",
+                subject_type,
+            )
+        identity["actor_type"] = "anonymous"
 
     # Сохраняем ДО role-check'а, чтобы у audit-middleware всегда был actor.
     request.state.auth_identity = identity

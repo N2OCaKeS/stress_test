@@ -22,7 +22,9 @@ import redis.asyncio as aioredis
 
 from src.clients.ssh import SshError
 from src.core.config import get_settings
+from src.core.constants import SCRUBBED_SENTINEL, STASH_TTL_SECONDS
 from src.core.exceptions import CredentialFetchError
+from src.core.identifiers import validate_task_id
 from src.db.session import AsyncSessionLocal
 from src.main import broker
 from src.repositories import task as task_repo
@@ -31,14 +33,6 @@ from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
 
-# Маркер, которым `scrub_payload_keys` заменяет секретные значения в payload'е.
-# Если на retry-попытке `_impl` видит это значение в payload-поле — значит,
-# предыдущая попытка уже почистила inline-секреты, и доверять payload нельзя:
-# `chpasswd` или `authorized_keys` с literal'ом `"<scrubbed>"` тихо испортили
-# бы аккаунт. Должно строго совпадать с `replacement` в
-# `repositories/task.scrub_payload_keys`.
-SCRUBBED_SENTINEL = "<scrubbed>"
-
 # Префикс для Redis-stash'а inline-creds provision'а. Симметрично
 # `_ACCOUNT_ROTATE_KEY_PREFIX` в `tasks/passwords.py`: tasks/payload row в БД
 # чистим в `finally` (defense-in-depth от утечки в `tasks.payload`), но между
@@ -46,12 +40,6 @@ SCRUBBED_SENTINEL = "<scrubbed>"
 # хранилище server_service выдаёт inline-креды один раз через
 # dispatch-канал, повторно их запросить нельзя.
 _PROVISION_INLINE_KEY_PREFIX = "dbos:provision_inline:"
-
-# TTL stash'а покрывает максимальный exponential back-off (`_runner.
-# _compute_backoff_delay` capped 300s) с запасом на сетевые тормоза. Если
-# воркер всё-таки не успел дойти до submit'а за это окно — задача FAILED,
-# оператор инициирует новый provision и server_service сгенерит свежие креды.
-_PROVISION_INLINE_STASH_TTL_SECONDS = 1800
 
 
 async def _read_provision_inline(task_id: str) -> tuple[str | None, str | None]:
@@ -62,6 +50,7 @@ async def _read_provision_inline(task_id: str) -> tuple[str | None, str | None]:
     «TTL истёк». Поднимать новые retry'и при истечении TTL — задача
     оператора (server_service сгенерирует новые креды).
     """
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:
@@ -94,6 +83,7 @@ async def _store_provision_inline(
     """
     if password_plaintext is None and ssh_private_key_plaintext is None:
         return
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:
@@ -103,7 +93,7 @@ async def _store_provision_inline(
                 "password_plaintext": password_plaintext,
                 "ssh_private_key_plaintext": ssh_private_key_plaintext,
             }),
-            ex=_PROVISION_INLINE_STASH_TTL_SECONDS,
+            ex=STASH_TTL_SECONDS,
         )
     finally:
         await client.aclose()
@@ -111,6 +101,7 @@ async def _store_provision_inline(
 
 async def _delete_provision_inline(task_id: str) -> None:
     """Дропнуть stash после успешного submit'а. TTL подстрахует."""
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:

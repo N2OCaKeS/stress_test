@@ -90,16 +90,16 @@ async def cmd_outbox_reattempt(
         # `.env` могут вшить в exception URL c basic-auth/Bearer. Прогоняем
         # через тот же sanitizer, что и остальные worker-call-site'ы.
         logger.warning(
-            "outbox-reattempt: audit enqueue failed row=%s: %s: %s",
-            row_id, type(exc).__name__, redact_error_message(str(exc)),
+            "outbox-reattempt: audit enqueue failed row=%s: %s",
+            row_id, redact_error_message(f"{type(exc).__name__}: {exc}"),
         )
 
     try:
         await audit_outbox_publisher.flush_outbox()
     except Exception as exc:  # noqa: BLE001 — happy-path push, не критично
         logger.debug(
-            "outbox-reattempt: audit flush failed row=%s: %s: %s",
-            row_id, type(exc).__name__, redact_error_message(str(exc)),
+            "outbox-reattempt: audit flush failed row=%s: %s",
+            row_id, redact_error_message(f"{type(exc).__name__}: {exc}"),
         )
 
     print(

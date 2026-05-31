@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import Action, EntityType
 from src.core.exceptions import (
+    AppException,
     AuthorizationError,
     ConflictError,
     DomainValidationError,
@@ -900,7 +901,7 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
             account.password_encrypted,
             aad=secrets_service.aad_for_server_account_password(account.id),
         )
-    except Exception:
+    except AppException:
         audit_service.emit(
             "server_account.password_revealed",
             target_id=account.id, target_type="server_account",
@@ -911,6 +912,26 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
             },
         )
         raise
+    except Exception as exc:
+        # secrets_service.decrypt сам поднимает AppException(DECRYPT_FAILED),
+        # но если в crypto-pipeline'е всплывёт что-то нестандартное (например,
+        # ASYNC/threadpool wrapper уронит RuntimeError), голый exception
+        # утечёт наружу как 500 без error_code. Оборачиваем под тот же ключ,
+        # чтобы FastAPI handler вернул стандартный envelope.
+        audit_service.emit(
+            "server_account.password_revealed",
+            target_id=account.id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "decrypt_failed",
+                "department_id": account.department_id,
+            },
+        )
+        raise AppException(
+            error_code="DECRYPT_FAILED",
+            message=f"Failed to decrypt account password: {type(exc).__name__}",
+            http_status=500,
+        ) from exc
 
     audit_service.emit(
         "server_account.password_revealed",

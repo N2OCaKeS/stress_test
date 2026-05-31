@@ -28,6 +28,7 @@ import redis.asyncio as aioredis
 
 from src.clients.ssh import SshError
 from src.core.config import get_settings
+from src.core.identifiers import validate_task_id
 from src.db.session import AsyncSessionLocal
 from src.main import broker
 from src.repositories import task as task_repo
@@ -117,6 +118,7 @@ async def _mark_bootstrap_succeeded(task_id: str) -> None:
     руками. Ошибки глушим — best-effort оптимизация, без маркера retry
     отработает как раньше через cred'ы.
     """
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:
@@ -133,6 +135,7 @@ async def _mark_bootstrap_succeeded(task_id: str) -> None:
 
 async def _read_bootstrap_succeeded(task_id: str) -> bool:
     """Проверить, отработал ли SSH-bootstrap для этой task'и ранее."""
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:
@@ -144,6 +147,7 @@ async def _read_bootstrap_succeeded(task_id: str) -> bool:
 
 async def _delete_bootstrap_succeeded(task_id: str) -> None:
     """Снять маркер после успешного `submit_prepared` — best-effort cleanup."""
+    validate_task_id(task_id)
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
     try:

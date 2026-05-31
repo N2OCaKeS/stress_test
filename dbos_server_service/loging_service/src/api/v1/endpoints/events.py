@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from src.core.config import get_settings
 from src.core.constants import RESERVED_SERVICE_NAMES
 from src.core.exceptions import AppException, AuthorizationError
+from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
 from src.dependencies.auth import ReaderIdentity, require_service_token
 from src.dependencies.db import get_db
 from src.schemas.events import EventCreate, EventListResponse, EventResponse
@@ -29,13 +30,11 @@ from src.core.limiter import limiter
 
 router = APIRouter()
 
-_MAX_LIMIT = 1000
-# Верхняя граница для offset'а: при больших значениях PostgreSQL гоняет
-# постраничный proскролл до этого оффсета даже когда подходящих строк нет.
-# Десять миллионов — реалистичный потолок журнала на года вперёд и при этом
-# далёкий от patalogical-OFFSET, на котором statement_timeout начинает рвать
-# запросы.
-_MAX_OFFSET = 10_000_000
+# Алиасы для совместимости со старыми тестами/код-call'ами в этом модуле.
+# Сами значения живут в `core.limits` — там их видят и `services.py`,
+# и любой будущий read-эндпоинт без дублирования.
+_MAX_LIMIT = MAX_QUERY_LIMIT
+_MAX_OFFSET = MAX_QUERY_OFFSET
 
 
 def _ingest_rate_limit_key(request: Request) -> str:

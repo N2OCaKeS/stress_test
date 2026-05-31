@@ -319,7 +319,7 @@ def _validate_match_action(match_action: str | None, db: Session) -> None:
     if match_action is None or "*" in match_action:
         return
     if not se_repo.action_is_registered(db, match_action):
-        if se_repo.list_all(db):
+        if se_repo.has_any(db):
             raise DomainValidationError(
                 error_code="UNKNOWN_MATCH_ACTION",
                 message=(

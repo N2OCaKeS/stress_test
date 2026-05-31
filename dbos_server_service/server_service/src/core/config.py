@@ -213,6 +213,17 @@ class Settings(BaseSettings):
             "`global_rate_limit`."
         ),
     )
+    server_prepare_rate_limit: str = Field(
+        default="3/minute",
+        alias="SERVER_PREPARE_RATE_LIMIT",
+        description=(
+            "Per-IP rate-limit на bootstrap-управления через POST "
+            "/servers/{id}/prepare (синтаксис slowapi). Каждый dispatch "
+            "пишет plaintext-creds в Redis под TTL и поднимает worker-task, "
+            "поэтому burst либо забивает Redis сиротскими ключами, либо "
+            "перегружает worker. Применяется поверх `global_rate_limit`."
+        ),
+    )
     ipmi_credentials_rotate_rate_limit: str = Field(
         default="5/minute",
         alias="IPMI_CREDENTIALS_ROTATE_RATE_LIMIT",

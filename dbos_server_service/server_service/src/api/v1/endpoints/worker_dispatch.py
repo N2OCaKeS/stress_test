@@ -806,14 +806,16 @@ async def inventory_sync_dispatch(
         404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
         409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
         422: {"description": "Битый base64 в username_b64 / password_b64."},
+        429: {"description": "Per-IP prepare-rate-limit пробит."},
         503: {"description": "Worker недоступен."},
     },
 )
+@endpoint_limiter.limit(get_settings().server_prepare_rate_limit)
 async def server_prepare_dispatch(
+    request: Request,
     server_id: str,
     body: ServerPrepareRequest,
     identity: CurrentIdentity,
-    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ServerPrepareResponse:
     """Ставит `server.prepare` (бутстрап управления) в очередь worker'а.

@@ -581,6 +581,18 @@ async def assign_roles(
     if user is None:
         raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
 
+    # Cross-dept guard поднят выше `has_active_access` и role-каталога: иначе
+    # error_code (`SERVICE_NOT_ALLOWED_FOR_DEPARTMENT` vs `INVALID_SERVICE_ROLE`)
+    # давал бы DA из dept_alpha oracle на состояние dept_beta — есть ли у того
+    # service_x и какие роли там определены. Зеркало `_check_can_manage` в
+    # `service_role_service`: dept-isolation вперёд per-service существования.
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN:
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, user.department_id,
+            error_code="USER_ROLE_UPDATE_FORBIDDEN",
+            message="Cannot assign roles outside your department",
+        )
+
     if not await dept_repo.has_active_access(user.department_id, service_name):
         raise AuthorizationError(
             error_code="SERVICE_NOT_ALLOWED_FOR_DEPARTMENT",
@@ -598,13 +610,6 @@ async def assign_roles(
                 ),
                 details={"service_name": service_name, "role": role},
             )
-
-    if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        await assert_dept_admin_target_dept(
-            user_repo, actor_id, user.department_id,
-            error_code="USER_ROLE_UPDATE_FORBIDDEN",
-            message="Cannot assign roles outside your department",
-        )
 
     await role_repo.set_roles(user_id, service_name, roles, assigned_by=actor_id)
     await db.commit()
@@ -1056,6 +1061,10 @@ async def auto_unban_if_expired(
         user.id, since=ban.banned_at,
     )
     await db.commit()
+    # Симметрия с manual `unban_user`: кэш ещё держит `is_banned=True` /
+    # `status=BANNED`, и следующий запрос с access-токеном попадал бы под
+    # ban-guard вплоть до истечения TTL. Сбрасываем сразу.
+    _invalidate_identity_cache(user.id)
     audit_service.emit(
         "user.unban", None, target_id=user.id, target_type="user",
         details={

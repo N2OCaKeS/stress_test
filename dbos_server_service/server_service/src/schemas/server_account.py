@@ -7,11 +7,27 @@
 остальных поле остаётся `None`.
 """
 
+import re
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.password_policy import validate_password
+
+# POSIX group name: начинается с lowercase / underscore, дальше цифры / `-`,
+# общая длина 32 символа (login.defs default). Те же ограничения дублируются
+# в `schemas/internal.py::InventoryUserItem.unix_groups` — расхождение между
+# accept-from-API и accept-from-worker привело бы к рассинхрону reconcile.
+_POSIX_GROUP_NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+
+
+def _validate_unix_groups(value: list[str]) -> list[str]:
+    for name in value:
+        if len(name) > 32 or not _POSIX_GROUP_NAME_RE.match(name):
+            raise ValueError(
+                f"unix_groups: '{name}' не соответствует POSIX group name pattern"
+            )
+    return value
 
 
 class ServerAccountCreate(BaseModel):
@@ -55,7 +71,12 @@ class ServerAccountCreate(BaseModel):
         description="Право sudo. Требует отдельного action `grant_sudo` (admin-only).",
     )
     unix_groups: list[str] = Field(
-        default_factory=list, description="Список Unix-групп аккаунта (без проверки существования)."
+        default_factory=list,
+        max_length=64,
+        description=(
+            "Список Unix-групп аккаунта. Имена валидируются POSIX-паттерном; "
+            "существование групп на боксе не проверяется — это задача worker'а."
+        ),
     )
     linked_user_id: str | None = Field(
         default=None, description="Опциональный FK на платформенного user'а (для DBoS-аккаунтов)."
@@ -87,6 +108,11 @@ class ServerAccountCreate(BaseModel):
             return None
         return validate_password(value)
 
+    @field_validator("unix_groups")
+    @classmethod
+    def _check_unix_groups(cls, value: list[str]) -> list[str]:
+        return _validate_unix_groups(value)
+
 
 class ServerAccountUpdate(BaseModel):
     """Тело PATCH /server-accounts/{id}. Пароль через `rotate_password`,
@@ -101,10 +127,21 @@ class ServerAccountUpdate(BaseModel):
     """
 
     has_sudo: bool | None = Field(default=None, description="Сменить sudo-флаг (требует `grant_sudo`).")
-    unix_groups: list[str] | None = Field(default=None, description="Перезаписать список групп.")
+    unix_groups: list[str] | None = Field(
+        default=None,
+        max_length=64,
+        description="Перезаписать список групп (валидируется POSIX-паттерном).",
+    )
     linked_user_id: str | None = Field(default=None, description="Сменить связь с user'ом.")
     shell: str | None = Field(default=None, max_length=64, description="Сменить shell.")
     home_dir: str | None = Field(default=None, max_length=256, description="Сменить home_dir.")
+
+    @field_validator("unix_groups")
+    @classmethod
+    def _check_unix_groups(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return _validate_unix_groups(value)
 
 
 class ServerAccountServersUpdate(BaseModel):

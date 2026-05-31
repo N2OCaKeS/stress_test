@@ -196,10 +196,10 @@ class TestActorTypePropagation:
         assert ev.actor_type == "oauth_client"
         assert ev.actor_id == "cli_abc"
 
-    def test_missing_subject_type_falls_back_to_user(self, client):
-        """Older introspect (no subject_type) → fallback "user"."""
+    def test_missing_subject_type_falls_back_to_anonymous(self, client):
+        """Older introspect (no subject_type) → fallback "anonymous" (симметрия с _emit_audit и audit_outbox writer)."""
         identity = self._resolve_identity(client, None, "usr_legacy")
-        assert identity["actor_type"] == "user"
+        assert identity["actor_type"] == "anonymous"
 
     def test_emit_audit_unknown_actor_type_falls_back(
         self, db, monkeypatch, TestSessionLocal

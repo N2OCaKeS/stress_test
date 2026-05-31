@@ -1,5 +1,6 @@
 """Репозиторий `AuditRule`."""
 
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -149,8 +150,12 @@ def delete(db: Session, rule: AuditRule, *, commit: bool = True) -> None:
     её timestamp, чтобы MAX(updated_at) переехал и cross-worker invalidation
     сработал штатно.
 
-    `name` переименовываем (`<old>#deleted-<id>`), иначе UNIQUE constraint
+    `name` переименовываем (`<old>#deleted-<ns>-<id>`), иначе UNIQUE constraint
     `uq_audit_rules_name` не даст создать правило с тем же именем повторно.
+    В suffix вшит nanosecond timestamp — это разводит коллизию, когда длинный
+    `name` усечён до 128 и две soft-delete row'и с одного префикса разрешились
+    бы в одно и то же значение. Префикс правила режется до 80 символов,
+    остаток (43) гарантированно вмещает `#deleted-<int_ns>-<id12>`.
 
     `commit=False` — атомарный admin-CRUD: единственный commit делает endpoint
     после delete + audit.
@@ -159,7 +164,7 @@ def delete(db: Session, rule: AuditRule, *, commit: bool = True) -> None:
     rule.deleted_at = now
     rule.updated_at = now
     rule.is_active = False
-    rule.name = f"{rule.name}#deleted-{rule.id}"[:128]
+    rule.name = f"{rule.name[:80]}#deleted-{time.time_ns()}-{rule.id[:12]}"
     if commit:
         db.commit()
     else:

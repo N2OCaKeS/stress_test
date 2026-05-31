@@ -185,8 +185,10 @@ async def _dispatch_for_server(
       5. ``worker_client.dispatch_task`` + audit-emit на каждой ветке.
 
     ``extra_payload`` мерджится поверх стандартного ``{server_id,
-    target_department_id}`` — нужен для редких task-kind'ов с собственными
-    полями (например, `inventory.sync` опционально берёт ``account_id``).
+    target_department_id, host, ssh_port, is_managed, management_user}``
+    — нужен, если в будущем появится task-kind с собственными полями.
+    Сейчас оба call-site'а (`power.status`, `inventory.sync`) идут с
+    `extra_payload=None`.
     """
     # 1. Role-check.
     with emit_denied_on_authz_error(
@@ -722,12 +724,12 @@ async def power_status_dispatch(
     status_code=202,
     description=(
         "Публикует задачу `inventory.sync` в taskiq-broker. Worker идёт на "
-        "сервер по SSH (используя любой аккаунт сервера, если в payload "
-        "передан `account_id`, иначе дефолтный `root`), снимает OS/kernel/"
-        "packages/disks и постит facts обратно через `submit_inventory_facts` "
-        "(internal endpoint). Сырые facts остаются в `task.result` для "
-        "диагностики; submit-fail уходит в audit как `server.inventory_sync` "
-        "failure, но сам task остаётся SUCCEEDED."
+        "сервер по SSH под управляющим пользователем (`management_user`) "
+        "если сервер `is_managed`, иначе под дефолтным аккаунтом сессии — "
+        "снимает OS/kernel/packages/disks и постит facts обратно через "
+        "`submit_inventory_facts` (internal endpoint). Сырые facts остаются "
+        "в `task.result` для диагностики; submit-fail уходит в audit как "
+        "`server.inventory_sync` failure, но сам task остаётся SUCCEEDED."
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},

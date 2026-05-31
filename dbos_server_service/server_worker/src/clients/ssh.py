@@ -850,7 +850,17 @@ class SshClient:
         return groups & {"sudo", "wheel"}
 
     def _validate_login(self, login: str) -> None:
-        """Отбить login с символами вне POSIX-набора до подстановки в команду."""
+        """Отбить login с символами вне POSIX-набора до подстановки в команду.
+
+        Контракт: каждый call-site, который подставляет `login` в shell-строку
+        (useradd / usermod / userdel / getent / id -nG / chpasswd payload /
+        authorized_keys mkdir / sudoers-path) ОБЯЗАН позвать `_validate_login`
+        ДО конструкции команды. Без `shlex.quote` безопасность держится
+        исключительно на `_LOGIN_RE` charset ([A-Za-z0-9._-]) — добавление
+        любого нового метода с прямой подстановкой login без предварительного
+        `_validate_login` мгновенно открывает command-injection. Если ослабить
+        `_LOGIN_RE`, потребуется переход на `shlex.quote` во всех call-site'ах.
+        """
         if not _LOGIN_RE.match(login):
             raise SshError(
                 error_code="SSH_INVALID_LOGIN",

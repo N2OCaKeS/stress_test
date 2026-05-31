@@ -289,6 +289,11 @@ async def _fetch_identity(
         identity["actor_type"] = subject_type
     else:
         # Старый introspect мог не присылать `subject_type` — backward-compat.
+        # TODO: убрать fallback после того как все инсталляции auth_service
+        # обновятся до версии, которая всегда возвращает `subject_type`
+        # из /introspect. Сейчас оставлен для совместимости с пред-релизными
+        # стендами; следствие — старый auth без поля будет писать любой PAT
+        # как actor_type="user", искажая audit-атрибуцию для bot/oauth m2m.
         identity["actor_type"] = "user"
 
     # Сохраняем ДО role-check'а, чтобы у audit-middleware всегда был actor.

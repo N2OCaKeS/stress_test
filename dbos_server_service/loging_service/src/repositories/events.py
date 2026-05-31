@@ -38,11 +38,27 @@ def _with_statement_timeout(
 
     На `57014` зовётся `on_canceled()` и пишется warning. Любая другая
     DBAPIError пробрасывается caller'у.
+
+    Quirk: `SET LOCAL` действует до конца внешней транзакции, а не до
+    выхода из SAVEPOINT. После rollback'а внутреннего nested-savepoint'а
+    выставленный timeout продолжит действовать на следующие statement'ы
+    в той же outer-tx, пока она не закоммитится/отроллбэчится. Под
+    текущих caller'ов (per-request read-эндпоинт с фиксированным session
+    scope'ом) это безопасно — outer-tx закрывается сразу после ответа.
+    Если helper позовут из долгоживущего сценария (worker-таска,
+    batch-loop с одной транзакцией), выставленный timeout будет
+    наследоваться следующими операциями этой же tx.
+
+    На `timeout_ms=0` SET LOCAL пропускаем — Postgres трактует 0 как
+    «без лимита», но сам факт записи в session-state остаётся, и в
+    долгоживущих транзакциях это сбрасывало бы ранее выставленный
+    timeout. No-op ветка явная.
     """
-    timeout_sql = f"SET LOCAL statement_timeout = {int(timeout_ms)}"
     nested = db.begin_nested()
     try:
-        db.execute(text(timeout_sql))
+        if timeout_ms > 0:
+            timeout_sql = f"SET LOCAL statement_timeout = {int(timeout_ms)}"
+            db.execute(text(timeout_sql))
         result = fn()
         nested.commit()
         return result

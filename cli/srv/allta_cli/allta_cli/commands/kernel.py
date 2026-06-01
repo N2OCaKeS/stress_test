@@ -19,6 +19,8 @@ GRUB_CFG_PATH = Path("/boot/grub/grub.cfg")
 GRUB_DEFAULTS_PATH = Path("/etc/default/grub")
 
 _PKG_PREFIX = "linux-image-"
+_HEADERS_PREFIX = "linux-headers-"
+_MODULES_PREFIX = "linux-astra-modules-"
 _KERNEL_VERSION_RE = re.compile(r"^linux-image-(\d+\.\d+\.\d+[^\s]*)$")
 _EXCLUDE_SUFFIXES = ("-dbg", "-dbgsym")
 
@@ -108,21 +110,32 @@ def _install_and_set_default(entry: KernelEntry, *, ask_reboot: bool) -> int:
 
     sudo = _sudo()
 
-    if not entry.installed:
+    # Кроме образа ядра ставим заголовки и astra-модули того же ядра — без них
+    # не собираются модули и часть тестов ядра не запускается.
+    wanted = [entry.package]
+    for pkg in _companion_packages(entry.package):
+        if _apt_package_exists(pkg):
+            wanted.append(pkg)
+        else:
+            ui.warn(f"Пакет '{pkg}' не найден в apt — пропускаю.")
+
+    to_install = [pkg for pkg in wanted if not _is_installed(pkg)]
+    if to_install:
         ui.step("Установка ядра через apt-get…")
         env = "DEBIAN_FRONTEND=noninteractive"
         rc = _run(f"{sudo}{env} apt-get -y update", "apt-get update")
         if rc != 0:
             return rc
+        packages = " ".join(shlex.quote(pkg) for pkg in to_install)
         rc = _run(
-            f"{sudo}{env} apt-get -y install {shlex.quote(entry.package)}",
-            f"установка пакета {entry.package}",
+            f"{sudo}{env} apt-get -y install {packages}",
+            f"установка пакетов: {', '.join(to_install)}",
         )
         if rc != 0:
             return rc
-        ui.ok(f"Пакет {entry.package} установлен.")
+        ui.ok(f"Установлены пакеты: {', '.join(to_install)}.")
     else:
-        ui.ok("Ядро уже установлено, пропускаю apt-get install.")
+        ui.ok("Ядро, заголовки и модули уже установлены, пропускаю apt-get install.")
 
     resolved_version = _resolve_installed_kernel_version(entry.package) or entry.version
     if resolved_version != entry.version:
@@ -184,6 +197,14 @@ def _to_display(package: str) -> str:
     if package.startswith(_PKG_PREFIX):
         return package[len(_PKG_PREFIX):]
     return package
+
+
+def _companion_packages(image_package: str) -> list[str]:
+    """По имени linux-image-<suffix> собрать заголовки и astra-модули того же
+    ядра: linux-headers-<suffix> и linux-astra-modules-<suffix>. Работает и для
+    мета-пакетов (suffix вида 6.6-generic), apt сам разрешит их в конкретные."""
+    suffix = image_package[len(_PKG_PREFIX):] if image_package.startswith(_PKG_PREFIX) else image_package
+    return [f"{_HEADERS_PREFIX}{suffix}", f"{_MODULES_PREFIX}{suffix}"]
 
 
 def _apt_package_exists(package: str) -> bool:

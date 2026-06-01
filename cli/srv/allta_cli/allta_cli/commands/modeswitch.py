@@ -34,8 +34,8 @@ MODE_COMMANDS: dict[str, list[tuple[str, list[str]]]] = {
     ],
     MODE_SMOLENSK: [
         ("astra-modeswitch", ["set", "2"]),
-        ("astra-mic-control", ["enable"]),
         ("astra-mac-control", ["enable"]),
+        ("astra-mic-control", ["enable"]),
     ],
 }
 

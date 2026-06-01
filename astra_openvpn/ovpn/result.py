@@ -331,12 +331,20 @@ def analyze_result(
         negative=True,
         bounds=(0, tester_count),
     )
+    # Пол в 1% от подключившихся: при нуле отвалов критерий целиком выкидывается
+    # моделью как пустой, из-за чего прогон с парой отвалов получает завышенный
+    # рейтинг. Держим значение всегда ненулевым, реальные отвалы (их сильно больше
+    # 1%) проходят как есть.
+    disconnected_values = [
+        max(m["disconnected_count"], 0.01 * m["ever_connected_count"])
+        for m in per_run
+    ]
     model.add_criterion(
         name="disconnected_count",
         iterations=iterations,
-        values=[m["disconnected_count"] for m in per_run],
+        values=disconnected_values,
         weight=0.2,
-        negative=True,  
+        negative=True,
         bounds=(0, tester_count),
     )
     power = float(0.45)

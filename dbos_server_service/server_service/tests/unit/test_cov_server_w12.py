@@ -688,9 +688,9 @@ class TestForcePasswordParam:
                 headers={"Authorization": f"Bearer {token}"},
                 params={"server_id": srv.id},
             )
-        assert resp.status_code == 422
+        assert resp.status_code == 409
         data = resp.json()
-        assert data["error_code"] == "DISCOVERED_NO_PASSWORD_NEEDS_EXPLICIT_FORCE"
+        assert data["error_code"] == "ACCOUNT_HAS_NO_PASSWORD"
 
     @pytest.mark.asyncio
     async def test_discovered_no_password_with_force_dispatches(

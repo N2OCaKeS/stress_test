@@ -2,7 +2,7 @@
 
 Areas:
 * savepoint rollback — audit emit shape on ConflictError / ServiceUnavailableError
-  in _dispatch_account_on_host with inject_provision_creds=True
+  in _dispatch_account_provision (creds-stash path)
 * IPMI 404 unify — ipmi_rotate_password_dispatch:
   - controller found, server in cross-dept → NO_IPMI_CONTROLLER (GAP-1)
   - decommissioned server → SERVER_DECOMMISSIONED (GAP-2)

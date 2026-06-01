@@ -317,7 +317,7 @@ class TestDrainRemainingCancelledError:
             flush_started = asyncio.Event()
             cancel_after_flush_start = asyncio.Event()
 
-            async def slow_flush(batch, committed_ids):
+            async def slow_flush(batch, committed_keys):
                 flush_started.set()
                 await cancel_after_flush_start.wait()
 

@@ -29,6 +29,7 @@ Header НЕ заменяет существующую `require_action` permissio
 даже когда PAT всё ещё держит глобальные actions.
 """
 
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.constants import AccountSource, Action, EntityType
 from src.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
+from src.core.known_os import is_known_os
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import os_version as osv_repo
 from src.repositories import server as server_repo
@@ -51,6 +53,8 @@ from src.schemas.internal import (
 from src.schemas.server import ServerPrepareCallbackRequest
 from src.services import audit_service, permissions, secrets_service
 from src.utils.ids import os_version_id, server_account_id, server_disk_id
+
+logger = logging.getLogger(__name__)
 
 # Допустимый перекос между worker'ом и server_service'ом по NTP — 10 минут с
 # каждой стороны. Используется для отбивания `rotated_at` из будущего в
@@ -626,14 +630,40 @@ async def _resolve_or_create_os(
     *,
     server_id: str | None = None,
     server_department_id: str | None = None,
-) -> str:
+    actor_subject_type: str | None = None,
+) -> str | None:
     """Lookup OS-версии по name; INSERT при first-seen.
 
-    Inventory-callback'и worker'а могут притащить ранее не виденное имя ОС —
-    мы заводим его в глобальном каталоге. Сейчас тут нет dept-scope, поэтому
-    каждое такое создание поднимает WARNING-аудит, чтобы оператор видел
-    источник записи и при необходимости вычистил мусор.
+    Worker отдаёт `os_version` строкой из `/etc/os-release`. Имя обязано
+    начинаться с одного из whitelist-префиксов (`KNOWN_OS_PREFIXES`) —
+    иначе запись в каталоге НЕ создаётся, эмитим WARNING
+    `os.unknown_observed` и возвращаем None. Inventory.sync продолжается
+    без апдейта `server.os_version_id` (поле остаётся прежним).
+
+    Известное имя → существующий flow: если в каталоге есть строка с тем
+    же name — возвращаем её id; иначе INSERT с WARNING-аудитом
+    `os_version.create` (есть авто-создание, оператор видит источник).
     """
+    if not is_known_os(name):
+        logger.warning(
+            "unknown OS observed: %r from server %s — skip create",
+            name, server_id,
+        )
+        audit_service.emit(
+            "os.unknown_observed",
+            target_id=server_id,
+            target_type="server",
+            status="warning",
+            allowed=True,
+            details={
+                "reason": "os_not_in_whitelist",
+                "os_name": name,
+                "server_id": server_id,
+                "server_department_id": server_department_id,
+                "actor_subject_type": actor_subject_type,
+            },
+        )
+        return None
     obj = await osv_repo.get_by_name(db, name)
     if obj is not None:
         return obj.id
@@ -751,18 +781,25 @@ async def receive_inventory(
         payload.os_version,
         server_id=server_id,
         server_department_id=server.department_id,
+        actor_subject_type=identity.subject_type,
     )
 
-    await server_repo.update(db, server, {
+    # Если OS не прошла whitelist (`_resolve_or_create_os` вернул None) —
+    # `os_version_id` оставляем прежний, чтобы случайный мусор из inventory
+    # не сносил легитимную привязку. Остальные hardware-поля апдейтим как
+    # обычно: они не зависят от каталога os_versions.
+    server_update: dict = {
         "hostname": payload.hostname,
         "cpu_brand": payload.cpu_brand,
         "cpu_model": payload.cpu_model,
         "cpu_cores": payload.cpu_cores,
         "cpu_threads": payload.cpu_threads,
         "cpu_frequency_ghz": payload.cpu_frequency_ghz,
-        "os_version_id": os_id_resolved,
         "os_last_synced_at": datetime.now(timezone.utc),
-    })
+    }
+    if os_id_resolved is not None:
+        server_update["os_version_id"] = os_id_resolved
+    await server_repo.update(db, server, server_update)
     disks_count = await _upsert_disks(db, server_id, payload.disks)
     await db.commit()
 
@@ -1151,6 +1188,16 @@ async def record_provision_status(
         )
 
     await account_repo.set_link_presence(db, link, present=payload.present)
+    # Callback от worker'а — единственная точка подтверждения, что credentials,
+    # сгенерированные на dispatch'е и сохранённые в server_accounts.password_encrypted /
+    # ssh_private_key_encrypted, реально доехали до боксу. Снимаем pending_apply
+    # на любой успешный provision/update (`present=True`); deprovision (`present=False`)
+    # тоже завершает цикл — на боксе пользователя больше нет, БД-creds логически
+    # выровнены с реальностью. Не трогаем, если у row'а флаг и так False —
+    # бесплатно по UPDATE, но логически чище.
+    if account.credentials_pending_apply:
+        account.credentials_pending_apply = False
+        await db.flush()
     await db.commit()
 
     audit_service.emit(
@@ -1455,6 +1502,10 @@ async def record_ipmi_credentials_rotated(
     await ipmi_repo.update(db, ctrl, {
         "password_encrypted": encrypted,
         "password_rotated_at": rotated_at,
+        # Callback worker'а — единственная точка, где БД-ciphertext
+        # подтверждён применением на BMC. Снимаем pending_apply, чтобы
+        # следующий dispatch не уходил в force_replace-режим.
+        "credentials_pending_apply": False,
     })
     await db.commit()
 

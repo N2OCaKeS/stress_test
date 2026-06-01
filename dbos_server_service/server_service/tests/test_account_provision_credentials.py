@@ -157,6 +157,11 @@ class TestProvisionGeneratesCredentials:
         # Симулируем предыдущий provision: ssh-ключ уже есть, password — тоже.
         from src.services import server_account as account_svc
         await account_svc.ensure_provision_credentials(db, acc)
+        # ensure_provision_credentials выставляет pending_apply=True (creds
+        # уехали на dispatch, callback ещё не пришёл). Симулируем приход
+        # callback'а: на боксе всё применено, флаг снят — иначе следующий
+        # provision увидит pending_apply=True и форснёт force_replace.
+        acc.credentials_pending_apply = False
         await db.commit()
         await db.refresh(acc)
         stored_pubkey = acc.ssh_public_key

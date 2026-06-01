@@ -187,13 +187,19 @@ def _fetch_creds(login="ops"):
 class TestProvisionHandlers:
     async def test_provision_collects_and_submits(
         self, make_task, fetch_task, captured_audit, monkeypatch,
+        stash_dispatch_creds,
     ):
+        # W21-W1: provision требует dispatch-stash в Redis вместо
+        # plaintext-полей в payload. Эмулируем то, что server_service
+        # делает перед dispatch'ем.
+        stash_key = await stash_dispatch_creds(password_plaintext="sess-pwd")
         tid = await make_task(
             task_kind="account.provision", target_server_id="srv_p1",
             payload={
                 "server_id": "srv_p1", "account_id": "acc_1", "login": "ops",
                 "has_sudo": True, "unix_groups": ["devs"], "shell": "/bin/bash",
                 "home_dir": "/home/ops",
+                "creds_stash_key": stash_key,
             },
         )
         monkeypatch.setattr(
@@ -395,25 +401,31 @@ class TestAuthorizedKeyWrite:
 
 
 class TestProvisionTaskWithInlineCreds:
-    """`account.provision` принимает inline-креды из payload (F23-B)."""
+    """`account.provision` тянет провижн-креды из Redis-stash'а (W21-W1)."""
 
     async def test_inline_password_and_pubkey_used(
         self, make_task, fetch_task, captured_audit, monkeypatch,
+        stash_dispatch_creds,
     ):
-        # Provision с inline password+pubkey: воркер не должен дёргать
-        # `fetch_account_password` — креды уже в payload'е.
+        # Provision-креды кладёт server_service в `dbos:dispatch_creds:<id>`
+        # перед dispatch'ем; в payload едет только `creds_stash_key`.
+        original_password = "GenStrongPwd!9X" * 2
+        original_private_key = (
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n"
+            "-----END OPENSSH PRIVATE KEY-----\n"
+        )
+        stash_key = await stash_dispatch_creds(
+            password_plaintext=original_password,
+            ssh_private_key_plaintext=original_private_key,
+        )
         tid = await make_task(
             task_kind="account.provision", target_server_id="srv_inline",
             payload={
                 "server_id": "srv_inline", "account_id": "acc_inline",
                 "login": "ops",
-                "password_plaintext": "GenStrongPwd!9X" * 2,
                 "ssh_public_key": _ED25519_PUB,
-                "ssh_private_key_plaintext": (
-                    "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n"
-                    "-----END OPENSSH PRIVATE KEY-----\n"
-                ),
                 "force_replace": True,
+                "creds_stash_key": stash_key,
             },
         )
         fetch_calls: list = []
@@ -455,6 +467,7 @@ class TestProvisionTaskWithInlineCreds:
         assert "authorized_keys" in bash_cmd
         assert " > " in bash_cmd  # truncate, не append
 
+    @pytest.mark.skip(reason="payload больше не несёт plaintext после W21-W1 P0 фикса")
     async def test_inline_secrets_scrubbed_after_success(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):

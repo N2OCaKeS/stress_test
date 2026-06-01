@@ -346,74 +346,120 @@ from src import tasks  # noqa: E402, F401
 # (skip_locked)` — если две replica'и стартуют одновременно, одна и та же
 # row не подхватится дважды.
 async def _recover_due_scheduled_retries_once() -> None:
-    """Один проход recovery: SELECT due-row'ы и kiq каждой.
+    """Один проход recovery: per-row claim → commit → kiq.
 
     Общая логика для startup-хука (`_recover_scheduled_retries`) и
-    periodic-task'и (`tasks_recover_scheduled_retries`). Без этого фикс
-    P0-2 был бы дубликатом кода: startup поднимает потерянные при крэше
-    retry-планы, periodic — потерянные в долгоживущем процессе
-    (asyncio.create_task GC'нулся, `_RETRY_TASKS` set теряет ссылку,
-    `_delayed_kick` ловит CancelledError при чужой отмене и re-raise'ит
-    без re-kick'а).
+    periodic-task'и (`tasks_recover_scheduled_retries`). startup поднимает
+    потерянные при крэше retry-планы, periodic — потерянные в долгоживущем
+    процессе (asyncio.create_task GC'нулся, `_RETRY_TASKS` set теряет
+    ссылку, `_delayed_kick` ловит CancelledError при чужой отмене и
+    re-raise'ит без re-kick'а).
+
+    Per-row короткая транзакция вместо одного длинного FOR UPDATE'а: на
+    backlog'е в 100+ task'ов старый код держал lock на всю SELECT-batch
+    пока шёл kiq-loop (N×Redis-RTT), блокируя соседние replica'и и
+    sweep-задачи. Сейчас каждый row claim'ается отдельным
+    `SELECT FOR UPDATE LIMIT 1 → UPDATE scheduled_retry_at=NULL → COMMIT`,
+    после чего lock отпускается и `kiq` уходит без открытой транзакции.
     """
     from src.db.session import AsyncSessionLocal
     from src.repositories import task as task_repo
     from src.utils.redaction import redact_error_message
 
-    try:
-        async with AsyncSessionLocal() as session:
-            due = await task_repo.list_due_scheduled_retries(session)
-            if not due:
-                return
+    # Жёсткий cap на тик: даже если backlog огромный, не молотим в одном
+    # проходе всё подряд. Следующий cron-тик доберёт остаток. Cap
+    # совпадает с разумным размером Redis-burst'а; крайне маловероятно
+    # упереться в production'е (по факту >10 retry-pending за минуту —
+    # уже сигнал к investigation'у).
+    MAX_PER_TICK = 200
+    recovered = 0
+    skipped = 0
+    failed_kiq = 0
 
-            logger.info(
-                "scheduled_retries recovery: found %s task(s) with due "
-                "scheduled_retry_at, re-kicking",
-                len(due),
+    while recovered + skipped + failed_kiq < MAX_PER_TICK:
+        try:
+            async with AsyncSessionLocal() as session:
+                t = await task_repo.claim_one_due_scheduled_retry(session)
+                if t is None:
+                    # Очередь due-task'ов исчерпана — нормальный выход.
+                    await session.commit()
+                    break
+                task_id = t.id
+                task_kind = t.task_kind
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001
+            redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
+            logger.warning(
+                "scheduled_retries recovery: claim failed: %s",
+                redacted,
             )
-            recovered = 0
-            for t in due:
-                try:
-                    target_task = broker.find_task(t.task_kind)
-                    if target_task is None:
-                        logger.warning(
-                            "scheduled_retries recovery: broker does not "
-                            "know task_kind=%s (task_id=%s left in queued)",
-                            t.task_kind,
-                            t.id,
-                        )
-                        continue
-                    await target_task.kicker().kiq(t.id)
-                    recovered += 1
-                except Exception as exc:  # noqa: BLE001
-                    redacted = redact_error_message(
-                        f"{type(exc).__name__}: {exc}"
-                    )
-                    logger.warning(
-                        "scheduled_retries recovery: re-kick failed "
-                        "task_id=%s task_kind=%s: %s",
-                        t.id,
-                        t.task_kind,
-                        redacted,
-                    )
-            # commit ПОСЛЕ kiq-loop'а: row-level lock'и держатся до commit'а;
-            # после него вторая replica увидит row'ы свободными (но статусы
-            # уже изменятся как только consumer подхватит kiq, и `mark_running`
-            # CAS отобьёт повторную попытку).
-            await session.commit()
-    except Exception as exc:  # noqa: BLE001 — recovery не должна крэшить хост
-        redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
-        logger.warning(
-            "scheduled_retries recovery: SELECT failed: %s",
-            redacted,
-        )
-        return
+            return
 
-    logger.info(
-        "scheduled_retries recovery: re-kicked %s/%s task(s)",
-        recovered,
-        len(due),
-    )
+        # Lock уже отпущен — kiq без открытой транзакции.
+        target_task = broker.find_task(task_kind)
+        if target_task is None:
+            # Неизвестный task_kind: row claim'нута (scheduled_retry_at=NULL),
+            # надо явно вернуть её, иначе она «потеряется». Здесь это
+            # симптом deployment drift'а — operator-alert уровень.
+            logger.warning(
+                "scheduled_retries recovery: broker does not know "
+                "task_kind=%s (task_id=%s); releasing claim",
+                task_kind,
+                task_id,
+            )
+            try:
+                async with AsyncSessionLocal() as session:
+                    await task_repo.release_claimed_retry(session, task_id)
+                    await session.commit()
+            except Exception as exc:  # noqa: BLE001
+                redacted = redact_error_message(
+                    f"{type(exc).__name__}: {exc}"
+                )
+                logger.warning(
+                    "scheduled_retries recovery: release after unknown "
+                    "task_kind failed task_id=%s: %s",
+                    task_id,
+                    redacted,
+                )
+            skipped += 1
+            continue
+
+        try:
+            await target_task.kicker().kiq(task_id)
+            recovered += 1
+        except Exception as exc:  # noqa: BLE001
+            redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
+            logger.warning(
+                "scheduled_retries recovery: re-kick failed "
+                "task_id=%s task_kind=%s: %s",
+                task_id,
+                task_kind,
+                redacted,
+            )
+            failed_kiq += 1
+            # Возвращаем row обратно в pool — следующий тик подберёт.
+            try:
+                async with AsyncSessionLocal() as session:
+                    await task_repo.release_claimed_retry(session, task_id)
+                    await session.commit()
+            except Exception as inner:  # noqa: BLE001
+                redacted = redact_error_message(
+                    f"{type(inner).__name__}: {inner}"
+                )
+                logger.warning(
+                    "scheduled_retries recovery: release after kiq-fail "
+                    "task_id=%s: %s",
+                    task_id,
+                    redacted,
+                )
+
+    if recovered or failed_kiq or skipped:
+        logger.info(
+            "scheduled_retries recovery: re-kicked=%s failed_kiq=%s skipped=%s",
+            recovered,
+            failed_kiq,
+            skipped,
+        )
 
 
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)

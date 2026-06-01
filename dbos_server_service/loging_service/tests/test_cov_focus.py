@@ -685,9 +685,14 @@ class TestReservedServiceGuardExtended:
 
     def test_double_underscore_variant_returns_422_not_403(self, client, auth_headers):
         """'loging__service' (двойной underscore) — не зарезервированное имя,
-        но не проходит _SERVICE_PATTERN (charset ok, но не equal reserved) → 201."""
+        но не проходит _SERVICE_PATTERN (charset ok, но не equal reserved) → 201.
+
+        Идентичность payload.service и X-Service-Identity обязана совпадать —
+        используем `auth_service` (известный identity), чтобы проверить именно
+        reserved-name guard, а не SERVICE_IDENTITY_PAYLOAD_MISMATCH.
+        """
         from tests.conftest import make_event
-        r = client.post(self.EVENTS_URL, json=make_event(service="other_service"),
+        r = client.post(self.EVENTS_URL, json=make_event(service="auth_service"),
                         headers=auth_headers)
         assert r.status_code == 201
 

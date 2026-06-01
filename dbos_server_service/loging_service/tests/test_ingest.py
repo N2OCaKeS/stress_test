@@ -37,7 +37,10 @@ class TestIngestPayload:
             "status": "success",
             "allowed": True,
         }
-        resp = client.post("/api/logging/v1/events", json=payload, headers=auth_headers)
+        # X-Service-Identity должна совпадать с payload.service —
+        # guard SERVICE_IDENTITY_PAYLOAD_MISMATCH режет несовпадение на 403.
+        headers = auth_headers | {"X-Service-Identity": "config_service"}
+        resp = client.post("/api/logging/v1/events", json=payload, headers=headers)
         assert resp.status_code == 201
 
     def test_all_severity_levels_accepted(self, client, auth_headers):
@@ -149,7 +152,7 @@ class TestIngestReservedService:
             resp = client.post(
                 "/api/logging/v1/events",
                 json=make_event(service=svc),
-                headers=auth_headers,
+                headers=auth_headers | {"X-Service-Identity": svc},
             )
             assert resp.status_code == 201, f"service {svc!r} unexpectedly blocked"
 

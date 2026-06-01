@@ -319,6 +319,92 @@ async def list_due_scheduled_retries(
     return list((await db.execute(stmt)).scalars().all())
 
 
+async def claim_one_due_scheduled_retry(
+    db: AsyncSession, *, now: datetime | None = None,
+) -> Task | None:
+    """Атомарно «забронировать» одну due retry-row под текущий worker.
+
+    Берёт один row с `status='queued' AND scheduled_retry_at <= now()` под
+    `FOR UPDATE SKIP LOCKED LIMIT 1` и обнуляет ``scheduled_retry_at`` (claim-
+    маркер). Caller обязан немедленно commit'нуть и затем дёрнуть ``kiq()``;
+    если kiq упадёт — вернуть row в pool через ``release_claimed_retry``,
+    проставив `scheduled_retry_at` обратно на now().
+
+    Зачем именно так:
+      * Статус остаётся `queued` — taskiq-consumer на той стороне kiq'а
+        нормально пройдёт `mark_running` CAS (он матчит `status='queued'`).
+      * `scheduled_retry_at=NULL` исключает row из дальнейших claim'ов
+        scheduler'а: `list_due_scheduled_retries` и `claim_one_due_scheduled_retry`
+        фильтруют по `scheduled_retry_at IS NOT NULL` — без re-claim'а до
+        тех пор, пока либо consumer не сделает mark_running, либо kiq не
+        упадёт и мы не вернём timestamp.
+      * Короткая per-row транзакция (SELECT+UPDATE+COMMIT) — lock держится
+        миллисекунды, не висит N×Redis-RTT, как при batch-loop с одним
+        долгоживущим FOR UPDATE.
+    """
+    threshold = now or datetime.now(timezone.utc)
+    select_stmt = (
+        select(Task)
+        .where(
+            Task.status == TaskStatus.QUEUED,
+            Task.scheduled_retry_at.is_not(None),
+            Task.scheduled_retry_at <= threshold,
+        )
+        .order_by(Task.scheduled_retry_at.asc())
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    candidate = (await db.execute(select_stmt)).scalar_one_or_none()
+    if candidate is None:
+        return None
+
+    # Claim: гасим `scheduled_retry_at`, чтобы parallel-replica не подобрала
+    # ту же row следующим тиком. Статус не трогаем — consumer ниже сделает
+    # `mark_running` CAS на `status='queued'`.
+    update_stmt = (
+        update(Task)
+        .where(
+            Task.id == candidate.id,
+            Task.status == TaskStatus.QUEUED,
+            Task.scheduled_retry_at.is_not(None),
+        )
+        .values(scheduled_retry_at=None)
+        .returning(Task.id)
+    )
+    if (await db.execute(update_stmt)).scalar_one_or_none() is None:
+        # Race: кто-то опередил между SELECT и UPDATE.
+        return None
+    candidate.scheduled_retry_at = None
+    await db.flush()
+    return candidate
+
+
+async def release_claimed_retry(
+    db: AsyncSession,
+    task_id: str,
+    *,
+    scheduled_retry_at: datetime | None = None,
+) -> None:
+    """Вернуть claim'нутую retry-row обратно как due (kiq() упал).
+
+    CAS на `(status='queued', scheduled_retry_at IS NULL)` — если row уже
+    подобрал consumer (mark_running успел поставить running), no-op.
+    `scheduled_retry_at` ставится на `now()` если не передан явно — это
+    делает row снова видимой для следующего тика scheduler'а.
+    """
+    target = scheduled_retry_at or datetime.now(timezone.utc)
+    stmt = (
+        update(Task)
+        .where(
+            Task.id == task_id,
+            Task.status == TaskStatus.QUEUED,
+            Task.scheduled_retry_at.is_(None),
+        )
+        .values(scheduled_retry_at=target)
+    )
+    await db.execute(stmt)
+
+
 async def list_orphaned_running(
     db: AsyncSession,
     *,

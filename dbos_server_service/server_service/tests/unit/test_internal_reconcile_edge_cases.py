@@ -188,10 +188,12 @@ class TestResolveOrCreateOs:
 
         BASE_INT = "/api/server/v1/internal"
 
+        # Имя обязано пройти KNOWN_OS_PREFIXES — иначе запись не создаётся
+        # (whitelist W21-W1).
         r1 = await client.post(
             f"{BASE_INT}/servers/{srv1.id}/inventory",
             headers={"Authorization": "Bearer " + worker_bot_token_a},
-            json=_inv(srv1.id, "UniqueDistro 42"),
+            json=_inv(srv1.id, "Astra Linux SE 1.7"),
         )
         assert r1.status_code == 200, r1.text
         os_id_first = r1.json()["os_version_id"]
@@ -199,13 +201,14 @@ class TestResolveOrCreateOs:
         r2 = await client.post(
             f"{BASE_INT}/servers/{srv2.id}/inventory",
             headers={"Authorization": "Bearer " + worker_bot_token_a},
-            json=_inv(srv2.id, "UniqueDistro 42"),
+            json=_inv(srv2.id, "Astra Linux SE 1.7"),
         )
         assert r2.status_code == 200, r2.text
         os_id_second = r2.json()["os_version_id"]
 
         # Одно и то же имя → тот же id.
         assert os_id_first == os_id_second
+        assert os_id_first is not None
 
         # Первый вызов создаёт запись (warning), второй — нет.
         os_creates = [
@@ -213,7 +216,7 @@ class TestResolveOrCreateOs:
             if e.get("action") == "os_version.create"
         ]
         assert len(os_creates) == 1
-        assert os_creates[0]["details"]["name"] == "UniqueDistro 42"
+        assert os_creates[0]["details"]["name"] == "Astra Linux SE 1.7"
 
     async def test_different_os_names_give_different_ids(
         self, client, worker_bot_token_a, make_server, db, dept_a,
@@ -234,12 +237,12 @@ class TestResolveOrCreateOs:
         r1 = await client.post(
             f"{BASE_INT}/servers/{srv1.id}/inventory",
             headers={"Authorization": "Bearer " + worker_bot_token_a},
-            json=_inv(srv1.id, "DistroAlpha 1"),
+            json=_inv(srv1.id, "Astra Linux SE 1.7"),
         )
         r2 = await client.post(
             f"{BASE_INT}/servers/{srv2.id}/inventory",
             headers={"Authorization": "Bearer " + worker_bot_token_a},
-            json=_inv(srv2.id, "DistroBeta 2"),
+            json=_inv(srv2.id, "Ubuntu 22.04"),
         )
         assert r1.status_code == 200
         assert r2.status_code == 200
@@ -259,7 +262,8 @@ class TestResolveOrCreateOs:
                 "hostname": f"host-{srv.id[-4:]}", "kernel": "5.10.0",
                 "cpu_brand": None, "cpu_model": None,
                 "cpu_cores": 1, "cpu_threads": None, "cpu_frequency_ghz": None,
-                "os_version": "NeverSeenOS 9999", "disks": [],
+                # known prefix "Astra Linux" → пройдёт whitelist, создаст запись
+                "os_version": "Astra Linux SE 9.99", "disks": [],
             },
         )
 

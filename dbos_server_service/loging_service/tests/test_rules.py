@@ -199,10 +199,18 @@ class TestRuleApplication:
         admin_client.post(RULES_URL, json=make_rule(
             name="suppress-config", effect="SUPPRESS", match_service="config_service",
         ))
-        assert client.post(EVENTS_URL, headers=auth_headers,
-                           json=make_event(service="auth_service")).status_code == 201
-        assert client.post(EVENTS_URL, headers=auth_headers,
-                           json=make_event(service="config_service")).status_code == 204
+        # X-Service-Identity подменяется под каждый payload.service —
+        # иначе SERVICE_IDENTITY_PAYLOAD_MISMATCH guard режет ingest на 403.
+        assert client.post(
+            EVENTS_URL,
+            headers=auth_headers | {"X-Service-Identity": "auth_service"},
+            json=make_event(service="auth_service"),
+        ).status_code == 201
+        assert client.post(
+            EVENTS_URL,
+            headers=auth_headers | {"X-Service-Identity": "config_service"},
+            json=make_event(service="config_service"),
+        ).status_code == 204
 
     def test_match_status_filter(self, client, admin_client, auth_headers):
         admin_client.post(RULES_URL, json=make_rule(

@@ -410,9 +410,11 @@ class TestListServices:
         assert r.json()["items"] == []
 
     def test_shows_services_after_events(self, client, admin_client, auth_headers):
-        client.post(EVENTS_URL, headers=auth_headers,
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "auth_service"},
                     json=make_event(service="auth_service"))
-        client.post(EVENTS_URL, headers=auth_headers,
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "config_service"},
                     json=make_event(service="config_service"))
         r = admin_client.get(SERVICES_URL)
         body = r.json()
@@ -422,9 +424,11 @@ class TestListServices:
 
     def test_event_count_per_service(self, client, admin_client, auth_headers):
         for _ in range(3):
-            client.post(EVENTS_URL, headers=auth_headers,
+            client.post(EVENTS_URL,
+                        headers=auth_headers | {"X-Service-Identity": "auth_service"},
                         json=make_event(service="auth_service"))
-        client.post(EVENTS_URL, headers=auth_headers,
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "config_service"},
                     json=make_event(service="config_service"))
         r = admin_client.get(SERVICES_URL)
         svc_map = {s["service"]: s for s in r.json()["items"]}
@@ -563,7 +567,7 @@ class TestListServicesDeptScope:
         # Ingest as if from auth_service / dep_a — one event.
         r = client.post(
             EVENTS_URL,
-            headers=auth_headers,
+            headers=auth_headers | {"X-Service-Identity": "auth_service"},
             json=make_event(service="auth_service", department_id="dep_a"),
         )
         assert r.status_code == 201
@@ -571,7 +575,7 @@ class TestListServicesDeptScope:
         for _ in range(2):
             r = client.post(
                 EVENTS_URL,
-                headers=auth_headers,
+                headers=auth_headers | {"X-Service-Identity": "config_service"},
                 json=make_event(service="config_service", department_id="dep_b"),
             )
             assert r.status_code == 201
@@ -676,11 +680,14 @@ class TestListServicesDeptScope:
         global aggregate across all departments — the fix must NOT break
         the unscoped path.
         """
-        client.post(EVENTS_URL, headers=auth_headers,
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "auth_service"},
                     json=make_event(service="auth_service", department_id="dep_a"))
-        client.post(EVENTS_URL, headers=auth_headers,
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "config_service"},
                     json=make_event(service="config_service", department_id="dep_b"))
-        client.post(EVENTS_URL, headers=auth_headers,
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "server_service"},
                     json=make_event(service="server_service", department_id="dep_c"))
 
         p = _mock_identity({
@@ -707,9 +714,11 @@ class TestListServicesDeptScope:
         the dependency-override path, but here we exercise the real
         ``require_reader`` to confirm symmetry.
         """
-        client.post(EVENTS_URL, headers=auth_headers,
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "auth_service"},
                     json=make_event(service="auth_service", department_id="dep_a"))
-        client.post(EVENTS_URL, headers=auth_headers,
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "config_service"},
                     json=make_event(service="config_service", department_id="dep_b"))
 
         p = _mock_identity({

@@ -215,7 +215,13 @@ async def ensure_provision_credentials(
         )
         generated = True
 
-    if generated:
+    # На любом dispatch'е provision'а сохранённый в БД ciphertext перестаёт
+    # считаться подтверждённым до прихода callback'а worker'а — он либо
+    # дольёт его на бокс, либо нет. Между этими событиями БД ≠ бокс,
+    # retry должен форсить overwrite.
+    account.credentials_pending_apply = True
+
+    if generated or account.credentials_pending_apply:
         await db.flush()
 
     creds = {
@@ -240,6 +246,11 @@ async def reset_provision_credentials(
     account.password_encrypted = None
     account.ssh_public_key = None
     account.ssh_private_key_encrypted = None
+    # Reset делает caller только перед свежим ensure → следующий dispatch
+    # выйдет с pending_apply=True. Здесь явно ставим True, чтобы между
+    # reset'ом и ensure'ом (или если ensure упадёт до flush'а) состояние
+    # не оставалось «применено» — на боксе всё равно ничего нового нет.
+    account.credentials_pending_apply = True
     await db.flush()
     return account
 

@@ -7,7 +7,7 @@
   * `rotate_credentials` (legacy) docstring/summary помечен как fallback,
     не обещает verify-механизма на этом endpoint'е;
   * `account.provision` для discovered-аккаунта без пароля без
-    `?force_password=true` отбивается 422 `DISCOVERED_NO_PASSWORD_NEEDS_EXPLICIT_FORCE`;
+    `?force_password=true` отбивается 409 `ACCOUNT_HAS_NO_PASSWORD`;
   * системные task'и опознаются через whitelist `_SYSTEM_TASK_KINDS`, не
     через неявный (target_server_id IS NULL AND created_by IS NULL).
 """
@@ -196,9 +196,9 @@ class TestProvisionForcePasswordGuard:
             f"{BASE}/server-accounts/{acc.id}/provision?server_id={srv.id}",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 422, resp.text
+        assert resp.status_code == 409, resp.text
         body = resp.json()
-        assert body["error_code"] == "DISCOVERED_NO_PASSWORD_NEEDS_EXPLICIT_FORCE"
+        assert body["error_code"] == "ACCOUNT_HAS_NO_PASSWORD"
 
     async def test_discovered_without_password_force_true_proceeds(
         self, client, operator_token_a, make_server, make_account, db, monkeypatch,

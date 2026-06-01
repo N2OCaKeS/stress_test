@@ -132,13 +132,16 @@ def _fetch_spy(login="ops", *, has_password=True):
 class TestProvisionUsesManagementSession:
     async def test_managed_provision_connects_as_management_user(
         self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
+        stash_dispatch_creds,
     ):
+        stash_key = await stash_dispatch_creds(password_plaintext="sess-pwd")
         tid = await make_task(
             task_kind="account.provision", target_server_id="srv_m1",
             payload={
                 "server_id": "srv_m1", "account_id": "acc_1", "login": "ops",
                 "has_sudo": True, "unix_groups": ["devs"], "shell": "/bin/bash",
                 "is_managed": True, "management_user": "dbos",
+                "creds_stash_key": stash_key,
             },
         )
         monkeypatch.setattr(
@@ -174,12 +177,15 @@ class TestProvisionUsesManagementSession:
 
     async def test_unmanaged_provision_keeps_self_session(
         self, make_task, fetch_task, captured_audit, monkeypatch,
+        stash_dispatch_creds,
     ):
+        stash_key = await stash_dispatch_creds(password_plaintext="sess-pwd")
         tid = await make_task(
             task_kind="account.provision", target_server_id="srv_m2",
             payload={
                 "server_id": "srv_m2", "account_id": "acc_2", "login": "ops",
                 "is_managed": False,
+                "creds_stash_key": stash_key,
             },
         )
         monkeypatch.setattr(
@@ -242,6 +248,7 @@ class TestProvisionUsesManagementSession:
 
     async def test_managed_without_key_fails_task_clearly(
         self, make_task, fetch_task, captured_audit, monkeypatch,
+        stash_dispatch_creds,
     ):
         from sqlalchemy import update
 
@@ -252,11 +259,13 @@ class TestProvisionUsesManagementSession:
         get_settings.cache_clear()
         monkeypatch.setenv("SSH_MANAGEMENT_PRIVATE_KEY_PATH", "")
         get_settings.cache_clear()
+        stash_key = await stash_dispatch_creds(password_plaintext="sess-pwd")
         tid = await make_task(
             task_kind="account.provision", target_server_id="srv_m4",
             payload={
                 "server_id": "srv_m4", "account_id": "acc_4", "login": "ops",
                 "is_managed": True, "management_user": "dbos",
+                "creds_stash_key": stash_key,
             },
         )
         # max_attempts=1 → terminal FAILED после одной ошибки.
@@ -531,6 +540,10 @@ class TestManagedSkipsFetchForAuth:
 
 
 class TestManagedDiscoveredAccountProvision:
+    @pytest.mark.skip(
+        reason="W21-W1: discovered+no_password теперь 409 fail-fast в server, "
+        "worker эту таску не получает"
+    )
     async def test_managed_provision_no_password_skips_chpasswd(
         self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
     ):
@@ -571,12 +584,18 @@ class TestManagedDiscoveredAccountProvision:
 
     async def test_managed_provision_with_password_sets_it(
         self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
+        stash_dispatch_creds,
     ):
+        # Managed-provision: password приходит из dispatch-stash'а (W21-W1),
+        # `_fetch_password_to_set` к server_service не зовётся — креды уже
+        # есть.
+        stash_key = await stash_dispatch_creds(password_plaintext="sess-pwd")
         tid = await make_task(
             task_kind="account.provision", target_server_id="srv_pw",
             payload={
                 "server_id": "srv_pw", "account_id": "acc_pw", "login": "ops",
                 "is_managed": True, "management_user": "dbos",
+                "creds_stash_key": stash_key,
             },
         )
         spy = _fetch_spy("ops", has_password=True)
@@ -601,6 +620,6 @@ class TestManagedDiscoveredAccountProvision:
 
         t = await fetch_task(tid)
         assert t.status == TaskStatus.SUCCEEDED
-        # На managed login из payload, пароль тянем best-effort для chpasswd.
-        assert len(spy.calls) == 1
+        # Креды пришли через stash, fetch_account_password не дёргался.
+        assert spy.calls == []
         assert conn.run.await_count == 3

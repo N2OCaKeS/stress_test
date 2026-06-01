@@ -36,6 +36,14 @@ TEST_SERVICE_API_KEYS = {
     "server_service": TEST_API_KEY,
     "config_service": TEST_API_KEY,
     "server_worker": TEST_API_KEY,
+    # Дополнительные identity для тестов, которые гоняют граничные значения
+    # `payload.service`. После введения SERVICE_IDENTITY_PAYLOAD_MISMATCH guard
+    # endpoint требует, чтобы X-Service-Identity совпадал с payload.service —
+    # под произвольную строку identity не зарегистрируешь без её появления
+    # в SERVICE_API_KEYS. `svc` — короткое имя для null-fields теста,
+    # 64-character `s...s` — для проверки верхней границы max_length=64.
+    "svc": TEST_API_KEY,
+    "s" * 64: TEST_API_KEY,
 }
 
 # `RETENTION_LOOP_ENABLED=false` ОБЯЗАН быть выставлен ДО первого
@@ -288,11 +296,29 @@ def auth_headers() -> dict:
     Identity по умолчанию — `auth_service` (совпадает с `make_event()`
     default `service="auth_service"`). Тесты, которым нужно ходить под
     другой identity (server_service / config_service / server_worker),
-    переписывают header руками: `auth_headers | {"X-Service-Identity": "server_service"}`.
+    переписывают header руками: `auth_headers | {"X-Service-Identity": "server_service"}`,
+    либо используют `headers_for(svc)`-хелпер ниже, который сам подставляет
+    identity, совпадающий с `payload.service` (нужно после введения
+    `SERVICE_IDENTITY_PAYLOAD_MISMATCH` guard на POST /events).
     """
     return {
         "Authorization": f"Bearer {TEST_API_KEY}",
         "X-Service-Identity": TEST_SERVICE_IDENTITY,
+    }
+
+
+def headers_for(service: str) -> dict:
+    """Headers с `X-Service-Identity`, равной `service`.
+
+    `POST /events` guard сравнивает `X-Service-Identity` с `payload.service`
+    и режет mismatch на 403 `SERVICE_IDENTITY_PAYLOAD_MISMATCH`. Для тестов,
+    которые ингестят события под разными namespace'ами (auth_service /
+    server_service / config_service / server_worker), хелпер собирает
+    подходящие headers одной строкой.
+    """
+    return {
+        "Authorization": f"Bearer {TEST_API_KEY}",
+        "X-Service-Identity": service,
     }
 
 

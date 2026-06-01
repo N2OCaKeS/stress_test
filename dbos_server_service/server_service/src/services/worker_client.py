@@ -52,10 +52,10 @@ def prepare_creds_key(task_id_value: str) -> str:
     return f"{PREPARE_CREDS_KEY_PREFIX}{task_id_value}"
 
 
-# Префикс Redis-ключа для inline-кред provision-таски (account.provision с
-# `inject_provision_creds=True`). Симметрично `PREPARE_CREDS_KEY_PREFIX`, но
-# своя scope: prepare держит bootstrap-логин/пароль ОС-юзера, dispatch держит
-# password+ssh_private_key аккаунта для useradd/chpasswd на боксе.
+# Префикс Redis-ключа для inline-кред provision-таски (`account.provision`).
+# Симметрично `PREPARE_CREDS_KEY_PREFIX`, но своя scope: prepare держит
+# bootstrap-логин/пароль ОС-юзера, dispatch держит password+ssh_private_key
+# аккаунта для useradd/chpasswd на боксе.
 DISPATCH_CREDS_KEY_PREFIX = "dbos:dispatch_creds:"
 
 

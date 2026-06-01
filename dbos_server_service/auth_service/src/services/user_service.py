@@ -899,9 +899,13 @@ async def ban_user(
             "pat_revoked_count": pat_revoked_count,
             # Боты намеренно остаются живыми (см. комментарий выше). Поля с
             # bot-counter'ами оставляем нулевыми для обратной совместимости
-            # SIEM-правил, ожидающих эти ключи в `user.ban`.
+            # SIEM-правил, ожидающих эти ключи в `user.ban`. Явный
+            # `bots_policy` — машиночитаемое объявление политики, чтобы
+            # SIEM-правила могли отличать «ноль ботов было» от «по политике
+            # не трогаем» без сравнения с историей.
             "bot_tokens_revoked": 0,
             "owned_bots_count": 0,
+            "bots_policy": "no_auto_revoke",
         },
         "request_id": request_id,
     }

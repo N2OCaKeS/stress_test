@@ -515,9 +515,12 @@ class TestUsersInventoryReconcile:
     async def test_auto_create_os_emits_warning(
         self, client, worker_bot_token_a, make_server, dept_a, captured_emits,
     ):
-        """Неизвестное `os_version` через inventory-callback заводит запись в
-        глобальный каталог + поднимает WARNING-аудит `os_version.create`.
-        Это нужно, чтобы SOC видел, кто загрязнил каталог."""
+        """Имя, прошедшее whitelist (KNOWN_OS_PREFIXES), но отсутствующее в
+        каталоге — заводит запись + поднимает WARNING-аудит
+        `os_version.create` с `reason=auto_from_inventory`. SOC видит, кто
+        загрязнил каталог. Имена вне whitelist'а покрыты отдельным тестом
+        в `test_w21_w1_os_whitelist.py` (там запись НЕ создаётся и эмитится
+        `os.unknown_observed`)."""
         srv = await make_server(department_id=dept_a)
         payload = {
             "hostname": "srv-warn",
@@ -527,7 +530,8 @@ class TestUsersInventoryReconcile:
             "cpu_cores": 1,
             "cpu_threads": None,
             "cpu_frequency_ghz": None,
-            "os_version": "UnseenDistro 9000",
+            # известный prefix "Astra Linux", версии 99.99 нет в seed'е → first-seen
+            "os_version": "Astra Linux SE 99.99",
             "disks": [],
         }
         resp = await client.post(
@@ -543,7 +547,7 @@ class TestUsersInventoryReconcile:
         assert warns, f"expected os_version.create warning, captured: {captured_emits}"
         emit = warns[0]
         details = emit.get("details") or {}
-        assert details.get("name") == "UnseenDistro 9000"
+        assert details.get("name") == "Astra Linux SE 99.99"
         assert details.get("reason") == "auto_from_inventory"
         assert details.get("server_id") == srv.id
         assert details.get("server_department_id") == dept_a

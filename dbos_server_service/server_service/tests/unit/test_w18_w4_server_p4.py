@@ -259,8 +259,12 @@ class TestDispatchRollbackOnRedisFailure:
     def test_finally_block_cleans_up_stash_on_dispatch_failure(self):
         src = inspect.getsource(wd_endpoint)
         # finally: если dispatch не ok — чистим stash + rollback savepoint.
+        # `inject_provision_creds` параметр выпилен; provision живёт в
+        # выделенном `_dispatch_account_provision`, где `if not dispatch_ok`
+        # — единственная ветка cleanup'а (creds-stash всегда присутствует).
         assert "dispatch_ok = False" in src
-        assert "if inject_provision_creds and not dispatch_ok" in src
+        assert "if not dispatch_ok" in src
+        assert "delete_dispatch_creds(stash_key)" in src
 
 
 # ── 12. dispatch_task_with_hit callers оборачивают ошибки в audit ────────────

@@ -329,7 +329,7 @@ class TestIngestIdempotency:
             r = client.post(
                 "/api/logging/v1/events",
                 json=make_event(service=svc, idempotency_key="shared-key"),
-                headers=auth_headers,
+                headers=auth_headers | {"X-Service-Identity": svc},
             )
             assert r.status_code == 201
 

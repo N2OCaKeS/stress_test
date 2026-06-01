@@ -144,11 +144,25 @@ def create_event(
             ),
         )
 
-    # P2 SERVICE_IDENTITY_PAYLOAD_MISMATCH guard отложен — требует
-    # переписать ~13 тестовых fixture'ов (TEST_SERVICE_IDENTITY=auth_service
-    # против payload.service=server_service во многих integration-тестах).
-    # Per-service API keys в production сделают этот soft-check излишним.
-    # См. TODO W11 P2 — заведено как separate cleanup задача.
+    # Cross-service idempotency poisoning: дедуп в `event_service.record` берёт
+    # ключом пару `(payload.service, idempotency_key)`. Caller с валидным
+    # SERVICE_API_KEY для `auth_service` мог послать payload с
+    # `service="server_service"` и совпадающим `idempotency_key` — UNIQUE
+    # отбил бы легитимный запрос второго сервиса, а в журнале остался бы
+    # подделанный row. Гард симметричен `SERVICE_IDENTITY_PATH_MISMATCH` в
+    # `POST /services/{service}/events`. Если identity не выставлен
+    # (deployment без per-service keys) — пропускаем, остальной layered
+    # auth уже отбивает.
+    advertised = getattr(request.state, "service_identity", None)
+    if advertised is not None and normalize_identifier(payload.service) != advertised:
+        raise AuthorizationError(
+            error_code="SERVICE_IDENTITY_PAYLOAD_MISMATCH",
+            message=(
+                f"X-Service-Identity does not match payload.service "
+                f"(identity={advertised!r}, payload={payload.service!r}); "
+                "a service-token caller may only ingest events under its own service"
+            ),
+        )
 
     event = event_service.record(db, payload)
     if event is None:

@@ -8,7 +8,11 @@ from tests.conftest import make_event
 
 
 def _ingest(client, auth_headers, **kwargs):
-    resp = client.post("/api/logging/v1/events", json=make_event(**kwargs), headers=auth_headers)
+    payload = make_event(**kwargs)
+    # `SERVICE_IDENTITY_PAYLOAD_MISMATCH` guard требует, чтобы
+    # X-Service-Identity совпадал с payload.service.
+    headers = auth_headers | {"X-Service-Identity": payload["service"]}
+    resp = client.post("/api/logging/v1/events", json=payload, headers=headers)
     assert resp.status_code == 201
     return resp.json()["id"]
 

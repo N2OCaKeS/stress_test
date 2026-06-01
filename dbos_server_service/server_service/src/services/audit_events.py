@@ -92,10 +92,12 @@ SERVICE_EVENTS = [
     {"action": "os_version.delete", "description": "OS version deleted", "default_severity": "WARNING"},
     {"action": "os_version.list_anonymous", "description": "Public OS-version list read without bearer token (enumeration trail for SIEM)", "default_severity": "INFO"},
     {"action": "os_version.view_anonymous", "description": "Public OS-version card read without bearer token (enumeration trail for SIEM)", "default_severity": "INFO"},
+    {"action": "os.unknown_observed", "description": "Inventory callback принёс os_version, не прошедший whitelist KNOWN_OS_PREFIXES. Запись в os_versions НЕ создаётся, server.os_version_id остаётся прежним", "default_severity": "WARNING"},
     # Worker-dispatch endpoints (см. endpoints/worker_dispatch.py).
     {"action": "server.inventory_sync", "description": "Inventory-sync (SSH-probe) dispatched to worker", "default_severity": "INFO"},
     {"action": "server.users_inventory_triggered", "description": "OS-user inventory (SSH getent) dispatched to worker — target=server (kick'ается со стороны сервера, аккаунты только результат)", "default_severity": "INFO"},
     {"action": "server_account.rotate_password_dispatch", "description": "Server account password rotation dispatched to worker (SSH apply + storage round-trip)", "default_severity": "CRITICAL"},
+    {"action": "mass_rotation.partial_failure", "description": "Массовая ротация (mode=all) частично применилась: на K серверов dispatch успешен, на K+1 worker отбил ServiceUnavailable, остаток не пытались. Auto-cancel НЕ выполняется (риск частичных откатов) — оператору отдаются task_ids для ручной отмены", "default_severity": "WARNING"},
     {"action": "server_account.provision", "description": "OS-user provision (useradd) dispatched to worker", "default_severity": "WARNING"},
     {"action": "server_account.update_on_host", "description": "OS-user attribute sync (usermod) dispatched to worker", "default_severity": "INFO"},
     {"action": "server_account.deprovision", "description": "OS-user deprovision (userdel) dispatched to worker", "default_severity": "WARNING"},

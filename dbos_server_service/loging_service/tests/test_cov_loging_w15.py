@@ -355,9 +355,9 @@ class TestDroppedCancelTotal:
             outbox._queue = asyncio.Queue(maxsize=2)
 
             batch = [_env(f"ev-{i}") for i in range(3)]
-            committed_ids: set[int] = set()
+            committed_keys: set[str] = set()
 
-            # Подменяем sync-часть: ничего не коммитит (committed_ids пустой).
+            # Подменяем sync-часть: ничего не коммитит (committed_keys пустой).
             def fake_write_batch_sync(b, cids):
                 return 0
 
@@ -367,14 +367,14 @@ class TestDroppedCancelTotal:
             # очередь переполнена (maxsize=2, batch из 3 → все не requeue'ятся).
             requeued = 0
             for envelope in batch:
-                if id(envelope) in committed_ids:
+                if envelope.idempotency_key in committed_keys:
                     continue
                 try:
                     outbox._queue.put_nowait(envelope)
                     requeued += 1
                 except asyncio.QueueFull:
                     break
-            lost = len(batch) - len(committed_ids) - requeued
+            lost = len(batch) - len(committed_keys) - requeued
             if lost > 0:
                 with outbox._counters_lock:
                     outbox._dropped_cancel_total += lost
@@ -400,25 +400,25 @@ class TestDroppedCancelTotal:
             outbox._queue = asyncio.Queue(maxsize=8)
 
             batch = [_env(f"ev-{i}") for i in range(3)]
-            committed_ids: set[int] = {id(e) for e in batch}
+            committed_keys: set[str] = {e.idempotency_key for e in batch}
 
-            # Все в committed_ids → requeue'ить нечего, lost=0.
+            # Все в committed_keys → requeue'ить нечего, lost=0.
             requeued = 0
             for envelope in batch:
-                if id(envelope) in committed_ids:
+                if envelope.idempotency_key in committed_keys:
                     continue
                 try:
                     outbox._queue.put_nowait(envelope)
                     requeued += 1
                 except asyncio.QueueFull:
                     break
-            lost = len(batch) - len(committed_ids) - requeued
+            lost = len(batch) - len(committed_keys) - requeued
             if lost > 0:
                 with outbox._counters_lock:
                     outbox._dropped_cancel_total += lost
-            if committed_ids:
+            if committed_keys:
                 with outbox._counters_lock:
-                    outbox._drained_total += len(committed_ids)
+                    outbox._drained_total += len(committed_keys)
 
             return outbox.dropped_cancel_total(), outbox.drained_total()
 

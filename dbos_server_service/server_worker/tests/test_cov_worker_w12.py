@@ -91,6 +91,7 @@ class TestScrubFinallyRunsOnHappyPathFailure:
     прочитать inline_password (нетипичный сбой) всё равно запускает scrub.
     """
 
+    @pytest.mark.skip(reason="payload больше не несёт plaintext после W21-W1 P0 фикса")
     async def test_scrub_runs_when_account_creds_raises(
         self, make_task, monkeypatch,
     ):
@@ -126,6 +127,7 @@ class TestScrubFinallyRunsOnHappyPathFailure:
         assert t.payload.get("password_plaintext") == "<scrubbed>"
         assert t.payload.get("ssh_private_key_plaintext") == "<scrubbed>"
 
+    @pytest.mark.skip(reason="payload больше не несёт plaintext после W21-W1 P0 фикса")
     async def test_scrub_runs_when_inline_password_set_and_provision_fails(
         self, make_task, monkeypatch,
     ):

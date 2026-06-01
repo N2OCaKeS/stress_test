@@ -315,14 +315,15 @@ class TestEnvelopeFromAppException:
         assert body["error_code"] == "UNKNOWN_MATCH_ACTION"
         assert "not registered" in body["message"].lower()
 
-    def test_token_proxy_invalid_credentials_envelope(self, client, monkeypatch):
-        # Чтобы AppException-handler сработал, AUTH_SERVICE_URL должен быть задан
-        # — фикстура `client` его выставляет.
-        _failing_token_resp(monkeypatch, status_code=401)
-        r = client.post(
-            "/api/logging/v1/token",
-            data={"username": "x", "password": "y"},
-        )
+    def test_token_proxy_invalid_credentials_envelope(self, client, mock_token_proxy):
+        # `/token` использует pooled `_token_proxy_client` — подменяем его
+        # на MockTransport через фикстуру `mock_token_proxy`. AUTH_SERVICE_URL
+        # уже выставлен в фикстуре `client`.
+        with mock_token_proxy(status_code=401):
+            r = client.post(
+                "/api/logging/v1/token",
+                data={"username": "x", "password": "y"},
+            )
         assert r.status_code == 401
         body = r.json()
         assert body["error_code"] == "INVALID_CREDENTIALS"

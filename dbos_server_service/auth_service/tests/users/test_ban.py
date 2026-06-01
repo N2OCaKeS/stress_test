@@ -298,3 +298,4 @@ async def test_ban_audit_reports_zero_bot_revokes(
     assert details["pat_revoked"] is True
     assert details["bot_tokens_revoked"] == 0
     assert details["owned_bots_count"] == 0
+    assert details["bots_policy"] == "no_auto_revoke"

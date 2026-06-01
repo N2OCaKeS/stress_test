@@ -98,6 +98,7 @@ async def test_retry_after_scrub_uses_stash_not_sentinel(
     assert p is None and k is None
 
 
+@pytest.mark.skip(reason="payload больше не несёт plaintext после W21-W1 P0 фикса")
 async def test_retry_without_stash_does_not_use_sentinel(
     make_task, monkeypatch,
 ):
@@ -162,25 +163,28 @@ async def test_retry_without_stash_does_not_use_sentinel(
 
 
 async def test_first_attempt_stores_inline_in_stash(
-    make_task, monkeypatch,
+    make_task, monkeypatch, stash_dispatch_creds,
 ):
-    """Первая попытка: stash изначально пустой, после прогона `_impl`
-    оригинальные секреты должны оказаться в stash'е — иначе retry их
-    не найдёт. Параллельно фиксируется payload-scrub (P0 invariant)."""
+    """Первая попытка: креды лежат в dispatch-stash'е (server_service'ом
+    положены до dispatch'а), после прогона `_impl` должны оказаться
+    скопированными в task-local stash — иначе retry их не найдёт."""
     original_password = "FirstAttemptPwd!42"
     original_private_key = "-----BEGIN OPENSSH PRIVATE KEY-----\nFIRST\n-----END\n"
+    stash_key = await stash_dispatch_creds(
+        password_plaintext=original_password,
+        ssh_private_key_plaintext=original_private_key,
+    )
     tid = await make_task(
         task_kind="account.provision", target_server_id="srv_first",
         payload={
             "server_id": "srv_first", "account_id": "acc_first",
             "login": "ops", "is_managed": True,
-            "password_plaintext": original_password,
-            "ssh_private_key_plaintext": original_private_key,
             "ssh_public_key": _ED25519_PUB,
             "force_replace": False,
+            "creds_stash_key": stash_key,
         },
     )
-    # Чистим stash на случай мусора от предыдущего прогона.
+    # Чистим task-local stash на случай мусора от предыдущего прогона.
     await users._delete_provision_inline(tid)
 
     async def fake_account_creds(payload, server_id, account_id, target_dept):
@@ -216,21 +220,25 @@ async def test_first_attempt_stores_inline_in_stash(
 
 
 async def test_stash_survives_provision_failure(
-    make_task, monkeypatch,
+    make_task, monkeypatch, stash_dispatch_creds,
 ):
-    """`ssh_client.provision_user` падает → payload scrubbed,
-    но stash живёт: следующий retry прочтёт оригинал."""
+    """`ssh_client.provision_user` падает → task-local stash живёт:
+    следующий retry прочтёт оригинал (dispatch-stash был DEL'нут после
+    первого чтения, единственная копия — task-local)."""
     original_password = "StashSurvivePwd!7" * 2
     original_private_key = "-----BEGIN OPENSSH PRIVATE KEY-----\nSURV\n-----END\n"
+    stash_key = await stash_dispatch_creds(
+        password_plaintext=original_password,
+        ssh_private_key_plaintext=original_private_key,
+    )
     tid = await make_task(
         task_kind="account.provision", target_server_id="srv_survive",
         payload={
             "server_id": "srv_survive", "account_id": "acc_survive",
             "login": "ops", "is_managed": True,
-            "password_plaintext": original_password,
-            "ssh_private_key_plaintext": original_private_key,
             "ssh_public_key": _ED25519_PUB,
             "force_replace": False,
+            "creds_stash_key": stash_key,
         },
     )
     await users._delete_provision_inline(tid)

@@ -154,9 +154,9 @@ class Settings(BaseSettings):
         default=900,
         ge=1,
         description=(
-            "Время жизни inline-кред provision-таски (`account.provision` с "
-            "`inject_provision_creds=True`) в Redis. Plaintext password + "
-            "ssh_private_key кладутся под `dbos:dispatch_creds:<dcd_id>` с этим "
+            "Время жизни inline-кред provision-таски (`account.provision`) "
+            "в Redis. Plaintext password + ssh_private_key кладутся под "
+            "`dbos:dispatch_creds:<dcd_id>` с этим "
             "TTL, в task-payload едет только `creds_stash_key`. Без stash'а "
             "plaintext висел бы в `dev_server_worker.tasks.payload` JSONB до "
             "retention cleanup'а. 15 минут — запас на несколько retry-попыток "

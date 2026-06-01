@@ -276,6 +276,15 @@ class AccountRotateDispatchResponse(BaseModel):
     `skipped` — серверы, на которые задача не поставлена (decommissioned или
     отбита воркером); при массовой ротации один битый сервер не валит весь
     батч.
+
+    `partial_failure` помечен явно для UX-consistency: `False` означает,
+    что весь батч пролетел (или пропуски — это idempotent/decommissioned,
+    они в `skipped`). `True` поднимается, когда в массовом режиме worker
+    отбил ServiceUnavailable после K успешных dispatch'ей — тогда K задач
+    уже в очереди, остаток не пытались. `next_action` подсказывает UI,
+    что делать дальше: `retry_not_attempted` (повторить запрос после
+    стабилизации воркера) или `manual_cancel_dispatched` (отменить уже
+    поставленные через `/tasks/{id}/cancel`, если откатить ротацию важно).
     """
 
     mode: str = Field(description="single | all.")
@@ -284,6 +293,22 @@ class AccountRotateDispatchResponse(BaseModel):
     skipped: list[AccountRotateSkipped] = Field(
         default_factory=list,
         description="Серверы, пропущенные при массовой ротации.",
+    )
+    partial_failure: bool = Field(
+        default=False,
+        description=(
+            "True, если массовая ротация частично применилась (worker отбил "
+            "после K успешных dispatch'ей). Auto-cancel не выполняется — UI "
+            "должен показать `tasks` (уже dispatched) и `next_action`."
+        ),
+    )
+    next_action: str | None = Field(
+        default=None,
+        description=(
+            "Подсказка UI на случай partial_failure: `retry_not_attempted` "
+            "(повторить весь запрос) или `manual_cancel_dispatched` "
+            "(отменить уже поставленные task_ids). None — partial_failure=False."
+        ),
     )
 
 

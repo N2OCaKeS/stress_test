@@ -387,10 +387,14 @@ class TestIpmiControllerRotateDispatch:
         assert call["task_kind"] == "ipmi.rotate_password"
         assert call["target_server_id"] == srv.id
         assert call["target_resource_id"] == ctrl.id
+        # Свежий controller без предыдущего dispatch'а: pending_before=False,
+        # значит force_replace в payload'е — False (worker сам генерит и
+        # применяет, поле кладётся для симметрии с account.provision).
         assert call["payload"] == {
             "server_id": srv.id,
             "controller_id": ctrl.id,
             "target_department_id": "dep_a",
+            "force_replace": False,
         }
 
     async def test_reader_cannot_rotate_ipmi(
@@ -869,9 +873,12 @@ class TestMassRotatePartialTolerance:
         self, client, operator_token_a, make_server, make_account,
         captured_emits, monkeypatch, db,
     ):
-        """Если воркер падает после K успешных INSERT+RPUSH в батче, SIEM
-        должен увидеть агрегат с фактическим dispatched/failed/not_attempted —
-        не только per-server failure последнего сервера."""
+        """Если воркер падает после K успешных INSERT+RPUSH в батче — mass-
+        режим больше не отбивает 503, а отдаёт структурированный ответ с
+        `partial_failure=True`, `next_action=manual_cancel_dispatched` и
+        списком task_ids для ручной отмены. SIEM получает агрегат
+        (`worker_unreachable_partial`) + отдельный WARNING-event
+        `mass_rotation.partial_failure` с тем же составом."""
         from src.core.exceptions import ServiceUnavailableError
 
         srv1 = await make_server(department_id="dep_a")
@@ -900,13 +907,22 @@ class TestMassRotatePartialTolerance:
             f"{BASE}/server-accounts/{acc.id}/rotate",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 503
+        # Mass-режим с хотя бы одним успешным dispatch'ем — структурный
+        # ответ 202 (status=partial), не 503.
+        assert resp.status_code == 202, resp.text
+        body = resp.json()
+        assert body["mode"] == "all"
+        assert body["status"] == "partial"
+        assert body["partial_failure"] is True
+        assert body["next_action"] == "manual_cancel_dispatched"
+        assert len(body["tasks"]) == 1
+        assert body["tasks"][0]["task_id"] == "tsk_ok_1"
 
         events = _events(
             captured_emits, "server_account.rotate_password_dispatch",
         )
-        # Должны быть два failure-emit: per-server (worker_unreachable) и
-        # агрегированный (worker_unreachable_partial) с фактическим состоянием.
+        # Per-server (worker_unreachable) и агрегированный
+        # (worker_unreachable_partial) failure-эмиты сохраняем как раньше.
         partial_aggregates = [
             e for e in events
             if e.get("status") == "failure"
@@ -916,9 +932,7 @@ class TestMassRotatePartialTolerance:
         agg = partial_aggregates[0]["details"]
         assert agg["mode"] == "all"
         assert agg["dispatched_count"] == 1
-        # Сервер, на котором случился сбой — единственный в `failed`.
         assert len(agg["failed"]) == 1
-        # Третий сервер остался непопытанным.
         assert agg["not_attempted"] == [srv3.id] or len(agg["not_attempted"]) == 1
 
 

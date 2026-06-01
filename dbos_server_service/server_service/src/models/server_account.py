@@ -103,6 +103,13 @@ class ServerAccount(Base):
     # на provision-вызове они заполняются автогенерацией Ed25519.
     ssh_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     ssh_private_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # True между dispatch'ем ротации/provision'а и callback'ом worker'а: в БД
+    # уже свежий ciphertext, на боксе ещё старый материал. Retry до callback'а
+    # форсит `force_replace=True` — иначе race-сценарий «dispatch ok, callback
+    # потерялся» оставил бы drift между server-БД и реальным сервером.
+    credentials_pending_apply: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     has_sudo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     unix_groups: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, default=list

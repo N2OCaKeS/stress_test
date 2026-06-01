@@ -337,7 +337,7 @@ class TestRecoverScheduledRetriesException:
     """Exception внутри recovery не должен пробрасываться наружу."""
 
     async def test_db_exception_is_caught_and_logged(self, monkeypatch, caplog):
-        """Если list_due_scheduled_retries бросает — функция возвращает None, не raises."""
+        """Если claim_one_due_scheduled_retry бросает — функция возвращает None, не raises."""
         import logging
 
         import src.repositories.task as task_repo_mod
@@ -345,7 +345,7 @@ class TestRecoverScheduledRetriesException:
         async def boom_list(*a, **kw):
             raise RuntimeError("postgresql://user:pass@db:5432/worker")
 
-        monkeypatch.setattr(task_repo_mod, "list_due_scheduled_retries", boom_list)
+        monkeypatch.setattr(task_repo_mod, "claim_one_due_scheduled_retry", boom_list)
 
         from src.main import _recover_due_scheduled_retries_once
 
@@ -372,7 +372,7 @@ class TestRecoverScheduledRetriesException:
                 "postgresql://admin:hunter2_secret@db.local:5432/worker"
             )
 
-        monkeypatch.setattr(task_repo_mod, "list_due_scheduled_retries", boom_list)
+        monkeypatch.setattr(task_repo_mod, "claim_one_due_scheduled_retry", boom_list)
 
         from src.main import _recover_due_scheduled_retries_once
 

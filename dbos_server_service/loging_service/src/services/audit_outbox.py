@@ -276,19 +276,24 @@ class AuditOutbox:
                         batch.append(self._queue.get_nowait())
                     except asyncio.QueueEmpty:
                         break
-                # `committed_ids` — общий между корутиной и thread-target'ом
+                # `committed_keys` — общий между корутиной и thread-target'ом
                 # set. `_write_batch_sync` ПОСЛЕ успешного `db.commit()` кладёт
-                # туда `id(envelope)` каждого закоммитнутого события. Если в
-                # этот момент прилетает `CancelledError` (между returning из
-                # `to_thread` и +=`_drained_total`), мы по этому set'у узнаём,
-                # какие envelope'ы УЖЕ в БД, и не дублируем их при requeue.
-                committed_ids: set[int] = set()
+                # туда `envelope.idempotency_key` каждого закоммитнутого
+                # события. Если в этот момент прилетает `CancelledError`
+                # (между returning из `to_thread` и `_drained_total +=`),
+                # мы по этому set'у узнаём, какие envelope'ы УЖЕ в БД, и не
+                # дублируем их при requeue. Идэмпотенси-ключ предпочтительнее
+                # `id(envelope)` — он переживает GC и совпадает с DB-level
+                # dedup-якорем (партиционный UNIQUE по
+                # `(service, idempotency_key)`), что делает инвариант
+                # "не пишем тот же ключ дважды" более явным.
+                committed_keys: set[str] = set()
                 try:
-                    await self._flush_batch(batch, committed_ids)
+                    await self._flush_batch(batch, committed_keys)
                 except asyncio.CancelledError:
                     # `stop()` отменил задачу прямо во время flush — батч уже
                     # выдернут из очереди, БД могла принять часть или весь
-                    # commit. `committed_ids` — то, что точно в БД; всё
+                    # commit. `committed_keys` — то, что точно в БД; всё
                     # остальное возвращаем в очередь под `_drain_remaining`.
                     #
                     # Потери разносятся по причинам: QueueFull при requeue
@@ -300,21 +305,28 @@ class AuditOutbox:
                     # буфер переполнен» как «грубый shutdown».
                     requeued = 0
                     overflow_lost = 0
+                    skipped_committed = 0
                     for envelope in batch:
-                        if id(envelope) in committed_ids:
+                        if envelope.idempotency_key in committed_keys:
+                            skipped_committed += 1
                             continue
                         try:
                             self._queue.put_nowait(envelope)
                             requeued += 1
                         except asyncio.QueueFull:
                             overflow_lost += 1
+                    if skipped_committed:
+                        logger.warning(
+                            "audit outbox requeue skipped %d envelope(s) already committed",
+                            skipped_committed,
+                        )
                     # Всё, что не закоммитилось и не вернулось в очередь
                     # (и не упало в overflow_lost) — настоящая cancel-потеря:
                     # сюда сейчас попасть нечем, ветка зарезервирована на
                     # случай, если в будущем добавится логика «пропустить
                     # некоторые envelope'ы без requeue».
                     cancel_lost = (
-                        len(batch) - len(committed_ids) - requeued - overflow_lost
+                        len(batch) - skipped_committed - requeued - overflow_lost
                     )
                     if overflow_lost > 0 or cancel_lost > 0:
                         with self._counters_lock:
@@ -322,9 +334,9 @@ class AuditOutbox:
                                 self._dropped_overflow_total += overflow_lost
                             if cancel_lost > 0:
                                 self._dropped_cancel_total += cancel_lost
-                    if committed_ids:
+                    if skipped_committed:
                         with self._counters_lock:
-                            self._drained_total += len(committed_ids)
+                            self._drained_total += skipped_committed
                     raise
                 # Маленькая пауза, чтобы не молотить процессор, если queue
                 # пуст. `asyncio.Queue.get()` сам await'ит до появления
@@ -363,12 +375,12 @@ class AuditOutbox:
         while True:
             batch: list[AuditEnvelope] = []
             # Per-batch shared set, в который `_write_batch_sync` положит
-            # `id(envelope)` каждого events, для которого `db.commit()`
-            # прошёл успешно. Если `CancelledError` прилетит между
-            # `to_thread` returning и обновлением счётчиков, мы по этому
-            # set'у узнаём, какие envelope'ы УЖЕ в БД, и не считаем их
-            # как `_dropped_shutdown_total`.
-            committed_ids: set[int] = set()
+            # `envelope.idempotency_key` каждого events, для которого
+            # `db.commit()` прошёл успешно. Если `CancelledError` прилетит
+            # между `to_thread` returning и обновлением счётчиков, мы по
+            # этому set'у узнаём, какие envelope'ы УЖЕ в БД, и не считаем
+            # их как `_dropped_shutdown_total`.
+            committed_keys: set[str] = set()
             try:
                 while len(batch) < self._batch_size:
                     try:
@@ -388,7 +400,7 @@ class AuditOutbox:
                             lost,
                         )
                     return
-                await self._flush_batch(batch, committed_ids)
+                await self._flush_batch(batch, committed_keys)
             except asyncio.CancelledError:
                 # Force-cancel во время финального drain'а: батч уже выдернут
                 # из очереди и в `_flush_batch` мог не дойти до commit'а. Без
@@ -398,11 +410,11 @@ class AuditOutbox:
                 # ловит — отдельная ветка ОБЯЗАТЕЛЬНА перед re-raise.
                 #
                 # Если sync-target успел `db.commit()` до отмены, эти envelope'ы
-                # уже в `committed_ids`: вычитаем их из `lost`, иначе тот же
+                # уже в `committed_keys`: вычитаем их из `lost`, иначе тот же
                 # row уехал бы и в `drained_total` (через `_flush_batch`), и
                 # в `dropped_shutdown_total` — двойной учёт ломал бы инвариант
                 # выше.
-                lost = len(batch) - len(committed_ids)
+                lost = len(batch) - len(committed_keys)
                 if self._queue is not None:
                     lost += self._queue.qsize()
                 if lost > 0:
@@ -422,22 +434,23 @@ class AuditOutbox:
     async def _flush_batch(
         self,
         batch: list[AuditEnvelope],
-        committed_ids: set[int] | None = None,
+        committed_keys: set[str] | None = None,
     ) -> None:
         """Пишет батч одной транзакцией в `asyncio.to_thread`.
 
-        `committed_ids` — опциональный shared set, который `_write_batch_sync`
-        заполняет `id(envelope)`'ами ПОСЛЕ `db.commit()`. Нужен `_drain_loop`'у,
-        чтобы при `CancelledError` между `to_thread` returning и `_drained_total +=`
-        не requeue'ить уже закоммитнутые события.
+        `committed_keys` — опциональный shared set, который `_write_batch_sync`
+        заполняет `envelope.idempotency_key`'ами ПОСЛЕ `db.commit()`. Нужен
+        `_drain_loop`'у, чтобы при `CancelledError` между `to_thread`
+        returning и `_drained_total +=` не requeue'ить уже закоммитнутые
+        события.
         """
         if not batch:
             return
-        if committed_ids is None:
-            committed_ids = set()
+        if committed_keys is None:
+            committed_keys = set()
         try:
             succeeded = await asyncio.to_thread(
-                self._write_batch_sync, batch, committed_ids
+                self._write_batch_sync, batch, committed_keys
             )
             # `succeeded` — сколько savepoint'ов закоммитилось. Failures за
             # отказавшие savepoint'ы уже забампил `_write_batch_sync` через
@@ -467,7 +480,7 @@ class AuditOutbox:
     def _write_batch_sync(
         self,
         batch: list[AuditEnvelope],
-        committed_ids: set[int],
+        committed_keys: set[str],
     ) -> int:
         """Sync-часть flush'а: одна сессия, savepoint на событие, один commit.
 
@@ -480,9 +493,10 @@ class AuditOutbox:
         Возвращает число успешно записанных событий — caller использует это
         значение для `_drained_total`, чтобы partial-failure не приводил к
         перерасчёту `drained + failures > enqueued`. Дополнительно после
-        успешного `db.commit()` кладёт `id(envelope)` каждого закоммитнутого
-        события в shared `committed_ids` — это нужно `_drain_loop`'у, чтобы
-        корректно отработать `CancelledError`, прилетевший уже после commit'а.
+        успешного `db.commit()` кладёт `envelope.idempotency_key` каждого
+        закоммитнутого события в shared `committed_keys` — это нужно
+        `_drain_loop`'у, чтобы корректно отработать `CancelledError`,
+        прилетевший уже после commit'а.
 
         Внутри держим set `bumped_ids` — id() envelope'ов, за которые уже
         вызывался `_bump_failure`. Без него падение `db.commit()` на outer-tx
@@ -526,7 +540,7 @@ class AuditOutbox:
             # до commit'а» даже если `CancelledError` прилетит между этим
             # моментом и returning из `to_thread`.
             for env in succeeded_envs:
-                committed_ids.add(id(env))
+                committed_keys.add(env.idempotency_key)
         finally:
             db.close()
         return len(succeeded_envs)

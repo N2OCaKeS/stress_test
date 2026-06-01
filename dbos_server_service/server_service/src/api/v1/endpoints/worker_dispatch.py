@@ -62,7 +62,6 @@ from src.core.limiter import endpoint_limiter, per_account_key
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
-    DomainValidationError,
     NotFoundError,
     ServiceUnavailableError,
 )
@@ -309,37 +308,23 @@ async def _dispatch_for_server(
     return {"task_id": task_id, "status": "queued"}
 
 
-async def _dispatch_account_on_host(
+async def _resolve_account_and_server(
     *,
     db: AsyncSession,
     identity,
-    request: Request,
     account_id: str,
     server_id: str,
     action: str,
     audit_action: str,
-    task_kind: str,
     operation: str,
-    extra_payload: dict | None = None,
-    include_home_dir: bool | None = None,
-    inject_provision_creds: bool = False,
-    force_password: bool = False,
-) -> dict:
-    """Общая логика per-server provision/update/deprovision OS-пользователя.
+):
+    """Permission + visibility + dept-isolation для пары account+server.
 
-    Порядок проверок зеркалит `account_rotate_password_dispatch`: permission
-    ДО visibility (иначе enumeration), затем dept-isolated lookup аккаунта,
-    проверка что `server_id` среди привязанных, decommissioned-gate, dispatch.
-
-    Operation триггерится разными CRUD-действиями на `server_account`:
-    provision → `create`, update → `update`, deprovision → `delete`.
-    worker_bot широкого CRUD не получает — только callback `provision_on_host`.
-
-    `force_password` действует только в паре с `inject_provision_creds=True`
-    и нужен для discovered-аккаунтов: у них в БД пароля нет, и если caller
-    хочет, чтобы worker сгенерил новый и принудительно записал его на боксе
-    через chpasswd, он должен явно передать `force_password=true`. Иначе
-    discovered-аккаунт без пароля → 422 `DISCOVERED_NO_PASSWORD_NEEDS_EXPLICIT_FORCE`.
+    Возвращает `(account, server)`. На любом провале эмитит failure-audit и
+    поднимает исключение. Порядок проверок зеркалит
+    `account_rotate_password_dispatch`: permission ДО visibility (иначе
+    enumeration), затем dept-isolated lookup аккаунта, проверка что
+    `server_id` среди привязанных, decommissioned-gate.
     """
     with emit_denied_on_authz_error(
         audit_action,
@@ -410,149 +395,239 @@ async def _dispatch_account_on_host(
             error_code="SERVER_DECOMMISSIONED",
             message="Server is decommissioned and cannot accept worker operations",
         )
+    return account, server
+
+
+async def _dispatch_account_on_host(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    account_id: str,
+    server_id: str,
+    action: str,
+    audit_action: str,
+    task_kind: str,
+    operation: str,
+    extra_payload: dict | None = None,
+    include_home_dir: bool | None = None,
+) -> dict:
+    """Per-server update/deprovision OS-пользователя.
+
+    Provision'у нужны inline-креды + savepoint вокруг dispatch'а, поэтому
+    он живёт отдельно в `_dispatch_account_provision`. Update/deprovision
+    плейн-payload без секретов, savepoint не нужен — на этой ветке только
+    permission/visibility/dispatch.
+    """
+    account, server = await _resolve_account_and_server(
+        db=db, identity=identity, account_id=account_id, server_id=server_id,
+        action=action, audit_action=audit_action, operation=operation,
+    )
 
     idempotency_key = read_idempotency_key(request)
-    # Non-secret атрибуты аккаунта едут в payload — воркеру не нужен отдельный
-    # read карточки, пароль он тянет через internal view_password endpoint.
     payload = _build_account_task_payload(
         server=server, account=account, include_attrs=True,
         include_home_dir=include_home_dir,
     )
-    if inject_provision_creds:
-        # Discovered-аккаунты идут в provision из инвентаризации — у них пароля
-        # в БД нет, и SSH-ключа тоже. Managed-аккаунт может попасть в provision
-        # повторно (переустановка ОС): credentials уже есть, отдаём те же, без
-        # force_replace — воркеру они нужны только чтобы установить chpasswd и
-        # дополить authorized_keys (если grep по строке не нашёл точного
-        # совпадения). Если кред нет — генерим Ed25519 + strong-password,
-        # сохраняем зашифрованным, и поднимаем force_replace=True: на боксе
-        # надо перезаписать пароль и ключ. Commit ниже (`dispatch_task` не
-        # пишет в server-БД).
-        #
-        # Discovered-аккаунт без пароля — особый случай: предыдущая версия молча
-        # генерила strong-password и заливала его через chpasswd, перетирая
-        # пароль, который оператор сервера выставил руками. Теперь требуем
-        # явный `?force_password=true`. caller знает что делает.
-        if (
-            account.source == AccountSource.DISCOVERED.value
-            and account.password_encrypted is None
-            and not force_password
-        ):
-            audit_service.emit(
-                audit_action, target_id=account_id, target_type="server_account",
-                status="denied", allowed=False,
-                details={
-                    "reason": "discovered_no_password_needs_explicit_force",
-                    "server_id": server.id,
-                    "operation": operation,
-                    "department_id": server.department_id,
-                },
-            )
-            raise DomainValidationError(
-                error_code="DISCOVERED_NO_PASSWORD_NEEDS_EXPLICIT_FORCE",
-                message=(
-                    "Discovered account has no stored password; pass "
-                    "?force_password=true to generate a new one and overwrite "
-                    "the on-host password via chpasswd"
-                ),
-            )
-        # `force_password=true` обещает overwrite через chpasswd. Для discovered-
-        # аккаунта со ВЖЕ сохранённым в БД паролем `ensure_provision_credentials`
-        # sticky'ит существующий ciphertext — worker применил бы старый пароль и
-        # переустановка ОС оставила бы коробку с тем же кредом, что был до. Сбрасываем
-        # пароль и ssh-keypair ДО ensure, чтобы получить свежесгенерированную пару и
-        # `force_replace=True` в payload'е. Managed-аккаунты этот reset не трогает —
-        # контракт `force_password` остаётся узким: только discovered.
-        had_password_before = account.password_encrypted is not None
-        force_overwrite = (
-            force_password
-            and account.source == AccountSource.DISCOVERED.value
-        )
-        # Изоляция «creds-generation + dispatch» в одном savepoint'е: либо
-        # коммитим обе мутации после успешного dispatch'а, либо роллбэчим
-        # savepoint при ошибке dispatch'а — иначе свежий ciphertext в БД без
-        # доехавшей до worker'а задачи ломает SSH (drift между server-БД и
-        # реальным сервером).
-        creds_sp = await db.begin_nested()
-        if force_overwrite:
-            await account_svc.reset_provision_credentials(db, account)
-        _, creds, _ = await account_svc.ensure_provision_credentials(
-            db, account,
-        )
-        # Plaintext password + ssh_private_key НЕ кладём в payload — иначе они
-        # осели бы в `dev_server_worker.tasks.payload` (JSONB) до retention
-        # cleanup'а, и любой с read к worker-БД видел бы пароль. Кладём их в
-        # Redis под одноразовый ключ с TTL, в payload — только ссылка
-        # `creds_stash_key`. Воркер читает creds по ссылке, потом DEL'ит.
-        # Симметрия с `server.prepare` (bootstrap_creds_key).
-        # ssh_public_key — не секрет, едет в payload как раньше.
-        stash_key = worker_client.dispatch_creds_key(dispatch_creds_id())
-        try:
-            await worker_client.store_dispatch_creds(
-                stash_key,
-                {
-                    "password_plaintext": creds["password"],
-                    "ssh_private_key_plaintext": creds["ssh_private_key"],
-                },
-            )
-        except ServiceUnavailableError:
-            await creds_sp.rollback()
-            audit_service.emit(
-                audit_action, target_id=account_id, target_type="server_account",
-                status="failure", allowed=True,
-                details={
-                    "reason": "creds_store_unavailable",
-                    "task_kind": task_kind,
-                    "server_id": server.id,
-                    "operation": operation,
-                    "department_id": server.department_id,
-                },
-            )
-            raise
-        except Exception as exc:
-            # Любой runtime-фейл Redis (timeout/conn refused/etc) — best-effort
-            # rollback stash'а и savepoint'а, 503 наружу. Без этого
-            # plaintext-ciphertext в server-БД остался бы без доехавшей до
-            # worker'а задачи.
-            await worker_client.delete_dispatch_creds(stash_key)
-            await creds_sp.rollback()
-            audit_service.emit(
-                audit_action, target_id=account_id, target_type="server_account",
-                status="failure", allowed=True,
-                details={
-                    "reason": "creds_store_failed",
-                    "task_kind": task_kind,
-                    "server_id": server.id,
-                    "operation": operation,
-                    "department_id": server.department_id,
-                    "error_class": type(exc).__name__,
-                },
-            )
-            raise ServiceUnavailableError(
-                error_code="WORKER_REDIS_UNAVAILABLE",
-                message="Failed to stash provision credentials before dispatch",
-            ) from exc
-        payload["creds_stash_key"] = stash_key
-        payload["ssh_public_key"] = creds["ssh_public_key"]
-        # force_replace говорит воркеру «chpasswd на боксе»: нужно когда
-        # (а) discovered + явный force_password — мы только что сбросили
-        # старый пароль через reset, либо (б) пароля в БД до ensure не было
-        # — ensure сгенерил новый, и его надо доставить на бокс. Managed-
-        # аккаунт со sticky-паролем (ensure только ssh-keypair дописал) сюда
-        # не попадает.
-        payload["force_replace"] = force_overwrite or not had_password_before
     if extra_payload:
         payload.update(extra_payload)
-    # Сохраняем неизменяемые поля server/account в локалки — после rollback'а
-    # savepoint'а ORM-атрибуты expire'нутся, и доступ к ним из audit-emit полез
-    # бы за sync-fetch в БД (greenlet-mismatch в async).
     server_id_v = server.id
     server_dept_v = server.department_id
     account_login_v = account.login
-    # Savepoint держим явно: на любом исключении из dispatch_task откатываем
-    # creds-savepoint (либо commit'им при успехе). До этого было ловлей только
-    # ConflictError/ServiceUnavailableError — другие исключения оставляли SP
-    # подвешенным до close session'а, контракт хрупкий.
+    try:
+        task_id = await worker_client.dispatch_task(
+            task_kind=task_kind,
+            target_server_id=server_id_v,
+            target_resource_id=account_id,
+            payload=payload,
+            created_by=identity.user_id,
+            request_id=getattr(request.state, "request_id", None),
+            idempotency_key=idempotency_key,
+        )
+    except ConflictError:
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "idempotent_conflict",
+                "task_kind": task_kind,
+                "server_id": server_id_v,
+                "operation": operation,
+                "department_id": server_dept_v,
+            },
+        )
+        raise
+    except ServiceUnavailableError:
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "worker_unreachable",
+                "task_kind": task_kind,
+                "server_id": server_id_v,
+                "operation": operation,
+                "department_id": server_dept_v,
+            },
+        )
+        raise
+    audit_service.emit(
+        audit_action, target_id=account_id, target_type="server_account",
+        status="success", allowed=True,
+        details={
+            "task_id": task_id,
+            "task_kind": task_kind,
+            "server_id": server_id_v,
+            "operation": operation,
+            "login": account_login_v,
+            "department_id": server_dept_v,
+        },
+    )
+    return {"operation": operation, "server_id": server_id_v, "task_id": task_id, "status": "queued"}
+
+
+async def _dispatch_account_provision(
+    *,
+    db: AsyncSession,
+    identity,
+    request: Request,
+    account_id: str,
+    server_id: str,
+    audit_action: str,
+    task_kind: str,
+    force_password: bool,
+) -> dict:
+    """Provision dispatch с creds-stash, savepoint и pending_apply.
+
+    Контракт:
+    * Discovered + `password_encrypted IS NULL` + нет inline-пароля → 409
+      `ACCOUNT_HAS_NO_PASSWORD` (fail-fast в dispatch'е до worker'а).
+    * Discovered + `password_encrypted IS NULL` + `force_password=true` →
+      сгенерить новый пароль + ssh-keypair, force_replace=true (chpasswd
+      на боксе).
+    * Managed (либо discovered с уже сохранённым ciphertext'ом) → sticky
+      существующий пароль, force_replace только если pending_apply'нутый
+      ciphertext ещё не подтверждён callback'ом worker'а (race-fix).
+    * Plaintext password + ssh_private_key уезжают в Redis-stash под
+      `dbos:dispatch_creds:<dcd_id>` (TTL = `dispatch_creds_ttl_seconds`),
+      в task-payload едет только ссылка `creds_stash_key`. Симметрия с
+      `server.prepare` (bootstrap_creds_key).
+    """
+    operation = "provision"
+    account, server = await _resolve_account_and_server(
+        db=db, identity=identity, account_id=account_id, server_id=server_id,
+        action=Action.CREATE, audit_action=audit_action, operation=operation,
+    )
+
+    # Discovered без сохранённого пароля и без явного force_password —
+    # fail-fast 409 ДО любых side-effect'ов: ни stash в Redis, ни savepoint,
+    # ни generation. Caller знает что делает: либо ротировать пароль через
+    # `/rotate_password`, либо явно передать `?force_password=true`.
+    if (
+        account.source == AccountSource.DISCOVERED.value
+        and account.password_encrypted is None
+        and not force_password
+    ):
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={
+                "reason": "account_has_no_password",
+                "server_id": server.id,
+                "operation": operation,
+                "department_id": server.department_id,
+            },
+        )
+        raise ConflictError(
+            error_code="ACCOUNT_HAS_NO_PASSWORD",
+            message=(
+                "Discovered account has no stored password; rotate the "
+                "password first or pass ?force_password=true to generate a "
+                "new one and overwrite the on-host password via chpasswd"
+            ),
+        )
+
+    idempotency_key = read_idempotency_key(request)
+    payload = _build_account_task_payload(
+        server=server, account=account, include_attrs=True,
+    )
+    # `force_password=true` для discovered'а: сбрасываем сохранённое до ensure,
+    # чтобы получить свежий пароль и force_replace=True. Managed-аккаунты
+    # этот reset не трогает — контракт узкий: только discovered.
+    had_password_before = account.password_encrypted is not None
+    pending_before = bool(account.credentials_pending_apply)
+    force_overwrite = (
+        force_password
+        and account.source == AccountSource.DISCOVERED.value
+    )
+    # Изоляция «creds-generation + dispatch» в одном savepoint'е: либо
+    # коммитим обе мутации после успешного dispatch'а, либо роллбэчим
+    # при ошибке dispatch'а. Без этого свежий ciphertext в БД без доехавшей
+    # до worker'а задачи рвал бы SSH (drift между server-БД и боксом).
+    creds_sp = await db.begin_nested()
+    if force_overwrite:
+        await account_svc.reset_provision_credentials(db, account)
+    _, creds, _ = await account_svc.ensure_provision_credentials(
+        db, account,
+    )
+    stash_key = worker_client.dispatch_creds_key(dispatch_creds_id())
+    try:
+        await worker_client.store_dispatch_creds(
+            stash_key,
+            {
+                "password_plaintext": creds["password"],
+                "ssh_private_key_plaintext": creds["ssh_private_key"],
+            },
+        )
+    except ServiceUnavailableError:
+        await creds_sp.rollback()
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "creds_store_unavailable",
+                "task_kind": task_kind,
+                "server_id": server.id,
+                "operation": operation,
+                "department_id": server.department_id,
+            },
+        )
+        raise
+    except Exception as exc:
+        # Любой runtime-фейл Redis (timeout / conn refused / etc) —
+        # best-effort cleanup stash'а и savepoint'а, 503 наружу.
+        await worker_client.delete_dispatch_creds(stash_key)
+        await creds_sp.rollback()
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "creds_store_failed",
+                "task_kind": task_kind,
+                "server_id": server.id,
+                "operation": operation,
+                "department_id": server.department_id,
+                "error_class": type(exc).__name__,
+            },
+        )
+        raise ServiceUnavailableError(
+            error_code="WORKER_REDIS_UNAVAILABLE",
+            message="Failed to stash provision credentials before dispatch",
+        ) from exc
+    payload["creds_stash_key"] = stash_key
+    payload["ssh_public_key"] = creds["ssh_public_key"]
+    # force_replace говорит воркеру «chpasswd на боксе». Три триггера:
+    # (а) discovered + явный force_password — reset выше сбросил старое;
+    # (б) пароля в БД до ensure не было — ensure сгенерил, надо доставить;
+    # (в) `credentials_pending_apply=True` ещё до текущего dispatch'а —
+    #     значит предыдущая попытка прошла dispatch, но callback'а не
+    #     получили (worker мог упасть после dispatch'а); БД считает свой
+    #     ciphertext «не подтверждённым», retry форсит overwrite.
+    payload["force_replace"] = (
+        force_overwrite or not had_password_before or pending_before
+    )
+    server_id_v = server.id
+    server_dept_v = server.department_id
+    account_login_v = account.login
     dispatch_ok = False
     try:
         try:
@@ -593,34 +668,26 @@ async def _dispatch_account_on_host(
             )
             raise
     finally:
-        if inject_provision_creds and not dispatch_ok:
+        if not dispatch_ok:
             # Stash осиротел — task в Redis-broker не доехал, воркер за
-            # creds не пойдёт; чистим stash вручную, чтобы plaintext не висел
-            # до TTL. Симметрично `server_prepare_dispatch.delete_prepare_creds`.
+            # creds не пойдёт; чистим вручную, чтобы plaintext не висел до TTL.
             await worker_client.delete_dispatch_creds(stash_key)
             await creds_sp.rollback()
-    if inject_provision_creds:
-        await creds_sp.commit()
-        await db.commit()
-        await db.refresh(account)
-    success_details = {
-        "task_id": task_id,
-        "task_kind": task_kind,
-        "server_id": server_id_v,
-        "operation": operation,
-        "login": account_login_v,
-        "department_id": server_dept_v,
-    }
-    if inject_provision_creds:
-        # `force_replace` уже в task-payload'е воркеру, но в success-аудите
-        # его не было — оператор видел только status=success и не отличал
-        # принудительный overwrite от штатного provision. SIEM-правила теперь
-        # фильтруют overwrite-кейсы по этому полю.
-        success_details["force_replace"] = payload.get("force_replace", False)
+    await creds_sp.commit()
+    await db.commit()
+    await db.refresh(account)
     audit_service.emit(
         audit_action, target_id=account_id, target_type="server_account",
         status="success", allowed=True,
-        details=success_details,
+        details={
+            "task_id": task_id,
+            "task_kind": task_kind,
+            "server_id": server_id_v,
+            "operation": operation,
+            "login": account_login_v,
+            "department_id": server_dept_v,
+            "force_replace": payload.get("force_replace", False),
+        },
     )
     return {"operation": operation, "server_id": server_id_v, "task_id": task_id, "status": "queued"}
 
@@ -1286,13 +1353,13 @@ async def account_rotate_password_dispatch(
         except ServiceUnavailableError:
             # Воркер недоступен глобально (redis down / не сконфигурён) — не
             # per-server проблема: продолжать батч смысла нет, каждый
-            # следующий сервер упадёт идентично. Отбиваем весь запрос.
+            # следующий сервер упадёт идентично.
             #
-            # До raise эмитим агрегат с фактическим состоянием батча: на
-            # серверы 1..K-1 уже стоит INSERT+RPUSH (dispatched), на K случился
-            # сбой (failed), на оставшихся не дошли (not_attempted). Без этого
-            # SIEM увидит только per-server failure и не сможет восстановить,
-            # какие task_id'ы реально в работе.
+            # Эмитим агрегат с фактическим состоянием батча: на серверы
+            # 1..K-1 уже стоит INSERT+RPUSH (dispatched), на K случился сбой
+            # (failed), на оставшихся не дошли (not_attempted). Без этого
+            # SIEM увидит только per-server failure и не сможет
+            # восстановить, какие task_id'ы реально в работе.
             audit_service.emit(
                 audit_action, target_id=account_id, target_type="server_account",
                 status="failure", allowed=True,
@@ -1324,6 +1391,46 @@ async def account_rotate_password_dispatch(
                     "department_id": account.department_id,
                 },
             )
+            # Mass-режим + хотя бы один успешный dispatch — не отбиваем 503,
+            # а отдаём структурированный response с `partial_failure=True`.
+            # Auto-cancel не делаем (риск частичных откатов на боксах, куда
+            # task уже долетел и применился). UI получает task_ids для
+            # ручной отмены и список not_attempted для retry.
+            if mode == "all" and tasks:
+                audit_service.emit(
+                    "mass_rotation.partial_failure",
+                    target_id=account_id, target_type="server_account",
+                    status="warning", allowed=True,
+                    details={
+                        "task_kind": "account.rotate_password",
+                        "dispatched_count": len(tasks),
+                        "failed_count": 1,
+                        "not_attempted_count": len(not_attempted),
+                        "dispatched_task_ids": [t["task_id"] for t in tasks],
+                        "failed_server_id": failed_server_id,
+                        "not_attempted_server_ids": not_attempted,
+                        "login": account.login,
+                        "department_id": account.department_id,
+                    },
+                )
+                # Дописываем failed + not_attempted в skipped, чтобы клиент
+                # увидел их в одном списке с decommissioned/idempotent.
+                skipped.append({
+                    "server_id": failed_server_id,
+                    "reason": "worker_unreachable",
+                })
+                for sid in not_attempted:
+                    skipped.append({
+                        "server_id": sid, "reason": "not_attempted",
+                    })
+                return AccountRotateDispatchResponse(
+                    mode=mode,
+                    status="partial",
+                    tasks=[AccountRotateTask(**t) for t in tasks],
+                    skipped=[AccountRotateSkipped(**s) for s in skipped],
+                    partial_failure=True,
+                    next_action="manual_cancel_dispatched",
+                )
             raise
         tasks.append({"server_id": server.id, "task_id": task_id})
 
@@ -1350,6 +1457,8 @@ async def account_rotate_password_dispatch(
         status="queued",
         tasks=[AccountRotateTask(**t) for t in tasks],
         skipped=[AccountRotateSkipped(**s) for s in skipped],
+        partial_failure=False,
+        next_action=None,
     )
 
 
@@ -1395,10 +1504,9 @@ async def account_provision_dispatch(
             "Для discovered-аккаунтов без сохранённого пароля: "
             "сгенерировать новый и принудительно перезаписать его на боксе "
             "через chpasswd. Без этого флага discovered-аккаунт без пароля "
-            "отбивается 422 (`DISCOVERED_NO_PASSWORD_NEEDS_EXPLICIT_FORCE`), "
-            "чтобы случайно не затереть руками выставленный пароль. "
-            "Managed-аккаунт и discovered с уже сохранённым паролем игнорируют "
-            "этот флаг."
+            "отбивается 409 (`ACCOUNT_HAS_NO_PASSWORD`), чтобы случайно не "
+            "затереть руками выставленный пароль. Managed-аккаунт и "
+            "discovered с уже сохранённым паролем игнорируют этот флаг."
         ),
     ),
 ) -> AccountProvisionDispatchResponse:
@@ -1407,14 +1515,11 @@ async def account_provision_dispatch(
     Доступ: `(server_account, *, create)`. Связано:
     `server_worker/src/tasks/users.py::account_provision`.
     """
-    result = await _dispatch_account_on_host(
+    result = await _dispatch_account_provision(
         db=db, identity=identity, request=request,
         account_id=account_id, server_id=server_id,
-        action=Action.CREATE,
         audit_action="server_account.provision",
         task_kind="account.provision",
-        operation="provision",
-        inject_provision_creds=True,
         force_password=force_password,
     )
     return AccountProvisionDispatchResponse(**result)
@@ -1622,10 +1727,25 @@ async def ipmi_rotate_password_dispatch(
         )
 
     idempotency_key = read_idempotency_key(request)
+    # Помечаем строку controller'а pending_apply=True до dispatch'а: worker
+    # будет генерить новый пароль и применять его на BMC, а callback
+    # `record_ipmi_credentials_rotated` сохранит ciphertext и снимет флаг.
+    # Между dispatch'ем и callback'ом БД-ciphertext (старый) и BMC-пароль
+    # (свежий) могут разойтись — retry увидит pending_apply=True и
+    # сможет отличить «свежий dispatch» от «callback просто запоздал».
+    pending_before = bool(controller.credentials_pending_apply)
+    controller.credentials_pending_apply = True
+    await db.flush()
     payload = {
         "server_id": server.id,
         "controller_id": controller_id,
         "target_department_id": server.department_id,
+        # force_replace для retry-сценария: было had_password_before AND NOT
+        # pending_apply, теперь — был ли подтверждён предыдущий dispatch.
+        # Worker не использует это поле на ipmi.rotate_password (он сам
+        # генерит и применяет), но кладём для симметрии с account-провижном
+        # и SIEM-аудитом: оператор видит «retry с force-overwrite».
+        "force_replace": pending_before,
     }
     try:
         task_id = await worker_client.dispatch_task(
@@ -1638,6 +1758,11 @@ async def ipmi_rotate_password_dispatch(
             idempotency_key=idempotency_key,
         )
     except ConflictError:
+        # Idempotent-конфликт: задача уже стоит на этом ресурсе, наш
+        # pending_apply-флаг подождёт того же callback'а. БД-обновление
+        # коммитим, чтобы flag не откатился к False — иначе следующий
+        # ручной dispatch не понял бы race-состояние.
+        await db.commit()
         audit_service.emit(
             audit_action, target_id=controller_id, target_type="ipmi_controller",
             status="failure", allowed=True,
@@ -1650,6 +1775,10 @@ async def ipmi_rotate_password_dispatch(
         )
         raise
     except ServiceUnavailableError:
+        # Воркер недоступен — нашу мутацию pending_apply'а откатываем,
+        # никакого dispatch'а не случилось, БД не должна оставаться в
+        # «pending» состоянии без задачи в очереди.
+        await db.rollback()
         audit_service.emit(
             audit_action, target_id=controller_id, target_type="ipmi_controller",
             status="failure", allowed=True,
@@ -1661,6 +1790,7 @@ async def ipmi_rotate_password_dispatch(
             },
         )
         raise
+    await db.commit()
     audit_service.emit(
         audit_action, target_id=controller_id, target_type="ipmi_controller",
         status="success", allowed=True,

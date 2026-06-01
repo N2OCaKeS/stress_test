@@ -68,7 +68,7 @@ class TestOutboxCancelledAfterCommitNoDuplicate:
     """Сценарий гонки:
 
     1) `to_thread(_write_batch_sync)` УЖЕ закоммитил батч.
-    2) `committed_ids` теперь содержит `id(envelope)` каждого события.
+    2) `committed_keys` теперь содержит `idempotency_key` каждого события.
     3) Внутри `_drain_loop` CancelledError прилетает ДО `_drained_total += ...`.
     4) Старый код requeue'ил весь батч → `_drain_remaining` дописывал дубль.
     5) Новый код: requeue только не-в-committed envelope'ы; `_drained_total`
@@ -77,7 +77,7 @@ class TestOutboxCancelledAfterCommitNoDuplicate:
 
     def test_committed_envelopes_not_requeued_on_cancel(self):
         # Воспроизводим гонку напрямую через `_write_batch_sync`: после его
-        # возврата `committed_ids` уже содержит все события, и если задача
+        # возврата `committed_keys` уже содержит все события, и если задача
         # затем будет отменена — drain не должен их requeue'ить.
         written: list[AuditEnvelope] = []
 
@@ -100,13 +100,13 @@ class TestOutboxCancelledAfterCommitNoDuplicate:
         )
 
         batch = [_env(f"ok-{i}") for i in range(3)]
-        committed_ids: set[int] = set()
-        succeeded = outbox._write_batch_sync(batch, committed_ids)
+        committed_keys: set[str] = set()
+        succeeded = outbox._write_batch_sync(batch, committed_keys)
 
-        # commit-success зафиксирован: все три envelope'а в `committed_ids`.
+        # commit-success зафиксирован: все три envelope'а в `committed_keys`.
         assert succeeded == 3
-        assert len(committed_ids) == 3
-        assert {id(env) for env in batch} == committed_ids
+        assert len(committed_keys) == 3
+        assert {env.idempotency_key for env in batch} == committed_keys
         # Self-audit-failures не бампились.
         assert failures["n"] == 0
 
@@ -114,7 +114,7 @@ class TestOutboxCancelledAfterCommitNoDuplicate:
         """Один savepoint падает — он НЕ в committed, остальные — да.
 
         Гарантирует, что в cancel-branch drain не «потеряет» события: failed
-        savepoint уже учтён `_bump_failure`, успешные — в `committed_ids`.
+        savepoint уже учтён `_bump_failure`, успешные — в `committed_keys`.
         Инвариант `drained + failures = enqueued` держится без overcount'а.
         """
 
@@ -138,13 +138,13 @@ class TestOutboxCancelledAfterCommitNoDuplicate:
         )
 
         ok1, bad, ok2 = _env("ok-1"), _env("bad"), _env("ok-2")
-        committed_ids: set[int] = set()
-        succeeded = outbox._write_batch_sync([ok1, bad, ok2], committed_ids)
+        committed_keys: set[str] = set()
+        succeeded = outbox._write_batch_sync([ok1, bad, ok2], committed_keys)
 
         assert succeeded == 2
-        assert id(bad) not in committed_ids
-        assert id(ok1) in committed_ids
-        assert id(ok2) in committed_ids
+        assert bad.idempotency_key not in committed_keys
+        assert ok1.idempotency_key in committed_keys
+        assert ok2.idempotency_key in committed_keys
         assert failures["n"] == 1
 
     def test_cancel_during_drain_after_commit_no_duplicate(self):

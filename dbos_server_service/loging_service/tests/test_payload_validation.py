@@ -57,7 +57,8 @@ class TestDetailsSizeLimit:
 class TestStringLengthBounds:
     def test_service_max_length_64(self, client, auth_headers):
         r = client.post(EVENTS_URL,
-                        json=make_event(service="s" * 64), headers=auth_headers)
+                        json=make_event(service="s" * 64),
+                        headers=auth_headers | {"X-Service-Identity": "s" * 64})
         assert r.status_code == 201
         r = client.post(EVENTS_URL,
                         json=make_event(service="s" * 65), headers=auth_headers)
@@ -186,7 +187,8 @@ class TestIngestStoresAllFields:
             "status": "success",
             "allowed": True,
         }
-        r = client.post(EVENTS_URL, json=payload, headers=auth_headers)
+        r = client.post(EVENTS_URL, json=payload,
+                        headers=auth_headers | {"X-Service-Identity": "svc"})
         from src.models.audit_event import AuditEvent
         stored = db.get(AuditEvent, r.json()["id"])
         assert stored.actor_id is None

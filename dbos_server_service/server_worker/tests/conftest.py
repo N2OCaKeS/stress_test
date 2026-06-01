@@ -155,6 +155,61 @@ async def fetch_task():
     return _get
 
 
+@pytest_asyncio.fixture
+async def stash_dispatch_creds():
+    """Положить provision-креды в Redis под `dbos:dispatch_creds:<id>` и
+    вернуть ключ, который тест может вписать в payload как `creds_stash_key`.
+
+    Имитирует то, что server_service делает перед dispatch'ем: пишет
+    plaintext-секреты в Redis с TTL, в payload едет только ссылка. Без
+    этого worker фейлится `DISPATCH_STASH_MISSING` ещё до `_account_creds`.
+    """
+    import json
+    import uuid as _uuid
+
+    import redis.asyncio as aioredis
+
+    from src.core.config import get_settings
+
+    written: list[str] = []
+
+    async def _stash(
+        password_plaintext: str | None = "sess-pwd",
+        ssh_private_key_plaintext: str | None = None,
+        suffix: str | None = None,
+    ) -> str:
+        token = suffix or _uuid.uuid4().hex[:16]
+        key = f"dbos:dispatch_creds:{token}"
+        settings = get_settings()
+        client = aioredis.from_url(settings.redis_url)
+        try:
+            await client.set(
+                key,
+                json.dumps({
+                    "password_plaintext": password_plaintext,
+                    "ssh_private_key_plaintext": ssh_private_key_plaintext,
+                }),
+                ex=300,
+            )
+        finally:
+            await client.aclose()
+        written.append(key)
+        return key
+
+    yield _stash
+
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        for key in written:
+            try:
+                await client.delete(key)
+            except Exception:
+                pass
+    finally:
+        await client.aclose()
+
+
 @pytest.fixture
 def captured_audit(monkeypatch):
     """In-memory сборщик audit-событий.

@@ -45,7 +45,7 @@ FS_MARK_DIR5 = '/tmp/fs_mark_test5'
 FS_MARK_SIZE = 10240
 FS_MARK_COUNT = 100000
 
-LOAD2_PATH = f'{SCRIPT_DIR}/load2noarch'
+LOAD2_PATH = f'{SCRIPT_DIR}/libs/load2noarch'
 LOAD2_DIR = '/tmp/load2_test'
 LOAD2_WORKERS = 150
 LOAD2_LOOPS = 20000

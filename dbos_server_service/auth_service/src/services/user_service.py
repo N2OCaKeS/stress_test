@@ -1193,10 +1193,11 @@ async def get_user_permissions(
             message="User not found",
         )
 
-    if is_dept_admin and not is_account_admin and not is_self:
-        # account_admin + self уже отфильтровались выше; здесь явная ветка
-        # только для dept_admin (с проверкой is_self, чтобы admin, смотрящий
-        # сам себя, не упёрся в случайный mismatch department_id).
+    if is_dept_admin and not is_self:
+        # is_account_admin и is_dept_admin взаимоисключающие (platform_role
+        # один на юзера), поэтому `not is_account_admin` лишний. Self
+        # фильтруем явно — admin может смотреть свою же строку, не упираясь
+        # в случайный mismatch department_id.
         if identity.department_id != target.department_id:
             _emit_permissions_denied(
                 actor_id=identity.user_id,

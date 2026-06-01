@@ -40,15 +40,19 @@ def _with_statement_timeout(
     На `57014` зовётся `on_canceled()` и пишется warning. Любая другая
     DBAPIError пробрасывается caller'у.
 
-    Quirk: `SET LOCAL` действует до конца внешней транзакции, а не до
-    выхода из SAVEPOINT. После rollback'а внутреннего nested-savepoint'а
-    выставленный timeout продолжит действовать на следующие statement'ы
-    в той же outer-tx, пока она не закоммитится/отроллбэчится. Под
-    текущих caller'ов (per-request read-эндпоинт с фиксированным session
-    scope'ом) это безопасно — outer-tx закрывается сразу после ответа.
-    Если helper позовут из долгоживущего сценария (worker-таска,
-    batch-loop с одной транзакцией), выставленный timeout будет
-    наследоваться следующими операциями этой же tx.
+    Postgres-quirk: `SET LOCAL statement_timeout = N` живёт до конца
+    *внешней* транзакции, выход из SAVEPOINT его не сбрасывает. Если
+    helper позовут из долгоживущей outer-tx (worker-таска, batch-loop),
+    выставленный timeout наследовался бы следующими statement'ами той
+    же tx — например, COUNT с timeout=1500 ms бил бы по соседнему
+    SELECT'у через секунду после возврата из этого helper'а.
+
+    Поэтому в success-ветке мы явно сбрасываем timeout обратно в 0
+    («без лимита») перед `nested.commit()`. В fail-ветке reset не нужен:
+    `nested.rollback()` поднимает внутренний savepoint, а сам timeout
+    остаётся в session-state до конца outer-tx — но caller уже получил
+    исключение/no-op и outer-tx обычно сразу откатится HTTP-обработчиком
+    или caller'ом repo-функции.
 
     На `timeout_ms=0` SET LOCAL пропускаем — Postgres трактует 0 как
     «без лимита», но сам факт записи в session-state остаётся, и в
@@ -61,6 +65,11 @@ def _with_statement_timeout(
             timeout_sql = f"SET LOCAL statement_timeout = {int(timeout_ms)}"
             db.execute(text(timeout_sql))
         result = fn()
+        if timeout_ms > 0:
+            # Сбрасываем timeout до того, как закроется savepoint:
+            # после `nested.commit()` SET LOCAL продолжил бы действовать
+            # на следующие statement'ы outer-tx (см. docstring).
+            db.execute(text("SET LOCAL statement_timeout = 0"))
         nested.commit()
         return result
     except DBAPIError as exc:

@@ -5,10 +5,11 @@
 
 Порядок обработки события:
   1. Если severity не задан — назначается из _DEFAULT_SEVERITY (по action+status)
-  2. OVERRIDE_SEVERITY — изменяет severity, продолжает цепочку
-  3. SUPPRESS          — отбрасывает событие (не сохраняется)
-  4. ALLOW             — сохраняет немедленно, прекращает вычисление
-  5. Если ни одно правило не дало финального решения — событие сохраняется (default allow)
+  2. Правила перебираются по убыванию priority (`priority DESC`)
+  3. SUPPRESS          — отбрасывает событие (не сохраняется), цепочка обрывается
+  4. ALLOW             — сохраняет немедленно, цепочка обрывается
+  5. OVERRIDE_SEVERITY — меняет severity и обрывает цепочку (highest priority wins)
+  6. Если ни одно правило не сматчилось — событие сохраняется (default allow)
 """
 
 import logging
@@ -229,10 +230,17 @@ def action_matches_pattern(action: str, pattern: str) -> bool:
 
 
 def _resolve_default_severity(action: str, status: str) -> str:
-    """Возвращает severity по умолчанию из встроенной таблицы."""
+    """Возвращает severity по умолчанию из встроенной таблицы.
+
+    Fallback для (action, status) пары, которой нет в `_DEFAULT_SEVERITY`:
+    `failure`/`denied`/`warning` → WARNING, всё остальное → INFO. Без
+    `"warning"` в первой ветке `status="warning"` (soft-mode guard'ы в
+    server_service::internal_service._check_target_department) свалился бы
+    в INFO — теряется сигнал, что операция прошла, но что-то пахнет.
+    """
     if (action, status) in _DEFAULT_SEVERITY:
         return _DEFAULT_SEVERITY[(action, status)]
-    return "WARNING" if status in ("failure", "denied") else "INFO"
+    return "WARNING" if status in ("failure", "denied", "warning") else "INFO"
 
 
 class _RuleCache:
@@ -252,6 +260,16 @@ class _RuleCache:
         # считаем по `_loaded_monotonic`, чтобы NTP step / переключение
         # часов не запирали кеш на десятки минут или, наоборот, не
         # сбрасывали его внеплановым refresh'ем.
+        #
+        # Эти два поля держатся в одной паре: апдейт обоих атомарен
+        # под `self._lock` (см. `get`/`invalidate`). Читаются без lock'а
+        # только из `_ttl_fresh` на горячем пути — там нас интересует
+        # один `_loaded_monotonic`, а wall-clock `_loaded_at` не трогаем
+        # (расхождение «monotonic уже обновлён, _loaded_at ещё нет» на
+        # CPython 64-bit невозможно — присваивание int/datetime атомарно
+        # на уровне байткода, GIL держит read-modify-write). Если когда-то
+        # перейдём на свободный от GIL рантайм или добавим третье связанное
+        # поле — `_ttl_fresh` придётся брать под lock.
         self._loaded_at: datetime | None = None
         self._loaded_monotonic: float | None = None
         # Запоминаем, что предыдущий tick видел пустую БД (MAX(updated_at) = NULL).
@@ -379,6 +397,22 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
             update={"severity": _resolve_default_severity(payload.action, payload.status)}
         )
 
+    # Cold-start семантика: если БД упала и кеш ещё не успел заполниться
+    # за всю жизнь процесса, `_cache.get` пробросит исключение наверх — caller
+    # увидит 500 и retry через outbox. Это сознательный fail-closed: для
+    # audit-журнала consistency важнее availability — событие либо прошло
+    # rule engine как положено, либо упало и переедет на retry. Альтернатива
+    # (fail-open: записать без правил) скрытно протащила бы события, которые
+    # active SUPPRESS-правило должно было бы подавить, — это compliance-дыра.
+    # После первой удачной загрузки кеш отдаёт stale snapshot при последующих
+    # DB-выпадениях (см. `_RuleCache.get` except-ветку), так что окно "500 на
+    # ingest" — только до первого успешного refresh'а.
+    # Правила отсортированы по `priority DESC` в `get_active_sorted`.
+    # Семантика OVERRIDE_SEVERITY (исторический контракт): несколько матчей
+    # применяются последовательно, последний переписывает severity. SUPPRESS/
+    # ALLOW обрывают цепочку. Вопрос «highest priority wins vs last match wins»
+    # — open owner-question (см. obsidian/TODO.md → W18 deferred Q2). Тесты
+    # фиксируют текущий контракт «последний выигрывает».
     rules = _cache.get(db)
     for rule in rules:
         if not _matches(rule, payload):

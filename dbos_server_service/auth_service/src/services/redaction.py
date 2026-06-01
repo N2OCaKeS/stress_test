@@ -6,7 +6,7 @@
 - `<PASSWORD>`   — ключи password/pwd/pass/old_password/new_password
 - `<TOKEN>`      — token/jwt/bearer/access_token/refresh_token/oauth_token/id_token
 - `<SECRET>`     — secret/secret_key/api_key/apikey/client_secret/private_key
-- `<HASH>`       — password_hash/hash/token_hash
+- `<HASH>`       — password_hash/token_hash/pwd_hash/refresh_token_hash/pat_hash/bot_token_hash
 - `<CREDENTIAL>` — credential/credentials/auth
 
 Дополнительно — value-level эвристика:
@@ -33,7 +33,6 @@ _PASSWORD_KEYS = {
 _TOKEN_KEYS = {
     "token", "access_token", "refresh_token", "id_token",
     "oauth_token", "bearer", "jwt", "jwt_token",
-    "refresh_token_hash",  # тоже секрет, маскируем как TOKEN-уровень
     "session_token",
     # defense-in-depth: если кто-то решит положить plaintext в явно
     # названный ключ — маскируем по имени, не дожидаясь эвристики по dbos_*
@@ -42,16 +41,14 @@ _TOKEN_KEYS = {
 _SECRET_KEYS = {
     "secret", "secret_key", "api_key", "apikey",
     "client_secret", "private_key", "signing_key",
-    "service_api_key", "logging_service_api_key",
+    "service_api_key", "service_key", "logging_service_api_key",
 }
 _HASH_KEYS = {
-    # Конкретные ключи, под которыми лежат именно хэши секретов. `hash` —
-    # обобщённый, но в audit-details auth_service'а он используется только
-    # для password_hash/token_hash (исторические синонимы); в других
-    # доменах (`permission_hash`, `etag_hash`, `content_hash`) ключ не
-    # секретный и под `<HASH>` его маскировать не нужно — таких ключей в
-    # сетe ключей нет, и `_classify_key` отдаёт None.
-    "password_hash", "hash", "token_hash", "pwd_hash",
+    # Хэши секретов — маскируем. Generic `hash` оставлен для обратной
+    # совместимости с hypothesis-тестом (см. test_redaction_hypothesis); если
+    # появятся легитимные ключи вроде `git_commit_hash`, переименуй их в коде.
+    "hash", "password_hash", "token_hash", "pwd_hash",
+    "refresh_token_hash", "pat_hash", "bot_token_hash",
 }
 _CREDENTIAL_KEYS = {
     "credential", "credentials", "auth", "authorization",
@@ -82,16 +79,21 @@ _MAX_STRING_LEN = 2048  # очень длинные строки усекают�
 
 
 def _classify_key(key: str) -> str | None:
-    """Возвращает плейсхолдер по имени ключа, либо None если ключ безопасен."""
+    """Возвращает плейсхолдер по имени ключа, либо None если ключ безопасен.
+
+    _HASH_KEYS проверяем РАНЬШЕ _TOKEN_KEYS: имена вида `refresh_token_hash` /
+    `pat_hash` / `bot_token_hash` относятся к хэшам токенов (метка `<HASH>`),
+    не к токенам как таковым.
+    """
     k = key.lower()
     if k in _PASSWORD_KEYS:
         return "<PASSWORD>"
+    if k in _HASH_KEYS:
+        return "<HASH>"
     if k in _TOKEN_KEYS:
         return "<TOKEN>"
     if k in _SECRET_KEYS:
         return "<SECRET>"
-    if k in _HASH_KEYS:
-        return "<HASH>"
     if k in _CREDENTIAL_KEYS:
         return "<CREDENTIAL>"
     return None

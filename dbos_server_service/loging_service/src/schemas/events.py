@@ -241,6 +241,12 @@ class EventCreate(BaseModel):
         if v is None:
             return v
         if not isinstance(v, str):
+            # Не str → пускаем дальше как есть. Пайдантик-уровневый type-coerce
+            # на str-аннотации отбьёт не-строку с `string_type`-ошибкой ДО
+            # того, как value уедет в БД, так что NFKC/charset нам здесь делать
+            # не на чем. Возвращаем raw, чтобы caller получил стандартный
+            # `Input should be a valid string`, а не наше специальное
+            # «match [A-Za-z0-9_.-]».
             return v
         normalised = unicodedata.normalize("NFKC", v).strip()
         if not normalised:

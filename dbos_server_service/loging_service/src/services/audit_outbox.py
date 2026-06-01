@@ -24,9 +24,10 @@ Outbox-паттерн: `push_nowait()` кладёт payload во внутрен�
   настроены слишком консервативно, либо app под DoS-нагрузкой.
 * ``dropped_cancel_total`` — drain-task отменён (`stop()`-call или
   CancelledError на event loop'е), батч уже выдернут из очереди, но БД не
-  успела принять commit. То, что не закоммитилось и не вернулось в очередь
-  (queue mid-shutdown может быть уже full → не requeue'ится), уходит сюда.
-  Признак «грубого» shutdown'а: stop() пришёл во время активного flush'а.
+  успела принять commit. То, что не закоммитилось и не вернулось в очередь,
+  уходит сюда. Если очередь во время requeue была переполнена — события
+  идут в ``dropped_overflow_total``, потому что это про насыщение буфера,
+  а не про cancel.
 * ``dropped_shutdown_total`` — финальный `_drain_remaining` не уложился в
   бюджет `stop(timeout=...)`. Признак того, что shutdown grace period
   слишком короткий для текущего буфера, либо БД-writes стали в разы
@@ -289,7 +290,16 @@ class AuditOutbox:
                     # выдернут из очереди, БД могла принять часть или весь
                     # commit. `committed_ids` — то, что точно в БД; всё
                     # остальное возвращаем в очередь под `_drain_remaining`.
+                    #
+                    # Потери разносятся по причинам: QueueFull при requeue
+                    # (буфер мог заполниться между cancel-моментом и тем,
+                    # как мы дошли до этой строки — push_nowait продолжает
+                    # принимать события в момент cancel'а) — это overflow,
+                    # не cancel. Раньше всё валилось в `_dropped_cancel_total`
+                    # и маскировало реальный сигнал «сервис под нагрузкой,
+                    # буфер переполнен» как «грубый shutdown».
                     requeued = 0
+                    overflow_lost = 0
                     for envelope in batch:
                         if id(envelope) in committed_ids:
                             continue
@@ -297,11 +307,21 @@ class AuditOutbox:
                             self._queue.put_nowait(envelope)
                             requeued += 1
                         except asyncio.QueueFull:
-                            break
-                    lost = len(batch) - len(committed_ids) - requeued
-                    if lost > 0:
+                            overflow_lost += 1
+                    # Всё, что не закоммитилось и не вернулось в очередь
+                    # (и не упало в overflow_lost) — настоящая cancel-потеря:
+                    # сюда сейчас попасть нечем, ветка зарезервирована на
+                    # случай, если в будущем добавится логика «пропустить
+                    # некоторые envelope'ы без requeue».
+                    cancel_lost = (
+                        len(batch) - len(committed_ids) - requeued - overflow_lost
+                    )
+                    if overflow_lost > 0 or cancel_lost > 0:
                         with self._counters_lock:
-                            self._dropped_cancel_total += lost
+                            if overflow_lost > 0:
+                                self._dropped_overflow_total += overflow_lost
+                            if cancel_lost > 0:
+                                self._dropped_cancel_total += cancel_lost
                     if committed_ids:
                         with self._counters_lock:
                             self._drained_total += len(committed_ids)
@@ -324,7 +344,19 @@ class AuditOutbox:
             logger.error("audit outbox drain loop crashed: %s", exc, exc_info=True)
 
     async def _drain_remaining(self, *, timeout: float) -> None:
-        """Финальный выгреб очереди в shutdown'е, не дольше `timeout`."""
+        """Финальный выгреб очереди в shutdown'е, не дольше `timeout`.
+
+        Deadline-check сделан ПОСЛЕ выдёргивания батча, но ДО `_flush_batch`:
+        если бюджет уже исчерпан, события уезжают в `_dropped_shutdown_total`
+        вместо того, чтобы инициировать flush, который заведомо не успеет
+        и упадёт в `CancelledError` ветку. Это даёт детерминированный учёт
+        потерь по причине «таймаут» отдельно от «жёсткий cancel» — SIEM по
+        этим двум counter'ам отличает «выделили мало времени» от «forced
+        kill во время flush'а». Цена: один уже выдёрнутый из очереди батч
+        (до `batch_size` events) считается потерянным, даже если БД мгновенно
+        бы его приняла — но мы и так в shutdown'е, дополнительные ~poll_interval
+        мс держать процесс смысла нет.
+        """
         if self._queue is None:
             return
         deadline = asyncio.get_running_loop().time() + max(0.0, timeout)

@@ -36,6 +36,10 @@ from src.core.security import hash_password as _hash_password
 
 @lru_cache(maxsize=1)
 def _dummy_password_hash() -> str:
+    # Инвариант: dummy-hash считается теми же параметрами Argon2id, что и
+    # production-хэши (`hash_password`). Если когда-то расщепим параметры
+    # на dev/prod — здесь надо синхронно тянуть production-конфиг, иначе
+    # timing-equalisation сломается (dummy verify станет быстрее реального).
     return _hash_password("__never_match_sentinel__")
 
 

@@ -233,6 +233,12 @@ async def get_current_identity(
 _IDENTITY_CACHE_TTL_SECONDS: float | None = None
 _IDENTITY_CACHE_MAXSIZE: int | None = None
 _identity_cache: "OrderedDict[str, tuple[IdentityContext, float]]" = OrderedDict()
+# Обратный индекс user_id → {cache_key}. Поддерживается в `_identity_cache_put`
+# / `_identity_cache_get` (lazy GC) / `popitem`-eviction. Делает
+# `invalidate_identity_cache_for_user` O(K), где K — число entries конкретного
+# юзера, вместо O(N) скана всего кэша. При default maxsize=50k и burst'е PAT/
+# bot-токенов линейный скан становился заметным.
+_user_index: dict[str, set[str]] = {}
 
 
 def _get_cache_config() -> tuple[float, int]:
@@ -267,6 +273,16 @@ def _token_cache_key(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def _drop_from_user_index(user_id: str, key: str) -> None:
+    """Снять `key` с обратного индекса user_id; чистит пустые set'ы."""
+    keys = _user_index.get(user_id)
+    if keys is None:
+        return
+    keys.discard(key)
+    if not keys:
+        _user_index.pop(user_id, None)
+
+
 def _identity_cache_get(token: str) -> IdentityContext | None:
     """Достать identity из кэша. None если miss/expired (с lazy GC).
 
@@ -284,6 +300,7 @@ def _identity_cache_get(token: str) -> IdentityContext | None:
         # Lazy GC — удаляем при miss-after-expire, чтобы dict не рос
         # бесконечно для коротко-живущих токенов.
         _identity_cache.pop(key, None)
+        _drop_from_user_index(identity.user_id, key)
         return None
     # Cache hit — двигаем запись в конец, чтобы eviction выбрасывал реально
     # давно не используемые токены, а не недавно прочитанные.
@@ -301,10 +318,18 @@ def _identity_cache_put(token: str, identity: IdentityContext) -> None:
     if ttl <= 0:
         return
     key = _token_cache_key(token)
+    # Если key уже был под другим user_id (теоретически невозможно при
+    # sha256 от raw-токена, но защищаемся от reseed/тестового мусора) —
+    # снимем старую запись из обратного индекса.
+    prev = _identity_cache.get(key)
+    if prev is not None and prev[0].user_id != identity.user_id:
+        _drop_from_user_index(prev[0].user_id, key)
     _identity_cache[key] = (identity, time.time() + ttl)
     _identity_cache.move_to_end(key)
+    _user_index.setdefault(identity.user_id, set()).add(key)
     while len(_identity_cache) > maxsize:
-        _identity_cache.popitem(last=False)
+        evicted_key, (evicted_identity, _) = _identity_cache.popitem(last=False)
+        _drop_from_user_index(evicted_identity.user_id, evicted_key)
 
 
 def _identity_cache_clear() -> None:
@@ -312,6 +337,7 @@ def _identity_cache_clear() -> None:
     новый app, но module-level state переживает между тестами в той же сессии).
     """
     _identity_cache.clear()
+    _user_index.clear()
 
 
 def invalidate_identity_cache_for_user(user_id: str) -> int:
@@ -320,16 +346,15 @@ def invalidate_identity_cache_for_user(user_id: str) -> int:
     Дёргают `ban_user`/`unban_user`/`update_user` при смене
     platform_role/department/status — privilege-change должен сработать
     моментально, не ждать TTL. Возвращает число удалённых entries (для
-    тестов/observability). Скан линейный — O(N), но N ~10K и invalidate
-    редкий, не парься.
+    тестов/observability). Через обратный индекс `_user_index` — O(K) по
+    числу записей юзера, не O(N) по всему кэшу.
     """
-    to_drop: list[str] = []
-    for key, (identity, _expires) in _identity_cache.items():
-        if identity.user_id == user_id:
-            to_drop.append(key)
-    for key in to_drop:
+    keys = _user_index.pop(user_id, None)
+    if not keys:
+        return 0
+    for key in keys:
         _identity_cache.pop(key, None)
-    return len(to_drop)
+    return len(keys)
 
 
 def _propagate_identity_to_audit_context(identity: IdentityContext) -> None:

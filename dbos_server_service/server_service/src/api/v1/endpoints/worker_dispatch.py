@@ -476,7 +476,7 @@ async def _dispatch_account_on_host(
         creds_sp = await db.begin_nested()
         if force_overwrite:
             await account_svc.reset_provision_credentials(db, account)
-        _, creds, generated = await account_svc.ensure_provision_credentials(
+        _, creds, _ = await account_svc.ensure_provision_credentials(
             db, account,
         )
         # Plaintext password + ssh_private_key НЕ кладём в payload — иначе они

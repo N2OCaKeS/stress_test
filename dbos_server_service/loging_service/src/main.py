@@ -962,13 +962,28 @@ def _emit_audit_envelope(envelope: AuditEnvelope) -> None:
     try:
         try:
             write_envelope_to_db(db, envelope)
-            db.commit()
+            commit = getattr(db, "commit", None)
+            if callable(commit):
+                commit()
         except Exception as exc:
-            db.rollback()
+            # Тестовые fake-сессии (`_BoomSession`/`_NoopSession`) могут не
+            # реализовывать rollback/close — гвардим через getattr, чтобы
+            # инварианты self-audit failure counter / log error работали.
+            rollback = getattr(db, "rollback", None)
+            if callable(rollback):
+                try:
+                    rollback()
+                except Exception:
+                    pass
             _bump_self_audit_failures()
             logger.error("self-audit failed: %s", exc, exc_info=True)
     finally:
-        db.close()
+        close = getattr(db, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
 
 
 def _emit_audit(
@@ -983,51 +998,32 @@ def _emit_audit(
 ) -> None:
     """Пишет событие loging_service напрямую в БД — всегда минуя SUPPRESS-правила.
 
-    Это гарантирует, что аудит loging_service нельзя скрыть никакими
-    правилами.
-
-    Ошибки записи логируются (`logger.error` + counter) — silent failure
-    антипаттерн: маскирует регрессии инварианта «self-audit всегда пишется».
+    Production hot-path сейчас идёт через `_emit_audit_envelope` после того,
+    как `audit_access` middleware кладёт событие в outbox или (без outbox'а)
+    в `to_thread(_emit_audit_envelope, envelope)`. Этот helper нужен тестам
+    `test_middleware.py` / `test_batch2.py` / `test_p4_cleanups.py` — они
+    проверяют инварианты self-audit (счётчик ошибок, defence-in-depth обход
+    SUPPRESS, actor_type fallback) с positional-аргументной сигнатурой, и
+    переписывать их одной волной слишком шумно. Поэтому функция просто
+    собирает envelope через тот же `make_envelope` и вызывает
+    `_emit_audit_envelope` — DRY со sync-fallback'ом outbox'а.
 
     `actor_type` пробрасывается из identity (через `_fetch_identity` —
-    маппинг от auth_service introspect `subject_type`). Известные значения
-    из whitelist'а идут как есть; всё остальное (None или новый subject_type
-    от auth_service, который мы ещё не знаем) → `"anonymous"`, чтобы
-    неизвестный subject не атрибутировался к человеку в SOC. Раньше unknown
-    + non-null actor_id → `"user"`, но это false-positive: bot/oauth_client
-    с слегка переименованным subject_type попадали бы в user-метрики.
+    маппинг от auth_service introspect `subject_type`). Whitelist-резолв
+    делает `_resolve_actor_type` внутри `write_envelope_to_db` — здесь
+    дополнительной обработки не нужно.
     """
-    # Резолв actor_type — единый whitelist (`_resolve_actor_type`).
-    # `VALID_ACTOR_TYPES` совпадает с `EventCreate.actor_type` Literal'ом;
-    # неизвестные значения сваливаются в "anonymous", чтобы не подмешивать
-    # фейкового user'а в SIEM-агрегаты.
-    resolved_actor_type = _resolve_actor_type(actor_type)
-
-    from src.db.session import SessionLocal
-    from src.schemas.events import EventCreate
-    from src.services.event_service import record_admin_action
-    db = SessionLocal()
-    try:
-        record_admin_action(
-            db,
-            EventCreate(
-                timestamp=datetime.now(timezone.utc),
-                service="loging_service",
-                action=action,
-                actor_id=actor_id,
-                actor_type=resolved_actor_type,
-                username=username,
-                status=emit_status,
-                allowed=allowed,
-                request_id=request_id,
-                details=details,
-            ),
-        )
-    except Exception as exc:
-        _bump_self_audit_failures()
-        logger.error("self-audit failed: %s", exc, exc_info=True)
-    finally:
-        db.close()
+    envelope = make_envelope(
+        action=action,
+        actor_id=actor_id,
+        actor_type=actor_type,
+        username=username,
+        emit_status=emit_status,
+        allowed=allowed,
+        request_id=request_id,
+        details=details,
+    )
+    _emit_audit_envelope(envelope)
 
 
 def _http_status_to_category(status: int) -> str:

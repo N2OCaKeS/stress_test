@@ -35,13 +35,13 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
 
 import redis.asyncio as aioredis
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
-from src.services import _breaker_lua
+from src.services import _breaker_core, _breaker_lua
+from src.services._breaker_core import Thresholds as _Thresholds
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +54,6 @@ _KEY_PREFIX = "cb:audit_publisher"
 DEFAULT_FAILURE_THRESHOLD = 5
 DEFAULT_WINDOW_SECONDS = 60
 DEFAULT_COOLDOWN_SECONDS = 30
-
-
-@dataclass(frozen=True)
-class _Thresholds:
-    """Пороги breaker'а для одного вызова — отделены от Settings для тестов."""
-
-    failure_threshold: int = DEFAULT_FAILURE_THRESHOLD
-    window_seconds: int = DEFAULT_WINDOW_SECONDS
-    cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS
 
 
 def _thresholds_from_settings() -> _Thresholds:
@@ -132,8 +123,17 @@ def _probe_key() -> str:
     return f"{_KEY_PREFIX}:probe"
 
 
+def _all_keys() -> tuple[str, str, str, str]:
+    """Все четыре ключа breaker'а: (failures, state, open_until, probe)."""
+    return (*_keys(), _probe_key())
+
+
 async def _get_client() -> aioredis.Redis:
-    """One-shot Redis-клиент. Не кэшируем — см. комментарий в bmc_circuit_breaker."""
+    """One-shot Redis-клиент. Не кэшируем — см. комментарий в bmc_circuit_breaker.
+
+    Подменяется в тестах через `install_fake_redis(monkeypatch, audit_cb)` —
+    `_breaker_core` дёргает эту функцию как client_factory.
+    """
     settings = get_settings()
     return aioredis.from_url(settings.redis_url)
 
@@ -145,26 +145,14 @@ async def check() -> None:
     Redis (fail-open: пропускаем HTTP, breaker «как будто closed»).
     """
     thresholds = _thresholds_from_settings()
-    client = await _get_client()
-    try:
-        try:
-            keys = (*_keys(), _probe_key())
-            result = await client.eval(
-                _CHECK_SCRIPT, 4, *keys,
-                str(int(time.time())), str(thresholds.cooldown_seconds),
-            )
-        except Exception:  # noqa: BLE001 — fail-open
-            logger.warning(
-                "audit_publisher_breaker: check failed, defaulting to closed",
-                exc_info=True,
-            )
-            return
-    finally:
-        await client.aclose()
-
-    state_raw, retry_after_raw = result[0], result[1]
-    state = state_raw.decode() if isinstance(state_raw, bytes) else state_raw
-    retry_after = float(retry_after_raw)
+    state, retry_after = await _breaker_core.eval_check(
+        client_factory=_get_client,
+        keys=_all_keys(),
+        cooldown_seconds=thresholds.cooldown_seconds,
+        log_prefix="audit_publisher_breaker",
+        logger=logger,
+        now=time.time(),
+    )
     if state == "open":
         logger.warning(
             "audit_publisher_breaker: rejecting POST; circuit open for ~%ss",
@@ -195,26 +183,13 @@ async def get_state() -> tuple[str, float]:
 
     Если Redis недоступен — fail-open: возвращаем `("closed", 0.0)`.
     """
-    client = await _get_client()
-    try:
-        try:
-            keys = (*_keys(), _probe_key())
-            result = await client.eval(
-                _GET_STATE_SCRIPT, 4, *keys,
-                str(int(time.time())),
-            )
-        except Exception:  # noqa: BLE001 — fail-open
-            logger.warning(
-                "audit_publisher_breaker: get_state failed, defaulting to closed",
-                exc_info=True,
-            )
-            return ("closed", 0.0)
-    finally:
-        await client.aclose()
-
-    state_raw, retry_after_raw = result[0], result[1]
-    state = state_raw.decode() if isinstance(state_raw, bytes) else state_raw
-    return (state, float(retry_after_raw))
+    return await _breaker_core.eval_get_state(
+        client_factory=_get_client,
+        keys=_all_keys(),
+        log_prefix="audit_publisher_breaker",
+        logger=logger,
+        now=time.time(),
+    )
 
 
 async def record_success() -> None:
@@ -222,18 +197,12 @@ async def record_success() -> None:
 
     Безопасна при ошибках Redis. Дёргается из `_publish_one` после 2xx.
     """
-    client = await _get_client()
-    try:
-        try:
-            keys = (*_keys(), _probe_key())
-            await client.eval(_RECORD_SUCCESS_SCRIPT, 4, *keys)
-        except Exception:  # noqa: BLE001 — best-effort
-            logger.warning(
-                "audit_publisher_breaker: record_success failed",
-                exc_info=True,
-            )
-    finally:
-        await client.aclose()
+    await _breaker_core.eval_record_success(
+        client_factory=_get_client,
+        keys=_all_keys(),
+        log_prefix="audit_publisher_breaker",
+        logger=logger,
+    )
 
 
 async def record_failure() -> None:
@@ -244,32 +213,21 @@ async def record_failure() -> None:
     канал не виноват, breaker такие не считает).
     """
     thresholds = _thresholds_from_settings()
-    client = await _get_client()
-    try:
-        try:
-            keys = (*_keys(), _probe_key())
-            result = await client.eval(
-                _RECORD_FAILURE_SCRIPT, 4, *keys,
-                str(int(time.time())),
-                str(thresholds.failure_threshold),
-                str(thresholds.window_seconds),
-                str(thresholds.cooldown_seconds),
-            )
-        except Exception:  # noqa: BLE001 — best-effort
-            logger.warning(
-                "audit_publisher_breaker: record_failure failed",
-                exc_info=True,
-            )
-            return
-    finally:
-        await client.aclose()
-
-    state_raw, count_raw = result[0], result[1]
-    state = state_raw.decode() if isinstance(state_raw, bytes) else state_raw
+    result = await _breaker_core.eval_record_failure(
+        client_factory=_get_client,
+        keys=_all_keys(),
+        thresholds=thresholds,
+        log_prefix="audit_publisher_breaker",
+        logger=logger,
+        now=time.time(),
+    )
+    if result is None:
+        return
+    state, count = result
     if state == "open":
         logger.error(
             "audit_publisher_breaker: OPENED after %s failures in %ss; cooldown=%ss",
-            int(count_raw),
+            count,
             thresholds.window_seconds,
             thresholds.cooldown_seconds,
         )
@@ -280,13 +238,9 @@ async def reset() -> None:
 
     Сносит все четыре ключа (failures, state, open_until, probe).
     """
-    client = await _get_client()
-    try:
-        try:
-            await client.delete(*_keys(), _probe_key())
-        except Exception:  # noqa: BLE001
-            logger.warning(
-                "audit_publisher_breaker: reset failed", exc_info=True,
-            )
-    finally:
-        await client.aclose()
+    await _breaker_core.eval_reset(
+        client_factory=_get_client,
+        keys=_all_keys(),
+        log_prefix="audit_publisher_breaker",
+        logger=logger,
+    )

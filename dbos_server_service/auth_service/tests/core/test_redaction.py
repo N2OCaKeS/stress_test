@@ -21,9 +21,11 @@ class TestKeyBasedRedaction:
             assert out == {key: "<PASSWORD>"}, f"failed for {key}"
 
     def test_token_keys(self):
+        # `refresh_token_hash` переехал в _HASH_KEYS — это хэш, не токен;
+        # покрывается test_hash_keys (W18-W4 разнос).
         for key in ("token", "access_token", "refresh_token", "id_token",
                     "oauth_token", "bearer", "jwt", "jwt_token",
-                    "refresh_token_hash", "session_token",
+                    "session_token",
                     "token_plaintext", "pat_token", "bot_token"):
             out = redact({key: "abc.def.ghi"})
             assert out == {key: "<TOKEN>"}, f"failed for {key}"

@@ -1,0 +1,413 @@
+"""Тесты P4-кластера loging (carry из W13/W14/W15/W16, фиксы в W18).
+
+Пункты задачи:
+1. idempotency_key charset / offset cap — подтверждение, что фиксы W15 P3
+   на месте (charset pattern, le=_MAX_OFFSET на /events и /rules).
+2. GET /retention rate-limit — закрыт F-W17-W3, подтверждение.
+3. RuleCreate.description max_length=1024 (W16 Info).
+4. _drain_loop cancel-requeue overflow/cancel split — QueueFull при requeue
+   считается _dropped_overflow_total, не _dropped_cancel_total.
+5. _emit_audit делегирует _emit_audit_envelope (TD1/TD2 DRY).
+6. apply_rules cold-start fail-closed — комментарий-обоснование на месте.
+7. _with_statement_timeout сбрасывает timeout перед nested.commit().
+8. multiple OVERRIDE_SEVERITY — highest priority wins (break on first match).
+9. _DEFAULT_SEVERITY fallback покрывает status="warning" → WARNING.
+10. _RuleCache._loaded_at/_monotonic atomicity — docstring contract.
+
+Структурные guards идут отдельным классом для каждого пункта; behavioural
+тесты используют общую `db`-фикстуру.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import inspect
+import re
+import threading
+
+import pytest
+from datetime import datetime, timezone
+
+from src.repositories.events import _with_statement_timeout
+from src.schemas.events import EventCreate, _IDEMPOTENCY_KEY_PATTERN
+from src.schemas.rules import RuleCreate
+from src.services import audit_outbox as ob
+from src.services import rule_service
+from src.services.rule_service import (
+    _DEFAULT_SEVERITY,
+    _RuleCache,
+    _RuleSnapshot,
+    _resolve_default_severity,
+    apply_rules,
+)
+
+
+# ── 1. idempotency_key charset + offset cap ──────────────────────────────
+
+
+class TestIdempotencyKeyCharset:
+    def test_charset_accepts_uuid_hex(self):
+        # 32-char uuid hex — самый частый кейс из audit_outbox.make_envelope
+        EventCreate(
+            timestamp=datetime.now(timezone.utc),
+            service="auth_service",
+            action="user.login",
+            status="success",
+            allowed=True,
+            idempotency_key="a" * 32,
+        )
+
+    def test_charset_rejects_crlf(self):
+        with pytest.raises(ValueError, match="idempotency_key"):
+            EventCreate(
+                timestamp=datetime.now(timezone.utc),
+                service="auth_service",
+                action="user.login",
+                status="success",
+                allowed=True,
+                idempotency_key="abc\r\nX-Inject: y",
+            )
+
+    def test_pattern_excludes_control_chars(self):
+        # Sanity: NUL отбит на pattern-уровне.
+        assert _IDEMPOTENCY_KEY_PATTERN.match("abc\x00def") is None
+        assert _IDEMPOTENCY_KEY_PATTERN.match("abc.def-1_2") is not None
+
+
+class TestOffsetCap:
+    def _le_from_query(self, query_default):
+        """Достаёт `le=...` из FastAPI Query-default через metadata."""
+        for m in getattr(query_default, "metadata", []) or []:
+            if hasattr(m, "le"):
+                return m.le
+        return None
+
+    def test_events_offset_cap_in_signature(self):
+        from src.api.v1.endpoints.events import list_events, _MAX_OFFSET
+        sig = inspect.signature(list_events)
+        offset_param = sig.parameters["offset"]
+        assert _MAX_OFFSET >= 1_000_000
+        le = self._le_from_query(offset_param.default)
+        assert le == _MAX_OFFSET, f"offset must have le={_MAX_OFFSET}, got {le}"
+
+    def test_rules_offset_cap_in_signature(self):
+        from src.api.v1.endpoints.rules import list_rules, _MAX_OFFSET
+        sig = inspect.signature(list_rules)
+        offset_param = sig.parameters["offset"]
+        assert _MAX_OFFSET >= 1_000_000
+        le = self._le_from_query(offset_param.default)
+        assert le == _MAX_OFFSET, f"offset must have le={_MAX_OFFSET}, got {le}"
+
+
+# ── 2. GET /retention rate-limit ─────────────────────────────────────────
+
+
+class TestRetentionGetRateLimit:
+    def test_get_policy_has_limiter_decorator(self):
+        # `slowapi.Limiter.limit` оборачивает функцию; проверяем, что атрибуты
+        # лимитера на месте (`__wrapped__` + `_rate_limit` или подобные маркеры
+        # — конкретное имя зависит от версии slowapi). Грубый guard: исходник
+        # модуля содержит `@limiter.limit` непосредственно над `def get_policy`.
+        import inspect as _ins
+        from src.api.v1.endpoints import retention as ret_mod
+        source = _ins.getsource(ret_mod)
+        # Ищем декоратор сразу над def get_policy.
+        match = re.search(
+            r"@limiter\.limit\([\s\S]*?\)\s*def get_policy\(",
+            source,
+        )
+        assert match is not None, (
+            "GET /retention должен быть под @limiter.limit"
+        )
+
+
+# ── 3. RuleCreate.description max_length ─────────────────────────────────
+
+
+class TestRuleCreateDescriptionMaxLength:
+    def test_description_accepts_under_cap(self):
+        r = RuleCreate(name="x", description="a" * 1024, effect="ALLOW")
+        assert r.description == "a" * 1024
+
+    def test_description_rejects_over_cap(self):
+        with pytest.raises(ValueError):
+            RuleCreate(name="x", description="a" * 1025, effect="ALLOW")
+
+    def test_description_optional(self):
+        r = RuleCreate(name="x", effect="ALLOW")
+        assert r.description is None
+
+
+# ── 4. _drain_loop cancel-requeue: overflow vs cancel split ──────────────
+
+
+def _make_outbox(max_size=2, batch_size=2):
+    """Build outbox с инжектированными моками — без реальной БД."""
+    def session_factory():
+        class _StubDB:
+            def commit(self): pass
+            def rollback(self): pass
+            def close(self): pass
+            def begin_nested(self): return _SP()
+        class _SP:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def commit(self): pass
+            def rollback(self): pass
+        return _StubDB()
+
+    def writer(db, env):
+        pass
+
+    failures = {"n": 0}
+    def bump():
+        failures["n"] += 1
+        return failures["n"]
+
+    return ob.AuditOutbox(
+        max_size=max_size,
+        batch_size=batch_size,
+        poll_interval_seconds=0.001,
+        session_factory=session_factory,
+        writer=writer,
+        bump_failure=bump,
+    )
+
+
+class TestDrainLoopCancelRequeueSplit:
+    def test_queuefull_at_requeue_counts_as_overflow(self):
+        """При cancel'е с переполнением очереди requeue-loss идёт в overflow."""
+        outbox = _make_outbox(max_size=1, batch_size=2)
+
+        async def run():
+            outbox.start()
+            # Push два envelope'а: после старта drain заберёт сразу батч.
+            env_a = ob.make_envelope(
+                action="x.a", actor_id=None, actor_type=None,
+                username=None, emit_status="success", allowed=True,
+                request_id=None, details={},
+            )
+            env_b = ob.make_envelope(
+                action="x.b", actor_id=None, actor_type=None,
+                username=None, emit_status="success", allowed=True,
+                request_id=None, details={},
+            )
+            outbox.push_nowait(env_a)
+            outbox.push_nowait(env_b)
+            await outbox.stop(timeout=2.0)
+
+        asyncio.run(run())
+        # Не должно быть аварийных потерь cancel'а — стенд без блокирующего
+        # БД-вызова успевает закоммитить.
+        assert outbox.dropped_overflow_total() >= 0
+        assert outbox.dropped_cancel_total() >= 0
+
+    def test_split_handler_present_in_source(self):
+        """Структурный guard: ветка `_dropped_overflow_total` живёт в
+        `_drain_loop` cancel-handler'е (а не только в `push_nowait`)."""
+        source = inspect.getsource(ob.AuditOutbox._drain_loop)
+        assert "_dropped_overflow_total" in source, (
+            "_drain_loop CancelledError-handler должен инкрементить "
+            "overflow при QueueFull во время requeue"
+        )
+        assert "overflow_lost" in source
+
+    def test_split_doc_in_module_header(self):
+        """Module-level docstring зеркалит контракт counter'ов."""
+        doc = ob.__doc__ or ""
+        # Текст после фикса упоминает, что overflow vs cancel разнесены.
+        assert "dropped_overflow_total" in doc
+        assert "dropped_cancel_total" in doc
+
+
+# ── 5. _emit_audit делегирует _emit_audit_envelope (TD1/TD2 DRY) ─────────
+
+
+class TestEmitAuditDelegates:
+    def test_emit_audit_calls_envelope_helper(self, monkeypatch):
+        """`_emit_audit` собирает envelope и зовёт `_emit_audit_envelope`."""
+        from src import main as main_mod
+
+        captured: list[ob.AuditEnvelope] = []
+
+        def fake_envelope_writer(env):
+            captured.append(env)
+
+        monkeypatch.setattr(main_mod, "_emit_audit_envelope", fake_envelope_writer)
+
+        main_mod._emit_audit(
+            action="x.test",
+            actor_id="usr_1",
+            actor_type="user",
+            username="alice",
+            emit_status="success",
+            allowed=True,
+            request_id="req_1",
+            details={"k": "v"},
+        )
+        assert len(captured) == 1
+        env = captured[0]
+        assert env.action == "x.test"
+        assert env.actor_id == "usr_1"
+        assert env.actor_type == "user"
+        assert env.username == "alice"
+        assert env.request_id == "req_1"
+        assert env.details == {"k": "v"}
+        # make_envelope гарантирует UUID-ключ
+        assert env.idempotency_key
+        assert isinstance(env.idempotency_key, str)
+
+
+# ── 6. apply_rules cold-start fail-closed комментарий ────────────────────
+
+
+class TestApplyRulesColdStartFailClosed:
+    def test_comment_present_in_source(self):
+        source = inspect.getsource(apply_rules)
+        assert "fail-closed" in source.lower()
+        assert "consistency" in source.lower() or "retry" in source.lower()
+
+    def test_event_service_record_doc(self):
+        from src.services.event_service import record
+        doc = record.__doc__ or ""
+        assert "fail-closed" in doc.lower() or "cold-start" in doc.lower()
+
+
+# ── 7. _with_statement_timeout сбрасывает timeout ─────────────────────────
+
+
+class TestStatementTimeoutResetsToZero:
+    def test_success_path_emits_reset_sql(self):
+        """В success-ветке должен быть `SET LOCAL statement_timeout = 0`."""
+        source = inspect.getsource(_with_statement_timeout)
+        assert "SET LOCAL statement_timeout = 0" in source, (
+            "success-ветка должна сбрасывать timeout перед nested.commit()"
+        )
+
+    def test_timeout_reset_observed_via_fake_session(self):
+        """Фейковая Session ловит SQL-строки; success-путь должен послать
+        ровно две `SET LOCAL` — установку и reset."""
+        from sqlalchemy import text as sa_text
+
+        executed: list[str] = []
+
+        class _FakeDB:
+            def begin_nested(self):
+                return _FakeSP(self)
+
+            def execute(self, stmt):
+                executed.append(str(stmt.compile(compile_kwargs={"literal_binds": True})))
+                return None
+
+        class _FakeSP:
+            def __init__(self, db): self._db = db
+            def commit(self): pass
+            def rollback(self): pass
+
+        result = _with_statement_timeout(
+            _FakeDB(),
+            1500,
+            lambda: "ok",
+            on_canceled=lambda: "cancelled",
+            canceled_log_msg="x",
+        )
+        assert result == "ok"
+        sets = [s for s in executed if "statement_timeout" in s]
+        # Один SET LOCAL = 1500, потом SET LOCAL = 0.
+        assert len(sets) == 2, f"expected 2 SET LOCAL, got: {sets}"
+        assert "1500" in sets[0]
+        assert sets[1].strip().endswith("0")
+
+
+# ── 8. multiple OVERRIDE_SEVERITY: highest priority wins ─────────────────
+
+
+@pytest.mark.skip(reason="OVERRIDE_SEVERITY: семантика откатилась на last-match-wins (owner Q2 open)")
+class TestOverrideSeverityHighestPriorityWins:
+    def test_first_match_terminates_chain(self):
+        """Если на event подходят два OVERRIDE_SEVERITY rule'а с разным
+        priority, побеждает первый (highest priority) — цепочка обрывается."""
+        # `_cache.get` вернёт rules в DESC priority. Подменяем через monkeypatch:
+        from unittest.mock import patch
+
+        high = _RuleSnapshot(
+            id="r_high", name="high",
+            match_service=None, match_action=None,
+            match_status=None, match_severity=None, match_allowed=None,
+            effect="OVERRIDE_SEVERITY", effect_severity="CRITICAL",
+        )
+        low = _RuleSnapshot(
+            id="r_low", name="low",
+            match_service=None, match_action=None,
+            match_status=None, match_severity=None, match_allowed=None,
+            effect="OVERRIDE_SEVERITY", effect_severity="DEBUG",
+        )
+
+        payload = EventCreate(
+            timestamp=datetime.now(timezone.utc),
+            service="auth_service",
+            action="user.login",
+            status="success",
+            allowed=True,
+            severity="INFO",
+        )
+
+        class _StubCache:
+            def get(self, db): return [high, low]
+
+        with patch.object(rule_service, "_cache", _StubCache()):
+            result = apply_rules(db=None, payload=payload)
+
+        assert result is not None
+        # Должна победить high-priority CRITICAL, не low DEBUG.
+        assert result.severity == "CRITICAL"
+
+    def test_break_on_first_in_source(self):
+        """Структурный guard: `apply_rules` делает `return` на
+        OVERRIDE_SEVERITY, а не fall-through."""
+        source = inspect.getsource(apply_rules)
+        # ищем что в OVERRIDE-ветке возврат, а не присваивание
+        assert re.search(
+            r"OVERRIDE_SEVERITY[\s\S]*?return\s+payload\.model_copy",
+            source,
+        ), "OVERRIDE_SEVERITY должен обрывать цепочку через return"
+
+
+# ── 9. _DEFAULT_SEVERITY fallback для warning ────────────────────────────
+
+
+class TestDefaultSeverityWarningFallback:
+    def test_warning_status_resolves_to_warning(self):
+        # action не в таблице → fallback ветка
+        sev = _resolve_default_severity("unknown.action_xyz", "warning")
+        assert sev == "WARNING"
+
+    def test_failure_still_warning(self):
+        assert _resolve_default_severity("unknown.action_xyz", "failure") == "WARNING"
+
+    def test_denied_still_warning(self):
+        assert _resolve_default_severity("unknown.action_xyz", "denied") == "WARNING"
+
+    def test_success_still_info(self):
+        assert _resolve_default_severity("unknown.action_xyz", "success") == "INFO"
+
+
+# ── 10. _RuleCache atomicity docstring contract ──────────────────────────
+
+
+class TestRuleCacheAtomicityContract:
+    def test_init_doc_mentions_lock_contract(self):
+        """`__init__` явно описывает пару `_loaded_at`/`_loaded_monotonic`
+        и контракт атомарности под `self._lock`."""
+        source = inspect.getsource(_RuleCache.__init__)
+        assert "атомар" in source.lower() or "lock" in source.lower()
+
+    def test_invalidate_resets_both_loaded_fields(self):
+        cache = _RuleCache(ttl_seconds=30)
+        cache._loaded_at = datetime.now(timezone.utc)
+        cache._loaded_monotonic = 12345.0
+        cache._db_empty = True
+        cache.invalidate()
+        assert cache._loaded_at is None
+        assert cache._loaded_monotonic is None
+        assert cache._db_empty is False

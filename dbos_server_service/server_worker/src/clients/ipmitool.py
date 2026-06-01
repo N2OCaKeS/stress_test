@@ -123,12 +123,13 @@ def _mask_password_in_argv(argv: list[str]) -> list[str]:
             safe[i + 1] = "***"
 
     # `user set password <id> <newpass>` — последний positional argument.
+    # `range(len(safe) - 4)` уже гарантирует, что `safe[i + 4]` в границах,
+    # отдельный guard не нужен.
     for i in range(len(safe) - 4):
         if (
             safe[i] == "user"
             and safe[i + 1] == "set"
             and safe[i + 2] == "password"
-            and i + 4 < len(safe)
         ):
             safe[i + 4] = "***"
             break

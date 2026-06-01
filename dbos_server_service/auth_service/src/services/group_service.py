@@ -193,11 +193,15 @@ async def delete_group(db: AsyncSession, identity, group_id: str, request_id=Non
 # ── Membership ────────────────────────────────────────────────────────────────
 
 async def list_members(db: AsyncSession, identity, group_id: str, request_id=None) -> list[MemberResponse]:
-    _require_admin(identity)
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+    # GET-симметрия с add_member/remove_member: DA своего отдела имеет право
+    # модифицировать членство, странно отдавать ему 403 на чтение того же
+    # списка. Lookup группы — ДО guard'а, чтобы 404 не светил dept чужой
+    # группы через статус (см. add_member).
+    _require_dept_or_account_admin(identity, grp.department_id)
     user_repo = UserRepository(db)
     members = await repo.list_members(group_id)
     users_by_id = {
@@ -296,11 +300,12 @@ async def remove_member(db: AsyncSession, identity, group_id: str, user_id: str,
 # ── Bot membership ──────────────────────────────────────────────────────────
 
 async def list_bot_members(db: AsyncSession, identity, group_id: str, request_id=None) -> list[BotMemberResponse]:
-    _require_admin(identity)
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+    # См. list_members: GET-симметрия с add_bot_member/remove_bot_member.
+    _require_dept_or_account_admin(identity, grp.department_id)
     bot_repo = BotRepository(db)
     members = await repo.list_bot_members(group_id)
     # Один SELECT по всем bot_id'ам вместо N×get_by_id.
@@ -463,11 +468,14 @@ async def list_user_groups(db: AsyncSession, identity, user_id: str, request_id=
 async def list_group_services(
     db: AsyncSession, identity, group_id: str, request_id=None
 ) -> list[GroupServiceAccessResponse]:
-    _require_admin(identity)
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+    # См. list_members: GET-симметрия. DA своего отдела видит service-access
+    # группы (хоть write-операции `grant_service_to_group` пока требуют
+    # account_admin — это отдельный gap, тут только чтение).
+    _require_dept_or_account_admin(identity, grp.department_id)
     access_list = await repo.list_service_access(group_id)
     return [GroupServiceAccessResponse(
         service_name=a.service_name,
@@ -570,11 +578,12 @@ async def revoke_service_from_group(
 async def list_group_roles(
     db: AsyncSession, identity, group_id: str, request_id=None
 ) -> list[GroupRoleResponse]:
-    _require_admin(identity)
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+    # См. list_members: GET-симметрия с assign_group_roles.
+    _require_dept_or_account_admin(identity, grp.department_id)
     rows = await repo.list_roles(group_id)
     by_service: dict[str, list[str]] = {}
     for r in rows:

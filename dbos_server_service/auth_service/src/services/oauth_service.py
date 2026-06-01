@@ -8,6 +8,7 @@
 import base64
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import timedelta
 
@@ -37,6 +38,8 @@ _SECRET_PREFIX_LEN = 12
 # спецификацией, но S256 обязателен для public client'ов — мы принимаем оба
 # на стороне сервера (валидируем method), решение оставляем за клиентом.
 _PKCE_METHODS = {"S256", "plain"}
+
+logger = logging.getLogger(__name__)
 
 
 def _to_response(client) -> OAuthClientResponse:
@@ -285,6 +288,15 @@ async def issue_authorization_code(
             raise AuthorizationError(
                 error_code="PKCE_METHOD_INVALID",
                 message=f"code_challenge_method must be one of {sorted(_PKCE_METHODS)}",
+            )
+        if method == "plain":
+            # Confidential клиент с PKCE plain — формально допустимо по RFC,
+            # но фактически бесполезно (verifier == challenge, защиты от
+            # перехвата нет). Шлём WARNING чтобы оператор видел потенциально
+            # неправильно сконфигурённый интегрирующийся клиент.
+            logger.warning(
+                "oauth client %s used PKCE plain (insecure); recommend S256",
+                client_id,
             )
         pkce_challenge = code_challenge
         pkce_method = method

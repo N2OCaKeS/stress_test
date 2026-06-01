@@ -219,6 +219,11 @@ async def update_bot(
             # на него уже завязались. Inline-блок повторяет шаблон emit'а
             # из общего хелпера, чтобы SIEM-сигнатура (status="failure",
             # reason="cross_tenant_bot") совпадала.
+            # Инвариант: failure-audit эмитится ДО mutations. Выше — только
+            # `_resolve_actor_dept` (один SELECT, без writes) и проверка
+            # dept-равенства. `db.commit()` ниже не вызван, значит rollback
+            # в get_db() ничего не сотрёт после raise — audit-emit'у не на
+            # что налипать кроме SELECT'ов.
             audit_service.emit(
                 "bot.update", actor_id, status="failure", allowed=False,
                 target_id=bot.id, target_type="bot",

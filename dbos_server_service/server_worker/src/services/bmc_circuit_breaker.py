@@ -49,13 +49,13 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
 
 import redis.asyncio as aioredis
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
-from src.services import _breaker_lua
+from src.services import _breaker_core, _breaker_lua
+from src.services._breaker_core import Thresholds as _Thresholds
 
 logger = logging.getLogger(__name__)
 
@@ -70,19 +70,6 @@ _KEY_PREFIX = "cb:bmc:"
 DEFAULT_FAILURE_THRESHOLD = 5
 DEFAULT_WINDOW_SECONDS = 60
 DEFAULT_COOLDOWN_SECONDS = 30
-
-
-@dataclass(frozen=True)
-class _Thresholds:
-    """Конфигурация breaker'а на один вызов.
-
-    Передаётся отдельно, чтобы тесты могли менять пороги без monkeypatch'а
-    settings. Production-код всегда берёт значения из ``get_settings()``.
-    """
-
-    failure_threshold: int = DEFAULT_FAILURE_THRESHOLD
-    window_seconds: int = DEFAULT_WINDOW_SECONDS
-    cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS
 
 
 def _thresholds_from_settings() -> _Thresholds:
@@ -126,11 +113,10 @@ class CircuitBreakerOpenError(AppException):
 
 
 # ── Lua-скрипты ─────────────────────────────────────────────────────────────
-# Все переходы атомарны на стороне Redis. KEYS[1]=failures, KEYS[2]=state,
-# KEYS[3]=open_until. ARGV — параметры конкретного вызова. Сами скрипты
-# живут в `_breaker_lua` — общие с audit_publisher_breaker. Локальные
-# алиасы оставлены для обратной совместимости (FakeRedis в тестах
-# матчит скрипт по объекту-строке).
+# Все переходы атомарны на стороне Redis. Сами скрипты живут в `_breaker_lua`
+# (общие с audit_publisher_breaker), Python-обвязка — в `_breaker_core`.
+# Локальные алиасы оставлены для тестов: FakeRedis-патчи матчат скрипт по
+# объекту-строке, через `_breaker_core` ходят на ту же константу.
 _CHECK_SCRIPT = _breaker_lua.CHECK_SCRIPT
 _RECORD_SUCCESS_SCRIPT = _breaker_lua.RECORD_SUCCESS_SCRIPT
 _RECORD_FAILURE_SCRIPT = _breaker_lua.RECORD_FAILURE_SCRIPT
@@ -153,12 +139,20 @@ def _probe_key(host: str) -> str:
     return f"{_KEY_PREFIX}{host}:probe"
 
 
+def _all_keys(host: str) -> tuple[str, str, str, str]:
+    """Все четыре ключа breaker'а для host'а: (failures, state, open_until, probe)."""
+    return (*_keys(host), _probe_key(host))
+
+
 async def _get_client() -> aioredis.Redis:
-    """Один-shot Redis-клиент.
+    """One-shot Redis-клиент.
 
     Не кэшируем глобально: ``aioredis.Redis`` держит pool, разрыв коннекта
     из-за рестарта Redis тогда придётся отдельно лечить. Open-close
     стоит мало по сравнению с BMC-roundtrip'ом.
+
+    Подменяется в тестах через `install_fake_redis(monkeypatch, bmc_cb)` —
+    `_breaker_core` дёргает эту функцию как client_factory.
     """
     settings = get_settings()
     return aioredis.from_url(settings.redis_url)
@@ -173,26 +167,14 @@ async def check(host: str) -> None:
     if not host:
         return
     thresholds = _thresholds_from_settings()
-    client = await _get_client()
-    try:
-        try:
-            keys = (*_keys(host), _probe_key(host))
-            result = await client.eval(
-                _CHECK_SCRIPT, 4, *keys,
-                str(int(time.time())), str(thresholds.cooldown_seconds),
-            )
-        except Exception:  # noqa: BLE001 — fail-open
-            logger.warning(
-                "bmc_breaker: check failed for host=%s, defaulting to closed",
-                host, exc_info=True,
-            )
-            return
-    finally:
-        await client.aclose()
-
-    state_raw, retry_after_raw = result[0], result[1]
-    state = state_raw.decode() if isinstance(state_raw, bytes) else state_raw
-    retry_after = float(retry_after_raw)
+    state, retry_after = await _breaker_core.eval_check(
+        client_factory=_get_client,
+        keys=_all_keys(host),
+        cooldown_seconds=thresholds.cooldown_seconds,
+        log_prefix=f"bmc_breaker[host={host}]",
+        logger=logger,
+        now=time.time(),
+    )
     if state == "open":
         logger.warning(
             "bmc_breaker: rejecting call to %s; circuit open for ~%ss",
@@ -209,18 +191,12 @@ async def record_success(host: str) -> None:
     """
     if not host:
         return
-    client = await _get_client()
-    try:
-        try:
-            keys = (*_keys(host), _probe_key(host))
-            await client.eval(_RECORD_SUCCESS_SCRIPT, 4, *keys)
-        except Exception:  # noqa: BLE001 — best-effort
-            logger.warning(
-                "bmc_breaker: record_success failed for host=%s",
-                host, exc_info=True,
-            )
-    finally:
-        await client.aclose()
+    await _breaker_core.eval_record_success(
+        client_factory=_get_client,
+        keys=_all_keys(host),
+        log_prefix=f"bmc_breaker[host={host}]",
+        logger=logger,
+    )
 
 
 async def record_failure(host: str) -> None:
@@ -232,33 +208,22 @@ async def record_failure(host: str) -> None:
     if not host:
         return
     thresholds = _thresholds_from_settings()
-    client = await _get_client()
-    try:
-        try:
-            keys = (*_keys(host), _probe_key(host))
-            result = await client.eval(
-                _RECORD_FAILURE_SCRIPT, 4, *keys,
-                str(int(time.time())),
-                str(thresholds.failure_threshold),
-                str(thresholds.window_seconds),
-                str(thresholds.cooldown_seconds),
-            )
-        except Exception:  # noqa: BLE001 — best-effort
-            logger.warning(
-                "bmc_breaker: record_failure failed for host=%s",
-                host, exc_info=True,
-            )
-            return
-    finally:
-        await client.aclose()
-
-    state_raw, count_raw = result[0], result[1]
-    state = state_raw.decode() if isinstance(state_raw, bytes) else state_raw
+    result = await _breaker_core.eval_record_failure(
+        client_factory=_get_client,
+        keys=_all_keys(host),
+        thresholds=thresholds,
+        log_prefix=f"bmc_breaker[host={host}]",
+        logger=logger,
+        now=time.time(),
+    )
+    if result is None:
+        return
+    state, count = result
     if state == "open":
         logger.error(
             "bmc_breaker: OPENED for host=%s after %s failures in %ss; "
             "cooldown=%ss",
-            host, int(count_raw),
+            host, count,
             thresholds.window_seconds, thresholds.cooldown_seconds,
         )
 
@@ -272,13 +237,9 @@ async def reset(host: str) -> None:
     """
     if not host:
         return
-    client = await _get_client()
-    try:
-        try:
-            await client.delete(*_keys(host), _probe_key(host))
-        except Exception:  # noqa: BLE001
-            logger.warning(
-                "bmc_breaker: reset failed for host=%s", host, exc_info=True,
-            )
-    finally:
-        await client.aclose()
+    await _breaker_core.eval_reset(
+        client_factory=_get_client,
+        keys=_all_keys(host),
+        log_prefix=f"bmc_breaker[host={host}]",
+        logger=logger,
+    )

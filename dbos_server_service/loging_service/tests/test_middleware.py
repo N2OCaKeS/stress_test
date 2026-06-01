@@ -355,7 +355,16 @@ class TestEmitAuditBypassesRules:
             def add(self, *_a, **_k):
                 raise RuntimeError("db is on fire")
 
+            def execute(self, *_a, **_k):
+                # После W18-W4 refactor _emit_audit ходит через
+                # record_admin_action → event_repo.insert → db.execute(stmt).
+                # Мокаем тот же путь, поднимая идентичное исключение.
+                raise RuntimeError("db is on fire")
+
             def commit(self):
+                pass
+
+            def rollback(self):
                 pass
 
             def refresh(self, *_a):

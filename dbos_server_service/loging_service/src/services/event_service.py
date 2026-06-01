@@ -18,7 +18,18 @@ logger = logging.getLogger(__name__)
 
 def _redact_payload(payload: EventCreate) -> EventCreate:
     """Применяет defense-in-depth маскировку к payload.details.
-    Если details пуст или после маскировки не изменился — возвращает исходный объект.
+
+    Если details пуст или после маскировки не изменился — возвращает исходный
+    объект, чтобы избежать ненужного `model_copy` (мелкая аллокация на каждом
+    POST /events).
+
+    Сложность сравнения `cleaned == payload.details`: для dict Python
+    сравнивает рекурсивно, обходя вложенные dict/list. На допустимом payload'е
+    глубина ≤10 (`EventCreate._details_depth`) и общий объём ≤64 KB
+    (`_details_size`), так что сравнение O(N) по числу leaf-значений и
+    укладывается в десятки микросекунд даже на пограничных payload'ах.
+    Атаку «сделай compare экспоненциально дорогим» не запустить — структурный
+    DoS отсечён валидаторами схемы выше по стеку.
     """
     if not payload.details:
         return payload
@@ -36,6 +47,13 @@ def record(db: Session, payload: EventCreate) -> AuditEvent | None:
     пробрасываем 409 caller'у. Self-audit писать ПОСЛЕ rollback'а основной
     транзакции репозитория (insert завалил savepoint при raise) — иначе
     sqlalchemy ругается на dirty session.
+
+    Cold-start contract: если БД упала и rule-cache ещё не наполнялся,
+    `apply_rules` пробросит исключение → caller получит 500 → outbox retry.
+    Это fail-closed: для audit-журнала важнее «событие либо отработано
+    правилами, либо упало и поедет на retry», чем «отработать без правил».
+    Записать ingest без rule engine означало бы тайно пропустить события,
+    которые SUPPRESS-правило должно было дропнуть — compliance-дыра.
     """
     payload = _redact_payload(payload)
     modified = rule_service.apply_rules(db, payload)

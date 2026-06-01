@@ -2,9 +2,9 @@ CC=gcc
 CFLAGS=-Wall -Wextra -O2
 LDFLAGS=-lcurl -pthread -lz
 RM=rm -f
-TARGET=load_simple_with_open
+TARGET=load2noarch_recompile
 
-SRCS=load_simple_with_open.c
+SRCS=load2noarch_recompile.c
 OBJS=$(SRCS:.c=.o)
 
 .PHONY: all

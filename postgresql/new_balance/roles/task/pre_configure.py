@@ -31,6 +31,7 @@ class PreConfigure:
                 "sshpass",
             ],
             "dcfreeipa": ["astra-freeipa-server"],
+            "g_web": ["apache2", "libapache2-mod-auth-gssapi"],  # mod-auth-gssapi для Kerberos
         }
         self.provider.apt.install(
             apt_structure=apt_install,
@@ -56,6 +57,63 @@ class PreConfigure:
         }
         self.provider.execute(
             commands=hosts,
+            vms_dates=VMS_DATES,
+            vms_groups=VMS_GROUPS,
+            username=USERNAME,
+            password=PASSWORD,
+        )
+
+    def szi_configure(self):
+        """СЗИ по ФСТЭК К1"""
+
+        # secdel, MAC, MIC — на всех ВМ включая load_tester
+        commands = {
+            "g_all": {
+                "secdel enable": {
+                    "command": "sudo astra-secdel-control enable -s secdelrnd=3",
+                    "signal set": "",
+                    "signal get": "",
+                },
+                "mac enable": {
+                    "command": "sudo astra-mac-control enable",
+                    "signal set": "",
+                    "signal get": "",
+                },
+                "mic enable": {
+                    "command": "sudo astra-mic-control enable",
+                    "signal set": "",
+                    "signal get": "",
+                },
+                # "swapwiper enable": {       # затирание swap при завершении ОС
+                #     "command": "sudo astra-swapwiper-control enable",
+                #     "signal set": "",
+                #     "signal get": "",
+                # },
+                # "sysrq lock": {
+                #     "command": "sudo astra-sysrq-lock enable",
+                #     "signal set": "",
+                #     "signal get": "",
+                # },
+            },
+        }
+
+        # ЗПС и ptrace — без load_tester (там запускается неподписанный нагрузочный код)
+        for group in ["g_database", "g_load_balancer", "g_web", "dcfreeipa"]:
+            commands[group] = {
+                "digsig enable": {
+                    "command": "sudo astra-digsig-control enable",
+                    "signal set": "",
+                    "signal get": "",
+                },
+                "ptrace lock": {
+                    "command": "sudo astra-ptrace-lock enable",
+                    "signal set": "",
+                    "signal get": "",
+                },
+            }
+
+        self.provider.execute(
+            commands=commands,
             vms_dates=VMS_DATES,
             vms_groups=VMS_GROUPS,
             username=USERNAME,

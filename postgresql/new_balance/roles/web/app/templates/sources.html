@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Исходники {{ build_id }} — Protopack{% endblock %}
+
+{% block breadcrumb %}
+  <a class="row-link" href="{{ url_for('build_detail', build_id=build_id) }}">{{ build_id }}</a> / исходники
+{% endblock %}
+
+{% block content %}
+<h1>Исходники сборки: {{ build_id }}</h1>
+
+{% if sources %}
+<table>
+  <thead>
+    <tr>
+      <th>Исходник</th>
+      <th>Версия</th>
+      <th>Описание</th>
+      <th>Репозиторий</th>
+      <th>Отдел</th>
+      <th>SDK</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in sources %}
+    <tr>
+      <td>{{ s.source }}</td>
+      <td>{{ s.source_version }}</td>
+      <td>{{ s.description or '—' }}</td>
+      <td>{{ s.repository or '—' }}</td>
+      <td>{{ s.department or '—' }}</td>
+      <td>{{ s.sdk or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">Исходники не найдены или недоступны на вашем уровне МРД.</p>
+{% endif %}
+{% endblock %}

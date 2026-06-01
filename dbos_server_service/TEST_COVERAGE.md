@@ -4,16 +4,16 @@
 
 | Сервис | Состояние кода | Тесты | Прогон |
 |---|---|---|---|
-| [auth_service](#auth_service) | production-ready | **1521** | `make test-auth`, `make test-auth-e2e` |
-| [loging_service](#loging_service) | production-ready | **1403** | `make test-logging` |
-| [server_service](#server_service) | production-ready, 0 stubs | **1628** | `make test-server` |
-| [server_worker](#server_worker) | production-ready, 3 hw-клиента (Redfish/ipmitool/SSH) | **2174** | `make test-worker` |
+| [auth_service](#auth_service) | production-ready | **1525** | `make test-auth`, `make test-auth-e2e` |
+| [loging_service](#loging_service) | production-ready | **1437** | `make test-logging` |
+| [server_service](#server_service) | production-ready, 0 stubs | **1636** | `make test-server` |
+| [server_worker](#server_worker) | production-ready, 3 hw-клиента (Redfish/ipmitool/SSH) | **2183** | `make test-worker` |
 | [tests/integration](#cross-service-integration) | cross-service auth↔logging↔server | **495** | `make test-integration` |
 | `config_service` | не начат | — | — |
 | `web_settings` | не начат | — | — |
 | `cli` | не начат | — | — |
 
-Суммарно: **6726 passing тестов** (1521 + 1403 + 1628 + 2174) + **495 integration**. Критичных открытых задач нет.
+Суммарно: **6781 passing тестов** (1525 + 1437 + 1636 + 2183) + **495 integration**. Критичных открытых задач нет.
 
 ### Недавно добавленное покрытие
 

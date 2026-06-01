@@ -655,12 +655,13 @@ class TestIpmiRotate:
             submit_calls.append(controller_id)
             return {"rotated_at": "x"}
 
-        # `_get_bmc` зовётся дважды: один раз для apply, второй для verify.
-        # Apply должен пройти, verify — упасть. Поэтому возвращаем новый
-        # fake каждый раз и помечаем второй как `raise_on_verify`.
+        # `_get_bmc` зовётся: apply, verify (1st), verify-retry (2nd, после
+        # asyncio.sleep(1) для NTP-drift tolerance window). Оба verify-shot'а
+        # моделируем как фейлящие — оба попытки → final failure.
         bmc_seq: list[_FakeRedfishForRotate] = [
             _FakeRedfishForRotate(),  # apply
-            _FakeRedfishForRotate(raise_on_verify=True),  # verify
+            _FakeRedfishForRotate(raise_on_verify=True),  # verify attempt 1
+            _FakeRedfishForRotate(raise_on_verify=True),  # verify attempt 2 (retry)
         ]
         idx = {"n": 0}
         async def _bmc_factory(creds, *, prefer="redfish"):
@@ -683,9 +684,10 @@ class TestIpmiRotate:
         assert submit_calls == [], "submit must not be called if verify failed"
         assert "BMC_VERIFY_AFTER_ROTATE_FAILED" in t.last_error
         assert captured_audit[0]["status"] == "failure"
-        # Apply прошёл (на первом клиенте), verify запустился на втором.
+        # Apply прошёл (на первом клиенте), оба verify-shot'а запустились.
         assert len(bmc_seq[0].rotate_calls) == 1
         assert bmc_seq[1].get_power_state_calls == 1
+        assert bmc_seq[2].get_power_state_calls == 1
 
     async def test_submit_failure_after_verify_marks_failed(
         self, make_task, fetch_task, captured_audit, monkeypatch,

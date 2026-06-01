@@ -42,6 +42,7 @@ worker'а между apply и delete.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import secrets
@@ -398,8 +399,10 @@ async def ipmi_rotate_password(task_id: str) -> None:
          ipmitool user set password).
       4. `dispatch_get_power_state` под НОВЫМ паролем — read-only verify,
          доказательство что BMC действительно принял пароль (не отверг
-         тихо по policy, не вернулся к старому). Не verify прошёл → не
-         коммитим storage; задача FAILED.
+         тихо по policy, не вернулся к старому). Verify пробуем до двух
+         раз с 1s паузой: первая попытка может упасть на лёгком NTP-drift
+         либо мгновенном transient-сбое сразу после apply. Не verify
+         прошёл оба раза → не коммитим storage; задача FAILED.
       5. `submit_rotated_ipmi_password` с `verified_at` → server_service
          шифрует + хранит. server_service отказывает без `verified_at`.
       6. DELETE stash.
@@ -507,24 +510,49 @@ async def ipmi_rotate_password(task_id: str) -> None:
         # BMC из-за чужого circuit-state. Сам verify-вызов всё ещё гоняет
         # `record_failure/success` в except'е — реальные network/auth
         # сбои останутся видимы breaker'у.
-        verify_client = await _get_bmc(verify_creds)
-        try:
+        #
+        # Verify пытаемся максимум дважды с задержкой 1s между попытками.
+        # Зачем: на стенде с лёгким NTP-drift'ом (worker↔BMC расходятся на
+        # секунды) BMC может первой попыткой отбить auth с новым паролем —
+        # часть моделей не сразу применяет PATCH к internal-clock'у, плюс
+        # есть транзиентные сетевые сбои сразу после apply. Один retry с
+        # 1s паузой даёт BMC шанс «настояться» без раскачки цикла. Больше
+        # одного retry'я не делаем: каждый дополнительный заход — это ещё
+        # одна возможность storage разъехаться с BMC через timeout/race и
+        # лишний таймаут на и без того долгом durable-retry-цикле.
+        #
+        # Trade-off: если NTP-drift между worker и BMC реально превышает
+        # ±60s (broken time-source), оба захода упадут и `verify_in_future`
+        # на server_service всё равно отобьёт callback — это правильная
+        # реакция: storage не примет пароль с заведомо неверным timestamp'ом,
+        # оператор увидит явный `BMC_VERIFY_AFTER_ROTATE_FAILED` + audit с
+        # деталями skew'а и пойдёт чинить NTP.
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            verify_client = await _get_bmc(verify_creds)
             try:
-                await dispatch_get_power_state(verify_client)
-            except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
-                await _breaker.record_failure(host)
-                wrapped = wrap_bmc_error("ipmi_rotate_password", exc)
-                # error_code намеренно перетираем: оператору важна фаза
-                # (apply прошёл, упал verify), а transport-уровень
-                # (BMC_AUTH_FAILED / BMC_UNREACHABLE / ...) поднимаем
-                # выше через `__cause__` (`raise ... from exc`).
-                # `wrap_bmc_error` не кладёт `phase` в details — фаза
-                # читается из самого `error_code`.
-                wrapped.error_code = "BMC_VERIFY_AFTER_ROTATE_FAILED"
-                raise wrapped from exc
-            await _breaker.record_success(host)
-        finally:
-            await _aclose_bmc(verify_client)
+                try:
+                    await dispatch_get_power_state(verify_client)
+                    await _breaker.record_success(host)
+                    last_exc = None
+                    break
+                except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
+                    await _breaker.record_failure(host)
+                    last_exc = exc
+            finally:
+                await _aclose_bmc(verify_client)
+            if attempt == 0:
+                await asyncio.sleep(1.0)
+        if last_exc is not None:
+            wrapped = wrap_bmc_error("ipmi_rotate_password", last_exc)
+            # error_code намеренно перетираем: оператору важна фаза
+            # (apply прошёл, упал verify), а transport-уровень
+            # (BMC_AUTH_FAILED / BMC_UNREACHABLE / ...) поднимаем
+            # выше через `__cause__` (`raise ... from exc`).
+            # `wrap_bmc_error` не кладёт `phase` в details — фаза
+            # читается из самого `error_code`.
+            wrapped.error_code = "BMC_VERIFY_AFTER_ROTATE_FAILED"
+            raise wrapped from last_exc
 
         verified_at = datetime.now(timezone.utc).isoformat()
 

@@ -13,7 +13,6 @@ from ps_conf import (REPORT_PATH, FLAMEGRAPH_NAME, UB_FLAMEGRAPH_NAME, FS_FLAMEG
 from json import dumps, loads
 import pandas as pd
 import subprocess
-import signal
 import time
 
 
@@ -65,8 +64,7 @@ class SpinlockImpactTest:
 
         print('Starting perf record...')
         perf_proc = subprocess.Popen(
-            f'sudo perf record -a -g -F {PERF_FREQ} -o libs/perf.data',
-            shell=True
+            ['sudo', 'perf', 'record', '-a', '-g', '-F', str(PERF_FREQ), '-o', 'libs/perf.data']
         )
 
         print(f'Running UnixBench with {UB_CONCURRENCY} workers...')
@@ -75,7 +73,7 @@ class SpinlockImpactTest:
         duration = round(time.perf_counter() - start, 3)
 
         print('Stopping perf...')
-        perf_proc.send_signal(signal.SIGINT)
+        subprocess.run(['sudo', 'pkill', '-INT', '-x', 'perf'])
         perf_proc.wait()
 
         command('cd libs && sudo perf report -i perf.data > perf_report.txt')
@@ -150,8 +148,7 @@ class SpinlockImpactTest:
 
         print('Starting perf record...')
         perf_proc = subprocess.Popen(
-            f'sudo perf record -a -g -F {PERF_FREQ} -o libs/perf.data',
-            shell=True
+            ['sudo', 'perf', 'record', '-a', '-g', '-F', str(PERF_FREQ), '-o', 'libs/perf.data']
         )
 
         print(f'Running fs_mark (size={FS_MARK_SIZE}, count={FS_MARK_COUNT})...')
@@ -162,7 +159,7 @@ class SpinlockImpactTest:
         duration = round(time.perf_counter() - start, 3)
 
         print('Stopping perf...')
-        perf_proc.send_signal(signal.SIGINT)
+        subprocess.run(['sudo', 'pkill', '-INT', '-x', 'perf'])
         perf_proc.wait()
 
         command('cd libs && sudo perf report -i perf.data > perf_report.txt')
@@ -224,11 +221,12 @@ class SpinlockImpactTest:
             mkdir(REPORT_PATH, 0o777)
         if not isdir(LOAD2_DIR):
             mkdir(LOAD2_DIR, 0o777)
+        
+        command('make -C libs load2noarch')
 
         print('Starting perf record...')
         perf_proc = subprocess.Popen(
-            f'sudo perf record -a -g -F {PERF_FREQ} -o libs/perf.data',
-            shell=True
+            ['sudo', 'perf', 'record', '-a', '-g', '-F', str(PERF_FREQ), '-o', 'libs/perf.data']
         )
 
         print(f'Running load2noarch (workers={LOAD2_WORKERS}, loops={LOAD2_LOOPS}, archive_loops={LOAD2_ARCHIVE_LOOPS})...')
@@ -237,7 +235,7 @@ class SpinlockImpactTest:
         duration = round(time.perf_counter() - start, 3)
 
         print('Stopping perf...')
-        perf_proc.send_signal(signal.SIGINT)
+        subprocess.run(['sudo', 'pkill', '-INT', '-x', 'perf'])
         perf_proc.wait()
 
         command('cd libs && sudo perf report -i perf.data > perf_report.txt')

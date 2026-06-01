@@ -16,7 +16,11 @@ $(TARGET): $(OBJS)
 $(OBJS): $(SRCS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+.PHONY: load2noarch
+load2noarch: load2noarch.c
+	$(CC) $(CFLAGS) -o $@ $< -lz -pthread
+
 .PHONY: clean
 clean:
-	-$(RM) $(TARGET) $(OBJS)
+	-$(RM) $(TARGET) $(OBJS) load2noarch
 

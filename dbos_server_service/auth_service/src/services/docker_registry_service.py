@@ -458,11 +458,18 @@ async def issue_token(
     legacy_only_scope = bool(requested_access) and all(
         _parse_registry_name(e["name"]) is None for e in requested_access
     )
+    # Кэшируем caller_cfg между legacy-guard'ом и циклом по scope: иначе на
+    # каждый legacy-only token endpoint мы дёрнули бы `docker_repo.get_by_department`
+    # дважды (один раз тут, второй раз ниже из `_resolve_registry(None, dept)`).
+    # `legacy_dept` тоже подтянем из `_resolve_registry` ниже — здесь нужен
+    # только cfg для guard'а.
+    cached_caller_cfg = None
     if not anonymous and legacy_only_scope:
         docker_repo = DockerRegistryRepository(db)
-        caller_cfg = (
+        cached_caller_cfg = (
             await docker_repo.get_by_department(department_id) if department_id else None
         )
+        caller_cfg = cached_caller_cfg
         if caller_cfg is None or not caller_cfg.is_enabled:
             audit_service.emit(
                 "docker.token_issued",
@@ -488,13 +495,19 @@ async def issue_token(
     allowed_access: list[dict] = []
     # Legacy-scope (`repository:myapp:pull` без `<dept>/`) всегда сводится к
     # конфигу caller-отдела; считаем один раз, чтобы не дёргать
-    # dept_repo + docker_repo на каждом таком entry.
+    # dept_repo + docker_repo на каждом таком entry. Если legacy-guard выше
+    # уже сходил за `caller_cfg` — переиспользуем, докупаем только `dept`.
     legacy_dept = None
     legacy_cfg = None
     if not anonymous and department_id is not None and any(
         _parse_registry_name(e["name"]) is None for e in requested_access
     ):
-        legacy_dept, legacy_cfg = await _resolve_registry(db, None, department_id)
+        if cached_caller_cfg is not None:
+            dept_repo = DepartmentRepository(db)
+            legacy_dept = await dept_repo.get_by_id(department_id)
+            legacy_cfg = cached_caller_cfg
+        else:
+            legacy_dept, legacy_cfg = await _resolve_registry(db, None, department_id)
 
     for entry in requested_access:
         registry_name = _parse_registry_name(entry["name"])

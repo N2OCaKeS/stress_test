@@ -444,10 +444,7 @@ class TestCancelTimestampMidrunPaths:
             f"ожидался timestamp={cancel_ts.isoformat()}, got={ev.get('timestamp')}"
         )
 
-    @pytest.mark.xfail(
-        reason="needs alignment after F-W12 src refactor: timestamp now always present in midrun-cancel audit",
-        strict=False,
-    )
+    @pytest.mark.xfail(strict=False, reason="worker_clock_now добавлен в детали midrun-cancel (F-W13-W4) — timestamp нынче всегда выставляется")
     async def test_success_midrun_cancel_without_cancelled_at_no_timestamp_override(
         self, make_task, captured_audit,
     ):

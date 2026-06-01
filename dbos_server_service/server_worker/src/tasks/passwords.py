@@ -476,6 +476,13 @@ async def ipmi_rotate_password(task_id: str) -> None:
         # попытки (retry упёрся в submit, не в apply) — переиспользуем его,
         # иначе новое значение ушло бы в storage и timestamp разъехался бы
         # с фактическим моментом смены пароля на BMC.
+        #
+        # rotated_at берётся из worker-clock (`datetime.now(UTC)`), а не из
+        # BMC. На стенде с NTP это безопасно (расхождение worker↔BMC обычно
+        # <1s), но если worker уехал по часам на минуты — `verify_in_future`
+        # на server_service поймает разъезд (±60s окно). В отчётах ротации
+        # ориентироваться на server_service.account.rotated_at — это
+        # источник истины с точки зрения платформы.
         if stashed_rotated_at:
             rotated_at = stashed_rotated_at
         else:

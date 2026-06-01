@@ -24,6 +24,28 @@ _RULE_ACTION_PATTERN: re.Pattern[str] = re.compile(r"^[a-z0-9_.*]{1,128}$")
 # вторую строку в log-shipping pipeline. Печатные ASCII без CR/LF/TAB.
 _RULE_NAME_PATTERN: re.Pattern[str] = re.compile(r"^[\x20-\x7E]{1,128}$")
 
+# `description` идёт в admin-UI и в CSV-экспорт правил. Сам name отбит
+# `_RULE_NAME_PATTERN`, но description раньше принимал любые символы —
+# включая `\r`, `\n`, NUL. CRLF в описании раскалывает строку CSV/JSON
+# при экспорте и подделывает вторую строку в log-shipping pipeline тем же
+# образом, что и `actor_id` / `action` в `EventCreate` (см. schemas/events.py).
+# Пускаем юникод-text (description содержательнее name), но запрещаем
+# control-байты: CR, LF, TAB, NUL и весь C0/C1 кроме обычного пробела.
+_RULE_DESCRIPTION_CONTROL_RE: re.Pattern[str] = re.compile(
+    r"[\x00-\x1f\x7f]"
+)
+
+
+def _validate_rule_description(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if _RULE_DESCRIPTION_CONTROL_RE.search(value):
+        raise ValueError(
+            "description must not contain control characters "
+            "(CR, LF, TAB, NUL, other C0/C1)"
+        )
+    return value
+
 
 def _normalize_match_service(value: str | None) -> str | None:
     """NFKC + invisibles/confusables + charset-проверка `[a-z_]{1,64}`.
@@ -119,6 +141,11 @@ class RuleCreate(BaseModel):
     def _validate_name(cls, v: str) -> str:
         return _validate_rule_name(v)
 
+    @field_validator("description", mode="after")
+    @classmethod
+    def _validate_description(cls, v: str | None) -> str | None:
+        return _validate_rule_description(v)
+
     @model_validator(mode="after")
     def _validate_effect(self) -> "RuleCreate":
         if self.effect == "DROP":
@@ -159,6 +186,11 @@ class RuleUpdate(BaseModel):
         if v is None:
             return None
         return _validate_rule_name(v)
+
+    @field_validator("description", mode="after")
+    @classmethod
+    def _validate_description(cls, v: str | None) -> str | None:
+        return _validate_rule_description(v)
 
     @model_validator(mode="after")
     def _normalize_effect(self) -> "RuleUpdate":

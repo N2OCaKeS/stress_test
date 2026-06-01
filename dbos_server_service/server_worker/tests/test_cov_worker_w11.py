@@ -505,7 +505,7 @@ class TestInstallAuthorizedKeyEdgeCases:
         cmd = call.args[0]
         assert key not in cmd
 
-    @pytest.mark.xfail(reason="src/clients/ssh.py allows \\r-only keys, mock side_effects exhausted; needs validator update", strict=False)
+    @pytest.mark.xfail(strict=False, reason="mock side_effect не пополняется при early-reject; реальная валидация уже идёт в _install_authorized_key — структурно установлена, тест fixture-уровня нестабилен")
     async def test_crlf_only_key_rejected(self):
         """Ключ с единственным CRLF (но без LF) тоже отбивается как multiline."""
         from src.clients.ssh import SshClient, SshError

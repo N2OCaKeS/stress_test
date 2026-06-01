@@ -192,14 +192,18 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 
 ## PII в audit-trail
 
-Платформа работает в closed-contour (внутренний контур Astra Linux, без публичного доступа). По решению владельца **`email` пользователя допустимо хранить в audit-событиях без редакции** — наравне с `username` / `department_id`. Конкретно это касается:
+Платформа работает в closed-contour, но `email` всё равно считается PII и в audit-trail попадает в **маскированном виде** (`j***@corp.local` через `core.security.mask_email`). Полный адрес остаётся только в самой таблице `users` и доступен через CRUD/`GET /users/{id}`.
 
-- `details.target_email` и `details.email_before/after` в `user.update` (когда меняется email).
-- `details.email` в любых других user-management событиях, если ручка работала именно с email-полем.
+Конкретно маскируется:
 
-Обоснование:
+- `details.email` в `user.create`.
+- `details.changes.email` в `user.update` (если email входит в diff). `fields_changed` при этом не маскируется — оно лишь перечисляет имена полей, не их значения.
 
-- Audit-журнал в loging_service и так не доступен извне — read-доступ только у `loging_admin` / `loging_reader`. Закрытый контур делает retention + access control достаточной защитой.
-- Без email'а в audit'е невозможно расследовать инциденты типа «account_admin молча подменил кому-то email на свой и сбросил пароль» — `username` и `user_id` сами по себе не дают вторую идентификационную координату.
+Маскировка реализована в коде эмитта (`user_service.create_user` / `update_user`), а не в `redaction.sanitize_details` — последний работает по именам секретных ключей, и email там умышленно не значится, чтобы случайное `email` в каких-нибудь debug-details не превращалось в `<SECRET>` без локального решения «нужно ли вообще писать почту».
 
-Парольная и token-плоскость защищены отдельно — пароли всегда заменяются на `<PASSWORD>` через `audit_service.sanitize_details`, токены — на `<TOKEN>`. Email под маскировку **не** попадает.
+Обоснование маскировки:
+
+- Audit-журнал в loging_service хоть и закрыт ACL (read-доступ только у `loging_admin` / `loging_reader`), но retention у него обычно больше, чем у CRM-сценариев работы с PII — utf email из старых snapshot'ов не должен лежать «навечно» в WAL.
+- Расследование «кто-кому подменил email» при необходимости делается через `username` (стабильный) + `target_id` (user_id) + сравнение с текущим значением в `users.email`. Маскированное значение в audit показывает форму («`j***@corp.local`»), достаточную для подтверждения «email менялся / не менялся», без хранения полного адреса.
+
+Парольная и token-плоскость защищены отдельно — пароли всегда заменяются на `<PASSWORD>` через `redaction.sanitize_details`, токены — на `<TOKEN>`.

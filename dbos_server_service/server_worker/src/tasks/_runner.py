@@ -789,6 +789,10 @@ async def _safe_flush_outbox() -> None:
     """
     try:
         await audit_outbox_publisher.flush_outbox()
+    except asyncio.CancelledError:
+        # Пробрасываем явно: task cancellation должен дойти до event-loop'а,
+        # иначе taskiq shutdown / SIGTERM не остановят worker штатно.
+        raise
     except Exception:  # noqa: BLE001
         # Логирование делает сам publisher; здесь — просто проглатываем,
         # чтобы не сорвать happy-path lifecycle'а.

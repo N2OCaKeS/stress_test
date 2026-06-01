@@ -910,6 +910,8 @@ async def secrets_reencrypt_lazy() -> None:
             async with AsyncSessionLocal() as session:
                 await task_repo.enqueue_audit(session, task_id=None, payload=payload)
                 await session.commit()
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:  # noqa: BLE001 — best-effort audit
             logger.debug(
                 "secrets.reencrypt_lazy: outbox enqueue failed: %s",
@@ -918,6 +920,8 @@ async def secrets_reencrypt_lazy() -> None:
             return
         try:
             await audit_outbox_publisher.flush_outbox()
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:  # noqa: BLE001 — happy-path optimization
             logger.debug(
                 "secrets.reencrypt_lazy: outbox flush failed: %s",

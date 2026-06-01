@@ -45,10 +45,42 @@ runner-meta-причину:
 ## Handler-level events
 
 Сами handler'ы (`tasks/power.py`, `tasks/passwords.py`,
-`tasks/inventory.py`, `tasks/prepare.py`, `tasks/secrets_reencrypt.py`)
-пишут события под своими `audit_action` (`server.power_on`,
-`ipmi_controller.password_rotate`, и т.д.). Severity-defaults и
-описания полей — в `server_service/AUDIT_EVENTS.md`: эти actions
-зарегистрированы как принадлежащие `server_service`, потому что
-именно server_service дёргает worker'а и владеет бизнес-смыслом
-операции.
+`tasks/inventory.py`, `tasks/prepare.py`, `tasks/installed_packages.py`,
+`tasks/users.py`, `tasks/secrets_reencrypt.py`) пишут события под
+своими `audit_action`. Severity-defaults и описания полей — в
+`server_service/AUDIT_EVENTS.md`: эти actions зарегистрированы как
+принадлежащие `server_service`, потому что именно server_service дёргает
+worker'а и владеет бизнес-смыслом операции.
+
+Реестр `audit_action`, эмитируемых handler'ами (source-of-truth — поле
+`audit_action=` в `tasks/*.py`):
+
+| action | source | target_type |
+|---|---|---|
+| `server.power_on` | `tasks/power.py` | `server` |
+| `server.power_off` | `tasks/power.py` | `server` |
+| `server.power_reboot` | `tasks/power.py` | `server` |
+| `server.power_status` | `tasks/power.py` | `server` |
+| `server.inventory_sync` | `tasks/inventory.py` | `server` |
+| `server.prepare` | `tasks/prepare.py` | `server` |
+| `installed_packages.list` | `tasks/installed_packages.py` | `server` |
+| `server_account.provision` | `tasks/users.py` | `server_account` |
+| `server_account.update_on_host` | `tasks/users.py` | `server_account` |
+| `server_account.deprovision` | `tasks/users.py` | `server_account` |
+| `server_account.users_inventory` | `tasks/users.py` | `server_account` |
+| `server_account.password_rotate` | `tasks/passwords.py` | `server_account` |
+| `ipmi_controller.password_rotate` | `tasks/passwords.py` | `ipmi_controller` |
+
+---
+
+## Worker-lifecycle events
+
+События, которые `main.py` и CLI пишут вне `_runner.run_task` — они
+относятся к самому процессу worker'а, а не к конкретной task'е.
+
+| action | severity | эмитится при | target_type | детали (`details`) |
+|---|---|---|---|---|
+| `task.worker_shutdown` | ERROR (или WARNING если задача уйдёт в retry) | graceful shutdown worker'а — все живые task'и переводятся в `failed` (либо retry если `attempt < max_attempts`), чтобы scheduler/другой реплика подхватили | `task` | `task_id`, `reason="worker_shutdown"`, `attempt`, `max_attempts`, `will_retry` |
+| `task.worker_orphaned` | ERROR | sweep'ер нашёл task'у, у которой `worker_id` не отвечает heartbeat'ом (упавший процесс) — task принудительно `failed`, retry-decision не делается, оператор разбирается вручную | `task` | `task_id`, `reason="worker_orphaned"`, `worker_id`, `attempt`, `max_attempts` |
+| `secrets.reencrypt_tick` | INFO (success), WARNING (errors>0), ERROR (app_env mismatch) | каждый тик `secrets.reencrypt_lazy` — даже когда работы нет (skip/idle), чтобы видеть пульс ротации ключей | `secret` | `processed`, `skipped`, `errors`, `claimed`, `seeded`, `remaining_before`, `active_version`, `batch_size`. Либо `skipped=True` + `reason` (`active_tasks_present` / `app_env_mismatch`) на ранних exit'ах |
+| `audit.outbox_reattempt_manual` | WARNING | CLI-команда `outbox-reattempt` — оператор форсит повторную доставку конкретной row'ы из `audit_outbox`. Severity WARNING — manual-интервенция в audit-pipeline | `audit_outbox` | `row_id`, `reason` (оператор пишет, зачем), `source="cli"` |

@@ -40,7 +40,7 @@ from src.schemas.server_account import (
 )
 from src.services import audit_service, permissions, secrets_service
 from src.services.audit_helpers import emit_denied_on_authz_error
-from src.services.server import load_visible_server
+from src.services.server import load_visible_server, load_visible_servers
 from src.utils.ids import server_account_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -254,23 +254,33 @@ async def _resolve_same_dept_servers(
 
     Любой server чужого/несуществующего dept'а → 404 (скрываем факт
     существования). На вход уже идёт дедуплицированный список.
+
+    Один SQL-запрос `WHERE id IN (...)` через `load_visible_servers` — раньше
+    был цикл `for sid in server_ids: load_visible_server` (N+1). Поведение
+    идентичное: при отсутствии хотя бы одного видимого id поднимаем
+    `NotFoundError` для первого пропавшего sid (в порядке исходного списка)
+    с тем же audit-эмитом, что и старая ветка.
     """
-    servers: list[Server] = []
-    for sid in server_ids:
-        try:
-            srv = await load_visible_server(db, identity, sid)
-        except NotFoundError:
-            # Visibility-404 (cross-dept / отсутствует): failure+allowed=True,
-            # caller прошёл permission — отказ не из-за прав, а из-за невидимости.
-            audit_service.emit(
-                audit_action,
-                target_type="server_account",
-                status="failure", allowed=True,
-                details={"reason": "server_not_found_or_cross_dept", "server_id": sid},
-            )
-            raise
-        servers.append(srv)
-    return servers
+    if not server_ids:
+        return []
+    visible = await load_visible_servers(db, identity, server_ids)
+    missing = [sid for sid in server_ids if sid not in visible]
+    if missing:
+        first_missing = missing[0]
+        audit_service.emit(
+            audit_action,
+            target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "server_not_found_or_cross_dept",
+                "server_id": first_missing,
+            },
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND",
+            message="Server not found",
+        )
+    return [visible[sid] for sid in server_ids]
 
 
 async def create_account(

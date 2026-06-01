@@ -52,9 +52,12 @@ _audit_outbox: "AuditOutbox | None" = None
 # Strict-numeric content-length: `int()` принимает `+1`, `_`-сепараторы,
 # окружающие пробелы и юникодные digits — всё это потенциальные smuggling
 # поверхности на стеке без h11 0.16 (или прокси, нормализующего header).
-# RFC 9110 разрешает только ASCII `0-9`. fullmatch гарантирует, что после
-# strip'а строка состоит из этих цифр и ничего больше.
-_CONTENT_LENGTH_RE = re.compile(r"\d+")
+# RFC 9110 разрешает только ASCII `0-9`. Pattern явно `[0-9]+` (а не `\d+`):
+# без флага re.ASCII шаблон `\d` в Python матчит весь Unicode-class Nd,
+# включая Devanagari `१२३` и арабские `٠١٢` — `int()` их тоже принимает,
+# и в результате malformed Content-Length прошёл бы guard. fullmatch
+# гарантирует, что после strip'а строка состоит из этих цифр и ничего больше.
+_CONTENT_LENGTH_RE = re.compile(r"[0-9]+")
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

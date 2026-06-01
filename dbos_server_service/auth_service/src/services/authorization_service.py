@@ -7,7 +7,7 @@ service_roles) всегда revalidate'ятся из БД, не берутся �
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import PlatformRole, SubjectType, UserStatus
+from src.core.constants import BotStatus, PlatformRole, SubjectType, UserStatus
 from src.core.security import decode_access_token, hash_opaque_token
 from src.repositories.bot_tokens import BotTokenRepository
 from src.repositories.bots import BotRepository
@@ -419,7 +419,13 @@ async def introspect(
             return IntrospectResponse(active=False)
         bot_repo = BotRepository(db)
         bot = await bot_repo.get_by_id(bot_token.bot_id)
-        if bot is None or not bot.is_active:
+        # `is_active` — основной флаг (sync'ится с PATCH /bots, ban-каскадами).
+        # `status` дублирует доменное состояние; в нормальном flow всегда
+        # совпадает с `is_active`. Defence-in-depth: если кто-то правит БД
+        # вручную или новая ручка забудет синкать оба поля, drift
+        # `is_active=True, status=BLOCKED` не должен пропускать токен.
+        bot_status_active = bot is not None and bot.status == BotStatus.ACTIVE
+        if bot is None or not bot.is_active or not bot_status_active:
             audit_service.emit(
                 "token.introspect", bot_token.bot_id, actor_type="bot",
                 status="failure", allowed=False,

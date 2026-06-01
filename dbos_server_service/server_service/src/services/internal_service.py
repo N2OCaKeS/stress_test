@@ -36,11 +36,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.constants import AccountSource, Action, EntityType
 from src.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
-
-# Допустимый перекос между worker'ом и server_service'ом по NTP — 10 минут с
-# каждой стороны. Используется для отбивания `rotated_at` из будущего в
-# `record_ipmi_credentials_rotated`.
-_ROTATED_AT_SKEW_SECONDS = 10 * 60
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import os_version as osv_repo
 from src.repositories import server as server_repo
@@ -56,6 +51,11 @@ from src.schemas.internal import (
 from src.schemas.server import ServerPrepareCallbackRequest
 from src.services import audit_service, permissions, secrets_service
 from src.utils.ids import os_version_id, server_account_id, server_disk_id
+
+# Допустимый перекос между worker'ом и server_service'ом по NTP — 10 минут с
+# каждой стороны. Используется для отбивания `rotated_at` из будущего в
+# `record_ipmi_credentials_rotated`.
+_ROTATED_AT_SKEW_SECONDS = 10 * 60
 
 
 def _emit_dept_header_missing_soft(
@@ -196,10 +196,14 @@ def _check_target_department(
                 ),
                 details={"target_id": target_id},
             )
-        # Soft mode: warning эмитит caller через `_emit_dept_header_missing_soft`
-        # под отдельным action'ом `internal.dept_header_missing`. Дублировать
-        # его здесь под `<audit_action>` с reason=`missing_target_department_header_soft`
-        # значит писать два события на один триггер.
+        # Soft mode (`internal_require_dept_header=False`) — намеренное dev/test
+        # ослабление защиты от stale-payload worker'а. В production
+        # `internal_require_dept_header=True` (см. `core/config.py`), и сюда мы
+        # сюда не доходим. denied=False / warning here — by design: actor-vs-server
+        # check уже отбил cross-dept caller'а строкой выше, остаётся только
+        # сигнализировать в audit о missing-header (это делает caller через
+        # `_emit_dept_header_missing_soft` под отдельным action'ом
+        # `internal.dept_header_missing`). Не использовать в prod.
         return
 
     if header_department_id != server_department_id:

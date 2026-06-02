@@ -32,7 +32,11 @@ results_dict = {
     } for subsys in SUBSYSTEM_DATES.keys()
 }
 
-
+fpower_dict = {
+    subsys: {
+        'power': 0
+    } for subsys in SUBSYSTEM_DATES.keys()
+}
 
 
 def index_calculator(criterions: dict, 
@@ -67,6 +71,8 @@ def index_calculator(criterions: dict,
                             negative=config['negative'],
                             bounds=config['bounds'])
 
+    fpower = _model.calc_power()
+    fpower_dict[subsystem] = fpower['power']
     result = _model.total_rating(power=fp) 
     #print(result)
     #print(result['total_rating'])
@@ -82,8 +88,9 @@ for subsystem, criterion in SUBSYSTEM_DATES.items():
 
 
 print(results_dict)
+print(fpower_dict)
 
 # TODO
 # Проверить bounds во всех тестах
 # Добавить в словарь метрики деления/умножения рейтинга
-# Определить и добавить в словарь fixed power
+# Определить и добавить в словарь fixed power (После фиксации bounds!!!)

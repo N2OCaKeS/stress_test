@@ -601,13 +601,21 @@ class TestDispatchAuditOnWorkerFailure:
         )
         assert resp.status_code == 503
         assert resp.json().get("error_code") == "WORKER_REDIS_NOT_CONFIGURED"
+        # Сжатый aggregate-event: один failure с reason=worker_unreachable_partial
+        # вместо пары (per-server worker_unreachable + worker_unreachable_partial).
+        # Для single-режима tasks/not_attempted пусты, unreachable_count=1.
         failures = [
             e for e in _events(captured_emits, "server_account.rotate_password_dispatch")
             if e.get("status") == "failure"
-            and e.get("details", {}).get("reason") == "worker_unreachable"
+            and e.get("details", {}).get("reason") == "worker_unreachable_partial"
         ]
         assert len(failures) == 1
-        assert failures[0]["details"]["task_kind"] == "account.rotate_password"
+        details = failures[0]["details"]
+        assert details["task_kind"] == "account.rotate_password"
+        assert details["unreachable_count"] == 1
+        assert details["failed"] == [srv.id]
+        assert details["dispatched_count"] == 0
+        assert details["not_attempted"] == []
 
     async def test_service_unavailable_emits_failure_for_ipmi_rotate(
         self, client, admin_role_token_a, make_server, make_ipmi,
@@ -887,9 +895,9 @@ class TestMassRotatePartialTolerance:
         """Если воркер падает после K успешных INSERT+RPUSH в батче — mass-
         режим больше не отбивает 503, а отдаёт структурированный ответ с
         `partial_failure=True`, `next_action=manual_cancel_dispatched` и
-        списком task_ids для ручной отмены. SIEM получает агрегат
-        (`worker_unreachable_partial`) + отдельный WARNING-event
-        `mass_rotation.partial_failure` с тем же составом."""
+        списком task_ids для ручной отмены. SIEM получает один агрегат
+        (`worker_unreachable_partial` с `unreachable_count`) + отдельный
+        WARNING-event `mass_rotation.partial_failure` с тем же составом."""
         from src.core.exceptions import ServiceUnavailableError
 
         srv1 = await make_server(department_id="dep_a")
@@ -932,8 +940,8 @@ class TestMassRotatePartialTolerance:
         events = _events(
             captured_emits, "server_account.rotate_password_dispatch",
         )
-        # Per-server (worker_unreachable) и агрегированный
-        # (worker_unreachable_partial) failure-эмиты сохраняем как раньше.
+        # Раньше шло два события (per-server + агрегат); теперь
+        # объединено в один агрегат с `unreachable_count`.
         partial_aggregates = [
             e for e in events
             if e.get("status") == "failure"
@@ -944,7 +952,17 @@ class TestMassRotatePartialTolerance:
         assert agg["mode"] == "all"
         assert agg["dispatched_count"] == 1
         assert len(agg["failed"]) == 1
+        assert agg["unreachable_count"] == 1
+        assert agg["server_id"] == agg["failed"][0]
         assert agg["not_attempted"] == [srv3.id] or len(agg["not_attempted"]) == 1
+        # Per-server worker_unreachable не должен дублировать агрегат:
+        # на упавшем сервере единственное failure-событие — этот же агрегат.
+        plain_unreachable = [
+            e for e in events
+            if e.get("status") == "failure"
+            and e["details"].get("reason") == "worker_unreachable"
+        ]
+        assert plain_unreachable == []
 
 
 class TestIdempotencyKeyLength:

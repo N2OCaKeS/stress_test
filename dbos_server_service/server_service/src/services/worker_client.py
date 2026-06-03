@@ -746,6 +746,19 @@ async def _dispatch_task_inner(
             message="Task insert failed and idempotent retry did not resolve",
         )
 
+    # Окно потери: INSERT уже закоммичен, а до `stub.kiq` процесс умер
+    # (kill -9, OOM, перезагрузка пода) — task-row в БД есть, в Redis-очередь
+    # ничего не уехало, worker за ней не пойдёт, клиент успел получить
+    # exception ServiceUnavailableError либо 5xx. Текущая компенсация —
+    # `_delete_task_row` при любом сбое внутри блока ниже, но смерть между
+    # commit'ом и kiq'ом её не запускает.
+    #
+    # Чистое решение — transactional outbox по аналогии с audit-outbox в
+    # `loging_client`: вместо прямого RPUSH в Redis писать
+    # `(task_id, queue_name)` в `tasks_dispatch_outbox` в той же транзакции,
+    # отдельный воркер забирает строки и публикует в брокер с at-least-once
+    # семантикой. Сейчас не делаем — big-scope, требует новой миграции и
+    # отдельной фоновой задачи; описано в obsidian/TODO.md под carry.
     try:
         await _ensure_broker_started()
         stub = _task_stubs.get(task_kind)

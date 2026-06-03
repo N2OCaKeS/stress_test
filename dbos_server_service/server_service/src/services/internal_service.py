@@ -1456,24 +1456,33 @@ async def record_ipmi_credentials_rotated(
     # удачный BMC test-call в окне `IPMI_VERIFY_MAX_AGE_SECONDS`. Старый /
     # отсутствующий verify => 400. Иначе сохранили бы пароль, которым
     # нельзя залогиниться, и out-of-band доступ потерян до ручной починки.
-    max_age = get_settings().ipmi_verify_max_age_seconds
+    #
+    # Окна асимметричны: stale-сторону держим узкой (это про возраст
+    # successful BMC test-call'а, реиспользовать давний proof нельзя),
+    # future-сторону можно расширить на стендах с заметным NTP-skew между
+    # worker'ом и приёмником через `VERIFY_FUTURE_SKEW_SECONDS`. По
+    # умолчанию оба окна равны и работа идёт как раньше.
+    settings = get_settings()
+    max_age = settings.ipmi_verify_max_age_seconds
+    future_skew = settings.verify_future_skew_seconds
     verify_age = (now - verified_at).total_seconds()
-    if abs(verify_age) > max_age:
-        # Future-dated verified_at — отдельная ветка: worker'у не доверяем,
-        # если он шлёт «доказательство из будущего» (часы поплыли / умышленный
-        # spoof). Reason и message отличаются от обычного stale-случая, чтобы
-        # оператор в loging_service сразу видел причину.
-        is_future = verify_age < 0
+    is_future = verify_age < 0
+    too_future = is_future and -verify_age > future_skew
+    too_old = (not is_future) and verify_age > max_age
+    if too_future or too_old:
         reason = "verify_in_future" if is_future else "verify_stale"
         if is_future:
             message = (
-                f"BMC verified_at is in the future: must be within {max_age}s of now"
+                f"BMC verified_at is in the future: must be within "
+                f"{future_skew}s of now"
             )
+            window = future_skew
         else:
             message = (
                 "Stale or missing BMC verify proof: verified_at must be "
                 f"within {max_age}s of now"
             )
+            window = max_age
         audit_service.emit(
             "ipmi_controller.credentials_rotated_callback",
             target_id=controller_id, target_type="ipmi_controller",
@@ -1483,7 +1492,7 @@ async def record_ipmi_credentials_rotated(
                 "server_id": ctrl.server_id,
                 "verified_at": verified_at.isoformat(),
                 "verify_age_seconds": round(verify_age, 3),
-                "max_age_seconds": max_age,
+                "max_age_seconds": window,
             },
         )
         raise BadRequestError(
@@ -1491,7 +1500,7 @@ async def record_ipmi_credentials_rotated(
             message=message,
             details={
                 "verified_at": verified_at.isoformat(),
-                "max_age_seconds": max_age,
+                "max_age_seconds": window,
             },
         )
 

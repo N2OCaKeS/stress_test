@@ -216,6 +216,22 @@ class Settings(BaseSettings):
             "реиспользовать давний successful test."
         ),
     )
+    verify_future_skew_seconds: int = Field(
+        default=60,
+        ge=1,
+        alias="VERIFY_FUTURE_SKEW_SECONDS",
+        description=(
+            "Отдельное окно для future-dated `verified_at`: насколько в "
+            "будущее worker может опередить локальные часы server_service'а "
+            "до отбоя 400 BMC_VERIFY_REQUIRED (reason=verify_in_future). "
+            "По умолчанию равно `IPMI_VERIFY_MAX_AGE_SECONDS` (60s); "
+            "повышать (например, до 300s) на стендах с заметным NTP-skew "
+            "между worker'ом и приёмником, где штатный 60s окном съедает "
+            "обычные расхождения. Stale-направление продолжает идти через "
+            "`IPMI_VERIFY_MAX_AGE_SECONDS` — оно про возраст successful "
+            "verify, не про clock-skew."
+        ),
+    )
     rotated_at_skew_seconds: int = Field(
         default=600,
         ge=1,

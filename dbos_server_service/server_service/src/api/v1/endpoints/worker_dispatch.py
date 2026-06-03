@@ -1386,21 +1386,12 @@ async def account_rotate_password_dispatch(
             # per-server проблема: продолжать батч смысла нет, каждый
             # следующий сервер упадёт идентично.
             #
-            # Эмитим агрегат с фактическим состоянием батча: на серверы
-            # 1..K-1 уже стоит INSERT+RPUSH (dispatched), на K случился сбой
-            # (failed), на оставшихся не дошли (not_attempted). Без этого
-            # SIEM увидит только per-server failure и не сможет
-            # восстановить, какие task_id'ы реально в работе.
-            audit_service.emit(
-                audit_action, target_id=account_id, target_type="server_account",
-                status="failure", allowed=True,
-                details={
-                    "reason": "worker_unreachable",
-                    "task_kind": "account.rotate_password",
-                    "server_id": server.id,
-                    "department_id": server.department_id,
-                },
-            )
+            # Раньше эмитили два события подряд (per-server `worker_unreachable`
+            # + агрегат `worker_unreachable_partial`) — SIEM получал
+            # удвоенный сигнал на одну и ту же причину. Сжали в один
+            # агрегат: `reason=worker_unreachable_partial`, упавший сервер
+            # выезжает в `failed`/`unreachable_count`, состав батча
+            # (dispatched/not_attempted/skipped) — рядом.
             failed_server_id = server.id
             dispatched_index = dispatchable.index(server)
             not_attempted = [s.id for s in dispatchable[dispatched_index + 1:]]
@@ -1415,11 +1406,13 @@ async def account_rotate_password_dispatch(
                     "dispatched": [t["server_id"] for t in tasks],
                     "dispatched_count": len(tasks),
                     "failed": [failed_server_id],
+                    "unreachable_count": 1,
                     "not_attempted": not_attempted,
                     "skipped": skipped,
                     "skipped_count": len(skipped),
                     "login": account.login,
                     "department_id": account.department_id,
+                    "server_id": failed_server_id,
                 },
             )
             # Mass-режим + хотя бы один успешный dispatch — не отбиваем 503,

@@ -384,11 +384,23 @@ class TestAccountRotateStashHelpers:
 
         await passwords._delete_account_rotate_password(fake_tid)
         assert await passwords._read_account_rotate_password(fake_tid) is None
+        assert (
+            await passwords._read_account_rotate_state(fake_tid)
+            == (None, None, None)
+        )
 
-        await passwords._store_account_rotate_password(fake_tid, "secret_acc_42")
+        await passwords._store_account_rotate_password(
+            fake_tid, "secret_acc_42", login="ops", rotated_at=None,
+        )
+        # Tonkaya obyortka возвращает только password.
         assert (
             await passwords._read_account_rotate_password(fake_tid)
             == "secret_acc_42"
+        )
+        # Полный roundtrip — JSON с password+login+rotated_at.
+        assert (
+            await passwords._read_account_rotate_state(fake_tid)
+            == ("secret_acc_42", "ops", None)
         )
 
         await passwords._delete_account_rotate_password(fake_tid)

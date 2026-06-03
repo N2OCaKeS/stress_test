@@ -357,8 +357,9 @@ class SshClient:
         if rc != 0:
             # Подчищаем stderr — защита от случая, когда chpasswd
             # вернул в логе сам логин/пароль (теоретически он не
-            # должен, но не доверяем).
-            stderr_clean = _scrub_password_echo(stderr, new_password)
+            # должен, но не доверяем). Маскируем оба: и пароль, и
+            # `login:` prefix из payload `echo "user:pass" | chpasswd`.
+            stderr_clean = _scrub_password_echo(stderr, new_password, login=login)
             raise SshError(
                 error_code="SSH_CHPASSWD_FAILED",
                 host=self.host,
@@ -1067,17 +1068,28 @@ def _sanitize_cmd(command: str) -> str:
     return sanitized
 
 
-def _scrub_password_echo(stderr: str, new_password: str) -> str:
-    """Удалить из stderr точное совпадение `new_password`.
+def _scrub_password_echo(
+    stderr: str, new_password: str, login: str | None = None,
+) -> str:
+    """Удалить из stderr точное совпадение `new_password` (и опционально login'а).
 
-    Эшелонированная защита: redact_error_message не знает значение
+    Эшелонированная защита: `redact_error_message` не знает значение
     пароля (regex'ы матчат структуру). Здесь, имея на руках новый
     пароль, прибиваем его substring'ом до того, как stderr поедет в
     audit-логи.
+
+    Если передан `login`, дополнительно вырезаем `login:` (точная пара
+    «логин + двоеточие», как в chpasswd-payload `echo "user:pass" |
+    chpasswd`). Маскируем именно префикс с двоеточием, а не голый login:
+    голый login встречается в десятке других контекстов (sudo prompt,
+    `bash: <login>: command not found`), затирая его везде, потеряли бы
+    debug-полезную информацию.
     """
-    if not new_password:
-        return stderr
-    return stderr.replace(new_password, "<PASSWORD>")
+    if new_password:
+        stderr = stderr.replace(new_password, "<PASSWORD>")
+    if login:
+        stderr = stderr.replace(f"{login}:", "<LOGIN>:")
+    return stderr
 
 
 def _parse_os_release(text: str) -> dict:

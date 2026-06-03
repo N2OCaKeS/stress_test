@@ -161,6 +161,21 @@ class AuditOutbox:
         self._dropped_shutdown_total = 0
         self._drained_total = 0
 
+        # Сериализуем sync-writer'ы между `_drain_loop` и `_drain_remaining`.
+        # Тонкость: `await asyncio.to_thread(...)` при `CancelledError` отдаёт
+        # управление наверх, НО поток-исполнитель в ThreadPoolExecutor
+        # продолжает крутить `_write_batch_sync` до конца — `db.commit()` ещё
+        # может выстрелить. Если в этот момент `stop()` уже зовёт
+        # `_drain_remaining`, тот открывает свою сессию и пишет в ту же
+        # таблицу параллельно. Партиционный UNIQUE по
+        # `(service, idempotency_key)` от прямого дубля защитит, но конкурентные
+        # INSERT'ы из двух сессий всё равно дают шанс на serialization-failure
+        # и на partial-commit, который ломает учёт `committed_keys`.
+        # threading.Lock держится внутри sync-target'а на всё время сессии,
+        # так что второй writer ждёт даже если async-await первого уже отдал
+        # CancelledError наверх.
+        self._writer_lock = threading.Lock()
+
     # ── lifecycle ────────────────────────────────────────────────────────
 
     def start(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
@@ -515,6 +530,18 @@ class AuditOutbox:
         первый bump на свой `begin_nested()`-rollback, а потом второй — при
         фолбэке в except-ветке коммита, который ходит по всему батчу.
         """
+        # `_writer_lock` сериализует sync-writer'ы между drain-loop'ом и
+        # `_drain_remaining`. Acquire — синхронный, в треде; если предыдущий
+        # batch ещё пишет (например, async-await его cancel'нули, но
+        # `db.commit()` ещё в полёте), второй writer тут подождёт.
+        with self._writer_lock:
+            return self._write_batch_locked(batch, committed_keys)
+
+    def _write_batch_locked(
+        self,
+        batch: list[AuditEnvelope],
+        committed_keys: set[str],
+    ) -> int:
         db = self._session_factory()
         succeeded_envs: list[AuditEnvelope] = []
         bumped_ids: set[int] = set()

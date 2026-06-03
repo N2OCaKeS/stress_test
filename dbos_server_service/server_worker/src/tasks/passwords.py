@@ -144,6 +144,46 @@ def _ipmi_stash_parse(raw: bytes | bytearray | str) -> tuple[str | None, str | N
     return data.get("password"), data.get("rotated_at")
 
 
+def _account_stash_value(
+    password: str, login: str | None, rotated_at: str | None,
+) -> str:
+    """Сериализовать (password, login, rotated_at) в JSON для account-stash'а.
+
+    Симметрично `_ipmi_stash_value`. `login` нужен на retry'е, если мы
+    впервые попали сюда после chpasswd (логин уже выбран — из payload или
+    fetch'а) и хотим избежать второго fetch'а, который на discovered-
+    аккаунте всё равно вернёт 404. `rotated_at` хранится для симметрии
+    с IPMI: server_service возвращает свой timestamp на submit, но если
+    submit повторится из-за transient'а, мы переиспользуем тот же.
+    """
+    return json.dumps(
+        {"password": password, "login": login, "rotated_at": rotated_at}
+    )
+
+
+def _account_stash_parse(
+    raw: bytes | bytearray | str,
+) -> tuple[str | None, str | None, str | None]:
+    """Разобрать account-stash из Redis.
+
+    Возвращает `(password, login, rotated_at)`. Если в Redis лежит чужой
+    или старый формат (не валидный JSON, не dict) — возвращаем тройку
+    `None`'ов: caller увидит «как будто stash пустой», сгенерит новый
+    пароль и пойдёт штатным путём. Старый формат сам выпадет по TTL.
+    """
+    if isinstance(raw, (bytes, bytearray)):
+        text = raw.decode("utf-8")
+    else:
+        text = str(raw)
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return None, None, None
+    if not isinstance(data, dict):
+        return None, None, None
+    return data.get("password"), data.get("login"), data.get("rotated_at")
+
+
 async def _read_ipmi_rotate_state(task_id: str) -> tuple[str | None, str | None]:
     """Достать (password, rotated_at) из stash'а.
 
@@ -210,11 +250,15 @@ async def _delete_ipmi_rotate_password(task_id: str) -> None:
         await client.aclose()
 
 
-async def _read_account_rotate_password(task_id: str) -> str | None:
-    """Достать ранее сгенерированный account-пароль ротации из Redis.
+async def _read_account_rotate_state(
+    task_id: str,
+) -> tuple[str | None, str | None, str | None]:
+    """Достать (password, login, rotated_at) account-stash'а из Redis.
 
-    Симметрично `_read_ipmi_rotate_state`, но возвращает только plaintext —
-    у account-rotate нет stash'а rotated_at, поэтому tuple не нужен.
+    Симметрично `_read_ipmi_rotate_state`. `login` нужен для retry'я
+    после первого chpasswd (избежать повторного fetch'а у server_service);
+    `rotated_at` хранится опционально (server_service возвращает свой
+    timestamp на submit, но переиспользуется на retry'ях submit'а).
     """
     validate_task_id(task_id)
     settings = get_settings()
@@ -224,17 +268,37 @@ async def _read_account_rotate_password(task_id: str) -> str | None:
     finally:
         await client.aclose()
     if raw is None:
-        return None
-    return raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+        return None, None, None
+    return _account_stash_parse(raw)
 
 
-async def _store_account_rotate_password(task_id: str, password: str) -> None:
+async def _read_account_rotate_password(task_id: str) -> str | None:
+    """Достать только password из account-stash'а.
+
+    Тонкая обёртка над `_read_account_rotate_state` — оставлена для
+    call-site'ов и тестов, которым нужен только пароль.
+    """
+    password, _login, _rotated_at = await _read_account_rotate_state(task_id)
+    return password
+
+
+async def _store_account_rotate_password(
+    task_id: str,
+    password: str,
+    login: str | None = None,
+    rotated_at: str | None = None,
+) -> None:
     """Сохранить in-flight account-пароль ротации в Redis с TTL.
 
     Кладём ПЕРЕД `chpasswd`: если retry повторит _impl, мы достанем тот
     же пароль и не сгенерим новый. Без этого каждый retry перезаписывал
     бы пароль на хосте новым случайным секретом, ломая self-сессии и
     рассинхронизируя storage с реальностью на хосте.
+
+    Формат — JSON `{password, login, rotated_at}` симметрично IPMI-stash'у.
+    `login` и `rotated_at` опциональны: на первом заходе известен только
+    `password` (login резолвится из payload/fetch чуть позже), оба слота
+    дополнятся при следующих обновлениях stash'а.
     """
     validate_task_id(task_id)
     settings = get_settings()
@@ -242,7 +306,7 @@ async def _store_account_rotate_password(task_id: str, password: str) -> None:
     try:
         await client.set(
             _ACCOUNT_ROTATE_KEY_PREFIX + task_id,
-            password,
+            _account_stash_value(password, login, rotated_at),
             ex=STASH_TTL_SECONDS,
         )
     finally:
@@ -347,12 +411,19 @@ async def account_rotate_password(task_id: str) -> None:
         # self-сессий (`is_managed=False`), которые логинятся паролем из
         # storage, это означало бы постоянный auth-fail после первого же
         # transient-fail'а submit'а.
-        stashed = await _read_account_rotate_password(task_id)
-        if stashed is None:
+        stashed_password, _stashed_login, _stashed_rotated_at = (
+            await _read_account_rotate_state(task_id)
+        )
+        if stashed_password is None:
             new_password = _generate_password()
-            await _store_account_rotate_password(task_id, new_password)
+            # login на этом этапе уже известен (из payload либо fetch'а
+            # выше) — кладём его в stash сразу, чтобы retry мог обойтись
+            # без второго fetch'а к server_service.
+            await _store_account_rotate_password(
+                task_id, new_password, login=creds.get("login"),
+            )
         else:
-            new_password = stashed
+            new_password = stashed_password
         await ssh_client.set_account_password(creds, server_id, creds["login"], new_password)
         confirmation = await server_service_client.submit_rotated_password(
             server_id, account_id, new_password, target_dept,

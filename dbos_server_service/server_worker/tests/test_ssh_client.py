@@ -463,3 +463,21 @@ class TestScrubPasswordEcho:
 
     def test_password_not_present_returns_input(self):
         assert _scrub_password_echo("no leak", "secret") == "no leak"
+
+    def test_masks_login_prefix_with_colon(self):
+        # chpasswd payload form: echo "user:pass" | chpasswd
+        scrubbed = _scrub_password_echo(
+            "chpasswd: line 1: ops:SuperSecret malformed",
+            "SuperSecret",
+            login="ops",
+        )
+        assert "SuperSecret" not in scrubbed
+        assert "ops:" not in scrubbed
+        assert "<LOGIN>:<PASSWORD>" in scrubbed
+
+    def test_login_none_keeps_login_visible(self):
+        # Старый контракт: login не передан — login в stderr не трогаем.
+        scrubbed = _scrub_password_echo(
+            "error for ops: bad", "secret", login=None,
+        )
+        assert "ops:" in scrubbed

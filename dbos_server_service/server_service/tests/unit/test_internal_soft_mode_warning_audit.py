@@ -112,6 +112,9 @@ def _settings(monkeypatch, *, strict: bool):
         ipmi_verify_max_age_seconds = 60
         # Окно допустимого NTP-skew для rotated_at (default из core/config.py).
         rotated_at_skew_seconds = 600
+        # Future-skew окно для verified_at — отдельное от max_age, чтобы
+        # на стендах с NTP-drift'ом не отбивать BMC verify.
+        verify_future_skew_seconds = 60
 
     monkeypatch.setattr(internal_service, "get_settings", lambda: _S())
 

@@ -555,7 +555,7 @@ class TestPrepareDispatchIdempotentHitRaceCleanup:
         race_task_id = "tsk_race_winner_existing"
 
         async def fake_dispatch(
-            *, task_kind, target_server_id, payload,
+            *, db=None, task_kind, target_server_id, payload,
             created_by, request_id,
             target_resource_id=None, idempotency_key=None,
             return_hit=False,

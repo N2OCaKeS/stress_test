@@ -163,6 +163,7 @@ async def _dispatch_power(
     # Поэтому эмитим failure ДО re-raise.
     try:
         task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+            db=db,
             task_kind=task_kind,
             target_server_id=server_id,
             # `target_department_id` нужен worker'у чтобы echo'нуть этот dept в
@@ -175,6 +176,7 @@ async def _dispatch_power(
             request_id=getattr(request.state, "request_id", None),
             idempotency_key=idempotency_key,
         )
+        await db.commit()
     except ConflictError:
         # TASK_IDEMPOTENT_CONFLICT — два POST'а с одним Idempotency-Key
         # успели гонкой пройти SELECT и упасть на UNIQUE-constraint, а

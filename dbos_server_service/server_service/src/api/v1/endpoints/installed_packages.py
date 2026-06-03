@@ -167,6 +167,7 @@ async def list_installed_packages(
     }
     try:
         task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+            db=db,
             task_kind="installed_packages.list",
             target_server_id=server_id,
             payload=payload,
@@ -174,6 +175,7 @@ async def list_installed_packages(
             request_id=getattr(request.state, "request_id", None),
             idempotency_key=idempotency_key,
         )
+        await db.commit()
     except ConflictError:
         audit_service.emit(
             audit_action, target_id=server_id, target_type="server",

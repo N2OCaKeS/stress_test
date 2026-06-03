@@ -66,7 +66,7 @@ def captured_dispatch(monkeypatch):
     async def fake_delete(creds_key):
         deleted.append(creds_key)
 
-    async def fake_dispatch(*, task_kind, target_server_id, payload,
+    async def fake_dispatch(*, db=None, task_kind, target_server_id, payload,
                             created_by, request_id,
                             target_resource_id=None, idempotency_key=None,
                             return_hit=False):

@@ -300,7 +300,21 @@ class TestDispatchTaskSplit:
         monkeypatch.setattr(wc, "_ensure_broker_started", fake_ensure)
         monkeypatch.setattr(wc, "_task_stubs", {"power.on": _Stub()})
 
+        from src.repositories import dispatch_outbox as _dox
+
+        async def fake_outbox_insert(_db, **_kw):
+            return None
+
+        monkeypatch.setattr(_dox, "insert", fake_outbox_insert)
+        monkeypatch.setattr(
+            "src.services.worker_client.dispatch_outbox_repo.insert",
+            fake_outbox_insert,
+        )
+
+        from unittest.mock import AsyncMock
+
         result = await wc.dispatch_task(
+            db=AsyncMock(),
             task_kind="power.on",
             target_server_id="srv_x",
             payload={},
@@ -332,7 +346,21 @@ class TestDispatchTaskSplit:
         monkeypatch.setattr(wc, "_ensure_broker_started", fake_ensure)
         monkeypatch.setattr(wc, "_task_stubs", {"power.on": _Stub()})
 
+        from src.repositories import dispatch_outbox as _dox
+
+        async def fake_outbox_insert(_db, **_kw):
+            return None
+
+        monkeypatch.setattr(_dox, "insert", fake_outbox_insert)
+        monkeypatch.setattr(
+            "src.services.worker_client.dispatch_outbox_repo.insert",
+            fake_outbox_insert,
+        )
+
+        from unittest.mock import AsyncMock
+
         task_id, hit = await wc.dispatch_task_with_hit(
+            db=AsyncMock(),
             task_kind="power.on",
             target_server_id="srv_x",
             payload={},
@@ -474,13 +502,15 @@ def test_installed_packages_handler_passes_max_rows(monkeypatch):
         user_id = "usr_x"
         department_id = "dep_a"
 
+    from unittest.mock import AsyncMock
+
     _aio.run(
         ip.list_installed_packages(
             server_id="srv_1",
             identity=_Identity(),
             request=_Req(),
             pattern="*",
-            db=None,
+            db=AsyncMock(),
         )
     )
 

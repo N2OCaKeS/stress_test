@@ -6,25 +6,22 @@ server_service делает две вещи, чтобы передать раб�
      (cross-DB на том же Postgres-кластере). Эта строка — персистентный
      контракт: worker мутирует ``status`` / ``started_at`` /
      ``completed_at`` именно на ней.
-  2. Publish ``task_id`` в Redis через taskiq ListQueueBroker — используя
-     pre-registered task-name стабы, единственная задача которых —
-     включить ``.kiq()``. Настоящий handler с тем же именем живёт в
-     server_worker.
+  2. INSERT в ``dispatch_outbox`` (server_service-БД) с готовым payload'ом
+     и `task_kind`. Outbox-row пишется в ту же транзакцию, что и доменные
+     изменения caller'а — caller commit'нет одним атомарным `db.commit()`.
 
-**Zombie-task защита.** Шаги 1 и 2 не атомарны — INSERT коммитится в
-`dev_server_worker.tasks` ДО `broker.kiq`. Если Redis недоступен и
-`broker.startup` или `stub.kiq` падают, строка `queued` остаётся в БД,
-worker её не подберёт (zombie task).
+Публикация в Redis из этого модуля убрана. Её делает отдельный poller в
+server_worker (Phase C): выбирает `dispatched_at IS NULL`, шлёт в брокер
+и проставляет `dispatched_at = now()`. Падение между commit'ом и publish'ем
+безопасно — следующий тик poller'а добёт строку.
 
-Минимальный фикс без миграций: исключение → каскадно DELETE'им свежую
-строку и поднимаем `ServiceUnavailableError("WORKER_UNREACHABLE")`. Клиент
-получит 503 и может retry. При flaky Redis часть task'ов теряется, но
-клиент знает, что dispatch не удался, и в БД zombie-строк не остаётся.
-Симметрично с `WORKER_DB_NOT_CONFIGURED` / `WORKER_REDIS_NOT_CONFIGURED` /
-`UNKNOWN_TASK_KIND` (см. `_dispatch_power` в `endpoints/ipmi.py`).
-
-TODO: outbox-pattern (отдельная колонка `enqueued_at_redis` + фоновый
-poller в worker'е) — нужна миграция и изменения в worker'е.
+Cross-DB asymmetry. INSERT в worker-БД и INSERT в outbox физически в разных
+PostgreSQL-БД (на одном кластере), atomic 2PC мы не используем. Если worker-БД
+INSERT успел, а caller'ский commit упал — лежит orphan-task без outbox, worker
+её не подберёт. Этот сценарий узкий (commit на локальной БД редко падает) и
+безопасный (orphan-task не запускается без публикации). Symmetric scenario —
+outbox остался без worker-row — невозможен, потому что INSERT в worker-БД
+идёт первым: если он не прошёл, до outbox-INSERT'а мы не доходим.
 """
 
 import asyncio
@@ -34,11 +31,12 @@ from datetime import datetime, timezone
 import redis.asyncio as aioredis
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from taskiq_redis import ListQueueBroker
 
 from src.core.config import get_settings
 from src.core.exceptions import ConflictError, ServiceUnavailableError
+from src.repositories import dispatch_outbox as dispatch_outbox_repo
 from src.utils.ids import task_id
 
 # Префикс Redis-ключа для одноразовых bootstrap-кред prepare'а. Креды лежат
@@ -690,6 +688,7 @@ async def store_dispatch_creds(stash_key: str, creds: dict) -> None:
 
 async def _dispatch_task_inner(
     *,
+    db: AsyncSession,
     task_kind: str,
     target_server_id: str | None,
     payload: dict,
@@ -703,6 +702,10 @@ async def _dispatch_task_inner(
     Зовётся из публичных `dispatch_task` / `dispatch_task_with_hit`. Сами
     публичные методы делятся ради явного контракта возврата, ядро их не
     дублирует.
+
+    `db` — server_service-сессия caller'а. В неё пишется outbox-row; commit
+    делает caller вместе со своими доменными изменениями. На idempotent-hit
+    outbox-INSERT'а нет — предыдущий dispatch уже его записал.
     """
     if idempotency_key is not None:
         existing = await _get_task_by_idempotency_key(idempotency_key)
@@ -730,8 +733,8 @@ async def _dispatch_task_inner(
         # Race на UNIQUE(idempotency_key): другой процесс успел вставить
         # задачу с этим ключом между нашим SELECT и INSERT. Повторный SELECT
         # должен её увидеть и вернуть существующий id — это идемпотентный
-        # путь, никакого нового kick'а worker'у. Снова сверяем kind/server,
-        # чтобы race не пробил confused-deputy через гонку.
+        # путь, outbox-INSERT не делаем (предыдущий dispatch уже его записал).
+        # Снова сверяем kind/server, чтобы race не пробил confused-deputy.
         if idempotency_key is not None:
             existing = await _get_task_by_idempotency_key(idempotency_key)
             if existing is not None:
@@ -746,42 +749,38 @@ async def _dispatch_task_inner(
             message="Task insert failed and idempotent retry did not resolve",
         )
 
-    # Окно потери: INSERT уже закоммичен, а до `stub.kiq` процесс умер
-    # (kill -9, OOM, перезагрузка пода) — task-row в БД есть, в Redis-очередь
-    # ничего не уехало, worker за ней не пойдёт, клиент успел получить
-    # exception ServiceUnavailableError либо 5xx. Текущая компенсация —
-    # `_delete_task_row` при любом сбое внутри блока ниже, но смерть между
-    # commit'ом и kiq'ом её не запускает.
+    # Outbox-INSERT в server_service-БД. Сам payload — тот же, что воркер
+    # получит из таблицы tasks (worker читает по `task_id`), но кладём и
+    # `task_kind`, чтобы poller знал, в какую taskiq-очередь публиковать
+    # без дополнительного SELECT'а из worker-БД.
     #
-    # Чистое решение — transactional outbox по аналогии с audit-outbox в
-    # `loging_client`: вместо прямого RPUSH в Redis писать
-    # `(task_id, queue_name)` в `tasks_dispatch_outbox` в той же транзакции,
-    # отдельный воркер забирает строки и публикует в брокер с at-least-once
-    # семантикой. Сейчас не делаем — big-scope, требует новой миграции и
-    # отдельной фоновой задачи; описано в obsidian/TODO.md под carry.
+    # commit не делаем — owner транзакции caller. Это и есть суть outbox'а:
+    # если caller'ский commit упадёт, outbox-row не появится, и worker-row
+    # станет orphan'ом (никто не опубликует его в Redis). Без orphan'а
+    # poller бы дублировал ещё-не-выполненную задачу при retry.
     try:
-        await _ensure_broker_started()
-        stub = _task_stubs.get(task_kind)
-        if stub is None:
-            raise ServiceUnavailableError(
-                error_code="UNKNOWN_TASK_KIND",
-                message=f"No taskiq stub registered for task kind '{task_kind}'",
-            )
-        await stub.kiq(new_id)
-    except ServiceUnavailableError:
-        await _delete_task_row(new_id)
-        raise
+        await dispatch_outbox_repo.insert(
+            db,
+            task_id=new_id,
+            task_kind=task_kind,
+            payload=payload,
+        )
     except Exception as exc:  # noqa: BLE001
+        # Outbox не записался — worker-row уже закоммичен (cross-DB), его не
+        # снять без 2PC. Лучшее, что можем — попытка best-effort DELETE'а
+        # worker-row, чтобы не плодить orphan'ов; ошибки DELETE'а глотаем,
+        # потому что наружу важнее поднять оригинальную причину фейла.
         await _delete_task_row(new_id)
         raise ServiceUnavailableError(
             error_code="WORKER_UNREACHABLE",
-            message=f"Failed to publish task to worker broker: {exc.__class__.__name__}",
+            message=f"Failed to write dispatch_outbox row: {exc.__class__.__name__}",
         ) from exc
     return new_id, False
 
 
 async def dispatch_task(
     *,
+    db: AsyncSession,
     task_kind: str,
     target_server_id: str | None,
     payload: dict,
@@ -790,7 +789,7 @@ async def dispatch_task(
     target_resource_id: str | None = None,
     idempotency_key: str | None = None,
 ) -> str:
-    """INSERT task row + kick worker'а. Возвращает новый task_id.
+    """INSERT task row + INSERT outbox row. Возвращает новый task_id.
 
     Caller'ам, которым нужен флаг idempotent-replay'я (audit-details), —
     использовать `dispatch_task_with_hit`. Разделение на два метода вместо
@@ -798,29 +797,31 @@ async def dispatch_task(
     однозначно `str`, без union'а.
 
     Если передан ``idempotency_key`` — сначала ищем существующий task с этим
-    ключом (через cross-DB engine). Найден — возвращаем его id без повторной
-    публикации в брокер (идемпотентный путь, защита от дубль-кликов клиента
-    и retries).
+    ключом (через cross-DB engine). Найден — возвращаем его id без записи
+    в outbox (предыдущий dispatch уже там).
 
     БД `dev_server_worker.tasks` имеет UNIQUE на ``idempotency_key`` —
     при гонке между двумя процессами с одним ключом INSERT упадёт с
     IntegrityError: ловим, делаем повторный SELECT, возвращаем найденный id.
     Если после второй попытки строка всё ещё не найдена — поднимаем
-    ConflictError(409, TASK_IDEMPOTENT_CONFLICT) как сигнал «что-то пошло не
-    так на стороне worker-БД».
+    ConflictError(409, TASK_IDEMPOTENT_CONFLICT).
 
-    **Zombie-task protection:** если `broker.startup` или `stub.kiq` падают
-    после INSERT'а, `_delete_task_row(new_id)` откатывает строку. Иначе она
-    лежит `queued` навсегда, worker её всё равно не подбирает (см. module
-    docstring).
+    Outbox-INSERT идёт в `db` (server_service-сессия caller'а) и НЕ
+    коммитится здесь — caller commit'нет вместе со своими доменными
+    изменениями. Это даёт атомарность outbox-write+domain-write в рамках
+    server_service-БД. Worker-row в `dev_server_worker.tasks` коммитится
+    eagerly (cross-DB, atomic 2PC мы не используем); если caller'ский
+    commit упадёт, останется orphan-task без outbox, и poller его не
+    опубликует — безопасно (задача не запустится), но требует мониторинга.
 
     Поднимается `ServiceUnavailableError`:
 
-    * исходный error_code (`WORKER_DB_NOT_CONFIGURED` / `WORKER_REDIS_NOT_CONFIGURED`
-      / `UNKNOWN_TASK_KIND`) — пробрасывается без оборачивания;
-    * любая другая ошибка публикации → `WORKER_UNREACHABLE` (с chained __cause__).
+    * исходный error_code (`WORKER_DB_NOT_CONFIGURED`) — пробрасывается;
+    * фейл outbox-INSERT'а → `WORKER_UNREACHABLE` (с chained __cause__),
+      worker-row best-effort удаляется.
     """
     new_id, _hit = await _dispatch_task_inner(
+        db=db,
         task_kind=task_kind,
         target_server_id=target_server_id,
         payload=payload,
@@ -834,6 +835,7 @@ async def dispatch_task(
 
 async def dispatch_task_with_hit(
     *,
+    db: AsyncSession,
     task_kind: str,
     target_server_id: str | None,
     payload: dict,
@@ -845,12 +847,13 @@ async def dispatch_task_with_hit(
     """Как `dispatch_task`, но возвращает `(task_id, idempotent_hit)`.
 
     `idempotent_hit=True`, когда `idempotency_key` совпал с уже существующей
-    строкой и новой публикации в брокер не было. Caller (`_dispatch_power` /
+    строкой и новый outbox-row не писался. Caller (`_dispatch_power` /
     `server_prepare_dispatch`) кладёт флаг в audit details, чтобы SIEM
     отличал «новая task» от «idempotent replay» — иначе оба сценария
     неразличимы и нельзя посчитать долю реальных повторов.
     """
     return await _dispatch_task_inner(
+        db=db,
         task_kind=task_kind,
         target_server_id=target_server_id,
         payload=payload,

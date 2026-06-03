@@ -40,6 +40,15 @@ class Settings(BaseSettings):
         ...,
         description="PostgreSQL async DSN for the worker's own DB (dev_server_worker)",
     )
+    server_service_database_url: str = Field(
+        default="",
+        description=(
+            "PostgreSQL async DSN for the server_service DB (dev_server_service). "
+            "Используется dispatch_outbox publisher'ом — он читает строки outbox'а "
+            "из server_service-БД (миграция таблицы там же) и публикует задачи в "
+            "taskiq-broker. Пустой → publisher молча скипает тик (dev/test/local)."
+        ),
+    )
     db_pool_size: int = Field(
         default=5,
         ge=1,
@@ -443,6 +452,46 @@ class Settings(BaseSettings):
             "How many days to keep published outbox rows (both delivered "
             "and DLQ-poisoned) before the daily cleanup drops them. "
             "Unpublished (in-flight) rows are never touched by cleanup."
+        ),
+    )
+
+    # ── Dispatch outbox publisher ────────────────────────────────────────
+    # Publisher читает `dispatch_outbox` из server_service-БД, шлёт задачи в
+    # taskiq broker и помечает row dispatched. Параметры зеркалят audit-
+    # outbox publisher'а (poll-interval, batch, max_attempts, retention),
+    # но семантика проще: вместо HTTP в loging_service — locally kicker.kiq.
+    dispatch_outbox_poll_interval_seconds: int = Field(
+        default=2,
+        ge=1,
+        description=(
+            "Как часто publisher опрашивает dispatch_outbox. Меньше — ниже "
+            "latency dispatch'а после commit'а, выше — DB-нагрузка."
+        ),
+    )
+    dispatch_outbox_batch_size: int = Field(
+        default=100,
+        ge=1,
+        description=(
+            "Сколько строк за один проход publisher тянет FOR UPDATE SKIP "
+            "LOCKED. При burst'е dispatch'ей увеличить."
+        ),
+    )
+    dispatch_outbox_max_attempts: int = Field(
+        default=10,
+        ge=1,
+        description=(
+            "Soft-cap по `attempts` для одной outbox-строки. После cap'а "
+            "publisher оставляет row с attempts=MAX и пишет WARNING — DLQ-"
+            "style, без отдельной таблицы. Re-attempt — оператор сбрасывает "
+            "вручную."
+        ),
+    )
+    dispatch_outbox_retention_days: int = Field(
+        default=7,
+        ge=1,
+        description=(
+            "Сколько дней хранить успешно dispatch'нутые outbox-row'ы перед "
+            "daily cleanup'ом. Unpublished/недоставленные строки не трогаются."
         ),
     )
 

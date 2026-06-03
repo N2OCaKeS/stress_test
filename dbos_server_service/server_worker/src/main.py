@@ -90,6 +90,58 @@ async def _warmup_http_pools(state: TaskiqState) -> None:
     get_server_service_client()
 
 
+_DISPATCH_PUBLISHER_TASK_KEY = "dispatch_outbox_publisher_task"
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _start_dispatch_outbox_publisher(state: TaskiqState) -> None:
+    """Поднять фоновый publisher для dispatch_outbox.
+
+    Закрывает окно потери между commit'ом server_service-транзакции и
+    публикацией в Redis (см. docstring `tasks/dispatch_outbox.py`). Loop
+    polls раз в `DISPATCH_OUTBOX_POLL_INTERVAL_SECONDS`. Если в текущем
+    окружении `SERVER_SERVICE_DATABASE_URL` не выставлен —
+    `dispatch_outbox.poll_once` сам no-op'ит, поэтому стартуем безусловно.
+    """
+    from src.tasks import dispatch_outbox
+
+    task = asyncio.create_task(
+        dispatch_outbox.run_publisher_loop(),
+        name="dispatch_outbox_publisher",
+    )
+    state[_DISPATCH_PUBLISHER_TASK_KEY] = task
+    logger.info("dispatch_outbox publisher loop scheduled on worker startup")
+
+
+@broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
+async def _stop_dispatch_outbox_publisher(state: TaskiqState) -> None:
+    """Остановить dispatch_outbox publisher при shutdown'е воркера."""
+    task: asyncio.Task | None = state.get(_DISPATCH_PUBLISHER_TASK_KEY)
+    if task is None:
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — shutdown-хук не должен падать
+        logger.warning(
+            "dispatch_outbox publisher loop raised on shutdown: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+    finally:
+        try:
+            del state[_DISPATCH_PUBLISHER_TASK_KEY]
+        except KeyError:
+            pass
+    # Закрыть engine на server_service-БД (если поднимался).
+    from src.db import dispatch_outbox_session
+
+    await dispatch_outbox_session.dispose()
+    logger.info("dispatch_outbox publisher loop stopped on worker shutdown")
+
+
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def _start_audit_outbox_publisher(state: TaskiqState) -> None:
     """Поднимаем фоновый publisher для transactional audit outbox.
@@ -867,6 +919,35 @@ async def audit_outbox_cleanup_published_old() -> None:
             deleted,
             cutoff.isoformat(),
         )
+
+
+@broker.task("dispatch_outbox.poll")
+async def dispatch_outbox_poll_task() -> None:
+    """Operator-ручка / ad-hoc kick'нуть один проход publisher'а.
+
+    Штатно publisher работает фоновым `asyncio.create_task` loop'ом (см.
+    `_start_dispatch_outbox_publisher`) с 2-секундным интервалом — таскю
+    кидать руками не нужно. Регистрация здесь нужна, чтобы taskiq broker
+    знал имя `dispatch_outbox.poll` (для testkit'а, ручного `kiq` из
+    операторской консоли или будущего scheduler'а с sub-minute гранулярностью).
+    """
+    from src.tasks import dispatch_outbox
+
+    await dispatch_outbox.poll_once()
+
+
+@broker.task(
+    "dispatch_outbox.cleanup_old",
+    # 03:15 MSK = 00:15 UTC. Сдвиг от `tasks.cleanup_completed_old` (00:00 UTC)
+    # и `audit_outbox.cleanup_published_old` (00:30 UTC) — три housekeeping
+    # task'и не пересекаются по DB-write нагрузке.
+    schedule=[{"cron": "15 0 * * *"}] if _settings.scheduler_enabled else [],
+)
+async def dispatch_outbox_cleanup_old_task() -> None:
+    """Daily retention для dispatch_outbox (см. tasks/dispatch_outbox.py)."""
+    from src.tasks import dispatch_outbox
+
+    await dispatch_outbox.cleanup_old()
 
 
 @broker.task("internal.outbox_re_attempt")

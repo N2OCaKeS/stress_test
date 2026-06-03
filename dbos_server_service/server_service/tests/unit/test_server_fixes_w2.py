@@ -205,7 +205,7 @@ class TestProvisionForcePasswordGuard:
     ):
         captured: list[dict] = []
 
-        async def fake_dispatch(*, task_kind, target_server_id, payload,
+        async def fake_dispatch(*, db=None, task_kind, target_server_id, payload,
                                 created_by, request_id,
                                 target_resource_id=None, idempotency_key=None,
                                 return_hit=False):

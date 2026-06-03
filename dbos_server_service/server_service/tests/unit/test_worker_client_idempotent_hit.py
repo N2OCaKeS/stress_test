@@ -8,6 +8,8 @@ audit details, чтобы SIEM отличал «новая task» от «idempot
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from src.core.exceptions import ConflictError
@@ -18,6 +20,7 @@ from src.services import worker_client
 def stub_dispatch_internals(monkeypatch):
     """Минимальный набор моков, чтобы dispatch_task пошёл через INSERT путь."""
     inserted: list[dict] = []
+    outbox_inserted: list[dict] = []
 
     async def fake_insert(**kwargs):
         inserted.append(kwargs)
@@ -25,18 +28,24 @@ def stub_dispatch_internals(monkeypatch):
     async def fake_delete(_id):
         pass
 
-    async def fake_ensure_broker():
-        pass
-
-    class _Stub:
-        async def kiq(self, _tid):
-            return None
+    async def fake_outbox_insert(_db, *, task_id, task_kind, payload):
+        outbox_inserted.append(
+            {"task_id": task_id, "task_kind": task_kind, "payload": payload}
+        )
 
     monkeypatch.setattr(worker_client, "_insert_task_row", fake_insert)
     monkeypatch.setattr(worker_client, "_delete_task_row", fake_delete)
-    monkeypatch.setattr(worker_client, "_ensure_broker_started", fake_ensure_broker)
-    monkeypatch.setattr(worker_client, "_task_stubs", {"power.on": _Stub()})
-    return inserted
+    monkeypatch.setattr(
+        worker_client.dispatch_outbox_repo, "insert", fake_outbox_insert
+    )
+
+    class _Bag:
+        pass
+
+    bag = _Bag()
+    bag.inserted = inserted
+    bag.outbox_inserted = outbox_inserted
+    return bag
 
 
 class TestReturnHit:
@@ -47,6 +56,7 @@ class TestReturnHit:
             worker_client, "_get_task_by_idempotency_key", lookup,
         )
         task_id, hit = await worker_client.dispatch_task_with_hit(
+            db=AsyncMock(),
             task_kind="power.on",
             target_server_id="srv_abc",
             payload={"server_id": "srv_abc"},
@@ -56,6 +66,8 @@ class TestReturnHit:
         )
         assert task_id.startswith("tsk_")
         assert hit is False
+        # Новая task — outbox-row тоже создан
+        assert len(stub_dispatch_internals.outbox_inserted) == 1
 
     async def test_existing_task_returns_hit_true(self, stub_dispatch_internals, monkeypatch):
         async def lookup(_key):
@@ -64,6 +76,7 @@ class TestReturnHit:
             worker_client, "_get_task_by_idempotency_key", lookup,
         )
         result = await worker_client.dispatch_task_with_hit(
+            db=AsyncMock(),
             task_kind="power.on",
             target_server_id="srv_abc",
             payload={"server_id": "srv_abc"},
@@ -73,16 +86,15 @@ class TestReturnHit:
         )
         assert result == ("tsk_existing", True)
         # INSERT не дёргался — идемпотентный путь
-        assert stub_dispatch_internals == []
+        assert stub_dispatch_internals.inserted == []
+        # Idempotent-hit: outbox-INSERT тоже не делается (предыдущий dispatch
+        # уже его записал — повторная запись плодила бы дубль публикации).
+        assert stub_dispatch_internals.outbox_inserted == []
 
     async def test_reuse_key_for_other_task_kind_raises_conflict(
         self, stub_dispatch_internals, monkeypatch,
     ):
-        """Тот же ключ под другой task_kind → 409 IDEMPOTENCY_KEY_REUSE_CONFLICT.
-
-        Без проверки caller получил бы task_id от старой операции
-        (confused-deputy). Stub возвращает существующий task с другим kind.
-        """
+        """Тот же ключ под другой task_kind → 409 IDEMPOTENCY_KEY_REUSE_CONFLICT."""
         async def lookup(_key):
             return "tsk_existing", "power.on", "srv_abc"
         monkeypatch.setattr(
@@ -90,6 +102,7 @@ class TestReturnHit:
         )
         with pytest.raises(ConflictError) as exc_info:
             await worker_client.dispatch_task(
+                db=AsyncMock(),
                 task_kind="power.off",
                 target_server_id="srv_abc",
                 payload={"server_id": "srv_abc"},
@@ -99,7 +112,8 @@ class TestReturnHit:
             )
         assert exc_info.value.error_code == "IDEMPOTENCY_KEY_REUSE_CONFLICT"
         # INSERT не вызывался — отбили до записи
-        assert stub_dispatch_internals == []
+        assert stub_dispatch_internals.inserted == []
+        assert stub_dispatch_internals.outbox_inserted == []
 
     async def test_reuse_key_for_other_target_server_raises_conflict(
         self, stub_dispatch_internals, monkeypatch,
@@ -112,6 +126,7 @@ class TestReturnHit:
         )
         with pytest.raises(ConflictError) as exc_info:
             await worker_client.dispatch_task(
+                db=AsyncMock(),
                 task_kind="power.on",
                 target_server_id="srv_xyz",
                 payload={"server_id": "srv_xyz"},
@@ -120,7 +135,8 @@ class TestReturnHit:
                 idempotency_key="reused-key",
             )
         assert exc_info.value.error_code == "IDEMPOTENCY_KEY_REUSE_CONFLICT"
-        assert stub_dispatch_internals == []
+        assert stub_dispatch_internals.inserted == []
+        assert stub_dispatch_internals.outbox_inserted == []
 
     async def test_reuse_key_for_same_op_returns_existing(
         self, stub_dispatch_internals, monkeypatch,
@@ -132,6 +148,7 @@ class TestReturnHit:
             worker_client, "_get_task_by_idempotency_key", lookup,
         )
         result = await worker_client.dispatch_task(
+            db=AsyncMock(),
             task_kind="power.on",
             target_server_id="srv_abc",
             payload={"server_id": "srv_abc"},
@@ -140,7 +157,8 @@ class TestReturnHit:
             idempotency_key="same-op-key",
         )
         assert result == "tsk_same"
-        assert stub_dispatch_internals == []
+        assert stub_dispatch_internals.inserted == []
+        assert stub_dispatch_internals.outbox_inserted == []
 
     async def test_dispatch_task_returns_plain_string(self, stub_dispatch_internals, monkeypatch):
         """`dispatch_task` без `_with_hit` отдаёт чистый str — без union."""
@@ -150,6 +168,7 @@ class TestReturnHit:
             worker_client, "_get_task_by_idempotency_key", lookup,
         )
         result = await worker_client.dispatch_task(
+            db=AsyncMock(),
             task_kind="power.on",
             target_server_id="srv_abc",
             payload={"server_id": "srv_abc"},

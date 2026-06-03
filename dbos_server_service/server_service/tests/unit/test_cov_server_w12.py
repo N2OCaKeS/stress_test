@@ -1308,7 +1308,10 @@ class TestIdempotentHitAudit:
         monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
         monkeypatch.setattr(wc, "_ensure_broker_started", fake_ensure)
 
+        from unittest.mock import AsyncMock
+
         result = await wc.dispatch_task_with_hit(
+            db=AsyncMock(),
             task_kind="power.on",
             target_server_id="srv_abc",
             payload={},
@@ -1336,8 +1339,11 @@ class TestIdempotentHitAudit:
         monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
         monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
 
+        from unittest.mock import AsyncMock
+
         with pytest.raises(ConflictError) as exc_info:
             await wc.dispatch_task(
+                db=AsyncMock(),
                 task_kind="power.on",
                 target_server_id="srv_abc",
                 payload={},

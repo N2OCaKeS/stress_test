@@ -267,6 +267,7 @@ async def _dispatch_for_server(
         payload.update(extra_payload)
     try:
         task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+            db=db,
             task_kind=task_kind,
             target_server_id=server_id,
             payload=payload,
@@ -274,6 +275,7 @@ async def _dispatch_for_server(
             request_id=getattr(request.state, "request_id", None),
             idempotency_key=idempotency_key,
         )
+        await db.commit()
     except ConflictError:
         audit_service.emit(
             audit_action, target_id=server_id, target_type="server",
@@ -437,6 +439,7 @@ async def _dispatch_account_on_host(
     account_login_v = account.login
     try:
         task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+            db=db,
             task_kind=task_kind,
             target_server_id=server_id_v,
             target_resource_id=account_id,
@@ -445,6 +448,7 @@ async def _dispatch_account_on_host(
             request_id=getattr(request.state, "request_id", None),
             idempotency_key=idempotency_key,
         )
+        await db.commit()
     except ConflictError:
         audit_service.emit(
             audit_action, target_id=account_id, target_type="server_account",
@@ -635,6 +639,7 @@ async def _dispatch_account_provision(
     try:
         try:
             task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+                db=db,
                 task_kind=task_kind,
                 target_server_id=server_id_v,
                 target_resource_id=account_id,
@@ -763,6 +768,7 @@ async def fanout_update_on_host(
         )
         try:
             task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+                db=db,
                 task_kind="account.update_on_host",
                 target_server_id=server.id,
                 target_resource_id=account.id,
@@ -771,6 +777,7 @@ async def fanout_update_on_host(
                 request_id=request_id,
                 idempotency_key=per_server_key,
             )
+            await db.commit()
         except (ConflictError, ServiceUnavailableError) as exc:
             reason = (
                 "idempotent_conflict"
@@ -1097,6 +1104,7 @@ async def server_prepare_dispatch(
     }
     try:
         task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+            db=db,
             task_kind=task_kind,
             target_server_id=server_id,
             payload=payload,
@@ -1104,6 +1112,7 @@ async def server_prepare_dispatch(
             request_id=getattr(request.state, "request_id", None),
             idempotency_key=idempotency_key,
         )
+        await db.commit()
     except ConflictError:
         # Подчищаем Redis: воркер за креды не пойдёт, иначе plaintext висит до TTL.
         await worker_client.delete_prepare_creds(creds_key)
@@ -1352,6 +1361,7 @@ async def account_rotate_password_dispatch(
         )
         try:
             task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+                db=db,
                 task_kind="account.rotate_password",
                 target_server_id=server.id,
                 target_resource_id=account_id,
@@ -1360,6 +1370,7 @@ async def account_rotate_password_dispatch(
                 request_id=request_id,
                 idempotency_key=per_server_key,
             )
+            await db.commit()
             if idempotent_hit:
                 idempotent_hits.append(server.id)
         except ConflictError:
@@ -1775,6 +1786,7 @@ async def ipmi_rotate_password_dispatch(
     }
     try:
         task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
+            db=db,
             task_kind="ipmi.rotate_password",
             target_server_id=server.id,
             target_resource_id=controller_id,

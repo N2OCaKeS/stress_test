@@ -208,9 +208,12 @@ async def finalize_reencrypt_outbox_done(
 
     Audit:
 
-    * success → `secrets.reencrypt_done` (INFO);
-    * skipped (owner уже перешифровался параллельно) → тоже INFO с
-      `skipped=True` в details, чтобы оператор видел happy-no-op;
+    * success → `secrets.reencrypt_done` (status=success, severity INFO);
+    * skipped (owner уже перешифровался параллельно / пропал / outbox-row
+      закрыт другой ветвью) → `secrets.reencrypt_done` со
+      `status="warning"` и `details.reason in {owner_vanished,
+      owner_ciphertext_changed, status_not_processing}`; service-layer
+      эмитит парный `secrets.migration.skipped` с тем же reason;
     * 404 если row не существует.
     """
     await _require_worker_scope(db, identity)

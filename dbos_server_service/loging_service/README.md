@@ -63,7 +63,7 @@
 
 > **Терминологический alias.** В корпоративной модели безопасности (§logging.3) этот эффект называется `DROP`. В коде, БД и API канон — `SUPPRESS`. API принимает оба варианта на вход (`effect="DROP"` нормализуется в `"SUPPRESS"`), но в ответах и в БД всегда хранится `SUPPRESS`. Это одно и то же.
 
-Правила хранятся в `audit_rules`, кешируются in-memory с TTL 30 сек и `MAX(updated_at)`-проверкой — это даёт согласованность между несколькими репликами без `pub/sub`. CRUD по правилам инвалидирует кеш форсом. Кеш thread-safe через `threading.Lock`, при ошибке БД отдаёт stale-данные с логированием.
+Правила хранятся в `audit_rules`, кешируются in-memory с TTL 30 сек и `MAX(updated_at)`-проверкой — это даёт согласованность между несколькими репликами без `pub/sub`. CRUD по правилам инвалидирует кеш форсом. Кеш thread-safe через `threading.Lock`, при ошибке БД отдаёт stale-данные с логированием. Состояние кеша держится в `CacheState` (`UNLOADED` / `LOADING` / `READY` / `EMPTY`); сравнение «изменилась ли БД» идёт через `_last_db_max` — оба операнда приходят с writer-side, NTP-skew между pod'ами на сравнение не влияет. ORM-row'и снимаются в frozen `_RuleSnapshot` до выхода из session-скоупа, чтобы кеш не зависел от `Session` и lazy-loaded relationship'ов.
 
 Match-полей пять: `match_service`, `match_action` (glob с одной звёздочкой на сегмент: `user.*` совпадает с `user.login`, не с `user.login.extra`), `match_status`, `match_severity`, `match_allowed`. `None` = «любое».
 
@@ -82,13 +82,13 @@ Match-полей пять: `match_service`, `match_action` (glob с одной �
 
 Daemon-thread (`src/main.py::_retention_loop`) считает время до следующего MSK 00:00 без `sleep(86400)`-дрейфа, берёт Postgres advisory-lock и итерирует активные политики — каждая выдаёт свой `DELETE` с предикатами. DELETE чанкуется (`DELETE ... WHERE id IN (SELECT ... LIMIT chunk)` с commit'ом на чанк), чтобы не держать row-locks на миллионы строк и не тормозить ingest. Инвариант: события `service='loging_service'` не удаляются никогда, даже если в фильтре пытаются их таргетировать (гард `_PROTECTED_SERVICE` в `apply_active`).
 
-После успешного sweep'а сервис эмитит self-audit событие `logging.retention_sweep` с `{deleted_count, retain_days, run_date_msk}`.
+После успешного sweep'а сервис эмитит self-audit событие `logging.retention_sweep` с `{deleted_count, run_date_msk, policies: [{id, retain_days, severity, service}, ...], min_retain_days, max_retain_days}` — поля `min_retain_days`/`max_retain_days` опускаются, если на момент запуска sweep'а активных политик не было.
 
 ## Безопасность
 
 - **Unicode normalization.** `utils/normalization.py` сворачивает входящие service-имена через NFKC + invisible-strip (ZWSP, ZWJ, BOM, SHY, …) + curated confusables fold (кир. `о` → ASCII `o`, греч. `ο` → `o`, и т.д.) до lower-кейса. Применяется в `EventCreate.service` валидаторе, `X-Service-Identity` парсере и path-параметре `/services/{service}/events`. Закрывает обход `loging_service`-reserved-guard через homoglyphs и retention-исключения.
 - **Charset validators.** `actor_id` / `target_id` / `department_id` / `request_id` — `^[A-Za-z0-9_\-]{1,48}$` (request_id — до 64); `target_type` — `^[a-z_.]{1,64}$`; `action` — `^[a-z0-9_.]{1,128}$` (snake_case + точка + цифры для версий, напр. `provision_v2`, `http.4xx_error`); `service` после Unicode-нормализации — `[a-z_]{1,64}`; `username` — email-like `[A-Za-z0-9_\-@.]{1,128}`. Параллельно middleware санирует incoming `X-Request-ID` (стрипает CRLF/NUL, truncate, fallback `req_<hex>`).
-- **Body-size middleware.** Отбивает `Content-Length > MAX_REQUEST_BODY_BYTES` (по умолчанию 64 KB) **до** body-read'а. Negative Content-Length → 400 `INVALID_CONTENT_LENGTH`.
+- **Body-size middleware.** Отбивает `Content-Length > MAX_REQUEST_BODY_BYTES` (по умолчанию 1 MiB) **до** body-read'а. Malformed Content-Length (плюс, подчёркивания, юникод-digits, пробелы) → 400 `INVALID_CONTENT_LENGTH`. Если `Content-Length` нет (chunked transfer-encoding) — middleware считает байты в потоке и отдаёт 413 при превышении.
 - **Shadow-keys guard.** `EventCreate.details` запрещает actor-identity ключи (`actor_id`, `actor_type`) на любой глубине вложенности — чтобы держатель ingest-ключа не shadow'ил identity actor'а через нестед `details`. Остальные top-level колонки (`service`, `action`, `status`, `request_id`, `severity`, `event_id`, `occurred_at`, `department_id`) разрешены внутри `details`: реальные события всех 4 сервисов используют их как target/scope/context (permission-аудит пишет `details={"action": "delete", ...}` — это granted action, не event action; denied-аудит несёт `department_id` цели и т.п.). NUL-byte в ключах/значениях тоже банится. Walker итеративный — рекурсия сама была бы DoS-вектором.
 - **Depth-cap.** `details` ограничен глубиной 10 и размером 64 KB.
 - **Per-service ingest auth.** `SERVICE_API_KEYS` JSON env — мапа `{identity: key}`; единственный режим service-to-service ingest (legacy shared `SERVICE_API_KEY` удалён). `X-Service-Identity` обязателен, работает ключом lookup'а; сравнение `secrets.compare_digest` — timing-safe. Identity вне map'а → 401 `INVALID_SERVICE_KEY`; mismatch ключа → 401 `INVALID_SERVICE_KEY`; отсутствие identity header'а → 401 `MISSING_SERVICE_IDENTITY`; пустой `SERVICE_API_KEYS` → 503 `SERVICE_TOKEN_NOT_CONFIGURED`. Compromise одного ключа даёт право писать только от имени соответствующего сервиса. На `POST /services/{service}/events` дополнительно сверяется path-параметр с identity → mismatch = 403 `SERVICE_IDENTITY_PATH_MISMATCH`.
@@ -100,7 +100,7 @@ Daemon-thread (`src/main.py::_retention_loop`) считает время до с
 
 ## События, которые сервис эмитит сам
 
-Одиннадцать self-audit событий: `logging.events_queried`, `logging.rules_read`, `logging.rules_write`, `logging.services_read`, `logging.admin_access`, `logging.retention_read`, `logging.retention_write`, `logging.retention_sweep`, `logging_rule.create`, `logging_rule.update`, `logging_rule.delete`. Полный справочник — `AUDIT_EVENTS.md`.
+Self-audit события: `logging.events_queried`, `logging.rules_read`, `logging.rules_write`, `logging.services_read`, `logging.admin_access`, `logging.retention_read`, `logging.retention_write`, `logging.retention_sweep`, `logging.service_events_registered`, `logging_rule.create`, `logging_rule.update`, `logging_rule.delete`, плюс `audit.idempotency_conflict` (poisoning-guard warning при mismatch `payload_hash` на повторённом `(service, idempotency_key)`). Полный справочник — `AUDIT_EVENTS.md`.
 
 ## Отказоустойчивость
 
@@ -133,10 +133,15 @@ Daemon-thread (`src/main.py::_retention_loop`) считает время до с
 | `TOKEN_PROXY_POOL_MAX_KEEPALIVE` | `5` | `httpx.Limits` keepalive для `/token` proxy-клиента |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` | body-size middleware cap (1 MiB) |
 | `INGEST_RATE_LIMIT` | `100/minute` | slowapi default на `POST /events` |
+| `AUDIT_QUERY_RATE_LIMIT` | `60/minute` | slowapi default на read-канал: `GET /events`, `GET /rules*`, `GET /services*`, `GET /retention` |
 | `REGISTER_EVENTS_RATE_LIMIT` | `100/minute` | slowapi default на `POST /services/{service}/events` (per-identity) |
 | `RATE_LIMIT_HEADERS_ENABLED` | `false` | включать ли `X-RateLimit-*` response headers |
 | `SECURITY_HSTS_ENABLED` | `false` | `Strict-Transport-Security` header — только за https-фронтом |
 | `AUDIT_DRAIN_TIMEOUT_SECONDS` | `2.0` | бюджет на draining pending self-audit задач при shutdown'е |
+| `AUDIT_OUTBOX_ENABLED` | `true` | включать ли self-audit outbox drain-loop в lifespan'е |
+| `AUDIT_OUTBOX_MAX_SIZE` | `4096` | bounded размер in-memory очереди self-audit; переполнение дропает старейший элемент в `dropped_overflow_total` |
+| `AUDIT_OUTBOX_BATCH_SIZE` | `64` | сколько envelope'ов выгребает drain за одну транзакцию |
+| `AUDIT_OUTBOX_POLL_INTERVAL_SECONDS` | `0.05` | пауза между батчами drain-loop'а |
 | `AUDIT_COUNT_STATEMENT_TIMEOUT_MS` | `10000` | `SET LOCAL statement_timeout` для `COUNT(*)` в `GET /events?include_total=true`. На превышении (`57014`) репо возвращает `total=null`, страница рендерится. `0` — выключить guard. |
 | `AUDIT_QUERY_STATEMENT_TIMEOUT_MS` | `30000` | `SET LOCAL statement_timeout` для основного `SELECT ... ORDER BY timestamp DESC OFFSET LIMIT` в `GET /events`. На превышении репо возвращает пустую страницу + warning лог, 200 без 500. `0` — выключить guard. |
 | `RETENTION_LOOP_ENABLED` | `true` | запускать ли фоновый retention-cleanup daemon |

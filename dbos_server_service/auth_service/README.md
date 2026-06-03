@@ -45,12 +45,12 @@ Pydantic-схемы в `src/schemas/` — отдельная плоскость 
 | `account_admin` | Глобальный платформенный администратор. Управляет сервисами, отделами, группами, OAuth2-клиентами, может банить/разбанить юзеров. **НЕ** получает прикладных service-ролей — `allowed_services` в introspect всегда пустой (`authorization_service.py:172`). | NULL разрешён |
 | `department_admin` | Администратор одного отдела. Управляет юзерами, ботами, группами, OAuth2-клиентами своего отдела. На чужой отдел — 404 / 403 (cross-dept enumeration prevention). | обязателен |
 | `loging_admin` | Полный доступ в `loging_service` (управление правилами severity/suppress + retention + чтение каталога аудита по всем отделам). В `auth_service` собственных прав не имеет. | NULL разрешён |
-| `loging_reader` | Read-only доступ в `loging_service` ко всем отделам (мониторинг, без управления правилами). В `auth_service` собственных прав не имеет. | обязателен |
+| `loging_reader` | Read-only доступ в `loging_service` ко всем отделам (мониторинг, без управления правилами). В `auth_service` собственных прав не имеет. | NULL разрешён |
 | service-role (отсутствие platform-роли) | Обычный юзер. Права — через прямые `UserServiceRole`, группы (`GroupServiceRole`) и `DepartmentServiceAccess`. | обязателен |
 
 Все четыре значения — `PlatformRole` enum (`core/constants.py`): `ACCOUNT_ADMIN`, `DEPARTMENT_ADMIN`, `LOGING_ADMIN`, `LOGING_READER`. Bit-flagged роли вроде `departments`/`group_admin` платформа не использует — управление этими сущностями завязано на `account_admin` (глобально) и `department_admin` (внутри своего отдела), см. таблицу выше.
 
-Допуск `NULL department_id` для `ACCOUNT_ADMIN`/`LOGING_ADMIN` — в `user_service.py:_platform_admins`. Для `LOGING_READER` и обычных юзеров отсутствие отдела → `MISSING_REQUIRED_FIELD` (`user_service.py:134`). Платформенные admin'ы могут иметь service-роли только для `LOGING_*` (бизнес-смысл — присматривать за loging_service), но guard'ы прикладных сервисов это игнорируют: `account_admin` bypass-ит action-матрицу `server_service`, остальные platform-роли там прав не получают.
+Допуск `NULL department_id` для `ACCOUNT_ADMIN`/`LOGING_ADMIN`/`LOGING_READER` — в `user_service.py:_platform_admins`. Для обычных юзеров отсутствие отдела → `MISSING_REQUIRED_FIELD`. `loging_reader` без `department_id` на стороне `auth_service` создаётся успешно; политика «dept-scoped read» сейчас держится только на стороне `loging_service` (без `department_id` он отдаст `403 NO_DEPARTMENT` на первом же GET аудита). Платформенные admin'ы могут иметь service-роли только для `LOGING_*` (бизнес-смысл — присматривать за loging_service), но guard'ы прикладных сервисов это игнорируют: `account_admin` bypass-ит action-матрицу `server_service`, остальные platform-роли там прав не получают.
 
 ### Service-роли
 
@@ -158,10 +158,13 @@ List-эндпоинты `GET /users`, `/users/department/{id}`, `/bots`, `/group
 ### Локально (docker-compose)
 
 ```bash
-cd auth_service
-docker-compose up --build
+# Из корня dbos_server_service — общий dev-стек (auth + logging + server + worker):
+make up    # см. корневой Makefile
 # API:   http://localhost:8000
 # Docs:  http://localhost:8000/docs
+
+# Либо отдельный compose только для auth_service:
+docker compose -f auth_service/docker/docker-compose.yml up --build
 ```
 
 ### Напрямую (требуется PostgreSQL)

@@ -2,7 +2,7 @@
 
 > **Версия сервиса:** `0.1.0` (см. `pyproject.toml`, OpenAPI `version` в `src/main.py`).
 > **Базовый префикс:** `/api/auth/v1`.
-> **Всего endpoints:** **71** (auth 7, users 12, departments 4, services 3, service_roles 6, tokens 3, bots 9, groups 13, authorization 2, oauth2 5, docker 7).
+> **Всего endpoints:** **78** (auth 7, users 16, departments 4, services 3, service_roles 6, tokens 3, bots 9, groups 16, authorization 2, oauth2 5, docker 7).
 > **Статус реализации:** production-ready (см. `../STATUS.md`).
 > **Аудит-события:** перечислены в `AUDIT_EVENTS.md`.
 
@@ -161,15 +161,15 @@ Auth: AnyAdmin. Body:
 
 `department_id` обязателен для всех, кроме `account_admin`. `department_admin` может создавать только в своём отделе и **не** account_admin. Назначать любую `platform_role` может только `account_admin`.
 
-**`loging_reader` обязан иметь `department_id`** — это dept-scoped reader (видит аудит только своего отдела). Если пользователя с `platform_role=loging_reader` создать без `department_id`, на первом же GET в `loging_service` он получит **403 `NO_DEPARTMENT`** — это by design, fallback «нет dept → видеть всё» не сделан. Для глобального read-only по аудиту используется `platform_role=loging_admin` или `platform_role=account_admin` (обе создаются без `department_id`).
+**`loging_reader` без `department_id` создаётся успешно** — `LOGING_READER` входит в `user_service._platform_admins` рядом с `account_admin` и `loging_admin`, поэтому auth_service не требует от него `department_id`. Политика «dept-scoped read» сейчас живёт только на стороне `loging_service`: на первом же GET аудита без `department_id` он отдаст `403 NO_DEPARTMENT`. Для глобального read-only по аудиту используется `platform_role=loging_admin` или `platform_role=account_admin`.
 
-Errors: `USERNAME_TAKEN` (409), `DEPARTMENT_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin создаёт в чужом отделе, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin пытается выдать `platform_role`.
+Errors: `USER_ALREADY_EXISTS` (409), `DEPARTMENT_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin создаёт в чужом отделе, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin пытается выдать `platform_role`.
 
 ### `PATCH /users/{user_id}`
 
 Auth: AnyAdmin. Body (все поля опциональны): `email`, `department_id`, `status` (`UserStatus` enum), `platform_role` (`PlatformRole` enum).
 
-Errors: `USER_NOT_FOUND` (404), `PERMISSION_DENIED` (403).
+Errors: `USER_NOT_FOUND` (404), `USER_UPDATE_FORBIDDEN` (403) — department_admin лезет в чужой отдел или меняет привилегированные поля, `STATUS_CHANGE_REQUIRES_ACCOUNT_ADMIN` (403) — не-account_admin меняет `status` на/с `BANNED`, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin меняет `platform_role`.
 
 ### `POST /users/{user_id}/roles`
 
@@ -179,7 +179,7 @@ Auth: AnyAdmin. Replace-семантика для (user, service).
 { "service_name": "config_service", "roles": ["reader", "operator"] }
 ```
 
-Errors: `SERVICE_ACCESS_DENIED` (403), `ROLE_NOT_FOUND` (404).
+Errors: `USER_NOT_FOUND` (404), `USER_INACTIVE` (409) — нельзя выдавать роль выключенному юзеру, `USER_ROLE_UPDATE_FORBIDDEN` (403) — department_admin лезет в чужой отдел, `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT` (403) — отдел не имеет access к сервису, `INVALID_SERVICE_ROLE` (422) — роль не определена для `(department, service)`.
 
 ### `POST /users/{user_id}/reset-password`
 
@@ -187,7 +187,7 @@ Auth: AnyAdmin. `account_admin` — любой юзер; `department_admin` — 
 
 Admin-вариант — для смены чужого пароля. Для self-reset используется `POST /users/me/password` (требует подтверждения старого пароля).
 
-Errors: `USER_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ISOLATION` (403).
+Errors: `USER_NOT_FOUND` (404), `USER_RESET_PASSWORD_FORBIDDEN` (403) — department_admin лезет в чужой отдел, `ACTOR_VANISHED` (401) — actor-юзер удалён между JWT-выдачей и вызовом.
 
 ### `POST /users/me/password`
 
@@ -266,7 +266,7 @@ Response: `list[UserGroupsResponse]`.
 
 Auth: AnyAdmin. Body: `{ "group_id": "..." }`.
 
-Errors: `GROUP_NOT_FOUND` / `USER_NOT_FOUND` (404), `GROUP_DEPARTMENT_MISMATCH` (400).
+Errors: `GROUP_NOT_FOUND` / `USER_NOT_FOUND` (404), `GROUP_DEPARTMENT_MISMATCH` (400), `ALREADY_GROUP_MEMBER` (409), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin лезет в чужой отдел, `ROLE_REQUIRED` (403).
 
 ### `DELETE /users/{user_id}/groups/{group_id}`
 
@@ -323,7 +323,7 @@ Auth: `account_admin`. Response: `list[DepartmentResponse]`.
 
 Auth: `account_admin`. Body: `{ "name": "...", "display_name": "..." }`.
 
-Errors: `DEPARTMENT_NAME_TAKEN` (409).
+Errors: `DEPARTMENT_ALREADY_EXISTS` (409).
 
 ### `POST /departments/{department_id}/services`
 
@@ -343,7 +343,7 @@ Auth: `account_admin`.
 
 `POST` body: `{ "service_name": "...", "display_name": "...", "description": "..." }`. После создания автоматически появляется системная роль `admin` (`is_system=True`).
 
-Errors: `SERVICE_NAME_TAKEN` (409), `SERVICE_HAS_DEPENDENCIES` (409) на delete если есть активные `DepartmentServiceAccess`.
+Errors: `SERVICE_ALREADY_EXISTS` (409) на create, `SERVICE_NOT_FOUND` (404) на delete. На delete сервис не валится с 409 — каскадно деактивирует все `DepartmentServiceAccess`, `UserServiceRole`, `BotServiceRole` и `ServiceRoleDefinition` (audit `service.delete`, details `cascade_revoked_department_access=true`, `cascade_deactivated_roles=true`, `affected_bot_count`).
 
 ---
 
@@ -360,9 +360,11 @@ Auth: Bearer. `account_admin` / `department_admin` своего отдела / �
 `PATCH` body: `{ "display_name": "...", "description": "..." }` (опциональны).
 
 Errors:
-- `ROLE_NAME_TAKEN` (409) — уже есть в scope.
-- `SERVICE_ACCESS_DENIED` (403) — нет dept-service-access.
-- `SYSTEM_ROLE_PROTECTED` (400) на DELETE системной роли.
+- `SERVICE_ROLE_ALREADY_EXISTS` (409) — уже есть в scope.
+- `SERVICE_ROLE_MGMT_FORBIDDEN` (403) — нет прав управления ролями в `(department, service)`.
+- `SERVICE_NOT_GRANTED_FOR_DEPARTMENT` (403) — у отдела нет access к сервису.
+- `SERVICE_ROLE_NOT_FOUND` (404) на PATCH/DELETE неизвестной роли.
+- `SERVICE_ROLE_SYSTEM_LOCKED` (403) на DELETE/PATCH системной роли (`is_system=True`).
 
 ### `POST /{role_name}/assign` / `POST /{role_name}/revoke`
 
@@ -424,7 +426,7 @@ Auth: AnyAdmin. Body:
 }
 ```
 
-Errors: `BOT_NAME_TAKEN` (409), `DEPARTMENT_NOT_FOUND` (404).
+Errors: `BOT_NAME_TAKEN` (409), `DEPARTMENT_NOT_FOUND` (404), `BOT_CREATION_FORBIDDEN` (403) — department_admin создаёт в чужом отделе, `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT` (403) — `allowed_services` содержит сервис, к которому отдел не подключён.
 
 ### `GET /bots`
 
@@ -469,7 +471,7 @@ Auth: AnyAdmin. Replace-семантика для (bot, service). Body:
 { "service_name": "config_service", "roles": ["operator"] }
 ```
 
-Errors: `SERVICE_ACCESS_DENIED` (403) — сервис не в `allowed_services` бота или отдела; `ROLE_NOT_FOUND` (404).
+Errors: `BOT_NOT_FOUND` (404), `BOT_INACTIVE` (409) — выключенный бот, `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT` (403) — отдел не имеет access, `SERVICE_NOT_IN_BOT_ALLOWED` (403) — сервис не в `bot.allowed_services`, `INVALID_SERVICE_ROLE` (422) — роль не определена в `(department, service)`, `BOT_ROLE_MGMT_FORBIDDEN` (403) — department_admin лезет к чужому боту.
 
 ### `DELETE /bots/{bot_id}/roles/{service_name}`
 
@@ -491,7 +493,7 @@ Auth: Bearer (account_admin или department_admin своего отдела). 
 { "department_id": "dep_xyz", "name": "devs", "display_name": "Devs", "description": "..." }
 ```
 
-Errors: `GROUP_NAME_TAKEN` (409) — имя занято в отделе; `PERMISSION_DENIED` (403) — cross-dept у department_admin.
+Errors: `GROUP_ALREADY_EXISTS` (409) — имя занято в отделе; `DEPARTMENT_FORBIDDEN` (403) — cross-dept у department_admin; `DEPARTMENT_NOT_FOUND` (404).
 
 ### `PATCH /groups/{group_id}`
 
@@ -643,7 +645,7 @@ Response (`OAuthClientCreatedResponse`):
 
 `client_secret` показывается один раз.
 
-Errors: `OAUTH_CLIENT_NAME_EXISTS` (409), `DEPARTMENT_ACCESS_DENIED` (403), `redirect_uri_*` (422).
+Errors: `OAUTH_CLIENT_NAME_EXISTS` (409), `DEPARTMENT_NOT_FOUND` (404), `DEPARTMENT_ACCESS_DENIED` (403), `redirect_uri_*` (422).
 
 ### `GET /oauth2/clients`
 
@@ -667,7 +669,7 @@ Auth: Bearer (user JWT; `actor_type=oauth_client` отбивается `require_
 
 Response: 302 redirect на `{redirect_uri}?code=…&state=…`.
 
-Errors: `UNSUPPORTED_RESPONSE_TYPE` (400), `INVALID_REDIRECT_URI` (400), `INVALID_CLIENT` (400), `PKCE_METHOD_INVALID` (400), `USER_CONTEXT_REQUIRED` (403) — m2m-токен на user-endpoint.
+Errors: `UNSUPPORTED_RESPONSE_TYPE` (400), `REDIRECT_URI_MISMATCH` (403) — uri не в whitelist'е клиента, `OAUTH_CLIENT_INVALID` (401) — нет такого client_id или клиент деактивирован, `GRANT_TYPE_NOT_ALLOWED` (403) — `authorization_code` не в `grant_types` клиента, `PKCE_REQUIRED` (403) — для public-клиента, `PKCE_METHOD_INVALID` (403) — public требует `S256`, confidential — `S256`/`plain`, `USER_CONTEXT_REQUIRED` (403) — m2m-токен на user-endpoint.
 
 **`state` — обязанности клиента.** Параметр `state` сервер прозрачно прокидывает обратно в `redirect_uri` без интерпретации (RFC 6749 §10.12). Защита от CSRF на этом канале — на стороне клиента: клиент **обязан** генерировать криптостойкий `state` (например `secrets.token_urlsafe(32)`), привязывать его к сессии (cookie/session storage) и при колбэке проверять равенство `state`-присланного и сохранённого. Сервер ограничивает длину 2048 символами, но не валидирует содержимое и не помнит выданные значения.
 
@@ -692,7 +694,7 @@ Pydantic Literal допускает все три значения; на runtime
 
 Response (`OAuthTokenResponse`): `access_token`, `token_type=Bearer`, `expires_in`, `scope`.
 
-Errors: `INVALID_GRANT` (400) — code не найден/истёк/уже использован/PKCE verifier не совпал; `INVALID_CLIENT` (401); `UNSUPPORTED_GRANT_TYPE` (400/422); `PKCE_METHOD_INVALID` (400) — `code_challenge_method` не `S256`/`plain`.
+Errors: `OAUTH_CODE_INVALID` (401) — код не найден / уже использован; `OAUTH_CODE_EXPIRED` (401); `REDIRECT_URI_MISMATCH` (403) — redirect_uri не совпал с тем, под которым код был выдан; `INVALID_GRANT` (400) — PKCE verifier не совпал / code-row помечен use'нутым между check и mark; `OAUTH_CLIENT_INVALID` (401) — неверный `client_id`/`client_secret`; `GRANT_TYPE_NOT_ALLOWED` (403) — grant не в `client.grant_types`; `UNSUPPORTED_GRANT_TYPE` (400/422); `OAUTH_USER_NOT_FOUND` / `OAUTH_USER_INACTIVE` (401) — owner кода удалён / деактивирован.
 
 ---
 
@@ -712,17 +714,21 @@ Auth: AnyAdmin (account_admin или department_admin своего отдела)
 
 `pull_user_ids` обязателен для `restricted`. Response: `DockerRegistryConfigResponse`.
 
+Errors: `DEPARTMENT_NOT_FOUND` (404), `DEPARTMENT_ACCESS_DENIED` (403) — DA лезет в чужой отдел, `PULL_USERS_REQUIRED` (403) — `pull_policy=restricted` без `pull_user_ids`.
+
 ### `PATCH /docker/registry/{department_id}`
 
 Auth: AnyAdmin. Частичный update. Body — те же поля + `is_enabled` (bool).
 
+Errors: `DOCKER_REGISTRY_NOT_CONFIGURED` (404) — конфиг не создан, `DEPARTMENT_ACCESS_DENIED` (403), `PULL_USERS_REQUIRED` (403).
+
 ### `GET /docker/registry/{department_id}`
 
-Auth: AnyAdmin. Response: `DockerRegistryConfigResponse`. `404` если конфиг не создан.
+Auth: AnyAdmin. Response: `DockerRegistryConfigResponse`. `DOCKER_REGISTRY_NOT_CONFIGURED` (404) если конфиг не создан.
 
 ### `DELETE /docker/registry/{department_id}`
 
-Auth: AnyAdmin. Снимает конфиг полностью.
+Auth: AnyAdmin. Снимает конфиг полностью. Errors: `DOCKER_REGISTRY_NOT_CONFIGURED` (404).
 
 ### `GET /docker/token`
 
@@ -764,93 +770,126 @@ Auth: public. Response: JWKS (RS256).
 
 ## Каталог error_codes
 
+Только коды, реально поднимаемые `auth_service`. Источник — `grep error_code= src/` (исключения `core/exceptions.py` и raise-сайты сервисов).
+
 ### Валидация / формат запроса
 
-- `INVALID_REQUEST`, `INVALID_JSON`, `MISSING_REQUIRED_FIELD`, `INVALID_FIELD_FORMAT`
-- `INVALID_USERNAME_FORMAT`, `INVALID_PASSWORD_FORMAT`, `INVALID_TOKEN_FORMAT`, `INVALID_DATETIME_FORMAT`
-- `UNSUPPORTED_AUTH_MODE`, `UNSUPPORTED_GRANT_TYPE`, `UNSUPPORTED_RESPONSE_TYPE`
-- `VALIDATION_ERROR`
+- `MISSING_REQUIRED_FIELD` (400) — обязательное поле отсутствует (например `department_id` для обычного юзера).
+- `UNSUPPORTED_GRANT_TYPE` (400/422) — grant_type не из `authorization_code` / `client_credentials`.
+- `UNSUPPORTED_RESPONSE_TYPE` (400) — `response_type` отличается от `code`.
+- `INVALID_TOKEN_EXPIRY` (422) — `expires_at` в прошлом / битый формат.
+- Pydantic 422: `redirect_uri_invalid`, `redirect_uri_has_fragment`, `redirect_uri_not_https`, `redirect_uri_scheme_invalid` — валидация `redirect_uris` на регистрации OAuth-клиента.
 
 ### Логин и сессии
 
-- `INVALID_CREDENTIALS`, `USER_NOT_FOUND`, `USER_BLOCKED`, `USER_BANNED`
-- `PASSWORD_EXPIRED`, `PASSWORD_RESET_REQUIRED`, `LOGIN_ATTEMPTS_EXCEEDED`
-- `SESSION_NOT_FOUND`, `SESSION_EXPIRED`, `SESSION_REVOKED`
-- `REFRESH_TOKEN_INVALID`, `REFRESH_TOKEN_EXPIRED`, `REFRESH_TOKEN_REVOKED`, `REFRESH_TOKEN_RACE`
-- `ACCESS_TOKEN_EXPIRED`, `ACCESS_TOKEN_REVOKED`
+- `INVALID_CREDENTIALS` (401) — пароль не подошёл / нет такого юзера.
+- `USER_BANNED` (401) — юзер забанен.
+- `USER_BLOCKED` (401) — `user.status=BLOCKED`.
+- `INVALID_OLD_PASSWORD` (401) — `POST /users/me/password` — старый пароль не подошёл (инкрементит lockout-счётчик).
+- `SAME_PASSWORD` (422) — `new_password` совпадает с текущим.
+- `SESSION_NOT_FOUND` (404) — `DELETE /users/me/sessions/{id}`.
+- `REFRESH_TOKEN_INVALID` (401) — токен не найден / отозван / reuse-detection (kill-switch).
+- `REFRESH_TOKEN_EXPIRED` (401).
+- `REFRESH_TOKEN_RACE` (401) — параллельный refresh выиграл CAS, повтор с новым refresh.
 
 ### Доступ и авторизация
 
-- `SERVICE_ACCESS_DENIED`, `ROLE_REQUIRED`, `ROLE_NOT_ASSIGNED`, `INSUFFICIENT_SERVICE_ROLE`
-- `ACTION_NOT_ALLOWED`, `DEPARTMENT_ACCESS_DENIED`, `SUBJECT_BANNED`
-- `BOT_ACCESS_DENIED`, `TOKEN_SCOPE_DENIED`, `TOKEN_SERVICE_NOT_ALLOWED`
-- `PERMISSION_DENIED`
+- `PERMISSION_DENIED` (403) — общий fallback на endpoint'е без своего кода.
+- `ROLE_REQUIRED` (403) — нужна определённая платформенная роль.
+- `DEPARTMENT_ACCESS_DENIED` (403) — DA лезет в чужой отдел (general guard).
+- `DEPARTMENT_FORBIDDEN` (403) — `create_group` cross-dept у DA.
 - `USER_CONTEXT_REQUIRED` (403) — m2m identity (`actor_type=oauth_client`) на user-facing endpoint'е.
+- `STATUS_CHANGE_REQUIRES_ACCOUNT_ADMIN` (403) — не-account_admin меняет `status` ↔ `BANNED` через PATCH.
+- `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin выдаёт `platform_role`.
+- `ACTOR_VANISHED` (401) — actor-юзер удалён между JWT-выдачей и вызовом.
 
 ### Service-to-service auth
 
 - `INVALID_SERVICE_TOKEN` (401) — `SERVICE_API_KEY` отсутствует / неверный / per-service mismatch.
 - `MISSING_SERVICE_IDENTITY` (401) — header `X-Service-Identity` обязателен, но отсутствует (strict mode либо `SERVICE_API_KEYS` JSON задан).
 - `INVALID_SERVICE_IDENTITY` (401) — identity не в `KNOWN_SERVICE_IDENTITIES` (strict mode).
-- `SERVICE_IDENTITY_PATH_MISMATCH` (403) — cross-link на loging_service: `X-Service-Identity` не совпадает с path-параметром `/services/{service}/events`.
 
 ### Cross-service ссылки
 
 - `PLATFORM_ADMIN_BUSINESS_DATA_DENIED` (403) — поднимает `server_service` middleware'ом для `account_admin`/`loging_admin` ДО endpoint-логики. В `auth_service` не эмитится, но клиенты должны его знать (request к server_service через user-JWT).
 
-### PAT / service token
+### PAT (Personal Access Tokens)
 
-- `TOKEN_NOT_FOUND`, `TOKEN_EXPIRED`, `TOKEN_REVOKED`, `TOKEN_ALREADY_REVOKED`
-- `TOKEN_LIMIT_REACHED`, `TOKEN_NAME_ALREADY_EXISTS`, `TOKEN_CREATION_FORBIDDEN`
-- `TOKEN_OWNER_MISMATCH`, `TOKEN_HASH_MISMATCH`, `TOKEN_TYPE_MISMATCH`, `TOKEN_ROTATION_REQUIRED`
+- `TOKEN_NOT_FOUND` (404) — токен не найден / не твой (oracle защищён 404'ом).
+- `TOKEN_ALREADY_REVOKED` (409) — уже revoked.
+- `TOKEN_NAME_ALREADY_EXISTS` (409) — имя занято для текущего юзера.
+- `INVALID_TOKEN_EXPIRY` (422).
 
 ### Bot / service account
 
-- `BOT_NOT_FOUND`, `BOT_NAME_TAKEN`, `BOT_BLOCKED`, `BOT_BANNED`
-- `BOT_TOKEN_NOT_FOUND`, `BOT_TOKEN_ALREADY_REVOKED`
-- `BOT_SERVICE_NOT_ALLOWED`, `BOT_DEPARTMENT_MISMATCH`
-- `BOT_CREATION_FORBIDDEN`, `BOT_UPDATE_FORBIDDEN`
+- `BOT_NOT_FOUND` (404), `BOT_NAME_TAKEN` (409) — глобально-уникальное имя бота.
+- `BOT_INACTIVE` (409) — попытка выдать роль/добавить в группу выключенного бота.
+- `BOT_TOKEN_NOT_FOUND` (404), `BOT_TOKEN_ALREADY_REVOKED` (409).
+- `BOT_CREATION_FORBIDDEN` (403) — DA создаёт бота в чужом отделе.
+- `BOT_UPDATE_FORBIDDEN` (403) — DA PATCH'ит чужого бота (с `bot.update` failure-audit).
+- `BOT_ROLE_MGMT_FORBIDDEN` (403) — DA управляет ролями чужого бота.
+- `SERVICE_NOT_IN_BOT_ALLOWED` (403) — сервис не в `bot.allowed_services`.
 
 ### Users / admin
 
-- `USERNAME_TAKEN`, `USER_UPDATE_FORBIDDEN`, `USER_DELETE_FORBIDDEN`, `USER_ROLE_UPDATE_FORBIDDEN`
-- `SERVICE_ROLE_ALREADY_ASSIGNED`, `SERVICE_ROLE_NOT_FOUND`, `SERVICE_ROLE_CONFLICT`
-- `DEPARTMENT_MISMATCH`, `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT`
-- `CANNOT_ASSIGN_SERVICE`, `CANNOT_ASSIGN_ROLE`
-- `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — назначить `platform_role` пытается не `account_admin` (на `POST /users`).
-- `BAN_ALREADY_ACTIVE`, `BAN_NOT_FOUND`, `UNBAN_FORBIDDEN`
+- `USER_NOT_FOUND` (404).
+- `USER_ALREADY_EXISTS` (409) — `username` занят на `POST /users`.
+- `USER_UPDATE_FORBIDDEN` (403) — DA PATCH'ит чужого юзера.
+- `USER_ROLE_UPDATE_FORBIDDEN` (403) — DA назначает роли юзеру чужого отдела.
+- `USER_RESET_PASSWORD_FORBIDDEN` (403) — DA сбрасывает пароль юзеру чужого отдела.
+- `USER_INACTIVE` (409) — выдать роль выключенному юзеру.
+- `USER_DEPARTMENT_MISMATCH` (400) — внутреннее несоответствие (юзер vs scope).
+- `USER_BANNED_OR_INACTIVE` (401) — попытка использовать токен забаненного юзера в introspect.
+- `BAN_ALREADY_ACTIVE` (409), `BAN_NOT_FOUND` (404).
 
 ### Groups
 
-- `GROUP_NAME_TAKEN`, `GROUP_NOT_FOUND`, `GROUP_DEPARTMENT_MISMATCH`
+- `GROUP_NOT_FOUND` (404).
+- `GROUP_ALREADY_EXISTS` (409) — имя занято в отделе.
+- `GROUP_DEPARTMENT_MISMATCH` (400) — юзер/бот не из того же отдела.
+- `GROUP_SERVICE_ACCESS_REQUIRED` (403) — нет `GroupServiceAccess` для целевого сервиса.
+- `GROUP_SERVICE_NOT_FOUND` (404), `GROUP_SERVICE_ALREADY_GRANTED` (409).
+- `MEMBER_NOT_FOUND` (404), `ALREADY_GROUP_MEMBER` (409).
 
 ### Service roles
 
-- `ROLE_NAME_TAKEN`, `ROLE_NOT_FOUND`, `SYSTEM_ROLE_PROTECTED`
+- `SERVICE_ROLE_ALREADY_EXISTS` (409) — определение роли уже в `(department, service)`.
+- `SERVICE_ROLE_NOT_FOUND` (404).
+- `SERVICE_ROLE_SYSTEM_LOCKED` (403) — системную (`is_system=True`) роль нельзя менять / удалять.
+- `SERVICE_ROLE_MGMT_FORBIDDEN` (403) — нет прав управления каталогом ролей в scope.
+- `INVALID_SERVICE_ROLE` (422) — на assign передана роль, которой нет в каталоге.
+- `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT` (403) — у отдела нет access к сервису.
+- `SERVICE_NOT_GRANTED_FOR_DEPARTMENT` (403) — симметричный код для управления service-role catalog'ом.
 
 ### OAuth2
 
-- `INVALID_GRANT` (400) — code не найден/истёк/уже использован/redirect_uri mismatch/PKCE verifier mismatch.
-- `INVALID_CLIENT` (401) — неверный client_id или secret.
-- `OAUTH_CLIENT_INVALID`, `OAUTH_CLIENT_NAME_EXISTS` (409).
-- `OAUTH_CODE_INVALID`, `REDIRECT_URI_MISMATCH`, `INVALID_REDIRECT_URI` (400/422).
-- `GRANT_TYPE_NOT_ALLOWED`, `UNSUPPORTED_GRANT_TYPE` (400/422), `UNSUPPORTED_RESPONSE_TYPE` (400).
-- `PKCE_METHOD_INVALID` (400) — `code_challenge_method` отличается от `S256`/`plain`.
-- `redirect_uri_invalid`, `redirect_uri_has_fragment`, `redirect_uri_not_https`, `redirect_uri_scheme_invalid` (Pydantic 422) — валидация `redirect_uris` на регистрации клиента.
+- `OAUTH_CLIENT_INVALID` (401) — неверный `client_id`/`client_secret` или клиент деактивирован.
+- `OAUTH_CLIENT_NOT_FOUND` (404).
+- `OAUTH_CLIENT_NAME_EXISTS` (409).
+- `OAUTH_CODE_INVALID` (401), `OAUTH_CODE_EXPIRED` (401).
+- `OAUTH_USER_NOT_FOUND` (401), `OAUTH_USER_INACTIVE` (401) — owner кода удалён / деактивирован между issue и exchange.
+- `REDIRECT_URI_MISMATCH` (403) — uri не в whitelist'е либо не совпал с тем, под которым код выдан.
+- `GRANT_TYPE_NOT_ALLOWED` (403) — grant не в `client.grant_types`.
+- `INVALID_GRANT` (400) — PKCE verifier mismatch / code-row marked used между check и mark.
+- `PKCE_REQUIRED` (403) — public client без `code_challenge`.
+- `PKCE_METHOD_INVALID` (403) — public требует `S256`, confidential — `S256`/`plain`.
 
 ### Docker
 
-- `DOCKER_ACCESS_DENIED`, `MISSING_CREDENTIALS`
+- `DOCKER_ACCESS_DENIED` (403) — нет конфига registry для отдела или registry disabled.
+- `DOCKER_REGISTRY_NOT_CONFIGURED` (404).
+- `MISSING_CREDENTIALS` (401) — нет Basic-заголовка на `/docker/token`.
+- `PULL_USERS_REQUIRED` (403) — `pull_policy=restricted` без `pull_user_ids`.
+- `PUSH_DEPT_MISMATCH` (403) — push в чужой namespace.
 
 ### Ссылочная целостность
 
-- `DEPARTMENT_NOT_FOUND`, `SERVICE_NOT_FOUND`, `RESOURCE_NOT_FOUND`, `DEPENDENCY_NOT_FOUND`
-- `SERVICE_HAS_DEPENDENCIES`, `SERVICE_NAME_TAKEN`, `DEPARTMENT_NAME_TAKEN`
+- `DEPARTMENT_NOT_FOUND` (404), `DEPARTMENT_ALREADY_EXISTS` (409).
+- `SERVICE_NOT_FOUND` (404), `SERVICE_ALREADY_EXISTS` (409), `SERVICE_ALREADY_GRANTED` (409).
 
 ### Rate-limit / lockout
 
-- `TOO_MANY_REQUESTS`, `TOO_MANY_LOGIN_ATTEMPTS`, `TOO_MANY_TOKEN_ATTEMPTS`
-- `SUSPICIOUS_ACTIVITY_DETECTED`, `ACCOUNT_TEMPORARILY_LOCKED`, `IP_TEMPORARILY_BLOCKED`
+- `ACCOUNT_TEMPORARILY_LOCKED` (429) — общий lockout для `/login` и `/docker/token`. В details — `retry_after_seconds`.
 
 Пример lockout ответа:
 
@@ -866,6 +905,4 @@ Auth: public. Response: JWKS (RS256).
 
 ### Инфраструктура
 
-- `INTERNAL_ERROR`, `DATABASE_ERROR`, `HASHING_ERROR`
-- `TOKEN_SIGNING_ERROR`, `TOKEN_VERIFICATION_ERROR`
-- `DEPENDENCY_UNAVAILABLE`, `LOGGING_SERVICE_UNAVAILABLE`, `CONFIGURATION_ERROR`
+5xx ошибки FastAPI обрабатывает дефолтным handler'ом — `auth_service` собственного каталога для них не ведёт. SIEM ловит их через `http.server_error` audit-event с реальным статусом в `details.status_code`.

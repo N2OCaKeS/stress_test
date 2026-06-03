@@ -8,7 +8,9 @@
   2. Правила перебираются по убыванию priority (`priority DESC`)
   3. SUPPRESS          — отбрасывает событие (не сохраняется), цепочка обрывается
   4. ALLOW             — сохраняет немедленно, цепочка обрывается
-  5. OVERRIDE_SEVERITY — меняет severity и обрывает цепочку (highest priority wins)
+  5. OVERRIDE_SEVERITY — меняет severity, цепочка продолжается; следующий
+                         OVERRIDE-матч переписывает severity заново
+                         (контракт «последний выигрывает», см. `apply_rules`)
   6. Если ни одно правило не сматчилось — событие сохраняется (default allow)
 """
 
@@ -215,6 +217,7 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("logging.retention_write",  "success"): "WARNING",
     ("logging.retention_sweep",  "success"): "INFO",
     ("logging.service_events_registered", "success"): "INFO",
+    ("audit.idempotency_conflict", "warning"): "WARNING",
 }
 
 

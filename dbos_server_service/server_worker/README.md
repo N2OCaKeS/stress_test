@@ -47,7 +47,7 @@ cd ..              # to dbos_server_service/
 make up            # postgres + redis + auth + logging + server + worker
 make logs          # tail worker logs
 make sh-worker     # bash inside the running worker container
-make test-worker   # run worker pytest suite (1486 tests)
+make test-worker   # run worker pytest suite (актуальное число — STATUS.md / TEST_COVERAGE.md)
 make down          # stop the stack
 ```
 
@@ -181,7 +181,7 @@ taskiq scheduler src.main:scheduler
 | `worker.cleanup_stale_heartbeats` | `0 * * * *` | DROP heartbeat-row'ов старше `WORKER_HEARTBEAT_CLEANUP_THRESHOLD_SECONDS` (default 7d) |
 | `tasks.cleanup_completed_old` | `0 0 * * *` (03:00 MSK) | DELETE SUCCEEDED/FAILED task'ов старше `TASKS_RETENTION_DAYS` (default 30d); bounded growth `tasks`. QUEUED/RUNNING не трогаем — это работа orphan-sweep'а. |
 | `audit_outbox.cleanup_published_old` | `30 0 * * *` (03:30 MSK) | DELETE published outbox-row'ов (как delivered, так и DLQ-poisoned) старше `AUDIT_OUTBOX_RETENTION_DAYS` (default 90d). Сдвиг от `tasks.cleanup_completed_old` чтобы не пересекаться по DB-write нагрузке. |
-| `secrets.reencrypt_lazy` | `*/5 * * * *` | bulk re-encrypt server_account / ipmi_controller паролей под актуальный `key_version` master-ключа — ходит в server_service `/secrets/migration_status` + `/secrets/reencrypt_batch`. Skip'ается, если `RUNNING_TASKS` непуст — приоритет ниже пользовательских handler'ов. Дополнительно сверяет `APP_ENV` worker'а и server_service'а (последний отдаёт его в `migration_status`): несовпадение → аборт тика + audit `secrets.reencrypt_tick status=failure reason=app_env_mismatch`. Защита от staging-worker'а, случайно нацеленного на prod-server_service. |
+| `secrets.reencrypt_lazy` | `*/5 * * * *` | bulk re-encrypt server_account / ipmi_controller паролей под актуальный `key_version` master-ключа — ходит в server_service `/secrets/migration_status` + `/secrets/reencrypt_batch`. Skip'ается, если `RUNNING_TASKS` непуст — приоритет ниже пользовательских handler'ов. Дополнительно сверяет `APP_ENV` worker'а и server_service'а (последний отдаёт его в `migration_status`): несовпадение → аборт тика + audit `secrets.reencrypt_tick status=failure allowed=False reason=app_env_mismatch`. Защита от staging-worker'а, случайно нацеленного на prod-server_service. Partial-failure батча (часть `finalize_done` упала) → audit `status=warning allowed=False reason=finalize_errors`; clean-success остаётся `status=success allowed=True`. |
 
 Cron в taskiq читается в UTC; MSK-времена в комментариях для оператора. Расписания планируем по московскому времени (Europe/Moscow, UTC+3), а в БД и брокер всё уходит в UTC. Hardware-handlers (`power.*`, `ipmi.rotate_password`) используют BMC dispatcher из `tasks/_bmc_helpers.py`: HEAD-probe `/redfish/v1/` → Redfish-клиент, иначе fallback на `ipmitool` (`clients/ipmitool.py`).
 
@@ -199,7 +199,7 @@ SCHEDULER_ENABLED=true taskiq scheduler src.main:scheduler
 
 ```bash
 make test-worker
-# 1486 passed, 27 test-файлов
+# точные цифры — STATUS.md и TEST_COVERAGE.md
 ```
 
 ## Конфигурация (env-vars)
@@ -245,6 +245,26 @@ make test-worker
 | `IPMI_USER_ID` | `2` | дефолтный Redfish account slot (`/Managers/<m>/Accounts/<n>`). Dell iDRAC root=2, HPE iLO=1, Supermicro=3. Per-host override через payload |
 | `REDFISH_VERIFY_TLS` | `false` | iDRAC ships self-signed cert — `true` только когда BMC получили cert от внутреннего CA |
 | `REDFISH_TIMEOUT_SECONDS` | `30.0` | per-request timeout для Redfish-вызовов |
+
+### Pooled HTTP-clients (`audit_client`, `server_service_client`)
+
+| ENV | Default | Назначение |
+|---|---|---|
+| `AUDIT_POOL_MAX_CONNECTIONS` | `20` | общий лимит одновременных соединений в httpx-пуле к loging_service |
+| `AUDIT_POOL_MAX_KEEPALIVE_CONNECTIONS` | `10` | сколько idle-соединений держать открытыми для reuse; должно быть ≤ `AUDIT_POOL_MAX_CONNECTIONS` |
+| `SERVER_SERVICE_POOL_MAX_CONNECTIONS` | `20` | общий лимит одновременных соединений в httpx-пуле к server_service (fetch_*/submit_* callbacks) |
+| `SERVER_SERVICE_POOL_MAX_KEEPALIVE_CONNECTIONS` | `10` | idle-соединения для server_service; ≤ `SERVER_SERVICE_POOL_MAX_CONNECTIONS` |
+
+### Circuit breakers (Redis-backed, shared между replica'ами)
+
+| ENV | Default | Назначение |
+|---|---|---|
+| `BMC_BREAKER_FAILURE_THRESHOLD` | `5` | сколько failure'ов на один BMC-host в окне `window_seconds` нужно, чтобы breaker замкнулся |
+| `BMC_BREAKER_WINDOW_SECONDS` | `60` | rolling-окно счётчика BMC failure'ов (TTL ключа `cb:bmc:<host>:failures`) |
+| `BMC_BREAKER_COOLDOWN_SECONDS` | `30` | на сколько open breaker отбивает запросы до перехода в half-open |
+| `AUDIT_PUBLISHER_BREAKER_FAILURE_THRESHOLD` | `5` | failure'ов POST'а в loging_service в окне `window_seconds` для open'а breaker'а канала |
+| `AUDIT_PUBLISHER_BREAKER_WINDOW_SECONDS` | `60` | rolling-окно счётчика failures для audit-publisher breaker'а |
+| `AUDIT_PUBLISHER_BREAKER_COOLDOWN_SECONDS` | `30` | сколько секунд audit-publisher breaker отбивает POST'ы до half-open |
 
 ### Management-SSH (prepare / онбординг)
 

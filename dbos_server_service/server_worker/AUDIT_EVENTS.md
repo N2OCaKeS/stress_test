@@ -71,6 +71,21 @@ worker'а и владеет бизнес-смыслом операции.
 | `server_account.password_rotate` | `tasks/passwords.py` | `server_account` |
 | `ipmi_controller.password_rotate` | `tasks/passwords.py` | `ipmi_controller` |
 
+На failure-ветке `ipmi_controller.password_rotate`, когда BMC принял пароль
+(apply прошёл), но read-only verify под новым паролем не сработал, runner
+проставляет `error_code="BMC_VERIFY_AFTER_ROTATE_FAILED"` и кладёт
+`details.phase`:
+
+- `verify_first_attempt` — упала первая попытка verify сразу после apply
+  (мгновенный transient / лёгкий NTP-drift, до 1s sleep между попытками);
+- `verify_retry` — упала и повторная попытка verify через 1s паузу. Storage
+  с BMC точно разъехался: оператор либо ждёт следующий retry task'и, либо
+  идёт чинить NTP / BMC.
+
+Transport-уровень (`BMC_AUTH_FAILED` / `BMC_UNREACHABLE` / `BMC_TIMEOUT`)
+пробрасывается через `__cause__` (`raise ... from exc`), читается из
+`task.last_error`.
+
 ---
 
 ## Worker-lifecycle events
@@ -82,5 +97,18 @@ worker'а и владеет бизнес-смыслом операции.
 |---|---|---|---|---|
 | `task.worker_shutdown` | ERROR (или WARNING если задача уйдёт в retry) | graceful shutdown worker'а — все живые task'и переводятся в `failed` (либо retry если `attempt < max_attempts`), чтобы scheduler/другой реплика подхватили | `task` | `task_id`, `reason="worker_shutdown"`, `attempt`, `max_attempts`, `will_retry` |
 | `task.worker_orphaned` | ERROR | sweep'ер нашёл task'у, у которой `worker_id` не отвечает heartbeat'ом (упавший процесс) — task принудительно `failed`, retry-decision не делается, оператор разбирается вручную | `task` | `task_id`, `reason="worker_orphaned"`, `worker_id`, `attempt`, `max_attempts` |
-| `secrets.reencrypt_tick` | INFO (success), WARNING (errors>0), ERROR (app_env mismatch) | каждый тик `secrets.reencrypt_lazy` — даже когда работы нет (skip/idle), чтобы видеть пульс ротации ключей | `secret` | `processed`, `skipped`, `errors`, `claimed`, `seeded`, `remaining_before`, `active_version`, `batch_size`. Либо `skipped=True` + `reason` (`active_tasks_present` / `app_env_mismatch`) на ранних exit'ах |
-| `audit.outbox_reattempt_manual` | WARNING | CLI-команда `outbox-reattempt` — оператор форсит повторную доставку конкретной row'ы из `audit_outbox`. Severity WARNING — manual-интервенция в audit-pipeline | `audit_outbox` | `row_id`, `reason` (оператор пишет, зачем), `source="cli"` |
+| `secrets.reencrypt_tick` | INFO (success, `allowed=True`), WARNING (status=`warning`, `errors>0`, `allowed=False`, `reason="finalize_errors"`), ERROR (status=`failure`, `allowed=False`, `reason="app_env_mismatch"`) | каждый тик `secrets.reencrypt_lazy` — даже когда работы нет (skip/idle), чтобы видеть пульс ротации ключей | `secret` | `processed`, `skipped`, `errors`, `claimed`, `seeded`, `remaining_before`, `active_version`, `batch_size`. На partial-failure-path добавляется `reason="finalize_errors"` и `allowed=False`, чтобы scheduler/sweep отличали чистый success от warning'а по одному полю. Либо `skipped=True` + `reason` (`active_tasks_present` / `app_env_mismatch`) на ранних exit'ах; `app_env_mismatch` дополнительно несёт `worker_app_env` и `server_service_app_env` и эмитится с `allowed=False`. |
+| `audit.outbox_reattempt_manual` | WARNING | CLI-команда `outbox-reattempt` — оператор форсит повторную доставку конкретной row'ы из `audit_outbox`. Severity WARNING — manual-интервенция в audit-pipeline | `audit_outbox` | `row_id`, `reason` (оператор пишет, зачем), `source="cli"`. На emit'е заполняются `actor_id` (`--actor-id` CLI), `actor_type="operator"`, `target_id=row_id`, `severity=WARNING` явным полем (не из default-таблицы) |
+
+---
+
+## Publisher-side детали
+
+`_publish_one` инкрементит `attempts` ДО ветвления на permanent_4xx /
+poison / transient. Для 4xx это **информационная метрика** (row уходит в
+DLQ с `attempts=1`, не с `0`, чтобы по полю было видно «попытка реально
+была сделана», а row не выглядел «ещё не пробованным»). Для transient'а
+и poison-cap'а — реальный счётчик retry'ев, по которому работают
+`_maybe_poison` и `_apply_backoff`. Контракт зафиксирован тестом
+`test_emit_4xx_sends_row_to_dlq`: после 4xx ожидается `attempts=1` и
+`reason="permanent_4xx"` в DLQ-логе.

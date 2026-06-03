@@ -133,7 +133,8 @@ async def delete_role(
     """Удалить ServiceRoleDefinition.
 
     Возможные ошибки:
-        * `SYSTEM_ROLE_PROTECTED` (400) — пытаемся снести системную.
+        * `SERVICE_ROLE_SYSTEM_LOCKED` (403) — пытаемся снести системную (`is_system=True`).
+        * `SERVICE_ROLE_NOT_FOUND` (404).
     """
     await service_role_service.delete_role(
         db=db,

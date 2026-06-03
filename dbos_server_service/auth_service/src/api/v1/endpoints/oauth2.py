@@ -156,8 +156,10 @@ async def authorize(
 
     Возможные ошибки:
         * `UNSUPPORTED_RESPONSE_TYPE` (400) — не `code`.
-        * `INVALID_REDIRECT_URI` (400) — uri не в whitelist'е клиента.
-        * `INVALID_CLIENT` (400) — нет такого client_id или он отключён.
+        * `REDIRECT_URI_MISMATCH` (403) — uri не в whitelist'е клиента.
+        * `OAUTH_CLIENT_INVALID` (401) — нет такого client_id или клиент деактивирован.
+        * `GRANT_TYPE_NOT_ALLOWED` (403) — `authorization_code` не в `grant_types` клиента.
+        * `PKCE_REQUIRED` / `PKCE_METHOD_INVALID` (403).
     """
     if response_type not in _SUPPORTED_RESPONSE_TYPES:
         raise DomainValidationError(

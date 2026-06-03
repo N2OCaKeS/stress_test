@@ -97,7 +97,7 @@ Severity вычисляется автоматически в `src/services/rule
 | `http.client_error` | `failure` | WARNING | HTTP 4xx (кроме 401/403) |
 | `http.server_error` | `failure` | CRITICAL | HTTP 5xx |
 
-Details: `{method, path, status_code, ip}` + при ошибке `error_code` если AppException.
+Details: `{method, path, status_code}` + `platform_role`, если у identity он есть. `ip` сейчас не пишется (см. `main.py::audit_access`).
 
 ### Admin actions (`logging_rule.*`)
 
@@ -113,6 +113,16 @@ Details:
 - `create`: `{rule_id, rule_name}`.
 - `update`: `{rule_id, changes: <PATCH-payload, exclude_unset>}`.
 - `delete`: `{rule_id, rule_name}`.
+
+### Idempotency conflict (`audit.idempotency_conflict`)
+
+Эмитится в `src/services/event_service.py::_emit_idempotency_conflict_audit`, когда `POST /events` приходит с уже использованной парой `(service, idempotency_key)`, но `payload_hash` расходится с сохранённым — попытка poisoning'а. Идёт через `record_admin_action()`, минуя rule engine. Severity жёстко выставлен в payload'е.
+
+| action | status | severity | Когда возникает | target_type |
+|---|---|---|---|---|
+| `audit.idempotency_conflict` | `warning` | WARNING | `POST /events` с конфликтом payload hash на повторённом `(service, idempotency_key)` | — |
+
+Details: `{claimed_service, idempotency_key, claimed_action, error_code}`.
 
 ### Service-catalog registration (`logging.service_events_registered`)
 
@@ -133,7 +143,7 @@ HTTP middleware `audit_access` для `GET /retention` (через `_action_for_
 
 Details:
 
-- `logging.retention_read` (GET): пишется middleware'ом — `{method, path, status_code, ip}` (см. http-access ниже).
+- `logging.retention_read` (GET): пишется middleware'ом — `{method, path, status_code}` (см. http-access выше).
 - `logging.retention_write` (PUT/DELETE): `{old: <snapshot|null>, new: <snapshot|null>}`,
   где snapshot — `{id, retain_days, description, is_active}` или `null`.
 - `logging.retention_sweep`: `{deleted_count, run_date_msk, policies: [{id, retain_days, severity, service}, ...], min_retain_days, max_retain_days}`. Под filter-режимом активных политик может быть несколько с разными `retain_days` — массив `policies` несёт полный snapshot, `min_retain_days`/`max_retain_days` дают границы. Поля `min/max` опускаются, если на момент запуска sweep'а активных политик нет.

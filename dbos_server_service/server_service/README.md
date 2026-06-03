@@ -254,18 +254,32 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 | `DB_MAX_OVERFLOW` | SQLAlchemy `max_overflow` поверх pool_size; default 20 |
 | `AUTH_SERVICE_URL` | базовый URL для introspect; в prod/staging обязан быть https |
 | `AUTH_REQUEST_TIMEOUT_SECONDS` | default 3.0 |
+| `AUTH_POOL_MAX_CONNECTIONS` / `INTROSPECT_POOL_MAX_CONNECTIONS` (legacy) | верхняя граница TCP-соединений для pooled httpx-клиентов auth_service; default 20 |
+| `AUTH_POOL_MAX_KEEPALIVE` / `INTROSPECT_POOL_MAX_KEEPALIVE` (legacy) | idle keep-alive соединения в пуле; default 10. Должно быть ≤ `*_MAX_CONNECTIONS` |
+| `SERVICE_API_KEY` | shared secret, отправляется в `Authorization: Bearer` при introspect-вызовах в auth_service. Обязателен в prod/staging |
 | `SERVER_ENCRYPTION_KEY` | master-ключ, обязательный, `min_length=32` |
 | `SERVER_ENCRYPTION_KEY_VERSION` | активная версия для новой записи; default 2 (HKDF), минимум 2 — v1 (legacy SHA-256) только для расшифровки старых ciphertext'ов |
 | `SERVER_ENCRYPTION_KEY__vN` | legacy ключи под версию N |
+| `HKDF_SALT_HEX` | HKDF-salt в hex для деривации AES-ключа (v2+). Минимум 32 hex (16 байт). Обязателен в production/staging; в dev допустим пустой (fallback constant) |
 | `SERVER_WORKER_DATABASE_URL` | cross-DB INSERT в `dev_server_worker.tasks` |
-| `SERVER_WORKER_REDIS_URL` | taskiq publish (он же хранит ephemeral bootstrap-креды prepare) |
+| `SERVER_WORKER_REDIS_URL` | taskiq publish (он же хранит ephemeral bootstrap-креды prepare). В prod/staging обязан содержать password в URL |
 | `PREPARE_CREDS_TTL_SECONDS` | TTL bootstrap-кред prepare в Redis (ключ `dbos:prepare_creds:<task_id>`); default 900 |
+| `DISPATCH_CREDS_TTL_SECONDS` | TTL inline-кред provision-таски (`account.provision`) в Redis (`dbos:dispatch_creds:<dcd_id>`); default 900 |
+| `GLOBAL_RATE_LIMIT` | глобальный per-IP rate-limit (slowapi-формат `<count>/<period>`); default `500/minute` |
+| `OS_VERSIONS_ANON_RATE_LIMIT` | per-IP rate-limit для анонимных GET `/os-versions*`; default `100/minute` |
+| `IPMI_ROTATE_PER_SERVER_RATE_LIMIT` | per-IP rate-limit на dispatch ротации IPMI-credentials; default `5/minute` |
+| `IPMI_CREDENTIALS_ROTATE_RATE_LIMIT` | per-IP rate-limit на POST `/servers/{id}/ipmi/credentials/rotate` (прямая ротация без worker'а); default `5/minute` |
+| `SERVER_PREPARE_RATE_LIMIT` | per-IP rate-limit на POST `/servers/{id}/prepare`; default `3/minute` |
+| `ACCOUNT_ROTATE_PASSWORD_RATE_LIMIT` | per-IP rate-limit на POST `/server-accounts/{id}/rotate_password`; default `10/minute` |
+| `IPMI_VERIFY_MAX_AGE_SECONDS` | максимальный возраст `verified_at` в `IpmiCredentialsRotatedRequest`; default 60 |
+| `ROTATED_AT_SKEW_SECONDS` | допустимый перекос между worker'овым `rotated_at` и локальным временем для `record_ipmi_credentials_rotated`; default 600 (NTP-drift tolerance) |
+| `PASSWORD_REVEAL_AUDIT_WINDOW_SECONDS` | окно throttle'а CRITICAL-аудита раскрытия пароля per (actor, account); default 300. Первое раскрытие в окне → CRITICAL `server_account.password_revealed`, последующие → INFO `*.password_revealed_throttled`. `0` отключает throttle |
 | `SECURITY_HSTS_ENABLED` | включает `Strict-Transport-Security` на всех ответах; default `False` (только за https-фронтом) |
-| `LOGGING_SERVICE_URL` | endpoint loging_service'а |
+| `LOGGING_SERVICE_URL` | endpoint loging_service'а; в prod/staging обязан быть https (кроме localhost) |
 | `LOGGING_SERVICE_API_KEY` | ingest-ключ для аудита |
 | `INTERNAL_REQUIRE_DEPT_HEADER` | default `True`; soft mode (`False`) — только для dev/test |
-| `APP_ENV` | `development` / `staging` / `production` (влияет на https-guard'ы и swagger) |
-| `TRUSTED_PROXY_IPS` | CIDR allow-list для XFF; default `[]` |
+| `APP_ENV` | `local` / `dev` / `test` / `staging` / `production` (влияет на https-guard'ы, обязательность ключей, swagger) |
+| `TRUSTED_PROXY_IPS` | CIDR allow-list для XFF; default `[]` (никому не доверять). Comma-separated или JSON-list |
 
 ## Тестирование
 

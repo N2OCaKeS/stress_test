@@ -74,7 +74,7 @@ async def create_service(
     "/{service_name}",
     response_model=OkResponse,
     summary="Удалить сервис из регистра",
-    description="Сервис не должен иметь активных department_access — иначе ошибка.",
+    description="Каскадно деактивирует все DepartmentServiceAccess, UserServiceRole, BotServiceRole и ServiceRoleDefinition для этого сервиса.",
 )
 async def delete_service(
     service_name: str,
@@ -82,13 +82,20 @@ async def delete_service(
     identity: AccountAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
-    """Снять сервис с регистрации.
+    """Снять сервис с регистрации (cascade).
 
     Доступ:
         Только account_admin.
 
+    Каскад:
+        Деактивирует все `DepartmentServiceAccess`, `UserServiceRole`,
+        `BotServiceRole` и `ServiceRoleDefinition` для сервиса. Identity-cache
+        затронутых ботов инвалидируется. Audit `service.delete` несёт
+        `cascade_revoked_department_access`, `cascade_deactivated_roles`,
+        `affected_bot_count`.
+
     Возможные ошибки:
-        * `SERVICE_HAS_DEPENDENCIES` (409) — есть активные DepartmentServiceAccess.
+        * `SERVICE_NOT_FOUND` (404).
     """
     await platform_service_service.delete_service(
         db=db,

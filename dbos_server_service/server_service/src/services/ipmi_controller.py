@@ -510,7 +510,10 @@ def _reveal_controller_password(
     `view_credentials`, поэтому permission тут уже не проверяется. Возвращает
     `None`, если у контроллера нет сохранённого пароля. Раскрытие пишет
     CRITICAL-аудит `ipmi_controller.credentials_revealed`; сломанный
-    ciphertext поднимает `DECRYPT_FAILED` (500) + failure-аудит.
+    ciphertext поднимает `DECRYPT_FAILED` (422 — input-error со стороны
+    secrets_service: битый AEAD-формат) + failure-аудит. Непредвиденный сбой
+    crypto-стека оборачивается ниже в `except Exception` под тем же кодом, но
+    с http_status=500.
     """
     audit_action = "ipmi_controller.credentials_revealed"
 

@@ -388,8 +388,16 @@ async def _insert_task_row(
         await session.commit()
 
 
-# Терминальные статусы taskiq lifecycle — task в любом из них уже закрыта
-# и не подлежит отмене. Дублируем имена из server_worker (нет общего пакета).
+# Cancellable-статусы taskiq lifecycle — task только в queued/running ещё
+# можно перевести в cancelled; succeeded/failed/cancelled — terminal.
+#
+# Источник правды по самим именам статусов — `server_worker/src/models/
+# task.py::TaskStatus` (SQLAlchemy enum), оттуда же — CAS-предикаты в
+# `server_worker/src/repositories/task.py`. Здесь — локальная копия
+# строковых литералов, потому что server_service не импортирует пакет
+# server_worker (отдельная БД, отдельная codebase, отдельный сервис).
+# При изменении набора terminal/non-terminal статусов в server_worker
+# нужно вручную синхронизировать этот set.
 _CANCELLABLE_STATUSES: frozenset[str] = frozenset({"queued", "running"})
 
 

@@ -924,10 +924,10 @@ class TestGetAccountPassword:
             e for e in captured if e["action"] == "server_account.password_revealed"
         ]
 
-    async def test_broken_encrypted_password_returns_500(
+    async def test_broken_encrypted_password_returns_422(
         self, client, admin_role_token_a, make_server, make_account, db,
     ):
-        """Сломанный ciphertext + view_password → DECRYPT_FAILED (http 500)."""
+        """Сломанный ciphertext + view_password → DECRYPT_FAILED (http 422)."""
         from sqlalchemy import update
 
         from src.models import ServerAccount
@@ -943,7 +943,7 @@ class TestGetAccountPassword:
         )
         await db.flush()
         resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
-        assert resp.status_code == 500
+        assert resp.status_code == 422
         assert resp.json()["error_code"] == "DECRYPT_FAILED"
 
     async def test_broken_ciphertext_invisible_to_reader(

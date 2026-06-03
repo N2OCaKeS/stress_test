@@ -965,7 +965,10 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
     decrypt_failed) всегда пишут CRITICAL — это не штатный refresh.
     Window=0 отключает throttle.
 
-    Сломанный ciphertext поднимает `DECRYPT_FAILED` (500) + failure-аудит.
+    Сломанный ciphertext поднимает `DECRYPT_FAILED` (422 — input-error со
+    стороны secrets_service: битый AEAD-формат) + failure-аудит.
+    Непредвиденный сбой crypto-стека оборачивается в `DECRYPT_FAILED` (500)
+    исключением ниже в `except Exception` (см. wrapper-комментарий).
     """
     actor_id = audit_context.get_context().actor_id
 

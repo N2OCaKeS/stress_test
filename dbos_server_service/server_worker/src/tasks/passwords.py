@@ -517,22 +517,34 @@ async def ipmi_rotate_password(task_id: str) -> None:
         # деталями skew'а и пойдёт чинить NTP.
         last_exc: Exception | None = None
         last_attempt: int = 0
-        for attempt in range(2):
-            verify_client = await _get_bmc(verify_creds)
-            try:
+        try:
+            for attempt in range(2):
+                verify_client = await _get_bmc(verify_creds)
                 try:
-                    await dispatch_get_power_state(verify_client)
-                    await _breaker.record_success(host)
-                    last_exc = None
-                    break
-                except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
-                    await _breaker.record_failure(host)
-                    last_exc = exc
-                    last_attempt = attempt
-            finally:
-                await _aclose_bmc(verify_client)
-            if attempt == 0:
-                await asyncio.sleep(1.0)
+                    try:
+                        await dispatch_get_power_state(verify_client)
+                        await _breaker.record_success(host)
+                        last_exc = None
+                        break
+                    except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
+                        await _breaker.record_failure(host)
+                        last_exc = exc
+                        last_attempt = attempt
+                finally:
+                    await _aclose_bmc(verify_client)
+                if attempt == 0:
+                    await asyncio.sleep(1.0)
+        finally:
+            # Defense-in-depth: новый пароль остаётся в `verify_creds["password"]`
+            # после успешной верификации и держится во frame'е до конца task'а
+            # (submit, audit, return). Затираем сразу, дальше он не нужен —
+            # plaintext продолжает жить только в `new_password` локально и в
+            # Redis-stash под TTL до явного DELETE ниже.
+            try:
+                verify_creds["password"] = ""
+            except Exception:  # noqa: BLE001
+                pass
+            verify_creds = None  # noqa: F841
         if last_exc is not None:
             wrapped = wrap_bmc_error("ipmi_rotate_password", last_exc)
             # error_code намеренно перетираем: оператору важна фаза

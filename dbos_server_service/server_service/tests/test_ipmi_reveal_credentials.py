@@ -164,10 +164,10 @@ class TestGetControllerCredentials:
             if e["action"] == "ipmi_controller.credentials_revealed"
         ]
 
-    async def test_broken_ciphertext_returns_500(
+    async def test_broken_ciphertext_returns_422(
         self, client, admin_role_token_a, make_server, make_ipmi, db,
     ):
-        """Сломанный ciphertext + view_credentials → DECRYPT_FAILED (http 500)."""
+        """Сломанный ciphertext + view_credentials → DECRYPT_FAILED (http 422)."""
         from sqlalchemy import update
 
         from src.models import IpmiController
@@ -181,7 +181,7 @@ class TestGetControllerCredentials:
         )
         await db.flush()
         resp = await client.get(_ipmi_url(srv.id), headers=_hdr(admin_role_token_a))
-        assert resp.status_code == 500
+        assert resp.status_code == 422
         assert resp.json()["error_code"] == "DECRYPT_FAILED"
 
     async def test_broken_ciphertext_invisible_to_reader(

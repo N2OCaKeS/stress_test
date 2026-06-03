@@ -46,6 +46,7 @@ import base64
 import hashlib
 import os
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -181,7 +182,7 @@ def encrypt(plaintext: str, *, aad: bytes) -> str:
     """
     if plaintext is None:
         raise AppException(
-            http_status=500,
+            http_status=422,
             error_code="ENCRYPT_INPUT_INVALID",
             message="Cannot encrypt None",
         )
@@ -198,10 +199,19 @@ def decrypt(token: str, *, aad: bytes) -> str:
 
     `aad` обязан совпадать с тем, что передавался в :func:`encrypt`. Несовпадение
     или подмена ciphertext'а — `DECRYPT_FAILED` (под капотом InvalidTag).
+
+    Классификация ошибок (http_status):
+
+    * 422 — input-validation: пустой/без префикса token, неразбираемый формат,
+      битый base64, InvalidTag (несовпадение AAD / подмена ciphertext / битый
+      nonce). Caller прислал данные, которые корректный AEAD не принимает.
+    * 500 — настоящая инфраструктурная авария: ключ для версии токена не
+      сконфигурирован (`ENCRYPTION_KEY_MISSING` из :func:`_key_for_version`),
+      либо неожиданное исключение в crypto-стеке (`DECRYPT_INTERNAL_ERROR`).
     """
     if not token or not token.startswith("v"):
         raise AppException(
-            http_status=500,
+            http_status=422,
             error_code="ENCRYPTED_TOKEN_INVALID",
             message="Encrypted token has no version prefix",
         )
@@ -210,17 +220,41 @@ def decrypt(token: str, *, aad: bytes) -> str:
         version = int(version_part[1:])
     except (ValueError, IndexError) as exc:
         raise AppException(
-            http_status=500,
+            http_status=422,
             error_code="ENCRYPTED_TOKEN_MALFORMED",
             message="Cannot parse encrypted token",
         ) from exc
     key = _key_for_version(version)
     try:
-        plaintext = AESGCM(key).decrypt(_b64d(nonce_b64), _b64d(ct_b64), aad)
-    except Exception as exc:  # noqa: BLE001 — cryptography поднимает разные subclasses
+        nonce_bytes = _b64d(nonce_b64)
+        ct_bytes = _b64d(ct_b64)
+    except (ValueError, TypeError) as exc:
+        # Битый base64 в nonce/ciphertext — это форма malformed-input'а, а не
+        # криптофейл. AEAD до этого даже не доходит.
         raise AppException(
-            http_status=500,
+            http_status=422,
             error_code="DECRYPT_FAILED",
             message=f"Failed to decrypt token: {type(exc).__name__}",
+        ) from exc
+    try:
+        plaintext = AESGCM(key).decrypt(nonce_bytes, ct_bytes, aad)
+    except (InvalidTag, ValueError) as exc:
+        # InvalidTag — auth tag не сошёлся (подмена ciphertext'а, неправильный
+        # aad, не тот ключ); ValueError — `cryptography` его поднимает для
+        # неправильной длины nonce и подобных format-нарушений. Всё это —
+        # input-ошибки: AEAD корректно отрабатывает, просто данные не те.
+        raise AppException(
+            http_status=422,
+            error_code="DECRYPT_FAILED",
+            message=f"Failed to decrypt token: {type(exc).__name__}",
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 — фоллбэк для непредвиденных
+        # Сюда долетит что-то нестандартное из crypto-стека — например, сбой
+        # HSM-провайдера (когда он появится) или неожиданное исключение из
+        # backend'а cryptography. Это инфраструктура, не входные данные.
+        raise AppException(
+            http_status=500,
+            error_code="DECRYPT_INTERNAL_ERROR",
+            message=f"Internal decrypt error: {type(exc).__name__}",
         ) from exc
     return plaintext.decode("utf-8")

@@ -203,6 +203,31 @@ def _unscrub(value):
     return value
 
 
+# POSIX-узкий набор: буквы/цифры/`._-`. Совпадает с `_LOGIN_RE` из
+# `src/clients/ssh.py` — это вторая линия обороны на входе task'и, до
+# `_account_creds` (fetch password) и любых SSH-вызовов. Если payload
+# принёс мусор в `login`, не хотим триггерить лишний fetch/audit на
+# server_service'е и только потом получать SSH_INVALID_LOGIN — отбиваем
+# сразу со стабильным error_code.
+_TASK_LOGIN_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
+
+
+def _validate_payload_login(payload: dict) -> None:
+    """Жёсткая валидация `login` из payload до любых side-effect'ов.
+
+    `account.update_on_host` и `account.deprovision` обязаны иметь `login`
+    в payload (managed-сценарий, ключевой логин). Невалидный/пустой login
+    — `SshError(SSH_INVALID_LOGIN)`, task FAILED.
+    """
+    login = payload.get("login")
+    if not isinstance(login, str) or not login or not _TASK_LOGIN_RE.match(login):
+        raise SshError(
+            error_code="SSH_INVALID_LOGIN",
+            host="",
+            message="login is missing or contains disallowed characters",
+        )
+
+
 async def _account_creds(
     payload: dict, server_id: str, account_id: str, target_dept: str | None,
 ) -> dict:
@@ -538,6 +563,7 @@ async def account_update_on_host(task_id: str) -> None:
     Связано с: `server_account.update_on_host` audit action.
     """
     async def _impl(payload: dict) -> dict:
+        _validate_payload_login(payload)
         server_id = payload["server_id"]
         account_id = payload["account_id"]
         target_dept = payload.get("target_department_id")
@@ -587,6 +613,7 @@ async def account_deprovision(task_id: str) -> None:
     Связано с: `server_account.deprovision` audit action.
     """
     async def _impl(payload: dict) -> dict:
+        _validate_payload_login(payload)
         server_id = payload["server_id"]
         account_id = payload["account_id"]
         target_dept = payload.get("target_department_id")

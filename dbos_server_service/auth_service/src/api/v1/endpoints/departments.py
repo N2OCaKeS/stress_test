@@ -54,7 +54,7 @@ async def create_department(
         Только account_admin.
 
     Возможные ошибки:
-        * `DEPARTMENT_NAME_TAKEN` (409) — отдел с таким `name` уже есть.
+        * `DEPARTMENT_ALREADY_EXISTS` (409) — отдел с таким `name` уже есть.
     """
     return await department_service.create_department(
         db=db,

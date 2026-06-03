@@ -76,7 +76,7 @@ Severity вычисляется автоматически в `src/services/rule
 
 ### HTTP middleware (`logging.*`)
 
-Эмитятся на любой запрос (кроме `/health` и `/ready`) в `src/main.py::audit_access`. `action` определяется по `method + path` (`_action_for_path`).
+Эмитятся на любой запрос (кроме `/health`, `/ready` и `/token`) в `src/main.py::audit_access` — `_SKIP_AUDIT_PATHS`. `action` определяется по `method + path` (`_action_for_path`). Дополнительно скипается успешный (`status<400`) POST на `_INGEST_PREFIXES` (`/events`, `/services/`) — anti-amplification, иначе loging писал бы событие на каждое принятое; auth-провалы (401/403) и rate-limit (429) на этих путях всё равно эмитятся как `http.*`. Успешные `PUT/DELETE /retention` тоже скипаются (single source — endpoint-level `_audit` пишет `logging.retention_write`).
 
 | action | status | severity | Когда возникает | target_type |
 |---|---|---|---|---|
@@ -144,8 +144,8 @@ HTTP middleware `audit_access` для `GET /retention` (через `_action_for_
 Details:
 
 - `logging.retention_read` (GET): пишется middleware'ом — `{method, path, status_code}` (см. http-access выше).
-- `logging.retention_write` (PUT/DELETE): `{old: <snapshot|null>, new: <snapshot|null>}`,
-  где snapshot — `{id, retain_days, description, is_active}` или `null`.
+- `logging.retention_write` (PUT): `{old: <group_summaries>, new: <group_summaries>}` — `_snapshot_list` группирует активные политики по `(retain_days, severity, description, is_active)` и схлопывает только сервис-измерение. Каждая группа — `{retain_days, severity, description, is_active, services: [...], count, sample_id}`. Filtered-PUT может породить Cartesian N×M политик; группировка не даёт `details` перевалить 64 KB cap `EventCreate._details_size`.
+- `logging.retention_write` (DELETE): `{old: <group_summaries>, new: null, deactivated_count: int}` — `deactivated_count` несёт фактический размер погашенного активного набора (после filtered-PUT это N×M).
 - `logging.retention_sweep`: `{deleted_count, run_date_msk, policies: [{id, retain_days, severity, service}, ...], min_retain_days, max_retain_days}`. Под filter-режимом активных политик может быть несколько с разными `retain_days` — массив `policies` несёт полный snapshot, `min_retain_days`/`max_retain_days` дают границы. Поля `min/max` опускаются, если на момент запуска sweep'а активных политик нет.
 
 ---

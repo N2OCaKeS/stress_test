@@ -1,7 +1,7 @@
 # loging_service · реестр тестов
 
 **Всего тестов**: точное число живёт в выводе `make test-logging` (последняя зафиксированная цифра — `777 passed`, актуальный счётчик перепроверяется по `pytest --collect-only -q`).
-**Файлов**: 34 (`tests/test_*.py`).
+**Файлов**: точное число — `ls tests/test_*.py | wc -l` (карри-cover волны добавляли новые регрессионные файлы без сноса старых; на момент правки реестра — 66).
 **Стек**: pytest + `fastapi.TestClient` поверх реального PostgreSQL в Docker (`loging_db_test`). Никаких моков БД — каждый тест начинается с `TRUNCATE` всех таблиц.
 
 ## Запуск
@@ -43,7 +43,7 @@ docker compose -f loging_service/tests/docker-compose.test.yml run --rm test-run
 | `test_middleware.py` | Self-audit middleware в `main.py`: `_action_for_path`, `_http_status_to_category`, форма AppException-ответов, X-Request-ID, `_emit_audit` обходит правила. |
 | `test_payload_validation.py` | Валидация `EventCreate`: лимит `details` 64 KB, `max_length` всех строковых полей, `actor_type` enum, сохранение опциональных полей. |
 | `test_schema_validators.py` | Pydantic-схемы целиком: `EventCreate` (charset, shadow-keys, NUL-byte guard, `request_id`, `idempotency_key`, charset-валидаторы `target_id`/`target_type`/`actor_id`/`subject_id` против CRLF-инъекций и unicode-байпасса), `RuleCreate` (с `effect=WARNING` / `RuleStatus.warning`), `RegisterEventsRequest`. |
-| `test_body_size_limit.py` | DoS-fix: middleware режет `Content-Length > MAX_REQUEST_BODY_BYTES` (default 64 KB) до чтения body, отрицательный `Content-Length` → 400. |
+| `test_body_size_limit.py` | DoS-fix: middleware режет `Content-Length > MAX_REQUEST_BODY_BYTES` (default 1 MiB) до чтения body, malformed Content-Length (negative / plus / underscore / unicode-digit / whitespace) → 400 `INVALID_CONTENT_LENGTH`, chunked-overflow → 413 на стриме. |
 | `test_rate_limit.py` | Per-IP `100/minute` на ingest (slowapi), отдельный bucket per-service, `headers_enabled=False`, отсутствие лимита на `/health`. |
 | `test_redaction.py` | Defense-in-depth маскировка `details`: по имени ключа (password/token/secret/hash/credential) и по форме значения (JWT, argon2/bcrypt), вложенность, truncate длинных строк. |
 | `test_normalization.py` | `utils.normalization.normalize_service_name`: NFKC-фолд, удаление невидимых символов, confusable-маппинг, защита от unicode-байпасса reserved-имени `loging_service`. |
@@ -84,4 +84,4 @@ docker compose -f loging_service/tests/docker-compose.test.yml run --rm test-run
 - **Фоновый `_retention_loop`** (`src/main.py`) — таймер MSK 00:00 не тестируется напрямую; сама функция `apply_active(db)` покрыта в `test_retention_protection.py` и `test_retention_apply.py`.
 - **E2E-стек с реальным auth_service** и кросс-сервисным аудитом — лежит в `dbos_server_service/tests/` (cross-service integration).
 - **Производительность ingest** — отдельный нагрузочный тест, в реестре нет.
-- **Полная интеграция middleware self-audit через TestClient** — `_action_for_path`, `_emit_audit` и форма ответов покрыты unit-тестами; запись через `asyncio.ensure_future(asyncio.to_thread(...))` в реальном цикле напрямую не проверяется.
+- **Полная интеграция middleware self-audit через TestClient** — `_action_for_path`, `_emit_audit` и форма ответов покрыты unit-тестами; горячий путь middleware идёт через `AuditOutbox` (bounded `asyncio.Queue` + drain-loop, см. `services/audit_outbox.py`); сценарии outbox'а покрыты `test_audit_outbox*.py`, но end-to-end запись из реального middleware через очередь напрямую не воспроизводится.

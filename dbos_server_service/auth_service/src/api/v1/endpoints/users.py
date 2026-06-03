@@ -380,10 +380,14 @@ async def create_user(
         * department_admin — только в своём отделе, и не account_admin.
 
     Возможные ошибки:
-        * `USERNAME_TAKEN` (409) — username уже занят.
+        * `USER_ALREADY_EXISTS` (409) — username уже занят.
         * `DEPARTMENT_NOT_FOUND` (404) — указанный department_id не найден.
-        * `PERMISSION_DENIED` (403) — department_admin пытается создать в
-          чужом отделе или создать account_admin.
+        * `DEPARTMENT_ACCESS_DENIED` (403) — department_admin пытается создать
+          в чужом отделе.
+        * `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin пытается
+          выдать `platform_role`.
+        * `MISSING_REQUIRED_FIELD` (400) — `department_id` опущен для обычного
+          юзера (не платформенного админа).
     """
     return await user_service.create_user(
         db=db,
@@ -459,8 +463,11 @@ async def assign_roles(
         в `allowed_services` отдела.
 
     Возможные ошибки:
-        * `SERVICE_ACCESS_DENIED` (403) — отдел не имеет access к сервису.
-        * `ROLE_NOT_FOUND` (404) — нет такого `ServiceRoleDefinition`.
+        * `USER_NOT_FOUND` (404) / `USER_INACTIVE` (409).
+        * `USER_ROLE_UPDATE_FORBIDDEN` (403) — DA назначает роли юзеру чужого отдела.
+        * `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT` (403) — отдел не имеет access к сервису.
+        * `INVALID_SERVICE_ROLE` (422) — роль не определена в `ServiceRoleDefinition`
+          для пары `(department, service)`.
     """
     await user_service.assign_roles(
         db=db,
@@ -500,7 +507,9 @@ async def reset_password(
 
     Возможные ошибки:
         * `USER_NOT_FOUND` (404).
-        * `DEPARTMENT_ISOLATION` (403) — cross-dept у department_admin.
+        * `USER_RESET_PASSWORD_FORBIDDEN` (403) — DA сбрасывает пароль юзеру
+          чужого отдела.
+        * `ACTOR_VANISHED` (401) — actor-юзер удалён между JWT-выдачей и вызовом.
     """
     await user_service.reset_password(
         db=db,

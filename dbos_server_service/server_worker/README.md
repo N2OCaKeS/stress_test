@@ -81,7 +81,7 @@ src/
   tasks/
     _runner.py                  # task lifecycle wrapper (CAS, retry, audit, 2-session pattern)
     _runner_state.py            # RUNNING_TASKS set, get_worker_id()
-    _bmc_helpers.py             # extract_bmc_host: strip scheme/port из endpoint_url для get_bmc_client
+    _bmc_helpers.py             # extract_bmc_host (strip scheme/port из endpoint_url), get_bmc (Redfish HEAD probe + ipmitool fallback), aclose_bmc
     _bmc_errors.py              # wrap_bmc_error → BMC_UNREACHABLE/BMC_AUTH_FAILED/BMC_REJECTED/BMC_TIMEOUT/BMC_ERROR
     power.py                    # power.{on,off,reboot,status}
     inventory.py                # inventory.sync + callback submit_inventory_facts
@@ -105,7 +105,7 @@ src/
 | `power.status` | `server.power_status` | real Redfish/ipmitool |
 | `inventory.sync` | `server.inventory_sync` | real SSH (`asyncssh`) → facts → callback `submit_inventory_facts` в server_service |
 | `account.rotate_password` | `server_account.password_rotate` | real SSH `chpasswd` + callback `submit_rotated_password` (plaintext, server_service шифрует своим master-key) |
-| `ipmi.rotate_password` | `ipmi_controller.password_rotate` | real: storage-first → BMC через Redfish с fallback на ipmitool + callback `submit_rotated_ipmi_password` |
+| `ipmi.rotate_password` | `ipmi_controller.password_rotate` | real: apply на BMC через Redfish с fallback на ipmitool → read-only verify под новым паролем (до 2 попыток, между ними 1s) → callback `submit_rotated_ipmi_password` (storage-last, требует `verified_at`). На failure verify-фазы `error_code=BMC_VERIFY_AFTER_ROTATE_FAILED`, `details.phase=verify_first_attempt|verify_retry`. |
 | `installed_packages.list` | `installed_packages.list` | real SSH `dpkg-query` / `rpm -qa` через `asyncssh` |
 | `users.inventory` | `server_account.users_inventory` | real SSH `getent passwd`/`getent group` → парс OS-пользователей → callback `submit_users_inventory` |
 | `account.provision` | `server_account.provision` | real SSH `useradd` (idempotent) → callback `submit_provision_status(present=True)` |
@@ -181,7 +181,8 @@ taskiq scheduler src.main:scheduler
 | `worker.cleanup_stale_heartbeats` | `0 * * * *` | DROP heartbeat-row'ов старше `WORKER_HEARTBEAT_CLEANUP_THRESHOLD_SECONDS` (default 7d) |
 | `tasks.cleanup_completed_old` | `0 0 * * *` (03:00 MSK) | DELETE SUCCEEDED/FAILED task'ов старше `TASKS_RETENTION_DAYS` (default 30d); bounded growth `tasks`. QUEUED/RUNNING не трогаем — это работа orphan-sweep'а. |
 | `audit_outbox.cleanup_published_old` | `30 0 * * *` (03:30 MSK) | DELETE published outbox-row'ов (как delivered, так и DLQ-poisoned) старше `AUDIT_OUTBOX_RETENTION_DAYS` (default 90d). Сдвиг от `tasks.cleanup_completed_old` чтобы не пересекаться по DB-write нагрузке. |
-| `secrets.reencrypt_lazy` | `*/5 * * * *` | bulk re-encrypt server_account / ipmi_controller паролей под актуальный `key_version` master-ключа — ходит в server_service `/secrets/migration_status` + `/secrets/reencrypt_batch`. Skip'ается, если `RUNNING_TASKS` непуст — приоритет ниже пользовательских handler'ов. Дополнительно сверяет `APP_ENV` worker'а и server_service'а (последний отдаёт его в `migration_status`): несовпадение → аборт тика + audit `secrets.reencrypt_tick status=failure allowed=False reason=app_env_mismatch`. Защита от staging-worker'а, случайно нацеленного на prod-server_service. Partial-failure батча (часть `finalize_done` упала) → audit `status=warning allowed=False reason=finalize_errors`; clean-success остаётся `status=success allowed=True`. |
+| `tasks.recover_scheduled_retries` | `*/1 * * * *` | periodic recovery «зависших» retry-row'ов: `status='queued' AND scheduled_retry_at <= now()` re-kick'ается через CAS `list_due_scheduled_retries` (SKIP LOCKED). Закрывает дыру startup-only recovery: если фоновая `_RETRY_TASKS`-task молча отменилась (GC / event-loop / чужой cancel), без minute-cron'а row застряла бы до рестарта. |
+| `secrets.reencrypt_lazy` | `*/5 * * * *` | постепенная ре-шифрация секретов через outbox-pattern: `GET /internal/secrets/migration_status` (наблюдаемость + APP_ENV-guard), при пустом outbox и `remaining>0` — `POST /reencrypt_outbox/seed`, затем `GET /reencrypt_outbox/pending?limit=N` (claim) и для каждого row'а `POST .../{id}/done` (либо `.../{id}/failed`, если done упал). Worker мастер-ключ не держит, crypto на server-side в короткой per-row транзакции. Skip'ается, если `RUNNING_TASKS` непуст — приоритет ниже пользовательских handler'ов. Дополнительно сверяет `APP_ENV` worker'а и server_service'а (последний отдаёт его в `migration_status`): несовпадение → аборт тика + audit `secrets.reencrypt_tick status=failure allowed=False reason=app_env_mismatch`. Защита от staging-worker'а, случайно нацеленного на prod-server_service. Partial-failure батча (часть `finalize_done` упала) → audit `status=warning allowed=False reason=finalize_errors`; clean-success остаётся `status=success allowed=True`. |
 
 Cron в taskiq читается в UTC; MSK-времена в комментариях для оператора. Расписания планируем по московскому времени (Europe/Moscow, UTC+3), а в БД и брокер всё уходит в UTC. Hardware-handlers (`power.*`, `ipmi.rotate_password`) используют BMC dispatcher из `tasks/_bmc_helpers.py`: HEAD-probe `/redfish/v1/` → Redfish-клиент, иначе fallback на `ipmitool` (`clients/ipmitool.py`).
 
@@ -281,4 +282,4 @@ Bootstrap-креды `prepare` worker читает из Redis (тот же `REDI
 | ENV | Default | Назначение |
 |---|---|---|
 | `SECRETS_REENCRYPT_ENABLED` | `false` | включает periodic `secrets.reencrypt_lazy` (5-минутный тик). Дефолт `false` — включать осознанно (`true`) только на время миграции master-ключа, чтобы тик не сработал неожиданно при копировании prod-манифеста в dev/staging, где `/internal/secrets/*` недостижим |
-| `SECRETS_REENCRYPT_BATCH_SIZE` | `100` | размер `reencrypt_batch` запроса в server_service. Worker не делает несколько батчей за тик — high-priority задачи должны успевать прорваться между ними |
+| `SECRETS_REENCRYPT_BATCH_SIZE` | `100` | размер `reencrypt_outbox/pending?limit=N` claim'а одного тика. Worker не делает несколько claim'ов за тик — high-priority задачи должны успевать прорваться между ними. Seed-фаза при пустом outbox запрашивает до `N * 10` row'ов, чтобы один тик после bump'а версии ключа уже нашёл, что обработать. |

@@ -58,7 +58,7 @@ async def create_service(
         Только account_admin.
 
     Возможные ошибки:
-        * `SERVICE_NAME_TAKEN` (409) — такой `service_name` уже есть.
+        * `SERVICE_ALREADY_EXISTS` (409) — такой `service_name` уже есть.
     """
     return await platform_service_service.create_service(
         db=db,

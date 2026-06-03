@@ -74,8 +74,10 @@ async def create_role(
         группам можно её назначать.
 
     Возможные ошибки:
-        * `ROLE_NAME_TAKEN` (409) — уже есть такая в scope.
-        * `SERVICE_ACCESS_DENIED` (403) — нет dept-service-access.
+        * `SERVICE_ROLE_ALREADY_EXISTS` (409) — уже есть такая в scope.
+        * `SERVICE_NOT_GRANTED_FOR_DEPARTMENT` (403) — у отдела нет access к сервису.
+        * `SERVICE_ROLE_MGMT_FORBIDDEN` (403) — у actor'а нет прав на управление
+          ролями в `(department, service)`.
     """
     return await service_role_service.create_role(
         db=db,

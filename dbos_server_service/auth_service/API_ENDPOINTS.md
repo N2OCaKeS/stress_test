@@ -28,8 +28,8 @@
 ```json
 {
   "error": "forbidden",
-  "error_code": "SERVICE_ACCESS_DENIED",
-  "message": "User has no access to config_service",
+  "error_code": "SERVICE_NOT_ALLOWED_FOR_DEPARTMENT",
+  "message": "Service 'config_service' is not allowed for this department",
   "details": { "service_name": "config_service" },
   "request_id": "req_123",
   "timestamp": "2026-04-18T12:00:00Z"
@@ -56,23 +56,24 @@ List-эндпоинты `GET /users`, `GET /users/department/{department_id}`, `
 
 ### Lockout (защита от brute-force)
 
-Общий pipeline для `POST /login` и `GET /docker/token` (через `services/_lockout.py`).
+Общий pipeline через `services/_lockout.py`. Применяется к user-password (`POST /login`, `POST /users/me/password`, `GET /docker/token`), bot-token (`GET /docker/token` с `dbos_bot_…`) и OAuth client_secret (`POST /oauth2/token` с `grant_type=client_credentials`).
 
-| Параметр | ENV | Default |
-|---|---|---|
-| Порог неудач подряд | `MAX_FAILED_LOGIN_ATTEMPTS` | `5` |
-| Длительность блокировки | `LOCKOUT_MINUTES` | `15` |
+| Принципал | Счётчик | Порог (ENV / default) | Длительность (ENV / default) |
+|---|---|---|---|
+| User (`users`) | `failed_login_attempts` | `MAX_FAILED_LOGIN_ATTEMPTS` / `5` | `LOCKOUT_MINUTES` / `15` |
+| Bot (`bot_accounts`) | `failed_token_attempts` | `BOT_MAX_FAILED_TOKEN_ATTEMPTS` / `5` | `BOT_LOCKOUT_MINUTES` / `15` |
+| OAuth-client (`oauth_clients`) | `failed_secret_attempts` | `OAUTH_CLIENT_MAX_FAILED_SECRET_ATTEMPTS` / `5` | `OAUTH_CLIENT_LOCKOUT_MINUTES` / `15` |
 
 Поведение:
 
-- Каждая неудачная проверка пароля инкрементит `users.failed_login_attempts` (атомарно).
-- При достижении порога ставится `locked_until = now + LOCKOUT_MINUTES`.
-- Все последующие попытки (для этого username, любого пароля) → `429 ACCOUNT_TEMPORARILY_LOCKED` с полем `details.retry_after_seconds`.
-- Успешный login сбрасывает счётчик и снимает блокировку.
-- По истечении `locked_until` следующая попытка автоматически разлочивает аккаунт (CAS-release).
-- Lockout общий между `/login` и `/docker/token` — заблокированный аккаунт не пройдёт ни через один из них.
+- Каждая неудачная проверка секрета инкрементит соответствующий counter (атомарно).
+- При достижении порога ставится `locked_until = now + <lockout_minutes>` соответствующей сущности.
+- Все последующие попытки (для этого principal'а, любого секрета) → `429 ACCOUNT_TEMPORARILY_LOCKED` с полем `details.retry_after_seconds`.
+- Успешная проверка сбрасывает счётчик и снимает блокировку.
+- По истечении `locked_until` следующая попытка автоматически разлочивает principal'а (CAS-release).
+- User-lockout общий между `/login`, `/users/me/password` (через `INVALID_OLD_PASSWORD`) и `/docker/token` (для password/PAT-варианта) — заблокированный аккаунт не пройдёт ни через один из них.
 
-Lockout **не применяется** к refresh, PAT и bot-токенам (там нет brute-force поверхности — токен либо валиден, либо нет).
+Lockout **не применяется** к refresh и PAT-токенам (там нет brute-force поверхности — токен либо валиден, либо нет; PAT на `/docker/token` идёт через user-lockout).
 
 ---
 
@@ -436,6 +437,8 @@ Auth: AnyAdmin. `account_admin` — все; `department_admin` — только 
 
 Auth: AnyAdmin. Body (опциональны): `name`, `description`, `status` ("active"|"disabled"), `allowed_services`.
 
+Errors: `BOT_NOT_FOUND` (404), `BOT_UPDATE_FORBIDDEN` (403) — department_admin лезет к боту чужого отдела, `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT` (403) — `allowed_services` содержит сервис, к которому отдел не подключён.
+
 ### `POST /bots/{bot_id}/tokens`
 
 Auth: AnyAdmin. Body: `{ "name": "...", "expires_at": "ISO|null" }`.
@@ -537,7 +540,7 @@ Auth: Bearer. account_admin / department_admin своего отдела / membe
 
 ### `POST /groups/{group_id}/services`
 
-Auth: Bearer (admin своего отдела). Body: `{ "service_name": "config_service" }`. Сервис должен быть в `allowed_services` отдела (иначе `SERVICE_ACCESS_DENIED`).
+Auth: Bearer (admin своего отдела). Body: `{ "service_name": "config_service" }`. Сервис должен быть в `allowed_services` отдела (иначе `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT`). Также эмиттится `GROUP_SERVICE_ALREADY_GRANTED` (409) при повторном grant'е.
 
 ### `DELETE /groups/{group_id}/services/{service_name}`
 
@@ -555,7 +558,7 @@ Auth: Bearer (admin своего отдела). Replace-семантика. Body
 { "service_name": "config_service", "roles": ["operator"] }
 ```
 
-Errors: `SERVICE_ACCESS_DENIED` (403) — нет group_service_access; `ROLE_NOT_FOUND` (404).
+Errors: `GROUP_SERVICE_ACCESS_REQUIRED` (403) — нет group_service_access; `SERVICE_NOT_FOUND` (404); `INVALID_SERVICE_ROLE` (422) — роль не определена в `(department, service)`.
 
 ### `DELETE /groups/{group_id}/roles/{service_name}`
 
@@ -889,7 +892,7 @@ Auth: public. Response: JWKS (RS256).
 
 ### Rate-limit / lockout
 
-- `ACCOUNT_TEMPORARILY_LOCKED` (429) — общий lockout для `/login` и `/docker/token`. В details — `retry_after_seconds`.
+- `ACCOUNT_TEMPORARILY_LOCKED` (429) — lockout-pipeline. Применяется к `/login`, `/users/me/password` (через `INVALID_OLD_PASSWORD`), `/docker/token`, OAuth `client_credentials` через `/oauth2/token` (per `OAuthClient.failed_secret_attempts` + `OAUTH_CLIENT_LOCKOUT_MINUTES`) и bot-токенам (per `BotAccount.failed_token_attempts` + `BOT_LOCKOUT_MINUTES`). В details — `retry_after_seconds`.
 
 Пример lockout ответа:
 

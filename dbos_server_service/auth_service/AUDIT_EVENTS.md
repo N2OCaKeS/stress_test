@@ -51,7 +51,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `user.refresh` | INFO | `auth_service.refresh` | session | `session_id`. На failure: `reason="user_not_found" \| "banned" \| "blocked" \| "expired"`. |
 | `user.logout` | INFO | `auth_service.logout` | session | Идемпотент: для несуществующего тоже success. |
 | `user.me` | INFO | `/me` endpoint | user | Скан собственного identity. |
-| `token.refresh_reuse` | CRITICAL | `SessionRepository.rotate` | session | Reuse-detection — kill-switch на всю сессию. |
+| `token.refresh_reuse` | CRITICAL | `auth_service.refresh` (reuse-detection ветка) | session | Reuse-detection — kill-switch на всю сессию юзера. |
 | `token.refresh_race` | INFO | `auth_service.refresh` | session | CAS-miss на параллельном `/refresh`, benign-race. `session_id`, `reason="concurrent_rotation"`. |
 
 ## Users
@@ -142,7 +142,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `bot.token_create` | WARNING | `bot_service.create_bot_token` | `bot_id`, `bot_name`, `token_id`, `token_name`, `token_prefix`, `expires_at` (по умолчанию now + 6 мес). Plaintext токен в audit не уходит — caller получает его через response. |
 | `bot.token_list` | INFO | `GET /bots/{id}/tokens` | — |
 | `bot.token_revoke` | WARNING | `bot_service.revoke_bot_token` | `token_id`. |
-| `bot.token_expired` | WARNING | `authorization_service.introspect_token` | Попытка использовать просроченный bot-токен (401 BOT_TOKEN_EXPIRED). `bot_id`, `bot_token_id`, `expires_at`. |
+| `bot.token_expired` | WARNING | `authorization_service.introspect_token` | Попытка использовать просроченный bot-токен через `/authorization/introspect` (введён `active=False`; `details.error_code="BOT_TOKEN_EXPIRED"`). `bot_id`, `bot_token_id`, `token_name`, `token_prefix`, `expires_at`. |
 | `bot.roles_assign` | WARNING | `bot_service.assign_bot_roles` | `service_name`, `roles`. |
 | `bot.roles_list` | INFO | `GET /bots/{id}/roles` | — |
 | `bot.roles_revoke` | WARNING | `bot_service.revoke_bot_roles` | `service_name`. |
@@ -186,7 +186,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 
 ## Notes
 
-- Все события идут асинхронно через `audit_service.emit_audit_event` (httpx → loging_service). Failure отправки логируется как WARNING, но не валит запрос.
+- Все события идут асинхронно через `audit_service.emit` (httpx → loging_service). Failure отправки логируется как WARNING, но не валит запрос.
 - При недоступном loging_service события теряются — нет retry / outbox. Это известный gap.
 - `request_id` коррелируется с `X-Request-ID` заголовком — у каждого HTTP-запроса свой.
 

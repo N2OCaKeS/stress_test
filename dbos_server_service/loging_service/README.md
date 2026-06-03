@@ -25,14 +25,14 @@
 
 | Роль | Что может |
 |---|---|
-| `platform_role=loging_admin` | Управление правилами, retention, ingest-ключами. Чтение **всех** событий |
-| `platform_role=account_admin` | Чтение **всех** событий аудита. **Без** управления правилами/retention |
+| `platform_role=loging_admin` | Управление правилами и retention, ingest-ключами. Чтение **всех** событий |
+| `platform_role=account_admin` | Чтение **всех** событий аудита + **управление правилами** (CRUD `/rules`). **Без** управления retention |
 | `platform_role=loging_reader` | Read-only, только свой департамент. **Требует `department_id`**: без него первое чтение событий → 403 `NO_DEPARTMENT` (by design, см. ниже) |
 | `platform_role=department_admin` | Read-only, только свой департамент |
 | `loging_service.reader` / `operator` / `admin` | Read-only, только свой департамент. Все три роли дают одно и то же — отдельных прав у service-`admin` тут нет |
 | Сервисы-источники | Только **запись** через per-service `SERVICE_API_KEYS` map + `X-Service-Identity` |
 
-Управление правилами и retention-политиками — **только у `platform_role=loging_admin`**. Ни service-`admin`, ни `department_admin`, ни `account_admin` сюда не пройдут. Все изменения правил и retention пишутся в собственный аудит сервиса.
+Управление правилами (`POST/PATCH/DELETE /rules`) допускают и `loging_admin`, и `account_admin` (зависимость `require_admin_or_account_admin`). Управление retention-политиками (`PUT/DELETE /retention`) — **только у `platform_role=loging_admin`** (зависимость `require_admin`). Ни service-`admin`, ни `department_admin` в обе группы не пройдут. Все изменения правил и retention пишутся в собственный аудит сервиса.
 
 Роли пользователей создаются и меняются **только в `auth_service`**; `loging_service` лишь читает их из JWT-introspect ответа.
 

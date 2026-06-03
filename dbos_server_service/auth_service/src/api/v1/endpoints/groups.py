@@ -64,8 +64,9 @@ async def create_group(
         account_admin (любой отдел) или department_admin (только свой).
 
     Возможные ошибки:
-        * `GROUP_NAME_TAKEN` (409) — внутри отдела имя уже занято.
-        * `PERMISSION_DENIED` (403) — cross-dept у department_admin.
+        * `GROUP_ALREADY_EXISTS` (409) — внутри отдела имя уже занято.
+        * `DEPARTMENT_FORBIDDEN` (403) — cross-dept у department_admin.
+        * `DEPARTMENT_NOT_FOUND` (404).
     """
     return await group_service.create_group(
         db, identity, body.department_id, body.name, body.display_name, body.description,
@@ -250,7 +251,7 @@ async def list_group_services(
     response_model=GroupServiceAccessResponse,
     status_code=201,
     summary="Дать группе access к сервису",
-    description="Сервис должен быть в `allowed_services` отдела (иначе SERVICE_ACCESS_DENIED).",
+    description="Сервис должен быть в `allowed_services` отдела (иначе SERVICE_NOT_ALLOWED_FOR_DEPARTMENT).",
 )
 async def grant_service(
     group_id: str, body: GroupServiceGrantRequest, request: Request,
@@ -319,8 +320,10 @@ async def assign_group_roles(
     """Replace ролей группы для сервиса.
 
     Возможные ошибки:
-        * `SERVICE_ACCESS_DENIED` (403) — нет group_service_access.
-        * `ROLE_NOT_FOUND` (404) — нет `ServiceRoleDefinition`.
+        * `GROUP_SERVICE_ACCESS_REQUIRED` (403) — нет group_service_access.
+        * `SERVICE_NOT_FOUND` (404) — нет такого `PlatformService`.
+        * `INVALID_SERVICE_ROLE` (422) — нет такого `ServiceRoleDefinition` в
+          `(department, service)`.
     """
     return await group_service.assign_group_roles(
         db, identity, group_id, body.service_name, body.roles,

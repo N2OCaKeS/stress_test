@@ -280,7 +280,7 @@ matrix. Заглушки 501 (`server_accounts`, `inventory`, `installed_package
   написано.
 - Field-level gate `has_sudo=True → Action.GRANT_SUDO` — поведение запланировано в
   STATUS.md, не реализовано.
-- Кэш introspect (TTL ~30 сек) — план, нет.
+- Кэш introspect в server_service — намеренно отсутствует (свежий introspect на каждом запросе, чтобы revoke/ban действовали мгновенно). В auth_service есть identity-cache `_identity_cache` с TTL `IDENTITY_CACHE_TTL_SECONDS` (default 5.0s), не плановая, а штатная фича.
 - FK RESTRICT на `os_version_id`/`cpu_id` (попытка удалить → 409) — миграция
   есть, но интеграционного теста нет.
 - Полное CRUD для `ipmi_controller`, `server_account` repositories (косвенно

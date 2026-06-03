@@ -572,6 +572,11 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
     оператор видел не только число ошибок, но и какие именно entity_id.
     Wire-схема `ReencryptBatchResponse` остаётся `{processed, errors}` —
     `failed_rows` уходит только в аудит.
+
+    Edge: на `limit <= 0` возвращаем сокращённый `{processed: 0, errors: 0}`
+    без `failed_rows` — батч не запускался, списку обрабатывать нечего.
+    Endpoint читает `failed_rows` через `.get(..., [])`, так что несовместимости
+    нет.
     """
     settings = get_settings()
     active = settings.server_encryption_key_version

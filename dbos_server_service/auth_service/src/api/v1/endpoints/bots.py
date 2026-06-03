@@ -229,8 +229,11 @@ async def assign_bot_roles(
         в `allowed_services` бота и в `dept_services` отдела.
 
     Возможные ошибки:
-        * `SERVICE_ACCESS_DENIED` (403).
-        * `ROLE_NOT_FOUND` (404) — роль не определена в `ServiceRoleDefinition`.
+        * `BOT_NOT_FOUND` (404) / `BOT_INACTIVE` (409).
+        * `BOT_ROLE_MGMT_FORBIDDEN` (403) — DA лезет к чужому боту.
+        * `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT` (403) — у отдела нет access.
+        * `SERVICE_NOT_IN_BOT_ALLOWED` (403) — сервис не в `bot.allowed_services`.
+        * `INVALID_SERVICE_ROLE` (422) — роль не определена в `ServiceRoleDefinition`.
     """
     return await bot_service.assign_bot_roles(
         db=db,

@@ -89,7 +89,7 @@ HTTP запрос
 6. **os_versions** — `name` unique, `description`, `repositories` (массив URL-строк). Каталог **глобальный для всей платформы** — без `department_id`, одна OS-запись на все департаменты.
 7. **entity_permissions** — `(entity_type, role, action, target_department_id)`, scope per-department или system-wide. (Бывшая таблица `server_installed_packages` удалена миграцией `c8e4f6a9b1d2` — теперь live SSH-probe через worker. Бывшая таблица-каталог `cpu_models` удалена миграцией `b6f3a91d27e8` — CPU-данные плоско в `servers`.)
 
-Миграции (7 alembic ревизий):
+Миграции (26 alembic ревизий, ниже — ключевые; полный набор — в `src/db/migrations/versions/`):
 
 - `d3ad4aac49cc_initial_schema_action_based.py` — 8 таблиц + 13 индексов.
 - `831ba55543e9_seed_default_entity_permissions.py` — 90 строк дефолтных grants (admin 50 + reader 8 + operator 32 + guest 0).
@@ -109,6 +109,12 @@ HTTP запрос
 - `b7e2c9a14f63_worker_bot_account_inventory_submit.py` — грант `(server_account, inventory_submit)` для `worker_bot` (callback инвентаризации OS-пользователей).
 - `c4f7d9b2a1e8_worker_bot_provision_on_host.py` — грант `(server_account, provision_on_host)` для `worker_bot` (callback provision/deprovision на боксе).
 - `d1f4a8c7b3e9_server_prepared_and_worker_bot_grant.py` — поля `servers.is_managed` / `management_user` / `prepared_at` + грант `(server, prepare_callback)` для `worker_bot`.
+- `b9c2e7d4a8f1_account_ssh_keypair.py` — добавлены поля SSH-ключа `server_accounts.ssh_public_key` / `ssh_private_key_encrypted` под bootstrap провижна.
+- `c5a9b3d4e7f2_credentials_pending_apply.py` — флаги `password_pending_apply` на `server_accounts` и `ipmi_controllers` для 2-фазной ротации (БД-ciphertext свежий, флаг снимается callback'ом после реального apply на боксе/BMC; retry до callback'а считается «не подтверждённым»).
+- `f2a1b8c9d3e4_reencrypt_outbox.py` — таблица `secrets_reencrypt_outbox` под фоновый перешифровщик (worker через outbox-pattern). Заменяет старый sync-batch `reencrypt_batch`.
+- `e3f8c4b21a07_seed_view_drift_grant.py` — seed грантов `(server, view_drift)` для `admin` и `operator`; `reader` сохраняет инвариант «только view», расширенный грант — вручную.
+- `a8d2b7c1e394_seed_task_cancel_grant.py` — seed `(task, admin, cancel)`; отмена worker-task через `POST /tasks/{id}/cancel` доступна только держателям `admin`-роли по дефолту.
+- `a2c1d8e4b9f5_add_reveal_password_grants.py` / `a4b7e1c92d05_ipmi_controllers_bmc_vendor.py` — промежуточные миграции, последствия отменены позже (`c3f9b1a8d420` снимает reveal-гранты; `d5e8a1c3f960` дропает `bmc_vendor`).
 
 ## Что в stub'ах (501 NOT_IMPLEMENTED)
 
@@ -283,8 +289,7 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 
 ## Тестирование
 
-**~805 тестов (passed)** после закрытия stub'ов + расширения visibility/audit
-покрытия (точная цифра — в `STATUS.md` / `TEST_COVERAGE.md`). Запуск:
+Тесты проходят зелёным. Точное число динамически растёт по мере появления новых регрессионных и unit-сьютов — актуальная цифра в `STATUS.md` / `TEST_COVERAGE.md`. Запуск:
 
 ```bash
 make test-server         # в Docker (рекомендуемо — реальный postgres)
@@ -306,7 +311,7 @@ make test-dev-server     # в devcontainer
   `test_startup_audit.py`, `test_config_redis_prod_guard.py`,
   `test_internal_soft_mode_warning_audit.py`.
 
-Что покрыто: audit emission на всех ~222 точках, worker_bot least-privilege,
+Что покрыто: audit emission на всех ~235 точках, worker_bot least-privilege,
 rate-limit, introspect без кэша (свежий вызов на каждый запрос, revoked-токен
 отбивается немедленно), security headers, stub envelope+OpenAPI, dispatch_task
 idempotency + zombie rollback, broker_lock concurrency, platform_admin_guard

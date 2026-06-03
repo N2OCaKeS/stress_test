@@ -63,14 +63,14 @@ class TestMassRotatePartialFailureResponse:
         async def dispatch_then_boom(*, target_server_id, **kwargs):
             call_count["n"] += 1
             if call_count["n"] == 1:
-                return "tsk_dispatched_1"
+                return ("tsk_dispatched_1", False)
             raise ServiceUnavailableError(
                 error_code="WORKER_UNREACHABLE",
                 message="redis dropped",
             )
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             dispatch_then_boom,
         )
 
@@ -118,13 +118,13 @@ class TestMassRotatePartialFailureResponse:
         async def dispatch_then_boom(*, target_server_id, **kwargs):
             call_count["n"] += 1
             if call_count["n"] == 1:
-                return "tsk_dispatched_a"
+                return ("tsk_dispatched_a", False)
             raise ServiceUnavailableError(
                 error_code="WORKER_UNREACHABLE", message="boom",
             )
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             dispatch_then_boom,
         )
 
@@ -172,10 +172,10 @@ class TestMassRotatePartialFailureResponse:
 
         async def ok_dispatch(**kwargs):
             call_count["n"] += 1
-            return f"tsk_ok_{call_count['n']}"
+            return (f"tsk_ok_{call_count['n']}", False)
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             ok_dispatch,
         )
 

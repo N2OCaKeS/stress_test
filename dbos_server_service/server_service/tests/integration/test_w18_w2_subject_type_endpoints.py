@@ -62,6 +62,9 @@ def stub_dispatch(monkeypatch):
     async def fake_dispatch(**kwargs):
         return "tsk_unused"
 
+    async def fake_dispatch_with_hit(**kwargs):
+        return ("tsk_unused", False)
+
     for path in (
         "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
         "src.api.v1.endpoints.ipmi.worker_client.dispatch_task",
@@ -70,6 +73,16 @@ def stub_dispatch(monkeypatch):
     ):
         try:
             monkeypatch.setattr(path, fake_dispatch)
+        except (AttributeError, ImportError):
+            pass
+    for path in (
+        "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
+        "src.api.v1.endpoints.ipmi.worker_client.dispatch_task_with_hit",
+        "src.api.v1.endpoints.installed_packages.worker_client.dispatch_task_with_hit",
+        "src.api.v1.endpoints.inventory.worker_client.dispatch_task_with_hit",
+    ):
+        try:
+            monkeypatch.setattr(path, fake_dispatch_with_hit)
         except (AttributeError, ImportError):
             pass
 

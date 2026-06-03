@@ -104,8 +104,13 @@ class TestDispatchRollbackKeepsDbCredsIntact:
 
         import src.services.worker_client as worker_mod
         monkeypatch.setattr(worker_mod, "dispatch_task", boom_dispatch)
+        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom_dispatch)
         monkeypatch.setattr(
             "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom_dispatch,
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom_dispatch,
         )
 
@@ -157,8 +162,13 @@ class TestDispatchRollbackKeepsDbCredsIntact:
 
         import src.services.worker_client as worker_mod
         monkeypatch.setattr(worker_mod, "dispatch_task", boom_dispatch)
+        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom_dispatch)
         monkeypatch.setattr(
             "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom_dispatch,
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom_dispatch,
         )
 
@@ -198,11 +208,19 @@ class TestDispatchRollbackKeepsDbCredsIntact:
         async def fake_dispatch(**kwargs):
             return "tsk_happy_w18"
 
+        async def fake_dispatch_with_hit(**kwargs):
+            return ("tsk_happy_w18", False)
+
         import src.services.worker_client as worker_mod
         monkeypatch.setattr(worker_mod, "dispatch_task", fake_dispatch)
+        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", fake_dispatch_with_hit)
         monkeypatch.setattr(
             "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
             fake_dispatch,
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
+            fake_dispatch_with_hit,
         )
 
         resp = await client.post(

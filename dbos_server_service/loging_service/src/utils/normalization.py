@@ -90,10 +90,25 @@ _CONFUSABLES_MAP = {
     "β": "b", "Β": "B",  # β / Β
     "ζ": "z", "Ζ": "Z",  # ζ / Ζ
     # IPA / расширенная латиница — выглядят как ASCII в большинстве шрифтов,
-    # NFKC их не сворачивает (нет compatibility-decomposition).
+    # NFKC их не сворачивает (нет compatibility-decomposition). Покрываем
+    # буквы, встречающиеся в платформенных именах сервисов (auth/loging/
+    # server/config/worker), small-cap IPA-варианты — типовой обход для
+    # confusable-фильтра, если оставить только кириллицу и греческий.
+    "ɑ": "a",                  # U+0251 LATIN SMALL LETTER ALPHA
     "ɡ": "g",                  # U+0261 LATIN SMALL LETTER SCRIPT G
     "ı": "i",                  # U+0131 LATIN SMALL LETTER DOTLESS I
     "ŋ": "n",                  # U+014B LATIN SMALL LETTER ENG
+    "ᴄ": "c",                  # U+1D04 LATIN LETTER SMALL CAPITAL C
+    "ᴇ": "e",                  # U+1D07 LATIN LETTER SMALL CAPITAL E
+    "ʜ": "h",                  # U+029C LATIN LETTER SMALL CAPITAL H
+    "ɪ": "i",                  # U+026A LATIN LETTER SMALL CAPITAL I
+    "ʟ": "l",                  # U+029F LATIN LETTER SMALL CAPITAL L
+    "ɴ": "n",                  # U+0274 LATIN LETTER SMALL CAPITAL N
+    "ᴏ": "o",                  # U+1D0F LATIN LETTER SMALL CAPITAL O
+    "ʀ": "r",                  # U+0280 LATIN LETTER SMALL CAPITAL R
+    "ᴛ": "t",                  # U+1D1B LATIN LETTER SMALL CAPITAL T
+    "ᴜ": "u",                  # U+1D1C LATIN LETTER SMALL CAPITAL U
+    "ᴠ": "v",                  # U+1D20 LATIN LETTER SMALL CAPITAL V
 }
 
 _CONFUSABLES_TRANSLATE = str.maketrans(_CONFUSABLES_MAP)

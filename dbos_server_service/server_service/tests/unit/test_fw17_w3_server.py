@@ -440,9 +440,9 @@ def test_installed_packages_handler_passes_max_rows(monkeypatch):
 
     async def fake_dispatch(**kwargs):
         captured.update(kwargs)
-        return "tsk_fake"
+        return ("tsk_fake", False)
 
-    monkeypatch.setattr(ip.worker_client, "dispatch_task", fake_dispatch)
+    monkeypatch.setattr(ip.worker_client, "dispatch_task_with_hit", fake_dispatch)
 
     # Чтобы не дёргать БД и permissions, подменим всё вокруг.
     class _Server:

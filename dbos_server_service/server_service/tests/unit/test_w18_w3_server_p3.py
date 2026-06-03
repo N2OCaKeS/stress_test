@@ -256,7 +256,12 @@ class TestFinalizeDoneEndpointSkipStatus:
         from src.api.v1.endpoints import secrets_migration as sm_ep
 
         async def fake_finalize_done(db, outbox_id):
-            return {"id": outbox_id, "status": "done", "skipped": True}
+            return {
+                "id": outbox_id,
+                "status": "done",
+                "skipped": True,
+                "skip_reason": "owner_vanished",
+            }
 
         async def fake_require(db, identity):
             return None
@@ -270,11 +275,42 @@ class TestFinalizeDoneEndpointSkipStatus:
             outbox_id="rox_skip", identity=_identity(), db=None,
         )
         assert resp.status == "done"
+        # `skip_reason` остаётся внутренним полем — wire-response его не несёт.
+        assert not hasattr(resp, "skip_reason")
 
         events = [e for e in captured_emits if e["action"] == "secrets.reencrypt_done"]
         assert len(events) == 1
         assert events[0]["status"] == "warning"
         assert events[0]["details"]["skipped"] is True
+        assert events[0]["details"]["reason"] == "owner_vanished"
+
+    @pytest.mark.asyncio
+    async def test_done_skipped_without_reason_no_reason_in_details(
+        self, monkeypatch, captured_emits,
+    ):
+        """Старая форма ответа без skip_reason не ломает audit-emit."""
+        from src.api.v1.endpoints import secrets_migration as sm_ep
+
+        async def fake_finalize_done(db, outbox_id):
+            return {"id": outbox_id, "status": "done", "skipped": True}
+
+        async def fake_require(db, identity):
+            return None
+
+        monkeypatch.setattr(
+            sm_ep.secrets_migration_service, "finalize_done", fake_finalize_done,
+        )
+        monkeypatch.setattr(sm_ep, "_require_worker_scope", fake_require)
+
+        resp = await sm_ep.finalize_reencrypt_outbox_done(
+            outbox_id="rox_skip_noreason", identity=_identity(), db=None,
+        )
+        assert resp.status == "done"
+
+        events = [e for e in captured_emits if e["action"] == "secrets.reencrypt_done"]
+        assert len(events) == 1
+        assert events[0]["status"] == "warning"
+        assert "reason" not in events[0]["details"]
 
 
 # ── 4. requeue_failed сбрасывает attempts ────────────────────────────────────
@@ -354,10 +390,88 @@ class TestReencryptBatchLogsPerRowError:
         with caplog.at_level(logging.WARNING, logger=secrets_migration_service.__name__):
             result = await secrets_migration_service.reencrypt_batch(db=None, limit=10)
 
-        assert result == {"processed": 0, "errors": 1}
+        assert result["processed"] == 0
+        assert result["errors"] == 1
+        # failed_rows — структурированный sample для SIEM поверх per-row warning-логов.
+        assert result["failed_rows"] == [
+            {
+                "entity_type": "server_account",
+                "entity_id": "acc_failing",
+                "error_class": "RuntimeError",
+            }
+        ]
         # сообщение содержит id строки и класс исключения
         msgs = [r.getMessage() for r in caplog.records]
         assert any("acc_failing" in m and "RuntimeError" in m for m in msgs), msgs
+
+
+class TestReencryptBatchEndpointPropagatesFailedRows:
+    @pytest.mark.asyncio
+    async def test_failed_rows_in_audit_details(self, monkeypatch, captured_emits):
+        """Endpoint кладёт sample упавших row'ов в `secrets.reencrypt_batch` audit."""
+        from src.api.v1.endpoints import secrets_migration as sm_ep
+
+        async def fake_reencrypt(db, limit):
+            return {
+                "processed": 1,
+                "errors": 2,
+                "failed_rows": [
+                    {
+                        "entity_type": "server_account",
+                        "entity_id": "acc_a",
+                        "error_class": "RuntimeError",
+                    },
+                    {
+                        "entity_type": "ipmi_controller",
+                        "entity_id": "ctrl_b",
+                        "error_class": "ValueError",
+                    },
+                ],
+            }
+
+        async def fake_require(db, identity):
+            return None
+
+        monkeypatch.setattr(
+            sm_ep.secrets_migration_service, "reencrypt_batch", fake_reencrypt,
+        )
+        monkeypatch.setattr(sm_ep, "_require_worker_scope", fake_require)
+
+        resp = await sm_ep.reencrypt_batch(identity=_identity(), db=None, limit=10)
+        # wire-схема не несёт failed_rows — только processed/errors
+        assert resp.processed == 1
+        assert resp.errors == 2
+
+        events = [e for e in captured_emits if e["action"] == "secrets.reencrypt_batch"]
+        assert len(events) == 1
+        details = events[0]["details"]
+        assert details["processed"] == 1
+        assert details["errors"] == 2
+        assert len(details["failed_rows"]) == 2
+        assert details["failed_rows"][0]["entity_id"] == "acc_a"
+        assert details["failed_rows"][1]["entity_type"] == "ipmi_controller"
+
+    @pytest.mark.asyncio
+    async def test_empty_failed_rows_not_in_audit(self, monkeypatch, captured_emits):
+        """Чистый батч — `failed_rows` в details не появляется."""
+        from src.api.v1.endpoints import secrets_migration as sm_ep
+
+        async def fake_reencrypt(db, limit):
+            return {"processed": 5, "errors": 0, "failed_rows": []}
+
+        async def fake_require(db, identity):
+            return None
+
+        monkeypatch.setattr(
+            sm_ep.secrets_migration_service, "reencrypt_batch", fake_reencrypt,
+        )
+        monkeypatch.setattr(sm_ep, "_require_worker_scope", fake_require)
+
+        await sm_ep.reencrypt_batch(identity=_identity(), db=None, limit=10)
+
+        events = [e for e in captured_emits if e["action"] == "secrets.reencrypt_batch"]
+        assert len(events) == 1
+        assert "failed_rows" not in events[0]["details"]
 
 
 # ── 6. orphaned IPMI controller ──────────────────────────────────────────────

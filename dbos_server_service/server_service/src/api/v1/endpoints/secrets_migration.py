@@ -107,20 +107,26 @@ async def reencrypt_batch(
     data = await secrets_migration_service.reencrypt_batch(db, limit=limit)
     processed = data["processed"]
     errors = data["errors"]
+    failed_rows = data.get("failed_rows", [])
     is_total_failure = errors > 0 and processed == 0
+    details: dict[str, object] = {
+        "limit": limit,
+        "processed": processed,
+        "errors": errors,
+    }
+    if failed_rows:
+        # Cap на случай гигантских батчей: SIEM detail-field не любит длинные
+        # массивы. Полный счётчик уже в `errors`; здесь — sample для триажа.
+        details["failed_rows"] = failed_rows[:50]
     audit_service.emit(
         "secrets.reencrypt_batch",
         target_id=None,
         target_type="secret",
         status="failure" if is_total_failure else "success",
         allowed=True,
-        details={
-            "limit": limit,
-            "processed": processed,
-            "errors": errors,
-        },
+        details=details,
     )
-    return ReencryptBatchResponse(**data)
+    return ReencryptBatchResponse(processed=processed, errors=errors)
 
 
 # ── Outbox-pattern endpoints ────────────────────────────────────────────────
@@ -233,19 +239,25 @@ async def finalize_reencrypt_outbox_done(
     # это не plain success — отдаём `warning`, чтобы SIEM правила не считали
     # такие row'ы как чистые перешифровки.
     is_skipped = bool(data.get("skipped"))
+    skip_reason = data.get("skip_reason")
+    details: dict[str, object] = {
+        "outbox_id": outbox_id,
+        "status": data["status"],
+        "skipped": is_skipped,
+    }
+    if is_skipped and skip_reason:
+        details["reason"] = skip_reason
     audit_service.emit(
         "secrets.reencrypt_done",
         target_id=outbox_id,
         target_type="secret",
         status="warning" if is_skipped else "success",
         allowed=True,
-        details={
-            "outbox_id": outbox_id,
-            "status": data["status"],
-            "skipped": is_skipped,
-        },
+        details=details,
     )
-    return OutboxFinalizeDoneResponse(**data)
+    # `skip_reason` — внутреннее поле для аудита, не часть wire-контракта.
+    response_data = {k: v for k, v in data.items() if k != "skip_reason"}
+    return OutboxFinalizeDoneResponse(**response_data)
 
 
 @router.post(

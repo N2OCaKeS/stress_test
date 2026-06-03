@@ -496,10 +496,10 @@ class TestAccountRotateDispatchMassServerNotVisible:
 
         async def _fake_dispatch(*, target_server_id, **kwargs):
             dispatched.append(target_server_id)
-            return "tsk_fake"
+            return ("tsk_fake", False)
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             _fake_dispatch,
         )
 
@@ -587,10 +587,10 @@ class TestFanoutUpdateOnHostDecommissioned:
 
         # Патчим dispatch, чтобы не трогать worker
         async def _noop_dispatch(**kwargs):
-            return "tsk_noop"
+            return ("tsk_noop", False)
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             _noop_dispatch,
         )
 
@@ -625,10 +625,10 @@ class TestFanoutUpdateOnHostDecommissioned:
 
         async def _fake_dispatch(*, target_server_id, **kwargs):
             dispatched.append({"target_server_id": target_server_id})
-            return "tsk_fanout"
+            return ("tsk_fanout", False)
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             _fake_dispatch,
         )
 
@@ -704,10 +704,10 @@ class TestFanoutUpdateOnHostDispatchFailures:
                     message="already queued",
                 )
             dispatched.append(target_server_id)
-            return "tsk_ok"
+            return ("tsk_ok", False)
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             _selective,
         )
 
@@ -763,10 +763,10 @@ class TestFanoutUpdateOnHostDispatchFailures:
                     message="redis down",
                 )
             dispatched.append(target_server_id)
-            return "tsk_ok"
+            return ("tsk_ok", False)
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             _selective,
         )
 

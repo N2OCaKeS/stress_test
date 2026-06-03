@@ -266,7 +266,7 @@ async def _dispatch_for_server(
     if extra_payload:
         payload.update(extra_payload)
     try:
-        task_id = await worker_client.dispatch_task(
+        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
             task_kind=task_kind,
             target_server_id=server_id,
             payload=payload,
@@ -303,6 +303,7 @@ async def _dispatch_for_server(
             "task_id": task_id,
             "task_kind": task_kind,
             "department_id": server.department_id,
+            "idempotent_hit": idempotent_hit,
         },
     )
     return {"task_id": task_id, "status": "queued"}
@@ -435,7 +436,7 @@ async def _dispatch_account_on_host(
     server_dept_v = server.department_id
     account_login_v = account.login
     try:
-        task_id = await worker_client.dispatch_task(
+        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
             task_kind=task_kind,
             target_server_id=server_id_v,
             target_resource_id=account_id,
@@ -480,6 +481,7 @@ async def _dispatch_account_on_host(
             "operation": operation,
             "login": account_login_v,
             "department_id": server_dept_v,
+            "idempotent_hit": idempotent_hit,
         },
     )
     return {"operation": operation, "server_id": server_id_v, "task_id": task_id, "status": "queued"}
@@ -629,9 +631,10 @@ async def _dispatch_account_provision(
     server_dept_v = server.department_id
     account_login_v = account.login
     dispatch_ok = False
+    idempotent_hit = False
     try:
         try:
-            task_id = await worker_client.dispatch_task(
+            task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
                 task_kind=task_kind,
                 target_server_id=server_id_v,
                 target_resource_id=account_id,
@@ -673,6 +676,11 @@ async def _dispatch_account_provision(
             # creds не пойдёт; чистим вручную, чтобы plaintext не висел до TTL.
             await worker_client.delete_dispatch_creds(stash_key)
             await creds_sp.rollback()
+    # Idempotent-hit: новой публикации в брокер не было, но мы только что
+    # положили свежий stash — оригинальная task видит чужой ciphertext по
+    # своему ключу, наш stash висит сиротой до TTL. Чистим сразу.
+    if idempotent_hit:
+        await worker_client.delete_dispatch_creds(stash_key)
     await creds_sp.commit()
     await db.commit()
     await db.refresh(account)
@@ -687,6 +695,7 @@ async def _dispatch_account_provision(
             "login": account_login_v,
             "department_id": server_dept_v,
             "force_replace": payload.get("force_replace", False),
+            "idempotent_hit": idempotent_hit,
         },
     )
     return {"operation": operation, "server_id": server_id_v, "task_id": task_id, "status": "queued"}
@@ -753,7 +762,7 @@ async def fanout_update_on_host(
             include_home_dir=False,
         )
         try:
-            task_id = await worker_client.dispatch_task(
+            task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
                 task_kind="account.update_on_host",
                 target_server_id=server.id,
                 target_resource_id=account.id,
@@ -792,6 +801,7 @@ async def fanout_update_on_host(
                 "login": account.login,
                 "source": "edit_fanout",
                 "department_id": server.department_id,
+                "idempotent_hit": idempotent_hit,
             },
         )
         tasks.append({"server_id": server.id, "task_id": task_id})
@@ -1313,6 +1323,7 @@ async def account_rotate_password_dispatch(
         )
 
     tasks: list[dict] = []
+    idempotent_hits: list[str] = []
     for server in dispatchable:
         # Per-server idempotency-key суффикс — иначе один Idempotency-Key на
         # массовую ротацию схлопнул бы все серверы в одну задачу.
@@ -1322,7 +1333,7 @@ async def account_rotate_password_dispatch(
             server=server, account=account, include_attrs=False,
         )
         try:
-            task_id = await worker_client.dispatch_task(
+            task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
                 task_kind="account.rotate_password",
                 target_server_id=server.id,
                 target_resource_id=account_id,
@@ -1331,6 +1342,8 @@ async def account_rotate_password_dispatch(
                 request_id=request_id,
                 idempotency_key=per_server_key,
             )
+            if idempotent_hit:
+                idempotent_hits.append(server.id)
         except ConflictError:
             # Idempotent-конфликт — per-server: на этот сервер уже стоит
             # идентичная задача. В точечном режиме это hard-fail (единственная
@@ -1448,6 +1461,8 @@ async def account_rotate_password_dispatch(
             "dispatched": len(tasks),
             "skipped": skipped,
             "skipped_count": len(skipped),
+            "idempotent_hits": idempotent_hits,
+            "idempotent_hits_count": len(idempotent_hits),
             "login": account.login,
             "department_id": account.department_id,
         },
@@ -1748,7 +1763,7 @@ async def ipmi_rotate_password_dispatch(
         "force_replace": pending_before,
     }
     try:
-        task_id = await worker_client.dispatch_task(
+        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
             task_kind="ipmi.rotate_password",
             target_server_id=server.id,
             target_resource_id=controller_id,
@@ -1799,6 +1814,7 @@ async def ipmi_rotate_password_dispatch(
             "task_kind": "ipmi.rotate_password",
             "server_id": server.id,
             "department_id": server.department_id,
+            "idempotent_hit": idempotent_hit,
         },
     )
     return {"task_id": task_id, "status": "queued"}

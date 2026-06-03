@@ -124,7 +124,7 @@ async def trigger_users_inventory(
         "management_user": server.management_user,
     }
     try:
-        task_id = await worker_client.dispatch_task(
+        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
             task_kind="users.inventory",
             target_server_id=server_id,
             payload=payload,
@@ -161,6 +161,7 @@ async def trigger_users_inventory(
             "task_id": task_id,
             "task_kind": "users.inventory",
             "department_id": server.department_id,
+            "idempotent_hit": idempotent_hit,
         },
     )
     return ServerTaskDispatchResponse(task_id=task_id, status="queued")

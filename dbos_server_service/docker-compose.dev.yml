@@ -59,7 +59,7 @@ services:
     init: true
     environment:
       DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_logging
-      SERVICE_API_KEYS: '{"auth_service":"dev-logging-api-key","server_service":"dev-logging-api-key","config_service":"dev-logging-api-key","server_worker":"dev-logging-api-key"}'
+      SERVICE_API_KEYS: '{"auth_service":"audit_auth_service_dev_key","server_service":"audit_server_service_dev_key","config_service":"audit_config_service_dev_key","server_worker":"audit_server_worker_dev_key"}'
       INTROSPECT_SERVICE_API_KEY: dev-logging-introspect-key
       AUTH_SERVICE_URL: http://auth_service:8000
       LOGGING_ADMIN_USERNAME: admin
@@ -93,8 +93,10 @@ services:
       ACCESS_TOKEN_TTL_MINUTES: "60"
       REFRESH_TOKEN_TTL_DAYS: "14"
       LOGGING_SERVICE_URL: http://loging_service:8001
-      LOGGING_SERVICE_API_KEY: dev-logging-api-key
-      SERVICE_API_KEY: dev-logging-api-key
+      LOGGING_SERVICE_API_KEY: audit_auth_service_dev_key
+      # auth_service's own bearer for inbound /introspect (shared cross-service
+      # secret; per-service split — отдельная задача, не связанная с audit-ключами).
+      SERVICE_API_KEY: dev-introspect-api-key
       INITIAL_ADMIN_USERNAME: admin
       INITIAL_ADMIN_PASSWORD: "1234"
       INITIAL_ADMIN_EMAIL: admin@example.com
@@ -126,7 +128,11 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server
       AUTH_SERVICE_URL: http://auth_service:8000
-      SERVICE_API_KEY: dev-logging-api-key
+      LOGGING_SERVICE_URL: http://loging_service:8001
+      LOGGING_SERVICE_API_KEY: audit_server_service_dev_key
+      # Bearer для вызовов auth_service /introspect; должен совпадать с
+      # auth_service.SERVICE_API_KEY.
+      SERVICE_API_KEY: dev-introspect-api-key
       SERVER_ENCRYPTION_KEY: dev-server-encryption-key-do-not-use-in-prod
       SERVER_ENCRYPTION_KEY_VERSION: "1"
       SERVER_WORKER_DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server_worker
@@ -165,8 +171,10 @@ services:
       AUTH_SERVICE_URL: http://auth_service:8000
       LOGGING_SERVICE_URL: http://loging_service:8001
       WORKER_BOT_TOKEN: ""
-      LOGGING_SERVICE_API_KEY: dev-logging-api-key
-      SERVICE_API_KEY: dev-logging-api-key
+      LOGGING_SERVICE_API_KEY: audit_server_worker_dev_key
+      # Bearer для вызовов auth_service /introspect (где worker ходит за
+      # introspect'ом своего bot-токена) — shared cross-service.
+      SERVICE_API_KEY: dev-introspect-api-key
       WORKER_LOG_LEVEL: INFO
     # If WORKER_BOT_TOKEN is not provided via env but a PAT file is mounted
     # (written by `make seed`), source it before starting taskiq. Seeder

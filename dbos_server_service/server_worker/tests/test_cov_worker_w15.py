@@ -48,9 +48,11 @@ class TestForbiddenHomesViaWriteAuthorizedKey:
     async def test_write_authorized_key_rejects_forbidden_home(self, forbidden_home):
         """_write_authorized_key с явным target_home из _FORBIDDEN_HOMES → SSH_INVALID_HOME.
 
-        Этот путь пока не активируется в production (ни один caller не передаёт
-        target_home), но guard присутствует в коде — его нужно покрыть, чтобы
-        будущий call-site не обошёл проверку случайно.
+        Guard активен в production: `tasks/users.py::account_provision`
+        прокидывает `home_dir=payload.get("home_dir")` через `provision_user` в
+        `create_user`/`_write_authorized_key`, и оператор/server_service может
+        прислать в payload системный путь. Этот тест фиксирует поведение, чтобы
+        ослабление guard'а на refactor'е не прошло тихо.
         """
         ssh = _client_with_conn([])
         with pytest.raises(SshError) as exc:

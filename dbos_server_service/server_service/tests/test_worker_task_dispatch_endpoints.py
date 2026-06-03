@@ -41,9 +41,11 @@ def captured_dispatch(monkeypatch):
 
     async def fake_dispatch(*, task_kind, target_server_id, payload,
                             created_by, request_id,
-                            target_resource_id=None, idempotency_key=None):
+                            target_resource_id=None, idempotency_key=None,
+                            return_hit=False):
         if idempotency_key is not None and idempotency_key in _by_key:
-            return _by_key[idempotency_key]
+            existing = _by_key[idempotency_key]
+            return (existing, True) if return_hit else existing
         calls.append({
             "task_kind": task_kind,
             "target_server_id": target_server_id,
@@ -56,13 +58,22 @@ def captured_dispatch(monkeypatch):
         new_id = f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
         if idempotency_key is not None:
             _by_key[idempotency_key] = new_id
-        return new_id
+        return (new_id, False) if return_hit else new_id
+
+    async def fake_dispatch_with_hit(**kwargs):
+        kwargs["return_hit"] = True
+        return await fake_dispatch(**kwargs)
 
     import src.services.worker_client as worker_mod
     monkeypatch.setattr(worker_mod, "dispatch_task", fake_dispatch)
+    monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", fake_dispatch_with_hit)
     monkeypatch.setattr(
         "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
         fake_dispatch,
+    )
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
+        fake_dispatch_with_hit,
     )
     return calls
 
@@ -548,7 +559,7 @@ class TestDispatchAuditOnWorkerFailure:
             )
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom,
         )
         srv = await make_server(department_id="dep_a")
@@ -579,7 +590,7 @@ class TestDispatchAuditOnWorkerFailure:
             )
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom,
         )
         srv = await make_server(department_id="dep_a")
@@ -611,7 +622,7 @@ class TestDispatchAuditOnWorkerFailure:
             )
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom,
         )
         srv = await make_server(department_id="dep_a")
@@ -817,10 +828,10 @@ class TestMassRotatePartialTolerance:
                     error_code="TASK_IDEMPOTENT_CONFLICT",
                     message="already queued",
                 )
-            return "tsk_ok"
+            return ("tsk_ok", False)
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             selective,
         )
         resp = await client.post(
@@ -859,7 +870,7 @@ class TestMassRotatePartialTolerance:
             )
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom,
         )
         resp = await client.post(
@@ -893,14 +904,14 @@ class TestMassRotatePartialTolerance:
         async def boom_after_first(*, target_server_id, **kwargs):
             call_count["n"] += 1
             if call_count["n"] == 1:
-                return "tsk_ok_1"
+                return ("tsk_ok_1", False)
             raise ServiceUnavailableError(
                 error_code="WORKER_UNREACHABLE",
                 message="redis down mid-batch",
             )
 
         monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom_after_first,
         )
         resp = await client.post(

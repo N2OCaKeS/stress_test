@@ -116,8 +116,13 @@ class TestSavepointRollbackAuditEmit:
 
         import src.services.worker_client as worker_mod
         monkeypatch.setattr(worker_mod, "dispatch_task", boom)
+        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom)
         monkeypatch.setattr(
             "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom,
         )
 
@@ -161,8 +166,13 @@ class TestSavepointRollbackAuditEmit:
 
         import src.services.worker_client as worker_mod
         monkeypatch.setattr(worker_mod, "dispatch_task", boom)
+        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom)
         monkeypatch.setattr(
             "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom,
         )
 
@@ -205,8 +215,13 @@ class TestSavepointRollbackAuditEmit:
 
         import src.services.worker_client as worker_mod
         monkeypatch.setattr(worker_mod, "dispatch_task", boom)
+        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom)
         monkeypatch.setattr(
             "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
             boom,
         )
 

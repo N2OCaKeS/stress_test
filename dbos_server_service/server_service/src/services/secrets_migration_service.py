@@ -345,8 +345,11 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
     Crypto-операции дешёвые, lock держим только пока активна транзакция
     — это устраняет старую блокировку pool'а на крупных батчах.
 
-    Возвращает: `{id, status: 'done', skipped: bool}`. Ошибки — exception
-    наружу; endpoint обработает их через `finalize_failed`.
+    Возвращает: `{id, status: 'done', skipped: bool, skip_reason: str | None}`.
+    `skip_reason` — внутреннее поле для endpoint-аудита (`owner_vanished` /
+    `owner_ciphertext_changed` / `status_not_processing`), наружу wire-схема
+    его не несёт. Ошибки — exception наружу; endpoint обработает их через
+    `finalize_failed`.
     """
     sel = (
         select(ReencryptOutboxEntry)
@@ -374,7 +377,12 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
                 "current_status": entry.status,
             },
         )
-        return {"id": outbox_id, "status": entry.status, "skipped": True}
+        return {
+            "id": outbox_id,
+            "status": entry.status,
+            "skipped": True,
+            "skip_reason": "status_not_processing",
+        }
 
     aad = _aad_for_entry(entry.entity_type, entry.entity_id)
     plaintext = secrets_service.decrypt(entry.legacy_ciphertext, aad=aad)
@@ -438,7 +446,12 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
     entry.processed_at = datetime.now(timezone.utc)
     entry.last_error = None
     await db.commit()
-    return {"id": outbox_id, "status": STATUS_DONE, "skipped": skipped}
+    return {
+        "id": outbox_id,
+        "status": STATUS_DONE,
+        "skipped": skipped,
+        "skip_reason": skip_reason,
+    }
 
 
 async def finalize_failed(
@@ -552,6 +565,13 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
     На pool exhaustion здесь больше не страдаем: вызовы редкие и
     ограничены `limit` (≤1000). Логика идентична прежней — decrypt-old →
     encrypt-active с per-row try/except.
+
+    Возвращает `{processed, errors, failed_rows}`. `failed_rows` — список
+    `{entity_type, entity_id, error_class}` для row'ов, упавших на
+    decrypt/encrypt. Endpoint кладёт этот sample в audit-details, чтобы
+    оператор видел не только число ошибок, но и какие именно entity_id.
+    Wire-схема `ReencryptBatchResponse` остаётся `{processed, errors}` —
+    `failed_rows` уходит только в аудит.
     """
     settings = get_settings()
     active = settings.server_encryption_key_version
@@ -567,6 +587,11 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
 
     processed = 0
     errors = 0
+    # Список упавших row'ов с минимумом полей для диагностики оператору.
+    # `entity_id` уже логируется через `logger.warning` ниже, но в summary
+    # удобно отдать структурированно — endpoint кладёт это в audit details,
+    # чтобы SIEM мог разложить инциденты по таблицам.
+    failed_rows: list[dict[str, str]] = []
 
     for acc in accounts:
         try:
@@ -578,11 +603,19 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
             # Тип эксепшна важен для диагностики (ключ ушёл из env vs битый
             # ciphertext vs decrypt с чужим AAD'ом). Сам plaintext или ключ
             # из exc-сообщений не достанем — пишем только класс.
+            exc_class = type(exc).__name__
             logger.warning(
                 "reencrypt_batch server_account row %s failed: %s",
-                acc.id, type(exc).__name__,
+                acc.id, exc_class,
             )
             errors += 1
+            failed_rows.append(
+                {
+                    "entity_type": ENTITY_SERVER_ACCOUNT,
+                    "entity_id": acc.id,
+                    "error_class": exc_class,
+                }
+            )
 
     for ipmi in ipmis:
         try:
@@ -591,11 +624,19 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
             ipmi.password_encrypted = secrets_service.encrypt(plain, aad=aad)
             processed += 1
         except Exception as exc:  # noqa: BLE001
+            exc_class = type(exc).__name__
             logger.warning(
                 "reencrypt_batch ipmi_controller row %s failed: %s",
-                ipmi.id, type(exc).__name__,
+                ipmi.id, exc_class,
             )
             errors += 1
+            failed_rows.append(
+                {
+                    "entity_type": ENTITY_IPMI_CONTROLLER,
+                    "entity_id": ipmi.id,
+                    "error_class": exc_class,
+                }
+            )
 
     if processed > 0:
         await db.flush()
@@ -603,4 +644,4 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
     # processed == 0: писать нечего, не трогаем транзакцию — оставляем
     # SAVEPOINT / outer transaction caller'у.
 
-    return {"processed": processed, "errors": errors}
+    return {"processed": processed, "errors": errors, "failed_rows": failed_rows}

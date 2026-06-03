@@ -694,6 +694,20 @@ async def reset_password(
     # Сессии и PAT'ы юзера сняты — identity-кэш может ещё нести `is_active=True`
     # и пускать ранее закэшированный access-token до TTL. Сбрасываем сразу.
     _invalidate_identity_cache(user_id)
+    # actor_role в details: SIEM-у проще фильтровать по конкретному типу
+    # actor'а, чем тянуть его из отдельного запроса в auth. Источники:
+    #   * actor==target → "self" (admin сбрасывает себе пароль через
+    #     admin-ручку — теоретически возможно, маркируем явно);
+    #   * resolved platform_role → значение enum'а (account_admin /
+    #     department_admin / loging_*);
+    #   * actor_role не передан и в БД нет — "unknown" (не падаем, аудит
+    #     всё равно эмитим, чтобы не потерять событие смены пароля).
+    if actor_id == user_id:
+        audit_actor_role = "self"
+    elif actor_role:
+        audit_actor_role = str(actor_role)
+    else:
+        audit_actor_role = "unknown"
     # new_password → sanitizer заменит на <PASSWORD>
     audit_service.emit(
         "user.password_reset", actor_id, target_id=user_id, target_type="user",
@@ -702,6 +716,7 @@ async def reset_password(
             "new_password": new_password,
             "sessions_revoked": True,
             "tokens_revoked": True,
+            "actor_role": audit_actor_role,
         },
         request_id=request_id,
     )
@@ -785,6 +800,7 @@ async def change_own_password(
             details={
                 "reason": "invalid_old_password",
                 "caller_is_admin": user.platform_role in _ADMIN_PLATFORM_ROLES,
+                "actor_role": "self",
             },
             request_id=request_id,
         )
@@ -825,6 +841,7 @@ async def change_own_password(
             "caller_is_admin": user.platform_role in _ADMIN_PLATFORM_ROLES,
             "sessions_revoked": True,
             "tokens_revoked": False,
+            "actor_role": "self",
         },
         request_id=request_id,
     )

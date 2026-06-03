@@ -36,9 +36,11 @@ def captured_dispatch(monkeypatch):
 
     async def fake_dispatch(*, task_kind, target_server_id, payload,
                             created_by, request_id,
-                            target_resource_id=None, idempotency_key=None):
+                            target_resource_id=None, idempotency_key=None,
+                            return_hit=False):
         if idempotency_key is not None and idempotency_key in by_key:
-            return by_key[idempotency_key]
+            existing = by_key[idempotency_key]
+            return (existing, True) if return_hit else existing
         calls.append({
             "task_kind": task_kind,
             "target_server_id": target_server_id,
@@ -49,13 +51,22 @@ def captured_dispatch(monkeypatch):
         new_id = f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
         if idempotency_key is not None:
             by_key[idempotency_key] = new_id
-        return new_id
+        return (new_id, False) if return_hit else new_id
+
+    async def fake_dispatch_with_hit(**kwargs):
+        kwargs["return_hit"] = True
+        return await fake_dispatch(**kwargs)
 
     import src.services.worker_client as worker_mod
     monkeypatch.setattr(worker_mod, "dispatch_task", fake_dispatch)
+    monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", fake_dispatch_with_hit)
     monkeypatch.setattr(
         "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
         fake_dispatch,
+    )
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
+        fake_dispatch_with_hit,
     )
     return calls
 

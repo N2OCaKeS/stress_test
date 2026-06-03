@@ -64,13 +64,24 @@ def captured_dispatch(monkeypatch):
 
     async def fake_dispatch(**kwargs):
         calls.append(kwargs)
-        return f"tsk_w21_{len(calls)}"
+        return_hit = kwargs.get("return_hit", False)
+        new_id = f"tsk_w21_{len(calls)}"
+        return (new_id, False) if return_hit else new_id
+
+    async def fake_dispatch_with_hit(**kwargs):
+        kwargs["return_hit"] = True
+        return await fake_dispatch(**kwargs)
 
     import src.services.worker_client as worker_mod
     monkeypatch.setattr(worker_mod, "dispatch_task", fake_dispatch)
+    monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", fake_dispatch_with_hit)
     monkeypatch.setattr(
         "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
         fake_dispatch,
+    )
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
+        fake_dispatch_with_hit,
     )
     return calls
 

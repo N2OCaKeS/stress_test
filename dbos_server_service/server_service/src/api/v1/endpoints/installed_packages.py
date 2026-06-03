@@ -166,7 +166,7 @@ async def list_installed_packages(
         "target_department_id": server.department_id,
     }
     try:
-        task_id = await worker_client.dispatch_task(
+        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
             task_kind="installed_packages.list",
             target_server_id=server_id,
             payload=payload,
@@ -204,6 +204,7 @@ async def list_installed_packages(
             "task_kind": "installed_packages.list",
             "pattern": pattern,
             "department_id": server.department_id,
+            "idempotent_hit": idempotent_hit,
         },
     )
     return {"task_id": task_id, "status": "queued"}

@@ -65,7 +65,14 @@ _DEV_PG         = postgresql+psycopg://app_user:app_password@postgres:5432
 _DEV_AUTH_DB    = $(_DEV_PG)/dev_auth
 _DEV_LOG_DB     = $(_DEV_PG)/dev_logging
 _DEV_SERVER_DB  = $(_DEV_PG)/dev_server
-_DEV_LOG_KEY    = dev-logging-api-key
+_DEV_AUTH_AUDIT_KEY   = audit_auth_service_dev_key
+_DEV_SERVER_AUDIT_KEY = audit_server_service_dev_key
+_DEV_WORKER_AUDIT_KEY = audit_server_worker_dev_key
+_DEV_CONFIG_AUDIT_KEY = audit_config_service_dev_key
+_DEV_INTROSPECT_KEY   = dev-introspect-api-key
+# legacy single-key alias оставлен для обратной совместимости с целями, которые
+# не дифференцируют caller'а (например, generic test-инструменты).
+_DEV_LOG_KEY    = $(_DEV_AUTH_AUDIT_KEY)
 _DEV_SECRET     = dev-secret-key-for-local-must-be-32-chars!
 _DEV_SERVER_KEY = dev-server-encryption-key-do-not-use-in-prod
 _DEV_ADMIN_USER = admin
@@ -159,8 +166,8 @@ conn.close()"
 	@echo "→ Запуск loging_service :8001..."
 	@cd loging_service && \
 		DATABASE_URL=$(_DEV_LOG_DB) \
-		SERVICE_API_KEYS='{"auth_service":"$(_DEV_LOG_KEY)","server_service":"$(_DEV_LOG_KEY)","config_service":"$(_DEV_LOG_KEY)","server_worker":"$(_DEV_LOG_KEY)"}' \
-		INTROSPECT_SERVICE_API_KEY=$(_DEV_LOG_KEY)-introspect \
+		SERVICE_API_KEYS='{"auth_service":"$(_DEV_AUTH_AUDIT_KEY)","server_service":"$(_DEV_SERVER_AUDIT_KEY)","config_service":"$(_DEV_CONFIG_AUDIT_KEY)","server_worker":"$(_DEV_WORKER_AUDIT_KEY)"}' \
+		INTROSPECT_SERVICE_API_KEY=$(_DEV_INTROSPECT_KEY)-introspect \
 		AUTH_SERVICE_URL=http://localhost:8000 \
 		PYTHONPATH=. \
 		uvicorn src.main:app --host 0.0.0.0 --port 8001 \
@@ -172,7 +179,7 @@ conn.close()"
 	@cd auth_service && \
 		DATABASE_URL=$(_DEV_AUTH_DB) SECRET_KEY=$(_DEV_SECRET) \
 		ACCESS_TOKEN_TTL_MINUTES=60 REFRESH_TOKEN_TTL_DAYS=14 \
-		LOGGING_SERVICE_URL=http://localhost:8001 LOGGING_SERVICE_API_KEY=$(_DEV_LOG_KEY) \
+		LOGGING_SERVICE_URL=http://localhost:8001 LOGGING_SERVICE_API_KEY=$(_DEV_AUTH_AUDIT_KEY) \
 		INITIAL_ADMIN_USERNAME=$(_DEV_ADMIN_USER) INITIAL_ADMIN_PASSWORD=$(_DEV_ADMIN_PASS) INITIAL_ADMIN_EMAIL=$(_DEV_ADMIN_EMAIL) \
 		PYTHONPATH=. uvicorn src.main:app --host 0.0.0.0 --port 8000 \
 		> $(CURDIR)/.dev/auth.log 2>&1 & echo $$! > $(CURDIR)/.dev/auth.pid

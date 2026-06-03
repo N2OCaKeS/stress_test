@@ -108,6 +108,60 @@ class TestConfusables:
         # `logi` + ŋ + `g_service` → `login` + `g_service` = `loging_service`.
         assert normalize_service_name("logiŋg_service") == "loging_service"
 
+    def test_latin_alpha(self):
+        # U+0251 LATIN SMALL LETTER ALPHA — выглядит как ASCII 'a'.
+        assert normalize_service_name("ɑuth_service") == "auth_service"
+
+    def test_small_capital_c(self):
+        # U+1D04 LATIN LETTER SMALL CAPITAL C → 'c'.
+        assert normalize_service_name("ᴄonfig_service") == "config_service"
+
+    def test_small_capital_e(self):
+        # U+1D07 LATIN LETTER SMALL CAPITAL E → 'e'.
+        assert normalize_service_name("auth_sᴇrvice") == "auth_service"
+
+    def test_small_capital_h(self):
+        # U+029C LATIN LETTER SMALL CAPITAL H → 'h'.
+        assert normalize_service_name("autʜ_service") == "auth_service"
+
+    def test_small_capital_i(self):
+        # U+026A LATIN LETTER SMALL CAPITAL I → 'i'.
+        assert normalize_service_name("logɪng_service") == "loging_service"
+
+    def test_small_capital_l(self):
+        # U+029F LATIN LETTER SMALL CAPITAL L → 'l'.
+        assert normalize_service_name("ʟoging_service") == "loging_service"
+
+    def test_small_capital_n(self):
+        # U+0274 LATIN LETTER SMALL CAPITAL N → 'n'.
+        assert normalize_service_name("logiɴg_service") == "loging_service"
+
+    def test_small_capital_o(self):
+        # U+1D0F LATIN LETTER SMALL CAPITAL O → 'o'.
+        assert normalize_service_name("lᴏging_service") == "loging_service"
+
+    def test_small_capital_r(self):
+        # U+0280 LATIN LETTER SMALL CAPITAL R → 'r'.
+        assert normalize_service_name("seʀver_service") == "server_service"
+
+    def test_small_capital_t(self):
+        # U+1D1B LATIN LETTER SMALL CAPITAL T → 't'.
+        assert normalize_service_name("auᴛh_service") == "auth_service"
+
+    def test_small_capital_u(self):
+        # U+1D1C LATIN LETTER SMALL CAPITAL U → 'u'.
+        assert normalize_service_name("aᴜth_service") == "auth_service"
+
+    def test_small_capital_v(self):
+        # U+1D20 LATIN LETTER SMALL CAPITAL V → 'v'.
+        assert normalize_service_name("serᴠer_service") == "server_service"
+
+    def test_combined_ipa_homoglyphs_loging(self):
+        # Атакующий пакует payload `ʟᴏgɪng_service` (всё small-caps, кроме g/n),
+        # надеется обойти reserved-guard. Должен свернуться в каноническое
+        # `loging_service` и попасть в гард.
+        assert normalize_service_name("ʟᴏgɪng_service") == "loging_service"
+
 
 class TestCombined:
     def test_unicode_plus_case_plus_invisible(self):

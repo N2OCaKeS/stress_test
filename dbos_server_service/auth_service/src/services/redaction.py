@@ -1,3 +1,4 @@
+# DUPE: keep in sync with loging_service/src/utils/redaction.py (and vice versa). Until shared SDK extraction.
 """Маскировка секретов в audit-payload перед отправкой в loging_service.
 
 Идея: рекурсивно проходим по dict/list и заменяем подозрительные значения
@@ -32,14 +33,14 @@ _PASSWORD_KEYS = {
 }
 _TOKEN_KEYS = {
     "token", "access_token", "refresh_token", "id_token",
-    "oauth_token", "bearer", "jwt", "jwt_token",
+    "oauth_token", "bearer", "bearer_token", "jwt", "jwt_token",
     "session_token",
     # defense-in-depth: если кто-то решит положить plaintext в явно
     # названный ключ — маскируем по имени, не дожидаясь эвристики по dbos_*
     "token_plaintext", "pat_token", "bot_token",
 }
 _SECRET_KEYS = {
-    "secret", "secret_key", "api_key", "apikey",
+    "secret", "secret_key", "api_key", "apikey", "api_secret",
     "client_secret", "private_key", "signing_key",
     "service_api_key", "service_key", "logging_service_api_key",
 }

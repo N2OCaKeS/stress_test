@@ -211,6 +211,7 @@ make test-worker
 |---|---|---|
 | `APP_ENV` | `local` | `production` включает REDIS_URL password-validator, https-guard для outbound URL и обязательность `LOGGING_SERVICE_API_KEY` |
 | `DATABASE_URL` | — | async DSN к `dev_server_worker` |
+| `SERVER_SERVICE_DATABASE_URL` | — | cross-DB DSN на БД `server_service` для poller'а `dispatch_outbox`. Если не задан — fallback на `DATABASE_URL` |
 | `DB_POOL_SIZE` | `5` | SQLAlchemy pool_size воркер-engine'а; рассчитан на 1-2 handler'а + heartbeat/sweep/outbox-publisher. При росте `WORKER_HANDLER_CONCURRENCY` или `taskiq --workers` — поднимать |
 | `DB_MAX_OVERFLOW` | `10` | burst-кап поверх `DB_POOL_SIZE` под короткие пики (fan-out reconcile, drain) |
 | `REDIS_URL` | `redis://redis:6379/0` | taskiq broker. В `production` обязан содержать password-сегмент (`redis://:<pwd>@host:port/db`) — иначе старт падает на validator'е |
@@ -240,6 +241,11 @@ make test-worker
 | `TASKS_RETENTION_DAYS` | `30` | сколько дней хранить SUCCEEDED/FAILED task'и до daily DELETE. QUEUED/RUNNING никогда не трогаем — за них отвечает orphan-sweep |
 | `AUDIT_OUTBOX_RETENTION_DAYS` | `90` | сколько дней хранить published outbox-row'ы (и delivered, и DLQ-poisoned) до daily DELETE. Unpublished (in-flight) не трогаем |
 | `MAX_PUBLISH_ATTEMPTS` | `50` | cap по attempts в publisher loop'е. При превышении row уходит в DLQ через `_send_to_dlq` с `reason="attempts_cap"`; счётчик `audit_outbox_dead_total` тикает (stub под Prometheus) |
+| `DISPATCH_OUTBOX_POLL_INTERVAL_SECONDS` | `2` | интервал poller'а dispatch_outbox (читает unpublished row'ы и публикует таски) |
+| `DISPATCH_OUTBOX_BATCH_SIZE` | `100` | максимум rows, забираемых poller'ом за один тик |
+| `DISPATCH_OUTBOX_MAX_ATTEMPTS` | `10` | сколько попыток публикации до ухода row'а в DLQ-style limbo |
+| `DISPATCH_OUTBOX_RETENTION_DAYS` | `7` | TTL для опубликованных dispatch_outbox row'ов до cleanup'а |
+| `AUDIT_INSTALLED_PACKAGES_PATTERN_DEBUG` | `false` | экспонировать `pattern` в audit-details `installed_packages` (CVE-разведка risk — оставляем off в проде) |
 
 ### BMC / Redfish
 

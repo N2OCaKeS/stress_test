@@ -1,3 +1,4 @@
+# DUPE: keep in sync with auth_service/src/services/redaction.py (and vice versa). Until shared SDK extraction.
 """Маскировка секретов в `details` — защитный слой на стороне loging_service.
 
 Дублирует логику `auth_service/src/services/redaction.py`. Применяется к

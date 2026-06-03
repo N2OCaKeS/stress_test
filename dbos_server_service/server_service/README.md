@@ -278,6 +278,7 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 | `SERVER_PREPARE_RATE_LIMIT` | per-IP rate-limit на POST `/servers/{id}/prepare`; default `3/minute` |
 | `ACCOUNT_ROTATE_PASSWORD_RATE_LIMIT` | per-IP rate-limit на POST `/server-accounts/{id}/rotate_password`; default `10/minute` |
 | `IPMI_VERIFY_MAX_AGE_SECONDS` | максимальный возраст `verified_at` в `IpmiCredentialsRotatedRequest`; default 60 |
+| `VERIFY_FUTURE_SKEW_SECONDS` | допустимое окно в будущем для `verified_at` при verify-after-rotate (NTP-drift tolerance); default 60 |
 | `ROTATED_AT_SKEW_SECONDS` | допустимый перекос между worker'овым `rotated_at` и локальным временем для `record_ipmi_credentials_rotated`; default 600 (NTP-drift tolerance) |
 | `PASSWORD_REVEAL_AUDIT_WINDOW_SECONDS` | окно throttle'а CRITICAL-аудита раскрытия пароля per (actor, account); default 300. Первое раскрытие в окне → CRITICAL `server_account.password_revealed`, последующие → INFO `*.password_revealed_throttled`. `0` отключает throttle |
 | `SECURITY_HSTS_ENABLED` | включает `Strict-Transport-Security` на всех ответах; default `False` (только за https-фронтом) |

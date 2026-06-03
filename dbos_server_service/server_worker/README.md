@@ -211,6 +211,8 @@ make test-worker
 |---|---|---|
 | `APP_ENV` | `local` | `production` включает REDIS_URL password-validator, https-guard для outbound URL и обязательность `LOGGING_SERVICE_API_KEY` |
 | `DATABASE_URL` | — | async DSN к `dev_server_worker` |
+| `DB_POOL_SIZE` | `5` | SQLAlchemy pool_size воркер-engine'а; рассчитан на 1-2 handler'а + heartbeat/sweep/outbox-publisher. При росте `WORKER_HANDLER_CONCURRENCY` или `taskiq --workers` — поднимать |
+| `DB_MAX_OVERFLOW` | `10` | burst-кап поверх `DB_POOL_SIZE` под короткие пики (fan-out reconcile, drain) |
 | `REDIS_URL` | `redis://redis:6379/0` | taskiq broker. В `production` обязан содержать password-сегмент (`redis://:<pwd>@host:port/db`) — иначе старт падает на validator'е |
 | `SERVER_SERVICE_URL` | — | base URL server_service (internal credentials/rotate/callbacks). В `production`/`staging` обязан быть https (кроме localhost) |
 | `AUTH_SERVICE_URL` | — | base URL auth_service для introspect собственного bot-токена |

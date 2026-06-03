@@ -196,7 +196,7 @@ PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 | `RATE_LIMIT_STORAGE_URI` | slowapi backend (например `redis://host:6379/0`); fallback `memory://` |
 | `INITIAL_ADMIN_USERNAME/PASSWORD/EMAIL` | одноразовый bootstrap |
 
-Полный список — в `.env.example`.
+`.env.example` показывает базовый bootstrap (DB, JWT, registry, admin). Полный набор env-vars — в `src/core/config.py` (Settings); каждая опция там с docstring и default'ом.
 
 ### Rate-limit storage
 

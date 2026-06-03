@@ -445,11 +445,11 @@ class TestOutboxRoundTrip:
         db.add(entry)
         await db.commit()
 
-        # finalize_done в этом случае может упасть на decrypt'е (legacy_ciphertext
-        # ненастоящий), но проверка owner-vanished идёт раньше — после успешного
-        # decrypt'а. Используем валидный ciphertext, чтобы дойти до проверки.
+        # owner-check теперь идёт ДО decrypt/encrypt — для owner_vanished ветки
+        # ciphertext вообще не дёргается. Оставляем валидный ciphertext на случай,
+        # если в будущем порядок поменяется обратно, но для прохождения теста это
+        # не обязательно.
         from src.services import secrets_service
-        # Перешифровка любого plaintext'а — главное чтобы decrypt прошёл.
         plain = "x"
         aad = secrets_service.aad_for_server_account_password("acc_does_not_exist")
         entry.legacy_ciphertext = secrets_service.encrypt(plain, aad=aad)

@@ -191,6 +191,14 @@ async def authorize(
     # не через `parse_qsl`+`urlencode`: round-trip ломал `+` (parse_qsl декодит
     # его в пробел, дальше `urlencode` ставит `%20`), а `quote()` оставляет `+`
     # safe и не трогает уже-encoded последовательности из исходной query.
+    #
+    # Если клиент прислал в `state` уже percent-encoded последовательность
+    # (например `abc%20def`), `quote(safe='')` экранирует сам `%` как `%25`,
+    # итог — `state=abc%2520def`. Это by-design: RFC 6749 §4.1.2 трактует
+    # state как opaque-строку, передаваемую клиентом 1:1; ответственность за
+    # консистентный encoding на стороне клиента (не encode'ить дважды). Сервер
+    # echo'ит ровно те байты, что получил, поэтому round-trip
+    # decode→clientCompare даёт исходное значение.
     parsed = urlparse(redirect_uri)
     appended = f"code={quote(code, safe='')}"
     if state:

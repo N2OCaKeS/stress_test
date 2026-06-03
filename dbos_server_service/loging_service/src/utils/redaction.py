@@ -37,14 +37,14 @@ _PASSWORD_KEYS = {
 }
 _TOKEN_KEYS = {
     "token", "access_token", "refresh_token", "id_token",
-    "oauth_token", "bearer", "jwt", "jwt_token",
+    "oauth_token", "bearer", "bearer_token", "jwt", "jwt_token",
     "refresh_token_hash", "session_token",
 }
 # `bearer` живёт только в `_TOKEN_KEYS` — `_classify_key` идёт
 # PASSWORD → TOKEN → SECRET, дубль здесь был мёртвым (TOKEN всегда
 # побеждает).
 _SECRET_KEYS = {
-    "secret", "secret_key", "api_key", "apikey",
+    "secret", "secret_key", "api_key", "apikey", "api_secret",
     "client_secret", "private_key", "signing_key",
     "service_api_key", "service_key", "introspect_key",
 }
@@ -72,6 +72,10 @@ _MAX_DEPTH = 64
 
 
 def _classify_key(key: str) -> str | None:
+    # `lower()` симметричен `_details_shadow_keys` в `schemas/events.py` —
+    # оба валидатора сравнивают ключи без учёта регистра. Если расширишь
+    # один список зарезервированных имён, не забудь второй: расхождение
+    # позволит обойти shadow-проверку через `Actor_id` (Title case).
     k = key.lower()
     if k in _PASSWORD_KEYS:
         return "<PASSWORD>"

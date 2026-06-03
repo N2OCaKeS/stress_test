@@ -24,7 +24,15 @@ async def _login(client, username="t_admin", password="Admin1234!"):
 
 
 class TestRefreshUpdatesSessionIp:
-    @pytest.mark.xfail(reason="endpoint reads request.client.host, не X-Forwarded-For; src-fix в следующей волне", strict=False)
+    @pytest.mark.xfail(
+        reason="endpoint вызывает extract_client_ip(request), но он доверяет XFF "
+        "только если request.client.host входит в TRUSTED_PROXY_IPS allow-list. "
+        "Базовый AsyncClient в conftest шлёт client.host='testclient', и без "
+        "переключения env TRUSTED_PROXY_IPS + reset get_settings.cache_clear() "
+        "XFF игнорируется. Для рабочей проверки см. `test_main_extract_client_ip_wiring.py` "
+        "(там собирается отдельный app с подменённым trusted_proxies_env fixture).",
+        strict=False,
+    )
     async def test_refresh_updates_ip_address_in_session(self, client, account_admin, db):
         """После `/refresh` с X-Forwarded-For Session.ip_address обновляется в БД."""
         data = await _login(client)

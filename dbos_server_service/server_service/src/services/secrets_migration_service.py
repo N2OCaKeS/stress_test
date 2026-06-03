@@ -334,11 +334,11 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
     Поток (всё — в одной короткой транзакции):
 
     1. SELECT outbox-row с `FOR UPDATE`, проверяем `status='processing'`.
-    2. `decrypt(legacy_ciphertext, aad)` старым ключом → plaintext.
-    3. `encrypt(plaintext, aad)` активным ключом → new ciphertext.
-    4. Если в owner-row уже не legacy (кто-то параллельно дёрнул rotate)
-       — выходим с `skipped=True`, помечаем outbox `done` (работа фактически
-       выполнена другим путём, перешифровывать нечего).
+    2. SELECT owner-row с `FOR UPDATE`. Если row пропал или ciphertext
+       разошёлся с legacy (параллельный rotate) — закрываем outbox-row
+       `done`/`skipped=True` без crypto-операций.
+    3. `decrypt(legacy_ciphertext, aad)` старым ключом → plaintext.
+    4. `encrypt(plaintext, aad)` активным ключом → new ciphertext.
     5. UPDATE owner-row.password_encrypted = new ciphertext.
     6. UPDATE outbox-row → `status='done'`, `processed_at=now()`.
 
@@ -384,12 +384,15 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
             "skip_reason": "status_not_processing",
         }
 
-    aad = _aad_for_entry(entry.entity_type, entry.entity_id)
-    plaintext = secrets_service.decrypt(entry.legacy_ciphertext, aad=aad)
-    new_ciphertext = secrets_service.encrypt(plaintext, aad=aad)
-
+    # Сначала проверяем существование owner-row и совпадение ciphertext'а:
+    # decrypt+encrypt — это AES-GCM раунд и HKDF, дешёво, но не бесплатно,
+    # и на массовом cleanup'е (owner-row уже удалён или ротирован параллельно)
+    # обидно тратить CPU на работу, результат которой будет выброшен. Сначала
+    # тянем owner с FOR UPDATE — если пропал или ciphertext разошёлся, выходим
+    # по skipped-ветке до crypto-операций.
     skipped = False
     skip_reason: str | None = None
+    owner: ServerAccount | IpmiController | None
     if entry.entity_type == ENTITY_SERVER_ACCOUNT:
         owner_stmt = (
             select(ServerAccount)
@@ -397,14 +400,6 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
             .with_for_update()
         )
         owner = (await db.execute(owner_stmt)).scalar_one_or_none()
-        if owner is None:
-            skipped = True
-            skip_reason = "owner_vanished"
-        elif owner.password_encrypted != entry.legacy_ciphertext:
-            skipped = True
-            skip_reason = "owner_ciphertext_changed"
-        else:
-            owner.password_encrypted = new_ciphertext
     elif entry.entity_type == ENTITY_IPMI_CONTROLLER:
         owner_stmt = (
             select(IpmiController)
@@ -412,17 +407,21 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
             .with_for_update()
         )
         owner = (await db.execute(owner_stmt)).scalar_one_or_none()
-        if owner is None:
-            skipped = True
-            skip_reason = "owner_vanished"
-        elif owner.password_encrypted != entry.legacy_ciphertext:
-            skipped = True
-            skip_reason = "owner_ciphertext_changed"
-        else:
-            owner.password_encrypted = new_ciphertext
     else:
         # entity_type валидируется на seed; сюда не доедем штатно.
         raise ValueError(f"unknown entity_type {entry.entity_type!r}")
+
+    if owner is None:
+        skipped = True
+        skip_reason = "owner_vanished"
+    elif owner.password_encrypted != entry.legacy_ciphertext:
+        skipped = True
+        skip_reason = "owner_ciphertext_changed"
+    else:
+        aad = _aad_for_entry(entry.entity_type, entry.entity_id)
+        plaintext = secrets_service.decrypt(entry.legacy_ciphertext, aad=aad)
+        new_ciphertext = secrets_service.encrypt(plaintext, aad=aad)
+        owner.password_encrypted = new_ciphertext
 
     if skipped:
         # Owner-row пропал / ротировал ciphertext параллельно — outbox-row всё

@@ -88,6 +88,10 @@ class EventDefinition(BaseModel):
 
 
 class RegisterEventsRequest(BaseModel):
+    # Лимит 500 действий × ~500 байт описания = ~250 кБ, что укладывается в
+    # `MAX_REQUEST_BODY_BYTES` (1 МБ по умолчанию). Два предела работают
+    # независимо: schema-валидатор отбивает кардинальность, middleware —
+    # raw-байтовый объём. Менять один — не забыть пересчитать другой.
     events: list[EventDefinition] = Field(
         min_length=1,
         max_length=500,

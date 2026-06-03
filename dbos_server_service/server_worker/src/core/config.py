@@ -331,6 +331,24 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── installed_packages audit-detail masking ──────────────────────────
+    # `installed_packages.list` принимает glob-pattern (`linux-image*`,
+    # `openssl*`, …). По себе pattern — операционный параметр, но в audit-
+    # details он намекает, какие CVE-релевантные пакеты оператор пробовал
+    # инспектировать. Дефолт — масковать (pattern в audit не уходит, только
+    # server_id/count/package_manager). Включается осознанно, когда нужно
+    # сопоставить audit-row с конкретным запросом из server_service.
+    audit_installed_packages_pattern_debug: bool = Field(
+        default=False,
+        description=(
+            "When False (default), `installed_packages.list` strips `pattern` "
+            "from the audit whitelist — only server_id/count/package_manager "
+            "appear in audit-details. Set True to include `pattern` for "
+            "correlation with the server_service request log; trade-off is "
+            "CVE-recon visibility leaks."
+        ),
+    )
+
     # ── Audit-outbox publisher cap ───────────────────────────────────────
     # Soft-cap по `attempts` для одной outbox-row. После него publisher
     # помечает row как DLQ (`published_at=now()`, `last_error="[DLQ:attempts_cap]"`)

@@ -321,8 +321,11 @@ class AuditOutbox:
                 # Маленькая пауза, чтобы не молотить процессор, если queue
                 # пуст. `asyncio.Queue.get()` сам await'ит до появления
                 # элемента — пауза нужна только под нагрузкой как back-pressure
-                # против drain-too-eager (батчи в 1 элемент).
-                if self._poll_interval > 0:
+                # против drain-too-eager (батчи в 1 элемент). Если только что
+                # вышли полным батчем — очередь под нагрузкой, sleep лишний
+                # throughput-cap (batch_size / poll_interval ev/s); сразу
+                # идём за следующим батчем.
+                if self._poll_interval > 0 and len(batch) < self._batch_size:
                     await asyncio.sleep(self._poll_interval)
         except asyncio.CancelledError:
             # Грейсфул-shutdown: остаток допишет `stop()` через

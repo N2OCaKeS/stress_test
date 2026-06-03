@@ -29,17 +29,42 @@ import logging
 import re
 
 from src.clients.ssh import SshClient, SshError
+from src.core.config import get_settings
 from src.main import broker
 from src.services import server_service_client, ssh_client
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
 
-# Только server_id, pattern, count — никаких имён пакетов в audit-details
-# (могут раздуть log при большом результате и засветить версии CVE-relevant
-# софта). Полный список лежит в task.result, оператор увидит его через
-# API. То же решение, что в `tasks/inventory.py::AUDIT_SAFE_FIELDS`.
-AUDIT_SAFE_FIELDS: set[str] = {"server_id", "pattern", "count", "package_manager"}
+# server_id/count/package_manager — операционные счётчики без секретов и без
+# намёка на интент оператора. `pattern` живёт в отдельном whitelist'е и
+# уходит в audit-details только при включённом
+# `AUDIT_INSTALLED_PACKAGES_PATTERN_DEBUG` — иначе оператор, запросивший
+# `linux-image*` или `openssl*`, оставлял бы CVE-релевантный фокус в audit
+# (мягкая разведка для атакующего с доступом к loging). Полный результат
+# (`packages`) наружу всё равно не уходит — лежит в task.result, виден
+# через API. То же решение, что в `tasks/inventory.py::AUDIT_SAFE_FIELDS`.
+_BASE_AUDIT_SAFE_FIELDS: frozenset[str] = frozenset(
+    {"server_id", "count", "package_manager"},
+)
+
+
+def _audit_safe_fields() -> set[str]:
+    """Собрать whitelist под текущую конфигурацию.
+
+    Default — без `pattern`. Если оператор явно включил debug-флаг через
+    env, `pattern` добавляется в whitelist и попадает в audit-details.
+    Settings read через `get_settings()` (lru_cache) — дешёво.
+    """
+    fields = set(_BASE_AUDIT_SAFE_FIELDS)
+    if get_settings().audit_installed_packages_pattern_debug:
+        fields.add("pattern")
+    return fields
+
+
+# Backward-compat alias для тестов / внешних читателей, ожидавших
+# module-level set. Содержит дефолтный (masked) набор полей.
+AUDIT_SAFE_FIELDS: set[str] = set(_BASE_AUDIT_SAFE_FIELDS)
 
 # Локальный allow-list символов для glob-pattern перед подстановкой в
 # shell-команду. Принимаем только то, что нужно dpkg-query/rpm glob'у:
@@ -142,8 +167,10 @@ async def installed_packages_list(task_id: str) -> None:
     `target_department_id`.
 
     Возвращает: `{server_id, pattern, package_manager, count, packages: [...]}`.
-    audit-detail'и режутся до AUDIT_SAFE_FIELDS — список пакетов наружу
-    в loging_service не уходит.
+    audit-detail'и режутся whitelist'ом `_audit_safe_fields()` — список
+    пакетов наружу в loging_service не уходит. `pattern` по умолчанию
+    тоже не уходит (CVE-recon hint), показывается только если включён
+    `AUDIT_INSTALLED_PACKAGES_PATTERN_DEBUG`.
 
     Возможные ошибки: `SshError(SSH_AUTH_FAILED/SSH_CONNECT_FAILED/...)`,
     `SshError(NO_PACKAGE_MANAGER)`, `CredentialFetchError`.
@@ -223,5 +250,5 @@ async def installed_packages_list(task_id: str) -> None:
         audit_action="installed_packages.list",
         audit_target_type="server",
         impl=_impl,
-        audit_safe_fields=AUDIT_SAFE_FIELDS,
+        audit_safe_fields=_audit_safe_fields(),
     )

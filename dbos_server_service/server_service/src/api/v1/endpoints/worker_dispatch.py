@@ -1181,7 +1181,7 @@ async def server_prepare_dispatch(
         202: {"description": "Задача(и) приняты; tasks + skipped в теле ответа."},
         403: {"description": "Нет роли с `rotate_password` либо чужой department."},
         404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
-        409: {"description": "SERVER_DECOMMISSIONED (точечно либо все списаны) / TASK_IDEMPOTENT_CONFLICT (точечно)."},
+        409: {"description": "SERVER_DECOMMISSIONED (точечно либо все списаны) / TASK_IDEMPOTENT_CONFLICT (точечно) / NO_LINKED_SERVERS (массово, аккаунт без привязок)."},
         503: {"description": "Worker недоступен (redis down / не сконфигурён)."},
     },
 )
@@ -1255,6 +1255,24 @@ async def account_rotate_password_dispatch(
         target_ids = [server_id]
         mode = "single"
     else:
+        # Массовая ротация по аккаунту без привязок — ставить нечего.
+        # Раньше отвалилось бы внизу под видом `all_targets_decommissioned`
+        # (пустой dispatchable + пустой skipped), что путало оператора.
+        # Отбиваем явный 409 NO_LINKED_SERVERS и пишем отдельный audit-
+        # reason, чтобы SIEM не смешивал «нет привязок» с «все списаны».
+        if not linked_ids:
+            audit_service.emit(
+                audit_action, target_id=account_id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": "no_linked_servers",
+                    "department_id": account.department_id,
+                },
+            )
+            raise ConflictError(
+                error_code="NO_LINKED_SERVERS",
+                message="Account is not linked to any server; nothing to rotate",
+            )
         target_ids = linked_ids
         mode = "all"
 

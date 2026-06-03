@@ -110,6 +110,8 @@ def _settings(monkeypatch, *, strict: bool):
         # IPMI verify max age — реальное значение по умолчанию (60s).
         # record_ipmi_credentials_rotated читает его при проверке verified_at.
         ipmi_verify_max_age_seconds = 60
+        # Окно допустимого NTP-skew для rotated_at (default из core/config.py).
+        rotated_at_skew_seconds = 600
 
     monkeypatch.setattr(internal_service, "get_settings", lambda: _S())
 

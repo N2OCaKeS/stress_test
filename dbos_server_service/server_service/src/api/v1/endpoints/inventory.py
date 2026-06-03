@@ -40,11 +40,14 @@ users_router = APIRouter(prefix="/servers/{server_id}/users")
     summary="Запустить инвентаризацию OS-пользователей через SSH (202, worker)",
     description=(
         "Публикует задачу `users.inventory` в taskiq-broker. Worker заходит "
-        "на сервер по SSH (через привязанный аккаунт, если в payload передан "
-        "`account_id`, иначе дефолтный `root`), читает `getent passwd` / группы "
-        "/ sudoers, фильтрует системных по `UID_MIN` из `/etc/login.defs` и "
-        "POST'ит список обратно в `/internal/servers/{id}/users/inventory`. "
-        "server_service reconcile'ит его с `server_accounts`. "
+        "на сервер по SSH — под управляющим пользователем (`management_user`) "
+        "если сервер `is_managed`, иначе под дефолтным аккаунтом сессии — "
+        "читает `getent passwd` / группы / sudoers, фильтрует системных по "
+        "`UID_MIN` из `/etc/login.defs` и POST'ит список обратно в "
+        "`/internal/servers/{id}/users/inventory`. server_service reconcile'ит "
+        "его с `server_accounts`. Конкретный `account_id` в payload здесь не "
+        "передаётся: dispatch без аргументов, выбор аккаунта — server-level "
+        "(prepared → management_user; иначе SSH-клиент идёт под дефолтом). "
         "Право — тот же `inventory_trigger`, что и у hardware-инвентаризации. "
         "Доступ: `(server, *, inventory_trigger)`."
     ),

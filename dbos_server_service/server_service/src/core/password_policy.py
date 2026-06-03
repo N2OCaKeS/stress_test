@@ -8,10 +8,12 @@
 цифровой символ. Применяется к bootstrap-кредам на `server.prepare`: входная
 точка доступа к свежей коробке, держать здесь слабые пароли нельзя.
 
-`validate_password` / `validate_strong_password` бросают на схеме исключение
-с конкретным error-code (`WEAK_PASSWORD`) — Pydantic поднимает 422, FastAPI
-кладёт type в `details.errors[].type`. `is_compliant` / `is_strong` — голые
-проверки без исключения, удобны для assert'ов.
+Обе `validate_*` функции бросают `PydanticCustomError` с типом `WEAK_PASSWORD`
+— клиент видит одинаковый машинно-различимый код в `details.errors[].type` и
+для базовой, и для усиленной политики. `PydanticCustomError` — подкласс
+`ValueError`, поэтому Pydantic поднимает его как 422, а старые тесты с
+`pytest.raises(ValueError)` остаются валидными. `is_compliant` / `is_strong`
+— голые проверки без исключения, удобны для assert'ов.
 """
 
 from pydantic_core import PydanticCustomError
@@ -51,20 +53,25 @@ def is_strong(password: str) -> bool:
 def validate_password(password: str) -> str:
     """Проверить пароль по базовой политике и вернуть его же.
 
-    Подходит для использования в pydantic field-валидаторе: на нарушении
-    политики поднимает `ValueError`, который схема отдаёт как 422.
+    На нарушении бросает `PydanticCustomError` с типом `WEAK_PASSWORD` —
+    тот же код, что и `validate_strong_password`, чтобы клиент по
+    `details.errors[].type` различал нарушение политики единообразно. По
+    длине сообщения видно, какая именно из двух политик не прошла.
+    `PydanticCustomError` — подкласс `ValueError`, поэтому Pydantic
+    нормально складывает его в 422-envelope.
     """
     if not is_compliant(password):
-        raise ValueError(_POLICY_MESSAGE)
+        raise PydanticCustomError("WEAK_PASSWORD", _POLICY_MESSAGE)
     return password
 
 
 def validate_strong_password(password: str) -> str:
     """Проверить пароль по усиленной политике и вернуть его же.
 
-    На нарушении бросает `PydanticCustomError` с типом `WEAK_PASSWORD` — он
-    проедет наружу в `details.errors[].type` 422-envelope'а, машинно
-    различимый код.
+    На нарушении бросает `PydanticCustomError` с типом `WEAK_PASSWORD` —
+    тот же код, что и `validate_password`. Сообщение содержит strong-
+    требования (16+ символов, три класса), по нему различимо, какая из
+    политик сработала.
     """
     if not is_strong(password):
         raise PydanticCustomError("WEAK_PASSWORD", _STRONG_POLICY_MESSAGE)

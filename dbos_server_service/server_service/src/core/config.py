@@ -216,6 +216,20 @@ class Settings(BaseSettings):
             "реиспользовать давний successful test."
         ),
     )
+    rotated_at_skew_seconds: int = Field(
+        default=600,
+        ge=1,
+        alias="ROTATED_AT_SKEW_SECONDS",
+        description=(
+            "Допустимый перекос (секунды) между `rotated_at` от worker'а и "
+            "локальным временем server_service'а в "
+            "`record_ipmi_credentials_rotated`. Защита от NTP-drift'а: "
+            "значения за пределами окна отбиваются как ROTATED_AT_IN_FUTURE "
+            "/ ROTATED_AT_TOO_OLD. 10 минут — баланс между терпимостью к "
+            "обычному кластерному NTP-skew и блокировкой умышленно поданных "
+            "дат для top-sort'а в UI."
+        ),
+    )
     ipmi_rotate_per_server_rate_limit: str = Field(
         default="5/minute",
         alias="IPMI_ROTATE_PER_SERVER_RATE_LIMIT",
@@ -257,6 +271,20 @@ class Settings(BaseSettings):
             "user-initiated ротация общего ciphertext'а без SSH-apply. CRITICAL-"
             "аудит; burst грозит шумом и парой race'ов с параллельным "
             "/rotate-dispatch'ем. Применяется поверх `global_rate_limit`."
+        ),
+    )
+    password_reveal_audit_window_seconds: int = Field(
+        default=300,
+        ge=0,
+        alias="PASSWORD_REVEAL_AUDIT_WINDOW_SECONDS",
+        description=(
+            "Окно throttling'а CRITICAL-аудита раскрытия паролей. На каждом "
+            "GET карточки с view_password первое раскрытие per (actor, account) "
+            "в окне пишет CRITICAL `server_account.password_revealed`; "
+            "последующие в том же окне — INFO `server_account.password_revealed_throttled`, "
+            "чтобы UI-tooltip с автообновлением каждые N секунд не забивал SIEM "
+            "CRITICAL'ом на один и тот же reveal. 0 отключает throttling (каждый "
+            "GET → CRITICAL, старое поведение). Default — 5 минут."
         ),
     )
     security_hsts_enabled: bool = Field(

@@ -148,7 +148,7 @@ class TestIpmiRotatedAtStableAcrossRetries:
         )
 
         # После успеха stash удалён.
-        assert await passwords._read_ipmi_rotate_password(tid) is None
+        assert (await passwords._read_ipmi_rotate_state(tid))[0] is None
 
     async def test_first_attempt_stores_rotated_at_in_stash(
         self, make_task, fetch_task, captured_audit, monkeypatch,

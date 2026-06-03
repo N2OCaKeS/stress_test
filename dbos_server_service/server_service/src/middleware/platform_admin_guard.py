@@ -128,11 +128,19 @@ _HEALTH_PATHS: frozenset[str] = frozenset({
     "/api/server/v1/health",
     "/api/server/v1/ready",
 })
-_DOCS_SUFFIXES: tuple[str, ...] = (
+# Полные пути публичной документации. Точное равенство по этому набору,
+# никаких endswith — иначе endpoint вроде `/api/server/v1/secret/docs`
+# проскочил бы whitelist по суффиксу `/docs`.
+_DOCS_PATHS: frozenset[str] = frozenset({
     "/openapi.json",
     "/docs",
     "/redoc",
-)
+})
+# Префиксы Swagger/Redoc static'ов. Только корневые — endpoint в любом
+# другом месте, начинающийся с `/docs/...` или `/redoc/...`, у нас не
+# регистрируется (router сидит под `/api/server/v1`), поэтому совпадение
+# по префиксу здесь — это именно UI-ресурсы.
+_DOCS_PREFIXES: tuple[str, ...] = ("/docs/", "/redoc/")
 
 
 def _is_public_path(path: str) -> bool:
@@ -145,15 +153,14 @@ def _is_public_path(path: str) -> bool:
       пути с похожим окончанием не проскочили мимо guard.
     * **OpenAPI/Swagger** (``/openapi.json``, ``/docs``, ``/redoc``, плюс
       их static-подресурсы Swagger UI) — публичные в dev/test, в проде
-      отключены в ``main.py``.
+      отключены в ``main.py``. Сами три пути — точное равенство; статика
+      — фиксированные префиксы из корня (`/docs/...`, `/redoc/...`).
     """
     if path in _HEALTH_PATHS:
         return True
-    if path.endswith(_DOCS_SUFFIXES):
+    if path in _DOCS_PATHS:
         return True
-    # Swagger UI подгружает свои static'и (``/docs/oauth2-redirect`` и пр.)
-    # — пропускаем всё, что начинается с ``/docs/`` или ``/redoc/``.
-    if path.startswith(("/docs/", "/redoc/")):
+    if path.startswith(_DOCS_PREFIXES):
         return True
     return False
 

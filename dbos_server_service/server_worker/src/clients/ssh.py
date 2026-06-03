@@ -527,6 +527,12 @@ class SshClient:
                 message="public key is empty",
             )
         key_line = public_key.strip()
+        # Single-line guard — вторая линия защиты от command-injection в чужие
+        # ключи: `\n`/`$()`/backtick/`;` в самом ключе остаются на stdin (через
+        # `key=$(cat)`), но если ключ когда-нибудь начнёт подставляться в
+        # shell-строку, многострочный или с метасимволами он сломал бы парсинг.
+        # Здесь же отсекаем CR/LF, чтобы invariant держался независимо от
+        # будущих изменений транспорта.
         if "\n" in key_line or "\r" in key_line:
             raise SshError(
                 error_code="SSH_INVALID_ARG",
@@ -582,7 +588,7 @@ class SshClient:
         # `/sbin/nologin`, `/bin/false`) — если кто-то по ошибке протащит
         # такой login через провижн server_account, ключ не уляжется в
         # неожиданном месте. Список синхронизирован с `_FORBIDDEN_HOMES`.
-        rc, _out, stderr = await self.run(
+        bash_cmd = (
             f"bash -c 'set -e; "
             f"home=$(getent passwd {target_user} | cut -d: -f6); "
             'case "$home" in '
@@ -595,7 +601,20 @@ class SshClient:
             f"{write_cmd}; "
             f'chown -R {target_user}: "$home/.ssh"; '
             'chmod 700 "$home/.ssh"; '
-            'chmod 600 "$home/.ssh/authorized_keys"\'',
+            'chmod 600 "$home/.ssh/authorized_keys"\''
+        )
+        # Sanity-guard: ни один из подставляемых аргументов (target_user через
+        # `_validate_login`, write_cmd литералом) не должен внести `\n` в
+        # bash-строку. Без этого многострочная команда могла бы попасть в
+        # asyncssh.run и быть интерпретирована как несколько отдельных
+        # statement'ов. Защита эшелонированная — основной фильтр выше
+        # (`_validate_login`, key newline guard), но invariant полезно
+        # держать ближе к точке использования.
+        assert "\n" not in bash_cmd and "\r" not in bash_cmd, (
+            "authorized_keys command must be single-line"
+        )
+        rc, _out, stderr = await self.run(
+            bash_cmd,
             sudo=True,
             stdin_payload=f"{key_line}\n",
         )

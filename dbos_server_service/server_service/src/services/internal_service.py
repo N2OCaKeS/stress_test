@@ -56,10 +56,10 @@ from src.utils.ids import os_version_id, server_account_id, server_disk_id
 
 logger = logging.getLogger(__name__)
 
-# Допустимый перекос между worker'ом и server_service'ом по NTP — 10 минут с
-# каждой стороны. Используется для отбивания `rotated_at` из будущего в
-# `record_ipmi_credentials_rotated`.
-_ROTATED_AT_SKEW_SECONDS = 10 * 60
+# Допустимый NTP-skew между worker'ом и server_service'ом для `rotated_at` в
+# `record_ipmi_credentials_rotated` живёт в Settings (env `ROTATED_AT_SKEW_SECONDS`,
+# дефолт 600). Читаем через `get_settings()` в самом обработчике — fixture'ы и
+# `monkeypatch.setenv` в тестах подхватываются без перезагрузки модуля.
 
 
 def _emit_dept_header_missing_soft(
@@ -1395,11 +1395,12 @@ async def record_ipmi_credentials_rotated(
     # `rotated_at` ложится в `password_rotated_at`, по которому UI сортирует
     # карточки. Worker с убежавшими часами (NTP-drift) или умышленно подменённый
     # PAT мог бы прислать «ротация на год вперёд» и навсегда вытолкнуть запись
-    # в топ списка. Допускаем небольшой перекос (±10 минут) — пишет ошибки
-    # без оператора при стандартном NTP-skew между worker'ом и server_service'ом.
+    # в топ списка. Допускаем небольшой перекос — окно настраивается через
+    # `Settings.rotated_at_skew_seconds` (env ROTATED_AT_SKEW_SECONDS, default 600s).
+    rotated_skew_max = get_settings().rotated_at_skew_seconds
     now = datetime.now(timezone.utc)
     rotated_drift = (rotated_at - now).total_seconds()
-    if rotated_drift > _ROTATED_AT_SKEW_SECONDS:
+    if rotated_drift > rotated_skew_max:
         audit_service.emit(
             "ipmi_controller.credentials_rotated_callback",
             target_id=controller_id, target_type="ipmi_controller",
@@ -1409,25 +1410,24 @@ async def record_ipmi_credentials_rotated(
                 "server_id": ctrl.server_id,
                 "rotated_at": rotated_at.isoformat(),
                 "rotated_drift_seconds": round(rotated_drift, 3),
-                "max_skew_seconds": _ROTATED_AT_SKEW_SECONDS,
+                "max_skew_seconds": rotated_skew_max,
             },
         )
         raise BadRequestError(
             error_code="ROTATED_AT_IN_FUTURE",
             message=(
-                f"rotated_at must be within {_ROTATED_AT_SKEW_SECONDS}s of now "
+                f"rotated_at must be within {rotated_skew_max}s of now "
                 "(NTP-skew tolerated)"
             ),
             details={
                 "rotated_at": rotated_at.isoformat(),
-                "max_skew_seconds": _ROTATED_AT_SKEW_SECONDS,
+                "max_skew_seconds": rotated_skew_max,
             },
         )
     # Симметрично — нижняя граница. Worker с очень отставшими часами либо
     # подменённый PAT мог бы прислать `rotated_at` из глубокого прошлого и
-    # утопить новую запись в конце сортировки UI. Допускаем тот же ±10-мин
-    # NTP-skew, что и для верхней границы.
-    if rotated_drift < -_ROTATED_AT_SKEW_SECONDS:
+    # утопить новую запись в конце сортировки UI. То же окно, что и сверху.
+    if rotated_drift < -rotated_skew_max:
         audit_service.emit(
             "ipmi_controller.credentials_rotated_callback",
             target_id=controller_id, target_type="ipmi_controller",
@@ -1437,18 +1437,18 @@ async def record_ipmi_credentials_rotated(
                 "server_id": ctrl.server_id,
                 "rotated_at": rotated_at.isoformat(),
                 "rotated_drift_seconds": round(rotated_drift, 3),
-                "max_skew_seconds": _ROTATED_AT_SKEW_SECONDS,
+                "max_skew_seconds": rotated_skew_max,
             },
         )
         raise BadRequestError(
             error_code="ROTATED_AT_TOO_OLD",
             message=(
-                f"rotated_at must be within {_ROTATED_AT_SKEW_SECONDS}s of now "
+                f"rotated_at must be within {rotated_skew_max}s of now "
                 "(NTP-skew tolerated)"
             ),
             details={
                 "rotated_at": rotated_at.isoformat(),
-                "max_skew_seconds": _ROTATED_AT_SKEW_SECONDS,
+                "max_skew_seconds": rotated_skew_max,
             },
         )
 

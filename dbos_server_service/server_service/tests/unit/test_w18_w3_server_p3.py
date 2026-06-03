@@ -92,6 +92,7 @@ def _settings(monkeypatch, *, strict: bool = False):
     class _S:
         internal_require_dept_header = strict
         ipmi_verify_max_age_seconds = 60
+        rotated_at_skew_seconds = 600
 
     monkeypatch.setattr(internal_service, "get_settings", lambda: _S())
 

@@ -16,12 +16,14 @@ import base64
 import logging
 import secrets
 import string
+import time
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.constants import Action, EntityType
 from src.core.exceptions import (
     AppException,
@@ -38,12 +40,48 @@ from src.schemas.server_account import (
     ServerAccountServersUpdate,
     ServerAccountUpdate,
 )
-from src.services import audit_service, permissions, secrets_service
+from src.services import audit_context, audit_service, permissions, secrets_service
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.services.server import load_visible_server, load_visible_servers
 from src.utils.ids import server_account_id as new_id
 
 logger = logging.getLogger(__name__)
+
+# Окно throttling'а аудита раскрытия паролей. Ключ (actor_id, account_id) —
+# monotonic-timestamp последнего CRITICAL reveal'а. Пока в окне — повторные
+# вызовы пишут INFO `password_revealed_throttled`. In-memory словарь живёт
+# на процесс, при рестарте теряется (приемлемо: SIEM всё равно увидит
+# первый CRITICAL после рестарта). Multi-worker деплой даст по одному
+# CRITICAL на воркера, но не водопад.
+_REVEAL_AUDIT_WINDOW: dict[tuple[str, str], float] = {}
+
+
+def _should_emit_critical_reveal(actor_id: str | None, account_id: str) -> bool:
+    """True, если для пары (actor, account) пора писать CRITICAL reveal.
+
+    Срабатывает на первый вызов в окне `password_reveal_audit_window_seconds`;
+    последующие в том же окне отдают False, и caller пишет INFO-вариант.
+    `actor_id is None` (анонимные / сервисные вызовы без identity) —
+    всегда CRITICAL, мерджить в один bucket с другими `None` опасно.
+    Window=0 отключает throttle: всегда CRITICAL.
+    """
+    window = get_settings().password_reveal_audit_window_seconds
+    if window <= 0 or actor_id is None:
+        return True
+    now = time.monotonic()
+    key = (actor_id, account_id)
+    last = _REVEAL_AUDIT_WINDOW.get(key)
+    if last is None or (now - last) >= window:
+        _REVEAL_AUDIT_WINDOW[key] = now
+        # Best-effort sweep устаревших ключей — иначе словарь распухает
+        # на долгоживущем процессе. Линейный пробег, выполняется только
+        # при miss'е (т.е. редко), для O(n) словаря допустимо.
+        stale_cutoff = now - window
+        stale_keys = [k for k, ts in _REVEAL_AUDIT_WINDOW.items() if ts < stale_cutoff]
+        for k in stale_keys:
+            _REVEAL_AUDIT_WINDOW.pop(k, None)
+        return True
+    return False
 
 
 async def _load_account_visible(
@@ -915,9 +953,22 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
     Вызывается из `get_account` только после успешной проверки `view_password`,
     поэтому permission тут уже не проверяется. Возвращает `None`, если у
     аккаунта нет сохранённого пароля (карточка всё равно отдаётся без пароля).
-    Раскрытие пишет CRITICAL-аудит `server_account.password_revealed`;
-    сломанный ciphertext поднимает `DECRYPT_FAILED` (500) + failure-аудит.
+
+    Аудит раскрытия пишется в двух режимах per (actor, account):
+
+    * первый успех в окне `password_reveal_audit_window_seconds` →
+      CRITICAL `server_account.password_revealed`;
+    * повторы в окне → INFO `server_account.password_revealed_throttled`.
+
+    Это не даёт UI-tooltip'у с автообновлением каждые N секунд забивать
+    SIEM CRITICAL'ом на один и тот же reveal. Failure-ветки (no_password /
+    decrypt_failed) всегда пишут CRITICAL — это не штатный refresh.
+    Window=0 отключает throttle.
+
+    Сломанный ciphertext поднимает `DECRYPT_FAILED` (500) + failure-аудит.
     """
+    actor_id = audit_context.get_context().actor_id
+
     if account.password_encrypted is None:
         audit_service.emit(
             "server_account.password_revealed",
@@ -967,13 +1018,25 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
             http_status=500,
         ) from exc
 
-    audit_service.emit(
-        "server_account.password_revealed",
-        target_id=account.id, target_type="server_account",
-        status="success", allowed=True,
-        details={
-            "login": account.login,
-            "department_id": account.department_id,
-        },
-    )
+    if _should_emit_critical_reveal(actor_id, account.id):
+        audit_service.emit(
+            "server_account.password_revealed",
+            target_id=account.id, target_type="server_account",
+            status="success", allowed=True,
+            details={
+                "login": account.login,
+                "department_id": account.department_id,
+            },
+        )
+    else:
+        audit_service.emit(
+            "server_account.password_revealed_throttled",
+            target_id=account.id, target_type="server_account",
+            status="success", allowed=True,
+            details={
+                "login": account.login,
+                "department_id": account.department_id,
+                "window_seconds": get_settings().password_reveal_audit_window_seconds,
+            },
+        )
     return base64.b64encode(plain.encode("utf-8")).decode("ascii")

@@ -7,8 +7,8 @@
    старый цикл не вернулся.
 2. `_check_target_department` soft-mode — явный комментарий в коде про
    намеренное dev/test ослабление, чтобы не выглядело как баг.
-3. `internal_service` — module-level константа `_ROTATED_AT_SKEW_SECONDS`
-   объявлена после импортов (E402 чистый).
+3. `internal_service` — окно NTP-skew для `rotated_at` живёт в
+   `Settings.rotated_at_skew_seconds` (env `ROTATED_AT_SKEW_SECONDS`).
 """
 from __future__ import annotations
 
@@ -147,12 +147,22 @@ class TestSoftModeCommentExplicit:
         assert "не использовать в prod" in src.lower() or "by design" in src.lower()
 
 
-# ── 3. internal_service: E402 чистый, константа после импортов ───────────────
+# ── 3. internal_service: rotated_at NTP-skew settings ────────────────────────
 
 
 class TestInternalServiceImportsOrder:
-    def test_rotated_at_skew_constant_defined(self):
-        assert internal_service._ROTATED_AT_SKEW_SECONDS == 10 * 60
+    def test_rotated_at_skew_default_in_settings(self):
+        """Дефолт `Settings.rotated_at_skew_seconds` — 600s (10 минут).
+
+        Сама константа вынесена из `internal_service` в `core/config.py`,
+        env-override через `ROTATED_AT_SKEW_SECONDS`. Тест держит дефолт,
+        чтобы тихая правка не сменила окно отбивки `rotated_at`.
+        """
+        from src.core.config import Settings
+
+        # noinspection PyTypeChecker
+        field = Settings.model_fields["rotated_at_skew_seconds"]
+        assert field.default == 600
 
     @pytest.mark.skipif(
         True,

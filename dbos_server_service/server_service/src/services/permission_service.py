@@ -71,7 +71,35 @@ def _resolve_target_department_id(
     Все writes scoped на ``identity.department_id``; передача другого
     ``target_department_id`` → ``DEPARTMENT_ISOLATION``. System-wide grant'ов
     через этот путь нет — они приходят только из seed-миграций.
+
+    Также явно отбиваем internal-service субъектов (`subject_type == "pat"`
+    для worker_bot и подобных). Сейчас матрицу прав никакой service-account
+    не редактирует — `permission.grant`/`revoke` есть только у живых ролей
+    account_admin/department_admin. Если завтра какому-нибудь боту по ошибке
+    выдадут эти actions, мы не хотим, чтобы тут он молча получил scope своего
+    department'а — лучше явный DEPARTMENT_ISOLATION на старте.
     """
+    if identity.subject_type in {"pat", "oauth_client"}:
+        audit_service.emit(
+            audit_action,
+            target_type="entity_permission",
+            status="denied",
+            allowed=False,
+            details={
+                **audit_details,
+                "reason": isolation_reason,
+                "actor_subject_type": identity.subject_type,
+                "target_department_id": target_department_id,
+            },
+        )
+        raise AuthorizationError(
+            error_code="DEPARTMENT_ISOLATION",
+            message=(
+                "Service accounts (PAT / OAuth client) cannot manage "
+                "entity_permissions; route via human admin"
+            ),
+            details={"target_department_id": target_department_id},
+        )
     actor_dept = identity.department_id
     if actor_dept is None:
         # Caller без department'а вообще. Трактуем как isolation violation,
@@ -247,7 +275,9 @@ async def grant_action(
     ``DEPARTMENT_ISOLATION``.
 
     Идемпотентность: повторный grant в тот же scope возвращает существующую
-    строку без INSERT'а (`noop` в audit details).
+    строку без INSERT'а и без audit-emit. SIEM-правила «новая выдача прав»
+    висят на `permission.grant`+`status="success"`; раньше no-op ветка тоже
+    эмитила `success` и поднимала false-positive на каждый повторный вызов.
     """
     audit_details = {"entity_type": entity_type, "role": role, "action": action}
     # 1. проверка matrix-уровня
@@ -281,15 +311,12 @@ async def grant_action(
             details={"entity_type": entity_type, "action": action},
         )
     scope_details = {**audit_details, "department_id": department_id}
-    # 4. идемпотентность — exact-scope lookup
+    # 4. идемпотентность — exact-scope lookup. На no-op аудит не эмитим:
+    # SIEM-rule «выдан новый grant» строится на `permission.grant` +
+    # `status="success"`, и повторный вызов с success-эмитом приходил как
+    # false-positive (видно бы было «новая выдача прав» на каждый POST из UI).
     existing = await repo.get(db, entity_type, role, action, department_id)
     if existing is not None:
-        audit_service.emit(
-            "permission.grant",
-            target_id=existing.id, target_type="entity_permission",
-            status="success", allowed=True,
-            details={**scope_details, "noop": True},
-        )
         return existing
     try:
         obj = await repo.grant(

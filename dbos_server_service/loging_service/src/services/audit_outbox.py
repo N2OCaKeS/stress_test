@@ -291,52 +291,17 @@ class AuditOutbox:
                 try:
                     await self._flush_batch(batch, committed_keys)
                 except asyncio.CancelledError:
-                    # `stop()` отменил задачу прямо во время flush — батч уже
-                    # выдернут из очереди, БД могла принять часть или весь
-                    # commit. `committed_keys` — то, что точно в БД; всё
-                    # остальное возвращаем в очередь под `_drain_remaining`.
-                    #
-                    # Потери разносятся по причинам: QueueFull при requeue
-                    # (буфер мог заполниться между cancel-моментом и тем,
-                    # как мы дошли до этой строки — push_nowait продолжает
-                    # принимать события в момент cancel'а) — это overflow,
-                    # не cancel. Раньше всё валилось в `_dropped_cancel_total`
-                    # и маскировало реальный сигнал «сервис под нагрузкой,
-                    # буфер переполнен» как «грубый shutdown».
-                    requeued = 0
-                    overflow_lost = 0
-                    skipped_committed = 0
-                    for envelope in batch:
-                        if envelope.idempotency_key in committed_keys:
-                            skipped_committed += 1
-                            continue
-                        try:
-                            self._queue.put_nowait(envelope)
-                            requeued += 1
-                        except asyncio.QueueFull:
-                            overflow_lost += 1
-                    if skipped_committed:
-                        logger.warning(
-                            "audit outbox requeue skipped %d envelope(s) already committed",
-                            skipped_committed,
-                        )
-                    # Всё, что не закоммитилось и не вернулось в очередь
-                    # (и не упало в overflow_lost) — настоящая cancel-потеря:
-                    # сюда сейчас попасть нечем, ветка зарезервирована на
-                    # случай, если в будущем добавится логика «пропустить
-                    # некоторые envelope'ы без requeue».
-                    cancel_lost = (
-                        len(batch) - skipped_committed - requeued - overflow_lost
-                    )
-                    if overflow_lost > 0 or cancel_lost > 0:
-                        with self._counters_lock:
-                            if overflow_lost > 0:
-                                self._dropped_overflow_total += overflow_lost
-                            if cancel_lost > 0:
-                                self._dropped_cancel_total += cancel_lost
-                    if skipped_committed:
-                        with self._counters_lock:
-                            self._drained_total += skipped_committed
+                    # `stop()` отменил задачу прямо во время flush. Cancel —
+                    # сам по себе НЕ повод считать потерю: что мы успели
+                    # закоммитить, лежит в `committed_keys`, а всё остальное
+                    # пробуем вернуть в очередь под `_drain_remaining`.
+                    # Requeue вынесен в `_account_cancelled_batch`, чтобы
+                    # QueueFull-при-requeue (растит `_dropped_overflow_total`,
+                    # счётчик `overflow_lost`) и чистая cancel-потеря
+                    # (`_dropped_cancel_total`) не пересекались в одном
+                    # except-блоке — иначе перегруз буфера маскировался под
+                    # «грубый shutdown».
+                    self._account_cancelled_batch(batch, committed_keys)
                     raise
                 # Маленькая пауза, чтобы не молотить процессор, если queue
                 # пуст. `asyncio.Queue.get()` сам await'ит до появления
@@ -354,6 +319,52 @@ class AuditOutbox:
             # это сломалась сама очередь или session factory; логируем и
             # выходим, чтобы lifespan мог переподнять при следующем start'е.
             logger.error("audit outbox drain loop crashed: %s", exc, exc_info=True)
+
+    def _account_cancelled_batch(
+        self,
+        batch: list[AuditEnvelope],
+        committed_keys: set[str],
+    ) -> None:
+        """Учёт батча, отменённого `CancelledError` во время flush.
+
+        Что закоммитилось (по `committed_keys`) — учитываем в `drained_total`,
+        как при нормальном пути. Остальное возвращаем в очередь через
+        `put_nowait`; QueueFull здесь означает, что буфер уже забит
+        конкурирующими push'ами (`push_nowait` продолжает принимать события
+        прямо до конца cancel'а) — это потеря по причине overflow, не cancel,
+        бампим `_dropped_overflow_total`. Истинный cancel-loss (события, не
+        закоммитнутые и НЕ влезшие в overflow-учёт) уезжает в
+        `_dropped_cancel_total` — резерв на случай, если в будущем появится
+        ветка «пропустить envelope без requeue».
+        """
+        assert self._queue is not None
+        requeued = 0
+        overflow_lost = 0
+        skipped_committed = 0
+        for envelope in batch:
+            if envelope.idempotency_key in committed_keys:
+                skipped_committed += 1
+                continue
+            try:
+                self._queue.put_nowait(envelope)
+                requeued += 1
+            except asyncio.QueueFull:
+                overflow_lost += 1
+        if skipped_committed:
+            logger.warning(
+                "audit outbox requeue skipped %d envelope(s) already committed",
+                skipped_committed,
+            )
+        cancel_lost = len(batch) - skipped_committed - requeued - overflow_lost
+        if overflow_lost > 0 or cancel_lost > 0:
+            with self._counters_lock:
+                if overflow_lost > 0:
+                    self._dropped_overflow_total += overflow_lost
+                if cancel_lost > 0:
+                    self._dropped_cancel_total += cancel_lost
+        if skipped_committed:
+            with self._counters_lock:
+                self._drained_total += skipped_committed
 
     async def _drain_remaining(self, *, timeout: float) -> None:
         """Финальный выгреб очереди в shutdown'е, не дольше `timeout`.

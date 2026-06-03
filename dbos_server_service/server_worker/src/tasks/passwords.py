@@ -144,18 +144,6 @@ def _ipmi_stash_parse(raw: bytes | bytearray | str) -> tuple[str | None, str | N
     return data.get("password"), data.get("rotated_at")
 
 
-async def _read_ipmi_rotate_password(task_id: str) -> str | None:
-    """Достать ранее сгенерированный пароль ротации из Redis.
-
-    Возвращает plaintext или None, если ключа нет (первая попытка либо TTL
-    истёк). При retry'е IPMI rotate `_impl` запускается заново — без stash'а
-    каждая попытка генерила бы новый пароль и перезаписывала storage,
-    рассинхронизируя storage с реальным BMC при transient-fail'ах.
-    """
-    password, _ = await _read_ipmi_rotate_state(task_id)
-    return password
-
-
 async def _read_ipmi_rotate_state(task_id: str) -> tuple[str | None, str | None]:
     """Достать (password, rotated_at) из stash'а.
 
@@ -225,8 +213,8 @@ async def _delete_ipmi_rotate_password(task_id: str) -> None:
 async def _read_account_rotate_password(task_id: str) -> str | None:
     """Достать ранее сгенерированный account-пароль ротации из Redis.
 
-    Симметрично `_read_ipmi_rotate_password`. Возвращает plaintext или
-    None, если ключа нет.
+    Симметрично `_read_ipmi_rotate_state`, но возвращает только plaintext —
+    у account-rotate нет stash'а rotated_at, поэтому tuple не нужен.
     """
     validate_task_id(task_id)
     settings = get_settings()
@@ -528,6 +516,7 @@ async def ipmi_rotate_password(task_id: str) -> None:
         # оператор увидит явный `BMC_VERIFY_AFTER_ROTATE_FAILED` + audit с
         # деталями skew'а и пойдёт чинить NTP.
         last_exc: Exception | None = None
+        last_attempt: int = 0
         for attempt in range(2):
             verify_client = await _get_bmc(verify_creds)
             try:
@@ -539,6 +528,7 @@ async def ipmi_rotate_password(task_id: str) -> None:
                 except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
                     await _breaker.record_failure(host)
                     last_exc = exc
+                    last_attempt = attempt
             finally:
                 await _aclose_bmc(verify_client)
             if attempt == 0:
@@ -549,9 +539,13 @@ async def ipmi_rotate_password(task_id: str) -> None:
             # (apply прошёл, упал verify), а transport-уровень
             # (BMC_AUTH_FAILED / BMC_UNREACHABLE / ...) поднимаем
             # выше через `__cause__` (`raise ... from exc`).
-            # `wrap_bmc_error` не кладёт `phase` в details — фаза
-            # читается из самого `error_code`.
+            # В details кладём фазу verify (первая попытка или retry) —
+            # чтобы по audit'у было видно, упал ли verify сразу после apply
+            # или уже на повторе после 1s паузы.
             wrapped.error_code = "BMC_VERIFY_AFTER_ROTATE_FAILED"
+            wrapped.details["phase"] = (
+                "verify_first_attempt" if last_attempt == 0 else "verify_retry"
+            )
             raise wrapped from last_exc
 
         verified_at = datetime.now(timezone.utc).isoformat()

@@ -634,7 +634,7 @@ class TestIpmiRotatePasswordIpmitool:
         assert submit_calls == [stashed_pwd]
 
         # После успеха stash вычищен.
-        assert await passwords._read_ipmi_rotate_password(tid) is None
+        assert (await passwords._read_ipmi_rotate_state(tid))[0] is None
 
     async def test_stash_helpers_roundtrip(self, monkeypatch):
         """Базовый roundtrip Redis-stash'а пароля ротации: write → read → delete."""
@@ -647,13 +647,13 @@ class TestIpmiRotatePasswordIpmitool:
         await passwords._delete_ipmi_rotate_password(fake_tid)
 
         # Изначально ключа нет.
-        assert await passwords._read_ipmi_rotate_password(fake_tid) is None
+        assert (await passwords._read_ipmi_rotate_state(fake_tid))[0] is None
 
         await passwords._store_ipmi_rotate_password(fake_tid, "secret_42")
-        assert await passwords._read_ipmi_rotate_password(fake_tid) == "secret_42"
+        assert (await passwords._read_ipmi_rotate_state(fake_tid))[0] == "secret_42"
 
         await passwords._delete_ipmi_rotate_password(fake_tid)
-        assert await passwords._read_ipmi_rotate_password(fake_tid) is None
+        assert (await passwords._read_ipmi_rotate_state(fake_tid))[0] is None
 
 
 # ── unit tests для wrap_ipmitool_error ───────────────────────────────────────

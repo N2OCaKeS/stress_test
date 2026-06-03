@@ -215,6 +215,15 @@ def apply_active(db: Session, *, chunk_size: int = _SWEEP_CHUNK_SIZE) -> int:
             # даёт index seek по `ix_audit_events_service`.
             AuditEvent.service != _PROTECTED_SERVICE,
         )
+        # Детерминированный порядок чанков. Без явного ORDER BY PostgreSQL
+        # может вернуть разные id в каждом LIMIT-блоке: между чанками
+        # коммитим, autovacuum чистит dead tuples, план может перейти на
+        # другой индекс или bitmap heap scan. Это не приводит к двойному
+        # удалению (DELETE ... WHERE id IN (...) на уже снесённых id даёт
+        # rowcount=0), но в редких сценариях chunk-loop мог не сойтись,
+        # пока не закончились matching row'ы — порядком id.asc() это
+        # гарантируется монотонно.
+        .order_by(AuditEvent.id.asc())
         .limit(chunk_size)
     )
 

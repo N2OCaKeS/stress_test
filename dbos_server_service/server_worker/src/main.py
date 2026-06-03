@@ -1027,7 +1027,7 @@ async def secrets_reencrypt_lazy() -> None:
         await _enqueue_outbox_audit({
             "action": "secrets.reencrypt_tick",
             "status": "failure",
-            "allowed": True,
+            "allowed": False,
             "target_type": "secret",
             "details": {
                 "skipped": True,
@@ -1174,19 +1174,26 @@ async def secrets_reencrypt_lazy() -> None:
         seeded,
         remaining,
     )
+    audit_details: dict = {
+        "processed": processed,
+        "skipped": skipped,
+        "errors": errors,
+        "claimed": len(items),
+        "seeded": seeded,
+        "remaining_before": remaining,
+        "active_version": active_version,
+        "batch_size": settings.secrets_reencrypt_batch_size,
+    }
+    if errors > 0:
+        # Partial-failure: часть row'ов в processing-state не финализирована
+        # (finalize_done упал, finalize_failed best-effort). `allowed=False`
+        # — чтобы scheduler/sweep не считали тик за «всё хорошо» и могли
+        # отличить чистый success от warning'а по одному полю.
+        audit_details["reason"] = "finalize_errors"
     await _enqueue_outbox_audit({
         "action": "secrets.reencrypt_tick",
         "status": "success" if errors == 0 else "warning",
-        "allowed": True,
+        "allowed": errors == 0,
         "target_type": "secret",
-        "details": {
-            "processed": processed,
-            "skipped": skipped,
-            "errors": errors,
-            "claimed": len(items),
-            "seeded": seeded,
-            "remaining_before": remaining,
-            "active_version": active_version,
-            "batch_size": settings.secrets_reencrypt_batch_size,
-        },
+        "details": audit_details,
     })

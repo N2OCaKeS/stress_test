@@ -12,6 +12,7 @@
   6. Если ни одно правило не сматчилось — событие сохраняется (default allow)
 """
 
+import enum
 import logging
 import re
 import threading
@@ -243,6 +244,26 @@ def _resolve_default_severity(action: str, status: str) -> str:
     return "WARNING" if status in ("failure", "denied", "warning") else "INFO"
 
 
+class CacheState(enum.Enum):
+    """Состояние `_RuleCache`.
+
+    * `UNLOADED` — кеш ни разу не прогрелся (или сброшен через `invalidate`),
+      следующий `get` обязан сходить в БД.
+    * `LOADING` — в процессе загрузки (зарезервировано на случай вынесения
+      refresh в фоновый таск; сейчас get идёт под `self._lock`, состояние
+      переходит сразу `UNLOADED → READY|EMPTY`).
+    * `READY` — кеш прогрет, в `_rules` лежит непустой snapshot.
+    * `EMPTY` — кеш прогрет, БД пустая. Отдельное состояние, чтобы
+      `MAX(updated_at) = NULL` на пустой БД не триггерил лишний
+      `SELECT active_sorted` каждый TTL-tick.
+    """
+
+    UNLOADED = "unloaded"
+    LOADING = "loading"
+    READY = "ready"
+    EMPTY = "empty"
+
+
 class _RuleCache:
     """In-memory кеш активных правил с TTL-обновлением.
 
@@ -251,15 +272,26 @@ class _RuleCache:
     Это позволяет корректно работать с несколькими воркерами:
     изменение правил через любой из них будет подхвачено остальными.
     При недоступности БД возвращает устаревший кэш с логированием.
+
+    Состояние держится в одном поле `_state: CacheState` (UNLOADED / LOADING
+    / READY / EMPTY) вместо набора bool-флагов — раньше пара
+    `_loaded_at is None` + `_db_empty: bool` дублировали один и тот же домен
+    «cold / warm-empty / warm-non-empty» и расходились в edge-кейсах
+    (например, после `invalidate` `_db_empty` сбрасывался отдельно). Bool
+    `_db_empty` оставлен как property для обратной совместимости с тестами,
+    проксирует `_state == CacheState.EMPTY`.
     """
 
     def __init__(self, ttl_seconds: int = 30) -> None:
         self._rules: list[_RuleSnapshot] = []
-        # `_loaded_at` (wall-clock) сравниваем с `MAX(updated_at)` из БД —
-        # это межсервисный timestamp, его нужно держать в UTC. TTL же
-        # считаем по `_loaded_monotonic`, чтобы NTP step / переключение
-        # часов не запирали кеш на десятки минут или, наоборот, не
-        # сбрасывали его внеплановым refresh'ем.
+        # `_loaded_at` (wall-clock UTC) — момент последнего успешного refresh'а
+        # в этом процессе. Сами «изменилась ли БД» решаем по `_last_db_max`
+        # (два DB-side timestamp'а), а `_loaded_at` остаётся как маркер для
+        # диагностики и для теста, проверяющего, что watermark фиксируется
+        # ДО SELECT'а MAX (load_started_at = пред-окно, не пост-окно). TTL
+        # считаем по `_loaded_monotonic`, чтобы NTP step / переключение часов
+        # не запирали кеш на десятки минут или не сбрасывали его внеплановым
+        # refresh'ем.
         #
         # Эти два поля держатся в одной паре: апдейт обоих атомарен
         # под `self._lock` (см. `get`/`invalidate`). Читаются без lock'а
@@ -272,12 +304,40 @@ class _RuleCache:
         # поле — `_ttl_fresh` придётся брать под lock.
         self._loaded_at: datetime | None = None
         self._loaded_monotonic: float | None = None
-        # Запоминаем, что предыдущий tick видел пустую БД (MAX(updated_at) = NULL).
-        # Без этого флага условие `db_updated_at is None` каждый раз даёт True
-        # и тянет лишний SELECT active_sorted каждые TTL-секунд на пустой БД.
-        self._db_empty: bool = False
+        # MAX(updated_at) последнего успешного refresh'а. Сравниваем именно с
+        # этим значением, а не с `_loaded_at`: оба операнда теперь приходят из
+        # БД (от одного и того же writer'ского wall-clock'а), и NTP-skew между
+        # reader-pod'ом и writer-pod'ом из сравнения выпадает. Раньше
+        # сравнение шло `db_updated_at > _loaded_at`, и любая разница часов
+        # между pod'ами либо ложно триггерила reload, либо тихо пропускала
+        # cross-worker UPDATE до следующего bump'а MAX.
+        self._last_db_max: datetime | None = None
+        # Состояние кеша: UNLOADED → (READY | EMPTY). Заменяет старую пару
+        # «`_loaded_at is None` + `_db_empty: bool`», которые ходили парой,
+        # но обновлялись в разных местах и расходились (см. invalidate).
+        self._state: CacheState = CacheState.UNLOADED
         self._ttl = ttl_seconds
         self._lock = threading.Lock()
+
+    @property
+    def _db_empty(self) -> bool:
+        """Обратная совместимость: `True`, когда last успешный refresh
+        видел пустую БД. Тесты исторически читают/пишут этот атрибут."""
+        return self._state is CacheState.EMPTY
+
+    @_db_empty.setter
+    def _db_empty(self, value: bool) -> None:
+        # Сеттер нужен только для тестов, которые форсят флаг. Не трогаем
+        # `_loaded_at` / `_loaded_monotonic`: они под контролем `get`/`invalidate`.
+        if value:
+            self._state = CacheState.EMPTY
+        else:
+            # False можно выставить из READY (есть правила) или из UNLOADED
+            # (тестовый сброс). Не разрушаем уже прогретый READY-state.
+            if self._state is CacheState.EMPTY:
+                self._state = (
+                    CacheState.READY if self._rules else CacheState.UNLOADED
+                )
 
     def _ttl_fresh(self, mono_now: float) -> bool:
         return (
@@ -293,15 +353,15 @@ class _RuleCache:
             mono_now = time.monotonic()
             if self._ttl_fresh(mono_now):
                 return self._rules
-            # Фиксируем «нижнюю границу» окна загрузки ДО SELECT'а MAX. Если
-            # другой worker сделает UPDATE между нашим MAX-snapshot'ом и
-            # концом загрузки — его UPDATE.updated_at будет строго БОЛЬШЕ
-            # этого `load_started_at`. На следующем TTL-tick мы возьмём
-            # `db_updated_at > self._loaded_at` и подтянем cross-worker
-            # change. Если бы `_loaded_at` ставился в конце (после `now`),
-            # UPDATE, попавший в окно (max-select, now), терялся бы до
-            # следующего bump'а MAX (т.е. ещё одного UPDATE).
+            # `_loaded_at` фиксируем ДО SELECT'а MAX — это межсервисный
+            # watermark, его читают тесты и стале-fallback. Сравнение «изменилась
+            # ли БД» теперь делается через `_last_db_max` (см. ниже), а
+            # `_loaded_at` остаётся как маркер «когда был последний успешный
+            # refresh» для диагностики и для теста, проверяющего, что
+            # `_loaded_at` ≤ before-вызова (фиксируется в начале окна).
             load_started_at = datetime.now(timezone.utc)
+            prev_state = self._state
+            self._state = CacheState.LOADING
             try:
                 db_updated_at = rule_repo.get_max_updated_at(db)
                 # Пустая БД (NULL MAX) при пустом кеше — стабильное состояние,
@@ -309,29 +369,45 @@ class _RuleCache:
                 # появится первая row — db_updated_at станет non-NULL и
                 # ветка ниже подтянет её.
                 db_empty_now = db_updated_at is None
-                first_load = self._loaded_at is None
+                first_load = prev_state is CacheState.UNLOADED
+                # Сравниваем новый MAX с последним наблюдавшимся MAX'ом из БД,
+                # а не с `_loaded_at` (wall-clock reader'а). Оба операнда —
+                # writer-side timestamps, NTP skew между pod'ами на сравнение
+                # не влияет. Если writer переотправил тот же `updated_at`
+                # (clock rollback на пишущем pod'е) — пропустим update до
+                # следующего bump'а; это ничейный случай, потому что физически
+                # «UPDATE прилетел, а MAX в БД не вырос» означает, что row
+                # с большим updated_at уже была.
                 changed = (
                     not db_empty_now
-                    and (first_load or db_updated_at > self._loaded_at)
+                    and (
+                        first_load
+                        or self._last_db_max is None
+                        or db_updated_at > self._last_db_max
+                    )
                 )
                 # first_load (после invalidate или cold start) — всегда тянем
                 # фактический snapshot, даже если БД пустая. Это лишний SELECT
                 # на абсолютно пустой инсталляции один раз за TTL, но invalidate
                 # должен гарантированно сбросить кеш.
-                if changed or first_load or (db_empty_now and not self._db_empty):
+                empty_to_empty_after_purge = (
+                    db_empty_now and prev_state is not CacheState.EMPTY
+                )
+                if changed or first_load or empty_to_empty_after_purge:
                     fresh_orm = rule_repo.get_active_sorted(db)
                     # Снимаем frozen-dataclass с каждой ORM-row до выхода из
                     # session-скоупа — кеш не должен зависеть ни от Session,
                     # ни от lazy-loading'а добавленных в будущем relationship'ов.
                     self._rules = [_snapshot_rule(r) for r in fresh_orm]
-                self._db_empty = db_empty_now
+                self._state = CacheState.EMPTY if db_empty_now else CacheState.READY
                 self._loaded_at = load_started_at
                 self._loaded_monotonic = mono_now
+                self._last_db_max = db_updated_at
             except Exception:
                 if self._loaded_monotonic is not None:
                     logger.error("RuleCache: DB reload failed — serving stale cache")
                     # Сдвигаем ТОЛЬКО TTL (monotonic), чтобы не долбить БД
-                    # до следующего окна. `_loaded_at` и `_db_empty` оставляем
+                    # до следующего окна. `_loaded_at` и state оставляем
                     # на последнем подтверждённом значении: при восстановлении
                     # БД следующий tick корректно сравнит `MAX(updated_at)`
                     # с этим watermark'ом и подхватит любой cross-worker
@@ -340,7 +416,9 @@ class _RuleCache:
                     # попавший в окно [last_good, failed_attempt], потерялся
                     # бы до следующего bump'а MAX (т.е. ещё одного UPDATE).
                     self._loaded_monotonic = mono_now
+                    self._state = prev_state
                 else:
+                    self._state = prev_state
                     raise
         return self._rules
 
@@ -350,7 +428,8 @@ class _RuleCache:
         with self._lock:
             self._loaded_at = None
             self._loaded_monotonic = None
-            self._db_empty = False
+            self._last_db_max = None
+            self._state = CacheState.UNLOADED
 
 
 _cache = _RuleCache(ttl_seconds=30)

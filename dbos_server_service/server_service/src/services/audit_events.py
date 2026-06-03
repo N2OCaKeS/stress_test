@@ -48,6 +48,7 @@ SERVICE_EVENTS = [
     {"action": "ipmi_controller.credentials_revealed", "description": "Decrypted IPMI password revealed to user (base64) via GET ipmi card with view_credentials", "default_severity": "CRITICAL"},
     {"action": "server_account.view_password", "description": "Decrypted server account password revealed (internal)", "default_severity": "WARNING"},
     {"action": "server_account.password_revealed", "description": "Decrypted server account password revealed to user (base64) via GET account card with view_password", "default_severity": "CRITICAL"},
+    {"action": "server_account.password_revealed_throttled", "description": "Subsequent password reveal within audit window (actor+account) — first reveal was already logged as CRITICAL `server_account.password_revealed`; INFO-копия для трассировки шумного UI-polling'а без CRITICAL-флуда SIEM", "default_severity": "INFO"},
     {"action": "server_account.rotate_password", "description": "Server account password rotated", "default_severity": "CRITICAL"},
     {"action": "internal.dept_header_missing", "description": "Internal endpoint called without X-Target-Department-Id header (soft mode bypassed server lookup)", "default_severity": "WARNING"},
     # Worker → server_service callbacks (write-direction internal API)

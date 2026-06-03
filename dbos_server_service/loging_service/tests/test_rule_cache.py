@@ -13,7 +13,7 @@ import pytest
 from src.repositories import rules as rule_repo
 from src.schemas.rules import RuleCreate
 from src.services import rule_service
-from src.services.rule_service import _RuleCache
+from src.services.rule_service import CacheState, _RuleCache
 
 
 def _make_rule(db, name: str, **kwargs):
@@ -459,3 +459,53 @@ class TestRuleCacheLoadedAtCapturedBeforeMaxQuery:
             f"чтобы cross-worker UPDATE внутри окна подхватывался. "
             f"before={before}, _loaded_at={cache._loaded_at}, after={after}"
         )
+
+
+# ── CacheState transitions ────────────────────────────────────────────────────
+
+
+class TestRuleCacheStateMachine:
+    """Регрессия на enum-state: UNLOADED → (READY | EMPTY) и обратно через invalidate.
+
+    Раньше состояние складывалось из пары `_loaded_at is None` + `_db_empty: bool`,
+    что расходилось в edge-кейсах (например, `_db_empty` сбрасывался отдельно).
+    Один enum-флаг закрывает домен и делает переходы явными.
+    """
+
+    def test_initial_state_is_unloaded(self):
+        cache = _RuleCache(ttl_seconds=30)
+        assert cache._state is CacheState.UNLOADED
+        # Обратная совместимость: bool-property отражает «не EMPTY».
+        assert cache._db_empty is False
+
+    def test_first_get_on_empty_db_transitions_to_empty(self, db):
+        cache = _RuleCache(ttl_seconds=30)
+        assert cache.get(db) == []
+        assert cache._state is CacheState.EMPTY
+        assert cache._db_empty is True
+
+    def test_first_get_with_rules_transitions_to_ready(self, db):
+        _make_rule(db, "r1")
+        cache = _RuleCache(ttl_seconds=30)
+        assert cache.get(db)
+        assert cache._state is CacheState.READY
+        assert cache._db_empty is False
+
+    def test_invalidate_returns_to_unloaded(self, db):
+        cache = _RuleCache(ttl_seconds=30)
+        cache.get(db)  # переводит в EMPTY либо READY
+        cache.invalidate()
+        assert cache._state is CacheState.UNLOADED
+        assert cache._loaded_at is None
+        assert cache._loaded_monotonic is None
+        assert cache._db_empty is False
+
+    def test_legacy_db_empty_setter_drives_state(self):
+        """Тесты исторически делают `cache._db_empty = True/False`. Property-сеттер
+        проксирует это в `_state` без поломки инвариантов."""
+        cache = _RuleCache(ttl_seconds=30)
+        cache._db_empty = True
+        assert cache._state is CacheState.EMPTY
+        cache._db_empty = False
+        # Без правил — откатываемся к UNLOADED (не выдумываем READY с пустым snapshot).
+        assert cache._state is CacheState.UNLOADED

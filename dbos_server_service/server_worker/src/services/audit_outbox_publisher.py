@@ -396,6 +396,15 @@ async def _publish_one(
         # Реальные клиенты (httpx) включают полный URL с basic-auth в
         # repr исключения. Симметрично `_runner.py` (для `task.last_error`)
         # прогоняем через `redact_error_message` до записи в worker-DB.
+        #
+        # `attempts` инкрементим ДО ветвления на permanent_4xx / poison /
+        # transient: для 4xx это информационная метрика (показывает, что
+        # одна попытка реально была сделана — row не уходит в DLQ
+        # «нулевой»), для transient/poison — реальный счётчик retry'ев,
+        # по которому работает `_maybe_poison` и `_apply_backoff`. Тест
+        # `test_emit_4xx_sends_row_to_dlq` фиксирует attempts=1 после 4xx
+        # как часть контракта — DLQ-row с attempts=0 был бы неотличим от
+        # ещё-не-попробованной.
         row.attempts = (row.attempts or 0) + 1
         error_message = redact_error_message(exc.error_message)
         row.last_error = error_message[:LAST_ERROR_MAX_LEN]
@@ -566,15 +575,41 @@ async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
     failed_ids: list[int] = []
     for _ in range(limit):
         async with AsyncSessionLocal() as session:
-            stmt = _select_unpublished_excluding(1, failed_ids)
-            select_res = await session.execute(stmt)
-            row = select_res.scalars().first()
-            if row is None:
-                # Очередь пуста (либо все оставшиеся row'ы в `failed_ids`) —
-                # выходим, не нужно бить лишний SELECT.
-                break
-            row_id = row.id
-            publish_res = await _publish_one(session, row)
+            try:
+                stmt = _select_unpublished_excluding(1, failed_ids)
+                select_res = await session.execute(stmt)
+                row = select_res.scalars().first()
+                if row is None:
+                    # Очередь пуста (либо все оставшиеся row'ы в `failed_ids`) —
+                    # выходим, не нужно бить лишний SELECT.
+                    break
+                row_id = row.id
+                publish_res = await _publish_one(session, row)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                # Неожиданный сбой (например, БД отвалилась во время
+                # `session.execute`, либо баг в `_publish_one`, который
+                # тот не успел поймать). Без этого guard'а батч умирал
+                # бы на первой такой ошибке, и остальные row'ы ждали бы
+                # следующего тика. С guard'ом — rollback'аем сессию,
+                # помечаем row (если успели её прочитать) как failed для
+                # этого прохода и переходим к следующей итерации SELECT'а.
+                try:
+                    await session.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                logger.warning(
+                    "audit_outbox flush iteration failed err=%s",
+                    type(exc).__name__,
+                )
+                # Если row уже выбрали, исключим её из последующих SELECT'ов
+                # в этом проходе, чтобы не уперлись в одну и ту же сломанную
+                # строку.
+                local_row_id = locals().get("row_id")
+                if isinstance(local_row_id, int):
+                    failed_ids.append(local_row_id)
+                continue
             if publish_res.was_published:
                 published += 1
             if not publish_res.closed:

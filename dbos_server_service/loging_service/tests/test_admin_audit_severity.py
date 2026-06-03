@@ -15,7 +15,7 @@ from src.services.event_service import record_admin_action
 
 def _event(**kwargs) -> EventCreate:
     base = dict(
-        timestamp=datetime(2026, 4, 19, 10, tzinfo=timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         service="loging_service",
         action="logging_rule.create",
         status="success",

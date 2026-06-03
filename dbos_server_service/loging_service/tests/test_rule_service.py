@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 def _event(**kwargs) -> EventCreate:
     base = dict(
-        timestamp=datetime(2026, 4, 19, 10, tzinfo=timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         service="auth_service",
         action="user.login",
         status="success",

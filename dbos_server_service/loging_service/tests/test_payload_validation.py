@@ -180,8 +180,10 @@ class TestIngestStoresAllFields:
 
     def test_null_optional_fields_stored_as_null(self, client, auth_headers, db):
         # Без явных actor_id/username/target_*/request_id — в БД должно быть None
+        from datetime import datetime, timezone
+
         payload = {
-            "timestamp": "2026-04-19T10:00:00Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "service": "svc",
             "action": "test.action",
             "status": "success",

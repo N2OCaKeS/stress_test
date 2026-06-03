@@ -121,9 +121,11 @@ class TestAppExceptionResponseShape:
         assert ts.tzinfo is not None
 
     def test_403_shape_for_wrong_role(self, client, mock_introspect):
+        # Rules access requires platform_role ∈ (loging_admin, account_admin).
+        # loging_reader сюда не пускается — это даёт 403 LOGING_ADMIN_REQUIRED.
         with mock_introspect(json_body={
             "active": True, "subject_type": "user", "sub": "u",
-            "username": "n", "platform_role": "account_admin",
+            "username": "n", "platform_role": "loging_reader",
         }):
             r = client.post(
                 "/api/logging/v1/rules",
@@ -133,7 +135,7 @@ class TestAppExceptionResponseShape:
         assert r.status_code == 403
         body = r.json()
         assert body["error"] == "forbidden"
-        assert body["error_code"] == "INSUFFICIENT_ROLE"
+        assert body["error_code"] == "LOGING_ADMIN_REQUIRED"
         assert body["request_id"]
 
     def test_503_shape_for_auth_unavailable(self, client, mock_introspect):

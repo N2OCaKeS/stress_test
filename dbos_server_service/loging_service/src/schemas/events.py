@@ -3,7 +3,7 @@
 import json
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -77,6 +77,13 @@ _TARGET_TYPE_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_.]{1,64}$")
 # UUID, opaque-токены и batch-id'ы (буквы, цифры, `_`, `-`, `.`).
 _IDEMPOTENCY_KEY_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_\-.]{1,128}$")
 
+# Допустимый дрифт timestamp'а ingest-payload'а относительно now() сервера.
+# Окно ±1ч ловит NTP-разъезжание клиентских часов (минуты-десятки минут) и
+# при этом отбивает backdating-атаки: caller с `SERVICE_API_KEY` не может
+# подделать «событие год назад» (исказив retention/SUPPRESS-окна по времени)
+# или «событие в будущем» (вытолкнуть запись за to_time-фильтр SOC'а).
+_TIMESTAMP_SKEW: timedelta = timedelta(hours=1)
+
 
 class EventCreate(BaseModel):
     """Payload, который сервис шлёт чтобы записать событие аудита."""
@@ -125,6 +132,31 @@ class EventCreate(BaseModel):
             "(outbox-retry safe). Опускайте для legacy / one-shot ingest."
         ),
     )
+
+    @field_validator("timestamp")
+    @classmethod
+    def _bound_timestamp(cls, v: datetime) -> datetime:
+        """Окно ±1ч от now() сервера; naive datetime → нормализуется как UTC.
+
+        Backdating-атаки на retention: правило ретеншена удаляет старое;
+        атакующий с `SERVICE_API_KEY` мог бы прислать `timestamp` лет на
+        десять в прошлое — следующая retention-итерация снесла бы запись,
+        и трасса инцидента исчезла. Аналогично с `timestamp` в будущем:
+        SOC-запрос с `to_time=now()` пропустил бы событие до тех пор, пока
+        реальное время не догнало бы спуфленное.
+        """
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        if v < now - _TIMESTAMP_SKEW:
+            raise ValueError(
+                f"timestamp too far in the past (>1h from now): {v.isoformat()}"
+            )
+        if v > now + _TIMESTAMP_SKEW:
+            raise ValueError(
+                f"timestamp too far in the future (>1h from now): {v.isoformat()}"
+            )
+        return v
 
     @field_validator("service")
     @classmethod

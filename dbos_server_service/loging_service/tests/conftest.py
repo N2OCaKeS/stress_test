@@ -67,7 +67,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 
 from src.db.base import Base
-from src.dependencies.auth import require_admin, require_reader
+from src.dependencies.auth import (
+    require_admin,
+    require_admin_or_account_admin,
+    require_reader,
+)
 from src.dependencies.db import get_db
 from src.main import app
 
@@ -279,9 +283,12 @@ def admin_client(db, monkeypatch):
     get_settings.cache_clear()
 
     app.dependency_overrides[get_db] = _db_override(db)
-    # Админ имеет и admin, и reader-доступ — переопределяем обе зависимости.
+    # Админ имеет admin, reader, и rules-admin доступы — переопределяем все
+    # три зависимости. `require_admin_or_account_admin` — новая dep'ка из
+    # W22-W4 (rules accessible только loging_admin / account_admin).
     app.dependency_overrides[require_admin] = lambda: ADMIN_IDENTITY
     app.dependency_overrides[require_reader] = lambda: ADMIN_IDENTITY
+    app.dependency_overrides[require_admin_or_account_admin] = lambda: ADMIN_IDENTITY
 
     with TestClient(app) as c:
         yield c
@@ -325,8 +332,14 @@ def headers_for(service: str) -> dict:
 # ── Payload factories ─────────────────────────────────────────────────────────
 
 def make_event(**kwargs) -> dict:
+    # `EventCreate.timestamp` ограничен ±1ч от `datetime.now(UTC)`: hardcoded
+    # дата (`"2026-04-19T10:00:00Z"`) проваливала бы валидатор по мере того,
+    # как реальное время уходило вперёд. Берём `now()` чтобы фабрика
+    # оставалась stable независимо от того, в каком году гоняют тесты.
+    from datetime import datetime, timezone
+
     base = {
-        "timestamp": "2026-04-19T10:00:00Z",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "service": "auth_service",
         "action": "user.login",
         "actor_id": "usr_abc123",

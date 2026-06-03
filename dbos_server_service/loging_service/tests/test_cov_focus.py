@@ -32,7 +32,7 @@ from src.models.audit_event import AuditEvent
 
 def _event(**kwargs) -> EventCreate:
     base = dict(
-        timestamp=datetime(2026, 4, 19, 10, tzinfo=timezone.utc),
+        timestamp=datetime.now(timezone.utc),
         service="auth_service",
         action="user.login",
         status="success",
@@ -419,14 +419,23 @@ class TestRetentionChunkedRollback:
 # _ACTION_PATTERN — цифры и unicode-confusables
 # ────────────────────────────────────────────────────────────────────────────
 
-_BASE_EVENT = {
-    "timestamp": datetime(2026, 4, 19, 10, tzinfo=timezone.utc),
-    "service": "auth_service",
-    "action": "user.login",
-    "status": "success",
-    "allowed": True,
-    "actor_type": "user",
-}
+def _base_event() -> dict:
+    """Стандартный event-payload с динамическим `timestamp=now()`.
+
+    Hardcoded дата проваливала бы `EventCreate._bound_timestamp` (±1ч окно).
+    Возвращаем свежий dict каждым вызовом — тесты разворачивают через
+    `{**_base_event(), "action": ...}`.
+    """
+    return {
+        "timestamp": datetime.now(timezone.utc),
+        "service": "auth_service",
+        "action": "user.login",
+        "status": "success",
+        "allowed": True,
+        "actor_type": "user",
+    }
+
+
 
 
 class TestActionPatternDigits:
@@ -441,7 +450,7 @@ class TestActionPatternDigits:
         "a0.b1.c2",
     ])
     def test_action_with_digits_accepted(self, action: str):
-        m = EventCreate(**{**_BASE_EVENT, "action": action})
+        m = EventCreate(**{**_base_event(), "action": action})
         assert m.action == action
 
     @pytest.mark.parametrize("bad_action", [
@@ -451,15 +460,15 @@ class TestActionPatternDigits:
     ])
     def test_uppercase_in_action_rejected(self, bad_action: str):
         with pytest.raises(ValidationError):
-            EventCreate(**{**_BASE_EVENT, "action": bad_action})
+            EventCreate(**{**_base_event(), "action": bad_action})
 
     def test_action_with_only_digits_accepted(self):
         """Всё-из-цифр проходит pattern, но семантически странно — задокументируем."""
-        m = EventCreate(**{**_BASE_EVENT, "action": "123.456"})
+        m = EventCreate(**{**_base_event(), "action": "123.456"})
         assert m.action == "123.456"
 
     def test_action_starting_with_digit_accepted(self):
-        m = EventCreate(**{**_BASE_EVENT, "action": "3d.render"})
+        m = EventCreate(**{**_base_event(), "action": "3d.render"})
         assert m.action == "3d.render"
 
 
@@ -470,37 +479,37 @@ class TestActionPatternUnicodeConfusables:
     def test_cyrillic_o_in_action_rejected(self):
         """Кириллическая 'о' (U+043E) не входит в [a-z0-9_.]."""
         with pytest.raises(ValidationError):
-            EventCreate(**{**_BASE_EVENT, "action": "user.lоgin"})  # 'о' = U+043E
+            EventCreate(**{**_base_event(), "action": "user.lоgin"})  # 'о' = U+043E
 
     def test_greek_omicron_in_action_rejected(self):
         """Греческая 'ο' (U+03BF) — тоже нет."""
         with pytest.raises(ValidationError):
-            EventCreate(**{**_BASE_EVENT, "action": "user.lοgin"})  # 'ο' = U+03BF
+            EventCreate(**{**_base_event(), "action": "user.lοgin"})  # 'ο' = U+03BF
 
     def test_zero_width_space_in_action_rejected(self):
         """ZWSP (U+200B) не входит в [a-z0-9_.]."""
         with pytest.raises(ValidationError):
-            EventCreate(**{**_BASE_EVENT, "action": "user.log​in"})
+            EventCreate(**{**_base_event(), "action": "user.log​in"})
 
     def test_fullwidth_latin_in_action_rejected(self):
         """Fullwidth 'ａ' (U+FF41) — вне ASCII диапазона, не проходит."""
         with pytest.raises(ValidationError):
-            EventCreate(**{**_BASE_EVENT, "action": "ｕser.login"})
+            EventCreate(**{**_base_event(), "action": "ｕser.login"})
 
     def test_normal_action_accepted_after_unicode_tests(self):
         """Контрольный: чистый ASCII action проходит."""
-        m = EventCreate(**{**_BASE_EVENT, "action": "user.login"})
+        m = EventCreate(**{**_base_event(), "action": "user.login"})
         assert m.action == "user.login"
 
     def test_crlf_in_action_rejected(self):
         """CR/LF в action → log injection → должен быть отбит."""
         with pytest.raises(ValidationError):
-            EventCreate(**{**_BASE_EVENT, "action": "user.login\r\nfake.event"})
+            EventCreate(**{**_base_event(), "action": "user.login\r\nfake.event"})
 
     def test_action_with_space_rejected(self):
         """Пробел не входит в допустимый charset."""
         with pytest.raises(ValidationError):
-            EventCreate(**{**_BASE_EVENT, "action": "user login"})
+            EventCreate(**{**_base_event(), "action": "user login"})
 
 
 # ────────────────────────────────────────────────────────────────────────────

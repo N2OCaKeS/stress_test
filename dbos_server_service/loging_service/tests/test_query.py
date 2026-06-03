@@ -4,7 +4,14 @@ GET /events требует platform_role=loging_admin → используем a
 POST /events принимает SERVICE_API_KEY → используем client + auth_headers.
 """
 
+from datetime import datetime, timedelta, timezone
+
 from tests.conftest import make_event
+
+
+def _ts(offset_min: int = 0) -> str:
+    """ISO-timestamp в окне ±1ч от `datetime.now(UTC)` — внутри bounds валидатора."""
+    return (datetime.now(timezone.utc) + timedelta(minutes=offset_min)).isoformat()
 
 
 def _ingest(client, auth_headers, **kwargs):
@@ -38,9 +45,9 @@ class TestQueryAll:
         assert len(body["items"]) == 2
 
     def test_events_sorted_newest_first(self, client, admin_client, auth_headers):
-        _ingest(client, auth_headers, timestamp="2026-04-19T08:00:00Z")
-        _ingest(client, auth_headers, timestamp="2026-04-19T10:00:00Z")
-        _ingest(client, auth_headers, timestamp="2026-04-19T09:00:00Z")
+        _ingest(client, auth_headers, timestamp=_ts(-40))
+        _ingest(client, auth_headers, timestamp=_ts(-10))
+        _ingest(client, auth_headers, timestamp=_ts(-25))
         timestamps = [
             item["timestamp"]
             for item in admin_client.get("/api/logging/v1/events").json()["items"]
@@ -122,31 +129,52 @@ class TestFilterByAction:
         ).json()["total"] == 0
 
 
+def _three_points_and_mid(offsets=(-50, -30, -10)):
+    """Возвращает (timestamps_to_ingest, фиксированная середина для filter'а).
+
+    Без зафиксированного base'а каждый вызов `_ts()` в filter'е отстаёт от
+    ingest'а на миллисекунды, и inclusive-граница (`from_time=_ts(-30)`)
+    может выбросить -30-ингест за пределы окна. Считаем все три точки от
+    одного `now`, и для filter'а берём ровно ту же середину.
+    """
+    base = datetime.now(timezone.utc)
+    ts_list = [(base + timedelta(minutes=o)).isoformat() for o in offsets]
+    return ts_list
+
+
 class TestFilterByTimeRange:
     def test_from_time_inclusive(self, client, admin_client, auth_headers):
-        for ts in ("2026-04-19T08:00:00Z", "2026-04-19T10:00:00Z", "2026-04-19T12:00:00Z"):
+        ts_list = _three_points_and_mid()
+        for ts in ts_list:
             _ingest(client, auth_headers, timestamp=ts)
+        # from_time=ts_list[1] → берём 2 точки: середина (inclusive) + последняя.
         assert admin_client.get(
             "/api/logging/v1/events",
-            params={"from_time": "2026-04-19T10:00:00Z", "include_total": "true"},
+            params={"from_time": ts_list[1], "include_total": "true"},
         ).json()["total"] == 2
 
     def test_to_time_inclusive(self, client, admin_client, auth_headers):
-        for ts in ("2026-04-19T08:00:00Z", "2026-04-19T10:00:00Z", "2026-04-19T12:00:00Z"):
+        ts_list = _three_points_and_mid()
+        for ts in ts_list:
             _ingest(client, auth_headers, timestamp=ts)
         assert admin_client.get(
             "/api/logging/v1/events",
-            params={"to_time": "2026-04-19T10:00:00Z", "include_total": "true"},
+            params={"to_time": ts_list[1], "include_total": "true"},
         ).json()["total"] == 2
 
     def test_time_range_combined(self, client, admin_client, auth_headers):
-        for ts in ("2026-04-19T08:00:00Z", "2026-04-19T10:00:00Z", "2026-04-19T12:00:00Z"):
+        ts_list = _three_points_and_mid()
+        for ts in ts_list:
             _ingest(client, auth_headers, timestamp=ts)
+        # Окно вокруг середины — должно поймать только её.
+        base = datetime.fromisoformat(ts_list[1])
+        from_t = (base - timedelta(minutes=5)).isoformat()
+        to_t = (base + timedelta(minutes=5)).isoformat()
         assert admin_client.get(
             "/api/logging/v1/events",
             params={
-                "from_time": "2026-04-19T09:00:00Z",
-                "to_time": "2026-04-19T11:00:00Z",
+                "from_time": from_t,
+                "to_time": to_t,
                 "include_total": "true",
             },
         ).json()["total"] == 1

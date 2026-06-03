@@ -332,6 +332,34 @@ async def require_admin(
     return identity
 
 
+async def require_admin_or_account_admin(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> dict:
+    """Требует `platform_role` ∈ {`loging_admin`, `account_admin`}.
+
+    Управление и просмотр правил аудита — admin-only. `loging_reader` /
+    `department_admin` / service-роли в loging_service сюда не пускаются,
+    даже на GET: rules видны и эффективны глобально, и leak их состояния
+    reader'у раскрывает топологию SUPPRESS/OVERRIDE-политик отдела (что
+    дропается, какая severity форсируется, какой match_target_id под
+    наблюдением). На GET /events read-доступ остаётся per `require_reader`
+    с dept-scope.
+    """
+    identity = await _fetch_identity(credentials, request)
+    role = identity.get("platform_role")
+    if role not in ("loging_admin", "account_admin"):
+        raise AppException(
+            http_status=403,
+            error_code="LOGING_ADMIN_REQUIRED",
+            message=(
+                "Rules access requires platform_role in (loging_admin, account_admin)"
+            ),
+        )
+    identity["_dept_scope"] = None  # admin-роли — без scope
+    return identity
+
+
 async def require_reader(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
@@ -377,3 +405,4 @@ async def require_reader(
 
 AdminIdentity = Annotated[dict, Depends(require_admin)]
 ReaderIdentity = Annotated[dict, Depends(require_reader)]
+RulesAdminIdentity = Annotated[dict, Depends(require_admin_or_account_admin)]

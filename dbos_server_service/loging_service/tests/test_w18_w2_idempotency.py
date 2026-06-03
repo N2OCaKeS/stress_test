@@ -18,6 +18,7 @@
 """
 
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
@@ -240,7 +241,7 @@ class TestGracefulShutdownNoDuplicates:
 class TestPayloadHashContract:
     def test_repo_insert_stores_payload_hash(self, db: Session):
         payload = EventCreate(
-            timestamp="2026-04-19T10:00:00Z",
+            timestamp=datetime.now(timezone.utc),
             service="server_service",
             action="server.acquire",
             actor_id="usr_1",
@@ -258,7 +259,7 @@ class TestPayloadHashContract:
 
     def test_repo_insert_no_hash_when_no_key(self, db: Session):
         payload = EventCreate(
-            timestamp="2026-04-19T10:00:00Z",
+            timestamp=datetime.now(timezone.utc),
             service="server_service",
             action="server.acquire",
             status="success",
@@ -272,7 +273,7 @@ class TestPayloadHashContract:
 
     def test_repo_insert_raises_conflict_on_hash_mismatch(self, db: Session):
         first = EventCreate(
-            timestamp="2026-04-19T10:00:00Z",
+            timestamp=datetime.now(timezone.utc),
             service="server_service",
             action="server.acquire",
             status="success",
@@ -284,7 +285,7 @@ class TestPayloadHashContract:
         event_repo.insert(db, first)
 
         second = EventCreate(
-            timestamp="2026-04-19T10:00:00Z",
+            timestamp=datetime.now(timezone.utc),
             service="server_service",
             action="server.release",  # отличие
             status="success",
@@ -299,7 +300,7 @@ class TestPayloadHashContract:
 
     def test_repo_insert_same_payload_returns_existing(self, db: Session):
         payload = EventCreate(
-            timestamp="2026-04-19T10:00:00Z",
+            timestamp=datetime.now(timezone.utc),
             service="server_service",
             action="server.acquire",
             status="success",

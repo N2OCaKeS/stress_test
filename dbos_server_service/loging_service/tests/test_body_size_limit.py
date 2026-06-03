@@ -71,8 +71,10 @@ class TestBodySizeMiddleware:
         через `content=bytes`, а не `json=` (отличается обработка CL в
         httpx). Если регрессия конкретно по этому пути — поймает.
         """
+        from datetime import datetime, timezone
+
         huge_event = {
-            "timestamp": "2026-04-19T10:00:00Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "service": "auth_service",
             "action": "user.login",
             "status": "success",
@@ -523,8 +525,11 @@ class TestDetailsNestingDepth:
         # стека потока. Берём 200 — гарантированно за нашим лимитом
         # (10) и заведомо ниже любого парсера-лимита.
         depth = 200
+        from datetime import datetime, timezone
+
+        ts_iso = datetime.now(timezone.utc).isoformat()
         body_str = (
-            '{"timestamp":"2026-04-19T10:00:00Z",'
+            '{"timestamp":"' + ts_iso + '",'
             '"service":"auth_service",'
             '"action":"user.login",'
             '"status":"success",'

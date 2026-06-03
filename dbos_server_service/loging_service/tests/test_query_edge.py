@@ -12,7 +12,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from tests.conftest import make_event
+
+
+def _ts(offset_min: int = 0) -> str:
+    """ISO-timestamp в окне ±1ч от now — внутри bounds валидатора timestamp'а."""
+    return (datetime.now(timezone.utc) + timedelta(minutes=offset_min)).isoformat()
 
 
 def _ingest(client, auth_headers, **kw):
@@ -24,19 +31,19 @@ def _ingest(client, auth_headers, **kw):
 
 class TestTimeRangeEdge:
     def test_from_greater_than_to_returns_empty_200(self, client, admin_client, auth_headers):
-        _ingest(client, auth_headers, timestamp="2026-04-19T10:00:00Z")
+        _ingest(client, auth_headers, timestamp=_ts(-30))
         resp = admin_client.get(
             "/api/logging/v1/events",
             params={
-                "from_time": "2026-04-19T12:00:00Z",
-                "to_time":   "2026-04-19T08:00:00Z",
+                "from_time": _ts(30),
+                "to_time": _ts(-50),
             },
         )
         assert resp.status_code == 200
         assert resp.json()["items"] == []
 
     def test_from_equals_to_inclusive_window(self, client, admin_client, auth_headers):
-        ts = "2026-04-19T10:00:00Z"
+        ts = _ts(-30)
         _ingest(client, auth_headers, timestamp=ts)
         resp = admin_client.get(
             "/api/logging/v1/events",
@@ -50,14 +57,19 @@ class TestTimeRangeEdge:
 
 class TestCombinedFilters:
     def test_all_filters_together(self, client, admin_client, auth_headers):
+        base = datetime.now(timezone.utc)
+        ts_a = (base - timedelta(minutes=30)).isoformat()
+        ts_b = (base - timedelta(minutes=15)).isoformat()
         _ingest(client, auth_headers,
                 service="auth_service", action="user.login",
                 status="success", severity="INFO", department_id="dep_a",
-                timestamp="2026-04-19T10:00:00Z")
+                timestamp=ts_a)
         _ingest(client, auth_headers,
                 service="auth_service", action="user.login",
                 status="failure", severity="CRITICAL", department_id="dep_a",
-                timestamp="2026-04-19T11:00:00Z")
+                timestamp=ts_b)
+        from_t = (base - timedelta(minutes=45)).isoformat()
+        to_t = (base - timedelta(minutes=5)).isoformat()
         # Только success+INFO+dep_a — попадает первое
         resp = admin_client.get(
             "/api/logging/v1/events",
@@ -67,8 +79,8 @@ class TestCombinedFilters:
                 "status": "success",
                 "severity": "INFO",
                 "department_id": "dep_a",
-                "from_time": "2026-04-19T09:00:00Z",
-                "to_time": "2026-04-19T12:00:00Z",
+                "from_time": from_t,
+                "to_time": to_t,
                 "include_total": "true",
             },
         )

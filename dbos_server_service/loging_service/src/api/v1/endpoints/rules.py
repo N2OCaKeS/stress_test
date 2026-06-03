@@ -19,7 +19,10 @@ from src.core.exceptions import (
     NotFoundError,
 )
 from src.core.limiter import limiter
-from src.dependencies.auth import AdminIdentity, ReaderIdentity, require_admin
+from src.dependencies.auth import (
+    RulesAdminIdentity,
+    require_admin_or_account_admin,
+)
 from src.dependencies.db import get_db
 from src.repositories import rules as rule_repo
 from src.repositories import service_events as se_repo
@@ -104,15 +107,16 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
     summary="Список всех правил аудита",
     description=(
         "Постранично отдаёт правила, отсортированные по `priority DESC`.\n\n"
-        "**Доступ:** `loging_admin` / `account_admin` (без scope), либо "
-        "`loging_reader` / `department_admin` / service-роль в `loging_service`. "
-        "Правила глобальны — dept-scope здесь не применяется.\n\n"
+        "**Доступ:** только `loging_admin` или `account_admin`. `loging_reader` / "
+        "`department_admin` / service-роли в `loging_service` сюда не пускаются — "
+        "правила глобальны и leak их состояния (SUPPRESS/OVERRIDE-политики) "
+        "раскрывает топологию мониторинга.\n\n"
         "**Связано:** `POST /rules` — создать правило; `GET /services/{svc}/events` — "
         "список action'ов, доступных для `match_action`."
     ),
 )
 # Read-канал rules чейнится в тот же per-IP bucket, что и GET /events
-# (`audit_query_rate_limit`). Без лимита reader-JWT мог бы крутить
+# (`audit_query_rate_limit`). Без лимита admin-JWT мог бы крутить
 # постраничный листинг с большим offset'ом и держать пул коннектов.
 @limiter.limit(
     lambda: get_settings().audit_query_rate_limit,
@@ -120,7 +124,7 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
 def list_rules(
     request: Request,
     response: Response,
-    identity: ReaderIdentity,
+    identity: RulesAdminIdentity,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0, le=_MAX_OFFSET),
@@ -139,8 +143,7 @@ def list_rules(
     response_model=RuleResponse,
     summary="Получить правило по ID",
     description=(
-        "**Доступ:** read-роли (`loging_admin` / `account_admin` / `loging_reader` / "
-        "`department_admin` / service-роли в `loging_service`).\n\n"
+        "**Доступ:** только `loging_admin` или `account_admin`.\n\n"
         "**Возможные ошибки:** 404 — правила с таким ID нет."
     ),
 )
@@ -151,7 +154,7 @@ def get_rule(
     rule_id: str,
     request: Request,
     response: Response,
-    identity: ReaderIdentity,
+    identity: RulesAdminIdentity,
     db: Session = Depends(get_db),
 ) -> RuleResponse:
     return RuleResponse.model_validate(_get_or_404(db, rule_id))
@@ -171,7 +174,7 @@ def get_rule(
         "`user.login.extra`. Точное `match_action` валидируется против реестра "
         "`service_events` — нельзя завести правило на action, которого никто не "
         "регистрировал (но только если реестр непустой).\n\n"
-        "**Доступ:** `platform_role=loging_admin`.\n\n"
+        "**Доступ:** `platform_role` ∈ {`loging_admin`, `account_admin`}.\n\n"
         "**Возможные ошибки:**\n"
         "- 409 — правило с таким `name` уже существует (UNIQUE constraint);\n"
         "- 422 — невалидный effect_severity (см. правило про OVERRIDE_SEVERITY) "
@@ -179,11 +182,11 @@ def get_rule(
         "**Связано:** изменение правил сбрасывает in-memory кеш "
         "(`rule_service.invalidate_cache`)."
     ),
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_account_admin)],
 )
 def create_rule(
     payload: RuleCreate,
-    identity: AdminIdentity,
+    identity: RulesAdminIdentity,
     db: Session = Depends(get_db),
 ) -> RuleResponse:
     _validate_match_action(payload.match_action, db)
@@ -224,19 +227,19 @@ def create_rule(
     description=(
         "Partial-update: меняет только переданные поля. После обновления "
         "сбрасывает in-memory кеш rule engine.\n\n"
-        "**Доступ:** `platform_role=loging_admin`.\n\n"
+        "**Доступ:** `platform_role` ∈ {`loging_admin`, `account_admin`}.\n\n"
         "**Возможные ошибки:**\n"
         "- 404 — правила с таким ID нет;\n"
         "- 409 — переименование конфликтует с существующим именем;\n"
         "- 422 — нарушение invariant'а effect ↔ effect_severity, либо "
         "неизвестный `match_action`."
     ),
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_account_admin)],
 )
 def update_rule(
     rule_id: str,
     payload: RuleUpdate,
-    identity: AdminIdentity,
+    identity: RulesAdminIdentity,
     db: Session = Depends(get_db),
 ) -> RuleResponse:
     _validate_match_action(payload.match_action, db)
@@ -293,14 +296,14 @@ def update_rule(
     summary="Удалить правило",
     description=(
         "Полностью удаляет правило и сбрасывает кеш rule engine.\n\n"
-        "**Доступ:** `platform_role=loging_admin`.\n\n"
+        "**Доступ:** `platform_role` ∈ {`loging_admin`, `account_admin`}.\n\n"
         "**Возможные ошибки:** 404 — правила с таким ID нет."
     ),
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_account_admin)],
 )
 def delete_rule(
     rule_id: str,
-    identity: AdminIdentity,
+    identity: RulesAdminIdentity,
     db: Session = Depends(get_db),
 ) -> None:
     rule = _get_or_404(db, rule_id)

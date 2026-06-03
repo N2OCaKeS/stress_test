@@ -292,7 +292,11 @@ class TestAdminAudit:
 
     def test_rule_create_audit_with_scoped_admin_department(self, db, monkeypatch):
         """Если у admin'а есть department_id — он попадает в audit-event."""
-        from src.dependencies.auth import require_admin, require_reader
+        from src.dependencies.auth import (
+            require_admin,
+            require_admin_or_account_admin,
+            require_reader,
+        )
         from src.main import app
         from src.dependencies.db import get_db
         from fastapi.testclient import TestClient
@@ -323,6 +327,7 @@ class TestAdminAudit:
         app.dependency_overrides[get_db] = _override
         app.dependency_overrides[require_admin] = lambda: scoped_identity
         app.dependency_overrides[require_reader] = lambda: scoped_identity
+        app.dependency_overrides[require_admin_or_account_admin] = lambda: scoped_identity
         try:
             with TestClient(app) as c:
                 c.post(RULES_URL, json=make_rule(name="scoped-audit-rule"))

@@ -30,8 +30,10 @@ class TestIngestPayload:
         assert "received_at" in body
 
     def test_minimal_event_defaults(self, client, auth_headers):
+        from datetime import datetime, timezone
+
         payload = {
-            "timestamp": "2026-04-19T10:00:00Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "service": "config_service",
             "action": "secret.read",
             "status": "success",

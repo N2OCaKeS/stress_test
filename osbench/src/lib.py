@@ -2,6 +2,8 @@
 import subprocess
 import signal
 import sys
+import platform
+import psutil
 
 from pathlib import Path
 from abc import ABC, abstractmethod
@@ -136,6 +138,20 @@ class system:
             else:
                 return errors, False
             
+
+    @staticmethod
+    def get_system_info():
+        return {
+            'os_name': platform.system(),
+            'os_version': platform.release(),
+            'kernel_version': platform.version(),
+            'cpu_model': platform.processor() or "Unknown",
+            'cpu_cores': psutil.cpu_count(logical=False),
+            'cpu_threads': psutil.cpu_count(logical=True),
+            'ram_total': f"{psutil.virtual_memory().total / (1024**3):.1f} GB",
+            'test_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'hostname': platform.node()
+        }
 
 
 class Writer:

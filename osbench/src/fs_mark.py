@@ -17,7 +17,8 @@ from config.conf import (
     INODE_COUNT,
     RESULTS_MAIN_DIR,
     RESULT_FSMARK_NAME,
-    RESULTS_STATUS
+    RESULTS_STATUS,
+    DEFAULT_DISK
 )
 
 
@@ -134,7 +135,8 @@ class FSMark(Test, FsMarkParser):
                  f_count=FILES,
                  f_step=FILES_STEP,
                  f_limit=FILES_LIMIT,
-                 fs=FS):
+                 fs=FS,
+                 dd=DEFAULT_DISK):
         
         self.test_success = False
         self.f_size = f_size
@@ -142,6 +144,7 @@ class FSMark(Test, FsMarkParser):
         self.f_step = f_step
         self.f_limit = f_limit
         self.fs = fs
+        self.dd = dd
         self.test_dir = STORAGE_MOUNT_DIR
         self.t_dir1 = "test1"
         self.t_dir2 = "test2"
@@ -164,26 +167,48 @@ class FSMark(Test, FsMarkParser):
         """
         Создание тестовой директории
         """
-        storage_name = system.command("lsblk | awk 'NR==2' | awk '{print $1;}'")
+        def _is_system_disk(disk_name):
+            """
+            Проверяет, не является ли диск системным
+            """
+            # Проверяем, смонтирован ли диск как /
+            mounts = system.command(f"mount | grep '/dev/{disk_name}'")
+            if '/' in mounts and 'type' in mounts:
+                return True
+            
+            # Проверяем, является ли диск boot-диском
+            if system.command(f"lsblk -o MOUNTPOINT /dev/{disk_name} | grep -E '^/boot'", returncode=True) == 0:
+                return True
+            
+            return False
+        
+        log.warning("⚠️ ВНИМАНИЕ! В процессе тестирования данные на диске могут быть уничтожены!")
+        storage_name = self.dd
+        if storage_name not in system.command(f"lsblk | grep {storage_name}"):
+            storage_name = system.command("lsblk | awk 'NR==2' | awk '{print $1;}'")
         log.debug(storage_name)
 
-        if system.command(f"lsblk | grep {storage_name}", returncode=True) == 0:
-            if system.command(f"lsblk | grep {storage_name}1", returncode=True) == 0:
-                system.command(f"umount {STORAGE_MOUNT_DIR}", returncode=True)
-                system.command(f"sudo parted -s /dev/{storage_name} select && sudo parted -s /dev/{storage_name} rm 1", returncode=True)
+        if not _is_system_disk(storage_name):
+            if system.command(f"lsblk | grep {storage_name}", returncode=True) == 0:
+                if system.command(f"lsblk | grep {storage_name}1", returncode=True) == 0:
+                    system.command(f"umount {STORAGE_MOUNT_DIR}", returncode=True)
+                    system.command(f"sudo parted -s /dev/{storage_name} select && sudo parted -s /dev/{storage_name} rm 1", returncode=True)
 
-        if self.fs == "xfs":
-            system.leave_command(f"sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary xfs 0% 100%")
-            system.leave_command(f"sudo mkfs -t {self.fs} -f /dev/{storage_name}1")
+            if self.fs == "xfs":
+                system.leave_command(f"sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary xfs 0% 100%")
+                system.leave_command(f"sudo mkfs -t {self.fs} -f /dev/{storage_name}1")
+            else:
+                system.leave_command(f"sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary {self.fs} 0% 100%")
+                system.leave_command(f"sudo mkfs -t {self.fs} {INODE_COUNT} -F /dev/{storage_name}1")
+
+            system.leave_command(f"mount /dev/{storage_name}1 {STORAGE_MOUNT_DIR}")
+
+            mkdir(f"{STORAGE_MOUNT_DIR}/{self.t_dir1}", mode=0o755)
+            mkdir(f"{STORAGE_MOUNT_DIR}/{self.t_dir2}", mode=0o755)
+            mkdir(f"{STORAGE_MOUNT_DIR}/{self.t_dir3}", mode=0o755)
         else:
-            system.leave_command(f"sudo parted -s /dev/{storage_name} mklabel gpt mkpart primary {self.fs} 0% 100%")
-            system.leave_command(f"sudo mkfs -t {self.fs} {INODE_COUNT} -F /dev/{storage_name}1")
-
-        system.leave_command(f"mount /dev/{storage_name}1 {STORAGE_MOUNT_DIR}")
-
-        mkdir(f"{STORAGE_MOUNT_DIR}/{self.t_dir1}", mode=0o755)
-        mkdir(f"{STORAGE_MOUNT_DIR}/{self.t_dir2}", mode=0o755)
-        mkdir(f"{STORAGE_MOUNT_DIR}/{self.t_dir3}", mode=0o755)
+            log.error(f"Диск {storage_name} является системным! Тест остановлен.")
+            return False, False
 
 
         """

@@ -11,3 +11,4 @@ bs4
 pexpect
 prettytable
 setuptools
+psutil

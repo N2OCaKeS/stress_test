@@ -351,3 +351,16 @@ class BaseTest:
         with open(INFO_FILENAME, 'a+') as info:
             info.writelines(info_lst)
 
+
+def build_mrd_dataframe(results: dict) -> pd.DataFrame:
+    rows = []
+    for key in sorted(results, key=lambda k: int(k)):
+        r = results[key]
+        rows.append({
+            "requests":       r["requests"],
+            "rps":            r["rps"],
+            "avg_latency_ms": r["avg_latency_ms"],
+            "errors":         r["sent"] - r["ok_200"],
+        })
+    return pd.DataFrame(rows)
+

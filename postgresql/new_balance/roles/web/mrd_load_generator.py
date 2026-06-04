@@ -1,25 +1,5 @@
 #!/usr/bin/env python3
 """
-mrd_load_generator.py — Python-аналог load_generator.c
-
-Многопоточный нагрузчик HTTP с МРД-меткой (PARSEC) и Kerberos Negotiate.
-
-  Мьютекс защищает две операции подряд:
-    1. gss_init_sec_context() — GSSAPI читает ccache; конкурентный доступ
-       нескольких потоков к FILE-ccache небезопасен в ряде версий MIT Kerberos.
-    2. pdp_set_pid(new) → socket() → pdp_set_pid(orig) — метка процесса
-       глобальна для всего процесса; без мьютекса поток B создаст сокет
-       с меткой, установленной потоком A.
-
-  I/O (connect/send/recv) выполняется вне мьютекса — потоки параллельны.
-
-Требования:
-  pip install gssapi               # или: apt install python3-gssapi
-  apt install libpdp-dev           # libpdp.so
-  kinit user@BALANCE.RBT
-  sudo execaps -c 0x804 -- python3 mrd_load_generator.py \\
-      -H 10.0.2.20 -n web1.balance.rbt -l 2 -u /lev1.html -w 10 -r 1000
-
 Флаги:
   -H/--host     IP-адрес сервера (обязательный; -h занята --help)
   -n/--name     DNS-имя (для Host: и SPN Kerberos)
@@ -28,11 +8,18 @@ mrd_load_generator.py — Python-аналог load_generator.c
   -l/--level    МРД-уровень 0..3 (по умолчанию 0)
   -w/--workers  Число потоков (по умолчанию 4)
   -r/--requests Всего запросов (по умолчанию 100)
+
+Пример:
+  kinit user@BALANCE.RBT
+  sudo execaps -c 0x804 -- python3 mrd_load_generator_iter.py \\
+      -H 10.0.2.20 -n web1.balance.rbt -l 2 -u /lev1.html -w 10 \\
+      --r-start 200 --r-end 1000 --r-step 200 --output-dir results/
 """
 
 import argparse
 import base64
 import ctypes
+import json
 import os
 import queue
 import socket
@@ -41,6 +28,15 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Optional
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Конфигурация итераций
+# ─────────────────────────────────────────────────────────────────────────────
+
+DEFAULT_R_START = 100
+DEFAULT_R_END   = 500
+DEFAULT_R_STEP  = 100
+MAX_ITERATIONS  = 5
 
 # ─────────────────────────────────────────────────────────────────────────────
 # gssapi
@@ -58,15 +54,6 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class PDP:
-    """
-    Обёртка над libpdp для управления MAC-метками процесса.
-
-    Жизненный цикл метки (счётчик ссылок):
-      pdp_get_pid / pdpl_get_new_init_mac  →  счётчик увеличивается
-      pdpl_put                             →  уменьшает; при 0 освобождается
-    Каждый полученный/созданный указатель нужно освободить через put().
-    """
-
     _PDPL_FMT_TXT = 0
 
     def __init__(self) -> None:
@@ -85,54 +72,35 @@ class PDP:
 
         lib.pdp_init.restype               = ctypes.c_int
         lib.pdp_init.argtypes              = []
-
         lib.pdp_release.restype            = None
         lib.pdp_release.argtypes           = []
-
-        # pdp_get_pid(pid_t pid) → PDPL_T*
         lib.pdp_get_pid.restype            = ctypes.c_void_p
         lib.pdp_get_pid.argtypes           = [ctypes.c_int]
-
-        # pdp_set_pid(pid_t pid, PDPL_T*) → int
         lib.pdp_set_pid.restype            = ctypes.c_int
         lib.pdp_set_pid.argtypes           = [ctypes.c_int, ctypes.c_void_p]
-
-        # pdpl_ilev(PDPL_T*) → PDP_ILEV_T (uint32)
         lib.pdpl_ilev.restype              = ctypes.c_uint32
         lib.pdpl_ilev.argtypes             = [ctypes.c_void_p]
-
-        # pdpl_get_new_init_mac(level, ilev, lin_ilev, cats, type) → PDPL_T*
         lib.pdpl_get_new_init_mac.restype  = ctypes.c_void_p
         lib.pdpl_get_new_init_mac.argtypes = [
-            ctypes.c_uint32,   # PDP_LEV_T  level
-            ctypes.c_uint32,   # PDP_ILEV_T ilev
-            ctypes.c_uint32,   # lin_ilev
-            ctypes.c_uint64,   # PDP_CAT_T  cats
-            ctypes.c_uint32,   # PDP_TYPE_T type
+            ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32,
+            ctypes.c_uint64, ctypes.c_uint32,
         ]
-
         lib.pdpl_put.restype               = None
         lib.pdpl_put.argtypes              = [ctypes.c_void_p]
-
         lib.pdpl_get_text.restype          = ctypes.c_char_p
         lib.pdpl_get_text.argtypes         = [ctypes.c_void_p, ctypes.c_int]
 
         self._lib = lib
-
         if lib.pdp_init() != 0:
             raise RuntimeError(f"pdp_init() ошибка: {os.strerror(ctypes.get_errno())}")
 
-    # --- публичный API, точно соответствующий C-функциям ---
-
     def get_pid(self) -> int:
-        """pdp_get_pid(0) → указатель на метку процесса. Нужно put()."""
         ptr = self._lib.pdp_get_pid(0)
         if not ptr:
             raise RuntimeError(f"pdp_get_pid(0) NULL: {os.strerror(ctypes.get_errno())}")
         return ptr
 
     def set_pid(self, ptr: int) -> None:
-        """pdp_set_pid(0, ptr). Требует PARSEC_CAP_SETMAC."""
         if self._lib.pdp_set_pid(0, ptr) != 0:
             raise PermissionError(
                 f"pdp_set_pid() ошибка: {os.strerror(ctypes.get_errno())}\n"
@@ -140,11 +108,9 @@ class PDP:
             )
 
     def ilev(self, ptr: int) -> int:
-        """pdpl_ilev(ptr) — уровень целостности метки."""
         return int(self._lib.pdpl_ilev(ptr))
 
     def new_mac(self, level: int, ilev: int) -> int:
-        """pdpl_get_new_init_mac(level, ilev, 0, 0, 0) → PDPL_T*. Нужно put()."""
         ptr = self._lib.pdpl_get_new_init_mac(level, ilev, 0, 0, 0)
         if not ptr:
             raise RuntimeError(
@@ -153,41 +119,29 @@ class PDP:
         return ptr
 
     def put(self, ptr: int) -> None:
-        """pdpl_put(ptr) — уменьшить счётчик ссылок."""
         if ptr:
             self._lib.pdpl_put(ptr)
 
     def label_text(self, ptr: int) -> str:
-        """pdpl_get_text(ptr, PDPL_FMT_TXT)."""
         raw = self._lib.pdpl_get_text(ptr, self._PDPL_FMT_TXT)
         return raw.decode("utf-8", errors="replace") if raw else "?"
 
     def release(self) -> None:
-        """pdp_release()."""
         self._lib.pdp_release()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GSSAPI — одноразовый Negotiate-токен
+# GSSAPI
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_negotiate_token(hostname: str, verbose: bool = False) -> Optional[str]:
-    """
-    Python-аналог get_negotiate_token_ex() из load_generator.c.
-
-    gss_import_name(HTTP@<hostname>) → gss_init_sec_context() → base64.
-    ST берётся из ccache (kinit), без обращения к KDC.
-    Токен ОДНОРАЗОВЫЙ — Apache отклоняет повторное использование (replay).
-    Вызывать под g_label_mutex: конкурентный доступ к ccache небезопасен.
-    """
     if not _HAS_GSSAPI:
         return None
     spn = f"HTTP@{hostname}"
     if verbose:
         print(f"[gss]  SPN: {spn}")
     try:
-        name = gssapi.Name(spn, gssapi.NameType.hostbased_service)
-        # GSS_C_SEQUENCE_FLAG:
+        name  = gssapi.Name(spn, gssapi.NameType.hostbased_service)
         flags = [gssapi.RequirementFlag.mutual_authentication]
         for _seq_name in ("out_of_sequence_detection", "sequence_detection", "sequence"):
             try:
@@ -195,12 +149,7 @@ def get_negotiate_token(hostname: str, verbose: bool = False) -> Optional[str]:
                 break
             except AttributeError:
                 pass
-
-        ctx  = gssapi.SecurityContext(
-            name=name,
-            flags=flags,
-            usage="initiate",
-        )
+        ctx         = gssapi.SecurityContext(name=name, flags=flags, usage="initiate")
         token_bytes = ctx.step()
         if not token_bytes:
             return None
@@ -215,13 +164,13 @@ def get_negotiate_token(hostname: str, verbose: bool = False) -> Optional[str]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Коды возврата do_one_request
+# Коды возврата
 # ─────────────────────────────────────────────────────────────────────────────
 
-ERR_LABEL   = -1   # ошибка метки / socket()
-ERR_CONNECT = -2   # connect() не удался
-ERR_IO      = -3   # send/recv или пустой ответ
-ERR_AUTH    = -4   # Kerberos-токен не получен
+ERR_LABEL   = -1
+ERR_CONNECT = -2
+ERR_IO      = -3
+ERR_AUTH    = -4
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -234,39 +183,19 @@ def do_one_request(
     pdp: PDP,
     label_mutex: threading.Lock,
 ) -> int:
-    """
-    Выполняет один HTTP GET с МРД-меткой и Kerberos Negotiate.
-    Возвращает HTTP-статус или ERR_*.
-
-    Последовательность под мьютексом (аналог load_generator.c):
-      1. get_negotiate_token()          — свежий одноразовый токен
-      2. pdp_get_pid(0)                 — сохранить метку процесса
-      3. pdpl_get_new_init_mac(level,…) — создать метку с нужным МРД-уровнем
-      4. pdp_set_pid(0, new_label)      — применить к процессу
-      5. socket()                       — сокет наследует метку процесса
-      6. pdp_set_pid(0, orig_label)     — немедленно восстановить метку процесса
-      7. pdpl_put(new) / pdpl_put(orig) — освободить метки
-    I/O — вне мьютекса.
-    """
-    t0 = time.monotonic()
-
-    # ── Критическая секция ────────────────────────────────────────────────────
-    token:    Optional[str] = None
+    token:    Optional[str]    = None
     sockfd:   Optional[socket.socket] = None
     orig_ptr: int = 0
     new_ptr:  int = 0
 
     with label_mutex:
-        # 1. Kerberos-токен под мьютексом
         token = get_negotiate_token(hostname, verbose=False)
 
-        # 2. Читаем текущую метку процесса
         try:
             orig_ptr = pdp.get_pid()
         except Exception:
             return ERR_LABEL
 
-        # 3. Создаём метку с нужным МРД-уровнем
         try:
             cur_ilev = pdp.ilev(orig_ptr)
             new_ptr  = pdp.new_mac(level, cur_ilev)
@@ -274,7 +203,6 @@ def do_one_request(
             pdp.put(orig_ptr)
             return ERR_LABEL
 
-        # 4. Применяем метку к процессу
         try:
             pdp.set_pid(new_ptr)
         except PermissionError:
@@ -282,32 +210,25 @@ def do_one_request(
             pdp.put(orig_ptr)
             return ERR_LABEL
 
-        # 5. Создаём сокет — он наследует метку процесса
         try:
             sockfd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         except OSError:
             sockfd = None
 
-        # 6. Немедленно восстанавливаем метку процесса (сокет уже получил свою)
         try:
             pdp.set_pid(orig_ptr)
         except Exception:
             pass
 
-        # 7. Освобождаем метки
         pdp.put(new_ptr);  new_ptr  = 0
         pdp.put(orig_ptr); orig_ptr = 0
-    # ── Конец критической секции ──────────────────────────────────────────────
 
     if sockfd is None:
         return ERR_LABEL
 
-    # Без токена сервер вернёт 401 — не тратим соединение
     if token is None:
         sockfd.close()
         return ERR_AUTH
-
-    # ── I/O вне мьютекса — потоки работают параллельно ───────────────────────
 
     try:
         sockfd.settimeout(15)
@@ -331,7 +252,6 @@ def do_one_request(
         sockfd.close()
         return ERR_IO
 
-    # Читаем до EOF (HTTP/1.0 + Connection: close — сервер закрывает сам)
     try:
         chunks = []
         while True:
@@ -349,9 +269,7 @@ def do_one_request(
         return ERR_IO
 
     response = b"".join(chunks).decode("latin-1", errors="replace")
-
-    # sscanf(response, "HTTP/%*s %d", &http_status)
-    parts = response.split(" ", 2)
+    parts    = response.split(" ", 2)
     try:
         return int(parts[1])
     except (IndexError, ValueError):
@@ -359,7 +277,7 @@ def do_one_request(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Статистика (thread-safe)
+# Статистика
 # ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -377,7 +295,6 @@ class Stats:
     total_usec: int = 0
 
     def record(self, status: int, usec: int) -> int:
-        """Записывает результат запроса. Возвращает порядковый номер (sent)."""
         with self._lock:
             self.sent       += 1
             self.total_usec += usec
@@ -393,19 +310,8 @@ class Stats:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Функция потока
+# Воркер
 # ─────────────────────────────────────────────────────────────────────────────
-
-_STATUS_STR = {
-    200:         "200 OK",
-    401:         "401 Unauthorized",
-    403:         "403 Forbidden",
-    ERR_AUTH:    "ERR_AUTH (kinit?)",
-    ERR_CONNECT: "ERR_CONNECT",
-    ERR_IO:      "ERR_IO",
-    ERR_LABEL:   "ERR_LABEL",
-}
-
 
 def worker_thread(
     ip: str, port: int, hostname: str, url: str, level: int,
@@ -423,15 +329,72 @@ def worker_thread(
         t0     = time.monotonic()
         status = do_one_request(ip, port, hostname, url, level, pdp, label_mutex)
         usec   = int((time.monotonic() - t0) * 1_000_000)
-
-        seq = stats.record(status, usec)
-
-        # Первые 20 запросов — построчно (аналог C: if (done <= 20))
-        if seq <= 20:
-            label = _STATUS_STR.get(status, f"HTTP {status}")
-            print(f"[req#{seq:03d}] {label}")
+        stats.record(status, usec)
 
         work_queue.task_done()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Одна итерация нагрузки → возвращает dict со статистикой
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_iteration(
+    ip: str, port: int, hostname: str, url: str, level: int,
+    workers: int, requests: int,
+    pdp: PDP, label_mutex: threading.Lock,
+    iteration_num: int,
+) -> dict:
+    print(f"\n{'─'*50}")
+    print(f"  Итерация {iteration_num}: -r {requests} запросов, -w {workers} потоков")
+    print(f"{'─'*50}")
+
+    stats: Stats = Stats()
+    wq: "queue.Queue[int]" = queue.Queue()
+    for i in range(requests):
+        wq.put(i)
+
+    t_start = time.monotonic()
+    threads = []
+    for _ in range(workers):
+        t = threading.Thread(
+            target=worker_thread,
+            args=(ip, port, hostname, url, level,
+                  pdp, label_mutex, wq, stats),
+            daemon=True,
+        )
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
+
+    wall_sec = time.monotonic() - t_start
+    err_total = stats.err_label + stats.err_conn + stats.err_io + stats.err_auth
+    rps       = stats.sent / wall_sec if wall_sec > 0 else 0.0
+    avg_ms    = (stats.total_usec / stats.sent / 1000) if stats.sent > 0 else 0.0
+
+    print(f"  200 OK: {stats.ok}  403: {stats.forbidden}  401: {stats.unauth}"
+          f"  ошибки: {err_total}")
+    print(f"  Время: {wall_sec:.2f}с  RPS: {rps:.1f}  avg latency: {avg_ms:.1f}мс")
+
+    return {
+        "iteration":      iteration_num,
+        "requests":       requests,
+        "workers":        workers,
+        "wall_sec":       round(wall_sec, 3),
+        "rps":            round(rps, 2),
+        "avg_latency_ms": round(avg_ms, 2),
+        "sent":           stats.sent,
+        "ok_200":         stats.ok,
+        "forbidden_403":  stats.forbidden,
+        "unauth_401":     stats.unauth,
+        "other":          stats.other,
+        "err_total":      err_total,
+        "err_label":      stats.err_label,
+        "err_connect":    stats.err_conn,
+        "err_io":         stats.err_io,
+        "err_auth":       stats.err_auth,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -440,30 +403,31 @@ def worker_thread(
 
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="Нагрузчик HTTP с МРД-меткой (PARSEC) и Kerberos Negotiate",
+        description="нагрузчик HTTP (PARSEC + Kerberos)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Пример:\n"
             "  kinit user@BALANCE.RBT\n"
-            "  sudo execaps -c 0x804 -- python3 mrd_load_generator.py \\\n"
-            "      -H 10.0.2.20 -n web1.balance.rbt -l 2 -u /lev1.html -w 10 -r 1000\n\n"
-            "Примечание: IP задаётся через -H (не -h: та занята --help)."
+            "  sudo execaps -c 0x804 -- python3 mrd_load_generator_iter.py \\\n"
+            "      -H 10.0.2.20 -n web1.balance.rbt -l 2 -u /lev1.html -w 10 \\\n"
+            "      --r-start 200 --r-end 1000 --r-step 200 --output-dir results/"
         ),
     )
-    ap.add_argument("-H", "--host",     required=True,          metavar="IP",
-                    help="IP-адрес сервера (для connect)")
-    ap.add_argument("-n", "--name",     default="",             metavar="HOSTNAME",
-                    help="DNS-имя сервера (для Host: и SPN Kerberos)")
-    ap.add_argument("-p", "--port",     default=80,  type=int,  metavar="PORT",
-                    help="TCP-порт (по умолчанию 80)")
-    ap.add_argument("-u", "--url",      default="/",            metavar="PATH",
-                    help="Путь запроса (по умолчанию /)")
-    ap.add_argument("-l", "--level",    default=0,   type=int,  metavar="0..3",
-                    help="МРД-уровень конфиденциальности (по умолчанию 0)")
-    ap.add_argument("-w", "--workers",  default=4,   type=int,  metavar="N",
-                    help="Число параллельных потоков (по умолчанию 4)")
-    ap.add_argument("-r", "--requests", default=100, type=int,  metavar="N",
-                    help="Общее число запросов (по умолчанию 100)")
+    ap.add_argument("-H", "--host",     required=True,         metavar="IP")
+    ap.add_argument("-n", "--name",     default="",            metavar="HOSTNAME")
+    ap.add_argument("-p", "--port",     default=80,  type=int, metavar="PORT")
+    ap.add_argument("-u", "--url",      default="/",           metavar="PATH")
+    ap.add_argument("-l", "--level",    default=0,   type=int, metavar="0..3")
+    ap.add_argument("-w", "--workers",  default=4,   type=int, metavar="N")
+
+    ap.add_argument("--r-start", default=DEFAULT_R_START, type=int, metavar="N",
+                    help=f"Начальное число запросов (по умолчанию {DEFAULT_R_START})")
+    ap.add_argument("--r-end",   default=DEFAULT_R_END,   type=int, metavar="N",
+                    help=f"Конечное число запросов (по умолчанию {DEFAULT_R_END})")
+    ap.add_argument("--r-step",  default=DEFAULT_R_STEP,  type=int, metavar="N",
+                    help=f"Шаг (по умолчанию {DEFAULT_R_STEP})")
+    ap.add_argument("--output-dir", default=".", metavar="DIR",
+                    help="Папка для JSON-файлов результатов (по умолчанию .)")
     args = ap.parse_args()
 
     ip       = args.host
@@ -479,46 +443,53 @@ def main() -> None:
         sys.exit("Ошибка: уровень МРД (-l) должен быть 0..3")
     if args.workers < 1:
         sys.exit("Ошибка: -w должен быть >= 1")
-    if args.requests < 1:
-        sys.exit("Ошибка: -r должен быть >= 1")
+    if args.r_start < 1 or args.r_end < args.r_start or args.r_step < 1:
+        sys.exit("Ошибка: требуется r_start >= 1, r_end >= r_start, r_step >= 1")
+
+    # Строим список значений -r (не более MAX_ITERATIONS)
+    r_values = list(range(args.r_start, args.r_end + 1, args.r_step))[:MAX_ITERATIONS]
+    if not r_values:
+        sys.exit("Ошибка: диапазон [r_start..r_end] с шагом r_step пуст")
+
+    os.makedirs(args.output_dir, exist_ok=True)
 
     print("══════════════════════════════════════════════")
-    print("  mrd_load_generator.py: МРД нагрузчик")
+    print("  mrd_load_generator_iter.py: нагрузчик")
     print("══════════════════════════════════════════════")
     print(f"[conf] IP:          {ip}:{args.port}")
     print(f"[conf] Hostname:    {hostname}")
     print(f"[conf] URL:         {args.url}")
     print(f"[conf] МРД уровень: {args.level}")
     print(f"[conf] Потоков:     {args.workers}")
-    print(f"[conf] Запросов:    {args.requests}")
+    print(f"[conf] Итерации -r: {r_values}  (шаг {args.r_step})")
+    print(f"[conf] Вывод JSON:  {args.output_dir}/")
     print("──────────────────────────────────────────────")
 
-    # 1. Инициализация libpdp
+    # Инициализация libpdp
     try:
         pdp = PDP()
     except RuntimeError as exc:
         sys.exit(f"[pdp]  {exc}")
 
-    # Метка процесса при старте (аналог C: pdp_get_pid → pdpl_get_text)
     try:
         self_ptr = pdp.get_pid()
-        print(f"[pdp]  Метка процесса (начальная): \"{pdp.label_text(self_ptr)}\"")
+        print(f"[pdp]  Метка процесса: \"{pdp.label_text(self_ptr)}\"")
         cur_ilev = pdp.ilev(self_ptr)
     except Exception as exc:
         pdp.release()
         sys.exit(f"[pdp]  {exc}")
 
-    # Preflight: проверяем pdp_set_pid + наследование метки сокетом
+    # Preflight
     label_mutex = threading.Lock()
     new_ptr: int = 0
     try:
-        new_ptr = pdp.new_mac(args.level, cur_ilev)
+        new_ptr   = pdp.new_mac(args.level, cur_ilev)
         pdp.set_pid(new_ptr)
         test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        pdp.set_pid(self_ptr)       # немедленно восстановить
+        pdp.set_pid(self_ptr)
         test_sock.close()
         pdp.put(new_ptr); new_ptr = 0
-        print("[pdp]  pdp_set_pid() + socket() — OK\n")
+        print("[pdp]  pdp_set_pid() + socket() — OK")
     except PermissionError as exc:
         pdp.put(self_ptr)
         if new_ptr:
@@ -530,76 +501,47 @@ def main() -> None:
         if new_ptr:
             pdp.put(new_ptr)
 
-    # 2. Проверяем Kerberos (аналог C: один пробный вызов при старте)
+    # Kerberos
     if not _HAS_GSSAPI:
-        print(
-            "[warn] Модуль gssapi не найден. Установите: pip install gssapi\n"
-            "       Запросы пойдут без аутентификации (ожидайте 401).",
-            file=sys.stderr,
-        )
+        print("[warn] Модуль gssapi не найден. pip install gssapi", file=sys.stderr)
     else:
         probe = get_negotiate_token(hostname, verbose=True)
         if probe:
-            print("[gss]  Kerberos OK. Каждый запрос получит свой токен.\n")
+            print("[gss]  Kerberos OK.")
         else:
-            print(
-                "[warn] Kerberos-токен не получен — запросы пойдут без аутентификации\n"
-                "       (сервер вернёт 401)\n",
-                file=sys.stderr,
-            )
+            print("[warn] Kerberos-токен не получен (ожидайте 401)", file=sys.stderr)
 
-    print(f"[load] Запускаю {args.workers} потоков, всего {args.requests} запросов...")
+    # ── Итеративный запуск ───────────────────────────────────────────────────
+    results_by_iter: dict = {}
+    t_total_start = time.monotonic()
 
-    # 3. Заполняем очередь задач и запускаем воркеры
-    stats: Stats = Stats()
-    wq: "queue.Queue[int]" = queue.Queue()
-    for i in range(args.requests):
-        wq.put(i)
-
-    t_wall_start = time.monotonic()
-    threads = []
-    for _ in range(args.workers):
-        t = threading.Thread(
-            target=worker_thread,
-            args=(ip, args.port, hostname, args.url, args.level,
-                  pdp, label_mutex, wq, stats),
-            daemon=True,
+    for idx, r_val in enumerate(r_values, start=1):
+        result = run_iteration(
+            ip=ip, port=args.port, hostname=hostname,
+            url=args.url, level=args.level,
+            workers=args.workers, requests=r_val,
+            pdp=pdp, label_mutex=label_mutex,
+            iteration_num=idx,
         )
-        t.start()
-        threads.append(t)
+        results_by_iter[str(idx)] = result
 
-    # 4. Ждём завершения всех потоков
-    for t in threads:
-        t.join()
+    total_wall = time.monotonic() - t_total_start
 
-    wall_sec = time.monotonic() - t_wall_start
+    json_path = os.path.join(args.output_dir, "results.json")
+    with open(json_path, "w", encoding="utf-8") as fh:
+        json.dump(results_by_iter, fh, ensure_ascii=False, indent=2)
 
-    # 5. Итоговая статистика
-    err_total = stats.err_label + stats.err_conn + stats.err_io + stats.err_auth
-    rps    = stats.sent / wall_sec if wall_sec > 0 else 0.0
-    avg_ms = (stats.total_usec / stats.sent / 1000) if stats.sent > 0 else 0.0
-
-    print()
-    print("══════════════════════════════════════════════")
-    print("  РЕЗУЛЬТАТЫ")
-    print("══════════════════════════════════════════════")
-    print(f"[stat] Всего:             {stats.sent}")
-    print(f"[stat] 200 OK:            {stats.ok}")
-    print(f"[stat] 403 Forbidden:     {stats.forbidden}")
-    print(f"[stat] 401 Unauthorized:  {stats.unauth}")
-    print(f"[stat] Другие статусы:    {stats.other}")
-    if err_total > 0:
-        print(f"[stat] Ошибки итого:      {err_total}")
-        auth_hint = "  ← выполните kinit заново!" if stats.err_auth > 0 else ""
-        print(f"[stat]   Kerberos-токен:  {stats.err_auth}{auth_hint}")
-        print(f"[stat]   метка/сокет:     {stats.err_label}")
-        print(f"[stat]   connect():       {stats.err_conn}")
-        print(f"[stat]   send/recv:       {stats.err_io}")
-    print("──────────────────────────────────────────────")
-    print(f"[stat] Время выполнения:  {wall_sec:.2f} сек")
-    print(f"[stat] Скорость:          {rps:.1f} req/s")
-    print(f"[stat] Средняя latency:   {avg_ms:.1f} мс")
-    print("══════════════════════════════════════════════")
+    print(f"\n{'═'*50}")
+    print("  ИТОГО")
+    print(f"{'═'*50}")
+    print(f"  Итераций выполнено: {len(results_by_iter)}")
+    print(f"  Общее время:        {total_wall:.2f}с")
+    for key, r in results_by_iter.items():
+        print(f"  iter {key:>2}  r={r['requests']:6d}"
+              f"  RPS={r['rps']:7.1f}  avg={r['avg_latency_ms']:7.1f}мс"
+              f"  ok={r['ok_200']}  err={r['err_total']}")
+    print(f"\n  JSON: {json_path}")
+    print(f"{'═'*50}")
 
     pdp.release()
 

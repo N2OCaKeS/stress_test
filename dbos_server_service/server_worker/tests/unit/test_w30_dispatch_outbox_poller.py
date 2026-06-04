@@ -160,8 +160,8 @@ class TestPollOnceHappyPath:
         kiq_args = [c.args for c in broker._kiq.call_args_list]
         assert ("tsk_a",) in kiq_args
         assert ("tsk_b",) in kiq_args
-        # Session commit'нула
-        assert session.commit_count == 1
+        # Per-row commit: по одному commit'у на каждый успешный dispatch
+        assert session.commit_count == 2
 
     async def test_clears_error_and_retry_on_success(self, monkeypatch):
         """Если row пришла с прошлой ошибкой — после успешного publish
@@ -188,8 +188,8 @@ class TestPollOnceHappyPath:
 
 class TestPollOnceEmpty:
     async def test_empty_pending_no_broker_calls(self, monkeypatch):
-        """Пустой батч → kiq не вызывается, commit всё равно делается
-        (no-op), broker не дёргается."""
+        """Пустой батч → kiq не вызывается, commit не делается (per-row
+        commit: нечего коммитить), broker не дёргается."""
         session = _FakeSession([])
         broker = _make_broker()
         _install_session(monkeypatch, session)
@@ -198,8 +198,9 @@ class TestPollOnceEmpty:
         await outbox_poller.poll_once()
 
         assert broker.find_task.call_count == 0
-        # Session всё равно execute+commit — но это один тик, не лишний.
+        # SELECT всё равно делается, но commit'ить нечего.
         assert session.execute_calls == 1
+        assert session.commit_count == 0
 
 
 # ── poll_once: publish failure → backoff ─────────────────────────────────────

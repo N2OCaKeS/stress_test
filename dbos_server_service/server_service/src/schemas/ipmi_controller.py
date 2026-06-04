@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.constants import IpmiKind
 from src.core.password_policy import validate_password
+from src.utils.url_security import validate_safe_endpoint_url
 
 
 class IpmiControllerCreate(BaseModel):
@@ -40,6 +41,11 @@ class IpmiControllerCreate(BaseModel):
     def _check_password_policy(cls, value: str) -> str:
         return validate_password(value)
 
+    @field_validator("endpoint_url")
+    @classmethod
+    def _check_endpoint_url(cls, value: str) -> str:
+        return validate_safe_endpoint_url(value, field_name="endpoint_url")
+
 
 class IpmiControllerUpdate(BaseModel):
     """Тело PATCH /servers/{server_id}/ipmi. Все поля опциональны.
@@ -58,6 +64,13 @@ class IpmiControllerUpdate(BaseModel):
         default=None, min_length=1, max_length=128,
         description="Сменить login.",
     )
+
+    @field_validator("endpoint_url")
+    @classmethod
+    def _check_endpoint_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_safe_endpoint_url(value, field_name="endpoint_url")
 
 
 class IpmiControllerResponse(BaseModel):

@@ -70,6 +70,9 @@ worker'а и владеет бизнес-смыслом операции.
 | `server_account.users_inventory` | `tasks/users.py` | `server_account` |
 | `server_account.password_rotate` | `tasks/passwords.py` | `server_account` |
 | `ipmi_controller.password_rotate` | `tasks/passwords.py` | `ipmi_controller` |
+| `bmc.tls_downgrade` | `clients/__init__.py` | `ipmi_controller` |
+
+`bmc.tls_downgrade` — отдельное worker-level WARNING, эмитится из `_probe_redfish_cascade` при каждом фактическом переходе на менее защищённый канал BMC: `https_verify → https_noverify` (self-signed cert или MITM-подозрение) и `https_verify → http` / `https_noverify → http` (legacy BMC без TLS). Severity всегда `WARNING`, status `success`, `target_type=ipmi_controller`, `target_id` совпадает с `details.host`. Поля `details`: `host` (host[:port] BMC), `from` (`https_verify` | `https_noverify`), `to` (`https_noverify` | `http`). Эмит через transactional outbox (`enqueue_audit`); при недоступности outbox event теряется silent — probe-loop не должен крэшить из-за audit'а.
 
 На failure-ветке `ipmi_controller.password_rotate`, когда BMC принял пароль
 (apply прошёл), но read-only verify под новым паролем не сработал, runner

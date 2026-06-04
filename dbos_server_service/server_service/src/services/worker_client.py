@@ -26,6 +26,7 @@ outbox остался без worker-row — невозможен, потому �
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
@@ -38,6 +39,8 @@ from src.core.config import get_settings
 from src.core.exceptions import ConflictError, ServiceUnavailableError
 from src.repositories import dispatch_outbox as dispatch_outbox_repo
 from src.utils.ids import task_id
+
+logger = logging.getLogger(__name__)
 
 # Префикс Redis-ключа для одноразовых bootstrap-кред prepare'а. Креды лежат
 # под `dbos:prepare_creds:<task_id>` с TTL — в task-payload едет только ссылка
@@ -555,9 +558,19 @@ async def _delete_task_row(task_id_to_delete: str) -> None:
                 {"id": task_id_to_delete},
             )
             await session.commit()
-    except Exception:  # noqa: BLE001
-        # best-effort rollback — оригинальная ошибка важнее
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # best-effort rollback — оригинальная ошибка важнее. Структурный
+        # warning даёт операторам сигнал «остался orphan worker-row, без
+        # выполнения, без публикации в Redis» — он безопасен, но забивает
+        # таблицу tasks до retention cleanup'а.
+        logger.warning(
+            "worker-row compensation delete failed, orphan task row remains",
+            extra={
+                "event": "orphan_worker_row",
+                "task_id": task_id_to_delete,
+                "exc_type": exc.__class__.__name__,
+            },
+        )
 
 
 async def delete_prepare_creds(creds_key: str) -> None:
@@ -770,11 +783,38 @@ async def _dispatch_task_inner(
         # снять без 2PC. Лучшее, что можем — попытка best-effort DELETE'а
         # worker-row, чтобы не плодить orphan'ов; ошибки DELETE'а глотаем,
         # потому что наружу важнее поднять оригинальную причину фейла.
+        # Структурный лог нужен SIEM'у/мониторингу для счётчика compensation'ов:
+        # если он растёт — outbox-engine у server_service'а ломается часто.
+        logger.warning(
+            "dispatch_task outbox write failed, compensating worker-row delete",
+            extra={
+                "event": "dispatch_outbox_failed",
+                "task_id": new_id,
+                "task_kind": task_kind,
+                "target_server_id": target_server_id,
+                "exc_type": exc.__class__.__name__,
+            },
+        )
         await _delete_task_row(new_id)
         raise ServiceUnavailableError(
             error_code="WORKER_UNREACHABLE",
             message=f"Failed to write dispatch_outbox row: {exc.__class__.__name__}",
         ) from exc
+    # Worker-row + outbox-row записаны успешно. Caller дальше делает commit
+    # своей транзакции; если он упадёт, outbox-row откатится, а worker-row
+    # останется orphan'ом без публикации в Redis (poller её не подберёт —
+    # безопасно, но требует мониторинга). Сценарий узкий: локальный commit
+    # после нескольких удачных async-операций обычно проходит.
+    logger.info(
+        "dispatch_task queued (worker-row + outbox)",
+        extra={
+            "event": "dispatch_task_queued",
+            "task_id": new_id,
+            "task_kind": task_kind,
+            "target_server_id": target_server_id,
+            "idempotency_key": idempotency_key,
+        },
+    )
     return new_id, False
 
 

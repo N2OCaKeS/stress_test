@@ -147,6 +147,14 @@ _FORBIDDEN_HOMES = frozenset({
     "/",
     "/dev",
     "/var/empty",
+    # Debian `nobody`, `_apt` и часть служебных учёток держат
+    # `/nonexistent` в поле home. Запись в `/nonexistent/.ssh/authorized_keys`
+    # под sudo на ряде дистрибутивов реально создаст каталог в корне ФС —
+    # бессмысленно и опасно.
+    "/nonexistent",
+    # `/run/sshd` — home `sshd`-демона (privsep'ный chroot); пользовательских
+    # сессий быть не должно.
+    "/run/sshd",
     "/usr/sbin/nologin",
     "/sbin/nologin",
     "/bin/false",
@@ -585,15 +593,17 @@ class SshClient:
         # под sudo и порче корневой ФС. Явный exit 1 с сообщением в stderr
         # ловится caller'ом как обычный SSH_*_FAILED.
         # Дополнительно отбиваем home-каталоги типичных системных учёток
-        # (`/dev`, `/var/empty`, заблокированные shell'ы `/usr/sbin/nologin`,
-        # `/sbin/nologin`, `/bin/false`) — если кто-то по ошибке протащит
-        # такой login через провижн server_account, ключ не уляжется в
-        # неожиданном месте. Список синхронизирован с `_FORBIDDEN_HOMES`.
+        # (`/dev`, `/var/empty`, `/nonexistent` у Debian nobody/_apt,
+        # `/run/sshd` у демона sshd, заблокированные shell'ы
+        # `/usr/sbin/nologin`, `/sbin/nologin`, `/bin/false`) — если кто-то
+        # по ошибке протащит такой login через провижн server_account,
+        # ключ не уляжется в неожиданном месте. Список синхронизирован
+        # с `_FORBIDDEN_HOMES`.
         bash_cmd = (
             f"bash -c 'set -e; "
             f"home=$(getent passwd {target_user} | cut -d: -f6); "
             'case "$home" in '
-            '""|"/"|"/dev"|"/var/empty"|"/usr/sbin/nologin"|"/sbin/nologin"|"/bin/false") '
+            '""|"/"|"/dev"|"/var/empty"|"/nonexistent"|"/run/sshd"|"/usr/sbin/nologin"|"/sbin/nologin"|"/bin/false") '
             f'echo "user {target_user} not found or has invalid home" >&2; '
             'exit 1;; '
             'esac; '

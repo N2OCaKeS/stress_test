@@ -15,8 +15,11 @@ dispatch_outbox — всё в одной транзакции) и публика
      OR next_retry_at <= now())`. Cron-scheduler не подходит — у него
      минимальная гранулярность минута.
   2. Для каждой row'ы — `broker.find_task(task_kind).kicker().kiq(task_id)`.
-     Success → UPDATE dispatched_at=now(). Failure → attempts++, last_error,
-     next_retry_at = now() + 2^attempts (cap 5 минут).
+     Success → UPDATE dispatched_at=now() + `session.commit()` per-row.
+     Failure → attempts++, last_error, next_retry_at = now() + 2^attempts
+     (cap 5 минут), тоже per-row commit. Без per-row commit'а Redis-transient
+     после k успешных kiq откатывал бы все k записей и приводил к их
+     передиспатчу — broker.kiq доставил бы тот же task_id повторно.
   3. После `DISPATCH_OUTBOX_MAX_ATTEMPTS` row не закрываем — оставляем с
      attempts=MAX, логируем WARNING. Оператор разруливает: либо ручной
      reset attempts/next_retry_at, либо отдельная DLQ-таска в будущем.
@@ -115,12 +118,28 @@ async def poll_once() -> None:
     failed_total = 0
     cap_reached = 0
 
+    rows_total = 0
     try:
         async with factory() as session:
             stmt = _select_pending_stmt(limit)
             result = await session.execute(stmt)
             rows = list(result.scalars().all())
+            rows_total = len(rows)
 
+            # Per-row commit: каждая успешная kiq + UPDATE фиксируется
+            # отдельной транзакцией. Без этого Redis-transient после k
+            # успешных kiq откатывал бы все k row'ов и приводил к их
+            # передиспатчу при следующем тике (broker.kiq не идемпотентна
+            # на уровне consumer'а: тот же task_id ушёл бы в очередь дважды).
+            # FOR UPDATE SKIP LOCKED, полученный при SELECT, держится до
+            # первого commit'а — после него locks отпускаются и другая
+            # реплика теоретически могла бы зацепить ту же row'у. Защита
+            # от двойной публикации остаётся на уровне `dispatched_at IS NULL`
+            # фильтра в SELECT: после commit'а первой row'ы её
+            # `dispatched_at` уже выставлен, и параллельный SELECT её
+            # пропустит. Pending row'и из текущего батча остаются
+            # уязвимы между commit'ами — это сознательный trade-off ради
+            # at-most-once на успешных kiq.
             for row in rows:
                 task = broker.find_task(row.task_kind)
                 if task is None:
@@ -146,6 +165,17 @@ async def poll_once() -> None:
                     else:
                         row.next_retry_at = _compute_next_retry_at(row.attempts)
                     failed_total += 1
+                    try:
+                        await session.commit()
+                    except Exception as commit_exc:  # noqa: BLE001
+                        await session.rollback()
+                        redacted = redact_error_message(
+                            f"{type(commit_exc).__name__}: {commit_exc}"
+                        )
+                        logger.warning(
+                            "dispatch_outbox.poll: commit failed for row=%s: %s",
+                            row.id, redacted,
+                        )
                     continue
 
                 try:
@@ -171,6 +201,17 @@ async def poll_once() -> None:
                     else:
                         row.next_retry_at = _compute_next_retry_at(row.attempts)
                     failed_total += 1
+                    try:
+                        await session.commit()
+                    except Exception as commit_exc:  # noqa: BLE001
+                        await session.rollback()
+                        redacted_commit = redact_error_message(
+                            f"{type(commit_exc).__name__}: {commit_exc}"
+                        )
+                        logger.warning(
+                            "dispatch_outbox.poll: commit failed for row=%s: %s",
+                            row.id, redacted_commit,
+                        )
                     continue
 
                 row.dispatched_at = datetime.now(timezone.utc)
@@ -178,9 +219,26 @@ async def poll_once() -> None:
                 # в логе/админке row'и видна как чистый success.
                 row.next_retry_at = None
                 row.last_error = None
+                try:
+                    await session.commit()
+                except Exception as commit_exc:  # noqa: BLE001
+                    # Commit упал после успешного kiq — broker уже принял
+                    # task_id, а БД не зафиксировала dispatched_at. Следующий
+                    # тик увидит row pending и kiq'нет повторно. Пишем WARNING
+                    # для оператора, но в нашу статистику row числится как
+                    # failed, а не dispatched (потому что в БД ничего не легло).
+                    await session.rollback()
+                    redacted = redact_error_message(
+                        f"{type(commit_exc).__name__}: {commit_exc}"
+                    )
+                    logger.warning(
+                        "dispatch_outbox.poll: kiq succeeded but commit failed "
+                        "for row=%s task_id=%s — row will be redispatched: %s",
+                        row.id, row.task_id, redacted,
+                    )
+                    failed_total += 1
+                    continue
                 dispatched_total += 1
-
-            await session.commit()
     except Exception as exc:  # noqa: BLE001 — periodic не должен крэшить scheduler
         redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
         logger.warning(
@@ -195,7 +253,7 @@ async def poll_once() -> None:
             dispatched_total,
             failed_total,
             cap_reached,
-            len(rows),
+            rows_total,
         )
 
 

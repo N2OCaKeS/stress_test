@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from src.core.password_policy import validate_strong_password
 from src.schemas.disk import DiskResponse, DiskSpec
 from src.schemas.ipmi_controller import IpmiControllerCreate
+from src.utils.url_security import validate_safe_hostname
 
 
 def _decode_b64(value: str, field_name: str) -> str:
@@ -81,6 +82,11 @@ class ServerCreate(BaseModel):
             "через отдельные /servers/{id}/ipmi-эндпоинты."
         ),
     )
+
+    @field_validator("hostname")
+    @classmethod
+    def _check_hostname(cls, value: str) -> str:
+        return validate_safe_hostname(value, field_name="hostname")
 
     @model_validator(mode="after")
     def _check_storage(self) -> "ServerCreate":

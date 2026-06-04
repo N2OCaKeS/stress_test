@@ -220,7 +220,9 @@ def _validate_payload_login(payload: dict) -> None:
     — `SshError(SSH_INVALID_LOGIN)`, task FAILED.
     """
     login = payload.get("login")
-    if not isinstance(login, str) or not login or not _TASK_LOGIN_RE.match(login):
+    # `fullmatch`, не `match`: `re.match` упирается в prefix и пропустил бы
+    # `valid\nrm -rf /` — отбиваем такую строку как невалидную полностью.
+    if not isinstance(login, str) or not login or not _TASK_LOGIN_RE.fullmatch(login):
         raise SshError(
             error_code="SSH_INVALID_LOGIN",
             host="",

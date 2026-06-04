@@ -167,7 +167,7 @@ class TestCreateController:
         srv = await make_server(department_id="dep_a")
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi",
-            json={"kind": "idrac", "endpoint_url": "x", "username": "u", "password": "bmc-pass-1"},
+            json={"kind": "idrac", "endpoint_url": "https://x", "username": "u", "password": "bmc-pass-1"},
         )
         assert resp.status_code == 401
 
@@ -645,7 +645,7 @@ class TestAuditEmission:
             headers=_hdr(reader_token_a),
             json={
                 "kind": "idrac",
-                "endpoint_url": "x",
+                "endpoint_url": "https://x",
                 "username": "u",
                 "password": "bmc-pass-1",
             },

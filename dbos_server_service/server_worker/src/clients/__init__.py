@@ -113,6 +113,55 @@ async def _probe_redfish(host: str, *, scheme: str = "https") -> bool:
     return resp.status_code in {200, 401, 403, 405}
 
 
+async def _emit_tls_downgrade_audit(
+    host: str, *, from_level: str, to_level: str,
+) -> None:
+    """Best-effort WARNING-событие о понижении уровня безопасности BMC.
+
+    Эмитится при каждом фактическом переходе cascade'а: https-verify →
+    https-no-verify, https-verify → http, https-no-verify → http. События
+    идут через transactional outbox (`enqueue_audit` + commit), как и
+    остальной worker-audit; если outbox упал (БД недоступна) — просто
+    логируем и едем дальше, probe сам по себе не должен крэшить из-за
+    audit'а.
+
+    `host` — host[:port] BMC. Не редактируем: в audit'е оператору важно
+    видеть, какой именно контроллер ответил только через http.
+    """
+    # Локальные импорты: модуль `clients` грузится из `main` ДО того, как
+    # `repositories.task` / `db.session` готовы; держим import call-time'но.
+    try:
+        from src.db.session import AsyncSessionLocal
+        from src.repositories import task as task_repo
+    except Exception:  # noqa: BLE001 — audit-инфра не обязана быть на каждом call-site'е
+        logger.debug("bmc.tls_downgrade: audit infra unavailable, host=%s", host)
+        return
+
+    payload = {
+        "action": "bmc.tls_downgrade",
+        "status": "success",
+        "allowed": True,
+        "actor_type": "service",
+        "target_type": "ipmi_controller",
+        "target_id": host,
+        "severity": "WARNING",
+        "details": {
+            "host": host,
+            "from": from_level,
+            "to": to_level,
+        },
+    }
+    try:
+        async with AsyncSessionLocal() as session:
+            await task_repo.enqueue_audit(session, task_id=None, payload=payload)
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.debug(
+            "bmc.tls_downgrade audit emit failed host=%s: %s",
+            host, exc.__class__.__name__,
+        )
+
+
 async def _probe_redfish_cascade(host: str) -> bool:
     """Каскадный probe BMC: https-verify → https-no-verify → http.
 
@@ -126,9 +175,10 @@ async def _probe_redfish_cascade(host: str) -> bool:
     Возвращает True если ХОТЯ БЫ один уровень увидел Redfish. False если
     все три провалились — caller уйдёт на ipmitool.
 
-    Lowering security level каскадно логируется на WARNING, чтобы оператор
-    видел в журнале «BMC ответил только через http» — это сигнал
-    обновить firmware / выписать cert.
+    Lowering security level каскадно логируется на WARNING и эмитит
+    audit-event `bmc.tls_downgrade` (через outbox), чтобы оператор
+    видел и в логах, и в audit-журнале «BMC ответил только через
+    http/no-verify» — это сигнал обновить firmware или выписать cert.
     """
     settings = get_settings()
     verify = settings.redfish_verify_tls
@@ -138,6 +188,13 @@ async def _probe_redfish_cascade(host: str) -> bool:
     # iDRAC — verify=False (но всё равно поверх TLS).
     if await _probe_redfish(host, scheme="https"):
         return True
+
+    # Уровень, с которого мы стартовали — нужен для audit-события
+    # `bmc.tls_downgrade`. Если verify=False с самого начала, шаг 2 пропускаем,
+    # и реальный переход — сразу на http (если он сработает); from-level
+    # тогда `https_noverify`, потому что https-no-verify фактически и был
+    # первой попыткой.
+    from_level = "https_verify" if verify else "https_noverify"
 
     # 2) https без verify — fallback на случай self-signed cert'а. Имеет
     # смысл только если settings.verify=True (иначе шаг 1 уже это сделал).
@@ -153,6 +210,9 @@ async def _probe_redfish_cascade(host: str) -> bool:
                     "certificate validation.",
                     host,
                 )
+                await _emit_tls_downgrade_audit(
+                    host, from_level="https_verify", to_level="https_noverify",
+                )
                 return True
         except (httpx.HTTPError, OSError) as exc:
             logger.info(
@@ -167,6 +227,9 @@ async def _probe_redfish_cascade(host: str) -> bool:
             "TLS, traffic is unencrypted. Acceptable only on isolated "
             "management VLAN.",
             host,
+        )
+        await _emit_tls_downgrade_audit(
+            host, from_level=from_level, to_level="http",
         )
         return True
 

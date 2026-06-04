@@ -48,40 +48,64 @@ from src.utils.ids import server_account_id as new_id
 logger = logging.getLogger(__name__)
 
 # Окно throttling'а аудита раскрытия паролей. Ключ (actor_id, account_id) —
-# monotonic-timestamp последнего CRITICAL reveal'а. Пока в окне — повторные
-# вызовы пишут INFO `password_revealed_throttled`. In-memory словарь живёт
-# на процесс, при рестарте теряется (приемлемо: SIEM всё равно увидит
-# первый CRITICAL после рестарта). Multi-worker деплой даст по одному
-# CRITICAL на воркера, но не водопад.
-_REVEAL_AUDIT_WINDOW: dict[tuple[str, str], float] = {}
+# (timestamp последнего CRITICAL'а, накопленный счётчик reveal'ов в окне).
+# Пока в окне — повторные вызовы пишут INFO `password_revealed_throttled`,
+# счётчик идёт в details обоих типов событий, чтобы SIEM мог фильтровать
+# только по CRITICAL count и всё равно видеть общее число reveal'ов в окне.
+# In-memory словарь живёт на процесс, при рестарте теряется (приемлемо:
+# SIEM всё равно увидит первый CRITICAL после рестарта). Multi-worker деплой
+# даст по одному CRITICAL на воркера, но не водопад.
+_REVEAL_AUDIT_WINDOW: dict[tuple[str, str], tuple[float, int]] = {}
 
 
-def _should_emit_critical_reveal(actor_id: str | None, account_id: str) -> bool:
-    """True, если для пары (actor, account) пора писать CRITICAL reveal.
+def _record_reveal_attempt(actor_id: str | None, account_id: str) -> tuple[bool, int]:
+    """Зафиксировать reveal-вызов и вернуть `(should_emit_critical, total_in_window)`.
 
-    Срабатывает на первый вызов в окне `password_reveal_audit_window_seconds`;
-    последующие в том же окне отдают False, и caller пишет INFO-вариант.
-    `actor_id is None` (анонимные / сервисные вызовы без identity) —
-    всегда CRITICAL, мерджить в один bucket с другими `None` опасно.
-    Window=0 отключает throttle: всегда CRITICAL.
+    `total_in_window` — накопленный счётчик reveal'ов для пары (actor, account)
+    в рамках текущего окна (включает текущий вызов). Caller кладёт его в
+    `details.total_reveals_in_window`, чтобы SIEM ловил bulk-reveal даже когда
+    правило смотрит только на CRITICAL count.
+
+    На первом вызове в окне эмитится CRITICAL и счётчик начинается с 1.
+    Последующие в том же окне — INFO throttled, счётчик инкрементируется.
+    Окно отсчитывается от первого CRITICAL'а (`last_critical_at`); счётчик
+    сбрасывается, когда CRITICAL уезжает за горизонт окна.
+
+    `actor_id is None` (анонимные / сервисные без identity) — всегда CRITICAL,
+    счётчик не накапливается (мерджить разные `None`-bucket'ы в один опасно).
+    Window=0 отключает throttle: всегда CRITICAL, счётчик не ведётся.
     """
     window = get_settings().password_reveal_audit_window_seconds
     if window <= 0 or actor_id is None:
-        return True
+        return True, 1
     now = time.monotonic()
     key = (actor_id, account_id)
-    last = _REVEAL_AUDIT_WINDOW.get(key)
-    if last is None or (now - last) >= window:
-        _REVEAL_AUDIT_WINDOW[key] = now
+    entry = _REVEAL_AUDIT_WINDOW.get(key)
+    if entry is None or (now - entry[0]) >= window:
+        _REVEAL_AUDIT_WINDOW[key] = (now, 1)
         # Best-effort sweep устаревших ключей — иначе словарь распухает
         # на долгоживущем процессе. Линейный пробег, выполняется только
         # при miss'е (т.е. редко), для O(n) словаря допустимо.
         stale_cutoff = now - window
-        stale_keys = [k for k, ts in _REVEAL_AUDIT_WINDOW.items() if ts < stale_cutoff]
+        stale_keys = [k for k, (ts, _cnt) in _REVEAL_AUDIT_WINDOW.items() if ts < stale_cutoff]
         for k in stale_keys:
             _REVEAL_AUDIT_WINDOW.pop(k, None)
-        return True
-    return False
+        return True, 1
+    last_at, count = entry
+    new_count = count + 1
+    _REVEAL_AUDIT_WINDOW[key] = (last_at, new_count)
+    return False, new_count
+
+
+def _should_emit_critical_reveal(actor_id: str | None, account_id: str) -> bool:
+    """Legacy-обёртка над `_record_reveal_attempt` без счётчика.
+
+    Сохранена для совместимости со старыми тестами, ожидающими bool-ответа
+    и не интересующимися cumulative count'ом. Новый код должен звать
+    `_record_reveal_attempt` напрямую и класть счётчик в audit-details.
+    """
+    should_emit, _count = _record_reveal_attempt(actor_id, account_id)
+    return should_emit
 
 
 async def _load_account_visible(
@@ -1021,7 +1045,8 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
             http_status=500,
         ) from exc
 
-    if _should_emit_critical_reveal(actor_id, account.id):
+    should_emit_critical, total_in_window = _record_reveal_attempt(actor_id, account.id)
+    if should_emit_critical:
         audit_service.emit(
             "server_account.password_revealed",
             target_id=account.id, target_type="server_account",
@@ -1029,6 +1054,7 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
             details={
                 "login": account.login,
                 "department_id": account.department_id,
+                "total_reveals_in_window": total_in_window,
             },
         )
     else:
@@ -1040,6 +1066,7 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
                 "login": account.login,
                 "department_id": account.department_id,
                 "window_seconds": get_settings().password_reveal_audit_window_seconds,
+                "total_reveals_in_window": total_in_window,
             },
         )
     return base64.b64encode(plain.encode("utf-8")).decode("ascii")

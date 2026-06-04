@@ -52,7 +52,7 @@ async def create_os_version(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на создании os_version: %s", exc.orig)
+        logger.warning("IntegrityError на создании os_version: %s", type(exc.orig).__name__)
         audit_service.emit(
             "os_version.create",
             target_type="os_version",
@@ -191,7 +191,10 @@ async def update_os_version(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на обновлении os_version %s: %s", os_version_id, exc.orig)
+        logger.warning(
+            "IntegrityError на обновлении os_version %s: %s",
+            os_version_id, type(exc.orig).__name__,
+        )
         audit_service.emit(
             "os_version.update",
             target_id=os_version_id, target_type="os_version",
@@ -263,7 +266,10 @@ async def delete_os_version(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
-        logger.warning("IntegrityError на удалении os_version %s: %s", os_version_id, exc.orig)
+        logger.warning(
+            "IntegrityError на удалении os_version %s: %s",
+            os_version_id, type(exc.orig).__name__,
+        )
         audit_service.emit(
             "os_version.delete",
             target_id=os_version_id, target_type="os_version",

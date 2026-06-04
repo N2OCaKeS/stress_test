@@ -249,6 +249,11 @@ async def set_account_password(
     управляющим пользователем по ключу (chpasswd через sudo); иначе — под
     самим аккаунтом по паролю.
     """
+    # Обычный chpasswd-login считаем не-чувствительным (в отличие от
+    # bootstrap-login'а, см. `_mask_bootstrap_login`): admin / db / app —
+    # стандартные имена, не подсказка для атакующего. Если политика
+    # потребует маскировать, ввести `_mask_for_log(login)` тут симметрично
+    # bootstrap-пути.
     logger.info("ssh chpasswd %s on %s", login, _extract_host(credentials, server_id))
     async with _build_session(credentials, server_id) as ssh:
         await ssh.set_password(login, new_password)

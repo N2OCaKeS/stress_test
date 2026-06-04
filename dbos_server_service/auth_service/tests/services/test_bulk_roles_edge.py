@@ -84,7 +84,7 @@ class TestTargetValidation:
             json={"user_ids": [user_a.id]},
         )
         assert resp.status_code in (403, 404)
-        assert resp.json()["error_code"] in {"DEPARTMENT_FORBIDDEN", "SERVICE_ROLE_NOT_FOUND"}
+        assert resp.json()["error_code"] in {"DEPARTMENT_ACCESS_DENIED", "SERVICE_ROLE_NOT_FOUND"}
 
     async def test_revoke_nonexistent_role_no_error(
         self, client, admin_token, user_a, dept_a_with_service, service_x,

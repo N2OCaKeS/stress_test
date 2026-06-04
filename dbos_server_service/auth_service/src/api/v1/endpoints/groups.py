@@ -65,7 +65,7 @@ async def create_group(
 
     Возможные ошибки:
         * `GROUP_ALREADY_EXISTS` (409) — внутри отдела имя уже занято.
-        * `DEPARTMENT_FORBIDDEN` (403) — cross-dept у department_admin.
+        * `DEPARTMENT_ACCESS_DENIED` (403) — cross-dept у department_admin.
         * `DEPARTMENT_NOT_FOUND` (404).
     """
     return await group_service.create_group(

@@ -512,7 +512,7 @@ async def get_account(
         "server_account.view",
         target_id=account.id, target_type="server_account",
         status="success", allowed=True,
-        details={"login": account.login},
+        details={"login": account.login, "department_id": account.department_id},
     )
 
     return account, revealed

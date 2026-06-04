@@ -181,9 +181,9 @@ class TestEmitAppliesRedaction:
     def test_clean_details_pass_through(self, monkeypatch):
         captured = _capture_payload(monkeypatch)
         audit_service.emit("user.login",
-                           details={"reason": "invalid_password", "attempts": 3},
+                           details={"reason": "invalid_credentials", "attempts": 3},
                            status="failure", allowed=False)
-        assert captured[0]["details"] == {"reason": "invalid_password", "attempts": 3}
+        assert captured[0]["details"] == {"reason": "invalid_credentials", "attempts": 3}
 
 
 # ── Fallback в logger когда url не настроен ──────────────────────────────────

@@ -445,4 +445,4 @@ class TestAuditEmitDeptAdminCrossDept:
         ]
         assert denied
         details = denied[0].get("details") or {}
-        assert details.get("reason") == "cross_department"
+        assert details.get("reason") == "cross_department_user"

@@ -72,7 +72,7 @@ async def test_update_bot_cross_tenant_emits_failure_audit(
     ]
     assert failed, f"no failure-audit for bot.update: {captured_audit}"
     details = failed[0].get("details") or {}
-    assert details["reason"] == "cross_tenant_bot"
+    assert details["reason"] == "cross_department_bot"
     assert details["bot_id"] == bot_id
 
 

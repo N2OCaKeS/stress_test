@@ -518,7 +518,8 @@ def _extract_actor_info(
     + `decode_access_token`, повторный HS256-decode не нужен.
     """
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
+    # RFC 7235 §2.1: scheme case-insensitive (`bearer foo` ≡ `Bearer foo`).
+    if len(auth) < 7 or auth[:7].lower() != "bearer ":
         return None, None
     token = auth[7:]
     try:

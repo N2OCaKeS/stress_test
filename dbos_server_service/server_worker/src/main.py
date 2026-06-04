@@ -153,9 +153,8 @@ async def _stop_dispatch_outbox_publisher(state: TaskiqState) -> None:
         pass
     except Exception as exc:  # noqa: BLE001 — shutdown-хук не должен падать
         logger.warning(
-            "dispatch_outbox publisher loop raised on shutdown: %s: %s",
-            type(exc).__name__,
-            exc,
+            "dispatch_outbox publisher loop raised on shutdown: %s",
+            redact_error_message(f"{type(exc).__name__}: {exc}"),
         )
     finally:
         try:
@@ -204,9 +203,8 @@ async def _stop_audit_outbox_publisher(state: TaskiqState) -> None:
         pass
     except Exception as exc:  # noqa: BLE001 — shutdown-хук не должен падать
         logger.warning(
-            "audit_outbox publisher loop raised on shutdown: %s: %s",
-            type(exc).__name__,
-            exc,
+            "audit_outbox publisher loop raised on shutdown: %s",
+            redact_error_message(f"{type(exc).__name__}: {exc}"),
         )
     finally:
         try:
@@ -986,6 +984,17 @@ async def internal_outbox_re_attempt(row_id: int) -> bool:
     from src.services import audit_outbox_publisher
     from src.utils.redaction import redact_error_message
 
+    # taskiq broker сериализует payload через JSON, но runtime-проверки на
+    # тип аргументов не делает. Если кто-то kiq'нет `kiq("not-an-int")`,
+    # SQLAlchemy попытается каст'нуть string → int внутри `session.get` и
+    # бросит ProgrammingError. Отбиваем сразу, без открытия сессии.
+    if not isinstance(row_id, int) or isinstance(row_id, bool):
+        logger.warning(
+            "internal.outbox_re_attempt: row_id must be int, got %r",
+            row_id,
+        )
+        return False
+
     try:
         return await audit_outbox_publisher.re_attempt_row(row_id)
     except Exception as exc:  # noqa: BLE001
@@ -1215,12 +1224,18 @@ async def secrets_reencrypt_lazy() -> None:
         except ValueError:
             # `validate_outbox_id` отбил мусорный id — единственный источник
             # истины формата, без дублирующего isinstance-pre-check здесь.
+            # Лог нужен на forensic-разбор, если server_service вдруг отдаст
+            # битый id; `%r` покрывает None / dict / non-string.
             errors += 1
+            logger.warning(
+                "secrets.reencrypt_lazy: malformed outbox_id from server_service: %r",
+                outbox_id,
+            )
             continue
         except CredentialFetchError as exc:
             errors += 1
             logger.warning(
-                "secrets.reencrypt_lazy: finalize_done failed id=%s: %s",
+                "secrets.reencrypt_lazy: finalize_done failed id=%r: %s",
                 outbox_id,
                 redact_error_message(f"{exc.error_code}: {exc.message}"),
             )
@@ -1234,14 +1249,14 @@ async def secrets_reencrypt_lazy() -> None:
                 )
             except Exception as inner:  # noqa: BLE001
                 logger.warning(
-                    "secrets.reencrypt_lazy: finalize_failed also failed id=%s: %s",
+                    "secrets.reencrypt_lazy: finalize_failed also failed id=%r: %s",
                     outbox_id,
                     redact_error_message(f"{type(inner).__name__}: {inner}"),
                 )
         except Exception as exc:  # noqa: BLE001
             errors += 1
             logger.warning(
-                "secrets.reencrypt_lazy: finalize_done unexpected error id=%s: %s",
+                "secrets.reencrypt_lazy: finalize_done unexpected error id=%r: %s",
                 outbox_id,
                 redact_error_message(f"{type(exc).__name__}: {exc}"),
             )
@@ -1255,7 +1270,7 @@ async def secrets_reencrypt_lazy() -> None:
                 )
             except Exception as inner:  # noqa: BLE001
                 logger.warning(
-                    "secrets.reencrypt_lazy: finalize_failed also failed id=%s: %s",
+                    "secrets.reencrypt_lazy: finalize_failed also failed id=%r: %s",
                     outbox_id,
                     redact_error_message(f"{type(inner).__name__}: {inner}"),
                 )

@@ -100,7 +100,7 @@ async def create_group(
     if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
         if identity.department_id != department_id:
             raise AuthorizationError(
-                error_code="DEPARTMENT_FORBIDDEN",
+                error_code="DEPARTMENT_ACCESS_DENIED",
                 message="department_admin can only create groups in their own department",
             )
     elif identity.platform_role != PlatformRole.ACCOUNT_ADMIN:

@@ -334,6 +334,13 @@ async def _publish_one(
     после возврата (или `rollback()` при exception'е выше) — иначе
     `next_retry_at` не приедет в БД и SELECT следующего poll-цикла подберёт
     ту же row снова.
+
+    Исключение из «обязан commit'нуть»: на `breaker_skipped=True` метод
+    делает `session.flush()` только если `retry_after > 0` (есть что
+    зафиксировать в БД). При `retry_after == 0` row не меняется, flush
+    отсутствует, и `commit()` caller'а — noop. Caller всё равно может
+    звать `commit()` безусловно (симметрия с остальными ветками,
+    эффективно ничего не пишет), либо bail-out'ить из batch'а сразу.
     """
     payload = dict(row.payload)
     action = payload.pop("action", None)

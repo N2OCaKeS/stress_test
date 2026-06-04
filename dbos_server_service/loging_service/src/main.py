@@ -198,14 +198,33 @@ def create_application() -> FastAPI:
                         "audit outbox shutdown failed: %s", exc, exc_info=True
                     )
                 _audit_outbox = None
+            # Каждый `aclose` под своим try/except: если первый клиент упал
+            # на shutdown'е (например, transport уже зарезетили), второй всё
+            # равно должен получить шанс закрыться. Без try-обёртки exception
+            # уносил бы управление наверх с уже None'нутым handle'ом — FD-leak
+            # до GC.
             client = auth_deps._introspect_client
             auth_deps._introspect_client = None
             if client is not None:
-                await client.aclose()
+                try:
+                    await client.aclose()
+                except Exception as exc:
+                    logger.error(
+                        "introspect http client aclose failed: %s",
+                        exc,
+                        exc_info=True,
+                    )
             token_client = auth_deps._token_proxy_client
             auth_deps._token_proxy_client = None
             if token_client is not None:
-                await token_client.aclose()
+                try:
+                    await token_client.aclose()
+                except Exception as exc:
+                    logger.error(
+                        "token proxy http client aclose failed: %s",
+                        exc,
+                        exc_info=True,
+                    )
 
     # `persistAuthorization` держит SERVICE_API_KEY / Bearer-токен в
     # localStorage браузера между перезагрузками /docs. В development/test
@@ -281,11 +300,18 @@ def create_application() -> FastAPI:
         raw_request_id = request.headers.get("X-Request-ID")
         request_id: str | None = None
         if raw_request_id is not None:
+            # Порядок: cap → replace → strip → cap. Сначала режем сырую строку
+            # до 256 байт (с запасом на трёхкратный replace и trailing-
+            # whitespace) — это защита от flood'а тысячами CR/LF в одном
+            # header'е, где сам replace × 3 по 1 МБ был бы микро-DoS-вектором.
+            # После трёх replace'ов и strip'а финально cap'им до 64 — это
+            # бизнес-инвариант для request_id pattern'а.
             sanitized = (
-                raw_request_id.replace("\r", "")
+                raw_request_id[:256]
+                .replace("\r", "")
                 .replace("\n", "")
-                .replace("\x00", "")[:64]
-                .strip()
+                .replace("\x00", "")
+                .strip()[:64]
             )
             if sanitized:
                 request_id = sanitized
@@ -762,6 +788,23 @@ def _retention_loop() -> None:
                         # Снимаем snapshot активных политик ДО sweep'а: иначе
                         # concurrent admin-DELETE между apply_active и сбором
                         # деталей даст deleted_count>0 при пустом списке политик.
+                        #
+                        # ВНИМАНИЕ: фактически это ДВА независимых SELECT'а —
+                        # этот `list_active` и второй внутри `apply_active`
+                        # (`retention_policies.py:195`). Audit-details попадает
+                        # один snapshot, sweep DELETE'ит по другому. Инвариант
+                        # «snapshot == policies-sweep'а» держится только потому,
+                        # что _retention_loop сидит под `pg_try_advisory_lock`
+                        # (см. acquire выше), а PUT /retention этого лока НЕ
+                        # берёт — значит admin-PUT в принципе НЕ пересекается
+                        # с этим SELECT-окном (контракт: PUT приходит между
+                        # tick'ами, а внутри tick'а advisory-lock держится до
+                        # release под `finally` ниже). Если когда-нибудь под
+                        # лок поставят и PUT, между двумя SELECT'ами появится
+                        # окно, в котором audit врёт. Передавать snapshot в
+                        # `apply_active(db, policies=snapshot)` пока не нужно:
+                        # советующий лок снимает гонку, а лишний parameter
+                        # размывает контракт «apply_active сам тянет активные».
                         from src.repositories.retention_policies import list_active
                         snapshot = list_active(db)
                         try:

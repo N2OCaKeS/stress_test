@@ -496,7 +496,7 @@ Auth: Bearer (account_admin или department_admin своего отдела). 
 { "department_id": "dep_xyz", "name": "devs", "display_name": "Devs", "description": "..." }
 ```
 
-Errors: `GROUP_ALREADY_EXISTS` (409) — имя занято в отделе; `DEPARTMENT_FORBIDDEN` (403) — cross-dept у department_admin; `DEPARTMENT_NOT_FOUND` (404).
+Errors: `GROUP_ALREADY_EXISTS` (409) — имя занято в отделе; `DEPARTMENT_ACCESS_DENIED` (403) — cross-dept у department_admin; `DEPARTMENT_NOT_FOUND` (404).
 
 ### `PATCH /groups/{group_id}`
 
@@ -794,13 +794,14 @@ Auth: public. Response: JWKS (RS256).
 - `REFRESH_TOKEN_INVALID` (401) — токен не найден / отозван / reuse-detection (kill-switch).
 - `REFRESH_TOKEN_EXPIRED` (401).
 - `REFRESH_TOKEN_RACE` (401) — параллельный refresh выиграл CAS, повтор с новым refresh.
+- `ACCESS_TOKEN_EXPIRED` (401) — access JWT с `exp < now` (с учётом `JWT_LEEWAY_SECONDS`). Клиенту допустимо запускать refresh-flow.
+- `INVALID_TOKEN` (401) — отсутствующий / structurally invalid / bad-signature / unknown actor_type / missing claims. Refresh не поможет; нужен повторный login.
 
 ### Доступ и авторизация
 
 - `PERMISSION_DENIED` (403) — общий fallback на endpoint'е без своего кода.
 - `ROLE_REQUIRED` (403) — нужна определённая платформенная роль.
-- `DEPARTMENT_ACCESS_DENIED` (403) — DA лезет в чужой отдел (general guard).
-- `DEPARTMENT_FORBIDDEN` (403) — `create_group` cross-dept у DA.
+- `DEPARTMENT_ACCESS_DENIED` (403) — DA лезет в чужой отдел (общий код для всех cross-dept нарушений).
 - `USER_CONTEXT_REQUIRED` (403) — m2m identity (`actor_type=oauth_client`) на user-facing endpoint'е.
 - `STATUS_CHANGE_REQUIRES_ACCOUNT_ADMIN` (403) — не-account_admin меняет `status` ↔ `BANNED` через PATCH.
 - `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin выдаёт `platform_role`.

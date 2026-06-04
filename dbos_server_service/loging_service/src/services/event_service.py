@@ -63,10 +63,18 @@ def record(db: Session, payload: EventCreate) -> AuditEvent | None:
         return event_repo.insert(db, modified)
     except ConflictError as exc:
         # Откат завалившейся вставки, чтобы self-audit писался в чистой сессии.
+        # Если rollback упал (disconnect, broken pool), self-audit ниже
+        # стартует на сломанной сессии и почти наверняка тоже завалится:
+        # warning self-audit для poisoning-detection — compliance-критичный
+        # путь, его потерю замолчать нельзя. На fake-сессиях из тестов
+        # (которые могут не реализовывать rollback) ловим Exception целиком,
+        # но обязательно логируем.
         try:
             db.rollback()
-        except Exception:
-            pass
+        except Exception as rb_exc:
+            logger.warning(
+                "rollback after idempotency conflict failed: %s", rb_exc
+            )
         _emit_idempotency_conflict_audit(db, modified, exc)
         raise
 
@@ -80,6 +88,17 @@ def _emit_idempotency_conflict_audit(
     Сценарий редкий, поэтому накладные расходы на second commit допустимы.
     Любая ошибка тут проглатывается в лог — клиент всё равно должен получить
     409, а потеря warning self-audit'а не должна мешать основной ошибке.
+
+    ИНВАРИАНТ caller'а: вызывается только ПОСЛЕ rollback'а outer-tx
+    (см. `record` выше). `commit=True` ниже закрывает свою отдельную
+    транзакцию, и если outer-tx не была rollback'нута, этот commit
+    выкинет её partially-committed состояние наружу. Сейчас единственный
+    call-site — ConflictError-ветка `record`, и rollback там стоит явно.
+    Если в будущем появится другой call-site (например, валидатор, который
+    зовёт `_emit_idempotency_conflict_audit` без явного rollback'а
+    собственной savepoint'ы), commit-семантика становится сюрпризом —
+    стоит вынести `commit_mode` параметром или продублировать инвариант
+    в docstring caller'а.
     """
     try:
         warning_payload = EventCreate(

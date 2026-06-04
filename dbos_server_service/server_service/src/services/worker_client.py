@@ -237,7 +237,7 @@ async def shutdown_broker() -> None:
     Best-effort: ошибки `broker.shutdown()` глотаем — на пути shutdown
     важнее, чтобы lifespan не упал, чем чтобы Redis-таймауты доехали.
     """
-    global _worker_broker, _broker_started
+    global _worker_broker, _broker_started, _worker_engine, _worker_session_factory
     broker = _worker_broker
     if broker is not None and _broker_started:
         try:
@@ -246,6 +246,17 @@ async def shutdown_broker() -> None:
             pass
     _worker_broker = None
     _broker_started = False
+    # Engine для cross-DB вставок в `dev_server_worker.tasks` тоже надо
+    # закрыть — иначе в тестах с несколькими lifespan-циклами старый engine
+    # держит pool до 5+5 connections к worker-БД.
+    engine = _worker_engine
+    if engine is not None:
+        try:
+            await engine.dispose()
+        except Exception:  # noqa: BLE001
+            pass
+    _worker_engine = None
+    _worker_session_factory = None
 
 
 async def _ensure_broker_started() -> None:

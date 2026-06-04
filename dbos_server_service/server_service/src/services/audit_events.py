@@ -46,6 +46,7 @@ SERVICE_EVENTS = [
     # Sensitive: показ расшифрованных секретов (internal endpoints для worker'а)
     {"action": "ipmi_controller.view_credentials", "description": "Decrypted IPMI credentials revealed (internal)", "default_severity": "WARNING"},
     {"action": "ipmi_controller.credentials_revealed", "description": "Decrypted IPMI password revealed to user (base64) via GET ipmi card with view_credentials", "default_severity": "CRITICAL"},
+    {"action": "ipmi_controller.credentials_revealed_throttled", "description": "Subsequent BMC password reveal within audit window (actor+controller) — первый reveal уже залогирован CRITICAL `ipmi_controller.credentials_revealed`; INFO-копия для трассировки шумного UI-polling'а без CRITICAL-флуда SIEM", "default_severity": "INFO"},
     {"action": "server_account.view_password", "description": "Decrypted server account password revealed (internal)", "default_severity": "WARNING"},
     {"action": "server_account.password_revealed", "description": "Decrypted server account password revealed to user (base64) via GET account card with view_password", "default_severity": "CRITICAL"},
     {"action": "server_account.password_revealed_throttled", "description": "Subsequent password reveal within audit window (actor+account) — first reveal was already logged as CRITICAL `server_account.password_revealed`; INFO-копия для трассировки шумного UI-polling'а без CRITICAL-флуда SIEM", "default_severity": "INFO"},

@@ -58,6 +58,7 @@ from src.core.constants import STASH_TTL_SECONDS
 from src.core.identifiers import validate_task_id
 from src.main import broker
 from src.services import server_service_client, ssh_client
+from src.tasks.users import _validate_payload_login
 from src.tasks._bmc_errors import (
     dispatch_get_power_state,
     dispatch_rotate_user_password,
@@ -95,7 +96,11 @@ AUDIT_SAFE_FIELDS_IPMI_ROTATE: set[str] = {
 # Политика пароля под типичные iDRAC / Linux PAM правила сложности:
 #   * минимум 16 chars (берём 20),
 #   * минимум по одному: lowercase, uppercase, digit, и пунктуация из
-#     консервативного набора, на который BMC и PAM согласны.
+#     консервативного набора, на который BMC и PAM согласны (iDRAC9/iLO5
+#     принимают `!@#$%^&*` целиком). На вендорах с более строгой policy
+#     (Supermicro X9 запрещает `$`) пароль будет отвергнут на BMC, retry
+#     с тем же alphabet'ом не починит — fallback на менее строгий набор
+#     не реализован; оператору придётся вручную поменять `_PASSWORD_PUNCT`.
 _PASSWORD_LENGTH = 20
 _PASSWORD_PUNCT = "!@#$%^&*"
 _PASSWORD_ALPHABET = (
@@ -382,6 +387,16 @@ async def account_rotate_password(task_id: str) -> None:
     Связано с: `server_account.password_rotate` audit action.
     """
     async def _impl(payload: dict) -> dict:
+        # Симметрично с update_on_host / deprovision / provision: если login
+        # передан в payload — валидируем fail-fast ДО fetch'а пароля и chpasswd.
+        # Self-сценарий: login в payload может отсутствовать, его положит
+        # `fetch_account_password`; тогда валидация выше отработает после
+        # fetch'а внутри `ssh_client.set_account_password` через `_LOGIN_RE`.
+        # Managed-ветка: server_service кладёт login в payload, валидация на
+        # входе фейлится быстро со стабильным SSH_INVALID_LOGIN и не идёт за
+        # паролем впустую.
+        if payload.get("login") is not None:
+            _validate_payload_login(payload)
         server_id = payload["server_id"]
         account_id = payload["account_id"]
         # Forwarded из server_service dispatch (X-Target-Department-Id
@@ -594,6 +609,11 @@ async def ipmi_rotate_password(task_id: str) -> None:
                 try:
                     try:
                         await dispatch_get_power_state(verify_client)
+                        # Второй record_success в рамках одной task'и: apply
+                        # уже сбрасывал failures в Redis, идёмпотентный noop
+                        # на закрытом breaker'е. Симметрия с failure-веткой
+                        # `record_failure` ниже — оба пути одинаково отчитываются
+                        # breaker'у, без branch'а «успех уже был».
                         await _breaker.record_success(host)
                         last_exc = None
                         break

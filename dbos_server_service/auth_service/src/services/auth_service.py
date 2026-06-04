@@ -389,7 +389,7 @@ async def login(
             "user.login", user.id, status="failure", allowed=False,
             username=user.username,
             details={
-                "reason": "invalid_password",
+                "reason": "invalid_credentials",
                 "attempts": user.failed_login_attempts,
                 "max_attempts": get_settings().max_failed_login_attempts,
             },

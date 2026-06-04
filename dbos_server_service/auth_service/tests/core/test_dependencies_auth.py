@@ -42,9 +42,9 @@ class TestExtractBearer:
     def test_returns_token_with_prefix(self):
         assert auth_dep._extract_bearer(_make_request({"Authorization": "Bearer abc.def.ghi"})) == "abc.def.ghi"
 
-    def test_returns_none_for_lowercase_bearer(self):
-        """Текущая реализация — case-sensitive. Фиксируем."""
-        assert auth_dep._extract_bearer(_make_request({"Authorization": "bearer abc"})) is None
+    def test_lowercase_bearer_extracted(self):
+        """Bearer parsing is case-insensitive per RFC 7235."""
+        assert auth_dep._extract_bearer(_make_request({"Authorization": "bearer abc"})) == "abc"
 
     def test_returns_none_for_basic(self):
         assert auth_dep._extract_bearer(_make_request({"Authorization": "Basic dXNlcjpwYXNz"})) is None
@@ -75,7 +75,7 @@ class TestGetCurrentIdentity:
     async def test_missing_bearer_raises(self):
         with pytest.raises(AuthenticationError) as exc:
             await auth_dep.get_current_identity(_make_request(), db=None)
-        assert exc.value.error_code == "ACCESS_TOKEN_EXPIRED"
+        assert exc.value.error_code == "INVALID_TOKEN"
 
     async def test_garbage_token_raises(self):
         req = _make_request({"Authorization": "Bearer not.a.jwt"})

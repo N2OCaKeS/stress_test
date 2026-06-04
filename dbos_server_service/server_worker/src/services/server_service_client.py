@@ -64,7 +64,7 @@ async def fetch_ipmi_credentials(
             error_code="SERVER_SERVICE_UNREACHABLE",
             message=f"Failed to call server_service: {type(exc).__name__}",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code >= 300:
         raise CredentialFetchError(
             error_code="IPMI_CREDENTIALS_UNAVAILABLE",
             message=f"server_service returned {response.status_code}",
@@ -100,7 +100,7 @@ async def fetch_account_password(
             error_code="SERVER_SERVICE_UNREACHABLE",
             message=f"Failed to call server_service: {type(exc).__name__}",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code >= 300:
         raise CredentialFetchError(
             error_code="ACCOUNT_PASSWORD_UNAVAILABLE",
             message=f"server_service returned {response.status_code}",
@@ -147,7 +147,7 @@ async def submit_rotated_password(
             error_code="SERVER_SERVICE_UNREACHABLE",
             message=f"Failed to call server_service: {type(exc).__name__}",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code >= 300:
         raise CredentialFetchError(
             error_code="PASSWORD_ROTATE_REJECTED",
             message=f"server_service returned {response.status_code}",
@@ -389,7 +389,7 @@ async def fetch_secrets_migration_status() -> dict:
             error_code="SERVER_SERVICE_UNREACHABLE",
             message=f"Failed to call server_service: {type(exc).__name__}",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code >= 300:
         raise CredentialFetchError(
             error_code="SECRETS_MIGRATION_STATUS_UNAVAILABLE",
             message=f"server_service returned {response.status_code}",
@@ -429,7 +429,7 @@ async def trigger_secrets_reencrypt_batch(limit: int) -> dict:
             error_code="SERVER_SERVICE_UNREACHABLE",
             message=f"Failed to call server_service: {type(exc).__name__}",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code >= 300:
         raise CredentialFetchError(
             error_code="SECRETS_REENCRYPT_REJECTED",
             message=f"server_service returned {response.status_code}",
@@ -466,7 +466,7 @@ async def seed_reencrypt_outbox(limit: int = 500) -> dict:
             error_code="SERVER_SERVICE_UNREACHABLE",
             message=f"Failed to call server_service: {type(exc).__name__}",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code >= 300:
         raise CredentialFetchError(
             error_code="SECRETS_OUTBOX_SEED_REJECTED",
             message=f"server_service returned {response.status_code}",
@@ -504,7 +504,7 @@ async def claim_reencrypt_outbox_pending(limit: int) -> list[dict]:
             error_code="SERVER_SERVICE_UNREACHABLE",
             message=f"Failed to call server_service: {type(exc).__name__}",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code >= 300:
         raise CredentialFetchError(
             error_code="SECRETS_OUTBOX_CLAIM_REJECTED",
             message=f"server_service returned {response.status_code}",
@@ -546,7 +546,7 @@ async def finalize_reencrypt_outbox_done(outbox_id: str) -> dict:
             error_code="SERVER_SERVICE_UNREACHABLE",
             message=f"Failed to call server_service: {type(exc).__name__}",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code >= 300:
         raise CredentialFetchError(
             error_code="SECRETS_OUTBOX_FINALIZE_REJECTED",
             message=f"server_service returned {response.status_code}",
@@ -580,7 +580,7 @@ async def finalize_reencrypt_outbox_failed(outbox_id: str, error: str) -> dict:
             error_code="SERVER_SERVICE_UNREACHABLE",
             message=f"Failed to call server_service: {type(exc).__name__}",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code >= 300:
         raise CredentialFetchError(
             error_code="SECRETS_OUTBOX_FINALIZE_REJECTED",
             message=f"server_service returned {response.status_code}",
@@ -649,7 +649,7 @@ async def submit_rotated_ipmi_password(
             error_code="SERVER_SERVICE_UNREACHABLE",
             message=f"Failed to call server_service: {type(exc).__name__}",
         ) from exc
-    if response.status_code != 200:
+    if response.status_code >= 300:
         raise CredentialFetchError(
             error_code="IPMI_ROTATE_REJECTED",
             message=f"server_service returned {response.status_code}",

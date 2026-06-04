@@ -233,7 +233,7 @@ async def test_update_bot_dept_admin_none_dept_failure_audit_has_null_actor_dept
 ):
     """В failure-audit details['actor_department_id'] == None (не отсутствует).
 
-    SIEM-правило `actor_department_id IS NULL AND reason='cross_tenant_bot'`
+    SIEM-правило `actor_department_id IS NULL AND reason='cross_department_bot'`
     отличает broken identity от штатной cross-tenant попытки. Если поле
     пропадёт из details, правило молча перестанет матчить — регрессия.
     """
@@ -267,7 +267,7 @@ async def test_update_bot_dept_admin_none_dept_failure_audit_has_null_actor_dept
     ]
     assert failures, f"no failure bot.update audit: {captured_audit}"
     details = failures[0].get("details") or {}
-    assert details["reason"] == "cross_tenant_bot"
+    assert details["reason"] == "cross_department_bot"
     assert details["bot_department_id"] == dept_b.id
     # Ключ присутствует и явно None — не отсутствует.
     assert "actor_department_id" in details
@@ -332,7 +332,7 @@ async def test_update_bot_cross_tenant_name_conflict_returns_403_not_409(
         if e["action"] == "bot.update" and e.get("status") == "failure"
     ]
     assert failures, f"guard не эмитнул failure-audit: {captured_audit}"
-    assert failures[0]["details"]["reason"] == "cross_tenant_bot"
+    assert failures[0]["details"]["reason"] == "cross_department_bot"
 
     # Имя дефолтного бота не изменилось — guard остановил до repo.update.
     successes = [

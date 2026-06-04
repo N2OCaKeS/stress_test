@@ -218,7 +218,7 @@ async def update_bot(
             # BOT_UPDATE_FORBIDDEN. Терять стабильный код нельзя — клиенты
             # на него уже завязались. Inline-блок повторяет шаблон emit'а
             # из общего хелпера, чтобы SIEM-сигнатура (status="failure",
-            # reason="cross_tenant_bot") совпадала.
+            # reason="cross_department_bot") совпадала.
             # Инвариант: failure-audit эмитится ДО mutations. Выше — только
             # `_resolve_actor_dept` (один SELECT, без writes) и проверка
             # dept-равенства. `db.commit()` ниже не вызван, значит rollback
@@ -229,7 +229,7 @@ async def update_bot(
                 target_id=bot.id, target_type="bot",
                 request_id=request_id,
                 details={
-                    "reason": "cross_tenant_bot",
+                    "reason": "cross_department_bot",
                     "bot_id": bot.id,
                     "bot_department_id": bot.department_id,
                     "actor_department_id": actor_dept_id,
@@ -464,7 +464,7 @@ def _check_can_manage_bot_or_audit(
         _require_can_manage_bot(actor_role, actor_dept_id, bot)
     except AuthorizationError:
         details = {
-            "reason": "cross_tenant_bot",
+            "reason": "cross_department_bot",
             "bot_id": bot.id,
             "bot_department_id": bot.department_id,
             "actor_department_id": actor_dept_id,

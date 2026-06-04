@@ -57,7 +57,7 @@ async def test_dept_admin_cannot_create_group_in_other_dept(
 ):
     resp = await _create_group(client, dept_admin_a_token, dept_b.id, name="cross_dept_grp")
     assert resp.status_code == 403
-    assert resp.json()["error_code"] == "DEPARTMENT_FORBIDDEN"
+    assert resp.json()["error_code"] == "DEPARTMENT_ACCESS_DENIED"
 
 
 async def test_admin_lists_groups(client, admin_token, dept_a):

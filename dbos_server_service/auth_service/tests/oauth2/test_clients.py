@@ -309,7 +309,7 @@ async def test_authorize_without_jwt_returns_401(client, admin_token, dept_a):
                             },
                             follow_redirects=False)
     assert resp.status_code == 401
-    assert resp.json()["error_code"] == "ACCESS_TOKEN_EXPIRED"
+    assert resp.json()["error_code"] == "INVALID_TOKEN"
 
 
 async def test_authorize_with_deleted_client_returns_401(client, admin_token, user_a_token, dept_a):

@@ -1,7 +1,7 @@
 """Unit-тесты для actor_type != "user" и != "oauth_client" в get_current_identity.
 
 При actor_type="bot" / "service" / "unknown" / пустая строка — должен вернуться 401
-ACCESS_TOKEN_EXPIRED (не 500, не 403). Это ветка else в get_current_identity:
+INVALID_TOKEN (не 500, не 403). Это ветка else в get_current_identity:
   > Прочие actor_type — reject.
 
 Дополнительно: require_user_context отвергает oauth_client-identity.
@@ -71,7 +71,7 @@ class TestUnknownActorType:
         with pytest.raises(AuthenticationError) as exc:
             # db=None — до DB не дойдём, dispatch срабатывает раньше
             await auth_dep.get_current_identity(req, db=None)
-        assert exc.value.error_code == "ACCESS_TOKEN_EXPIRED"
+        assert exc.value.error_code == "INVALID_TOKEN"
 
 
 # ── require_user_context: oauth_client → 403 ─────────────────────────────────

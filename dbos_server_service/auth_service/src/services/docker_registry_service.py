@@ -10,6 +10,7 @@ Docker registry config.yml:
       issuer: <DOCKER_REGISTRY_ISSUER>
 """
 
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -37,6 +38,9 @@ from src.services._dept_guard import assert_dept_admin_target_dept
 from src.services.auth_service import verify_password_with_lockout
 from src.utils.time import is_expired
 from src.core.docker_jwt import sign_docker_token
+
+
+logger = logging.getLogger(__name__)
 
 
 def _cfg_to_response(cfg) -> DockerRegistryConfigResponse:
@@ -714,12 +718,18 @@ async def _authenticate_with_audit(
         # _authenticate_subject не доходит до этой ветки.
         if exc.error_code == "ACCOUNT_TEMPORARILY_LOCKED":
             actor_id = None
+            # actor-id enrichment best-effort: если БД сейчас лежит, аудит
+            # lockout-события важнее, чем 500 пользователю; логируем
+            # причину, но запрос не валим — основная ветка авторизации
+            # уже отказала.
             try:
                 user = await UserRepository(db).get_by_username(username)
                 if user is not None:
                     actor_id = user.id
             except Exception:
-                pass
+                logger.exception(
+                    "docker.token: actor lookup failed for locked user %r", username
+                )
             audit_service.emit(
                 "docker.token_issued",
                 actor_id,
@@ -749,12 +759,17 @@ async def _authenticate_with_audit(
             subject_type = "password"
         actor_id = None
         if subject_type == "password":
+            # см. комментарий выше: enrichment best-effort, БД-ошибки
+            # логируем, но 500 на invalid-credentials не возвращаем.
             try:
                 user = await UserRepository(db).get_by_username(username)
                 if user is not None:
                     actor_id = user.id
             except Exception:
-                pass
+                logger.exception(
+                    "docker.token: actor lookup failed for invalid-credentials user %r",
+                    username,
+                )
         audit_service.emit(
             "docker.token_issued",
             actor_id,

@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.constants import AccountSource, Action, EntityType
-from src.core.exceptions import AuthorizationError, BadRequestError, NotFoundError
+from src.core.exceptions import AppException, AuthorizationError, BadRequestError, NotFoundError
 from src.core.known_os import is_known_os
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import os_version as osv_repo
@@ -370,10 +370,26 @@ async def fetch_ipmi_credentials(
             error_code="NO_IPMI_CONTROLLER",
             message="No IPMI controller is registered for this server",
         )
-    plain = secrets_service.decrypt(
-        ctrl.password_encrypted,
-        aad=secrets_service.aad_for_ipmi_credential(ctrl.id),
-    )
+    try:
+        plain = secrets_service.decrypt(
+            ctrl.password_encrypted,
+            aad=secrets_service.aad_for_ipmi_credential(ctrl.id),
+        )
+    except AppException:
+        # Симметрично с `ipmi_controller._reveal_controller_password`:
+        # сломанный ciphertext должен оставить SIEM-след именно как
+        # failure-audit, а не уезжать наверх голым 422.
+        audit_service.emit(
+            "ipmi_controller.view_credentials",
+            target_id=ctrl.id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={
+                "reason": "decrypt_failed",
+                "server_id": server_id,
+                "caller_type": identity.subject_type,
+            },
+        )
+        raise
     audit_service.emit(
         "ipmi_controller.view_credentials",
         target_id=ctrl.id, target_type="ipmi_controller",
@@ -506,10 +522,25 @@ async def fetch_account_password(
             error_code="ACCOUNT_HAS_NO_PASSWORD",
             message="Account has no stored password",
         )
-    plain = secrets_service.decrypt(
-        account.password_encrypted,
-        aad=secrets_service.aad_for_server_account_password(account.id),
-    )
+    try:
+        plain = secrets_service.decrypt(
+            account.password_encrypted,
+            aad=secrets_service.aad_for_server_account_password(account.id),
+        )
+    except AppException:
+        # Симметрично с `server_account._reveal_account_password`: на битом
+        # ciphertext'е worker'у нужнее audit-trail, чем чистый 422-trace.
+        audit_service.emit(
+            "server_account.view_password",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "decrypt_failed",
+                "server_id": server_id,
+                "caller_type": identity.subject_type,
+            },
+        )
+        raise
     audit_service.emit(
         "server_account.view_password",
         target_id=account_id, target_type="server_account",

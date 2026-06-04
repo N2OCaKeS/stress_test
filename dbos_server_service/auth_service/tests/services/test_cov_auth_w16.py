@@ -132,7 +132,7 @@ class TestBotTokenCreateFailureDetails:
             f"token_name должен быть в failure-details, got: {details}"
         )
         assert details["token_name"] == "rotation_token"
-        assert details["reason"] == "cross_tenant_bot"
+        assert details["reason"] == "cross_department_bot"
 
 
 # ── GAP-7: oauth state с %-литералом → double-encode ─────────────────────────

@@ -73,7 +73,7 @@ async def test_dept_admin_cannot_manage_other_dept(
         headers={"Authorization": f"Bearer {dept_admin_a_token}"},
     )
     assert resp.status_code == 403
-    assert resp.json()["error_code"] == "DEPARTMENT_FORBIDDEN"
+    assert resp.json()["error_code"] == "DEPARTMENT_ACCESS_DENIED"
 
 
 # ── Create role ───────────────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ async def test_service_admin_cannot_create_role_in_other_dept(
         json={"role_name": "leak_role", "display_name": "Leak"},
     )
     assert resp.status_code == 403
-    assert resp.json()["error_code"] == "DEPARTMENT_FORBIDDEN"
+    assert resp.json()["error_code"] == "DEPARTMENT_ACCESS_DENIED"
 
 
 # ── Update role ───────────────────────────────────────────────────────────────

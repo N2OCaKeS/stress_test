@@ -177,7 +177,13 @@ async def _delete_dispatch_creds(stash_key: str) -> None:
     except ValueError:
         # Malformed key — ничего не удаляем (guard защищает от прыжка в
         # чужой keyspace; на malformed просто молча выходим, основной
-        # поток уже отработал).
+        # поток уже отработал). На нормальном пути сюда не попадаем —
+        # ключ уже прошёл валидацию в `_read_dispatch_creds`. Если попал,
+        # это race / баг, debug-лог нужен на forensic.
+        logger.debug(
+            "_delete_dispatch_creds: malformed stash_key, skip DEL: %r",
+            stash_key,
+        )
         return
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
@@ -405,6 +411,15 @@ async def account_provision(task_id: str) -> None:
     Связано с: `server_account.provision` audit action.
     """
     async def _impl(payload: dict) -> dict:
+        # Симметрично с update_on_host / deprovision: если login пришёл в
+        # payload — fail-fast валидация ДО fetch'а пароля и любых
+        # side-effect'ов. Managed-ветка обязана иметь login в payload (без него
+        # `_account_creds` сразу падает SSH_INVALID_ARG); self-ветка login
+        # доберёт через fetch_account_password, тогда `_LOGIN_RE` отработает
+        # внутри ssh_client. Здесь — третья линия обороны, симметричная
+        # `update_on_host` / `deprovision`.
+        if payload.get("login") is not None:
+            _validate_payload_login(payload)
         server_id = payload["server_id"]
         account_id = payload["account_id"]
         target_dept = payload.get("target_department_id")

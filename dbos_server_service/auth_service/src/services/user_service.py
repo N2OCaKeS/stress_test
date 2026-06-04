@@ -1222,7 +1222,7 @@ async def get_user_permissions(
         _emit_permissions_denied(
             actor_id=identity.user_id,
             target_id=user_id,
-            reason="cross_department",
+            reason="cross_department_user",
             department_id=identity.department_id,
             request_id=request_id,
         )

@@ -219,10 +219,15 @@ async def finalize_reencrypt_outbox_done(
     await _require_worker_scope(db, identity)
     try:
         data = await secrets_migration_service.finalize_done(db, outbox_id)
-    except Exception as exc:  # noqa: BLE001 — crypto-ошибки тоже сюда
-        # Caller'у скорее всего стоит вызвать `.../failed`, но мы не
-        # пробуем угадывать — отдаём 500 с error_code, чтобы воркер
-        # решил сам (по http.500 пишет audit failure + продолжает batch).
+    except AppException:
+        # Crypto-ошибки (`DECRYPT_FAILED`, `ENCRYPTION_KEY_MISSING`) и любые
+        # другие structured-исключения пробрасываем как есть, чтобы worker
+        # увидел оригинальный error_code и записал его в `/failed`.
+        raise
+    except Exception as exc:  # noqa: BLE001 — нестандартные runtime-ошибки
+        # Только для несвязанных runtime-ошибок оборачиваем в generic
+        # `SECRETS_REENCRYPT_FINALIZE_FAILED` — иначе worker полностью
+        # потеряет первопричину crash'а.
         raise AppException(
             http_status=500,
             error_code="SECRETS_REENCRYPT_FINALIZE_FAILED",

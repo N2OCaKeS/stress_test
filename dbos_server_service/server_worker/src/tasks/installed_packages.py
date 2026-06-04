@@ -55,7 +55,9 @@ def _audit_safe_fields() -> set[str]:
 
     Default — без `pattern`. Если оператор явно включил debug-флаг через
     env, `pattern` добавляется в whitelist и попадает в audit-details.
-    Settings read через `get_settings()` (lru_cache) — дешёво.
+    Settings read через `get_settings()` (lru_cache) — дёшево. Кэш сюда
+    добавлять опасно: тесты гоняют `get_settings.cache_clear()` между
+    кейсами, а отдельный module-level cache их перетёр бы.
     """
     fields = set(_BASE_AUDIT_SAFE_FIELDS)
     if get_settings().audit_installed_packages_pattern_debug:
@@ -217,7 +219,10 @@ async def installed_packages_list(task_id: str) -> None:
         ssh_client.apply_session_hints(creds, payload)
 
         host = creds.get("host") or creds.get("ssh_host") or server_id
-        logger.info("installed_packages.list on %s pattern=%s", host, pattern)
+        # `%r` для host — defence-in-depth от log-injection: host приходит из
+        # creds (server_service/payload-hints), теоретически может содержать
+        # `\n`. `pattern` уже прошёл `_PATTERN_RE`, безопасен.
+        logger.info("installed_packages.list on %r pattern=%s", host, pattern)
         async with ssh_client.build_session(creds, server_id) as ssh:
             package_manager = await _detect_package_manager(ssh)
             cmd = _build_command(package_manager, pattern)

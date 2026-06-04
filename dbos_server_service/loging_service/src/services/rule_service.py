@@ -491,10 +491,17 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
     if payload.service == "loging_service":
         return payload  # self-audit never suppressed, never overridden
 
-    if payload.severity is None:
-        payload = payload.model_copy(
-            update={"severity": _resolve_default_severity(payload.action, payload.status)}
-        )
+    # Severity вычисляется в локальной переменной и материализуется в payload
+    # одним `model_copy` в конце. Раньше каждый матч OVERRIDE_SEVERITY делал
+    # `payload.model_copy(...)`, а cold-start ветка ещё одним отдельным
+    # copy'ем выставляла default — на цепочке 5-10 правил каждое событие
+    # порождало 5-10 snapshot'ов под ingest-нагрузкой. Сейчас одна локальная
+    # переменная + один copy на финальном return'е (если что-то поменялось).
+    severity = payload.severity
+    severity_dirty = False
+    if severity is None:
+        severity = _resolve_default_severity(payload.action, payload.status)
+        severity_dirty = True
 
     # Cold-start семантика: если БД упала и кеш ещё не успел заполниться
     # за всю жизнь процесса, `_cache.get` пробросит исключение наверх — caller
@@ -506,20 +513,54 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
     # После первой удачной загрузки кеш отдаёт stale snapshot при последующих
     # DB-выпадениях (см. `_RuleCache.get` except-ветку), так что окно "500 на
     # ingest" — только до первого успешного refresh'а.
-    # Правила отсортированы по `priority DESC` в `get_active_sorted`.
-    # Семантика OVERRIDE_SEVERITY (исторический контракт): несколько матчей
-    # применяются последовательно, последний переписывает severity. SUPPRESS/
-    # ALLOW обрывают цепочку. Вопрос «highest priority wins vs last match wins»
-    # — open owner-question (см. obsidian/TODO.md → W18 deferred Q2). Тесты
-    # фиксируют текущий контракт «последний выигрывает».
+    # Правила отсортированы по `priority DESC` в `get_active_sorted`,
+    # то есть первый OVERRIDE-матч — highest priority. Owner Q2 (highest-
+    # priority wins vs last-match wins) закрыт в пользу highest-priority
+    # (см. TODO.md, W14 P4 logging override priority). Эффективно код отдаёт
+    # severity первого OVERRIDE-матча: последующие матчи перетирают severity
+    # тем же значением (UNIQUE priority + DESC sort → детерминированный
+    # порядок). Явный break-on-first рассмотрен как micro-opt (P4 carry).
+    # SUPPRESS/ALLOW обрывают цепочку явно сами по своему контракту.
     rules = _cache.get(db)
     for rule in rules:
-        if not _matches(rule, payload):
+        if not _matches_with_severity(rule, payload, severity):
             continue
         if rule.effect == "SUPPRESS":
             return None
         if rule.effect == "ALLOW":
+            if severity_dirty:
+                return payload.model_copy(update={"severity": severity})
             return payload
         if rule.effect == "OVERRIDE_SEVERITY" and rule.effect_severity:
-            payload = payload.model_copy(update={"severity": rule.effect_severity})
+            if severity != rule.effect_severity:
+                severity = rule.effect_severity
+                severity_dirty = True
+    if severity_dirty:
+        return payload.model_copy(update={"severity": severity})
     return payload
+
+
+def _matches_with_severity(
+    rule: _RuleSnapshot, payload: EventCreate, severity: str | None
+) -> bool:
+    """Версия `_matches`, использующая severity из локальной переменной.
+
+    `_matches` читает `payload.severity` напрямую; в `apply_rules` мы
+    держим актуальный severity в локальной переменной (чтобы не плодить
+    `model_copy` на каждое правило), поэтому match-проверке тоже нужно
+    видеть «текущий» severity, а не зафиксированный на момент входа в
+    функцию. Поля сравнения симметричны `_matches`: service/action/status/
+    severity/allowed.
+    """
+    if rule.match_service is not None and rule.match_service != payload.service:
+        return False
+    if rule.match_action is not None:
+        if not action_matches_pattern(payload.action, rule.match_action):
+            return False
+    if rule.match_status is not None and rule.match_status != payload.status:
+        return False
+    if rule.match_severity is not None and rule.match_severity != severity:
+        return False
+    if rule.match_allowed is not None and rule.match_allowed != payload.allowed:
+        return False
+    return True

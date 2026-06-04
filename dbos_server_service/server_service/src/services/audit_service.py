@@ -270,7 +270,7 @@ def _send_sync(payload: dict, logging_url: str, api_key: str) -> None:
 
     Используется в shutdown и других sync-контекстах. Backoff'ы короткие
     (cap ~0.7s суммарно), чтобы не блокировать lifecycle. На финальном
-    229 — инкремент `_audit_dropped_429`, как и в async-пути.
+    429 — инкремент `_audit_dropped_429`, как и в async-пути.
     """
     url_full = f"{logging_url}/api/logging/v1/events"
     headers = bearer_header(api_key)

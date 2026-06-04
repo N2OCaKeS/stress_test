@@ -16,10 +16,12 @@ Department-isolation скрывает cross-dept-сервер за 404 (`SERVER_
 import base64
 import logging
 import secrets
+import time
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.constants import Action, EntityType
 from src.core.exceptions import (
     AppException,
@@ -30,12 +32,47 @@ from src.models import IpmiController
 from src.repositories import ipmi_controller as repo
 from src.schemas.identity import IdentityContext
 from src.schemas.ipmi_controller import IpmiControllerCreate, IpmiControllerUpdate
-from src.services import audit_service, permissions, secrets_service
+from src.services import audit_context, audit_service, permissions, secrets_service
 from src.services.audit_helpers import emit_denied_on_authz_error
 from src.services.server import load_visible_server
 from src.utils.ids import ipmi_controller_id as new_id
 
 logger = logging.getLogger(__name__)
+
+
+# Throttle CRITICAL `ipmi_controller.credentials_revealed` ровно так же, как
+# для server_account password reveal: UI-tooltip с автообновлением иначе
+# зальёт SIEM CRITICAL'ами. Окно/политика — общий `password_reveal_audit_window_seconds`
+# (отдельный bucket по `(actor, controller_id)`, без коллизий с account-словарём).
+_REVEAL_AUDIT_WINDOW: dict[tuple[str, str], tuple[float, int]] = {}
+
+
+def _record_controller_reveal_attempt(
+    actor_id: str | None, controller_id: str,
+) -> tuple[bool, int]:
+    """Зафиксировать reveal-вызов BMC-пароля и вернуть `(should_emit_critical, total_in_window)`.
+
+    Логика идентична `server_account._record_reveal_attempt`, см. там
+    комментарий по invariant'ам. `actor_id is None` → всегда CRITICAL,
+    счётчик не накапливается. `window <= 0` → throttle отключён.
+    """
+    window = get_settings().password_reveal_audit_window_seconds
+    if window <= 0 or actor_id is None:
+        return True, 1
+    now = time.monotonic()
+    key = (actor_id, controller_id)
+    entry = _REVEAL_AUDIT_WINDOW.get(key)
+    if entry is None or (now - entry[0]) >= window:
+        _REVEAL_AUDIT_WINDOW[key] = (now, 1)
+        stale_cutoff = now - window
+        stale_keys = [k for k, (ts, _cnt) in _REVEAL_AUDIT_WINDOW.items() if ts < stale_cutoff]
+        for k in stale_keys:
+            _REVEAL_AUDIT_WINDOW.pop(k, None)
+        return True, 1
+    last_at, count = entry
+    new_count = count + 1
+    _REVEAL_AUDIT_WINDOW[key] = (last_at, new_count)
+    return False, new_count
 
 
 def _generate_password() -> str:
@@ -568,14 +605,33 @@ def _reveal_controller_password(
             http_status=500,
         ) from exc
 
-    audit_service.emit(
-        audit_action,
-        target_id=obj.id, target_type="ipmi_controller",
-        status="success", allowed=True,
-        details={
-            "server_id": obj.server_id,
-            "username": obj.username,
-            "department_id": department_id,
-        },
+    actor_id = audit_context.get_context().actor_id
+    should_emit_critical, total_in_window = _record_controller_reveal_attempt(
+        actor_id, obj.id,
     )
+    if should_emit_critical:
+        audit_service.emit(
+            audit_action,
+            target_id=obj.id, target_type="ipmi_controller",
+            status="success", allowed=True,
+            details={
+                "server_id": obj.server_id,
+                "username": obj.username,
+                "department_id": department_id,
+                "total_reveals_in_window": total_in_window,
+            },
+        )
+    else:
+        audit_service.emit(
+            "ipmi_controller.credentials_revealed_throttled",
+            target_id=obj.id, target_type="ipmi_controller",
+            status="success", allowed=True,
+            details={
+                "server_id": obj.server_id,
+                "username": obj.username,
+                "department_id": department_id,
+                "window_seconds": get_settings().password_reveal_audit_window_seconds,
+                "total_reveals_in_window": total_in_window,
+            },
+        )
     return base64.b64encode(plain.encode()).decode("ascii")

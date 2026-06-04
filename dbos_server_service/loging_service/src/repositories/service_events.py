@@ -145,10 +145,20 @@ def action_is_registered(db: Session, match_action: str) -> bool:
     матчит и `user.login.extra` (где `.` для `%` — обычный символ),
     а контракт `action_matches_pattern` — «`*` покрывает один сегмент без
     точек». Чистого `EXISTS` без postcheck'а недостаточно.
+
+    Внимание: glob-ветка ниже (`"*" in match_action`) в production не
+    исполняется. Единственный call-site — `_validate_match_action` в
+    `endpoints/rules.py` — сам срезает glob'ы (`"*" in match_action: return`)
+    ДО вызова сюда. Ветка оставлена ради существующего покрытия в
+    `tests/test_w18_w3_loging_p3.py` и `tests/test_services.py:523`: тесты
+    дёргают `action_is_registered` напрямую, в том числе с glob-аргументом,
+    и фиксируют контракт LIKE-фильтр + python-postcheck. Если когда-нибудь
+    rules-endpoint снимет gate и начнёт передавать glob — реализация уже
+    готова.
     """
     from sqlalchemy import exists as sa_exists
 
-    if "*" in match_action:
+    if "*" in match_action:  # kept for parity: production gate в _validate_match_action; см. docstring
         from src.services.rule_service import action_matches_pattern
 
         like_pattern = match_action.replace("\\", "\\\\").replace("*", "%")

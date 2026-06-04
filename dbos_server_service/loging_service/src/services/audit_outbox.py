@@ -34,10 +34,14 @@ Outbox-паттерн: `push_nowait()` кладёт payload во внутрен�
   медленнее обычного. SIEM по росту именно этого counter'а отличает
   «не успели на graceful shutdown» от «не успеваем под нагрузкой».
 * ``dropped_after_stop_total`` — `push_nowait` вызвали ПОСЛЕ возврата
-  `stop()`: очередь уже None, fallback пишет напрямую в session_factory.
-  Признак того, что middleware ещё принимает запросы, хотя outbox уже
-  погашен — race lifecycle, который тише всего проявляется при принудительном
-  shutdown.
+  `stop()`: очередь уже None, fallback пытается записать envelope напрямую
+  через session_factory. Counter инкрементится по факту попадания на
+  after-stop ветку, НЕЗАВИСИМО от того, успел fallback-writer закоммитить
+  row или упал на закрывающемся pool'е. То есть «событие могло потеряться»,
+  не «событие точно потеряно»: SIEM по росту counter'а отличает
+  caller-side lifecycle race (middleware ещё принимает запросы, хотя outbox
+  погашен) от чистого DoS-overflow'а; собственно потерянные fallback-writes
+  параллельно поднимают `self_audit_failures_total` через `_bump_failure`.
 
 Геттеры `dropped_overflow_total()` / `dropped_cancel_total()` /
 `dropped_shutdown_total()` / `dropped_after_stop_total()` — публичные;
@@ -150,7 +154,7 @@ class AuditOutbox:
 
         self._queue: asyncio.Queue[AuditEnvelope] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._drain_task: asyncio.Task | None = None
+        self._drain_task: asyncio.Task[None] | None = None
         self._stopping = False
 
         # Счётчики — под `threading.Lock`, чтобы тесты могли читать их с
@@ -463,7 +467,19 @@ class AuditOutbox:
                 # row уехал бы и в `drained_total` (через `_flush_batch`), и
                 # в `dropped_shutdown_total` — двойной учёт ломал бы инвариант
                 # выше.
-                lost = len(batch) - len(committed_keys)
+                #
+                # ВАЖНО: `committed_keys` снимается ПОСЛЕ блокирующего acquire
+                # `_writer_lock`. `await to_thread(...)` при `CancelledError`
+                # отдаёт управление наверх, но thread-side `_write_batch_locked`
+                # под GIL продолжает крутиться вплоть до `db.commit()` и
+                # обновления shared set'а. Без acquire здесь thread мог бы
+                # дописать commit и заполнить `committed_keys` уже ПОСЛЕ того,
+                # как мы взяли snapshot `len(committed_keys)`, — event попадал
+                # бы и в `audit_events`, и в `dropped_shutdown_total`.
+                # Acquire ждёт окончания thread-side commit'а и закрывает окно.
+                with self._writer_lock:
+                    committed_now = len(committed_keys)
+                lost = len(batch) - committed_now
                 if self._queue is not None:
                     lost += self._queue.qsize()
                 if lost > 0:
@@ -627,14 +643,21 @@ class AuditOutbox:
             return self._dropped_shutdown_total
 
     def dropped_after_stop_total(self) -> int:
-        """События, пришедшие в `push_nowait` уже после `stop()`.
+        """События, попавшие в `push_nowait` уже после `stop()`.
 
         Отдельно от `dropped_shutdown_total`: тот считает batch'и, не
         уложившиеся в бюджет финального drain'а внутри `stop()`. Этот же
         counter растёт, когда `push_nowait` вызвали ПОСЛЕ возврата `stop()` —
-        очередь уже None, fallback пишет напрямую в session_factory (которая
-        может вести в закрывающийся pool). Признак того, что caller-side не
-        дождался graceful-shutdown или middleware ещё обслуживает запросы.
+        очередь уже None, fallback пытается записать envelope напрямую через
+        session_factory (которая может вести в закрывающийся pool).
+
+        Семантика — «попало на after-stop ветку», НЕ «событие потеряно».
+        Counter инкрементится по факту попадания на fallback после stop'а,
+        НЕЗАВИСИМО от того, успел ли fallback-writer закоммитить row. Если
+        fallback упал — параллельно бампается `self_audit_failures_total`
+        через `_bump_failure`; SIEM по паре counter'ов отличает «успели на
+        after-stop fallback» от «провалили его». Признак того, что caller-side
+        не дождался graceful-shutdown или middleware ещё обслуживает запросы.
         """
         with self._counters_lock:
             return self._dropped_after_stop_total
@@ -718,7 +741,10 @@ def _resolve_actor_type(actor_type: str | None) -> str:
     return "anonymous"
 
 
-def _coerce_details_keys(details: Any) -> Any:
+_COERCE_DETAILS_MAX_DEPTH = 64
+
+
+def _coerce_details_keys(details: Any, _depth: int = 0) -> Any:
     """Рекурсивно приводит ключи dict'а к `str`.
 
     Чистая insurance для JSONB-сериализации: psycopg `Json`-адаптер падает
@@ -731,11 +757,23 @@ def _coerce_details_keys(details: Any) -> Any:
     `isinstance(k, str)` и не-str ключи пропускает SILENTLY (не падает), так
     что валидатор сам по себе нас не защищает — нормализация здесь её
     дополняет.
+
+    Depth-cap: на hot-path payload через `EventCreate` уже ограничен
+    `_details_depth <= 10`, но fallback `_emit_audit_envelope` зовёт нас
+    ДО валидации schema'ы. Симметричный insurance с `utils.redaction.redact`
+    (`_MAX_DEPTH = 64`): за пределами depth-cap'а возвращаем значение «как
+    есть» вместо `RecursionError` — pydantic дальше отобьёт слишком глубокий
+    payload собственной валидацией с понятным error_code.
     """
+    if _depth >= _COERCE_DETAILS_MAX_DEPTH:
+        return details
     if isinstance(details, dict):
-        return {str(k): _coerce_details_keys(v) for k, v in details.items()}
+        return {
+            str(k): _coerce_details_keys(v, _depth + 1)
+            for k, v in details.items()
+        }
     if isinstance(details, list):
-        return [_coerce_details_keys(v) for v in details]
+        return [_coerce_details_keys(v, _depth + 1) for v in details]
     return details
 
 

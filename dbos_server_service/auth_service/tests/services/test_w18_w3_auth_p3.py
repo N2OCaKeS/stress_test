@@ -184,7 +184,7 @@ class TestCheckCanManageBotExtraDetails:
         assert len(failures) == 1
         details = failures[0]["details"]
         # стандартные поля cross-tenant денайла
-        assert details["reason"] == "cross_tenant_bot"
+        assert details["reason"] == "cross_department_bot"
         assert details["bot_id"] == bot.id
         assert details["bot_department_id"] == dept_a.id
         assert details["actor_department_id"] == dept_b.id

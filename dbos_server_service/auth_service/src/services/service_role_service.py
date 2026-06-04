@@ -39,7 +39,7 @@ def _check_can_manage(
         return
     if identity.department_id != department_id:
         raise AuthorizationError(
-            error_code="DEPARTMENT_FORBIDDEN",
+            error_code="DEPARTMENT_ACCESS_DENIED",
             message="Cannot manage roles outside your own department",
         )
     if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:

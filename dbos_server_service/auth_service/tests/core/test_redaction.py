@@ -182,13 +182,13 @@ class TestAuditScenarios:
     def test_login_failure_with_form_password(self):
         """Если в details случайно попал введённый пароль — маскируется."""
         out = redact({
-            "reason": "invalid_password",
+            "reason": "invalid_credentials",
             "username": "ivanov",
             "password": "MyP@ssw0rd",  # такого быть не должно — но если есть, маскируем
             "attempts": 3,
         })
         assert out["password"] == "<PASSWORD>"
-        assert out["reason"] == "invalid_password"
+        assert out["reason"] == "invalid_credentials"
         assert out["username"] == "ivanov"
         assert out["attempts"] == 3
 

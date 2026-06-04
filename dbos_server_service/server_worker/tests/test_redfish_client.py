@@ -345,6 +345,6 @@ class TestLifecycle:
 
         async with _make_client(handler) as c:
             assert await c.get_power_state() == "Off"
-        # client закрыт; повторное использование httpx после aclose даст ошибку
-        with pytest.raises(RuntimeError):
+        # client закрыт; повторное использование даёт явный RedfishError
+        with pytest.raises(RedfishError, match="closed"):
             await c.get_power_state()

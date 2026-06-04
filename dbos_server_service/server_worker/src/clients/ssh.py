@@ -996,6 +996,8 @@ class SshClient:
         )
 
         # 4. /etc/os-release — KEY=VALUE (часть в кавычках).
+        # `_capture_text` всегда возвращает dict (см. сигнатуру), `isinstance`
+        # тут — defence-in-depth на случай тестовой подмены subclass'ом.
         os_release_raw = await self._capture_text("cat /etc/os-release")
         facts["os"] = _parse_os_release(os_release_raw.get("stdout", "")) if isinstance(os_release_raw, dict) else {}
         if isinstance(os_release_raw, dict) and "error" in os_release_raw:
@@ -1003,6 +1005,7 @@ class SshClient:
 
         # 5. lspci -mm — построчно. Не парсим в class/vendor/device dict
         # (нужно дополнительно lspci -nn для PCI ID) — отдаём raw lines.
+        # `isinstance` — то же defence-in-depth, что в os_release-блоке выше.
         lspci_raw = await self._capture_text("lspci -mm")
         if isinstance(lspci_raw, dict):
             lines = [ln for ln in lspci_raw.get("stdout", "").splitlines() if ln.strip()]
@@ -1127,8 +1130,8 @@ def _parse_os_release(text: str) -> dict:
     кривых строках — просто пропускает.
     """
     out: dict[str, str] = {}
-    for line in text.splitlines():
-        line = line.strip()
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")

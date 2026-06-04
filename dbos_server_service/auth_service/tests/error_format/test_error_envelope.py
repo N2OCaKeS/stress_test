@@ -17,7 +17,7 @@ async def test_401_error_has_full_envelope(client):
     assert resp.status_code == 401
     body = resp.json()
     assert _ENVELOPE_KEYS.issubset(body.keys()), f"missing fields: {_ENVELOPE_KEYS - set(body.keys())}"
-    assert body["error_code"] == "ACCESS_TOKEN_EXPIRED"
+    assert body["error_code"] == "INVALID_TOKEN"
     assert body["request_id"]
     assert body["timestamp"]
 

@@ -22,6 +22,7 @@ import time
 from collections import OrderedDict
 from typing import Annotated
 
+import jwt as _jwt
 from fastapi import Depends, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,18 +43,26 @@ _logger = logging.getLogger(__name__)
 
 
 def _extract_bearer(request: Request) -> str | None:
-    """Вытащить Bearer-токен из `Authorization` header'а. None если нет."""
+    """Вытащить Bearer-токен из `Authorization` header'а. None если нет.
+
+    Scheme сравнивается case-insensitive — RFC 7235 §2.1 фиксирует, что
+    auth-scheme нечувствителен к регистру (`bearer foo` валиден так же,
+    как `Bearer foo`).
+    """
     auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
+    if len(auth) >= 7 and auth[:7].lower() == "bearer ":
         return auth[7:]
     return None
 
 
 def _invalid_token_error() -> AuthenticationError:
-    """Единая ошибка для невалидного/истёкшего JWT. Не палит конкретику."""
+    """Единая ошибка для structurally invalid JWT (bad signature, missing claims,
+    unknown actor_type). Конкретику не палим, но отделена от `ACCESS_TOKEN_EXPIRED`:
+    клиенту бесполезно гонять refresh-flow на forged-токене.
+    """
     return AuthenticationError(
-        error_code="ACCESS_TOKEN_EXPIRED",
-        message="Invalid or expired token",
+        error_code="INVALID_TOKEN",
+        message="Invalid token",
     )
 
 
@@ -175,7 +184,7 @@ async def get_current_identity(
     token = _extract_bearer(request)
     if token is None:
         raise AuthenticationError(
-            error_code="ACCESS_TOKEN_EXPIRED",
+            error_code="INVALID_TOKEN",
             message="Missing bearer token",
         )
 
@@ -192,6 +201,11 @@ async def get_current_identity(
     if payload is None:
         try:
             payload = decode_access_token(token)
+        except _jwt.ExpiredSignatureError:
+            raise AuthenticationError(
+                error_code="ACCESS_TOKEN_EXPIRED",
+                message="Access token expired",
+            )
         except Exception:
             raise _invalid_token_error()
 
@@ -483,16 +497,10 @@ def require_service_token(
         return
 
     # ── Legacy shared secret ─────────────────────────────────────────────────
-    # Если `SERVICE_API_KEYS` непустой, мы уже вернулись выше — сюда попадаем
-    # только при пустом per-service словаре. Но если `strict_service_api_keys`
-    # включён И словарь непустой — это означает «legacy fallback запрещён»;
-    # в норме сюда не попадём, однако защищаемся явным reject'ом на случай
-    # будущих рефакторингов ветки выше.
-    if settings.service_api_keys and settings.strict_service_api_keys:
-        raise AuthenticationError(
-            error_code="INVALID_SERVICE_TOKEN",
-            message="Legacy SERVICE_API_KEY fallback disabled (STRICT_SERVICE_API_KEYS=true)",
-        )
+    # Сюда попадаем только при пустом `SERVICE_API_KEYS` — ветка выше уже
+    # вернулась при truthy словаре. Любая инверсия порядка веток должна
+    # пересматривать этот инвариант (`STRICT_SERVICE_API_KEYS` тогда снова
+    # обязан резать legacy-fallback при непустом словаре).
     if not secrets.compare_digest(credentials.credentials, settings.service_api_key):
         raise AuthenticationError(
             error_code="INVALID_SERVICE_TOKEN",

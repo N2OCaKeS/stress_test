@@ -386,8 +386,11 @@ async def revoke_action(
     )
     scope_details = {**audit_details, "department_id": department_id}
     removed = await repo.revoke(db, entity_type, role, action, department_id)
-    await db.commit()
     if removed == 0:
+        # Не коммитим no-op'ом: иначе случайные in-flight write'ы caller'а
+        # уехали бы под чужой revoke-операцией. Явный rollback держит
+        # сессию чистой для последующего raise.
+        await db.rollback()
         audit_service.emit(
             "permission.revoke", target_type="entity_permission",
             status="failure", allowed=True,
@@ -406,6 +409,7 @@ async def revoke_action(
                 "department_id": department_id,
             },
         )
+    await db.commit()
     audit_service.emit(
         "permission.revoke", target_type="entity_permission",
         status="success", allowed=True,

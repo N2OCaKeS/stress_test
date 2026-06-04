@@ -38,7 +38,10 @@ def extract_bmc_host(endpoint_url: str) -> str:
     используем `netloc` и срезаем `user:pass@` префикс, если он есть.
     Для строк без scheme netloc пустой, падаем на `split('/')[0]` (это уже
     host[:port]); из этого fallback'а нужно вручную отрезать userinfo —
-    с bare-IPv4/IPv6 `urlparse` его не видит.
+    с bare-IPv4/IPv6 `urlparse` его не видит. Bare-bracket IPv6 без scheme
+    (`[::1]` / `[::1]:443`) тоже идёт через fallback: `urlparse` кладёт это
+    в `path`, а не `netloc`, поэтому split('/')[0] возвращает исходную
+    строку as-is — корректное поведение для downstream подстановки в URL.
 
     Пустая строка → возвращаем как есть, BMC-клиент упадёт с понятной
     ошибкой connect'а.

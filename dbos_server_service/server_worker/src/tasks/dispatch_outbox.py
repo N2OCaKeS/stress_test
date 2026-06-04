@@ -21,7 +21,9 @@ dispatch_outbox — всё в одной транзакции) и публика
      после k успешных kiq откатывал бы все k записей и приводил к их
      передиспатчу — broker.kiq доставил бы тот же task_id повторно.
   3. После `DISPATCH_OUTBOX_MAX_ATTEMPTS` row не закрываем — оставляем с
-     attempts=MAX, логируем WARNING. Оператор разруливает: либо ручной
+     attempts=MAX, паркуем `next_retry_at = now() + 24h`, логируем WARNING.
+     Парковка нужна, чтобы row не входила в SELECT каждый poll-тик и не
+     спамила лог тем же сообщением. Оператор разруливает: либо ручной
      reset attempts/next_retry_at, либо отдельная DLQ-таска в будущем.
 
 Cleanup-task `dispatch_outbox.cleanup_old` раз в сутки удаляет успешно
@@ -58,6 +60,15 @@ _BACKOFF_EXPONENT_CAP = 12
 # долго; реальные операционные проблемы лучше разруливать вручную, а не
 # растягивать exponential до часов.
 _BACKOFF_MAX_SECONDS = 300.0
+
+# Парковка для row'ы, упёршейся в `attempts >= max_attempts`. Без неё
+# `next_retry_at` остаётся в прошлом, и каждый poll-тик снова берёт row в
+# SELECT, дёргает broker.find_task / kiq, пишет WARNING с тем же текстом и
+# инкрементит `attempts` в бесконечность. Сутки между тиками держат лог
+# читаемым (один WARNING в день), но оставляют оператору возможность сбросить
+# вручную (UPDATE attempts=0, next_retry_at=NULL) — row продолжает быть
+# pending, не уходит в формальный DLQ.
+_CAP_REACHED_PARK_SECONDS = 24 * 3600.0
 
 
 def _compute_next_retry_at(attempts: int) -> datetime:
@@ -158,10 +169,16 @@ async def poll_once() -> None:
                     )[:LAST_ERROR_MAX_LEN]
                     if row.attempts >= max_attempts:
                         cap_reached += 1
+                        # Парковка до +24h: row остаётся pending, но не входит
+                        # в SELECT каждый poll-тик. Оператор увидит её в админке
+                        # и решит — ручной reset либо ждать до следующего парка.
+                        row.next_retry_at = datetime.now(timezone.utc) + timedelta(
+                            seconds=_CAP_REACHED_PARK_SECONDS,
+                        )
                         logger.warning(
                             "dispatch_outbox.poll: row=%s task_id=%s "
                             "task_kind=%s reached attempts cap=%s (unknown task_kind); "
-                            "leaving pending — operator must reset",
+                            "parking next_retry_at=+24h — operator must reset",
                             row.id,
                             row.task_id,
                             row.task_kind,
@@ -193,10 +210,13 @@ async def poll_once() -> None:
                     row.last_error = redacted[:LAST_ERROR_MAX_LEN]
                     if row.attempts >= max_attempts:
                         cap_reached += 1
+                        row.next_retry_at = datetime.now(timezone.utc) + timedelta(
+                            seconds=_CAP_REACHED_PARK_SECONDS,
+                        )
                         logger.warning(
                             "dispatch_outbox.poll: row=%s task_id=%s "
                             "task_kind=%s reached attempts cap=%s last_error=%s; "
-                            "leaving pending — operator must reset",
+                            "parking next_retry_at=+24h — operator must reset",
                             row.id,
                             row.task_id,
                             row.task_kind,

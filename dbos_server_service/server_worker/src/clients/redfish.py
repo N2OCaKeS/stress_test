@@ -53,13 +53,6 @@ PowerAction = Literal[
 ]
 
 
-# Дефолтный путь к Manager-ресурсу. У Dell-моделей это `iDRAC.Embedded.1`,
-# у HPE iLO — `1`. Caller может передать override.
-_DEFAULT_MANAGER_ID = "iDRAC.Embedded.1"
-# Дефолтный System ID. У большинства one-node-серверов это `1` или
-# `System.Embedded.1`. Берём `1` как наиболее переносимый.
-_DEFAULT_SYSTEM_ID = "1"
-
 # Per-kind manager-id маппинг. iDRAC использует embedded slot, HP iLO
 # держит manager под номером `1`. Остальные kind (ipmi / redfish) оставляют
 # manager_id="" — клиент сделает discovery через коллекцию /Managers.
@@ -67,6 +60,14 @@ KIND_MANAGER_IDS: dict[str, str] = {
     "idrac": "iDRAC.Embedded.1",
     "ilo": "1",
 }
+
+# Дефолтный путь к Manager-ресурсу. У Dell-моделей это `iDRAC.Embedded.1`,
+# у HPE iLO — `1`. Caller может передать override. Берём из `KIND_MANAGER_IDS`,
+# чтобы не было дублирующегося литерала на правку при добавлении новых iDRAC.
+_DEFAULT_MANAGER_ID = KIND_MANAGER_IDS["idrac"]
+# Дефолтный System ID. У большинства one-node-серверов это `1` или
+# `System.Embedded.1`. Берём `1` как наиболее переносимый.
+_DEFAULT_SYSTEM_ID = "1"
 
 
 def resolve_manager_id(kind: str | None) -> str:
@@ -238,6 +239,7 @@ class RedfishClient:
             client_kwargs["transport"] = transport
         self._client = httpx.AsyncClient(**client_kwargs)
         self._owns_transport = transport is None
+        self._closed = False
 
     @staticmethod
     def _normalize_host(host: str) -> str:
@@ -273,10 +275,15 @@ class RedfishClient:
         запроса на shared transport отвалится «Cannot send request after
         client has been closed».
         """
+        if self._closed:
+            return
+        self._closed = True
         if not self._owns_transport:
             # Shared transport — клиент one-shot per BMC, но transport общий.
             # Закрывать клиент целиком значило бы закрыть transport,
-            # ломая остальные RedfishClient'ы. Просто отпускаем ссылку.
+            # ломая остальные RedfishClient'ы. Просто отпускаем ссылку;
+            # `_closed=True` выше превратит дальнейшие request'ы в явный
+            # RedfishError вместо голого AttributeError на `None.request`.
             self._client = None  # type: ignore[assignment]
             return
         await self._client.aclose()
@@ -342,6 +349,16 @@ class RedfishClient:
         caller-handler различит по `status_code is None`, что это «BMC
         unreachable», а не «отказ BMC».
         """
+        if self._closed:
+            # Use-after-aclose: на shared transport `_client` уже None,
+            # на standalone — закрыт. Без явной проверки caller получает
+            # либо AttributeError, либо httpx-исключение про closed client.
+            # RedfishError(None, ...) единая семантика с другими transport
+            # failures.
+            raise RedfishError(
+                status_code=None,
+                message=f"Redfish client already closed (path={path})",
+            )
         try:
             response = await self._client.request(method, path, json=json_body)
         except httpx.HTTPError as exc:

@@ -22,8 +22,8 @@ def _reset_state():
 
 
 @pytest.mark.asyncio
-async def test_emit_tasks_overflow_drops_oldest(monkeypatch):
-    """При len(_EMIT_TASKS) >= cap: oldest cancel'ится, counter растёт."""
+async def test_emit_tasks_overflow_drops_one(monkeypatch):
+    """При len(_EMIT_TASKS) >= cap: одна произвольная task cancel'ится, counter растёт."""
     # Подменяем cap на маленькое значение, чтобы не плодить тысячу task.
     monkeypatch.setattr(audit_service, "_EMIT_TASKS_MAX", 3)
 
@@ -50,8 +50,8 @@ async def test_emit_tasks_overflow_drops_oldest(monkeypatch):
     assert len(audit_service._EMIT_TASKS) == 3
     assert audit_service.get_emit_tasks_overflow_total() == 0
 
-    # Четвёртый emit: oldest должен быть cancel'нут, counter += 1, set
-    # остаётся в пределах cap'а (size = cap, oldest заменён на новый).
+    # Четвёртый emit: произвольная task cancel'нута, counter += 1, set
+    # остаётся в пределах cap'а (size = cap, одна заменена на новую).
     audit_service.emit("user.login", request_id="req_overflow_1")
     await asyncio.sleep(0)
     assert audit_service.get_emit_tasks_overflow_total() == 1

@@ -69,15 +69,24 @@ def get_context() -> AuditContext:
 
 
 def update_context(**fields) -> None:
-    """Дописать поля в текущий контекст. Создаёт новый, если не было."""
+    """Дописать поля в текущий контекст. Создаёт новый, если не было.
+
+    Поля с `value is None` **пропускаются** (не перетирают существующее
+    значение и не создают `extra`-ключ). Это сделано намеренно: вызывающий
+    код после introspect передаёт частично заполненный набор полей, и
+    `None` означает «не знаю — оставь как есть», а не «очисти».
+    Для явной очистки поля собирай новый `AuditContext` и зови `set_context`.
+    """
     ctx = _current.get()
     if ctx is None:
         ctx = AuditContext()
         _current.set(ctx)
     for k, v in fields.items():
-        if hasattr(ctx, k) and v is not None:
+        if v is None:
+            continue
+        if hasattr(ctx, k):
             setattr(ctx, k, v)
-        elif v is not None:
+        else:
             ctx.extra[k] = v
 
 

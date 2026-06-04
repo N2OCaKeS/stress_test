@@ -101,11 +101,18 @@ def _validate_request_id(value: str | None) -> None:
 
 
 # Поля, входящие в hash payload'а для idempotency-poisoning защиты.
-# Сюда НЕ входят `received_at` и `id` (server-side defaults — на двух
-# ретраях будут разные значения). `request_id` тоже исключён: middleware
-# на ретраях может реассайнить его, а сама retry-семантика не должна
-# зависеть от значения трассировки. Все остальные поля EventCreate
-# участвуют в хэше: разные значения → разный logical event → 409.
+# Включены (14 полей; см. tuple ниже): `timestamp`, `service`, `action`,
+# `actor_id`, `actor_type`, `username`, `department_id`, `target_id`,
+# `target_type`, `status`, `allowed`, `severity`, `details`, `idempotency_key`.
+# Любая разница в этих полях между двумя POST'ами с одинаковым
+# `idempotency_key` → разный logical event → 409 IDEMPOTENCY_KEY_CONFLICT.
+#
+# Исключены (по причинам, не связанным с logical-identity события):
+# * `id` — server-side primary key, генерится autoincrement'ом;
+# * `received_at` — server-side default `now()`, разный на каждый ретрай;
+# * `request_id` — трассировочный header, middleware на ретраях может
+#   реассайнить (например, новый attach_request_id в gateway'е), а
+#   retry-семантика не должна зависеть от значения трассировки.
 _HASH_FIELDS: tuple[str, ...] = (
     "timestamp",
     "service",

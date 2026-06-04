@@ -91,7 +91,7 @@ async def test_bot_token_create_cross_tenant_emits_failure(
     failed = [e for e in captured_audit if e.get("status") == "failure"]
     assert any(
         e["action"] == "bot.token_create"
-        and e["details"]["reason"] == "cross_tenant_bot"
+        and e["details"]["reason"] == "cross_department_bot"
         and e["details"]["bot_id"] == bot.id
         for e in failed
     ), f"no failure event for bot.token_create: {failed}"
@@ -116,7 +116,7 @@ async def test_bot_roles_assign_cross_tenant_emits_failure(
         if e.get("status") == "failure" and e["action"] == "bot.roles_assign"
     ]
     assert failed, f"no failure event for bot.roles_assign: {captured_audit}"
-    assert failed[0]["details"]["reason"] == "cross_tenant_bot"
+    assert failed[0]["details"]["reason"] == "cross_department_bot"
 
 
 async def test_bot_token_revoke_cross_tenant_emits_failure(

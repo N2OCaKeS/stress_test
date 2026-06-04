@@ -99,7 +99,47 @@ def example_math_model() -> None:
     pprint(model.total_rating(power=calculated_power))
 
 
+def example_math_model_ratio() -> None:
+    """MathModel(type='ratio'): рейтинг как отношение к эталону (без bounds и power).
+
+    Эталон (референсный прогон) фиксируется один раз и передаётся в reference.
+    На эталоне рейтинг = scale (100). value/ref для positive, ref/value для negative:
+    ratio > 1 — лучше эталона, < 1 — хуже. Итог — взвешенное геом-среднее × scale.
+    """
+    # Эталон: значения референсного прогона по критериям (заморожены один раз).
+    reference = {
+        "latency": [12.0, 14.0, 18.0],            # negative: меньше = лучше
+        "throughput": [5000.0, 7300.0, 9300.0],   # positive: больше = лучше
+    }
+
+    model = MathModel(type="ratio")
+    # Новый прогон: латентность вдвое ниже (лучше), throughput в 1.5 раза выше.
+    model.add_criterion(
+        "latency",
+        iterations=[100, 200, 300],
+        values=[6.0, 7.0, 9.0],
+        weight=0.4,
+        negative=True,
+        reference=reference["latency"],
+    )
+    model.add_criterion(
+        "throughput",
+        iterations=[100, 200, 300],
+        values=[7500.0, 10950.0, 13950.0],
+        weight=0.6,
+        negative=False,
+        reference=reference["throughput"],
+    )
+
+    print("\nMathModel / ratio (отношение к эталону, scale=100)")
+    result = model.total_rating(scale=100.0)   # эталон -> 100, >100 лучше, <100 хуже
+    pprint(result)
+    for name, info in result["criteria"].items():
+        print(f"  {name}: R = {info['ratio']:.3f}")   # latency ~2.0, throughput ~1.5
+
+
 if __name__ == "__main__":
     example_old_class_individual()
     example_old_with_common_params()
     example_math_model()
+    example_math_model_ratio()

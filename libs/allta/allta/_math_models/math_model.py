@@ -140,17 +140,52 @@ class MathModel:
     Коэффициент ``power`` подбирается отдельно через ``calc_power(...)`` на synthetic-наборах,
     построенных из ``bounds`` и типа критерия, а затем явно передаётся в
     ``total_rating(power)`` для получения стабильных результатов между запусками теста.
+
+    Поддерживается два режима (параметр ``type`` в конструкторе):
+
+    - ``"odds"`` (по умолчанию) — min-max + odds + power, описанная выше схема.
+    - ``"ratio"`` — отношение к эталону (как в UnixBench): без границ и power. Для каждого
+      замера ``ratio = value/reference`` (positive) или ``reference/value`` (negative);
+      итог — взвешенное геом-среднее ``ratio`` × ``scale``. На эталоне рейтинг = ``scale``.
+
+    Примеры::
+
+        # ODDS (как раньше): нужны bounds и power
+        m = MathModel()                       # или MathModel(type="odds")
+        m.add_criterion("syscall", iterations=[4, 8], values=[680000, 690000],
+                        weight=0.11, negative=False, bounds=(0, 7_000_000))
+        rating = m.total_rating(power=0.998)["total_rating"]
+
+        # RATIO: нужен reference (эталонный прогон), без bounds и power
+        m = MathModel(type="ratio")
+        m.add_criterion("syscall", iterations=[4, 8], values=[6_800_000, 6_900_000],
+                        weight=0.11, negative=False, reference=[680000, 690000])
+        m.add_criterion("latency", iterations=[1, 2, 3], values=[0.6, 0.6, 0.6],
+                        weight=0.06, negative=True, reference=[0.3, 0.3, 0.3])
+        res = m.total_rating(scale=100.0)     # эталон -> 100, >100 лучше, <100 хуже
+        res["total_rating"]                   # итоговый индекс
+        res["criteria"]["syscall"]["ratio"]   # R критерия (здесь ~10.0)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, type: str | None = None) -> None:
         """
         Создаёт пустую математическую модель.
+
+        Args:
+            type: режим расчёта.
+                ``None`` / ``"odds"`` — min-max + odds + power (по умолчанию, как раньше):
+                    ``add_criterion`` принимает ``bounds``, ``total_rating(power)`` нужен power.
+                ``"ratio"`` — отношение к эталону: ``add_criterion`` принимает ``reference``,
+                    ``total_rating()`` считает взвешенное геом-среднее отношений (без power).
 
         Внутренние параметры модели фиксированы:
         - максимальная степень полинома: 10
         - инверсия negative-критериев: включена
         - epsilon для clipping: 1e-6
         """
+        if type not in (None, "odds", "ratio"):
+            raise ValueError(f"type должен быть None, 'odds' или 'ratio'; получено {type!r}")
+        self._mode = "ratio" if type == "ratio" else "odds"
         self._max_degree = 10
         self._invert_negative = True
         self._epsilon = 1e-6
@@ -163,10 +198,20 @@ class MathModel:
         values: Sequence[Number],
         weight: Number,
         negative: bool,
-        bounds: tuple[Number, Number],
+        bounds: tuple[Number, Number] | None = None,
+        reference: Number | Sequence[Number] | None = None,
     ) -> "MathModel":
         """
         Добавляет критерий в модель.
+
+        Поддерживаются два режима нормализации значения:
+        - ``bounds`` — min-max + odds-модель (как раньше): нужен для ``total_rating``.
+        - ``reference`` — отношение к эталону: для каждого замера считается
+          ``ratio = value / reference`` (positive) или ``reference / value`` (negative),
+          ``ratio > 1`` лучше эталона, ``< 1`` хуже. Магнитуда честная (×100 -> ratio 100),
+          границы и power не нужны. Используется методом ``ratio_index``.
+
+        Можно передать оба: ``bounds`` для odds-расчёта и ``reference`` для ratio-расчёта.
 
         Args:
             name (str): Название критерия.
@@ -174,7 +219,8 @@ class MathModel:
             values (Sequence[Number]): Значения критерия на каждой итерации.
             weight (Number): Вес критерия в итоговом рейтинге.
             negative (bool): Признак negative-критерия. ``True`` если меньше = лучше.
-            bounds (tuple[Number, Number]): Границы ``(L, U)`` для min-max нормализации.
+            bounds (tuple[Number, Number] | None): Границы ``(L, U)`` для odds-режима.
+            reference (Number | Sequence[Number] | None): Эталон(ы) для ratio-режима.
 
         Returns:
             MathModel: Текущий экземпляр модели для chaining-вызовов.
@@ -185,28 +231,103 @@ class MathModel:
             raise ValueError("iterations и values должны быть одинаковой длины")
         if len(iterations) < 2:
             raise ValueError("Для критерия требуется минимум 2 точки")
+        if self._mode == "ratio" and reference is None:
+            raise ValueError(f"{name}: в режиме type='ratio' нужен reference")
+        if self._mode == "odds" and bounds is None:
+            raise ValueError(f"{name}: в режиме type='odds' нужен bounds")
 
         x_arr = np.array([float(x) for x in iterations], dtype=float)
         y_arr = np.array([float(v) for v in values], dtype=float)
-        lower_bound = float(bounds[0])
-        upper_bound = float(bounds[1])
 
-        if upper_bound <= lower_bound:
-            raise ValueError(f"{name}: upper_bound должен быть больше lower_bound")
         if float(weight) < 0.0:
             raise ValueError(f"{name}: weight должен быть >= 0")
         if np.any(np.diff(x_arr) <= 0.0):
             raise ValueError(f"{name}: iterations должны быть строго возрастающими")
 
-        self._criteria[str(name)] = {
+        entry: dict[str, Any] = {
             "name": str(name),
             "iterations": x_arr,
             "values": y_arr,
             "weight": float(weight),
             "negative": bool(negative),
-            "bounds": (lower_bound, upper_bound),
         }
+
+        if bounds is not None:
+            lower_bound = float(bounds[0])
+            upper_bound = float(bounds[1])
+            if upper_bound <= lower_bound:
+                raise ValueError(f"{name}: upper_bound должен быть больше lower_bound")
+            entry["bounds"] = (lower_bound, upper_bound)
+
+        if reference is not None:
+            entry["ratios"] = self._compute_ratios(name, y_arr, reference, bool(negative))
+
+        self._criteria[str(name)] = entry
         return self
+
+    def _compute_ratios(
+        self,
+        name: str,
+        values: np.ndarray,
+        reference: Number | Sequence[Number],
+        negative: bool,
+    ) -> np.ndarray:
+        """Отношение к эталону по каждому замеру: positive value/ref, negative ref/value."""
+        if isinstance(reference, (int, float)):
+            ref = np.full(values.shape, float(reference), dtype=float)
+        else:
+            ref = np.array([float(r) for r in reference], dtype=float)
+            if ref.size != values.size:
+                raise ValueError(f"{name}: reference должен быть скаляром или длины values")
+
+        eps = float(self._epsilon)
+        v = np.clip(values, eps, None)
+        r = np.clip(ref, eps, None)
+        return r / v if negative else v / r
+
+    def ratio_index(self, scale: Number = 100.0, cap: Number = 1000.0) -> dict[str, Any]:
+        """
+        Итоговый индекс как взвешенное геом-среднее отношений к эталону.
+
+        Считается только по критериям, добавленным с ``reference`` (ratio-режим).
+        Для каждого критерия отношение по замерам сводится геом-средним, затем берётся
+        взвешенное геом-среднее по критериям и умножается на ``scale``:
+
+            index = exp( Σ wᵢ·ln(ratioᵢ) / Σ wᵢ ) * scale
+
+        На эталоне все ``ratio = 1`` -> ``index = scale``. Магнитуда честная: метрика
+        ×N даёт ``ratioᵢ = N``, а вклад в индекс — по весу. Границы и power не нужны.
+
+        Args:
+            scale (Number): Множитель индекса (на эталоне индекс равен ``scale``).
+            cap (Number): Ограничение выброса: ``ratio`` зажимается в ``[1/cap, cap]``,
+                чтобы один аномальный замер не перекосил индекс.
+
+        Returns:
+            dict[str, Any]: ``index`` и детализация ``criteria`` (ratio и weight по критериям).
+        """
+        ratio_criteria = {n: c for n, c in self._criteria.items() if "ratios" in c}
+        if not ratio_criteria:
+            raise ValueError("Нет критериев с reference (ratio-режим)")
+
+        cap_value = float(cap)
+        if cap_value <= 1.0:
+            raise ValueError("cap должен быть > 1")
+        total_weight = sum(float(c["weight"]) for c in ratio_criteria.values())
+        if total_weight <= 0.0:
+            raise ValueError("Сумма весов критериев должна быть > 0")
+
+        log_sum = 0.0
+        details: dict[str, Any] = {}
+        for name, criterion in ratio_criteria.items():
+            clamped = np.clip(np.array(criterion["ratios"], dtype=float), 1.0 / cap_value, cap_value)
+            crit_ratio = float(np.exp(np.mean(np.log(clamped))))
+            weight = float(criterion["weight"])
+            log_sum += weight * math.log(crit_ratio)
+            details[name] = {"ratio": crit_ratio, "weight": weight}
+
+        index = float(math.exp(log_sum / total_weight) * float(scale))
+        return {"index": index, "scale": float(scale), "criteria": details}
 
     def test_power(
         self,
@@ -398,22 +519,42 @@ class MathModel:
 
         return result
 
-    def total_rating(self, power: Number) -> dict[str, Any]:
+    def total_rating(
+        self,
+        power: Number | None = None,
+        *,
+        scale: Number = 100.0,
+        cap: Number = 1000.0,
+    ) -> dict[str, Any]:
         """
         Рассчитывает итоговый рейтинг по всем ранее добавленным критериям.
 
-        Перед вызовом необходимо явно передать общий ``power`` для всей группы критериев.
-        Обычно этот коэффициент заранее подбирается через ``calc_power(...)``
-        и затем фиксируется в коде теста для повторного использования между запусками.
+        Поведение зависит от режима модели (``type`` в конструкторе):
+        - ``odds`` (по умолчанию): нужен ``power`` (как раньше). Возвращает odds-рейтинг.
+        - ``ratio``: ``power`` не нужен. Возвращает взвешенное геом-среднее отношений к
+          эталону × ``scale`` (на эталоне = ``scale``). ``cap`` ограничивает выбросы.
 
         Args:
-            power (Number): Зафиксированный коэффициент степенного преобразования.
+            power (Number | None): степень для odds-режима (в ratio-режиме игнорируется).
+            scale (Number): множитель индекса для ratio-режима (на эталоне индекс = scale).
+            cap (Number): ограничение выброса ratio в ``[1/cap, cap]`` (ratio-режим).
 
         Returns:
-            dict[str, Any]: Итоговый рейтинг и детализация по критериям.
+            dict[str, Any]: ``total_rating`` и детализация по критериям.
         """
         if not self._criteria:
             raise ValueError("Не добавлено ни одного критерия")
+
+        if self._mode == "ratio":
+            res = self.ratio_index(scale=scale, cap=cap)
+            return {
+                "total_rating": float(res["index"]),
+                "scale": float(res["scale"]),
+                "criteria": res["criteria"],
+            }
+
+        if power is None:
+            raise ValueError("в режиме type='odds' нужно передать power")
         return self._evaluate_group(float(power))
 
     def calc_power(

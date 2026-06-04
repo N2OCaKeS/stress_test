@@ -85,7 +85,7 @@ def _derive_key_legacy(material: str) -> bytes:
     Оставлен исключительно чтобы записи, зашифрованные до HKDF-rollout'а,
     оставались читаемыми. Новые encrypt'ы ОБЯЗАНЫ идти через :func:`_derive_key_hkdf`.
     """
-    return hashlib.sha256(material.encode("utf-8")).digest()
+    return hashlib.sha256(material.encode()).digest()
 
 
 def _derive_key_hkdf(material: str, version: int) -> bytes:
@@ -101,7 +101,7 @@ def _derive_key_hkdf(material: str, version: int) -> bytes:
         salt=_resolve_hkdf_salt(),
         info=f"v{version}".encode("ascii"),
     )
-    return hkdf.derive(material.encode("utf-8"))
+    return hkdf.derive(material.encode())
 
 
 def _derive_key(material: str, version: int) -> bytes:
@@ -147,7 +147,7 @@ def aad_for_server_account_password(account_id: str) -> bytes:
     Формат — `"server_account_password|server_accounts|<id>"`. Привязывает
     ciphertext к конкретной строке: swap в другую строку → InvalidTag.
     """
-    return f"server_account_password|server_accounts|{account_id}".encode("utf-8")
+    return f"server_account_password|server_accounts|{account_id}".encode()
 
 
 def aad_for_server_account_ssh_key(account_id: str) -> bytes:
@@ -157,7 +157,7 @@ def aad_for_server_account_ssh_key(account_id: str) -> bytes:
     пароля, чтобы swap ciphertext'а password↔private_key в одной и той же
     строке тоже отбивался InvalidTag.
     """
-    return f"server_account_ssh_key|server_accounts|{account_id}".encode("utf-8")
+    return f"server_account_ssh_key|server_accounts|{account_id}".encode()
 
 
 def aad_for_ipmi_credential(controller_id: str) -> bytes:
@@ -166,7 +166,7 @@ def aad_for_ipmi_credential(controller_id: str) -> bytes:
     Формат — `"ipmi_credential|ipmi_controllers|<id>"`. Привязывает
     ciphertext к конкретному BMC-row: swap → InvalidTag.
     """
-    return f"ipmi_credential|ipmi_controllers|{controller_id}".encode("utf-8")
+    return f"ipmi_credential|ipmi_controllers|{controller_id}".encode()
 
 
 # ── Encrypt / Decrypt ────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ def encrypt(plaintext: str, *, aad: bytes) -> str:
     version = settings.server_encryption_key_version
     key = _key_for_version(version)
     nonce = os.urandom(_NONCE_BYTES)
-    ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode("utf-8"), aad)
+    ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode(), aad)
     return f"v{version}${_b64e(nonce)}${_b64e(ciphertext)}"
 
 

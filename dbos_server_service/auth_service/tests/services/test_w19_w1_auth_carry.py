@@ -8,15 +8,12 @@
    не происходит.
 3. `authorization` endpoint — `caller_ip` из body действительно прокидывается
    в `authorization_service.introspect` (regression на silent-feature-loss).
-4. AUDIT_EVENTS.md PII-секция синхронизирована с кодом (`email` маскируется).
 """
 
 from __future__ import annotations
 
 from datetime import timedelta
-from pathlib import Path
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import BotStatus
@@ -195,25 +192,6 @@ class TestCallerIpWiredThroughIntrospectEndpoint:
         )
 
 
-# ── 4. AUDIT_EVENTS.md PII-секция синхронизирована с кодом ───────────────────
-
-
-@pytest.mark.skip(reason="AUDIT_EVENTS.md вне test-container mount; doc-drift проверяется главным")
-class TestAuditEventsDocPiiSection:
-    """`user.update` маскирует email через `mask_email` (user_service.py:557).
-    AUDIT_EVENTS.md в секции «PII в audit-trail» долгое время утверждал
-    обратное (email не маскируется). Регрессия фиксирует, что после W19-W1
-    документация согласована с кодом."""
-
-    def test_audit_events_pii_section_says_email_is_masked(self):
-        doc = Path(__file__).resolve().parents[2] / "AUDIT_EVENTS.md"
-        text = doc.read_text(encoding="utf-8")
-        # Якорный заголовок секции есть.
-        assert "## PII в audit-trail" in text
-        # Старая формулировка «без редакции» удалена.
-        assert "без редакции" not in text, (
-            "PII-секция всё ещё утверждает, что email хранится без редакции — "
-            "противоречит коду в user_service.update_user."
-        )
-        # Новая формулировка про маскировку видна.
-        assert "маскированном виде" in text or "маскируется" in text
+# AUDIT_EVENTS.md PII-секция (doc-drift): проверяется на хосте через
+# `make check-audit-events-listing` — файл лежит вне test-container mount,
+# поэтому держать его как pytest-тест бесполезно.

@@ -1069,4 +1069,4 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
                 "total_reveals_in_window": total_in_window,
             },
         )
-    return base64.b64encode(plain.encode("utf-8")).decode("ascii")
+    return base64.b64encode(plain.encode()).decode("ascii")

@@ -60,7 +60,7 @@ async def aclose_all() -> None:
     if client is not None:
         try:
             await client.aclose()
-        except Exception as exc:  # noqa: BLE001 — shutdown best-effort
+        except Exception as exc:  # shutdown best-effort
             logger.warning("http_pool: failed to close audit pool: %s", exc)
 
 

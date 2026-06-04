@@ -28,12 +28,26 @@ dev/test/CI не делали лишних запросов.
 import asyncio
 import logging
 import sys
+from datetime import datetime, timezone
 
 from taskiq import TaskiqEvents, TaskiqScheduler, TaskiqState
 from taskiq.schedule_sources import LabelScheduleSource
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from src.core.config import get_settings
+from src.core.constants import TaskStatus
+from src.db import dispatch_outbox_session
+from src.db.session import AsyncSessionLocal
+from src.repositories import task as task_repo
+from src.services import audit_outbox_publisher, http_pool
+from src.utils.redaction import redact_error_message
+
+# `from src.tasks._runner_state import RUNNING_TASKS` остаётся локальным:
+# импорт сабмодуля прогоняет `src.tasks/__init__.py` → загружает все
+# task-модули (`power.py`, `users.py`, ...), каждый из них на module-level
+# делает `from src.main import broker` — circular на этой стадии загрузки
+# `src.main` (broker ещё не определён). Аналогично для `from src.tasks
+# import dispatch_outbox`.
 
 try:
     _settings = get_settings()
@@ -149,8 +163,6 @@ async def _stop_dispatch_outbox_publisher(state: TaskiqState) -> None:
         except KeyError:
             pass
     # Закрыть engine на server_service-БД (если поднимался).
-    from src.db import dispatch_outbox_session
-
     await dispatch_outbox_session.dispose()
     logger.info("dispatch_outbox publisher loop stopped on worker shutdown")
 
@@ -164,11 +176,6 @@ async def _start_audit_outbox_publisher(state: TaskiqState) -> None:
     «loging_service недоступен пару минут / низкий QPS»: иначе строки
     `audit_outbox` копятся без shipping'а.
     """
-    # Локальный import: модуль publisher'а тянет `src.db.session` → async engine.
-    # Держим импорт здесь, чтобы `import src.main` для регистрации тасок
-    # не открывал DB-engine как side-effect.
-    from src.services import audit_outbox_publisher
-
     task = asyncio.create_task(
         audit_outbox_publisher.run_publisher_loop(),
         name="audit_outbox_publisher",
@@ -246,15 +253,10 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
     за порогом разумного грейс-периода лучше ловить операторски (alert
     на `status='running' AND started_at < now()-15m`).
     """
-    # Локальный импорт, как везде — иначе циклический.
-    from datetime import datetime, timezone
-
-    from src.repositories import task as task_repo
+    # `RUNNING_TASKS` остаётся локальным импортом: подмодуль `src.tasks`
+    # на module-level гонит регистрацию тасок через `from src.main import
+    # broker` — циклично при загрузке `src.main`.
     from src.tasks._runner_state import RUNNING_TASKS
-    from src.db.session import AsyncSessionLocal
-    from src.services import audit_outbox_publisher
-    from src.core.constants import TaskStatus
-    from src.utils.redaction import redact_error_message
 
     timeout = _settings.worker_shutdown_timeout_seconds
     poll = 0.5
@@ -390,8 +392,6 @@ async def _close_http_pools(state: TaskiqState) -> None:
     После выхода из этого хука taskiq закроет broker, и FD-учёт
     httpx-пула должен быть чистым.
     """
-    from src.services import http_pool
-
     await http_pool.aclose_all()
 
 
@@ -1204,9 +1204,6 @@ async def secrets_reencrypt_lazy() -> None:
 
     for item in items:
         outbox_id = item.get("id")
-        if not isinstance(outbox_id, str):
-            errors += 1
-            continue
         try:
             result = await server_service_client.finalize_reencrypt_outbox_done(
                 outbox_id
@@ -1215,6 +1212,11 @@ async def secrets_reencrypt_lazy() -> None:
                 skipped += 1
             else:
                 processed += 1
+        except ValueError:
+            # `validate_outbox_id` отбил мусорный id — единственный источник
+            # истины формата, без дублирующего isinstance-pre-check здесь.
+            errors += 1
+            continue
         except CredentialFetchError as exc:
             errors += 1
             logger.warning(

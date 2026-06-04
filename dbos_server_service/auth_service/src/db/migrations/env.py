@@ -7,7 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 from src.core.config import get_settings
 from src.db.base import Base
-import src.models  # noqa: F401 — ensures all models are registered with Base
+import src.models  # noqa: F401  # ensures all models are registered with Base
 
 config = context.config
 

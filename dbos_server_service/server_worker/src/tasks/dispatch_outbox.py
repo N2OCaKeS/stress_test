@@ -40,6 +40,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, or_, select
 
+from src.core.backoff import compute_retry_delay
 from src.core.config import get_settings
 from src.core.constants import LAST_ERROR_MAX_LEN
 from src.db import dispatch_outbox_session
@@ -61,8 +62,12 @@ _BACKOFF_MAX_SECONDS = 300.0
 
 def _compute_next_retry_at(attempts: int) -> datetime:
     """Назначить `next_retry_at = now + 2^attempts` секунд, ограниченное cap'ом."""
-    exponent = min(max(attempts, 0), _BACKOFF_EXPONENT_CAP)
-    delay = min(2 ** exponent, _BACKOFF_MAX_SECONDS)
+    delay = compute_retry_delay(
+        attempts,
+        base=2.0,
+        cap_seconds=_BACKOFF_MAX_SECONDS,
+        exp_cap=_BACKOFF_EXPONENT_CAP,
+    )
     return datetime.now(timezone.utc) + timedelta(seconds=delay)
 
 

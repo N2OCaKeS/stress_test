@@ -54,7 +54,7 @@ def encode_cursor(sort_value: datetime | str, row_id: str) -> str:
         sort_str = sort_value.isoformat()
     else:
         sort_str = str(sort_value)
-    payload = json.dumps({"k": sort_str, "i": row_id}, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps({"k": sort_str, "i": row_id}, separators=(",", ":")).encode()
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
 

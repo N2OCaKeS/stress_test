@@ -58,6 +58,7 @@ def set_context(ctx: AuditContext) -> object:
 
 
 def reset_context(token: object) -> None:
+    """Сбросить контекст по token'у, полученному из set_context()."""
     _current.reset(token)  # type: ignore[arg-type]
 
 
@@ -129,7 +130,7 @@ def _leftmost_non_trusted(xff: str, trusted: list[str]) -> str | None:
 
 
 def extract_client_ip(
-    request: "Request",
+    request: Request,
     trusted_proxy_ips: list[str] | None = None,
 ) -> str | None:
     """Безопасно достаёт IP клиента с учётом X-Forwarded-For + allow-list.

@@ -13,7 +13,7 @@
 COMPOSE = docker compose -f tests/docker-compose.test.yml
 RUNNER  = $(COMPOSE) run --rm test-runner
 
-.PHONY: test test-e2e test-all test-ci test-down test-build test-logs
+.PHONY: test test-e2e test-all test-ci test-down test-build test-logs check-audit-events-listing
 
 ## Fast: unit + integration (no docker registry needed)
 test:
@@ -42,3 +42,19 @@ test-logs:
 ## Destroy containers + volumes (including test DB data)
 test-down:
 	$(COMPOSE) down -v --remove-orphans
+
+## Проверить, что AUDIT_EVENTS.md существует и перечисляет все действия из SERVICE_EVENTS.
+## Запускается на хосте (а не в test-контейнере), потому что AUDIT_EVENTS.md живёт рядом
+## с pyproject.toml и в test-mount не попадает.
+check-audit-events-listing:
+	@python3 -c 'import re, sys, pathlib; \
+root = pathlib.Path("."); \
+doc = root / "AUDIT_EVENTS.md"; \
+src = root / "src" / "services" / "audit_events.py"; \
+assert doc.is_file(), f"missing {doc}"; \
+assert src.is_file(), f"missing {src}"; \
+actions = re.findall(r"\"action\":\s*\"([^\"]+)\"", src.read_text(encoding="utf-8")); \
+assert actions, "no actions parsed from SERVICE_EVENTS"; \
+text = doc.read_text(encoding="utf-8"); \
+missing = [a for a in actions if f"`{a}`" not in text]; \
+sys.exit("AUDIT_EVENTS.md missing actions: " + ", ".join(missing)) if missing else print(f"OK: {len(actions)} actions listed in AUDIT_EVENTS.md")'

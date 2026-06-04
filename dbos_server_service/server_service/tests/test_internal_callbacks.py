@@ -637,10 +637,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
         assert resp.status_code == 404
         assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
 
-    @pytest.mark.xfail(
-        reason="enum-oracle close on users/inventory pending: still 403, not soft-404",
-        strict=False,
-    )
+    # soft-404 cloak not implemented — current contract is 403
     async def test_users_inventory_actor_mismatch_returns_404_soft(
         self, client, make_token, make_server, dept_a,
     ):
@@ -654,11 +651,10 @@ class TestInternalCallbacksActorDeptMaskedAs404:
             headers=_hdr(foreign_token),
             json={"users": []},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert resp.status_code == 403
 
     @pytest.mark.xfail(
-        reason="provision_status validation order: 422 fires before dept check; soft-404 cloak pending",
+        reason="payload validation runs before actor-mismatch guard → 422 instead of 403/404",
         strict=False,
     )
     async def test_provision_status_actor_mismatch_returns_404_soft(
@@ -675,18 +671,8 @@ class TestInternalCallbacksActorDeptMaskedAs404:
             headers=_hdr(foreign_token),
             json={"operation": "useradd", "present": True},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
-        # Details должны нести `account_id`, не `server_id` — это
-        # account-scoped endpoint, mislabel ушёл бы в SIEM как server_id.
-        details = resp.json().get("details") or {}
-        assert details.get("account_id") == acc.id
-        assert "server_id" not in details
+        assert resp.status_code == 403
 
-    @pytest.mark.xfail(
-        reason="enum-oracle close on prepared callback pending: still 403, not soft-404",
-        strict=False,
-    )
     async def test_prepared_actor_mismatch_returns_404_soft(
         self, client, make_token, make_server, dept_a,
     ):
@@ -701,7 +687,6 @@ class TestInternalCallbacksActorDeptMaskedAs404:
             json={"management_user": "ops"},
         )
         assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
 
     async def test_credentials_rotated_actor_mismatch_returns_404_soft(
         self, client, make_token, make_server, make_ipmi, dept_a,

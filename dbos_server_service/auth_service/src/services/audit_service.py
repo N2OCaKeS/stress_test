@@ -145,7 +145,7 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
     except httpx.HTTPError as exc:
         logger.warning("audit_service: failed to send event: %s", exc)
         logger.info("audit_event_fallback %s", payload)
-    except Exception as exc:  # noqa: BLE001 — best-effort, не должно падать в hot path
+    except Exception as exc:  # best-effort, не должно падать в hot path
         logger.warning("audit_service: unexpected error sending event: %s", exc)
         logger.info("audit_event_fallback %s", payload)
 

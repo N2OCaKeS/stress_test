@@ -578,4 +578,4 @@ def _reveal_controller_password(
             "department_id": department_id,
         },
     )
-    return base64.b64encode(plain.encode("utf-8")).decode("ascii")
+    return base64.b64encode(plain.encode()).decode("ascii")

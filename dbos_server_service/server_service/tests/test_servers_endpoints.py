@@ -347,11 +347,11 @@ class TestUpdateServer:
         assert "db_error" not in (body.get("details") or {})
 
     @pytest.mark.xfail(
-        reason="savepoint test fixture: PATCH cross-dept на дубликат hostname не "
-        "триггерит UNIQUE constraint immediate, хотя same-dept эквивалент "
-        "(test_update_duplicate_ip_conflict) работает. Логика кода корректна "
-        "(см. test_create_conflict_does_not_leak_cross_dept_*); баг в тест-setup. "
-        "TODO: переписать через explicit commit / отдельный engine для cross-dept seed.",
+        reason="Fixture-only blocker: тестовая транзакция держит cross-dept seed в "
+        "одном savepoint c PATCH'ем, и UNIQUE на hostname не материализуется до "
+        "COMMIT — same-dept эквивалент (test_update_duplicate_ip_conflict) проходит "
+        "штатно. Production-путь корректен и покрыт `test_create_conflict_does_not_"
+        "leak_cross_dept_*`; ограничение конкретно у этого test-engine, не у кода.",
         strict=False,
     )
     async def test_update_conflict_does_not_leak_cross_dept_hostname(

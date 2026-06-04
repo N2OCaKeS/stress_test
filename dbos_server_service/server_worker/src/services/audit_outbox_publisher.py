@@ -45,6 +45,7 @@ from typing import NamedTuple
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.backoff import compute_retry_delay
 from src.core.config import Settings
 from src.core.constants import LAST_ERROR_MAX_LEN
 from src.db.session import AsyncSessionLocal
@@ -294,8 +295,12 @@ def _apply_backoff(row: AuditOutbox) -> None:
     `permanent_4xx`, `attempts_cap`) — там row уже закрыт через
     `_send_to_dlq` и `next_retry_at` смысла не имеет.
     """
-    exponent = min(row.attempts or 0, _BACKOFF_EXPONENT_CAP)
-    delay = min(2 ** exponent, _BACKOFF_MAX_SECONDS)
+    delay = compute_retry_delay(
+        row.attempts or 0,
+        base=2.0,
+        cap_seconds=_BACKOFF_MAX_SECONDS,
+        exp_cap=_BACKOFF_EXPONENT_CAP,
+    )
     row.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
 
 

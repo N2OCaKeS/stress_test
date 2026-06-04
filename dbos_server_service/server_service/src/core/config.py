@@ -508,14 +508,17 @@ class Settings(BaseSettings):
         любом окружении — это намеренный fail-closed default для
         environment'ов без worker'а (legacy/dev/test).
         """
-        if self.app_env.lower() in {"production", "staging"} and self.server_worker_redis_url:
-            if not _REDIS_URL_PASSWORD_RE.search(self.server_worker_redis_url):
-                raise ValueError(
-                    "SERVER_WORKER_REDIS_URL must contain a password in "
-                    f"{self.app_env} (format: redis://:<password>@host:port/db). "
-                    "Anonymous Redis exposes the taskiq queue to RPUSH from "
-                    "any co-located container."
-                )
+        if (
+            self.app_env.lower() in {"production", "staging"}
+            and self.server_worker_redis_url
+            and not _REDIS_URL_PASSWORD_RE.search(self.server_worker_redis_url)
+        ):
+            raise ValueError(
+                "SERVER_WORKER_REDIS_URL must contain a password in "
+                f"{self.app_env} (format: redis://:<password>@host:port/db). "
+                "Anonymous Redis exposes the taskiq queue to RPUSH from "
+                "any co-located container."
+            )
         return self
 
     @model_validator(mode="after")

@@ -6,7 +6,6 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-import httpx
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +20,7 @@ from src.core.config import get_settings
 from src.core.exceptions import AppException
 from src.core.logging import configure_logging
 from src.dependencies.db import get_db
-from src.services import audit_context, audit_service
+from src.services import audit_context, audit_service, http_pool
 from src.services.audit_context import AuditContext, extract_client_ip
 from src.services.audit_events import register_events
 from src.services.bootstrap_service import bootstrap_admin
@@ -113,6 +112,8 @@ _RATE_LIMITED_PATHS_FACTORY = {
 }
 
 
+# SOURCE OF TRUTH: dbos_server_service/sdk/security_headers.py
+# DUPE: keep in sync with auth_service/loging_service/server_service security_headers.py
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Базовые security headers (HSTS опционально, X-Frame-Options, CSP).
 
@@ -179,18 +180,13 @@ def create_application() -> FastAPI:
         async for db in get_db():
             await bootstrap_admin(db)
 
-        # Pooled httpx.AsyncClient для audit-emit в loging_service. Per-call
-        # client под burst быстро исчерпает FD-пул (каждый authed запрос →
-        # login/refresh/ban/http.client_error audit); pool ставит потолок и
-        # амортизирует TLS-handshake. Если `logging_service_url` пуст —
+        # Pooled httpx.AsyncClient для audit-emit в loging_service.
+        # Конструирование клиента вынесено в `services/http_pool.init_pools` —
+        # здесь lifespan только дёргает init/aclose, чтобы вся конфигурация
+        # пулов жила в одном модуле (зеркалит `server_worker` / `server_service`).
+        # Если `logging_service_url` пуст — клиент не создаётся и
         # `_send_to_logging_service` идёт по per-call fallback'у.
-        logging_url = (settings.logging_service_url or "").rstrip("/")
-        if logging_url:
-            audit_service._audit_client = httpx.AsyncClient(
-                base_url=logging_url,
-                timeout=2.0,
-                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-            )
+        http_pool.init_pools(settings)
 
         # Запуск sequence как task'а В loop'е, а не через asyncio.to_thread:
         # внутри потока emit() ловит RuntimeError на asyncio.get_running_loop()
@@ -221,12 +217,9 @@ def create_application() -> FastAPI:
                     # но не подвешиваем shutdown. Лог в audit-канал.
                     pass
 
-            # Обнуляем ссылку только после drain'а. Любые emit'ы, попавшие
+            # Обнуляем slot только после drain'а. Любые emit'ы, попавшие
             # сюда после этой строки, пойдут per-call fallback'ом.
-            audit_pool = audit_service._audit_client
-            audit_service._audit_client = None
-            if audit_pool is not None:
-                await audit_pool.aclose()
+            await http_pool.aclose_all()
 
     app = FastAPI(
         title=settings.app_name,

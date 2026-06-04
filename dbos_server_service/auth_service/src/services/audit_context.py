@@ -1,3 +1,6 @@
+# SOURCE OF TRUTH: dbos_server_service/sdk/extract_client_ip.py
+# DUPE: keep `extract_client_ip` / `_is_trusted_proxy` / `_leftmost_non_trusted`
+#       in sync with sdk/extract_client_ip.py и server_service/src/services/audit_context.py.
 """Per-request audit-контекст. Заполняется middleware, читается `audit_service.emit`.
 
 Позволяет любому вызову `emit(...)` автоматически подхватить:

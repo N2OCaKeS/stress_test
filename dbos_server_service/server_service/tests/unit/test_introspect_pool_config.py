@@ -66,7 +66,12 @@ def test_keepalive_zero_allowed(monkeypatch):
 
 
 def test_main_uses_settings_for_pool(monkeypatch):
-    """`main.lifespan` использует settings.introspect_pool_max_connections в httpx.Limits."""
+    """`http_pool.init_pools` использует settings.introspect_pool_* в httpx.Limits.
+
+    Конструирование клиентов вынесено из `main.py` в `services/http_pool.py`,
+    lifespan только дёргает `http_pool.init_pools(settings)`. Проверяем оба
+    конца: main вызывает init_pools, init_pools читает settings.introspect_pool_*.
+    """
     # Импорт после env-выставления гарантирует свежий Settings.
     for k, v in _env(
         INTROSPECT_POOL_MAX_CONNECTIONS="42",
@@ -82,17 +87,26 @@ def test_main_uses_settings_for_pool(monkeypatch):
     assert s.introspect_pool_max_connections == 42
     assert s.introspect_pool_max_keepalive == 7
 
-    # Грепаем main.py — pool_limits построен из settings, не hardcode'ом.
     import pathlib
     main_py = pathlib.Path(config.__file__).parent.parent / "main.py"
-    text = main_py.read_text()
-    assert "settings.introspect_pool_max_connections" in text
-    assert "settings.introspect_pool_max_keepalive" in text
-    # Удостоверяемся что httpx.Limits для introspect-pool'а больше не
-    # вызывается с hardcoded числами (могли остаться в _audit_client, но
-    # introspect уже на settings).
+    main_text = main_py.read_text()
+    # Lifespan дёргает init_pools(settings) — единая точка сборки пулов.
+    assert "http_pool.init_pools(settings)" in main_text
+
+    http_pool_py = pathlib.Path(config.__file__).parent.parent / "services" / "http_pool.py"
+    pool_text = http_pool_py.read_text()
+    # init_pools читает обе env-переменные из settings, без hardcode'а.
+    assert "settings.introspect_pool_max_connections" in pool_text
+    assert "settings.introspect_pool_max_keepalive" in pool_text
+
+    # Удостоверяемся, что в блоке конструирования _introspect_client нет
+    # старого hardcoded числа 20.
     import re
-    introspect_block = re.search(r"_introspect_client = httpx\.AsyncClient\(.*?\)", text, re.S)
+    introspect_block = re.search(
+        r"auth_deps\._introspect_client = httpx\.AsyncClient\(.*?\)",
+        pool_text,
+        re.S,
+    )
     assert introspect_block is not None
     assert "max_connections=20" not in introspect_block.group(0)
 

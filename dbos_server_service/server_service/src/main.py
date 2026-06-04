@@ -7,7 +7,6 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-import httpx
 import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
@@ -25,7 +24,7 @@ from src.core.exceptions import AppException
 from src.dependencies import auth as auth_deps
 from src.middleware.https_guard import HTTPSRequiredMiddleware
 from src.middleware.platform_admin_guard import platform_admin_guard
-from src.services import audit_context, audit_service, worker_client
+from src.services import audit_context, audit_service, http_pool, worker_client
 from src.services.audit_context import AuditContext
 from src.services.audit_events import register_events
 
@@ -54,6 +53,8 @@ def _is_health_path(path: str) -> bool:
     return path in _HEALTH_PATHS
 
 
+# SOURCE OF TRUTH: dbos_server_service/sdk/security_headers.py
+# DUPE: keep in sync with auth_service/loging_service/server_service security_headers.py
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Базовые security headers (HSTS опционально, X-Frame-Options, CSP).
 
@@ -78,6 +79,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'none'; frame-ancestors 'none'",
+        )
+        # Permissions-Policy: JSON-API без UI, зануляем sensor-API на случай,
+        # если когда-нибудь появится браузерный клиент.
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "geolocation=(), microphone=(), camera=(), payment=(), usb=()",
         )
         if self._hsts_enabled:
             response.headers.setdefault(
@@ -140,42 +147,12 @@ def create_application() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Поднимаем pooled httpx.AsyncClient для introspect (slowloris-фикс).
-        # Bounded limits: на slowloris-burst пул не разрастается, ставит
-        # back-pressure на дальнейшие introspect-запросы. Размер пула
-        # конфигурируется через AUTH_POOL_MAX_CONNECTIONS /
-        # AUTH_POOL_MAX_KEEPALIVE (или legacy INTROSPECT_POOL_*), чтобы
-        # прод можно было тюнить под нагрузку без правки кода.
-        pool_limits = httpx.Limits(
-            max_connections=settings.introspect_pool_max_connections,
-            max_keepalive_connections=settings.introspect_pool_max_keepalive,
-        )
-        auth_deps._introspect_client = httpx.AsyncClient(
-            base_url=settings.auth_service_url.rstrip("/"),
-            timeout=settings.auth_request_timeout_seconds,
-            limits=pool_limits,
-        )
-        # Pooled client для audit-emit в loging_service. Каждый authenticated
-        # request может породить audit-emission (grant/ban/power/http.client_error
-        # в middleware), per-call client → FD-amplification под slowloris.
-        # base_url берётся из settings; если пусто — оставляем None и
-        # `_send_to_logging_service` идёт по fallback per-call.
-        logging_url = (settings.logging_service_url or "").rstrip("/")
-        if logging_url:
-            audit_service._audit_client = httpx.AsyncClient(
-                base_url=logging_url,
-                timeout=2.0,
-                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-            )
-            # Отдельный пул под read-канал к loging (drift-агрегация в
-            # GET /servers/{id}/drift). Read и write держим раздельно, чтобы
-            # дашборд-burst на drift-эндпоинт не выедал FD у audit-emit
-            # канала, и наоборот.
-            http_clients.loging_read_client = httpx.AsyncClient(
-                base_url=logging_url,
-                timeout=5.0,
-                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-            )
+        # Поднимаем pooled httpx.AsyncClient'ы под исходящие каналы:
+        # introspect → auth_service, audit-emit → loging_service, read → loging_service.
+        # Конструирование клиентов и лимиты вынесены в `services/http_pool.init_pools` —
+        # здесь lifespan только дёргает init/aclose, чтобы вся конфигурация
+        # пулов жила в одном модуле (зеркалит `server_worker`).
+        http_pool.init_pools(settings)
         # Pooled aioredis-клиент для bootstrap-кред prepare'а. До этого
         # `store_prepare_creds` строил `aioredis.from_url(...)` per-call —
         # burst POST /prepare ронял Redis на connection-budget. Если

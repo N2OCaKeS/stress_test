@@ -180,6 +180,66 @@ class Settings(BaseSettings):
             "LOGING_SERVICE_API_KEY env у loging_service. Пусто отключает удалённый аудит."
         ),
     )
+    # ── Pool'ы под исходящие каналы в loging_service ───────────────────────
+    # Audit-emit (write) и dashboard-read держим в раздельных пулах: drift-burst
+    # на read-эндпоинт не должен выедать FD у audit-канала и наоборот. Размеры
+    # — sane defaults под одного uvicorn worker'а; на сильно нагруженных
+    # стендах поднимать env'ом без правки кода.
+    audit_pool_max_connections: int = Field(
+        default=20,
+        ge=1,
+        alias="AUDIT_POOL_MAX_CONNECTIONS",
+        description=(
+            "Верхний лимит TCP-соединений в пуле audit-emit к loging_service. "
+            "Каждый authenticated request может породить emit (grant/ban/power/"
+            "http.client_error); per-call client под slowloris-burst быстро "
+            "исчерпает FD-пул, pool ставит back-pressure."
+        ),
+    )
+    audit_pool_max_keepalive: int = Field(
+        default=10,
+        ge=0,
+        alias="AUDIT_POOL_MAX_KEEPALIVE",
+        description=(
+            "Сколько idle keep-alive соединений audit-pool держит открытыми. "
+            "Должно быть <= audit_pool_max_connections."
+        ),
+    )
+    audit_pool_timeout_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        alias="AUDIT_POOL_TIMEOUT_SECONDS",
+        description=(
+            "Таймаут одного POST'а в loging_service /events. Best-effort: "
+            "audit-emit не блокирует main-flow, на превышении emit теряется "
+            "(WARNING-лог + fallback в локальный logger)."
+        ),
+    )
+    loging_read_pool_max_connections: int = Field(
+        default=10,
+        ge=1,
+        alias="LOGING_READ_POOL_MAX_CONNECTIONS",
+        description=(
+            "Лимит соединений read-канала к loging_service "
+            "(`GET /events` под drift-summary). Отдельный пул от audit-emit, "
+            "чтобы дашборд-burst не выедал FD у write-канала."
+        ),
+    )
+    loging_read_pool_max_keepalive: int = Field(
+        default=5,
+        ge=0,
+        alias="LOGING_READ_POOL_MAX_KEEPALIVE",
+        description="Idle keep-alive для loging-read pool'а.",
+    )
+    loging_read_timeout_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        alias="LOGING_READ_TIMEOUT_SECONDS",
+        description=(
+            "Таймаут чтения из loging_service. Дольше audit-emit'а: drift-агрегация "
+            "может тянуть несколько секунд за окно событий."
+        ),
+    )
     global_rate_limit: str = Field(
         default="500/minute",
         description=(
@@ -376,6 +436,16 @@ class Settings(BaseSettings):
                 f"({self.introspect_pool_max_keepalive}) cannot exceed "
                 "AUTH_POOL_MAX_CONNECTIONS / INTROSPECT_POOL_MAX_CONNECTIONS "
                 f"({self.introspect_pool_max_connections})"
+            )
+        if self.audit_pool_max_keepalive > self.audit_pool_max_connections:
+            raise ValueError(
+                f"AUDIT_POOL_MAX_KEEPALIVE ({self.audit_pool_max_keepalive}) "
+                f"cannot exceed AUDIT_POOL_MAX_CONNECTIONS ({self.audit_pool_max_connections})"
+            )
+        if self.loging_read_pool_max_keepalive > self.loging_read_pool_max_connections:
+            raise ValueError(
+                f"LOGING_READ_POOL_MAX_KEEPALIVE ({self.loging_read_pool_max_keepalive}) "
+                f"cannot exceed LOGING_READ_POOL_MAX_CONNECTIONS ({self.loging_read_pool_max_connections})"
             )
         return self
 

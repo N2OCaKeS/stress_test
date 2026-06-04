@@ -225,6 +225,38 @@ class Settings(BaseSettings):
     logging_service_url: str | None = Field(default=None, alias="LOGGING_SERVICE_URL")
     logging_service_api_key: str | None = Field(default=None, alias="LOGGING_SERVICE_API_KEY")
 
+    # ── Pool под audit-emit в loging_service ────────────────────────────────
+    # Каждый authenticated request может породить audit-emission (login,
+    # refresh, ban, http.client_error в middleware), per-call client под
+    # login-burst быстро исчерпает FD-пул. Размер пула — env-tunable.
+    audit_pool_max_connections: int = Field(
+        default=20,
+        ge=1,
+        alias="AUDIT_POOL_MAX_CONNECTIONS",
+        description=(
+            "Верхний лимит TCP-соединений в пуле audit-emit к loging_service. "
+            "20 — sane default под одного uvicorn worker'а."
+        ),
+    )
+    audit_pool_max_keepalive: int = Field(
+        default=10,
+        ge=0,
+        alias="AUDIT_POOL_MAX_KEEPALIVE",
+        description=(
+            "Сколько idle keep-alive соединений audit-pool держит открытыми. "
+            "Должно быть <= audit_pool_max_connections."
+        ),
+    )
+    audit_pool_timeout_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        alias="AUDIT_POOL_TIMEOUT_SECONDS",
+        description=(
+            "Таймаут одного POST'а в loging_service /events. Best-effort: "
+            "audit-emit не блокирует main-flow, на превышении emit теряется."
+        ),
+    )
+
     # Trusted reverse-proxy IPs (allow-list для X-Forwarded-For / X-Real-IP).
     #
     # Если `request.client.host` НЕ в списке — header игнорируется и в качестве
@@ -416,6 +448,16 @@ class Settings(BaseSettings):
         "", "change-me", "changeme", "1234", "12345", "123456",
         "password", "admin", "admin1234",
     })
+
+    @model_validator(mode="after")
+    def _check_audit_pool_sanity(self) -> "Settings":
+        """keepalive > max_connections — невалидная конфигурация httpx-пула."""
+        if self.audit_pool_max_keepalive > self.audit_pool_max_connections:
+            raise ValueError(
+                f"AUDIT_POOL_MAX_KEEPALIVE ({self.audit_pool_max_keepalive}) "
+                f"cannot exceed AUDIT_POOL_MAX_CONNECTIONS ({self.audit_pool_max_connections})"
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_production_secrets(self) -> "Settings":

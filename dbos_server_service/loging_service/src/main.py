@@ -60,6 +60,8 @@ _audit_outbox: "AuditOutbox | None" = None
 _CONTENT_LENGTH_RE = re.compile(r"[0-9]+")
 
 
+# SOURCE OF TRUTH: dbos_server_service/sdk/security_headers.py
+# DUPE: keep in sync with auth_service/loging_service/server_service security_headers.py
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Базовые security headers (HSTS опционально, X-Frame-Options, CSP).
 
@@ -84,6 +86,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'none'; frame-ancestors 'none'",
+        )
+        # Permissions-Policy: JSON-API без UI, зануляем sensor-API на случай,
+        # если когда-нибудь появится браузерный клиент.
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "geolocation=(), microphone=(), camera=(), payment=(), usb=()",
         )
         if self._hsts_enabled:
             response.headers.setdefault(

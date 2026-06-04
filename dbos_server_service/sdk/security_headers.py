@@ -1,13 +1,13 @@
 """SecurityHeadersMiddleware — общий набор защитных HTTP-заголовков.
 
-Канонический источник для копи-паста между сервисами. Эталон — версия
-из `auth_service/src/main.py` (там сверху ещё Permissions-Policy, которой
-нет в server_service-версии; для копи-паста объединяем).
+Канонический источник для копи-паста между сервисами. Эталон — superset
+из всех трёх сервисных копий (включает Permissions-Policy, исторически
+жившую только в auth_service).
 
 Где сейчас дублируется этот middleware:
-    auth_service/src/main.py     — c Permissions-Policy
-    loging_service/src/main.py   — без Permissions-Policy (но включает Cache-Control для admin)
-    server_service/src/main.py   — без Permissions-Policy
+    auth_service/src/main.py     — полный набор (включая Permissions-Policy)
+    loging_service/src/main.py   — полный набор
+    server_service/src/main.py   — полный набор
 
 Назначение заголовков:
 

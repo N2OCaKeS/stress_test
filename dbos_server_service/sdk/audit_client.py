@@ -38,6 +38,13 @@ _API_KEY = os.getenv("LOGGING_SERVICE_API_KEY")
 _TIMEOUT = float(os.getenv("LOGGING_SERVICE_TIMEOUT", "2.0"))
 
 
+# SOURCE OF TRUTH: dbos_server_service/sdk/bearer.py::bearer_header
+# Inlined here so audit_client.py остаётся standalone-копипастом по sdk/README.md.
+def _bearer_header(token: str) -> dict[str, str]:
+    """Return Authorization header dict for the given bearer token."""
+    return {"Authorization": f"Bearer {token}"}
+
+
 class AuditClient:
     """Configurable audit client — use when you need multiple named instances."""
 
@@ -155,7 +162,7 @@ def _send(
             httpx.post(
                 f"{logging_url}/api/logging/v1/events",
                 json=payload,
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers=_bearer_header(api_key),
                 timeout=timeout,
             )
         except Exception as exc:
@@ -198,7 +205,7 @@ def register_events(
         resp = httpx.post(
             f"{url}/api/logging/v1/services/{svc}/events",
             json={"events": events},
-            headers={"Authorization": f"Bearer {key}"},
+            headers=_bearer_header(key),
             timeout=timeout,
         )
         if resp.status_code == 200:

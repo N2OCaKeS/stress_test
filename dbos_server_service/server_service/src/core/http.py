@@ -5,11 +5,16 @@ service-to-service контракт у каждого сервиса свой, �
 кросс-сервисной зависимости.
 
 Пулы httpx-клиентов живут отдельно в `http_clients.py`.
+
+SOURCE OF TRUTH: dbos_server_service/sdk/bearer.py — при правке `bearer_header`
+обновить эталон и все четыре копии (`auth_service`, `loging_service`,
+`server_service`, `server_worker`).
 """
 
 from __future__ import annotations
 
 
+# SOURCE OF TRUTH: dbos_server_service/sdk/bearer.py::bearer_header
 def bearer_header(token: str) -> dict[str, str]:
     """Return Authorization header dict for the given bearer token."""
     return {"Authorization": f"Bearer {token}"}

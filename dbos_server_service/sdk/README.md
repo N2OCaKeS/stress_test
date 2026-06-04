@@ -26,7 +26,7 @@
 | Файл | Где используется (на момент создания) | Что это |
 |------|---------------------------------------|---------|
 | `audit_client.py` | (новый компонент для будущих сервисов) | HTTP-клиент для отправки audit-событий в `loging_service`. |
-| `bearer.py` | `auth_service`, `loging_service`, `server_service`, `server_worker` (через `audit_client.py`) | `_extract_bearer(request)` + shape-precheck (`_is_token_shape_valid`). Самый консервативный вариант — из `server_service/src/dependencies/auth.py`. |
+| `bearer.py` | `auth_service`, `loging_service`, `server_service`, `server_worker` (через `audit_client.py`) | Inbound: `_extract_bearer(request)` + shape-precheck (`_is_token_shape_valid`); самый консервативный вариант — из `server_service/src/dependencies/auth.py`. Outbound: `bearer_header(token)` — эталон для `<service>/src/core/http.py` копий во всех 4 сервисах. |
 | `extract_client_ip.py` | `auth_service/src/services/audit_context.py`, `server_service/src/services/audit_context.py` | Безопасный парсер `X-Forwarded-For`/`X-Real-IP` с allow-list доверенных proxy. |
 | `security_headers.py` | `auth_service/src/main.py`, `loging_service/src/main.py`, `server_service/src/main.py` | `SecurityHeadersMiddleware` (HSTS опционально, X-Frame, CSP, Referrer-Policy, Permissions-Policy). |
 | `redaction.py` | `auth_service/src/services/redaction.py`, `loging_service/src/utils/redaction.py`, `server_service/src/services/redaction.py` | Dict/list redactor: маскирует password/token/secret/hash/credential по имени ключа и JWT/argon2/bcrypt по форме значения. Версия `loging_service` — самая консервативная (всегда схлопывает контейнер на ключе-классификаторе). |

@@ -615,6 +615,8 @@ async def ipmi_rotate_password(task_id: str) -> None:
                 verify_creds["password"] = ""
             except Exception:  # noqa: BLE001
                 pass
+            # Drop reference for early GC: dict с (уже затёртым) password-полем
+            # больше не нужен, frame ещё живёт до конца verify-try/finally.
             verify_creds = None  # noqa: F841
         if last_exc is not None:
             wrapped = wrap_bmc_error("ipmi_rotate_password", last_exc)

@@ -72,7 +72,7 @@ Severity вычисляется автоматически в `src/services/rule
 
 ## События, которые `loging_service` эмитит сам
 
-Собственные события идут через `record_admin_action()` (для admin CRUD и self-audit) или `_emit_audit()` (для HTTP middleware), **минуя rule engine** — SUPPRESS-правило не подавит self-audit.
+Собственные события идут через self-audit outbox (`audit_outbox.push_nowait` → фоновый `_drain_loop` → `write_envelope_to_db` → `record_admin_action(commit=False)`); под graceful-shutdown / до старта outbox'а используется sync fallback `_emit_audit_envelope`. Admin CRUD-endpoint'ы пишут напрямую через `record_admin_action()` в той же транзакции, что и основное изменение. Все пути **минуют rule engine** — SUPPRESS-правило не подавит self-audit.
 
 ### HTTP middleware (`logging.*`)
 
@@ -138,8 +138,9 @@ Details: `{service, added, updated, total}` — счётчики из ответ
 
 Эмитятся в `src/api/v1/endpoints/retention.py::_audit` (PUT/DELETE),
 HTTP middleware `audit_access` для `GET /retention` (через `_action_for_path` → `logging.retention_read`) и
-в `src/main.py::_retention_loop` (фоновый sweep). Идут через
-`record_admin_action()` или `_emit_audit()`, минуя rule engine.
+в `src/main.py::_retention_loop` (фоновый sweep). PUT/DELETE и sweep идут через
+`record_admin_action()` напрямую; GET-средняя ветка кладёт envelope в
+`audit_outbox.push_nowait`. Все пути минуют rule engine.
 
 Details:
 

@@ -9,6 +9,7 @@ from src.repositories.groups import GroupRepository
 from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.services import ServiceRepository
 from src.repositories.users import UserRepository
+from src.schemas.auth import IdentityContext
 from src.schemas.groups import (
     BotMemberResponse, GroupResponse, GroupRoleResponse, GroupServiceAccessResponse,
     MemberResponse, UserGroupsResponse,
@@ -18,13 +19,13 @@ from src.services._cache_invalidation import invalidate_identity_cache as _inval
 from src.utils.pagination import PaginationParams
 
 
-def _require_admin(identity) -> None:
+def _require_admin(identity: IdentityContext) -> None:
     """Гард — требует account_admin. Жёсткий вариант, для глобальных операций."""
     if identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
         raise AuthorizationError(error_code="ROLE_REQUIRED", message="account_admin role required")
 
 
-def _require_dept_or_account_admin(identity, dept_id: str) -> None:
+def _require_dept_or_account_admin(identity: IdentityContext, dept_id: str) -> None:
     """Гард для операций над группой внутри отдела.
 
     account_admin — любой отдел; department_admin — только свой
@@ -41,6 +42,20 @@ def _require_dept_or_account_admin(identity, dept_id: str) -> None:
             )
         return
     raise AuthorizationError(error_code="ROLE_REQUIRED", message="Admin role required")
+
+
+def _assert_dept_admin_owns_group(identity: IdentityContext, grp) -> None:
+    """Inner dept-isolation guard для DA в write-операциях над группой.
+
+    Вызывается ПОСЛЕ внешней проверки роли (account_admin/department_admin)
+    и ПОСЛЕ lookup'а группы. Цель — не светить чужой dept через разницу
+    в статус-кодах (404 vs 403 DEPT_MISMATCH) на под-ресурсах (user, bot).
+    """
+    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN and identity.department_id != grp.department_id:
+        raise AuthorizationError(
+            error_code="DEPARTMENT_ACCESS_DENIED",
+            message="department_admin can only manage groups in their own department",
+        )
 
 
 def _grp_response(grp) -> GroupResponse:
@@ -60,7 +75,7 @@ def _grp_response(grp) -> GroupResponse:
 # ── Group CRUD ────────────────────────────────────────────────────────────────
 
 async def list_groups(
-    db: AsyncSession, identity, pagination: PaginationParams | None = None, request_id=None
+    db: AsyncSession, identity: IdentityContext, pagination: PaginationParams | None = None, request_id=None
 ) -> tuple[list[GroupResponse], int]:
     """Список активных групп (страница). account_admin only.
 
@@ -75,7 +90,7 @@ async def list_groups(
 
 
 async def create_group(
-    db: AsyncSession, identity, department_id: str, name: str, display_name: str,
+    db: AsyncSession, identity: IdentityContext, department_id: str, name: str, display_name: str,
     description: str | None, request_id=None,
 ) -> GroupResponse:
     """Создать группу внутри отдела.
@@ -127,7 +142,7 @@ async def create_group(
 
 
 async def update_group(
-    db: AsyncSession, identity, group_id: str,
+    db: AsyncSession, identity: IdentityContext, group_id: str,
     display_name: str | None, description: str | None, request_id=None,
 ) -> GroupResponse:
     """Обновить метаданные группы.
@@ -153,7 +168,7 @@ async def update_group(
     return _grp_response(grp)
 
 
-async def delete_group(db: AsyncSession, identity, group_id: str, request_id=None) -> None:
+async def delete_group(db: AsyncSession, identity: IdentityContext, group_id: str, request_id=None) -> None:
     """Soft-delete группы.
 
     account_admin — любая группа; department_admin — только группы своего отдела
@@ -192,7 +207,7 @@ async def delete_group(db: AsyncSession, identity, group_id: str, request_id=Non
 
 # ── Membership ────────────────────────────────────────────────────────────────
 
-async def list_members(db: AsyncSession, identity, group_id: str, request_id=None) -> list[MemberResponse]:
+async def list_members(db: AsyncSession, identity: IdentityContext, group_id: str, request_id=None) -> list[MemberResponse]:
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
@@ -215,7 +230,7 @@ async def list_members(db: AsyncSession, identity, group_id: str, request_id=Non
     return result
 
 
-async def add_member(db: AsyncSession, identity, group_id: str, user_id: str, request_id=None) -> MemberResponse:
+async def add_member(db: AsyncSession, identity: IdentityContext, group_id: str, user_id: str, request_id=None) -> MemberResponse:
     if identity.platform_role not in (PlatformRole.ACCOUNT_ADMIN, PlatformRole.DEPARTMENT_ADMIN):
         raise AuthorizationError(error_code="ROLE_REQUIRED", message="Admin role required")
 
@@ -227,12 +242,7 @@ async def add_member(db: AsyncSession, identity, group_id: str, user_id: str, re
     # dept-isolation для DA проверяем СРАЗУ после lookup'а группы — иначе
     # DA из dept_b отличает «существует user в dept_a» (403 DEPT_MISMATCH)
     # от «не существует» (404), что просвечивает чужой dept по статус-коду.
-    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
-        if identity.department_id != grp.department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only manage groups in their own department",
-            )
+    _assert_dept_admin_owns_group(identity, grp)
 
     user_repo = UserRepository(db)
     user = await user_repo.get_by_id(user_id)
@@ -266,7 +276,7 @@ async def add_member(db: AsyncSession, identity, group_id: str, user_id: str, re
     return MemberResponse(user_id=user.id, username=user.username, added_at=m.added_at)
 
 
-async def remove_member(db: AsyncSession, identity, group_id: str, user_id: str, request_id=None) -> None:
+async def remove_member(db: AsyncSession, identity: IdentityContext, group_id: str, user_id: str, request_id=None) -> None:
     if identity.platform_role not in (PlatformRole.ACCOUNT_ADMIN, PlatformRole.DEPARTMENT_ADMIN):
         raise AuthorizationError(error_code="ROLE_REQUIRED", message="Admin role required")
 
@@ -276,12 +286,7 @@ async def remove_member(db: AsyncSession, identity, group_id: str, user_id: str,
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
 
     # dept-isolation для DA — до membership-lookup'а; см. комментарий в add_member.
-    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
-        if identity.department_id != grp.department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only manage groups in their own department",
-            )
+    _assert_dept_admin_owns_group(identity, grp)
 
     m = await repo.get_membership(group_id, user_id)
     if m is None:
@@ -299,7 +304,7 @@ async def remove_member(db: AsyncSession, identity, group_id: str, user_id: str,
 
 # ── Bot membership ──────────────────────────────────────────────────────────
 
-async def list_bot_members(db: AsyncSession, identity, group_id: str, request_id=None) -> list[BotMemberResponse]:
+async def list_bot_members(db: AsyncSession, identity: IdentityContext, group_id: str, request_id=None) -> list[BotMemberResponse]:
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
@@ -319,7 +324,7 @@ async def list_bot_members(db: AsyncSession, identity, group_id: str, request_id
     return result
 
 
-async def add_bot_member(db: AsyncSession, identity, group_id: str, bot_id: str, request_id=None) -> BotMemberResponse:
+async def add_bot_member(db: AsyncSession, identity: IdentityContext, group_id: str, bot_id: str, request_id=None) -> BotMemberResponse:
     if identity.platform_role not in (PlatformRole.ACCOUNT_ADMIN, PlatformRole.DEPARTMENT_ADMIN):
         raise AuthorizationError(error_code="ROLE_REQUIRED", message="Admin role required")
 
@@ -329,12 +334,7 @@ async def add_bot_member(db: AsyncSession, identity, group_id: str, bot_id: str,
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
 
     # dept-isolation для DA — до bot-lookup'а; см. комментарий в add_member.
-    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
-        if identity.department_id != grp.department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only manage groups in their own department",
-            )
+    _assert_dept_admin_owns_group(identity, grp)
 
     bot_repo = BotRepository(db)
     bot = await bot_repo.get_by_id(bot_id)
@@ -376,7 +376,7 @@ async def add_bot_member(db: AsyncSession, identity, group_id: str, bot_id: str,
     return BotMemberResponse(bot_id=bot.id, name=bot.name, added_at=m.added_at)
 
 
-async def remove_bot_member(db: AsyncSession, identity, group_id: str, bot_id: str, request_id=None) -> None:
+async def remove_bot_member(db: AsyncSession, identity: IdentityContext, group_id: str, bot_id: str, request_id=None) -> None:
     if identity.platform_role not in (PlatformRole.ACCOUNT_ADMIN, PlatformRole.DEPARTMENT_ADMIN):
         raise AuthorizationError(error_code="ROLE_REQUIRED", message="Admin role required")
 
@@ -386,12 +386,7 @@ async def remove_bot_member(db: AsyncSession, identity, group_id: str, bot_id: s
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
 
     # dept-isolation для DA — до membership-lookup'а; см. комментарий в add_member.
-    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
-        if identity.department_id != grp.department_id:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message="department_admin can only manage groups in their own department",
-            )
+    _assert_dept_admin_owns_group(identity, grp)
 
     m = await repo.get_bot_membership(group_id, bot_id)
     if m is None:
@@ -409,7 +404,7 @@ async def remove_bot_member(db: AsyncSession, identity, group_id: str, bot_id: s
     )
 
 
-async def list_user_groups(db: AsyncSession, identity, user_id: str, request_id=None) -> list[UserGroupsResponse]:
+async def list_user_groups(db: AsyncSession, identity: IdentityContext, user_id: str, request_id=None) -> list[UserGroupsResponse]:
     # ── Cross-department info-disclosure guard ──────────────────────────────
     # `GET /users/{user_id}/groups` доступен любому залогиненному (свои),
     # department_admin'у (юзер своего отдела) и account_admin (любой). Без
@@ -466,7 +461,7 @@ async def list_user_groups(db: AsyncSession, identity, user_id: str, request_id=
 # ── Group service access ──────────────────────────────────────────────────────
 
 async def list_group_services(
-    db: AsyncSession, identity, group_id: str, request_id=None
+    db: AsyncSession, identity: IdentityContext, group_id: str, request_id=None
 ) -> list[GroupServiceAccessResponse]:
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
@@ -486,7 +481,7 @@ async def list_group_services(
 
 
 async def grant_service_to_group(
-    db: AsyncSession, identity, group_id: str, service_name: str, request_id=None
+    db: AsyncSession, identity: IdentityContext, group_id: str, service_name: str, request_id=None
 ) -> GroupServiceAccessResponse:
     _require_admin(identity)
     repo = GroupRepository(db)
@@ -547,7 +542,7 @@ async def grant_service_to_group(
 
 
 async def revoke_service_from_group(
-    db: AsyncSession, identity, group_id: str, service_name: str, request_id=None
+    db: AsyncSession, identity: IdentityContext, group_id: str, service_name: str, request_id=None
 ) -> None:
     _require_admin(identity)
     repo = GroupRepository(db)
@@ -576,7 +571,7 @@ async def revoke_service_from_group(
 # ── Group service roles ───────────────────────────────────────────────────────
 
 async def list_group_roles(
-    db: AsyncSession, identity, group_id: str, request_id=None
+    db: AsyncSession, identity: IdentityContext, group_id: str, request_id=None
 ) -> list[GroupRoleResponse]:
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
@@ -592,7 +587,7 @@ async def list_group_roles(
 
 
 async def assign_group_roles(
-    db: AsyncSession, identity, group_id: str, service_name: str,
+    db: AsyncSession, identity: IdentityContext, group_id: str, service_name: str,
     roles: list[str], request_id=None,
 ) -> GroupRoleResponse:
     _require_admin(identity)
@@ -654,7 +649,7 @@ async def assign_group_roles(
 
 
 async def revoke_group_roles(
-    db: AsyncSession, identity, group_id: str, service_name: str, request_id=None
+    db: AsyncSession, identity: IdentityContext, group_id: str, service_name: str, request_id=None
 ) -> None:
     _require_admin(identity)
     repo = GroupRepository(db)

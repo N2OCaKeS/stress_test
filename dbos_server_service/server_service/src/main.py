@@ -19,6 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from src.api.router import api_router
 from src.core import http_clients
 from src.core.config import get_settings
+from src.core.constants import HEALTH_PATHS
 from src.core.limiter import limiter
 from src.core.exceptions import AppException
 from src.dependencies import auth as auth_deps
@@ -43,14 +44,13 @@ _AUDIT_DRAIN_TIMEOUT_SECONDS = 2.0
 
 logger = logging.getLogger("server_service.startup")
 
-# Health-paths — middleware пропускает их без аудита и без rate-limit'а.
-# server_service вешает health/ready на /api/server/v1/health и /api/server/v1/ready.
-_HEALTH_PATHS = {"/api/server/v1/health", "/api/server/v1/ready"}
-
-
 def _is_health_path(path: str) -> bool:
-    """True если path относится к health/ready (исключён из rate-limit'а)."""
-    return path in _HEALTH_PATHS
+    """True если path относится к health/ready (исключён из rate-limit'а).
+
+    Источник — `core/constants.HEALTH_PATHS` (тот же набор, что и в
+    `middleware/platform_admin_guard`).
+    """
+    return path in HEALTH_PATHS
 
 
 # SOURCE OF TRUTH: dbos_server_service/sdk/security_headers.py
@@ -315,7 +315,7 @@ def create_application() -> FastAPI:
         """
         response = await call_next(request)
         path = request.url.path
-        if path in _HEALTH_PATHS:
+        if path in HEALTH_PATHS:
             return response
         status_code = response.status_code
         if status_code < 400:

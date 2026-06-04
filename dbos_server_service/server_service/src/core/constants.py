@@ -7,6 +7,16 @@ from enum import StrEnum
 # audit_events) — теперь источник один.
 SERVICE_NAME = "server_service"
 
+# Health/ready paths, которые middleware пропускают без аудита, rate-limit'а
+# и introspect'а. Точный матч (никаких endswith), чтобы вложенные пути с
+# похожим окончанием — например `/api/server/v1/servers/{id}/health` —
+# не обходили guard. Используется одновременно в `main` (rate-limit /
+# audit-skip) и `middleware/platform_admin_guard` (public-path whitelist).
+HEALTH_PATHS: frozenset[str] = frozenset({
+    "/api/server/v1/health",
+    "/api/server/v1/ready",
+})
+
 
 class ServerStatus(StrEnum):
     """Жизненный цикл сервера."""

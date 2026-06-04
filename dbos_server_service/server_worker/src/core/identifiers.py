@@ -16,13 +16,19 @@ from __future__ import annotations
 
 import re
 
-# Канонический формат — `tsk_<32 hex>` (`utils/ids.task_id`), но мы
-# принимаем более широкий безопасный alphabet: alnum + `_` + `-` длиной
-# до 64. Это пускает test-id'ы (`tsk_stash_roundtrip_test`) и оставляет
-# запас на возможное изменение id-фабрики, при этом блокируя любые
-# `:` / `/` / `..` / spaces, которые позволили бы прыгнуть в чужой
-# Redis-namespace через `_PREFIX + task_id`.
-_TASK_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+# Безопасный alphabet идентификаторов: alnum + `_` + `-` длиной до 64.
+# Канонические форматы — `tsk_<32 hex>` (`utils/ids.task_id`) для task_id и
+# `rox_<32 hex>` (`server_service.secrets_migration_service.seed_outbox`) для
+# outbox_id, оба укладываются в этот alphabet. Более широкое окно нужно для
+# тестовых id'ов (`tsk_stash_roundtrip_test`, `rox_x`) и на случай изменения
+# id-фабрики, при этом блокирует `:` / `/` / `.` / `..` / spaces — всё, что
+# позволило бы прыгнуть из URL-сегмента или Redis-namespace.
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+# Backward-compat алиасы — тесты могут импортировать конкретное имя; обоим
+# соответствует один и тот же regex.
+_TASK_ID_RE = _SAFE_ID_RE
+_OUTBOX_ID_RE = _SAFE_ID_RE
 
 
 def validate_task_id(task_id: str) -> str:
@@ -33,16 +39,9 @@ def validate_task_id(task_id: str) -> str:
     delete(<prefix> + task_id)` — даже если он только что пришёл из
     taskiq message context (broker не валидирует формат).
     """
-    if not isinstance(task_id, str) or not _TASK_ID_RE.fullmatch(task_id):
+    if not isinstance(task_id, str) or not _SAFE_ID_RE.fullmatch(task_id):
         raise ValueError("invalid task_id")
     return task_id
-
-
-# `rox_<32 hex>` — формат `secrets_migration_service.seed_outbox`
-# в server_service. Принимаем безопасный alphabet `[A-Za-z0-9_-]{1,64}`
-# на случай тестовых id'ов вроде `rox_x` / `rox_oops`. Блокируем `/`
-# `:` `.` пробелы — всё, что позволило бы прыгнуть из URL-сегмента.
-_OUTBOX_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 def validate_outbox_id(outbox_id: str) -> str:
@@ -53,6 +52,6 @@ def validate_outbox_id(outbox_id: str) -> str:
     приводил бы запрос к другому endpoint'у. httpx не нормализует
     `..`-сегменты, поэтому проверка должна быть здесь.
     """
-    if not isinstance(outbox_id, str) or not _OUTBOX_ID_RE.fullmatch(outbox_id):
+    if not isinstance(outbox_id, str) or not _SAFE_ID_RE.fullmatch(outbox_id):
         raise ValueError("invalid outbox_id")
     return outbox_id

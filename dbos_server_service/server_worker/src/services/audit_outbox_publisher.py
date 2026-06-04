@@ -90,6 +90,11 @@ class PublishResult(NamedTuple):
 # остальные 49 даже если loging тут же ответил бы быстро. batch=5 ограничивает
 # blast-radius медленных запросов и при этом не убивает throughput на happy-
 # path'е — за 2-секундный poll-interval все 5 успевают пройти.
+#
+# Дефолты дублируются здесь и в `Settings.audit_outbox_*` — module-level
+# константы оставлены как fallback и читаются default-аргументами функций ниже,
+# а live-значения через `Settings()` берутся в `run_publisher_loop` и
+# `_flush_outbox_once`/`flush_outbox` (если caller явно не передал limit).
 _BATCH_SIZE = 5
 # Пауза между проходами фонового loop'а.
 _POLL_INTERVAL_SECONDS = 2.0
@@ -480,6 +485,15 @@ async def _publish_one(
 def _select_unpublished(limit: int):
     """Собрать SELECT-stmt для unpublished outbox-rows.
 
+    Production-путь идёт через `_select_unpublished_excluding` (per-row
+    flush требует пропускать уже пробованные id'шники). Эта функция
+    остаётся для тестов (`tests/test_audit_outbox.py::test_select_unpublished_*`),
+    которые валидируют контракт SELECT inspection'ом SQL без коннекта
+    к настоящей DB — `_select_unpublished_excluding` с пустым `exclude_ids`
+    выглядит идентично, но тест-кейсы исторически зафиксированы на этом
+    имени. Менять надо обе функции одновременно (`with_for_update`,
+    `order_by`, `where`-фильтр).
+
     Вынесено отдельно, чтобы можно было проверить контракт inspection'ом
     SQL (тесты валидируют наличие `FOR UPDATE SKIP LOCKED` без коннекта
     к настоящей DB).
@@ -542,7 +556,39 @@ def _select_unpublished_excluding(limit: int, exclude_ids: list[int]):
     return stmt
 
 
-async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
+def _resolve_batch_size() -> int:
+    """Live-значение batch-size из `Settings.audit_outbox_batch_size`.
+
+    Свежий `Settings()` без LRU-кэша — pydantic проводит ту же валидацию,
+    что и для прочих env-полей, и тесты могут менять
+    `AUDIT_OUTBOX_BATCH_SIZE` через `monkeypatch.setenv` без
+    `get_settings.cache_clear()`. Падение на чтение settings (env malformed)
+    — fallback на module-level `_BATCH_SIZE` (5), чтобы publisher не
+    остановился из-за конфиг-ошибки.
+    """
+    try:
+        return Settings().audit_outbox_batch_size
+    except Exception:  # noqa: BLE001 — fallback на module-default
+        return _BATCH_SIZE
+
+
+def _resolve_poll_interval() -> float:
+    """Live-значение poll-interval из Settings, fallback на `_POLL_INTERVAL_SECONDS`."""
+    try:
+        return Settings().audit_outbox_poll_interval_seconds
+    except Exception:  # noqa: BLE001
+        return _POLL_INTERVAL_SECONDS
+
+
+def _resolve_cb_sleep_chunk() -> float:
+    """Live-значение cb-sleep-chunk из Settings, fallback на `_CB_SLEEP_CHUNK_SECONDS`."""
+    try:
+        return Settings().audit_outbox_cb_sleep_chunk_seconds
+    except Exception:  # noqa: BLE001
+        return _CB_SLEEP_CHUNK_SECONDS
+
+
+async def _flush_outbox_once(*, limit: int | None = None) -> tuple[int, int]:
     """Внутренний single-pass: возвращает `(published, audit_emit_errors)`.
 
     Отличается от публичного `flush_outbox()` только тем, что отдаёт
@@ -565,6 +611,8 @@ async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
     Throughput не страдает заметно — узкое горло всё равно HTTP к
     loging_service, не Postgres-commit'ы.
     """
+    if limit is None:
+        limit = _resolve_batch_size()
     published = 0
     audit_emit_errors = 0
     # Row'ы, которые мы уже пытались опубликовать в этом проходе и
@@ -641,7 +689,7 @@ async def _flush_outbox_once(*, limit: int = _BATCH_SIZE) -> tuple[int, int]:
     return published, audit_emit_errors
 
 
-async def flush_outbox(*, limit: int = _BATCH_SIZE) -> int:
+async def flush_outbox(*, limit: int | None = None) -> int:
     """Single-pass: пытаемся опубликовать до `limit` неотправленных строк.
 
     Используется как «just-in-time» publisher из `_runner.run_task`:
@@ -667,7 +715,7 @@ async def flush_outbox(*, limit: int = _BATCH_SIZE) -> int:
 
 
 async def run_publisher_loop(
-    *, interval_seconds: float = _POLL_INTERVAL_SECONDS
+    *, interval_seconds: float | None = None
 ) -> None:
     """Бесконечный фоновый loop. Поднимать как async-таск на старте процесса.
 
@@ -692,6 +740,8 @@ async def run_publisher_loop(
         бессмысленно. `audit_emit_errors` оставлен в API проходов
         только для observability/тестов.
     """
+    if interval_seconds is None:
+        interval_seconds = _resolve_poll_interval()
     logger.info("audit_outbox publisher loop started (interval=%ss)", interval_seconds)
     while True:
         try:
@@ -725,7 +775,7 @@ async def run_publisher_loop(
         # get_state() fail-open'ятся (возвращается closed), это ok.
         state, retry_after = await audit_publisher_breaker.get_state()
         if state == "open" and retry_after > 0:
-            sleep_for = min(retry_after, _CB_SLEEP_CHUNK_SECONDS)
+            sleep_for = min(retry_after, _resolve_cb_sleep_chunk())
             await asyncio.sleep(sleep_for)
         else:
             await asyncio.sleep(interval_seconds)

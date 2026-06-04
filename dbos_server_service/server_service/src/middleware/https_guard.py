@@ -45,18 +45,12 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from src.core.constants import HEALTH_PATHS
+
 # Окружения, в которых требуется HTTPS. Зеркалит `_HTTPS_REQUIRED_ENVS` из
 # `server_worker/src/core/config.py` и список из `_require_https_*_in_prod`
 # валидаторов `server_service/src/core/config.py`.
 HTTPS_REQUIRED_ENVS: frozenset[str] = frozenset({"production", "staging"})
-
-# Health-пути, которые middleware пропускает даже в production: k8s liveness
-# и readiness probe ходят внутри pod-network по http, и 403 на них приведёт
-# к рестарту pod'а в loop'е.
-_HEALTH_PATHS: frozenset[str] = frozenset({
-    "/api/server/v1/health",
-    "/api/server/v1/ready",
-})
 
 
 def _is_request_https(request: Request) -> bool:
@@ -135,7 +129,7 @@ class HTTPSRequiredMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if not self._enabled:
             return await call_next(request)
-        if request.url.path in _HEALTH_PATHS:
+        if request.url.path in HEALTH_PATHS:
             return await call_next(request)
         if _is_request_https(request):
             return await call_next(request)

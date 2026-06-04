@@ -306,7 +306,6 @@ class TestOAuthPkcePlainWarning:
 
 # ── 7. identity-cache reverse index ────────────────────────────────────────
 
-@pytest.mark.skip(reason="reverse-index test specs не совпадают с public API auth_dep — отложено")
 class TestIdentityCacheReverseIndex:
     def setup_method(self):
         # Снимаем module-state перед каждым тестом, чтобы не зависеть от
@@ -366,7 +365,6 @@ class TestIdentityCacheReverseIndex:
 
 # ── 9. user_service.get_user_permissions — sanity ──────────────────────────
 
-@pytest.mark.skip(reason="get_user_permissions требует identity object, не str — тесты пишут wrong type")
 class TestGetUserPermissionsCondition:
     async def test_dept_admin_cross_dept_still_denied(
         self, db, dept_admin_b, user_a,

@@ -1214,26 +1214,25 @@ async def get_user_permissions(
             message="User not found",
         )
 
-    if is_dept_admin and not is_self:
-        # is_account_admin и is_dept_admin взаимоисключающие (platform_role
-        # один на юзера), поэтому `not is_account_admin` лишний. Self
-        # фильтруем явно — admin может смотреть свою же строку, не упираясь
-        # в случайный mismatch department_id.
-        if identity.department_id != target.department_id:
-            _emit_permissions_denied(
-                actor_id=identity.user_id,
-                target_id=user_id,
-                reason="cross_department",
-                department_id=identity.department_id,
-                request_id=request_id,
-            )
-            raise AuthorizationError(
-                error_code="DEPARTMENT_ACCESS_DENIED",
-                message=(
-                    "department_admin can only view permissions for users "
-                    "in their own department"
-                ),
-            )
+    # is_account_admin и is_dept_admin взаимоисключающие (platform_role
+    # один на юзера), поэтому `not is_account_admin` лишний. Self
+    # фильтруем явно — admin может смотреть свою же строку, не упираясь
+    # в случайный mismatch department_id.
+    if is_dept_admin and not is_self and identity.department_id != target.department_id:
+        _emit_permissions_denied(
+            actor_id=identity.user_id,
+            target_id=user_id,
+            reason="cross_department",
+            department_id=identity.department_id,
+            request_id=request_id,
+        )
+        raise AuthorizationError(
+            error_code="DEPARTMENT_ACCESS_DENIED",
+            message=(
+                "department_admin can only view permissions for users "
+                "in their own department"
+            ),
+        )
 
     # ── Step 2: collect data ──────────────────────────────────────────────
     dept = (

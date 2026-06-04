@@ -808,13 +808,20 @@ def _retention_loop() -> None:
                                 )
                             last_run = today
                         finally:
-                            # last_run уже выставлен выше до finally — отдельно
-                            # развязываем unlock и commit, чтобы упавший commit
-                            # не отменял факт, что sweep отработал. apply_active
-                            # коммитит per-chunk сам, record_admin_action — тоже
-                            # под `commit=True`, так что финальный db.commit()
-                            # здесь чистит хвост пустой транзакции и упасть может
-                            # только на disconnect'е.
+                            # `last_run = today` выставляется в success-ветке
+                            # try-блока (после apply_active + self-audit) или
+                            # в `except audit_exc` (sweep прошёл, audit упал —
+                            # реран в тот же день не нужен). Если же сам
+                            # apply_active кинет — управление улетит во
+                            # внешний `except Exception` (line ~837), last_run
+                            # не сдвинется, и следующий tick повторит sweep —
+                            # это by-design.
+                            # unlock и commit вынесены сюда, чтобы упавший
+                            # commit не маскировал сам факт, что sweep
+                            # отработал: apply_active коммитит per-chunk сам,
+                            # record_admin_action — под `commit=True`, так
+                            # что финальный db.commit() чистит хвост пустой
+                            # транзакции и упасть может только на disconnect'е.
                             try:
                                 db.execute(
                                     text("SELECT pg_advisory_unlock(:k)"),
@@ -905,12 +912,14 @@ def _action_for_path(method: str, path: str) -> str:
 # `record_admin_action`). Когда в loging_service появится Prometheus-клиент,
 # эту переменную заменит `Counter("loging_self_audit_failures_total", ...)`.
 #
-# `_emit_audit` исполняется внутри `asyncio.to_thread`, и несколько воркеров
-# могут инкрементить счётчик параллельно. CPython GIL не делает `+=` атомарным
-# (read-modify-write на байткоде из трёх инструкций), под нагрузкой получаем
-# lost-increment'ы — самые informative цифры теряются как раз когда сервис
-# горит. Заводим threading.Lock и делаем приватный setter, чтобы все апдейты
-# шли через него.
+# Hot-path инкремента — `audit_outbox._write_batch_locked` (исполняется в
+# ThreadPoolExecutor через `asyncio.to_thread` из `_drain_loop`), плюс
+# fallback из `_emit_audit_envelope` под graceful-shutdown. Несколько
+# воркеров инкрементят счётчик параллельно из разных threads; CPython GIL
+# не делает `+=` атомарным (read-modify-write на байткоде из трёх инструкций),
+# под нагрузкой получаем lost-increment'ы — самые informative цифры теряются
+# как раз когда сервис горит. Заводим threading.Lock и делаем приватный
+# setter, чтобы все апдейты шли через него.
 self_audit_failures_total = 0
 _self_audit_failures_lock = threading.Lock()
 

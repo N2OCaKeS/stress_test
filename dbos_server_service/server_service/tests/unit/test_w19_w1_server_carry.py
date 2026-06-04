@@ -164,10 +164,3 @@ class TestInternalServiceImportsOrder:
         field = Settings.model_fields["rotated_at_skew_seconds"]
         assert field.default == 600
 
-    @pytest.mark.skipif(
-        True,
-        reason="ruff не установлен в test-container; E402 проверяется главным "
-        "Claude в pre-commit/CI, не в unit-suite",
-    )
-    def test_no_e402_in_internal_service(self):
-        pass

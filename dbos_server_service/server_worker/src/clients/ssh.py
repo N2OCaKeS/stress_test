@@ -161,6 +161,54 @@ _FORBIDDEN_HOMES = frozenset({
 })
 
 
+def _validate_ssh_public_key(
+    public_key: str,
+    *,
+    host: str,
+    cmd_label: str = "prepare authorized_keys",
+) -> str:
+    """Канонический валидатор SSH-public-key для authorized_keys.
+
+    Зовётся `_install_authorized_key` (внутренняя установка ключа) и
+    `bootstrap_management_user` (pre-чек до useradd/sudoers, чтобы не
+    оставлять побочных эффектов на /etc при битом ключе).
+
+    Возвращает stripped key-line при успехе; иначе `SshError(SSH_INVALID_ARG)`.
+
+    Что проверяем:
+      * непустой, после strip;
+      * single-line (нет `\n` / `\r`) — защита от command-injection через
+        многострочный «ключ», даже если транспорт когда-нибудь начнёт
+        подставлять ключ в shell-строку;
+      * known prefix из `_VALID_SSH_KEY_PREFIXES` — алгоритм должен быть в
+        whitelist'е, trailing space гарантирует разделитель между алгоритмом
+        и base64-payload'ом.
+    """
+    if not public_key or not public_key.strip():
+        raise SshError(
+            error_code="SSH_INVALID_ARG",
+            host=host,
+            cmd_sanitized=cmd_label,
+            message="public key is empty",
+        )
+    key_line = public_key.strip()
+    if "\n" in key_line or "\r" in key_line:
+        raise SshError(
+            error_code="SSH_INVALID_ARG",
+            host=host,
+            cmd_sanitized=cmd_label,
+            message="public key must be a single line",
+        )
+    if not key_line.startswith(_VALID_SSH_KEY_PREFIXES):
+        raise SshError(
+            error_code="SSH_INVALID_ARG",
+            host=host,
+            cmd_sanitized=cmd_label,
+            message="public key has unsupported algorithm prefix",
+        )
+    return key_line
+
+
 class SshClient:
     """Wrapper над `asyncssh.connect` с тремя бизнес-операциями.
 
@@ -528,34 +576,16 @@ class SshClient:
         """
         self._validate_login(target_user)
         cmd_label = f"prepare authorized_keys <{target_user}>"
-        if not public_key or not public_key.strip():
-            raise SshError(
-                error_code="SSH_INVALID_ARG",
-                host=self.host,
-                cmd_sanitized=cmd_label,
-                message="public key is empty",
-            )
-        key_line = public_key.strip()
-        # Single-line guard — вторая линия защиты от command-injection в чужие
-        # ключи: `\n`/`$()`/backtick/`;` в самом ключе остаются на stdin (через
-        # `key=$(cat)`), но если ключ когда-нибудь начнёт подставляться в
-        # shell-строку, многострочный или с метасимволами он сломал бы парсинг.
-        # Здесь же отсекаем CR/LF, чтобы invariant держался независимо от
-        # будущих изменений транспорта.
-        if "\n" in key_line or "\r" in key_line:
-            raise SshError(
-                error_code="SSH_INVALID_ARG",
-                host=self.host,
-                cmd_sanitized=cmd_label,
-                message="public key must be a single line",
-            )
-        if not key_line.startswith(_VALID_SSH_KEY_PREFIXES):
-            raise SshError(
-                error_code="SSH_INVALID_ARG",
-                host=self.host,
-                cmd_sanitized=cmd_label,
-                message="public key has unsupported algorithm prefix",
-            )
+        # Single-line / known-prefix / non-empty — общий валидатор
+        # `_validate_ssh_public_key`. Защита от command-injection в чужие
+        # ключи: `\n`/`$()`/backtick/`;` в самом ключе остаются на stdin
+        # (через `key=$(cat)`), но если ключ когда-нибудь начнёт подставляться
+        # в shell-строку, многострочный или с метасимволами он сломал бы
+        # парсинг. Здесь же отсекаем CR/LF, чтобы invariant держался
+        # независимо от будущих изменений транспорта.
+        key_line = _validate_ssh_public_key(
+            public_key, host=self.host, cmd_label=cmd_label,
+        )
         # Защита от case'а «caller передал системного пользователя» (nobody,
         # daemon, заблокированные сервисные аккаунты). Если caller знает
         # home заранее — отсекаем по списку до отправки команды на хост.
@@ -743,30 +773,11 @@ class SshClient:
         """
         self._validate_login(management_user)
         # Pre-валидируем ключ ДО useradd/sudoers (битый ключ — фейл setup'а
-        # без побочных эффектов на /etc). Сам install ниже повторит проверку
-        # в `_install_authorized_key` — это OK, regex дешёвый, дубль не мешает.
-        if not public_key or not public_key.strip():
-            raise SshError(
-                error_code="SSH_INVALID_ARG",
-                host=self.host,
-                cmd_sanitized="prepare authorized_keys",
-                message="management public key is empty",
-            )
-        key_line = public_key.strip()
-        if "\n" in key_line or "\r" in key_line:
-            raise SshError(
-                error_code="SSH_INVALID_ARG",
-                host=self.host,
-                cmd_sanitized="prepare authorized_keys",
-                message="management public key must be a single line",
-            )
-        if not key_line.startswith(_VALID_SSH_KEY_PREFIXES):
-            raise SshError(
-                error_code="SSH_INVALID_ARG",
-                host=self.host,
-                cmd_sanitized="prepare authorized_keys",
-                message="management public key has unsupported algorithm prefix",
-            )
+        # без побочных эффектов на /etc). Канонический валидатор —
+        # `_install_authorized_key` (вызывается ниже на шаге 3); зовём его
+        # сюда же общей функцией, чтобы пре-чек и итоговая установка
+        # держались на одном источнике истины.
+        _validate_ssh_public_key(public_key, host=self.host)
 
         # 1. Управляющий пользователь — заводим idempotent'но, с sudo-группой.
         # На Debian/Ubuntu/Astra sudoer-группа — `sudo`, на RHEL/Alpine — `wheel`.

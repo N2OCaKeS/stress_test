@@ -24,7 +24,10 @@ class Session(Base):
     refresh_token_hash: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
     # Legacy: один предыдущий hash. Оставлен для совместимости со старыми
     # строками и миграционным даунгрейдом; новый код пишет в
-    # `previous_token_hashes` и оттуда же читает.
+    # `previous_token_hashes` и оттуда же читает. После backfill миграции
+    # `f3a4b5c6d7e8` колонка дублирует хвост массива на каждой ротации;
+    # drop column или фиксация nullable «памятника» — отдельное owner-решение
+    # (см. obsidian/TODO.md P3 sweep carry).
     previous_token_hash: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
     # Последние PREVIOUS_TOKEN_HASH_WINDOW hash'ей в порядке от старого к
     # новому. На каждой ротации старый refresh_token_hash аппендится в хвост,

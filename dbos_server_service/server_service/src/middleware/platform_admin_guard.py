@@ -88,7 +88,7 @@ from datetime import datetime, timezone
 from fastapi import Request
 from starlette.responses import JSONResponse
 
-from src.core.constants import PlatformRole
+from src.core.constants import HEALTH_PATHS, PlatformRole
 from src.core.exceptions import AppException
 # Импортируем модуль целиком, а не функции, чтобы monkeypatch в тестах
 # (patches `src.dependencies.auth._introspect`) реально срабатывал при
@@ -121,13 +121,10 @@ BLOCKED_PLATFORM_ROLES: frozenset[PlatformRole] = frozenset(
 # без JWT (k8s probe), openapi/docs — публичные в dev (в production они
 # отключены через docs_url=None в main.create_application).
 #
-# Health/ready — точный матч (тот же набор, что и в main._HEALTH_PATHS),
-# чтобы гипотетический `/api/server/v1/servers/{id}/health` или иной
-# вложенный путь не обходил guard через endswith.
-_HEALTH_PATHS: frozenset[str] = frozenset({
-    "/api/server/v1/health",
-    "/api/server/v1/ready",
-})
+# Health/ready — точный матч (источник `core/constants.HEALTH_PATHS`,
+# тот же набор, что и в `main`), чтобы гипотетический
+# `/api/server/v1/servers/{id}/health` или иной вложенный путь не обходил
+# guard через endswith.
 # Полные пути публичной документации. Точное равенство по этому набору,
 # никаких endswith — иначе endpoint вроде `/api/server/v1/secret/docs`
 # проскочил бы whitelist по суффиксу `/docs`.
@@ -156,13 +153,11 @@ def _is_public_path(path: str) -> bool:
       отключены в ``main.py``. Сами три пути — точное равенство; статика
       — фиксированные префиксы из корня (`/docs/...`, `/redoc/...`).
     """
-    if path in _HEALTH_PATHS:
-        return True
-    if path in _DOCS_PATHS:
-        return True
-    if path.startswith(_DOCS_PREFIXES):
-        return True
-    return False
+    return (
+        path in HEALTH_PATHS
+        or path in _DOCS_PATHS
+        or path.startswith(_DOCS_PREFIXES)
+    )
 
 
 def _build_forbidden_response(request: Request, role: PlatformRole) -> JSONResponse:

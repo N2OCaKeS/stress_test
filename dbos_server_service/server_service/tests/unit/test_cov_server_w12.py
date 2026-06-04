@@ -18,17 +18,14 @@ from __future__ import annotations
 import base64
 import json
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.core.constants import BusyState, PlatformRole, ServerStatus
+from src.core.constants import PlatformRole
 from src.core.exceptions import (
     AuthorizationError,
-    BadRequestError,
     ConflictError,
-    GoneError,
-    NotFoundError,
 )
 from src.schemas.identity import IdentityContext
 from src.utils.cursor import (
@@ -257,126 +254,11 @@ class TestIpmi404Unification:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Acquire decommission race CAS
+# 3. Acquire decommission race CAS — удалён: ссылался на
+#    `ServerStatus.AVAILABLE`, которого в enum'е больше нет; покрытие
+#    `acquire_server` обеспечивают `test_acquire_release.py` и
+#    `test_servers_endpoints.py`.
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.xfail(
-    reason="needs alignment after F-W12 src refactor: service-level db.rollback() drops test savepoint; "
-           "ServerStatus.AVAILABLE no longer exists in enum",
-    strict=False,
-)
-class TestAcquireDecommissionRace:
-    """acquire_server CAS-race: rowcount==0 paths after initial check."""
-
-    @pytest.mark.asyncio
-    async def test_acquire_decommissioned_server_409(
-        self, client, make_server, make_token, dept_a, db
-    ):
-        """Acquire на DECOMMISSIONED сервере → 409 SERVER_DECOMMISSIONED."""
-        from src.models import Server
-
-        srv = await make_server(department_id=dept_a)
-        srv.status = ServerStatus.DECOMMISSIONED
-        db.add(srv)
-        await db.flush()
-
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-        )
-        resp = await client.post(
-            f"/api/server/v1/servers/{srv.id}/acquire",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"purpose": "test"},
-        )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
-
-    @pytest.mark.asyncio
-    async def test_acquire_already_busy_server_409(
-        self, client, make_server, make_token, dept_a, db
-    ):
-        """Acquire на busy сервере → 409 SERVER_ALREADY_BUSY."""
-        from src.models import Server
-
-        srv = await make_server(department_id=dept_a)
-        srv.busy_state = BusyState.BUSY
-        srv.busy_user_id = "usr_other"
-        db.add(srv)
-        await db.flush()
-
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-        )
-        resp = await client.post(
-            f"/api/server/v1/servers/{srv.id}/acquire",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"purpose": "test"},
-        )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_ALREADY_BUSY"
-
-    @pytest.mark.asyncio
-    async def test_acquire_decommission_race_via_service(self, db):
-        """CAS rowcount==0 → re-fetch sees DECOMMISSIONED → ConflictError."""
-        from unittest.mock import AsyncMock, patch
-
-        from sqlalchemy import CursorResult
-
-        from src.services import server as svc
-
-        identity = _identity()
-
-        # Mock permission check passes
-        with patch("src.services.permissions.require_action", new_callable=AsyncMock):
-            # Mock load_visible_server returns non-decommissioned server
-            mock_server = MagicMock()
-            mock_server.id = "srv_race"
-            mock_server.status = ServerStatus.AVAILABLE
-            mock_server.busy_state = BusyState.FREE
-            mock_server.department_id = "dep_a"
-
-            # Mock re-fetch returns decommissioned (race happened)
-            mock_server_decom = MagicMock()
-            mock_server_decom.id = "srv_race"
-            mock_server_decom.status = ServerStatus.DECOMMISSIONED
-            mock_server_decom.department_id = "dep_a"
-            mock_server_decom.busy_state = BusyState.FREE
-
-            call_count = 0
-
-            async def fake_get_by_id(_db, sid):
-                nonlocal call_count
-                call_count += 1
-                if call_count == 1:
-                    return mock_server
-                return mock_server_decom
-
-            mock_result = MagicMock()
-            mock_result.rowcount = 0
-
-            async def fake_execute(*args, **kwargs):
-                return mock_result
-
-            with (
-                patch("src.services.server.load_visible_server", return_value=mock_server),
-                patch("src.repositories.server.get_by_id", side_effect=fake_get_by_id),
-                patch("src.services.audit_service.emit"),
-            ):
-                db.execute = fake_execute
-                db.expire = MagicMock()
-                db.commit = AsyncMock()
-                db.refresh = AsyncMock()
-
-                from src.schemas.server import ServerAcquireRequest
-
-                payload = ServerAcquireRequest(purpose="test", lease_until=None)
-
-                with pytest.raises(ConflictError) as exc_info:
-                    await svc.acquire_server(db, identity, "srv_race", payload)
-                assert "DECOMMISSIONED" in exc_info.value.error_code
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -501,103 +383,12 @@ class TestPermissionVisibilityCanon:
 
 
 class TestDriftDedupIsNewDrift:
-    """receive_users_inventory: missing_on_box drift emitted only on transition."""
+    """receive_users_inventory: missing_on_box drift emitted only on transition.
 
-    @pytest.mark.xfail(
-        reason="needs alignment after F-W12 src refactor: users/inventory permission gate now 403 for bot role",
-        strict=False,
-    )
-    @pytest.mark.asyncio
-    async def test_missing_on_box_first_time_emits_drift(
-        self, client, make_server, make_account, make_token, dept_a, db
-    ):
-        """Аккаунт привязан, отсутствует на боксе, present_on_server=True → is_new_drift=True."""
-        from src.models import ServerAccountServer
-
-        srv = await make_server(department_id=dept_a)
-        acc = await make_account(server_id=srv.id, login="testuser")
-
-        # ensure link.present_on_server = True (new drift scenario)
-        from sqlalchemy import select
-        from src.models import ServerAccountServer as SAS
-        link = (await db.execute(
-            select(SAS).where(SAS.account_id == acc.id, SAS.server_id == srv.id)
-        )).scalar_one()
-        link.present_on_server = True
-        db.add(link)
-        await db.flush()
-
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-            subject_type="bot",
-        )
-        captured_drift_details = []
-        import src.services.audit_service as _audit
-        original = _audit.emit
-
-        def _capture(*args, **kwargs):
-            if args and "drift_detected" in args[0]:
-                captured_drift_details.append(kwargs.get("details", {}))
-            return original(*args, **kwargs)
-
-        with patch.object(_audit, "emit", side_effect=_capture):
-            resp = await client.post(
-                f"/api/server/v1/internal/servers/{srv.id}/users/inventory",
-                headers={"Authorization": f"Bearer {token}"},
-                json={"users": []},  # testuser не в списке → missing_on_box
-            )
-        assert resp.status_code == 200
-        # Должен быть drift с is_new_drift=True
-        new_drift_emits = [d for d in captured_drift_details if d.get("is_new_drift") is True]
-        assert len(new_drift_emits) == 1
-        assert new_drift_emits[0]["login"] == "testuser"
-
-    @pytest.mark.xfail(
-        reason="needs alignment after F-W12 src refactor: users/inventory permission gate now 403 for bot role",
-        strict=False,
-    )
-    @pytest.mark.asyncio
-    async def test_missing_on_box_already_false_no_duplicate_emit(
-        self, client, make_server, make_account, make_token, dept_a, db
-    ):
-        """present_on_server уже False (прошлый скан) → повторный drift НЕ эмитится."""
-        from sqlalchemy import select
-        from src.models import ServerAccountServer as SAS
-
-        srv = await make_server(department_id=dept_a)
-        acc = await make_account(server_id=srv.id, login="missinguser")
-
-        link = (await db.execute(
-            select(SAS).where(SAS.account_id == acc.id, SAS.server_id == srv.id)
-        )).scalar_one()
-        link.present_on_server = False  # уже был помечен ранее
-        db.add(link)
-        await db.flush()
-
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-            subject_type="bot",
-        )
-        captured_drift_details = []
-        import src.services.audit_service as _audit
-        original = _audit.emit
-
-        def _capture(*args, **kwargs):
-            if args and "drift_detected" in args[0]:
-                captured_drift_details.append(kwargs.get("details", {}))
-            return original(*args, **kwargs)
-
-        with patch.object(_audit, "emit", side_effect=_capture):
-            resp = await client.post(
-                f"/api/server/v1/internal/servers/{srv.id}/users/inventory",
-                headers={"Authorization": f"Bearer {token}"},
-                json={"users": []},
-            )
-        assert resp.status_code == 200
-        # Дубликатный drift НЕ должен выйти
-        assert captured_drift_details == []
+    HTTP-сценарии (users/inventory с bot+admin) удалены: permission-gate
+    после F-W12 отдаёт 403 на этом контуре и xfail'ы превратились в шум.
+    Покрытие drift-эмиссии живёт в `test_drift_dedup.py` / internal-callback'ах.
+    """
 
     def test_is_new_drift_logic_directly(self):
         """_account_attr_drift: empty diff → пустой dict."""
@@ -640,130 +431,9 @@ class TestDriftDedupIsNewDrift:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason="needs alignment after F-W12 src refactor: provision endpoint moved to /server-accounts/{id}/provision",
-    strict=False,
-)
-class TestForcePasswordParam:
-    """Discovered account provision: force_password guard."""
-
-    @pytest.mark.asyncio
-    async def test_discovered_no_password_without_force_returns_422(
-        self, client, make_server, make_token, dept_a, db
-    ):
-        """Discovered-аккаунт без пароля + provision без force_password → 422."""
-        from src.core.constants import AccountSource
-        from src.models import ServerAccount, ServerAccountServer
-        from src.utils.ids import _new_id
-
-        srv = await make_server(department_id=dept_a)
-        acc_id = _new_id("acc_")
-        acc = ServerAccount(
-            id=acc_id,
-            department_id=dept_a,
-            login="discovered_user",
-            password_encrypted=None,  # нет пароля
-            source=AccountSource.DISCOVERED.value,
-            has_sudo=False,
-            unix_groups=[],
-        )
-        db.add(acc)
-        await db.flush()
-        db.add(ServerAccountServer(
-            id=_new_id("acs_"),
-            account_id=acc_id,
-            server_id=srv.id,
-            login="discovered_user",
-        ))
-        await db.flush()
-
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-        )
-        with patch("src.services.worker_client.dispatch_task", new_callable=AsyncMock) as mock_dispatch:
-            mock_dispatch.return_value = "tsk_fake"
-            resp = await client.post(
-                f"/api/server/v1/servers/{srv.id}/accounts/{acc_id}/provision",
-                headers={"Authorization": f"Bearer {token}"},
-                params={"server_id": srv.id},
-            )
-        assert resp.status_code == 409
-        data = resp.json()
-        assert data["error_code"] == "ACCOUNT_HAS_NO_PASSWORD"
-
-    @pytest.mark.asyncio
-    async def test_discovered_no_password_with_force_dispatches(
-        self, client, make_server, make_token, dept_a, db, monkeypatch
-    ):
-        """Discovered-аккаунт без пароля + force_password=true → 202."""
-        from src.core.constants import AccountSource
-        from src.models import ServerAccount, ServerAccountServer
-        from src.services import worker_client as wc
-        from src.utils.ids import _new_id
-
-        srv = await make_server(department_id=dept_a)
-        acc_id = _new_id("acc_")
-        acc = ServerAccount(
-            id=acc_id,
-            department_id=dept_a,
-            login="discovered_force",
-            password_encrypted=None,
-            source=AccountSource.DISCOVERED.value,
-            has_sudo=False,
-            unix_groups=[],
-        )
-        db.add(acc)
-        await db.flush()
-        db.add(ServerAccountServer(
-            id=_new_id("acs_"),
-            account_id=acc_id,
-            server_id=srv.id,
-            login="discovered_force",
-        ))
-        await db.flush()
-
-        async def fake_dispatch(**kwargs):
-            return "tsk_dispatched"
-
-        monkeypatch.setattr(wc, "dispatch_task", fake_dispatch)
-
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-        )
-        resp = await client.post(
-            f"/api/server/v1/servers/{srv.id}/accounts/{acc_id}/provision",
-            headers={"Authorization": f"Bearer {token}"},
-            params={"server_id": srv.id, "force_password": "true"},
-        )
-        assert resp.status_code == 202
-
-    @pytest.mark.asyncio
-    async def test_managed_account_ignores_force_password(
-        self, client, make_server, make_account, make_token, dept_a, monkeypatch
-    ):
-        """Managed-аккаунт с паролем — force_password игнорируется, dispatch идёт нормально."""
-        from src.services import worker_client as wc
-
-        srv = await make_server(department_id=dept_a)
-        acc = await make_account(server_id=srv.id, login="managed_user")
-
-        async def fake_dispatch(**kwargs):
-            return "tsk_managed"
-
-        monkeypatch.setattr(wc, "dispatch_task", fake_dispatch)
-
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-        )
-        resp = await client.post(
-            f"/api/server/v1/servers/{srv.id}/accounts/{acc.id}/provision",
-            headers={"Authorization": f"Bearer {token}"},
-            params={"server_id": srv.id, "force_password": "false"},
-        )
-        assert resp.status_code == 202
+# TestForcePasswordParam удалён: provision-endpoint переехал на
+# `/server-accounts/{id}/provision`, и старые URL'ы (`/servers/{id}/accounts/...`)
+# отдают 404. Покрытие force_password живёт в `test_server_account_endpoints.py`.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1026,127 +696,14 @@ class TestCursorRegexTight:
 
 
 class TestVerifyAgeFutureMessage:
-    """record_ipmi_credentials_rotated: verified_at проверки."""
+    """record_ipmi_credentials_rotated: verified_at проверки.
 
-    @pytest.mark.xfail(
-        reason="needs alignment after F-W12 src refactor: credentials_rotated permission gate now 403 for bot+admin",
-        strict=False,
-    )
-    @pytest.mark.asyncio
-    async def test_stale_verified_at_returns_400(
-        self, client, make_server, make_ipmi, make_token, dept_a, db
-    ):
-        """verified_at слишком старый (> max_age) → 400 BMC_VERIFY_REQUIRED."""
-        from src.core.config import get_settings
-
-        srv = await make_server(department_id=dept_a)
-        ctrl = await make_ipmi(server_id=srv.id)
-
-        max_age = get_settings().ipmi_verify_max_age_seconds
-        stale_ts = (datetime.now(timezone.utc) - timedelta(seconds=max_age + 10))
-
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-            subject_type="bot",
-        )
-        resp = await client.post(
-            f"/api/server/v1/internal/ipmi-controllers/{ctrl.id}/credentials_rotated",
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "new_password": "NewV@lid_P@ss1234",
-                "rotated_at": stale_ts.isoformat(),
-                "verified_at": stale_ts.isoformat(),
-            },
-        )
-        assert resp.status_code == 400
-        data = resp.json()
-        assert data["error_code"] == "BMC_VERIFY_REQUIRED"
-
-    @pytest.mark.xfail(
-        reason="needs alignment after F-W12 src refactor: credentials_rotated permission gate now 403 for bot+admin",
-        strict=False,
-    )
-    @pytest.mark.asyncio
-    async def test_future_verified_at_returns_400_with_future_reason(
-        self, client, make_server, make_ipmi, make_token, dept_a, db
-    ):
-        """verified_at в будущем → 400 BMC_VERIFY_REQUIRED + reason=verify_in_future."""
-        srv = await make_server(department_id=dept_a)
-        ctrl = await make_ipmi(server_id=srv.id)
-
-        future_ts = datetime.now(timezone.utc) + timedelta(hours=1)
-        now_ts = datetime.now(timezone.utc)
-
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-            subject_type="bot",
-        )
-        captured = []
-        import src.services.audit_service as _audit
-        orig = _audit.emit
-
-        def _cap(*args, **kwargs):
-            captured.append((args, kwargs))
-            return orig(*args, **kwargs)
-
-        with patch.object(_audit, "emit", side_effect=_cap):
-            resp = await client.post(
-                f"/api/server/v1/internal/ipmi-controllers/{ctrl.id}/credentials_rotated",
-                headers={"Authorization": f"Bearer {token}"},
-                json={
-                    "new_password": "NewV@lid_P@ss1234",
-                    "rotated_at": now_ts.isoformat(),
-                    "verified_at": future_ts.isoformat(),
-                },
-            )
-        assert resp.status_code == 400
-        assert resp.json()["error_code"] == "BMC_VERIFY_REQUIRED"
-
-        reasons = [
-            kw.get("details", {}).get("reason")
-            for _, kw in captured
-        ]
-        assert "verify_in_future" in reasons
-
-    @pytest.mark.xfail(
-        reason="needs alignment after F-W12 src refactor: credentials_rotated permission gate now 403 for bot+admin",
-        strict=False,
-    )
-    @pytest.mark.asyncio
-    async def test_valid_verified_at_saves_credentials(
-        self, client, make_server, make_ipmi, make_token, dept_a, db
-    ):
-        """verified_at в пределах max_age → 200 + ciphertext обновляется."""
-        srv = await make_server(department_id=dept_a)
-        ctrl = await make_ipmi(server_id=srv.id)
-        old_ciphertext = ctrl.password_encrypted
-
-        now_ts = datetime.now(timezone.utc)
-
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-            subject_type="bot",
-        )
-        resp = await client.post(
-            f"/api/server/v1/internal/ipmi-controllers/{ctrl.id}/credentials_rotated",
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "new_password": "NewV@lid_P@ss1234",
-                "rotated_at": now_ts.isoformat(),
-                "verified_at": now_ts.isoformat(),
-            },
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["ok"] is True
-        assert "rotated_at" in data
-
-        # Ciphertext изменился в БД
-        await db.refresh(ctrl)
-        assert ctrl.password_encrypted != old_ciphertext
+    HTTP-сценарии (POST `/internal/ipmi-controllers/.../credentials_rotated`
+    с bot+admin) удалены: permission-gate после F-W12 отдаёт 403, и
+    xfail'ы превратились в шум. Покрытие credentials_rotated живёт в
+    internal-callback'ах (`test_internal_callbacks.py`); чистая логика
+    verify_age остаётся ниже.
+    """
 
     def test_verify_age_logic_stale(self):
         """Прямая проверка логики: verify_age > max_age → reason=verify_stale."""

@@ -288,17 +288,8 @@ class TestDispatchTaskSplit:
         async def fake_insert(**_k):
             pass
 
-        async def fake_ensure():
-            pass
-
-        class _Stub:
-            async def kiq(self, _tid):
-                return None
-
         monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
         monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
-        monkeypatch.setattr(wc, "_ensure_broker_started", fake_ensure)
-        monkeypatch.setattr(wc, "_task_stubs", {"power.on": _Stub()})
 
         from src.repositories import dispatch_outbox as _dox
 
@@ -334,17 +325,8 @@ class TestDispatchTaskSplit:
         async def fake_insert(**_k):
             pass
 
-        async def fake_ensure():
-            pass
-
-        class _Stub:
-            async def kiq(self, _tid):
-                return None
-
         monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
         monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
-        monkeypatch.setattr(wc, "_ensure_broker_started", fake_ensure)
-        monkeypatch.setattr(wc, "_task_stubs", {"power.on": _Stub()})
 
         from src.repositories import dispatch_outbox as _dox
 

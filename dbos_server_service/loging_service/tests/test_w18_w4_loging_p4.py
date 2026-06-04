@@ -10,7 +10,7 @@
 5. _emit_audit делегирует _emit_audit_envelope (TD1/TD2 DRY).
 6. apply_rules cold-start fail-closed — комментарий-обоснование на месте.
 7. _with_statement_timeout сбрасывает timeout перед nested.commit().
-8. multiple OVERRIDE_SEVERITY — highest priority wins (break on first match).
+8. multiple OVERRIDE_SEVERITY — last-match-wins (см. test_rule_engine_edge).
 9. _DEFAULT_SEVERITY fallback покрывает status="warning" → WARNING.
 10. _RuleCache._loaded_at/_monotonic atomicity — docstring contract.
 
@@ -32,11 +32,9 @@ from src.repositories.events import _with_statement_timeout
 from src.schemas.events import EventCreate, _IDEMPOTENCY_KEY_PATTERN
 from src.schemas.rules import RuleCreate
 from src.services import audit_outbox as ob
-from src.services import rule_service
 from src.services.rule_service import (
     _DEFAULT_SEVERITY,
     _RuleCache,
-    _RuleSnapshot,
     _resolve_default_severity,
     apply_rules,
 )
@@ -319,58 +317,11 @@ class TestStatementTimeoutResetsToZero:
         assert sets[1].strip().endswith("0")
 
 
-# ── 8. multiple OVERRIDE_SEVERITY: highest priority wins ─────────────────
-
-
-@pytest.mark.skip(reason="OVERRIDE_SEVERITY: семантика откатилась на last-match-wins (owner Q2 open)")
-class TestOverrideSeverityHighestPriorityWins:
-    def test_first_match_terminates_chain(self):
-        """Если на event подходят два OVERRIDE_SEVERITY rule'а с разным
-        priority, побеждает первый (highest priority) — цепочка обрывается."""
-        # `_cache.get` вернёт rules в DESC priority. Подменяем через monkeypatch:
-        from unittest.mock import patch
-
-        high = _RuleSnapshot(
-            id="r_high", name="high",
-            match_service=None, match_action=None,
-            match_status=None, match_severity=None, match_allowed=None,
-            effect="OVERRIDE_SEVERITY", effect_severity="CRITICAL",
-        )
-        low = _RuleSnapshot(
-            id="r_low", name="low",
-            match_service=None, match_action=None,
-            match_status=None, match_severity=None, match_allowed=None,
-            effect="OVERRIDE_SEVERITY", effect_severity="DEBUG",
-        )
-
-        payload = EventCreate(
-            timestamp=datetime.now(timezone.utc),
-            service="auth_service",
-            action="user.login",
-            status="success",
-            allowed=True,
-            severity="INFO",
-        )
-
-        class _StubCache:
-            def get(self, db): return [high, low]
-
-        with patch.object(rule_service, "_cache", _StubCache()):
-            result = apply_rules(db=None, payload=payload)
-
-        assert result is not None
-        # Должна победить high-priority CRITICAL, не low DEBUG.
-        assert result.severity == "CRITICAL"
-
-    def test_break_on_first_in_source(self):
-        """Структурный guard: `apply_rules` делает `return` на
-        OVERRIDE_SEVERITY, а не fall-through."""
-        source = inspect.getsource(apply_rules)
-        # ищем что в OVERRIDE-ветке возврат, а не присваивание
-        assert re.search(
-            r"OVERRIDE_SEVERITY[\s\S]*?return\s+payload\.model_copy",
-            source,
-        ), "OVERRIDE_SEVERITY должен обрывать цепочку через return"
+# ── 8. multiple OVERRIDE_SEVERITY ────────────────────────────────────────
+# Класс TestOverrideSeverityHighestPriorityWins удалён: контракт
+# last-match-wins зафиксирован в test_rule_engine_edge.py::
+# test_override_chain_picks_last_match. «Highest priority wins» был
+# временной ветвью owner Q2 и сейчас не реализован.
 
 
 # ── 9. _DEFAULT_SEVERITY fallback для warning ────────────────────────────

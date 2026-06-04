@@ -292,7 +292,11 @@ class AuditOutbox:
 
     async def _drain_loop(self) -> None:
         """Фоновая корутина: ждёт элемент → выгребает батч → пишет."""
-        assert self._queue is not None
+        # Под `python -O` assert сносится — каждый last-mile `self._queue.get()`
+        # тогда упал бы на `NoneType` без читаемого error_code. Явный guard
+        # симметричен `_drain_remaining` (см. ниже).
+        if self._queue is None:
+            return
         try:
             while not self._stopping:
                 try:
@@ -639,8 +643,12 @@ class AuditOutbox:
         with self._counters_lock:
             return self._drained_total
 
-    def reset_counters_for_tests(self) -> None:
-        """Только для тестов: обнуляет все cause-counters и drained."""
+    def _reset_counters_for_tests(self) -> None:
+        """Только для тестов: обнуляет все cause-counters и drained.
+
+        Префикс `_` отмечает «не публичный API»: production-код не должен
+        зачищать счётчики в полёте.
+        """
         with self._counters_lock:
             self._dropped_overflow_total = 0
             self._dropped_cancel_total = 0
@@ -664,10 +672,14 @@ def make_envelope(
     """Помощник: фиксирует `enqueued_at` и привязывает уникальный dedup-ключ.
 
     Если caller не передал `idempotency_key` явно, генерится UUID4. Этот
-    ключ становится `audit_events.idempotency_key` при записи и гарантирует,
-    что shutdown-requeue / повторный `_drain_remaining` не запишет один и
-    тот же envelope дважды — partial UNIQUE на `(service, idempotency_key)`
-    отбросит retry на DB-уровне.
+    ключ становится `audit_events.idempotency_key` при записи. Partial
+    UNIQUE на `(service, idempotency_key)` ловит retry на DB-уровне, но
+    `event_repo.insert` дополнительно сверяет `idempotency_payload_hash`
+    через `ON CONFLICT DO NOTHING` + select-by-key: idempotent replay с тем
+    же hash тихо возвращает existing row (`audit_outbox` envelope сам себя
+    hash'ит детерминированно, так что shutdown-requeue попадает именно
+    сюда), а replay с другим hash на тот же ключ — 409
+    `IDEMPOTENCY_KEY_CONFLICT` с warning self-audit.
     """
     return AuditEnvelope(
         action=action,
@@ -709,12 +721,16 @@ def _resolve_actor_type(actor_type: str | None) -> str:
 def _coerce_details_keys(details: Any) -> Any:
     """Рекурсивно приводит ключи dict'а к `str`.
 
-    `EventCreate._details_shadow_keys` проверяет только `isinstance(k, str)` —
-    int/tuple/прочие ключи проходят мимо guard'а. Внешние source'ы (middleware
-    `audit_access` строит details руками — там всё str, но fallback-paths и
-    record_admin_action могут получить смешанный dict, если контракт нарушен).
-    Приводим заранее, чтобы JSONB-сериализация и shadow-keys-валидатор
-    работали с однородным dict'ом.
+    Чистая insurance для JSONB-сериализации: psycopg `Json`-адаптер падает
+    на не-str ключах (`json.dumps` ругается на `int`/`tuple`/etc.), а
+    внешние source'ы могут прийти со смешанным dict'ом (middleware строит
+    руками — там str, но fallback-paths и record_admin_action не дают
+    гарантии). Прогоняем рекурсивно вниз через list/dict.
+
+    Замечание про shadow-keys: `EventCreate._details_shadow_keys` смотрит
+    `isinstance(k, str)` и не-str ключи пропускает SILENTLY (не падает), так
+    что валидатор сам по себе нас не защищает — нормализация здесь её
+    дополняет.
     """
     if isinstance(details, dict):
         return {str(k): _coerce_details_keys(v) for k, v in details.items()}

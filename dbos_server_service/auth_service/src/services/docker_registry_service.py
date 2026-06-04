@@ -34,6 +34,7 @@ from src.schemas.docker_registry import (
 )
 from src.services import _lockout, audit_service
 from src.services._dept_guard import assert_dept_admin_target_dept
+from src.services.auth_service import verify_password_with_lockout
 from src.utils.time import is_expired
 from src.core.docker_jwt import sign_docker_token
 
@@ -359,9 +360,7 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
     # Общий helper `verify_password_with_lockout` (в `services/auth_service.py`)
     # гоняет тот же pipeline, что и `/login`: active-lockout → 429
     # ACCOUNT_TEMPORARILY_LOCKED ДО verify_password, failed verify → атомарный
-    # инкремент + commit, на 5-й failure → lockout. Lazy import — чтобы
-    # сохранить acyclic import-graph.
-    from src.services.auth_service import verify_password_with_lockout
+    # инкремент + commit, на 5-й failure → lockout.
     await verify_password_with_lockout(db, user, password)
     return user.id, user.department_id
 
@@ -370,15 +369,13 @@ def _resolve_actions(cfg, subject_id: str, requested_actions: list[str]) -> list
     """Подмножество запрошенных actions, на которые у субъекта реально есть права."""
     allowed = []
 
-    if "pull" in requested_actions:
-        if cfg.pull_policy == PULL_POLICY_ALL:
-            allowed.append("pull")
-        elif subject_id in cfg.pull_user_ids:
-            allowed.append("pull")
+    if "pull" in requested_actions and (
+        cfg.pull_policy == PULL_POLICY_ALL or subject_id in cfg.pull_user_ids
+    ):
+        allowed.append("pull")
 
-    if "push" in requested_actions:
-        if subject_id in cfg.push_user_ids:
-            allowed.append("push")
+    if "push" in requested_actions and subject_id in cfg.push_user_ids:
+        allowed.append("push")
 
     return allowed
 

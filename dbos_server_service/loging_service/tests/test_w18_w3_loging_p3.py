@@ -1,8 +1,8 @@
 """Тесты P3-кластера loging (carry из W14/W15/W16, фиксы в W18).
 
 1) `action_is_registered` glob — фильтр в БД через LIKE, не full scan +
-   python-цикл; `has_any_registered` — алиас на `has_any`.
-2) `_validate_match_action` зовёт `has_any_registered` вместо `list_all` —
+   python-цикл; `has_any` через `SELECT EXISTS`.
+2) `_validate_match_action` зовёт `has_any` вместо `list_all` —
    подтверждаем endpoint-side контракт.
 3) `apply_active` snapshot политик фиксируется на старте (документация).
 4) `_retention_loop` last_run не теряется при упавшем trailing-commit'е.
@@ -99,10 +99,10 @@ class TestActionIsRegisteredGlob:
             f"ожидался LIKE-запрос к service_events.action; видели: {captured_sql}"
         )
 
-    def test_has_any_registered_alias(self, db):
-        assert se_repo.has_any_registered(db) is False
+    def test_has_any_via_exists(self, db):
+        assert se_repo.has_any(db) is False
         _seed_actions(db, service="auth_service", actions=["user.login"])
-        assert se_repo.has_any_registered(db) is True
+        assert se_repo.has_any(db) is True
 
 
 # ── Fix 2: _validate_match_action использует has_any_registered ────────────
@@ -116,7 +116,7 @@ class TestValidateMatchActionViaEndpoint:
 
     def test_create_rule_empty_catalog_allows_any_match_action(self, admin_client, db):
         # service_events пуст — раньше тут `list_all` материализовал бы
-        # пустой список, теперь `has_any_registered` отдаёт False по EXISTS.
+        # пустой список, теперь `has_any` отдаёт False по EXISTS.
         r = admin_client.post(
             "/api/logging/v1/rules",
             json={

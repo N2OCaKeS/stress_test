@@ -67,12 +67,14 @@ worker'а и владеет бизнес-смыслом операции.
 | `server_account.provision` | `tasks/users.py` | `server_account` |
 | `server_account.update_on_host` | `tasks/users.py` | `server_account` |
 | `server_account.deprovision` | `tasks/users.py` | `server_account` |
-| `server_account.users_inventory` | `tasks/users.py` | `server_account` |
+| `server_account.users_inventory` | `tasks/users.py` | `server` |
 | `server_account.password_rotate` | `tasks/passwords.py` | `server_account` |
 | `ipmi_controller.password_rotate` | `tasks/passwords.py` | `ipmi_controller` |
 | `bmc.tls_downgrade` | `clients/__init__.py` | `ipmi_controller` |
 
-`bmc.tls_downgrade` — отдельное worker-level WARNING, эмитится из `_probe_redfish_cascade` при каждом фактическом переходе на менее защищённый канал BMC: `https_verify → https_noverify` (self-signed cert или MITM-подозрение) и `https_verify → http` / `https_noverify → http` (legacy BMC без TLS). Severity всегда `WARNING`, status `success`, `target_type=ipmi_controller`, `target_id` совпадает с `details.host`. Поля `details`: `host` (host[:port] BMC), `from` (`https_verify` | `https_noverify`), `to` (`https_noverify` | `http`). Эмит через transactional outbox (`enqueue_audit`); при недоступности outbox event теряется silent — probe-loop не должен крэшить из-за audit'а.
+`server_account.users_inventory` — `target_type=server` (а не `server_account`), потому что inventory снимает срез всех ОС-пользователей хоста, а не работает с конкретной учёткой; ключ корреляции в audit'е — `server_id`. Симметрично соседнему `server.inventory_sync` (`tasks/inventory.py`).
+
+`bmc.tls_downgrade` — отдельное worker-level WARNING, эмитится из `_probe_redfish_cascade` при каждом фактическом переходе на менее защищённый канал BMC: `https_verify → https_noverify` (self-signed cert или MITM-подозрение) и `https_verify → http` / `https_noverify → http` (legacy BMC без TLS). Severity всегда `WARNING`, status `success`, `actor_type=service` (явный override в payload — остальные worker-actions полагаются на дефолт `service` из `audit_client.emit`), `target_type=ipmi_controller`, `target_id` совпадает с `details.host`. Поля `details`: `host` (host[:port] BMC), `from` (`https_verify` | `https_noverify`), `to` (`https_noverify` | `http`). Эмит через transactional outbox (`enqueue_audit`); при недоступности outbox event теряется silent — probe-loop не должен крэшить из-за audit'а.
 
 На failure-ветке `ipmi_controller.password_rotate`, когда BMC принял пароль
 (apply прошёл), но read-only verify под новым паролем не сработал, runner
@@ -102,6 +104,8 @@ Transport-уровень (`BMC_AUTH_FAILED` / `BMC_UNREACHABLE` / `BMC_TIMEOUT`)
 | `task.worker_orphaned` | ERROR | sweep'ер нашёл task'у, у которой `worker_id` не отвечает heartbeat'ом (упавший процесс) — task принудительно `failed`, retry-decision не делается, оператор разбирается вручную | `task` | `task_id`, `reason="worker_orphaned"`, `worker_id`, `attempt`, `max_attempts` |
 | `secrets.reencrypt_tick` | INFO (success, `allowed=True`), WARNING (status=`warning`, `errors>0`, `allowed=False`, `reason="finalize_errors"`), ERROR (status=`failure`, `allowed=False`, `reason="app_env_mismatch"`) | каждый тик `secrets.reencrypt_lazy` — даже когда работы нет (skip/idle), чтобы видеть пульс ротации ключей | `secret` | `processed`, `skipped`, `errors`, `claimed`, `seeded`, `remaining_before`, `active_version`, `batch_size`. На partial-failure-path добавляется `reason="finalize_errors"` и `allowed=False`, чтобы scheduler/sweep отличали чистый success от warning'а по одному полю. Либо `skipped=True` + `reason` (`active_tasks_present` / `app_env_mismatch`) на ранних exit'ах; `app_env_mismatch` дополнительно несёт `worker_app_env` и `server_service_app_env` и эмитится с `allowed=False`. |
 | `audit.outbox_reattempt_manual` | WARNING | CLI-команда `outbox-reattempt` — оператор форсит повторную доставку конкретной row'ы из `audit_outbox`. Severity WARNING — manual-интервенция в audit-pipeline | `audit_outbox` | `row_id`, `reason` (оператор пишет, зачем), `source="cli"`. На emit'е заполняются `actor_id` (`--actor-id` CLI), `actor_type="operator"`, `target_id=row_id`, `severity=WARNING` явным полем (не из default-таблицы) |
+
+`dispatch_outbox` publisher (`tasks/dispatch_outbox.py`) audit-событий **не эмитит**: он читает строки `dispatch_outbox` из server_service-БД и кикает taskiq-задачи — это внутренний fanout, не бизнес-операция. Видимость наблюдается через worker-логи (`reached attempts cap`, backoff-warnings) и счётчики publisher'а. Если оператор ищет в этой таблице `dispatch_outbox.*` — таких action'ов нет by design.
 
 ---
 

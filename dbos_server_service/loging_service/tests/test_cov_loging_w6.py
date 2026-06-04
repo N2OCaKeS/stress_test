@@ -280,7 +280,7 @@ class TestAuditOutboxFlushEmptyBatch:
 
 
 class TestAuditOutboxCounters:
-    """drained_total и reset_counters_for_tests."""
+    """drained_total и _reset_counters_for_tests."""
 
     def test_drained_total_increments_after_drain(self):
         captured: list[AuditEnvelope] = []
@@ -329,7 +329,7 @@ class TestAuditOutboxCounters:
             outbox.push_nowait(_env("c"))
 
             # Сбрасываем
-            outbox.reset_counters_for_tests()
+            outbox._reset_counters_for_tests()
             return (
                 outbox.dropped_overflow_total(),
                 outbox.dropped_cancel_total(),

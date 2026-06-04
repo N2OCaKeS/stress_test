@@ -384,7 +384,7 @@ class TestInstalledPackagesTask:
             return {"login": "ops", "password": "p"}
 
         monkeypatch.setattr(
-            "src.tasks.installed_packages.server_service_client.fetch_account_password",
+            "src.tasks._account_helpers.server_service_client.fetch_account_password",
             _spy,
         )
 
@@ -430,7 +430,7 @@ class TestInstalledPackagesTask:
             return {"login": "ops", "password": "p"}
 
         monkeypatch.setattr(
-            "src.tasks.installed_packages.server_service_client.fetch_account_password",
+            "src.tasks._account_helpers.server_service_client.fetch_account_password",
             _spy,
         )
 

@@ -72,7 +72,6 @@ def dispatch_creds_key(stash_id_value: str) -> str:
 _worker_engine = None
 _worker_session_factory = None
 _worker_broker: ListQueueBroker | None = None
-_task_stubs: dict = {}
 _broker_started = False
 # Lock защищает race на `_ensure_broker_started`: два concurrent `dispatch_task`
 # в одном event loop могут оба пройти проверку `not _broker_started` до того,
@@ -123,10 +122,12 @@ def _build_broker() -> ListQueueBroker:
 
     Стабы существуют только чтобы можно было вызвать ``.kiq()`` из этого
     сервиса — настоящие handler'ы с теми же именами живут в server_worker.
+    taskiq резолвит handler по строковому имени, отдельный dispatch-map
+    нам не нужен.
 
     **Dispatch map (task_kind → endpoint).**
 
-    Все стабы из `_task_stubs` сейчас активно dispatch'атся из endpoints;
+    Сейчас все task-kinds активно dispatch'атся из endpoints;
     501-заглушек больше нет. Соответствие task-kind'ов и endpoint'ов:
 
     * ``power.on`` / ``power.off`` / ``power.reboot`` —
@@ -153,7 +154,7 @@ def _build_broker() -> ListQueueBroker:
     * ``server.prepare`` — `endpoints/worker_dispatch.py::server_prepare`
       (bootstrap-креды едут через Redis по `bootstrap_creds_key`).
     """
-    global _worker_broker, _task_stubs
+    global _worker_broker
     settings = get_settings()
     if not settings.server_worker_redis_url:
         raise ServiceUnavailableError(
@@ -221,21 +222,6 @@ def _build_broker() -> ListQueueBroker:
     async def _server_prepare(task_id: str) -> None:  # noqa: ARG001
         return None
 
-    _task_stubs = {
-        "power.on": _power_on,
-        "power.off": _power_off,
-        "power.reboot": _power_reboot,
-        "power.status": _power_status,
-        "inventory.sync": _inventory_sync,
-        "account.rotate_password": _account_rotate,
-        "ipmi.rotate_password": _ipmi_rotate,
-        "installed_packages.list": _installed_packages_list,
-        "users.inventory": _users_inventory,
-        "account.provision": _account_provision,
-        "account.update_on_host": _account_update_on_host,
-        "account.deprovision": _account_deprovision,
-        "server.prepare": _server_prepare,
-    }
     _worker_broker = broker
     return broker
 
@@ -539,10 +525,10 @@ async def cancel_task(
 async def _delete_task_row(task_id_to_delete: str) -> None:
     """Best-effort DELETE для отката zombie-row после неудачной публикации в Redis.
 
-    Используется только из `dispatch_task` при сбое `broker.startup` /
-    `stub.kiq` — INSERT уже закоммичен в `dev_server_worker.tasks`, и без
-    отката строка останется `queued` навсегда (worker её не подберёт,
-    потому что в Redis-очереди публикация не произошла).
+    Используется только из `dispatch_task` при сбое outbox-INSERT'а —
+    INSERT в `dev_server_worker.tasks` уже закоммичен, и без отката
+    строка останется `queued` навсегда (poller её не подберёт, потому
+    что outbox-row нет, в Redis-очереди публикация не произойдёт).
 
     Если DELETE сам упадёт (та же worker-БД может быть недоступна — но это
     маловероятно: INSERT только что прошёл) — глушим исключение и даём
@@ -760,7 +746,7 @@ async def _dispatch_task_inner(
         raise ConflictError(
             error_code="TASK_IDEMPOTENT_CONFLICT",
             message="Task insert failed and idempotent retry did not resolve",
-        )
+        ) from None
 
     # Outbox-INSERT в server_service-БД. Сам payload — тот же, что воркер
     # получит из таблицы tasks (worker читает по `task_id`), но кладём и

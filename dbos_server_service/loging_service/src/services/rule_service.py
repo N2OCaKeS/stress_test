@@ -67,7 +67,21 @@ class _RuleSnapshot:
     effect_severity: str | None
 
 
+_CANONICAL_EFFECTS = frozenset({"SUPPRESS", "ALLOW", "OVERRIDE_SEVERITY"})
+
+
 def _snapshot_rule(rule: AuditRule) -> _RuleSnapshot:
+    # `effect` нормализуется на ingest (`RuleCreate._validate_effect`)
+    # и защищён check-constraint'ом миграции. Если в БД всё-таки оказалось
+    # чужое значение (ручной UPDATE / альтернативная миграция / тест) —
+    # WARNING, чтобы поломку было видно в логах; cache при этом всё равно
+    # положит row, чтобы не валить ingest целиком.
+    if rule.effect not in _CANONICAL_EFFECTS:
+        logger.warning(
+            "_RuleCache: rule %s has non-canonical effect %r — "
+            "expected one of %s",
+            rule.id, rule.effect, sorted(_CANONICAL_EFFECTS),
+        )
     return _RuleSnapshot(
         id=rule.id,
         name=rule.name,
@@ -252,9 +266,12 @@ class CacheState(enum.Enum):
 
     * `UNLOADED` — кеш ни разу не прогрелся (или сброшен через `invalidate`),
       следующий `get` обязан сходить в БД.
-    * `LOADING` — в процессе загрузки (зарезервировано на случай вынесения
-      refresh в фоновый таск; сейчас get идёт под `self._lock`, состояние
-      переходит сразу `UNLOADED → READY|EMPTY`).
+    * `LOADING` — в процессе загрузки. Выставляется внутри `get()` под
+      `self._lock` и тут же сменяется на `READY`/`EMPTY` (или
+      восстанавливается на `prev_state` при исключении); снаружи никем не
+      наблюдается. Оставлено для случая вынесения refresh в фоновый таск,
+      когда отдельная корутина будет смотреть на enum-значение без захвата
+      lock'а.
     * `READY` — кеш прогрет, в `_rules` лежит непустой snapshot.
     * `EMPTY` — кеш прогрет, БД пустая. Отдельное состояние, чтобы
       `MAX(updated_at) = NULL` на пустой БД не триггерил лишний

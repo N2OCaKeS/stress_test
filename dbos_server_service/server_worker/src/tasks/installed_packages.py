@@ -31,7 +31,8 @@ import re
 from src.clients.ssh import SshClient, SshError
 from src.core.config import get_settings
 from src.main import broker
-from src.services import server_service_client, ssh_client
+from src.services import ssh_client
+from src.tasks._account_helpers import resolve_ssh_creds
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
@@ -199,15 +200,16 @@ async def installed_packages_list(task_id: str) -> None:
             )
 
         # На управляемом сервере вход по ключу под management_user — пароль
-        # аккаунта не нужен (и его может не быть у discovered-аккаунта).
-        # Тянем пароль только если сессия реально пойдёт под самим аккаунтом
-        # (тот же паттерн, что в inventory.sync / users.inventory).
-        if account_id and not is_managed:
-            creds = await server_service_client.fetch_account_password(
-                server_id, account_id, target_dept,
-            )
-        else:
-            creds = {"login": payload.get("ssh_login", "root")}
+        # аккаунта не нужен; self-сценарий — пароль из server_service.
+        # Общая логика в `_account_helpers.resolve_ssh_creds` (тот же паттерн
+        # в inventory.sync / users.inventory).
+        creds = await resolve_ssh_creds(
+            payload,
+            server_id,
+            account_id=account_id,
+            target_dept=target_dept,
+            is_managed=is_managed,
+        )
 
         # is_managed/management_user/host/ssh_port из payload пропускаются
         # через единый apply_session_hints — server_service кладёт туда

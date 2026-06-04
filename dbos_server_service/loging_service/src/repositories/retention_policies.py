@@ -36,11 +36,14 @@ def get_active(db: Session) -> RetentionPolicy | None:
 
 
 def create(db: Session, payload: RetentionPolicyCreate) -> RetentionPolicy:
-    """Создаёт одну retention-политику (без severity/service-фильтров).
+    """Test-only: создаёт ОДНУ retention-политику и возвращает row напрямую.
 
-    Wrap'ер вокруг `create_policy` для backward-compat (один row, NULL/NULL).
-    Возвращает «представительский» row, как делал старый код, — первый
-    созданный.
+    Production-код (endpoint'ы и `_retention_loop`) ходит через
+    `create_policy`, который возвращает список row'ов (Cartesian по
+    severity_filter × service_filter). Этот хелпер оставлен ради тестов,
+    которые исторически писали `repo.create(db, RetentionPolicyCreate(...))`
+    и ждали single-row return. Trade-off — миграция тестов на
+    `create_policy(...)[0]` против поддержки тонкого wrap'ера; пока живёт.
     """
     rows = create_policy(db, payload)
     return rows[0]

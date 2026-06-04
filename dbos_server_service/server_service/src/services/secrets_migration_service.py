@@ -163,6 +163,55 @@ async def status(db: AsyncSession) -> dict:
 # ── Outbox seeding ──────────────────────────────────────────────────────────
 
 
+def _legacy_ciphertext_filter(column, active_prefix: str):
+    """Общий predicate для legacy-ciphertext SELECT'ов.
+
+    Возвращает три where-кляузы: not-NULL, wire-prefix `v<N>$`, и
+    not-LIKE-активного префикса. Применяется к
+    ``ServerAccount.password_encrypted`` / ``IpmiController.password_encrypted``
+    и к любым другим аналогичным колонкам, если такие появятся.
+    """
+    return (
+        column.is_not(None),
+        column.op("~")("^v[0-9]+\\$"),
+        column.notlike(active_prefix),
+    )
+
+
+async def _pick_legacy_ciphertext_rows(
+    db: AsyncSession,
+    model,
+    active: int,
+    limit: int | None,
+    *,
+    scalars: bool = True,
+):
+    """SELECT row'ов с legacy-ciphertext'ом для заданного owner-модели.
+
+    `scalars=True` — отдаём полные ORM-объекты (использует `reencrypt_batch`).
+    `scalars=False` — отдаём пары `(id, ciphertext)` для `seed_outbox`,
+    без материализации остальной row'ы.
+
+    `limit=None` — без LIMIT'а (использует `seed_outbox` при не заданном
+    quota'е). Иначе clause LIMIT добавляется в SELECT.
+    """
+    active_prefix = f"v{active}$%"
+    column = model.password_encrypted
+    if scalars:
+        stmt = select(model)
+    else:
+        stmt = select(model.id, column)
+    for clause in _legacy_ciphertext_filter(column, active_prefix):
+        stmt = stmt.where(clause)
+    stmt = stmt.order_by(model.id)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    result = await db.execute(stmt)
+    if scalars:
+        return list(result.scalars())
+    return list(result.all())
+
+
 async def seed_outbox(db: AsyncSession, limit: int | None = None) -> dict:
     """Заполнить outbox-строки для всех owner-row'ов с legacy ciphertext'ом.
 
@@ -182,37 +231,23 @@ async def seed_outbox(db: AsyncSession, limit: int | None = None) -> dict:
     """
     settings = get_settings()
     active = settings.server_encryption_key_version
-    active_prefix = f"v{active}$%"
 
-    scanned = 0
     inserted = 0
 
     candidates: list[tuple[str, str, str]] = []  # (entity_type, entity_id, ciphertext)
 
-    sa_stmt = (
-        select(ServerAccount.id, ServerAccount.password_encrypted)
-        .where(ServerAccount.password_encrypted.is_not(None))
-        .where(ServerAccount.password_encrypted.op("~")("^v[0-9]+\\$"))
-        .where(ServerAccount.password_encrypted.notlike(active_prefix))
-        .order_by(ServerAccount.id)
+    sa_rows = await _pick_legacy_ciphertext_rows(
+        db, ServerAccount, active, limit, scalars=False
     )
-    if limit is not None:
-        sa_stmt = sa_stmt.limit(limit)
-    for row in (await db.execute(sa_stmt)).all():
+    for row in sa_rows:
         candidates.append((ENTITY_SERVER_ACCOUNT, row[0], row[1]))
 
     remaining = None if limit is None else max(0, limit - len(candidates))
     if remaining is None or remaining > 0:
-        ipmi_stmt = (
-            select(IpmiController.id, IpmiController.password_encrypted)
-            .where(IpmiController.password_encrypted.is_not(None))
-            .where(IpmiController.password_encrypted.op("~")("^v[0-9]+\\$"))
-            .where(IpmiController.password_encrypted.notlike(active_prefix))
-            .order_by(IpmiController.id)
+        ipmi_rows = await _pick_legacy_ciphertext_rows(
+            db, IpmiController, active, remaining, scalars=False
         )
-        if remaining is not None:
-            ipmi_stmt = ipmi_stmt.limit(remaining)
-        for row in (await db.execute(ipmi_stmt)).all():
+        for row in ipmi_rows:
             candidates.append((ENTITY_IPMI_CONTROLLER, row[0], row[1]))
 
     scanned = len(candidates)
@@ -531,30 +566,46 @@ async def cleanup_done(db: AsyncSession, older_than_hours: int) -> int:
 
 async def _pick_account_batch(db: AsyncSession, active: int, limit: int) -> list[ServerAccount]:
     """Выбрать ServerAccount'ы с префиксом, отличным от активного."""
-    active_prefix = f"v{active}$%"
-    stmt = (
-        select(ServerAccount)
-        .where(ServerAccount.password_encrypted.is_not(None))
-        .where(ServerAccount.password_encrypted.op("~")("^v[0-9]+\\$"))
-        .where(ServerAccount.password_encrypted.notlike(active_prefix))
-        .order_by(ServerAccount.id)
-        .limit(limit)
-    )
-    return list((await db.execute(stmt)).scalars())
+    return await _pick_legacy_ciphertext_rows(db, ServerAccount, active, limit)
 
 
 async def _pick_ipmi_batch(db: AsyncSession, active: int, limit: int) -> list[IpmiController]:
     """Симметрично _pick_account_batch — для ipmi_controllers."""
-    active_prefix = f"v{active}$%"
-    stmt = (
-        select(IpmiController)
-        .where(IpmiController.password_encrypted.is_not(None))
-        .where(IpmiController.password_encrypted.op("~")("^v[0-9]+\\$"))
-        .where(IpmiController.password_encrypted.notlike(active_prefix))
-        .order_by(IpmiController.id)
-        .limit(limit)
-    )
-    return list((await db.execute(stmt)).scalars())
+    return await _pick_legacy_ciphertext_rows(db, IpmiController, active, limit)
+
+
+def _reencrypt_row(row, *, aad_fn, entity_type: str, log_label: str) -> dict | None:
+    """Перешифровать один ciphertext-row под активный ключ.
+
+    Возвращает `None` на успех (и обновляет `row.password_encrypted` in-place)
+    либо dict `{entity_type, entity_id, error_class}` на сбой decrypt/encrypt.
+    Любые исключения decrypt/encrypt здесь поглощаются — caller считает
+    `processed` / `errors` по возврату.
+
+    `aad_fn` — `secrets_service.aad_for_server_account_password` или
+    `aad_for_ipmi_credential`; вызывается с `row.id`.
+    `log_label` — человеческое имя источника для WARNING'а (например
+    `"server_account"`).
+    """
+    try:
+        aad = aad_fn(row.id)
+        plain = secrets_service.decrypt(row.password_encrypted, aad=aad)
+        row.password_encrypted = secrets_service.encrypt(plain, aad=aad)
+        return None
+    except Exception as exc:  # noqa: BLE001 — любая ошибка decrypt/encrypt
+        # Тип эксепшна важен для диагностики (ключ ушёл из env vs битый
+        # ciphertext vs decrypt с чужим AAD'ом). Сам plaintext или ключ
+        # из exc-сообщений не достанем — пишем только класс.
+        exc_class = type(exc).__name__
+        logger.warning(
+            "reencrypt_batch %s row %s failed: %s",
+            log_label, row.id, exc_class,
+        )
+        return {
+            "entity_type": entity_type,
+            "entity_id": row.id,
+            "error_class": exc_class,
+        }
 
 
 async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
@@ -597,50 +648,22 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
     # чтобы SIEM мог разложить инциденты по таблицам.
     failed_rows: list[dict[str, str]] = []
 
-    for acc in accounts:
-        try:
-            aad = secrets_service.aad_for_server_account_password(acc.id)
-            plain = secrets_service.decrypt(acc.password_encrypted, aad=aad)
-            acc.password_encrypted = secrets_service.encrypt(plain, aad=aad)
-            processed += 1
-        except Exception as exc:  # noqa: BLE001 — любая ошибка decrypt/encrypt
-            # Тип эксепшна важен для диагностики (ключ ушёл из env vs битый
-            # ciphertext vs decrypt с чужим AAD'ом). Сам plaintext или ключ
-            # из exc-сообщений не достанем — пишем только класс.
-            exc_class = type(exc).__name__
-            logger.warning(
-                "reencrypt_batch server_account row %s failed: %s",
-                acc.id, exc_class,
+    batches = (
+        (accounts, secrets_service.aad_for_server_account_password,
+         ENTITY_SERVER_ACCOUNT, "server_account"),
+        (ipmis, secrets_service.aad_for_ipmi_credential,
+         ENTITY_IPMI_CONTROLLER, "ipmi_controller"),
+    )
+    for rows, aad_fn, entity_type, log_label in batches:
+        for row in rows:
+            failure = _reencrypt_row(
+                row, aad_fn=aad_fn, entity_type=entity_type, log_label=log_label
             )
-            errors += 1
-            failed_rows.append(
-                {
-                    "entity_type": ENTITY_SERVER_ACCOUNT,
-                    "entity_id": acc.id,
-                    "error_class": exc_class,
-                }
-            )
-
-    for ipmi in ipmis:
-        try:
-            aad = secrets_service.aad_for_ipmi_credential(ipmi.id)
-            plain = secrets_service.decrypt(ipmi.password_encrypted, aad=aad)
-            ipmi.password_encrypted = secrets_service.encrypt(plain, aad=aad)
-            processed += 1
-        except Exception as exc:  # noqa: BLE001
-            exc_class = type(exc).__name__
-            logger.warning(
-                "reencrypt_batch ipmi_controller row %s failed: %s",
-                ipmi.id, exc_class,
-            )
-            errors += 1
-            failed_rows.append(
-                {
-                    "entity_type": ENTITY_IPMI_CONTROLLER,
-                    "entity_id": ipmi.id,
-                    "error_class": exc_class,
-                }
-            )
+            if failure is None:
+                processed += 1
+            else:
+                errors += 1
+                failed_rows.append(failure)
 
     if processed > 0:
         await db.flush()

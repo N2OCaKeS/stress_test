@@ -124,6 +124,9 @@ def has_any(db: Session) -> bool:
     row'е. На пустой таблице различия нет, но при ~10k+ зарегистрированных
     action'ах материализация всего списка ради boolean'а ест и память,
     и pgsql round-trip.
+
+    Используется `_validate_match_action`: если ни один сервис ничего не
+    зарегистрировал, не блокируем создание правила.
     """
     from sqlalchemy import exists
     return bool(db.execute(select(exists().where(ServiceEvent.id.is_not(None)))).scalar())
@@ -132,17 +135,16 @@ def has_any(db: Session) -> bool:
 def action_is_registered(db: Session, match_action: str) -> bool:
     """True, если *match_action* совпадает хотя бы с одним зарегистрированным событием.
 
-    Точные строки требуют точного совпадения. Паттерны со `*` транслируются
-    в SQL `LIKE` с подстановкой `%` и фильтр идёт в БД: на каталоге в десятки
-    тысяч action'ов это `EXISTS (... LIMIT 1)` с index seek по `ix_service_events_action`
-    вместо `SELECT action FROM service_events` + python-цикл по всем row'ам.
+    Точные строки идут через `SELECT EXISTS (... = match_action)` — index seek
+    по `ix_service_events_action`, без python-цикла.
 
-    `action_matches_pattern` (`user.*` совпадает только с одним сегментом)
-    допускает в pattern'е `*`, но не `%`/`_` — поэтому экранирование
-    LIKE-метасимволов сводится к escape'у `\\` для самой бэк-слэш-формы.
-    Финально подтверждаем совпадение в Python через `action_matches_pattern`,
-    чтобы DB-уровневый LIKE с `%` (который матчит `.`) не пропустил
-    `user.login.extra` для pattern'а `user.*`.
+    Паттерны со `*` транслируются в SQL `LIKE` с подстановкой `%`: фильтр
+    отбирается на стороне БД (index range по anchored-префиксу, типа
+    `user.%`), но финально каждая candidate-row дополнительно проходит через
+    `action_matches_pattern` в Python. Это нужно, потому что `LIKE 'user.%'`
+    матчит и `user.login.extra` (где `.` для `%` — обычный символ),
+    а контракт `action_matches_pattern` — «`*` покрывает один сегмент без
+    точек». Чистого `EXISTS` без postcheck'а недостаточно.
     """
     from sqlalchemy import exists as sa_exists
 
@@ -164,14 +166,3 @@ def action_is_registered(db: Session, match_action: str) -> bool:
             select(sa_exists().where(ServiceEvent.action == match_action))
         ).scalar()
     )
-
-
-def has_any_registered(db: Session) -> bool:
-    """Алиас `has_any` со смысловой нагрузкой «есть хоть один зарегистрированный action».
-
-    `_validate_match_action` зовёт `has_any` дважды на разные ветки логики —
-    отдельная функция делает call-site короче и явнее: «если ни один сервис
-    ничего не зарегистрировал, не блокируем создание правила». Оставляем
-    `has_any` для backward-compat.
-    """
-    return has_any(db)

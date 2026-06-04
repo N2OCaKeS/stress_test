@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
@@ -207,15 +207,13 @@ def create_application() -> FastAPI:
             # Таймаут 2с симметричен `audit_outbox` drain'у воркера.
             pending = list(audit_service._EMIT_TASKS)
             if pending:
-                try:
+                # Под timeout остаётся часть тасок — потеряем их,
+                # но не подвешиваем shutdown.
+                with suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(
                         asyncio.gather(*pending, return_exceptions=True),
                         timeout=2.0,
                     )
-                except asyncio.TimeoutError:
-                    # Под timeout остаётся часть тасок — потеряем их,
-                    # но не подвешиваем shutdown. Лог в audit-канал.
-                    pass
 
             # Обнуляем slot только после drain'а. Любые emit'ы, попавшие
             # сюда после этой строки, пойдут per-call fallback'ом.

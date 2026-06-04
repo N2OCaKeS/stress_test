@@ -30,6 +30,7 @@ from src.db.session import AsyncSessionLocal
 from src.main import broker
 from src.repositories import task as task_repo
 from src.services import server_service_client, ssh_client
+from src.tasks._account_helpers import resolve_ssh_creds
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
@@ -203,12 +204,15 @@ def _unscrub(value):
     return value
 
 
-# POSIX-узкий набор: буквы/цифры/`._-`. Совпадает с `_LOGIN_RE` из
-# `src/clients/ssh.py` — это вторая линия обороны на входе task'и, до
-# `_account_creds` (fetch password) и любых SSH-вызовов. Если payload
-# принёс мусор в `login`, не хотим триггерить лишний fetch/audit на
-# server_service'е и только потом получать SSH_INVALID_LOGIN — отбиваем
-# сразу со стабильным error_code.
+# POSIX-узкий набор: буквы/цифры/`._-`. SOURCE OF TRUTH этого pattern'а —
+# `src/clients/ssh.py:_LOGIN_RE` / `_GROUP_RE`; здесь третья (внешняя) линия
+# обороны на входе task'и, до `_account_creds` (fetch password) и любых
+# SSH-вызовов. Если payload принёс мусор в `login`, не хотим триггерить
+# лишний fetch/audit на server_service'е и только потом получать
+# SSH_INVALID_LOGIN — отбиваем сразу со стабильным error_code.
+# Pattern должен оставаться байт-в-байт идентичным `clients/ssh.py:_LOGIN_RE`
+# и `server_service/src/schemas/server_account.py` ServerAccountCreate.login:
+# любая правка одной из копий обязана быть отражена в остальных двух.
 _TASK_LOGIN_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
 
 
@@ -325,15 +329,16 @@ async def users_inventory(task_id: str) -> None:
         target_dept = payload.get("target_department_id")
         is_managed = bool(payload.get("is_managed"))
 
-        # На управляемом сервере сессия идёт по ключу под управляющим
-        # пользователем — пароль аккаунта не нужен (его может и не быть у
-        # discovered-аккаунта). Тянем только когда сессия пойдёт под аккаунтом.
-        if account_id and not is_managed:
-            creds = await server_service_client.fetch_account_password(
-                server_id, account_id, target_dept,
-            )
-        else:
-            creds = {"login": payload.get("ssh_login", "root")}
+        # Управляемый — вход по ключу под management_user, пароль аккаунта
+        # не нужен; self — пароль из server_service. Общая логика в
+        # `_account_helpers.resolve_ssh_creds`.
+        creds = await resolve_ssh_creds(
+            payload,
+            server_id,
+            account_id=account_id,
+            target_dept=target_dept,
+            is_managed=is_managed,
+        )
         ssh_client.apply_session_hints(creds, payload)
 
         facts = await ssh_client.collect_os_users(creds, server_id)

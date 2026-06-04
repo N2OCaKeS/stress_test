@@ -400,6 +400,41 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Параметры audit-outbox publisher loop'а. Symmetрично
+    # dispatch-outbox (`dispatch_outbox_*`), чтобы оператор мог тюнить оба
+    # publisher'а одинаково. Дефолты — те же, что были раньше как
+    # module-private константы в `services/audit_outbox_publisher.py`.
+    audit_outbox_batch_size: int = Field(
+        default=5,
+        ge=1,
+        alias="AUDIT_OUTBOX_BATCH_SIZE",
+        description=(
+            "Сколько строк за один проход. Маленький batch ограничивает "
+            "blast-radius медленных HTTP-вызовов в loging_service (весь "
+            "batch держится FOR UPDATE SKIP LOCKED до commit'а); при "
+            "batch=50 один медленный emit тормозит остальные 49."
+        ),
+    )
+    audit_outbox_poll_interval_seconds: float = Field(
+        default=2.0,
+        gt=0.0,
+        alias="AUDIT_OUTBOX_POLL_INTERVAL_SECONDS",
+        description=(
+            "Пауза между проходами фонового publisher loop'а. Меньше — "
+            "ниже latency audit-event'а, выше — DB-нагрузка."
+        ),
+    )
+    audit_outbox_cb_sleep_chunk_seconds: float = Field(
+        default=5.0,
+        gt=0.0,
+        alias="AUDIT_OUTBOX_CB_SLEEP_CHUNK_SECONDS",
+        description=(
+            "В open-state shared circuit breaker'а publisher loop спит "
+            "порциями ≤ этой длины, чтобы быстро отреагировать на закрытие "
+            "breaker'а и не блокировать graceful shutdown."
+        ),
+    )
+
     # ── Management user / bootstrap (prepare) ────────────────────────────
     # Бутстрап управления (#14): задача `server.prepare` заходит на сервер
     # под одноразовыми bootstrap-кредами (password-auth), заводит системного

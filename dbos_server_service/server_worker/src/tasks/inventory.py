@@ -19,6 +19,7 @@ import logging
 from src.core.exceptions import CredentialFetchError
 from src.main import broker
 from src.services import server_service_client, ssh_client
+from src.tasks._account_helpers import resolve_ssh_creds
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
@@ -62,16 +63,18 @@ async def inventory_sync(task_id: str) -> None:
         target_dept = payload.get("target_department_id")
         is_managed = bool(payload.get("is_managed"))
 
-        # На управляемом сервере аутентификация идёт по ключу под управляющим
-        # пользователем — пароль аккаунта для сессии не нужен, и его может не
-        # быть вовсе (discovered-аккаунт). Тянем пароль только когда сессия
-        # реально пойдёт под самим аккаунтом.
-        if account_id and not is_managed:
-            creds = await server_service_client.fetch_account_password(
-                server_id, account_id, target_dept,
-            )
-        else:
-            creds = {"login": payload.get("ssh_login", "root")}
+        # Управляемый сервер — вход по ключу под management_user (пароль
+        # аккаунта не нужен и может отсутствовать у discovered-аккаунта);
+        # self-сценарий — пароль из server_service. Логика в
+        # `_account_helpers.resolve_ssh_creds` (та же для users.py /
+        # installed_packages.py).
+        creds = await resolve_ssh_creds(
+            payload,
+            server_id,
+            account_id=account_id,
+            target_dept=target_dept,
+            is_managed=is_managed,
+        )
         ssh_client.apply_session_hints(creds, payload)
 
         facts = await ssh_client.collect_inventory(creds, server_id)

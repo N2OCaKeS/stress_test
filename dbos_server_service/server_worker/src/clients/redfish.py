@@ -211,6 +211,7 @@ class RedfishClient:
         timeout: float = 30.0,
         manager_id: str = _DEFAULT_MANAGER_ID,
         system_id: str = _DEFAULT_SYSTEM_ID,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         # `host` принимает либо полный URL (`https://idrac.example.com`),
         # либо «голый» hostname (`idrac.example.com`) — во втором случае
@@ -219,13 +220,24 @@ class RedfishClient:
         self._base_url = self._normalize_host(host)
         self._manager_id = manager_id
         self._system_id = system_id
-        self._client = httpx.AsyncClient(
-            base_url=self._base_url,
-            auth=(username, password),
-            verify=verify_tls,
-            timeout=timeout,
-            headers={"Accept": "application/json"},
-        )
+        # Shared transport — если передан, connection pool разделяется с
+        # другими RedfishClient'ами того же verify-уровня (см. http_pool
+        # `get_bmc_redfish_transport`). `verify=` тогда задан на транспорте,
+        # клиенту его передавать нельзя — httpx ругается на конфликт. Без
+        # transport — standalone-клиент с собственным пулом (legacy-путь
+        # для тестов с MockTransport через подмену `_client` напрямую).
+        client_kwargs: dict = {
+            "base_url": self._base_url,
+            "auth": (username, password),
+            "timeout": timeout,
+            "headers": {"Accept": "application/json"},
+        }
+        if transport is None:
+            client_kwargs["verify"] = verify_tls
+        else:
+            client_kwargs["transport"] = transport
+        self._client = httpx.AsyncClient(**client_kwargs)
+        self._owns_transport = transport is None
 
     @staticmethod
     def _normalize_host(host: str) -> str:
@@ -249,7 +261,24 @@ class RedfishClient:
         await self.aclose()
 
     async def aclose(self) -> None:
-        """Закрыть underlying connection pool. Идемпотентно."""
+        """Закрыть underlying connection pool. Идемпотентно.
+
+        Если клиент построен на shared transport (см. `http_pool
+        .get_bmc_redfish_transport`), сам transport не закрываем —
+        он живёт до WORKER_SHUTDOWN и переиспользуется другими
+        RedfishClient'ами. httpx.AsyncClient.aclose() сначала помечает
+        клиента как закрытого и потом вызывает transport.aclose(); для
+        shared-случая мы пропускаем сам aclose клиента и руками выставляем
+        флаг is_closed через приватный атрибут — иначе следующий вызов
+        запроса на shared transport отвалится «Cannot send request after
+        client has been closed».
+        """
+        if not self._owns_transport:
+            # Shared transport — клиент one-shot per BMC, но transport общий.
+            # Закрывать клиент целиком значило бы закрыть transport,
+            # ломая остальные RedfishClient'ы. Просто отпускаем ссылку.
+            self._client = None  # type: ignore[assignment]
+            return
         await self._client.aclose()
 
     async def _resolve_manager_id(self) -> str:

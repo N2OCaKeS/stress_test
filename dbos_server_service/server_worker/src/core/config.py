@@ -147,6 +147,40 @@ class Settings(BaseSettings):
             "server_service. Should be <= server_service_pool_max_connections."
         ),
     )
+    # ── BMC HTTP pool (Redfish + scheme probe) ───────────────────────────
+    # Один пул соединений для всех BMC-вызовов: probe HEAD `/redfish/v1/`
+    # (3 клиента по (scheme, verify)) и per-host RedfishClient через shared
+    # httpx-transport (2 транспорта по verify). До этой настройки каждый
+    # power-action / rotate-password создавал свежий httpx.AsyncClient с
+    # TCP/TLS handshake на каждый roundtrip — амплификация FD'ов при burst'е
+    # параллельных задач на разные BMC. Лимиты — суммарно на все BMC.
+    bmc_pool_max_connections: int = Field(
+        default=20,
+        ge=1,
+        description=(
+            "Total concurrent connections in the pooled BMC httpx clients "
+            "(Redfish transport + scheme probe). Covers all BMC hosts "
+            "addressed by a single worker; tune up if a stand has many "
+            "BMCs handled in parallel."
+        ),
+    )
+    bmc_pool_max_keepalive_connections: int = Field(
+        default=10,
+        ge=1,
+        description=(
+            "Idle keepalive connections to keep open for reuse against "
+            "BMCs. Should be <= bmc_pool_max_connections."
+        ),
+    )
+    bmc_probe_timeout_seconds: float = Field(
+        default=1.5,
+        ge=0.1,
+        description=(
+            "Timeout for HEAD `/redfish/v1/` probe per scheme step in the "
+            "cascade. Kept short so ipmitool fallback doesn't wait long "
+            "on dead BMC. Default 1.5s."
+        ),
+    )
 
     # ── Graceful shutdown ────────────────────────────────────────────────
     # Максимум сколько ждать running task'ам завершиться при SIGTERM /

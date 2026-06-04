@@ -1,29 +1,18 @@
-# DUPE: keep in sync with auth_service/src/services/redaction.py (and vice versa). Until shared SDK extraction.
+# SOURCE OF TRUTH: dbos_server_service/sdk/redaction.py
+# DUPE: keep in sync with sdk/redaction.py, auth_service/src/services/redaction.py,
+#       server_service/src/services/redaction.py.
 """Маскировка секретов в `details` — защитный слой на стороне loging_service.
 
-Дублирует логику `auth_service/src/services/redaction.py`. Применяется к
-`payload.details` перед сохранением, чтобы случайные секреты от любого
-источника не попали в БД.
-
-TODO (см. obsidian/TODO.md P4): вынести в общий пакет — sdk либо
-отдельный pip-пакет. Сейчас сервисы независимо депло́ятся, общего PYTHONPATH
-нет (`auth_service/src` и `loging_service/src` — изолированы), поэтому
-просто `from auth_service.services.redaction import redact` не сработает.
-Варианты: (a) общий внутренний пакет `dbos_audit_sdk` (наиболее чистый,
-но требует своего pyproject + публикации в internal registry),
-(b) git-submodule или symlink в общий каталог корня монорепо,
-(c) оставить два экземпляра + sync-тест (как у `_DEFAULT_SEVERITY`).
-Выбор откладывается, пока схемы redaction не разойдутся (сейчас держим
-руками в синхронности).
-
-Плейсхолдеры: `<PASSWORD>`, `<TOKEN>`, `<SECRET>`, `<HASH>`, `<CREDENTIAL>`.
+Локальная копия для loging_service. Применяется к `payload.details` перед
+сохранением, чтобы случайные секреты от любого источника не попали в БД.
 
 Списки ключей — exact-set lookup по нижнему регистру. В частности,
 `_SECRET_KEYS` включает имена ключей S2S-ингеста (`service_api_key`,
-`service_key`, `introspect_key`) — auth_service / server_service
-аудитят rotate-операции с этими именами в `details`, без них secret уезжал
-бы в БД в plaintext. `bearer` лежит в `_TOKEN_KEYS` (классифицируется как
-`<TOKEN>`).
+`service_key`, `introspect_key`) — auth_service / server_service аудитят
+rotate-операции с этими именами в `details`, без них secret уезжал бы в БД в
+plaintext. `bearer` лежит в `_TOKEN_KEYS` (классифицируется как `<TOKEN>`).
+
+Плейсхолдеры: `<PASSWORD>`, `<TOKEN>`, `<SECRET>`, `<HASH>`, `<CREDENTIAL>`.
 """
 
 from __future__ import annotations
@@ -39,11 +28,10 @@ _PASSWORD_KEYS = {
 _TOKEN_KEYS = {
     "token", "access_token", "refresh_token", "id_token",
     "oauth_token", "bearer", "bearer_token", "jwt", "jwt_token",
-    "refresh_token_hash", "session_token",
+    "session_token",
 }
 # `bearer` живёт только в `_TOKEN_KEYS` — `_classify_key` идёт
-# PASSWORD → TOKEN → SECRET, дубль здесь был мёртвым (TOKEN всегда
-# побеждает).
+# PASSWORD → HASH → TOKEN → SECRET, дубль в `_SECRET_KEYS` был мёртвым.
 _SECRET_KEYS = {
     "secret", "secret_key", "api_key", "apikey", "api_secret",
     "client_secret", "private_key", "signing_key",
@@ -51,15 +39,17 @@ _SECRET_KEYS = {
 }
 _HASH_KEYS = {
     "password_hash", "hash", "token_hash", "pwd_hash",
+    "refresh_token_hash",
 }
 _CREDENTIAL_KEYS = {
     "credential", "credentials", "auth", "authorization",
 }
 
 _JWT_RE = re.compile(r"^[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}$")
-_BCRYPT_RE = re.compile(r"^\$2[aby]?\$\d{1,2}\$[./A-Za-z0-9]{53}$")
+_BCRYPT_RE = re.compile(r"^\$2[aby]?\$\d{1,2}\$[./A-Za-z0-9]{50,60}$")
 _ARGON2_RE = re.compile(r"^\$argon2(id|i|d)?\$")
 _OPAQUE_TOKEN_RE = re.compile(r"^dbos_(pat|bot)_[A-Za-z0-9_\-]{12,}$")
+_OAUTH_CLIENT_SECRET_RE = re.compile(r"^cs_[A-Za-z0-9_\-]{12,}$")
 
 _MAX_STRING_LEN = 2048
 
@@ -77,15 +67,18 @@ def _classify_key(key: str) -> str | None:
     # оба валидатора сравнивают ключи без учёта регистра. Если расширишь
     # один список зарезервированных имён, не забудь второй: расхождение
     # позволит обойти shadow-проверку через `Actor_id` (Title case).
+    #
+    # HASH-проверка идёт перед TOKEN-проверкой: имена вида `refresh_token_hash`
+    # должны маскироваться как `<HASH>`, а не `<TOKEN>` (хэш токена ≠ токен).
     k = key.lower()
     if k in _PASSWORD_KEYS:
         return "<PASSWORD>"
+    if k in _HASH_KEYS:
+        return "<HASH>"
     if k in _TOKEN_KEYS:
         return "<TOKEN>"
     if k in _SECRET_KEYS:
         return "<SECRET>"
-    if k in _HASH_KEYS:
-        return "<HASH>"
     if k in _CREDENTIAL_KEYS:
         return "<CREDENTIAL>"
     return None
@@ -96,6 +89,8 @@ def _classify_value(value: str) -> str | None:
         return "<TOKEN>"
     if _OPAQUE_TOKEN_RE.match(value):
         return "<TOKEN>"
+    if _OAUTH_CLIENT_SECRET_RE.match(value):
+        return "<SECRET>"
     if _BCRYPT_RE.match(value) or _ARGON2_RE.match(value):
         return "<HASH>"
     return None

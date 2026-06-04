@@ -259,3 +259,68 @@ class TestPoolConfig:
         assert limits.max_connections == 99
         assert limits.max_keepalive_connections == 33
         assert captured[0]["timeout"] == 7.0
+
+
+class TestBmcProbePool:
+    """BMC scheme-probe pool: один клиент на (scheme, verify) комбинацию."""
+
+    def test_probe_client_is_singleton_per_key(self):
+        a1 = http_pool.get_bmc_probe_client(scheme="https", verify=True)
+        a2 = http_pool.get_bmc_probe_client(scheme="https", verify=True)
+        assert a1 is a2
+
+    def test_probe_clients_differ_by_verify(self):
+        a = http_pool.get_bmc_probe_client(scheme="https", verify=True)
+        b = http_pool.get_bmc_probe_client(scheme="https", verify=False)
+        assert a is not b
+
+    def test_probe_clients_differ_by_scheme(self):
+        a = http_pool.get_bmc_probe_client(scheme="https", verify=True)
+        b = http_pool.get_bmc_probe_client(scheme="http", verify=True)
+        assert a is not b
+
+    def test_probe_http_ignores_verify(self):
+        """Для plain-HTTP флаг verify ничего не значит — один клиент."""
+        a = http_pool.get_bmc_probe_client(scheme="http", verify=True)
+        b = http_pool.get_bmc_probe_client(scheme="http", verify=False)
+        assert a is b
+
+    def test_probe_rejects_unsupported_scheme(self):
+        with pytest.raises(ValueError):
+            http_pool.get_bmc_probe_client(scheme="ftp", verify=True)
+
+    async def test_aclose_all_closes_probe_clients(self):
+        a = http_pool.get_bmc_probe_client(scheme="https", verify=True)
+        b = http_pool.get_bmc_probe_client(scheme="https", verify=False)
+        await http_pool.aclose_all()
+        assert a.is_closed
+        assert b.is_closed
+
+    async def test_get_after_aclose_creates_new_probe(self):
+        a1 = http_pool.get_bmc_probe_client(scheme="https", verify=True)
+        await http_pool.aclose_all()
+        a2 = http_pool.get_bmc_probe_client(scheme="https", verify=True)
+        assert a1 is not a2
+
+
+class TestBmcRedfishTransport:
+    """Shared transport под per-host RedfishClient — один на verify-уровень."""
+
+    def test_transport_is_singleton_per_verify(self):
+        a1 = http_pool.get_bmc_redfish_transport(verify=True)
+        a2 = http_pool.get_bmc_redfish_transport(verify=True)
+        assert a1 is a2
+
+    def test_transports_differ_by_verify(self):
+        a = http_pool.get_bmc_redfish_transport(verify=True)
+        b = http_pool.get_bmc_redfish_transport(verify=False)
+        assert a is not b
+
+    async def test_aclose_all_closes_transports(self):
+        http_pool.get_bmc_redfish_transport(verify=True)
+        http_pool.get_bmc_redfish_transport(verify=False)
+        # Не падает на закрытии — основная проверка.
+        await http_pool.aclose_all()
+        # После shutdown'а слот пустой → следующий get создаёт новый.
+        a2 = http_pool.get_bmc_redfish_transport(verify=True)
+        assert a2 is not None

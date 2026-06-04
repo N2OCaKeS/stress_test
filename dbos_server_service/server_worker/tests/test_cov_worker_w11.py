@@ -790,12 +790,14 @@ class TestBmcCascadeFullFallback:
 
         class AlwaysRefused:
             def __init__(self, **kw): pass
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): pass
             async def head(self, url):
                 raise httpx.ConnectError("connection refused")
+            async def aclose(self): pass
 
-        monkeypatch.setattr("src.clients.httpx.AsyncClient", AlwaysRefused)
+        def _fake_get(*, scheme, verify):
+            return AlwaysRefused()
+
+        monkeypatch.setattr("src.clients.get_bmc_probe_client", _fake_get)
 
         client = await get_bmc_client(
             host="dead.bmc.example.com",

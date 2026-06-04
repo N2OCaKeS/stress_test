@@ -1,3 +1,6 @@
+# NOT under sdk/redaction.py: разный API (free-form string vs dict). См.
+# sdk/README.md и sdk/redaction.py — этот модуль в синхронизацию НЕ
+# включён, у него собственный контракт `redact_error_message(str) -> str`.
 """Маскировка секретов в строках сообщений об ошибках.
 
 Когда `_runner.run_task` ловит исключение из impl (idrac/ssh/HTTP-клиента),

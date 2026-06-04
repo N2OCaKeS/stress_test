@@ -28,6 +28,10 @@ import httpx
 from src.clients.ipmitool import IpmitoolClient, IpmitoolError
 from src.clients.redfish import RedfishClient, resolve_manager_id
 from src.core.config import get_settings
+from src.services.http_pool import (
+    get_bmc_probe_client,
+    get_bmc_redfish_transport,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,11 +94,8 @@ async def _probe_redfish(host: str, *, scheme: str = "https") -> bool:
         )
     url = f"{scheme}://{host}{_REDFISH_PROBE_PATH}"
     try:
-        async with httpx.AsyncClient(
-            verify=verify if scheme == "https" else True,
-            timeout=_REDFISH_PROBE_TIMEOUT_SECONDS,
-        ) as client:
-            resp = await client.head(url)
+        client = get_bmc_probe_client(scheme=scheme, verify=verify)
+        resp = await client.head(url)
     except (httpx.HTTPError, OSError) as exc:
         if scheme == "https" and verify and _is_tls_error(exc):
             # Cert не прошёл валидацию — пусть cascade попробует следующий
@@ -141,16 +142,10 @@ async def _probe_redfish_cascade(host: str) -> bool:
     # 2) https без verify — fallback на случай self-signed cert'а. Имеет
     # смысл только если settings.verify=True (иначе шаг 1 уже это сделал).
     if verify:
-        # Временно отключим verify через локальный probe-вызов: переиспользуем
-        # _probe_redfish с подменой settings — самый честный способ — сделать
-        # отдельный httpx-запрос здесь, чтобы не плодить лишний state.
         url = f"https://{host}{_REDFISH_PROBE_PATH}"
         try:
-            async with httpx.AsyncClient(
-                verify=False,
-                timeout=_REDFISH_PROBE_TIMEOUT_SECONDS,
-            ) as client:
-                resp = await client.head(url)
+            client = get_bmc_probe_client(scheme="https", verify=False)
+            resp = await client.head(url)
             if resp.status_code in {200, 401, 403, 405}:
                 logger.warning(
                     "Redfish probe to %s succeeded only with verify=False "
@@ -212,16 +207,18 @@ async def get_bmc_client(
 
     if await _probe_redfish_cascade(host):
         settings = get_settings()
+        # Shared transport под verify-уровень: TCP/TLS connections к одному
+        # BMC переиспользуются между RedfishClient'ами одного worker'а.
+        # `verify_tls` уносится в transport, RedfishClient передаёт его
+        # туда же — клиенту дублировать не надо (httpx ругается на конфликт).
+        transport = get_bmc_redfish_transport(verify=settings.redfish_verify_tls)
         kwargs: dict = {
             "host": host,
             "username": username,
             "password": password,
-            # Пробрасываем настроенные verify/timeout — без этого RedfishClient
-            # подхватывал свои hard-coded дефолты (verify=False, timeout=30s),
-            # и env-настройки `REDFISH_VERIFY_TLS`/`REDFISH_TIMEOUT_SECONDS`
-            # не влияли на реальные запросы (probe их видел, transport — нет).
             "verify_tls": settings.redfish_verify_tls,
             "timeout": settings.redfish_timeout_seconds,
+            "transport": transport,
         }
         if kind:
             manager_id = resolve_manager_id(kind)

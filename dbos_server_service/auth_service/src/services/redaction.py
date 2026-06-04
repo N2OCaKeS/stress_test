@@ -1,22 +1,30 @@
-# DUPE: keep in sync with loging_service/src/utils/redaction.py (and vice versa). Until shared SDK extraction.
+# SOURCE OF TRUTH: dbos_server_service/sdk/redaction.py
+# DUPE: keep in sync with sdk/redaction.py, loging_service/src/utils/redaction.py,
+#       server_service/src/services/redaction.py.
 """Маскировка секретов в audit-payload перед отправкой в loging_service.
+
+Локальная копия для auth_service. Сервисные тесты фиксируют:
+  * приоритет в `_classify_key`: PASSWORD → HASH → TOKEN → SECRET → CREDENTIAL
+    (HASH перед TOKEN — `refresh_token_hash`/`pat_hash`/`bot_token_hash` должны
+    маскироваться как `<HASH>`, не `<TOKEN>`);
+  * `cs_<...>` OAuth client_secret → `<SECRET>` по значению;
+  * `token_plaintext`/`pat_token`/`bot_token` в `_TOKEN_KEYS`;
+  * расширенное окно bcrypt-хвоста 50..60 (усечённые/padded версии).
 
 Идея: рекурсивно проходим по dict/list и заменяем подозрительные значения
 типизированными плейсхолдерами:
 
-- `<PASSWORD>`   — ключи password/pwd/pass/old_password/new_password
-- `<TOKEN>`      — token/jwt/bearer/access_token/refresh_token/oauth_token/id_token
-- `<SECRET>`     — secret/secret_key/api_key/apikey/client_secret/private_key
-- `<HASH>`       — password_hash/token_hash/pwd_hash/refresh_token_hash/pat_hash/bot_token_hash
-- `<CREDENTIAL>` — credential/credentials/auth
+- `<PASSWORD>`   — ключи password/pwd/pass/old_password/new_password/…
+- `<TOKEN>`      — token/jwt/bearer/access_token/refresh_token/oauth_token/id_token/…
+- `<SECRET>`     — secret/secret_key/api_key/apikey/client_secret/private_key/…
+- `<HASH>`       — password_hash/hash/token_hash/pwd_hash/refresh_token_hash/pat_hash/bot_token_hash
+- `<CREDENTIAL>` — credential/credentials/auth/authorization
 
 Дополнительно — value-level эвристика:
-  JWT-подобные строки (три base64-сегмента через `.`) → `<TOKEN>`
-  bcrypt/argon2-хэши (`$2b$…`, `$argon2id$…`)         → `<HASH>`
-
-Маскировка идёт по обоим путям: и по имени ключа, и по форме значения.
-Если ключ уже подразумевает один тип — он имеет приоритет (например, ключ
-`password` со значением, похожим на JWT, всё равно станет `<PASSWORD>`).
+  JWT-подобные строки (три base64-сегмента через `.`)        → `<TOKEN>`
+  Опаковые токены платформы (`dbos_pat_…`, `dbos_bot_…`)     → `<TOKEN>`
+  OAuth client_secret формы `cs_<token_urlsafe(≥12)>`        → `<SECRET>`
+  bcrypt/argon2-хэши (`$2b$…`, `$argon2id$…`)                → `<HASH>`
 """
 
 from __future__ import annotations
@@ -42,7 +50,8 @@ _TOKEN_KEYS = {
 _SECRET_KEYS = {
     "secret", "secret_key", "api_key", "apikey", "api_secret",
     "client_secret", "private_key", "signing_key",
-    "service_api_key", "service_key", "logging_service_api_key",
+    "service_api_key", "service_key", "introspect_key",
+    "logging_service_api_key",
 }
 _HASH_KEYS = {
     # Хэши секретов — маскируем. Generic `hash` оставлен для обратной
@@ -77,6 +86,11 @@ _OAUTH_CLIENT_SECRET_RE = re.compile(r"^cs_[A-Za-z0-9_\-]{12,}$")
 # ложноположительных. Делается только по контексту ключа.
 
 _MAX_STRING_LEN = 2048  # очень длинные строки усекаются, маркер `<TRUNCATED>` добавляется в конец
+
+# Жёсткий cap на глубину обхода. Caller'ы (например worker payload) могут
+# прислать произвольно глубокий dict; без верхнего предела итерация уходит в
+# линейный рост памяти на cyclic-friendly nested структуре.
+_MAX_DEPTH = 64
 
 
 def _classify_key(key: str) -> str | None:
@@ -118,6 +132,11 @@ def _redact_value(value: Any, key_placeholder: str | None) -> Any:
     if key_placeholder is not None:
         # Ключ диктует тип — всегда маскируем, независимо от значения
         return key_placeholder
+    if isinstance(value, (bytes, bytearray)):
+        # bytes под безопасным ключом декодируем permissively через
+        # `errors="replace"`: иначе JSON-сериализатор уронил бы `b'...'`-репр
+        # в БД, минуя classify_value (regex'ы работают по str без `b'`-префикса).
+        value = bytes(value).decode("utf-8", errors="replace")
     if isinstance(value, str):
         v_holder = _classify_value(value)
         if v_holder is not None:
@@ -128,31 +147,56 @@ def _redact_value(value: Any, key_placeholder: str | None) -> Any:
 
 
 def redact(payload: Any) -> Any:
-    """Рекурсивно санитизирует dict/list. Не мутирует вход — возвращает новый объект.
+    """Санитизирует dict/list без рекурсии. Не мутирует вход — возвращает новый объект.
+
+    Обход — итеративный через explicit-стек: на глубоком payload'е рекурсивная
+    версия упиралась в `RecursionError` (limit ≈ 1000) ещё до того, как
+    срабатывали upstream-каппы на размер тела. На глубине > `_MAX_DEPTH` (64)
+    подставляем `"<TRUNCATED>"` плейсхолдер.
+
+    Контракт — только для контейнеров: маскировка строк работает исключительно
+    для значений ВНУТРИ dict/list (по имени ключа или pattern'у на content).
+    Top-level скаляр возвращается как есть.
 
     Применение:
         details = redact({"reason": "invalid", "password": "p@ss"})
         # → {"reason": "invalid", "password": "<PASSWORD>"}
     """
-    if isinstance(payload, dict):
-        out: dict[str, Any] = {}
-        for k, v in payload.items():
-            key_str = str(k)
-            holder = _classify_key(key_str)
-            if isinstance(v, (dict, list)):
-                # Контейнер: либо ключ диктует маскировку целиком, либо рекурсия
-                if holder is not None:
-                    out[key_str] = holder
+    if not isinstance(payload, (dict, list)):
+        return payload
+
+    root: list[Any] = [None]
+    stack: list[tuple[Any, Any, Any, int]] = [(payload, root, 0, 0)]
+
+    while stack:
+        src, dst, key, depth = stack.pop()
+
+        if depth > _MAX_DEPTH:
+            dst[key] = "<TRUNCATED>"
+            continue
+
+        if isinstance(src, dict):
+            new_dict: dict[str, Any] = {}
+            dst[key] = new_dict
+            for k, v in src.items():
+                k_str = str(k)
+                holder = _classify_key(k_str)
+                if isinstance(v, (dict, list)):
+                    if holder is not None:
+                        new_dict[k_str] = holder
+                    else:
+                        stack.append((v, new_dict, k_str, depth + 1))
                 else:
-                    out[key_str] = redact(v)
-            else:
-                out[key_str] = _redact_value(v, holder)
-        return out
-    if isinstance(payload, list):
-        return [
-            redact(item) if isinstance(item, (dict, list))
-            else _redact_value(item, None)
-            for item in payload
-        ]
-    # На верхнем уровне non-dict — возвращаем как есть
-    return payload
+                    new_dict[k_str] = _redact_value(v, holder)
+        elif isinstance(src, list):
+            new_list: list[Any] = [None] * len(src)
+            dst[key] = new_list
+            for i, item in enumerate(src):
+                if isinstance(item, (dict, list)):
+                    stack.append((item, new_list, i, depth + 1))
+                else:
+                    new_list[i] = _redact_value(item, None)
+        else:
+            dst[key] = src
+
+    return root[0]

@@ -3,23 +3,32 @@
 Раньше каждый `audit_client.emit` и каждый `server_service_client.*` зов
 создавал свежий `httpx.AsyncClient` через `async with`. Под нагрузкой это
 давало TCP/TLS handshake на каждый call, лишний расход FD и плавающую
-латентность. Здесь — два пула (loging_service и server_service) с keepalive,
-поднимаются лениво и закрываются на WORKER_SHUTDOWN.
+латентность. Здесь — пулы под три горячих исходящих канала: loging_service,
+server_service и BMC (Redfish-transport + scheme probe). Поднимаются лениво,
+закрываются на WORKER_SHUTDOWN.
 
 Контракт:
 
   * `get_audit_client()` — пул под emit'ы в loging_service.
   * `get_server_service_client()` — пул под internal-callback'и server_service.
-  * `aclose_all()` — закрывает оба, вызывается из `WORKER_SHUTDOWN`. После
-    закрытия следующий `get_*` снова создаст новый клиент (нужно для
+  * `get_bmc_probe_client(scheme, verify)` — пул под HEAD `/redfish/v1/` probe.
+    Три комбинации `(scheme, verify)`: `("https", True)`, `("https", False)`,
+    `("http", True)` — клиенты переиспользуются между host'ами, потому что
+    probe stateless и не несёт auth.
+  * `get_bmc_redfish_transport(verify)` — shared httpx-транспорт под
+    per-host `RedfishClient`. Сам клиент остаётся per-host (свой
+    `base_url` и `auth=`), но connection pool — общий через transport,
+    разделённый по `verify`. Два транспорта: `verify=True`/`verify=False`.
+  * `aclose_all()` — закрывает все пулы, вызывается из `WORKER_SHUTDOWN`.
+    После закрытия следующий `get_*` снова создаст новый клиент (нужно для
     тестового цикла «startup → shutdown → startup»).
   * `reset_for_tests()` — синхронный сброс кеш-слотов без `aclose`; тесты,
     которые подменяют `httpx.AsyncClient` через monkeypatch, должны звать
     его в фикстуре, иначе закешированный экземпляр переживёт patch.
 
 Тесты, которым нужно перехватить отдельный запрос, могут патчить
-`get_audit_client` / `get_server_service_client` напрямую — это проще, чем
-вязаться к httpx-конструктору.
+`get_audit_client` / `get_server_service_client` / `get_bmc_probe_client`
+напрямую — это проще, чем вязаться к httpx-конструктору.
 """
 
 from __future__ import annotations
@@ -36,6 +45,13 @@ logger = logging.getLogger(__name__)
 
 _audit_client: Optional[httpx.AsyncClient] = None
 _server_service_client: Optional[httpx.AsyncClient] = None
+# (scheme, verify) → клиент под HEAD-probe. Три валидные комбинации:
+# ('https', True), ('https', False), ('http', True). 'http' игнорирует verify.
+_bmc_probe_clients: dict[tuple[str, bool], httpx.AsyncClient] = {}
+# verify (bool) → shared AsyncHTTPTransport. Используется per-host
+# RedfishClient'ами как общий connection pool — auth/base_url остаются
+# у клиента, сокеты переиспользуются между BMC.
+_bmc_redfish_transports: dict[bool, httpx.AsyncHTTPTransport] = {}
 
 
 def _build_client(*, max_connections: int, max_keepalive: int, timeout: float) -> httpx.AsyncClient:
@@ -90,11 +106,76 @@ def get_server_service_client() -> httpx.AsyncClient:
     return _server_service_client
 
 
+def get_bmc_probe_client(*, scheme: str, verify: bool) -> httpx.AsyncClient:
+    """Вернуть pooled HEAD-probe-клиент по `(scheme, verify)`.
+
+    Probe — HEAD `/redfish/v1/` без auth, поэтому можно держать один клиент
+    на все BMC: меняется только URL запроса, не клиент. Три валидные
+    комбинации:
+
+      * `('https', True)`  — TLS с verify (prod / внутренний CA).
+      * `('https', False)` — TLS без verify (dev / self-signed iDRAC).
+      * `('http',  True)`  — plain HTTP; `verify` для http no-op, оставлен
+        для единообразия ключа (см. ниже).
+
+    `('http', False)` склеивается в `('http', True)` — для plain-HTTP
+    флаг verify ничего не значит, отдельный клиент держать смысла нет.
+
+    Таймаут — короткий `_REDFISH_PROBE_TIMEOUT_SECONDS` (см. caller'а
+    в `src/clients/__init__.py`), здесь задаём через settings, чтобы пул
+    не зависел от import-order.
+    """
+    if scheme not in {"http", "https"}:
+        raise ValueError(f"unsupported probe scheme: {scheme!r}")
+    # Нормализуем ключ: для http verify ни на что не влияет.
+    key_verify = verify if scheme == "https" else True
+    key = (scheme, key_verify)
+    client = _bmc_probe_clients.get(key)
+    if client is None or client.is_closed:
+        settings = get_settings()
+        client = httpx.AsyncClient(
+            verify=key_verify if scheme == "https" else True,
+            timeout=settings.bmc_probe_timeout_seconds,
+            limits=httpx.Limits(
+                max_connections=settings.bmc_pool_max_connections,
+                max_keepalive_connections=settings.bmc_pool_max_keepalive_connections,
+            ),
+        )
+        _bmc_probe_clients[key] = client
+    return client
+
+
+def get_bmc_redfish_transport(*, verify: bool) -> httpx.AsyncHTTPTransport:
+    """Вернуть shared httpx-transport под per-host `RedfishClient`.
+
+    Два транспорта: `verify=True` / `verify=False`. RedfishClient остаётся
+    per-host (свой `base_url`, свой `auth=(u, p)`), но connection pool —
+    общий: при работе с пачкой BMC за один тик worker'а сокеты до одного и
+    того же контроллера переиспользуются.
+
+    Размер пула — общий лимит на все BMC одновременно. Если worker
+    обслуживает большой стенд (десятки BMC параллельно), поднимать через
+    env `BMC_POOL_MAX_CONNECTIONS`.
+    """
+    transport = _bmc_redfish_transports.get(verify)
+    if transport is None:
+        settings = get_settings()
+        transport = httpx.AsyncHTTPTransport(
+            verify=verify,
+            limits=httpx.Limits(
+                max_connections=settings.bmc_pool_max_connections,
+                max_keepalive_connections=settings.bmc_pool_max_keepalive_connections,
+            ),
+        )
+        _bmc_redfish_transports[verify] = transport
+    return transport
+
+
 async def aclose_all() -> None:
-    """Закрыть оба пула на graceful shutdown.
+    """Закрыть все пулы на graceful shutdown.
 
     Идемпотентно — повторный вызов проходит без ошибок. После закрытия
-    очищаем слот, чтобы следующий get_* создал свежий клиент (это нужно
+    очищаем слоты, чтобы следующий `get_*` создал свежий клиент (это нужно
     для test-цикла и для случая, когда worker внутри одного процесса
     рестартует broker).
     """
@@ -114,6 +195,30 @@ async def aclose_all() -> None:
     _audit_client = None
     _server_service_client = None
 
+    # BMC probe clients
+    for key, client in list(_bmc_probe_clients.items()):
+        try:
+            await client.aclose()
+        except Exception as exc:  # noqa: BLE001 — shutdown best-effort
+            logger.warning(
+                "http_pool: failed to close bmc probe pool %s: %s",
+                key,
+                redact_error_message(f"{type(exc).__name__}: {exc}"),
+            )
+    _bmc_probe_clients.clear()
+
+    # BMC redfish transports
+    for verify, transport in list(_bmc_redfish_transports.items()):
+        try:
+            await transport.aclose()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "http_pool: failed to close bmc redfish transport verify=%s: %s",
+                verify,
+                redact_error_message(f"{type(exc).__name__}: {exc}"),
+            )
+    _bmc_redfish_transports.clear()
+
 
 def reset_for_tests() -> None:
     """Сброс закешированных клиентов без `aclose`.
@@ -126,3 +231,5 @@ def reset_for_tests() -> None:
     global _audit_client, _server_service_client
     _audit_client = None
     _server_service_client = None
+    _bmc_probe_clients.clear()
+    _bmc_redfish_transports.clear()

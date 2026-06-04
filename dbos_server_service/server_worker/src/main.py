@@ -84,10 +84,23 @@ async def _warmup_http_pools(state: TaskiqState) -> None:
     не в середине первого audit-эмита; (2) async event-loop с привязкой
     к pool'у фиксируется здесь, а не в первом call'е.
     """
-    from src.services.http_pool import get_audit_client, get_server_service_client
+    from src.services.http_pool import (
+        get_audit_client,
+        get_bmc_probe_client,
+        get_bmc_redfish_transport,
+        get_server_service_client,
+    )
+    from src.core.config import get_settings as _gs
 
     get_audit_client()
     get_server_service_client()
+    # BMC pool: probe (3 комбинации scheme/verify) + Redfish transport
+    # под текущий verify-уровень. Второй verify-уровень поднимется лениво,
+    # если cascade провалится на верхнем шаге.
+    get_bmc_probe_client(scheme="https", verify=True)
+    get_bmc_probe_client(scheme="https", verify=False)
+    get_bmc_probe_client(scheme="http", verify=True)
+    get_bmc_redfish_transport(verify=_gs().redfish_verify_tls)
 
 
 _DISPATCH_PUBLISHER_TASK_KEY = "dispatch_outbox_publisher_task"

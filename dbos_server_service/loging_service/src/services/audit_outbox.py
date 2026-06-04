@@ -14,7 +14,7 @@ Outbox-паттерн: `push_nowait()` кладёт payload во внутрен�
 счётчик потерь инкрементится по причине, чтобы факт потери не маскировался
 и cause легко разнести в метриках.
 
-Семантика трёх dropped_*_total counter'ов:
+Семантика четырёх dropped_*_total counter'ов:
 
 * ``dropped_overflow_total`` — буфер переполнен на `push_nowait`. Старейший
   envelope выкидывается, чтобы освободить слот для свежего (свежее событие
@@ -33,10 +33,16 @@ Outbox-паттерн: `push_nowait()` кладёт payload во внутрен�
   слишком короткий для текущего буфера, либо БД-writes стали в разы
   медленнее обычного. SIEM по росту именно этого counter'а отличает
   «не успели на graceful shutdown» от «не успеваем под нагрузкой».
+* ``dropped_after_stop_total`` — `push_nowait` вызвали ПОСЛЕ возврата
+  `stop()`: очередь уже None, fallback пишет напрямую в session_factory.
+  Признак того, что middleware ещё принимает запросы, хотя outbox уже
+  погашен — race lifecycle, который тише всего проявляется при принудительном
+  shutdown.
 
 Геттеры `dropped_overflow_total()` / `dropped_cancel_total()` /
-`dropped_shutdown_total()` — публичные; ожидаются к экспозу через будущий
-`/metrics`, до тех пор читаются тестами напрямую через инстанс outbox'а.
+`dropped_shutdown_total()` / `dropped_after_stop_total()` — публичные;
+ожидаются к экспозу через будущий `/metrics`, до тех пор читаются тестами
+напрямую через инстанс outbox'а.
 Агрегата нет специально: SIEM по одному числу не отличит DoS-перегрузку от
 рваного shutdown'а — суммирование делается на стороне дашборда.
 
@@ -159,6 +165,7 @@ class AuditOutbox:
         self._dropped_overflow_total = 0
         self._dropped_cancel_total = 0
         self._dropped_shutdown_total = 0
+        self._dropped_after_stop_total = 0
         self._drained_total = 0
 
         # Сериализуем sync-writer'ы между `_drain_loop` и `_drain_remaining`.
@@ -226,6 +233,15 @@ class AuditOutbox:
             # Сервис ещё не запустил lifespan (или уже остановил). На случай
             # in-process тестов фолбэчимся в синхронный writer прямо здесь —
             # это та же семантика, что у старого `to_thread(_emit_audit)`.
+            # Если `_stopping=True`, мы попали сюда уже ПОСЛЕ `stop()` —
+            # session_factory может вести в закрывающийся pool, а сам fallback
+            # выполняется на горячем пути middleware. Бампим отдельный counter,
+            # чтобы SIEM по росту `dropped_after_stop_total` ловил race
+            # «событие пришло во время/после shutdown» и не путал его с
+            # «outbox ещё не поднят» (legitimate startup window).
+            if self._stopping:
+                with self._counters_lock:
+                    self._dropped_after_stop_total += 1
             db = self._session_factory()
             try:
                 try:
@@ -606,6 +622,19 @@ class AuditOutbox:
         with self._counters_lock:
             return self._dropped_shutdown_total
 
+    def dropped_after_stop_total(self) -> int:
+        """События, пришедшие в `push_nowait` уже после `stop()`.
+
+        Отдельно от `dropped_shutdown_total`: тот считает batch'и, не
+        уложившиеся в бюджет финального drain'а внутри `stop()`. Этот же
+        counter растёт, когда `push_nowait` вызвали ПОСЛЕ возврата `stop()` —
+        очередь уже None, fallback пишет напрямую в session_factory (которая
+        может вести в закрывающийся pool). Признак того, что caller-side не
+        дождался graceful-shutdown или middleware ещё обслуживает запросы.
+        """
+        with self._counters_lock:
+            return self._dropped_after_stop_total
+
     def drained_total(self) -> int:
         with self._counters_lock:
             return self._drained_total
@@ -616,6 +645,7 @@ class AuditOutbox:
             self._dropped_overflow_total = 0
             self._dropped_cancel_total = 0
             self._dropped_shutdown_total = 0
+            self._dropped_after_stop_total = 0
             self._drained_total = 0
 
 

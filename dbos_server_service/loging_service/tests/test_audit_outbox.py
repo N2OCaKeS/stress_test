@@ -262,6 +262,36 @@ class TestFallbackWithoutLoop:
         assert accepted is False
         assert len(captured) == 1
         assert sessions[0].closes == 1
+        # До start() флаг `_stopping` ещё в False, after-stop-counter не растёт.
+        assert outbox.dropped_after_stop_total() == 0
+
+    def test_fallback_after_stop_bumps_counter(self):
+        """push_nowait после `stop()` инкрементит dropped_after_stop_total."""
+        captured: list[AuditEnvelope] = []
+
+        def writer(db, env):
+            captured.append(env)
+
+        async def run():
+            outbox = AuditOutbox(
+                max_size=4,
+                batch_size=2,
+                poll_interval_seconds=0.05,
+                session_factory=_FakeSession,
+                writer=writer,
+                bump_failure=lambda: 0,
+            )
+            outbox.start()
+            await outbox.stop(timeout=1.0)
+            return outbox
+
+        outbox = asyncio.run(run())
+        # Outbox остановлен, `_stopping=True`, `_queue is None`. push идёт
+        # в fallback и должен бампить новый counter ровно один раз.
+        accepted = outbox.push_nowait(_env("after-stop"))
+        assert accepted is False
+        assert len(captured) == 1
+        assert outbox.dropped_after_stop_total() == 1
 
 
 # ── drain не валится на одном битом событии ────────────────────────────────

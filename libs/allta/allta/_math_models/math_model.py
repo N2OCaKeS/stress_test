@@ -140,6 +140,31 @@ class MathModel:
     Коэффициент ``power`` подбирается отдельно через ``calc_power(...)`` на synthetic-наборах,
     построенных из ``bounds`` и типа критерия, а затем явно передаётся в
     ``total_rating(power)`` для получения стабильных результатов между запусками теста.
+
+    Поддерживается два режима (параметр ``type`` в конструкторе):
+
+    - ``"odds"`` (по умолчанию) — min-max + odds + power, описанная выше схема.
+    - ``"ratio"`` — отношение к эталону (как в UnixBench): без границ и power. Для каждого
+      замера ``ratio = value/reference`` (positive) или ``reference/value`` (negative);
+      итог — взвешенное геом-среднее ``ratio`` × ``scale``. На эталоне рейтинг = ``scale``.
+
+    Примеры::
+
+        # ODDS (как раньше): нужны bounds и power
+        m = MathModel()                       # или MathModel(type="odds")
+        m.add_criterion("syscall", iterations=[4, 8], values=[680000, 690000],
+                        weight=0.11, negative=False, bounds=(0, 7_000_000))
+        rating = m.total_rating(power=0.998)["total_rating"]
+
+        # RATIO: нужен reference (эталонный прогон), без bounds и power
+        m = MathModel(type="ratio")
+        m.add_criterion("syscall", iterations=[4, 8], values=[6_800_000, 6_900_000],
+                        weight=0.11, negative=False, reference=[680000, 690000])
+        m.add_criterion("latency", iterations=[1, 2, 3], values=[0.6, 0.6, 0.6],
+                        weight=0.06, negative=True, reference=[0.3, 0.3, 0.3])
+        res = m.total_rating(scale=100.0)     # эталон -> 100, >100 лучше, <100 хуже
+        res["total_rating"]                   # итоговый индекс
+        res["criteria"]["syscall"]["ratio"]   # R критерия (здесь ~10.0)
     """
 
     def __init__(self, type: str | None = None) -> None:
@@ -248,8 +273,8 @@ class MathModel:
         negative: bool,
     ) -> np.ndarray:
         """Отношение к эталону по каждому замеру: positive value/ref, negative ref/value."""
-        if np.isscalar(reference):
-            ref = np.full_like(values, float(reference), dtype=float)
+        if isinstance(reference, (int, float)):
+            ref = np.full(values.shape, float(reference), dtype=float)
         else:
             ref = np.array([float(r) for r in reference], dtype=float)
             if ref.size != values.size:

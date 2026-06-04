@@ -659,9 +659,20 @@ def _resolve_actor_type(actor_type: str | None) -> str:
     Единая точка резолва — используется и здесь, и в `main._emit_audit`.
     Раньше код дублировался в двух местах: правка whitelist'а требовала
     держать обе ветки в синхроне руками.
+
+    Под middleware `audit_access` actor_type всегда выставлен (см.
+    `dependencies/auth.py::_fetch_identity`), поэтому None здесь — сигнал
+    того, что admin self-audit call-site забыл передать тип. Логируем
+    предупреждение: молча проглатывать None в "anonymous" мешало бы найти
+    забывший call-site по grep'у.
     """
     if actor_type in VALID_ACTOR_TYPES:
         return actor_type
+    if actor_type is None:
+        logger.warning(
+            "audit_outbox._resolve_actor_type received None — admin self-audit "
+            "call-site likely forgot to pass actor_type; falling back to anonymous"
+        )
     return "anonymous"
 
 

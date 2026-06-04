@@ -199,6 +199,12 @@ async def server_prepare(task_id: str) -> None:
     async def _impl(payload: dict) -> dict:
         server_id = payload["server_id"]
         target_dept = payload.get("target_department_id")
+        # `creds_key` объявляется на верхнем уровне функции, а не внутри
+        # `if not already_bootstrapped`-ветки ниже: cleanup-блок в конце
+        # `_impl` ссылается на эту переменную независимо от того, ходили ли
+        # мы по bootstrap-пути или прошли по marker'у. Переезд declare'а
+        # внутрь if-блока сломает cleanup с NameError на already_bootstrapped
+        # retry'е.
         creds_key = payload.get("bootstrap_creds_key")
         settings = get_settings()
         management_user = settings.ssh_management_user

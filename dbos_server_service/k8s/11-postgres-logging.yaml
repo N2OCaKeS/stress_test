@@ -5,6 +5,8 @@ kind: PersistentVolumeClaim
 metadata:
   name: logging-postgres-data
   namespace: dbos
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
@@ -32,10 +34,21 @@ spec:
       labels:
         app: logging-postgres
     spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
       containers:
         - name: postgres
           image: postgres:16
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
           ports:
             - containerPort: 5432
           env:
@@ -57,11 +70,15 @@ spec:
               command: ["pg_isready", "-U", "logging_user", "-d", "logging_db"]
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
           livenessProbe:
             exec:
               command: ["pg_isready"]
             initialDelaySeconds: 30
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             requests: { cpu: "100m", memory: "256Mi" }
             limits:   { cpu: "1000m", memory: "1Gi" }

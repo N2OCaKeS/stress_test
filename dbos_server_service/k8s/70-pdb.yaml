@@ -1,0 +1,51 @@
+# PodDisruptionBudget на каждый сервис с replicas=2.
+# minAvailable: 1 защищает от вытеснения обеих реплик одновременно
+# при `kubectl drain`, обновлении k3s или voluntary disruption.
+# Для postgres'ов (replicas=1) PDB не имеет смысла.
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+  namespace: dbos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: auth-service
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: logging-service-pdb
+  namespace: dbos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: logging-service
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: server-service-pdb
+  namespace: dbos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: server-service
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: server-worker-pdb
+  namespace: dbos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: server-worker

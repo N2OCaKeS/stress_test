@@ -1,0 +1,64 @@
+# Internal CA: bootstrap self-signed Issuer → CA Certificate → CA Issuer.
+#
+# Идея:
+#   1) `dbos-selfsigned-bootstrap` — self-signed Issuer, нужен только для того,
+#      чтобы подписать корневой CA-сертификат.
+#   2) `dbos-internal-ca` — Certificate (isCA: true), CN "DBOS Server Manager
+#      Internal CA", срок 10 лет. cert-manager положит ключ + сертификат
+#      в Secret `dbos-ca-key-pair`.
+#   3) `dbos-ca-issuer` — CA-Issuer, подписывает leaf-сертификаты для сервисов
+#      приватным ключом из `dbos-ca-key-pair`.
+#
+# Этот CA-сертификат потом импортируется на admin-машины как trusted
+# (см. k8s/README.md, раздел "Импорт CA на admin-машины").
+
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: dbos-selfsigned-bootstrap
+  namespace: dbos
+spec:
+  selfSigned: {}
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dbos-internal-ca
+  namespace: dbos
+spec:
+  isCA: true
+  commonName: DBOS Server Manager Internal CA
+  subject:
+    organizations:
+      - DBOS Server Manager
+      - Astra Linux SE
+    countries:
+      - RU
+  # 10 лет. Корневой CA меняем редко; для leaf'ов отдельный 1-летний цикл.
+  duration: 87600h
+  renewBefore: 8760h           # за год до истечения cert-manager перевыпустит CA
+  secretName: dbos-ca-key-pair # тут окажутся ca.crt + tls.crt + tls.key
+  privateKey:
+    algorithm: RSA
+    size: 4096
+    encoding: PKCS8
+  usages:
+    - cert sign
+    - crl sign
+    - digital signature
+  issuerRef:
+    name: dbos-selfsigned-bootstrap
+    kind: Issuer
+    group: cert-manager.io
+
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: dbos-ca-issuer
+  namespace: dbos
+spec:
+  ca:
+    secretName: dbos-ca-key-pair

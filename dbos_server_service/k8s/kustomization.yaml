@@ -7,9 +7,18 @@ resources:
   - 00-namespace.yaml
   - 10-postgres-auth.yaml
   - 11-postgres-logging.yaml
-  - 20-secrets.yaml          # генерируется scripts/k8s/gen_secrets.sh (Secret + dbos-tls)
+  - 20-secrets.yaml          # генерируется scripts/k8s/gen_secrets.sh
+  - 45-migrations.yaml       # Alembic Job'ы на каждый сервис (применять до Deployment'ов)
   - 30-logging-service.yaml
   - 40-auth-service.yaml
   - 50-server-service.yaml
   - 60-server-worker.yaml
-  - 50-ingress.yaml          # генерируется scripts/k8s/gen_secrets.sh из 50-ingress.yaml.template
+  - 70-pdb.yaml              # PodDisruptionBudget на все сервисы с replicas=2
+  - 80-networkpolicy.yaml    # default-deny ingress + явные allow между подграфами
+  - 50-ingress.yaml          # TLS-secret'ы выпускает cert-manager (91/92-*.yaml)
+  - 100-postgres-backup.yaml # CronJob pg_dump для auth/logging кластеров
+  - 101-backup-pvc.yaml      # PV под бэкапы (общий на оба CronJob'а)
+
+# 91-ca-issuer.yaml и 92-certificates.yaml в этот kustomize НЕ включены —
+# их применяет scripts/k8s/install_cert_manager.sh до основного apply,
+# потому что они зависят от CRD cert-manager, которого тут ещё нет.

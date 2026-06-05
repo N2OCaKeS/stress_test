@@ -1,17 +1,24 @@
 # Postgres для auth_service — один pod с persistent volume.
 # Резервирование делается через бэкапы (см. scripts/k8s/backup_pg.sh), не репликами.
 
+# PV под local-path: явный Retain, чтобы случайное удаление PVC не зачищало
+# данные. k3s local-path-provisioner создаёт PV динамически; здесь объявлен
+# guard на reclaim policy через StorageClass-параметры PVC + аннотация.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: auth-postgres-data
   namespace: dbos
+  annotations:
+    # local-path provisioner k3s читает эту аннотацию и проставляет Retain
+    # на динамически созданный PV.
+    helm.sh/resource-policy: keep
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
     requests:
       storage: 5Gi
-  storageClassName: local-path     # k3s default provisioner
+  storageClassName: local-path
 
 ---
 apiVersion: apps/v1
@@ -33,10 +40,27 @@ spec:
       labels:
         app: auth-postgres
     spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        # Postgres официальный image инициализирует data dir под UID 999 (postgres).
+        # fsGroup нужен чтобы новый PV получил группу postgres и pg_isready
+        # работал на shared volume.
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
       containers:
         - name: postgres
           image: postgres:16
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # postgres image пишет в /var/run/postgresql и /tmp; root-FS оставляем rw,
+            # т.к. официальный image не поддерживает readOnlyRootFilesystem без
+            # дополнительных volume mounts на десяток директорий.
+            readOnlyRootFilesystem: false
           ports:
             - containerPort: 5432
           env:
@@ -58,11 +82,15 @@ spec:
               command: ["pg_isready", "-U", "auth_user", "-d", "auth_db"]
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
           livenessProbe:
             exec:
               command: ["pg_isready"]
             initialDelaySeconds: 30
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             requests: { cpu: "100m", memory: "256Mi" }
             limits:   { cpu: "1000m", memory: "1Gi" }

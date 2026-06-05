@@ -1,0 +1,206 @@
+# ConfigMap с inline backup-скриптом. Логика — копия scripts/k8s/backup_pg.sh
+# (in-cluster ветка), вынесена сюда чтобы CronJob не требовал mount'а repo
+# или сборки отдельного image. При правках скрипта правят обе копии.
+#
+# Альтернатива — собрать свой image с зашитым backup_pg.sh; пока живём на
+# официальном postgres:16, поскольку он уже даёт pg_dump/pg_restore.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pg-backup-script
+  namespace: dbos
+data:
+  backup.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    : "${TARGET_DEPLOY:?required}"
+    : "${TARGET_DB:?required}"
+    : "${TARGET_USER:?required}"
+    : "${BACKUP_ROOT:?required}"
+    : "${PGPASSWORD:?required}"
+
+    DEST="$BACKUP_ROOT/$TARGET_DEPLOY"
+    mkdir -p "$DEST"
+
+    DOY=$(date -u +%j); DOY_INT=$((10#$DOY))
+    DOW=$(date -u +%u)
+    DOM=$(date -u +%d)
+    MONTH=$(date -u +%m); MONTH_INT=$((10#$MONTH))
+
+    DAILY_SLOT=$(printf "%02d" $((DOY_INT % 14)))
+    WEEKLY_SLOT=$((DOY_INT / 7 % 4))
+    MONTHLY_SLOT=$((MONTH_INT % 6))
+
+    DAILY_FILE="$DEST/daily-$DAILY_SLOT.dump"
+    WEEKLY_FILE="$DEST/weekly-$WEEKLY_SLOT.dump"
+    MONTHLY_FILE="$DEST/monthly-$MONTHLY_SLOT.dump"
+
+    echo "→ Бэкап $TARGET_DEPLOY ($TARGET_DB) UTC=$(date -u +%FT%TZ)"
+    echo "  daily slot: $DAILY_FILE"
+
+    TMP="$DEST/.in-progress-$$.dump"
+    trap 'rm -f "$TMP"' EXIT
+
+    pg_dump \
+      --host="$TARGET_DEPLOY" \
+      --username="$TARGET_USER" \
+      --dbname="$TARGET_DB" \
+      --format=custom \
+      --compress=6 \
+      --no-owner --no-acl \
+      --file="$TMP"
+
+    if ! pg_restore --list "$TMP" >/dev/null 2>&1; then
+      echo "✗ Verification failed" >&2
+      exit 1
+    fi
+
+    mv "$TMP" "$DAILY_FILE"
+    trap - EXIT
+
+    if [[ "$DOW" == "1" ]]; then
+      cp "$DAILY_FILE" "$WEEKLY_FILE"
+      echo "  weekly slot:  $WEEKLY_FILE"
+    fi
+    if [[ "$DOM" == "01" ]]; then
+      cp "$DAILY_FILE" "$MONTHLY_FILE"
+      echo "  monthly slot: $MONTHLY_FILE"
+    fi
+
+    SIZE=$(du -h "$DAILY_FILE" | cut -f1)
+    echo "✓ $TARGET_DEPLOY: $SIZE"
+    ls -lh "$DEST"
+
+---
+# CronJob: daily 02:00 MSK (Europe/Moscow = UTC+3) → 23:00 UTC предыдущих суток.
+# k8s CronJob.spec.timeZone доступен с v1.27; в k3s старых версий fallback на
+# UTC-cron, поэтому schedule пишется в UTC: "0 23 * * *" → 02:00 MSK.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup-auth
+  namespace: dbos
+spec:
+  schedule: "0 23 * * *"          # 02:00 MSK ежедневно (UTC+3 → 23:00 UTC)
+  timeZone: "Etc/UTC"             # explicit UTC; MSK см. комментарий выше
+  concurrencyPolicy: Forbid       # параллельный backup второй раз не нужен
+  startingDeadlineSeconds: 600    # пропустить запуск, если 10 минут отставание
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: pg-backup
+            target: auth-postgres
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999          # postgres image UID
+            runAsGroup: 999
+            fsGroup: 999
+          containers:
+            - name: backup
+              image: postgres:16
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/backup.sh"]
+              env:
+                - name: TARGET_DEPLOY
+                  value: auth-postgres
+                - name: TARGET_DB
+                  value: auth_db
+                - name: TARGET_USER
+                  valueFrom:
+                    secretKeyRef: { name: dbos-secrets, key: AUTH_DB_USER }
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: dbos-secrets, key: AUTH_DB_PASSWORD }
+                - name: BACKUP_ROOT
+                  value: /backup
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests: { cpu: "100m", memory: "128Mi" }
+                limits:   { cpu: "1000m", memory: "512Mi" }
+          volumes:
+            - name: scripts
+              configMap:
+                name: pg-backup-script
+                defaultMode: 0o555
+            - name: backup
+              persistentVolumeClaim:
+                claimName: dbos-backup-pv
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup-logging
+  namespace: dbos
+spec:
+  # 02:15 MSK — сдвинут от auth-backup на 15 минут, чтобы два pg_dump не
+  # дёргали один и тот же диск k3s-VM в один момент.
+  schedule: "15 23 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: pg-backup
+            target: logging-postgres
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+          containers:
+            - name: backup
+              image: postgres:16
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/backup.sh"]
+              env:
+                - name: TARGET_DEPLOY
+                  value: logging-postgres
+                - name: TARGET_DB
+                  value: logging_db
+                - name: TARGET_USER
+                  valueFrom:
+                    secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_USER }
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_PASSWORD }
+                - name: BACKUP_ROOT
+                  value: /backup
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests: { cpu: "100m", memory: "128Mi" }
+                limits:   { cpu: "1000m", memory: "512Mi" }
+          volumes:
+            - name: scripts
+              configMap:
+                name: pg-backup-script
+                defaultMode: 0o555
+            - name: backup
+              persistentVolumeClaim:
+                claimName: dbos-backup-pv

@@ -1,0 +1,37 @@
+# cert-manager — установка
+#
+# Closed-network deploy: ставим из локально сохранённого манифеста
+# (см. scripts/k8s/install_cert_manager.sh — он apply'ит сохранённый YAML).
+#
+# Этот файл — НЕ применяется через `kubectl apply -k k8s/` (cert-manager
+# содержит CRD + namespace + webhook и должен быть установлен ДО основного
+# kustomize-набора, иначе apply упадёт на неизвестных kind'ах Issuer/Certificate).
+#
+# Порядок развёртывания:
+#   1) bash scripts/k8s/install_cert_manager.sh
+#       → apply cert-manager.yaml (namespace cert-manager + CRD + Deployment'ы)
+#       → ожидание готовности cert-manager-webhook
+#   2) kubectl apply -f k8s/91-ca-issuer.yaml
+#   3) kubectl apply -f k8s/92-certificates.yaml
+#   4) make k8s-deploy (kustomize применит остальное, включая Ingress, который
+#      найдёт уже выпущенные cert-manager'ом Secret'ы)
+#
+# Версия cert-manager: v1.15.3 (stable, validated на k3s v1.30).
+# Манифест должен лежать локально по пути scripts/k8s/cert-manager.yaml.
+# Скачать на машине с интернетом:
+#   curl -sL -o scripts/k8s/cert-manager.yaml \
+#     https://github.com/cert-manager/cert-manager/releases/download/v1.15.3/cert-manager.yaml
+# и перенести в closed network вместе с docker-образами:
+#   quay.io/jetstack/cert-manager-controller:v1.15.3
+#   quay.io/jetstack/cert-manager-webhook:v1.15.3
+#   quay.io/jetstack/cert-manager-cainjector:v1.15.3
+#   quay.io/jetstack/cert-manager-startupapicheck:v1.15.3
+#
+# На VM импортируй в k3s containerd:
+#   for img in controller webhook cainjector startupapicheck; do
+#     docker pull quay.io/jetstack/cert-manager-${img}:v1.15.3
+#     docker save quay.io/jetstack/cert-manager-${img}:v1.15.3 | k3s ctr images import -
+#   done
+#
+# Если в окружении есть offline-зеркало образов — пропатчи image: в
+# scripts/k8s/cert-manager.yaml перед apply.

@@ -88,8 +88,10 @@ _DEV_ADMIN_EMAIL = admin@example.com
         test-devcont-all install-registry \
         test-integration logs-test-integration up-test-integration down-test-integration \
         test-auth test-auth-e2e test-logging test-server test-worker test-all test-down test-build \
-        k8s-install k8s-secrets k8s-build k8s-deploy k8s-rollout k8s-rollback \
-        k8s-logs k8s-status k8s-backup k8s-destroy
+        k8s-install k8s-install-k3s k8s-install-cert-manager k8s-secrets k8s-build \
+        k8s-deploy k8s-migrate k8s-smoke k8s-rollout k8s-rollback \
+        k8s-logs k8s-status k8s-backup k8s-destroy \
+        prod-deploy
 
 ##@ Dev: стек в Docker (без devcontainer)
 
@@ -383,20 +385,53 @@ scan: ## [ручной] Полное локальное сканирование
 	@scripts/full-scan.sh
 
 ##@ k8s: production деплой в k3s на VM
-# Полный цикл деплоя: install_k3s → gen_secrets → build_and_import → deploy.
-# Подробный runbook — в k8s/README.md.
+# Полный цикл: k8s-install-k3s → k8s-install-cert-manager → k8s-build →
+# k8s-secrets → k8s-deploy → k8s-migrate → k8s-smoke.
+# Подробный runbook — obsidian/infra/Production deploy runbook.md и k8s/README.md.
 
-k8s-install: ## [VM, sudo] Установить k3s на текущий хост (Astra Linux SE)
+k8s-install-k3s: ## [VM, sudo] Установить k3s на текущий хост (Astra Linux SE). Идемпотентно.
 	sudo bash scripts/k8s/install_k3s.sh
 
-k8s-secrets: ## Сгенерировать k8s/20-secrets.yaml со случайными prod-значениями
-	bash scripts/k8s/gen_secrets.sh
+k8s-install: k8s-install-k3s ## Алиас k8s-install-k3s (обратная совместимость)
 
-k8s-build: ## [VM] Собрать образы auth/logging и импортировать в k3s
-	bash scripts/k8s/build_and_import.sh
+k8s-install-cert-manager: ## [VM] Установить cert-manager в кластер (один раз). Идемпотентно.
+	@if [ -x scripts/k8s/install_cert_manager.sh ]; then \
+		bash scripts/k8s/install_cert_manager.sh; \
+	else \
+		echo "scripts/k8s/install_cert_manager.sh не найден — см. obsidian/infra/Production deploy runbook.md."; \
+		exit 1; \
+	fi
 
-k8s-deploy: ## Применить все манифесты (kubectl apply -k k8s/) и подождать готовности
+k8s-build: ## [VM] Собрать Docker-образы сервисов и импортировать в k3s containerd (ctr)
+	bash scripts/k8s/build_and_import.sh $(if $(TAG),$(TAG),)
+
+k8s-secrets: ## Сгенерировать k8s/20-secrets.yaml + 50-ingress.yaml. Спросит домен, если не задан ранее.
+	@bash scripts/k8s/gen_secrets.sh $(if $(DOMAIN),$(DOMAIN),)
+	@echo ""
+	@echo "  Дальше: проверь k8s/20-secrets.yaml и k8s/50-ingress.yaml,"
+	@echo "  затем 'make k8s-deploy' применит их через kustomize."
+
+k8s-deploy: ## kubectl apply -k k8s/ + ожидание готовности всех deployments
 	bash scripts/k8s/deploy.sh
+
+k8s-migrate: ## Прогнать alembic-миграции внутри pod'ов всех сервисов (идемпотентно)
+	@echo "→ Миграции auth_service..."
+	@$(K8S) exec deploy/auth-service -- alembic upgrade head
+	@echo "→ Миграции logging_service..."
+	@$(K8S) exec deploy/logging-service -- alembic upgrade head
+	@echo "→ Миграции server_service..."
+	@$(K8S) exec deploy/server-service -- alembic upgrade head
+	@echo "→ Миграции server_worker..."
+	@$(K8S) exec deploy/server-worker -- alembic upgrade head
+	@echo "✓ Миграции прогнаны."
+
+k8s-smoke: ## Smoke-тесты после деплоя (health/ready/login для всех сервисов)
+	@if [ -x scripts/k8s/smoke_test.sh ]; then \
+		bash scripts/k8s/smoke_test.sh; \
+	else \
+		echo "scripts/k8s/smoke_test.sh не найден — см. obsidian/infra/Production checklist.md."; \
+		exit 1; \
+	fi
 
 k8s-rollout: ## Пересобрать образы и сделать rolling update. SVC=auth|logging|all (default: all)
 	bash scripts/k8s/rollout.sh $(SVC)
@@ -404,11 +439,21 @@ k8s-rollout: ## Пересобрать образы и сделать rolling up
 k8s-rollback: ## Откатить deployment. SVC=auth|logging, REV=<revision> (по умолчанию предыдущая)
 	bash scripts/k8s/rollback.sh $(SVC) $(REV)
 
-k8s-logs: ## Логи pods. SVC=auth|logging (default: auth)
-	$(K8S) logs -f -l app=$(if $(SVC),$(SVC),auth)-service --tail=100
+k8s-logs: ## Логи pods. SERVICE=auth|loging|server|worker (default: auth). Также принимает SVC.
+	@svc="$(if $(SERVICE),$(SERVICE),$(if $(SVC),$(SVC),auth))"; \
+	case "$$svc" in \
+		auth)    label="auth-service" ;; \
+		loging|logging) label="logging-service" ;; \
+		server)  label="server-service" ;; \
+		worker)  label="server-worker" ;; \
+		*)       label="$${svc}-service" ;; \
+	esac; \
+	$(K8S) logs -f -l app=$$label --tail=100
 
 k8s-status: ## Статус всех ресурсов в namespace dbos
-	$(K8S) get pods,svc,deploy,pvc -o wide
+	$(K8S) get all -o wide
+	@echo ""
+	$(K8S) get pvc,configmap,secret,ingress -o wide
 
 k8s-backup: ## pg_dump обеих БД через kubectl exec. DEST=path (default: ./k8s/backups)
 	bash scripts/k8s/backup_pg.sh $(if $(DEST),$(DEST),./k8s/backups)
@@ -416,6 +461,32 @@ k8s-backup: ## pg_dump обеих БД через kubectl exec. DEST=path (defau
 k8s-destroy: ## ОПАСНО: удалить весь namespace dbos (включая PVC и данные)
 	@echo "Это удалит ВСЕ данные. Подтвердить: 'y' для продолжения"
 	@read confirm && [ "$$confirm" = "y" ] && $(K8S) delete namespace dbos
+
+prod-deploy: ## Meta: build → check secrets → deploy → migrate → smoke. Требует k3s и cert-manager уже установленными.
+	@echo "→ [1/5] Сборка образов и импорт в k3s..."
+	@$(MAKE) k8s-build --no-print-directory
+	@echo ""
+	@echo "→ [2/5] Проверка секретов..."
+	@if [ ! -f k8s/20-secrets.yaml ]; then \
+		echo "ОШИБКА: k8s/20-secrets.yaml отсутствует. Запусти 'make k8s-secrets' и заполни значения."; \
+		exit 1; \
+	fi
+	@if [ ! -f k8s/50-ingress.yaml ]; then \
+		echo "ОШИБКА: k8s/50-ingress.yaml отсутствует. Запусти 'make k8s-secrets'."; \
+		exit 1; \
+	fi
+	@echo "  k8s/20-secrets.yaml и k8s/50-ingress.yaml на месте."
+	@echo ""
+	@echo "→ [3/5] Применение манифестов..."
+	@$(MAKE) k8s-deploy --no-print-directory
+	@echo ""
+	@echo "→ [4/5] Миграции..."
+	@$(MAKE) k8s-migrate --no-print-directory
+	@echo ""
+	@echo "→ [5/5] Smoke-тесты..."
+	@$(MAKE) k8s-smoke --no-print-directory
+	@echo ""
+	@echo "✓ prod-deploy завершён."
 
 ##@ Справка
 

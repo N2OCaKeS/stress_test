@@ -35,11 +35,36 @@ spec:
     metadata:
       labels:
         app: logging-service
+      annotations:
+        # /metrics не выставлен (owner decision W41 — без отдельного Prometheus).
+        # Audit-стрим — собственный источник телеметрии этого сервиса:
+        # GET /api/logging/v1/events читается оператором / SIEM-rule'ами.
+        # /api/logging/v1/ready отдаёт DB-ping + audit-drop counter.
+        prometheus.io/scrape: "false"
+        dbos.monitoring/source: "/api/logging/v1/ready"
+        dbos.monitoring/audit-stream: "/api/logging/v1/events"
     spec:
+      # AUDIT_DRAIN_TIMEOUT_SECONDS (default 2s) — финальный drain self-audit
+      # outbox в lifespan; kubelet даёт грейс до SIGKILL, держим запас.
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: logging-service
           image: dbos/logging-service:latest
-          imagePullPolicy: Never   # критично: образ импортирован локально в k3s
+          # Образ импортирован локально в containerd k3s (`ctr -n=k8s.io images import`).
+          # IfNotPresent не пойдёт в docker.io, если тег уже есть на ноде.
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 8001
           envFrom:
@@ -73,17 +98,22 @@ spec:
             - name: LOGGING_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_PASSWORD }
-          command: ["sh", "-c"]
+          # Миграции вынесены в отдельный Job logging-migrate (см. 45-migrations.yaml);
+          # сюда стартуем сразу uvicorn'ом. Если schema не готова, /ready вернёт 503
+          # и реплика не подхватит трафик до завершения Job'а.
+          command: ["uvicorn"]
           args:
-            - |
-              python -m alembic upgrade head &&
-              exec uvicorn src.main:app --host 0.0.0.0 --port 8001 --workers 2
+            - "src.main:app"
+            - "--host=0.0.0.0"
+            - "--port=8001"
+            - "--workers=2"
           readinessProbe:
             httpGet:
               path: /api/logging/v1/ready
               port: 8001
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 3
             failureThreshold: 6
           livenessProbe:
             httpGet:
@@ -91,9 +121,18 @@ spec:
               port: 8001
             initialDelaySeconds: 30
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests: { cpu: "100m", memory: "128Mi" }
             limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 
 ---
 apiVersion: v1
@@ -108,16 +147,3 @@ spec:
   ports:
     - port: 8001
       targetPort: 8001
-
----
-# Защита от вытеснения всех реплик одновременно при обновлении ноды/k3s
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: logging-service-pdb
-  namespace: dbos
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: logging-service

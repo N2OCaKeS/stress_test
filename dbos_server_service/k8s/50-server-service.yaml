@@ -47,18 +47,38 @@ spec:
     metadata:
       labels:
         app: server-service
+      annotations:
+        # /metrics не выставлен (owner decision W41 — без отдельного Prometheus).
+        # Operational-counter'ы выставлены в payload /api/server/v1/ready:
+        # dispatch_outbox_pending_depth, secrets_decrypt_failures, dropped_429.
+        # Подробнее — obsidian/infra/Observability.md.
+        prometheus.io/scrape: "false"
+        dbos.monitoring/source: "/api/server/v1/ready"
     spec:
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: server-service
           image: dbos/server-service:latest
-          imagePullPolicy: Never   # образ импортирован локально в k3s
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 8002
           envFrom:
             - configMapRef:
                 name: server-service-config
           env:
-            # ── Собственная БД server_service ────────────────────────────────
+            # Собственная БД server_service
             - name: DATABASE_URL
               value: "postgresql+psycopg://$(SERVER_DB_USER):$(SERVER_DB_PASSWORD)@server-postgres:5432/server_db"
             - name: SERVER_DB_USER
@@ -67,21 +87,21 @@ spec:
             - name: SERVER_DB_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SERVER_DB_PASSWORD }
-            # ── Worker coupling: креды БД воркера для dispatch ───────────────
+            # Worker coupling: креды БД воркера для dispatch
             - name: WORKER_DB_USER
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: WORKER_DB_USER }
             - name: WORKER_DB_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: WORKER_DB_PASSWORD }
-            # ── Redis-broker URL с password (taskiq publish) ─────────────────
+            # Redis-broker URL с password (taskiq publish).
             # `_require_redis_auth_in_prod` в Settings рубит запуск без password.
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }
             - name: SERVER_WORKER_REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
-            # ── Шифрование хранимых паролей (server accounts + IPMI) ─────────
+            # Шифрование хранимых паролей (server accounts + IPMI).
             # AES-256-GCM + HKDF-SHA256 от мастер-ключа. Версия активного
             # ключа пишется в новые ciphertext'ы как `v<N>$...`.
             - name: SERVER_ENCRYPTION_KEY
@@ -90,7 +110,6 @@ spec:
             - name: SERVER_ENCRYPTION_KEY_VERSION
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SERVER_ENCRYPTION_KEY_VERSION }
-            # ── Service-to-service auth ──────────────────────────────────────
             # SERVICE_API_KEY — outbound bearer для introspect/service-access
             # в auth_service. Должен совпадать с SERVICE_API_KEYS[server_service]
             # на стороне auth_service.
@@ -98,8 +117,7 @@ spec:
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SERVER_SERVICE_API_KEY }
             # SERVICE_API_KEYS — inbound bearer'ы (worker → server_service
-            # internal endpoints) в формате per-service map. Альтернативный
-            # legacy-режим с одним SERVICE_API_KEY ниже.
+            # internal endpoints) в формате per-service map.
             - name: SERVICE_API_KEYS
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SERVER_INBOUND_SERVICE_API_KEYS }
@@ -109,17 +127,21 @@ spec:
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
-          command: ["sh", "-c"]
+          # Миграции вынесены в Job server-migrate (см. 45-migrations.yaml).
+          command: ["uvicorn"]
           args:
-            - |
-              python -m alembic upgrade head &&
-              exec uvicorn src.main:app --host 0.0.0.0 --port 8002 --workers 2 --proxy-headers
+            - "src.main:app"
+            - "--host=0.0.0.0"
+            - "--port=8002"
+            - "--workers=2"
+            - "--proxy-headers"
           readinessProbe:
             httpGet:
               path: /api/server/v1/ready
               port: 8002
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 3
             failureThreshold: 6
           livenessProbe:
             httpGet:
@@ -127,9 +149,18 @@ spec:
               port: 8002
             initialDelaySeconds: 30
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests: { cpu: "100m", memory: "128Mi" }
             limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 
 ---
 apiVersion: v1
@@ -144,16 +175,3 @@ spec:
   ports:
     - port: 8002
       targetPort: 8002
-
----
-# Защита от вытеснения всех реплик одновременно при обновлении ноды/k3s.
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: server-service-pdb
-  namespace: dbos
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: server-service

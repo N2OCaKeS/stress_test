@@ -5,6 +5,14 @@
 # Использование:
 #   scripts/k8s/gen_secrets.sh                  — спросит домен интерактивно
 #   scripts/k8s/gen_secrets.sh dbos.example.com — домен аргументом
+#
+# Внутри:
+#   - openssl rand -base64 32 для encryption-keys
+#   - openssl rand -hex 16    для HKDF salt
+#   - tr-pool A-Za-z0-9       для остальных секретов (URL-safe, readable)
+#   - kratкое summary с admin-паролем + перечнем сгенерированных ключей
+#     дублируется в /tmp/dbos-secrets-<timestamp>.txt (chmod 600), чтобы
+#     не терять его при scroll'е терминала.
 
 set -euo pipefail
 
@@ -14,6 +22,9 @@ SECRETS_OUT="$K8S_DIR/20-secrets.yaml"
 INGRESS_OUT="$K8S_DIR/50-ingress.yaml"
 INGRESS_TEMPLATE="$K8S_DIR/50-ingress.yaml.template"
 ENV_FILE="$K8S_DIR/.env.k8s"
+
+TS="$(date -u +%Y%m%dT%H%M%SZ)"
+SUMMARY_OUT="/tmp/dbos-secrets-${TS}.txt"
 
 # ── Domain (для Ingress + CN сертификата) ──────────────────────────────────────
 DOMAIN="${1:-}"
@@ -32,19 +43,58 @@ fi
 # ── Перезапись ─────────────────────────────────────────────────────────────────
 if [[ -f "$SECRETS_OUT" ]] || [[ -f "$INGRESS_OUT" ]]; then
     echo "⚠ Файлы $SECRETS_OUT / $INGRESS_OUT уже существуют."
-    echo "  Перезапись СБРОСИТ admin-пароль, аннулирует JWT и заменит TLS-сертификат."
-    read -p "  Продолжить? (yes/no): " yn
+    echo "  Перезапись СБРОСИТ admin-пароль, аннулирует JWT, заменит мастер-ключ"
+    echo "  шифрования (все существующие server_account/IPMI ciphertext'ы станут"
+    echo "  недешифруемыми!) и заменит TLS-сертификат."
+    echo ""
+    echo "  Для смены ТОЛЬКО мастер-ключа без потери ciphertext'ов используй"
+    echo "  scripts/k8s/rotate_master_key.sh — он сохраняет previous-ключ"
+    echo "  в Secret'е и запускает background re-encrypt."
+    echo ""
+    read -p "  Перегенерировать ВСЁ? (yes/no): " yn
     [[ "$yn" == "yes" ]] || { echo "Отменено."; exit 0; }
 fi
 
 # ── Генератор случайных строк ─────────────────────────────────────────────────
 rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; }
+rand_b64() { openssl rand -base64 "$1" | tr -d '\n='; }
+rand_hex() { openssl rand -hex "$1"; }
 
+# Postgres credentials (per-service)
 AUTH_DB_PASSWORD=$(rand 32)
 LOGGING_DB_PASSWORD=$(rand 32)
+SERVER_DB_PASSWORD=$(rand 32)
+WORKER_DB_PASSWORD=$(rand 32)
+
+# auth_service
 AUTH_SECRET_KEY=$(rand 64)
-LOGGING_SERVICE_API_KEY=$(rand 48)
 INITIAL_ADMIN_PASSWORD=$(rand 16)
+
+# loging_service service-to-service
+LOGGING_SERVICE_API_KEY_AUTH=$(rand 48)
+LOGGING_SERVICE_API_KEY_SERVER=$(rand 48)
+LOGGING_SERVICE_API_KEY_CONFIG=$(rand 48)
+LOGGING_SERVICE_API_KEY_WORKER=$(rand 48)
+# loging_service single outbound для backward-compat (caller'ы пока используют
+# одно поле; map выше — для inbound key-separation в loging_service Settings).
+LOGGING_SERVICE_API_KEY="$LOGGING_SERVICE_API_KEY_AUTH"
+LOGGING_INTROSPECT_SERVICE_API_KEY=$(rand 48)
+
+# server_service envelope encryption
+SERVER_ENCRYPTION_KEY=$(rand_b64 32)
+SERVER_ENCRYPTION_KEY_VERSION=2
+HKDF_SALT_HEX=$(rand_hex 16)
+
+# server_service / worker service-to-service
+SERVER_SERVICE_API_KEY=$(rand 48)
+WORKER_SERVICE_API_KEY=$(rand 48)
+WORKER_BOT_TOKEN="dbos_bot_$(rand 48)"
+# Inbound SERVICE_API_KEYS-map для server_service (worker_bot — единственный
+# inbound caller сегодня; формат kv-list).
+SERVER_INBOUND_SERVICE_API_KEYS="worker_bot:${WORKER_BOT_TOKEN}"
+
+# Redis
+REDIS_PASSWORD=$(rand 32)
 
 # ── RSA private key для Docker registry token-flow ────────────────────────────
 echo "→ Генерируем RSA private key для Docker registry..."
@@ -66,12 +116,18 @@ openssl req -x509 -nodes -newkey rsa:2048 \
 TLS_CRT_B64=$(base64 -w0 < "$TMP/tls.crt")
 TLS_KEY_B64=$(base64 -w0 < "$TMP/tls.key")
 
+# ── JSON map для loging_service (inbound) ────────────────────────────────────
+LOGGING_SERVICE_API_KEYS_JSON=$(cat <<EOF
+{"auth_service":"${LOGGING_SERVICE_API_KEY_AUTH}","server_service":"${LOGGING_SERVICE_API_KEY_SERVER}","config_service":"${LOGGING_SERVICE_API_KEY_CONFIG}","server_worker":"${LOGGING_SERVICE_API_KEY_WORKER}"}
+EOF
+)
+
 # ── 20-secrets.yaml ───────────────────────────────────────────────────────────
 echo "→ Пишем $SECRETS_OUT..."
 {
 cat <<EOF
-# СГЕНЕРИРОВАНО $(date -u +%Y-%m-%dT%H:%M:%SZ) скриптом scripts/k8s/gen_secrets.sh
-# Не коммитить в git (см. .gitignore).
+# СГЕНЕРИРОВАНО ${TS} скриптом scripts/k8s/gen_secrets.sh
+# DO NOT COMMIT. Файл попадает в .gitignore (k8s/20-secrets.yaml).
 
 apiVersion: v1
 kind: Secret
@@ -80,11 +136,17 @@ metadata:
   namespace: dbos
 type: Opaque
 stringData:
+  # Postgres
   AUTH_DB_USER: auth_user
   AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD}
   LOGGING_DB_USER: logging_user
   LOGGING_DB_PASSWORD: ${LOGGING_DB_PASSWORD}
+  SERVER_DB_USER: server_user
+  SERVER_DB_PASSWORD: ${SERVER_DB_PASSWORD}
+  WORKER_DB_USER: worker_user
+  WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD}
 
+  # auth_service
   AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
 
   DOCKER_RSA_PRIVATE_KEY: |
@@ -96,7 +158,27 @@ cat <<EOF
   INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
   INITIAL_ADMIN_EMAIL: admin@${DOMAIN}
 
+  # loging_service: outbound + inbound map + introspect
   LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY}
+  LOGGING_SERVICE_API_KEYS_JSON: |
+    ${LOGGING_SERVICE_API_KEYS_JSON}
+  LOGGING_INTROSPECT_SERVICE_API_KEY: ${LOGGING_INTROSPECT_SERVICE_API_KEY}
+
+  # server_service: envelope encryption
+  SERVER_ENCRYPTION_KEY: ${SERVER_ENCRYPTION_KEY}
+  SERVER_ENCRYPTION_KEY_VERSION: "${SERVER_ENCRYPTION_KEY_VERSION}"
+  HKDF_SALT_HEX: ${HKDF_SALT_HEX}
+
+  # server_service: s2s
+  SERVER_SERVICE_API_KEY: ${SERVER_SERVICE_API_KEY}
+  SERVER_INBOUND_SERVICE_API_KEYS: '${SERVER_INBOUND_SERVICE_API_KEYS}'
+
+  # server_worker
+  WORKER_BOT_TOKEN: ${WORKER_BOT_TOKEN}
+  WORKER_SERVICE_API_KEY: ${WORKER_SERVICE_API_KEY}
+
+  # Redis (taskiq broker + rate-limit storage)
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
 
 ---
 # TLS-сертификат для Traefik (Ingress host: ${DOMAIN})
@@ -122,6 +204,56 @@ sed "s|__INGRESS_HOST__|${DOMAIN}|g" "$INGRESS_TEMPLATE" > "$INGRESS_OUT"
 echo "INGRESS_HOST=${DOMAIN}" > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
+# ── Summary для оператора (chmod 600 в /tmp) ──────────────────────────────────
+{
+cat <<EOF
+DBOS Server Manager — secrets summary
+generated: ${TS}
+domain:    ${DOMAIN}
+
+============================================================
+ADMIN (initial bootstrap, после первого старта смени пароль)
+============================================================
+  username: admin
+  password: ${INITIAL_ADMIN_PASSWORD}
+  email:    admin@${DOMAIN}
+
+============================================================
+MASTER ENCRYPTION KEY (server_service)
+============================================================
+  SERVER_ENCRYPTION_KEY:         ${SERVER_ENCRYPTION_KEY}
+  SERVER_ENCRYPTION_KEY_VERSION: ${SERVER_ENCRYPTION_KEY_VERSION}
+  HKDF_SALT_HEX:                 ${HKDF_SALT_HEX}
+
+============================================================
+WORKER BOT TOKEN (server_worker → server_service /internal/*)
+============================================================
+  ${WORKER_BOT_TOKEN}
+
+============================================================
+DB passwords (per-service)
+============================================================
+  auth_db    / auth_user:    ${AUTH_DB_PASSWORD}
+  logging_db / logging_user: ${LOGGING_DB_PASSWORD}
+  server_db  / server_user:  ${SERVER_DB_PASSWORD}
+  worker_db  / worker_user:  ${WORKER_DB_PASSWORD}
+
+============================================================
+REDIS
+============================================================
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+============================================================
+NOTES
+============================================================
+* Файл со всеми секретами: ${SECRETS_OUT} (chmod 600, gitignored).
+* Этот summary: ${SUMMARY_OUT} (chmod 600). Перенеси в password
+  manager и удали:  shred -u ${SUMMARY_OUT}
+* Ротация мастер-ключа: scripts/k8s/rotate_master_key.sh.
+EOF
+} > "$SUMMARY_OUT"
+chmod 600 "$SUMMARY_OUT"
+
 echo ""
 echo "✓ Готово."
 echo ""
@@ -129,11 +261,14 @@ echo "  Сгенерированы:"
 echo "    $SECRETS_OUT       (Secret dbos-secrets + dbos-tls, chmod 600)"
 echo "    $INGRESS_OUT       (Ingress + Middleware с host=$DOMAIN)"
 echo "    $ENV_FILE          (домен для повторных запусков)"
+echo "    $SUMMARY_OUT       (summary — admin-пароль + master-key + DB-passwords)"
 echo ""
-echo "  ⚠ СОХРАНИ admin-пароль СЕЙЧАС:"
+echo "  ⚠ Запомни / перенеси в password manager:"
 echo "    admin / ${INITIAL_ADMIN_PASSWORD}"
 echo ""
-echo "  ⚠ Self-signed cert валиден 365 дней. Перевыпуск: ${0} ${DOMAIN}"
+echo "  После переноса:  shred -u ${SUMMARY_OUT}"
+echo ""
+echo "  Self-signed cert валиден 365 дней. Перевыпуск: ${0} ${DOMAIN}"
 echo ""
 echo "  Для доступа с локальной машины пропиши в /etc/hosts:"
 echo "    <VM_IP>  ${DOMAIN}"

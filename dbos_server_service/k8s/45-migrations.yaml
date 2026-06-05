@@ -1,0 +1,241 @@
+# Alembic-миграции вынесены из Pod'а в отдельные Job'ы — один Pod на сервис,
+# который завершается после `alembic upgrade head`. Это убирает гонку
+# параллельных миграций при replicas=2 и развязывает фазу schema-evolution
+# от rolling-update сервиса.
+#
+# Порядок применения (deploy.sh):
+#   1. kubectl apply -f 00-..-20-secrets.yaml
+#   2. kubectl apply -f 10-postgres-*.yaml + wait pg_isready
+#   3. kubectl apply -f 45-migrations.yaml + wait --for=condition=complete
+#   4. kubectl apply -f 30-..-60-*.yaml + 70-pdb + 80-networkpolicy + 50-ingress
+#
+# Альтернатива — Helm/Argo PreSync hook; в чистом kustomize порядок зашит в
+# скрипт deploy.sh (см. scripts/k8s/deploy.sh).
+#
+# ttlSecondsAfterFinished автоматически выпиливает завершившиеся Pod'ы Job'ов;
+# backoffLimit ограничивает повторные попытки при падении (например, БД ещё
+# не подняла соединения).
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: auth-migrate
+  namespace: dbos
+  labels:
+    job: auth-migrate
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        job: auth-migrate
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alembic
+          image: dbos/auth-service:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(AUTH_DB_USER):$(AUTH_DB_PASSWORD)@auth-postgres:5432/auth_db"
+            - name: AUTH_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: AUTH_DB_USER }
+            - name: AUTH_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: AUTH_DB_PASSWORD }
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: AUTH_SECRET_KEY }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: logging-migrate
+  namespace: dbos
+  labels:
+    job: logging-migrate
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        job: logging-migrate
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alembic
+          image: dbos/logging-service:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(LOGGING_DB_USER):$(LOGGING_DB_PASSWORD)@logging-postgres:5432/logging_db"
+            - name: LOGGING_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_USER }
+            - name: LOGGING_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_PASSWORD }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: server-migrate
+  namespace: dbos
+  labels:
+    job: server-migrate
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        job: server-migrate
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alembic
+          image: dbos/server-service:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(SERVER_DB_USER):$(SERVER_DB_PASSWORD)@server-postgres:5432/server_db"
+            - name: SERVER_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_DB_USER }
+            - name: SERVER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_DB_PASSWORD }
+            - name: SERVER_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_ENCRYPTION_KEY }
+            - name: SERVER_ENCRYPTION_KEY_VERSION
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_ENCRYPTION_KEY_VERSION }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: worker-migrate
+  namespace: dbos
+  labels:
+    job: worker-migrate
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        job: worker-migrate
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alembic
+          image: dbos/server-worker:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(WORKER_DB_USER):$(WORKER_DB_PASSWORD)@worker-postgres:5432/worker_db"
+            - name: WORKER_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_DB_USER }
+            - name: WORKER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: WORKER_DB_PASSWORD }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

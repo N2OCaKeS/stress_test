@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dbos-backup-pv
+  namespace: dbos
+  annotations:
+    # local-path provisioner k3s: Retain, чтобы случайно не зачистить дампы
+    # при пересоздании PVC. Бэкапы переживают destroy/redeploy сервисов.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      # 20 GiB рассчитано на ~6 месяцев monthly + 4 weekly + 14 daily
+      # для двух кластеров. При custom-формате pg_dump с --compress=6
+      # типичный дамп auth_db/logging_db укладывается в десятки MiB.
+      storage: 20Gi
+  storageClassName: local-path

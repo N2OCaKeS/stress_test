@@ -42,11 +42,30 @@ spec:
     metadata:
       labels:
         app: auth-service
+      annotations:
+        # /metrics не выставлен (owner decision W41 — без отдельного Prometheus).
+        # Operational-counter'ы (failed-login, lockout, audit-drop)
+        # доступны через /api/auth/v1/ready JSON-payload и аудит-канал.
+        prometheus.io/scrape: "false"
+        dbos.monitoring/source: "/api/auth/v1/ready"
     spec:
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: auth-service
           image: dbos/auth-service:latest
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 8000
           envFrom:
@@ -88,17 +107,20 @@ spec:
                 secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }
             - name: RATE_LIMIT_STORAGE_URI
               value: "redis://:$(REDIS_PASSWORD)@redis:6379/1"
-          command: ["sh", "-c"]
+          # Миграции вынесены в Job auth-migrate (см. 45-migrations.yaml).
+          command: ["uvicorn"]
           args:
-            - |
-              python -m alembic upgrade head &&
-              exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2
+            - "src.main:app"
+            - "--host=0.0.0.0"
+            - "--port=8000"
+            - "--workers=2"
           readinessProbe:
             httpGet:
               path: /api/auth/v1/ready
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 3
             failureThreshold: 6
           livenessProbe:
             httpGet:
@@ -106,9 +128,18 @@ spec:
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests: { cpu: "100m", memory: "128Mi" }
             limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 
 ---
 apiVersion: v1
@@ -123,15 +154,3 @@ spec:
   ports:
     - port: 8000
       targetPort: 8000
-
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: auth-service-pdb
-  namespace: dbos
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: auth-service

@@ -1,0 +1,263 @@
+# NetworkPolicy для namespace dbos.
+# Базовая модель: default-deny + явные allow по подграфам.
+# k3s по умолчанию ставит flannel + CNI с поддержкой NetworkPolicy (через
+# kube-router, активируется флагом `--flannel-backend=host-gw` либо
+# установкой Calico/Cilium). Без NP-aware CNI правила игнорируются —
+# проверяй `kubectl -n dbos describe networkpolicy` + e2e curl из соседнего pod'а.
+#
+# Egress намеренно не ограничиваем: server_worker должен ходить наружу к BMC
+# тестовых стендов (Redfish / ipmitool по разным подсетям), а server_service
+# ходит к docker-registry. Жёсткий egress-allowlist потребует caталога IP/CIDR,
+# которые в закрытой сети меняются — оставляем на operator'а.
+
+# ────────────────────────────────────────────────────────────────────────────
+# Default deny ingress для всего namespace.
+# Любой pod, на который не повешено иное правило, не принимает соединения.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: dbos
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+---
+# ────────────────────────────────────────────────────────────────────────────
+# auth-service: вход от ingress-контроллера (Traefik в kube-system)
+# и от соседей по namespace (logging/server/worker делают introspect).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # Traefik ingress controller (k3s ставит в kube-system).
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        # Соседи по namespace dbos — для introspect / docker token / OAuth.
+        - podSelector:
+            matchLabels:
+              app: logging-service
+        - podSelector:
+            matchLabels:
+              app: server-service
+        - podSelector:
+            matchLabels:
+              app: server-worker
+      ports:
+        - protocol: TCP
+          port: 8000
+
+---
+# ────────────────────────────────────────────────────────────────────────────
+# logging-service: вход от ingress-контроллера (reader/admin API)
+# и от всех caller'ов (audit ingest).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: logging-service-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: logging-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              app: auth-service
+        - podSelector:
+            matchLabels:
+              app: server-service
+        - podSelector:
+            matchLabels:
+              app: server-worker
+      ports:
+        - protocol: TCP
+          port: 8001
+
+---
+# ────────────────────────────────────────────────────────────────────────────
+# server-service: наружу через Ingress (планируется), вход от worker'а
+# на /internal/* endpoints.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: server-service-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: server-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              app: server-worker
+      ports:
+        - protocol: TCP
+          port: 8002
+
+---
+# ────────────────────────────────────────────────────────────────────────────
+# auth-postgres: только auth-service и migration Job.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-postgres-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+        - podSelector:
+            matchLabels:
+              job: auth-migrate
+        - podSelector:
+            matchLabels:
+              app: pg-backup
+              target: auth-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# logging-postgres: только logging-service и его migration Job.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: logging-postgres-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: logging-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: logging-service
+        - podSelector:
+            matchLabels:
+              job: logging-migrate
+        - podSelector:
+            matchLabels:
+              app: pg-backup
+              target: logging-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# ────────────────────────────────────────────────────────────────────────────
+# server-postgres / worker-postgres / redis: пока в манифестах нет,
+# но правила задаём впрок — operator подложит сами Deployment'ы.
+# server-postgres ↔ server-service + server-migrate.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: server-postgres-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: server-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: server-service
+        - podSelector:
+            matchLabels:
+              job: server-migrate
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# worker-postgres ↔ server-worker + server-service (dispatch INSERT'ы в tasks).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-postgres-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: worker-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: server-worker
+        - podSelector:
+            matchLabels:
+              app: server-service
+        - podSelector:
+            matchLabels:
+              job: worker-migrate
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# Redis broker: server_service publish (db 0), server_worker consume (db 0),
+# auth_service rate-limit storage (db 1).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+        - podSelector:
+            matchLabels:
+              app: server-service
+        - podSelector:
+            matchLabels:
+              app: server-worker
+      ports:
+        - protocol: TCP
+          port: 6379

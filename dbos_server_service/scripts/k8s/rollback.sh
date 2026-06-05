@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # Откат последнего rollout.
 # Использование:
-#   scripts/k8s/rollback.sh auth      — откат auth_service на предыдущую ревизию
-#   scripts/k8s/rollback.sh logging   — откат logging_service
-#   scripts/k8s/rollback.sh auth N    — откат auth_service на конкретную ревизию N
+#   scripts/k8s/rollback.sh auth|logging|server|worker      — откат на предыдущую ревизию
+#   scripts/k8s/rollback.sh auth N                          — откат на конкретную ревизию N
 
 set -euo pipefail
 
-TARGET="${1:?usage: rollback.sh auth|logging [revision]}"
+TARGET="${1:?usage: rollback.sh auth|logging|server|worker [revision]}"
 REVISION="${2:-}"
 
 case "$TARGET" in
     auth)    DEPLOY="auth-service" ;;
     logging) DEPLOY="logging-service" ;;
-    *)       echo "ОШИБКА: цель должна быть 'auth' или 'logging'" >&2; exit 1 ;;
+    server)  DEPLOY="server-service" ;;
+    worker)  DEPLOY="server-worker" ;;
+    *)       echo "ОШИБКА: цель должна быть 'auth', 'logging', 'server' или 'worker'" >&2; exit 1 ;;
 esac
 
 echo "→ История ревизий $DEPLOY:"

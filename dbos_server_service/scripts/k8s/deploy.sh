@@ -21,6 +21,8 @@ kubectl -n dbos rollout status deploy/auth-postgres    --timeout=300s
 kubectl -n dbos rollout status deploy/logging-postgres --timeout=300s
 kubectl -n dbos rollout status deploy/logging-service  --timeout=300s
 kubectl -n dbos rollout status deploy/auth-service     --timeout=300s
+kubectl -n dbos rollout status deploy/server-service   --timeout=300s
+kubectl -n dbos rollout status deploy/server-worker    --timeout=300s
 
 echo ""
 echo "✓ Все deployments готовы."

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Обновить образы и перезапустить deployments (rolling update).
 # Использование:
-#   scripts/k8s/rollout.sh         — пересобрать + раскатить оба сервиса
-#   scripts/k8s/rollout.sh auth    — только auth_service
-#   scripts/k8s/rollout.sh logging — только logging_service
+#   scripts/k8s/rollout.sh                — все 4 сервиса
+#   scripts/k8s/rollout.sh auth           — только auth_service
+#   scripts/k8s/rollout.sh logging        — только logging_service
+#   scripts/k8s/rollout.sh server         — только server_service
+#   scripts/k8s/rollout.sh worker         — только server_worker
 
 set -euo pipefail
 
@@ -41,6 +43,20 @@ case "$TARGET" in
     logging|all)
         build_one "logging-service" "$ROOT_DIR/loging_service"
         rollout_one "logging-service"
+        ;;
+esac
+
+case "$TARGET" in
+    server|all)
+        build_one "server-service" "$ROOT_DIR/server_service"
+        rollout_one "server-service"
+        ;;
+esac
+
+case "$TARGET" in
+    worker|all)
+        build_one "server-worker" "$ROOT_DIR/server_worker"
+        rollout_one "server-worker"
         ;;
 esac
 

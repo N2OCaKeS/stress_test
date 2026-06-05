@@ -33,7 +33,7 @@ import pytest_asyncio
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr, make_emit_capture  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr, make_emit_capture  # noqa: E402
 
 
 # ── Audit capture (общий patcher как в test_audit_emission) ──────────────────
@@ -102,9 +102,7 @@ class TestAccountAdminBlocked:
     ):
         """``account_admin`` → 403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED на GET /servers."""
         resp = await client.get(f"{BASE}/servers", headers=_hdr(account_admin_token))
-        assert resp.status_code == 403
-        body = resp.json()
-        assert body["error_code"] == "PLATFORM_ADMIN_BUSINESS_DATA_DENIED"
+        body = assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
         assert body["error"] == "forbidden"
         assert body["details"]["platform_role"] == "account_admin"
         # details содержит весь список заблокированных ролей — SIEM-rule может
@@ -128,8 +126,7 @@ class TestAccountAdminBlocked:
             f"{BASE}/servers/{srv.id}/ipmi/power/reboot",
             headers=_hdr(account_admin_token),
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PLATFORM_ADMIN_BUSINESS_DATA_DENIED"
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
         assert captured_dispatch == [], (
             "worker НЕ должен получить задачу — guard режет ДО endpoint'а"
         )
@@ -144,9 +141,7 @@ class TestLogingAdminBlocked:
     ):
         """``loging_admin`` → 403 на business endpoint (servers list)."""
         resp = await client.get(f"{BASE}/servers", headers=_hdr(loging_admin_token))
-        assert resp.status_code == 403
-        body = resp.json()
-        assert body["error_code"] == "PLATFORM_ADMIN_BUSINESS_DATA_DENIED"
+        body = assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
         assert body["details"]["platform_role"] == "loging_admin"
 
     async def test_loging_admin_blocked_on_permissions(
@@ -154,8 +149,7 @@ class TestLogingAdminBlocked:
     ):
         """``loging_admin`` → 403 на GET /permissions."""
         resp = await client.get(f"{BASE}/permissions", headers=_hdr(loging_admin_token))
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PLATFORM_ADMIN_BUSINESS_DATA_DENIED"
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
 
 
 # ── 3. loging_reader НЕ блокируется guard'ом (имеет dept, может быть юзером) ─
@@ -173,10 +167,9 @@ class TestLogingReaderNotBlocked:
     ):
         """``loging_reader`` без service-role → 403 от матрицы прав,
         НЕ от platform-admin guard (другой error_code)."""
-        resp = await client.get(f"{BASE}/servers", headers=_hdr(loging_reader_token))
         # Должен получить 403, но через матрицу прав, не guard.
-        assert resp.status_code == 403
-        body = resp.json()
+        resp = await client.get(f"{BASE}/servers", headers=_hdr(loging_reader_token))
+        body = assert_error(resp, 403)
         # Если бы guard блокировал — был бы PLATFORM_ADMIN_BUSINESS_DATA_DENIED.
         # Здесь — матрица: PERMISSION_DENIED или подобный.
         assert body["error_code"] != "PLATFORM_ADMIN_BUSINESS_DATA_DENIED"
@@ -336,7 +329,7 @@ class TestAuditEmittedOnBlock:
         URL.
         """
         resp = await client.get(f"{BASE}/servers", headers=_hdr(account_admin_token))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
 
         events = _events(captured_emits, "http.platform_admin_blocked")
         assert len(events) == 1, (
@@ -361,7 +354,7 @@ class TestAuditEmittedOnBlock:
             f"{BASE}/permissions/server/reader/view",
             headers=_hdr(loging_admin_token),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
 
         events = _events(captured_emits, "http.platform_admin_blocked")
         assert len(events) == 1
@@ -378,7 +371,7 @@ class TestAuditEmittedOnBlock:
             headers=_hdr(loging_reader_token),
         )
         # 403 от матрицы, не от guard
-        assert resp.status_code == 403
+        assert_error(resp, 403)
         events = _events(captured_emits, "http.platform_admin_blocked")
         assert len(events) == 0, (
             "guard не должен эмитить http.platform_admin_blocked для loging_reader"
@@ -419,9 +412,8 @@ class TestAnonymousNotIntrospected:
     async def test_anonymous_business_endpoint_returns_401_not_403(self, client):
         """GET /servers без bearer → 401 (от ``CurrentIdentity``), не 403 platform-admin."""
         resp = await client.get(f"{BASE}/servers")
-        assert resp.status_code == 401
         # Конкретно ``ACCESS_TOKEN_MISSING``, не платформенный block
-        assert resp.json()["error_code"] == "ACCESS_TOKEN_MISSING"
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_invalid_token_returns_401_not_403(self, client):
         """Bearer с мусором → 401 INVALID_TOKEN_FORMAT (от shape-check), не 403."""
@@ -430,7 +422,7 @@ class TestAnonymousNotIntrospected:
             headers={"Authorization": "Bearer garbage"},
         )
         # 401 — middleware не маскирует невалидный токен под platform-admin блок
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_INVALID")
 
 
 # ── 10. Sanity: account_admin без service_roles, но с заголовком — блок ─────
@@ -453,8 +445,7 @@ class TestAccountAdminPureBlocking:
             allowed_services=["server_service"],
         )
         resp = await client.get(f"{BASE}/servers", headers=_hdr(token))
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PLATFORM_ADMIN_BUSINESS_DATA_DENIED"
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
 
 
 # ── 11. Неизвестный platform_role (rolling deploy) → 503, не 500 ────────────

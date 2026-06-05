@@ -12,7 +12,7 @@ import pytest
 BASE = "/api/server/v1/internal/secrets"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 class TestOpenApiHidden:
@@ -28,20 +28,20 @@ class TestOpenApiHidden:
 class TestMigrationStatusAuth:
     async def test_no_token_returns_401(self, client):
         resp = await client.get(f"{BASE}/migration_status")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_reader_forbidden(self, client, reader_token_a):
         resp = await client.get(
             f"{BASE}/migration_status", headers=_hdr(reader_token_a)
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "SECRETS_MIGRATION_DENIED")
 
     async def test_operator_forbidden(self, client, operator_token_a):
         """operator не имеет rotate_password по default — должен получить 403."""
         resp = await client.get(
             f"{BASE}/migration_status", headers=_hdr(operator_token_a)
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "SECRETS_MIGRATION_DENIED")
 
     async def test_worker_bot_can_read(self, client, worker_bot_token_a):
         resp = await client.get(
@@ -130,11 +130,11 @@ class TestReencryptBatchAuth:
         resp = await client.post(
             f"{BASE}/reencrypt_batch?limit=10", headers=_hdr(reader_token_a)
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "SECRETS_MIGRATION_DENIED")
 
     async def test_no_token_returns_401(self, client):
         resp = await client.post(f"{BASE}/reencrypt_batch?limit=10")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_worker_bot_can_call(self, client, worker_bot_token_a):
         resp = await client.post(
@@ -156,19 +156,19 @@ class TestReencryptBatchContract:
         resp = await client.post(
             f"{BASE}/reencrypt_batch?limit=0", headers=_hdr(worker_pat_token)
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_limit_validation_rejects_negative(self, client, worker_pat_token):
         resp = await client.post(
             f"{BASE}/reencrypt_batch?limit=-1", headers=_hdr(worker_pat_token)
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_limit_validation_rejects_too_large(self, client, worker_pat_token):
         resp = await client.post(
             f"{BASE}/reencrypt_batch?limit=10001", headers=_hdr(worker_pat_token)
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_idempotent_when_all_active(
         self, client, worker_pat_token, make_server, make_account,
@@ -277,13 +277,13 @@ class TestReencryptBatchAuditStatus:
 class TestOutboxSeedEndpoint:
     async def test_no_token_returns_401(self, client):
         resp = await client.post(f"{BASE}/reencrypt_outbox/seed")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_reader_forbidden(self, client, reader_token_a):
         resp = await client.post(
             f"{BASE}/reencrypt_outbox/seed", headers=_hdr(reader_token_a)
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "SECRETS_MIGRATION_DENIED")
 
     async def test_empty_db_no_inserts(self, client, worker_pat_token):
         resp = await client.post(
@@ -299,12 +299,12 @@ class TestOutboxSeedEndpoint:
         resp = await client.post(
             f"{BASE}/reencrypt_outbox/seed?limit=0", headers=_hdr(worker_pat_token)
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
         resp = await client.post(
             f"{BASE}/reencrypt_outbox/seed?limit=99999",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 class TestOutboxClaimEndpoint:
@@ -322,7 +322,7 @@ class TestOutboxClaimEndpoint:
             f"{BASE}/reencrypt_outbox/pending?limit=10",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "SECRETS_MIGRATION_DENIED")
 
 
 class TestOutboxFinalizeEndpoints:
@@ -331,8 +331,7 @@ class TestOutboxFinalizeEndpoints:
             f"{BASE}/reencrypt_outbox/rox_doesnotexist/done",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SECRETS_OUTBOX_ROW_NOT_FOUND"
+        assert_error(resp, 404, "SECRETS_OUTBOX_ROW_NOT_FOUND")
 
     async def test_failed_missing_returns_404(self, client, worker_pat_token):
         resp = await client.post(
@@ -340,7 +339,7 @@ class TestOutboxFinalizeEndpoints:
             headers=_hdr(worker_pat_token),
             json={"error": "boom"},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SECRETS_OUTBOX_ROW_NOT_FOUND")
 
     async def test_failed_requires_error_body(self, client, worker_pat_token):
         resp = await client.post(
@@ -348,7 +347,7 @@ class TestOutboxFinalizeEndpoints:
             headers=_hdr(worker_pat_token),
             json={},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 class TestOutboxCleanupEndpoint:
@@ -365,7 +364,7 @@ class TestOutboxCleanupEndpoint:
             f"{BASE}/reencrypt_outbox/cleanup?older_than_hours=24",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "SECRETS_MIGRATION_DENIED")
 
 
 class TestOutboxRoundTrip:

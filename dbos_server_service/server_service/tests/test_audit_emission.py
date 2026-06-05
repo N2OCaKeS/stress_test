@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 BASE = "/api/server/v1"
 
@@ -86,7 +86,7 @@ class TestServerCrudAudit:
             },
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "DEPARTMENT_ISOLATION")
         failures = [
             e for e in _events(captured_emits, "server.create")
             if e.get("status") == "failure"
@@ -143,7 +143,7 @@ class TestServerCrudAudit:
             json={"display_name": "x"},
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         failures = [
             e for e in _events(captured_emits, "server.update")
             if e.get("status") == "failure"
@@ -163,7 +163,7 @@ class TestServerCrudAudit:
             json={"display_name": "x"},
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         failures = [
             e for e in _events(captured_emits, "server.update")
             if e.get("status") == "failure"
@@ -181,7 +181,7 @@ class TestServerCrudAudit:
         resp = await client.delete(
             f"{BASE}/servers/{srv.id}", headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         failures = [
             e for e in _events(captured_emits, "server.delete")
             if e.get("status") == "failure"
@@ -199,7 +199,7 @@ class TestServerCrudAudit:
         resp = await client.delete(
             f"{BASE}/servers/srv_ghost", headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         failures = [
             e for e in _events(captured_emits, "server.delete")
             if e.get("status") == "failure"
@@ -222,7 +222,7 @@ class TestServerCrudAudit:
         resp = await client.get(
             f"{BASE}/servers/{srv.id}", headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         failures = [
             e for e in _events(captured_emits, "server.view")
             if e.get("status") == "failure"
@@ -240,7 +240,7 @@ class TestServerCrudAudit:
         resp = await client.get(
             f"{BASE}/servers/srv_ghost", headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         failures = [
             e for e in _events(captured_emits, "server.view")
             if e.get("status") == "failure"
@@ -265,7 +265,7 @@ class TestServerCrudAudit:
         resp = await client.get(
             f"{BASE}/servers/{srv.id}", headers=_hdr(guest_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [
             e for e in _events(captured_emits, "server.view")
             if e.get("status") == "denied"
@@ -365,7 +365,7 @@ class TestPowerAudit:
             f"{BASE}/servers/{srv.id}/ipmi/power/on",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [
             e for e in _events(captured_emits, "server.power_on")
             if e.get("status") == "denied"
@@ -382,7 +382,7 @@ class TestPowerAudit:
             f"{BASE}/servers/{srv.id}/ipmi/power/off",
             headers=_hdr(guest_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [
             e for e in _events(captured_emits, "server.power_off")
             if e.get("status") == "denied"
@@ -398,7 +398,7 @@ class TestPowerAudit:
             f"{BASE}/servers/{srv.id}/ipmi/power/reboot",
             headers=_hdr(no_role_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [
             e for e in _events(captured_emits, "server.power_reboot")
             if e.get("status") == "denied"
@@ -418,7 +418,7 @@ class TestPowerAudit:
             f"{BASE}/servers/{srv.id}/ipmi/power/on",
             headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         failures = [
             e for e in _events(captured_emits, "server.power_on")
             if e.get("status") == "failure"
@@ -460,7 +460,7 @@ class TestInternalSensitiveAudit:
             f"{INT}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [
             e for e in _events(captured_emits, "ipmi_controller.view_credentials")
             if e.get("status") == "denied"
@@ -495,7 +495,7 @@ class TestInternalSensitiveAudit:
             f"{INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [
             e for e in _events(captured_emits, "server_account.view_password")
             if e.get("status") == "denied"
@@ -531,7 +531,7 @@ class TestInternalSensitiveAudit:
             json={"password": "ReaderTry1234"},
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [
             e for e in _events(captured_emits, "server_account.rotate_password")
             if e.get("status") == "denied"
@@ -569,7 +569,7 @@ class TestPermissionMatrixAudit:
             f"{BASE}/permissions/server/guest/view",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [
             e for e in _events(captured_emits, "permission.grant")
             if e.get("status") == "denied"
@@ -584,7 +584,7 @@ class TestPermissionMatrixAudit:
             f"{BASE}/permissions/server/guest/view",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [
             e for e in _events(captured_emits, "permission.revoke")
             if e.get("status") == "denied"
@@ -719,7 +719,7 @@ class TestStub501NotAudited:
         остаться прежним.
         """
         resp = await client.get(f"{BASE}/servers")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
         denied = _events(captured_emits, "http.access_denied")
         assert len(denied) == 1, (

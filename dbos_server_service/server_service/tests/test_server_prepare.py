@@ -22,7 +22,7 @@ BASE = "/api/server/v1/servers"
 BASE_INT = "/api/server/v1/internal"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 def _b64(value: str) -> str:
@@ -158,7 +158,7 @@ class TestPrepareDispatch:
             headers=_hdr(reader_token_a),
             json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
     async def test_bad_base64_username_422(
@@ -170,7 +170,7 @@ class TestPrepareDispatch:
             headers=_hdr(operator_token_a),
             json={"username_b64": "!!notb64!!", "password_b64": _b64("Boot1234!StrongPwd")},
         )
-        assert resp.status_code == 422, resp.text
+        assert_error(resp, 422, "VALIDATION_ERROR")
         assert captured_dispatch == []
 
     async def test_bad_base64_password_422(
@@ -182,7 +182,7 @@ class TestPrepareDispatch:
             headers=_hdr(operator_token_a),
             json={"username_b64": _b64("bootadmin"), "password_b64": "@@bad@@"},
         )
-        assert resp.status_code == 422, resp.text
+        assert_error(resp, 422, "VALIDATION_ERROR")
         assert captured_dispatch == []
 
     # ── Усиленная парольная политика для bootstrap-пароля ──────────────────
@@ -202,8 +202,7 @@ class TestPrepareDispatch:
                 "password_b64": _b64(pwd),
             },
         )
-        assert resp.status_code == 422, resp.text
-        body = resp.json()
+        body = assert_error(resp, 422, "VALIDATION_ERROR")
         types = [e["type"] for e in body["details"]["errors"]]
         assert "WEAK_PASSWORD" in types
         assert captured_dispatch.stored_creds_calls == []
@@ -223,8 +222,8 @@ class TestPrepareDispatch:
                 "password_b64": _b64(pwd),
             },
         )
-        assert resp.status_code == 422, resp.text
-        types = [e["type"] for e in resp.json()["details"]["errors"]]
+        body = assert_error(resp, 422, "VALIDATION_ERROR")
+        types = [e["type"] for e in body["details"]["errors"]]
         assert "WEAK_PASSWORD" in types
         assert captured_dispatch == []
 
@@ -243,8 +242,8 @@ class TestPrepareDispatch:
                 "password_b64": _b64(pwd),
             },
         )
-        assert resp.status_code == 422, resp.text
-        types = [e["type"] for e in resp.json()["details"]["errors"]]
+        body = assert_error(resp, 422, "VALIDATION_ERROR")
+        types = [e["type"] for e in body["details"]["errors"]]
         assert "WEAK_PASSWORD" in types
         assert captured_dispatch == []
 
@@ -262,8 +261,8 @@ class TestPrepareDispatch:
                 "password_b64": _b64(pwd),
             },
         )
-        assert resp.status_code == 422, resp.text
-        types = [e["type"] for e in resp.json()["details"]["errors"]]
+        body = assert_error(resp, 422, "VALIDATION_ERROR")
+        types = [e["type"] for e in body["details"]["errors"]]
         assert "WEAK_PASSWORD" in types
         assert captured_dispatch == []
 
@@ -281,8 +280,8 @@ class TestPrepareDispatch:
                 "password_b64": _b64(pwd),
             },
         )
-        assert resp.status_code == 422, resp.text
-        types = [e["type"] for e in resp.json()["details"]["errors"]]
+        body = assert_error(resp, 422, "VALIDATION_ERROR")
+        types = [e["type"] for e in body["details"]["errors"]]
         assert "WEAK_PASSWORD" in types
         assert captured_dispatch == []
 
@@ -313,7 +312,7 @@ class TestPrepareDispatch:
             headers=_hdr(operator_token_b),
             json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
-        assert resp.status_code == 404, resp.text
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_decommissioned_409(
@@ -327,8 +326,7 @@ class TestPrepareDispatch:
             headers=_hdr(operator_token_a),
             json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
-        assert resp.status_code == 409, resp.text
-        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
     # ── Bootstrap-кред НЕ кладутся в Redis до проверки прав/видимости ──
@@ -345,7 +343,7 @@ class TestPrepareDispatch:
             headers=_hdr(reader_token_a),
             json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch.stored_creds_calls == []
 
     async def test_cross_dept_does_not_store_creds_in_redis(
@@ -357,7 +355,7 @@ class TestPrepareDispatch:
             headers=_hdr(operator_token_b),
             json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
-        assert resp.status_code == 404, resp.text
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch.stored_creds_calls == []
 
     async def test_decommissioned_does_not_store_creds_in_redis(
@@ -371,7 +369,7 @@ class TestPrepareDispatch:
             headers=_hdr(operator_token_a),
             json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
-        assert resp.status_code == 409, resp.text
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch.stored_creds_calls == []
 
     async def test_idempotent_hit_does_not_store_creds_in_redis(
@@ -458,8 +456,7 @@ class TestPrepareDispatch:
             headers={**_hdr(operator_token_a), "Idempotency-Key": idem_key},
             json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
         )
-        assert resp.status_code == 409, resp.text
-        assert resp.json()["error_code"] == "IDEMPOTENCY_KEY_REUSE_CONFLICT"
+        assert_error(resp, 409, "IDEMPOTENCY_KEY_REUSE_CONFLICT")
         # Креды не легли в Redis — pre-check сработал ДО store_prepare_creds.
         assert captured_dispatch.stored_creds_calls == []
         failures = [
@@ -650,7 +647,7 @@ class TestPreparedCallback:
             headers=_hdr(reader_token_a),
             json={"management_user": "dbos"},
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_unknown_server_404(
         self, client, worker_bot_token_a, dept_a,
@@ -660,8 +657,7 @@ class TestPreparedCallback:
             headers=_hdr(worker_bot_token_a),
             json={"management_user": "dbos"},
         )
-        assert resp.status_code == 404, resp.text
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
 
 # ── Audit: bootstrap-креды не уходят в журнал ────────────────────────────────

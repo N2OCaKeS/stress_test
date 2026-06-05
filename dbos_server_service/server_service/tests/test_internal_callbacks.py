@@ -30,7 +30,7 @@ from src.services import secrets_service
 BASE_INT = "/api/server/v1/internal"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 def _iso(dt: datetime | None = None) -> str:
@@ -189,7 +189,7 @@ class TestInventoryCallback:
                 "os_version": "x", "disks": [],
             },
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_token_returns_401(self, client, make_server, dept_a):
         srv = await make_server(department_id=dept_a)
@@ -202,7 +202,7 @@ class TestInventoryCallback:
                 "os_version": "x", "disks": [],
             },
         )
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_server_not_found_returns_404(
         self, client, admin_role_token_a,
@@ -217,8 +217,7 @@ class TestInventoryCallback:
                 "os_version": "x", "disks": [],
             },
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_invalid_payload_returns_422(
         self, client, admin_role_token_a, make_server, dept_a,
@@ -230,7 +229,7 @@ class TestInventoryCallback:
             # отсутствует cpu_model и пр.
             json={"hostname": "x"},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422)
 
     async def test_audit_inventory_received_emitted(
         self, client, admin_role_token_a, make_server, captured_emits, dept_a,
@@ -318,7 +317,7 @@ class TestIpmiCredentialsRotatedCallback:
                 "verified_at": _iso(),
             },
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_controller_not_found_returns_404(
         self, client, admin_role_token_a,
@@ -332,8 +331,7 @@ class TestIpmiCredentialsRotatedCallback:
                 "verified_at": _iso(),
             },
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
     async def test_audit_credentials_rotated_callback_emitted(
         self, client, admin_role_token_a, make_server, make_ipmi,
@@ -371,7 +369,7 @@ class TestIpmiCredentialsRotatedCallback:
                 "rotated_at": _iso(),
             },
         )
-        assert resp.status_code == 422, resp.text
+        assert_error(resp, 422)
 
     async def test_stale_verified_at_rejected_400(
         self, client, admin_role_token_a, make_server, make_ipmi, db, dept_a,
@@ -397,10 +395,9 @@ class TestIpmiCredentialsRotatedCallback:
                 "verified_at": stale,
             },
         )
-        assert resp.status_code == 400, resp.text
-        assert resp.json()["error_code"] == "BMC_VERIFY_REQUIRED"
+        body = assert_error(resp, 400, "BMC_VERIFY_REQUIRED")
         # Message в обычном stale-случае без future-формулировки.
-        assert "future" not in resp.json()["message"].lower()
+        assert "future" not in body["message"].lower()
 
         # Storage не должен мутироваться.
         await db.commit()
@@ -439,9 +436,8 @@ class TestIpmiCredentialsRotatedCallback:
                 "verified_at": future,
             },
         )
-        assert resp.status_code == 400, resp.text
-        assert resp.json()["error_code"] == "BMC_VERIFY_REQUIRED"
-        assert "future" in resp.json()["message"].lower()
+        body = assert_error(resp, 400, "BMC_VERIFY_REQUIRED")
+        assert "future" in body["message"].lower()
 
     async def test_rotated_at_far_future_rejected_400(
         self, client, admin_role_token_a, make_server, make_ipmi, db, dept_a,
@@ -468,8 +464,7 @@ class TestIpmiCredentialsRotatedCallback:
                 "verified_at": _iso(),
             },
         )
-        assert resp.status_code == 400, resp.text
-        assert resp.json()["error_code"] == "ROTATED_AT_IN_FUTURE"
+        assert_error(resp, 400, "ROTATED_AT_IN_FUTURE")
 
         # Storage не мутируется — старый ciphertext на месте.
         await db.commit()
@@ -505,8 +500,7 @@ class TestIpmiCredentialsRotatedCallback:
                 "verified_at": _iso(),
             },
         )
-        assert resp.status_code == 400, resp.text
-        assert resp.json()["error_code"] == "ROTATED_AT_TOO_OLD"
+        assert_error(resp, 400, "ROTATED_AT_TOO_OLD")
 
         await db.commit()
         refreshed = (await db.execute(
@@ -563,8 +557,7 @@ class TestCallbackDeptHeaderStrict:
                 "cpu_cores": 1, "os_version": "x", "disks": [],
             },
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        assert_error(resp, 403, "TARGET_DEPARTMENT_MISMATCH")
 
     async def test_ipmi_callback_matched_header_returns_200(
         self, client, admin_role_token_a, make_server, make_ipmi,
@@ -621,8 +614,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
                 "cpu_cores": 1, "os_version": "x", "disks": [],
             },
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     # soft-404 cloak not implemented — current contract is 403
     async def test_users_inventory_actor_mismatch_returns_404_soft(
@@ -638,7 +630,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
             headers=_hdr(foreign_token),
             json={"users": []},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403)
 
     async def test_provision_status_actor_mismatch_returns_422_contract(
         self, client, make_token, make_server, make_account, dept_a,
@@ -664,7 +656,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
             headers=_hdr(foreign_token),
             json={"operation": "useradd", "present": True},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422)
 
     async def test_prepared_actor_mismatch_returns_404_soft(
         self, client, make_token, make_server, dept_a,
@@ -679,7 +671,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
             headers=_hdr(foreign_token),
             json={"management_user": "ops"},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_credentials_rotated_actor_mismatch_returns_404_soft(
         self, client, make_token, make_server, make_ipmi, dept_a,
@@ -699,10 +691,9 @@ class TestInternalCallbacksActorDeptMaskedAs404:
                 "verified_at": _iso(),
             },
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
+        body = assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         # Controller-scoped endpoint — details несут `target_id` = controller_id.
-        details = resp.json().get("details") or {}
+        details = body.get("details") or {}
         assert details.get("target_id") == ctrl.id
         assert "server_id" not in details
         assert "controller_id" not in details
@@ -729,9 +720,7 @@ class TestCheckTargetDeptFieldLabel:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 403
-        body = resp.json()
-        assert body["error_code"] == "TARGET_DEPARTMENT_HEADER_REQUIRED"
+        body = assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
         details = body.get("details") or {}
         assert details.get("target_id") == acc.id
         assert "server_id" not in details
@@ -750,9 +739,7 @@ class TestCheckTargetDeptFieldLabel:
             },
             json={"password": "NewLabeled1234"},
         )
-        assert resp.status_code == 403
-        body = resp.json()
-        assert body["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        body = assert_error(resp, 403, "TARGET_DEPARTMENT_MISMATCH")
         details = body.get("details") or {}
         assert details.get("target_id") == acc.id
         assert "server_id" not in details
@@ -769,8 +756,8 @@ class TestCheckTargetDeptFieldLabel:
             f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 403
-        details = (resp.json().get("details") or {})
+        body = assert_error(resp, 403)
+        details = body.get("details") or {}
         assert details.get("target_id") == srv.id
         assert "server_id" not in details
 

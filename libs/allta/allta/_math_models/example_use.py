@@ -93,10 +93,13 @@ def example_math_model() -> None:
     print(f"delta               = {calculated_power - current_fixed_power:+.6f}")
 
     print("\nMathModel / total rating with current fixed power")
-    pprint(model.total_rating(power=current_fixed_power))
+    total, criteria = model.total_rating(power=current_fixed_power)
+    print(f"total = {total}")
+    pprint(criteria)
 
     print("\nMathModel / total rating with calculated power")
-    pprint(model.total_rating(power=calculated_power))
+    total, criteria = model.total_rating(power=calculated_power)
+    print(f"total = {total}")
 
 
 def example_math_model_ratio() -> None:
@@ -132,10 +135,14 @@ def example_math_model_ratio() -> None:
     )
 
     print("\nMathModel / ratio (отношение к эталону, scale=100)")
-    result = model.total_rating(scale=100.0)   # эталон -> 100, >100 лучше, <100 хуже
-    pprint(result)
-    for name, info in result["criteria"].items():
-        print(f"  {name}: R = {info['ratio']:.3f}")   # latency ~2.0, throughput ~1.5
+    # Распаковка: total — итоговый индекс, criteria — детализация по тестам.
+    total, criteria = model.total_rating(scale=100.0)   # эталон -> 100, >100 лучше
+
+    # Таблица в стиле UnixBench: BASELINE | RESULT | INDEX по каждому тесту.
+    print(f"{'Тест':<14}{'BASELINE':>14}{'RESULT':>14}{'INDEX':>10}")
+    for name, info in criteria.items():
+        print(f"{name:<14}{info['baseline']:>14.2f}{info['result']:>14.2f}{info['ratio']:>10.3f}")
+    print(f"{'ИТОГ (index)':<14}{'':>14}{'':>14}{total:>10.2f}")
 
 
 if __name__ == "__main__":

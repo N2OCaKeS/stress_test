@@ -60,8 +60,10 @@ MathModels
   Используется для калибровки на базовом наборе.
 
 * ``total_rating(power=None, *, scale=100.0, cap=1000.0)``
-  Возвращает рейтинг и детализацию по критериям. В режиме ``odds`` требуется ``power``;
-  в режиме ``ratio`` ``power`` не нужен, используются ``scale`` и ``cap``.
+  Возвращает ``RatingResult`` — распаковывается как ``total, criteria = total_rating(...)``
+  (доступны и атрибуты ``.total`` / ``.criteria``). В режиме ``odds`` требуется ``power``;
+  в режиме ``ratio`` ``power`` не нужен, используются ``scale`` и ``cap``. В ratio-режиме
+  каждый элемент ``criteria`` содержит ``baseline``, ``result``, ``ratio`` (индекс), ``weight``.
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Пример: калибровка ``power`` и расчёт рейтинга
@@ -107,9 +109,9 @@ MathModels
     )
     fixed_power = debug["power"]
 
-    result = model.total_rating(power=fixed_power)
+    total, criteria = model.total_rating(power=fixed_power)
     print("power:", fixed_power)
-    print("total_rating:", result["total_rating"])
+    print("total_rating:", total)
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Пример: использование фиксированного ``power``
@@ -127,8 +129,8 @@ MathModels
     model.add_criterion("tps2", x_values, [18568.963702, 23067.077549, 19998.627232, 21074.072323, 19833.653092], 0.83, False, (0.0, 140000.0))
 
     fixed_power = 0.48
-    result = model.total_rating(power=fixed_power)
-    print(result["total_rating"])
+    total, criteria = model.total_rating(power=fixed_power)
+    print(total)
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""
 Пример: режим ``ratio`` (отношение к эталону)
@@ -163,10 +165,14 @@ MathModels
         reference=reference["throughput"],
     )
 
-    result = model.total_rating(scale=100.0)   # эталон -> 100, >100 лучше, <100 хуже
-    print("total_rating:", result["total_rating"])           # ~168.3
-    print("R latency:   ", result["criteria"]["latency"]["ratio"])     # ~2.0
-    print("R throughput:", result["criteria"]["throughput"]["ratio"])  # ~1.5
+    total, criteria = model.total_rating(scale=100.0)   # эталон -> 100, >100 лучше
+    print("total_rating:", total)                                 # ~168.3
+    print("R latency:   ", criteria["latency"]["ratio"])          # ~2.0
+    print("R throughput:", criteria["throughput"]["ratio"])       # ~1.5
+
+    # Таблица BASELINE | RESULT | INDEX (как в UnixBench):
+    for name, info in criteria.items():
+        print(name, info["baseline"], info["result"], info["ratio"])
 
 ``reference`` можно задать и скаляром — тогда он применяется ко всем замерам критерия.
 

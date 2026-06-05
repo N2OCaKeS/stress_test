@@ -4,10 +4,22 @@ import binascii
 import math
 import warnings
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 from numpy.exceptions import RankWarning
+
+
+class RatingResult(NamedTuple):
+    """Результат ``total_rating``: распаковывается как ``total, criteria = ...``.
+
+    Также доступны атрибуты ``.total`` и ``.criteria``.
+    ``criteria`` — словарь по критериям; в ratio-режиме каждый элемент содержит
+    ``baseline``, ``result``, ``ratio`` (индекс) и ``weight``.
+    """
+
+    total: float
+    criteria: dict[str, Any]
 
 
 Number = float | int
@@ -154,7 +166,7 @@ class MathModel:
         m = MathModel()                       # или MathModel(type="odds")
         m.add_criterion("syscall", iterations=[4, 8], values=[680000, 690000],
                         weight=0.11, negative=False, bounds=(0, 7_000_000))
-        rating = m.total_rating(power=0.998)["total_rating"]
+        total, criteria = m.total_rating(power=0.998)
 
         # RATIO: нужен reference (эталонный прогон), без bounds и power
         m = MathModel(type="ratio")
@@ -162,9 +174,10 @@ class MathModel:
                         weight=0.11, negative=False, reference=[680000, 690000])
         m.add_criterion("latency", iterations=[1, 2, 3], values=[0.6, 0.6, 0.6],
                         weight=0.06, negative=True, reference=[0.3, 0.3, 0.3])
-        res = m.total_rating(scale=100.0)     # эталон -> 100, >100 лучше, <100 хуже
-        res["total_rating"]                   # итоговый индекс
-        res["criteria"]["syscall"]["ratio"]   # R критерия (здесь ~10.0)
+        total, criteria = m.total_rating(scale=100.0)   # эталон -> 100, >100 лучше
+        total                                  # итоговый индекс
+        criteria["syscall"]["ratio"]           # индекс критерия (здесь ~10.0)
+        criteria["syscall"]["baseline"]        # эталон, criteria[...]["result"] — факт
     """
 
     def __init__(self, type: str | None = None) -> None:
@@ -547,7 +560,7 @@ class MathModel:
         *,
         scale: Number = 100.0,
         cap: Number = 1000.0,
-    ) -> dict[str, Any]:
+    ) -> "RatingResult":
         """
         Рассчитывает итоговый рейтинг по всем ранее добавленным критериям.
 
@@ -562,22 +575,20 @@ class MathModel:
             cap (Number): ограничение выброса ratio в ``[1/cap, cap]`` (ratio-режим).
 
         Returns:
-            dict[str, Any]: ``total_rating`` и детализация по критериям.
+            RatingResult: распаковывается как ``total, criteria = total_rating(...)``.
+            ``total`` — итоговый рейтинг, ``criteria`` — детализация по критериям.
         """
         if not self._criteria:
             raise ValueError("Не добавлено ни одного критерия")
 
         if self._mode == "ratio":
             res = self.ratio_index(scale=scale, cap=cap)
-            return {
-                "total_rating": float(res["index"]),
-                "scale": float(res["scale"]),
-                "criteria": res["criteria"],
-            }
+            return RatingResult(float(res["index"]), res["criteria"])
 
         if power is None:
             raise ValueError("в режиме type='odds' нужно передать power")
-        return self._evaluate_group(float(power))
+        group = self._evaluate_group(float(power))
+        return RatingResult(float(group["total_rating"]), group["criteria"])
 
     def calc_power(
         self,

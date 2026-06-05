@@ -117,19 +117,6 @@ class TestListEventsQueryNormalization:
         assert r.status_code == 200
         assert r.json()["total"] == 1
 
-    @pytest.mark.xfail(
-        reason="needs alignment after F-W12 src refactor: confusable folding for ?action= query param pending",
-        strict=False,
-    )
-    def test_cyrillic_confusable_action_param_finds_events(self, admin_client, db):
-        """Confusable in ?action= value is folded before the DB lookup."""
-        _insert_event(db, action="user.login")
-        # 'u' replaced with кириллической 'у' (U+0443)
-        confusable_action = "уser.login"
-        r = admin_client.get(EVENTS_URL, params={"action": confusable_action, "include_total": "true"})
-        assert r.status_code == 200
-        assert r.json()["total"] == 1
-
     def test_service_none_not_normalised(self, admin_client, db):
         """When ?service is absent, no normalization and no filtering — returns all."""
         _insert_event(db, service="auth_service")

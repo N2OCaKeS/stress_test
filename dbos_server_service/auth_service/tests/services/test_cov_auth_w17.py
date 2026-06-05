@@ -12,23 +12,17 @@
   - audit_service._enrich_details: ctx.extra поля протекают в details
 """
 
-import base64
-
 import pytest
 import pytest_asyncio
 
 from src.models.department_docker_registry import DepartmentDockerRegistry
 from src.utils.ids import _new_id
+from tests._helpers.http import _basic  # noqa: F401 — общий helper
 
 
 CONFIG_URL = "/api/auth/v1/docker/registry/{dept_id}"
 TOKEN_URL = "/api/auth/v1/docker/token"
 USERS_URL = "/api/auth/v1/users"
-
-
-def _basic(username: str, password: str) -> dict:
-    creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
 
 
 def _capture_audit(monkeypatch) -> list[dict]:

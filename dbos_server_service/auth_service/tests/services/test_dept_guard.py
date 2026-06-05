@@ -54,12 +54,15 @@ async def test_actor_in_other_dept_raises_callers_error_code():
 
 
 async def test_actor_in_target_dept_passes_silently():
-    """actor.department_id == target_dept_id → no raise."""
+    """actor.department_id == target_dept_id → no raise (возвращает None)."""
     repo = _StubUserRepo(user=_StubUser(department_id="dept_a"))
-    await assert_dept_admin_target_dept(
+    result = await assert_dept_admin_target_dept(
         repo, "usr_da_a", "dept_a",
         error_code="X", message="x",
     )
+    assert result is None
+    # Хелпер должен дернуть get_by_id ровно один раз с переданным actor_id.
+    assert repo.calls == ["usr_da_a"]
 
 
 async def test_actor_dept_none_does_not_silent_pass():

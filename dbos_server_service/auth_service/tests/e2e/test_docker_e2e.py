@@ -10,21 +10,18 @@ Docker CLI и Docker daemon не нужны — только HTTP.
 или через `make test-devcont-all` (локальный бинарник registry).
 """
 
-import base64
 import json
 
 import jwt
 import pytest
 import requests
 
+from tests._helpers.http import _basic  # noqa: F401 — общий helper
+
 pytestmark = pytest.mark.e2e
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _basic(username: str, password: str) -> dict:
-    creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
 
 
 def _v2_url(host: str) -> str:

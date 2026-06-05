@@ -176,9 +176,10 @@ class TestParallelExchangeRace:
     ``test_concurrency.py::TestRefreshRotationRace`` (тот же паттерн)."""
 
     @pytest.mark.xfail(
-        reason="Parallel exchange race не воспроизводится в single-session "
-        "conftest (savepoint). CAS-логика правильная — см. unit-тест "
-        "TestMarkUsedCAS::test_mark_used_returns_false_when_stale (passing).",
+        reason="Parallel exchange race требует двух DB-connection'ов: "
+        "shared savepoint-session в conftest сериализует SELECT/UPDATE и "
+        "оба запроса успешно проходят CAS-mark_used. CAS-контракт уже "
+        "покрыт unit-тестом TestMarkUsedCAS::test_mark_used_returns_false_when_stale.",
         strict=False,
     )
     async def test_two_parallel_exchanges_yield_exactly_one_success(

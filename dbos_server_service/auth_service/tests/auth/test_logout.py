@@ -1,18 +1,16 @@
 """Тесты: POST /api/auth/v1/logout — выход из системы."""
 
+from tests._helpers.http import login as _login  # noqa: F401 — общий helper
+
 URL = "/api/auth/v1/logout"
-
-
-async def _login(client, username="t_admin", password="Admin1234!"):
-    r = await client.post("/api/auth/v1/login", json={"username": username, "password": password})
-    assert r.status_code == 200
-    return r.json()
 
 
 async def test_logout_revokes_refresh_token(client, account_admin):
     data = await _login(client)
     resp = await client.post(URL, json={"refresh_token": data["refresh_token"]})
     assert resp.status_code == 200
+    # Envelope: единый ключ revoked=True у endpoint'а logout.
+    assert resp.json() == {"ok": True}
     r = await client.post("/api/auth/v1/refresh", json={"refresh_token": data["refresh_token"]})
     assert r.status_code == 401
 
@@ -21,6 +19,8 @@ async def test_logout_invalid_token_returns_200(client, account_admin):
     """Logout is idempotent and doesn't reveal token validity."""
     resp = await client.post(URL, json={"refresh_token": "nonexistent_token_abc"})
     assert resp.status_code == 200
+    # Idempotent: envelope тот же, чтобы клиент не различал «было/не было».
+    assert resp.json() == {"ok": True}
 
 
 async def test_logout_twice_same_token_returns_200(client, account_admin):
@@ -28,6 +28,7 @@ async def test_logout_twice_same_token_returns_200(client, account_admin):
     await client.post(URL, json={"refresh_token": data["refresh_token"]})
     resp = await client.post(URL, json={"refresh_token": data["refresh_token"]})
     assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
 
 
 async def test_logout_does_not_affect_other_sessions(client, account_admin):

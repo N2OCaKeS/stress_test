@@ -5,21 +5,15 @@
 но без побочек на counter / locked_until.
 """
 
-import base64
-
 from sqlalchemy import select, update
 
 from src.models import BotAccount
+from tests._helpers.http import _basic  # noqa: F401 — общий helper
 
 
 TOKEN_URL = "/api/auth/v1/docker/token"
 CONFIG_URL = "/api/auth/v1/docker/registry/{dept_id}"
 BOTS_URL = "/api/auth/v1/bots"
-
-
-def _basic(username, password):
-    creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
 
 
 async def _enable_docker(client, token, dept_id):

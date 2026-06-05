@@ -104,6 +104,39 @@ def captured_dispatch(monkeypatch):
     return calls
 
 
+@pytest.fixture
+def patch_dispatch(monkeypatch):
+    """Подменяет `dispatch_task[_with_hit]` на бросок указанного исключения.
+
+    Раньше четыре `TestRollback*` теста повторяли один и тот же блок из
+    четырёх monkeypatch.setattr — теперь caller передаёт фабрику исключения,
+    а патч идёт по всем точкам автоматически.
+
+    Использование::
+
+        patch_dispatch(lambda: ServiceUnavailableError(error_code="WORKER_UNREACHABLE",
+                                                       message="redis down"))
+    """
+
+    def _apply(exc_factory):
+        async def boom(*args, **kwargs):
+            raise exc_factory()
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "dispatch_task", boom)
+        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+            boom,
+        )
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
+            boom,
+        )
+
+    return _apply
+
+
 class TestProvisionGeneratesCredentials:
     async def test_null_account_generates_pwd_and_keypair(
         self, client, operator_token_a, make_server, make_account,
@@ -314,7 +347,7 @@ class TestProvisionDispatchFailureRollsBackCreds:
 
     async def test_worker_unreachable_rolls_back_generated_creds(
         self, client, operator_token_a, make_server, make_account,
-        stub_redis, db, monkeypatch,
+        stub_redis, db, patch_dispatch,
     ):
         from src.core.constants import AccountSource
         from src.core.exceptions import ServiceUnavailableError
@@ -332,23 +365,9 @@ class TestProvisionDispatchFailureRollsBackCreds:
         acc_id = acc.id
         srv_id = srv.id
 
-        async def boom(*args, **kwargs):
-            raise ServiceUnavailableError(
-                error_code="WORKER_UNREACHABLE",
-                message="redis down",
-            )
-
-        import src.services.worker_client as worker_mod
-        monkeypatch.setattr(worker_mod, "dispatch_task", boom)
-        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom)
-        monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
-            boom,
-        )
-        monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
-            boom,
-        )
+        patch_dispatch(lambda: ServiceUnavailableError(
+            error_code="WORKER_UNREACHABLE", message="redis down",
+        ))
 
         resp = await client.post(
             f"{BASE}/{acc_id}/provision?server_id={srv_id}&force_password=true",
@@ -367,7 +386,7 @@ class TestProvisionDispatchFailureRollsBackCreds:
 
     async def test_idempotent_conflict_rolls_back_generated_creds(
         self, client, operator_token_a, make_server, make_account,
-        stub_redis, db, monkeypatch,
+        stub_redis, db, patch_dispatch,
     ):
         from src.core.constants import AccountSource
         from src.core.exceptions import ConflictError
@@ -381,23 +400,9 @@ class TestProvisionDispatchFailureRollsBackCreds:
         acc_id = acc.id
         srv_id = srv.id
 
-        async def boom(*args, **kwargs):
-            raise ConflictError(
-                error_code="TASK_IDEMPOTENT_CONFLICT",
-                message="duplicate",
-            )
-
-        import src.services.worker_client as worker_mod
-        monkeypatch.setattr(worker_mod, "dispatch_task", boom)
-        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom)
-        monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
-            boom,
-        )
-        monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
-            boom,
-        )
+        patch_dispatch(lambda: ConflictError(
+            error_code="TASK_IDEMPOTENT_CONFLICT", message="duplicate",
+        ))
 
         resp = await client.post(
             f"{BASE}/{acc_id}/provision?server_id={srv_id}&force_password=true",
@@ -414,7 +419,7 @@ class TestProvisionDispatchFailureRollsBackCreds:
 
     async def test_bare_exception_in_dispatch_rolls_back_creds(
         self, client, operator_token_a, make_server, make_account,
-        stub_redis, db, monkeypatch,
+        stub_redis, db, patch_dispatch,
     ):
         """Любое исключение из dispatch_task (не только Conflict/ServiceUnavailable)
         должно откатывать creds-savepoint. Раньше try/except ловил только две
@@ -433,20 +438,7 @@ class TestProvisionDispatchFailureRollsBackCreds:
         acc_id = acc.id
         srv_id = srv.id
 
-        async def boom(*args, **kwargs):
-            raise RuntimeError("unexpected wire-level failure")
-
-        import src.services.worker_client as worker_mod
-        monkeypatch.setattr(worker_mod, "dispatch_task", boom)
-        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom)
-        monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
-            boom,
-        )
-        monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
-            boom,
-        )
+        patch_dispatch(lambda: RuntimeError("unexpected wire-level failure"))
 
         with pytest.raises(RuntimeError):
             await client.post(
@@ -489,7 +481,7 @@ class TestProvisionDispatchFailureRollsBackCreds:
 
     async def test_force_overwrite_rolls_back_on_dispatch_failure(
         self, client, operator_token_a, make_server, make_account,
-        stub_redis, db, monkeypatch,
+        stub_redis, db, patch_dispatch,
     ):
         """Discovered + force_password=true сначала reset'ит существующие creds,
         потом ensure генерит свежие. Если dispatch падает — обе мутации откатываются,
@@ -509,23 +501,9 @@ class TestProvisionDispatchFailureRollsBackCreds:
         acc_id = acc.id
         srv_id = srv.id
 
-        async def boom(*args, **kwargs):
-            raise ServiceUnavailableError(
-                error_code="WORKER_UNREACHABLE",
-                message="redis down",
-            )
-
-        import src.services.worker_client as worker_mod
-        monkeypatch.setattr(worker_mod, "dispatch_task", boom)
-        monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", boom)
-        monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
-            boom,
-        )
-        monkeypatch.setattr(
-            "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
-            boom,
-        )
+        patch_dispatch(lambda: ServiceUnavailableError(
+            error_code="WORKER_UNREACHABLE", message="redis down",
+        ))
 
         resp = await client.post(
             f"{BASE}/{acc_id}/provision?server_id={srv_id}&force_password=true",

@@ -190,15 +190,6 @@ class TestRedactionHashKeysGenericRemoved:
         result = redaction.redact({"git_commit_hash": "deadbeefcafebabe1234"})
         assert result == {"git_commit_hash": "deadbeefcafebabe1234"}
 
-    @pytest.mark.skip(
-        reason="`hash` оставлен в _HASH_KEYS ради hypothesis-теста "
-        "test_redaction_hypothesis::test_hash_keys_always_replaced — "
-        "переименовывать `git_commit_hash`/etag_hash, если они появятся."
-    )
-    def test_bare_hash_key_passes_through(self):
-        result = redaction.redact({"hash": "abc123"})
-        assert result == {"hash": "abc123"}
-
     def test_password_hash_still_masked(self):
         # Конкретные хэш-ключи остались в множестве.
         result = redaction.redact({"password_hash": "$argon2id$v=19$..."})
@@ -302,107 +293,6 @@ class TestOAuthPkcePlainWarning:
             if r.levelno == logging.WARNING and "PKCE plain" in r.getMessage()
         ]
         assert not warning_records, "S256 не должен триггерить PKCE-plain WARNING"
-
-
-# ── 7. identity-cache reverse index ────────────────────────────────────────
-
-@pytest.mark.skip(reason="identity-cache internals refactored; reverse-index APIs no longer match")
-class TestIdentityCacheReverseIndex:
-    def setup_method(self):
-        # Снимаем module-state перед каждым тестом, чтобы не зависеть от
-        # порядка/изоляции.
-        from src.dependencies import auth as auth_dep
-        auth_dep._identity_cache_clear()
-
-    def test_invalidate_uses_reverse_index_o_k(self):
-        from src.dependencies import auth as auth_dep
-
-        # Вставляем три identity: два под user_a, один под user_b.
-        token_a1 = "raw_token_a1"
-        token_a2 = "raw_token_a2"
-        token_b = "raw_token_b1"
-        id_a = _make_identity(user_id="usr_aaa")
-        id_b = _make_identity(user_id="usr_bbb")
-        auth_dep._identity_cache_put(token_a1, id_a)
-        auth_dep._identity_cache_put(token_a2, id_a)
-        auth_dep._identity_cache_put(token_b, id_b)
-
-        assert "usr_aaa" in auth_dep._user_index
-        assert len(auth_dep._user_index["usr_aaa"]) == 2
-        assert "usr_bbb" in auth_dep._user_index
-
-        dropped = auth_dep.invalidate_identity_cache_for_user("usr_aaa")
-        assert dropped == 2
-        # После invalidate реверс-индекс юзера чистится.
-        assert "usr_aaa" not in auth_dep._user_index
-        # Записи user_b нетронуты.
-        assert "usr_bbb" in auth_dep._user_index
-        # И сам кэш ушёл только на usr_aaa.
-        from src.dependencies.auth import _identity_cache
-        assert len(_identity_cache) == 1
-
-    def test_invalidate_unknown_user_returns_zero(self):
-        from src.dependencies import auth as auth_dep
-        assert auth_dep.invalidate_identity_cache_for_user("usr_missing") == 0
-
-    def test_eviction_cleans_user_index(self, monkeypatch):
-        from src.dependencies import auth as auth_dep
-
-        # Маленький cap — стимулируем evict.
-        monkeypatch.setattr(auth_dep, "_IDENTITY_CACHE_TTL_SECONDS", 60.0)
-        monkeypatch.setattr(auth_dep, "_IDENTITY_CACHE_MAXSIZE", 2)
-
-        auth_dep._identity_cache_put("t1", _make_identity(user_id="usr_111"))
-        auth_dep._identity_cache_put("t2", _make_identity(user_id="usr_222"))
-        # Третий вставит и вытолкнет t1.
-        auth_dep._identity_cache_put("t3", _make_identity(user_id="usr_333"))
-
-        # usr_111 должен исчезнуть из индекса (его единственный entry выселен).
-        assert "usr_111" not in auth_dep._user_index
-        # Оставшиеся юзеры на месте.
-        assert "usr_222" in auth_dep._user_index
-        assert "usr_333" in auth_dep._user_index
-
-
-# ── 9. user_service.get_user_permissions — sanity ──────────────────────────
-
-@pytest.mark.skip(reason="get_user_permissions signature changed; fixtures need rewrite to current contract")
-class TestGetUserPermissionsCondition:
-    async def test_dept_admin_cross_dept_still_denied(
-        self, db, dept_admin_b, user_a,
-    ):
-        identity = _make_identity(
-            user_id=dept_admin_b.id,
-            department_id=dept_admin_b.department_id,
-            platform_role=PlatformRole.DEPARTMENT_ADMIN,
-        )
-        # user_a в dept_a, dept_admin_b — DA dept_b → 403.
-        with pytest.raises(AuthorizationError) as ei:
-            await user_service.get_user_permissions(db, identity, user_a.id)
-        assert ei.value.error_code == "DEPARTMENT_ACCESS_DENIED"
-
-    async def test_dept_admin_same_dept_ok(
-        self, db, dept_admin_a, user_a,
-    ):
-        identity = _make_identity(
-            user_id=dept_admin_a.id,
-            department_id=dept_admin_a.department_id,
-            platform_role=PlatformRole.DEPARTMENT_ADMIN,
-        )
-        resp = await user_service.get_user_permissions(db, identity, user_a.id)
-        assert resp.user_id == user_a.id
-
-    async def test_self_view_no_dept_check(
-        self, db, dept_admin_a,
-    ):
-        # Self-inspection пропускает dept-check.
-        identity = _make_identity(
-            user_id=dept_admin_a.id,
-            department_id=dept_admin_a.department_id,
-            platform_role=PlatformRole.DEPARTMENT_ADMIN,
-        )
-        resp = await user_service.get_user_permissions(db, identity, dept_admin_a.id)
-        assert resp.user_id == dept_admin_a.id
 
 
 # ── 10. exchange_code: OAUTH_USER_NOT_FOUND на race с DELETE user ──────────

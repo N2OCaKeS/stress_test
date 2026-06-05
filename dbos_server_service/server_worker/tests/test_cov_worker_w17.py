@@ -354,7 +354,11 @@ class TestDispatchRotateUserPasswordErrors:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-@pytest.mark.xfail(strict=False, reason="APP_ENV monkeypatch не пробивается до get_settings() в secrets_reencrypt_lazy; production-unreachable путь, оставлен как coverage-doc")
+@pytest.mark.xfail(
+    strict=False,
+    reason="APP_ENV mismatch: worker=local vs server=test — abort до сравнения id; "
+    "потребуется лак APP_ENV в Settings'е или fake-status, отдающий worker-овский env",
+)
 class TestReencryptLazyOutboxIdNotString:
     """non-string outbox_id в элементе claim-батча → errors счётчик увеличивается."""
 

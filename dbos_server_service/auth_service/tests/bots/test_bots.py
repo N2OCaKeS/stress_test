@@ -1,13 +1,9 @@
 """Тесты: /api/auth/v1/bots — сервисные боты и их токены."""
 
+from tests._helpers.http import _create_bot  # noqa: F401 — общий helper
+
 BOTS_URL = "/api/auth/v1/bots"
 INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
-
-
-async def _create_bot(client, token, dept_id, name="test_bot", services=None):
-    return await client.post(BOTS_URL, headers={"Authorization": f"Bearer {token}"}, json={
-        "name": name, "department_id": dept_id, "allowed_services": services or [],
-    })
 
 
 # ── Create ────────────────────────────────────────────────────────────────────
@@ -205,7 +201,7 @@ async def test_double_revoke_bot_token_returns_409(client, admin_token, dept_a):
 # ── Scope (existing) ──────────────────────────────────────────────────────────
 
 
-async def test_bot_token_scope_limited_by_dept_access(client, admin_token, dept_a_with_service, service_x, db):
+async def test_bot_token_scope_limited_by_dept_access(client, admin_token, dept_a_with_service, service_x):
     """After dept service revoke, bot token introspect should no longer include the service."""
     bot_id = (await _create_bot(client, admin_token, dept_a_with_service.id,
                                  services=[service_x.service_name])).json()["bot_id"]

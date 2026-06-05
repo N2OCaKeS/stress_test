@@ -19,8 +19,7 @@ Subprocess моками — `asyncio.create_subprocess_exec` подменяет�
 from __future__ import annotations
 
 import asyncio
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -30,52 +29,10 @@ from src.clients.ipmitool import (
     IpmitoolTimeout,
     _mask_password_in_argv,
 )
-
-
-# ── helpers ──────────────────────────────────────────────────────────────────
-
-
-def _make_fake_process(
-    returncode: int = 0,
-    stdout: bytes = b"",
-    stderr: bytes = b"",
-    *,
-    communicate_raises: BaseException | None = None,
-) -> MagicMock:
-    """Сконструировать MagicMock, имитирующий asyncio.subprocess.Process."""
-    proc = MagicMock()
-    proc.returncode = returncode
-    if communicate_raises is not None:
-        proc.communicate = AsyncMock(side_effect=communicate_raises)
-    else:
-        proc.communicate = AsyncMock(return_value=(stdout, stderr))
-    proc.wait = AsyncMock(return_value=returncode)
-    proc.terminate = MagicMock()
-    proc.kill = MagicMock()
-    return proc
-
-
-def _patch_subprocess(monkeypatch, proc_or_factory: Any) -> list[tuple[tuple, dict]]:
-    """Подменить `asyncio.create_subprocess_exec` и собрать вызовы.
-
-    `proc_or_factory` — либо готовый MagicMock-Process, либо обычная
-    функция-фабрика (для тестов, где результат зависит от команды).
-    MagicMock тоже callable, поэтому различаем по типу: MagicMock —
-    готовый proc, всё прочее callable — factory.
-
-    Возвращает список `[((argv...), kwargs), ...]` — для assertion'ов о
-    том, что в argv попал правильный набор аргументов.
-    """
-    calls: list[tuple[tuple, dict]] = []
-
-    async def fake_exec(*args, **kwargs):
-        calls.append((args, kwargs))
-        if not isinstance(proc_or_factory, MagicMock) and callable(proc_or_factory):
-            return proc_or_factory(args, kwargs)
-        return proc_or_factory
-
-    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
-    return calls
+from tests._helpers.subprocess_mocks import (
+    make_fake_process as _make_fake_process,
+    patch_subprocess as _patch_subprocess,
+)
 
 
 # ── chassis_power_status ─────────────────────────────────────────────────────
@@ -290,9 +247,11 @@ class TestTimeoutAndIO:
         with pytest.raises(IpmitoolTimeout):
             await client.chassis_power_status()
 
-        # Не падает в kill-path — но не assert'им вызов, потому что proc.wait
-        # после kill() могут не успеть до полного timeout'а; главное — что
-        # IpmitoolTimeout всё-таки получили.
+        # terminate() пошёл первым; grace-wait тоже упал в TimeoutError →
+        # kill() должен дёрнуться. Без kill() зависший subprocess пережил бы
+        # IpmitoolTimeout и тёк бы как FD-leak.
+        assert proc.terminate.called, "terminate() должен сработать первым"
+        assert proc.kill.called, "kill() должен сработать после grace-таймаута"
 
 
 # ── argv composition ─────────────────────────────────────────────────────────

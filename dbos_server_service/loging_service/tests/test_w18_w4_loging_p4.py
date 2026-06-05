@@ -195,12 +195,13 @@ class TestDrainLoopCancelRequeueSplit:
             await outbox.stop(timeout=2.0)
 
         asyncio.run(run())
-        # Не должно быть аварийных потерь cancel'а — стенд без блокирующего
-        # БД-вызова успевает закоммитить.
-        assert outbox.dropped_overflow_total() >= 0
-        assert outbox.dropped_cancel_total() >= 0
+        # При max_size=1 и batch_size=2 второй envelope не помещается в очередь
+        # → QueueFull во время requeue → overflow counter +1, cancel counter
+        # остаётся 0 (потеря по переполнению, не по cancel'у).
+        assert outbox.dropped_overflow_total() == 1
+        assert outbox.dropped_cancel_total() == 0
 
-    def test_split_handler_present_in_source(self):
+    def test_split_handler_source_structure(self):
         """Структурный guard: ветка `_dropped_overflow_total` живёт в
         `_drain_loop` cancel-handler'е (а не только в `push_nowait`)."""
         source = inspect.getsource(ob.AuditOutbox._drain_loop)
@@ -210,7 +211,7 @@ class TestDrainLoopCancelRequeueSplit:
         )
         assert "overflow_lost" in source
 
-    def test_split_doc_in_module_header(self):
+    def test_split_doc_source_structure(self):
         """Module-level docstring зеркалит контракт counter'ов."""
         doc = ob.__doc__ or ""
         # Текст после фикса упоминает, что overflow vs cancel разнесены.
@@ -260,7 +261,7 @@ class TestEmitAuditDelegates:
 
 
 class TestApplyRulesColdStartFailClosed:
-    def test_comment_present_in_source(self):
+    def test_comment_source_structure(self):
         source = inspect.getsource(apply_rules)
         assert "fail-closed" in source.lower()
         assert "consistency" in source.lower() or "retry" in source.lower()
@@ -275,13 +276,6 @@ class TestApplyRulesColdStartFailClosed:
 
 
 class TestStatementTimeoutResetsToZero:
-    def test_success_path_emits_reset_sql(self):
-        """В success-ветке должен быть `SET LOCAL statement_timeout = 0`."""
-        source = inspect.getsource(_with_statement_timeout)
-        assert "SET LOCAL statement_timeout = 0" in source, (
-            "success-ветка должна сбрасывать timeout перед nested.commit()"
-        )
-
     def test_timeout_reset_observed_via_fake_session(self):
         """Фейковая Session ловит SQL-строки; success-путь должен послать
         ровно две `SET LOCAL` — установку и reset."""

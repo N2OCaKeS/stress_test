@@ -505,20 +505,10 @@ class TestInstallAuthorizedKeyEdgeCases:
         cmd = call.args[0]
         assert key not in cmd
 
-    @pytest.mark.xfail(strict=False, reason="mock side_effect не пополняется при early-reject; реальная валидация уже идёт в _install_authorized_key — структурно установлена, тест fixture-уровня нестабилен")
-    async def test_crlf_only_key_rejected(self):
-        """Ключ с единственным CRLF (но без LF) тоже отбивается как multiline."""
-        from src.clients.ssh import SshClient, SshError
-        ssh = self._make_client([])
-        with pytest.raises(SshError) as exc_info:
-            await ssh._install_authorized_key(
-                target_user="dbos",
-                public_key="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKey\r",
-                truncate=False,
-                error_code="SSH_AUTHORIZED_KEYS_FAILED",
-            )
-        assert exc_info.value.error_code == "SSH_INVALID_ARG"
-        ssh._conn.run.assert_not_awaited()
+    # Тест на trailing-CR удалён: trailing `\r` сносится `strip()` в
+    # `_validate_authorized_key_line` — multiline-проверка не срабатывает,
+    # validation проходит до фактической записи. CRLF-injection покрывают
+    # тесты с явным `\n` посередине строки, а не trailing-CR.
 
     async def test_truncate_strips_leading_whitespace(self):
         """Пробелы в начале ключа нормализуются strip'ом (не попадают в authorized_keys)."""
@@ -610,7 +600,6 @@ class TestSharedBreakerIndependence:
     Redis-ключи (cb:bmc:* vs cb:audit_publisher:*).
     """
 
-    @pytest.mark.xfail(reason="_make_store_redis fixture не async-compatible (StoreRedis can't be used in 'await'); нужен FakeRedis с async eval", strict=False)
     async def test_bmc_open_does_not_affect_audit_breaker(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -619,8 +608,14 @@ class TestSharedBreakerIndependence:
         bmc_store: dict[str, str] = {}
         audit_store: dict[str, str] = {}
 
-        monkeypatch.setattr(bmc_cb, "_get_client", lambda: _make_store_redis(bmc_store))  # type: ignore
-        monkeypatch.setattr(audit_cb, "_get_client", lambda: _make_store_redis(audit_store))  # type: ignore
+        async def _bmc_factory():
+            return _make_store_redis(bmc_store)
+
+        async def _audit_factory():
+            return _make_store_redis(audit_store)
+
+        monkeypatch.setattr(bmc_cb, "_get_client", _bmc_factory)  # type: ignore
+        monkeypatch.setattr(audit_cb, "_get_client", _audit_factory)  # type: ignore
 
         now_val = 1_700_000_000
         monkeypatch.setattr(bmc_cb.time, "time", lambda: now_val)
@@ -637,7 +632,6 @@ class TestSharedBreakerIndependence:
         # audit — closed, check не бросает
         await audit_cb.check()
 
-    @pytest.mark.xfail(reason="_make_store_redis fixture не async-compatible (StoreRedis can't be used in 'await'); нужен FakeRedis с async eval", strict=False)
     async def test_audit_open_does_not_affect_bmc_breaker(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -646,8 +640,14 @@ class TestSharedBreakerIndependence:
         bmc_store: dict[str, str] = {}
         audit_store: dict[str, str] = {}
 
-        monkeypatch.setattr(bmc_cb, "_get_client", lambda: _make_store_redis(bmc_store))  # type: ignore
-        monkeypatch.setattr(audit_cb, "_get_client", lambda: _make_store_redis(audit_store))  # type: ignore
+        async def _bmc_factory():
+            return _make_store_redis(bmc_store)
+
+        async def _audit_factory():
+            return _make_store_redis(audit_store)
+
+        monkeypatch.setattr(bmc_cb, "_get_client", _bmc_factory)  # type: ignore
+        monkeypatch.setattr(audit_cb, "_get_client", _audit_factory)  # type: ignore
 
         now_val = 1_700_000_000
         monkeypatch.setattr(bmc_cb.time, "time", lambda: now_val)

@@ -136,17 +136,55 @@ class TestViewSuccessAfterReveal:
         success_block = src[src.find('status="success"'):]
         assert "_reveal_controller_password" in src[:src.find('status="success"')]
 
-    def test_server_account_get_reveals_before_success_emit(self):
-        src = inspect.getsource(server_account_service.get_account)
-        success_marker = 'status="success"'
-        if success_marker not in src:
-            pytest.skip("get_account не эмитит явный success — тест неактуален")
-        success_idx = src.find(success_marker)
-        # `_reveal_account_password` (или аналог) должен идти раньше success'а
-        reveal_markers = ["_reveal_account_password", "decrypt", "reveal"]
-        prefix = src[:success_idx]
-        assert any(m in prefix for m in reveal_markers), (
-            "get_account эмитит view-success ДО reveal'а — DECRYPT_FAILED даст success+failure"
+    async def test_server_account_get_decrypt_failure_does_not_emit_success(
+        self, client, admin_token, make_server, make_account, monkeypatch, db,
+    ):
+        """Контракт: GET account с битым ciphertext → DECRYPT_FAILED + view.failure, без view.success.
+
+        Эмиссия success-аудита раньше reveal'а пароля приводила к парному
+        `success`+`failure` событию (success пишется до того, как
+        `secrets_service.decrypt` бросает) — это путало SIEM. Поведенческая
+        проверка: подменяем `secrets_service.decrypt` так, чтобы он бросал;
+        убеждаемся, что endpoint вернул 500 DECRYPT_FAILED, success-аудита
+        на `server_account.view` нет, а failure-аудит есть.
+        """
+        from src.services import secrets_service
+
+        captured_emits: list[dict] = []
+
+        def fake_emit(action, actor_id=None, **kwargs):
+            captured_emits.append({"action": action, "actor_id": actor_id, **kwargs})
+
+        monkeypatch.setattr(
+            "src.services.server_account.audit_service.emit", fake_emit,
+        )
+
+        def sync_boom(*_a, **_kw):
+            raise ValueError("synthetic decrypt failure")
+
+        monkeypatch.setattr(secrets_service, "decrypt", sync_boom)
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="real-secret")
+        await db.commit()
+
+        resp = await client.get(
+            f"/api/server/v1/server-accounts/{acc.id}",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            params={"reveal": "true"},
+        )
+        # 500 либо 422 — в зависимости от того, на какой стадии endpoint
+        # ловит decrypt-fail. В любом случае success-эмит'а быть не должно.
+        assert resp.status_code in (422, 500), resp.text
+
+        success_views = [
+            e for e in captured_emits
+            if e.get("action") == "server_account.view"
+            and e.get("status") == "success"
+        ]
+        assert success_views == [], (
+            f"get_account emit'нул success ДО decrypt'а: {success_views}; "
+            "событие появится вместе с failure на DECRYPT_FAILED — SIEM путается."
         )
 
 

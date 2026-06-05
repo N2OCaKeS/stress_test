@@ -790,7 +790,9 @@ class TestIdempotentHitAudit:
             if kw.get("status") == "success" and kw.get("allowed") is True
         ]
         hit_flags = [e.get("details", {}).get("idempotent_hit") for e in success_emits]
-        assert True in hit_flags
+        # Ровно один idempotent-hit на success-emit — иначе двойная эмиссия
+        # на тот же task_id (бывало после mis-merge'а audit-helper'ов).
+        assert hit_flags.count(True) == 1, hit_flags
 
     @pytest.mark.asyncio
     async def test_power_on_new_task_idempotent_hit_false(

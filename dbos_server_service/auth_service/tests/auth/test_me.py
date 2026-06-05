@@ -25,7 +25,7 @@ async def test_me_account_admin_has_no_services(client, account_admin, admin_tok
     assert body["department_id"] is None
 
 
-async def test_me_reflects_current_db_state(client, user_a, user_a_token, dept_a_with_service, service_x, db):
+async def test_me_reflects_current_db_state(client, user_a, user_a_token, dept_a_with_service, service_x):
     """me endpoint re-reads DB, not just the JWT payload."""
     resp = await client.get(URL, headers={"Authorization": f"Bearer {user_a_token}"})
     assert service_x.service_name in resp.json()["allowed_services"]

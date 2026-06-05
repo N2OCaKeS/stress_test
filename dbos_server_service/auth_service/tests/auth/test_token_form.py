@@ -45,8 +45,9 @@ class TestTokenForm:
             TOKEN_URL,
             json={"username": "t_admin", "password": "Admin1234!"},
         )
-        # FastAPI вернёт 422 на отсутствие username/password в form
-        assert resp.status_code in (422, 415, 400)
+        # FastAPI вернёт 422 на отсутствие username/password в form-полях
+        # (JSON-body не парсится как form, поля «не найдены»).
+        assert resp.status_code == 422, resp.text
 
     async def test_not_in_openapi_schema(self, client):
         """`include_in_schema=False` — этот endpoint не должен попадать в /openapi.json."""

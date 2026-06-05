@@ -153,9 +153,19 @@ class TestBodySizeMiddleware:
         запрос, и атакующий с реальным body 50 MB обходил бы лимит. RFC 9110
         требует неотрицательного integer'а.
         """
+        from datetime import datetime, timezone
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        body_bytes = json.dumps({
+            "timestamp": now_iso,
+            "service": "auth_service",
+            "action": "user.login",
+            "status": "success",
+            "allowed": True,
+        }).encode()
         r = client.post(
             EVENTS_URL,
-            content=b'{"timestamp":"2026-04-19T10:00:00Z","service":"auth_service","action":"user.login","status":"success","allowed":true}',
+            content=body_bytes,
             headers={
                 **auth_headers,
                 "Content-Type": "application/json",

@@ -107,6 +107,19 @@ async def _truncate_tasks():
         await audit_publisher_breaker.reset()
     except Exception:
         pass
+    # Settings cache leak guard: некоторые тесты зовут
+    # `get_settings.cache_clear()`, после чего `src.main._settings`
+    # (модульная переменная) держит уже «отстреленный» инстанс. Если
+    # следующий тест патчит `_settings.worker_id` — патч уходит в старый
+    # инстанс, а `get_worker_id()` берёт новый из `get_settings()`. Чтобы
+    # heartbeat/worker_id тесты переживали этот leak, перепривязываем
+    # `_settings` к актуальному lru_cache-результату перед каждым тестом.
+    try:
+        import src.main as _main_mod
+        from src.core.config import get_settings as _gs
+        _main_mod._settings = _gs()
+    except Exception:
+        pass
     reset_for_tests()
     yield
     reset_for_tests()

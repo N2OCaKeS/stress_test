@@ -11,7 +11,7 @@ test_retention.py / test_retention_protection.py. Здесь — пограни�
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select, text
@@ -33,7 +33,14 @@ def _clear_retention(db):
     db.commit()
 
 
-def _add_event(db, *, service: str, days_ago: int, action: str = "x.y") -> str:
+def _add_event(
+    db,
+    *,
+    service: str,
+    days_ago: int,
+    action: str = "x.y",
+    severity: str = "INFO",
+) -> str:
     import uuid
     ev = AuditEvent(
         id=f"log_{uuid.uuid4().hex[:16]}",
@@ -44,7 +51,7 @@ def _add_event(db, *, service: str, days_ago: int, action: str = "x.y") -> str:
         actor_type="service",
         status="success",
         allowed=True,
-        severity="INFO",
+        severity=severity,
         details={},
     )
     db.add(ev)
@@ -221,24 +228,6 @@ class TestChunkedSweep:
 
 # ── Overlapping policies — счёт уникальных удалений ──────────────────────────
 
-def _add_event_sev(db, *, service: str, severity: str, days_ago: int) -> str:
-    import uuid
-    ev = AuditEvent(
-        id=f"log_{uuid.uuid4().hex[:16]}",
-        timestamp=datetime.now(timezone.utc) - timedelta(days=days_ago),
-        service=service,
-        action="x.y",
-        actor_id=None,
-        actor_type="service",
-        status="success",
-        allowed=True,
-        severity=severity,
-        details={},
-    )
-    db.add(ev)
-    db.flush()
-    return ev.id
-
 
 class TestOverlappingPolicies:
     """Когда событие подпадает под несколько политик — total = число
@@ -259,10 +248,10 @@ class TestOverlappingPolicies:
         )
         # 3 CRITICAL auth_service events (под обе политики)
         for _ in range(3):
-            _add_event_sev(db, service="auth_service", severity="CRITICAL", days_ago=100)
+            _add_event(db, service="auth_service", severity="CRITICAL", days_ago=100)
         # 2 INFO auth_service event (только под global)
         for _ in range(2):
-            _add_event_sev(db, service="auth_service", severity="INFO", days_ago=100)
+            _add_event(db, service="auth_service", severity="INFO", days_ago=100)
         db.commit()
 
         deleted = apply_active(db)
@@ -291,12 +280,12 @@ class TestOverlappingPolicies:
                 severity_filter=["CRITICAL"],
             ),
         )
-        target = _add_event_sev(
+        target = _add_event(
             db, service="auth_service", severity="CRITICAL", days_ago=100
         )
         # CRITICAL/other_service @100d — под вторую не попадает (нужно 365d),
         # под первую тоже нет (service mismatch) → не удаляется.
-        kept = _add_event_sev(
+        kept = _add_event(
             db, service="server_service", severity="CRITICAL", days_ago=100
         )
         db.commit()
@@ -328,11 +317,12 @@ class TestOverlappingPolicies:
             ),
         )
         snapshot = list_active(db)
+        today_iso = date.today().isoformat()
         details = _build_retention_sweep_details(
-            deleted=7, snapshot=snapshot, run_date_msk="2026-05-28"
+            deleted=7, snapshot=snapshot, run_date_msk=today_iso
         )
         assert details["deleted_count"] == 7
-        assert details["run_date_msk"] == "2026-05-28"
+        assert details["run_date_msk"] == today_iso
         # legacy «representative» поле отсутствует — иначе SOC увидит одно
         # число при двух разных политиках.
         assert "retain_days" not in details
@@ -348,12 +338,13 @@ class TestOverlappingPolicies:
         несут min/max (некорректно было бы выдать min(пустого) → exception)."""
         from src.main import _build_retention_sweep_details
 
+        today_iso = date.today().isoformat()
         details = _build_retention_sweep_details(
-            deleted=0, snapshot=[], run_date_msk="2026-05-28"
+            deleted=0, snapshot=[], run_date_msk=today_iso
         )
         assert details == {
             "deleted_count": 0,
-            "run_date_msk": "2026-05-28",
+            "run_date_msk": today_iso,
             "policies": [],
         }
 
@@ -365,7 +356,7 @@ class TestOverlappingPolicies:
         repo.create(db, RetentionPolicyCreate(retain_days=90))
         snapshot = list_active(db)
         details = _build_retention_sweep_details(
-            deleted=3, snapshot=snapshot, run_date_msk="2026-05-28"
+            deleted=3, snapshot=snapshot, run_date_msk=date.today().isoformat()
         )
         assert details["deleted_count"] == 3
         assert details["min_retain_days"] == 90
@@ -389,11 +380,11 @@ class TestOverlappingPolicies:
         )
         # 25 CRITICAL/auth_service — под обе политики.
         for _ in range(25):
-            _add_event_sev(
+            _add_event(
                 db, service="auth_service", severity="CRITICAL", days_ago=100
             )
         # 1 свежее, не должно тронуться.
-        fresh = _add_event_sev(
+        fresh = _add_event(
             db, service="auth_service", severity="INFO", days_ago=5
         )
         db.commit()

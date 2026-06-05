@@ -186,12 +186,8 @@ class TestCallerIpWiredThroughIntrospectEndpoint:
         )
         # Даже на bogus-токен endpoint вернёт 200 active=False, не 4xx —
         # introspect ловит decode-ошибку внутри.
-        assert resp.status_code in (200, 401), resp.text
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["active"] is False
         assert captured.get("caller_ip") == "203.0.113.7", (
             f"caller_ip из body не доехал до сервиса (got {captured!r})"
         )
-
-
-# AUDIT_EVENTS.md PII-секция (doc-drift): проверяется на хосте через
-# `make check-audit-events-listing` — файл лежит вне test-container mount,
-# поэтому держать его как pytest-тест бесполезно.

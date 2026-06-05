@@ -1,16 +1,11 @@
 """Тесты: GET /api/auth/v1/docker/token — выдача токена для Docker registry."""
 
-import base64
+from tests._helpers.http import _basic  # noqa: F401 — общий helper
 
 TOKEN_URL = "/api/auth/v1/docker/token"
 CONFIG_URL = "/api/auth/v1/docker/registry/{dept_id}"
 BOTS_URL = "/api/auth/v1/bots"
 TOKENS_URL = "/api/auth/v1/tokens"
-
-
-def _basic(username, password):
-    creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
 
 
 async def _enable_docker(client, token, dept_id, pull_policy="all", pull_user_ids=None, push_user_ids=None):
@@ -34,7 +29,7 @@ async def test_no_docker_config_returns_403(client, user_a, dept_a):
     assert resp.json()["error_code"] == "DOCKER_ACCESS_DENIED"
 
 
-async def test_disabled_docker_config_returns_403(client, admin_token, user_a, dept_a, docker_registry_enabled, db):
+async def test_disabled_docker_config_returns_403(client, admin_token, user_a, dept_a, docker_registry_enabled):
     await client.delete(CONFIG_URL.format(dept_id=dept_a.id),
                   headers={"Authorization": f"Bearer {admin_token}"})
     resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),

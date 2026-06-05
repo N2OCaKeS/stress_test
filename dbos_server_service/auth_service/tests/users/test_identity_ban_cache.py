@@ -177,7 +177,7 @@ class TestPlatformRoleEnum:
                 headers={"Authorization": f"Bearer {admin_token}"},
                 json=payload,
             )
-            assert resp.status_code in (200, 201), f"{role}: {resp.text}"
+            assert resp.status_code == 201, f"{role}: {resp.text}"
 
     async def test_create_user_with_null_platform_role_succeeds(
         self, client, admin_token, dept_a,
@@ -192,7 +192,7 @@ class TestPlatformRoleEnum:
                 "department_id": dept_a.id,
             },
         )
-        assert resp.status_code in (200, 201), resp.text
+        assert resp.status_code == 201, resp.text
 
     async def test_patch_user_with_garbage_platform_role_returns_422(
         self, client, admin_token, user_a,
@@ -307,7 +307,7 @@ class TestBannedToBlockedDeactivatesBan:
                 "department_id": dept_a.id,
             },
         )
-        assert resp.status_code in (200, 201)
+        assert resp.status_code == 201, resp.text
         new_user_id = resp.json()["user_id"]
 
         # PATCH-блокируем (ACTIVE → BLOCKED).
@@ -346,7 +346,7 @@ class TestUnbanReactivatesPAT:
             headers={"Authorization": f"Bearer {user_a_token}"},
             json={"name": "p2d_pat", "allowed_services": ["service_x"]},
         )
-        assert pat_resp.status_code in (200, 201)
+        assert pat_resp.status_code == 201, pat_resp.text
         raw = pat_resp.json()["token"]
 
         # 2. Ban — PAT станет revoked.

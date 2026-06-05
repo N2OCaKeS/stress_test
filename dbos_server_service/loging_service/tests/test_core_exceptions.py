@@ -157,7 +157,7 @@ class TestRequireServiceToken:
         assert auth_dep.require_service_token(request=req, credentials=_Creds()) is None
         assert req.state.service_identity == "auth_service"
 
-    def test_timing_safe_compare_used(self):
+    def test_timing_safe_compare_used_source_structure(self):
         """`secrets.compare_digest` — устойчив к timing атакам.
         Юнит-проверка только что используется правильная функция."""
         import inspect

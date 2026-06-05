@@ -43,11 +43,9 @@ class TestBotInactiveService:
                 "allowed_services": [service_x.service_name],
             },
         )
-        # Текущая реализация: пропускает (валидация только на dept-grant).
-        # Если в будущем добавится strict-check — поменять assertion.
-        assert resp.status_code in (201, 403)
-        if resp.status_code == 403:
-            assert resp.json()["error_code"] == "SERVICE_NOT_ALLOWED_FOR_DEPARTMENT"
+        # Контракт: bot-create валидирует только dept-grant, не is_active
+        # на PlatformService. Inactive сервис проходит — фиксируем 201.
+        assert resp.status_code == 201, resp.text
 
     async def test_bot_with_service_not_in_allowed_dept_returns_403(
         self, client, admin_token, dept_b, service_x,
@@ -88,10 +86,10 @@ class TestOAuthClientEmptyGrantTypes:
         # Однако клиент с пустыми grant_types бесполезен — ни authorize,
         # ни client_credentials не пройдут (см. тесты в test_clients.py).
 
-    async def test_invalid_grant_type_currently_accepted(self, client, admin_token, dept_a):
-        """Список grant_types не валидируется против whitelist — фиксируем
-        пробел: 'password' (deprecated в OAuth2.1) допустим в БД, но не имеет
-        обработчика."""
+    async def test_invalid_grant_type_rejected_by_schema(self, client, admin_token, dept_a):
+        """Контракт: схема ограничивает grant_types литералами
+        authorization_code / client_credentials / refresh_token.
+        Любые другие значения — 422 VALIDATION_ERROR."""
         resp = await client.post(
             CLIENTS_URL,
             headers={"Authorization": f"Bearer {admin_token}"},
@@ -101,8 +99,8 @@ class TestOAuthClientEmptyGrantTypes:
                 "grant_types": ["password", "implicit"],
             },
         )
-        # Сейчас 201 — фиксируем; если добавится whitelist, поменять.
-        assert resp.status_code in (201, 422)
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error_code"] == "VALIDATION_ERROR"
 
 
 # ── delete_client после использования ────────────────────────────────────────

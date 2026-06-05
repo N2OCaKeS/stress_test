@@ -8,20 +8,14 @@ bot-ветки обработки запроса.
 Дополнительно: аналогичный аудит для user-lockout на docker/token.
 """
 
-import base64
-
 import pytest
 
 from src.services import audit_service as audit_mod
+from tests._helpers.http import _basic  # noqa: F401 — общий helper
 
 TOKEN_URL = "/api/auth/v1/docker/token"
 CONFIG_URL = "/api/auth/v1/docker/registry/{dept_id}"
 BOTS_URL = "/api/auth/v1/bots"
-
-
-def _basic(username, password):
-    creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
 
 
 @pytest.fixture()

@@ -17,67 +17,17 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import asyncssh
 import pytest
-import pytest_asyncio
 
 from src.core.constants import TaskStatus
 from src.tasks import passwords
+from tests._helpers.bmc_mocks import FakeBmc as _FakeBmc, conn_ok as _conn_ok
 
 
 pytestmark = pytest.mark.asyncio
-
-
-def _run_result(stdout="", stderr="", rc=0):
-    res = MagicMock()
-    res.stdout = stdout
-    res.stderr = stderr
-    res.exit_status = rc
-    return res
-
-
-def _conn_ok():
-    conn = MagicMock(spec=asyncssh.SSHClientConnection)
-    conn.close = MagicMock()
-    conn.wait_closed = AsyncMock()
-    conn.run = AsyncMock(return_value=_run_result("", "", 0))
-    return conn
-
-
-class _FakeBmc:
-    """RedfishClient-stand-in без транзита через реальный transport."""
-
-    def __init__(self):
-        self.rotate_calls: list[tuple[int, str]] = []
-        self.get_power_state_calls = 0
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *a):
-        pass
-
-    async def rotate_user_password(self, user_id: int, new_password: str):
-        self.rotate_calls.append((user_id, new_password))
-
-    async def get_power_state(self) -> str:
-        self.get_power_state_calls += 1
-        return "On"
-
-    async def aclose(self) -> None:
-        pass
-
-
-@pytest_asyncio.fixture
-async def _cleanup_account_stash():
-    """Удаляет account-rotate ключи из Redis до и после теста.
-
-    Тесты используют реальный Redis из dev-стека; изоляция между
-    прогонами — наша забота.
-    """
-    yield
 
 
 class TestIpmiRotatedAtStableAcrossRetries:

@@ -474,8 +474,13 @@ class TestOutboxFinalizeFailedAuditEmit:
         assert claim_resp.status_code == 200
         items = claim_resp.json()["items"]
         target = next((i for i in items if i["id"] == "rox_w11_fail_001"), None)
-        if target is None:
-            pytest.skip("row not picked up by claim — possible isolation issue")
+        # Row коммитнут до claim'а — FOR UPDATE SKIP LOCKED обязан его подобрать.
+        # Раньше тут стоял defensive-skip на «possible isolation issue»; это
+        # маскировало флакайность claim-pattern'а на горячем пути. Если тест
+        # стабильно отбивает None — это регресс claim'а, не повод скипать.
+        assert target is not None, (
+            f"claim не подобрал committed pending-row; items={items}"
+        )
 
         captured_outbox_emits.clear()
         resp = await client.post(
@@ -651,20 +656,22 @@ class TestOsVersionAnonCursorAudit:
         self, client, admin_role_token_a, captured_os_emits,
     ):
         """?after=<token> без токена авторизации — cursor-path, emit os_version.list_anonymous."""
-        # Создаём несколько OS-версий, чтобы получить валидный курсор.
-        for i in range(2):
-            await client.post(
+        # Засеваем 3 версии — limit=1 точно оставит next_cursor.
+        for i in range(3):
+            resp = await client.post(
                 BASE_OS,
                 headers=_hdr(admin_role_token_a),
                 json={"name": f"osv-cursor-anon-{i}"},
             )
+            assert resp.status_code in (200, 201), resp.text
 
         first_page = await client.get(f"{BASE_OS}?cursor=true&limit=1")
         assert first_page.status_code == 200
         body = first_page.json()
         next_cursor = body.get("next_cursor")
-        if next_cursor is None:
-            pytest.skip("no next_cursor: not enough data")
+        # Раньше тут стоял defensive-skip; при 3 строках в БД с limit=1
+        # next_cursor обязан быть. Если пропал — это регресс cursor-формата.
+        assert next_cursor is not None, body
 
         captured_os_emits.clear()
         resp = await client.get(f"{BASE_OS}?after={next_cursor}")

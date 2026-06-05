@@ -38,7 +38,7 @@ USERS_URL = "/api/auth/v1/users"
 # ── Refresh token reuse detector ─────────────────────────────────────────────
 
 class TestRefreshReuse:
-    async def test_reuse_of_rotated_token_revokes_all_sessions(self, client, user_a, db):
+    async def test_reuse_of_rotated_token_revokes_all_sessions(self, client, user_a):
         """Сценарий атаки: украденный refresh-токен. Жертва уже его обменяла,
         атакующий пытается обменять — должно отозвать все сессии user'а."""
         login = await client.post(
@@ -238,9 +238,11 @@ class TestRefreshRotationRace:
         assert sess.token_generation == 1
 
     @pytest.mark.xfail(
-        reason="CAS refresh: test setup сложный (нужны отдельные DB-connection'ы "
-        "для honest race). Прямые unit-тесты на CAS-rotate работают; service-level "
-        "integration требует ASGI race-harness.",
+        reason="Service-level race требует двух DB-connection'ов: "
+        "savepoint-shared session в conftest сериализует UPDATE/SELECT и "
+        "симулированный winner-update внутри той же session подтягивается "
+        "evaluate-стратегией. Контракт CAS уже покрыт unit-тестом "
+        "test_rotate_returns_false_when_token_hash_changed_in_db выше.",
         strict=False,
     )
     async def test_refresh_returns_race_error_not_reuse_when_cas_misses(
@@ -341,7 +343,13 @@ class TestRefreshRotationRace:
             f"got calls: {revoke_all_calls}"
         )
 
-    @pytest.mark.xfail(reason="Same as test_refresh_returns_race_error_not_reuse_when_cas_misses.", strict=False)
+    @pytest.mark.xfail(
+        reason="Тот же setup-конфликт, что выше: shared savepoint-session "
+        "не воспроизводит multi-connection race. Контракт audit-emit'а "
+        "token.refresh_race vs token.refresh_reuse покрыт unit-уровнем "
+        "в test_rotate_returns_false_when_token_hash_changed_in_db.",
+        strict=False,
+    )
     async def test_refresh_race_emits_refresh_race_not_refresh_reuse_audit(
         self, client, user_a, db, monkeypatch,
     ):

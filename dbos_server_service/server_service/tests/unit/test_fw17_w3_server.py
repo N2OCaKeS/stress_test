@@ -266,20 +266,18 @@ class TestDispatchTaskSplit:
             "dispatch_task no longer takes return_hit — use dispatch_task_with_hit"
         )
 
-    def test_dispatch_task_with_hit_exists(self):
-        from src.services import worker_client as wc
-
-        assert callable(wc.dispatch_task_with_hit)
-        sig = inspect.signature(wc.dispatch_task_with_hit)
-        # All same fields as dispatch_task минус return_hit
-        for name in (
-            "task_kind", "target_server_id", "payload", "created_by",
-            "request_id", "target_resource_id", "idempotency_key",
-        ):
-            assert name in sig.parameters
-
     @pytest.mark.asyncio
-    async def test_dispatch_task_returns_str_only(self, monkeypatch):
+    async def test_dispatch_task_with_hit_accepts_all_dispatch_kwargs(
+        self, monkeypatch,
+    ):
+        """Behavioral mirror контракта: dispatch_task_with_hit принимает тот
+        же набор kwargs, что и dispatch_task (минус `return_hit`), и
+        возвращает `(task_id, hit_bool)`. Раньше тест проверял `name in
+        sig.parameters` — ломался на любом безобидном rename'е kwarg'а, не
+        проверяя, что функцию реально можно вызвать с этим набором.
+        """
+        from unittest.mock import AsyncMock
+
         from src.services import worker_client as wc
 
         async def fake_lookup(_k):
@@ -288,21 +286,55 @@ class TestDispatchTaskSplit:
         async def fake_insert(**_k):
             pass
 
-        monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
-        monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
-
-        from src.repositories import dispatch_outbox as _dox
-
         async def fake_outbox_insert(_db, **_kw):
             return None
 
-        monkeypatch.setattr(_dox, "insert", fake_outbox_insert)
+        monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
+        monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
         monkeypatch.setattr(
             "src.services.worker_client.dispatch_outbox_repo.insert",
             fake_outbox_insert,
         )
 
+        result = await wc.dispatch_task_with_hit(
+            db=AsyncMock(),
+            task_kind="power.on",
+            target_server_id="srv_x",
+            target_resource_id="res_x",
+            payload={"k": "v"},
+            created_by="usr_x",
+            request_id="req_1",
+            idempotency_key=None,
+        )
+        assert isinstance(result, tuple)
+        task_id, hit = result
+        assert isinstance(task_id, str) and task_id.startswith("tsk_")
+        assert isinstance(hit, bool)
+
+    @pytest.mark.asyncio
+    async def test_dispatch_task_returns_str_only(self, monkeypatch):
         from unittest.mock import AsyncMock
+
+        from src.services import worker_client as wc
+
+        async def fake_lookup(_k):
+            return None
+
+        async def fake_insert(**_k):
+            pass
+
+        async def fake_outbox_insert(_db, **_kw):
+            return None
+
+        monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
+        monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
+        # `worker_client` импортирует `dispatch_outbox` как `dispatch_outbox_repo`
+        # — патчим именно атрибут на модуле, не сам repo-модуль (раньше шёл
+        # двойной patch на оба варианта, что маскировало import-pattern).
+        monkeypatch.setattr(
+            "src.services.worker_client.dispatch_outbox_repo.insert",
+            fake_outbox_insert,
+        )
 
         result = await wc.dispatch_task(
             db=AsyncMock(),
@@ -317,6 +349,8 @@ class TestDispatchTaskSplit:
 
     @pytest.mark.asyncio
     async def test_dispatch_task_with_hit_returns_tuple(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
         from src.services import worker_client as wc
 
         async def fake_lookup(_k):
@@ -325,21 +359,15 @@ class TestDispatchTaskSplit:
         async def fake_insert(**_k):
             pass
 
-        monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
-        monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
-
-        from src.repositories import dispatch_outbox as _dox
-
         async def fake_outbox_insert(_db, **_kw):
             return None
 
-        monkeypatch.setattr(_dox, "insert", fake_outbox_insert)
+        monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
+        monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
         monkeypatch.setattr(
             "src.services.worker_client.dispatch_outbox_repo.insert",
             fake_outbox_insert,
         )
-
-        from unittest.mock import AsyncMock
 
         task_id, hit = await wc.dispatch_task_with_hit(
             db=AsyncMock(),

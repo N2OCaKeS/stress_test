@@ -182,7 +182,7 @@ async def test_manual_bot_token_revoke_still_works_after_owner_ban(
         headers={"Authorization": f"Bearer {admin_token}"},
         json={"name": "manual_revoke_tok"},
     )
-    assert tok_resp.status_code in (200, 201)
+    assert tok_resp.status_code == 201, tok_resp.text
     tok_data = tok_resp.json()
     raw_token = tok_data["token"]
     token_id = tok_data["token_id"]

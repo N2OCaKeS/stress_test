@@ -6,14 +6,9 @@ from sqlalchemy import update
 
 from src.core.security import hash_refresh_token
 from src.models import Session
+from tests._helpers.http import login as _login  # noqa: F401 — общий helper
 
 URL = "/api/auth/v1/refresh"
-
-
-async def _login(client, username="t_admin", password="Admin1234!"):
-    r = await client.post("/api/auth/v1/login", json={"username": username, "password": password})
-    assert r.status_code == 200
-    return r.json()
 
 
 async def test_refresh_returns_new_tokens(client, account_admin):

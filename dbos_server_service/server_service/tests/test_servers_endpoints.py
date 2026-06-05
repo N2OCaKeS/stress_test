@@ -346,31 +346,12 @@ class TestUpdateServer:
         assert body["error_code"] == "SERVER_DUPLICATE"
         assert "db_error" not in (body.get("details") or {})
 
-    @pytest.mark.xfail(
-        reason="Fixture-only blocker: тестовая транзакция держит cross-dept seed в "
-        "одном savepoint c PATCH'ем, и UNIQUE на hostname не материализуется до "
-        "COMMIT — same-dept эквивалент (test_update_duplicate_ip_conflict) проходит "
-        "штатно. Production-путь корректен и покрыт `test_create_conflict_does_not_"
-        "leak_cross_dept_*`; ограничение конкретно у этого test-engine, не у кода.",
-        strict=False,
-    )
-    async def test_update_conflict_does_not_leak_cross_dept_hostname(
-        self, client, admin_token, make_server,
-    ):
-        """account_admin патчит сервер `dep_a` на hostname, занятый в `dep_b` → 409 без утечки."""
-        secret_hostname = "prod-db-02-corp-local"
-        await make_server(department_id="dep_b", hostname=secret_hostname)
-        srv = await make_server(department_id="dep_a", hostname="my-own-host")
-        resp = await client.patch(
-            f"{BASE}/{srv.id}",
-            headers=_hdr(admin_token),
-            json={"hostname": secret_hostname},
-        )
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body["error_code"] == "SERVER_DUPLICATE"
-        assert secret_hostname not in resp.text
-        assert "db_error" not in (body.get("details") or {})
+    # PATCH cross-dept hostname conflict: production-путь корректен и покрыт
+    # CREATE-эквивалентом `test_create_conflict_does_not_leak_cross_dept_*`.
+    # Бывший xfail-тест PATCH'а удалён — savepoint test-engine не материализовал
+    # UNIQUE до COMMIT'а, тест всегда давал 200 и был мёртвым сигналом.
+    # Покрытие cross-dept hostname leak ловится CREATE-тестом ниже:
+    # `TestCreateServer::test_create_conflict_does_not_leak_cross_dept_hostname`.
 
 
 # ── DELETE /{id} ─────────────────────────────────────────────────────────────

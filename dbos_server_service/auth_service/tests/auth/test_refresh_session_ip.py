@@ -7,53 +7,20 @@
 GAP-8/9 из аудита F23-C.
 """
 
-import pytest
 from sqlalchemy import select
 
 from src.core.security import hash_refresh_token
 from src.models import Session
+from tests._helpers.http import login as _login  # noqa: F401 — общий helper
 
 LOGIN_URL = "/api/auth/v1/login"
 REFRESH_URL = "/api/auth/v1/refresh"
 
 
-async def _login(client, username="t_admin", password="Admin1234!"):
-    r = await client.post(LOGIN_URL, json={"username": username, "password": password})
-    assert r.status_code == 200, r.text
-    return r.json()
-
-
 class TestRefreshUpdatesSessionIp:
-    @pytest.mark.xfail(
-        reason="endpoint вызывает extract_client_ip(request), но он доверяет XFF "
-        "только если request.client.host входит в TRUSTED_PROXY_IPS allow-list. "
-        "Базовый AsyncClient в conftest шлёт client.host='testclient', и без "
-        "переключения env TRUSTED_PROXY_IPS + reset get_settings.cache_clear() "
-        "XFF игнорируется. Для рабочей проверки см. `test_main_extract_client_ip_wiring.py` "
-        "(там собирается отдельный app с подменённым trusted_proxies_env fixture).",
-        strict=False,
-    )
-    async def test_refresh_updates_ip_address_in_session(self, client, account_admin, db):
-        """После `/refresh` с X-Forwarded-For Session.ip_address обновляется в БД."""
-        data = await _login(client)
-        raw_refresh = data["refresh_token"]
-
-        resp = await client.post(
-            REFRESH_URL,
-            json={"refresh_token": raw_refresh},
-            headers={"X-Forwarded-For": "10.10.10.1"},
-        )
-        assert resp.status_code == 200, resp.text
-
-        new_raw = resp.json()["refresh_token"]
-        new_hash = hash_refresh_token(new_raw)
-        sess = await db.scalar(
-            select(Session).where(Session.refresh_token_hash == new_hash)
-        )
-        assert sess is not None, "rotated session not found"
-        assert sess.ip_address == "10.10.10.1", (
-            f"Session.ip_address not updated after refresh, got: {sess.ip_address!r}"
-        )
+    # XFF-чтение покрывается через test_main_extract_client_ip_wiring.py
+    # (отдельный app с настроенным trusted_proxies_env). Здесь оставлен только
+    # user-agent + IP-preserve кейсы — они работают на дефолтном AsyncClient.
 
     async def test_refresh_updates_user_agent_in_session(self, client, account_admin, db):
         """После `/refresh` с кастомным User-Agent сессия его запоминает."""

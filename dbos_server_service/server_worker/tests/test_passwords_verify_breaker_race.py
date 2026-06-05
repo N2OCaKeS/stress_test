@@ -17,39 +17,14 @@ ipmi_password` не вызывается → BMC стоит c новым пар�
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from src.core.constants import TaskStatus
 from src.tasks import passwords
+from tests._helpers.bmc_mocks import FakeBmc as _FakeBmc
 
 
 pytestmark = pytest.mark.asyncio
-
-
-class _FakeBmc:
-    """Happy-path BMC stand-in: apply и verify проходят."""
-
-    def __init__(self):
-        self.rotate_calls: list[tuple[int, str]] = []
-        self.power_calls = 0
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *a):
-        pass
-
-    async def rotate_user_password(self, user_id: int, new_password: str) -> None:
-        self.rotate_calls.append((user_id, new_password))
-
-    async def get_power_state(self) -> str:
-        self.power_calls += 1
-        return "On"
-
-    async def aclose(self) -> None:
-        pass
 
 
 async def test_breaker_check_not_called_before_verify(

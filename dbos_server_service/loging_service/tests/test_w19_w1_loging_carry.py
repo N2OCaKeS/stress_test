@@ -115,7 +115,7 @@ class TestRetentionLoopLastRunOutsideFinally:
     транзакции не отменяет факт, что sweep отработал и не приводит к повторному
     залпу в следующий минутный tick."""
 
-    def test_last_run_assigned_before_finally(self):
+    def test_last_run_assigned_before_finally_source_structure(self):
         from src import main as main_mod
 
         src = inspect.getsource(main_mod._retention_loop)
@@ -131,7 +131,7 @@ class TestRetentionLoopLastRunOutsideFinally:
             "иначе db.commit() failure отменит факт sweep'а"
         )
 
-    def test_commit_in_finally_wrapped_in_try(self):
+    def test_commit_in_finally_wrapped_in_try_source_structure(self):
         from src import main as main_mod
 
         src = inspect.getsource(main_mod._retention_loop)
@@ -153,7 +153,7 @@ class TestRegisterEventsUsesCount:
     и врал; полноценный SELECT + материализация ORM на каталоге с тысячами
     action'ов = впустую."""
 
-    def test_endpoint_uses_count_for_service(self):
+    def test_endpoint_uses_count_for_service_source_structure(self):
         from src.api.v1.endpoints import services as svc_ep
 
         src = inspect.getsource(svc_ep.register_events)
@@ -168,7 +168,7 @@ class TestRegisterEventsServiceIdentityReadOnce:
     """`service_identity` читается из `request.state` РОВНО один раз для
     обеих веток (path-guard и self-audit), а не дважды как раньше."""
 
-    def test_advertised_read_once(self):
+    def test_advertised_read_once_source_structure(self):
         from src.api.v1.endpoints import services as svc_ep
 
         src = inspect.getsource(svc_ep.register_events)

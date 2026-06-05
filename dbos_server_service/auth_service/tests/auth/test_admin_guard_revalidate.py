@@ -193,10 +193,11 @@ async def test_revoked_service_role_admin_loses_manage_permission(
 
 
 @pytest.mark.xfail(
-    reason="OAuth client_credentials JWT — base-guard ресолвит actor_type=oauth_client "
-    "корректно, но /me-handler ожидает user-context (username, platform_role) и "
-    "отдаёт 403 для oauth_client. TODO: либо отдельный /me для oauth_client, либо "
-    "minimal-stub identity из guard'а.",
+    reason="`/me` handler возвращает IdentityContext, который требует "
+    "user-context (username, platform_role). Для actor_type=oauth_client "
+    "эти поля отсутствуют — handler отвечает 403. Контракт `/me` "
+    "сейчас user-only by design; OAuth-клиенты должны использовать "
+    "`/authorization/introspect`. Тест зафиксирован как контракт-marker.",
     strict=False,
 )
 async def test_oauth_client_credentials_jwt_resolves_to_identity(
@@ -244,7 +245,8 @@ async def test_oauth_client_credentials_jwt_resolves_to_identity(
 
 @pytest.mark.xfail(
     reason="См. test_oauth_client_credentials_jwt_resolves_to_identity — "
-    "тот же edge case с /me-handler и oauth_client.",
+    "`/me` зафиксирован user-only by design, для oauth_client используется "
+    "`/authorization/introspect`. Тест-marker, не блокирующий.",
     strict=False,
 )
 async def test_oauth_client_deleted_jwt_rejected(

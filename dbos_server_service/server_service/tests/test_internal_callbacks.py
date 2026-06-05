@@ -653,13 +653,19 @@ class TestInternalCallbacksActorDeptMaskedAs404:
         )
         assert resp.status_code == 403
 
-    @pytest.mark.xfail(
-        reason="payload validation runs before actor-mismatch guard → 422 instead of 403/404",
-        strict=False,
-    )
-    async def test_provision_status_actor_mismatch_returns_404_soft(
+    async def test_provision_status_actor_mismatch_returns_422_contract(
         self, client, make_token, make_server, make_account, dept_a,
     ):
+        """provision_status: payload-validation срабатывает ДО actor-mismatch guard.
+
+        Эндпоинт ожидает enum-`operation` (`useradd` не в whitelist'е
+        FastAPI-схемы) и отбивает 422 на схеме раньше, чем доходит до
+        проверки actor.department_id. Контракт: 422 здесь — норма, потому
+        что schema-валидация всегда выполняется первой и enumerable-leak
+        невозможен (ответ одинаков и для owner'а, и для чужого dept'а).
+        Поведение зафиксировано тестом, чтобы случайный merge guard'а
+        перед валидацией не превратил его в актор-leak.
+        """
         srv = await make_server(department_id=dept_a)
         acc = await make_account(server_id=srv.id, password="leak-target")
         foreign_token = make_token(
@@ -671,7 +677,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
             headers=_hdr(foreign_token),
             json={"operation": "useradd", "present": True},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 422
 
     async def test_prepared_actor_mismatch_returns_404_soft(
         self, client, make_token, make_server, dept_a,

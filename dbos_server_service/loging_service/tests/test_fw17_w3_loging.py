@@ -127,7 +127,7 @@ class TestActionForPathCollisions:
 
 
 class TestRegisterEventsCountInsteadOfList:
-    def test_register_uses_count_for_service(self, client, db, auth_headers, monkeypatch):
+    def test_register_uses_count_for_service_source_structure(self, client, db, auth_headers, monkeypatch):
         """`register_events` для self-audit details должен звать count, не
         list_for_service. Контракт фиксируем через source-inspection — иначе
         случайный rollback на `list_for_service(..., limit=1000)` пройдёт молча.

@@ -285,10 +285,7 @@ TOKEN_URL = "/api/auth/v1/docker/token"
 CONFIG_URL = "/api/auth/v1/docker/registry/{dept_id}"
 
 
-def _basic_hdr(username: str, password: str) -> dict:
-    import base64
-    creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
+from tests._helpers.http import _basic_hdr  # noqa: F401 — общий helper
 
 
 class TestDockerPullDeniedRegistryNotFound:

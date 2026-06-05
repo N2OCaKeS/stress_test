@@ -183,7 +183,20 @@ async def aclose_all() -> None:
     очищаем слоты, чтобы следующий `get_*` создал свежий клиент (это нужно
     для test-цикла и для случая, когда worker внутри одного процесса
     рестартует broker).
+
+    `CancelledError` на первом `aclose()` не должен оставлять остальные
+    слоты неосвобождёнными — ловим как warning и продолжаем; в конце,
+    если cancel был, переотправляем после полного прохода. Без этого
+    SIGTERM посреди `aclose_all` приводил бы к утечке socket'ов остальных
+    клиентов (drain не успевал бы их закрыть).
     """
+    import asyncio as _asyncio
+
+    cancelled = False
+
+    def _is_cancelled(exc: BaseException) -> bool:
+        return isinstance(exc, _asyncio.CancelledError)
+
     global _audit_client, _server_service_client
     for slot_name in ("audit", "server_service"):
         client = _audit_client if slot_name == "audit" else _server_service_client
@@ -191,12 +204,19 @@ async def aclose_all() -> None:
             continue
         try:
             await client.aclose()
-        except Exception as exc:  # noqa: BLE001 — shutdown best-effort
-            logger.warning(
-                "http_pool: failed to close %s pool: %s",
-                slot_name,
-                redact_error_message(f"{type(exc).__name__}: {exc}"),
-            )
+        except BaseException as exc:  # noqa: BLE001 — shutdown best-effort
+            if _is_cancelled(exc):
+                cancelled = True
+                logger.warning(
+                    "http_pool: cancelled while closing %s pool — continuing drain",
+                    slot_name,
+                )
+            else:
+                logger.warning(
+                    "http_pool: failed to close %s pool: %s",
+                    slot_name,
+                    redact_error_message(f"{type(exc).__name__}: {exc}"),
+                )
     _audit_client = None
     _server_service_client = None
 
@@ -204,25 +224,44 @@ async def aclose_all() -> None:
     for key, client in list(_bmc_probe_clients.items()):
         try:
             await client.aclose()
-        except Exception as exc:  # noqa: BLE001 — shutdown best-effort
-            logger.warning(
-                "http_pool: failed to close bmc probe pool %s: %s",
-                key,
-                redact_error_message(f"{type(exc).__name__}: {exc}"),
-            )
+        except BaseException as exc:  # noqa: BLE001 — shutdown best-effort
+            if _is_cancelled(exc):
+                cancelled = True
+                logger.warning(
+                    "http_pool: cancelled while closing bmc probe pool %s — continuing drain",
+                    key,
+                )
+            else:
+                logger.warning(
+                    "http_pool: failed to close bmc probe pool %s: %s",
+                    key,
+                    redact_error_message(f"{type(exc).__name__}: {exc}"),
+                )
     _bmc_probe_clients.clear()
 
     # BMC redfish transports
     for verify, transport in list(_bmc_redfish_transports.items()):
         try:
             await transport.aclose()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "http_pool: failed to close bmc redfish transport verify=%s: %s",
-                verify,
-                redact_error_message(f"{type(exc).__name__}: {exc}"),
-            )
+        except BaseException as exc:  # noqa: BLE001
+            if _is_cancelled(exc):
+                cancelled = True
+                logger.warning(
+                    "http_pool: cancelled while closing bmc redfish transport verify=%s — continuing drain",
+                    verify,
+                )
+            else:
+                logger.warning(
+                    "http_pool: failed to close bmc redfish transport verify=%s: %s",
+                    verify,
+                    redact_error_message(f"{type(exc).__name__}: {exc}"),
+                )
     _bmc_redfish_transports.clear()
+
+    if cancelled:
+        raise _asyncio.CancelledError(
+            "http_pool.aclose_all: cancelled mid-drain; all slots flushed"
+        )
 
 
 def reset_for_tests() -> None:

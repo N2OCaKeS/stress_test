@@ -30,9 +30,14 @@ class TestDetailsSizeLimit:
         assert len(json.dumps(payload["details"])) > 65_536
         r = client.post(EVENTS_URL, json=payload, headers=auth_headers)
         assert r.status_code == 422
-        # Сообщение из валидатора попадает в details.errors[0].msg
         body = r.json()
-        assert "details" in str(body).lower() or "64" in str(body)
+        assert body["error_code"] == "VALIDATION_ERROR"
+        # Pydantic v2 validator location — `body.details` либо для одной из ошибок
+        # `loc` оканчивается на `details`.
+        errors = body.get("details", {}).get("errors") or []
+        assert any(
+            (err.get("loc") or [])[-1:] == ["details"] for err in errors
+        ), body
 
     def test_details_default_empty_dict_accepted(self, client, auth_headers):
         payload = make_event()

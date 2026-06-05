@@ -12,6 +12,8 @@ dept_admin пытался прочитать чужой отдел и был т�
 
 import pytest
 
+from tests._helpers.http import _create_bot  # noqa: F401 — общий helper
+
 BOTS_URL = "/api/auth/v1/bots"
 
 
@@ -42,14 +44,6 @@ def captured_audit(monkeypatch):
         })(),
     )
     return captured
-
-
-async def _create_bot(client, token, dept_id, name):
-    return await client.post(
-        BOTS_URL,
-        headers={"Authorization": f"Bearer {token}"},
-        json={"name": name, "department_id": dept_id, "allowed_services": []},
-    )
 
 
 async def test_dept_admin_cross_tenant_filter_audited_with_both_keys(

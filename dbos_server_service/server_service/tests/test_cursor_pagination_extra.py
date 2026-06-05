@@ -100,21 +100,24 @@ class TestServersCursorExtra:
         self, client, admin_token, admin_role_token_a,
     ):
         """Курсор от другого endpoint'а (другой sort_value формат) — должен дать 400."""
-        # Создать os-version, получить cursor.
-        resp = await client.post(
-            OS_VERSIONS, headers=_hdr(admin_role_token_a),
-            json={"name": "alien-cursor-test"},
-        )
-        assert resp.status_code == 201
+        # Засеваем минимум два os-version'а: cursor-режим выдаёт next_cursor
+        # только когда есть строка следом за limit'ом. Раньше тест засеивал
+        # один и пропадал в pytest.skip — теперь данные гарантированы.
+        for i in range(2):
+            resp = await client.post(
+                OS_VERSIONS, headers=_hdr(admin_role_token_a),
+                json={"name": f"alien-cursor-test-{i}"},
+            )
+            assert resp.status_code == 201
 
         r_os = await client.get(
             OS_VERSIONS, params={"cursor": "true", "limit": 1},
         )
         assert r_os.status_code == 200
         alien_cursor = r_os.json()["next_cursor"]
-
-        if alien_cursor is None:
-            pytest.skip("не удалось получить next_cursor от os-versions")
+        assert alien_cursor is not None, (
+            "next_cursor must be present after seeding 2 os-versions with limit=1"
+        )
 
         # Подаём os-versions cursor в /servers — формат совместим (ISO datetime + id),
         # поэтому endpoint НЕ ДОЛЖЕН крашиться; он просто не найдёт строк с такой парой

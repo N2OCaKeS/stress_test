@@ -19,48 +19,14 @@
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 
 from src.core.constants import TaskStatus
 from src.tasks import passwords, power
-
-
-# ── helpers (re-used pattern from test_ipmitool_client.py) ──────────────────
-
-
-def _make_fake_process(
-    returncode: int = 0,
-    stdout: bytes = b"",
-    stderr: bytes = b"",
-) -> MagicMock:
-    proc = MagicMock()
-    proc.returncode = returncode
-    proc.communicate = AsyncMock(return_value=(stdout, stderr))
-    proc.wait = AsyncMock(return_value=returncode)
-    proc.terminate = MagicMock()
-    proc.kill = MagicMock()
-    return proc
-
-
-def _patch_subprocess(monkeypatch, factory) -> list[tuple[tuple, dict]]:
-    """Подменить `asyncio.create_subprocess_exec`.
-
-    `factory` — либо MagicMock-Process (один и тот же на каждый вызов),
-    либо callable (args, kwargs) -> Process для command-зависимых сценариев.
-    """
-    calls: list[tuple[tuple, dict]] = []
-
-    async def fake_exec(*args, **kwargs):
-        calls.append((args, kwargs))
-        if isinstance(factory, MagicMock):
-            return factory
-        return factory(args, kwargs)
-
-    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_exec)
-    return calls
+from tests._helpers.subprocess_mocks import (
+    make_fake_process as _make_fake_process,
+    patch_subprocess as _patch_subprocess,
+)
 
 
 def _force_ipmitool(monkeypatch) -> None:

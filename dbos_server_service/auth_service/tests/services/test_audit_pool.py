@@ -110,8 +110,31 @@ async def test_audit_send_falls_back_to_per_call_when_pool_uninitialised(monkeyp
     assert new_client_counter["created"] == 2
 
 
+@pytest.fixture
+def noop_startup_env(monkeypatch):
+    """Заглушить три startup-зависимости lifespan'а: _startup_sequence,
+    bootstrap_admin, get_db. Без этого каждый test-кейс повторял один
+    и тот же блок патчей.
+    """
+    async def _noop_startup() -> None:
+        return None
+
+    async def _noop_bootstrap(db):
+        return None
+
+    async def _empty_db():
+        # пустой generator — async for x in get_db(): не сделает ни одной итерации
+        if False:
+            yield None
+
+    monkeypatch.setattr("src.main._startup_sequence", _noop_startup)
+    monkeypatch.setattr("src.main.bootstrap_admin", _noop_bootstrap)
+    monkeypatch.setattr("src.main.get_db", _empty_db)
+    return monkeypatch
+
+
 @pytest.mark.asyncio
-async def test_lifespan_initialises_audit_pool(monkeypatch):
+async def test_lifespan_initialises_audit_pool(monkeypatch, noop_startup_env):
     """После старта lifespan `_audit_client` — живой AsyncClient."""
     from src.core import config as config_mod
     from src.main import create_application
@@ -121,25 +144,6 @@ async def test_lifespan_initialises_audit_pool(monkeypatch):
     monkeypatch.setenv("LOGGING_SERVICE_URL", "http://logging.test.local")
     monkeypatch.setenv("LOGGING_SERVICE_API_KEY", "test-key")
     config_mod.get_settings.cache_clear()
-
-    # Заглушаем синхронный startup-аудит — он шлёт live httpx запросы наружу
-    # (register_events + service.started emit). Подмена на async-noop.
-    async def _noop_startup() -> None:
-        return None
-    monkeypatch.setattr("src.main._startup_sequence", _noop_startup)
-
-    # Чтобы bootstrap_admin не лез в БД на сборке app (мы тестируем lifespan,
-    # не БД-side-effects) — подменяем на no-op.
-    async def _noop_bootstrap(db):
-        return None
-    monkeypatch.setattr("src.main.bootstrap_admin", _noop_bootstrap)
-
-    # И get_db — на пустой no-op generator, чтобы lifespan не пытался коннектиться.
-    async def _empty_db():
-        # пустой generator — async for x in get_db(): не сделает ни одной итерации
-        if False:
-            yield None
-    monkeypatch.setattr("src.main.get_db", _empty_db)
 
     # Сбрасываем module-level state перед стартом.
     audit_service._audit_client = None
@@ -155,7 +159,7 @@ async def test_lifespan_initialises_audit_pool(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_lifespan_shutdown_closes_audit_pool(monkeypatch):
+async def test_lifespan_shutdown_closes_audit_pool(monkeypatch, noop_startup_env):
     """`aclose()` действительно вызывается на shutdown для пула."""
     from src.core import config as config_mod
     from src.main import create_application
@@ -163,18 +167,6 @@ async def test_lifespan_shutdown_closes_audit_pool(monkeypatch):
     monkeypatch.setenv("LOGGING_SERVICE_URL", "http://logging.test.local")
     monkeypatch.setenv("LOGGING_SERVICE_API_KEY", "test-key")
     config_mod.get_settings.cache_clear()
-
-    async def _noop_startup(): pass
-    monkeypatch.setattr("src.main._startup_sequence", _noop_startup)
-
-    async def _noop_bootstrap(db):
-        return None
-    monkeypatch.setattr("src.main.bootstrap_admin", _noop_bootstrap)
-
-    async def _empty_db():
-        if False:
-            yield None
-    monkeypatch.setattr("src.main.get_db", _empty_db)
 
     audit_service._audit_client = None
 
@@ -189,7 +181,7 @@ async def test_lifespan_shutdown_closes_audit_pool(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_lifespan_skips_audit_pool_when_logging_url_empty(monkeypatch):
+async def test_lifespan_skips_audit_pool_when_logging_url_empty(monkeypatch, noop_startup_env):
     """Если LOGGING_SERVICE_URL пустой — `_audit_client` остаётся None.
 
     Это dev-сценарий без loging_service: audit-emit'ы идут в локальный лог,
@@ -202,18 +194,6 @@ async def test_lifespan_skips_audit_pool_when_logging_url_empty(monkeypatch):
     monkeypatch.delenv("LOGGING_SERVICE_API_KEY", raising=False)
     config_mod.get_settings.cache_clear()
 
-    async def _noop_startup(): pass
-    monkeypatch.setattr("src.main._startup_sequence", _noop_startup)
-
-    async def _noop_bootstrap(db):
-        return None
-    monkeypatch.setattr("src.main.bootstrap_admin", _noop_bootstrap)
-
-    async def _empty_db():
-        if False:
-            yield None
-    monkeypatch.setattr("src.main.get_db", _empty_db)
-
     audit_service._audit_client = None
 
     app = create_application()
@@ -224,7 +204,7 @@ async def test_lifespan_skips_audit_pool_when_logging_url_empty(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_lifespan_shutdown_drains_inflight_emit_tasks(monkeypatch):
+async def test_lifespan_shutdown_drains_inflight_emit_tasks(monkeypatch, noop_startup_env):
     """`lifespan.finally` обязан дождаться `_EMIT_TASKS` ДО `aclose()` пула.
 
     Без drain'а гонка: emit-таска прочитала `_audit_client` и ушла в `await
@@ -242,31 +222,23 @@ async def test_lifespan_shutdown_drains_inflight_emit_tasks(monkeypatch):
     monkeypatch.setenv("LOGGING_SERVICE_API_KEY", "test-key")
     config_mod.get_settings.cache_clear()
 
-    async def _noop_startup(): pass
-    monkeypatch.setattr("src.main._startup_sequence", _noop_startup)
-
-    async def _noop_bootstrap(db):
-        return None
-    monkeypatch.setattr("src.main.bootstrap_admin", _noop_bootstrap)
-
-    async def _empty_db():
-        if False:
-            yield None
-    monkeypatch.setattr("src.main.get_db", _empty_db)
-
     audit_service._audit_client = None
     audit_service._EMIT_TASKS.clear()
 
     app = create_application()
     completed = {"done": False}
+    slow_done = _asyncio.Event()
 
     async with app.router.lifespan_context(app):
         # Имитируем уже-стартовавшую emit-таску: она «отправляется» в loging
         # и в этот момент shutdown решает закрыть пул. До фикса pool.aclose()
         # успел бы пройти, и `client.post` упал бы с ClientClosedError.
+        # Используем Event вместо sleep — детерминированно и без timing-flake.
         async def _slow_emit():
-            await _asyncio.sleep(0.1)
+            # Минимальная пауза для cooperative переключения, но без real-sleep.
+            await _asyncio.sleep(0)
             completed["done"] = True
+            slow_done.set()
 
         task = _asyncio.create_task(_slow_emit())
         audit_service._EMIT_TASKS.add(task)
@@ -276,6 +248,7 @@ async def test_lifespan_shutdown_drains_inflight_emit_tasks(monkeypatch):
     assert completed["done"] is True, (
         "shutdown не дренировал in-flight emit-таску до aclose()"
     )
+    assert slow_done.is_set()
 
 
 @pytest.mark.asyncio

@@ -226,6 +226,35 @@ class TestGetPowerState:
             with pytest.raises(RedfishError):
                 await c.get_power_state()
 
+    async def test_503_raises_with_status(self):
+        """Service Unavailable: текущее поведение — RedfishError(status=503).
+
+        Если worker когда-нибудь начнёт отдельно бэкоффить 503 (retryable),
+        тест должен будет расшириться; пока — фиксируем shape ответа.
+        """
+        def handler(request: httpx.Request) -> httpx.Response:
+            return _ok(503, {"error": {"code": "Base.1.0.ServiceUnavailable"}})
+
+        async with _make_client(handler) as c:
+            with pytest.raises(RedfishError) as exc:
+                await c.get_power_state()
+            assert exc.value.status_code == 503
+
+    async def test_429_raises_with_status(self):
+        """Rate-limited: BMC может вернуть 429 на shared-FIPS-host'е.
+
+        Сейчас обрабатывается как обычная ошибка с status=429; future-work —
+        читать Retry-After header и пробрасывать в backoff. Тест фиксирует
+        текущий контракт, чтобы migration был осознанным.
+        """
+        def handler(request: httpx.Request) -> httpx.Response:
+            return _ok(429, {"error": {"code": "Base.1.0.TooManyRequests"}})
+
+        async with _make_client(handler) as c:
+            with pytest.raises(RedfishError) as exc:
+                await c.get_power_state()
+            assert exc.value.status_code == 429
+
 
 # ── power_action ─────────────────────────────────────────────────────────────
 

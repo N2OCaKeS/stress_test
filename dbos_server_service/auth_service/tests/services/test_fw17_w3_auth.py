@@ -58,8 +58,10 @@ class TestServiceRoleCreatePattern:
 
     def test_seed_dev_role_names_pass(self):
         """Все role_name из scripts/seed_dev.py должны пройти pattern."""
-        for rn in ("reader", "operator", "admin", "worker_bot", "guest"):
-            ServiceRoleCreate(role_name=rn, display_name="x")
+        seed_names = ("reader", "operator", "admin", "worker_bot", "guest")
+        for rn in seed_names:
+            m = ServiceRoleCreate(role_name=rn, display_name="x")
+            assert m.role_name == rn
 
 
 # ── 2. list_clients: actor=None → ACTOR_VANISHED ─────────────────────────────

@@ -663,8 +663,9 @@ class TestSubjectTypeInDeniedAudit:
         denied_emits = [
             e for e in captured_emits
             if e.get("status") == "denied"
+            and e.get("action") == "server.power_status"
         ]
-        assert denied_emits, captured_emits
+        assert len(denied_emits) == 1, captured_emits
         ev = denied_emits[0]
         assert ev["details"].get("subject_type") == "bot"
 
@@ -689,8 +690,9 @@ class TestSubjectTypeInDeniedAudit:
         denied_emits = [
             e for e in captured_emits
             if e.get("status") == "denied"
+            and e.get("action") == "server.power_status"
         ]
-        assert denied_emits, captured_emits
+        assert len(denied_emits) == 1, captured_emits
         ev = denied_emits[0]
         assert ev["details"].get("subject_type") == "user"
 
@@ -719,7 +721,7 @@ class TestSubjectTypeInDeniedAudit:
             if e.get("status") == "denied"
             and e["action"] == "ipmi_controller.rotate_dispatch"
         ]
-        assert denied_emits, captured_emits
+        assert len(denied_emits) == 1, captured_emits
         ev = denied_emits[0]
         assert ev["details"].get("subject_type") == "bot"
 

@@ -9,7 +9,6 @@ scope, multi-resource scope (несколько частей в `scope`), рез
 inactive bot без инкремента счётчика.
 """
 
-import base64
 from datetime import datetime, timedelta, timezone
 
 import jwt as _jwt
@@ -21,14 +20,10 @@ from src.models.bot_account import BotAccount
 from src.models.bot_token import BotToken
 from src.models.department_docker_registry import DepartmentDockerRegistry
 from src.utils.ids import _new_id
+from tests._helpers.http import _basic  # noqa: F401 — общий helper
 
 TOKEN_URL = "/api/auth/v1/docker/token"
 BOTS_URL = "/api/auth/v1/bots"
-
-
-def _basic(username: str, password: str) -> dict[str, str]:
-    creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
 
 
 def _decode_access(token: str) -> list[dict]:

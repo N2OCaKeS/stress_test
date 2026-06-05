@@ -132,7 +132,7 @@ async def test_regular_user_without_dept_returns_422(client, admin_token):
     resp = await client.post(URL, headers={"Authorization": f"Bearer {admin_token}"}, json={
         "username": "nodept_user", "password": "Pass1234!",
     })
-    assert resp.status_code in (422, 400)
+    assert resp.status_code == 422, resp.text
 
 
 async def test_regular_user_cannot_create_users(client, user_a_token, dept_a):

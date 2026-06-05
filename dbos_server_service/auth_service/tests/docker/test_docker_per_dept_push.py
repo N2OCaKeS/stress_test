@@ -10,21 +10,16 @@ Bench:
     * push без auth header → анонимная ветка не выдаётся, 401.
 """
 
-import base64
 
 import jwt as _jwt
 import pytest_asyncio
 
 from src.models.department_docker_registry import DepartmentDockerRegistry
 from src.utils.ids import _new_id
+from tests._helpers.http import _basic  # noqa: F401 — общий helper
 
 
 TOKEN_URL = "/api/auth/v1/docker/token"
-
-
-def _basic(username: str, password: str) -> dict[str, str]:
-    creds = base64.b64encode(f"{username}:{password}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
 
 
 def _decode_access(token: str) -> list[dict]:

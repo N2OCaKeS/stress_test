@@ -607,10 +607,6 @@ class TestOrphanSweep:
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
 
-@pytest.mark.xfail(
-    reason="flaky in full-suite runs: worker_id resolution and heartbeat state leaks across tests; passes in isolation",
-    strict=False,
-)
 class TestWorkerHeartbeatTask:
     """`worker_heartbeat` periodic-task пишет в `worker_heartbeats`."""
 
@@ -670,8 +666,19 @@ class TestWorkerHeartbeatTask:
             ).scalar_one()
             t1 = row1.last_heartbeat_at
 
-        # Маленькая пауза чтобы timestamp заведомо отличался.
-        await asyncio.sleep(0.05)
+        # Откатываем первый timestamp на секунду назад напрямую, чтобы
+        # не полагаться на разрешение `now()` БД при двух соседних UPSERT'ах
+        # внутри одной транзакции event-loop'а.
+        from datetime import timedelta
+        async with AsyncSessionLocal() as session:
+            row = (await session.execute(
+                select(WorkerHeartbeat).where(
+                    WorkerHeartbeat.worker_id == "test-replica-B"
+                )
+            )).scalar_one()
+            row.last_heartbeat_at = t1 - timedelta(seconds=1)
+            await session.commit()
+            t1 = row.last_heartbeat_at
 
         # Второй tick.
         if hasattr(worker_heartbeat, "original_func"):
@@ -723,10 +730,6 @@ class TestSchedulerRegistration:
         assert "secrets.reencrypt_lazy" in broker.get_all_tasks()
 
 
-@pytest.mark.xfail(
-    reason="flaky in full-suite runs: cached _resolved_worker_id state leaks across tests; passes in isolation",
-    strict=False,
-)
 class TestWorkerIdResolution:
     """`get_worker_id()` резолвит стабильный идентификатор replica'и."""
 

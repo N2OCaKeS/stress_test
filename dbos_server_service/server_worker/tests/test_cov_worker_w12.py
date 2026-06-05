@@ -83,98 +83,11 @@ async def _cancel_with_cancelled_at(
 # ── scrub finally ─────────────────────────────────────────────────────────────
 
 
-class TestScrubFinallyRunsOnHappyPathFailure:
-    """provision finally-scrub срабатывает при RuntimeError внутри impl.
-
-    Это дополнение к test_provision_scrub_on_failure.py — там уже покрыт
-    SshError при provision_user. Здесь добавляем: RuntimeError при попытке
-    прочитать inline_password (нетипичный сбой) всё равно запускает scrub.
-    """
-
-    @pytest.mark.skip(reason="payload больше не несёт plaintext после W21-W1 P0 фикса")
-    async def test_scrub_runs_when_account_creds_raises(
-        self, make_task, monkeypatch,
-    ):
-        """fetch_account_password падает → scrub в finally всё равно стирает секреты."""
-        from src.tasks import users
-
-        tid = await make_task(
-            task_kind="account.provision",
-            target_server_id="srv_scrub_w12",
-            payload={
-                "server_id": "srv_scrub_w12",
-                "account_id": "acc_scrub",
-                "login": "dbos",
-                "is_managed": False,
-                "password_plaintext": "ShouldBeScrubb3d!",
-                "ssh_private_key_plaintext": "PRIVKEY-PLAINTEXT",
-            },
-        )
-
-        async def boom_fetch(server_id, account_id, target_department_id=None):
-            raise RuntimeError("service unavailable")
-
-        monkeypatch.setattr(
-            "src.tasks.users.server_service_client.fetch_account_password",
-            boom_fetch,
-        )
-
-        await users.account_provision.original_func(tid)
-
-        async with AsyncSessionLocal() as session:
-            t = await task_repo.get_by_id(session, tid)
-        assert t is not None
-        assert t.payload.get("password_plaintext") == "<scrubbed>"
-        assert t.payload.get("ssh_private_key_plaintext") == "<scrubbed>"
-
-    @pytest.mark.skip(reason="payload больше не несёт plaintext после W21-W1 P0 фикса")
-    async def test_scrub_runs_when_inline_password_set_and_provision_fails(
-        self, make_task, monkeypatch,
-    ):
-        """inline_password присутствует; provision_user падает → scrub стирает оба секрета."""
-        from src.tasks import users
-
-        tid = await make_task(
-            task_kind="account.provision",
-            target_server_id="srv_scrub_w12b",
-            payload={
-                "server_id": "srv_scrub_w12b",
-                "account_id": "acc_scrub_b",
-                "login": "ops",
-                "is_managed": True,
-                "password_plaintext": "InlinePass!42",
-                "ssh_private_key_plaintext": "-----BEGIN OPENSSH PRIVATE KEY-----\nXXX\n-----END OPENSSH PRIVATE KEY-----\n",
-                "ssh_public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest pub@host",
-                "force_replace": False,
-            },
-        )
-
-        from src.clients.ssh import SshError as _SshError
-
-        async def boom_provision(*a, **kw):
-            raise _SshError("SSH_USERADD_FAILED", "srv_scrub_w12b")
-
-        monkeypatch.setattr("src.tasks.users.ssh_client.provision_user", boom_provision)
-
-        submit_calls: list = []
-
-        async def fake_submit(*a, **kw):
-            submit_calls.append(a)
-
-        monkeypatch.setattr(
-            "src.tasks.users.server_service_client.submit_provision_status",
-            fake_submit,
-        )
-
-        await users.account_provision.original_func(tid)
-
-        assert submit_calls == [], "submit не должен вызываться при ошибке provision"
-
-        async with AsyncSessionLocal() as session:
-            t = await task_repo.get_by_id(session, tid)
-        assert t is not None
-        assert t.payload.get("password_plaintext") == "<scrubbed>"
-        assert t.payload.get("ssh_private_key_plaintext") == "<scrubbed>"
+# Класс TestScrubFinallyRunsOnHappyPathFailure (payload-plaintext scrub)
+# удалён: payload больше не содержит plaintext-полей после P0-фикса
+# server_service. Защиту от inline-плэйнтекста закрывает запрет на
+# `password_plaintext`/`ssh_private_key_plaintext` в payload на уровне
+# server_service.
 
 
 # ── breaker half_open probe-gate ─────────────────────────────────────────────
@@ -446,11 +359,13 @@ class TestCancelTimestampMidrunPaths:
             f"ожидался timestamp={cancel_ts.isoformat()}, got={ev.get('timestamp')}"
         )
 
-    @pytest.mark.xfail(strict=False, reason="worker_clock_now добавлен в детали midrun-cancel (F-W13-W4) — timestamp нынче всегда выставляется")
-    async def test_success_midrun_cancel_without_cancelled_at_no_timestamp_override(
+    async def test_success_midrun_cancel_without_cancelled_at_uses_worker_clock(
         self, make_task, captured_audit,
     ):
-        """Если cancelled_at не задан — timestamp в audit не появляется."""
+        """Если `cancelled_at` не задан — в audit идёт worker_clock_now,
+        timestamp всё равно выставляется (детерминированный поведение
+        после F-W13-W4: midrun-cancel без явного cancel-timestamp получает
+        timestamp из worker'а)."""
         tid = await make_task(task_kind="power.on", target_server_id="srv_cm3")
 
         async def impl(_payload: dict) -> dict:
@@ -474,9 +389,10 @@ class TestCancelTimestampMidrunPaths:
         assert len(captured_audit) == 1
         ev = captured_audit[0]
         assert ev["details"]["reason"] == "cancelled_midrun"
-        # Без cancelled_at — override timestamp не добавляется в payload.
-        assert "timestamp" not in ev, (
-            "без cancelled_at timestamp-ключ не должен добавляться"
+        # Timestamp всё равно выставлен — но из worker_clock_now, не из
+        # `cancelled_at` (т.к. cancelled_at был NULL).
+        assert ev.get("timestamp") is not None, (
+            "timestamp должен выставляться даже без cancelled_at"
         )
 
     async def test_failure_midrun_retry_path_cancel_uses_cancelled_at(

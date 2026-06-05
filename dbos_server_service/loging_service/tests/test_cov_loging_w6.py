@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -217,11 +217,6 @@ class TestAuditOutboxDrainRemainingTimeout:
 
     def test_drain_remaining_zero_timeout_drops_pending(self):
         captured: list[AuditEnvelope] = []
-        slow_called = [False]
-
-        async def slow_writer_async():
-            slow_called[0] = True
-            await asyncio.sleep(10)
 
         def writer(db, env):
             captured.append(env)
@@ -495,10 +490,10 @@ class TestBuildRetentionSweepDetails:
         details = _build_retention_sweep_details(
             deleted=0,
             snapshot=[],
-            run_date_msk="2026-05-30",
+            run_date_msk=date.today().isoformat(),
         )
         assert details["deleted_count"] == 0
-        assert details["run_date_msk"] == "2026-05-30"
+        assert details["run_date_msk"] == date.today().isoformat()
         assert details["policies"] == []
         assert "min_retain_days" not in details
         assert "max_retain_days" not in details
@@ -515,7 +510,7 @@ class TestBuildRetentionSweepDetails:
         details = _build_retention_sweep_details(
             deleted=42,
             snapshot=[policy],
-            run_date_msk="2026-05-30",
+            run_date_msk=date.today().isoformat(),
         )
         assert details["deleted_count"] == 42
         assert details["min_retain_days"] == 90
@@ -538,7 +533,7 @@ class TestBuildRetentionSweepDetails:
         details = _build_retention_sweep_details(
             deleted=100,
             snapshot=snapshot,
-            run_date_msk="2026-05-30",
+            run_date_msk=date.today().isoformat(),
         )
         assert details["min_retain_days"] == 30
         assert details["max_retain_days"] == 365
@@ -556,7 +551,7 @@ class TestBuildRetentionSweepDetails:
         details = _build_retention_sweep_details(
             deleted=5,
             snapshot=[policy],
-            run_date_msk="2026-05-30",
+            run_date_msk=date.today().isoformat(),
         )
         assert details["policies"][0]["severity"] == "ERROR"
         assert details["policies"][0]["service"] == "auth_service"
@@ -568,7 +563,7 @@ class TestBuildRetentionSweepDetails:
         details = _build_retention_sweep_details(
             deleted=7,
             snapshot=[],
-            run_date_msk="2026-05-30",
+            run_date_msk=date.today().isoformat(),
         )
         assert isinstance(details["deleted_count"], int)
 

@@ -540,9 +540,12 @@ class TestManagedSkipsFetchForAuth:
 
 
 class TestManagedDiscoveredAccountProvision:
+    # discovered+no_password теперь 409 fail-fast в server_service ещё до
+    # `dispatch_outbox` — worker эту таску в принципе не получит. Тест
+    # сценария «worker получил discovered+no_password» удалён как
+    # неработоспособный после смены контракта.
     @pytest.mark.skip(
-        reason="W21-W1: discovered+no_password теперь 409 fail-fast в server, "
-        "worker эту таску не получает"
+        reason="discovered+no_password — 409 fail-fast в server, не доходит до worker"
     )
     async def test_managed_provision_no_password_skips_chpasswd(
         self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,

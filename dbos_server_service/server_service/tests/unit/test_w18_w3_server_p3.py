@@ -519,7 +519,7 @@ class TestOrphanedIpmiController:
 
         action = "ipmi_controller.credentials_rotated_callback"
         events = [e for e in captured_emits if e["action"] == action]
-        assert events, captured_emits
+        assert len(events) == 1, captured_emits
         reasons = [e["details"].get("reason") for e in events]
         assert "orphaned_ipmi_controller" in reasons
         # И обратное: фейковый actor_department_mismatch НЕ эмитим.
@@ -530,15 +530,12 @@ class TestOrphanedIpmiController:
 
 
 class TestCancelTaskWithoutTargetNotCancellable:
-    @pytest.mark.skip(
-        reason="blanket-403 для non-system NULL-target отменён — ломал штатные "
-        "sandbox-dispatch'и (inventory.sync без актора). Решение об усилении "
-        "контракта отложено: либо вводить explicit `is_system: bool` колонку, "
-        "либо ждать appearance of a task без owner'а в проде."
-    )
-    @pytest.mark.asyncio
-    async def test_target_none_non_system_kind_denied(self):
-        pass
+    # Blanket-403 для non-system NULL-target отменён сознательно — ломал штатные
+    # sandbox-dispatch'и (inventory.sync без актора). Усиление контракта
+    # отложено до owner-решения: либо explicit is_system: bool колонка, либо
+    # появление task'и без owner'а в проде. Тест-stub удалён, чтобы skip-rot
+    # не маскировал решение в обратную сторону; реальная regress-страховка
+    # для системного guard'а живёт ниже в `test_target_none_system_kind_*`.
 
     @pytest.mark.asyncio
     async def test_target_none_system_kind_still_blocked_by_system_guard(

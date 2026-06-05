@@ -9,6 +9,7 @@ from fs_mark import FSMark
 from lmbench import LMBench
 from perfbench import PerfBench
 from aggregator import BenchmarkAggregator
+from index_calc import IndexCalculator
 
 
 """
@@ -30,6 +31,7 @@ fsmark_test = FSMark()
 lmbench_test = LMBench()
 perf = PerfBench()
 aggregator = BenchmarkAggregator()
+index = IndexCalculator()
 
 
 # ==================== БЛОК UNIXBENCH ========================
@@ -52,4 +54,7 @@ perf.get_results()
 aggregator.load_all()
 aggregator.print_summary()
 aggregator.export_to_json()
+
+# ==================== БЛОК Index Calculator ==========================
+index.total_index_calculator()
 

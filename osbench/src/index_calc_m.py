@@ -1,9 +1,11 @@
 import json
+import sys
 
 from allta import MathModel
 from pathlib import Path
 
-from osb_logger import log
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from lib import system
 from config.conf import (
     RESULTS_MAIN_DIR, 
@@ -17,7 +19,7 @@ from config.conf import (
 
 
 
-with open(f"{RESULTS_MAIN_DIR}/subsystem_results.json", "r") as f:
+with open(f"{RESULTS_MAIN_DIR}/testing_sbsdates.json", "r") as f:
     dates = json.load(f)
 
 SUBSYSTEM_DATES = {
@@ -63,7 +65,7 @@ class IndexCalculator:
         if isinstance(power, float):
             fp = power
         else:
-            log.error(f"fixed_power не задан: {power}")
+            print(f"fixed_power не задан: {power}")
             return False
 
         _model = MathModel(type='ratio')
@@ -71,7 +73,7 @@ class IndexCalculator:
         for test, config in criterions.items():
             iterations = list(dates[subsystem][test].keys())
             
-            log.debug(
+            print(
             f"""
                 {test},
                 iterations={iterations},
@@ -91,14 +93,17 @@ class IndexCalculator:
         if power_calc:
             fpower = _model.calc_power()
             fpower_dict[subsystem] = fpower['power']
-            log.debug(fpower_dict)
+            print(fpower_dict)
 
             return fpower_dict
 
         result, crit = _model.total_rating() 
+        #print(crit)
+
+        #total_rating = round((result['total_rating']), 3)
         total_rating = round(result, 3)
-        log.debug(f"{subsystem} power: {fp}")
-        log.debug(f"{subsystem} total_rating: {total_rating}")
+        print(f"{subsystem} power: {fp}")
+        print(f"{subsystem} total_rating: {total_rating}")
 
         if handle:
             if handle[0] == '/':
@@ -120,7 +125,9 @@ class IndexCalculator:
             
             results_dict[subsystem]['print_dict'] = self.subsystem_dict_handle(results_dict[subsystem]['print_dict'])
 
-        log.debug(results_dict)        
+
+        print(results_dict)
+        
         return results_dict
 
 
@@ -149,7 +156,7 @@ class IndexCalculator:
                                power_calc: bool = False):
         
         if power_calc:
-            return log.debug(f"\n\n{self.start_subsystem_calc(power_calc=True)}")
+            return print(f"\n\n{self.start_subsystem_calc(power_calc=True)}")
 
         subsystem_dates = self.start_subsystem_calc()
         system_info = system.get_system_info()
@@ -162,22 +169,29 @@ class IndexCalculator:
         geo_mean = subsystem ** (1/len(subsystem_dates.values()))
 
 
-        log.info(TOTAL_TEMPLATE_COLOR.format(test="ТЕСТ", 
-                                             guideline="GUIDELINE", 
-                                             result="RESULT",
-                                             ratio="RATIO",
-                                             kernel=subsystem_dates['kernel']['total_rating'],
-                                             processes_ipc=subsystem_dates['processes_ipc']['total_rating'],
-                                             filesystem=subsystem_dates['filesystem']['total_rating'],
-                                             scripts=subsystem_dates['scripts']['total_rating'],
-                                             total=geo_mean,
-                                             **system_info,
-                                             **results_dict['kernel']['print_dict'],
-                                             **results_dict['processes_ipc']['print_dict'],
-                                             **results_dict['filesystem']['print_dict'],
-                                             **results_dict['scripts']['print_dict']))
+        print(TOTAL_TEMPLATE_COLOR.format(test="ТЕСТ", 
+                                          guideline="GUIDELINE", 
+                                          result="RESULT",
+                                          ratio="RATIO",
+                                          kernel=subsystem_dates['kernel']['total_rating'],
+                                          processes_ipc=subsystem_dates['processes_ipc']['total_rating'],
+                                          filesystem=subsystem_dates['filesystem']['total_rating'],
+                                          scripts=subsystem_dates['scripts']['total_rating'],
+                                          total=geo_mean,
+                                          **system_info,
+                                          **results_dict['kernel']['print_dict'],
+                                          **results_dict['processes_ipc']['print_dict'],
+                                          **results_dict['filesystem']['print_dict'],
+                                          **results_dict['scripts']['print_dict']))
         
         
+
+
+
+ic = IndexCalculator()
+ic.total_index_calculator()
+
+
 
 
 

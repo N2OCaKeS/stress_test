@@ -4,10 +4,22 @@ import binascii
 import math
 import warnings
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 from numpy.exceptions import RankWarning
+
+
+class RatingResult(NamedTuple):
+    """Результат ``total_rating``: распаковывается как ``total, criteria = ...``.
+
+    Также доступны атрибуты ``.total`` и ``.criteria``.
+    ``criteria`` — словарь по критериям; в ratio-режиме каждый элемент содержит
+    ``baseline``, ``result``, ``ratio`` (индекс) и ``weight``.
+    """
+
+    total: float
+    criteria: dict[str, Any]
 
 
 Number = float | int
@@ -154,7 +166,7 @@ class MathModel:
         m = MathModel()                       # или MathModel(type="odds")
         m.add_criterion("syscall", iterations=[4, 8], values=[680000, 690000],
                         weight=0.11, negative=False, bounds=(0, 7_000_000))
-        rating = m.total_rating(power=0.998)["total_rating"]
+        total, criteria = m.total_rating(power=0.998)
 
         # RATIO: нужен reference (эталонный прогон), без bounds и power
         m = MathModel(type="ratio")
@@ -162,9 +174,10 @@ class MathModel:
                         weight=0.11, negative=False, reference=[680000, 690000])
         m.add_criterion("latency", iterations=[1, 2, 3], values=[0.6, 0.6, 0.6],
                         weight=0.06, negative=True, reference=[0.3, 0.3, 0.3])
-        res = m.total_rating(scale=100.0)     # эталон -> 100, >100 лучше, <100 хуже
-        res["total_rating"]                   # итоговый индекс
-        res["criteria"]["syscall"]["ratio"]   # R критерия (здесь ~10.0)
+        total, criteria = m.total_rating(scale=100.0)   # эталон -> 100, >100 лучше
+        total                                  # итоговый индекс
+        criteria["syscall"]["ratio"]           # индекс критерия (здесь ~10.0)
+        criteria["syscall"]["baseline"]        # эталон, criteria[...]["result"] — факт
     """
 
     def __init__(self, type: str | None = None) -> None:
@@ -260,29 +273,37 @@ class MathModel:
             entry["bounds"] = (lower_bound, upper_bound)
 
         if reference is not None:
-            entry["ratios"] = self._compute_ratios(name, y_arr, reference, bool(negative))
+            ref_arr = self._broadcast_reference(name, y_arr, reference)
+            entry["reference"] = ref_arr
+            entry["ratios"] = self._compute_ratios(y_arr, ref_arr, bool(negative))
 
         self._criteria[str(name)] = entry
         return self
 
-    def _compute_ratios(
-        self,
+    @staticmethod
+    def _broadcast_reference(
         name: str,
         values: np.ndarray,
         reference: Number | Sequence[Number],
+    ) -> np.ndarray:
+        """Приводит reference к массиву длины values (скаляр — одинаково на все замеры)."""
+        if isinstance(reference, (int, float)):
+            return np.full(values.shape, float(reference), dtype=float)
+        ref = np.array([float(r) for r in reference], dtype=float)
+        if ref.size != values.size:
+            raise ValueError(f"{name}: reference должен быть скаляром или длины values")
+        return ref
+
+    def _compute_ratios(
+        self,
+        values: np.ndarray,
+        reference: np.ndarray,
         negative: bool,
     ) -> np.ndarray:
         """Отношение к эталону по каждому замеру: positive value/ref, negative ref/value."""
-        if isinstance(reference, (int, float)):
-            ref = np.full(values.shape, float(reference), dtype=float)
-        else:
-            ref = np.array([float(r) for r in reference], dtype=float)
-            if ref.size != values.size:
-                raise ValueError(f"{name}: reference должен быть скаляром или длины values")
-
         eps = float(self._epsilon)
         v = np.clip(values, eps, None)
-        r = np.clip(ref, eps, None)
+        r = np.clip(reference, eps, None)
         return r / v if negative else v / r
 
     def ratio_index(self, scale: Number = 100.0, cap: Number = 1000.0) -> dict[str, Any]:
@@ -304,7 +325,11 @@ class MathModel:
                 чтобы один аномальный замер не перекосил индекс.
 
         Returns:
-            dict[str, Any]: ``index`` и детализация ``criteria`` (ratio и weight по критериям).
+            dict[str, Any]: ``index`` и детализация ``criteria``. По каждому критерию:
+            ``baseline`` (эталон, геом-среднее замеров эталона), ``result`` (факт. результат,
+            геом-среднее замеров прогона), ``ratio`` (индекс критерия = result/baseline для
+            positive и baseline/result для negative) и ``weight``. Удобно для UnixBench-таблицы
+            ``BASELINE | RESULT | INDEX``.
         """
         ratio_criteria = {n: c for n, c in self._criteria.items() if "ratios" in c}
         if not ratio_criteria:
@@ -317,14 +342,24 @@ class MathModel:
         if total_weight <= 0.0:
             raise ValueError("Сумма весов критериев должна быть > 0")
 
+        eps = float(self._epsilon)
         log_sum = 0.0
         details: dict[str, Any] = {}
         for name, criterion in ratio_criteria.items():
             clamped = np.clip(np.array(criterion["ratios"], dtype=float), 1.0 / cap_value, cap_value)
             crit_ratio = float(np.exp(np.mean(np.log(clamped))))
             weight = float(criterion["weight"])
+            values = np.clip(np.array(criterion["values"], dtype=float), eps, None)
+            reference = np.clip(np.array(criterion["reference"], dtype=float), eps, None)
+            result = float(np.exp(np.mean(np.log(values))))       # факт. результат (геом-среднее)
+            baseline = float(np.exp(np.mean(np.log(reference))))  # эталон (геом-среднее)
             log_sum += weight * math.log(crit_ratio)
-            details[name] = {"ratio": crit_ratio, "weight": weight}
+            details[name] = {
+                "baseline": baseline,
+                "result": result,
+                "ratio": crit_ratio,
+                "weight": weight,
+            }
 
         index = float(math.exp(log_sum / total_weight) * float(scale))
         return {"index": index, "scale": float(scale), "criteria": details}
@@ -525,7 +560,7 @@ class MathModel:
         *,
         scale: Number = 100.0,
         cap: Number = 1000.0,
-    ) -> dict[str, Any]:
+    ) -> "RatingResult":
         """
         Рассчитывает итоговый рейтинг по всем ранее добавленным критериям.
 
@@ -540,22 +575,20 @@ class MathModel:
             cap (Number): ограничение выброса ratio в ``[1/cap, cap]`` (ratio-режим).
 
         Returns:
-            dict[str, Any]: ``total_rating`` и детализация по критериям.
+            RatingResult: распаковывается как ``total, criteria = total_rating(...)``.
+            ``total`` — итоговый рейтинг, ``criteria`` — детализация по критериям.
         """
         if not self._criteria:
             raise ValueError("Не добавлено ни одного критерия")
 
         if self._mode == "ratio":
             res = self.ratio_index(scale=scale, cap=cap)
-            return {
-                "total_rating": float(res["index"]),
-                "scale": float(res["scale"]),
-                "criteria": res["criteria"],
-            }
+            return RatingResult(float(res["index"]), res["criteria"])
 
         if power is None:
             raise ValueError("в режиме type='odds' нужно передать power")
-        return self._evaluate_group(float(power))
+        group = self._evaluate_group(float(power))
+        return RatingResult(float(group["total_rating"]), group["criteria"])
 
     def calc_power(
         self,

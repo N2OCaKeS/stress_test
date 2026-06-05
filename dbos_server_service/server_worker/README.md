@@ -142,6 +142,20 @@ src/
   - `missing_action` — corrupted row без обязательного `action` — retry не починит, сразу в DLQ.
   - `permanent_4xx` — loging вернул 4xx, кроме `429/408` (rate-limit / timeout — retriable). 4xx означает malformed payload или revoked actor; счётчик breaker'а не трогается.
 
+### Operator CLI: re-attempt DLQ-row
+
+DLQ-row'ы публикатор больше не подхватывает (`published_at` стоит, `last_error` содержит `[DLQ:<reason>]` — `attempts_cap` / `permanent_4xx` / `missing_action`). Чтобы повторить доставку после фикса root cause (например, развернули payload-схему loging_service), у оператора есть две ручки:
+
+- **CLI** — удобнее в инцидент-режиме, не требует живого taskiq broker'а:
+
+  ```bash
+  python -m src.cli outbox-reattempt <row_id> [--reason "..."] [--actor-id usr_op]
+  ```
+
+  Сбрасывает `published_at`, `attempts`, `next_retry_at`, `last_error` → publisher подхватит row в ближайший тик. Дополнительно эмитит audit-событие `audit.outbox_reattempt_manual` (severity=WARNING) с `target_id=row_id` и `details.reason` — ручной re-attempt должен быть заметен в SIEM. Exit code: `0` — reset прошёл; `1` — row не найдена или уже unpublished. Audit-emit — best-effort, его падение не валит exit-code.
+
+- **Broker-task** — `internal.outbox_re_attempt(row_id)` (см. `server_worker/src/main.py`). Та же логика через taskiq; вызывается из server_service internal-endpoint'а либо вручную через kiq-CLI.
+
 ## Retry / durable scheduling
 
 - `mark_running` — CAS `UPDATE tasks SET status='running', attempt=attempt+1 WHERE id=:id AND status='queued' RETURNING id`. При rejection — audit `duplicate_dispatch`, impl не вызывается. Защищает от повторного enqueue и race двух worker'ов.

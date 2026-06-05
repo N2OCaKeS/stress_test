@@ -16,7 +16,7 @@ from __future__ import annotations
 BASE = "/api/server/v1/permissions"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 # ── GET / ────────────────────────────────────────────────────────────────────
@@ -66,12 +66,11 @@ class TestListAll:
     async def test_guest_forbidden(self, client, guest_token_a):
         """`guest` не имеет ни одного grant → 403."""
         resp = await client.get(BASE, headers=_hdr(guest_token_a))
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_token_returns_401(self, client):
         resp = await client.get(BASE)
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
 
 # ── GET /{entity_type} ───────────────────────────────────────────────────────
@@ -94,8 +93,7 @@ class TestListForEntity:
 
     async def test_unknown_entity_type_422(self, client, admin_token):
         resp = await client.get(f"{BASE}/nonexistent_type", headers=_hdr(admin_token))
-        assert resp.status_code == 422
-        assert resp.json()["error_code"] == "UNKNOWN_ENTITY_TYPE"
+        assert_error(resp, 422, "UNKNOWN_ENTITY_TYPE")
 
     async def test_no_grants_returns_empty(self, client, admin_token, db):
         """После удаления всех grants по entity — 200 + []."""
@@ -133,14 +131,13 @@ class TestGrant:
         resp = await client.put(
             f"{BASE}/server/operator/UNKNOWN_ACT", headers=_hdr(admin_token),
         )
-        assert resp.status_code == 422
-        assert resp.json()["error_code"] == "INVALID_ACTION_FOR_ENTITY"
+        assert_error(resp, 422, "INVALID_ACTION_FOR_ENTITY")
 
     async def test_grant_for_unknown_entity_422(self, client, admin_token):
         resp = await client.put(
             f"{BASE}/nonexistent_entity/operator/view", headers=_hdr(admin_token),
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "INVALID_ACTION_FOR_ENTITY")
 
     async def test_idempotent_grant_returns_existing(self, client, admin_token):
         """Повторный PUT на уже выданный grant возвращает existing (200), не 409.
@@ -159,12 +156,12 @@ class TestGrant:
 
     async def test_reader_cannot_grant(self, client, reader_token_a):
         resp = await client.put(f"{BASE}/server/reader/view", headers=_hdr(reader_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_operator_cannot_grant(self, client, operator_token_a):
         """`operator` имеет только view на entity `permission` — не permission_grant."""
         resp = await client.put(f"{BASE}/server/operator/delete", headers=_hdr(operator_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 # ── DELETE /{entity}/{role}/{action} ─────────────────────────────────────────
@@ -189,8 +186,7 @@ class TestRevoke:
         resp = await client.delete(
             f"{BASE}/server/reader/delete", headers=_hdr(admin_token),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "PERMISSION_NOT_FOUND"
+        assert_error(resp, 404, "PERMISSION_NOT_FOUND")
 
     async def test_revoke_twice_returns_404(self, client, admin_token):
         """Сначала grant в dep_a, потом revoke (200), потом revoke ещё раз (404)."""
@@ -204,13 +200,13 @@ class TestRevoke:
         resp = await client.delete(
             f"{BASE}/server/reader/view", headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_operator_cannot_revoke(self, client, operator_token_a):
         resp = await client.delete(
             f"{BASE}/server/reader/view", headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 # ── department_admin full-cycle (replaces account_admin bypass) ─────────────
@@ -279,12 +275,11 @@ class TestCatalog:
 
     async def test_guest_forbidden(self, client, guest_token_a):
         resp = await client.get(f"{BASE}/catalog", headers=_hdr(guest_token_a))
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_token_401(self, client):
         resp = await client.get(f"{BASE}/catalog")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_catalog_not_treated_as_entity_type(self, client, admin_token):
         """`/catalog` не должен матчиться как `/{entity_type}` → не 422."""
@@ -362,7 +357,7 @@ class TestMatrixByRole:
         resp = await client.get(
             f"{BASE}?role=admin&describe=true", headers=_hdr(guest_token_a)
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 # ── Department scope on read (list_all / list_for_entity / list_for_role) ────

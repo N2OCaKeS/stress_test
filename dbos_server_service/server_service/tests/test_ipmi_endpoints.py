@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 BASE = "/api/server/v1/servers"
 
@@ -118,7 +118,7 @@ class TestPowerOn:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []  # dispatch не вызывался
 
     async def test_guest_cannot_power_on(
@@ -129,12 +129,12 @@ class TestPowerOn:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(guest_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_token_returns_401(self, client, make_server, captured_dispatch):
         srv = await make_server(department_id="dep_a")
         resp = await client.post(f"{BASE}/{srv.id}/ipmi/power/on")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
         assert captured_dispatch == []
 
     async def test_department_admin_can_power_on(
@@ -174,7 +174,7 @@ class TestPowerOff:
             f"{BASE}/{srv.id}/ipmi/power/off",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 # ── Power REBOOT ─────────────────────────────────────────────────────────────
@@ -229,10 +229,8 @@ class TestPowerVisibility:
             f"{BASE}/{srv.id}/ipmi/power/off",
             headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
-        body = resp.json()
         # error_code из server_svc.get_server / _ensure_visible
-        assert body.get("error_code") == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []  # worker НЕ должен получить задачу
 
     async def test_cross_dept_operator_gets_404_power_on(
@@ -243,7 +241,7 @@ class TestPowerVisibility:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_cross_dept_operator_gets_404_power_reboot(
@@ -254,7 +252,7 @@ class TestPowerVisibility:
             f"{BASE}/{srv.id}/ipmi/power/reboot",
             headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_nonexistent_server_returns_404(
@@ -264,9 +262,7 @@ class TestPowerVisibility:
             f"{BASE}/srv_ghost_does_not_exist/ipmi/power/off",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
-        body = resp.json()
-        assert body.get("error_code") == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_nonexistent_server_returns_404_for_dept_admin(
@@ -281,7 +277,7 @@ class TestPowerVisibility:
             f"{BASE}/srv_ghost/ipmi/power/on",
             headers=_hdr(admin_token),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_decommissioned_server_returns_409(
@@ -296,9 +292,7 @@ class TestPowerVisibility:
             f"{BASE}/{srv.id}/ipmi/power/off",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body.get("error_code") == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
     async def test_decommissioned_blocks_power_on(
@@ -313,7 +307,7 @@ class TestPowerVisibility:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 409
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
     async def test_decommissioned_blocks_reboot_even_for_dept_admin(
@@ -335,7 +329,7 @@ class TestPowerVisibility:
             f"{BASE}/{srv.id}/ipmi/power/reboot",
             headers=_hdr(admin_token),
         )
-        assert resp.status_code == 409
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
 
@@ -370,9 +364,7 @@ class TestPowerNoIpmiController:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
-        body = resp.json()
-        assert body.get("error_code") == "NO_IPMI_CONTROLLER"
+        body = assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         assert "IPMI" in body.get("message", "")
         # worker НЕ должен получить задачу
         assert captured_dispatch == []
@@ -385,8 +377,7 @@ class TestPowerNoIpmiController:
             f"{BASE}/{srv.id}/ipmi/power/off",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         assert captured_dispatch == []
 
     async def test_power_reboot_without_ipmi_returns_404(
@@ -397,8 +388,7 @@ class TestPowerNoIpmiController:
             f"{BASE}/{srv.id}/ipmi/power/reboot",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         assert captured_dispatch == []
 
     async def test_no_ipmi_blocks_dept_admin_too(
@@ -415,8 +405,7 @@ class TestPowerNoIpmiController:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(admin_token),
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         assert captured_dispatch == []
 
     async def test_decommissioned_takes_priority_over_no_ipmi(
@@ -434,8 +423,7 @@ class TestPowerNoIpmiController:
             f"{BASE}/{srv.id}/ipmi/power/off",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
     async def test_no_ipmi_does_not_leak_to_unauthorized(
@@ -450,7 +438,7 @@ class TestPowerNoIpmiController:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         # error_code НЕ должен быть NO_IPMI_CONTROLLER — это утечка bookkeeping
         assert resp.json().get("error_code") != "NO_IPMI_CONTROLLER"
         assert captured_dispatch == []
@@ -467,7 +455,7 @@ class TestPowerNoIpmiAudit:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         failures = [
             e for e in _events(captured_emits, "server.power_on")
             if e.get("status") == "failure"
@@ -489,7 +477,7 @@ class TestPowerNoIpmiAudit:
             f"{BASE}/{srv.id}/ipmi/power/off",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         successes = [
             e for e in _events(captured_emits, "server.power_off")
             if e.get("status") == "success"
@@ -627,9 +615,7 @@ class TestPowerDispatchFailureAudit:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers={**_hdr(operator_token_a), "Idempotency-Key": "race-key-1"},
         )
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body.get("error_code") == "TASK_IDEMPOTENT_CONFLICT"
+        assert_error(resp, 409, "TASK_IDEMPOTENT_CONFLICT")
 
         failures = [
             e for e in _events(captured_emits, "server.power_on")
@@ -740,7 +726,7 @@ class TestPowerDispatchFailureAudit:
             f"{BASE}/{srv.id}/ipmi/power/on",
             headers={**_hdr(operator_token_a), "Idempotency-Key": "race-key-2"},
         )
-        assert resp.status_code == 409
+        assert_error(resp, 409, "TASK_IDEMPOTENT_CONFLICT")
         successes = [
             e for e in _events(captured_emits, "server.power_on")
             if e.get("status") == "success"

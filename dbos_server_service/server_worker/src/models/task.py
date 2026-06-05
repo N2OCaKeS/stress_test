@@ -21,14 +21,15 @@ class Task(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     # `task_kind` — taskiq broker label (`power.on`, `inventory.sync`, ...).
-    # Индексируется для запросов «все power.on за сутки» / health-check'ов.
+    # Single-column index не нужен: композит `ix_tasks_kind_status`
+    # (task_kind, status) обслуживает любой `WHERE task_kind=?`.
     # CHECK constraint по `TaskKind` enum'у сознательно не выставлен:
     # каждое новое значение требовало бы alembic-миграцию вдогонку за код-
     # релизом, что замедляет добавление task-handler'а. Опечатка пройдёт в
     # БД, но `broker.find_task` вернёт None и dispatch_outbox запаркует row
     # с reason=unknown_task_kind (см. `tasks/dispatch_outbox.py`) — fail-loud,
     # без silent-drop.
-    task_kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    task_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     # `target_server_id` — основной target. Индекс для UI «история task'ов
     # по серверу». nullable для system.heartbeat и подобных bookkeeping-
     # task'ов без конкретного сервера.

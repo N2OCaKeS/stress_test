@@ -99,8 +99,10 @@ class TestIndexes:
         assert "ix_tasks_kind_status" in names
         assert "ix_tasks_status_enqueued" in names
         # SQLAlchemy с index=True на колонке генерит ix_<table>_<col>
-        assert "ix_tasks_task_kind" in names
         assert "ix_tasks_target_server_id" in names
+        # `ix_tasks_task_kind` дропнут как дубликат prefix композита
+        # `ix_tasks_kind_status`.
+        assert "ix_tasks_task_kind" not in names
 
     async def test_idempotency_unique_constraint_present(self):
         async with engine.begin() as conn:

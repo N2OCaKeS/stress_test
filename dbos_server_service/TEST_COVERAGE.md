@@ -348,7 +348,8 @@ handlers, модель Task, HTTP-клиенты, mock'и iDRAC/SSH, enum'ы.
   (status=queued, attempt=0, max_attempts=3, payload={}, enqueued_at=now()); UNIQUE
   `idempotency_key` → IntegrityError; NULL не нарушает UNIQUE (PostgreSQL); JSONB
   nested access; индексы (`ix_tasks_kind_status`, `ix_tasks_status_enqueued`,
-  `ix_tasks_task_kind`, `ix_tasks_target_server_id`); NOT NULL columns (**8**).
+  `ix_tasks_target_server_id`), `ix_tasks_task_kind` дропнут как дубликат
+  prefix композита; NOT NULL columns (**8**).
 
 ### Smoke
 

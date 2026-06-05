@@ -23,7 +23,7 @@ from src.services import worker_client
 BASE = "/api/server/v1/server-accounts"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 @pytest.fixture
@@ -249,9 +249,7 @@ class TestDiscoveredNoPasswordFailFast:
             f"{BASE}/{acc.id}/provision?server_id={srv.id}",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409, resp.text
-        body = resp.json()
-        assert body["error_code"] == "ACCOUNT_HAS_NO_PASSWORD"
+        assert_error(resp, 409, "ACCOUNT_HAS_NO_PASSWORD")
         # До dispatch'а не дошли
         assert captured_dispatch == []
         # БД не тронута — флаг остаётся False

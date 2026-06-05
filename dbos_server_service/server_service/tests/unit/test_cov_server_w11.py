@@ -26,7 +26,7 @@ from src.utils.cursor import (
     decode_cursor,
     normalize_limit,
 )
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -504,7 +504,7 @@ class TestOutboxFinalizeFailedAuditEmit:
             headers=_hdr(worker_pat_token),
             json={"error": "test"},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SECRETS_OUTBOX_ROW_NOT_FOUND")
         events = [e for e in captured_outbox_emits if e["action"] == "secrets.reencrypt_failed"]
         assert events == []
 
@@ -561,7 +561,7 @@ class TestOutboxDoneAuditEmit:
             f"{BASE_SECRETS}/reencrypt_outbox/rox_ghost_done/done",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SECRETS_OUTBOX_ROW_NOT_FOUND")
         events = [e for e in captured_outbox_emits if e["action"] == "secrets.reencrypt_done"]
         assert events == []
 
@@ -703,7 +703,6 @@ class TestOsVersionAnonCursorAudit:
     ):
         """Невалидный cursor → 400 INVALID_CURSOR без audit-emit."""
         resp = await client.get(f"{BASE_OS}?after=notvalidbase64!!!")
-        assert resp.status_code == 400
-        assert resp.json()["error_code"] == "INVALID_CURSOR"
+        assert_error(resp, 400, "INVALID_CURSOR")
         events = [e for e in captured_os_emits if e["action"] == "os_version.list_anonymous"]
         assert events == []

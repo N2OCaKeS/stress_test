@@ -25,7 +25,7 @@ from src.utils.ids import _new_id
 BASE = "/api/server/v1/ipmi-controllers"
 
 
-from tests._helpers import auth_hdr as _hdr, make_emit_capture  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr, make_emit_capture  # noqa: E402
 
 
 @pytest.fixture
@@ -101,11 +101,9 @@ async def test_rotate_controller_in_my_dept_server_in_other_dept_404(
         f"{BASE}/{ctrl_id}/rotate",
         headers=_hdr(worker_bot_token_a),
     )
-    assert resp.status_code == 404, resp.text
-    body = resp.json()
     # Не должно протекать SERVER_NOT_FOUND — иначе раскрыли бы, что
     # controller_id привязан к чужому серверу.
-    assert body["error_code"] == "NO_IPMI_CONTROLLER", body
+    assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
     failures = [
         e for e in captured_emits
@@ -141,7 +139,7 @@ async def test_rotate_no_permission_emits_denied_with_bot_subject_type(
         f"{BASE}/{ctrl.id}/rotate",
         headers=_hdr(no_role_token_a),
     )
-    assert resp.status_code == 403, resp.text
+    assert_error(resp, 403, "PERMISSION_DENIED")
     denied = [
         e for e in captured_emits
         if e["action"] == "ipmi_controller.rotate_dispatch"

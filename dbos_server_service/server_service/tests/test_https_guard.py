@@ -13,6 +13,8 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from tests._helpers import assert_error
+
 BASE = "/api/server/v1"
 
 
@@ -50,9 +52,7 @@ class TestHttpsGuardProduction:
             transport=ASGITransport(app=production_app), base_url="http://test",
         ) as ac:
             resp = await ac.get(f"{BASE}/servers")
-        assert resp.status_code == 403
-        body = resp.json()
-        assert body["error_code"] == "HTTPS_REQUIRED"
+        body = assert_error(resp, 403, "HTTPS_REQUIRED")
         assert body["error"] == "forbidden"
         assert "scheme" in body["details"]
 
@@ -112,8 +112,7 @@ class TestHttpsGuardProduction:
                 f"{BASE}/servers",
                 headers={"X-Forwarded-Proto": "https, http"},
             )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "HTTPS_REQUIRED"
+        assert_error(resp, 403, "HTTPS_REQUIRED")
 
 
 class TestHttpsGuardDev:
@@ -122,6 +121,5 @@ class TestHttpsGuardDev:
         # middleware выключен и пропускает всё. Endpoint вернёт 401 (нет
         # Authorization), но точно не 403 HTTPS_REQUIRED.
         resp = await client.get(f"{BASE}/servers")
-        assert resp.status_code == 401
-        body = resp.json()
+        body = assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
         assert body.get("error_code") != "HTTPS_REQUIRED"

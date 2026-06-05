@@ -21,7 +21,7 @@ OS_VERSIONS = "/api/server/v1/os-versions"
 IPMI = "/api/server/v1/ipmi_controllers"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 class TestServersCursorExtra:
@@ -183,7 +183,7 @@ class TestServerAccountsCursorExtra:
             ACCOUNTS, headers=_hdr(admin_token),
             params={"cursor": "true"},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 class TestIpmiControllersCursorExtra:

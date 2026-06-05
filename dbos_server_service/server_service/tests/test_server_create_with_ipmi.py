@@ -17,7 +17,7 @@ import pytest
 
 from src.services import secrets_service
 
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 BASE = "/api/server/v1/servers"
 
@@ -142,7 +142,7 @@ class TestAtomicity:
             json=_payload(hostname="atomic-bad", ip_address="10.20.20.40", ipmi=bad_ipmi),
         )
         # Невалидный вложенный блок отбивается схемой ДО любой записи в БД.
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
         srv = (
             await db.execute(select(Server).where(Server.hostname == "atomic-bad"))
         ).scalar_one_or_none()
@@ -168,8 +168,7 @@ class TestAtomicity:
             json=_payload(hostname="dup-ipmi-host", ip_address="10.20.20.41",
                           ipmi=_ipmi_block(endpoint_url=marker_url)),
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "SERVER_DUPLICATE"
+        assert_error(resp, 409, "SERVER_DUPLICATE")
         # Контроллер с нашим уникальным endpoint_url не должен остаться: сервер
         # упал на UNIQUE(hostname), вся транзакция (включая IPMI) откатилась.
         orphan = (

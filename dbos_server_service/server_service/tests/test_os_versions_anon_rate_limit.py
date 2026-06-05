@@ -22,7 +22,7 @@ from __future__ import annotations
 LIST = "/api/server/v1/os-versions"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 class TestAnonymousRateLimit:
@@ -33,9 +33,7 @@ class TestAnonymousRateLimit:
             assert resp.status_code != 429, f"premature 429 на #{i + 1}: {resp.text}"
 
         resp = await client.get(LIST)
-        assert resp.status_code == 429, f"expected 429, got {resp.status_code}: {resp.text}"
-        body = resp.json()
-        assert body["error_code"] == "RATE_LIMIT_EXCEEDED"
+        assert_error(resp, 429, "RATE_LIMIT_EXCEEDED")
         assert resp.headers.get("Retry-After") == "60"
 
     async def test_authenticated_exempt_from_anon_limit(

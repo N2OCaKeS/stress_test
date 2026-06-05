@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 BASE = "/api/server/v1"
 
@@ -114,8 +114,7 @@ class TestTaskCancelNoTargetServerUserCreated:
             f"{BASE}/tasks/tsk_no_target_done/cancel",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "TASK_NOT_CANCELLABLE"
+        assert_error(resp, 409, "TASK_NOT_CANCELLABLE")
 
 
 class TestTaskCancelServiceUnavailable:
@@ -159,7 +158,7 @@ class TestTaskCancelIdValidation:
             headers=_hdr(admin_role_token_a),
         )
         # Нет такой задачи → 404, но путь прошёл валидацию.
-        assert resp.status_code == 404
+        assert_error(resp, 404, "TASK_NOT_FOUND")
 
     async def test_task_id_64_chars_accepted(
         self, client, admin_role_token_a, fake_worker,
@@ -170,7 +169,7 @@ class TestTaskCancelIdValidation:
             f"{BASE}/tasks/{task_id}/cancel",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "TASK_NOT_FOUND")
 
     async def test_task_id_65_chars_rejected(
         self, client, admin_role_token_a, fake_worker,
@@ -181,7 +180,7 @@ class TestTaskCancelIdValidation:
             f"{BASE}/tasks/{task_id}/cancel",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 class TestTaskCancelRaceCondition:
@@ -225,8 +224,7 @@ class TestTaskCancelRaceCondition:
             f"{BASE}/tasks/tsk_race_gone/cancel",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "TASK_NOT_FOUND"
+        assert_error(resp, 404, "TASK_NOT_FOUND")
 
         ev = [e for e in captured if e["action"] == "task.cancelled"]
         assert len(ev) == 1

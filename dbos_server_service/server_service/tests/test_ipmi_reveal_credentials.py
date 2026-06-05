@@ -15,7 +15,7 @@ import pytest
 BASE = "/api/server/v1/servers"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 def _ipmi_url(server_id: str) -> str:
@@ -84,21 +84,19 @@ class TestGetControllerCredentials:
             server_id=srv.id, username="other-dept", password="cross-dept",
         )
         resp = await client.get(_ipmi_url(srv.id), headers=_hdr(operator_token_a))
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_no_ipmi_returns_404(
         self, client, operator_token_a, make_server,
     ):
         srv = await make_server(department_id="dep_a")  # без IPMI controller
         resp = await client.get(_ipmi_url(srv.id), headers=_hdr(operator_token_a))
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
     async def test_no_token_returns_401(self, client, make_server):
         srv = await make_server(department_id="dep_a")
         resp = await client.get(_ipmi_url(srv.id))
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_audit_emit_on_reveal_success(
         self, client, admin_role_token_a, make_server, make_ipmi, monkeypatch,
@@ -180,8 +178,7 @@ class TestGetControllerCredentials:
         )
         await db.flush()
         resp = await client.get(_ipmi_url(srv.id), headers=_hdr(admin_role_token_a))
-        assert resp.status_code == 422
-        assert resp.json()["error_code"] == "DECRYPT_FAILED"
+        assert_error(resp, 422, "DECRYPT_FAILED")
 
     async def test_broken_ciphertext_invisible_to_reader(
         self, client, reader_token_a, make_server, make_ipmi, db,

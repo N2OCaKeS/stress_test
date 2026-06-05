@@ -21,7 +21,7 @@ from httpx import ASGITransport, AsyncClient
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 # Список stub-эндпоинтов. Изначально было 41 (4 endpoint-файла полностью
@@ -50,12 +50,8 @@ async def test_stub_anonymous_returns_401_envelope(client, method, path):
     шибл от любого закрытого route.
     """
     resp = await getattr(client, method)(f"{BASE}{path}")
-    assert resp.status_code == 401, (
-        f"{method.upper()} {path}: expected 401 anon, got {resp.status_code}"
-    )
-    body = resp.json()
+    body = assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
     # envelope-контракт из main.py app_exception_handler
-    assert body.get("error_code") == "ACCESS_TOKEN_MISSING"
     assert "request_id" in body
     assert "timestamp" in body
     assert "message" in body

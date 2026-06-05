@@ -31,7 +31,7 @@ from src.schemas.identity import IdentityContext
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 def _capture_emits(monkeypatch) -> list[dict]:
@@ -123,8 +123,7 @@ class TestIpmiRotateDispatchDecommissioned:
             headers=_hdr(admin_role_token_a),
         )
 
-        assert resp.status_code == 409, resp.text
-        assert resp.json().get("error_code") == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
         failures = [
@@ -168,8 +167,7 @@ class TestDispatchForServerNoIpmiAudit:
             headers=_hdr(operator_token_a),
         )
 
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         assert captured_dispatch == []
 
         failures = [

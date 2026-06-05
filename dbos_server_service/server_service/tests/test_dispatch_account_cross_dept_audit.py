@@ -21,7 +21,7 @@ import pytest
 
 from src.core.exceptions import NotFoundError
 
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 BASE = "/api/server/v1/server-accounts"
 
@@ -102,7 +102,7 @@ class TestDispatchAccountCrossDeptFailureAudit:
             f"{BASE}/{acc.id}/provision?server_id={srv.id}",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404, resp.text
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
         failures = [
             e for e in _events(captured_emits, "server_account.provision")
@@ -146,7 +146,7 @@ class TestDispatchAccountCrossDeptFailureAudit:
             f"{BASE}/{acc.id}/update_on_host?server_id={srv.id}",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
         failures = [
             e for e in _events(captured_emits, "server_account.update_on_host")

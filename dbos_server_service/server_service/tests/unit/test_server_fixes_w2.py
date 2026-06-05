@@ -28,7 +28,7 @@ from src.models import ServerAccountServer
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 # ── Fix 1: permission → visibility в users_inventory ────────────────────────
@@ -59,7 +59,7 @@ class TestUsersInventoryPermissionBeforeVisibility:
             f"{BASE}/servers/srv_phantom/users/inventory",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
         # Permission check сработал до visibility: get_server вообще не звали.
         assert calls == []
 
@@ -195,9 +195,7 @@ class TestProvisionForcePasswordGuard:
             f"{BASE}/server-accounts/{acc.id}/provision?server_id={srv.id}",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409, resp.text
-        body = resp.json()
-        assert body["error_code"] == "ACCOUNT_HAS_NO_PASSWORD"
+        assert_error(resp, 409, "ACCOUNT_HAS_NO_PASSWORD")
 
     async def test_discovered_without_password_force_true_proceeds(
         self, client, operator_token_a, make_server, make_account, db, monkeypatch,

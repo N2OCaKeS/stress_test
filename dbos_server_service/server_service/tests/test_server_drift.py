@@ -24,7 +24,7 @@ import pytest
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 @pytest.fixture
@@ -112,7 +112,7 @@ class TestDriftEndpoint:
             f"{BASE}/servers/{srv.id}/drift",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_guest_forbidden(
         self, client, guest_token_a, make_server, dept_a, fake_drift,
@@ -123,12 +123,12 @@ class TestDriftEndpoint:
             f"{BASE}/servers/{srv.id}/drift",
             headers=_hdr(guest_token_a),
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_token_returns_401(self, client, make_server, dept_a):
         srv = await make_server(department_id=dept_a)
         resp = await client.get(f"{BASE}/servers/{srv.id}/drift")
-        assert resp.status_code == 401, resp.text
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_cross_dept_returns_404(
         self, client, operator_token_b, make_server, dept_a, fake_drift,
@@ -141,7 +141,7 @@ class TestDriftEndpoint:
             f"{BASE}/servers/{srv.id}/drift",
             headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404, resp.text
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_default_since_is_24h_window(
         self, client, admin_role_token_a, make_server, dept_a, fake_drift,

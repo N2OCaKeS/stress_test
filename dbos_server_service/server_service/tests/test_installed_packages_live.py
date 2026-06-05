@@ -26,7 +26,7 @@ import pytest
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 def _url(server_id: str) -> str:
@@ -147,8 +147,7 @@ class TestPatternValidation:
             headers=_hdr(operator_token_a),
             params={"pattern": bad_pattern},
         )
-        assert resp.status_code == 422, resp.text
-        assert resp.json()["error_code"] == "INVALID_PATTERN"
+        assert_error(resp, 422, "INVALID_PATTERN")
         assert captured_dispatch == []
 
 
@@ -163,8 +162,7 @@ class TestVisibility:
             _url("srv_ghost_no_such_id"),
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_cross_dept_server_returns_404(
@@ -175,8 +173,7 @@ class TestVisibility:
             _url(srv.id),
             headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
 
 
@@ -189,7 +186,7 @@ class TestPermissions:
     ):
         srv = await make_server(department_id="dep_a")
         resp = await client.post(_url(srv.id))
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
         assert captured_dispatch == []
 
 
@@ -208,8 +205,7 @@ class TestWorkerSideFailures:
             _url(srv.id),
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
     async def test_worker_unreachable_returns_503(

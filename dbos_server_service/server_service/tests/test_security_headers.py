@@ -11,6 +11,8 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from tests._helpers import assert_error
+
 BASE = "/api/server/v1"
 
 _ALWAYS_ON = {
@@ -31,7 +33,7 @@ class TestSecurityHeadersAlwaysOn:
     async def test_unauthorized_response_carries_security_headers(self, client):
         # 401-ветка (нет Authorization) — заголовки должны быть и на ошибке.
         resp = await client.get(f"{BASE}/servers")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
         for header, value in _ALWAYS_ON.items():
             assert resp.headers.get(header) == value
 

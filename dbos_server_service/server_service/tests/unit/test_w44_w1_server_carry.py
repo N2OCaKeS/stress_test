@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import auth_hdr, make_dispatch_capture, make_emit_capture
+from tests._helpers import assert_error, auth_hdr, make_dispatch_capture, make_emit_capture
 
 BASE = "/api/server/v1"
 
@@ -76,9 +76,7 @@ class TestMassRotationCapReached:
             f"{BASE}/server-accounts/{acc.id}/rotate",
             headers=auth_hdr(operator_token_a),
         )
-        assert resp.status_code == 413, resp.text
-        body = resp.json()
-        assert body["error_code"] == "MASS_ROTATION_TOO_LARGE"
+        assert_error(resp, 413, "MASS_ROTATION_TOO_LARGE")
 
         # Ни один dispatch не должен уйти — endpoint режется на пред-флайте.
         assert captured_dispatch == []

@@ -21,7 +21,7 @@ from src.repositories import entity_permission as repo
 BASE = "/api/server/v1/permissions"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 @pytest_asyncio.fixture
@@ -173,9 +173,7 @@ class TestDeptAdminCannotGrantCrossDept:
             headers=_hdr(dept_admin_token_a),
             json={"target_department_id": dept_b},
         )
-        assert resp.status_code == 403
-        body = resp.json()
-        assert body["error_code"] == "DEPARTMENT_ISOLATION"
+        assert_error(resp, 403, "DEPARTMENT_ISOLATION")
 
     async def test_dept_admin_cannot_grant_system_wide(
         self, client, dept_admin_token_a, dept_a,
@@ -224,8 +222,7 @@ class TestAccountAdminBlockedFromPermissionsApi:
             f"{BASE}/server/some_global_role/delete",
             headers=_hdr(account_admin_token),
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PLATFORM_ADMIN_BUSINESS_DATA_DENIED"
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
         # Никакой строки в БД появиться не должно.
         rows = (await db.execute(
             select(EntityPermission).where(
@@ -243,8 +240,7 @@ class TestAccountAdminBlockedFromPermissionsApi:
             headers=_hdr(account_admin_token),
             json={"target_department_id": dept_a},
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PLATFORM_ADMIN_BUSINESS_DATA_DENIED"
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
         rows = (await db.execute(
             select(EntityPermission).where(
                 EntityPermission.role == "per_dept_role",
@@ -320,7 +316,7 @@ class TestDeptIsolationAuditEmitted:
             headers=_hdr(dept_admin_token_a),
             json={"target_department_id": dept_b},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "DEPARTMENT_ISOLATION")
 
         denied = [
             e for e in captured_emits
@@ -344,7 +340,7 @@ class TestDeptIsolationAuditEmitted:
             headers=_hdr(dept_admin_token_a),
             params={"target_department_id": dept_b},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "DEPARTMENT_ISOLATION")
         denied = [
             e for e in captured_emits
             if e["action"] == "permission.revoke"

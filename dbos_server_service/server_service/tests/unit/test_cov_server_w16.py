@@ -90,7 +90,7 @@ BASE = "/api/server/v1"
 BASE_INT = "/api/server/v1/internal"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 def _make_identity(
@@ -181,7 +181,7 @@ class TestDispatchPowerNoViewPermission:
             f"{BASE}/servers/{srv.id}/ipmi/power/on",
             headers=_hdr(tok),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied = [
             e for e in captured
@@ -220,7 +220,7 @@ class TestDispatchPowerNoViewPermission:
             f"{BASE}/servers/{srv.id}/ipmi/power/off",
             headers=_hdr(tok),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied = [
             e for e in captured
@@ -258,7 +258,7 @@ class TestDispatchPowerNoViewPermission:
             f"{BASE}/servers/{srv.id}/ipmi/power/reboot",
             headers=_hdr(tok),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied = [
             e for e in captured
@@ -343,7 +343,7 @@ class TestDispatchForServerNoViewPermission:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(tok),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied = [
             e for e in captured
@@ -382,7 +382,7 @@ class TestDispatchForServerNoViewPermission:
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers=_hdr(tok),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied = [
             e for e in captured
@@ -427,8 +427,7 @@ class TestAccountRotateDispatchSingleServerVanished:
             headers=_hdr(operator_token_a),
             params={"server_id": srv.id},
         )
-        assert resp.status_code == 404, resp.text
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_single_server_vanished_no_dispatch(
         self, client, operator_token_a, make_server, make_account,
@@ -451,7 +450,7 @@ class TestAccountRotateDispatchSingleServerVanished:
             headers=_hdr(operator_token_a),
             params={"server_id": srv.id},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
 
 
@@ -540,8 +539,7 @@ class TestAccountRotateDispatchMassServerNotVisible:
             headers=_hdr(operator_token_a),
         )
         # dispatchable == [] → same path as all-decommissioned
-        assert resp.status_code == 409, resp.text
-        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

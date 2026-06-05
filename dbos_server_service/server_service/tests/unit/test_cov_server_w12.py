@@ -33,6 +33,8 @@ from src.utils.cursor import (
     decode_cursor,
 )
 
+from tests._helpers import assert_error
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Identity helpers
@@ -91,9 +93,7 @@ class TestIpmiRotate410:
             headers={"Authorization": f"Bearer {token}"},
             json={"password": "NewP@ssw0rd1234567890"},
         )
-        assert resp.status_code == 410
-        data = resp.json()
-        assert data["error_code"] == "IPMI_ROTATE_USER_FACING_DEPRECATED"
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
 
     @pytest.mark.asyncio
     async def test_bot_subject_allowed(self, client, make_server, make_ipmi, make_token, dept_a, db):
@@ -138,7 +138,7 @@ class TestIpmiRotate410:
                 headers={"Authorization": f"Bearer {token}"},
                 json={},
             )
-        assert resp.status_code == 410
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
         reasons = [
             kw.get("details", {}).get("reason")
             for _, kw in captured
@@ -180,7 +180,7 @@ class TestIpmiRotate410:
             json={},
         )
         # Endpoint checks subject_type first, before permission matrix.
-        assert resp.status_code == 410
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -207,8 +207,7 @@ class TestIpmi404Unification:
             headers={"Authorization": f"Bearer {token}"},
             json={"password": "B0tR0tateP@ss1234567"},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
     @pytest.mark.asyncio
     async def test_power_on_no_ipmi_controller_returns_404(
@@ -232,8 +231,7 @@ class TestIpmi404Unification:
             f"/api/server/v1/servers/{srv.id}/ipmi/power/on",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
     @pytest.mark.asyncio
     async def test_get_ipmi_no_controller_server_exists_returns_404(
@@ -249,8 +247,7 @@ class TestIpmi404Unification:
             f"/api/server/v1/servers/{srv.id}/ipmi",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -312,9 +309,7 @@ class TestPermissionVisibilityCanon:
             headers={"Authorization": f"Bearer {token}"},
             json={"target_department_id": dept_b},
         )
-        assert resp.status_code == 403
-        data = resp.json()
-        assert data["error_code"] == "DEPARTMENT_ISOLATION"
+        assert_error(resp, 403, "DEPARTMENT_ISOLATION")
 
     def test_resolve_dept_no_actor_dept_raises(self):
         """_resolve_target_department_id с actor_dept=None → AuthorizationError."""
@@ -469,8 +464,7 @@ class TestSystemTasksWhitelist:
             "/api/server/v1/tasks/tsk_heartbeat_1/cancel",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "SYSTEM_TASK_ADMIN_REQUIRED"
+        assert_error(resp, 403, "SYSTEM_TASK_ADMIN_REQUIRED")
 
     @pytest.mark.asyncio
     async def test_system_task_sweep_non_admin_denied(
@@ -497,8 +491,7 @@ class TestSystemTasksWhitelist:
             "/api/server/v1/tasks/tsk_sweep_1/cancel",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "SYSTEM_TASK_ADMIN_REQUIRED"
+        assert_error(resp, 403, "SYSTEM_TASK_ADMIN_REQUIRED")
 
     @pytest.mark.asyncio
     async def test_system_task_cleanup_completed_non_admin_denied(
@@ -525,8 +518,7 @@ class TestSystemTasksWhitelist:
             "/api/server/v1/tasks/tsk_cleanup_1/cancel",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "SYSTEM_TASK_ADMIN_REQUIRED"
+        assert_error(resp, 403, "SYSTEM_TASK_ADMIN_REQUIRED")
 
     @pytest.mark.asyncio
     async def test_non_system_task_kind_passes_dept_check(

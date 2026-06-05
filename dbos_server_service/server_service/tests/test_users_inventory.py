@@ -21,7 +21,7 @@ BASE = "/api/server/v1/servers"
 BASE_INT = "/api/server/v1/internal"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 @pytest.fixture
@@ -123,7 +123,7 @@ class TestUsersInventoryTrigger:
         resp = await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
     async def test_cross_dept_returns_404(
@@ -133,13 +133,13 @@ class TestUsersInventoryTrigger:
         resp = await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_no_token_returns_401(self, client, make_server, captured_dispatch):
         srv = await make_server(department_id="dep_a")
         resp = await client.post(f"{BASE}/{srv.id}/users/inventory")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
         assert captured_dispatch == []
 
     async def test_decommissioned_returns_409(
@@ -151,8 +151,7 @@ class TestUsersInventoryTrigger:
         resp = await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
     async def test_success_emits_audit(
@@ -413,7 +412,7 @@ class TestUsersInventoryReconcile:
             f"{BASE_INT}/servers/{srv.id}/users/inventory",
             headers=_hdr(reader_token_a), json={"users": []},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_worker_bot_can_submit(
         self, client, worker_bot_token_a, make_server, dept_a,
@@ -432,8 +431,7 @@ class TestUsersInventoryReconcile:
             f"{BASE_INT}/servers/srv_ghost/users/inventory",
             headers=_hdr(worker_bot_token_a), json={"users": []},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_reconcile_uses_batched_queries(
         self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
@@ -570,7 +568,7 @@ class TestUsersInventoryReconcile:
             f"{BASE_INT}/servers/{srv.id}/inventory",
             headers=_hdr(worker_bot_token_a), json=payload,
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 @pytest.mark.usefixtures("soft_dept_mode")

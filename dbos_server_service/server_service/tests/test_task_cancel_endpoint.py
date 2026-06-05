@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 BASE = "/api/server/v1"
 
@@ -191,9 +191,7 @@ class TestTaskCancelConflict:
             f"{BASE}/tasks/tsk_done/cancel",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 409, resp.text
-        body = resp.json()
-        assert body["error_code"] == "TASK_NOT_CANCELLABLE"
+        body = assert_error(resp, 409, "TASK_NOT_CANCELLABLE")
 
         # failure-аудит с reason=not_cancellable
         ev = _events(captured_audit, "task.cancelled")
@@ -219,7 +217,7 @@ class TestTaskCancelPermission:
             f"{BASE}/tasks/tsk_p/cancel",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert fake_worker["cancel_calls"] == []
         # denied-аудит
         ev = _events(captured_audit, "task.cancelled")
@@ -240,14 +238,14 @@ class TestTaskCancelPermission:
             f"{BASE}/tasks/tsk_p2/cancel",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert fake_worker["cancel_calls"] == []
 
     async def test_no_token_returns_401(
         self, client, fake_worker,
     ):
         resp = await client.post(f"{BASE}/tasks/tsk_anon/cancel")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
         assert fake_worker["cancel_calls"] == []
 
 
@@ -261,8 +259,7 @@ class TestTaskCancelNotFound:
             f"{BASE}/tasks/tsk_nope/cancel",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "TASK_NOT_FOUND"
+        assert_error(resp, 404, "TASK_NOT_FOUND")
         ev = _events(captured_audit, "task.cancelled")
         assert len(ev) == 1
         # Permission прошёл, row отсутствует — visibility-404 → failure.
@@ -284,8 +281,7 @@ class TestTaskCancelNotFound:
             f"{BASE}/tasks/tsk_xdept/cancel",
             headers=_hdr(admin_token_b),
         )
-        assert resp.status_code == 404, resp.text
-        assert resp.json()["error_code"] == "TASK_NOT_FOUND"
+        assert_error(resp, 404, "TASK_NOT_FOUND")
         # cancel_task не вызывался — visibility check сработал ДО mutate
         assert fake_worker["cancel_calls"] == []
         ev = _events(captured_audit, "task.cancelled")
@@ -313,4 +309,4 @@ class TestTaskCancelValidation:
             headers=_hdr(admin_role_token_a),
             json={"reason": "a" * 513},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")

@@ -32,7 +32,7 @@ from src.schemas.identity import IdentityContext
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 def _make_identity(
@@ -94,7 +94,7 @@ class TestViewCredentialsMetaAudit:
             f"{BASE}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied = [
             e for e in captured
@@ -133,7 +133,7 @@ class TestViewCredentialsMetaAudit:
             f"{BASE}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr(tok),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
         failures = [
             e for e in captured
@@ -161,8 +161,7 @@ class TestViewCredentialsMetaAudit:
             f"{BASE}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr(tok),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
         failures = [
             e for e in captured
@@ -243,7 +242,7 @@ class TestPowerStatusCachedAudit:
             f"{BASE}/servers/{srv.id}/ipmi/power",
             headers=_hdr(guest_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied = [
             e for e in captured
@@ -271,7 +270,7 @@ class TestPowerStatusCachedAudit:
             f"{BASE}/servers/{srv.id}/ipmi/power",
             headers=_hdr(tok),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
         failures = [
             e for e in captured
@@ -417,7 +416,7 @@ class TestPrepareDispatchNoViewPermission:
                 "password_b64": _b64("Boot1234!StrongPwd"),
             },
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_view_emits_denied_audit(
         self, client, make_server, operator_token_a, monkeypatch,

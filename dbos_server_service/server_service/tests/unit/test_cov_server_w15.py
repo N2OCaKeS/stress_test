@@ -41,7 +41,7 @@ BASE = "/api/server/v1"
 BASE_DISPATCH = BASE
 
 
-from tests._helpers import auth_hdr as _hdr, make_emit_capture  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr, make_emit_capture  # noqa: E402
 
 
 def _make_identity(
@@ -171,7 +171,7 @@ class TestSavepointRollbackAuditEmit:
             f"{BASE}/server-accounts/{acc_id}/provision?server_id={srv_id}&force_password=true",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
+        assert_error(resp, 409, "TASK_IDEMPOTENT_CONFLICT")
 
         failures = [
             e for e in captured_emits
@@ -250,8 +250,7 @@ class TestIpmiRotatePasswordDispatchEdges:
             f"{BASE}/ipmi-controllers/{ctrl.id}/rotate",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 409, resp.text
-        assert resp.json().get("error_code") == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
 
     async def test_decommissioned_emits_failure_audit(
         self, client, admin_role_token_a, make_server, make_ipmi, db, monkeypatch,
@@ -271,7 +270,7 @@ class TestIpmiRotatePasswordDispatchEdges:
             f"{BASE}/ipmi-controllers/{ctrl.id}/rotate",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 409
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
 
         failures = [
             e for e in captured
@@ -311,8 +310,7 @@ class TestIpmiRotatePasswordDispatchEdges:
             f"{BASE}/ipmi-controllers/{ctrl.id}/rotate",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404, resp.text
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
     async def test_controller_found_server_cross_dept_emits_failure_audit(
         self, client, admin_role_token_a, make_server, make_ipmi, monkeypatch,
@@ -340,7 +338,7 @@ class TestIpmiRotatePasswordDispatchEdges:
             f"{BASE}/ipmi-controllers/{ctrl.id}/rotate",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
         failures = [
             e for e in captured
@@ -377,8 +375,7 @@ class TestDispatchForServerNoIpmiAudit:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
         power_failures = [
             e for e in captured
@@ -405,7 +402,7 @@ class TestDispatchForServerNoIpmiAudit:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
         power_failures = [
             e for e in captured
@@ -600,7 +597,7 @@ class TestSubjectTypeInDeniedAudit:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(no_role_bot_tok),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied_emits = [
             e for e in captured_emits
@@ -627,7 +624,7 @@ class TestSubjectTypeInDeniedAudit:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(no_role_tok),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied_emits = [
             e for e in captured_emits
@@ -656,7 +653,7 @@ class TestSubjectTypeInDeniedAudit:
             f"{BASE}/ipmi-controllers/{ctrl.id}/rotate",
             headers=_hdr(bot_tok),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied_emits = [
             e for e in captured_emits
@@ -683,7 +680,7 @@ class TestSubjectTypeInDeniedAudit:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(no_role_tok),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
         denied_emits = [
             e for e in captured_emits
@@ -732,8 +729,7 @@ class TestRotatedAtBoundaryValue:
                 "verified_at": verified_at,
             },
         )
-        assert resp.status_code == 400, resp.text
-        assert resp.json()["error_code"] == "ROTATED_AT_IN_FUTURE"
+        assert_error(resp, 400, "ROTATED_AT_IN_FUTURE")
 
     @pytest.mark.asyncio
     async def test_rotated_at_within_skew_is_accepted(

@@ -21,7 +21,7 @@ BASE = "/api/server/v1/server-accounts"
 BASE_INT = "/api/server/v1/internal"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 @pytest.fixture
@@ -107,7 +107,7 @@ class TestProvisionDispatch:
             f"{BASE}/{acc.id}/provision?server_id={srv.id}",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
     async def test_update_on_host_uses_usermod_task(
@@ -148,7 +148,7 @@ class TestProvisionDispatch:
             headers=_hdr(reader_token_a),
         )
         # reader не имеет delete → 403.
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
     async def test_missing_server_id_422(
@@ -159,7 +159,7 @@ class TestProvisionDispatch:
         resp = await client.post(
             f"{BASE}/{acc.id}/provision", headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
         assert captured_dispatch == []
 
     async def test_server_not_linked_404(
@@ -172,8 +172,7 @@ class TestProvisionDispatch:
             f"{BASE}/{acc.id}/provision?server_id={other.id}",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_cross_dept_account_404(
@@ -200,8 +199,7 @@ class TestProvisionDispatch:
             f"{BASE}/{acc.id}/provision?server_id={srv.id}",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
 
@@ -271,7 +269,7 @@ class TestProvisionStatusCallback:
             headers=_hdr(reader_token_a),
             json={"operation": "provision", "present": True},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_unlinked_account_404(
         self, client, worker_bot_token_a, make_server, make_account, dept_a,
@@ -284,8 +282,7 @@ class TestProvisionStatusCallback:
             headers=_hdr(worker_bot_token_a),
             json={"operation": "provision", "present": True},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_invalid_operation_422(
         self, client, worker_bot_token_a, make_server, make_account, dept_a,
@@ -297,7 +294,7 @@ class TestProvisionStatusCallback:
             headers=_hdr(worker_bot_token_a),
             json={"operation": "frobnicate", "present": True},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 # ── Management-session hints in dispatch payload ─────────────────────────────

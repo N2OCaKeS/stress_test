@@ -88,7 +88,7 @@ class TestListServers:
 
     async def test_limit_too_large_rejected(self, client, admin_token):
         resp = await client.get(BASE, headers=_hdr(admin_token), params={"limit": 1000})
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 # ── POST / (create) ──────────────────────────────────────────────────────────
@@ -239,12 +239,12 @@ class TestCreateServer:
     async def test_invalid_ip_returns_422(self, client, admin_token):
         resp = await client.post(BASE, headers=_hdr(admin_token),
                                   json=self._payload(ip_address="not-an-ip"))
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_ssh_port_out_of_range_returns_422(self, client, admin_token):
         resp = await client.post(BASE, headers=_hdr(admin_token),
                                   json=self._payload(ssh_port=0))
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 # ── GET /{id} ────────────────────────────────────────────────────────────────
@@ -492,7 +492,7 @@ class TestServerCpuFields:
             headers=_hdr(admin_token),
             json={"cpu_cores": -1},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_patch_negative_frequency_returns_422(
         self, client, admin_token, make_server,
@@ -504,7 +504,7 @@ class TestServerCpuFields:
             headers=_hdr(admin_token),
             json={"cpu_frequency_ghz": -0.1},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     @pytest.mark.usefixtures("soft_dept_mode")
     async def test_inventory_sync_writes_cpu_fields_inline(
@@ -694,7 +694,7 @@ class TestServerStorage:
                 {"slot": "disk2", "size_gb": 2, "is_system": True},
             ]),
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_duplicate_slot_rejected(self, client, admin_token):
         resp = await client.post(
@@ -704,7 +704,7 @@ class TestServerStorage:
                 {"slot": "disk1", "size_gb": 2},
             ]),
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_no_disk_endpoint(self, client, admin_token, make_server):
         """Отдельного CRUD-endpoint'а дисков больше нет."""

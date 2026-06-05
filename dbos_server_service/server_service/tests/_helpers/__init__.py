@@ -10,6 +10,9 @@
   `dispatch_task_with_hit` capture; не покрывает специфичные case'ы (boom-
   patch с конкретным исключением), но 16+ файлов с happy-path patch'ем сюда
   ложатся напрямую.
+* :func:`assert_error` — единая проверка `(status_code, error_code)` по
+  envelope-схеме `src/schemas/common.py::ErrorResponse`. Заменяет голый
+  `assert resp.status_code == 4xx` в test_internal_endpoints.py и аналогах.
 """
 
 from __future__ import annotations
@@ -20,6 +23,27 @@ from typing import Any
 def auth_hdr(token: str) -> dict[str, str]:
     """Шорткат для `Authorization: Bearer <token>`."""
     return {"Authorization": f"Bearer {token}"}
+
+
+def assert_error(resp: Any, status: int, error_code: str | None = None) -> dict:
+    """Проверить, что `resp` — error-envelope с ожидаемыми `status` и `error_code`.
+
+    Возвращает распарсенный JSON-body для дальнейших ассертов на `details`/
+    `request_id`. Если `error_code` не задан — проверяется только status.
+
+    Использовать вместо голого `assert resp.status_code == 4xx`, чтобы
+    зафиксировать стабильный контракт `error_code` (каталог в
+    ``API_ENDPOINTS.md``).
+    """
+    assert resp.status_code == status, (
+        f"expected status {status}, got {resp.status_code}: {resp.text}"
+    )
+    body = resp.json()
+    if error_code is not None:
+        assert body.get("error_code") == error_code, (
+            f"expected error_code={error_code!r}, got {body.get('error_code')!r}: {body}"
+        )
+    return body
 
 
 def make_emit_capture(

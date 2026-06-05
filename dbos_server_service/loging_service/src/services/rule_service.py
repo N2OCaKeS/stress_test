@@ -338,6 +338,17 @@ class _RuleCache:
         self._state: CacheState = CacheState.UNLOADED
         self._ttl = ttl_seconds
         self._lock = threading.Lock()
+        # Observability-счётчики: TTL-hit (fast-path), TTL-miss (slow-path
+        # с реальным DB-touch), stale-serve (slow-path упал и вернули
+        # предыдущий snapshot). SLA fast-path и slow-path принципиально
+        # разные, stale-serve особенно важно отслеживать после DB-outage.
+        # Читаются через `get_cache_counters()` (без lock'а на чтение:
+        # int-инкременты атомарны под GIL, для observability snapshot'а
+        # этого достаточно). Никаких prom-метрик не вешаем — counter'ы
+        # должны быть видны как минимум в self-audit/diagnostic-endpoint.
+        self._hits: int = 0
+        self._misses: int = 0
+        self._stale_serves: int = 0
 
     @property
     def _db_empty(self) -> bool:
@@ -372,11 +383,16 @@ class _RuleCache:
     def get(self, db: Session) -> list[_RuleSnapshot]:
         mono_now = time.monotonic()
         if self._ttl_fresh(mono_now):
+            self._hits += 1
             return self._rules
         with self._lock:
             mono_now = time.monotonic()
             if self._ttl_fresh(mono_now):
+                # Гонка: другой тред успел refresh, пока мы ждали lock.
+                # Засчитываем hit, не miss — реального DB-touch'а нет.
+                self._hits += 1
                 return self._rules
+            self._misses += 1
             # `_loaded_at` фиксируем ДО SELECT'а MAX — это межсервисный
             # watermark, его читают тесты и стале-fallback. Сравнение «изменилась
             # ли БД» теперь делается через `_last_db_max` (см. ниже), а
@@ -429,6 +445,7 @@ class _RuleCache:
                 self._last_db_max = db_updated_at
             except Exception:
                 if self._loaded_monotonic is not None:
+                    self._stale_serves += 1
                     logger.error("RuleCache: DB reload failed — serving stale cache")
                     # Сдвигаем ТОЛЬКО TTL (monotonic), чтобы не долбить БД
                     # до следующего окна. `_loaded_at` и state оставляем
@@ -461,6 +478,22 @@ _cache = _RuleCache(ttl_seconds=30)
 
 def invalidate_cache() -> None:
     _cache.invalidate()
+
+
+def get_cache_counters() -> dict[str, int]:
+    """Snapshot in-process counters кеша правил.
+
+    Возвращает `{hits, misses, stale_serves}`. Используется тестами и
+    диагностическими endpoint'ами; никаких prom-метрик здесь не вешаем,
+    чтобы не тянуть prometheus-client в hot-path. Без lock'а: int-чтение
+    атомарно под GIL, для snapshot'а допустим небольшой skew между
+    полями.
+    """
+    return {
+        "hits": _cache._hits,
+        "misses": _cache._misses,
+        "stale_serves": _cache._stale_serves,
+    }
 
 
 def _matches(rule: _RuleSnapshot, event: EventCreate) -> bool:

@@ -233,6 +233,86 @@ class TestPartialBatchFailure:
         assert len(remaining) == 1
         assert remaining[0].attempts == 1
 
+    async def test_mixed_4xx_5xx_batch_splits_into_dlq_retry_published(
+        self, make_task, monkeypatch,
+    ):
+        """5 строк в batch'е: 200/503/422/503/200 → 3 published, 2 unpublished.
+
+        В одном flush'е:
+          * 200 → published_at=NOW(), attempts=1, в очереди не осталось.
+          * 503 → transient, published_at=None, attempts=1 (retry).
+          * 422 → permanent 4xx, `_send_to_dlq('permanent_4xx')`
+                  → published_at=NOW() (DLQ-маркер), attempts=1, `_dlq_total += 1`.
+          * 503 → второй retry, attempts=1.
+          * 200 → published.
+
+        `flush_outbox` возвращает счётчик `was_published=True` — то есть
+        только реально доставленные 2×200; DLQ-row хоть и помечен
+        `published_at`, в return-счётчик не идёт (отдельный `_dlq_total`).
+        Итого: return=2, _dlq_total +1, unpublished=2 (оба 503).
+        Per-row commit изолирует ошибки — 4xx не отравляет остальные
+        строки batch'а.
+        """
+        audit_outbox_publisher._reset_breaker_state()
+
+        N = 5
+        async with AsyncSessionLocal() as session:
+            for i in range(N):
+                row = AuditOutbox(
+                    task_id=None,
+                    payload={"action": f"test.mix.{i}", "status": "success"},
+                )
+                session.add(row)
+            await session.commit()
+
+        # Порядок ответов на emit (по очереди): 200, 503, 422, 503, 200.
+        responses = [
+            None,
+            AuditEmitError("HTTP 503", status_code=503),
+            AuditEmitError("HTTP 422", status_code=422),
+            AuditEmitError("HTTP 503", status_code=503),
+            None,
+        ]
+        idx = {"i": 0}
+
+        async def scripted_emit(action, **kw):
+            i = idx["i"]
+            idx["i"] += 1
+            r = responses[i]
+            if r is not None:
+                raise r
+
+        monkeypatch.setattr(
+            "src.services.audit_outbox_publisher.audit_client.emit",
+            scripted_emit,
+        )
+
+        before_dlq = audit_outbox_publisher.get_dlq_total()
+        published_count = await audit_outbox_publisher.flush_outbox(limit=N)
+
+        # return = только `was_published=True` (ровно 2×200).
+        assert published_count == 2
+
+        # DLQ-counter инкрементировался ровно один раз (4xx).
+        assert audit_outbox_publisher.get_dlq_total() == before_dlq + 1
+
+        # Unpublished: ровно 2 строки (оба 503), attempts=1 у обеих.
+        remaining = await _unpublished_rows()
+        assert len(remaining) == 2
+        for r in remaining:
+            assert r.attempts == 1, (
+                f"transient 5xx должен инкрементить attempts ровно один раз, "
+                f"row {r.id}: attempts={r.attempts}"
+            )
+
+        # DLQ-row отличим по префиксу `[DLQ:permanent_4xx]` в last_error.
+        all_rows = await _all_outbox_rows()
+        dlq_rows = [
+            r for r in all_rows
+            if r.last_error and "[DLQ:permanent_4xx]" in r.last_error
+        ]
+        assert len(dlq_rows) == 1
+
 
 class TestMissingActionDlq:
     async def test_row_without_action_sent_to_dlq(

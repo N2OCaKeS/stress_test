@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, delete, or_, select, update as sa_update
 from sqlalchemy.orm import Session
 
+from src.core.constants import RESERVED_SERVICE_NAMES
 from src.models.audit_event import AuditEvent
 from src.models.retention_policy import RetentionPolicy
 from src.schemas.retention import RetentionPolicyCreate
@@ -22,7 +23,15 @@ from src.schemas.retention import RetentionPolicyCreate
 # иначе теряется `ix_audit_events_service` index seek и retention-sweep
 # вырождается в seq-scan по миллионам строк. Литерал `"loging_service"`
 # защищён от ротации (см. `apply_active`).
+#
+# Источник правды — `RESERVED_SERVICE_NAMES` в `core/constants.py`.
+# `_PROTECTED_SERVICE` оставлен как backward-compat alias: тесты
+# (`test_retention_apply.py`) импортируют его именно отсюда, и снэпшот-тест
+# фиксирует литерал "loging_service". Когда reserved-set расширится до 2+
+# имён — здесь надо будет переключиться на `in RESERVED_SERVICE_NAMES`
+# и обновить `apply_active`/тесты соответственно.
 _PROTECTED_SERVICE = "loging_service"
+assert _PROTECTED_SERVICE in RESERVED_SERVICE_NAMES  # drift-guard
 
 
 def get_active(db: Session) -> RetentionPolicy | None:

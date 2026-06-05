@@ -15,7 +15,6 @@ from src.core.config import get_settings
 from src.core.constants import Action, EntityType, ServerStatus
 from src.core.exceptions import (
     AuthorizationError,
-    BadRequestError,
     ConflictError,
     GoneError,
     NotFoundError,
@@ -273,17 +272,13 @@ async def list_controllers(
 ) -> PaginatedResponse[IpmiControllerResponse] | CursorPaginatedResponse[IpmiControllerResponse]:
     """List-эндпоинт. Доступ: `(ipmi_controller, *, view)`."""
     if cursor or after is not None:
-        from src.utils.cursor import InvalidCursorError
+        from src.utils.cursor import InvalidCursorError, to_bad_request
         try:
             items, next_cursor, has_more = await ipmi_svc.list_controllers_cursor(
                 db, identity, limit=limit, after=after,
             )
         except InvalidCursorError as exc:
-            raise BadRequestError(
-                error_code="INVALID_CURSOR",
-                message="cursor 'after' is invalid",
-                details={"hint": str(exc)},
-            ) from exc
+            raise to_bad_request(exc) from exc
         return CursorPaginatedResponse[IpmiControllerResponse](
             items=[IpmiControllerResponse.model_validate(i) for i in items],
             next_cursor=next_cursor,

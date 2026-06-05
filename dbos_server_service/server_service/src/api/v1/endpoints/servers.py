@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import BadRequestError
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
@@ -78,17 +77,13 @@ async def list_servers(
     # endpoint остаётся в legacy offset/limit envelope'е — старые клиенты,
     # которые шлют `?limit=X&offset=Y`, продолжают работать без изменений.
     if cursor or after is not None:
-        from src.utils.cursor import InvalidCursorError
+        from src.utils.cursor import InvalidCursorError, to_bad_request
         try:
             items, next_cursor, has_more = await svc.list_servers_cursor(
                 db, identity, limit=limit, after=after,
             )
         except InvalidCursorError as exc:
-            raise BadRequestError(
-                error_code="INVALID_CURSOR",
-                message="cursor 'after' is invalid",
-                details={"hint": str(exc)},
-            ) from exc
+            raise to_bad_request(exc) from exc
         cards = [
             ServerResponse.from_server(i, await svc.load_storage(db, i.id))
             for i in items

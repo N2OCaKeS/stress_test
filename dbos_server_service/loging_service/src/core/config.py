@@ -108,6 +108,17 @@ class Settings(BaseSettings):
         default=True, alias="INTROSPECT_TLS_VERIFY"
     )
 
+    # Путь к PEM-bundle с trusted CA для introspect-клиента. Используется,
+    # когда auth_service подписан корпоративным CA: `introspect_tls_verify`
+    # остаётся `True`, но проверка идёт против указанного bundle, а не
+    # системного trust store. None (default) → системный store. Если задан
+    # вместе с `introspect_tls_verify=False` — bundle игнорируется (verify
+    # выключен полностью); это согласовано с поведением httpx, и тоже
+    # ловится production-гардом ниже.
+    introspect_tls_ca_bundle: str | None = Field(
+        default=None, alias="INTROSPECT_TLS_CA_BUNDLE"
+    )
+
     # Размеры пула pooled introspect-клиента (httpx.Limits). Default 20/10 —
     # достаточно для типичного hot-path (один RPS на пользовательский
     # запрос). Под высокой нагрузкой можно поднять без передеплоя.

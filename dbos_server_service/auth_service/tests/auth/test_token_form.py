@@ -5,6 +5,10 @@ endpoint и пишет audit как обычный логин. Едитируе�
 не JSON.
 """
 
+from src.core.security import hash_password
+from src.models import User
+from src.utils.ids import _new_id
+
 TOKEN_URL = "/api/auth/v1/token"
 
 
@@ -57,3 +61,59 @@ class TestTokenForm:
         assert token_path not in spec.get("paths", {}), (
             f"{token_path} must be hidden from OpenAPI (used internally by Swagger)"
         )
+
+    async def test_banned_user_returns_403(self, client, db):
+        """Form-flow дёргает тот же `auth_service.login`: бан = 403 USER_BANNED."""
+        user = User(
+            id=_new_id("usr_"),
+            username="tf_banned",
+            password_hash=hash_password("Pass1234!"),
+            status="banned",
+            is_active=True,
+        )
+        db.add(user)
+        await db.flush()
+        resp = await client.post(
+            TOKEN_URL,
+            data={"username": "tf_banned", "password": "Pass1234!"},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["error_code"] == "USER_BANNED"
+
+    async def test_lockout_after_5_failed_attempts(self, client, db):
+        """5 неудачных + правильный пароль → 429 ACCOUNT_TEMPORARILY_LOCKED."""
+        user = User(
+            id=_new_id("usr_"),
+            username="tf_lockout",
+            password_hash=hash_password("Correct1!"),
+            status="active",
+            is_active=True,
+        )
+        db.add(user)
+        await db.flush()
+        for _ in range(5):
+            await client.post(
+                TOKEN_URL,
+                data={"username": "tf_lockout", "password": "wrong"},
+            )
+        resp = await client.post(
+            TOKEN_URL,
+            data={"username": "tf_lockout", "password": "Correct1!"},
+        )
+        assert resp.status_code == 429
+        assert resp.json()["error_code"] == "ACCOUNT_TEMPORARILY_LOCKED"
+
+    async def test_grant_type_password_explicit(self, client, account_admin):
+        """OAuth2PasswordRequestForm принимает `grant_type=password` явно
+        (Swagger так и шлёт). Поле не обязательно, но не должно ломать flow.
+        """
+        resp = await client.post(
+            TOKEN_URL,
+            data={
+                "username": "t_admin",
+                "password": "Admin1234!",
+                "grant_type": "password",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["token_type"] == "Bearer"

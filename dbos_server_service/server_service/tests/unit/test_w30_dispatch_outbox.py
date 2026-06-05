@@ -77,7 +77,16 @@ class TestRepoInsert:
 
 
 class TestDispatchTaskAtomicity:
-    """`dispatch_task` пишет worker-row (cross-DB) + outbox-row (caller db)."""
+    """`dispatch_task` пишет worker-row (cross-DB) + outbox-row (caller db).
+
+    Гибрид: первый тест берёт реальную сессию (`db`) и проверяет, что outbox-row
+    действительно лежит в caller-таблице после INSERT (SELECT обратно). Второй
+    тест моделирует cross-DB сбой, где caller-сессия упасть не должна — здесь
+    `AsyncMock()` достаточно, реальный SQLAlchemy rollback не нужен: проверяем
+    side-effect (`_delete_task_row` для worker-row) и тип исключения, а не
+    транзакционную семантику caller'а. Если в будущем добавятся ассерты на
+    `db.rollback()` или состояние caller-таблицы — переводить на real db.
+    """
 
     async def test_outbox_row_written_in_caller_session(self, db, monkeypatch):
         """Outbox-row кладётся в ту же сессию, что передал caller — caller

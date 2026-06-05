@@ -236,6 +236,44 @@ class TestSshClientRun:
                 await ssh.run("uname -a")
         assert exc_info.value.error_code == "SSH_RUN_FAILED"
 
+    async def test_run_connection_lost_maps_to_run_failed(self, monkeypatch):
+        """ConnectionLost во время exec — наследник `asyncssh.Error`, ловится
+        общим except в `run()` → `SSH_RUN_FAILED`.
+
+        Аналог реальной картины: TCP-канал отвалился посередине команды
+        (sshd упал, link reset). Мы не хотим, чтобы caller получил
+        `(-1, "", "")` или сырое asyncssh-исключение — нужен явный
+        SshError для retry-логики task'и.
+        """
+        conn = _make_fake_conn(run_raises=asyncssh.ConnectionLost("peer dropped"))
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "u", "p") as ssh:
+            with pytest.raises(SshError) as exc_info:
+                await ssh.run("ls /")
+        assert exc_info.value.error_code == "SSH_RUN_FAILED"
+        assert "peer dropped" not in str(exc_info.value), (
+            "SshError должен скрывать исходный текст asyncssh-исключения"
+        )
+
+    async def test_run_disconnect_error_maps_to_run_failed(self, monkeypatch):
+        """DisconnectError от удалённого sshd (graceful disconnect) тоже
+        наследник `asyncssh.Error` → `SSH_RUN_FAILED`.
+
+        Симметрично ConnectionLost'у — разница в том, что DisconnectError
+        приходит от sshd с reason-кодом, а ConnectionLost — от TCP/asyncio.
+        Маппинг одинаковый.
+        """
+        conn = _make_fake_conn(
+            run_raises=asyncssh.DisconnectError(11, "by application")
+        )
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "u", "p") as ssh:
+            with pytest.raises(SshError) as exc_info:
+                await ssh.run("uptime")
+        assert exc_info.value.error_code == "SSH_RUN_FAILED"
+
 
 # ── set_password() ──────────────────────────────────────────────────────────
 

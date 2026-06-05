@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from src.core.constants import Severity
+from src.core.constants import RESERVED_SERVICE_NAMES, Severity
 from src.utils.normalization import normalize_service_name
 
 # Тот же charset, что и у `EventCreate.service` после `normalize_service_name`
@@ -19,7 +19,14 @@ _SERVICE_FILTER_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_]{1,64}$")
 # `service != _PROTECTED_SERVICE`). Политика с этим сервисом в фильтре
 # никогда не сработает, поэтому ловим её на schema-уровне и возвращаем 422,
 # а не молча создаём dead-row, который вводит оператора в заблуждение.
+#
+# Источник правды — `RESERVED_SERVICE_NAMES` (`core/constants.py`). Литерал
+# дублирован для error-сообщений (`f"service {_PROTECTED_SERVICE!r} is protected..."`);
+# когда reserved-set расширится — `_validate_services` придётся переключить
+# на `in RESERVED_SERVICE_NAMES`, а здесь поднять `ValueError` с конкретным
+# именем из нарушившего входа.
 _PROTECTED_SERVICE = "loging_service"
+assert _PROTECTED_SERVICE in RESERVED_SERVICE_NAMES  # drift-guard
 
 # `Severity` (`core/constants.py::Severity`) — единый whitelist шести
 # уровней. Импорт оставлен через alias-import, чтобы не править все

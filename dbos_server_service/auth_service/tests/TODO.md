@@ -57,6 +57,8 @@
 - [x] Logout отзывает refresh_token
 - [x] После logout refresh тем же токеном → 401
 - [x] Logout с невалидным токеном → 200 (idempotent, не раскрывает информацию)
+- [x] Logout забаненного пользователя → 200 (ban не влияет на закрытие сессии)
+- [x] Logout по expired refresh-сессии → 200 idempotent (live/expired не различаются в ответе)
 
 ---
 

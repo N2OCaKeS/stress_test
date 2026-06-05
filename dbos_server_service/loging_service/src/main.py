@@ -145,6 +145,13 @@ def create_application() -> FastAPI:
                 live_settings.introspect_timeout_seconds,
                 connect=live_settings.introspect_connect_timeout_seconds,
             )
+            # `verify`: bool, либо путь к PEM-bundle для self-signed CA.
+            # bundle переопределяет bool=True (verify по bundle вместо
+            # системного store); при verify=False bundle игнорируется и
+            # проверка выключена полностью.
+            verify_param: bool | str = live_settings.introspect_tls_verify
+            if verify_param and live_settings.introspect_tls_ca_bundle:
+                verify_param = live_settings.introspect_tls_ca_bundle
             auth_deps._introspect_client = httpx.AsyncClient(
                 base_url=base,
                 timeout=timeout,
@@ -152,7 +159,7 @@ def create_application() -> FastAPI:
                     max_connections=live_settings.introspect_pool_max_connections,
                     max_keepalive_connections=live_settings.introspect_pool_max_keepalive,
                 ),
-                verify=live_settings.introspect_tls_verify,
+                verify=verify_param,
             )
             # Pooled клиент для `POST /token` swagger-логина. Лимиты скромнее
             # introspect'а — логины редкие, а одна полу-висящая connection
@@ -169,7 +176,7 @@ def create_application() -> FastAPI:
                     max_connections=live_settings.token_proxy_pool_max_connections,
                     max_keepalive_connections=live_settings.token_proxy_pool_max_keepalive,
                 ),
-                verify=live_settings.introspect_tls_verify,
+                verify=verify_param,
             )
         # Порядок старта: сначала self-audit outbox, потом retention-thread.
         # Retention эмитит `logging.retention_sweep` через outbox; если

@@ -7,6 +7,13 @@ SIEM-видимости enumeration-попыток; поверх глобаль�
 повешен отдельный per-IP лимит `OS_VERSIONS_ANON_RATE_LIMIT`
 (`settings.os_versions_anon_rate_limit`, default 100/minute) — на
 authenticated запросы он не распространяется (см. `_anon_rate_limit_key`).
+
+HEAD на этих GET-роутах не регистрируется — FastAPI/Starlette не
+авто-роутят HEAD на GET, и handler с `audit_service.emit` не запускается:
+HEAD-запрос вернёт 405 Method Not Allowed на ASGI-уровне, мимо audit'а.
+Если в будущем потребуется HEAD-эхо для cache-проверок — добавлять
+отдельным `@router.head(...)` с явным skip'ом anonymous-emit'а, иначе
+HEAD-flood даст INFO-flood в SIEM.
 """
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -14,7 +21,6 @@ from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
-from src.core.exceptions import BadRequestError
 from src.core.limiter import endpoint_limiter
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
@@ -79,17 +85,13 @@ async def list_os_versions(
 ) -> PaginatedResponse[OsVersionResponse] | CursorPaginatedResponse[OsVersionResponse]:
     """List OS-версий. Публичный, без авторизации."""
     if cursor or after is not None:
-        from src.utils.cursor import InvalidCursorError
+        from src.utils.cursor import InvalidCursorError, to_bad_request
         try:
             items, next_cursor, has_more = await svc.list_os_versions_cursor(
                 db, limit=limit, after=after,
             )
         except InvalidCursorError as exc:
-            raise BadRequestError(
-                error_code="INVALID_CURSOR",
-                message="cursor 'after' is invalid",
-                details={"hint": str(exc)},
-            ) from exc
+            raise to_bad_request(exc) from exc
         if _is_anonymous(request):
             audit_service.emit(
                 "os_version.list_anonymous",

@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.endpoints.worker_dispatch import fanout_update_on_host
 from src.core.config import get_settings
-from src.core.exceptions import BadRequestError
 from src.core.limiter import endpoint_limiter
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
@@ -119,17 +118,13 @@ async def list_accounts(
 ) -> PaginatedResponse[ServerAccountResponse] | CursorPaginatedResponse[ServerAccountResponse]:
     """List-эндпоинт. Доступ: `(server_account, *, view)`."""
     if cursor or after is not None:
-        from src.utils.cursor import InvalidCursorError
+        from src.utils.cursor import InvalidCursorError, to_bad_request
         try:
             items, next_cursor, has_more = await svc.list_accounts_cursor(
                 db, identity, server_id, limit=limit, after=after,
             )
         except InvalidCursorError as exc:
-            raise BadRequestError(
-                error_code="INVALID_CURSOR",
-                message="cursor 'after' is invalid",
-                details={"hint": str(exc)},
-            ) from exc
+            raise to_bad_request(exc) from exc
         return CursorPaginatedResponse[ServerAccountResponse](
             items=[_to_response(i) for i in items],
             next_cursor=next_cursor,

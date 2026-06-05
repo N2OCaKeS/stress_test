@@ -82,6 +82,25 @@ def decode_cursor(token: str) -> Cursor:
     return Cursor(sort_value=sort_value, row_id=row_id)
 
 
+def to_bad_request(exc: InvalidCursorError):
+    """Завернуть `InvalidCursorError` в 400 `INVALID_CURSOR` `BadRequestError`.
+
+    Шорткат для list-эндпоинтов: одинаковый `try/except → BadRequestError`
+    блок был скопирован в `servers.py`, `ipmi.py`, `server_accounts.py`,
+    `os_versions.py`. `from src.utils.cursor import to_bad_request` +
+    `raise to_bad_request(exc) from exc` убирает дубль envelope-полей.
+    """
+    # Локальный импорт — `core.exceptions` тянет fastapi/jwt-стек, а cursor.py
+    # импортируется из repository-слоя (через `decode_cursor`) и не должен
+    # сам по себе подтягивать веб-зависимости в воркеры/скрипты.
+    from src.core.exceptions import BadRequestError
+    return BadRequestError(
+        error_code="INVALID_CURSOR",
+        message="cursor 'after' is invalid",
+        details={"hint": str(exc)},
+    )
+
+
 _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 500
 

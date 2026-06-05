@@ -399,7 +399,7 @@ class TestUnbanReactivatesPAT:
             p for p in capture_audit_payloads
             if p.get("action") == "user.unban" and p.get("target_id") == user_a.id
         ]
-        assert unban_events
+        assert len(unban_events) == 1
         assert unban_events[0]["details"]["pat_reactivated"] == 2
 
 

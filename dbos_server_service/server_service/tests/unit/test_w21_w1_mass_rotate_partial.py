@@ -19,26 +19,16 @@ import pytest
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import auth_hdr as _hdr, make_emit_capture  # noqa: E402
 
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    captured: list[dict] = []
-
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    monkeypatch.setattr(
+    return make_emit_capture(
+        monkeypatch,
         "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
-        fake_emit,
+        "src.services.server.audit_service.emit",
     )
-    monkeypatch.setattr(
-        "src.services.server.audit_service.emit", fake_emit,
-    )
-    return captured
 
 
 class TestMassRotatePartialFailureResponse:

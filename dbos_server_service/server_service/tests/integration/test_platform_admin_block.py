@@ -33,40 +33,22 @@ import pytest_asyncio
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import auth_hdr as _hdr, make_emit_capture  # noqa: E402
 
 
 # ── Audit capture (общий patcher как в test_audit_emission) ──────────────────
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    """Захватывает все вызовы ``audit_service.emit`` (call kwargs).
-
-    Идентичен ``test_audit_emission.captured_emits``, но локализован в этом
-    файле, чтобы pytest не плодил конфликтов фикстур между файлами.
-    """
-    captured: list[dict] = []
-
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-
-    # Прямые importer'ы держат локальную ссылку — патчим их тоже.
-    for path in (
+    """Захватывает все вызовы ``audit_service.emit`` (call kwargs)."""
+    return make_emit_capture(
+        monkeypatch,
         "src.middleware.platform_admin_guard.audit_service.emit",
         "src.services.server.audit_service.emit",
         "src.services.internal_service.audit_service.emit",
         "src.services.permission_service.audit_service.emit",
         "src.api.v1.endpoints.ipmi.audit_service.emit",
-    ):
-        try:
-            monkeypatch.setattr(path, fake_emit)
-        except (AttributeError, ImportError):
-            pass
-
-    return captured
+    )
 
 
 def _events(captured: list[dict], action: str) -> list[dict]:

@@ -241,12 +241,14 @@ class TestPollOncePublishFailure:
         _install_session(monkeypatch, session)
         _install_broker(monkeypatch, broker)
 
+        cap = outbox_poller._BACKOFF_MAX_SECONDS
+
         before = datetime.now(timezone.utc)
         await outbox_poller.poll_once()
 
         assert row.next_retry_at is not None
         delay = (row.next_retry_at - before).total_seconds()
-        assert 290 <= delay <= 310
+        assert delay == pytest.approx(cap, abs=10)
 
     async def test_max_attempts_leaves_row_pending_logs_warning(
         self, monkeypatch, caplog

@@ -19,7 +19,9 @@ import pytest
 
 from src.core.exceptions import NotFoundError
 from src.schemas.identity import IdentityContext
-from src.services import audit_service, internal_service
+from src.services import internal_service
+
+from tests._helpers import make_emit_capture
 
 
 def _identity(
@@ -40,13 +42,7 @@ def _identity(
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    captured: list[dict] = []
-
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    monkeypatch.setattr(audit_service, "emit", fake_emit)
-    return captured
+    return make_emit_capture(monkeypatch)
 
 
 def _settings(monkeypatch, *, strict: bool = False) -> None:

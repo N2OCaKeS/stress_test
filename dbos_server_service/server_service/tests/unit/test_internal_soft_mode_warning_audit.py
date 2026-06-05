@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.services import audit_service, internal_service
+from src.services import internal_service
+
+from tests._helpers import make_emit_capture
 from src.services.audit_events import SERVICE_EVENTS
 
 
@@ -82,14 +84,8 @@ def _stub_secrets(monkeypatch):
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    captured: list[dict] = []
-
-    def fake_emit(action, **kwargs):
-        captured.append({"action": action, **kwargs})
-
-    monkeypatch.setattr(audit_service, "emit", fake_emit)
-    # Internal_service импортирует audit_service модулем, патч идёт автоматом.
-    return captured
+    # Internal_service импортирует audit_service модулем, default patch покрывает обоих.
+    return make_emit_capture(monkeypatch)
 
 
 def _identity():

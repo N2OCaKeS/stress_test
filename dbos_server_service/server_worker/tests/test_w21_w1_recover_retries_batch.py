@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.repositories import task as task_repo
+from tests._helpers.broker_mocks import make_broker
 
 
 def _new_id(prefix: str = "tsk_") -> str:
@@ -59,25 +60,15 @@ class TestParallelReplicasDisjointClaim:
 
         ids = await _seed_due(6)
 
-        kicked: list[str] = []
-        kicked_lock = asyncio.Lock()
-
-        class FakeKicker:
-            async def kiq(self, task_id, *args, **kwargs):
-                async with kicked_lock:
-                    kicked.append(task_id)
-
-        class FakeTask:
-            def kicker(self):
-                return FakeKicker()
-
-        monkeypatch.setattr(broker, "find_task", lambda kind: FakeTask())
+        fake_broker = make_broker()
+        monkeypatch.setattr(broker, "find_task", fake_broker.find_task)
 
         await asyncio.gather(
             _recover_due_scheduled_retries_once(),
             _recover_due_scheduled_retries_once(),
         )
 
+        kicked = [c.args[0] for c in fake_broker._kiq.call_args_list]
         # Каждый из 6 task'ов поднят ровно один раз. Никаких дубликатов.
         assert sorted(kicked) == sorted(ids), (
             f"kicked={sorted(kicked)} ids={sorted(ids)}"
@@ -90,15 +81,8 @@ class TestParallelReplicasDisjointClaim:
 
         ids = await _seed_due(3)
 
-        class FakeKicker:
-            async def kiq(self, task_id, *args, **kwargs):
-                pass
-
-        class FakeTask:
-            def kicker(self):
-                return FakeKicker()
-
-        monkeypatch.setattr(broker, "find_task", lambda kind: FakeTask())
+        fake_broker = make_broker()
+        monkeypatch.setattr(broker, "find_task", fake_broker.find_task)
 
         await _recover_due_scheduled_retries_once()
 

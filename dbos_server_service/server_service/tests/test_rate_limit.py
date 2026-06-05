@@ -29,7 +29,7 @@ READY = "/api/server/v1/ready"
 PROTECTED = "/api/server/v1/servers"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 @pytest.fixture
@@ -77,12 +77,12 @@ class TestWithinLimit:
     async def test_no_token_returns_401_not_429(self, client):
         """Анонимный GET /servers — это 401 от auth-dep, не 429."""
         resp = await client.get(PROTECTED)
-        assert resp.status_code == 401, resp.text
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_garbage_token_returns_401_not_429(self, client):
         """Trash-shape Bearer — отбивается bearer-shape pre-check'ом, 401."""
         resp = await client.get(PROTECTED, headers=_hdr("bogus_unregistered"))
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_INVALID")
 
     async def test_burst_under_limit_all_pass(self, client):
         """50 быстрых запросов c одного IP < 500/minute → ни одного 429."""
@@ -107,7 +107,7 @@ class TestRateLimitExceeded:
 
         # 6-й — должен быть отбит.
         resp = await client.get(PROTECTED)
-        assert resp.status_code == 429, f"expected 429, got {resp.status_code}: {resp.text}"
+        assert_error(resp, 429, "RATE_LIMIT_EXCEEDED")
 
     async def test_429_response_shape_matches_app_envelope(self, client, tight_limit):
         """429-ответ должен быть в нашем edge-format'е (error_code/request_id/timestamp)."""
@@ -115,11 +115,9 @@ class TestRateLimitExceeded:
         await client.get(PROTECTED)
         await client.get(PROTECTED)
         resp = await client.get(PROTECTED)
-        assert resp.status_code == 429
+        body = assert_error(resp, 429, "RATE_LIMIT_EXCEEDED")
 
-        body = resp.json()
         assert body["error"] == "too_many_requests"
-        assert body["error_code"] == "RATE_LIMIT_EXCEEDED"
         assert "Rate limit exceeded" in body["message"]
         assert "timestamp" in body
         # request_id может быть None (rate-limit срабатывает до middleware,
@@ -131,7 +129,7 @@ class TestRateLimitExceeded:
         tight_limit("1/minute")
         await client.get(PROTECTED)
         resp = await client.get(PROTECTED)
-        assert resp.status_code == 429
+        assert_error(resp, 429, "RATE_LIMIT_EXCEEDED")
         assert resp.headers.get("Retry-After") == "60"
 
     async def test_500_plus_requests_one_ip_yields_429(self, client, tight_limit):
@@ -197,7 +195,7 @@ class TestHealthNotRateLimited:
 
         # 4-й — 429 (квота исчерпана).
         resp = await client.get(PROTECTED)
-        assert resp.status_code == 429
+        assert_error(resp, 429, "RATE_LIMIT_EXCEEDED")
 
 
 # ── 429 НЕ эмитит audit-event (фикс 429-audit-amplification) ────────────────
@@ -237,7 +235,7 @@ class TestRateLimitNoAuditAmplification:
 
         # 6-й — 429
         resp = await client.get(PROTECTED)
-        assert resp.status_code == 429
+        assert_error(resp, 429, "RATE_LIMIT_EXCEEDED")
 
         # Никаких `http.*` audit-event'ов от 429-ответа.
         rate_limited_emits = [
@@ -278,7 +276,7 @@ class TestRateLimitNoAuditAmplification:
         # 100 запросов — все 429
         for _ in range(100):
             resp = await client.get(PROTECTED)
-            assert resp.status_code == 429
+            assert_error(resp, 429, "RATE_LIMIT_EXCEEDED")
 
         http_emits = [
             e for e in captured

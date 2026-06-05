@@ -20,7 +20,7 @@ from src.core.config import get_settings
 BASE_INT = "/api/server/v1/internal"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 # ── OpenAPI exposure ─────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ class TestIpmiCredentials:
             f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_operator_forbidden(self, client, operator_token_a, make_server, make_ipmi):
         """operator не получает view_credentials по default."""
@@ -71,20 +71,19 @@ class TestIpmiCredentials:
             f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_token_returns_401(self, client, make_server):
         srv = await make_server(department_id="dep_a")
         resp = await client.get(f"{BASE_INT}/servers/{srv.id}/ipmi/credentials")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_server_not_found_returns_404(self, client, worker_pat_token):
         resp = await client.get(
             f"{BASE_INT}/servers/srv_ghost/ipmi/credentials",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_no_ipmi_controller_returns_404(
         self, client, worker_pat_token, make_server,
@@ -94,8 +93,7 @@ class TestIpmiCredentials:
             f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
 
 # ── Account password ─────────────────────────────────────────────────────────
@@ -125,8 +123,7 @@ class TestAccountPassword:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_HAS_NO_PASSWORD"
+        assert_error(resp, 404, "ACCOUNT_HAS_NO_PASSWORD")
 
     async def test_discovered_account_without_password_returns_empty(
         self, client, worker_pat_token, make_server, make_account, db,
@@ -157,8 +154,7 @@ class TestAccountPassword:
             f"{BASE_INT}/servers/{srv_a.id}/accounts/{acc.id}/password",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_reader_forbidden(self, client, reader_token_a, make_server, make_account):
         srv = await make_server(department_id="dep_a")
@@ -167,7 +163,7 @@ class TestAccountPassword:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 # ── Rotate password ──────────────────────────────────────────────────────────
@@ -233,7 +229,7 @@ class TestRotatePassword:
             headers=_hdr(reader_token_a),
             json={"password": "ReaderTry1234"},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_rotate_account_not_found_returns_404(
         self, client, worker_pat_token, make_server,
@@ -244,7 +240,7 @@ class TestRotatePassword:
             headers=_hdr(worker_pat_token),
             json={"password": "GhostPwd1234"},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
 
 # ── X-Target-Department-Id cross-check (soft + strict) ───────────────────────
@@ -326,9 +322,7 @@ class TestTargetDeptHeaderStrictMode:
             f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 403
-        body = resp.json()
-        assert body["error_code"] == "TARGET_DEPARTMENT_HEADER_REQUIRED"
+        assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
 
     async def test_mismatched_header_returns_403_for_ipmi(
         self, client, worker_pat_token, make_server, make_ipmi, strict_dept_mode,
@@ -339,9 +333,7 @@ class TestTargetDeptHeaderStrictMode:
             f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr_with_dept(worker_pat_token, "dep_b"),
         )
-        assert resp.status_code == 403
-        body = resp.json()
-        assert body["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        assert_error(resp, 403, "TARGET_DEPARTMENT_MISMATCH")
         # Plaintext password MUST NOT appear in the 403 response.
         assert "should-not-leak" not in resp.text
 
@@ -366,8 +358,7 @@ class TestTargetDeptHeaderStrictMode:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr(worker_pat_token),
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "TARGET_DEPARTMENT_HEADER_REQUIRED"
+        assert_error(resp, 403, "TARGET_DEPARTMENT_HEADER_REQUIRED")
 
     async def test_mismatched_header_returns_403_for_account_password(
         self, client, worker_pat_token, make_server, make_account, strict_dept_mode,
@@ -378,8 +369,7 @@ class TestTargetDeptHeaderStrictMode:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr_with_dept(worker_pat_token, "dep_b"),
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        assert_error(resp, 403, "TARGET_DEPARTMENT_MISMATCH")
         assert "acc-mismatch" not in resp.text
 
     async def test_matched_header_returns_200_for_account_password(
@@ -404,8 +394,7 @@ class TestTargetDeptHeaderStrictMode:
             headers=_hdr_with_dept(worker_pat_token, "dep_b"),
             json={"password": "NewBlocked1234"},
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "TARGET_DEPARTMENT_MISMATCH"
+        assert_error(resp, 403, "TARGET_DEPARTMENT_MISMATCH")
 
     async def test_matched_header_allows_rotate(
         self, client, worker_pat_token, make_server, make_account, strict_dept_mode,
@@ -452,9 +441,7 @@ class TestActorDeptCrossCheckSoftMode:
             f"{BASE_INT}/servers/{srv.id}/ipmi/credentials",
             headers=_hdr_with_dept(foreign_token, "dep_a"),
         )
-        assert resp.status_code == 404
-        body = resp.json()
-        assert body["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert "dep-a-only-secret" not in resp.text
 
     async def test_account_password_actor_mismatch_returns_404_soft(
@@ -470,8 +457,7 @@ class TestActorDeptCrossCheckSoftMode:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr_with_dept(foreign_token, "dep_a"),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
         assert "dep-a-only-pwd" not in resp.text
 
     async def test_account_password_actor_mismatch_no_header_returns_404_soft(
@@ -489,8 +475,7 @@ class TestActorDeptCrossCheckSoftMode:
             f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/password",
             headers=_hdr(foreign_token),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
         assert "leak-target" not in resp.text
 
     async def test_rotate_actor_mismatch_no_header_returns_404_soft(
@@ -507,8 +492,7 @@ class TestActorDeptCrossCheckSoftMode:
             headers=_hdr(foreign_token),
             json={"password": "CrossDeptInj1234"},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_rotate_actor_mismatch_matched_header_still_404_soft(
         self, client, make_token, make_server, make_account,
@@ -526,5 +510,4 @@ class TestActorDeptCrossCheckSoftMode:
             headers=_hdr_with_dept(foreign_token, "dep_a"),
             json={"password": "CrossDeptInj5678"},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")

@@ -293,7 +293,7 @@ async def test_ban_audit_reports_zero_bot_revokes(
     assert resp.status_code == 200
 
     ban_events = [e for e in captured if e["action"] == "user.ban"]
-    assert ban_events
+    assert len(ban_events) == 1
     details = ban_events[0]["details"]
     assert details["pat_revoked"] is True
     assert details["bot_tokens_revoked"] == 0

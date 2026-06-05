@@ -38,11 +38,12 @@ from src.core.exceptions import AuthorizationError, NotFoundError
 from src.schemas.identity import IdentityContext
 from src.schemas.internal import IpmiCredentialsRotatedRequest
 from src.services import (
-    audit_service,
     internal_service,
     redaction,
     secrets_migration_service,
 )
+
+from tests._helpers import make_emit_capture
 
 
 # ── Хелперы ──────────────────────────────────────────────────────────────────
@@ -70,22 +71,12 @@ def _identity(
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    captured: list[dict] = []
-
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    monkeypatch.setattr(audit_service, "emit", fake_emit)
-    monkeypatch.setattr(
-        "src.api.v1.endpoints.tasks.audit_service.emit", fake_emit,
+    return make_emit_capture(
+        monkeypatch,
+        "src.api.v1.endpoints.tasks.audit_service.emit",
+        "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
+        "src.api.v1.endpoints.secrets_migration.audit_service.emit",
     )
-    monkeypatch.setattr(
-        "src.api.v1.endpoints.worker_dispatch.audit_service.emit", fake_emit,
-    )
-    monkeypatch.setattr(
-        "src.api.v1.endpoints.secrets_migration.audit_service.emit", fake_emit,
-    )
-    return captured
 
 
 def _settings(monkeypatch, *, strict: bool = False):

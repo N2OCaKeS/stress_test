@@ -193,21 +193,17 @@ class TestReencryptBatchContract:
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    """Тонкая копия фикстуры из test_roles_endpoints — мы здесь читаем,
-    какой status попадает в `secrets.reencrypt_batch` emit."""
-    captured: list[dict] = []
+    """Захват `audit_service.emit` для проверки status в `secrets.reencrypt_batch`.
 
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
+    endpoints/secrets_migration.py делает `from src.services import audit_service`
+    — патчим тот же объект, который endpoint видит, плюс источник.
+    """
+    from tests._helpers import make_emit_capture
 
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    # endpoints/secrets_migration.py делает `from src.services import audit_service`
-    # — патчим тот же объект, который endpoint видит.
-    monkeypatch.setattr(
-        "src.api.v1.endpoints.secrets_migration.audit_service.emit", fake_emit
+    return make_emit_capture(
+        monkeypatch,
+        "src.api.v1.endpoints.secrets_migration.audit_service.emit",
     )
-    return captured
 
 
 class TestReencryptBatchAuditStatus:

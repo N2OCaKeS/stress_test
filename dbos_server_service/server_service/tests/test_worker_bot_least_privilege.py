@@ -24,7 +24,7 @@ BASE = "/api/server/v1"
 BASE_INT = f"{BASE}/internal"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 # ── Allowed actions: 4 разрешённых эндпоинта возвращают 200 ──────────────────
@@ -93,8 +93,7 @@ class TestWorkerBotForbiddenServerCrud:
                 "department_id": "dep_a",
             },
         )
-        assert resp.status_code == 403, resp.text
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cannot_delete_server(
         self, client, worker_bot_token_a, make_server,
@@ -104,8 +103,7 @@ class TestWorkerBotForbiddenServerCrud:
             f"{BASE}/servers/{srv.id}",
             headers=_hdr(worker_bot_token_a),
         )
-        assert resp.status_code == 403, resp.text
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 class TestWorkerBotForbiddenPower:
@@ -145,7 +143,7 @@ class TestWorkerBotForbiddenPower:
             f"{BASE}/servers/{srv.id}/ipmi/power/on",
             headers=_hdr(worker_bot_token_a),
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == [], "dispatch не должен вызываться при отказе"
 
     async def test_cannot_power_off(
@@ -156,7 +154,7 @@ class TestWorkerBotForbiddenPower:
             f"{BASE}/servers/{srv.id}/ipmi/power/off",
             headers=_hdr(worker_bot_token_a),
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
     async def test_cannot_power_reboot(
@@ -167,7 +165,7 @@ class TestWorkerBotForbiddenPower:
             f"{BASE}/servers/{srv.id}/ipmi/power/reboot",
             headers=_hdr(worker_bot_token_a),
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
 
@@ -181,8 +179,7 @@ class TestWorkerBotForbiddenPermissionMatrix:
             f"{BASE}/permissions",
             headers=_hdr(worker_bot_token_a),
         )
-        assert resp.status_code == 403, resp.text
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cannot_grant_permission(self, client, worker_bot_token_a):
         """PUT /permissions/{entity}/{role}/{action} — требует
@@ -191,8 +188,7 @@ class TestWorkerBotForbiddenPermissionMatrix:
             f"{BASE}/permissions/server_account/worker_bot/grant_sudo",
             headers=_hdr(worker_bot_token_a),
         )
-        assert resp.status_code == 403, resp.text
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cannot_revoke_permission(self, client, worker_bot_token_a):
         """DELETE /permissions/{entity}/{role}/{action} — требует
@@ -201,8 +197,7 @@ class TestWorkerBotForbiddenPermissionMatrix:
             f"{BASE}/permissions/server_account/worker_bot/view_password",
             headers=_hdr(worker_bot_token_a),
         )
-        assert resp.status_code == 403, resp.text
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 # ── Permission-matrix регрессия: грант worker_bot реально появился в БД ──────

@@ -574,21 +574,15 @@ class TestPowerIdempotency:
 def captured_emits(monkeypatch):
     """Захватывает `audit_service.emit` вызовы из endpoints/ipmi.py.
 
-    Патчим прямой importer (`endpoints.ipmi.audit_service.emit`) и
-    источник (`services.audit_service.emit`) — на случай если внутри
-    модуля идёт обращение через `audit_service.emit(...)`.
+    Патчим прямой importer и источник — на случай если внутри модуля
+    идёт обращение через `audit_service.emit(...)`.
     """
-    captured: list[dict] = []
+    from tests._helpers import make_emit_capture
 
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    monkeypatch.setattr(
-        "src.api.v1.endpoints.ipmi.audit_service.emit", fake_emit,
+    return make_emit_capture(
+        monkeypatch,
+        "src.api.v1.endpoints.ipmi.audit_service.emit",
     )
-    return captured
 
 
 def _events(captured: list[dict], action: str) -> list[dict]:

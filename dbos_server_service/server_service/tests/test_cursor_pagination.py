@@ -18,7 +18,7 @@ OS_VERSIONS = "/api/server/v1/os-versions"
 IPMI = "/api/server/v1/ipmi_controllers"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 # ── /servers ─────────────────────────────────────────────────────────────────
@@ -106,9 +106,7 @@ class TestServersCursor:
             SERVERS, headers=_hdr(admin_token),
             params={"after": "!!! not base64 !!!"},
         )
-        assert resp.status_code == 400
-        body = resp.json()
-        assert body["error_code"] == "INVALID_CURSOR"
+        assert_error(resp, 400, "INVALID_CURSOR")
 
     async def test_invalid_cursor_payload_returns_400(
         self, client, admin_token,
@@ -117,8 +115,7 @@ class TestServersCursor:
         resp = await client.get(
             SERVERS, headers=_hdr(admin_token), params={"after": "aGk"},
         )
-        assert resp.status_code == 400
-        assert resp.json()["error_code"] == "INVALID_CURSOR"
+        assert_error(resp, 400, "INVALID_CURSOR")
 
     async def test_dept_isolation_in_cursor_mode(
         self, client, reader_token_a, make_server,
@@ -208,8 +205,7 @@ class TestServerAccountsCursor:
             ACCOUNTS, headers=_hdr(admin_token),
             params={"server_id": srv.id, "after": "%%%"},
         )
-        assert resp.status_code == 400
-        assert resp.json()["error_code"] == "INVALID_CURSOR"
+        assert_error(resp, 400, "INVALID_CURSOR")
 
     async def test_cross_dept_server_hidden_in_cursor_mode(
         self, client, reader_token_a, make_server, make_account,
@@ -220,7 +216,7 @@ class TestServerAccountsCursor:
             ACCOUNTS, headers=_hdr(reader_token_a),
             params={"server_id": srv.id, "cursor": "true"},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
 
 # ── /os-versions ─────────────────────────────────────────────────────────────
@@ -247,8 +243,7 @@ class TestOsVersionsCursor:
 
     async def test_invalid_cursor_returns_400(self, client):
         resp = await client.get(OS_VERSIONS, params={"after": "###"})
-        assert resp.status_code == 400
-        assert resp.json()["error_code"] == "INVALID_CURSOR"
+        assert_error(resp, 400, "INVALID_CURSOR")
 
     async def test_walk_collects_created_items(
         self, client, admin_role_token_a,
@@ -306,8 +301,7 @@ class TestIpmiControllersCursor:
         resp = await client.get(
             IPMI, headers=_hdr(admin_token), params={"after": "@@@"},
         )
-        assert resp.status_code == 400
-        assert resp.json()["error_code"] == "INVALID_CURSOR"
+        assert_error(resp, 400, "INVALID_CURSOR")
 
     async def test_dept_isolation(
         self, client, reader_token_a, make_server,

@@ -81,26 +81,16 @@ def captured_dispatch(monkeypatch):
 def captured_emits(monkeypatch):
     """Захватывает `audit_service.emit` из `endpoints/worker_dispatch`.
 
-    Зеркало паттерна из `test_ipmi_endpoints.py` — патчим и общий модуль,
-    и прямого importer'а (чтобы поймать обе формы вызова).
+    Патчим общий модуль и прямых importer'ов (worker_dispatch и
+    services.server — последний эмитит denied-аудит на cross-dept).
     """
-    captured: list[dict] = []
+    from tests._helpers import make_emit_capture
 
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    monkeypatch.setattr(
+    return make_emit_capture(
+        monkeypatch,
         "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
-        fake_emit,
+        "src.services.server.audit_service.emit",
     )
-    # `services.server.get_server` тоже эмитит denied-аудит на cross-dept —
-    # патчим и его, чтобы tests могли проверять полный набор.
-    monkeypatch.setattr(
-        "src.services.server.audit_service.emit", fake_emit,
-    )
-    return captured
 
 
 def _events(captured: list[dict], action: str) -> list[dict]:

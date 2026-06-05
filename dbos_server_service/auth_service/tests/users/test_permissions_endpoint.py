@@ -443,6 +443,6 @@ class TestAuditEmitDeptAdminCrossDept:
             if e["action"] == "user.permissions_view"
             and e.get("status") == "failure"
         ]
-        assert denied
+        assert len(denied) == 1
         details = denied[0].get("details") or {}
         assert details.get("reason") == "cross_department_user"

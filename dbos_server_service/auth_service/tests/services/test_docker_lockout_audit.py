@@ -88,8 +88,8 @@ class TestDockerBotLockoutAudit:
             and e.get("allowed") is False
             and e.get("details", {}).get("reason") == "account_locked"
         ]
-        assert lockout_events, (
-            f"ожидался docker.token_issued failure reason=account_locked, "
+        assert len(lockout_events) == 1, (
+            f"ожидался ровно один docker.token_issued failure reason=account_locked, "
             f"получили: {[e['action'] for e in capture_audit]}"
         )
 
@@ -126,7 +126,7 @@ class TestDockerBotLockoutAudit:
             e for e in capture_audit
             if e["action"] == "docker.token_issued" and e.get("status") == "failure"
         ]
-        assert events
+        assert len(events) == 1
         assert events[0]["details"]["username"] == bot_name
 
 
@@ -163,7 +163,7 @@ class TestDockerUserLockoutAudit:
             and e.get("status") == "failure"
             and e.get("details", {}).get("reason") == "account_locked"
         ]
-        assert lockout_events, (
-            f"no docker.token_issued failure account_locked in: "
+        assert len(lockout_events) == 1, (
+            f"ожидался ровно один docker.token_issued failure account_locked в: "
             f"{[(e['action'], e.get('details')) for e in capture_audit]}"
         )

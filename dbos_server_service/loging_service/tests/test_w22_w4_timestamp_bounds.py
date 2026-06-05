@@ -30,28 +30,34 @@ def _payload(**kwargs) -> dict:
 
 class TestTimestampBoundsInsideWindow:
     def test_now_accepted(self):
-        ev = EventCreate(**_payload(timestamp=datetime.now(timezone.utc)))
-        assert ev.timestamp.tzinfo is not None
+        ts = datetime.now(timezone.utc)
+        ev = EventCreate(**_payload(timestamp=ts))
+        assert ev.timestamp == ts
+        assert ev.timestamp.tzinfo == timezone.utc
 
     def test_30min_past_accepted(self):
         ts = datetime.now(timezone.utc) - timedelta(minutes=30)
         ev = EventCreate(**_payload(timestamp=ts))
         # tz сохраняется; точное значение проходит насквозь.
-        assert ev.timestamp.tzinfo is not None
+        assert ev.timestamp == ts
+        assert ev.timestamp.tzinfo == timezone.utc
 
     def test_30min_future_accepted(self):
         ts = datetime.now(timezone.utc) + timedelta(minutes=30)
         ev = EventCreate(**_payload(timestamp=ts))
-        assert ev.timestamp.tzinfo is not None
+        assert ev.timestamp == ts
+        assert ev.timestamp.tzinfo == timezone.utc
 
     def test_at_boundary_minus_50min_accepted(self):
         """Граница окна — 1ч; -50мин в зоне «комфортного запаса»."""
         ts = datetime.now(timezone.utc) - timedelta(minutes=50)
-        EventCreate(**_payload(timestamp=ts))
+        ev = EventCreate(**_payload(timestamp=ts))
+        assert ev.timestamp == ts
 
     def test_at_boundary_plus_50min_accepted(self):
         ts = datetime.now(timezone.utc) + timedelta(minutes=50)
-        EventCreate(**_payload(timestamp=ts))
+        ev = EventCreate(**_payload(timestamp=ts))
+        assert ev.timestamp == ts
 
 
 class TestTimestampBoundsOutsideWindow:

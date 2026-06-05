@@ -35,6 +35,7 @@ from src.db.session import AsyncSessionLocal
 from src.models import AuditOutbox, Task, WorkerHeartbeat
 from src.repositories import task as task_repo
 from src.repositories import worker_heartbeat as heartbeat_repo
+from tests._helpers.broker_mocks import make_broker
 
 
 def _new_id(prefix: str = "tsk_") -> str:
@@ -205,21 +206,13 @@ class TestRecoverScheduledRetries:
             await session.commit()
 
         # Мокаем broker.find_task → возвращаем fake task, ловим kiq-вызовы.
-        kicked = []
-
-        class FakeKicker:
-            async def kiq(self, task_id, *args, **kwargs):
-                kicked.append(task_id)
-
-        class FakeTask:
-            def kicker(self):
-                return FakeKicker()
-
-        monkeypatch.setattr(broker, "find_task", lambda kind: FakeTask())
+        fake_broker = make_broker()
+        monkeypatch.setattr(broker, "find_task", fake_broker.find_task)
 
         state = TaskiqState()
         await _recover_scheduled_retries(state)
 
+        kicked = [c.args[0] for c in fake_broker._kiq.call_args_list]
         # Поднято ровно 2 due — future не трогается.
         assert sorted(kicked) == sorted(due_ids)
 
@@ -257,20 +250,12 @@ class TestRecoverScheduledRetries:
         from src.main import _recover_scheduled_retries, broker
         from taskiq import TaskiqState
 
-        kicked = []
-
-        class FakeTask:
-            def kicker(self):
-                class K:
-                    async def kiq(self, *a, **k):
-                        kicked.append(a)
-                return K()
-
-        monkeypatch.setattr(broker, "find_task", lambda kind: FakeTask())
+        fake_broker = make_broker()
+        monkeypatch.setattr(broker, "find_task", fake_broker.find_task)
 
         state = TaskiqState()
         await _recover_scheduled_retries(state)
-        assert kicked == []
+        assert fake_broker._kiq.call_count == 0
 
     async def test_end_to_end_crash_simulation(self, fetch_task, monkeypatch):
         """E2E: симулируем «worker crash во время back-off sleep'а».
@@ -322,21 +307,13 @@ class TestRecoverScheduledRetries:
             await session.commit()
 
         # Шаг 3-4: «новый worker» поднялся → recovery подхватывает.
-        kicked = []
-
-        class FakeKicker:
-            async def kiq(self, task_id, *args, **kwargs):
-                kicked.append(task_id)
-
-        class FakeTask:
-            def kicker(self):
-                return FakeKicker()
-
-        monkeypatch.setattr(broker, "find_task", lambda kind: FakeTask())
+        fake_broker = make_broker()
+        monkeypatch.setattr(broker, "find_task", fake_broker.find_task)
 
         state = TaskiqState()
         await _recover_scheduled_retries(state)
 
+        kicked = [c.args[0] for c in fake_broker._kiq.call_args_list]
         assert kicked == [tid]
 
     async def test_periodic_recovery_kiqs_due_tasks(self, monkeypatch):
@@ -377,22 +354,14 @@ class TestRecoverScheduledRetries:
             })
             await session.commit()
 
-        kicked = []
-
-        class FakeKicker:
-            async def kiq(self, task_id, *args, **kwargs):
-                kicked.append(task_id)
-
-        class FakeTask:
-            def kicker(self):
-                return FakeKicker()
-
-        monkeypatch.setattr(broker, "find_task", lambda kind: FakeTask())
+        fake_broker = make_broker()
+        monkeypatch.setattr(broker, "find_task", fake_broker.find_task)
 
         # Periodic-task в taskiq декорирован `@broker.task` — вытаскиваем
         # сырую функцию через `.original_func`, не дёргаем kiq.
         await tasks_recover_scheduled_retries.original_func()
 
+        kicked = [c.args[0] for c in fake_broker._kiq.call_args_list]
         assert kicked == [due_id]
 
 

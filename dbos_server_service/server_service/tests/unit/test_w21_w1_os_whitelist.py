@@ -15,27 +15,18 @@ from sqlalchemy import select
 from src.core.known_os import KNOWN_OS_PREFIXES, is_known_os
 from src.models import OsVersion, Server
 
+from tests._helpers import make_emit_capture
+
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    captured: list[dict] = []
-
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    for path in (
+    return make_emit_capture(
+        monkeypatch,
         "src.services.internal_service.audit_service.emit",
         "src.services.server.audit_service.emit",
         "src.services.permission_service.audit_service.emit",
         "src.api.v1.endpoints.ipmi.audit_service.emit",
-    ):
-        try:
-            monkeypatch.setattr(path, fake_emit)
-        except (AttributeError, ImportError):
-            pass
-    return captured
+    )
 
 
 class TestIsKnownOs:

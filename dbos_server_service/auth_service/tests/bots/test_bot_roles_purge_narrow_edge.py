@@ -194,7 +194,7 @@ async def test_narrowing_multiple_services_counts_all_removed_roles(
         e for e in captured
         if e.get("action") == "bot.roles_purged_on_services_narrowed"
     ]
-    assert purge_events
+    assert len(purge_events) == 1
     details = purge_events[-1]["details"]
     # Два сервиса убраны, по одной роли на каждый — итого 2.
     assert details["removed_role_count"] == 2

@@ -310,6 +310,6 @@ async def test_invalid_pat_audit_has_subject_type_pat(
     assert resp.status_code == 401
 
     events = [e for e in captured if e.get("action") == "docker.token_issued"]
-    assert events
+    assert len(events) == 1
     ev = events[0]
     assert ev["details"]["subject_type"] == "pat"

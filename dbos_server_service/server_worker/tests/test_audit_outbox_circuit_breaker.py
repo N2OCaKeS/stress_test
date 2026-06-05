@@ -20,6 +20,7 @@ import asyncio
 import pytest
 
 from src.services import audit_outbox_publisher
+from src.services.audit_outbox_publisher import _CB_SLEEP_CHUNK_SECONDS
 
 
 # `pyproject.toml` ставит `asyncio_mode = "auto"`.
@@ -111,11 +112,10 @@ class TestAdaptiveSleepOnBreakerState:
         await _run_iterations(3, interval=2.0)
 
         assert sleep_recorder
-        # Все sleep'ы кап'нуты `_CB_SLEEP_CHUNK_SECONDS` (5.0 по дефолту),
-        # обычный poll-interval (2.0) не выбирается.
+        # Все sleep'ы кап'нуты `_CB_SLEEP_CHUNK_SECONDS`, обычный
+        # poll-interval (2.0) не выбирается.
         assert all(
-            s == audit_outbox_publisher._CB_SLEEP_CHUNK_SECONDS
-            for s in sleep_recorder
+            s == _CB_SLEEP_CHUNK_SECONDS for s in sleep_recorder
         ), f"open-state должен спать chunk-секунд; got={sleep_recorder}"
 
     async def test_open_state_uses_retry_after_if_smaller_than_chunk(
@@ -123,11 +123,15 @@ class TestAdaptiveSleepOnBreakerState:
     ):
         """Если до конца cooldown'а осталось меньше chunk'а — спим именно retry_after."""
 
+        # Любое значение < chunk: берём «половину» так, чтобы сравнение шло
+        # против шага, а не против hard-coded 1.5.
+        retry_after = _CB_SLEEP_CHUNK_SECONDS / 2
+
         async def fake_flush(*, limit=audit_outbox_publisher._BATCH_SIZE):
             return (0, 0)
 
         async def fake_get_state():
-            return ("open", 1.5)  # 1.5s < 5s chunk
+            return ("open", retry_after)
 
         monkeypatch.setattr(audit_outbox_publisher, "_flush_outbox_once", fake_flush)
         monkeypatch.setattr(
@@ -138,7 +142,7 @@ class TestAdaptiveSleepOnBreakerState:
         await _run_iterations(3, interval=2.0)
 
         assert sleep_recorder
-        assert all(s == 1.5 for s in sleep_recorder), (
+        assert all(s == retry_after for s in sleep_recorder), (
             f"остаток окна < chunk → спим именно retry_after; got={sleep_recorder}"
         )
 

@@ -31,26 +31,15 @@ from src.services import worker_client
 BASE = "/api/server/v1/server-accounts"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import auth_hdr as _hdr, make_emit_capture  # noqa: E402
 
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    captured: list[dict] = []
-
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    for path in (
+    return make_emit_capture(
+        monkeypatch,
         "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
-    ):
-        try:
-            monkeypatch.setattr(path, fake_emit)
-        except (AttributeError, ImportError):
-            pass
-    return captured
+    )
 
 
 @pytest.fixture

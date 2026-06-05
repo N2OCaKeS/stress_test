@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest  # noqa: F401  — re-exported transitively by conftest fixtures
 
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 BASE = "/api/server/v1/servers"
 
@@ -46,8 +46,7 @@ class TestViewCredentialsMetadata:
         resp = await client.get(
             f"{BASE}/{srv.id}/ipmi/credentials", headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_operator_without_credentials_grant_returns_403(
         self, client, operator_token_a, make_server, make_ipmi,
@@ -58,7 +57,7 @@ class TestViewCredentialsMetadata:
         resp = await client.get(
             f"{BASE}/{srv.id}/ipmi/credentials", headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_worker_bot_can_view_metadata(
         self, client, worker_bot_token_a, make_server, make_ipmi,
@@ -78,8 +77,7 @@ class TestViewCredentialsMetadata:
         resp = await client.get(
             f"{BASE}/{srv.id}/ipmi/credentials", headers=_hdr(admin_token),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
     async def test_cross_dept_returns_404(
         self, client, admin_token_b, make_server, make_ipmi,
@@ -89,13 +87,12 @@ class TestViewCredentialsMetadata:
         resp = await client.get(
             f"{BASE}/{srv.id}/ipmi/credentials", headers=_hdr(admin_token_b),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_no_token_returns_401(self, client, make_server):
         srv = await make_server(department_id="dep_a")
         resp = await client.get(f"{BASE}/{srv.id}/ipmi/credentials")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
 
 # ── GET /ipmi/power (кэшированный) ───────────────────────────────────────────
@@ -159,7 +156,7 @@ class TestPowerStatusCached:
             f"{BASE}/{srv.id}/ipmi/power", headers=_hdr(guest_token_a),
         )
         # guest по дефолту не имеет power_status в матрице
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404(
         self, client, operator_token_b, make_server,
@@ -168,11 +165,11 @@ class TestPowerStatusCached:
         resp = await client.get(
             f"{BASE}/{srv.id}/ipmi/power", headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_no_token_returns_401(self, client, make_server):
         srv = await make_server(department_id="dep_a")
         resp = await client.get(f"{BASE}/{srv.id}/ipmi/power")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
 

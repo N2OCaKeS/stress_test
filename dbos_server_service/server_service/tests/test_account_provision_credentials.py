@@ -28,7 +28,7 @@ from src.services import secrets_service, worker_client
 BASE = "/api/server/v1/server-accounts"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 @pytest.fixture
@@ -372,7 +372,7 @@ class TestProvisionDispatchFailureRollsBackCreds:
             f"{BASE}/{acc_id}/provision?server_id={srv_id}&force_password=true",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 503, resp.text
+        assert_error(resp, 503, "WORKER_UNREACHABLE")
 
         # Свежий transactional read обязателен — текущая сессия откатилась,
         # внутри неё `acc` уже expire'нут. Берём фактическое состояние из БД.
@@ -407,7 +407,7 @@ class TestProvisionDispatchFailureRollsBackCreds:
             f"{BASE}/{acc_id}/provision?server_id={srv_id}&force_password=true",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409, resp.text
+        assert_error(resp, 409, "TASK_IDEMPOTENT_CONFLICT")
 
         refreshed = (await db.execute(
             select(ServerAccount).where(ServerAccount.id == acc_id)
@@ -474,9 +474,7 @@ class TestProvisionDispatchFailureRollsBackCreds:
             f"{BASE}/{acc.id}/provision?server_id={srv.id}",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 422, resp.text
-        body = resp.json()
-        assert body["error_code"] == "ACCOUNT_SSH_KEY_INCONSISTENT"
+        assert_error(resp, 422, "ACCOUNT_SSH_KEY_INCONSISTENT")
 
     async def test_force_overwrite_rolls_back_on_dispatch_failure(
         self, client, operator_token_a, make_server, make_account,
@@ -508,7 +506,7 @@ class TestProvisionDispatchFailureRollsBackCreds:
             f"{BASE}/{acc_id}/provision?server_id={srv_id}&force_password=true",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 503, resp.text
+        assert_error(resp, 503, "WORKER_UNREACHABLE")
 
         refreshed = (await db.execute(
             select(ServerAccount).where(ServerAccount.id == acc_id)

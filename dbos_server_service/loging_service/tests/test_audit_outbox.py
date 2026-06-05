@@ -618,7 +618,7 @@ class TestCancelAfterCommitNoRequeue:
             assert outbox._queue.qsize() == 0
 
             await outbox._drain_remaining(timeout=0.5)
-            assert commit_done.is_set()
+            assert commit_done.is_set() is True
 
         asyncio.run(run())
 

@@ -237,13 +237,13 @@ async def test_bot_create_and_role_assign_audit_targets_bot(
     )
 
     create_events = [e for e in captured_audit if e["action"] == "bot.create"]
-    assert create_events
+    assert len(create_events) == 1
     assert create_events[0]["target_id"] == bot["bot_id"]
     assert create_events[0]["target_type"] == "bot"
     assert create_events[0]["details"]["department_id"] == dept_a_with_service.id
 
     role_events = [e for e in captured_audit if e["action"] == "bot.roles_assign"]
-    assert role_events
+    assert len(role_events) == 1
     assert role_events[0]["target_id"] == bot["bot_id"]
     assert role_events[0]["details"]["service_name"] == service_x.service_name
     assert role_events[0]["details"]["roles"] == ["reader"]

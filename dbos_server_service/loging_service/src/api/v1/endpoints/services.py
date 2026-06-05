@@ -21,6 +21,7 @@ from src.dependencies.auth import ReaderIdentity, require_service_token
 from src.dependencies.db import get_db
 from src.repositories import events as events_repo
 from src.repositories import service_events as se_repo
+from src.schemas.common import ErrorEnvelope
 from src.schemas.events import EventCreate
 from src.schemas.services import (
     RegisterEventsRequest,
@@ -39,6 +40,12 @@ from src.utils.normalization import normalize_service_name
 from src.core.limiter import limiter
 
 router = APIRouter()
+
+# Charset для path-параметра `service`: snake_case ASCII после NFKC
+# (тот же regex, что у `EventCreate.service` в schemas/events.py). Bounded
+# input снимает с NFKC'ка `normalize_service_name` нагрузку от unbounded
+# string и публикует charset/length в OpenAPI.
+_SERVICE_PATH_PATTERN = r"^[^/\s]{1,128}$"
 
 
 def _register_events_rate_limit_key(request: Request) -> str:
@@ -76,15 +83,25 @@ def _register_events_rate_limit_key(request: Request) -> str:
     description=(
         "Возвращает агрегат: `service`, `event_count`, `last_event_at` по каждому "
         "сервису, у которого есть хотя бы одно событие в `audit_events`.\n\n"
+        "Список заведомо короткий (десятки сервисов на платформе), поэтому "
+        "пагинации нет: `has_more=False`, `limit`/`offset` всегда `null`, "
+        "`total = len(items)`.\n\n"
         "**Доступ:**\n"
         "- `loging_admin` / `account_admin` — видят все сервисы;\n"
         "- `loging_reader` / `department_admin` / service-роли в "
         "`loging_service` — видят только сервисы, писавшие события из их "
         "`department_id`. `event_count` / `last_event_at` агрегируются "
         "только по их отделу.\n\n"
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
         "**Связано:** `GET /services/{service}/events` — каталог action'ов "
         "конкретного сервиса; `GET /events` — собственно события."
     ),
+    responses={
+        401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+        403: {"model": ErrorEnvelope, "description": "`INSUFFICIENT_ROLE` / `NO_DEPARTMENT`"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
+    },
 )
 # Per-IP лимит на read-канал реестра сервисов. Симметрия с `GET /events`:
 # даже валидный reader-JWT не должен иметь права burst'ом выжимать pgsql-пул
@@ -116,7 +133,17 @@ def list_services(
         ServiceInfo(service=r.service, event_count=r.event_count, last_event_at=r.last_event_at)
         for r in rows
     ]
-    return ServiceListResponse(items=items, total=len(items))
+    # Список заведомо короткий — реальной пагинации тут нет, но shape выровнен
+    # с EventListResponse / RuleListResponse / ServiceEventsResponse, чтобы
+    # клиенты не дёргали поля по-разному. `has_more=False` всегда: вернули всё,
+    # что есть; `limit`/`offset` None — параметров запрос не принимал.
+    return ServiceListResponse(
+        items=items,
+        total=len(items),
+        has_more=False,
+        limit=None,
+        offset=None,
+    )
 
 
 @router.post(
@@ -147,7 +174,18 @@ def list_services(
         "на зарегистрированные action'ы."
     ),
     responses={
-        429: {"description": "Превышен per-service-identity rate-limit"},
+        401: {
+            "model": ErrorEnvelope,
+            "description": "`INVALID_SERVICE_KEY` / `MISSING_SERVICE_IDENTITY`",
+        },
+        403: {
+            "model": ErrorEnvelope,
+            "description": "`RESERVED_SERVICE_NAME` / `SERVICE_IDENTITY_PATH_MISMATCH`",
+        },
+        413: {"model": ErrorEnvelope, "description": "`PAYLOAD_TOO_LARGE`"},
+        422: {"model": ErrorEnvelope, "description": "`VALIDATION_ERROR`"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-service-identity rate-limit"},
+        503: {"model": ErrorEnvelope, "description": "`SERVICE_TOKEN_NOT_CONFIGURED`"},
     },
     dependencies=[Depends(require_service_token)],
 )
@@ -166,7 +204,12 @@ def list_services(
 def register_events(
     request: Request,
     response: Response,
-    service: str = Path(description="Имя сервиса, например 'auth_service'"),
+    service: str = Path(
+        min_length=1,
+        max_length=64,
+        pattern=_SERVICE_PATH_PATTERN,
+        description="Имя сервиса, например 'auth_service'",
+    ),
     payload: RegisterEventsRequest = ...,
     db: Session = Depends(get_db),
 ) -> RegisterEventsResponse:
@@ -279,10 +322,18 @@ def register_events(
         "**Доступ:** read-роли (`loging_admin` / `account_admin` / "
         "`loging_reader` / `department_admin` / service-роли в "
         "`loging_service`). Реестр сам по себе не содержит dept-зависимых "
-        "данных, поэтому scope тут не применяется.\n\n"
+        "данных, но `loging_reader` / `department_admin` всё равно обязаны "
+        "иметь `department_id` (общий гард `require_reader`).\n\n"
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
         "**Связано:** `POST /services/{service}/events` — регистрация "
         "action'ов; `POST /rules` — правила на эти action'ы."
     ),
+    responses={
+        401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+        403: {"model": ErrorEnvelope, "description": "`INSUFFICIENT_ROLE` / `NO_DEPARTMENT`"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
+    },
 )
 @limiter.limit(
     lambda: get_settings().audit_query_rate_limit,
@@ -291,7 +342,12 @@ def list_service_events(
     request: Request,
     response: Response,
     identity: ReaderIdentity,
-    service: str = Path(description="Имя сервиса, например 'auth_service'"),
+    service: str = Path(
+        min_length=1,
+        max_length=64,
+        pattern=_SERVICE_PATH_PATTERN,
+        description="Имя сервиса, например 'auth_service'",
+    ),
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=MAX_QUERY_LIMIT),
     offset: int = Query(default=0, ge=0, le=MAX_QUERY_OFFSET),
@@ -305,6 +361,7 @@ def list_service_events(
         service=service,
         items=[ServiceEventDetail.model_validate(r) for r in rows],
         total=total,
+        has_more=offset + len(rows) < total,
         limit=limit,
         offset=offset,
     )

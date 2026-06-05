@@ -13,7 +13,7 @@ from src.db.session import AsyncSessionLocal
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.auth import IdentityContext, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest, RefreshResponse
-from src.schemas.common import OkResponse
+from src.schemas.common import HealthResponse, OkResponse, ReadyResponse
 from src.services import auth_service
 from src.services.audit_context import extract_client_ip
 
@@ -29,12 +29,13 @@ _READINESS_TIMEOUT_SECONDS = 0.5
 
 @router.get(
     "/health",
+    response_model=HealthResponse,
     summary="Liveness-проба",
     description="Простой liveness-чек. Не ходит в БД — нужен только чтобы понять, что процесс жив.",
 )
-async def healthcheck() -> dict[str, str]:
+async def healthcheck() -> HealthResponse:
     """Liveness — отдаёт `{"status": "ok"}` всегда, если процесс отвечает."""
-    return {"status": "ok", "service": "auth_service"}
+    return HealthResponse(status="ok", service="auth_service")
 
 
 async def _ping_db() -> None:
@@ -50,6 +51,10 @@ async def _ping_db() -> None:
         "Readiness-чек. Пингует БД через `SELECT 1` с коротким timeout'ом. "
         "При недоступной БД отвечает 503 — k8s ingress тогда не льёт трафик в pod."
     ),
+    responses={
+        200: {"model": ReadyResponse, "description": "БД доступна."},
+        503: {"model": ReadyResponse, "description": "БД недоступна, `reason=db_unreachable`."},
+    },
 )
 async def readiness() -> JSONResponse:
     """Readiness — БД-пинг через short-timeout `SELECT 1`.

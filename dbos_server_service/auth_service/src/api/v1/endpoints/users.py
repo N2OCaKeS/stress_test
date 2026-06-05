@@ -1,9 +1,10 @@
 """Эндпоинты CRUD пользователей и управления ролями/группами."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import UserStatus
+from src.core.exceptions import DomainValidationError
 from src.dependencies.auth import AccountAdmin, AnyAdmin, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.utils.pagination import PaginationParams, pagination_params
@@ -273,9 +274,9 @@ async def list_users(
         try:
             UserStatus(status)
         except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail=f"invalid status filter: {status!r}",
+            raise DomainValidationError(
+                error_code="INVALID_STATUS_FILTER",
+                message=f"invalid status filter: {status!r}",
             )
     items, total = await user_service.list_users(
         db=db,
@@ -333,9 +334,9 @@ async def list_users_by_department(
         try:
             UserStatus(status)
         except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail=f"invalid status filter: {status!r}",
+            raise DomainValidationError(
+                error_code="INVALID_STATUS_FILTER",
+                message=f"invalid status filter: {status!r}",
             )
     items, total = await user_service.list_users_by_department(
         db=db,
@@ -442,6 +443,7 @@ async def update_user(
 
 @router.post(
     "/{user_id}/roles",
+    response_model=OkResponse,
     summary="Назначить service-роли юзеру",
     description="Перезаписывает роли юзера для указанного сервиса. Replace-семантика, не append.",
 )

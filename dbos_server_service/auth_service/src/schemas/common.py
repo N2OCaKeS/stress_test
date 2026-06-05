@@ -19,3 +19,16 @@ class ErrorResponse(BaseModel):
 class OkResponse(BaseModel):
     """Тривиальный успешный ответ для эндпоинтов, которым нечего возвращать."""
     ok: bool = Field(default=True, description="Всегда True. Маркер успешного выполнения.")
+
+
+class HealthResponse(BaseModel):
+    """Ответ liveness-пробы `/health`."""
+    status: str = Field(description="`ok` если процесс жив.")
+    service: str = Field(description="Имя сервиса (auth_service).")
+
+
+class ReadyResponse(BaseModel):
+    """Ответ readiness-пробы `/ready` — успех (200) или 503 с reason."""
+    status: str = Field(description="`ready` (200) или `not_ready` (503).")
+    service: str = Field(description="Имя сервиса (auth_service).")
+    reason: str | None = Field(default=None, description="Причина not_ready (например, `db_unreachable`).")

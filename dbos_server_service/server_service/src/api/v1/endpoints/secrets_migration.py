@@ -134,7 +134,16 @@ async def reencrypt_batch(
 # ── Outbox-pattern endpoints ────────────────────────────────────────────────
 
 
-@router.post("/reencrypt_outbox/seed", response_model=SeedOutboxResponse)
+@router.post(
+    "/reencrypt_outbox/seed",
+    response_model=SeedOutboxResponse,
+    responses={
+        200: {"description": "Pending outbox-row'ы опубликованы."},
+        403: {"description": "SECRETS_MIGRATION_DENIED — нет full worker-scope (`view+rotate` на server_account и ipmi_controller)."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP worker-pool лимит пробит (WORKER_POOL_RATE_LIMIT)."},
+        500: {"description": "DECRYPT_FAILED / ENCRYPTION_KEY_MISSING / SECRETS_REENCRYPT_FINALIZE_FAILED."},
+    },
+)
 @endpoint_limiter.limit(get_settings().worker_pool_rate_limit)
 async def seed_reencrypt_outbox(
     request: Request,
@@ -179,6 +188,11 @@ async def seed_reencrypt_outbox(
 @router.get(
     "/reencrypt_outbox/pending",
     response_model=OutboxClaimResponse,
+    responses={
+        200: {"description": "Batch claimed под worker'а."},
+        403: {"description": "SECRETS_MIGRATION_DENIED."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP worker-pool лимит пробит."},
+    },
 )
 @endpoint_limiter.limit(get_settings().worker_pool_rate_limit)
 async def claim_reencrypt_outbox(
@@ -200,6 +214,12 @@ async def claim_reencrypt_outbox(
 @router.post(
     "/reencrypt_outbox/{outbox_id}/done",
     response_model=OutboxFinalizeDoneResponse,
+    responses={
+        200: {"description": "Row закрыт (status=done) либо помечен skipped/warning."},
+        403: {"description": "SECRETS_MIGRATION_DENIED."},
+        404: {"description": "SECRETS_OUTBOX_ROW_NOT_FOUND."},
+        500: {"description": "DECRYPT_FAILED / ENCRYPTION_KEY_MISSING / SECRETS_REENCRYPT_FINALIZE_FAILED."},
+    },
 )
 async def finalize_reencrypt_outbox_done(
     outbox_id: str,

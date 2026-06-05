@@ -16,6 +16,14 @@ Worker-task `installed_packages.list` использует `SshClient.run`:
 * RHEL/CentOS — `rpm -qa --queryformat '%{NAME} %{VERSION}\\n' '<pattern>'`
 Выбор делает сам worker (`which dpkg || which rpm`). Pattern — shell glob,
 не regex (мы НЕ оборачиваем в `re.escape` — dpkg / rpm сами умеют `*?[]`).
+
+URL vs action_kind: путь — `/installed-packages` (kebab, человекочитаемо
+для оператора и Swagger UI), `task_kind` / `audit_action` —
+`installed_packages.list` (snake_case, машинный ключ для SIEM/registry).
+Эта пара намеренно различна: коллекция URL'ов сервиса гомогенна в kebab-case
+(`/server-accounts`, `/ipmi-controllers`, `/os-versions`), а task_kind/audit
+живут в namespace'е `<entity>.<verb>` и сохраняют historical snake_case
+(используется как ключ в worker'е и в audit-registry).
 """
 
 import re
@@ -34,6 +42,7 @@ from src.core.exceptions import (
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.dependencies.idempotency import read_idempotency_key
+from src.schemas.server import ServerTaskDispatchResponse
 from src.services import audit_service, permissions, worker_client
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
@@ -58,6 +67,7 @@ _MAX_INSTALLED_PACKAGES_ROWS = 10000
 
 @router.post(
     "/installed-packages",
+    response_model=ServerTaskDispatchResponse,
     status_code=202,
     summary="Live-список установленных пакетов через worker (SSH + dpkg/rpm)",
     description=(
@@ -71,10 +81,10 @@ _MAX_INSTALLED_PACKAGES_ROWS = 10000
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
-        400: {"description": "INVALID_PATTERN — pattern содержит запрещённые символы."},
+        400: {"description": "INVALID_PATTERN / IDEMPOTENCY_KEY_TOO_LONG."},
         403: {"description": "Нет роли с `view` на server либо чужой department."},
         404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен (WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED)."},
     },
 )
@@ -89,7 +99,7 @@ async def list_installed_packages(
         description="Shell-glob паттерн (`htop`, `linux-image*`, `*-dev`). По умолчанию `*` — все пакеты.",
     ),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> ServerTaskDispatchResponse:
     """Live-просмотр пакетов через worker.
 
     Доступ: `(server, view)` + dept-isolation сервера. Cross-dept → 404.
@@ -209,4 +219,4 @@ async def list_installed_packages(
             "idempotent_hit": idempotent_hit,
         },
     )
-    return {"task_id": task_id, "status": "queued"}
+    return ServerTaskDispatchResponse(task_id=task_id, status="queued")

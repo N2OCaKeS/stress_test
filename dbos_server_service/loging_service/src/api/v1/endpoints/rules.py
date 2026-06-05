@@ -7,7 +7,7 @@ engine, см. `record_admin_action`), чтобы админ не мог случ
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,23 +19,29 @@ from src.core.exceptions import (
     NotFoundError,
 )
 from src.core.limiter import limiter
-from src.dependencies.auth import (
-    RulesAdminIdentity,
-    require_admin_or_account_admin,
-)
+from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
+from src.dependencies.auth import RulesAdminIdentity
 from src.dependencies.db import get_db
 from src.repositories import rules as rule_repo
 from src.repositories import service_events as se_repo
+from src.schemas.common import ErrorEnvelope
 from src.schemas.events import EventCreate
 from src.schemas.rules import RuleCreate, RuleListResponse, RuleResponse, RuleUpdate
 from src.services import event_service, rule_service
 
 router = APIRouter()
 
-# Симметрично `_MAX_OFFSET` в `endpoints/events.py`: верхняя граница для
-# постраничного offset'а. На таблице `audit_rules` редко бывает много row'ов,
-# но гард единообразный и страхует от patalogical OFFSET.
-_MAX_OFFSET = 10_000_000
+# Симметрия с `endpoints/events.py`: единственный источник cap'а на limit/offset
+# живёт в `core/limits.py`. Локальный аlias оставлен для compactness в декораторах
+# Query() — менять одно значение нужно в одном месте.
+_MAX_LIMIT = MAX_QUERY_LIMIT
+_MAX_OFFSET = MAX_QUERY_OFFSET
+
+# Charset path-параметра `rule_id` — opaque `rul_<hex>` идентификаторы
+# (см. `utils/ids.py`). Без bound'а pydantic пропускает unbounded string,
+# она уходит WHERE id=$1 — Postgres переварит, но 422 был бы дешевле и не
+# раздувал бы logs/metrics. Charset симметричен `EventCreate._id_charset`.
+_RULE_ID_PATTERN = r"^[A-Za-z0-9_\-]{1,48}$"
 
 
 def _is_unique_violation(exc: IntegrityError) -> bool:
@@ -111,9 +117,16 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
         "`department_admin` / service-роли в `loging_service` сюда не пускаются — "
         "правила глобальны и leak их состояния (SUPPRESS/OVERRIDE-политики) "
         "раскрывает топологию мониторинга.\n\n"
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
         "**Связано:** `POST /rules` — создать правило; `GET /services/{svc}/events` — "
         "список action'ов, доступных для `match_action`."
     ),
+    responses={
+        401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`LOGING_ADMIN_REQUIRED`)"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
+    },
 )
 # Read-канал rules чейнится в тот же per-IP bucket, что и GET /events
 # (`audit_query_rate_limit`). Без лимита admin-JWT мог бы крутить
@@ -126,13 +139,14 @@ def list_rules(
     response: Response,
     identity: RulesAdminIdentity,
     db: Session = Depends(get_db),
-    limit: int = Query(default=100, ge=1, le=1000),
+    limit: int = Query(default=100, ge=1, le=_MAX_LIMIT),
     offset: int = Query(default=0, ge=0, le=_MAX_OFFSET),
 ) -> RuleListResponse:
     rules, total = rule_repo.get_all(db, limit=limit, offset=offset)
     return RuleListResponse(
         items=[RuleResponse.model_validate(r) for r in rules],
         total=total,
+        has_more=offset + len(rules) < total,
         limit=limit,
         offset=offset,
     )
@@ -144,17 +158,29 @@ def list_rules(
     summary="Получить правило по ID",
     description=(
         "**Доступ:** только `loging_admin` или `account_admin`.\n\n"
-        "**Возможные ошибки:** 404 — правила с таким ID нет."
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README)."
     ),
+    responses={
+        401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`LOGING_ADMIN_REQUIRED`)"},
+        404: {"model": ErrorEnvelope, "description": "`RULE_NOT_FOUND` — правила с таким ID нет"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
+    },
 )
 @limiter.limit(
     lambda: get_settings().audit_query_rate_limit,
 )
 def get_rule(
-    rule_id: str,
     request: Request,
     response: Response,
     identity: RulesAdminIdentity,
+    rule_id: str = Path(
+        min_length=1,
+        max_length=48,
+        pattern=_RULE_ID_PATTERN,
+        description="ID правила (opaque `rul_<hex>`-токен)",
+    ),
     db: Session = Depends(get_db),
 ) -> RuleResponse:
     return RuleResponse.model_validate(_get_or_404(db, rule_id))
@@ -175,14 +201,24 @@ def get_rule(
         "`service_events` — нельзя завести правило на action, которого никто не "
         "регистрировал (но только если реестр непустой).\n\n"
         "**Доступ:** `platform_role` ∈ {`loging_admin`, `account_admin`}.\n\n"
-        "**Возможные ошибки:**\n"
-        "- 409 — правило с таким `name` уже существует (UNIQUE constraint);\n"
-        "- 422 — невалидный effect_severity (см. правило про OVERRIDE_SEVERITY) "
-        "либо неизвестный `match_action`.\n\n"
+        "Rate-limit: **не применяется** — admin write, see-also `API_ENDPOINTS.md`.\n\n"
         "**Связано:** изменение правил сбрасывает in-memory кеш "
         "(`rule_service.invalidate_cache`)."
     ),
-    dependencies=[Depends(require_admin_or_account_admin)],
+    responses={
+        401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`LOGING_ADMIN_REQUIRED`)"},
+        409: {"model": ErrorEnvelope, "description": "`RULE_NAME_CONFLICT` — UNIQUE на name"},
+        422: {
+            "model": ErrorEnvelope,
+            "description": (
+                "`VALIDATION_ERROR`, `EFFECT_SEVERITY_REQUIRED`, "
+                "`EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`"
+            ),
+        },
+        500: {"model": ErrorEnvelope, "description": "`INTERNAL_ERROR` — IntegrityError не из UNIQUE"},
+        503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
+    },
 )
 def create_rule(
     payload: RuleCreate,
@@ -228,18 +264,33 @@ def create_rule(
         "Partial-update: меняет только переданные поля. После обновления "
         "сбрасывает in-memory кеш rule engine.\n\n"
         "**Доступ:** `platform_role` ∈ {`loging_admin`, `account_admin`}.\n\n"
-        "**Возможные ошибки:**\n"
-        "- 404 — правила с таким ID нет;\n"
-        "- 409 — переименование конфликтует с существующим именем;\n"
-        "- 422 — нарушение invariant'а effect ↔ effect_severity, либо "
-        "неизвестный `match_action`."
+        "Rate-limit: **не применяется** — admin write."
     ),
-    dependencies=[Depends(require_admin_or_account_admin)],
+    responses={
+        401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`LOGING_ADMIN_REQUIRED`)"},
+        404: {"model": ErrorEnvelope, "description": "`RULE_NOT_FOUND`"},
+        409: {"model": ErrorEnvelope, "description": "`RULE_NAME_CONFLICT`"},
+        422: {
+            "model": ErrorEnvelope,
+            "description": (
+                "`VALIDATION_ERROR`, `EFFECT_SEVERITY_REQUIRED`, "
+                "`EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`"
+            ),
+        },
+        500: {"model": ErrorEnvelope, "description": "`INTERNAL_ERROR`"},
+        503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
+    },
 )
 def update_rule(
-    rule_id: str,
     payload: RuleUpdate,
     identity: RulesAdminIdentity,
+    rule_id: str = Path(
+        min_length=1,
+        max_length=48,
+        pattern=_RULE_ID_PATTERN,
+        description="ID правила (opaque `rul_<hex>`-токен)",
+    ),
     db: Session = Depends(get_db),
 ) -> RuleResponse:
     _validate_match_action(payload.match_action, db)
@@ -297,13 +348,23 @@ def update_rule(
     description=(
         "Полностью удаляет правило и сбрасывает кеш rule engine.\n\n"
         "**Доступ:** `platform_role` ∈ {`loging_admin`, `account_admin`}.\n\n"
-        "**Возможные ошибки:** 404 — правила с таким ID нет."
+        "Rate-limit: **не применяется** — admin write."
     ),
-    dependencies=[Depends(require_admin_or_account_admin)],
+    responses={
+        401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`LOGING_ADMIN_REQUIRED`)"},
+        404: {"model": ErrorEnvelope, "description": "`RULE_NOT_FOUND`"},
+        503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
+    },
 )
 def delete_rule(
-    rule_id: str,
     identity: RulesAdminIdentity,
+    rule_id: str = Path(
+        min_length=1,
+        max_length=48,
+        pattern=_RULE_ID_PATTERN,
+        description="ID правила (opaque `rul_<hex>`-токен)",
+    ),
     db: Session = Depends(get_db),
 ) -> None:
     rule = _get_or_404(db, rule_id)

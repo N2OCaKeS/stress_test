@@ -29,6 +29,13 @@ class TaskKind(StrEnum):
     Любое изменение `value` ломает обратную совместимость очереди: в DB и
     Redis уже могут лежать сообщения со старым лейблом. Расширять —
     добавлением новых членов; ломать значения существующих — нельзя.
+
+    Источник истины для broker-label'ов на worker- и server-сторонах. На
+    сегодня @broker.task(...) декораторы (`tasks/*.py`) и server-side
+    dispatch (`server_service/src/api/v1/endpoints/worker_dispatch.py`,
+    `worker_client.py`) держат литералы — wiring на enum требует общего
+    sdk-модуля (`sdk/task_kinds.py`), чтобы не дублировать определения.
+    TODO: вытащить в shared sdk, заменить литералы на TaskKind.<...>.value.
     """
 
     POWER_ON = "power.on"

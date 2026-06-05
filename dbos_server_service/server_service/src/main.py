@@ -14,6 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy.exc import IntegrityError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.router import api_router
@@ -461,6 +462,53 @@ def create_application() -> FastAPI:
                 "error_code": "VALIDATION_ERROR",
                 "message": "Request validation failed",
                 "details": {"errors": jsonable_encoder(exc.errors())},
+                "request_id": getattr(request.state, "request_id", None),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+    @app.exception_handler(IntegrityError)
+    async def integrity_error_handler(request: Request, exc: IntegrityError):
+        """IntegrityError fallthrough → 422 на CHECK violation, иначе 500.
+
+        Сервисный слой ловит UNIQUE-нарушения сам и поднимает осмысленный
+        ConflictError (`SERVER_DUPLICATE`, `IPMI_DUPLICATE`, ...). Сюда
+        долетают только не пойманные IntegrityError — почти всегда это
+        CHECK / FK violation, которые сервисный слой не разобрал
+        (например, новые CHECK constraints на `ssh_port`, `unix_groups`).
+        В таких случаях клиентский ввод нарушил contract, ответ — 422
+        DOMAIN_CONSTRAINT_VIOLATION, а не 500 INTERNAL_ERROR.
+
+        UNIQUE violation сюда попасть может только если сервис забыл
+        обернуть INSERT в try/except — тогда отдадим 409 (по PostgreSQL
+        sqlstate 23505), чтобы клиент не ловил 500 на duplicate.
+        """
+        orig = getattr(exc, "orig", None)
+        sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+        # 23505 = unique_violation; 23514 = check_violation; 23503 = foreign_key_violation.
+        if sqlstate == "23505":
+            http_status = 409
+            error_code = "INTEGRITY_VIOLATION_UNIQUE"
+            message = "Unique constraint violation"
+        elif sqlstate in {"23514", "23503", "23502"}:
+            http_status = 422
+            error_code = "DOMAIN_CONSTRAINT_VIOLATION"
+            message = "Database constraint violation (check/foreign-key/not-null)"
+        else:
+            http_status = 500
+            error_code = "INTERNAL_ERROR"
+            message = "Database integrity error"
+        logger.warning(
+            "Unclassified IntegrityError на %s: sqlstate=%s class=%s",
+            getattr(request, "url", "?"), sqlstate, type(orig).__name__,
+        )
+        return JSONResponse(
+            status_code=http_status,
+            content={
+                "error": _http_status_to_category(http_status),
+                "error_code": error_code,
+                "message": message,
+                "details": {"sqlstate": sqlstate} if sqlstate else {},
                 "request_id": getattr(request.state, "request_id", None),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },

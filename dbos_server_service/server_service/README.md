@@ -277,6 +277,10 @@ Worker-task'и, зарегистрированные в брокере, с кл�
 | `IPMI_CREDENTIALS_ROTATE_RATE_LIMIT` | per-IP rate-limit на POST `/servers/{id}/ipmi/credentials/rotate` (прямая ротация без worker'а); default `5/minute` |
 | `SERVER_PREPARE_RATE_LIMIT` | per-IP rate-limit на POST `/servers/{id}/prepare`; default `3/minute` |
 | `ACCOUNT_ROTATE_PASSWORD_RATE_LIMIT` | per-IP rate-limit на POST `/server-accounts/{id}/rotate_password`; default `10/minute` |
+| `MASS_ROTATE_DISPATCH_RATE_LIMIT` | per-IP rate-limit на POST `/server-accounts/{id}/rotate` (mass-rotation dispatch через worker); default `5/minute` |
+| `MASS_ROTATION_MAX_SERVERS` | cap на число серверов в одном mass-rotation запросе (превышение → 413 `MASS_ROTATION_TOO_LARGE`); default `200` |
+| `FANOUT_UPDATE_ON_HOST_MAX` | cap на размер fan-out'а `account.update_on_host` от PATCH аккаунта; default `200` |
+| `WORKER_POOL_RATE_LIMIT` | per-IP rate-limit на `/internal/secrets/reencrypt_outbox/seed` и `/pending` (worker poll-loop); default `60/minute` |
 | `IPMI_VERIFY_MAX_AGE_SECONDS` | максимальный возраст `verified_at` в `IpmiCredentialsRotatedRequest`; default 60 |
 | `VERIFY_FUTURE_SKEW_SECONDS` | допустимое окно в будущем для `verified_at` при verify-after-rotate (NTP-drift tolerance); default 60 |
 | `ROTATED_AT_SKEW_SECONDS` | допустимый перекос между worker'овым `rotated_at` и локальным временем для `record_ipmi_credentials_rotated`; default 600 (NTP-drift tolerance) |

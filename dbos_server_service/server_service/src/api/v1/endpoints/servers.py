@@ -214,7 +214,7 @@ async def get_server(
     responses={
         403: {"description": "Нет роли с `view_drift`."},
         404: {"description": "Сервер не найден / чужой dept."},
-        503: {"description": "loging_service недоступен."},
+        503: {"description": "LOGING_SERVICE_UNAVAILABLE / LOGING_SERVICE_NOT_CONFIGURED / LOGING_SERVICE_AUTH_FAILED — loging_service недоступен или не сконфигурён."},
     },
 )
 async def get_server_drift(

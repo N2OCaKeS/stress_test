@@ -262,12 +262,14 @@ class TestSubmitRotatedIpmi:
         monkeypatch.setattr(httpx, "AsyncClient", _Client(_Resp(200, {"ok": True}), cap))
         await server_service_client.submit_rotated_ipmi_password(
             "ipm_42", "secret-pwd", "2026-05-21T10:00:00Z",
+            verified_at="2026-05-21T10:00:05Z",
         )
         assert "/ipmi-controllers/ipm_42/credentials_rotated" in cap["url"]
-        # тело — plaintext + rotated_at, не encrypted; без verified_at body
-        # не несёт лишний ключ (backward-compat: старый server ещё его не
-        # требовал).
-        assert cap["json"] == {"new_password": "secret-pwd", "rotated_at": "2026-05-21T10:00:00Z"}
+        assert cap["json"] == {
+            "new_password": "secret-pwd",
+            "rotated_at": "2026-05-21T10:00:00Z",
+            "verified_at": "2026-05-21T10:00:05Z",
+        }
 
     async def test_verified_at_included_when_passed(self, settings_stub, monkeypatch):
         cap = {}
@@ -287,6 +289,7 @@ class TestSubmitRotatedIpmi:
         with pytest.raises(CredentialFetchError) as exc:
             await server_service_client.submit_rotated_ipmi_password(
                 "ipm_42", "p", "2026-05-21T10:00:00Z",
+                verified_at="2026-05-21T10:00:05Z",
             )
         assert exc.value.error_code == "IPMI_ROTATE_REJECTED"
         assert exc.value.details["ipmi_controller_id"] == "ipm_42"
@@ -296,6 +299,7 @@ class TestSubmitRotatedIpmi:
         try:
             await server_service_client.submit_rotated_ipmi_password(
                 "ipm_1", "highly-secret-bmc-pwd", "2026-05-21T10:00:00Z",
+                verified_at="2026-05-21T10:00:05Z",
             )
         except CredentialFetchError as exc:
             assert "highly-secret-bmc-pwd" not in exc.message
@@ -306,6 +310,7 @@ class TestSubmitRotatedIpmi:
         monkeypatch.setattr(httpx, "AsyncClient", _Client(_Resp(200, {"ok": True}), cap))
         await server_service_client.submit_rotated_ipmi_password(
             "ipm_42", "p", "2026-05-21T10:00:00Z", "dep_42",
+            verified_at="2026-05-21T10:00:05Z",
         )
         assert cap["headers"].get("X-Target-Department-Id") == "dep_42"
 

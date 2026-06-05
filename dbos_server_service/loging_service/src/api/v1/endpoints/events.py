@@ -6,20 +6,22 @@ GET  /events — читают `loging_admin | loging_reader | department_admin |
               своим отделом.
 """
 
+import unicodedata
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from src.core.config import get_settings
 from src.core.constants import RESERVED_SERVICE_NAMES
-from src.core.exceptions import AppException, AuthorizationError
+from src.core.exceptions import AppException, AuthorizationError, DomainValidationError
 from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
 from src.dependencies.auth import ReaderIdentity, require_service_token
 from src.dependencies.db import get_db
-from src.schemas.events import EventCreate, EventListResponse, EventResponse
+from src.schemas.common import ErrorEnvelope
+from src.schemas.events import _IDEMPOTENCY_KEY_PATTERN, EventCreate, EventListResponse, EventResponse
 from src.services import event_service
 from src.utils.normalization import normalize_identifier
 
@@ -35,6 +37,31 @@ router = APIRouter()
 # и любой будущий read-эндпоинт без дублирования.
 _MAX_LIMIT = MAX_QUERY_LIMIT
 _MAX_OFFSET = MAX_QUERY_OFFSET
+
+
+def _idempotency_key_from_header(raw: str | None) -> str | None:
+    """Нормализует header `Idempotency-Key` тем же путём, что и body-поле.
+
+    Возвращает канонический key или None (если пустой / отсутствует). Невалидный
+    charset после NFKC поднимает `DomainValidationError` → 422 — симметрично
+    тому, как pydantic-валидатор `EventCreate._normalize_idempotency_key` отбил
+    бы body-поле. Без этой симметрии header'ный path мог бы протащить байты,
+    которые dedup-индекс не дедуплит (CR/LF/control).
+    """
+    if raw is None:
+        return None
+    normalised = unicodedata.normalize("NFKC", raw).strip()
+    if not normalised:
+        return None
+    if not _IDEMPOTENCY_KEY_PATTERN.match(normalised):
+        raise DomainValidationError(
+            error_code="VALIDATION_ERROR",
+            message=(
+                "Idempotency-Key header must match [A-Za-z0-9_\\-.]{1,128} "
+                "after NFKC normalisation (no CR/LF, no control chars)"
+            ),
+        )
+    return normalised
 
 
 def _ingest_rate_limit_key(request: Request) -> str:
@@ -67,9 +94,13 @@ def _ingest_rate_limit_key(request: Request) -> str:
     description=(
         "Принимает одно событие от сервиса и сохраняет его в audit-журнал. "
         "Перед записью прогоняется через rule engine (SUPPRESS/ALLOW/OVERRIDE_SEVERITY) — "
-        "если активное правило подавляет событие, возвращается 204 без тела.\n\n"
+        "если активное правило подавляет событие, возвращается 204 без тела (без content-length).\n\n"
         "**Доступ:** только service-to-service по `SERVICE_API_KEY` "
         "(`Authorization: Bearer <ключ>`). Пользовательский JWT не принимается.\n\n"
+        "**Idempotency-Key:** ключ принимается из заголовка `Idempotency-Key` "
+        "или из поля тела `idempotency_key` (legacy для обратной совместимости). "
+        "Если заданы оба, значения должны совпасть после NFKC-нормализации — "
+        "иначе 422 `VALIDATION_ERROR`. Дедуп идёт по паре `(service, idempotency_key)`.\n\n"
         "**Возможные ошибки:**\n"
         "- 401 `INVALID_SERVICE_KEY` — нет или неверный SERVICE_API_KEY.\n"
         "- 401 `MISSING_SERVICE_IDENTITY` — требуется header "
@@ -78,21 +109,39 @@ def _ingest_rate_limit_key(request: Request) -> str:
         "`INVALID_SERVICE_KEY`).\n"
         "- 403 `RESERVED_SERVICE_NAME` — попытка записать `service=loging_service` "
         "(зарезервировано для внутреннего self-audit, защита retention-инварианта).\n"
+        "- 403 `SERVICE_IDENTITY_PAYLOAD_MISMATCH` — `X-Service-Identity` "
+        "не совпадает с `payload.service`.\n"
+        "- 409 `IDEMPOTENCY_KEY_CONFLICT` — `(service, idempotency_key)` уже использован "
+        "с другим payload'ом.\n"
         "- 413 `PAYLOAD_TOO_LARGE` — body больше `MAX_REQUEST_BODY_BYTES`.\n"
+        "- 400 `INVALID_CONTENT_LENGTH` — malformed `Content-Length` header.\n"
         "- 422 `VALIDATION_ERROR` — невалидный payload "
-        "(глубина `details` > 10, NUL-байты, shadow-keys, кривой `request_id`).\n"
+        "(глубина `details` > 10, NUL-байты, shadow-keys, кривой `request_id`, "
+        "конфликт `Idempotency-Key` header'а с `idempotency_key` в теле).\n"
         "- 429 `RATE_LIMIT_EXCEEDED` — превышен лимит на сервис-идентичность "
         "(`X-Service-Identity`, fallback на IP; `INGEST_RATE_LIMIT`, по "
-        "умолчанию 100/min).\n\n"
+        "умолчанию 100/min).\n"
+        "- 503 `SERVICE_TOKEN_NOT_CONFIGURED` — `SERVICE_API_KEYS` пуст.\n\n"
         "**Связано:** `POST /services/{service}/events` — регистрация каталога "
         "action'ов; `GET /events` — чтение записанных событий."
     ),
     response_description="Событие записано: id и `received_at` (UTC)",
     responses={
-        204: {"description": "Событие подавлено правилом аудита (SUPPRESS)"},
-        413: {"description": "Тело запроса превышает лимит размера"},
-        422: {"description": "Невалидный payload — см. `error_code` в envelope"},
-        429: {"description": "Превышен rate-limit на ingest (per-service-identity)"},
+        204: {"description": "Событие подавлено правилом аудита (SUPPRESS, без body)"},
+        400: {"model": ErrorEnvelope, "description": "`INVALID_CONTENT_LENGTH`"},
+        401: {
+            "model": ErrorEnvelope,
+            "description": "`INVALID_SERVICE_KEY` / `MISSING_SERVICE_IDENTITY`",
+        },
+        403: {
+            "model": ErrorEnvelope,
+            "description": "`RESERVED_SERVICE_NAME` / `SERVICE_IDENTITY_PAYLOAD_MISMATCH`",
+        },
+        409: {"model": ErrorEnvelope, "description": "`IDEMPOTENCY_KEY_CONFLICT`"},
+        413: {"model": ErrorEnvelope, "description": "`PAYLOAD_TOO_LARGE`"},
+        422: {"model": ErrorEnvelope, "description": "`VALIDATION_ERROR` — см. `error_code` в envelope"},
+        429: {"model": ErrorEnvelope, "description": "`RATE_LIMIT_EXCEEDED` (per-service-identity)"},
+        503: {"model": ErrorEnvelope, "description": "`SERVICE_TOKEN_NOT_CONFIGURED`"},
     },
     dependencies=[Depends(require_service_token)],
 )
@@ -114,6 +163,18 @@ def create_event(
     response: Response,
     payload: EventCreate,
     db: Session = Depends(get_db),
+    idempotency_key_header: Annotated[
+        str | None,
+        Header(
+            alias="Idempotency-Key",
+            description=(
+                "Idempotency-Key (RFC draft / Stripe / GitHub convention). "
+                "Совпадает по семантике с `payload.idempotency_key`. Если "
+                "переданы оба, значения должны совпасть после NFKC."
+            ),
+            max_length=256,
+        ),
+    ] = None,
 ) -> Response | EventResponse:
     # `response: Response` ОБЯЗАТЕЛЕН для slowapi когда эндпоинт возвращает
     # Pydantic-модель (а не голый `Response`). Обёртка slowapi инжектит
@@ -164,6 +225,29 @@ def create_event(
             ),
         )
 
+    # Idempotency-Key header (стандарт индустрии) сливается с
+    # `payload.idempotency_key` (legacy для обратной совместимости — внутренние
+    # сервисы дольше переезжают на header'ный путь). Header проходит через тот
+    # же NFKC-нормализатор и charset-pattern, что и body-поле, через
+    # `_idempotency_key_from_header()` helper. Конфликт (оба заданы и
+    # различаются после нормализации) → 422: caller явно противоречит сам себе.
+    header_normalised = _idempotency_key_from_header(idempotency_key_header)
+    if header_normalised is not None:
+        if payload.idempotency_key is None:
+            payload.idempotency_key = header_normalised
+        elif payload.idempotency_key != header_normalised:
+            raise DomainValidationError(
+                error_code="VALIDATION_ERROR",
+                message=(
+                    "Idempotency-Key header conflicts with body.idempotency_key "
+                    "(values differ after NFKC normalisation)"
+                ),
+                details={
+                    "header": header_normalised,
+                    "body": payload.idempotency_key,
+                },
+            )
+
     event = event_service.record(db, payload)
     if event is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -184,11 +268,18 @@ def create_event(
         "своим `department_id` (`_dept_scope`).\n\n"
         "**Фильтры** (любая комбинация, all-AND): `department_id`, `service`, "
         "`severity`, `action`, `from_time`, `to_time`, `limit`, `offset`.\n\n"
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
         "**Возможные ошибки:**\n"
-        "- 401 `INVALID_TOKEN` / `MISSING_TOKEN` — нет или неверный JWT.\n"
-        "- 403 — попытка dept-scoped пользователя запросить чужой `department_id`, "
-        "либо роль не в allow-list.\n"
-        "- 503 `AUTH_SERVICE_*` — auth_service недоступен (introspect завалился).\n\n"
+        "- 401 `INVALID_TOKEN` / `MISSING_TOKEN` / `USER_BANNED` — нет или неверный JWT.\n"
+        "- 403 `INSUFFICIENT_ROLE` — роль не в allow-list.\n"
+        "- 403 `NO_DEPARTMENT` — dept-scoped роль без `department_id`.\n"
+        "- 403 `DEPARTMENT_SCOPE_VIOLATION` — попытка dept-scoped пользователя "
+        "запросить чужой `department_id`.\n"
+        "- 429 `RATE_LIMIT_EXCEEDED` — превышен per-IP лимит.\n"
+        "- 503 `AUTH_SERVICE_NOT_CONFIGURED` / `AUTH_SERVICE_TIMEOUT` / "
+        "`AUTH_SERVICE_UNREACHABLE` / `AUTH_SERVICE_ERROR` / "
+        "`INTROSPECT_KEY_NOT_CONFIGURED` / `INTROSPECT_NOT_INITIALIZED` — "
+        "auth_service недоступен (introspect завалился).\n\n"
         "**Связано:** `POST /events` — приём событий; `GET /services` — реестр "
         "сервисов, когда-либо писавших события."
     ),
@@ -196,6 +287,20 @@ def create_event(
         "Постранично: items + has_more + limit + offset. Поле total заполнено "
         "только при `include_total=true`, иначе null."
     ),
+    responses={
+        401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+        403: {"model": ErrorEnvelope, "description": "Роль/scope не подходят"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        503: {
+            "model": ErrorEnvelope,
+            "description": (
+                "auth_service недоступен: `AUTH_SERVICE_NOT_CONFIGURED`, "
+                "`AUTH_SERVICE_TIMEOUT`, `AUTH_SERVICE_UNREACHABLE`, "
+                "`AUTH_SERVICE_ERROR`, `INTROSPECT_KEY_NOT_CONFIGURED`, "
+                "`INTROSPECT_NOT_INITIALIZED`"
+            ),
+        },
+    },
 )
 # Per-IP лимит на read-канал: даже валидный reader-JWT не должен иметь права
 # выжимать pgsql-пул широкими SELECT'ами по multi-million журналу. Лимит

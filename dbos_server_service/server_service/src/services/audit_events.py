@@ -120,6 +120,20 @@ SERVICE_EVENTS = [
     # Mid-run cancel сам по себе фиксируется не здесь, а worker'ом — он пишет
     # audit с action=<task_kind>, status=failure, details.reason=cancelled_midrun.
     {"action": "task.cancelled", "description": "Worker task cancelled by operator (status set to CANCELLED in dev_server_worker.tasks; running task finishes current stage)", "default_severity": "WARNING"},
+    # Worker-emitted runner/lifecycle и handler-финальные action'ы. Описаны
+    # подробно в `server_worker/AUDIT_EVENTS.md`; здесь регистрируются под
+    # тем же сервисом, чтобы оператор/SIEM находили их через registry API
+    # (`GET /api/logging/v1/services/server_service/events`). Worker сам в
+    # loging_service не регистрируется — публикует от имени `server_service`.
+    {"action": "task.worker_shutdown", "description": "Worker graceful shutdown — running task forced to retry или failed (target_id = server_id связанной таски при наличии, иначе task_id; severity ERROR/WARNING зависит от will_retry)", "default_severity": "ERROR"},
+    {"action": "task.worker_orphaned", "description": "Orphan-sweep нашёл running task'у с мёртвым worker_id и принудительно перевёл её в failed без retry-decision (target_id = server_id связанной таски при наличии, иначе task_id)", "default_severity": "ERROR"},
+    {"action": "task.deleted_midrun", "description": "Worker обнаружил исчезновение task-row между mark_running и terminal write (retention/manual DELETE); terminal mark пропущен, audit фиксирует факт", "default_severity": "WARNING"},
+    {"action": "secrets.reencrypt_tick", "description": "Periodic `secrets.reencrypt_lazy` worker-тик: success/idle (allowed=True), warning при finalize_errors, failure при app_env_mismatch worker↔server_service (явный severity ERROR)", "default_severity": "INFO"},
+    {"action": "audit.outbox_reattempt_manual", "description": "Оператор форсит CLI-командой `outbox-reattempt` повторную доставку конкретной row'ы worker'ского audit_outbox", "default_severity": "WARNING"},
+    {"action": "bmc.tls_downgrade", "description": "Worker BMC-probe перешёл на менее защищённый канал (https_verify→https_noverify или *→http) — фиксируется при каждом фактическом переходе", "default_severity": "WARNING"},
+    {"action": "server_account.password_rotate", "description": "Worker завершил ротацию пароля сервисной учётки (apply через SSH + callback `submit_rotated_password`); финальная action-name стороны worker'а, dispatch — `server_account.rotate_password_dispatch`", "default_severity": "CRITICAL"},
+    {"action": "ipmi_controller.password_rotate", "description": "Worker завершил ротацию IPMI/BMC-пароля (apply + verify + callback `submit_rotated_ipmi_password`); финальная action-name стороны worker'а, dispatch — `ipmi_controller.rotate_dispatch`", "default_severity": "CRITICAL"},
+    {"action": "server_account.users_inventory", "description": "Worker завершил OS-user inventory через SSH `getent` и отдал список через callback `submit_users_inventory`; target_type=server (срез хоста, не конкретной учётки)", "default_severity": "INFO"},
 ]
 
 

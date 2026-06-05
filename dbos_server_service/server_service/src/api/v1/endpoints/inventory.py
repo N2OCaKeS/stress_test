@@ -53,9 +53,10 @@ users_router = APIRouter(prefix="/servers/{server_id}/users")
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `inventory_trigger`."},
         404: {"description": "Сервер не найден / чужой dept."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен."},
     },
 )

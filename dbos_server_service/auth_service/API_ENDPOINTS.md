@@ -75,6 +75,22 @@ List-эндпоинты `GET /users`, `GET /users/department/{department_id}`, `
 
 Lockout **не применяется** к refresh и PAT-токенам (там нет brute-force поверхности — токен либо валиден, либо нет; PAT на `/docker/token` идёт через user-lockout).
 
+### Per-IP rate-limit (slowapi)
+
+Помимо per-principal lockout'а, 7 credential-критичных эндпоинтов закрыты per-IP лимитом (slowapi). Срабатывает ДО проверки секрета, отбивается `429 RATE_LIMIT_EXCEEDED` + `Retry-After`. Счётчик IP'шный, на успехе не сбрасывается. Защищает от brute-force с одного IP без срабатывания lockout (нужно отличать от `ACCOUNT_TEMPORARILY_LOCKED`).
+
+| Endpoint | ENV var | Default | Назначение |
+|---|---|---|---|
+| `POST /login` | `LOGIN_RATE_LIMIT` | `10/minute` | Argon2id verify ~100ms CPU, без лимита атакующий выжигает ядра. |
+| `POST /token` | `LOGIN_RATE_LIMIT` | `10/minute` | Swagger UI password-form — тот же login, общий лимит чтобы не обходить через `/token`. |
+| `POST /oauth2/token` | `LOGIN_RATE_LIMIT` | `10/minute` | `client_credentials` без per-client lockout'а — IP-лимит закрывает дыру. |
+| `POST /refresh` | `REFRESH_RATE_LIMIT` | `30/minute` | Multi-tab SPA / mobile background refresh укладываются; brute по opaque-refresh бессмыслен, но IP-лимит против flood'а. |
+| `GET /docker/token` | `DOCKER_TOKEN_RATE_LIMIT` | `30/minute` | `docker pull/push` burst'ы; защита от ротации username'ов в обход user-lockout. |
+| `POST /authorization/introspect` | `INTROSPECT_RATE_LIMIT` | `60/minute` | M2M-вызов часто, но не безудержно; защита auth-pool от token-flood'а. |
+| `POST /authorization/service-access` | `INTROSPECT_RATE_LIMIT` | `60/minute` | Тонкая обёртка над introspect, общий лимит. |
+
+Backend: `RATE_LIMIT_STORAGE_URI` (например `redis://host:6379/0`). Без задания → `memory://` (per-process; в K8s с 2+ репликами лимит мультиплицируется, prod выдаёт WARNING на старте). `headers_enabled=True` — `X-RateLimit-Limit` / `X-RateLimit-Remaining` / `X-RateLimit-Reset` ставятся в ответе.
+
 ---
 
 ## Authentication (root)
@@ -137,11 +153,20 @@ OAuth2 Password flow для Swagger UI. `include_in_schema=False`. Логика 
 
 Auth: `account_admin`. Пагинация (`limit`/`offset`, см. общие правила). Response: `list[UserResponse]` + заголовок `X-Total-Count`.
 
+Доп. query-параметры:
+
+| Параметр | Тип | Default | Семантика |
+|---|---|---|---|
+| `include_banned` | bool | `false` | Снять фильтр `is_active`: вернуть и забаненных/заблокированных. Без флага — только active. |
+| `status` | str | `null` | Пост-фильтр по статусу: `active` / `banned` / `blocked`. Если задан — `include_banned` неявно True. Невалидное значение → `422 INVALID_STATUS_FILTER`. |
+
 ### `GET /users/department/{department_id}`
 
 Auth: AnyAdmin. `account_admin` — любой отдел; `department_admin` — только свой (иначе 404, чтобы не было ID oracle). Пагинация (`limit`/`offset`); `X-Total-Count` считается в рамках отдела.
 
-Errors: `DEPARTMENT_NOT_FOUND` (404).
+Доп. query-параметры — те же `include_banned` / `status`, что и у `GET /users`.
+
+Errors: `DEPARTMENT_NOT_FOUND` (404), `INVALID_STATUS_FILTER` (422).
 
 ### `POST /users`
 
@@ -267,7 +292,7 @@ Response: `list[UserGroupsResponse]`.
 
 Auth: AnyAdmin. Body: `{ "group_id": "..." }`.
 
-Errors: `GROUP_NOT_FOUND` / `USER_NOT_FOUND` (404), `GROUP_DEPARTMENT_MISMATCH` (400), `ALREADY_GROUP_MEMBER` (409), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin лезет в чужой отдел, `ROLE_REQUIRED` (403).
+Errors: `GROUP_NOT_FOUND` / `USER_NOT_FOUND` (404), `GROUP_DEPARTMENT_MISMATCH` (403), `ALREADY_GROUP_MEMBER` (409), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin лезет в чужой отдел, `ROLE_REQUIRED` (403).
 
 ### `DELETE /users/{user_id}/groups/{group_id}`
 
@@ -433,6 +458,12 @@ Errors: `BOT_NAME_TAKEN` (409), `DEPARTMENT_NOT_FOUND` (404), `BOT_CREATION_FORB
 
 Auth: AnyAdmin. `account_admin` — все; `department_admin` — только свой отдел. Пагинация (`limit`/`offset`, см. общие правила) + `X-Total-Count`.
 
+Доп. query-параметр:
+
+| Параметр | Тип | Default | Семантика |
+|---|---|---|---|
+| `department_id` | str | `null` | Сузить выборку до указанного отдела. `account_admin` — любой; `department_admin` — только свой (иначе 403). |
+
 ### `PATCH /bots/{bot_id}`
 
 Auth: AnyAdmin. Body (опциональны): `name`, `description`, `status` ("active"|"disabled"), `allowed_services`.
@@ -508,13 +539,13 @@ Auth: Bearer. Каскадно убирает members + group_service_roles/acce
 
 ### `GET /groups/{group_id}/members`
 
-Auth: Bearer. account_admin / department_admin своего отдела / любой member группы.
+Auth: Bearer. account_admin / department_admin своего отдела. (Регулярный member группы доступа к составу не имеет.)
 
 ### `POST /groups/{group_id}/members`
 
 Auth: AnyAdmin. Body: `{ "user_id": "..." }`. Юзер и группа должны быть в одном отделе.
 
-Errors: `GROUP_DEPARTMENT_MISMATCH` (400), `GROUP_NOT_FOUND` / `USER_NOT_FOUND` (404).
+Errors: `GROUP_DEPARTMENT_MISMATCH` (403), `GROUP_NOT_FOUND` / `USER_NOT_FOUND` (404).
 
 ### `DELETE /groups/{group_id}/members/{user_id}`
 
@@ -528,7 +559,7 @@ Auth: Bearer. account_admin / department_admin своего отдела. Respon
 
 Auth: AnyAdmin. Body: `{ "bot_id": "..." }`. Бот и группа должны быть в одном отделе. Бот наследует service-роли группы (∩ `bot.allowed_services`).
 
-Errors: `GROUP_DEPARTMENT_MISMATCH` (400), `GROUP_NOT_FOUND` / `BOT_NOT_FOUND` (404), `ALREADY_GROUP_MEMBER` (409).
+Errors: `GROUP_DEPARTMENT_MISMATCH` (403), `GROUP_NOT_FOUND` / `BOT_NOT_FOUND` (404), `ALREADY_GROUP_MEMBER` (409).
 
 ### `DELETE /groups/{group_id}/bots/{bot_id}`
 
@@ -536,7 +567,7 @@ Auth: AnyAdmin. Errors: `MEMBER_NOT_FOUND` (404).
 
 ### `GET /groups/{group_id}/services`
 
-Auth: Bearer. account_admin / department_admin своего отдела / member группы. Response: `list[GroupServiceAccessResponse]`.
+Auth: Bearer. account_admin / department_admin своего отдела. (Регулярный member группы не пускается.) Response: `list[GroupServiceAccessResponse]`.
 
 ### `POST /groups/{group_id}/services`
 
@@ -548,7 +579,7 @@ Auth: Bearer. После revoke group_service_roles отбрасываются �
 
 ### `GET /groups/{group_id}/roles`
 
-Auth: Bearer. account_admin / department_admin своего отдела / member группы.
+Auth: Bearer. account_admin / department_admin своего отдела. (Регулярный member группы не пускается.)
 
 ### `POST /groups/{group_id}/roles`
 
@@ -656,7 +687,7 @@ Auth: AnyAdmin. Query: `department_id` (опц.). Response: `list[OAuthClientRes
 
 ### `DELETE /oauth2/clients/{client_id}`
 
-Auth: AnyAdmin. Каскад: убивает все authorization codes и issued токены клиента.
+Auth: AnyAdmin. Soft-delete: проставляет `is_active=false`. Выпущенные authorization codes и access-токены не удаляются физически — они истекают по TTL, а introspect отбивает их `is_active`-чеком клиента (см. `oauth2.py:delete_client`).
 
 ### `GET /oauth2/authorize`
 
@@ -777,10 +808,12 @@ Auth: public. Response: JWKS (RS256).
 
 ### Валидация / формат запроса
 
-- `MISSING_REQUIRED_FIELD` (400) — обязательное поле отсутствует (например `department_id` для обычного юзера).
+- `MISSING_REQUIRED_FIELD` (422) — обязательное поле отсутствует (например `department_id` для обычного юзера). Поднимается как `DomainValidationError` (см. `user_service.py`).
 - `UNSUPPORTED_GRANT_TYPE` (400/422) — grant_type не из `authorization_code` / `client_credentials`.
 - `UNSUPPORTED_RESPONSE_TYPE` (400) — `response_type` отличается от `code`.
 - `INVALID_TOKEN_EXPIRY` (422) — `expires_at` в прошлом / битый формат.
+- `INVALID_STATUS_FILTER` (422) — `?status=` на `GET /users` / `GET /users/department/{id}` не из набора `active`/`banned`/`blocked`.
+- `VALIDATION_ERROR` (422) — обёртка над pydantic `RequestValidationError` (см. `src/main.py`). В `details` — список pydantic-issues; per-field коды (`redirect_uri_invalid`, ...) сохраняются.
 - Pydantic 422: `redirect_uri_invalid`, `redirect_uri_has_fragment`, `redirect_uri_not_https`, `redirect_uri_scheme_invalid` — валидация `redirect_uris` на регистрации OAuth-клиента.
 
 ### Логин и сессии
@@ -842,7 +875,7 @@ Auth: public. Response: JWKS (RS256).
 - `USER_ROLE_UPDATE_FORBIDDEN` (403) — DA назначает роли юзеру чужого отдела.
 - `USER_RESET_PASSWORD_FORBIDDEN` (403) — DA сбрасывает пароль юзеру чужого отдела.
 - `USER_INACTIVE` (409) — выдать роль выключенному юзеру.
-- `USER_DEPARTMENT_MISMATCH` (400) — внутреннее несоответствие (юзер vs scope).
+- `USER_DEPARTMENT_MISMATCH` (403) — попытка назначить service-роль юзеру чужого отдела (cross-dept boundary).
 - `USER_BANNED_OR_INACTIVE` (401) — попытка использовать токен забаненного юзера в introspect.
 - `BAN_ALREADY_ACTIVE` (409), `BAN_NOT_FOUND` (404).
 
@@ -850,7 +883,7 @@ Auth: public. Response: JWKS (RS256).
 
 - `GROUP_NOT_FOUND` (404).
 - `GROUP_ALREADY_EXISTS` (409) — имя занято в отделе.
-- `GROUP_DEPARTMENT_MISMATCH` (400) — юзер/бот не из того же отдела.
+- `GROUP_DEPARTMENT_MISMATCH` (403) — юзер/бот не из того же отдела, что и группа (cross-dept boundary).
 - `GROUP_SERVICE_ACCESS_REQUIRED` (403) — нет `GroupServiceAccess` для целевого сервиса.
 - `GROUP_SERVICE_NOT_FOUND` (404), `GROUP_SERVICE_ALREADY_GRANTED` (409).
 - `MEMBER_NOT_FOUND` (404), `ALREADY_GROUP_MEMBER` (409).
@@ -894,6 +927,7 @@ Auth: public. Response: JWKS (RS256).
 ### Rate-limit / lockout
 
 - `ACCOUNT_TEMPORARILY_LOCKED` (429) — lockout-pipeline. Применяется к `/login`, `/users/me/password` (через `INVALID_OLD_PASSWORD`), `/docker/token`, OAuth `client_credentials` через `/oauth2/token` (per `OAuthClient.failed_secret_attempts` + `OAUTH_CLIENT_LOCKOUT_MINUTES`) и bot-токенам (per `BotAccount.failed_token_attempts` + `BOT_LOCKOUT_MINUTES`). В details — `retry_after_seconds`.
+- `RATE_LIMIT_EXCEEDED` (429) — per-IP slowapi-лимит (см. таблицу ниже) сработал ДО проверки секрета. Отличается от lockout'а: limit на IP, не на принципала; на успешном auth'е не сбрасывается, ждёт окно. `Retry-After` ставится в заголовке.
 
 Пример lockout ответа:
 

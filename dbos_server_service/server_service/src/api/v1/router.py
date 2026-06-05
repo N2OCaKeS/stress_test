@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from src.api.v1.endpoints.health import router as health_router
 from src.api.v1.endpoints.ipmi import list_router as ipmi_list_router
+from src.api.v1.endpoints.ipmi import list_router_legacy as ipmi_list_router_legacy
 from src.api.v1.endpoints.ipmi import router as ipmi_router
 from src.api.v1.endpoints.installed_packages import router as installed_packages_router
 from src.api.v1.endpoints.internal import router as internal_router
@@ -26,6 +27,10 @@ router.include_router(servers_router, tags=["servers"])
 router.include_router(server_accounts_router, tags=["server-accounts"])
 router.include_router(ipmi_router, tags=["ipmi"])
 router.include_router(ipmi_list_router, tags=["ipmi"])
+# Legacy snake_case `/ipmi_controllers` — алиас на тот же handler, скрыт из
+# OpenAPI. Существующим клиентам даёт время мигрировать на kebab-case
+# `/ipmi-controllers`; в OpenAPI публикуется только канонический путь.
+router.include_router(ipmi_list_router_legacy, tags=["ipmi"])
 router.include_router(installed_packages_router, tags=["installed-packages"])
 router.include_router(users_inventory_router, tags=["server-accounts"])
 router.include_router(os_versions_router, tags=["os-versions"])

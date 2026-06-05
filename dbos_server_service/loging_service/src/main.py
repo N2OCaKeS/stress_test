@@ -482,7 +482,7 @@ def create_application() -> FastAPI:
                             "error_code": "INVALID_CONTENT_LENGTH",
                             "message": "Content-Length header is malformed",
                             "details": {},
-                            "request_id": None,
+                            "request_id": getattr(request.state, "request_id", None),
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
                     )
@@ -500,7 +500,7 @@ def create_application() -> FastAPI:
                                 "max_bytes": max_size,
                                 "declared_bytes": declared,
                             },
-                            "request_id": None,
+                            "request_id": getattr(request.state, "request_id", None),
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
                     )
@@ -555,7 +555,7 @@ def create_application() -> FastAPI:
                                 "max_bytes": max_size,
                                 "received_bytes": received,
                             },
-                            "request_id": None,
+                            "request_id": getattr(request.state, "request_id", None),
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
                     )

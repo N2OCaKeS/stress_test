@@ -75,6 +75,7 @@ from src.schemas.server import (
     ServerPowerStatusDispatchResponse,
     ServerPrepareRequest,
     ServerPrepareResponse,
+    ServerTaskDispatchResponse,
 )
 from src.schemas.server_account import (
     AccountProvisionDispatchResponse,
@@ -854,9 +855,10 @@ async def fanout_update_on_host(
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `power_status` либо чужой department."},
         404: {"description": "Сервер не найден / чужой dept (скрыто за 404) либо NO_IPMI_CONTROLLER."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен."},
     },
 )
@@ -892,6 +894,7 @@ async def power_status_dispatch(
 
 @router_servers.post(
     "/inventory/sync",
+    response_model=ServerTaskDispatchResponse,
     summary="Запустить inventory-sync через SSH (202, worker)",
     status_code=202,
     description=(
@@ -901,13 +904,17 @@ async def power_status_dispatch(
         "снимает OS/kernel/packages/disks и постит facts обратно через "
         "`submit_inventory_facts` (internal endpoint). Сырые facts остаются "
         "в `task.result` для диагностики; submit-fail уходит в audit как "
-        "`server.inventory_sync` failure, но сам task остаётся SUCCEEDED."
+        "`server.inventory_sync` failure, но сам task остаётся SUCCEEDED.\n\n"
+        "Право `inventory_trigger` шарится с hardware-инвентаризацией и "
+        "OS-user инвентаризацией (`POST /servers/{id}/users/inventory`) — "
+        "отдельного `users_inventory_trigger` нет."
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `inventory_trigger` либо чужой department."},
         404: {"description": "Сервер не найден / чужой dept."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен."},
     },
 )
@@ -916,7 +923,7 @@ async def inventory_sync_dispatch(
     identity: CurrentIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> ServerTaskDispatchResponse:
     """Ставит `inventory.sync` в очередь worker'а.
 
     Доступ: `(server, *, inventory_trigger)`.
@@ -927,7 +934,7 @@ async def inventory_sync_dispatch(
     Связано: `_dispatch_for_server`, `server_worker/src/tasks/inventory.py`.
     """
     # SSH-сбор не нуждается в BMC — `require_ipmi=False`.
-    return await _dispatch_for_server(
+    result = await _dispatch_for_server(
         db=db, identity=identity, request=request,
         server_id=server_id,
         action=Action.INVENTORY_TRIGGER,
@@ -935,6 +942,7 @@ async def inventory_sync_dispatch(
         task_kind="inventory.sync",
         require_ipmi=False,
     )
+    return ServerTaskDispatchResponse(**result)
 
 
 # ── /servers/{id}/prepare — bootstrap управления (онбординг) ────────────────
@@ -964,12 +972,13 @@ async def inventory_sync_dispatch(
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `update` либо чужой department."},
         404: {"description": "Сервер не найден / чужой dept (скрыто за 404)."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         422: {"description": "Битый base64 в username_b64 / password_b64."},
-        429: {"description": "Per-IP prepare-rate-limit пробит."},
-        503: {"description": "Worker недоступен."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP prepare-rate-limit пробит."},
+        503: {"description": "Worker недоступен — WORKER_REDIS_UNAVAILABLE (Redis-stash для bootstrap-кред недоступен) или WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED (dispatch в taskiq)."},
     },
 )
 @endpoint_limiter.limit(get_settings().server_prepare_rate_limit)
@@ -1212,11 +1221,12 @@ async def server_prepare_dispatch(
     ),
     responses={
         202: {"description": "Задача(и) приняты; tasks + skipped в теле ответа."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `rotate_password` либо чужой department."},
         404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
-        409: {"description": "SERVER_DECOMMISSIONED (точечно либо все списаны) / TASK_IDEMPOTENT_CONFLICT (точечно) / NO_LINKED_SERVERS (массово, аккаунт без привязок)."},
+        409: {"description": "SERVER_DECOMMISSIONED (точечно либо все списаны) / TASK_IDEMPOTENT_CONFLICT (точечно) / IDEMPOTENCY_KEY_REUSE_CONFLICT / NO_LINKED_SERVERS (массово, аккаунт без привязок)."},
         413: {"description": "MASS_ROTATION_TOO_LARGE — батч превысил MASS_ROTATION_MAX_SERVERS."},
-        429: {"description": "Per-IP mass-rotate-rate-limit пробит."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP mass-rotate-rate-limit пробит (MASS_ROTATE_DISPATCH_RATE_LIMIT)."},
         503: {"description": "Worker недоступен (redis down / не сконфигурён)."},
     },
 )
@@ -1572,10 +1582,11 @@ async def account_rotate_password_dispatch(
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `create` либо чужой department."},
         404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
-        503: {"description": "Worker недоступен."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT / ACCOUNT_HAS_NO_PASSWORD (discovered-аккаунт без сохранённого пароля и без `force_password=true`)."},
+        503: {"description": "Worker недоступен — WORKER_REDIS_UNAVAILABLE (Redis-stash для provision-кред недоступен) или WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED (dispatch в taskiq)."},
     },
 )
 async def account_provision_dispatch(
@@ -1628,9 +1639,10 @@ async def account_provision_dispatch(
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `update` либо чужой department."},
         404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен."},
     },
 )
@@ -1679,9 +1691,10 @@ async def account_update_on_host_dispatch(
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `delete` либо чужой department."},
         404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
         503: {"description": "Worker недоступен."},
     },
 )
@@ -1722,6 +1735,7 @@ async def account_deprovision_dispatch(
 
 @router_ipmi.post(
     "/rotate",
+    response_model=ServerTaskDispatchResponse,
     summary="Ротация IPMI-пароля через worker (Redfish apply + storage)",
     status_code=202,
     description=(
@@ -1735,10 +1749,11 @@ async def account_deprovision_dispatch(
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
+        400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
         403: {"description": "Нет роли с `rotate_credentials` либо чужой department."},
         404: {"description": "IPMI-контроллер не найден / чужой dept."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT."},
-        429: {"description": "Rotate-rate-limit пробит (ключ — IP + controller_id)."},
+        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — rotate-rate-limit пробит (ключ — IP + controller_id)."},
         503: {"description": "Worker недоступен."},
     },
 )
@@ -1751,7 +1766,7 @@ async def ipmi_rotate_password_dispatch(
     controller_id: str,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> ServerTaskDispatchResponse:
     """Ставит `ipmi.rotate_password` в очередь worker'а.
 
     Доступ: `(ipmi_controller, *, rotate_credentials)`. Cross-dept controller
@@ -1891,4 +1906,4 @@ async def ipmi_rotate_password_dispatch(
             "idempotent_hit": idempotent_hit,
         },
     )
-    return {"task_id": task_id, "status": "queued"}
+    return ServerTaskDispatchResponse(task_id=task_id, status="queued")

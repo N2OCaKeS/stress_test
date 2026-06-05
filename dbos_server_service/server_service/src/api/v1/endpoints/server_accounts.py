@@ -315,7 +315,7 @@ async def delete_account(
         403: {"description": "Нет `rotate_password`."},
         404: {"description": "Аккаунт не найден / чужой dept."},
         422: {"description": "Переданный пароль не проходит политику."},
-        429: {"description": "Per-IP rotate-rate-limit пробит."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP rotate-rate-limit пробит."},
     },
 )
 @endpoint_limiter.limit(get_settings().account_rotate_password_rate_limit)

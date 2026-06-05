@@ -18,8 +18,20 @@ class ServiceInfo(BaseModel):
 
 
 class ServiceListResponse(BaseModel):
+    """Список сервисов, у которых есть события.
+
+    Shape выровнен с `EventListResponse` / `RuleListResponse` / `ServiceEventsResponse`:
+    items+has_more+limit+offset+total. Реальной пагинации тут нет — список
+    заведомо короткий (десятки сервисов на платформе), поэтому `has_more`
+    всегда `False`, а `limit`/`offset` `None`. `total = len(items)` — без
+    отдельного COUNT'а по журналу.
+    """
+
     items: list[ServiceInfo]
     total: int
+    has_more: bool = False
+    limit: int | None = None
+    offset: int | None = None
 
 
 # ── Реестр событий сервиса ────────────────────────────────────────────────────
@@ -122,8 +134,16 @@ class ServiceEventDetail(BaseModel):
 
 
 class ServiceEventsResponse(BaseModel):
+    """Постраничный каталог зарегистрированных action'ов сервиса.
+
+    Shape канонический — items+has_more+limit+offset+total. `total` берётся
+    через COUNT, `has_more` сравнивает `offset + len(items)` с `total` без
+    второго прохода.
+    """
+
     service: str
     items: list[ServiceEventDetail]
     total: int
+    has_more: bool = False
     limit: int
     offset: int

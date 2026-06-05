@@ -28,6 +28,7 @@ from src.core.limiter import limiter
 from src.dependencies.auth import AdminIdentity, require_admin
 from src.dependencies.db import get_db
 from src.repositories import retention_policies as repo
+from src.schemas.common import ErrorEnvelope
 from src.schemas.events import EventCreate
 from src.schemas.retention import (
     RetentionPolicyCreate,
@@ -36,6 +37,15 @@ from src.schemas.retention import (
 from src.services import event_service
 
 router = APIRouter(dependencies=[Depends(require_admin)])
+
+# Общий каталог ошибок для retention endpoint'ов. Все три эндпоинта закрыты
+# router-level `require_admin` — auth-ветка одинаковая. Различия — write-only
+# 422 (`PUT` валидирует `retain_days`) и `RATE_LIMIT_EXCEEDED` (только на GET).
+_AUTH_RESPONSES = {
+    401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+    403: {"model": ErrorEnvelope, "description": "`INSUFFICIENT_ROLE` — нужен loging_admin"},
+    503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
+}
 
 
 def _audit(db: Session, identity: dict, details: dict) -> None:
@@ -141,9 +151,14 @@ def _snapshot_list(policies) -> list[dict]:
     description=(
         "Возвращает активную политику или `null`, если ни одной не настроено.\n\n"
         "**Доступ:** `platform_role=loging_admin`.\n\n"
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
         "**Связано:** `PUT /retention` — задать/заменить политику; "
         "`DELETE /retention` — отключить ротацию (хранить вечно)."
     ),
+    responses={
+        **_AUTH_RESPONSES,
+        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+    },
 )
 # Симметрично остальным read-эндпоинтам (`GET /events`, `GET /rules`,
 # `GET /services`) ставим `audit_query_rate_limit`. `require_admin`
@@ -174,8 +189,14 @@ def get_policy(
         "`retain_days` ∈ [30, 3650]. Меньше 30 — нет: минимальный compliance "
         "срок для security-логов.\n\n"
         "**Доступ:** `platform_role=loging_admin`.\n\n"
-        "**Возможные ошибки:** 422 — `retain_days` вне диапазона."
+        "Rate-limit: **не применяется** — admin write. PUT всегда возвращает "
+        "200 даже при первой настройке политики (новая row создаётся, прежний "
+        "активный набор гасится в той же транзакции)."
     ),
+    responses={
+        **_AUTH_RESPONSES,
+        422: {"model": ErrorEnvelope, "description": "`VALIDATION_ERROR` — `retain_days` вне диапазона"},
+    },
 )
 def set_policy(
     payload: RetentionPolicyCreate,
@@ -212,8 +233,10 @@ def set_policy(
         "При filtered-режиме активным может быть набор строк (severity×service) "
         "— гасятся все сразу, чтобы фоновая ротация полностью остановилась. "
         "Если активных нет — ничего не делает, 204 всё равно.\n\n"
-        "**Доступ:** `platform_role=loging_admin`."
+        "**Доступ:** `platform_role=loging_admin`.\n\n"
+        "Rate-limit: **не применяется** — admin write."
     ),
+    responses=_AUTH_RESPONSES,
 )
 def disable_policy(
     identity: AdminIdentity,

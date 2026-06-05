@@ -594,7 +594,8 @@ async def submit_rotated_ipmi_password(
     new_password: str,
     rotated_at: str,
     target_department_id: str | None = None,
-    verified_at: str | None = None,
+    *,
+    verified_at: str,
 ) -> dict:
     """Отдать сгенерированный IPMI-пароль обратно в server_service.
 
@@ -634,9 +635,11 @@ async def submit_rotated_ipmi_password(
         f"{settings.server_service_url.rstrip('/')}"
         f"/api/server/v1/internal/ipmi-controllers/{ipmi_controller_id}/credentials_rotated"
     )
-    body: dict = {"new_password": new_password, "rotated_at": rotated_at}
-    if verified_at is not None:
-        body["verified_at"] = verified_at
+    body: dict = {
+        "new_password": new_password,
+        "rotated_at": rotated_at,
+        "verified_at": verified_at,
+    }
     client = get_server_service_client()
     try:
         response = await client.post(

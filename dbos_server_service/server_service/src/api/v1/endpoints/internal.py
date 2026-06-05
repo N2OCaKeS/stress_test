@@ -5,6 +5,17 @@
 endpoint'ы: bot worker'а должен иметь роль с чувствительными actions
 (`view_credentials`, `view_password`, `rotate_password`).
 
+`subject_type == 'bot'` на FastAPI-уровне НЕ enforce'ится (owner-decision
+2026-05-30 — полагаемся на матрицу прав): worker_bot — единственная роль,
+которой по seed выданы `(server_account, view_password)`,
+`(server_account, rotate_password)`, `(ipmi_controller, view_credentials)`
+и `(ipmi_controller, rotate_credentials)`. Любой каллер с такой комбинацией
+действий формально пройдёт. Симметрия с user-facing
+`POST /servers/{id}/ipmi/credentials/rotate` сломана: тот endpoint явно
+отбивается 410 GONE для не-bot subject_type (см. `endpoints/ipmi.py`),
+здесь же subject_type не проверяется. Документировано как трейд-офф
+до появления выделенного worker-PAT-канала.
+
 Дополнительно каждый endpoint читает опциональный header
 ``X-Target-Department-Id`` и cross-check'ит его против реального
 `server.department_id`. Worker форвардит сюда значение, которое он получил
@@ -12,6 +23,19 @@ endpoint'ы: bot worker'а должен иметь роль с чувствит�
 payload при dispatch'е). Soft/strict-режим — в
 ``internal_service._check_target_department``, контролируется
 ``settings.internal_require_dept_header``.
+
+`responses=` каталог здесь публикуется как контракт worker-SDK, хотя
+endpoints скрыты из OpenAPI (`include_in_schema=False`): worker
+SDK-codegen всё равно читает routes и нуждается в стабильных
+error_code'ах. Общий набор для всех internal-эндпоинтов:
+
+* 403 PERMISSION_DENIED — нет нужного action в матрице.
+* 403 TARGET_DEPARTMENT_MISMATCH — `X-Target-Department-Id` не совпал
+  с реальным dept целевого сервера / контроллера.
+* 403 TARGET_DEPARTMENT_HEADER_REQUIRED — strict-режим, header не
+  прислан.
+* 404 SERVER_NOT_FOUND / ACCOUNT_NOT_FOUND / NO_IPMI_CONTROLLER —
+  целевой ресурс не найден.
 """
 
 from fastapi import APIRouter, Depends, Header
@@ -41,6 +65,21 @@ from src.services import internal_service
 
 router = APIRouter(prefix="/internal", include_in_schema=False)
 
+# Общий каталог responses для всех internal-эндпоинтов. Шарится между
+# read-endpoint'ами (`get_*`) и callback'ами (`record_*`); добавление 409 в
+# конкретный handler делается локально (например, `record_ipmi_credentials_rotated`
+# имеет специфичный CREDENTIALS_ALREADY_APPLIED / BMC_VERIFY_REQUIRED).
+_INTERNAL_RESPONSES_BASE: dict[int | str, dict] = {
+    403: {"description": "PERMISSION_DENIED / TARGET_DEPARTMENT_MISMATCH / TARGET_DEPARTMENT_HEADER_REQUIRED."},
+    404: {"description": "SERVER_NOT_FOUND / ACCOUNT_NOT_FOUND / NO_IPMI_CONTROLLER."},
+}
+
+_INTERNAL_RESPONSES_CALLBACK: dict[int | str, dict] = {
+    **_INTERNAL_RESPONSES_BASE,
+    422: {"description": "Битый payload (нарушение pydantic-валидации; например, BMC_VERIFY_REQUIRED / IPMI_VERIFY_TOO_OLD)."},
+    500: {"description": "DECRYPT_FAILED / ENCRYPTION_KEY_MISSING / INTERNAL_ERROR."},
+}
+
 # Type alias держит дефолт FastAPI Header() аккуратным на все три route'а сразу.
 _TargetDeptHeader = Header(
     default=None,
@@ -56,6 +95,8 @@ _TargetDeptHeader = Header(
 @router.get(
     "/servers/{server_id}/ipmi/credentials",
     response_model=IpmiCredentialsResponse,
+    responses={**_INTERNAL_RESPONSES_BASE,
+               500: {"description": "DECRYPT_FAILED / ENCRYPTION_KEY_MISSING."}},
 )
 async def get_ipmi_credentials(
     server_id: str,
@@ -85,6 +126,9 @@ async def get_ipmi_credentials(
 @router.get(
     "/servers/{server_id}/accounts/{account_id}/password",
     response_model=AccountPasswordResponse,
+    responses={**_INTERNAL_RESPONSES_BASE,
+               409: {"description": "ACCOUNT_HAS_NO_PASSWORD — discovered-аккаунт без сохранённого ciphertext."},
+               500: {"description": "DECRYPT_FAILED / ENCRYPTION_KEY_MISSING."}},
 )
 async def get_account_password(
     server_id: str,
@@ -113,6 +157,7 @@ async def get_account_password(
 @router.post(
     "/servers/{server_id}/accounts/{account_id}/password/rotate",
     response_model=PasswordRotateResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
 )
 async def rotate_account_password(
     server_id: str,
@@ -145,6 +190,7 @@ async def rotate_account_password(
 @router.post(
     "/servers/{server_id}/inventory",
     response_model=InventoryCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
 )
 async def receive_inventory(
     server_id: str,
@@ -169,6 +215,7 @@ async def receive_inventory(
 @router.post(
     "/servers/{server_id}/users/inventory",
     response_model=UsersInventoryCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
 )
 async def receive_users_inventory(
     server_id: str,
@@ -197,6 +244,7 @@ async def receive_users_inventory(
 @router.post(
     "/servers/{server_id}/accounts/{account_id}/provision_status",
     response_model=ProvisionStatusResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
 )
 async def record_provision_status(
     server_id: str,
@@ -225,6 +273,7 @@ async def record_provision_status(
 @router.post(
     "/servers/{server_id}/prepared",
     response_model=ServerPrepareCallbackResponse,
+    responses=_INTERNAL_RESPONSES_CALLBACK,
 )
 async def record_server_prepared(
     server_id: str,
@@ -252,6 +301,8 @@ async def record_server_prepared(
 @router.post(
     "/ipmi-controllers/{controller_id}/credentials_rotated",
     response_model=IpmiCredentialsRotatedResponse,
+    responses={**_INTERNAL_RESPONSES_CALLBACK,
+               409: {"description": "CREDENTIALS_ALREADY_APPLIED — callback на не-pending row."}},
 )
 async def ipmi_credentials_rotated_callback(
     controller_id: str,

@@ -235,7 +235,16 @@ class RuleResponse(BaseModel):
 
 
 class RuleListResponse(BaseModel):
+    """Постраничный список правил.
+
+    Shape канонический — items+has_more+limit+offset+total. На таблице
+    `audit_rules` row'ей мало, поэтому `total` считается всегда. `has_more`
+    дублирует признак следующей страницы — выставляется через сравнение
+    `offset + len(items) < total`, без второго прохода по БД.
+    """
+
     items: list[RuleResponse]
     total: int
+    has_more: bool = False
     limit: int
     offset: int

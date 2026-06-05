@@ -119,6 +119,12 @@ async def delete_client(
     "/authorize",
     summary="OAuth2 authorize endpoint (authorization code flow)",
     description="Выдаёт authorization code и редиректит на redirect_uri. PKCE опционален для confidential, обязателен для public client'ов.",
+    responses={
+        302: {"description": "Redirect на `redirect_uri?code=…&state=…`."},
+        400: {"description": "`UNSUPPORTED_RESPONSE_TYPE` — response_type не `code`."},
+        401: {"description": "`OAUTH_CLIENT_INVALID` — нет client_id или клиент деактивирован."},
+        403: {"description": "`REDIRECT_URI_MISMATCH` / `GRANT_TYPE_NOT_ALLOWED` / `PKCE_REQUIRED` / `PKCE_METHOD_INVALID`."},
+    },
 )
 async def authorize(
     request: Request,
@@ -228,7 +234,7 @@ async def token(
 
     Возможные ошибки:
         * `INVALID_GRANT` — code не найден/истёк/уже использован.
-        * `INVALID_CLIENT` — неверный client_id/secret.
+        * `OAUTH_CLIENT_INVALID` (401) — неверный client_id/secret или клиент деактивирован.
         * `UNSUPPORTED_GRANT_TYPE` — не `authorization_code` и не `client_credentials`.
     """
     request_id = getattr(request.state, "request_id", None)

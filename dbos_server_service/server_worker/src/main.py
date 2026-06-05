@@ -373,7 +373,15 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                     audit_severity = "ERROR"
                     will_retry = False
 
-                target_id = fresh.target_server_id or tid
+                details_payload: dict = {
+                    "task_id": tid,
+                    "reason": "worker_shutdown",
+                    "attempt": fresh.attempt,
+                    "max_attempts": fresh.max_attempts,
+                    "will_retry": will_retry,
+                }
+                if fresh.target_server_id:
+                    details_payload["server_id"] = fresh.target_server_id
                 await task_repo.enqueue_audit(
                     session,
                     task_id=tid,
@@ -381,17 +389,11 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                         "action": "task.worker_shutdown",
                         "status": "failure",
                         "allowed": False,
-                        "target_id": target_id,
+                        "target_id": tid,
                         "target_type": "task",
                         "request_id": fresh.request_id,
                         "actor_id": fresh.created_by,
-                        "details": {
-                            "task_id": tid,
-                            "reason": "worker_shutdown",
-                            "attempt": fresh.attempt,
-                            "max_attempts": fresh.max_attempts,
-                            "will_retry": will_retry,
-                        },
+                        "details": details_payload,
                         "severity": audit_severity,
                     },
                 )
@@ -810,7 +812,15 @@ async def tasks_sweep_orphaned() -> None:
                     f"heartbeat stale; started_at={orphan.started_at}"
                 )
                 await task_repo.mark_failed(session, fresh, error_message)
-                target_id = fresh.target_server_id or fresh.id
+                orphan_details: dict = {
+                    "task_id": fresh.id,
+                    "reason": "worker_orphaned",
+                    "worker_id": fresh.worker_id,
+                    "attempt": fresh.attempt,
+                    "max_attempts": fresh.max_attempts,
+                }
+                if fresh.target_server_id:
+                    orphan_details["server_id"] = fresh.target_server_id
                 await task_repo.enqueue_audit(
                     session,
                     task_id=fresh.id,
@@ -818,17 +828,11 @@ async def tasks_sweep_orphaned() -> None:
                         "action": "task.worker_orphaned",
                         "status": "failure",
                         "allowed": False,
-                        "target_id": target_id,
+                        "target_id": fresh.id,
                         "target_type": "task",
                         "request_id": fresh.request_id,
                         "actor_id": fresh.created_by,
-                        "details": {
-                            "task_id": fresh.id,
-                            "reason": "worker_orphaned",
-                            "worker_id": fresh.worker_id,
-                            "attempt": fresh.attempt,
-                            "max_attempts": fresh.max_attempts,
-                        },
+                        "details": orphan_details,
                         "severity": "ERROR",
                     },
                 )
@@ -1215,6 +1219,7 @@ async def secrets_reencrypt_lazy() -> None:
             "status": "failure",
             "allowed": False,
             "target_type": "secret",
+            "severity": "ERROR",
             "details": {
                 "skipped": True,
                 "reason": "app_env_mismatch",

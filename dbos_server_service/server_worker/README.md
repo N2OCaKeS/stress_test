@@ -220,7 +220,9 @@ make test-worker
 | `LOGGING_SERVICE_URL` | — | base URL loging_service для audit-публикаций |
 | `WORKER_BOT_TOKEN` | `""` | PAT worker_bot. Если пусто — entrypoint берёт из `/shared/.worker_pat` (его кладёт `make seed`) |
 | `LOGGING_SERVICE_API_KEY` | `""` | shared SERVICE_API_KEY для `/api/logging/v1/events`. В `production` обязателен (иначе `audit_client.emit` тихо дропал бы события) |
-| `HTTP_REQUEST_TIMEOUT_SECONDS` | `5.0` | httpx timeout для client-вызовов в server_service / loging_service |
+| `HTTP_REQUEST_TIMEOUT_SECONDS` | `5.0` | legacy общий httpx timeout — fallback для тестов; production-path расщеплён ниже на audit/server_service |
+| `AUDIT_REQUEST_TIMEOUT_SECONDS` | `5.0` | httpx timeout для emit'ов в `loging_service /events`. Короткий — ingest должен отвечать быстро; outbox retry на медленных проходах rule_engine'а предпочтительнее зависшего worker'а |
+| `SERVER_SERVICE_REQUEST_TIMEOUT_SECONDS` | `15.0` | httpx timeout для internal-callback'ов в server_service (`fetch_*`/`submit_*`/`reencrypt_outbox/*`); длиннее audit-таймаута — крипто-операции server'а тянутся 50-200ms на row, batch-callback'и упираются в slow PG |
 | `WORKER_LOG_LEVEL` | `INFO` | python log level. `DEBUG` повышает шум, но `httpx/httpcore/hpack` принудительно понижены до WARNING (защита от утечки `Authorization` в логи) |
 
 ### Жизненный цикл и replica identity
@@ -233,6 +235,7 @@ make test-worker
 | `WORKER_ORPHAN_THRESHOLD_SECONDS` | `1800.0` | мин. длительность `status='running'` чтобы task считался orphan-кандидатом (потолок realistic impl-runtime) |
 | `WORKER_HEARTBEAT_STALE_SECONDS` | `300.0` | через сколько без heartbeat'а worker_id считается мёртвым; должно быть заметно больше cron-периода (60s) |
 | `WORKER_HEARTBEAT_CLEANUP_THRESHOLD_SECONDS` | `604800.0` (7d) | DROP старых row'ов в `worker_heartbeats` hourly cleanup'ом |
+| `WORKER_RETRY_RECOVERY_MAX_PER_TICK` | `200` | hard cap на один проход recovery'я scheduled_retry'ев (startup-hook и periodic-cron оба зовут одно ядро). Поднимать только под incident-recovery после длительного downtime'а (>1000 потерянных row'ов), потом возвращать в default |
 
 ### Retention (bounded growth) и audit outbox
 
@@ -241,6 +244,9 @@ make test-worker
 | `TASKS_RETENTION_DAYS` | `30` | сколько дней хранить SUCCEEDED/FAILED task'и до daily DELETE. QUEUED/RUNNING никогда не трогаем — за них отвечает orphan-sweep |
 | `AUDIT_OUTBOX_RETENTION_DAYS` | `90` | сколько дней хранить published outbox-row'ы (и delivered, и DLQ-poisoned) до daily DELETE. Unpublished (in-flight) не трогаем |
 | `MAX_PUBLISH_ATTEMPTS` | `50` | cap по attempts в publisher loop'е. При превышении row уходит в DLQ через `_send_to_dlq` с `reason="attempts_cap"`; счётчик `audit_outbox_dead_total` тикает (stub под Prometheus) |
+| `AUDIT_OUTBOX_BATCH_SIZE` | `5` | сколько строк за один проход audit-outbox publisher'а. Маленький batch ограничивает blast-radius медленных POST'ов в loging_service (весь batch держится `FOR UPDATE SKIP LOCKED` до commit'а) |
+| `AUDIT_OUTBOX_POLL_INTERVAL_SECONDS` | `2.0` | пауза между проходами фонового publisher loop'а audit-outbox. Меньше — ниже latency audit-event'а, выше — DB-нагрузка |
+| `AUDIT_OUTBOX_CB_SLEEP_CHUNK_SECONDS` | `5.0` | в open-state shared circuit breaker'а publisher loop спит порциями ≤ этой длины — чтобы быстро отреагировать на закрытие breaker'а и не блокировать graceful shutdown |
 | `DISPATCH_OUTBOX_POLL_INTERVAL_SECONDS` | `2` | интервал poller'а dispatch_outbox (читает unpublished row'ы и публикует таски) |
 | `DISPATCH_OUTBOX_BATCH_SIZE` | `100` | максимум rows, забираемых poller'ом за один тик |
 | `DISPATCH_OUTBOX_MAX_ATTEMPTS` | `10` | сколько попыток публикации до ухода row'а в DLQ-style limbo |
@@ -254,6 +260,9 @@ make test-worker
 | `IPMI_USER_ID` | `2` | дефолтный Redfish account slot (`/Managers/<m>/Accounts/<n>`). Dell iDRAC root=2, HPE iLO=1, Supermicro=3. Per-host override через payload |
 | `REDFISH_VERIFY_TLS` | `false` | iDRAC ships self-signed cert — `true` только когда BMC получили cert от внутреннего CA |
 | `REDFISH_TIMEOUT_SECONDS` | `30.0` | per-request timeout для Redfish-вызовов |
+| `BMC_POOL_MAX_CONNECTIONS` | `20` | общий лимит одновременных соединений в shared BMC httpx-пуле (Redfish-transport + 3 probe-клиента). Покрывает все BMC-host'ы worker'а — поднимать на стендах с десятками параллельных BMC |
+| `BMC_POOL_MAX_KEEPALIVE_CONNECTIONS` | `10` | сколько idle BMC-соединений держать открытыми для reuse; должно быть ≤ `BMC_POOL_MAX_CONNECTIONS` |
+| `BMC_PROBE_TIMEOUT_SECONDS` | `1.5` | per-step timeout для HEAD `/redfish/v1/` probe каскада (https-verify → https-noverify → http). Короткий — чтобы ipmitool-fallback не ждал долго на мёртвом BMC |
 
 ### Pooled HTTP-clients (`audit_client`, `server_service_client`)
 

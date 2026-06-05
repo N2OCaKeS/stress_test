@@ -36,6 +36,7 @@ from src.schemas.ipmi_controller import (
     IpmiCredentialsViewResponse,
     IpmiPowerStatusCachedResponse,
 )
+from src.schemas.server import ServerTaskDispatchResponse
 from src.services import audit_service, permissions, worker_client
 from src.services import ipmi_controller as ipmi_svc
 from src.services import server as server_svc
@@ -49,9 +50,27 @@ _POWER_ACTION_TO_AUDIT = {
     Action.POWER_REBOOT: "server.power_reboot",
 }
 
+# Общий каталог ответов для трёх power-эндпоинтов. Путь идёт через
+# `_dispatch_power → worker_client.dispatch_task_with_hit`, поэтому набор
+# error_code одинаков; держим в одной константе, чтобы ветки не разъезжались.
+_POWER_RESPONSES: dict[int | str, dict] = {
+    202: {"description": "Задача принята, возвращается task_id для отслеживания."},
+    400: {"description": "IDEMPOTENCY_KEY_TOO_LONG — заголовок длиннее лимита."},
+    403: {"description": "Нет роли с соответствующим power-action либо чужой department."},
+    404: {"description": "Сервер не найден / чужой dept (скрыто за 404) либо NO_IPMI_CONTROLLER."},
+    409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
+    503: {"description": "Worker недоступен (WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED)."},
+}
+
 router = APIRouter(prefix="/servers/{server_id}/ipmi")
 # Отдельный router для list — без server_id в prefix'е.
-list_router = APIRouter(prefix="/ipmi_controllers")
+# Каноничный путь — `/ipmi-controllers` (kebab-case, как остальные
+# коллекции сервиса: `/server-accounts`, `/os-versions`,
+# `/ipmi-controllers/{id}` POST/rotate). Старый `/ipmi_controllers`
+# (underscore) оставлен алиасом ради совместимости с уже задеплоенным
+# клиентом — оба роутера привязаны к одному handler'у ниже.
+list_router = APIRouter(prefix="/ipmi-controllers")
+list_router_legacy = APIRouter(prefix="/ipmi_controllers", include_in_schema=False)
 
 
 async def _dispatch_power(
@@ -281,6 +300,18 @@ async def list_controllers(
     )
 
 
+# Legacy alias `GET /ipmi_controllers` (snake_case) проксирует на тот же
+# handler; скрыт из OpenAPI и оставлен для существующих клиентов до их
+# миграции на kebab-case путь.
+list_router_legacy.add_api_route(
+    "",
+    list_controllers,
+    methods=["GET"],
+    response_model=None,
+    include_in_schema=False,
+)
+
+
 @router.post(
     "",
     response_model=IpmiControllerResponse,
@@ -412,7 +443,7 @@ async def delete_controller(
         403: {"description": "Нет `rotate_credentials`."},
         404: {"description": "Сервер не найден / чужой dept, либо контроллер не зарегистрирован."},
         410: {"description": "User-facing endpoint снят; используйте `/ipmi-controllers/{id}/rotate`."},
-        429: {"description": "Per-IP rotate-rate-limit пробит."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP rotate-rate-limit пробит."},
     },
 )
 @endpoint_limiter.limit(get_settings().ipmi_credentials_rotate_rate_limit)
@@ -629,6 +660,7 @@ async def power_status(
 
 @router.post(
     "/power/on",
+    response_model=ServerTaskDispatchResponse,
     summary="Включить питание (ставит задачу worker'у, 202)",
     status_code=202,
     description=(
@@ -638,20 +670,14 @@ async def power_status(
         "Header `Idempotency-Key` (опционально) — повторный POST с тем же "
         "ключом вернёт тот же `task_id`."
     ),
-    responses={
-        202: {"description": "Задача принята, возвращается task_id для отслеживания."},
-        403: {"description": "Нет роли с `power_on` либо чужой department."},
-        404: {"description": "Сервер не найден / чужой dept (скрыто за 404) либо NO_IPMI_CONTROLLER."},
-        409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
-        503: {"description": "Worker недоступен (WORKER_UNREACHABLE / WORKER_REDIS_NOT_CONFIGURED)."},
-    },
+    responses=_POWER_RESPONSES,
 )
 async def power_on(
     server_id: str,
     identity: CurrentIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> ServerTaskDispatchResponse:
     """
     Что делает: ставит задачу `power.on` в очередь worker'а.
 
@@ -664,14 +690,16 @@ async def power_on(
     Связано: `_dispatch_power`, `worker_client.dispatch_task`,
     `server_worker/tasks/power.py`.
     """
-    return await _dispatch_power(
+    result = await _dispatch_power(
         db=db, identity=identity, request=request, server_id=server_id,
         action=Action.POWER_ON, task_kind="power.on",
     )
+    return ServerTaskDispatchResponse(**result)
 
 
 @router.post(
     "/power/off",
+    response_model=ServerTaskDispatchResponse,
     summary="Выключить питание hard (ставит задачу worker'у, 202)",
     status_code=202,
     description=(
@@ -680,13 +708,14 @@ async def power_on(
         "`chassis power off` (ipmitool). Soft/ACPI shutdown через этот "
         "endpoint не поддерживается. Тот же набор валидаций и кодов."
     ),
+    responses=_POWER_RESPONSES,
 )
 async def power_off(
     server_id: str,
     identity: CurrentIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> ServerTaskDispatchResponse:
     """
     Что делает: ставит задачу `power.off` в очередь worker'а. Worker всегда
     делает hard power-off (`ForceOff` / `chassis power off`), без graceful.
@@ -694,34 +723,38 @@ async def power_off(
     Доступ: `(server, *, power_off)`.
     Ошибки и связи — как у `power_on`.
     """
-    return await _dispatch_power(
+    result = await _dispatch_power(
         db=db, identity=identity, request=request, server_id=server_id,
         action=Action.POWER_OFF, task_kind="power.off",
     )
+    return ServerTaskDispatchResponse(**result)
 
 
 @router.post(
     "/power/reboot",
+    response_model=ServerTaskDispatchResponse,
     summary="Перезагрузить (ставит задачу worker'у, 202)",
     status_code=202,
     description=(
         "Power-cycle через BMC (обычно reset через iDRAC/Redfish, не soft-reboot). "
         "Тот же набор валидаций, что у power/on."
     ),
+    responses=_POWER_RESPONSES,
 )
 async def power_reboot(
     server_id: str,
     identity: CurrentIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> ServerTaskDispatchResponse:
     """
     Что делает: ставит задачу `power.reboot` в очередь worker'а.
 
     Доступ: `(server, *, power_reboot)`.
     Ошибки и связи — как у `power_on`.
     """
-    return await _dispatch_power(
+    result = await _dispatch_power(
         db=db, identity=identity, request=request, server_id=server_id,
         action=Action.POWER_REBOOT, task_kind="power.reboot",
     )
+    return ServerTaskDispatchResponse(**result)

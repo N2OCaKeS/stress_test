@@ -251,6 +251,12 @@ async def docker_token(
     response_class=PlainTextResponse,
     summary="RSA public key (PEM) — для Docker registry rootcertbundle",
     tags=["docker-registry"],
+    responses={
+        200: {
+            "content": {"application/x-pem-file": {}},
+            "description": "PEM-encoded RSA public key.",
+        },
+    },
 )
 async def docker_public_key() -> str:
     """RSA public key для верификации Docker JWT.
@@ -265,6 +271,20 @@ async def docker_public_key() -> str:
     "/jwks",
     summary="JWKS endpoint — public keys для JWT verification",
     tags=["docker-registry"],
+    responses={
+        200: {
+            "description": "JWKS (RFC 7517) — `{\"keys\": [{kty, kid, use, alg, n, e}]}`.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "keys": [
+                            {"kty": "RSA", "kid": "...", "use": "sig", "alg": "RS256", "n": "...", "e": "AQAB"},
+                        ],
+                    },
+                },
+            },
+        },
+    },
 )
 async def docker_jwks() -> dict:
     """JSON Web Key Set — стандартный формат для JWT-aware инструментов."""

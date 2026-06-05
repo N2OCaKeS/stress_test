@@ -1187,7 +1187,12 @@ async def record_provision_status(
             extra={"server_id": server_id},
         )
 
-    account = await account_repo.get_by_id(db, account_id)
+    # FOR UPDATE на server_accounts — fan-out из mass-rotation может прислать
+    # несколько callback'ов в одном окне; без row-lock'а параллельные UPDATE
+    # `credentials_pending_apply = False` гонятся между собой и с user-facing
+    # `update_account` / linkage-операциями (последние тоже берут лок через
+    # `get_for_update`). Лок сериализует их без потерь.
+    account = await account_repo.get_for_update(db, account_id)
     link = await account_repo.get_link(db, account_id, server_id)
     if account is None or link is None:
         audit_service.emit(
@@ -1202,13 +1207,14 @@ async def record_provision_status(
         )
 
     await account_repo.set_link_presence(db, link, present=payload.present)
-    # Callback от worker'а — единственная точка подтверждения, что credentials,
-    # сгенерированные на dispatch'е и сохранённые в server_accounts.password_encrypted /
-    # ssh_private_key_encrypted, реально доехали до боксу. Снимаем pending_apply
-    # на любой успешный provision/update (`present=True`); deprovision (`present=False`)
-    # тоже завершает цикл — на боксе пользователя больше нет, БД-creds логически
-    # выровнены с реальностью. Не трогаем, если у row'а флаг и так False —
-    # бесплатно по UPDATE, но логически чище.
+    # Callback от worker'а подтверждает, что credentials, сгенерированные на
+    # dispatch'е и сохранённые в server_accounts.password_encrypted /
+    # ssh_private_key_encrypted, доехали до бокса. Семантика fan-out'а: pending_apply
+    # снимается первым успешным callback'ом любого сервера в группе — это
+    # «доехало хотя бы до одного». Per-server состояние live видно через
+    # `server_account_servers.present` (set_link_presence выше); pending_apply —
+    # короткий drift-флаг для UI «свежевыданные creds в процессе раскатки».
+    # Deprovision (`present=False`) тоже завершает цикл для своего сервера.
     if account.credentials_pending_apply:
         account.credentials_pending_apply = False
         await db.flush()

@@ -272,11 +272,14 @@ class TestFallbackWithoutLoop:
         )
         # `start` НЕ зовём — `_queue is None`, push идёт в fallback.
         accepted = outbox.push_nowait(_env("inline"))
-        assert accepted is False
+        assert accepted is True
         assert len(captured) == 1
         assert sessions[0].closes == 1
         # До start() флаг `_stopping` ещё в False, after-stop-counter не растёт.
         assert outbox.dropped_after_stop_total() == 0
+        # Успешный fallback-write попадает в drained по инварианту
+        # `enqueued = drained + failures + dropped`.
+        assert outbox.drained_total() == 1
 
     def test_fallback_after_stop_bumps_counter(self):
         """push_nowait после `stop()` инкрементит dropped_after_stop_total."""
@@ -300,11 +303,46 @@ class TestFallbackWithoutLoop:
 
         outbox = asyncio.run(run())
         # Outbox остановлен, `_stopping=True`, `_queue is None`. push идёт
-        # в fallback и должен бампить новый counter ровно один раз.
+        # в fallback и должен бампить новый counter ровно один раз. Сам
+        # fallback при этом успешно дописал event — `True` + drained_total++.
         accepted = outbox.push_nowait(_env("after-stop"))
-        assert accepted is False
+        assert accepted is True
         assert len(captured) == 1
         assert outbox.dropped_after_stop_total() == 1
+        assert outbox.drained_total() == 1
+
+    def test_fallback_after_stop_writer_failure_bumps_failure(self):
+        """push_nowait после `stop()` с падающим writer'ом: after-stop-counter
+        растёт, failure-counter растёт, drained_total не увеличивается, возврат
+        False."""
+        failures = {"n": 0}
+
+        def bump():
+            failures["n"] += 1
+            return failures["n"]
+
+        def writer(db, env):
+            raise RuntimeError("writer boom")
+
+        async def run():
+            outbox = AuditOutbox(
+                max_size=4,
+                batch_size=2,
+                poll_interval_seconds=0.05,
+                session_factory=_FakeSession,
+                writer=writer,
+                bump_failure=bump,
+            )
+            outbox.start()
+            await outbox.stop(timeout=1.0)
+            return outbox
+
+        outbox = asyncio.run(run())
+        accepted = outbox.push_nowait(_env("after-stop-bad"))
+        assert accepted is False
+        assert outbox.dropped_after_stop_total() == 1
+        assert failures["n"] == 1
+        assert outbox.drained_total() == 0
 
 
 # ── drain не валится на одном битом событии ────────────────────────────────

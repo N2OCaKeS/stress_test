@@ -152,6 +152,15 @@ _breaker_skips_total: int = 0
 # через `internal.outbox_re_attempt`.
 _BACKOFF_MAX_SECONDS = 300.0
 
+# Cap на `next_retry_at` при breaker-skip'е. retry_after от breaker'а —
+# это полный cooldown_seconds (по умолчанию 30s). Если breaker закроется
+# раньше (probe прошёл за секунду), row ждала бы все 30s до повторной
+# попытки, пока канал уже работает. Cap'аем небольшим окном: row выйдет
+# из backoff'а быстро, и если breaker всё ещё open — `check()` отобьёт
+# её снова без HTTP. Стоимость лишнего SELECT раз в N секунд несравнима
+# с задержкой audit-row на десятки секунд после реального recovery.
+_BREAKER_SKIP_RETRY_CAP_SECONDS = 5.0
+
 
 def get_dlq_total() -> int:
     """Сколько raз publisher отбраковал outbox-row в DLQ за время жизни процесса.
@@ -384,8 +393,12 @@ async def _publish_one(
         _breaker_skips_total += 1
         retry_after = float(exc.details.get("retry_after_seconds", 0) or 0)
         if retry_after > 0:
+            # Cap'аем окном `_BREAKER_SKIP_RETRY_CAP_SECONDS` — иначе row
+            # ждёт весь cooldown breaker'а, даже если probe прошёл успехом
+            # через секунду и канал уже работает.
+            capped_retry_after = min(retry_after, _BREAKER_SKIP_RETRY_CAP_SECONDS)
             row.next_retry_at = datetime.now(timezone.utc) + timedelta(
-                seconds=retry_after,
+                seconds=capped_retry_after,
             )
             await session.flush()
         return PublishResult(

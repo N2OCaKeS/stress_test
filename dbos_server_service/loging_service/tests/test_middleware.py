@@ -243,6 +243,23 @@ class TestRequestIdSanitisation:
         assert reflected.startswith("req_")
         assert len(reflected) > 4
 
+    def test_charset_filter_drops_out_of_range_characters(self, client):
+        # `_sanitize_request_id` теперь синхронизирован со схемным
+        # `_REQUEST_ID_PATTERN = [A-Za-z0-9_.\\-]{1,64}`: символы вне charset'а
+        # (например `;`, `(`, `=`) выкидываются ещё в middleware. Без фильтра
+        # такие id проходили middleware-reflection, но падали на drain'е
+        # `EventCreate(request_id=...)` валидатором и event терялся.
+        r = client.get(
+            "/api/logging/v1/health",
+            headers={"X-Request-ID": "req;injection=evil(payload)"},
+        )
+        reflected = r.headers["X-Request-ID"]
+        # Все out-of-charset символы выкинуты.
+        for forbidden in (";", "=", "(", ")"):
+            assert forbidden not in reflected
+        # Допустимая часть сохранилась.
+        assert reflected == "reqinjectionevilpayload"
+
 
 # ── _emit_audit: запись с обходом правил через SessionLocal ──────────────────
 

@@ -421,6 +421,9 @@ async def test_record_provision_status_soft_mode_no_header_emits_warning(
     async def get_by_id(db, aid):
         return _Account()
 
+    async def get_for_update(db, aid):
+        return _Account()
+
     async def get_link(db, aid, sid):
         return _Link()
 
@@ -428,6 +431,7 @@ async def test_record_provision_status_soft_mode_no_header_emits_warning(
         return None
 
     monkeypatch.setattr(internal_service.account_repo, "get_by_id", get_by_id)
+    monkeypatch.setattr(internal_service.account_repo, "get_for_update", get_for_update)
     monkeypatch.setattr(internal_service.account_repo, "get_link", get_link)
     monkeypatch.setattr(internal_service.account_repo, "set_link_presence", set_link_presence)
 

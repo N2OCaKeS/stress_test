@@ -352,3 +352,56 @@ class TestQueryTimeoutAudit:
             assert events == []
         finally:
             get_settings.cache_clear()
+
+
+# ── _emit_idempotency_conflict_audit misuse guard ────────────────────────────
+
+
+class TestIdempotencyConflictAuditMisuseGuard:
+    """Caller-инвариант: rollback outer-tx ДО вызова self-audit. Guard смотрит
+    на `db.in_transaction()`: если tx открыта — пропускаем audit, чтобы
+    `commit=True` внутри не сорвал чужую транзакцию. Логируем CRITICAL, чтобы
+    bad-call-site был виден в SIEM."""
+
+    class _SessionWithOpenTx:
+        def __init__(self):
+            self.commits = 0
+
+        def in_transaction(self) -> bool:
+            return True
+
+        def commit(self):
+            # Дополнительная страховка: если guard не отработает и audit пройдёт
+            # дальше, мы это увидим по росту commit-счётчика.
+            self.commits += 1
+
+    def test_open_tx_skips_audit_and_logs_critical(self, caplog):
+        session = self._SessionWithOpenTx()
+        payload = EventCreate(
+            timestamp=datetime.now(timezone.utc),
+            service="auth_service",
+            action="user.login",
+            actor_id=None,
+            actor_type="service",
+            status="failure",
+            allowed=False,
+            idempotency_key="poison-misuse",
+            details={},
+        )
+        exc = ConflictError(
+            error_code="IDEMPOTENCY_KEY_CONFLICT",
+            message="poison",
+            details={"service": payload.service, "idempotency_key": payload.idempotency_key},
+        )
+
+        with caplog.at_level(logging.CRITICAL, logger="src.services.event_service"):
+            event_service._emit_idempotency_conflict_audit(session, payload, exc)
+
+        # Audit-row через session НЕ пошёл (commit не вызывался).
+        assert session.commits == 0
+        critical = [
+            r.message for r in caplog.records if r.levelno == logging.CRITICAL
+        ]
+        assert any(
+            "called inside an open transaction" in m for m in critical
+        ), f"ожидали CRITICAL про open tx, получили: {critical!r}"

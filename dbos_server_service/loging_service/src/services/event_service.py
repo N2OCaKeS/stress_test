@@ -100,12 +100,23 @@ def _emit_idempotency_conflict_audit(
     транзакцию, и если outer-tx не была rollback'нута, этот commit
     выкинет её partially-committed состояние наружу. Сейчас единственный
     call-site — ConflictError-ветка `record`, и rollback там стоит явно.
-    Если в будущем появится другой call-site (например, валидатор, который
-    зовёт `_emit_idempotency_conflict_audit` без явного rollback'а
-    собственной savepoint'ы), commit-семантика становится сюрпризом —
-    стоит вынести `commit_mode` параметром или продублировать инвариант
-    в docstring caller'а.
+    Перед записью проверяем `db.in_transaction()` руками: если caller
+    нарушил инвариант, не пишем self-audit (теряем диагностику конфликта,
+    но не сносим чужую транзакцию) и логируем CRITICAL — bug должен быть
+    виден в SIEM.
     """
+    if db.in_transaction():
+        # Каллер не сделал rollback (или начал новую tx после нашего вызова).
+        # Зовём commit=True здесь — это снесёт outer-tx и выпустит наружу
+        # её partially-committed состояние. Гасим self-audit, чтобы не
+        # маскировать contract violation тихим успехом.
+        logger.critical(
+            "_emit_idempotency_conflict_audit called inside an open transaction; "
+            "skipping self-audit to avoid clobbering caller's tx "
+            "(action=%s, service=%s)",
+            payload.action, payload.service,
+        )
+        return
     try:
         warning_payload = EventCreate(
             timestamp=datetime.now(timezone.utc),

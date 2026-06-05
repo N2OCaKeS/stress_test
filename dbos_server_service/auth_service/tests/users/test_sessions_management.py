@@ -187,3 +187,44 @@ async def test_revoke_one_foreign_session_returns_404(client, user_a, user_b):
     # У b ничего не повредилось.
     r = await client.post(REFRESH_URL, json={"refresh_token": b1["refresh_token"]})
     assert r.status_code == 200
+
+
+async def test_revoke_one_current_session_emits_was_current_true(
+    client, user_a, capture_audit_payloads,
+):
+    """DELETE /me/sessions/{id}, где {id} = sid текущего access-токена,
+    проходит успешно и пишет в audit `was_current=True`. Параллельная сессия
+    остаётся живой — её refresh продолжает работать.
+    """
+    s1 = await _login_full(client, "t_user_a", "User1234!")
+    s2 = await _login_full(client, "t_user_a", "User1234!")
+
+    # Узнаём session_id, помеченный is_current=True для s2.
+    listing = await client.get(
+        LIST_URL, headers={"Authorization": f"Bearer {s2['access_token']}"}
+    )
+    items = listing.json()["items"]
+    current = next(it for it in items if it["is_current"])
+    current_sid = current["session_id"]
+
+    resp = await client.delete(
+        f"{LIST_URL}/{current_sid}",
+        headers={"Authorization": f"Bearer {s2['access_token']}"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["revoked_count"] == 1
+
+    # Свой refresh умер, второй сессии (s1) — жив.
+    r2 = await client.post(REFRESH_URL, json={"refresh_token": s2["refresh_token"]})
+    assert r2.status_code == 401
+    r1 = await client.post(REFRESH_URL, json={"refresh_token": s1["refresh_token"]})
+    assert r1.status_code == 200
+
+    # Audit-event пишет was_current=True.
+    events = [
+        p for p in capture_audit_payloads
+        if p.get("action") == "user.session_revoked_one"
+        and p.get("details", {}).get("session_id") == current_sid
+    ]
+    assert events, "expected user.session_revoked_one audit event"
+    assert events[0]["details"]["was_current"] is True

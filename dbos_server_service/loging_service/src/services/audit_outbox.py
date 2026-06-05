@@ -247,10 +247,12 @@ class AuditOutbox:
                 with self._counters_lock:
                     self._dropped_after_stop_total += 1
             db = self._session_factory()
+            written = False
             try:
                 try:
                     self._writer(db, envelope)
                     db.commit()
+                    written = True
                 except Exception as exc:
                     db.rollback()
                     self._bump_failure()
@@ -259,7 +261,14 @@ class AuditOutbox:
                     )
             finally:
                 db.close()
-            return False
+            if written:
+                # Инвариант `enqueued = drained + failures + dropped` требует,
+                # чтобы успешно записанный fallback envelope попал в `drained`.
+                # `dropped_after_stop_total` отдельная метрика — фиксирует, что
+                # push попал на after-stop-ветку независимо от исхода записи.
+                with self._counters_lock:
+                    self._drained_total += 1
+            return written
 
         try:
             queue.put_nowait(envelope)

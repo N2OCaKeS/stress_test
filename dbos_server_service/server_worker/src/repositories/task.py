@@ -41,6 +41,15 @@ async def mark_running(
       одно сообщение получит ровно один consumer, но CAS — defence in
       depth на случай мисконфига очереди (visibility timeout / re-enqueue
       на ack-fail).
+    * **stale Redis-message vs retry-recovery race** — старое сообщение в
+      Redis несёт `task_id` от первой попытки. Меж тем retry-recovery
+      или `mark_pending_for_retry` подняли `attempts` (например, B упал,
+      C переключился на attempt=1 и тоже умер, D ловит attempt=2 из БД).
+      CAS только по `status='queued'` пропустил бы stale-consumer'а с
+      in-memory `attempt=0` и установил бы `attempt=in_memory+1=1` —
+      в БД попадёт значение младше реального. CAS на пару
+      `(status='queued', attempt=:expected_attempt)` отбивает такой
+      stale-consumer: его in-memory копия отстала, и WHERE не матчит.
 
     `worker_id` — идентификатор replica, который
     забирает task'у. Записывается в `tasks.worker_id` для cross-replica
@@ -48,16 +57,22 @@ async def mark_running(
     `src/main.py`). При successful CAS попутно гасим `scheduled_retry_at`
     — task больше не «ждёт retry», она running.
 
-    Реализация — UPDATE ... WHERE status='queued' RETURNING. Атомарно на
-    уровне PostgreSQL, не нужен ни application-lock, ни row-level SELECT
-    FOR UPDATE. После UPDATE refresh переменной из БД — иначе SQLAlchemy
-    identity-map отдаст устаревшую копию.
+    Реализация — UPDATE ... WHERE status='queued' AND attempt=:expected
+    RETURNING. Атомарно на уровне PostgreSQL, не нужен ни application-
+    lock, ни row-level SELECT FOR UPDATE. После UPDATE refresh
+    переменной из БД — иначе SQLAlchemy identity-map отдаст устаревшую
+    копию.
     """
     now = datetime.now(timezone.utc)
-    next_attempt = task.attempt + 1
+    expected_attempt = task.attempt
+    next_attempt = expected_attempt + 1
     stmt = (
         update(Task)
-        .where(Task.id == task.id, Task.status == TaskStatus.QUEUED)
+        .where(
+            Task.id == task.id,
+            Task.status == TaskStatus.QUEUED,
+            Task.attempt == expected_attempt,
+        )
         .values(
             status=TaskStatus.RUNNING,
             attempt=next_attempt,

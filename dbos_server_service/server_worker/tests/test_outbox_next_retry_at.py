@@ -327,13 +327,15 @@ class TestBackoffExponentCap:
 
 
 class TestBreakerSkipSetsBackoff:
-    """Open breaker → `_publish_one` отодвигает `next_retry_at` за конец cooldown'а.
+    """Open breaker → `_publish_one` отодвигает `next_retry_at` на небольшое
+    окно (`_BREAKER_SKIP_RETRY_CAP_SECONDS`), а не на полный cooldown.
 
-    Без этого row остаётся eligible на следующем 2-секундном poll-цикле,
-    публикатор крутит check() по той же строке: breaker отбивает, attempts
-    не растут, но 5-секундный adaptive sleep всё равно бьёт DB через _select.
-    После фикса row уходит за горизонт cooldown'а до естественного закрытия
-    breaker'а.
+    Раньше: row уходила на `cooldown` секунд — публикатор не дёргал её
+    лишний раз, но если breaker закрывался через секунду (probe прошёл),
+    row ждала весь cooldown'а до естественного recovery, audit отставал.
+    Сейчас: cap режет retry_after в `_publish_one`, row выходит из
+    backoff'а быстро; если breaker всё ещё open — `check()` отобьёт её
+    на следующем тике.
     """
 
     async def test_breaker_skip_writes_next_retry_at(self, monkeypatch):
@@ -372,15 +374,18 @@ class TestBreakerSkipSetsBackoff:
         # Row остался unpublished, attempts не инкрементированы.
         assert row.published_at is None
         assert row.attempts == 0
-        # next_retry_at — за горизонт cooldown'а (DEFAULT_COOLDOWN_SECONDS=30).
+        # next_retry_at выставлен и cap'нут.
         assert row.next_retry_at is not None, (
             "breaker_skipped должен выставлять next_retry_at, чтобы row не "
             "spin'ил публикатор на каждом poll-цикле"
         )
-        cooldown = audit_publisher_breaker.DEFAULT_COOLDOWN_SECONDS
-        # С запасом на frozen clock и slack — окно [cooldown-5, cooldown+5].
-        assert row.next_retry_at >= before + timedelta(seconds=cooldown - 5)
-        assert row.next_retry_at <= before + timedelta(seconds=cooldown + 5)
+        cap = audit_outbox_publisher._BREAKER_SKIP_RETRY_CAP_SECONDS
+        # Окно (0, cap + slack]; slack 2s — на clock-skew между breaker'ом и
+        # моментом замера.
+        delta = (row.next_retry_at - before).total_seconds()
+        assert 0 < delta <= cap + 2.0, (
+            f"next_retry_at должен быть cap'нут на {cap}s; got delta={delta}"
+        )
 
 
 class TestMissingApiKeyRaises:

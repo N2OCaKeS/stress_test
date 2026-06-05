@@ -101,11 +101,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+_REQUEST_ID_SAFE_CHARS = re.compile(r"[^A-Za-z0-9_.\-]")
+
+
 def _sanitize_request_id(raw: str | None) -> str:
     """Возвращает безопасный `request_id`: либо санитизированный header,
     либо свежесгенерированный `req_<hex>`.
 
-    Порядок шагов — cap → replace → strip → cap — описан в `attach_request_id`.
+    Порядок шагов — cap → strip CR/LF/NUL → drop out-of-charset → strip → cap.
+    Charset синхронизирован со схемным `_REQUEST_ID_PATTERN`
+    (`[A-Za-z0-9_.\\-]{1,64}`); без этого envelope-payload c символами вроде
+    `;` или `(` проходил middleware-reflection, но падал на drain'е при
+    `EventCreate(...)` валидации и терялся как self-audit-failure.
+
     Вынесено как top-level helper, чтобы тот же id мог поднять и body-size
     middleware (он outermost, до attach_request_id, иначе 413/400 envelope
     остаётся без `X-Request-ID` для корреляции).
@@ -116,8 +124,8 @@ def _sanitize_request_id(raw: str | None) -> str:
             .replace("\r", "")
             .replace("\n", "")
             .replace("\x00", "")
-            .strip()[:64]
         )
+        sanitized = _REQUEST_ID_SAFE_CHARS.sub("", sanitized).strip()[:64]
         if sanitized:
             return sanitized
     return f"req_{uuid.uuid4().hex[:12]}"

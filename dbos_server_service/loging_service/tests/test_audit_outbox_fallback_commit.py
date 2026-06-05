@@ -47,9 +47,11 @@ class TestFallbackPersistsRow:
         )
 
         # `start` НЕ зовём — `_queue is None`, push идёт в синхронный fallback.
+        # Успешная запись через fallback возвращает True и попадает в drained.
         accepted = outbox.push_nowait(envelope)
-        assert accepted is False
+        assert accepted is True
         assert failures["n"] == 0
+        assert outbox.drained_total() == 1
 
         # Читаем независимой сессией: если коммит не сработал, INSERT откатился
         # бы на close() и здесь было бы пусто.
@@ -119,9 +121,12 @@ class TestFallbackPersistsRow:
             details={},
         )
 
+        # Битый writer: fallback закрылся rollback'ом, событие не записано —
+        # accepted=False, failure counter инкрементнут.
         accepted = outbox.push_nowait(envelope)
         assert accepted is False
         assert failures["n"] == 1
+        assert outbox.drained_total() == 0
 
         verify = TestSessionLocal()
         try:

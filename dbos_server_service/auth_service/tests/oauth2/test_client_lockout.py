@@ -174,3 +174,50 @@ async def test_lockout_applies_to_authorization_code_exchange(
     })
     assert resp.status_code == 429, resp.text
     assert resp.json()["error_code"] == "ACCOUNT_TEMPORARILY_LOCKED"
+
+
+async def test_verify_client_secret_jit_release_with_valid_secret_commits(
+    client, admin_token, dept_a, db,
+):
+    """`released_expired=True` + правильный secret: JIT-release должен
+    закоммититься в той же транзакции. Иначе locked_until/счётчик
+    оставались бы в БД и следующий запрос снова бы упирался в lockout.
+
+    Сценарий: 5 промахов → locked_until в будущем. Сдвигаем locked_until в
+    прошлое (assert_principal_not_locked отпустит, release_principal_if_expired
+    вернёт True). Делаем запрос с верным secret. После 200 в БД счётчик
+    обнулён и locked_until=None — значит JIT-release реально закоммитился.
+    """
+    cc = await _create_cc_client(client, admin_token, dept_a.id, name="lockout_jit_commit")
+
+    for _ in range(5):
+        await client.post(TOKEN_URL, json={
+            "grant_type": "client_credentials",
+            "client_id": cc["client_id"],
+            "client_secret": "wrong_secret",
+        })
+
+    from src.models.oauth_client import OAuthClient
+    from sqlalchemy import select
+
+    past = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await db.execute(
+        update(OAuthClient)
+        .where(OAuthClient.client_id == cc["client_id"])
+        .values(locked_until=past)
+    )
+    await db.commit()
+
+    resp = await client.post(TOKEN_URL, json={
+        "grant_type": "client_credentials",
+        "client_id": cc["client_id"],
+        "client_secret": cc["client_secret"],
+    })
+    assert resp.status_code == 200, resp.text
+
+    row = await db.scalar(
+        select(OAuthClient).where(OAuthClient.client_id == cc["client_id"])
+    )
+    await db.refresh(row)
+    assert row.locked_until is None
+    assert row.failed_secret_attempts == 0

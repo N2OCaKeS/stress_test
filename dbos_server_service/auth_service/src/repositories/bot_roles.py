@@ -60,14 +60,21 @@ class BotRoleRepository:
             )
         await self._db.flush()
 
-    async def clear_roles_for_service(self, bot_id: str, service_name: str) -> None:
-        await self._db.execute(
+    async def clear_roles_for_service(self, bot_id: str, service_name: str) -> int:
+        """Снести все BotServiceRole для пары (bot, service). Возвращает число удалённых строк.
+
+        Caller'у нужен rowcount, чтобы отличить реальный revoke от no-op
+        (`service_name` без ролей у бота): no-op-revoke не должен генерить
+        `bot.roles_revoke` audit — иначе SIEM ловит ложный сигнал.
+        """
+        result = await self._db.execute(
             delete(BotServiceRole).where(
                 BotServiceRole.bot_id == bot_id,
                 BotServiceRole.service_name == service_name,
             )
         )
         await self._db.flush()
+        return result.rowcount or 0
 
     async def delete_for_bot_services(
         self, bot_id: str, service_names: list[str]

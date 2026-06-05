@@ -38,10 +38,16 @@ async def get_for_update(db: AsyncSession, account_id: str) -> ServerAccount | N
 
 
 def linked_server_ids(account: ServerAccount) -> list[str]:
-    """Список server_id из связок аккаунта, упорядоченный по времени привязки."""
+    """Список server_id из связок аккаунта, упорядоченный по (created_at, server_id).
+
+    Tiebreaker по server_id — при bulk INSERT created_at часто совпадает у всех
+    линков; без него порядок зависит от selectin-loading и не воспроизводится.
+    """
     return [
         link.server_id
-        for link in sorted(account.server_links, key=lambda link: link.created_at)
+        for link in sorted(
+            account.server_links, key=lambda link: (link.created_at, link.server_id)
+        )
     ]
 
 

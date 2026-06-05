@@ -48,11 +48,18 @@ def repo_stub(monkeypatch):
     async def fake_has_action(db, entity_type, roles, action, department_id=None):
         return any((entity_type, r, action) in grants for r in roles)
 
-    async def fake_list_for_entity(db, entity_type):
-        return rows.get(entity_type, [])
+    async def fake_effective_actions(db, entity_type, roles, department_id=None):
+        role_set = set(roles)
+        out: set[str] = set()
+        for row in rows.get(entity_type, []):
+            if row.role not in role_set:
+                continue
+            if row.department_id is None or row.department_id == department_id:
+                out.add(row.action)
+        return out
 
     monkeypatch.setattr(permissions.repo, "has_action", fake_has_action)
-    monkeypatch.setattr(permissions.repo, "list_for_entity", fake_list_for_entity)
+    monkeypatch.setattr(permissions.repo, "effective_actions", fake_effective_actions)
 
     class _Ctl:
         def grant(self, entity_type, role, action):
@@ -174,6 +181,25 @@ class TestEffectiveActions:
         identity = _identity(roles=["custom_role"])
         repo_stub.set_rows("server", [])  # пусто
         assert await permissions.effective_actions(None, identity, "server") == set()
+
+    async def test_custom_role_from_other_dept_not_leaked(self, repo_stub):
+        """Кастомная роль того же имени в чужом отделе не должна светиться
+        в effective_actions у caller'а из dep_a (per-dept изоляция матрицы).
+        """
+        identity = _identity(roles=["custom_b"], department_id="dep_a")
+
+        class _Row:
+            def __init__(self, role, action, department_id=None):
+                self.role = role
+                self.action = action
+                self.department_id = department_id
+
+        repo_stub.set_rows("server", [
+            _Row("custom_b", "view", department_id="dep_b"),
+            _Row("custom_b", "list", department_id="dep_a"),
+        ])
+        got = await permissions.effective_actions(None, identity, "server")
+        assert got == {"list"}
 
 
 # ── Service-role isolation ────────────────────────────────────────────────────

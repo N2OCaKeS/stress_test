@@ -383,7 +383,23 @@ def delete_rule(
 
 
 def _validate_match_action(match_action: str | None, db: Session) -> None:
-    if match_action is None or "*" in match_action:
+    if match_action is None:
+        return
+    # Globs `logging.*` и `audit.*` админу создавать незачем: self-audit
+    # loging_service всегда обходит rule engine (см. apply_rules), так что
+    # SUPPRESS/OVERRIDE на эти префиксы — мёртвая конфигурация и источник
+    # путаницы при последующем разборе журнала. Отбиваем заранее.
+    if _is_self_audit_match(match_action):
+        raise DomainValidationError(
+            error_code="UNKNOWN_MATCH_ACTION",
+            message=(
+                f"Action '{match_action}' targets loging_service self-audit "
+                "which always bypasses the rule engine. Use a different "
+                "prefix (e.g. 'user.*', 'server.*')."
+            ),
+            details={"match_action": match_action},
+        )
+    if "*" in match_action:
         return
     if not se_repo.action_is_registered(db, match_action):
         if se_repo.has_any(db):
@@ -396,3 +412,25 @@ def _validate_match_action(match_action: str | None, db: Session) -> None:
                 ),
                 details={"match_action": match_action},
             )
+
+
+_SELF_AUDIT_PREFIXES: tuple[str, ...] = (
+    "logging.",
+    "logging_rule.",
+    "audit.",
+)
+
+
+def _is_self_audit_match(match_action: str) -> bool:
+    """True для action или glob, нацеленных на self-audit loging_service.
+
+    Self-audit пишется с префиксами `logging.` / `logging_rule.` / `audit.`
+    (см. event_service, retention.py, services.py, main._retention_loop,
+    rules.py admin-audit). Любой match_action с этими префиксами заведомо
+    бесполезен — rule engine выходит раньше, чем доходит до сравнения
+    (apply_rules: `if payload.service == "loging_service": return payload`).
+    Отбиваем такие правила при создании/обновлении, иначе админ может
+    создать мёртвую конфигурацию и потом потратить время на её отладку.
+    """
+    lowered = match_action.lower()
+    return lowered.startswith(_SELF_AUDIT_PREFIXES)

@@ -177,6 +177,28 @@ class TestUserSetPassword:
         with pytest.raises(ValueError, match="invalid IPMI user_id"):
             await client.user_set_password(64, "newpw")
 
+    @pytest.mark.parametrize("bad_user_id", [-1, 0, 64, 65, 128, 256])
+    async def test_out_of_range_user_id_rejected(self, bad_user_id):
+        """`user_id` валиден только в диапазоне 1..63 (IPMI 2.0).
+        Всё остальное — `ValueError` до запуска subprocess.
+        """
+        client = IpmitoolClient("10.0.0.5", "ADMIN", "secret")
+        with pytest.raises(ValueError, match="invalid IPMI user_id"):
+            await client.user_set_password(bad_user_id, "newpw")
+
+    @pytest.mark.parametrize("good_user_id", [1, 2, 32, 62, 63])
+    async def test_boundary_user_ids_accepted(self, monkeypatch, good_user_id):
+        """Граничные значения 1 и 63 — валидны, subprocess запускается."""
+        proc = _make_fake_process(returncode=0)
+        calls = _patch_subprocess(monkeypatch, proc)
+
+        client = IpmitoolClient("10.0.0.5", "ADMIN", "secret")
+        await client.user_set_password(good_user_id, "newpw")
+
+        # Subprocess получил наш user_id в argv (предпоследний positional).
+        argv = calls[0][0]
+        assert str(good_user_id) in argv
+
 
 # ── timeout / network / not-installed ────────────────────────────────────────
 

@@ -617,6 +617,69 @@ class TestPrepareHandler:
 
         get_settings.cache_clear()
 
+    async def test_cleanup_delete_failure_swallowed_on_happy_path(
+        self, make_task, fetch_task, captured_audit, monkeypatch,
+    ):
+        """Happy path с успешным `submit_prepared`: cleanup `_delete_bootstrap_creds`
+        падает Redis-исключением — task всё равно SUCCEEDED. TTL подчистит
+        ключ; cleanup-эксепшен задавлен на уровне самого `_delete_bootstrap_creds`,
+        внешний caller его не видит.
+        """
+        _set_mgmt_env(monkeypatch)
+        # creds читаются ОК — идём по `already_bootstrapped=False` пути.
+        # `_mock_creds` подменяет и `_read_bootstrap_creds`, и
+        # `_delete_bootstrap_creds`. Нам нужен реальный контракт «cleanup
+        # бросает, но handler не падает», поэтому отдельным monkeypatch'ом
+        # подменяем cleanup на функцию, которая ловит свой же exception
+        # (повторяя контракт реального `_delete_bootstrap_creds`).
+        _mock_creds(
+            monkeypatch,
+            {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
+        )
+
+        import logging
+
+        delete_calls: list[str] = []
+
+        async def cleanup_with_swallowed_error(creds_key: str) -> None:
+            delete_calls.append(creds_key)
+            try:
+                raise RuntimeError("redis connection reset during cleanup")
+            except Exception:
+                logging.getLogger("src.tasks.prepare").debug(
+                    "failed to delete bootstrap creds key", exc_info=True,
+                )
+
+        monkeypatch.setattr(prepare, "_delete_bootstrap_creds", cleanup_with_swallowed_error)
+
+        tid = await make_task(
+            task_kind="server.prepare", target_server_id="srv_prep_cleanup_fail",
+            payload={
+                "server_id": "srv_prep_cleanup_fail",
+                "bootstrap_creds_key": "dbos:prepare_creds:pcd_cleanup_fail",
+            },
+        )
+        conn = _conn(_bootstrap_seq())
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async def fake_submit(*a, **kw):
+            return {"ok": True}
+        monkeypatch.setattr(
+            "src.tasks.prepare.server_service_client.submit_prepared", fake_submit,
+        )
+
+        # Без exception-leak'а наружу. Сам факт того, что вызов прошёл — это
+        # тоже проверка ветки.
+        await prepare.server_prepare.original_func(tid)
+
+        t = await fetch_task(tid)
+        # Падение cleanup'а не должно ломать handler.
+        assert t.status == TaskStatus.SUCCEEDED
+        # Cleanup был вызван ровно один раз — на валидном ключе.
+        assert delete_calls == ["dbos:prepare_creds:pcd_cleanup_fail"]
+
+        get_settings.cache_clear()
+
     async def test_bootstrap_password_not_in_audit(
         self, make_task, fetch_task, captured_audit, monkeypatch,
     ):

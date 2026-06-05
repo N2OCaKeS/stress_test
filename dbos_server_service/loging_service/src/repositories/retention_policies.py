@@ -150,7 +150,12 @@ def list_active(db: Session) -> list[RetentionPolicy]:
 _SWEEP_CHUNK_SIZE = 10_000
 
 
-def apply_active(db: Session, *, chunk_size: int = _SWEEP_CHUNK_SIZE) -> int:
+def apply_active(
+    db: Session,
+    *,
+    chunk_size: int = _SWEEP_CHUNK_SIZE,
+    now: datetime | None = None,
+) -> int:
     """Удаляет события старше `retain_days`, КРОМЕ событий `loging_service`.
 
     Активные политики комбинируются в одно OR-выражение: событие подлежит
@@ -216,7 +221,11 @@ def apply_active(db: Session, *, chunk_size: int = _SWEEP_CHUNK_SIZE) -> int:
     # внутрь in-flight ingest'а. Зафиксированный `now` гарантирует, что
     # события, упавшие в БД позже старта sweep'а, точно не будут затронуты —
     # by-design, не баг.
-    now = datetime.now(timezone.utc)
+    # Caller (`main._retention_loop`) может пробросить тот же `now`, что
+    # пишется в audit-details `cutoff_at` — тогда audit и sweep гарантированно
+    # говорят про одно и то же окно.
+    if now is None:
+        now = datetime.now(timezone.utc)
     policy_predicates = []
     for policy in policies:
         cutoff = now - timedelta(days=policy.retain_days)

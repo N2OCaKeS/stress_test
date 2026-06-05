@@ -582,6 +582,11 @@ async def assign_bot_roles(
     role_repo = BotRoleRepository(db)
     await role_repo.set_roles(bot_id, service_name, roles, assigned_by=actor_id)
     await db.commit()
+    # Defence-in-depth: bot-токены пока не кэшируются по `bot.id` (introspect-only
+    # путь), но `update_bot` уже инвалидирует кэш на изменение allowed_services —
+    # держим симметрию для assign/revoke ролей, чтобы будущий path с bot-identity
+    # в кэше не оставлял stale-роли до TTL.
+    _invalidate_identity_cache(bot_id)
     audit_service.emit(
         "bot.roles_assign", actor_id, target_id=bot_id, target_type="bot",
         details={
@@ -621,8 +626,14 @@ async def revoke_bot_roles(
     )
 
     role_repo = BotRoleRepository(db)
-    await role_repo.clear_roles_for_service(bot_id, service_name)
+    removed = await role_repo.clear_roles_for_service(bot_id, service_name)
     await db.commit()
+    if removed == 0:
+        # No-op (у бота не было ролей на этот сервис либо service_name вне
+        # bot.allowed_services). Audit-emit пропускаем, чтобы SIEM не ловил
+        # ложный сигнал «роль отозвана» там, где ничего не изменилось.
+        return
+    _invalidate_identity_cache(bot_id)
     audit_service.emit(
         "bot.roles_revoke", actor_id, target_id=bot_id, target_type="bot",
         details={"bot_name": bot.name, "service_name": service_name},

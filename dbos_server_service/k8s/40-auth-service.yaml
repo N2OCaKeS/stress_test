@@ -79,6 +79,15 @@ spec:
             - name: INITIAL_ADMIN_EMAIL
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_EMAIL }
+            # Per-IP rate-limit storage. `memory://` fallback в multi-replica
+            # деплое не работает: round-robin ingress даёт атакующему
+            # `replicas × LOGIN_RATE_LIMIT` попыток. Используем общий Redis
+            # (тот же экземпляр, что и server_worker/server_service).
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }
+            - name: RATE_LIMIT_STORAGE_URI
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/1"
           command: ["sh", "-c"]
           args:
             - |

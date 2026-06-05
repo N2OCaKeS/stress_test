@@ -381,6 +381,86 @@ class TestCleanupOld:
         assert "dispatched_at" in stmt_str
         assert captured.get("commit") is True
 
+    async def test_info_log_emitted_when_rows_deleted(self, monkeypatch, caplog):
+        """Если `rowcount > 0` — INFO-лог с числом удалённых row'ов и cutoff.
+
+        Без assertion'а на лог регрессия (например, перепутанный аргумент
+        форматтера или удаление лог-строки) проходит молча.
+        """
+        import logging
+
+        class _Result:
+            rowcount = 5
+
+        class _CapSession:
+            async def execute(self, _stmt):
+                return _Result()
+
+            async def commit(self):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        monkeypatch.setattr(
+            outbox_poller.dispatch_outbox_session,
+            "get_session_factory",
+            lambda: lambda: _CapSession(),
+        )
+
+        with caplog.at_level(logging.INFO, logger="src.tasks.dispatch_outbox"):
+            await outbox_poller.cleanup_old()
+
+        info_msgs = [
+            r for r in caplog.records
+            if r.levelno == logging.INFO
+            and "cleanup_old" in r.getMessage()
+            and "dropped" in r.getMessage()
+        ]
+        assert info_msgs, "expected INFO-log when cleanup_old deleted rows"
+        msg = info_msgs[0].getMessage()
+        assert "5" in msg
+
+    async def test_no_info_log_when_zero_rows_deleted(self, monkeypatch, caplog):
+        """`rowcount=0` — INFO-лог не пишется (operational silence)."""
+        import logging
+
+        class _Result:
+            rowcount = 0
+
+        class _CapSession:
+            async def execute(self, _stmt):
+                return _Result()
+
+            async def commit(self):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        monkeypatch.setattr(
+            outbox_poller.dispatch_outbox_session,
+            "get_session_factory",
+            lambda: lambda: _CapSession(),
+        )
+
+        with caplog.at_level(logging.INFO, logger="src.tasks.dispatch_outbox"):
+            await outbox_poller.cleanup_old()
+
+        info_msgs = [
+            r for r in caplog.records
+            if r.levelno == logging.INFO
+            and "cleanup_old" in r.getMessage()
+            and "dropped" in r.getMessage()
+        ]
+        assert not info_msgs, "no INFO-log expected when zero rows deleted"
+
 
 # ── run_publisher_loop: cancellation ────────────────────────────────────────
 

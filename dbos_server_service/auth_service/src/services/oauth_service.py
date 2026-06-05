@@ -306,11 +306,23 @@ async def issue_authorization_code(
         if method == "plain":
             # Confidential клиент с PKCE plain — формально допустимо по RFC,
             # но фактически бесполезно (verifier == challenge, защиты от
-            # перехвата нет). Шлём WARNING чтобы оператор видел потенциально
-            # неправильно сконфигурённый интегрирующийся клиент.
+            # перехвата нет). Шлём audit-event (WARNING) — оператор/SIEM
+            # должны видеть это вне контейнерных логов; параллельный
+            # logger.warning оставляем для локального дебага.
             logger.warning(
                 "oauth client %s used PKCE plain (insecure); recommend S256",
                 client_id,
+            )
+            audit_service.emit(
+                "oauth.pkce_plain_used",
+                user_id,
+                target_id=client.id,
+                target_type="oauth_client",
+                request_id=request_id,
+                details={
+                    "client_id": client_id,
+                    "user_id": user_id,
+                },
             )
         pkce_challenge = code_challenge
         pkce_method = method

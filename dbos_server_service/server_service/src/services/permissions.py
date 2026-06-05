@@ -95,14 +95,6 @@ async def effective_actions(
     roles = identity.roles_for_service(SERVICE_NAME)
     if not roles:
         return set()
-    rows = await repo.list_for_entity(db, entity_type)
-    role_set = set(roles)
-    dept_id = identity.department_id
-    actions: set[str] = set()
-    for row in rows:
-        if row.role not in role_set:
-            continue
-        # system-wide row → всегда видима; per-dept row → только если dept совпал
-        if row.department_id is None or row.department_id == dept_id:
-            actions.add(row.action)
-    return actions
+    return await repo.effective_actions(
+        db, entity_type, roles, department_id=identity.department_id
+    )

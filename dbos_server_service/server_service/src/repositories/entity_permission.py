@@ -83,6 +83,39 @@ async def has_action(
     return (await db.execute(stmt)).scalar_one_or_none() is not None
 
 
+async def effective_actions(
+    db: AsyncSession,
+    entity_type: str,
+    roles: list[str],
+    department_id: str | None,
+) -> set[str]:
+    """Set действий, которые суммарно дают переданные роли в скоупе caller'а.
+
+    Тот же scope, что и в `has_action`: system-wide строки матчат всем,
+    per-department — только caller'у из того же отдела. SELECT DISTINCT,
+    чтобы не тянуть лишние строки матрицы в Python.
+    """
+    if not roles:
+        return set()
+    if department_id is None:
+        dept_filter = EntityPermission.department_id.is_(None)
+    else:
+        dept_filter = or_(
+            EntityPermission.department_id.is_(None),
+            EntityPermission.department_id == department_id,
+        )
+    stmt = (
+        select(EntityPermission.action)
+        .where(
+            EntityPermission.entity_type == entity_type,
+            EntityPermission.role.in_(roles),
+            dept_filter,
+        )
+        .distinct()
+    )
+    return set((await db.execute(stmt)).scalars())
+
+
 def _visible_scope_clause(department_id: str | None):
     """WHERE-условие для list-выборки в скоупе одного department'а.
 

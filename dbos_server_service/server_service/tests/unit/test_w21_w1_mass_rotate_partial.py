@@ -46,6 +46,9 @@ class TestMassRotatePartialFailureResponse:
         acc = await make_account(
             server_ids=[srv1.id, srv2.id, srv3.id], login="ops",
         )
+        # `linked_server_ids` сортирует по (created_at, server_id); при bulk
+        # INSERT created_at совпадает, поэтому итерация идёт по lex(server_id).
+        sorted_ids = sorted([srv1.id, srv2.id, srv3.id])
 
         call_count = {"n": 0}
 
@@ -80,14 +83,14 @@ class TestMassRotatePartialFailureResponse:
         # Один task_id в response — для cancel UI.
         assert len(body["tasks"]) == 1
         assert body["tasks"][0]["task_id"] == "tsk_dispatched_1"
-        assert body["tasks"][0]["server_id"] == srv1.id
+        assert body["tasks"][0]["server_id"] == sorted_ids[0]
 
         # skipped содержит failed-сервер + not_attempted.
         skipped_by_reason = {s["reason"]: s["server_id"] for s in body["skipped"]}
         assert "worker_unreachable" in skipped_by_reason
         assert "not_attempted" in skipped_by_reason
-        assert skipped_by_reason["worker_unreachable"] == srv2.id
-        assert skipped_by_reason["not_attempted"] == srv3.id
+        assert skipped_by_reason["worker_unreachable"] == sorted_ids[1]
+        assert skipped_by_reason["not_attempted"] == sorted_ids[2]
 
     async def test_partial_failure_emits_warning_audit(
         self, client, operator_token_a, make_server, make_account,
@@ -101,6 +104,7 @@ class TestMassRotatePartialFailureResponse:
         acc = await make_account(
             server_ids=[srv1.id, srv2.id, srv3.id], login="ops",
         )
+        sorted_ids = sorted([srv1.id, srv2.id, srv3.id])
 
         call_count = {"n": 0}
 
@@ -137,8 +141,8 @@ class TestMassRotatePartialFailureResponse:
         assert d["failed_count"] == 1
         assert d["not_attempted_count"] == 1
         assert d["dispatched_task_ids"] == ["tsk_dispatched_a"]
-        assert d["failed_server_id"] == srv2.id
-        assert d["not_attempted_server_ids"] == [srv3.id]
+        assert d["failed_server_id"] == sorted_ids[1]
+        assert d["not_attempted_server_ids"] == [sorted_ids[2]]
         assert d["login"] == "ops"
         assert d["department_id"] == "dep_a"
 

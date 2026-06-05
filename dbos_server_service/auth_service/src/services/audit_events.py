@@ -106,6 +106,7 @@ SERVICE_EVENTS = [
     {"action": "oauth.authorization_code_issued", "description": "OAuth2 authorization code issued", "default_severity": "INFO"},
     {"action": "oauth.code_exchanged", "description": "OAuth2 authorization code exchanged for token", "default_severity": "INFO"},
     {"action": "oauth.client_credentials_token", "description": "OAuth2 client credentials token issued", "default_severity": "INFO"},
+    {"action": "oauth.pkce_plain_used", "description": "OAuth2 confidential client used PKCE plain method (insecure; S256 recommended)", "default_severity": "WARNING"},
     # Token introspection
     {"action": "token.introspect", "description": "Token introspection request", "default_severity": "INFO"},
     # Docker Registry

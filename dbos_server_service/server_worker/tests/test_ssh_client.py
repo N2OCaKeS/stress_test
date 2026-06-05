@@ -152,6 +152,35 @@ class TestSshClientLifecycle:
             await SshClient("h", "u", "p").connect()
         assert exc_info.value.error_code == "SSH_CONNECT_FAILED"
 
+    async def test_connect_generic_asyncssh_error_maps_to_connect_failed(self, monkeypatch):
+        """Произвольный наследник `asyncssh.Error` (не PermissionDenied,
+        не ConnectionLost) — host-key fail, key-import fail, encryption fail —
+        должен мапиться в SSH_CONNECT_FAILED без утечки исходного текста.
+        """
+        monkeypatch.setattr(
+            asyncssh,
+            "connect",
+            AsyncMock(side_effect=asyncssh.HostKeyNotVerifiable("fingerprint mismatch")),
+        )
+        with pytest.raises(SshError) as exc_info:
+            await SshClient("h", "u", "p").connect()
+        assert exc_info.value.error_code == "SSH_CONNECT_FAILED"
+        # Исходный текст не должен утекать наружу.
+        assert "fingerprint mismatch" not in str(exc_info.value)
+
+    async def test_connect_channel_open_error_maps_to_connect_failed(self, monkeypatch):
+        """ChannelOpenError на этапе connect (нестандартный, но возможный
+        путь) — тоже asyncssh.Error → SSH_CONNECT_FAILED.
+        """
+        monkeypatch.setattr(
+            asyncssh,
+            "connect",
+            AsyncMock(side_effect=_ssh_channel_open_error()),
+        )
+        with pytest.raises(SshError) as exc_info:
+            await SshClient("h", "u", "p").connect()
+        assert exc_info.value.error_code == "SSH_CONNECT_FAILED"
+
     async def test_no_known_hosts_connects_without_verification(self, monkeypatch):
         # Флот часто переустанавливается, host-key меняется → host-key не
         # проверяем. SshClient захардкожен на known_hosts=None (accept-any) —

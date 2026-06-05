@@ -251,6 +251,48 @@ class TestForbiddenHomeBashGuard:
         assert "case " in cmd and "esac" in cmd
 
 
+class TestBashCmdSingleLineInvariant:
+    """`_install_authorized_key` собирает single-line bash-команду. Сама
+    функция уже отрезает CR/LF в login через `_validate_login`, но финальный
+    assert внутри метода — defense-in-depth: если кто-то добавит новый
+    call-site без login-валидации, assert должен взорваться раньше, чем
+    asyncssh интерпретирует строку как несколько statement'ов.
+    """
+
+    async def test_assertion_fires_if_target_user_contains_newline(self, monkeypatch):
+        """Перепрыгиваем `_validate_login` (моделируем regression: новый
+        путь забыл вызвать валидатор) и подставляем login с `\\n`.
+        Assert должен дать AssertionError — а не уйти в asyncssh.run.
+        """
+        ssh = _make_client_with_conn([run_result("", "", 0)])
+        # Заглушаем валидатор — моделируем будущий call-site без guard'а.
+        monkeypatch.setattr(ssh, "_validate_login", lambda *_a, **_kw: None)
+
+        with pytest.raises(AssertionError, match="single-line"):
+            await ssh._install_authorized_key(
+                target_user="evil\nrm -rf /",
+                public_key=_PUBKEY,
+                truncate=False,
+                error_code="SSH_AUTHORIZED_KEYS_FAILED",
+            )
+        # Команда до asyncssh не дошла.
+        ssh._conn.run.assert_not_awaited()
+
+    async def test_assertion_fires_on_carriage_return_in_login(self, monkeypatch):
+        """`\\r` без `\\n` тоже ломает single-line invariant."""
+        ssh = _make_client_with_conn([run_result("", "", 0)])
+        monkeypatch.setattr(ssh, "_validate_login", lambda *_a, **_kw: None)
+
+        with pytest.raises(AssertionError, match="single-line"):
+            await ssh._install_authorized_key(
+                target_user="dbos\rwhoami",
+                public_key=_PUBKEY,
+                truncate=False,
+                error_code="SSH_AUTHORIZED_KEYS_FAILED",
+            )
+        ssh._conn.run.assert_not_awaited()
+
+
 class TestValidSshKeyPrefixesShared:
     """Whitelist префиксов вынесен в module-level и используется в обоих
     путях записи ключа: `_install_authorized_key` (server_account) и

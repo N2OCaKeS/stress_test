@@ -272,3 +272,100 @@ class TestReencryptBatchDecryptFailureCounter:
         assert result["errors"] == 0
         after = metrics.get_secrets_decrypt_failures_total()
         assert after == before
+
+
+# ── secrets_migration_service.seed_outbox quota split ────────────────────────
+
+
+class TestSeedOutboxQuotaSplit:
+    """`seed_outbox(limit)` делит quota между ServerAccount и IpmiController.
+
+    SA-batch берётся первым, остаток limit'а уходит в IPMI-batch. При
+    `limit < len(SA-кандидатов)` ни одна IPMI-row не попадает в seed —
+    нужен повторный вызов после того, как первый batch уйдёт в `done`.
+    """
+
+    async def test_limit_smaller_than_sa_batch_skips_ipmi(
+        self, db, make_server, make_account, make_ipmi,
+    ):
+        from src.core.config import get_settings
+        from src.models import ReencryptOutboxEntry
+        from src.services import secrets_migration_service
+        from sqlalchemy import select
+
+        settings = get_settings()
+        if settings.server_encryption_key_version == 1:
+            pytest.skip("active version is v1; cannot synthesize legacy ciphertext")
+
+        # 3 SA с v1$ префиксом, 1 IPMI с v1$ префиксом.
+        srvs = [await make_server(department_id="dep_a") for _ in range(3)]
+        accs = []
+        for srv in srvs:
+            acc = await make_account(server_id=srv.id, password="real-secret")
+            _, nonce_b64, ct_b64 = acc.password_encrypted.split("$", 2)
+            acc.password_encrypted = f"v1${nonce_b64}${ct_b64}"
+            accs.append(acc)
+        ipmi_srv = await make_server(department_id="dep_a")
+        ctrl = await make_ipmi(server_id=ipmi_srv.id, password="ipmi-secret")
+        _, n2, c2 = ctrl.password_encrypted.split("$", 2)
+        ctrl.password_encrypted = f"v1${n2}${c2}"
+        await db.flush()
+        await db.commit()
+
+        # limit=2 < SA-кандидатов(3) → ipmi не должен попасть в этот seed.
+        result = await secrets_migration_service.seed_outbox(db, limit=2)
+        assert result["inserted"] == 2
+        await db.commit()
+
+        rows = list(
+            (
+                await db.execute(
+                    select(ReencryptOutboxEntry).order_by(ReencryptOutboxEntry.id)
+                )
+            ).scalars()
+        )
+        entity_types = {r.entity_type for r in rows}
+        assert entity_types == {"server_account"}, (
+            f"IPMI-row не должен попасть при limit < SA-batch, got {entity_types}"
+        )
+
+    async def test_split_when_limit_exceeds_sa_batch(
+        self, db, make_server, make_account, make_ipmi,
+    ):
+        """`limit=4` при 3 SA + 3 IPMI → 3 SA + 1 IPMI = 4 inserted."""
+        from src.core.config import get_settings
+        from src.models import ReencryptOutboxEntry
+        from src.services import secrets_migration_service
+        from sqlalchemy import select
+
+        settings = get_settings()
+        if settings.server_encryption_key_version == 1:
+            pytest.skip("active version is v1; cannot synthesize legacy ciphertext")
+
+        for _ in range(3):
+            srv = await make_server(department_id="dep_a")
+            acc = await make_account(server_id=srv.id, password="real-secret")
+            _, nonce_b64, ct_b64 = acc.password_encrypted.split("$", 2)
+            acc.password_encrypted = f"v1${nonce_b64}${ct_b64}"
+        for _ in range(3):
+            ipmi_srv = await make_server(department_id="dep_a")
+            ctrl = await make_ipmi(server_id=ipmi_srv.id, password="ipmi-secret")
+            _, n2, c2 = ctrl.password_encrypted.split("$", 2)
+            ctrl.password_encrypted = f"v1${n2}${c2}"
+        await db.flush()
+        await db.commit()
+
+        result = await secrets_migration_service.seed_outbox(db, limit=4)
+        assert result["inserted"] == 4
+        await db.commit()
+
+        rows = list(
+            (
+                await db.execute(
+                    select(ReencryptOutboxEntry)
+                )
+            ).scalars()
+        )
+        types = [r.entity_type for r in rows]
+        assert types.count("server_account") == 3
+        assert types.count("ipmi_controller") == 1

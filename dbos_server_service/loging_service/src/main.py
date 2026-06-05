@@ -749,7 +749,11 @@ _RETENTION_ADVISORY_LOCK_KEY: int = ADVISORY_LOCKS["retention_sweep"]
 
 
 def _build_retention_sweep_details(
-    *, deleted: int, snapshot: list, run_date_msk: str
+    *,
+    deleted: int,
+    snapshot: list,
+    run_date_msk: str,
+    cutoff_at: datetime | None = None,
 ) -> dict:
     """Собирает `details` для `logging.retention_sweep` self-audit.
 
@@ -758,6 +762,13 @@ def _build_retention_sweep_details(
     ненулевом deleted_count). Под filter-режим политик может быть несколько
     с разными `retain_days` — кладём массив + min/max, чтобы SOC видел
     честный набор, а не одну «представительскую» политику.
+
+    `cutoff_at` — UTC-момент, на который sweep зафиксировал «now» при
+    вычислении `timestamp < now - retain_days`. На 50M-таблице chunked
+    DELETE идёт часами; без этого поля SOC не может восстановить точное
+    окно, под которое попали удалённые row'ы (run_date_msk даёт только
+    дату MSK). Для backward-compat поле опциональное — старые caller'ы
+    без `cutoff_at` получают audit-запись без этого ключа.
     """
     policies_details = [
         {
@@ -773,6 +784,8 @@ def _build_retention_sweep_details(
         "run_date_msk": run_date_msk,
         "policies": policies_details,
     }
+    if cutoff_at is not None:
+        details["cutoff_at"] = cutoff_at.isoformat()
     if snapshot:
         retain_values = [p.retain_days for p in snapshot]
         details["min_retain_days"] = min(retain_values)
@@ -900,7 +913,18 @@ def _retention_loop() -> None:
                             # БД (WAL-amplification vs длительность транзакции)
                             # без перевыкатки кода.
                             chunk_size = get_settings().retention_chunk_size
-                            deleted = apply_active(db, chunk_size=chunk_size)
+                            # cutoff_at фиксируется ровно тем же UTC-моментом,
+                            # который apply_active использует для предиката
+                            # `timestamp < now - retain_days`. audit-details
+                            # `retention_sweep` потом получит этот же ts —
+                            # SOC сможет точно реконструировать окно даже
+                            # если sweep шёл часами.
+                            cutoff_at = datetime.now(timezone.utc)
+                            deleted = apply_active(
+                                db,
+                                chunk_size=chunk_size,
+                                now=cutoff_at,
+                            )
                             logger.info(
                                 "Retention cleanup [%s MSK]: deleted %d events",
                                 today, deleted,
@@ -917,6 +941,7 @@ def _retention_loop() -> None:
                                     deleted=deleted,
                                     snapshot=snapshot,
                                     run_date_msk=today.isoformat(),
+                                    cutoff_at=cutoff_at,
                                 )
                                 record_admin_action(
                                     db,

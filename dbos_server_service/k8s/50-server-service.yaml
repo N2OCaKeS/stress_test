@@ -127,6 +127,9 @@ spec:
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+            - name: SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_SERVICE_API_KEY }
           # Миграции вынесены в Job server-migrate (см. 45-migrations.yaml).
           command: ["uvicorn"]
           args:

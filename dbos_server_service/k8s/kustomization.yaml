@@ -7,6 +7,7 @@ resources:
   - 00-namespace.yaml
   - 10-postgres-auth.yaml
   - 11-postgres-logging.yaml
+  - 12-redis.yaml            # Redis для taskiq broker + slowapi rate-limit storage
   - 20-secrets.yaml          # генерируется scripts/k8s/gen_secrets.sh
   - 45-migrations.yaml       # Alembic Job'ы на каждый сервис (применять до Deployment'ов)
   - 30-logging-service.yaml

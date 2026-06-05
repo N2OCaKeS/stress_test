@@ -89,6 +89,9 @@ spec:
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+            - name: SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVICE_API_KEY }
             - name: INITIAL_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_USERNAME }

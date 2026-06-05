@@ -56,7 +56,10 @@ if [[ -f "$SECRETS_OUT" ]] || [[ -f "$INGRESS_OUT" ]]; then
 fi
 
 # ── Генератор случайных строк ─────────────────────────────────────────────────
-rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; }
+rand() {
+    local n=$1
+    LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "$n" || true
+}
 rand_b64() { openssl rand -base64 "$1" | tr -d '\n='; }
 rand_hex() { openssl rand -hex "$1"; }
 
@@ -84,6 +87,10 @@ LOGGING_INTROSPECT_SERVICE_API_KEY=$(rand 48)
 SERVER_ENCRYPTION_KEY=$(rand_b64 32)
 SERVER_ENCRYPTION_KEY_VERSION=2
 HKDF_SALT_HEX=$(rand_hex 16)
+
+# Legacy SERVICE_API_KEY (один общий секрет для всех caller'ов; в коде
+# используется как fallback если per-service SERVICE_API_KEYS не задан).
+SERVICE_API_KEY=$(rand 48)
 
 # server_service / worker service-to-service
 SERVER_SERVICE_API_KEY=$(rand 48)
@@ -168,6 +175,9 @@ cat <<EOF
   SERVER_ENCRYPTION_KEY: ${SERVER_ENCRYPTION_KEY}
   SERVER_ENCRYPTION_KEY_VERSION: "${SERVER_ENCRYPTION_KEY_VERSION}"
   HKDF_SALT_HEX: ${HKDF_SALT_HEX}
+
+  # Legacy shared SERVICE_API_KEY (fallback при пустых per-service maps)
+  SERVICE_API_KEY: ${SERVICE_API_KEY}
 
   # server_service: s2s
   SERVER_SERVICE_API_KEY: ${SERVER_SERVICE_API_KEY}

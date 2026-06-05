@@ -82,46 +82,7 @@ async def test_after_revoke_user_login_loses_service(client, admin_token, user_a
 #    выделение от реактивации revoked access ──────────────────────────────────
 
 
-import pytest
-
-
-@pytest.fixture()
-def capture_audit_payloads(monkeypatch):
-    captured: list[dict] = []
-
-    def fake_sync_post(url, json, headers, timeout):
-        captured.append(json)
-
-    monkeypatch.setattr("src.services.audit_service.httpx.post", fake_sync_post)
-
-    class _AsyncClient:
-        def __init__(self, *a, **k):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            pass
-
-        async def post(self, url, json, headers):
-            captured.append(json)
-
-            class R:
-                status_code = 201
-
-            return R()
-
-    monkeypatch.setattr("src.services.audit_service.httpx.AsyncClient", _AsyncClient)
-    monkeypatch.setattr(
-        "src.services.audit_service.get_settings",
-        lambda: type(
-            "S",
-            (),
-            {"logging_service_url": "http://test", "logging_service_api_key": "k"},
-        )(),
-    )
-    return captured
+# `capture_audit_payloads` — общая фикстура из `tests/conftest.py`.
 
 
 async def test_first_grant_audit_has_reactivated_false(

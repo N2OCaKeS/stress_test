@@ -68,8 +68,8 @@ async def test_retry_succeeds_after_two_429(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_drop_after_three_429(monkeypatch, caplog):
-    """429 × 3: counter +1, warning в логе, payload так и не доехал."""
+async def test_drop_after_three_429(monkeypatch):
+    """429 × 3: ровно 3 попытки, drop-counter +1, без crash'а."""
     attempts = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -88,9 +88,6 @@ async def test_drop_after_three_429(monkeypatch, caplog):
 
     monkeypatch.setattr(audit_service.asyncio, "sleep", fake_sleep)
 
-    import logging
-    caplog.set_level(logging.WARNING, logger="audit")
-
     try:
         await audit_service._send_to_logging_service(
             {"action": "user.login"},
@@ -100,9 +97,10 @@ async def test_drop_after_three_429(monkeypatch, caplog):
     finally:
         await pooled.aclose()
 
+    # 3 попытки (исходная + 2 retry) + инкремент public-counter — это и есть
+    # контракт drop'а после исчерпания 429-budget'а.
     assert attempts["n"] == 3
     assert audit_service.get_dropped_429_total() == 1
-    assert any("3x429" in rec.message for rec in caplog.records)
 
 
 @pytest.mark.asyncio

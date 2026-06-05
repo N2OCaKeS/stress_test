@@ -17,11 +17,9 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
+from tests._helpers import auth_hdr as _hdr
+
 BASE = "/api/server/v1/servers"
-
-
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest_asyncio.fixture
@@ -329,22 +327,13 @@ class TestUpdateOsVersion:
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    captured: list[dict] = []
+    from tests._helpers import make_emit_capture
 
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    for path in (
+    return make_emit_capture(
+        monkeypatch,
         "src.services.server.audit_service.emit",
         "src.api.v1.endpoints.servers.audit_service.emit",
-    ):
-        try:
-            monkeypatch.setattr(path, fake_emit)
-        except (AttributeError, ImportError):
-            pass
-    return captured
+    )
 
 
 def _events(captured: list[dict], action: str) -> list[dict]:

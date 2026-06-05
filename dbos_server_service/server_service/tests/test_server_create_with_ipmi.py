@@ -17,11 +17,9 @@ import pytest
 
 from src.services import secrets_service
 
+from tests._helpers import auth_hdr as _hdr
+
 BASE = "/api/server/v1/servers"
-
-
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
 
 
 def _payload(**overrides):
@@ -185,15 +183,9 @@ class TestAtomicity:
 @pytest.fixture
 def captured_emits(monkeypatch):
     """Захватывает `audit_service.emit` server-сервиса для проверки action-key'ев."""
-    captured: list[dict] = []
+    from tests._helpers import make_emit_capture
 
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    monkeypatch.setattr("src.services.server.audit_service.emit", fake_emit)
-    return captured
+    return make_emit_capture(monkeypatch, "src.services.server.audit_service.emit")
 
 
 class TestAuditEmission:

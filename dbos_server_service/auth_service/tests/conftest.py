@@ -454,6 +454,55 @@ def _reset_rate_limiter():
     limiter.reset()
 
 
+# ── Фикстуры: audit-перехват ─────────────────────────────────────────────────
+
+@pytest.fixture()
+def capture_audit_payloads(monkeypatch):
+    """Перехватывает payload, отправляемые `audit_service.emit()`.
+
+    Подменяет sync (`httpx.post`) и async (`httpx.AsyncClient`) пути в
+    `src.services.audit_service`, плюс `get_settings` — чтобы
+    `logging_service_url`/`api_key` были не-пустыми и emit реально вышел в
+    http-канал (где его перехватывает мок). Возвращает list, в который
+    кладутся отправленные json-payload'ы.
+    """
+    captured: list[dict] = []
+
+    def fake_sync_post(url, json, headers, timeout):
+        captured.append(json)
+
+    monkeypatch.setattr("src.services.audit_service.httpx.post", fake_sync_post)
+
+    class _AsyncClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            pass
+
+        async def post(self, url, json, headers):
+            captured.append(json)
+
+            class R:
+                status_code = 201
+
+            return R()
+
+    monkeypatch.setattr("src.services.audit_service.httpx.AsyncClient", _AsyncClient)
+    monkeypatch.setattr(
+        "src.services.audit_service.get_settings",
+        lambda: type(
+            "S",
+            (),
+            {"logging_service_url": "http://test", "logging_service_api_key": "k"},
+        )(),
+    )
+    return captured
+
+
 # ── Фикстуры: Docker registry ────────────────────────────────────────────────
 
 @pytest_asyncio.fixture()

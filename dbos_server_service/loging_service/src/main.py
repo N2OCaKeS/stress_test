@@ -101,6 +101,28 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _sanitize_request_id(raw: str | None) -> str:
+    """Возвращает безопасный `request_id`: либо санитизированный header,
+    либо свежесгенерированный `req_<hex>`.
+
+    Порядок шагов — cap → replace → strip → cap — описан в `attach_request_id`.
+    Вынесено как top-level helper, чтобы тот же id мог поднять и body-size
+    middleware (он outermost, до attach_request_id, иначе 413/400 envelope
+    остаётся без `X-Request-ID` для корреляции).
+    """
+    if raw is not None:
+        sanitized = (
+            raw[:256]
+            .replace("\r", "")
+            .replace("\n", "")
+            .replace("\x00", "")
+            .strip()[:64]
+        )
+        if sanitized:
+            return sanitized
+    return f"req_{uuid.uuid4().hex[:12]}"
+
+
 def create_application() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.app_log_level)
@@ -338,27 +360,15 @@ def create_application() -> FastAPI:
         # cap до 64 символов от сырых байтов, потом strip — чтобы padding
         # из тысячи пробелов не съедал budget. Пустое после strip'а →
         # автогенерируемый id.
-        raw_request_id = request.headers.get("X-Request-ID")
-        request_id: str | None = None
-        if raw_request_id is not None:
-            # Порядок: cap → replace → strip → cap. Сначала режем сырую строку
-            # до 256 байт (с запасом на трёхкратный replace и trailing-
-            # whitespace) — это защита от flood'а тысячами CR/LF в одном
-            # header'е, где сам replace × 3 по 1 МБ был бы микро-DoS-вектором.
-            # После трёх replace'ов и strip'а финально cap'им до 64 — это
-            # бизнес-инвариант для request_id pattern'а.
-            sanitized = (
-                raw_request_id[:256]
-                .replace("\r", "")
-                .replace("\n", "")
-                .replace("\x00", "")
-                .strip()[:64]
-            )
-            if sanitized:
-                request_id = sanitized
-        if request_id is None:
-            request_id = f"req_{uuid.uuid4().hex[:12]}"
-        request.state.request_id = request_id
+        # Если body-size middleware уже вычислил request_id для возможного
+        # 413/400 ответа, переиспользуем тот же id — иначе id в логах и в
+        # X-Request-ID response-header'е разъедутся для пограничных кейсов.
+        existing = getattr(request.state, "request_id", None)
+        if existing:
+            request_id = existing
+        else:
+            request_id = _sanitize_request_id(request.headers.get("X-Request-ID"))
+            request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response
@@ -491,6 +501,12 @@ def create_application() -> FastAPI:
         body для audit-ingest не несут.
         """
         if request.method in ("POST", "PUT", "PATCH"):
+            # Body-size middleware outermost — attach_request_id ещё не
+            # выставил `request.state.request_id`. Вычисляем id здесь, чтобы
+            # 413/400 envelope нёс `X-Request-ID` для correlation с логами и
+            # чтобы downstream middleware/route переиспользовали тот же id.
+            request_id = _sanitize_request_id(request.headers.get("X-Request-ID"))
+            request.state.request_id = request_id
             settings = get_settings()
             max_size = settings.max_request_body_bytes
             cl = request.headers.get("content-length")
@@ -513,9 +529,10 @@ def create_application() -> FastAPI:
                             "error_code": "INVALID_CONTENT_LENGTH",
                             "message": "Content-Length header is malformed",
                             "details": {},
-                            "request_id": getattr(request.state, "request_id", None),
+                            "request_id": request_id,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
+                        headers={"X-Request-ID": request_id},
                     )
                 declared = int(stripped)
                 if declared > max_size:
@@ -531,9 +548,10 @@ def create_application() -> FastAPI:
                                 "max_bytes": max_size,
                                 "declared_bytes": declared,
                             },
-                            "request_id": getattr(request.state, "request_id", None),
+                            "request_id": request_id,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
+                        headers={"X-Request-ID": request_id},
                     )
             else:
                 # Chunked / Transfer-Encoding: считаем байты по потоку до
@@ -586,9 +604,10 @@ def create_application() -> FastAPI:
                                 "max_bytes": max_size,
                                 "received_bytes": received,
                             },
-                            "request_id": getattr(request.state, "request_id", None),
+                            "request_id": request_id,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
+                        headers={"X-Request-ID": request_id},
                     )
 
                 # Стрим уместился — replay'им буфер одним сообщением вниз

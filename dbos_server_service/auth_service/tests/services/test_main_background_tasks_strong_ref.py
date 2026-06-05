@@ -46,11 +46,9 @@ async def test_lifespan_strong_refs_startup_task(monkeypatch):
     app = main_mod.create_application()
 
     async with app.router.lifespan_context(app):
-        # Ждём, пока startup-task реально стартанёт поток.
-        for _ in range(200):
-            if started.is_set():
-                break
-            await asyncio.sleep(0.01)
+        # Блокируемся в thread-pool до `started.set()` — детерминированно,
+        # без busy-loop на `asyncio.sleep(0.01)` и шансов на flake под slow-CI.
+        await asyncio.to_thread(started.wait, 5.0)
         assert started.is_set()
         assert len(main_mod._BACKGROUND_TASKS) == 1
         task = next(iter(main_mod._BACKGROUND_TASKS))

@@ -433,11 +433,15 @@ class TestXServiceIdentityValidation:
     async def test_valid_key_with_unknown_identity_soft_mode_allows(
         self, raw_client, user_a_token, caplog
     ):
-        """Default soft mode: unknown identity logs WARNING but request succeeds.
+        """Default soft mode: unknown identity → 200, plus operator-facing WARNING.
 
-        We assert both that the response is 200 AND that a WARNING-level
-        log line surfaced the value — operators must see this without us
-        breaking the request and triggering an incident.
+        Behavioral contract:
+          1. Request НЕ ломается (200) — иначе любой soft-misconfig каскадно
+             валит cross-service вызовы.
+          2. WARNING-level запись с rogue-значением летит в `src.dependencies.auth` —
+             единственный наблюдаемый сигнал для ops (counter'а под legacy-режим
+             нет). Substring-сторону минимизируем: достаточно факта WARNING+
+             rogue-value в args, без жёсткой привязки к фразе сообщения.
         """
         import logging
 
@@ -451,12 +455,16 @@ class TestXServiceIdentityValidation:
                 },
             )
         assert resp.status_code == 200
-        # WARNING surfaced with the offending value redacted via %r.
-        assert any(
-            "unknown X-Service-Identity" in rec.message
-            and "rogue_service_pwn" in rec.message
-            for rec in caplog.records
-        ), [rec.message for rec in caplog.records]
+        warn_records = [
+            rec for rec in caplog.records
+            if rec.levelno == logging.WARNING
+            and rec.name == "src.dependencies.auth"
+            and "rogue_service_pwn" in (rec.getMessage())
+        ]
+        assert warn_records, (
+            "ожидался WARNING-level лог с rogue-identity для ops-видимости, "
+            f"got: {[(r.levelname, r.name, r.getMessage()) for r in caplog.records]}"
+        )
 
     async def test_valid_key_without_identity_header_succeeds(
         self, raw_client, user_a_token

@@ -12,8 +12,6 @@
 
 from __future__ import annotations
 
-import time
-
 import pytest
 from sqlalchemy import select
 
@@ -30,53 +28,7 @@ ME_URL = "/api/auth/v1/me"
 LOGIN_URL = "/api/auth/v1/login"
 
 
-# ── Capture audit-payloads ───────────────────────────────────────────────────
-
-
-@pytest.fixture()
-def capture_audit_payloads(monkeypatch):
-    """Перехватывает все payload, отправляемые `audit_service.emit()`.
-
-    Зеркало `tests/users/test_update.py:capture_audit_payloads` — мокаем
-    `httpx.post` (sync-путь) и `httpx.AsyncClient` (async-путь) в
-    `src.services.audit_service`, плюс подменяем `get_settings` чтобы
-    `logging_service_url`/`api_key` были не-пустыми (триггерит post-путь).
-    """
-    captured: list[dict] = []
-
-    def fake_sync_post(url, json, headers, timeout):
-        captured.append(json)
-
-    monkeypatch.setattr("src.services.audit_service.httpx.post", fake_sync_post)
-
-    class _AsyncClient:
-        def __init__(self, *a, **k):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            pass
-
-        async def post(self, url, json, headers):
-            captured.append(json)
-
-            class R:
-                status_code = 201
-
-            return R()
-
-    monkeypatch.setattr("src.services.audit_service.httpx.AsyncClient", _AsyncClient)
-    monkeypatch.setattr(
-        "src.services.audit_service.get_settings",
-        lambda: type(
-            "S",
-            (),
-            {"logging_service_url": "http://test", "logging_service_api_key": "k"},
-        )(),
-    )
-    return captured
+# `capture_audit_payloads` — общая фикстура из `tests/conftest.py`.
 
 
 # ── subject_type → audit actor_type ──────────────────────────────────────────
@@ -607,11 +559,24 @@ class TestIntrospectCache:
     async def test_cache_expires_after_ttl(
         self, client, user_a, user_a_token, monkeypatch,
     ):
-        """Через >TTL кэш expire'нул — следующий request делает свежий revalidate."""
+        """Через >TTL кэш expire'нул — следующий request делает свежий revalidate.
+
+        Двигаем «фейковое now» через подмену `time.time` в `deps_auth_mod` —
+        без real-sleep, без шансов на flake под slow-CI / GC pause.
+        """
         from src.dependencies import auth as deps_auth_mod
 
-        monkeypatch.setattr(deps_auth_mod, "_IDENTITY_CACHE_TTL_SECONDS", 0.1)
+        monkeypatch.setattr(deps_auth_mod, "_IDENTITY_CACHE_TTL_SECONDS", 60.0)
         deps_auth_mod._identity_cache_clear()
+
+        fake_now = {"t": 1_000_000.0}
+
+        class _FakeTime:
+            @staticmethod
+            def time() -> float:
+                return fake_now["t"]
+
+        monkeypatch.setattr(deps_auth_mod, "time", _FakeTime)
 
         original_revalidate = deps_auth_mod._identity_from_user_jwt
         call_count = {"n": 0}
@@ -625,15 +590,15 @@ class TestIntrospectCache:
             deps_auth_mod, "_identity_from_user_jwt", counting_revalidate,
         )
 
-        # Первый request — miss → 1 revalidate.
+        # Первый request — miss → 1 revalidate, запись положена с expires_at=now+TTL.
         resp = await client.get(
             ME_URL, headers={"Authorization": f"Bearer {user_a_token}"},
         )
         assert resp.status_code == 200
         assert call_count["n"] == 1
 
-        # Ждём истечения TTL.
-        time.sleep(0.2)
+        # Прыгаем за TTL.
+        fake_now["t"] += 120.0
 
         # Второй request — кэш expire'нул, fresh revalidate.
         resp = await client.get(

@@ -415,61 +415,69 @@ class TestFilteredPolicy:
         assert db.query(AuditEvent).count() == 1
 
 
+def _poll_retention_writes(db, *, expected: int, timeout: float = 1.0) -> int:
+    """Poll-loop вместо одиночного sleep'а на async middleware tasks.
+
+    Возвращает фактическое число `logging.retention_write` events. Выходит
+    раньше, если уже видим `>= expected` (быстрый pass на reasonable load'е)
+    и не больше `timeout`-сек.
+    """
+    import time as _time
+    from src.models.audit_event import AuditEvent
+
+    deadline = _time.monotonic() + timeout
+    found = 0
+    while _time.monotonic() < deadline:
+        db.expire_all()
+        found = (
+            db.query(AuditEvent)
+            .filter_by(action="logging.retention_write")
+            .count()
+        )
+        if found >= expected:
+            break
+        _time.sleep(0.02)
+    return found
+
+
 class TestRetentionAuditNoDuplicate:
     """Endpoint — single source `logging.retention_write`. Middleware-эмиссия
     на success-путь сходила бы в дубль, ломала SIEM-агрегаты по action."""
 
     def test_put_emits_exactly_one_retention_write(self, admin_client, db):
-        import time
-        from src.models.audit_event import AuditEvent
-
         admin_client.put(URL, json={"retain_days": 90})
-        # Async middleware tasks могли ещё крутиться — даём шанс отстреляться.
-        time.sleep(0.2)
-        db.expire_all()
-        events = (
-            db.query(AuditEvent)
-            .filter_by(action="logging.retention_write")
-            .all()
-        )
-        assert len(events) == 1, (
+        count = _poll_retention_writes(db, expected=1)
+        assert count == 1, (
             f"PUT /retention должен писать ровно один retention_write event "
-            f"(endpoint — single source), получили {len(events)}"
+            f"(endpoint — single source), получили {count}"
         )
 
     def test_delete_emits_exactly_one_retention_write(self, admin_client, db):
-        import time
-        from src.models.audit_event import AuditEvent
-
         admin_client.put(URL, json={"retain_days": 90})
         admin_client.delete(URL)
-        time.sleep(0.2)
-        db.expire_all()
-        events = (
-            db.query(AuditEvent)
-            .filter_by(action="logging.retention_write")
-            .all()
-        )
+        count = _poll_retention_writes(db, expected=2)
         # 1 from PUT + 1 from DELETE = 2 retention_write events total
-        assert len(events) == 2, (
+        assert count == 2, (
             f"PUT+DELETE должны дать ровно 2 retention_write events, "
-            f"получили {len(events)}"
+            f"получили {count}"
         )
 
     def test_get_does_not_emit_retention_write(self, admin_client, db):
-        import time
-        from src.models.audit_event import AuditEvent
-
         admin_client.put(URL, json={"retain_days": 90})
         admin_client.get(URL)
-        time.sleep(0.2)
+        # PUT — 1 write, GET — 0 (read-only). Дожидаемся PUT'а через poll-loop,
+        # потом убеждаемся, что GET не добавил ни одной записи.
+        assert _poll_retention_writes(db, expected=1) == 1
+        # Дополнительный grace: GET не должен на следующих 200ms ничего долить.
+        import time as _time
+        _time.sleep(0.2)
         db.expire_all()
+        from src.models.audit_event import AuditEvent
         writes = (
             db.query(AuditEvent)
             .filter_by(action="logging.retention_write")
             .count()
         )
-        # PUT — 1 write, GET — 0 (read-only).
         assert writes == 1
 
 

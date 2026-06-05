@@ -5,7 +5,7 @@
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <mxCell id="title" value="DBOS Server Manager — схема взаимодействия (всё ПО на одном хосте/в одной сети)" style="text;html=1;align=left;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="title" value="DTQC-EMM (EMM) — схема взаимодействия (всё ПО на одном хосте/в одной сети)" style="text;html=1;align=left;fontSize=14;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="40" y="30" width="780" height="30" as="geometry" />
         </mxCell>
 
@@ -47,13 +47,13 @@
           <mxGeometry x="610" y="500" width="170" height="50" as="geometry" />
         </mxCell>
 
-        <mxCell id="operator" value="Оператор&#10;(cli — Astra; web-браузер)" style="shape=umlActor;verticalLabelPosition=bottom;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+        <mxCell id="operator" value="Оператор&#10;(cli; web-браузер)" style="shape=umlActor;verticalLabelPosition=bottom;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
           <mxGeometry x="900" y="120" width="60" height="90" as="geometry" />
         </mxCell>
         <mxCell id="servers" value="Управляемые серверы&#10;(Redfish / IPMI / SSH)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="880" y="370" width="180" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="hyper" value="Хост(ы) с ВМ&#10;(libvirt/QEMU-KVM, VirtualBox)&#10;управление по SSH" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" vertex="1" parent="1">
+        <mxCell id="hyper" value="Хост(ы) с ВМ&#10;(libvirt/QEMU-KVM)&#10;управление по SSH" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="880" y="470" width="180" height="70" as="geometry" />
         </mxCell>
 
@@ -77,7 +77,7 @@
         <mxCell id="e6b" value="broker" style="endArrow=block;html=1;" edge="1" parent="1" source="vworker" target="redis"><mxGeometry relative="1" as="geometry" /></mxCell>
 
         <mxCell id="e7" value="Redfish/IPMI/SSH (за пределы сети)" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="sworker" target="servers"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="e8" value="SSH → virsh/VBoxManage (за пределы сети)" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="vworker" target="hyper"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="SSH → virsh (за пределы сети)" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="vworker" target="hyper"><mxGeometry relative="1" as="geometry" /></mxCell>
 
         <mxCell id="e9" value="данные" style="endArrow=block;html=1;dashed=1;strokeColor=#6c8ebf;" edge="1" parent="1" source="server" target="pg"><mxGeometry relative="1" as="geometry" /></mxCell>
 

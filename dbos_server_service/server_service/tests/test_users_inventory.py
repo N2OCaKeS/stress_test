@@ -68,22 +68,13 @@ def captured_dispatch(monkeypatch):
 
 @pytest.fixture
 def captured_emits(monkeypatch):
-    captured: list[dict] = []
+    from tests._helpers import make_emit_capture
 
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    for path in (
+    return make_emit_capture(
+        monkeypatch,
         "src.api.v1.endpoints.inventory.audit_service.emit",
         "src.services.internal_service.audit_service.emit",
-    ):
-        try:
-            monkeypatch.setattr(path, fake_emit)
-        except (AttributeError, ImportError):
-            pass
-    return captured
+    )
 
 
 def _events(captured: list[dict], action: str) -> list[dict]:

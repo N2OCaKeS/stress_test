@@ -13,6 +13,7 @@ import pytest
 from src.models.audit_rule import AuditRule
 from src.schemas.events import EventCreate
 from src.services import rule_service
+from src.utils.ids import audit_rule_id
 
 
 def _event(**kw) -> EventCreate:
@@ -34,7 +35,7 @@ def _rule(*, effect="ALLOW", priority=100, match_service=None, match_action=None
           match_status=None, match_severity=None, match_allowed=None,
           effect_severity=None) -> AuditRule:
     r = AuditRule(
-        id="rl_test",
+        id=audit_rule_id(),
         name="t",
         effect=effect,
         priority=priority,

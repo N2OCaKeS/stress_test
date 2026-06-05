@@ -138,17 +138,28 @@ class TestStartupLog:
     """`_log_rate_limit_backend` пишет INFO с маскированным DSN, WARNING в prod."""
 
     def test_info_log_masks_password(self, caplog):
+        """Контракт INFO-startup-лога — заматчить password из DSN.
+
+        Функция чисто logging-only (нет return / нет side-effect'а), поэтому
+        substring + levelno-фильтр — единственный наблюдаемый канал. Password
+        не должен утечь, маскированный DSN — должен присутствовать.
+        """
         from src.main import _log_rate_limit_backend
 
         s = _fresh_settings(RATE_LIMIT_STORAGE_URI="redis://user:topsecret@h:6379/0")
         caplog.set_level(logging.INFO, logger="src.main")
         _log_rate_limit_backend(s)
 
-        messages = [r.message for r in caplog.records]
-        joined = "\n".join(messages)
+        info_records = [
+            r for r in caplog.records
+            if r.levelno == logging.INFO and r.name == "src.main"
+        ]
+        joined = "\n".join(r.getMessage() for r in info_records)
         assert "rate_limit_storage" in joined
         assert "redis://user:***@h:6379/0" in joined
-        assert "topsecret" not in joined
+        # `topsecret` не должен утечь ни в одну запись — даже не-INFO.
+        all_joined = "\n".join(r.getMessage() for r in caplog.records)
+        assert "topsecret" not in all_joined
 
     def test_info_log_memory_default(self, caplog):
         from src.main import _log_rate_limit_backend
@@ -157,7 +168,11 @@ class TestStartupLog:
         caplog.set_level(logging.INFO, logger="src.main")
         _log_rate_limit_backend(s)
 
-        joined = "\n".join(r.message for r in caplog.records)
+        info_records = [
+            r for r in caplog.records
+            if r.levelno == logging.INFO and r.name == "src.main"
+        ]
+        joined = "\n".join(r.getMessage() for r in info_records)
         assert "rate_limit_storage" in joined
         assert "memory://" in joined
 

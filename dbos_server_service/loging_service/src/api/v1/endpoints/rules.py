@@ -31,12 +31,6 @@ from src.services import event_service, rule_service
 
 router = APIRouter()
 
-# Симметрия с `endpoints/events.py`: единственный источник cap'а на limit/offset
-# живёт в `core/limits.py`. Локальный аlias оставлен для compactness в декораторах
-# Query() — менять одно значение нужно в одном месте.
-_MAX_LIMIT = MAX_QUERY_LIMIT
-_MAX_OFFSET = MAX_QUERY_OFFSET
-
 # Charset path-параметра `rule_id` — opaque `rul_<hex>` идентификаторы
 # (см. `utils/ids.py`). Без bound'а pydantic пропускает unbounded string,
 # она уходит WHERE id=$1 — Postgres переварит, но 422 был бы дешевле и не
@@ -139,8 +133,8 @@ def list_rules(
     response: Response,
     identity: RulesAdminIdentity,
     db: Session = Depends(get_db),
-    limit: int = Query(default=100, ge=1, le=_MAX_LIMIT),
-    offset: int = Query(default=0, ge=0, le=_MAX_OFFSET),
+    limit: int = Query(default=100, ge=1, le=MAX_QUERY_LIMIT),
+    offset: int = Query(default=0, ge=0, le=MAX_QUERY_OFFSET),
 ) -> RuleListResponse:
     rules, total = rule_repo.get_all(db, limit=limit, offset=offset)
     return RuleListResponse(

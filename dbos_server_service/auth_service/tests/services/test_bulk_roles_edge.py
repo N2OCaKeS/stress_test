@@ -83,8 +83,14 @@ class TestTargetValidation:
             headers={"Authorization": f"Bearer {admin_token}"},
             json={"user_ids": [user_a.id]},
         )
-        assert resp.status_code in (403, 404)
-        assert resp.json()["error_code"] in {"DEPARTMENT_ACCESS_DENIED", "SERVICE_ROLE_NOT_FOUND"}
+        # `bulk_assign` пропускает явный department-existence guard и сразу
+        # бьёт по `ServiceRoleDefinitionRepository.exists(dept, svc, role)`.
+        # Под ghost-отделом нет ни одного role-record → 404 SERVICE_ROLE_NOT_FOUND.
+        # (Под `account_admin` `_check_can_manage` пропускает, под не-admin
+        #  получили бы 403 DEPARTMENT_ACCESS_DENIED — здесь admin фиксирован
+        #  фикстурой `admin_token`.)
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "SERVICE_ROLE_NOT_FOUND"
 
     async def test_revoke_nonexistent_role_no_error(
         self, client, admin_token, user_a, dept_a_with_service, service_x,

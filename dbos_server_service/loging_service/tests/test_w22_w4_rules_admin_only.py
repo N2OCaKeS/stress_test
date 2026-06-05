@@ -57,62 +57,27 @@ class TestAllowedRolesCanReadRules:
 # ── denied roles ───────────────────────────────────────────────────────────
 
 
+_LOGING_READER_IDENTITY = {
+    "active": True, "subject_type": "user", "sub": "usr_3",
+    "username": "reader", "platform_role": "loging_reader",
+    "department_id": "dep_a",
+}
+
+
 class TestLogingReaderDeniedFromRules:
-    def test_loging_reader_403_on_list_rules(self, client, mock_introspect):
-        with mock_introspect(json_body={
-            "active": True, "subject_type": "user", "sub": "usr_3",
-            "username": "reader", "platform_role": "loging_reader",
-            "department_id": "dep_a",
-        }):
-            r = client.get(RULES_URL, headers={"Authorization": "Bearer jwt"})
-        assert r.status_code == 403
-        assert r.json()["error_code"] == "LOGING_ADMIN_REQUIRED"
-
-    def test_loging_reader_403_on_get_rule(self, client, mock_introspect):
-        with mock_introspect(json_body={
-            "active": True, "subject_type": "user", "sub": "usr_3",
-            "username": "reader", "platform_role": "loging_reader",
-            "department_id": "dep_a",
-        }):
-            r = client.get(f"{RULES_URL}/rl_x", headers={"Authorization": "Bearer jwt"})
-        assert r.status_code == 403
-        assert r.json()["error_code"] == "LOGING_ADMIN_REQUIRED"
-
-    def test_loging_reader_403_on_post(self, client, mock_introspect):
-        with mock_introspect(json_body={
-            "active": True, "subject_type": "user", "sub": "usr_3",
-            "username": "reader", "platform_role": "loging_reader",
-            "department_id": "dep_a",
-        }):
-            r = client.post(
-                RULES_URL,
-                headers={"Authorization": "Bearer jwt"},
-                json={"name": "x", "effect": "SUPPRESS", "priority": 100},
-            )
-        assert r.status_code == 403
-        assert r.json()["error_code"] == "LOGING_ADMIN_REQUIRED"
-
-    def test_loging_reader_403_on_patch(self, client, mock_introspect):
-        with mock_introspect(json_body={
-            "active": True, "subject_type": "user", "sub": "usr_3",
-            "username": "reader", "platform_role": "loging_reader",
-            "department_id": "dep_a",
-        }):
-            r = client.patch(
-                f"{RULES_URL}/rl_x",
-                headers={"Authorization": "Bearer jwt"},
-                json={"priority": 200},
-            )
-        assert r.status_code == 403
-        assert r.json()["error_code"] == "LOGING_ADMIN_REQUIRED"
-
-    def test_loging_reader_403_on_delete(self, client, mock_introspect):
-        with mock_introspect(json_body={
-            "active": True, "subject_type": "user", "sub": "usr_3",
-            "username": "reader", "platform_role": "loging_reader",
-            "department_id": "dep_a",
-        }):
-            r = client.delete(f"{RULES_URL}/rl_x", headers={"Authorization": "Bearer jwt"})
+    @pytest.mark.parametrize("method, url, json_body", [
+        ("get", RULES_URL, None),
+        ("get", f"{RULES_URL}/rl_x", None),
+        ("post", RULES_URL, {"name": "x", "effect": "SUPPRESS", "priority": 100}),
+        ("patch", f"{RULES_URL}/rl_x", {"priority": 200}),
+        ("delete", f"{RULES_URL}/rl_x", None),
+    ])
+    def test_loging_reader_403(self, client, mock_introspect, method, url, json_body):
+        with mock_introspect(json_body=_LOGING_READER_IDENTITY):
+            kwargs = {"headers": {"Authorization": "Bearer jwt"}}
+            if json_body is not None:
+                kwargs["json"] = json_body
+            r = getattr(client, method)(url, **kwargs)
         assert r.status_code == 403
         assert r.json()["error_code"] == "LOGING_ADMIN_REQUIRED"
 

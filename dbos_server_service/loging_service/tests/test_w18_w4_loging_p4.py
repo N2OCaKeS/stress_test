@@ -2,7 +2,7 @@
 
 Пункты задачи:
 1. idempotency_key charset / offset cap — подтверждение, что фиксы W15 P3
-   на месте (charset pattern, le=_MAX_OFFSET на /events и /rules).
+   на месте (charset pattern, le=MAX_QUERY_OFFSET на /events и /rules).
 2. GET /retention rate-limit — закрыт F-W17-W3, подтверждение.
 3. RuleCreate.description max_length=1024 (W16 Info).
 4. _drain_loop cancel-requeue overflow/cancel split — QueueFull при requeue
@@ -81,20 +81,22 @@ class TestOffsetCap:
         return None
 
     def test_events_offset_cap_in_signature(self):
-        from src.api.v1.endpoints.events import list_events, _MAX_OFFSET
+        from src.api.v1.endpoints.events import list_events
+        from src.core.limits import MAX_QUERY_OFFSET
         sig = inspect.signature(list_events)
         offset_param = sig.parameters["offset"]
-        assert _MAX_OFFSET >= 1_000_000
+        assert MAX_QUERY_OFFSET >= 1_000_000
         le = self._le_from_query(offset_param.default)
-        assert le == _MAX_OFFSET, f"offset must have le={_MAX_OFFSET}, got {le}"
+        assert le == MAX_QUERY_OFFSET, f"offset must have le={MAX_QUERY_OFFSET}, got {le}"
 
     def test_rules_offset_cap_in_signature(self):
-        from src.api.v1.endpoints.rules import list_rules, _MAX_OFFSET
+        from src.api.v1.endpoints.rules import list_rules
+        from src.core.limits import MAX_QUERY_OFFSET
         sig = inspect.signature(list_rules)
         offset_param = sig.parameters["offset"]
-        assert _MAX_OFFSET >= 1_000_000
+        assert MAX_QUERY_OFFSET >= 1_000_000
         le = self._le_from_query(offset_param.default)
-        assert le == _MAX_OFFSET, f"offset must have le={_MAX_OFFSET}, got {le}"
+        assert le == MAX_QUERY_OFFSET, f"offset must have le={MAX_QUERY_OFFSET}, got {le}"
 
 
 # ── 2. GET /retention rate-limit ─────────────────────────────────────────

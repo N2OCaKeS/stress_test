@@ -257,6 +257,34 @@ def test_rate_limit_exceeded_response_includes_headers():
 # ── 4. worker_client split ───────────────────────────────────────────────────
 
 
+@pytest.fixture
+def _wc_dispatch_stubs(monkeypatch):
+    """Минимальный набор патчей для запуска `dispatch_task[_with_hit]` без БД.
+
+    Три точки, которые иначе ходят в Postgres: idempotency lookup, task-row
+    insert и outbox-row insert. Возвращает модуль `worker_client` для
+    использования в самом тесте.
+    """
+    from src.services import worker_client as wc
+
+    async def fake_lookup(_k):
+        return None
+
+    async def fake_insert(**_k):
+        pass
+
+    async def fake_outbox_insert(_db, **_kw):
+        return None
+
+    monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
+    monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
+    monkeypatch.setattr(
+        "src.services.worker_client.dispatch_outbox_repo.insert",
+        fake_outbox_insert,
+    )
+    return wc
+
+
 class TestDispatchTaskSplit:
     def test_dispatch_task_signature(self):
         from src.services import worker_client as wc
@@ -268,34 +296,15 @@ class TestDispatchTaskSplit:
 
     @pytest.mark.asyncio
     async def test_dispatch_task_with_hit_accepts_all_dispatch_kwargs(
-        self, monkeypatch,
+        self, _wc_dispatch_stubs,
     ):
         """Behavioral mirror контракта: dispatch_task_with_hit принимает тот
         же набор kwargs, что и dispatch_task (минус `return_hit`), и
-        возвращает `(task_id, hit_bool)`. Раньше тест проверял `name in
-        sig.parameters` — ломался на любом безобидном rename'е kwarg'а, не
-        проверяя, что функцию реально можно вызвать с этим набором.
+        возвращает `(task_id, hit_bool)`.
         """
         from unittest.mock import AsyncMock
 
-        from src.services import worker_client as wc
-
-        async def fake_lookup(_k):
-            return None
-
-        async def fake_insert(**_k):
-            pass
-
-        async def fake_outbox_insert(_db, **_kw):
-            return None
-
-        monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
-        monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
-        monkeypatch.setattr(
-            "src.services.worker_client.dispatch_outbox_repo.insert",
-            fake_outbox_insert,
-        )
-
+        wc = _wc_dispatch_stubs
         result = await wc.dispatch_task_with_hit(
             db=AsyncMock(),
             task_kind="power.on",
@@ -312,30 +321,10 @@ class TestDispatchTaskSplit:
         assert isinstance(hit, bool)
 
     @pytest.mark.asyncio
-    async def test_dispatch_task_returns_str_only(self, monkeypatch):
+    async def test_dispatch_task_returns_str_only(self, _wc_dispatch_stubs):
         from unittest.mock import AsyncMock
 
-        from src.services import worker_client as wc
-
-        async def fake_lookup(_k):
-            return None
-
-        async def fake_insert(**_k):
-            pass
-
-        async def fake_outbox_insert(_db, **_kw):
-            return None
-
-        monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
-        monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
-        # `worker_client` импортирует `dispatch_outbox` как `dispatch_outbox_repo`
-        # — патчим именно атрибут на модуле, не сам repo-модуль (раньше шёл
-        # двойной patch на оба варианта, что маскировало import-pattern).
-        monkeypatch.setattr(
-            "src.services.worker_client.dispatch_outbox_repo.insert",
-            fake_outbox_insert,
-        )
-
+        wc = _wc_dispatch_stubs
         result = await wc.dispatch_task(
             db=AsyncMock(),
             task_kind="power.on",
@@ -348,27 +337,10 @@ class TestDispatchTaskSplit:
         assert result.startswith("tsk_")
 
     @pytest.mark.asyncio
-    async def test_dispatch_task_with_hit_returns_tuple(self, monkeypatch):
+    async def test_dispatch_task_with_hit_returns_tuple(self, _wc_dispatch_stubs):
         from unittest.mock import AsyncMock
 
-        from src.services import worker_client as wc
-
-        async def fake_lookup(_k):
-            return None
-
-        async def fake_insert(**_k):
-            pass
-
-        async def fake_outbox_insert(_db, **_kw):
-            return None
-
-        monkeypatch.setattr(wc, "_get_task_by_idempotency_key", fake_lookup)
-        monkeypatch.setattr(wc, "_insert_task_row", fake_insert)
-        monkeypatch.setattr(
-            "src.services.worker_client.dispatch_outbox_repo.insert",
-            fake_outbox_insert,
-        )
-
+        wc = _wc_dispatch_stubs
         task_id, hit = await wc.dispatch_task_with_hit(
             db=AsyncMock(),
             task_kind="power.on",
@@ -530,18 +502,20 @@ def test_installed_packages_handler_passes_max_rows(monkeypatch):
 # ── 10. ipmi_controller view-success после reveal'а ─────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_ipmi_get_controller_no_success_if_reveal_fails(monkeypatch):
-    """Если reveal падает DECRYPT_FAILED — view-success НЕ эмитится."""
-    from src.core.exceptions import AppException
+@pytest.fixture
+def _ipmi_view_stubs(monkeypatch):
+    """Подменяет permissions/load/repo для `ipmi_controller.get_controller`.
+
+    Возвращает `(ipmi_svc, captured)` — модуль и список перехваченных audit-
+    эмиссий. Сам `_reveal_controller_password` остаётся на caller'е: одни
+    тесты бросают DECRYPT_FAILED, другие возвращают plaintext.
+    """
     from src.services import ipmi_controller as ipmi_svc
 
     captured: list[dict] = []
 
     def fake_emit(action, actor_id=None, **kw):
         captured.append({"action": action, **kw})
-
-    monkeypatch.setattr(ipmi_svc.audit_service, "emit", fake_emit)
 
     class _Server:
         id = "srv_1"
@@ -564,10 +538,22 @@ async def test_ipmi_get_controller_no_success_if_reveal_fails(monkeypatch):
     async def fake_repo_get(*a, **k):
         return _Ctrl()
 
+    monkeypatch.setattr(ipmi_svc.audit_service, "emit", fake_emit)
     monkeypatch.setattr(ipmi_svc.permissions, "has_action", fake_has_action)
     monkeypatch.setattr(ipmi_svc.permissions, "require_action", fake_require)
     monkeypatch.setattr(ipmi_svc, "load_visible_server", fake_load)
     monkeypatch.setattr(ipmi_svc.repo, "get_by_server_id", fake_repo_get)
+    return ipmi_svc, captured
+
+
+@pytest.mark.asyncio
+async def test_ipmi_get_controller_no_success_if_reveal_fails(
+    monkeypatch, _ipmi_view_stubs,
+):
+    """Если reveal падает DECRYPT_FAILED — view-success НЕ эмитится."""
+    from src.core.exceptions import AppException
+
+    ipmi_svc, captured = _ipmi_view_stubs
 
     def boom_reveal(_obj, _dep):
         raise AppException(
@@ -589,42 +575,11 @@ async def test_ipmi_get_controller_no_success_if_reveal_fails(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ipmi_get_controller_success_after_reveal_ok(monkeypatch):
+async def test_ipmi_get_controller_success_after_reveal_ok(
+    monkeypatch, _ipmi_view_stubs,
+):
     """Reveal прошёл → view-success эмитится один раз."""
-    from src.services import ipmi_controller as ipmi_svc
-
-    captured: list[dict] = []
-
-    def fake_emit(action, actor_id=None, **kw):
-        captured.append({"action": action, **kw})
-
-    monkeypatch.setattr(ipmi_svc.audit_service, "emit", fake_emit)
-
-    class _Server:
-        id = "srv_1"
-        department_id = "dep_a"
-
-    class _Ctrl:
-        id = "ipm_1"
-        server_id = "srv_1"
-        password_encrypted = "v1$ct"
-
-    async def fake_has_action(*a, **k):
-        return True
-
-    async def fake_require(*a, **k):
-        return None
-
-    async def fake_load(*a, **k):
-        return _Server()
-
-    async def fake_repo_get(*a, **k):
-        return _Ctrl()
-
-    monkeypatch.setattr(ipmi_svc.permissions, "has_action", fake_has_action)
-    monkeypatch.setattr(ipmi_svc.permissions, "require_action", fake_require)
-    monkeypatch.setattr(ipmi_svc, "load_visible_server", fake_load)
-    monkeypatch.setattr(ipmi_svc.repo, "get_by_server_id", fake_repo_get)
+    ipmi_svc, captured = _ipmi_view_stubs
     monkeypatch.setattr(
         ipmi_svc, "_reveal_controller_password",
         lambda _obj, _dep: "decoded-base64",
@@ -642,16 +597,17 @@ async def test_ipmi_get_controller_success_after_reveal_ok(monkeypatch):
 # ── 11. server_account get_account симметрично ───────────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_server_account_get_no_success_if_reveal_fails(monkeypatch):
-    from src.core.exceptions import AppException
+@pytest.fixture
+def _sa_view_stubs(monkeypatch):
+    """Параллель `_ipmi_view_stubs` для `server_account.get_account`.
 
+    Подменяет permissions + `_load_account_visible` + emit-capture; reveal
+    остаётся на caller'е.
+    """
     captured: list[dict] = []
 
     def fake_emit(action, actor_id=None, **kw):
         captured.append({"action": action, **kw})
-
-    monkeypatch.setattr(sa_svc.audit_service, "emit", fake_emit)
 
     class _Acc:
         id = "acc_1"
@@ -668,9 +624,20 @@ async def test_server_account_get_no_success_if_reveal_fails(monkeypatch):
     async def fake_load(_db, _ident, _id):
         return _Acc()
 
+    monkeypatch.setattr(sa_svc.audit_service, "emit", fake_emit)
     monkeypatch.setattr(sa_svc.permissions, "has_action", fake_has_action)
     monkeypatch.setattr(sa_svc.permissions, "require_action", fake_require)
     monkeypatch.setattr(sa_svc, "_load_account_visible", fake_load)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_server_account_get_no_success_if_reveal_fails(
+    monkeypatch, _sa_view_stubs,
+):
+    from src.core.exceptions import AppException
+
+    captured = _sa_view_stubs
 
     def boom_reveal(_acc):
         raise AppException(

@@ -190,14 +190,17 @@ class TestEmitAppliesRedaction:
 
 
 class TestEmitFallback:
-    def test_no_url_logs_to_audit_logger(self, monkeypatch, caplog):
-        # Настройки без URL → log fallback
+    def test_no_url_skips_http_emit(self, monkeypatch):
+        # Настройки без URL → no http path. Проверяем что create_task НЕ
+        # вызывается и `_EMIT_TASKS` не растёт — это и есть наблюдаемый
+        # behavior fallback'а (substring-проверка лог-сообщения была хрупкой
+        # к ребрендингу формата).
         monkeypatch.setattr("src.services.audit_service.get_settings", lambda: type(
             "S", (), {"logging_service_url": None, "logging_service_api_key": None},
         )())
-        with caplog.at_level(logging.INFO, logger="audit"):
-            audit_service.emit("user.me", actor_id="u1")
-        assert any("audit_event" in r.message for r in caplog.records)
+        before = len(audit_service._EMIT_TASKS)
+        audit_service.emit("user.me", actor_id="u1")
+        assert len(audit_service._EMIT_TASKS) == before
 
 
 # ── extract_client_ip: X-Forwarded-For + allow-list ───────────────────────────

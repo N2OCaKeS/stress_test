@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import get_args
 
 from src.repositories import rules as rule_repo
@@ -47,10 +46,12 @@ class TestRuleCacheEmptyDbNoExtraReload:
             lambda d: (active_calls.append(1), original_active(d))[1],
         )
 
-        time.sleep(0.01)
+        # TTL=0 + любая ненулевая monotonic-дельта → cache.get форсит
+        # refresh-попытку. monotonic() имеет наносекундное разрешение в
+        # CPython — отдельный `time.sleep` не нужен, два последовательных
+        # `cache.get(db)` гарантированно идут по slow-path с MAX-touch'ем.
         # Второй tick — БД всё ещё пустая, MAX = NULL.
         assert cache.get(db) == []
-        time.sleep(0.01)
         # И третий — то же самое.
         assert cache.get(db) == []
 
@@ -64,11 +65,13 @@ class TestRuleCacheEmptyDbNoExtraReload:
         cache = _RuleCache(ttl_seconds=0)
         assert cache.get(db) == []
 
-        time.sleep(0.01)
+        # `rule_repo.create` коммитит — DB-side NOW() для `updated_at` фиксируется
+        # в момент INSERT'а и доступен следующему cache.get без sleep'а: cache
+        # читает MAX(updated_at), сравнивает с `_last_db_max=None`, идёт по
+        # slow-path get_active_sorted.
         payload = RuleCreate(name="r1", effect="SUPPRESS", priority=100)
         rule_repo.create(db, payload)
 
-        time.sleep(0.01)
         rules = cache.get(db)
         assert [r.name for r in rules] == ["r1"]
 

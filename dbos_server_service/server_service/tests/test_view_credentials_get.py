@@ -11,11 +11,9 @@ from __future__ import annotations
 
 import pytest  # noqa: F401  — re-exported transitively by conftest fixtures
 
+from tests._helpers import auth_hdr as _hdr
+
 BASE = "/api/server/v1/servers"
-
-
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
 
 
 # ── GET /ipmi/credentials (метаданные) ───────────────────────────────────────

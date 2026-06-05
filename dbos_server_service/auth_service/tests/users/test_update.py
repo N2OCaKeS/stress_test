@@ -1,7 +1,5 @@
 """Тесты: PATCH /api/auth/v1/users/{user_id} — обновление пользователя."""
 
-import pytest
-
 from src.core.constants import UserStatus
 
 URL = "/api/auth/v1/users/{user_id}"
@@ -10,50 +8,7 @@ INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
 LOGIN_URL = "/api/auth/v1/login"
 
 
-@pytest.fixture()
-def capture_audit_payloads(monkeypatch):
-    """Перехватывает все payload, отправляемые `audit_service.emit()`.
-
-    Использует тот же паттерн, что и `tests/core/test_audit_integration.py` —
-    monkeypatch на `httpx.post` (sync-путь) и `httpx.AsyncClient` (async-путь)
-    внутри `src.services.audit_service`, плюс подмена `get_settings`, чтобы
-    `logging_service_url`/`api_key` всегда были не-пустыми.
-    """
-    captured: list[dict] = []
-
-    def fake_sync_post(url, json, headers, timeout):
-        captured.append(json)
-
-    monkeypatch.setattr("src.services.audit_service.httpx.post", fake_sync_post)
-
-    class _AsyncClient:
-        def __init__(self, *a, **k):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            pass
-
-        async def post(self, url, json, headers):
-            captured.append(json)
-
-            class R:
-                status_code = 201
-
-            return R()
-
-    monkeypatch.setattr("src.services.audit_service.httpx.AsyncClient", _AsyncClient)
-    monkeypatch.setattr(
-        "src.services.audit_service.get_settings",
-        lambda: type(
-            "S",
-            (),
-            {"logging_service_url": "http://test", "logging_service_api_key": "k"},
-        )(),
-    )
-    return captured
+# `capture_audit_payloads` — общая фикстура из `tests/conftest.py`.
 
 
 async def _patch(client, token, user_id, body):

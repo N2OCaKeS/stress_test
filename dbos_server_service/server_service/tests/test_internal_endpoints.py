@@ -208,6 +208,9 @@ class TestRotatePassword:
             json={"password": "FirstTimePwd1234"},
         )
         assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body.get("rotated_at")
 
     async def test_operator_can_rotate(self, client, operator_token_a, make_server, make_account):
         """operator имеет default grant `server_account.rotate_password`."""
@@ -219,6 +222,9 @@ class TestRotatePassword:
             json={"password": "OpsNewPwd1234"},
         )
         assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body.get("rotated_at")
 
     async def test_reader_cannot_rotate(self, client, reader_token_a, make_server, make_account):
         srv = await make_server(department_id="dep_a")

@@ -60,6 +60,12 @@ def make_emit_capture(
     ``src.services.audit_service.emit``. Дополнительные пути (например
     ``src.api.v1.endpoints.worker_dispatch.audit_service.emit``) передаются
     через ``*extra_patch_paths`` — patch'аются той же фейк-функцией.
+
+    Если extra-путь резолвится в несуществующий модуль/атрибут (импортёр был
+    удалён или ещё не дотащил `import audit_service`), он молча скипается:
+    локальные фикстуры исторически прятали эту резолюцию в try/except, и
+    общий helper повторяет ту же семантику, иначе любая чистка импортов
+    ломала десятки тестов.
     """
     captured: list[dict] = []
 
@@ -70,7 +76,10 @@ def make_emit_capture(
         import src.services.audit_service as audit_mod
         monkeypatch.setattr(audit_mod, "emit", fake_emit)
     for path in extra_patch_paths:
-        monkeypatch.setattr(path, fake_emit)
+        try:
+            monkeypatch.setattr(path, fake_emit)
+        except (AttributeError, ImportError):
+            pass
     return captured
 
 

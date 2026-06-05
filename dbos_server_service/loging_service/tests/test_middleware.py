@@ -689,11 +689,21 @@ class TestIngestAuthFailureAudited:
         )
         assert r.status_code == 201
 
-        # Дать грейс на потенциальный (нежелательный) audit-task.
-        time.sleep(0.2)
+        # Poll-loop вместо одиночного sleep'а: если случайно прилетит
+        # нежелательный http.* (регресс), мы хотим увидеть его как можно
+        # раньше, а не после фикс-окна 0.2с. До 1с проверяем absence — если
+        # за это время асинхронный path не дошёл до БД, audit не будет
+        # дописан и позже (drain-loop под TRUNCATE'нутой БД лежит).
+        from sqlalchemy import select as _select
+        deadline = time.monotonic() + 1.0
+        http_events: list[AuditEvent] = []
+        while time.monotonic() < deadline:
+            http_events = db.execute(
+                _select(AuditEvent).where(AuditEvent.action.like("http.%"))
+            ).scalars().all()
+            if http_events:
+                break
+            time.sleep(0.02)
         # Никакого http.* события от успешного ingest'а быть не должно —
         # иначе loging аудирует собственный приём (amplification/рекурсия).
-        http_events = db.execute(
-            select(AuditEvent).where(AuditEvent.action.like("http.%"))
-        ).scalars().all()
         assert http_events == [], "успешный ingest не должен порождать http.* audit"

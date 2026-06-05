@@ -32,12 +32,6 @@ from src.core.limiter import limiter
 
 router = APIRouter()
 
-# Алиасы для совместимости со старыми тестами/код-call'ами в этом модуле.
-# Сами значения живут в `core.limits` — там их видят и `services.py`,
-# и любой будущий read-эндпоинт без дублирования.
-_MAX_LIMIT = MAX_QUERY_LIMIT
-_MAX_OFFSET = MAX_QUERY_OFFSET
-
 
 def _idempotency_key_from_header(raw: str | None) -> str | None:
     """Нормализует header `Idempotency-Key` тем же путём, что и body-поле.
@@ -321,8 +315,8 @@ def list_events(
     action: str | None = Query(default=None, description="Фильтр по имени action (точное совпадение)"),
     from_time: datetime | None = Query(default=None, description="Начало диапазона времени (ISO 8601)"),
     to_time: datetime | None = Query(default=None, description="Конец диапазона времени (ISO 8601)"),
-    limit: int = Query(default=100, ge=1, le=_MAX_LIMIT),
-    offset: int = Query(default=0, ge=0, le=_MAX_OFFSET),
+    limit: int = Query(default=100, ge=1, le=MAX_QUERY_LIMIT),
+    offset: int = Query(default=0, ge=0, le=MAX_QUERY_OFFSET),
     include_total: bool = Query(
         default=False,
         description=(

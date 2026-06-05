@@ -24,6 +24,29 @@ import pytest
 from src.services.redaction import redact
 
 
+# ── audit-spy helper ─────────────────────────────────────────────────────────
+
+def _capture_audit(monkeypatch) -> list[dict]:
+    """Подменяет `audit_service.emit` на spy и возвращает list перехваченных событий.
+
+    `audit_service` импортирован продакшен-кодом как module-объект
+    (`from src.services import audit_service`), поэтому patching атрибута
+    `emit` на самом модуле меняет вызов и в bot_service / docker / bot_ip_tracker
+    — там цепочка идёт через тот же объект модуля.
+    """
+    captured: list[dict] = []
+    from src.services import audit_service as audit_mod
+
+    orig = audit_mod.emit
+
+    def spy(action, actor_id=None, **kw):
+        captured.append({"action": action, "actor_id": actor_id, **kw})
+        return orig(action, actor_id, **kw)
+
+    monkeypatch.setattr(audit_mod, "emit", spy)
+    return captured
+
+
 # ── GAP-4: redact — контейнер под секретным ключом ───────────────────────────
 
 class TestRedactContainerUnderSecretKey:
@@ -74,16 +97,7 @@ class TestBotTokenCreateFailureDetails:
         from src.services import bot_service
         from src.utils.ids import _new_id
 
-        captured: list[dict] = []
-
-        import src.services.audit_service as audit_mod
-        orig = audit_mod.emit
-
-        def spy(action, actor_id=None, **kw):
-            captured.append({"action": action, "actor_id": actor_id, **kw})
-            return orig(action, actor_id, **kw)
-
-        monkeypatch.setattr(audit_mod, "emit", spy)
+        captured = _capture_audit(monkeypatch)
 
         # Создаём бота в dept_a
         bot = await bot_service.create_bot(
@@ -301,15 +315,7 @@ class TestDockerPullDeniedRegistryNotFound:
             json={"pull_policy": "all", "pull_user_ids": [], "push_user_ids": []},
         )
 
-        captured: list[dict] = []
-        import src.services.audit_service as audit_mod
-        orig = audit_mod.emit
-
-        def spy(action, actor_id=None, **kw):
-            captured.append({"action": action, "actor_id": actor_id, **kw})
-            return orig(action, actor_id, **kw)
-
-        monkeypatch.setattr(audit_mod, "emit", spy)
+        captured = _capture_audit(monkeypatch)
 
         resp = await client.get(
             TOKEN_URL,
@@ -368,15 +374,7 @@ class TestDockerPullDeniedRegistryNotFound:
             json={"pull_policy": "all", "pull_user_ids": [], "push_user_ids": []},
         )
 
-        captured: list[dict] = []
-        import src.services.audit_service as audit_mod
-        orig = audit_mod.emit
-
-        def spy(action, actor_id=None, **kw):
-            captured.append({"action": action, "actor_id": actor_id, **kw})
-            return orig(action, actor_id, **kw)
-
-        monkeypatch.setattr(audit_mod, "emit", spy)
+        captured = _capture_audit(monkeypatch)
 
         resp = await client.get(
             TOKEN_URL,
@@ -415,15 +413,7 @@ class TestBotIpTrackerWindowFromSettings:
         settings = config_mod.get_settings()
         monkeypatch.setattr(settings, "bot_suspicious_ip_window_seconds", 1800)
 
-        captured: list[dict] = []
-        import src.services.audit_service as audit_mod
-        orig = audit_mod.emit
-
-        def spy(action, actor_id=None, **kw):
-            captured.append({"action": action, "actor_id": actor_id, **kw})
-            return orig(action, actor_id, **kw)
-
-        monkeypatch.setattr(audit_mod, "emit", spy)
+        captured = _capture_audit(monkeypatch)
         # Отключаем реальную отправку (settings.logging_service_url → None)
         monkeypatch.setattr(settings, "logging_service_url", None, raising=False)
 
@@ -486,17 +476,8 @@ async def _grant_service_to_dept_w16(db, dept_id, service_name):
     await db.flush()
 
 
-def _capture_audit_w16(monkeypatch):
-    captured: list[dict] = []
-    import src.services.audit_service as audit_mod
-    orig = audit_mod.emit
-
-    def spy(action, actor_id=None, **kw):
-        captured.append({"action": action, "actor_id": actor_id, **kw})
-        return orig(action, actor_id, **kw)
-
-    monkeypatch.setattr(audit_mod, "emit", spy)
-    return captured
+# Backwards-compat alias на общий `_capture_audit`.
+_capture_audit_w16 = _capture_audit
 
 
 class TestBotRolesPurgeBehaviorConfirmed:

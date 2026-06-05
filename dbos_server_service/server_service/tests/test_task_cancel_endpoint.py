@@ -10,11 +10,9 @@ from __future__ import annotations
 
 import pytest
 
+from tests._helpers import auth_hdr as _hdr
+
 BASE = "/api/server/v1"
-
-
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture

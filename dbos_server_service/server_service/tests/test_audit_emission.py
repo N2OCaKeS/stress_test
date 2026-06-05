@@ -18,11 +18,9 @@ from __future__ import annotations
 
 import pytest
 
+from tests._helpers import auth_hdr as _hdr
+
 BASE = "/api/server/v1"
-
-
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
 
 
 # ── Фикстура: перехват emit ─────────────────────────────────────────────────
@@ -31,32 +29,18 @@ def _hdr(token: str) -> dict[str, str]:
 def captured_emits(monkeypatch):
     """Захватывает все вызовы audit_service.emit (call kwargs).
 
-    Патч идёт через monkeypatch модулей-импортёров, чтобы покрыть и
-    `from src.services import audit_service; audit_service.emit(...)`,
-    и потенциально другие пути.
+    Прямые importer'ы держат локальную ссылку на функцию (import-from), поэтому
+    патчим и через них.
     """
-    captured: list[dict] = []
+    from tests._helpers import make_emit_capture
 
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    # Главный модуль — патчим тут, остальные importer'ы тащат из него.
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-
-    # Прямые importer'ы держат локальную ссылку — патчим их тоже.
-    for path in (
+    return make_emit_capture(
+        monkeypatch,
         "src.services.server.audit_service.emit",
         "src.services.internal_service.audit_service.emit",
         "src.services.permission_service.audit_service.emit",
         "src.api.v1.endpoints.ipmi.audit_service.emit",
-    ):
-        try:
-            monkeypatch.setattr(path, fake_emit)
-        except (AttributeError, ImportError):
-            pass
-
-    return captured
+    )
 
 
 def _events(captured: list[dict], action: str) -> list[dict]:

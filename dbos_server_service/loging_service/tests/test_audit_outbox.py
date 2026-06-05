@@ -28,21 +28,45 @@ def _env(action: str = "user.login") -> AuditEnvelope:
     )
 
 
-class _FakeSession:
-    """Stub-сессия: считает commit/rollback/close, поддерживает begin_nested.
+class _SavepointContextManager:
+    """SAVEPOINT-shaped context manager.
 
-    `begin_nested()` возвращает context manager — реальная сессия делает
-    savepoint, но для unit-проверки outbox'а достаточно ничего-не-делающего
-    обёртывания, чтобы writer мог собрать SQL без падения.
+    Реальный `Session.begin_nested()` возвращает отдельный объект — savepoint,
+    у которого свой `__enter__`/`__exit__`, а внутри `__exit__` он явно вызывает
+    `rollback()` на родительской сессии при исключении (и пропускает его дальше).
+    Стаб моделирует тот же контракт: bump'аем `savepoint_rollbacks` родителя,
+    не глотаем исключение — outbox должен поймать его в writer-loop.
+    """
+
+    def __init__(self, parent: "_FakeSession"):
+        self._parent = parent
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is not None:
+            self._parent.savepoint_rollbacks += 1
+        return False
+
+
+class _FakeSession:
+    """Stub-сессия: считает commit/rollback/close + savepoint-rollbacks.
+
+    `begin_nested()` возвращает `_SavepointContextManager`, который ведёт себя
+    как SQLAlchemy-savepoint: на исключении внутри `with` помечает rollback и
+    пропускает ошибку наверх — это даёт outbox'у тот же signal-path, что и
+    реальная сессия (без false-confidence от self-returning стаба).
     """
 
     def __init__(self):
         self.commits = 0
         self.rollbacks = 0
         self.closes = 0
+        self.savepoint_rollbacks = 0
 
     def begin_nested(self):
-        return self
+        return _SavepointContextManager(self)
 
     def __enter__(self):
         return self
@@ -626,9 +650,10 @@ class _CommitFailingSession:
 
     def __init__(self):
         self.commits = 0
+        self.savepoint_rollbacks = 0
 
     def begin_nested(self):
-        return self
+        return _SavepointContextManager(self)
 
     def __enter__(self):
         return self

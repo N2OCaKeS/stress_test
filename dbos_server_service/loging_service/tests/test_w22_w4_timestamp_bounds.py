@@ -59,20 +59,26 @@ class TestTimestampBoundsOutsideWindow:
         ts = datetime.now(timezone.utc) - timedelta(hours=2)
         with pytest.raises(ValidationError) as ei:
             EventCreate(**_payload(timestamp=ts))
-        assert "too far in the past" in str(ei.value)
+        err = ei.value.errors()[0]
+        assert err["type"] == "value_error"
+        assert err["loc"] == ("timestamp",)
 
     def test_2h_future_rejected(self):
         ts = datetime.now(timezone.utc) + timedelta(hours=2)
         with pytest.raises(ValidationError) as ei:
             EventCreate(**_payload(timestamp=ts))
-        assert "too far in the future" in str(ei.value)
+        err = ei.value.errors()[0]
+        assert err["type"] == "value_error"
+        assert err["loc"] == ("timestamp",)
 
     def test_year_past_rejected(self):
         """Классический backdating-приём: «событие год назад»."""
         ts = datetime.now(timezone.utc) - timedelta(days=365)
         with pytest.raises(ValidationError) as ei:
             EventCreate(**_payload(timestamp=ts))
-        assert "too far in the past" in str(ei.value)
+        err = ei.value.errors()[0]
+        assert err["type"] == "value_error"
+        assert err["loc"] == ("timestamp",)
 
     def test_year_future_rejected(self):
         ts = datetime.now(timezone.utc) + timedelta(days=365)

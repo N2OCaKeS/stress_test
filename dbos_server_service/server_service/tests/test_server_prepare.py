@@ -113,18 +113,12 @@ def captured_dispatch(monkeypatch):
 @pytest.fixture
 def captured_emits_prepare(monkeypatch):
     """Захват `audit_service.emit` для prepare-эндпоинта."""
-    captured: list[dict] = []
+    from tests._helpers import make_emit_capture
 
-    def fake_emit(action, actor_id=None, **kwargs):
-        captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-    import src.services.audit_service as audit_mod
-    monkeypatch.setattr(audit_mod, "emit", fake_emit)
-    monkeypatch.setattr(
+    return make_emit_capture(
+        monkeypatch,
         "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
-        fake_emit,
     )
-    return captured
 
 
 # ── Trigger: POST /servers/{id}/prepare ──────────────────────────────────────

@@ -149,7 +149,7 @@ def _ingest_rate_limit_key(request: Request) -> str:
 # параметр (не через Depends) в сигнатуре эндпоинта — иначе не находит limiter
 # middleware state.
 @limiter.limit(
-    lambda: get_settings().ingest_rate_limit,
+    lambda: get_settings().compose_ingest_rate_limit(),
     key_func=_ingest_rate_limit_key,
 )
 def create_event(

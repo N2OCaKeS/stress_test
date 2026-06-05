@@ -1,4 +1,4 @@
-"""W19-W1 — closeouts оставшихся P3/P4 carry для server_worker.
+"""Closeouts оставшихся P3/P4 carry для server_worker.
 
 Покрывает:
   * `_safe_flush_outbox` пробрасывает `asyncio.CancelledError`;
@@ -6,14 +6,13 @@
     события (`task.worker_shutdown`, `task.worker_orphaned`,
     `secrets.reencrypt_tick`, `audit.outbox_reattempt_manual`,
     `installed_packages.list`);
-  * docstring `ipmi_rotate_password` фиксирует, что `rotated_at`
-    берётся из worker-clock и о ±60s окне `verify_in_future`.
+  * `_ipmi_stash_value` round-trip'ит ISO-timestamp (worker-clock как
+    источник истины `rotated_at`).
 """
 
 from __future__ import annotations
 
 import asyncio
-import re
 from pathlib import Path
 
 import pytest
@@ -128,23 +127,25 @@ class TestAuditEventsDocCoverage:
             assert reason in text, f"reason={reason!r} не в AUDIT_EVENTS.md"
 
 
-class TestRotatedAtDocsNTPNote:
-    """В docstring/комментарии `ipmi_rotate_password` явная пометка про
-    NTP-skew и server-clock как источник истины.
+class TestRotatedAtBehavior:
+    """`rotated_at` берётся из worker-clock, а не из BMC.
+
+    Поведение покрывается интеграционно: `_store_ipmi_rotate_password`
+    принимает ISO-string, который handler формирует через
+    `datetime.now(UTC).isoformat()`. Прямая проверка через
+    `_ipmi_stash_value`/`_ipmi_stash_parse` round-trip.
     """
 
-    def test_ntp_skew_note_present(self):
-        passwords_src = (_WORKER_ROOT / "src" / "tasks" / "passwords.py").read_text(
-            encoding="utf-8"
-        )
-        # Ищем оба ключевых маркера: worker-clock как источник rotated_at
-        # и упоминание verify_in_future окна.
-        assert "worker-clock" in passwords_src or "worker_clock" in passwords_src, (
-            "пометка про worker-clock как источник rotated_at не найдена"
-        )
-        assert "verify_in_future" in passwords_src, (
-            "ссылка на verify_in_future ±60s окно не найдена"
-        )
+    async def test_stash_roundtrip_preserves_iso_timestamp(self):
+        from datetime import datetime, timezone
+
+        from src.tasks import passwords as p
+
+        ts = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc).isoformat()
+        value = p._ipmi_stash_value("secret-pw", ts)
+        password, rotated_at = p._ipmi_stash_parse(value)
+        assert password == "secret-pw"
+        assert rotated_at == ts
 
 
 class TestBmcHostIPv6Verified:
@@ -161,20 +162,6 @@ class TestBmcHostIPv6Verified:
         assert extract_bmc_host(endpoint) == expected
 
 
-class TestRunnerSafeFlushDocstring:
-    """`_safe_flush_outbox` docstring явно говорит про CancelledError-pass."""
-
-    def test_docstring_mentions_cancelled(self):
-        runner_src = (_WORKER_ROOT / "src" / "tasks" / "_runner.py").read_text(
-            encoding="utf-8"
-        )
-        # Должна быть либо строка про CancelledError-passthrough в docstring,
-        # либо явный `except asyncio.CancelledError: raise` блок.
-        has_except = re.search(
-            r"except\s+asyncio\.CancelledError\s*:\s*\n\s*(?:#[^\n]*\n\s*)*raise\b",
-            runner_src,
-        )
-        assert has_except is not None, (
-            "в `_safe_flush_outbox` нет `except asyncio.CancelledError: raise` — "
-            "shutdown / SIGTERM не пройдёт через publisher.flush_outbox"
-        )
+# Поведение `_safe_flush_outbox` (CancelledError-passthrough + swallow regular)
+# покрыто `TestSafeFlushOutboxCancelledPassThrough` выше — behavioral-тесты с
+# monkeypatch'ингом publisher.flush_outbox, без зависимости от текста docstring'а.

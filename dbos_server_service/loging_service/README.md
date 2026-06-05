@@ -134,6 +134,7 @@ Self-audit события: `logging.events_queried`, `logging.rules_read`, `logg
 | `TOKEN_PROXY_POOL_MAX_KEEPALIVE` | `5` | `httpx.Limits` keepalive для `/token` proxy-клиента |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` | body-size middleware cap (1 MiB) |
 | `INGEST_RATE_LIMIT` | `100/minute` | slowapi default на `POST /events` |
+| `INGEST_BURST_PER_SECOND` | `0` | burst-cap поверх `INGEST_RATE_LIMIT`. `>0` добавляет второе правило `N/second`, защищает от штормов (`100/minute` без burst-капы выжимается за 1 секунду). `0` — выключено |
 | `AUDIT_QUERY_RATE_LIMIT` | `60/minute` | slowapi default на read-канал: `GET /events`, `GET /rules*`, `GET /services*`, `GET /retention` |
 | `REGISTER_EVENTS_RATE_LIMIT` | `100/minute` | slowapi default на `POST /services/{service}/events` (per-identity) |
 | `RATE_LIMIT_HEADERS_ENABLED` | `false` | включать ли `X-RateLimit-*` response headers |

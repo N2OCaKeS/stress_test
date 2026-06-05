@@ -237,11 +237,14 @@ class TestPollOncePublishFailure:
         before = datetime.now(timezone.utc)
         await outbox_poller.poll_once()
 
-        # attempts стало 5 → задержка 2^5=32с
+        # attempts стало 5 → задержка 2^5=32с (без jitter в текущей формуле).
+        # `before` снят ДО poll_once, `next_retry_at = now() + 32s` внутри
+        # хелпера — поэтому реальная разница немного >32 на стоимость
+        # самого вызова. Допуск 1.5с покрывает обычный CI; если шумно —
+        # bump.
         assert row.attempts == 5
         delay = (row.next_retry_at - before).total_seconds()
-        # с поправкой на runtime — должно быть около 32с, но никак не >300
-        assert 25 <= delay <= 60
+        assert delay == pytest.approx(32.0, abs=1.5)
 
     async def test_backoff_capped_at_5_minutes(self, monkeypatch):
         """2^large >> 5 min, но cap режет до 300с.
@@ -443,8 +446,8 @@ class TestComputeNextRetryAt:
         before = datetime.now(timezone.utc)
         ts = outbox_poller._compute_next_retry_at(0)
         delay = (ts - before).total_seconds()
-        # 2^0 = 1
-        assert 0.5 <= delay <= 2
+        # 2^0 = 1, без jitter
+        assert delay == pytest.approx(1.0, abs=0.5)
 
     def test_cap_enforced(self):
         before = datetime.now(timezone.utc)

@@ -53,6 +53,14 @@ def _anon_rate_limit_key(request: Request) -> str | None:
     read остаётся под одним только глобальным `global_rate_limit`.
     `exempt_when` тут не годится — slowapi-сигнатура для него — `() -> bool`
     (без request), а нам нужен contextual check.
+
+    Trade-off (owner-decision): authenticated burst ограничен только
+    глобальным `global_rate_limit` (default 500/minute per IP). Каталог
+    маленький, страница в худшем случае — 500 строк, нагрузка на БД
+    линейная и без join'ов на drift-таблицы. Когда добавится pagination
+    по batch download или матрица распухнет до тысяч строк — вешать
+    отдельный authenticated-limit (cap'ом по identity, не по IP, чтобы
+    NAT'нутые админы не делили бакет).
     """
     if _is_anonymous(request):
         return get_remote_address(request)

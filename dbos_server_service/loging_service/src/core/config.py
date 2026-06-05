@@ -145,6 +145,17 @@ class Settings(BaseSettings):
     # исключены в `main.py` (см. `_RATE_LIMIT_EXEMPT_PATHS`).
     ingest_rate_limit: str = Field(default="100/minute", alias="INGEST_RATE_LIMIT")
 
+    # Burst-cap поверх `ingest_rate_limit`: добавляет второе правило вида
+    # `<N>/second` (через `;`-сепаратор `parse_many`'я limits). Минутный
+    # bucket один: 100 запросов в минуту реально превращаются в 100 запросов
+    # за первую секунду, и легитимный logon-шторм (10 событий × 200 users,
+    # 2000 ev/min) глохнет на «горке». Включается выставлением >0 — по
+    # умолчанию 0 (правило не добавляется, поведение совместимое со старым).
+    # Связано с `compose_ingest_rate_limit()`.
+    ingest_burst_per_second: int = Field(
+        default=0, alias="INGEST_BURST_PER_SECOND", ge=0
+    )
+
     # Per-IP rate-limit на `GET /events` (read-канал admin/reader).
     # Закрывает Low DoS-вектор: даже без write-доступа атакующий с валидным
     # reader-JWT может вычерпать pgsql-пул широкими COUNT/SELECT'ами по
@@ -337,6 +348,19 @@ class Settings(BaseSettings):
             f"SERVICE_API_KEYS must be JSON object or dict, "
             f"got {type(v).__name__}"
         )
+
+    def compose_ingest_rate_limit(self) -> str:
+        """Собирает строку для `@limiter.limit(...)` на POST /events.
+
+        Если `ingest_burst_per_second` > 0 — возвращает multi-rule
+        `"<base>;<N>/second"`. `limits.parse_many` разберёт через `;` и
+        slowapi прогонит оба правила (event попадает в bucket только если
+        ни одно не превышено). При 0 — отдаёт чистый `ingest_rate_limit`,
+        поведение совместимое с до-burst конфигурацией.
+        """
+        if self.ingest_burst_per_second > 0:
+            return f"{self.ingest_rate_limit};{self.ingest_burst_per_second}/second"
+        return self.ingest_rate_limit
 
     @model_validator(mode="after")
     def _validate_production_secrets(self) -> "Settings":

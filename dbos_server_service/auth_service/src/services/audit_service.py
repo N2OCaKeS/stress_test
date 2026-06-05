@@ -69,7 +69,12 @@ _audit_emit_tasks_overflow: int = 0
 
 
 def get_emit_tasks_overflow_total() -> int:
-    """Сколько emit-task'ов было отменено из-за переполнения in-flight set'а."""
+    """Сколько emit-task'ов было отменено из-за переполнения in-flight set'а.
+
+    Per-process snapshot для diagnostic-payload'ов и тестов. Prometheus-экспорт
+    через `/metrics` не подключён — внешний scraper суммирует сам, либо счётчик
+    включается в heartbeat-событие (см. server_worker `system.heartbeat`).
+    """
     return _audit_emit_tasks_overflow
 
 
@@ -88,7 +93,12 @@ _audit_dropped_429: int = 0
 
 
 def get_dropped_429_total() -> int:
-    """Сколько audit-событий было отброшено после трёх подряд 429."""
+    """Сколько audit-событий было отброшено после трёх подряд 429.
+
+    Per-process snapshot. Ненулевое значение — сигнал, что loging_service режет
+    нас rate-limit'ом; внешний наблюдатель снимает счётчик через diagnostic-payload
+    либо heartbeat-событие. Prometheus-эндпоинт пока не вешаем (см. ops-sweep TODO).
+    """
     return _audit_dropped_429
 
 

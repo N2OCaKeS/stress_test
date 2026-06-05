@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+import pytest
 from sqlalchemy import select
 
 from src.core.constants import TaskStatus
@@ -462,7 +463,10 @@ class TestScheduleRetryBackoff:
         for t in created:
             await t
 
-        assert sleeps == [10.0, 20.0, 40.0]
+        # Точные значения 10/20/40 даёт текущая формула base*2^(attempt-1)
+        # без jitter; pytest.approx страхует от микро-плавающих сравнений
+        # и от accidental jitter в будущем.
+        assert sleeps == pytest.approx([10.0, 20.0, 40.0])
         # И каждый — kiq'нул task_id "tsk_x".
         assert len(fake_kicked) == 3
 

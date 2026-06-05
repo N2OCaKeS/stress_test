@@ -20,6 +20,13 @@ Downgrade: восстанавливает колонку kind (nullable), пер
 обратно в size_bytes с обратной конвертацией (size_bytes = size_gb * 1024^3)
 и пересевает disk-гранты (admin: view/create/update/delete; reader: view;
 operator: view/create/update).
+
+WARNING (downgrade): обратная конвертация умножает на 1024^3 в BIGINT.
+Потолок — 2^63-1 (~9.22 EiB), т.е. size_gb выше ~8.59e9 ГиБ переполнит
+колонку и UPDATE упадёт с numeric_value_out_of_range. На production-стендах
+такие диски физически не встречаются (1 ТБ ≈ 1024 ГиБ, в матрице у нас
+максимум десятки ТБ), но guard-CHECK не ставится — downgrade-сценарий
+ручной и редкий, лучше явная ошибка от БД, чем silent-overflow.
 """
 from typing import Sequence, Union
 from uuid import uuid4

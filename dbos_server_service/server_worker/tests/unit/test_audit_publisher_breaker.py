@@ -194,3 +194,97 @@ class TestReset:
         assert open_until_key not in fake_redis._store
         # И check после reset — closed, не бросает.
         await cb.check()
+
+
+class TestNonTransportException:
+    """Не-транспортные exception'ы из Lua/Redis пробрасываются наверх.
+
+    Симметрично BMC-breaker'у: `RedisError`/`OSError`/`TimeoutError`
+    дают fail-open, всё прочее (RuntimeError, KeyError, AttributeError)
+    — программный баг, который не должен прятаться за «канал прошёл».
+    """
+
+    async def test_check_propagates_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class BadRedis:
+            async def eval(self, *a, **kw):
+                raise RuntimeError("lua script bug")
+
+            async def aclose(self):
+                return None
+
+        async def fake_get_client():
+            return BadRedis()
+
+        monkeypatch.setattr(cb, "_get_client", fake_get_client)
+        with pytest.raises(RuntimeError, match="lua script bug"):
+            await cb.check()
+
+    async def test_get_state_propagates_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class BadRedis:
+            async def eval(self, *a, **kw):
+                raise RuntimeError("get_state bug")
+
+            async def aclose(self):
+                return None
+
+        async def fake_get_client():
+            return BadRedis()
+
+        monkeypatch.setattr(cb, "_get_client", fake_get_client)
+        with pytest.raises(RuntimeError, match="get_state bug"):
+            await cb.get_state()
+
+    async def test_record_failure_propagates_key_error(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class BadRedis:
+            async def eval(self, *a, **kw):
+                raise KeyError("missing key")
+
+            async def aclose(self):
+                return None
+
+        async def fake_get_client():
+            return BadRedis()
+
+        monkeypatch.setattr(cb, "_get_client", fake_get_client)
+        with pytest.raises(KeyError):
+            await cb.record_failure()
+
+    async def test_record_success_propagates_attribute_error(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class BadRedis:
+            async def eval(self, *a, **kw):
+                raise AttributeError("borked")
+
+            async def aclose(self):
+                return None
+
+        async def fake_get_client():
+            return BadRedis()
+
+        monkeypatch.setattr(cb, "_get_client", fake_get_client)
+        with pytest.raises(AttributeError):
+            await cb.record_success()
+
+    async def test_reset_propagates_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class BadRedis:
+            async def delete(self, *a, **kw):
+                raise RuntimeError("delete bug")
+
+            async def aclose(self):
+                return None
+
+        async def fake_get_client():
+            return BadRedis()
+
+        monkeypatch.setattr(cb, "_get_client", fake_get_client)
+        with pytest.raises(RuntimeError, match="delete bug"):
+            await cb.reset()

@@ -50,7 +50,7 @@ Source-of-truth — `src/services/audit_events.py::SERVICE_EVENTS`.
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
 | `server.create` | INFO | INSERT в `servers` | `server` | `hostname`, `ip_address`, `department_id` (whitelist в audit_service) |
-| `server.view` | INFO | denied на GET /{id} (cross-dept / nonexistent) — success на read не аудитим (шум) | `server` | `reason in {not_found_or_cross_dept, cross_department}` |
+| `server.view` | INFO | GET /{id}: success → `status=success`, `details={department_id}`; permission_denied → `status=denied`, `reason=permission_denied`; cross-dept / non-existent → `status=failure`, `reason=not_found_or_cross_dept` | `server` | `department_id` (success) либо `reason in {permission_denied, not_found_or_cross_dept}` (denied/failure) |
 | `server.view_drift` | INFO | GET `/servers/{id}/drift` — агрегированная сводка drift-событий | `server` | `department_id`, `since`, `count`, `truncated`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server.update` | INFO | UPDATE через PATCH | `server` | поля diff'а (whitelist), `department_id` |
 | `server.delete` | CRITICAL | hard-delete + CASCADE | `server` | `department_id` |
@@ -127,7 +127,7 @@ Public endpoint'ы, через которые user (обычно admin) запу
 
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
-| `internal.dept_header_missing` | WARNING | `/internal/*` дёрнули без `X-Target-Department-Id` в soft mode (`INTERNAL_REQUIRE_DEPT_HEADER=false`) | `http_endpoint` | `path`, `caller_username` |
+| `internal.dept_header_missing` | WARNING | `/internal/*` дёрнули без `X-Target-Department-Id` в soft mode (`INTERNAL_REQUIRE_DEPT_HEADER=false`) | `server` / `server_account` / `ipmi_controller` (тип целевой сущности, на которой шла операция) | `path`, `soft_mode=True`, `caller_type` (`identity.subject_type` — `service`/`bot`/`user`); `target_id` указывает на сущность из `target_type` |
 
 > **Default (prod):** `INTERNAL_REQUIRE_DEPT_HEADER=true` → отсутствие
 > header'а отбивается 403 ДО этого audit-события. Soft mode оставлен
@@ -177,7 +177,7 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | `ipmi_controller.list` | INFO | denied на GET list | `ipmi_controller` | `reason=permission_denied` |
 | `ipmi_controller.update` | INFO | PATCH (kind/bmc_vendor/endpoint/username — не password) | `ipmi_controller` | поля diff'а; при смене `bmc_vendor` — новое значение в `details.bmc_vendor` |
 | `ipmi_controller.delete` | CRITICAL | hard-delete | `ipmi_controller` | `server_id`, `kind` |
-| `ipmi_controller.rotate_credentials` | CRITICAL | direct PATCH (legacy) — currently не используется в пользу dispatch+callback | `ipmi_controller` | `server_id` |
+| `ipmi_controller.rotate_credentials` | WARNING | 410 GONE на `/ipmi/credentials/rotate` — endpoint снят (писал ciphertext без BMC apply/verify, мог разорвать out-of-band доступ). Канонический путь — worker dispatch + internal callback `credentials_rotated`. | `ipmi_controller` | `server_id`, `caller_type`, `migration`, `reason=user_facing_endpoint_deprecated` |
 | `ipmi_controller.view_credentials_meta` | INFO | GET `/ipmi/credentials` — метаданные controller'а без plaintext-пароля (kind/endpoint_url/username/last_probed_at) | `ipmi_controller` | `server_id`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept, not_registered}` |
 
 ---
@@ -232,8 +232,8 @@ dispatch-событие, server_worker (`tasks/installed_packages.py`) —
 
 - **Health/Ready endpoints** (`/health`, `/ready`) — k8s probes, шумно.
 - **429 rate-limit** — anti-amplification (см. middleware order в `main.py`).
-- **Успешный GET /{id}** (`server.view` / `*.view` на success) — слишком много шума на rendering UI. Denied (cross-dept / not found) — аудитится.
-- **Успешный GET list** (`*.list` на success) — то же.
+- **Успешный GET list** на корневых list-эндпоинтах (`*.list` на success) — шум на UI-пагинацию. Denied и failure-ветки аудитятся.
+- **Карточки `*.view` на success для дочерних сущностей** (`server_account.view`, `ipmi_controller.view`) — не аудитим. Исключение: `server.view` пишет и success-ветку (`status=success`, `details={department_id}`) — поверхностный SIEM-сигнал по чтению карточки сервера (см. таблицу выше).
 - **Stub-эндпоинты (501)** — попадают в `http.client_error` через middleware.
 
 ---

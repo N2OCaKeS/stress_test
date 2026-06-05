@@ -10,10 +10,9 @@
 * GET (list /ipmi_controllers) — фильтр по dept, scope без department.
 * PATCH / — частичное обновление, dept-isolation, без записи → 404.
 * DELETE / — admin OK, operator → 403 (нет grant), cross-dept → 404.
-* POST /credentials/rotate — admin + worker_bot роль OK, operator OK
-  (имеет rotate_credentials), reader → 403, plaintext не возвращается,
-  password_rotated_at обновляется, можно подать конкретный пароль (worker
-  callback path).
+* POST /credentials/rotate — 410 GONE для любого caller'а (включая bot).
+  Endpoint писал ciphertext без BMC apply/verify; ротация теперь идёт только
+  через worker dispatch + internal callback `credentials_rotated`.
 * boot/pxe/reinstall — dispatch'ат в worker через worker_client (тонкая
   обёртка), не часть CRUD-фокуса этого файла.
 """
@@ -371,13 +370,13 @@ class TestDeleteController:
 
 
 class TestRotateCredentials:
-    """User-facing /credentials/rotate теперь 410 GONE.
+    """`/credentials/rotate` снят — 410 GONE для любого caller'а.
 
-    Endpoint писал произвольный plaintext в `password_encrypted` без BMC
-    apply/verify — это могло разорвать out-of-band доступ. Корректный путь —
-    worker-dispatch (`POST /ipmi-controllers/{id}/rotate`), который применяет
-    пароль на BMC через Redfish/ipmitool и шлёт callback с verify-proof.
-    Bot-callback оставлен как backwards-compat для уже задеплоенных worker'ов.
+    Endpoint писал ciphertext в `password_encrypted` без BMC apply/verify.
+    Любой держатель `(ipmi_controller, rotate_credentials)` — включая bot —
+    мог разорвать out-of-band доступ к стойкам. Ротация теперь идёт только
+    через `POST /ipmi-controllers/{id}/rotate` (worker dispatch → BMC apply →
+    internal callback `credentials_rotated`, который делает verify-then-store).
     """
 
     async def test_admin_gets_410(
@@ -407,7 +406,6 @@ class TestRotateCredentials:
     async def test_reader_gets_410(
         self, client, reader_token_a, make_server, make_ipmi,
     ):
-        # reader всё равно user-facing — 410 раньше permission-check'а.
         srv = await make_server(department_id="dep_a")
         await make_ipmi(server_id=srv.id)
         resp = await client.post(
@@ -415,6 +413,36 @@ class TestRotateCredentials:
             headers=_hdr(reader_token_a),
         )
         assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
+
+    async def test_worker_bot_also_gets_410(
+        self, client, worker_bot_token_a, make_server, make_ipmi, db,
+    ):
+        """Bot с `(ipmi_controller, rotate_credentials)` — тоже 410.
+
+        Прошлый bot-fallback писал ciphertext без verify-proof; теперь
+        BMC-apply гарантируется только через worker dispatch + internal
+        callback. БД-ciphertext НЕ должен поменяться.
+        """
+        from src.models import IpmiController
+        from sqlalchemy import select
+
+        srv = await make_server(department_id="dep_a")
+        ctrl = await make_ipmi(server_id=srv.id, password="initial-secret")
+        original_encrypted = ctrl.password_encrypted
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
+            headers=_hdr(worker_bot_token_a),
+            json={"password": "applied-by-worker-via-redfish-1"},
+        )
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
+
+        row = (
+            await db.execute(
+                select(IpmiController).where(IpmiController.server_id == srv.id)
+            )
+        ).scalar_one()
+        assert row.password_encrypted == original_encrypted
 
     async def test_410_details_do_not_echo_server_id(
         self, client, admin_token, make_server, make_ipmi,
@@ -439,31 +467,6 @@ class TestRotateCredentials:
             assert "server_id" not in details, (
                 f"410 details echoed server_id for variant {variant!r}: {details!r}"
             )
-
-    async def test_worker_bot_callback_still_allowed(
-        self, client, worker_bot_token_a, make_server, make_ipmi, db,
-    ):
-        """Bot-callback (subject_type='bot') пока проходит для backwards-compat."""
-        from src.models import IpmiController
-        from sqlalchemy import select
-
-        srv = await make_server(department_id="dep_a")
-        await make_ipmi(server_id=srv.id)
-        resp = await client.post(
-            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(worker_bot_token_a),
-            json={"password": "applied-by-worker-via-redfish-1"},
-        )
-        assert resp.status_code == 200
-        row = (
-            await db.execute(
-                select(IpmiController).where(IpmiController.server_id == srv.id)
-            )
-        ).scalar_one()
-        assert secrets_service.decrypt(
-            row.password_encrypted,
-            aad=secrets_service.aad_for_ipmi_credential(row.id),
-        ) == "applied-by-worker-via-redfish-1"
 
 
 # ── Парольная политика на create / rotate ────────────────────────────────────
@@ -509,69 +512,10 @@ class TestPasswordPolicy:
         )
         assert resp.status_code == 201
 
-    @pytest.mark.parametrize(
-        "bad_password",
-        ["short1", "nodigitshere", "12345678"],
-        ids=["too_short", "no_digit", "no_letter"],
-    )
-    async def test_rotate_rejects_weak_password(
-        self, client, worker_bot_token_a, make_server, make_ipmi, bad_password,
-    ):
-        # User-facing rotate теперь 410, поэтому политика проверяется на
-        # bot-callback пути (backwards-compat для уже задеплоенных worker'ов).
-        srv = await make_server(department_id="dep_a")
-        await make_ipmi(server_id=srv.id)
-        resp = await client.post(
-            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(worker_bot_token_a),
-            json={"password": bad_password},
-        )
-        assert_error(resp, 422, "VALIDATION_ERROR")
-
-    async def test_rotate_accepts_compliant_password(
-        self, client, worker_bot_token_a, make_server, make_ipmi, db,
-    ):
-        from src.models import IpmiController
-        from sqlalchemy import select
-
-        srv = await make_server(department_id="dep_a")
-        await make_ipmi(server_id=srv.id)
-        resp = await client.post(
-            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(worker_bot_token_a),
-            json={"password": "manual-rotate-7"},
-        )
-        assert resp.status_code == 200
-        row = (
-            await db.execute(
-                select(IpmiController).where(IpmiController.server_id == srv.id)
-            )
-        ).scalar_one()
-        assert secrets_service.decrypt(
-            row.password_encrypted,
-            aad=secrets_service.aad_for_ipmi_credential(row.id),
-        ) == "manual-rotate-7"
-
-    async def test_rotate_without_body_generates(
-        self, client, worker_bot_token_a, make_server, make_ipmi, db,
-    ):
-        from src.models import IpmiController
-        from sqlalchemy import select
-
-        srv = await make_server(department_id="dep_a")
-        ctrl = await make_ipmi(server_id=srv.id, password="initial-secret-1")
-        original_encrypted = ctrl.password_encrypted
-        resp = await client.post(
-            f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(worker_bot_token_a),
-        )
-        assert resp.status_code == 200
-        row = (
-            await db.execute(
-                select(IpmiController).where(IpmiController.server_id == srv.id)
-            )
-        ).scalar_one()
-        assert row.password_encrypted != original_encrypted
+    # Парольная политика на rotate-route больше не применяется: endpoint снят
+    # (410 GONE для любого caller'а), `IpmiCredentialsRotateRequest` тут не
+    # парсится. Apply на BMC и валидация пароля идут в worker-handler через
+    # `POST /ipmi-controllers/{id}/rotate`.
 
 
 # ── Audit emission ───────────────────────────────────────────────────────────
@@ -663,42 +607,60 @@ class TestAuditEmission:
         assert ev["details"]["server_id"] == srv.id
         assert ev["details"]["department_id"] == "dep_a"
 
-    async def test_rotate_emits_success(
-        self, client, worker_bot_token_a, make_server, make_ipmi, captured_emits,
+    async def test_rotate_emits_410_warning_for_user(
+        self, client, admin_token, make_server, make_ipmi, monkeypatch,
     ):
-        # Через bot-callback путь — user-facing вызовы отбиваются 410 до
-        # эмита success'а.
+        """Любой вызов rotate'а → WARNING audit `user_facing_endpoint_deprecated`."""
+        from tests._helpers import make_emit_capture
+
+        emits = make_emit_capture(
+            monkeypatch,
+            "src.api.v1.endpoints.ipmi.audit_service.emit",
+        )
         srv = await make_server(department_id="dep_a")
-        ctrl = await make_ipmi(server_id=srv.id)
+        await make_ipmi(server_id=srv.id)
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
-            headers=_hdr(worker_bot_token_a),
+            headers=_hdr(admin_token),
+            json={},
         )
-        assert resp.status_code == 200
-        events = [
-            e for e in _events(captured_emits, "ipmi_controller.rotate_credentials")
-            if e.get("status") == "success"
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
+        warn = [
+            e for e in emits
+            if e["action"] == "ipmi_controller.rotate_credentials"
+            and e.get("status") == "warning"
         ]
-        assert len(events) == 1
-        ev = events[0]
-        assert ev["target_id"] == ctrl.id
+        assert len(warn) == 1
+        ev = warn[0]
+        assert ev["allowed"] is False
+        assert ev["details"]["reason"] == "user_facing_endpoint_deprecated"
+        # caller_type — `identity.subject_type` (None для дефолтных user-токенов
+        # без явного префикса, "bot" для PAT-ботов).
+        assert ev["details"]["caller_type"] in (None, "user")
         assert ev["details"]["server_id"] == srv.id
-        assert ev["details"]["reason"] == "user_initiated"
-        assert ev["details"]["department_id"] == "dep_a"
 
-    async def test_rotate_with_password_emits_worker_callback_reason(
-        self, client, worker_bot_token_a, make_server, make_ipmi, captured_emits,
+    async def test_rotate_emits_410_warning_for_bot(
+        self, client, worker_bot_token_a, make_server, make_ipmi, monkeypatch,
     ):
+        """Bot тоже отбивается 410; в audit caller_type=bot."""
+        from tests._helpers import make_emit_capture
+
+        emits = make_emit_capture(
+            monkeypatch,
+            "src.api.v1.endpoints.ipmi.audit_service.emit",
+        )
         srv = await make_server(department_id="dep_a")
         await make_ipmi(server_id=srv.id)
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
             headers=_hdr(worker_bot_token_a),
-            json={"password": "applied-pw-1"},
+            json={"password": "applied-by-worker-via-redfish-1"},
         )
-        assert resp.status_code == 200
-        events = [
-            e for e in _events(captured_emits, "ipmi_controller.rotate_credentials")
-            if e.get("status") == "success"
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
+        warn = [
+            e for e in emits
+            if e["action"] == "ipmi_controller.rotate_credentials"
+            and e.get("status") == "warning"
         ]
-        assert events[-1]["details"]["reason"] == "worker_callback"
+        assert len(warn) == 1
+        assert warn[0]["details"]["caller_type"] == "bot"

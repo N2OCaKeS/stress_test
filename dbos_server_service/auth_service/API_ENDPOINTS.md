@@ -791,6 +791,8 @@ Errors:
 - `INVALID_CREDENTIALS` (401) — пароль не подошёл.
 - `ACCOUNT_TEMPORARILY_LOCKED` (429 + `retry_after_seconds`) — lockout активен.
 - `DOCKER_ACCESS_DENIED` (403) — нет конфига registry для отдела или отключён.
+- `PAT_SCOPE_DENIES_DOCKER` (403) — PAT с непустым `allowed_services` без `docker_registry`.
+- `BOT_SCOPE_DENIES_DOCKER` (403) — bot-токен с непустым `allowed_services` без `docker_registry`.
 
 ### `GET /docker/certs`
 
@@ -918,6 +920,8 @@ Auth: public. Response: JWKS (RS256).
 - `MISSING_CREDENTIALS` (401) — нет Basic-заголовка на `/docker/token`.
 - `PULL_USERS_REQUIRED` (403) — `pull_policy=restricted` без `pull_user_ids`.
 - `PUSH_DEPT_MISMATCH` (403) — push в чужой namespace.
+- `PAT_SCOPE_DENIES_DOCKER` (403) — PAT использован на `/docker/token`, но у токена непустой `allowed_services` без `docker_registry`. Пустой `allowed_services` пропускает (нет сужения). На emit'е `_authenticate_with_audit` пишет failure-audit `docker.token_issued` с `reason=scope_denies_docker`, `subject_type=pat`.
+- `BOT_SCOPE_DENIES_DOCKER` (403) — симметрично для bot-токенов (`subject_type=bot_token`).
 
 ### Ссылочная целостность
 

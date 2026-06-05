@@ -178,7 +178,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `docker_registry.update` | CRITICAL | `docker_registry_service.update_config` | Diff. |
 | `docker_registry.get_config` | INFO | `GET /docker/registry/{id}` | — |
 | `docker_registry.disable` | CRITICAL | `docker_registry_service.delete_config` | `department_id`. |
-| `docker.token_issued` | INFO | `docker_registry_service.issue_token` | `scope`, `actions` (`pull`/`push`). На failure (account_locked, invalid_credentials) эмитится `status="failure"` с `reason`/`subject_type` в `details`. |
+| `docker.token_issued` | INFO | `docker_registry_service.issue_token` | `scope`, `actions` (`pull`/`push`). На failure эмитится `status="failure"` с `reason`/`subject_type` в `details`; `reason in {account_locked, invalid_credentials, scope_denies_docker}` (последний — PAT/bot с непустым `allowed_services` без `docker_registry` → 403 `PAT_SCOPE_DENIES_DOCKER` / `BOT_SCOPE_DENIES_DOCKER`; `subject_type in {pat, bot_token}`). |
 | `docker.push_denied` | WARNING | `docker_registry_service.issue_token` | `reason` (`PUSH_DEPT_MISMATCH` / `PUSH_PERMISSION_DENIED` / `REGISTRY_NOT_FOUND` / `REGISTRY_DISABLED`), `registry_name`, `scope`. |
 | `docker.pull_denied` | INFO | `docker_registry_service.issue_token` | `reason` (`PULL_PERMISSION_DENIED` / `REGISTRY_NOT_FOUND` / `REGISTRY_DISABLED`), `registry_name`, `scope`. |
 

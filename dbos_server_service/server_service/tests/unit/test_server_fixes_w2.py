@@ -152,10 +152,10 @@ class TestMissingOnBoxDriftIsNew:
 
 
 class TestRotateCredentialsDocstring:
-    def test_summary_marks_endpoint_as_legacy_fallback(self):
-        """Маркеры контракта: summary указывает на 410 GONE для user,
-        description явно говорит про bot-only fallback и про то, что сам
-        endpoint verify-proof НЕ проверяет (проверка в internal callback).
+    def test_summary_marks_endpoint_as_410_gone(self):
+        """Маркеры контракта: 410 GONE для любого caller'а, description
+        ссылается на канонический worker-dispatch путь и internal callback
+        с verify-then-store.
         """
         from src.api.v1.endpoints.ipmi import router
 
@@ -169,12 +169,12 @@ class TestRotateCredentialsDocstring:
 
         summary = rotate_route.summary or ""
         description = rotate_route.description or ""
-        assert "legacy" in summary.lower() or "410" in summary
-        # Контракт после P0: bot-only fallback + указатель на internal callback.
-        assert "bot" in description.lower()
+        assert "410" in summary
+        # Канонический путь — worker dispatch + internal callback.
+        assert "ipmi-controllers" in description.lower()
         assert "internal" in description.lower()
-        # Прямое признание: сам endpoint не проверяет verify.
-        assert "verify-proof НЕ проверяет" in description or "не проверяет" in description.lower()
+        # Прямое объяснение, почему endpoint снят.
+        assert "apply" in description.lower() and "verify" in description.lower()
 
 
 # ── Fix 4: discovered без пароля требует force_password=true ────────────────

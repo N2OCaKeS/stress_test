@@ -1,4 +1,10 @@
-"""Use cases для ipmi_controllers — CRUD + rotate_credentials.
+"""Use cases для ipmi_controllers — CRUD.
+
+Ротация пароля живёт в worker dispatch + internal callback
+(`worker_dispatch.ipmi_rotate_password_dispatch` → BMC apply →
+`internal_service.record_ipmi_credentials_rotated`, который делает
+verify-then-store). Здесь её нет — старый user-facing rotate был снят
+(410 GONE), потому что писал ciphertext без apply/verify на BMC.
 
 Связь servers↔ipmi_controllers 1:1 (UNIQUE на server_id). Поэтому все
 эндпоинты идут через {server_id}, без отдельного controller_id в URL —
@@ -15,7 +21,6 @@ Department-isolation скрывает cross-dept-сервер за 404 (`SERVER_
 
 import base64
 import logging
-import secrets
 import time
 
 from sqlalchemy.exc import IntegrityError
@@ -73,11 +78,6 @@ def _record_controller_reveal_attempt(
     new_count = count + 1
     _REVEAL_AUDIT_WINDOW[key] = (last_at, new_count)
     return False, new_count
-
-
-def _generate_password() -> str:
-    """Дефолтный генератор IPMI-паролей."""
-    return secrets.token_urlsafe(32)
 
 
 def emit_create_success(controller: IpmiController, department_id: str) -> None:
@@ -463,78 +463,6 @@ async def delete_controller(
             "department_id": server.department_id,
         },
     )
-
-
-async def rotate_credentials(
-    db: AsyncSession,
-    identity: IdentityContext,
-    server_id: str,
-    new_password: str | None = None,
-) -> IpmiController:
-    """Ротация IPMI-пароля.
-
-    Если `new_password=None` — генерируем серверной стороной
-    (`secrets.token_urlsafe(32)`); полезно для случая «компрометация без
-    apply'я на BMC». Worker-side callback path передаёт явный password
-    после успешного применения через Redfish/IPMI-tool.
-
-    Plaintext клиенту НЕ возвращается ни в одном случае.
-    """
-    with emit_denied_on_authz_error(
-        "ipmi_controller.rotate_credentials",
-        target_id=server_id,
-        target_type="ipmi_controller",
-        extra_details={"server_id": server_id},
-        identity=identity,
-    ):
-        await permissions.require_action(
-            db, identity, EntityType.IPMI_CONTROLLER, Action.ROTATE_CREDENTIALS
-        )
-    try:
-        server = await load_visible_server(db, identity, server_id)
-    except NotFoundError:
-        audit_service.emit(
-            "ipmi_controller.rotate_credentials",
-            target_id=server_id, target_type="ipmi_controller",
-            status="failure", allowed=True,
-            details={"reason": "server_not_found_or_cross_dept", "server_id": server_id},
-        )
-        raise
-    obj = await repo.get_by_server_id(db, server_id)
-    if obj is None:
-        audit_service.emit(
-            "ipmi_controller.rotate_credentials",
-            target_id=server_id, target_type="ipmi_controller",
-            status="failure", allowed=True,
-            details={"reason": "not_registered", "server_id": server_id},
-        )
-        raise NotFoundError(
-            error_code="NO_IPMI_CONTROLLER",
-            message="No IPMI controller is registered for this server",
-        )
-    plaintext = new_password if new_password is not None else _generate_password()
-    encrypted = secrets_service.encrypt(
-        plaintext,
-        aad=secrets_service.aad_for_ipmi_credential(obj.id),
-    )
-    updated = await repo.update_password(db, obj, encrypted)
-    await db.commit()
-    await db.refresh(updated)
-    audit_service.emit(
-        "ipmi_controller.rotate_credentials",
-        target_id=updated.id, target_type="ipmi_controller",
-        status="success", allowed=True,
-        details={
-            "server_id": updated.server_id,
-            "department_id": server.department_id,
-            "reason": "worker_callback" if new_password is not None else "user_initiated",
-            "rotated_at": (
-                updated.password_rotated_at.isoformat()
-                if updated.password_rotated_at else None
-            ),
-        },
-    )
-    return updated
 
 
 def _reveal_controller_password(

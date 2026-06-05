@@ -5,7 +5,8 @@
 monkeypatch и фиксируется правильным образом.
 
 Покрывается:
-* GET /ipmi, PUT, DELETE, /credentials, /credentials/rotate, /power — CRUD;
+* GET /ipmi, PUT, DELETE, /credentials, /power — CRUD;
+  (`/credentials/rotate` снят — 410 GONE, ротация только через worker dispatch)
 * POST /power/{on,off,reboot} — 202 + task_id формата tsk_*,
   permission check, request_id propagation в dispatch, действие в matrix
   (POWER_ON / OFF / REBOOT) — reader → 403, operator → 200, без таска;

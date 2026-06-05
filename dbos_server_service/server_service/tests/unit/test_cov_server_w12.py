@@ -77,11 +77,16 @@ def _make_raw_token(row_id: str, sort_value: str = "2026-05-30T12:00:00") -> str
 
 
 class TestIpmiRotate410:
-    """POST /servers/{id}/ipmi/credentials/rotate — 410 для user, 200 для bot."""
+    """POST /servers/{id}/ipmi/credentials/rotate — 410 GONE для любого caller'а.
+
+    Endpoint писал ciphertext без BMC apply/verify, поэтому держатель
+    `(ipmi_controller, rotate_credentials)` — включая bot — мог разорвать
+    out-of-band доступ. Ротация идёт через worker dispatch + internal callback.
+    """
 
     @pytest.mark.asyncio
     async def test_user_subject_gets_410(self, client, make_server, make_ipmi, make_token, dept_a):
-        """Вызов от user (не bot) → 410 IPMI_ROTATE_USER_FACING_DEPRECATED."""
+        """Вызов от user → 410 IPMI_ROTATE_USER_FACING_DEPRECATED."""
         srv = await make_server(department_id=dept_a, with_ipmi=True)
         token = make_token(
             department_id=dept_a,
@@ -96,10 +101,10 @@ class TestIpmiRotate410:
         assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
 
     @pytest.mark.asyncio
-    async def test_bot_subject_allowed(self, client, make_server, make_ipmi, make_token, dept_a, db):
-        """Bot-subject с `rotate_credentials` → 200 (bot fallback path)."""
+    async def test_bot_subject_also_blocked(self, client, make_server, make_ipmi, make_token, dept_a):
+        """Bot тоже получает 410: verify-then-store обходить нельзя."""
         srv = await make_server(department_id=dept_a)
-        ctrl = await make_ipmi(server_id=srv.id)
+        await make_ipmi(server_id=srv.id)
         token = make_token(
             department_id=dept_a,
             service_roles={"server_service": ["admin"]},
@@ -110,13 +115,10 @@ class TestIpmiRotate410:
             headers={"Authorization": f"Bearer {token}"},
             json={"password": "B0tR0tateP@ss1234567"},
         )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "id" in data
-        assert "rotated_at" in data
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
 
     @pytest.mark.asyncio
-    async def test_user_rotate_emits_warning_audit(self, client, make_server, make_token, dept_a):
+    async def test_rotate_emits_warning_audit(self, client, make_server, make_token, dept_a):
         """Audit event с reason=user_facing_endpoint_deprecated выдаётся перед 410."""
         srv = await make_server(department_id=dept_a, with_ipmi=True)
         token = make_token(
@@ -146,10 +148,10 @@ class TestIpmiRotate410:
         assert "user_facing_endpoint_deprecated" in reasons
 
     @pytest.mark.asyncio
-    async def test_bot_rotate_no_body_uses_generated_password(
+    async def test_bot_rotate_no_body_still_410(
         self, client, make_server, make_ipmi, make_token, dept_a
     ):
-        """Bot без тела — сервер генерит пароль сам (new_password=None path)."""
+        """Bot без тела — всё равно 410."""
         srv = await make_server(department_id=dept_a)
         await make_ipmi(server_id=srv.id)
         token = make_token(
@@ -161,13 +163,13 @@ class TestIpmiRotate410:
             f"/api/server/v1/servers/{srv.id}/ipmi/credentials/rotate",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert resp.status_code == 200
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
 
     @pytest.mark.asyncio
     async def test_user_rotate_no_permission_still_410_not_403(
         self, client, make_server, make_token, dept_a
     ):
-        """User без `rotate_credentials` → 410 (user-gate precedes permission-check)."""
+        """User без `rotate_credentials` → 410 (gate precedes permission-check)."""
         srv = await make_server(department_id=dept_a, with_ipmi=True)
         token = make_token(
             department_id=dept_a,
@@ -179,7 +181,6 @@ class TestIpmiRotate410:
             headers={"Authorization": f"Bearer {token}"},
             json={},
         )
-        # Endpoint checks subject_type first, before permission matrix.
         assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
 
 
@@ -191,23 +192,9 @@ class TestIpmiRotate410:
 class TestIpmi404Unification:
     """Missing IPMI controller → 404, not 500."""
 
-    @pytest.mark.asyncio
-    async def test_bot_rotate_no_ipmi_controller_returns_404(
-        self, client, make_server, make_token, dept_a
-    ):
-        """Bot rotate на сервере без IPMI controller → 404 NO_IPMI_CONTROLLER."""
-        srv = await make_server(department_id=dept_a)  # no with_ipmi=True
-        token = make_token(
-            department_id=dept_a,
-            service_roles={"server_service": ["admin"]},
-            subject_type="bot",
-        )
-        resp = await client.post(
-            f"/api/server/v1/servers/{srv.id}/ipmi/credentials/rotate",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"password": "B0tR0tateP@ss1234567"},
-        )
-        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
+    # Покрытие rotate-пути снято: endpoint больше не доходит до lookup'а
+    # controller'а — отбивает 410 GONE на любого caller'а. Существующее
+    # 404-покрытие на missing controller остаётся для power/get-веток.
 
     @pytest.mark.asyncio
     async def test_power_on_no_ipmi_controller_returns_404(

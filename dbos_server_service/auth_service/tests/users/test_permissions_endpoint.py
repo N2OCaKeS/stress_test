@@ -446,3 +446,58 @@ class TestAuditEmitDeptAdminCrossDept:
         assert len(denied) == 1
         details = denied[0].get("details") or {}
         assert details.get("reason") == "cross_department_user"
+
+
+# ── 10. Stale membership на soft-deleted группу — скип ───────────────────────
+
+
+class TestStaleMembershipOnSoftDeletedGroup:
+    """`list_active_by_ids` отдаёт только `is_active=True` группы; если у
+    юзера осталась membership на уже soft-deleted (`is_active=False`)
+    группу — в ответ /permissions она попадать не должна (см.
+    `user_service.get_user_permissions:1275-1280`).
+
+    Проверяем именно через HTTP, чтобы exercise'нуть и сам endpoint,
+    и фильтр в сервисе.
+    """
+
+    async def test_soft_deleted_group_skipped_in_response(
+        self,
+        client, admin_token, db, dept_a, dept_a_with_service, service_x, user_a,
+    ):
+        # Активная группа — нормально видна.
+        live = await _create_group_via_db(db, dept_a.id, "live_team")
+        await _add_user_to_group(db, live.id, user_a.id)
+        await _grant_group_service(db, live.id, service_x.service_name)
+        await _assign_group_role(db, live.id, service_x.service_name, "operator")
+
+        # Soft-deleted: membership остаётся, группа is_active=False.
+        ghost = await _create_group_via_db(db, dept_a.id, "ghost_team")
+        await _add_user_to_group(db, ghost.id, user_a.id)
+        await _grant_group_service(db, ghost.id, service_x.service_name)
+        await _assign_group_role(db, ghost.id, service_x.service_name, "admin")
+        ghost.is_active = False
+        await db.flush()
+        await db.commit()
+
+        resp = await client.get(
+            URL_TPL.format(user_id=user_a.id),
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+
+        group_names = {g["group_name"] for g in body["groups"]}
+        assert "live_team" in group_names
+        assert "ghost_team" not in group_names, (
+            "soft-deleted группа не должна попадать в /permissions "
+            "(stale membership-skip)"
+        )
+
+        # Effective roles тоже не должны включать ghost-роль `admin`:
+        # live даёт `operator` + direct `reader` из фикстуры.
+        effective_x = set(body["service_roles"].get(service_x.service_name, []))
+        assert "admin" not in effective_x, (
+            f"роль admin из soft-deleted группы не должна попадать в "
+            f"effective service_roles, got {effective_x}"
+        )

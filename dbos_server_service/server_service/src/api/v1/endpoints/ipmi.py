@@ -1,4 +1,4 @@
-"""IPMI / iDRAC / iLO / Redfish — CRUD + rotate_credentials + power.
+"""IPMI / iDRAC / iLO / Redfish — CRUD + power.
 
 CRUD ходит через `services/ipmi_controller.py`, power — через
 `worker_client.dispatch_task`. Связь servers↔ipmi_controllers 1:1
@@ -6,6 +6,12 @@ CRUD ходит через `services/ipmi_controller.py`, power — через
 резолвится однозначно. GET карточки доступен по `view` или `view_credentials`;
 держателю action `view_credentials` тот же GET доносит расшифрованный пароль
 в `password_b64`.
+
+`/credentials/rotate` оставлен как 410 GONE — endpoint писал ciphertext без
+BMC apply/verify, любой держатель grant'а (включая скомпрометированный bot)
+мог разорвать out-of-band доступ. Канонический путь — worker dispatch
+(`POST /ipmi-controllers/{id}/rotate`), worker применяет на BMC и шлёт
+internal callback `credentials_rotated`, который делает verify-then-store.
 """
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -417,11 +423,12 @@ async def delete_controller(
 @router.post(
     "/credentials/rotate",
     response_model=IpmiCredentialsRotateResponse,
-    summary="Ротация IPMI-пароля (legacy: 410 GONE для user, bot-only fallback)",
+    summary="Ротация IPMI-пароля снята (410 GONE для любого caller'а)",
     description=(
-        "User-facing вызовы (`subject_type != 'bot'`) отбиваются 410 GONE с "
-        "CRITICAL-аудитом: endpoint писал plaintext в `password_encrypted` "
-        "БЕЗ apply/verify на BMC, что могло убить out-of-band доступ.\n\n"
+        "Любой вызов отбивается 410 GONE с CRITICAL-аудитом. Endpoint писал "
+        "plaintext в `password_encrypted` БЕЗ apply/verify на BMC, и любой "
+        "держатель `(ipmi_controller, rotate_credentials)` мог разорвать "
+        "out-of-band доступ к стойкам.\n\n"
         "Канонический путь ротации:\n"
         "- инициируется через `POST /api/server/v1/ipmi-controllers/{id}/rotate` "
         "  (worker dispatch с BMC apply);\n"
@@ -429,15 +436,11 @@ async def delete_controller(
         "  `POST /internal/ipmi-controllers/{id}/credentials_rotated`, который "
         "  проверяет свежесть `verified_at` против `IPMI_VERIFY_MAX_AGE_SECONDS` "
         "  и только тогда шифрует и сохраняет ciphertext.\n\n"
-        "Этот endpoint оставлен исключительно как fallback для bot-токенов "
-        "(`subject_type='bot'`) — backwards-compat для уже задеплоенных "
-        "worker'ов до их миграции на internal callback. Сам он verify-proof "
-        "НЕ проверяет — у новых интеграций должен быть путь через internal."
+        "Bot-токены — в том числе worker_bot — ходят тем же путём, верификация "
+        "не зависит от типа caller'а."
     ),
     responses={
-        403: {"description": "Нет `rotate_credentials`."},
-        404: {"description": "Сервер не найден / чужой dept, либо контроллер не зарегистрирован."},
-        410: {"description": "User-facing endpoint снят; используйте `/ipmi-controllers/{id}/rotate`."},
+        410: {"description": "Endpoint снят; используйте `/ipmi-controllers/{id}/rotate`."},
         429: {"description": "RATE_LIMIT_EXCEEDED — per-IP rotate-rate-limit пробит."},
     },
 )
@@ -447,51 +450,39 @@ async def rotate_credentials(
     server_id: str,
     identity: CurrentIdentity,
     body: IpmiCredentialsRotateRequest | None = None,
-    db: AsyncSession = Depends(get_db),
 ) -> IpmiCredentialsRotateResponse:
-    """Rotate-эндпоинт. Доступ: `(ipmi_controller, *, rotate_credentials)`. Аудит — CRITICAL.
+    """Rotate-эндпоинт. Любой caller получает 410 GONE + CRITICAL-audit.
 
-    Контракт после P0-фикса:
-
-    * `subject_type != 'bot'` → 410 GONE + CRITICAL-audit. User-facing путь
-      убран, потому что писал ciphertext без apply/verify на BMC и мог
-      разорвать out-of-band доступ. Caller должен переехать на
-      `POST /ipmi-controllers/{id}/rotate` (worker dispatch).
-    * `subject_type == 'bot'` → fallback для legacy worker-токенов: пишет
-      ciphertext в БД без verify-proof. Новые worker'ы должны ходить через
-      internal callback `record_ipmi_credentials_rotated`, который ПРОВЕРЯЕТ
-      свежесть `verified_at` и только потом сохраняет.
+    Endpoint писал ciphertext в БД без apply/verify на BMC, поэтому держатель
+    `(ipmi_controller, rotate_credentials)` — включая скомпрометированный
+    bot — мог молча убить out-of-band доступ. Путь полностью снят: и user-,
+    и bot-вызовы должны ходить через `POST /ipmi-controllers/{id}/rotate`
+    (worker dispatch → BMC apply → internal callback `credentials_rotated`,
+    который проверяет verify-proof).
     """
-    if identity.subject_type != "bot":
-        audit_service.emit(
-            "ipmi_controller.rotate_credentials",
-            target_id=server_id, target_type="ipmi_controller",
-            status="warning", allowed=False,
-            details={
-                "reason": "user_facing_endpoint_deprecated",
-                "server_id": server_id,
-                "caller_type": identity.subject_type,
-                "migration": "use POST /ipmi-controllers/{id}/rotate",
-            },
-        )
-        # details пустые: эхо `server_id` из URL даёт CAS-different (caller
-        # может подсунуть UPPER/Lower/whitespace вариант), а полезной
-        # информации не несёт — caller сам знает, что он передал. Audit
-        # выше пишет сырой server_id уже как security-trail.
-        raise GoneError(
-            error_code="IPMI_ROTATE_USER_FACING_DEPRECATED",
-            message=(
-                "User-facing /ipmi/credentials/rotate is deprecated: it stored "
-                "plaintext without BMC apply/verify. Use "
-                "POST /api/server/v1/ipmi-controllers/{id}/rotate (worker "
-                "dispatch with BMC apply + verify)."
-            ),
-        )
-    new_password = body.password if body is not None else None
-    obj = await ipmi_svc.rotate_credentials(db, identity, server_id, new_password)
-    return IpmiCredentialsRotateResponse(
-        id=obj.id,
-        rotated_at=obj.password_rotated_at,
+    audit_service.emit(
+        "ipmi_controller.rotate_credentials",
+        target_id=server_id, target_type="ipmi_controller",
+        status="warning", allowed=False,
+        details={
+            "reason": "user_facing_endpoint_deprecated",
+            "server_id": server_id,
+            "caller_type": identity.subject_type,
+            "migration": "use POST /ipmi-controllers/{id}/rotate",
+        },
+    )
+    # details пустые: эхо `server_id` из URL даёт CAS-different (caller
+    # может подсунуть UPPER/Lower/whitespace вариант), а полезной
+    # информации не несёт — caller сам знает, что он передал. Audit
+    # выше пишет сырой server_id уже как security-trail.
+    raise GoneError(
+        error_code="IPMI_ROTATE_USER_FACING_DEPRECATED",
+        message=(
+            "/ipmi/credentials/rotate is deprecated: it stored plaintext "
+            "without BMC apply/verify. Use "
+            "POST /api/server/v1/ipmi-controllers/{id}/rotate (worker "
+            "dispatch with BMC apply + verify)."
+        ),
     )
 
 

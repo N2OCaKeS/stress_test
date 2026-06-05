@@ -107,6 +107,8 @@ Transport-уровень (`BMC_AUTH_FAILED` / `BMC_UNREACHABLE` / `BMC_TIMEOUT`)
 
 `dispatch_outbox` publisher (`tasks/dispatch_outbox.py`) audit-событий **не эмитит**: он читает строки `dispatch_outbox` из server_service-БД и кикает taskiq-задачи — это внутренний fanout, не бизнес-операция. Видимость наблюдается через worker-логи (`reached attempts cap`, backoff-warnings) и счётчики publisher'а. Если оператор ищет в этой таблице `dispatch_outbox.*` — таких action'ов нет by design.
 
+`secrets.reencrypt_lazy` (taskiq-периодика, `main.py::secrets_reencrypt_lazy`) собственного action'а **не имеет** — каждый её тик пишет одно audit-событие `secrets.reencrypt_tick` (см. строку выше). Имя `secrets.reencrypt_lazy` встречается только в worker-логах (`secrets.reencrypt_lazy: ...`) и в названии cron-job'ы в `core/config.py`. SIEM-правила пишутся по `action=secrets.reencrypt_tick`.
+
 ---
 
 ## Publisher-side детали

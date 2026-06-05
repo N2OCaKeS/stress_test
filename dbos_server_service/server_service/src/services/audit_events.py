@@ -82,7 +82,7 @@ SERVICE_EVENTS = [
     {"action": "ipmi_controller.list", "description": "IPMI controllers listed (emitted on denied)", "default_severity": "INFO"},
     {"action": "ipmi_controller.update", "description": "IPMI controller updated (kind/endpoint/username)", "default_severity": "INFO"},
     {"action": "ipmi_controller.delete", "description": "IPMI controller deleted", "default_severity": "CRITICAL"},
-    {"action": "ipmi_controller.rotate_credentials", "description": "IPMI controller password rotated", "default_severity": "CRITICAL"},
+    {"action": "ipmi_controller.rotate_credentials", "description": "Deprecated user-facing rotate route — 410 GONE warning audit", "default_severity": "WARNING"},
     # Installed packages — live SSH-probe через worker (без БД). Единственный
     # action: dispatch'ер `POST /servers/{id}/installed-packages` + worker-task
     # `installed_packages.list` (обе стороны эмитят с одинаковым action-name).

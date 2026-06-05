@@ -20,8 +20,7 @@ from src.core.config import get_settings
 BASE_INT = "/api/server/v1/internal"
 
 
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+from tests._helpers import auth_hdr as _hdr  # noqa: E402
 
 
 # ── OpenAPI exposure ─────────────────────────────────────────────────────────
@@ -264,10 +263,7 @@ def strict_dept_mode(monkeypatch):
 
 
 def _hdr_with_dept(token: str, dept: str | None) -> dict[str, str]:
-    headers = _hdr(token)
-    if dept is not None:
-        headers["X-Target-Department-Id"] = dept
-    return headers
+    return _hdr(token, dept=dept)
 
 
 @pytest.mark.usefixtures("soft_dept_mode")

@@ -16,14 +16,7 @@ import pytest
 from src.clients.ssh import SshClient, SshError
 from src.core.constants import TaskStatus
 from src.tasks import users
-
-
-def _run_result(stdout="", stderr="", rc=0):
-    res = MagicMock()
-    res.stdout = stdout
-    res.stderr = stderr
-    res.exit_status = rc
-    return res
+from tests._ssh_mock_helpers import run_result as _run_result
 
 
 def _conn(run_results):

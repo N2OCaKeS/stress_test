@@ -26,6 +26,7 @@ from src.utils.cursor import (
     decode_cursor,
     normalize_limit,
 )
+from tests._helpers import auth_hdr as _hdr
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -385,10 +386,6 @@ class TestSystemTaskGuardRoleVariations:
 # ─────────────────────────────────────────────────────────────────────────────
 # W9/W10: Audit emit — outbox lifecycle endpoints
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
 
 
 BASE_SECRETS = "/api/server/v1/internal/secrets"

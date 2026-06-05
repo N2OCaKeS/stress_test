@@ -1,17 +1,11 @@
 """Тесты: /api/auth/v1/users/me/sessions — list / revoke-all / revoke-one."""
 
+from tests._helpers.http import login as _login_full  # noqa: F401 — общий helper
+
 
 LIST_URL = "/api/auth/v1/users/me/sessions"
 REVOKE_URL = "/api/auth/v1/users/me/sessions/revoke"
-LOGIN_URL = "/api/auth/v1/login"
 REFRESH_URL = "/api/auth/v1/refresh"
-
-
-async def _login_full(client, username: str, password: str) -> dict:
-    """Логин — возвращает целиком ответ (access + refresh)."""
-    resp = await client.post(LOGIN_URL, json={"username": username, "password": password})
-    assert resp.status_code == 200, resp.text
-    return resp.json()
 
 
 # ── list_sessions ───────────────────────────────────────────────────────────

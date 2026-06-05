@@ -21,8 +21,10 @@ from sqlalchemy import text
 from src.core.config import get_settings
 from src.models.audit_event import AuditEvent
 from src.repositories import events as events_repo
-from src.services.audit_outbox import AuditEnvelope, AuditOutbox, make_envelope
+from src.services.audit_outbox import AuditEnvelope, AuditOutbox
 from src.utils.ids import audit_event_id
+
+from tests._helpers import make_env as _env
 from tests.conftest import make_rule
 
 
@@ -133,19 +135,6 @@ class _FakeSession:
 
     def close(self):
         self.closes += 1
-
-
-def _env(action: str) -> AuditEnvelope:
-    return make_envelope(
-        action=action,
-        actor_id=None,
-        actor_type=None,
-        username=None,
-        emit_status="success",
-        allowed=True,
-        request_id=None,
-        details={},
-    )
 
 
 class TestOutboxDrainedCounterNotOvercounted:

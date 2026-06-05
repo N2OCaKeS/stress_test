@@ -20,9 +20,20 @@ from __future__ import annotations
 from typing import Any
 
 
-def auth_hdr(token: str) -> dict[str, str]:
-    """Шорткат для `Authorization: Bearer <token>`."""
-    return {"Authorization": f"Bearer {token}"}
+def auth_hdr(token: str, dept: str | None = None) -> dict[str, str]:
+    """Шорткат для `Authorization: Bearer <token>` (+ опционально `X-Target-Department-Id`).
+
+    Часть тестов кросс-департамент-кейсов передаёт department override через
+    заголовок `X-Target-Department-Id`. Если `dept` задан — добавляется в headers.
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+    if dept is not None:
+        headers["X-Target-Department-Id"] = dept
+    return headers
+
+
+# Alias под имя из task-спеки: семантически то же самое, что `auth_hdr` без dept.
+bearer_header = auth_hdr
 
 
 def assert_error(resp: Any, status: int, error_code: str | None = None) -> dict:

@@ -11,30 +11,11 @@
 
 from __future__ import annotations
 
-import time
-
-from sqlalchemy import select
-
-from src.models.audit_event import AuditEvent
+from tests._helpers import wait_for_event as _wait_for_event
 from tests.conftest import make_event
 
 
 EVENTS_URL = "/api/logging/v1/events"
-
-
-def _wait_for_event(db, action: str, status_code: int, timeout: float = 1.5):
-    """Опросом ждём, пока drain выгребет событие из outbox в БД."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        rows = db.execute(
-            select(AuditEvent).where(AuditEvent.action == action)
-        ).scalars().all()
-        for r in rows:
-            details = r.details or {}
-            if details.get("status_code") == status_code:
-                return r
-        time.sleep(0.05)
-    return None
 
 
 def test_429_on_ingest_is_audited(client, auth_headers, db, TestSessionLocal, monkeypatch):

@@ -30,11 +30,7 @@ from src.services import secrets_service
 BASE_INT = "/api/server/v1/internal"
 
 
-def _hdr(token: str, dept: str | None = None) -> dict[str, str]:
-    headers = {"Authorization": f"Bearer {token}"}
-    if dept is not None:
-        headers["X-Target-Department-Id"] = dept
-    return headers
+from tests._helpers import auth_hdr as _hdr  # noqa: E402
 
 
 def _iso(dt: datetime | None = None) -> str:

@@ -14,8 +14,7 @@ import pytest
 BASE = "/api/server/v1"
 
 
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+from tests._helpers import auth_hdr as _hdr  # noqa: E402
 
 
 @pytest.fixture

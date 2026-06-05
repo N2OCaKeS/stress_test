@@ -21,23 +21,12 @@ import pytest
 
 from src.services.audit_outbox import AuditEnvelope, AuditOutbox, make_envelope
 
+from tests._helpers import make_env as _env
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # AuditOutbox — непокрытые ветки
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-def _env(action: str = "x.y") -> AuditEnvelope:
-    return make_envelope(
-        action=action,
-        actor_id=None,
-        actor_type=None,
-        username=None,
-        emit_status="success",
-        allowed=True,
-        request_id=None,
-        details={},
-    )
 
 
 class _FakeSession:

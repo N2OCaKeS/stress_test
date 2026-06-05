@@ -28,6 +28,7 @@ from src.clients.ssh import (
     _sanitize_cmd,
     _scrub_password_echo,
 )
+from tests._ssh_mock_helpers import run_result as _run_result
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -55,14 +56,6 @@ def _make_fake_conn(*, run_results=None, run_raises=None):
     else:
         conn.run = AsyncMock(return_value=_run_result("", "", 0))
     return conn
-
-
-def _run_result(stdout: str, stderr: str = "", exit_status: int = 0):
-    res = MagicMock()
-    res.stdout = stdout
-    res.stderr = stderr
-    res.exit_status = exit_status
-    return res
 
 
 def _ssh_timeout(reason: str = "timed out") -> asyncssh.TimeoutError:

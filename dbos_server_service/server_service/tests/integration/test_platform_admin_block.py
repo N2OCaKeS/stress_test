@@ -33,8 +33,7 @@ import pytest_asyncio
 BASE = "/api/server/v1"
 
 
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+from tests._helpers import auth_hdr as _hdr  # noqa: E402
 
 
 # ── Audit capture (общий patcher как в test_audit_emission) ──────────────────

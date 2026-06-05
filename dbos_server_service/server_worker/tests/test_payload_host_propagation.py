@@ -18,14 +18,7 @@ import pytest
 
 from src.core.constants import TaskStatus
 from src.tasks import inventory, users
-
-
-def _run_result(stdout="", stderr="", rc=0):
-    res = MagicMock()
-    res.stdout = stdout
-    res.stderr = stderr
-    res.exit_status = rc
-    return res
+from tests._ssh_mock_helpers import run_result as _run_result
 
 
 def _inventory_conn():

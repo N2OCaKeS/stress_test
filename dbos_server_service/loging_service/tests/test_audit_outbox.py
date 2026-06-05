@@ -12,20 +12,9 @@ in-memory очередь + фоновый drain под одним pooled-кон�
 
 import asyncio
 
-from src.services.audit_outbox import AuditEnvelope, AuditOutbox, make_envelope
+from src.services.audit_outbox import AuditEnvelope, AuditOutbox
 
-
-def _env(action: str = "user.login") -> AuditEnvelope:
-    return make_envelope(
-        action=action,
-        actor_id=None,
-        actor_type=None,
-        username=None,
-        emit_status="success",
-        allowed=True,
-        request_id=None,
-        details={},
-    )
+from tests._helpers import make_env as _env
 
 
 class _SavepointContextManager:

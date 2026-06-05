@@ -34,26 +34,12 @@ from unittest.mock import MagicMock
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from src.services.audit_outbox import AuditEnvelope, AuditOutbox, make_envelope
+from src.services.audit_outbox import AuditOutbox
+
+from tests._helpers import make_env as _env
 
 EVENTS_URL = "/api/logging/v1/events"
 RULES_URL = "/api/logging/v1/rules"
-
-
-# ── helpers ───────────────────────────────────────────────────────────────────
-
-
-def _env(action: str = "test.action") -> AuditEnvelope:
-    return make_envelope(
-        action=action,
-        actor_id=None,
-        actor_type=None,
-        username=None,
-        emit_status="success",
-        allowed=True,
-        request_id=None,
-        details={},
-    )
 
 
 class _OkSession:

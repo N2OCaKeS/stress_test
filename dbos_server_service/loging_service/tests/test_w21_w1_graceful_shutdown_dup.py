@@ -14,7 +14,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from src.services.audit_outbox import AuditEnvelope, AuditOutbox, make_envelope
+from src.services.audit_outbox import AuditOutbox
+
+from tests._helpers import make_env as _env
 
 
 class _FakeSession:
@@ -35,19 +37,6 @@ class _FakeSession:
 
     def close(self):
         pass
-
-
-def _env(action: str) -> AuditEnvelope:
-    return make_envelope(
-        action=action,
-        actor_id=None,
-        actor_type=None,
-        username=None,
-        emit_status="success",
-        allowed=True,
-        request_id=None,
-        details={},
-    )
 
 
 class TestGracefulShutdownDuplicate:

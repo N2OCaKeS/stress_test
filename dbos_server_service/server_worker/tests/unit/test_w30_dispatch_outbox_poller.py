@@ -22,11 +22,11 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from src.tasks import dispatch_outbox as outbox_poller
+from tests._helpers.broker_mocks import make_broker as _make_broker
 
 
 # ── In-memory строка outbox'а для тестов ─────────────────────────────────────
@@ -117,23 +117,6 @@ def _install_broker(monkeypatch, broker_mock) -> None:
     # модуль `src.main` целиком, чтобы import внутри функции попал в наш мок.
     import src.main as _main
     monkeypatch.setattr(_main, "broker", broker_mock)
-
-
-def _make_broker(*, kiq_exc: Exception | None = None, unknown_kind: bool = False):
-    """Собрать broker mock с заданным поведением `find_task(...).kicker().kiq(...)`."""
-    broker = MagicMock()
-    if unknown_kind:
-        broker.find_task = MagicMock(return_value=None)
-        return broker
-
-    kiq = AsyncMock(side_effect=kiq_exc) if kiq_exc else AsyncMock()
-    kicker = MagicMock()
-    kicker.kiq = kiq
-    task = MagicMock()
-    task.kicker = MagicMock(return_value=kicker)
-    broker.find_task = MagicMock(return_value=task)
-    broker._kiq = kiq  # удобный аксессор для проверок
-    return broker
 
 
 # ── poll_once: happy path ────────────────────────────────────────────────────

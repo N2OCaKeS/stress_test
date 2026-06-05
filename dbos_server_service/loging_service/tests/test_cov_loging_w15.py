@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -29,9 +28,13 @@ from sqlalchemy.exc import DBAPIError
 from src.core.config import get_settings
 from src.models.audit_rule import AuditRule
 from src.repositories import rules as rules_repo
-from src.services.audit_outbox import AuditEnvelope, AuditOutbox, make_envelope
+from src.services.audit_outbox import AuditOutbox
 from src.services.rule_service import _RuleCache
-from src.utils.ids import audit_rule_id
+from tests._helpers import (
+    insert_rule as _insert_rule_base,
+    make_env as _env,
+    wait_for_event as _wait_for_event,
+)
 from tests.conftest import make_event_def
 
 SERVICES_URL = "/api/logging/v1/services"
@@ -41,33 +44,7 @@ SERVICES_URL = "/api/logging/v1/services"
 
 
 def _insert_rule(db, name: str = "rule-w15") -> AuditRule:
-    now = datetime.now(timezone.utc)
-    rule = AuditRule(
-        id=audit_rule_id(),
-        name=name,
-        description="",
-        is_active=True,
-        priority=100,
-        effect="ALLOW",
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(rule)
-    db.commit()
-    return rule
-
-
-def _env(action: str = "user.login") -> AuditEnvelope:
-    return make_envelope(
-        action=action,
-        actor_id=None,
-        actor_type=None,
-        username=None,
-        emit_status="success",
-        allowed=True,
-        request_id=None,
-        details={},
-    )
+    return _insert_rule_base(db, name=name)
 
 
 class _FakeSession:
@@ -465,22 +442,6 @@ class TestDroppedCancelTotal:
 # ── 5. audit_access: 429 на POST /services/{svc}/events ──────────────────────
 
 
-def _wait_for_event(db, action: str, status_code: int, timeout: float = 1.5):
-    """Polling: ждём пока drain outbox'а положит событие в audit_events."""
-    from sqlalchemy import select
-    from src.models.audit_event import AuditEvent
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        rows = db.execute(
-            select(AuditEvent).where(AuditEvent.action == action)
-        ).scalars().all()
-        for r in rows:
-            details = r.details or {}
-            if details.get("status_code") == status_code:
-                return r
-        time.sleep(0.05)
-    return None
 
 
 def test_429_on_register_events_is_audited(

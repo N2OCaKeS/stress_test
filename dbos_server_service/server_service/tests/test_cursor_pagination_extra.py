@@ -21,8 +21,7 @@ OS_VERSIONS = "/api/server/v1/os-versions"
 IPMI = "/api/server/v1/ipmi_controllers"
 
 
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+from tests._helpers import auth_hdr as _hdr  # noqa: E402
 
 
 class TestServersCursorExtra:

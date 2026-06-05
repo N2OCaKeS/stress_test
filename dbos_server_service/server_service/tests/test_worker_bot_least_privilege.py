@@ -24,8 +24,7 @@ BASE = "/api/server/v1"
 BASE_INT = f"{BASE}/internal"
 
 
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+from tests._helpers import auth_hdr as _hdr  # noqa: E402
 
 
 # ── Allowed actions: 4 разрешённых эндпоинта возвращают 200 ──────────────────

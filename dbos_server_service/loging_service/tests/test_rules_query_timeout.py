@@ -8,31 +8,17 @@ total=0 / None — без 500 наружу.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from sqlalchemy import text
 
 from src.core.config import get_settings
 from src.models.audit_rule import AuditRule
 from src.repositories import rules as rules_repo
-from src.utils.ids import audit_rule_id
+
+from tests._helpers import insert_rule as _insert_rule_base
 
 
 def _insert_rule(db, name: str = "rule-timeout") -> AuditRule:
-    now = datetime.now(timezone.utc)
-    rule = AuditRule(
-        id=audit_rule_id(),
-        name=name,
-        description="",
-        is_active=True,
-        priority=100,
-        effect="ALLOW",
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(rule)
-    db.commit()
-    return rule
+    return _insert_rule_base(db, name=name)
 
 
 def test_get_all_applies_statement_timeout(db, monkeypatch):

@@ -916,6 +916,111 @@ class TestGetAccountPassword:
             e for e in captured if e["action"] == "server_account.password_revealed"
         ]
 
+    async def test_decrypt_internal_error_emits_failure_audit(
+        self, client, admin_role_token_a, make_server, make_account, monkeypatch,
+    ):
+        """Crypto-стек ронит непредвиденный exception — secrets_service.decrypt
+        оборачивает в DECRYPT_INTERNAL_ERROR (500), reveal-обвязка эмитит
+        `server_account.password_revealed` со status=failure и не раскрывает plaintext.
+        """
+        from src.core.exceptions import AppException
+        from src.services import secrets_service
+
+        def boom(*_a, **_kw):
+            raise AppException(
+                http_status=500,
+                error_code="DECRYPT_INTERNAL_ERROR",
+                message="forced crypto stack failure",
+            )
+
+        monkeypatch.setattr(secrets_service, "decrypt", boom)
+        monkeypatch.setattr(
+            "src.services.server_account.secrets_service.decrypt", boom,
+        )
+
+        captured: list[dict] = []
+
+        def fake_emit(action, actor_id=None, **kwargs):
+            captured.append({"action": action, "actor_id": actor_id, **kwargs})
+
+        import src.services.audit_service as audit_mod
+        monkeypatch.setattr(audit_mod, "emit", fake_emit)
+        monkeypatch.setattr(
+            "src.services.server_account.audit_service.emit", fake_emit,
+        )
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="will-be-broken-internally")
+        resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 500, resp.text
+        body = resp.json()
+        assert body["error_code"] == "DECRYPT_INTERNAL_ERROR"
+        assert "will-be-broken-internally" not in resp.text
+
+        failures = [
+            e for e in captured
+            if e["action"] == "server_account.password_revealed"
+            and e.get("status") == "failure"
+        ]
+        assert failures, captured
+        assert failures[0]["details"]["reason"] == "decrypt_failed"
+        # success-emit'а после fail быть не должно.
+        successes = [
+            e for e in captured
+            if e["action"] == "server_account.password_revealed"
+            and e.get("status") == "success"
+        ]
+        assert not successes
+
+    async def test_first_reveal_critical_repeat_throttled_to_info(
+        self, client, admin_role_token_a, make_server, make_account, monkeypatch,
+    ):
+        """Первый reveal в окне → CRITICAL `server_account.password_revealed`,
+        повтор в том же окне → INFO `server_account.password_revealed_throttled`.
+        """
+        from src.services import server_account as sa_mod
+
+        sa_mod._REVEAL_AUDIT_WINDOW.clear()
+
+        captured: list[dict] = []
+
+        def fake_emit(action, actor_id=None, **kwargs):
+            captured.append({"action": action, "actor_id": actor_id, **kwargs})
+
+        import src.services.audit_service as audit_mod
+        monkeypatch.setattr(audit_mod, "emit", fake_emit)
+        monkeypatch.setattr(
+            "src.services.server_account.audit_service.emit", fake_emit,
+        )
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="throttle-pw")
+
+        r1 = await client.get(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
+        assert r1.status_code == 200
+        first = [
+            e for e in captured
+            if e["action"] == "server_account.password_revealed"
+        ]
+        assert len(first) == 1, captured
+        assert first[0]["status"] == "success"
+        assert first[0]["details"]["total_reveals_in_window"] == 1
+
+        r2 = await client.get(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
+        assert r2.status_code == 200
+        throttled = [
+            e for e in captured
+            if e["action"] == "server_account.password_revealed_throttled"
+        ]
+        assert len(throttled) == 1, captured
+        assert throttled[0]["details"]["total_reveals_in_window"] == 2
+        assert throttled[0]["details"]["window_seconds"] >= 1
+        still_first = [
+            e for e in captured
+            if e["action"] == "server_account.password_revealed"
+        ]
+        assert len(still_first) == 1
+
     async def test_broken_encrypted_password_returns_422(
         self, client, admin_role_token_a, make_server, make_account, db,
     ):

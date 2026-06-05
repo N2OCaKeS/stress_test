@@ -307,6 +307,7 @@ def query(
     limit: int = 100,
     offset: int = 0,
     include_total: bool = False,
+    timeout_state: dict | None = None,
 ) -> tuple[list[AuditEvent], int | None, bool]:
     """Постранично достаёт события + признак `has_more` без обязательного COUNT.
 
@@ -318,6 +319,14 @@ def query(
 
     Возвращает `(events, total, has_more)`, где `total` равен None при
     `include_total=False`.
+
+    `timeout_state` — опциональный mutable dict, в который попадают флаги
+    `count_timeout` / `query_timeout` (True, если соответствующий statement
+    был отменён по `statement_timeout`). Caller использует эти флаги для
+    эмиссии warning self-audit'а (`logging.events_queried` со статусом
+    `warning`) — иначе timeout-волна с одного reader-JWT остаётся невидимой
+    для SOC. Репозиторий сам аудит не пишет: слой выше владеет
+    transaction-boundary и outbox'ом.
     """
     settings = get_settings()
     stmt = select(AuditEvent)
@@ -351,11 +360,16 @@ def query(
         # ломаем основной выпуск страницы.
         timeout_ms = settings.audit_count_statement_timeout_ms
         if timeout_ms > 0:
+            def _on_count_canceled() -> None:
+                if timeout_state is not None:
+                    timeout_state["count_timeout"] = True
+                return None
+
             total = _with_statement_timeout(
                 db,
                 timeout_ms,
                 lambda: db.execute(count_stmt).scalar_one(),
-                on_canceled=lambda: None,
+                on_canceled=_on_count_canceled,
                 canceled_log_msg=(
                     "audit COUNT exceeded statement_timeout=%dms; returning total=None"
                 ),
@@ -389,11 +403,16 @@ def query(
     # дашборд не падает целиком.
     query_timeout_ms = settings.audit_query_statement_timeout_ms
     if query_timeout_ms > 0:
+        def _on_query_canceled() -> list:
+            if timeout_state is not None:
+                timeout_state["query_timeout"] = True
+            return []
+
         rows = _with_statement_timeout(
             db,
             query_timeout_ms,
             lambda: db.execute(page_stmt).scalars().all(),
-            on_canceled=lambda: [],
+            on_canceled=_on_query_canceled,
             canceled_log_msg=(
                 "audit SELECT exceeded statement_timeout=%dms; returning empty page"
             ),

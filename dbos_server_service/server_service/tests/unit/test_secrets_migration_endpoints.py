@@ -467,6 +467,55 @@ class TestOutboxRoundTrip:
         assert emit["details"]["entity_type"] == "server_account"
         assert emit["status"] == "warning"
 
+    async def test_finalize_done_owner_ciphertext_changed_emits_warning(
+        self, client, worker_pat_token, captured_emits, db,
+        make_server, make_account,
+    ):
+        """Race с user-initiated rotate'ом: пока worker держал outbox-row на
+        ре-шифрации, owner-account уже сменил `password_encrypted` под другим
+        plaintext'ом. `finalize_done` обязан закрыть outbox warning'ом
+        `owner_ciphertext_changed`, не перетирая свежий ciphertext.
+        """
+        from src.models import ReencryptOutboxEntry
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, password="initial-pw")
+        # Outbox-row фиксирует ciphertext, который видел claim. Имитируем гонку:
+        # после claim'а user rotate'нул пароль — `acc.password_encrypted` теперь
+        # отличается от `legacy_ciphertext` outbox-entry.
+        stale_ciphertext = "v1$AAAA$BBBB"
+        entry = ReencryptOutboxEntry(
+            id="rox_changed_001",
+            entity_type="server_account",
+            entity_id=acc.id,
+            legacy_ciphertext=stale_ciphertext,
+            status="processing",
+        )
+        db.add(entry)
+        await db.commit()
+
+        finalize = await client.post(
+            f"{BASE}/reencrypt_outbox/{entry.id}/done",
+            headers=_hdr(worker_pat_token),
+        )
+        assert finalize.status_code == 200, finalize.text
+        body = finalize.json()
+        assert body["skipped"] is True
+
+        skipped_emits = [
+            e for e in captured_emits
+            if e["action"] == "secrets.migration.skipped"
+        ]
+        assert len(skipped_emits) == 1
+        emit = skipped_emits[0]
+        assert emit["details"]["reason"] == "owner_ciphertext_changed"
+        assert emit["details"]["entity_type"] == "server_account"
+        assert emit["status"] == "warning"
+
+        # Owner не должен быть перезаписан тем, что worker пытался отшифровать.
+        await db.refresh(acc)
+        assert acc.password_encrypted != stale_ciphertext
+
     async def test_finalize_done_status_not_processing_emits_warning(
         self, client, worker_pat_token, captured_emits, db,
     ):

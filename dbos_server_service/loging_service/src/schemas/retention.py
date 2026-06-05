@@ -74,8 +74,9 @@ class RetentionPolicyCreate(BaseModel):
         max_length=64,
         description=(
             "Какие сервисы охватывает политика. None / [] = все. "
-            "Имена `loging_service` принимаются, но retention для них не "
-            "применяется — событийный audit-trail защищён от ротации."
+            "`loging_service` в списке отбивается 422-кой — событийный "
+            "audit-trail сервиса защищён от ротации, и policy на него никогда "
+            "не сработала бы (см. `apply_active`)."
         ),
     )
 

@@ -370,6 +370,19 @@ async def dept_a_with_service(db, dept_a, service_x):
     return dept_a
 
 
+@pytest_asyncio.fixture()
+async def docker_registry_service_granted(db, dept_a_with_service):
+    """Сервис `docker_registry` (имя совпадает с `DOCKER_REGISTRY_SCOPE`)
+    зарегистрирован и выдан dept_a. Нужен, чтобы PAT и bot могли указать
+    `allowed_services=["docker_registry"]` (PAT-schema требует min_length=1,
+    а scope-guard в `_authenticate_subject` пускает только если этот scope
+    есть в `pat.allowed_services` / `bot.allowed_services`)."""
+    from src.services.docker_registry_service import DOCKER_REGISTRY_SCOPE
+    svc = await _make_service(db, DOCKER_REGISTRY_SCOPE)
+    await _grant_service(db, dept_a_with_service.id, svc.service_name)
+    return svc
+
+
 # ── Фикстуры: пользователи ───────────────────────────────────────────────────
 
 @pytest_asyncio.fixture()

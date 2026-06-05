@@ -73,6 +73,17 @@ async def _read_bootstrap_creds(creds_key: str) -> dict:
     поэтому retry работает, пока жив TTL. Нет ключа / истёк → `SshError(
     SSH_BOOTSTRAP_CREDS_MISSING)` — task завершится FAILED с понятным
     last_error, а не молчаливо зайдёт под `root` без пароля.
+
+    Bootstrap-creds лежат в Redis как plaintext JSON. Envelope-шифрование
+    value не делается — writer (server_service.internal_service) и reader
+    (worker) не имеют общего мастер-ключа: server_service шифрует ciphertext
+    в своей БД, но bootstrap-payload между сервисами идёт plaintext'ом, иначе
+    worker не смог бы залогиниться по SSH под `root` для prepare. Mitigation'ы:
+    короткий TTL (`PREPARE_CREDS_TTL_SECONDS` ≈ 15 мин в server_service),
+    обязательный redis AUTH в prod, неугадываемый суффикс ключа
+    (`dbos:prepare_creds:<task_id>`), `_validate_dispatch_creds_key` whitelist
+    на формат входящего payload-ключа. Подробнее — `AUDIT_EVENTS.md` секция
+    Threat model.
     """
     client = redis_pool.get_redis()
     raw = await client.get(creds_key)

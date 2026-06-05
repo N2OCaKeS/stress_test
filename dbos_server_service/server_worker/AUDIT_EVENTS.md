@@ -119,3 +119,24 @@ DLQ с `attempts=1`, не с `0`, чтобы по полю было видно �
 `_maybe_poison` и `_apply_backoff`. Контракт зафиксирован тестом
 `test_emit_4xx_sends_row_to_dlq`: после 4xx ожидается `attempts=1` и
 `reason="permanent_4xx"` в DLQ-логе.
+
+---
+
+## Threat model — known accepted risks
+
+Аудитная пометка про два класса рисков, которые периодически выплывают в
+security-аудитах кода и принимаются как осознанные trade-off'ы на текущем
+стенде. Полный разбор и обоснование — в `obsidian/services/server_worker.md`
+секция **Threat model**.
+
+- **IPMI new password в argv `ipmitool user set password`**
+  (`src/clients/ipmitool.py:232`). Новый пароль уходит последним positional
+  argument'ом, виден в `/proc/<pid>/cmdline` на время вызова. Mitigations:
+  `_mask_password_in_argv` в logs/audit/last_error, минимальный child env,
+  Redfish-путь без argv для iDRAC/iLO. Accepted в закрытой management-сети.
+- **Plaintext-пароли в Redis-stash** (`src/tasks/passwords.py:222`,
+  `src/tasks/users.py:95`, `src/tasks/prepare.py:119`). Value хранится как JSON
+  без envelope-шифрования. Mitigations: TTL, обязательный redis AUTH в prod,
+  явный DELETE после submit, неугадываемые ключи. Envelope-шифрование не
+  реализовано — worker не держит `SERVER_ENCRYPTION_KEY` (граница: шифрование
+  секретов живёт в `server_service`). Owner-decision: accepted.

@@ -120,3 +120,40 @@ async def test_exchange_code_for_blocked_user_rejected(
     )
     assert token_resp.status_code == 401
     assert token_resp.json()["error_code"] == "OAUTH_USER_INACTIVE"
+
+
+# ── /authorize отдельно: код вообще не должен выдаваться забаненному ─────────
+
+async def test_authorize_for_banned_user_rejected_without_code(
+    client, admin_token, user_a, user_a_token, dept_a, db,
+):
+    """До фикса /authorize возвращал 302 с code'ом даже для забаненного юзера —
+    /token позже отбивал, но сам факт 200 vs ошибка — username-enumeration
+    oracle. После фикса /authorize сразу 401 OAUTH_USER_INACTIVE."""
+    cl = await _make_client(client, admin_token, dept_a.id)
+
+    from src.services import user_service
+    await user_service.ban_user(
+        db=db,
+        actor_id="usr_admin_test",
+        user_id=user_a.id,
+        ban_type="permanent",
+        reason="banned before authorize",
+    )
+
+    auth_resp = await client.get(
+        AUTHORIZE_URL,
+        headers={"Authorization": f"Bearer {user_a_token}"},
+        params={
+            "client_id": cl["client_id"],
+            "redirect_uri": "https://app.example.com/callback",
+            "response_type": "code",
+        },
+        follow_redirects=False,
+    )
+    # JWT юзера всё ещё валиден (бан мгновенно отбивается через identity-revalidate
+    # в `get_current_identity`, либо в самом /authorize по статусу). Любая
+    # ветка должна вернуть ошибку, не 302 с кодом.
+    assert auth_resp.status_code in (401, 403), auth_resp.text
+    assert "location" not in {h.lower() for h in auth_resp.headers.keys()} or \
+        "code=" not in (auth_resp.headers.get("location") or "")

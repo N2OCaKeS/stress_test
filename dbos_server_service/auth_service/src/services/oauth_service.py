@@ -115,7 +115,9 @@ async def create_client(
         created_by=actor_id,
     )
     await db.commit()
-    # raw_secret уходит в details — sanitizer заменит на <SECRET> по ключу client_secret
+    # `client_secret` plaintext в details не пишем — оставляем только prefix.
+    # Redaction sanitizer всё равно бы его смаскировал, но это implicit guard;
+    # явный отказ от plaintext в audit-канале надёжнее (defence-in-depth).
     audit_service.emit(
         "oauth_client.create", actor_id, target_id=client.id, target_type="oauth_client",
         request_id=request_id,
@@ -127,7 +129,6 @@ async def create_client(
             "allowed_scopes": list(data.allowed_scopes),
             "grant_types": list(data.grant_types),
             "client_secret_prefix": secret_prefix,
-            "client_secret": raw_secret,
             "description": data.description,
             "is_public": data.is_public,
         },
@@ -261,6 +262,19 @@ async def issue_authorization_code(
 
     if redirect_uri not in client.redirect_uris:
         raise AuthorizationError(error_code="REDIRECT_URI_MISMATCH", message="redirect_uri does not match registered URIs")
+
+    # Без проверки статуса /authorize возвращал 200 даже забаненному юзеру —
+    # код выписывался, /token позже отбивал по `OAUTH_USER_INACTIVE`. Само
+    # 200 vs ошибка на /authorize — username-enumeration oracle: атакующий,
+    # отправляющий заявку от чужого имени, отличает «активен» от «бан».
+    # Симметрия с /login, где BANNED/BLOCKED отбиваются сразу.
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+    if user is None or user.status != UserStatus.ACTIVE or not user.is_active:
+        raise AuthenticationError(
+            error_code="OAUTH_USER_INACTIVE",
+            message="User account is not active",
+        )
 
     # PKCE-валидация. Для public-клиентов (`is_public=True`) S256 обязателен —
     # plain не защищает от перехвата кода (verifier == challenge тривиально).

@@ -72,14 +72,16 @@ def _resolve_target_department_id(
     ``target_department_id`` → ``DEPARTMENT_ISOLATION``. System-wide grant'ов
     через этот путь нет — они приходят только из seed-миграций.
 
-    Также явно отбиваем internal-service субъектов (`subject_type == "pat"`
-    для worker_bot и подобных). Сейчас матрицу прав никакой service-account
-    не редактирует — `permission.grant`/`revoke` есть только у живых ролей
-    account_admin/department_admin. Если завтра какому-нибудь боту по ошибке
-    выдадут эти actions, мы не хотим, чтобы тут он молча получил scope своего
-    department'а — лучше явный DEPARTMENT_ISOLATION на старте.
+    Также явно отбиваем internal-service субъектов (`subject_type == "bot"`
+    для worker_bot и подобных, плюс `oauth_client`). Сейчас матрицу прав
+    никакой service-account не редактирует — `permission.grant`/`revoke` есть
+    только у живых ролей account_admin/department_admin. Если завтра какому-нибудь
+    боту по ошибке выдадут эти actions, мы не хотим, чтобы тут он молча получил
+    scope своего department'а — лучше явный DEPARTMENT_ISOLATION на старте.
+    PAT приходит с `subject_type="user"` (от имени владельца), для него
+    действуют обычные dept-isolation checks ниже.
     """
-    if identity.subject_type in {"pat", "oauth_client"}:
+    if identity.subject_type in {"bot", "oauth_client"}:
         audit_service.emit(
             audit_action,
             target_type="entity_permission",
@@ -95,7 +97,7 @@ def _resolve_target_department_id(
         raise AuthorizationError(
             error_code="DEPARTMENT_ISOLATION",
             message=(
-                "Service accounts (PAT / OAuth client) cannot manage "
+                "Service accounts (bot / OAuth client) cannot manage "
                 "entity_permissions; route via human admin"
             ),
             details={"target_department_id": target_department_id},

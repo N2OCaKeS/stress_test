@@ -216,6 +216,66 @@ class TestGetControllerCredentials:
         assert body["username"] == f"u_{kind}"
         assert base64.b64decode(body["password_b64"]).decode() == f"pw_for_{kind}"
 
+    async def test_first_reveal_critical_repeat_throttled_to_info(
+        self, client, admin_role_token_a, make_server, make_ipmi, monkeypatch,
+    ):
+        """Первый reveal в окне → CRITICAL `ipmi_controller.credentials_revealed`,
+        повтор в том же окне → INFO `ipmi_controller.credentials_revealed_throttled`.
+
+        Защита от UI-tooltip'ов с автообновлением: SIEM не должен ловить водопад
+        CRITICAL'ов на один и тот же reveal от одного actor'а.
+        """
+        from src.services import ipmi_controller as ipmi_mod
+
+        # In-memory throttle-словарь живёт на процесс; чистим, чтобы не словить
+        # отголоски предыдущих тестов в той же сессии.
+        ipmi_mod._REVEAL_AUDIT_WINDOW.clear()
+
+        captured: list[dict] = []
+
+        def fake_emit(action, actor_id=None, **kwargs):
+            captured.append({"action": action, "actor_id": actor_id, **kwargs})
+
+        import src.services.audit_service as audit_mod
+        monkeypatch.setattr(audit_mod, "emit", fake_emit)
+        monkeypatch.setattr(
+            "src.services.ipmi_controller.audit_service.emit", fake_emit,
+        )
+
+        srv = await make_server(department_id="dep_a")
+        ctrl = await make_ipmi(
+            server_id=srv.id, username="bmc-throttle", password="throttle-pw",
+        )
+
+        r1 = await client.get(_ipmi_url(srv.id), headers=_hdr(admin_role_token_a))
+        assert r1.status_code == 200
+
+        first = [
+            e for e in captured
+            if e["action"] == "ipmi_controller.credentials_revealed"
+        ]
+        assert len(first) == 1, captured
+        assert first[0]["status"] == "success"
+        assert first[0]["details"]["total_reveals_in_window"] == 1
+
+        r2 = await client.get(_ipmi_url(srv.id), headers=_hdr(admin_role_token_a))
+        assert r2.status_code == 200
+
+        throttled = [
+            e for e in captured
+            if e["action"] == "ipmi_controller.credentials_revealed_throttled"
+        ]
+        assert len(throttled) == 1, captured
+        assert throttled[0]["details"]["total_reveals_in_window"] == 2
+        assert throttled[0]["details"]["window_seconds"] >= 1
+        # Второй CRITICAL не должен попасть в журнал — иначе throttle сломан.
+        still_first = [
+            e for e in captured
+            if e["action"] == "ipmi_controller.credentials_revealed"
+        ]
+        assert len(still_first) == 1
+        assert ctrl.id == first[0]["target_id"]
+
     async def test_view_credentials_action_checked_once(
         self, client, admin_role_token_a, make_server, make_ipmi, monkeypatch,
     ):

@@ -1,5 +1,7 @@
 """Тесты: /api/logging/v1/retention — политика хранения логов."""
 
+import pytest
+
 URL = "/api/logging/v1/retention"
 
 
@@ -639,3 +641,154 @@ class TestRetentionSelfAuditSizeCap:
         assert len(details_json) <= 65_536, (
             f"details сериализуется в {len(details_json)} байт, лимит 65536"
         )
+
+
+# ── restart-петля `_retention_loop_supervised` ───────────────────────────────
+
+
+class TestRetentionLoopSupervised:
+    """`_retention_loop_supervised` — внешняя обвязка с restart-семантикой.
+
+    Голый `_retention_loop` ловит только session-block внутри, всё остальное
+    (NTP-step, OOM из datetime/zoneinfo) убивает daemon-thread тихо. Wrapper
+    должен поймать любой Exception и стартовать loop заново через короткий
+    sleep + залогировать CRITICAL.
+    """
+
+    def test_exception_in_loop_triggers_critical_log_and_restart(
+        self, monkeypatch, caplog
+    ):
+        import logging as _logging
+        from src import main as main_module
+
+        # Счётчик: считаем заходы в `_retention_loop`. На втором — выходим из
+        # supervised'а через прерывание sleep'а, чтобы тест не висел.
+        calls: dict[str, int] = {"loop": 0, "sleep": 0}
+
+        def fake_loop():
+            calls["loop"] += 1
+            raise RuntimeError("simulated retention crash")
+
+        def fake_sleep(seconds):
+            calls["sleep"] += 1
+            # На втором sleep'е поднимаем KeyboardInterrupt — выход из supervised.
+            if calls["sleep"] >= 1:
+                raise KeyboardInterrupt
+
+        monkeypatch.setattr(main_module, "_retention_loop", fake_loop)
+        monkeypatch.setattr(main_module.time, "sleep", fake_sleep)
+
+        with caplog.at_level(_logging.CRITICAL, logger="src.main"):
+            # KeyboardInterrupt пробивается наверх (так как supervised
+            # ловит только Exception, не BaseException) — это и есть наш
+            # тест-сигнал «вышли управляемо после первого crash + sleep».
+            try:
+                main_module._retention_loop_supervised()
+            except KeyboardInterrupt:
+                pass
+
+        assert calls["loop"] >= 1, "loop должен быть вызван хотя бы один раз"
+        assert calls["sleep"] >= 1, "после crash должна быть пауза перед restart'ом"
+        # CRITICAL про crash залогирован.
+        critical = [r.message for r in caplog.records if r.levelno == _logging.CRITICAL]
+        assert any(
+            "retention loop crashed" in m for m in critical
+        ), f"ожидали CRITICAL про crash, получили: {critical!r}"
+
+    def test_normal_exit_also_logged_critical_and_restart(
+        self, monkeypatch, caplog
+    ):
+        """Если `_retention_loop` вернулся без exception (что не должно случаться
+        в норме), supervised тоже логирует CRITICAL и пытается restart'нуть.
+        """
+        import logging as _logging
+        from src import main as main_module
+
+        calls: dict[str, int] = {"loop": 0, "sleep": 0}
+
+        def fake_loop():
+            calls["loop"] += 1
+            return  # штатный выход — аномалия для daemon-loop'а.
+
+        def fake_sleep(seconds):
+            calls["sleep"] += 1
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(main_module, "_retention_loop", fake_loop)
+        monkeypatch.setattr(main_module.time, "sleep", fake_sleep)
+
+        with caplog.at_level(_logging.CRITICAL, logger="src.main"):
+            try:
+                main_module._retention_loop_supervised()
+            except KeyboardInterrupt:
+                pass
+
+        critical = [r.message for r in caplog.records if r.levelno == _logging.CRITICAL]
+        assert any(
+            "retention loop exited normally" in m for m in critical
+        ), f"ожидали CRITICAL про normal exit, получили: {critical!r}"
+        assert calls["loop"] >= 1
+        assert calls["sleep"] >= 1
+
+    def test_loop_restarted_after_crash(self, monkeypatch):
+        """После первого crash supervised должен реально позвать loop ещё раз —
+        иначе restart-петля декларативная, а не функциональная.
+        """
+        from src import main as main_module
+
+        calls = {"loop": 0, "sleep": 0}
+
+        def fake_loop():
+            calls["loop"] += 1
+            if calls["loop"] >= 2:
+                # Второй заход — поднимаем BaseException, чтобы пробить supervised.
+                raise SystemExit
+            raise RuntimeError("first crash")
+
+        def fake_sleep(seconds):
+            calls["sleep"] += 1
+            # Не прерываем sleep — даём loop'у вторую попытку.
+            return
+
+        monkeypatch.setattr(main_module, "_retention_loop", fake_loop)
+        monkeypatch.setattr(main_module.time, "sleep", fake_sleep)
+
+        with pytest.raises(SystemExit):
+            main_module._retention_loop_supervised()
+
+        assert calls["loop"] == 2, (
+            f"ожидали ровно два захода в loop (crash + restart), "
+            f"получили {calls['loop']}"
+        )
+
+    def test_watchdog_tick_advances_after_supervised_restart(self, monkeypatch):
+        """Sanity-связка: после supervised-restart watchdog тоже способен
+        двигаться вперёд (нет dead-lock'а на `_retention_watchdog_lock` после
+        forced exception в loop'е).
+        """
+        from src import main as main_module
+
+        # Снимем prior state, чтобы видеть свежий tick.
+        with main_module._retention_watchdog_lock:
+            main_module._retention_last_tick_monotonic = None
+
+        # Подставим минимальный fake_loop, который сам ставит tick + ломается.
+        def fake_loop():
+            import time as _time
+            with main_module._retention_watchdog_lock:
+                main_module._retention_last_tick_monotonic = _time.monotonic()
+            raise RuntimeError("crash after tick")
+
+        def fake_sleep(seconds):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(main_module, "_retention_loop", fake_loop)
+        monkeypatch.setattr(main_module.time, "sleep", fake_sleep)
+
+        try:
+            main_module._retention_loop_supervised()
+        except KeyboardInterrupt:
+            pass
+
+        # tick встал.
+        assert main_module.get_retention_last_tick_monotonic() is not None

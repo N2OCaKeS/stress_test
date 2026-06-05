@@ -946,3 +946,97 @@ class TestDrainRemainingCommittedNotDropped:
         dropped = asyncio.run(run())
         # batch=2, queue residue=3 → lost = 2 - 0 + 3 = 5.
         assert dropped == 5
+
+
+# ── _audit_drain_task_done_callback: 3 ветки ────────────────────────────────
+
+
+class TestDrainTaskDoneCallback:
+    """`_audit_drain_task_done_callback` — единственный SOC-сигнал смерти
+    `_drain_task`'а. Должен:
+
+    * на cancellation — молчать (graceful shutdown);
+    * на exception — писать CRITICAL c stack-trace'ом;
+    * на штатный return — писать WARNING (loop вышел без `stop()` —
+      возможен breaking change).
+    """
+
+    def test_cancelled_task_is_silent(self, caplog):
+        import logging as _logging
+        from src.main import _audit_drain_task_done_callback
+
+        async def runner():
+            async def doomed():
+                await asyncio.sleep(60)
+
+            task = asyncio.create_task(doomed())
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            return task
+
+        with caplog.at_level(_logging.WARNING, logger="src.main"):
+            done = asyncio.run(runner())
+            _audit_drain_task_done_callback(done)
+
+        # Никаких WARNING/CRITICAL — cancel это graceful shutdown.
+        noisy = [
+            r for r in caplog.records
+            if r.levelno >= _logging.WARNING and r.name == "src.main"
+        ]
+        assert noisy == [], (
+            f"callback не должен ничего логировать на cancel, получили: "
+            f"{[r.message for r in noisy]!r}"
+        )
+
+    def test_exception_in_task_logs_critical(self, caplog):
+        import logging as _logging
+        from src.main import _audit_drain_task_done_callback
+
+        async def runner():
+            async def boom():
+                raise RuntimeError("drain crashed mid-loop")
+
+            task = asyncio.create_task(boom())
+            try:
+                await task
+            except RuntimeError:
+                pass
+            return task
+
+        with caplog.at_level(_logging.CRITICAL, logger="src.main"):
+            done = asyncio.run(runner())
+            _audit_drain_task_done_callback(done)
+
+        critical = [
+            r.message for r in caplog.records if r.levelno == _logging.CRITICAL
+        ]
+        assert any(
+            "audit outbox drain task died with exception" in m
+            for m in critical
+        ), f"ожидали CRITICAL про died-with-exception, получили: {critical!r}"
+
+    def test_normal_exit_logs_warning(self, caplog):
+        import logging as _logging
+        from src.main import _audit_drain_task_done_callback
+
+        async def runner():
+            async def normal_exit():
+                return None
+
+            task = asyncio.create_task(normal_exit())
+            await task
+            return task
+
+        with caplog.at_level(_logging.WARNING, logger="src.main"):
+            done = asyncio.run(runner())
+            _audit_drain_task_done_callback(done)
+
+        warnings = [
+            r.message for r in caplog.records if r.levelno == _logging.WARNING
+        ]
+        assert any(
+            "exited without exception" in m for m in warnings
+        ), f"ожидали WARNING про exit-without-exception, получили: {warnings!r}"

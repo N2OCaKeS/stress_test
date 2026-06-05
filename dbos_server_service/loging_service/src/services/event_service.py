@@ -63,19 +63,25 @@ def record(db: Session, payload: EventCreate) -> AuditEvent | None:
         return event_repo.insert(db, modified)
     except ConflictError as exc:
         # Откат завалившейся вставки, чтобы self-audit писался в чистой сессии.
-        # Если rollback упал (disconnect, broken pool), self-audit ниже
-        # стартует на сломанной сессии и почти наверняка тоже завалится:
-        # warning self-audit для poisoning-detection — compliance-критичный
-        # путь, его потерю замолчать нельзя. На fake-сессиях из тестов
-        # (которые могут не реализовывать rollback) ловим Exception целиком,
-        # но обязательно логируем.
+        # Если rollback сам падает (disconnect, broken pool), session
+        # гарантированно непригодна для последующего INSERT'а — self-audit
+        # на ней почти наверняка либо завалится молча, либо отравит outer
+        # error caller'у. Логируем CRITICAL (rollback-fail после
+        # ConflictError — это или баг в SQLAlchemy-сессии, или серьёзный
+        # сбой пула) и пропускаем self-audit; outer ConflictError всё
+        # равно поднимется, клиент получит 409.
+        rollback_ok = True
         try:
             db.rollback()
         except Exception as rb_exc:
-            logger.warning(
-                "rollback after idempotency conflict failed: %s", rb_exc
+            rollback_ok = False
+            logger.critical(
+                "rollback after idempotency conflict failed: %s; "
+                "skipping self-audit emit on broken session",
+                rb_exc,
             )
-        _emit_idempotency_conflict_audit(db, modified, exc)
+        if rollback_ok:
+            _emit_idempotency_conflict_audit(db, modified, exc)
         raise
 
 
@@ -178,7 +184,9 @@ def query(
     limit: int = 100,
     offset: int = 0,
     include_total: bool = False,
+    identity: dict | None = None,
 ) -> EventListResponse:
+    timeout_state: dict = {}
     events, total, has_more = event_repo.query(
         db,
         department_id=department_id,
@@ -190,7 +198,25 @@ def query(
         limit=limit,
         offset=offset,
         include_total=include_total,
+        timeout_state=timeout_state,
     )
+    if timeout_state:
+        _emit_query_timeout_audit(
+            db,
+            identity=identity,
+            timeout_state=timeout_state,
+            filters={
+                "department_id": department_id,
+                "service": service,
+                "severity": severity,
+                "action": action,
+                "from_time": from_time.isoformat() if from_time else None,
+                "to_time": to_time.isoformat() if to_time else None,
+                "limit": limit,
+                "offset": offset,
+                "include_total": include_total,
+            },
+        )
     return EventListResponse(
         items=[EventDetail.model_validate(e) for e in events],
         total=total,
@@ -198,3 +224,51 @@ def query(
         limit=limit,
         offset=offset,
     )
+
+
+def _emit_query_timeout_audit(
+    db: Session,
+    *,
+    identity: dict | None,
+    timeout_state: dict,
+    filters: dict,
+) -> None:
+    """WARNING self-audit на отмену COUNT/SELECT по statement_timeout.
+
+    Без этого события «100 timeout-ов в минуту с одного reader-JWT» (флуд
+    широкими COUNT'ами или умышленный DoS на pgsql-pool) остаётся виден
+    только в server-логах. Эмитим `logging.events_queried` со статусом
+    `warning` и пробросом флагов timeout'а в details, чтобы SIEM-rule
+    мог поднять алёрт по action+status+actor.
+
+    Отдельная транзакция (`commit=True`): caller `query()` ничего ещё не
+    коммитил, а сам SELECT уже отработал через savepoint — состояние
+    сессии чистое. Любая ошибка self-audit'а проглатывается в лог, чтобы
+    не маскировать legitimate response caller'у.
+    """
+    try:
+        actor_type = (identity or {}).get("actor_type") or "user"
+        details = {
+            "timeout": True,
+            "count_timeout": bool(timeout_state.get("count_timeout")),
+            "query_timeout": bool(timeout_state.get("query_timeout")),
+            "filters": filters,
+        }
+        warning_payload = EventCreate(
+            timestamp=datetime.now(timezone.utc),
+            service="loging_service",
+            action="logging.events_queried",
+            actor_id=(identity or {}).get("user_id"),
+            actor_type=actor_type,
+            username=(identity or {}).get("username"),
+            department_id=(identity or {}).get("department_id"),
+            status="warning",
+            allowed=True,
+            severity="WARNING",
+            details=details,
+        )
+        record_admin_action(db, warning_payload, commit=True)
+    except Exception as audit_exc:
+        logger.warning(
+            "self-audit for events_queried timeout failed: %s", audit_exc
+        )

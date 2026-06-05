@@ -429,6 +429,32 @@ class GroupRepository:
         await self._db.flush()
         return list(affected_groups)
 
+    async def deactivate_all_dept_service_access(
+        self, department_id: str, service_name: str
+    ) -> list[str]:
+        """Soft-delete `GroupServiceAccess` строк по паре `(department, service)`.
+
+        Симметрично `deactivate_all_dept_service_roles`. Без этого каскада
+        `_merge_permissions` через `list_active_services_by_groups` продолжает
+        возвращать revoked-сервис, и юзер видит его в `allowed_services` через
+        group-канал, хотя отдел access уже потерял.
+        """
+        rows = await self._db.scalars(
+            select(GroupServiceAccess)
+            .join(UserGroup, UserGroup.id == GroupServiceAccess.group_id)
+            .where(
+                UserGroup.department_id == department_id,
+                GroupServiceAccess.service_name == service_name,
+            )
+        )
+        affected_groups: set[str] = set()
+        for row in rows:
+            if row.is_active:
+                affected_groups.add(row.group_id)
+            row.is_active = False
+        await self._db.flush()
+        return list(affected_groups)
+
     async def _group_ids_for_user(self, user_id: str) -> list[str]:
         rows = await self._db.scalars(
             select(UserGroupMembership.group_id)

@@ -137,23 +137,33 @@ async def revoke_service_access(
     affected_group_ids = await group_repo.deactivate_all_dept_service_roles(
         department_id, service_name,
     )
+    # Симметрично снимаем `GroupServiceAccess`: без этого
+    # `list_active_services_by_groups` продолжает возвращать `service_name`,
+    # и `_merge_permissions` (`dept ∪ group`) добавляет revoked-сервис обратно
+    # в `allowed_services` юзера через group-канал — downstream-сервисы
+    # пускали бы по stale scope.
+    affected_access_group_ids = await group_repo.deactivate_all_dept_service_access(
+        department_id, service_name,
+    )
     bot_role_repo = BotRoleRepository(db)
     affected_direct_bot_ids = await bot_role_repo.deactivate_all_in_dept_for_service(
         department_id, service_name,
     )
 
     # Собираем юзеров, которым нужен cache-invalidation: прямые носители роли
-    # + члены групп, у которых сняли group→role binding. Без сброса они до
-    # TTL=5s могли бы продолжать обращаться к сервису, у которого отдел уже
-    # не имеет доступа — `_merge_permissions` INTERSECT-инвариант нарушался.
+    # + члены групп, у которых сняли group→role binding ИЛИ group→service-access.
+    # Без сброса они до TTL=5s могли бы продолжать обращаться к сервису, у
+    # которого отдел уже не имеет доступа — `_merge_permissions` INTERSECT-
+    # инвариант нарушался.
     affected_user_ids: set[str] = set(affected_direct_user_ids)
     affected_bot_ids: set[str] = set(affected_direct_bot_ids)
-    if affected_group_ids:
+    member_group_ids = set(affected_group_ids) | set(affected_access_group_ids)
+    if member_group_ids:
         affected_user_ids.update(
-            await group_repo.list_member_user_ids(affected_group_ids)
+            await group_repo.list_member_user_ids(list(member_group_ids))
         )
         affected_bot_ids.update(
-            await group_repo.list_member_bot_ids(affected_group_ids)
+            await group_repo.list_member_bot_ids(list(member_group_ids))
         )
 
     await db.commit()

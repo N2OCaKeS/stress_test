@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import OsVersion, Server
@@ -75,6 +76,32 @@ async def create(db: AsyncSession, data: dict) -> OsVersion:
     db.add(obj)
     await db.flush()
     return obj
+
+
+async def create_if_absent(db: AsyncSession, data: dict) -> tuple[OsVersion, bool]:
+    """Атомарный upsert по UNIQUE(name): INSERT ... ON CONFLICT DO NOTHING + SELECT.
+
+    Возвращает `(obj, created)`. `created=False` означает, что параллельный
+    inventory-callback уже вставил эту строку (или она существовала). Используется
+    в `_resolve_or_create_os` чтобы избежать IntegrityError на concurrent first-seen.
+    """
+    stmt = (
+        pg_insert(OsVersion)
+        .values(**data)
+        .on_conflict_do_nothing(index_elements=[OsVersion.name])
+        .returning(OsVersion.id)
+    )
+    res = await db.execute(stmt)
+    inserted_id = res.scalar_one_or_none()
+    if inserted_id is None:
+        existing = await get_by_name(db, data["name"])
+        # UNIQUE(name) гарантирует, что после ON CONFLICT row точно есть.
+        assert existing is not None
+        return existing, False
+    await db.flush()
+    obj = await get_by_id(db, inserted_id)
+    assert obj is not None
+    return obj, True
 
 
 async def update(db: AsyncSession, obj: OsVersion, changes: dict) -> OsVersion:

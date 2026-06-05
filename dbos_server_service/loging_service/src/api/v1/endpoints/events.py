@@ -360,4 +360,5 @@ def list_events(
         limit=limit,
         offset=offset,
         include_total=include_total,
+        identity=identity,
     )

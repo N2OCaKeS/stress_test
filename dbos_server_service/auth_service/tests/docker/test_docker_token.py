@@ -179,21 +179,24 @@ async def test_empty_push_user_ids_nobody_can_push(client, admin_token, user_a, 
 
 # ── PAT as Docker password ────────────────────────────────────────────────────
 
-async def test_pat_as_docker_password(client, admin_token, user_a_token, user_a, dept_a):
+async def test_pat_as_docker_password(client, admin_token, user_a_token, user_a, dept_a, docker_registry_service_granted):
     await _enable_docker(client, admin_token, dept_a.id)
+    # PAT-scope включает `docker_registry` — docker-канал доступен.
+    # Без этого scope-guard `_authenticate_subject` отбивает 403
+    # PAT_SCOPE_DENIES_DOCKER (см. test_pat_without_docker_scope_denied).
     pat = (await client.post(TOKENS_URL,
                       headers={"Authorization": f"Bearer {user_a_token}"},
-                      json={"name": "docker_pat", "allowed_services": ["service_x"]})).json()["token"]
+                      json={"name": "docker_pat", "allowed_services": ["docker_registry"]})).json()["token"]
     resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", pat),
                       params={"service": "registry.test"})
     assert resp.status_code == 200
 
 
-async def test_revoked_pat_denied_for_docker(client, admin_token, user_a_token, user_a, dept_a):
+async def test_revoked_pat_denied_for_docker(client, admin_token, user_a_token, user_a, dept_a, docker_registry_service_granted):
     await _enable_docker(client, admin_token, dept_a.id)
     pat_data = (await client.post(TOKENS_URL,
                            headers={"Authorization": f"Bearer {user_a_token}"},
-                           json={"name": "docker_pat_rev", "allowed_services": ["service_x"]})).json()
+                           json={"name": "docker_pat_rev", "allowed_services": ["docker_registry"]})).json()
     await client.delete(f"{TOKENS_URL}/{pat_data['token_id']}",
                   headers={"Authorization": f"Bearer {user_a_token}"})
     resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", pat_data["token"]),
@@ -229,6 +232,65 @@ async def test_revoked_bot_token_denied_for_docker(client, admin_token, dept_a):
     resp = await client.get(TOKEN_URL, headers=_basic("dock_bot_rev", tok_data["token"]),
                       params={"service": "registry.test"})
     assert resp.status_code == 401
+
+
+# ── PAT/bot scope guard ───────────────────────────────────────────────────────
+
+
+async def test_pat_without_docker_scope_denied(
+    client, admin_token, user_a_token, user_a, dept_a, dept_a_with_service, service_x,
+):
+    """PAT с непустым `allowed_services`, не содержащим `docker_registry`,
+    не должен пускать в docker-канал — 403 PAT_SCOPE_DENIES_DOCKER.
+
+    Без guard'а PAT, выписанный только под server_service-канал, тихо
+    получает docker-token через Basic auth. После guard'а — 403 с явным
+    error_code и failure-audit `scope_denies_docker`.
+    """
+    await _enable_docker(client, admin_token, dept_a.id)
+    pat = (await client.post(
+        TOKENS_URL,
+        headers={"Authorization": f"Bearer {user_a_token}"},
+        json={"name": "no_docker_pat", "allowed_services": [service_x.service_name]},
+    )).json()["token"]
+
+    resp = await client.get(
+        TOKEN_URL,
+        headers=_basic("t_user_a", pat),
+        params={"service": "registry.test"},
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["error_code"] == "PAT_SCOPE_DENIES_DOCKER"
+
+
+async def test_bot_without_docker_scope_denied(
+    client, admin_token, dept_a, dept_a_with_service, service_x,
+):
+    """Bot с непустым `allowed_services`, не содержащим `docker_registry`,
+    отбивается 403 BOT_SCOPE_DENIES_DOCKER (симметрия PAT-теста)."""
+    await _enable_docker(client, admin_token, dept_a.id)
+    bot_id = (await client.post(
+        BOTS_URL,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "name": "no_docker_bot",
+            "department_id": dept_a.id,
+            "allowed_services": [service_x.service_name],
+        },
+    )).json()["bot_id"]
+    bot_token = (await client.post(
+        f"{BOTS_URL}/{bot_id}/tokens",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"name": "no_docker_tok"},
+    )).json()["token"]
+
+    resp = await client.get(
+        TOKEN_URL,
+        headers=_basic("no_docker_bot", bot_token),
+        params={"service": "registry.test"},
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["error_code"] == "BOT_SCOPE_DENIES_DOCKER"
 
 
 # ── Public key / JWKS endpoints ───────────────────────────────────────────────

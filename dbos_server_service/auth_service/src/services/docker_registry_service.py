@@ -42,6 +42,24 @@ from src.core.docker_jwt import sign_docker_token
 
 logger = logging.getLogger(__name__)
 
+# Имя сервиса, под которым docker-канал учитывается в `allowed_services`
+# PAT'ов и ботов. Пустой `allowed_services` трактуется как «без сужения
+# scope'а» (унаследовано от создателя) и docker-канал доступен. Если список
+# непуст и `docker_registry` в нём отсутствует — это явное сужение мимо
+# docker'а; пускать нельзя.
+DOCKER_REGISTRY_SCOPE = "docker_registry"
+
+
+def _scope_allows_docker(allowed_services: list[str] | None) -> bool:
+    """`True`, если данный `allowed_services` пускает к docker-каналу.
+
+    Пустой/None — нет сужения, доступ есть (back-compat для PAT/bot,
+    созданных без явного scope). Непустой — нужен `docker_registry`.
+    """
+    if not allowed_services:
+        return True
+    return DOCKER_REGISTRY_SCOPE in allowed_services
+
 
 def _cfg_to_response(cfg) -> DockerRegistryConfigResponse:
     """ORM DepartmentDockerRegistry → DTO."""
@@ -284,6 +302,14 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
                     raise AuthenticationError(
                         error_code="INVALID_CREDENTIALS", message="Invalid credentials"
                     )
+                # Scope-guard: PAT, выписанный с явным сужением мимо docker,
+                # не должен пускать в docker-канал — иначе контракт
+                # `pat.allowed_services` обходится через Basic auth.
+                if not _scope_allows_docker(pat.allowed_services):
+                    raise AuthorizationError(
+                        error_code="PAT_SCOPE_DENIES_DOCKER",
+                        message="PAT scope does not include docker_registry",
+                    )
                 return user.id, user.department_id
         raise AuthenticationError(error_code="INVALID_CREDENTIALS", message="Invalid credentials")
 
@@ -303,6 +329,13 @@ async def _authenticate_subject(db: AsyncSession, username: str, password: str):
                 if bot_for_success.failed_token_attempts:
                     await bot_repo.reset_failed_token_attempts(bot_for_success)
                     await db.commit()
+                # Scope-guard симметрично PAT: бот с непустым `allowed_services`,
+                # в котором нет `docker_registry`, не должен пробивать docker-канал.
+                if not _scope_allows_docker(bot_for_success.allowed_services):
+                    raise AuthorizationError(
+                        error_code="BOT_SCOPE_DENIES_DOCKER",
+                        message="Bot scope does not include docker_registry",
+                    )
                 return bot_for_success.id, bot_for_success.department_id
 
         # Token не валиден ИЛИ привязан к неактивному боту. Регистрируем
@@ -743,6 +776,28 @@ async def _authenticate_with_audit(
                     "service": service or settings.docker_registry_service,
                     "requested_scope": scope,
                     "retry_after_seconds": exc.details.get("retry_after_seconds"),
+                },
+                request_id=request_id,
+            )
+        elif exc.error_code in ("PAT_SCOPE_DENIES_DOCKER", "BOT_SCOPE_DENIES_DOCKER"):
+            # Scope-deny — клиент явно сузил `allowed_services` мимо docker.
+            # SOC видит это как `scope_denies_docker` reason; subject_type
+            # помечает источник (pat / bot_token).
+            subject_type = "pat" if exc.error_code == "PAT_SCOPE_DENIES_DOCKER" else "bot_token"
+            audit_service.emit(
+                "docker.token_issued",
+                None,
+                target_id=service or settings.docker_registry_service,
+                target_type="docker_registry",
+                status="failure",
+                allowed=False,
+                details={
+                    "reason": "scope_denies_docker",
+                    "subject_type": subject_type,
+                    "username": username,
+                    "service": service or settings.docker_registry_service,
+                    "requested_scope": scope,
+                    "error_code": exc.error_code,
                 },
                 request_id=request_id,
             )

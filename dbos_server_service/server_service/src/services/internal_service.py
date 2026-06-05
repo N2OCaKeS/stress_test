@@ -677,27 +677,28 @@ async def _resolve_or_create_os(
             },
         )
         return None
-    obj = await osv_repo.get_by_name(db, name)
-    if obj is not None:
-        return obj.id
-    created = await osv_repo.create(db, {
+    # Параллельный inventory с двух серверов на одну новую OS-версию: чистый
+    # get-then-create ловил бы IntegrityError на UNIQUE(name). ON CONFLICT
+    # DO NOTHING + re-SELECT возвращает уже вставленную row без race-window.
+    obj, created = await osv_repo.create_if_absent(db, {
         "id": os_version_id(),
         "name": name,
     })
-    audit_service.emit(
-        "os_version.create",
-        target_id=created.id,
-        target_type="os_version",
-        status="warning",
-        allowed=True,
-        details={
-            "reason": "auto_from_inventory",
-            "name": name,
-            "server_id": server_id,
-            "server_department_id": server_department_id,
-        },
-    )
-    return created.id
+    if created:
+        audit_service.emit(
+            "os_version.create",
+            target_id=obj.id,
+            target_type="os_version",
+            status="warning",
+            allowed=True,
+            details={
+                "reason": "auto_from_inventory",
+                "name": name,
+                "server_id": server_id,
+                "server_department_id": server_department_id,
+            },
+        )
+    return obj.id
 
 
 async def _upsert_disks(
@@ -1244,10 +1245,25 @@ async def record_server_prepared(
     `management_user=<имя>`. Идемпотентно: повторный callback просто
     переписывает те же поля. Аудит — CRITICAL.
     """
-    # Dept-check ВЫШЕ permission: cross-dept caller без grant'а иначе ловит 403
-    # permission_denied, что enum-oracle'ит факт существования сервера в чужом dept.
-    # Несуществующий server_id обрабатываем ДО dept-check'а — иначе SIEM ловит
-    # фейковый actor_department_mismatch на тычках в air.
+    # Permission ВЫШЕ existence/dept: caller без grant'а получает 403
+    # permission_denied вне зависимости от того, в каком dept'е сервер —
+    # факт существования сервера в чужом dept не утекает через 404/403 enum.
+    try:
+        await permissions.require_action(
+            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "server.prepared",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+    # Dept-check ВЫШЕ existence-проверки: разница 404 SERVER_NOT_FOUND vs
+    # 403 TARGET_DEPARTMENT_MISMATCH сама сливает caller'у факт существования
+    # сервера в чужом dept. Несуществующий server_id обрабатываем ДО dept-check'а —
+    # иначе SIEM ловит фейковый actor_department_mismatch на тычках в air.
     server = await server_repo.get_by_id(db, server_id)
     if server is None:
         audit_service.emit(
@@ -1267,18 +1283,6 @@ async def record_server_prepared(
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
     )
-    try:
-        await permissions.require_action(
-            db, identity, EntityType.SERVER, Action.PREPARE_CALLBACK,
-        )
-    except AuthorizationError:
-        audit_service.emit(
-            "server.prepared",
-            target_id=server_id, target_type="server",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
     if target_department_id is None:
         _emit_dept_header_missing_soft(
             handler_path="internal.record_server_prepared",

@@ -32,7 +32,7 @@ TLS-handshake между emissions. Outside the app lifecycle (unit-тесты, 
 
 import asyncio
 import logging
-import random
+import secrets
 from datetime import datetime, timezone
 
 import httpx
@@ -174,7 +174,7 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
             if response.status_code != 429:
                 return
             if attempt < len(_RETRY_DELAYS_ON_429):
-                delay = _RETRY_DELAYS_ON_429[attempt] * random.uniform(0.8, 1.2)
+                delay = _RETRY_DELAYS_ON_429[attempt] * secrets.SystemRandom().uniform(0.8, 1.2)
                 await asyncio.sleep(delay)
         global _audit_dropped_429
         _audit_dropped_429 += 1

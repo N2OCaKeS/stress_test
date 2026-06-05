@@ -221,6 +221,14 @@ async def _store_ipmi_rotate_password(
 
     `rotated_at` опционален для обратной совместимости с тестами,
     которые предзаполняют stash перед запуском handler'а.
+
+    Value — plaintext JSON. Envelope-шифрование (AES-256-GCM поверх
+    HKDF-SHA256, как в `server_service/secrets_service`) НЕ применяется:
+    worker не держит `SERVER_ENCRYPTION_KEY` (граница архитектуры —
+    мастер-ключ живёт только в server_service). Mitigation'ы: TTL,
+    обязательный redis AUTH в prod, явный DELETE после submit, ключи с
+    неугадываемым `task_id`-suffix'ом. Подробнее — `AUDIT_EVENTS.md`
+    секция Threat model и `obsidian/services/server_worker.md`.
     """
     validate_task_id(task_id)
     client = redis_pool.get_redis()
@@ -291,6 +299,9 @@ async def _store_account_rotate_password(
     `login` и `rotated_at` опциональны: на первом заходе известен только
     `password` (login резолвится из payload/fetch чуть позже), оба слота
     дополнятся при следующих обновлениях stash'а.
+
+    Value — plaintext JSON; envelope-шифрование не делается по тем же
+    причинам, что и для IPMI-stash'а (см. `_store_ipmi_rotate_password`).
     """
     validate_task_id(task_id)
     client = redis_pool.get_redis()

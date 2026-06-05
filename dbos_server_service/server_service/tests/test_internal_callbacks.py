@@ -658,9 +658,15 @@ class TestInternalCallbacksActorDeptMaskedAs404:
         )
         assert_error(resp, 422)
 
-    async def test_prepared_actor_mismatch_returns_404_soft(
+    async def test_prepared_actor_mismatch_returns_403_permission_denied(
         self, client, make_token, make_server, dept_a,
     ):
+        """`prepare_callback` — worker_bot-only грант; admin его не имеет.
+
+        Cross-dept admin без grant'а получает 403 PERMISSION_DENIED ещё
+        ДО dept-check'а: permission проверяется первой, симметрично остальным
+        internal-функциям (`fetch_account_password`, `record_provision_status`).
+        """
         srv = await make_server(department_id=dept_a)
         foreign_token = make_token(
             department_id="dep_b",
@@ -671,7 +677,7 @@ class TestInternalCallbacksActorDeptMaskedAs404:
             headers=_hdr(foreign_token),
             json={"management_user": "ops"},
         )
-        assert_error(resp, 404, "SERVER_NOT_FOUND")
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_credentials_rotated_actor_mismatch_returns_404_soft(
         self, client, make_token, make_server, make_ipmi, dept_a,

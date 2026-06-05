@@ -150,3 +150,71 @@ async def test_revoke_audit_includes_affected_user_count(
     revokes = [p for p in capture_audit_payloads if p["action"] == "department.service_revoke"]
     assert revokes, "audit-событие должно эмититься"
     assert revokes[-1]["details"].get("affected_user_count", 0) >= 1
+
+
+async def test_revoke_cascades_group_service_access(
+    client, admin_token, user_a, user_a_token, dept_a_with_service, service_x, db,
+):
+    """revoke сервиса каскадно снимает `GroupServiceAccess` отдела.
+
+    Без каскада `_merge_permissions` через `list_active_services_by_groups`
+    продолжал бы возвращать revoked-сервис юзеру (`allowed_services` через
+    group-канал) и downstream-сервисы пускали бы по stale scope.
+    """
+    GROUPS_URL = "/api/auth/v1/groups"
+    # Создаём группу в отделе, выдаём ей доступ к сервису, кладём юзера.
+    grp_resp = await client.post(
+        GROUPS_URL,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"department_id": dept_a_with_service.id, "name": "rgrp", "display_name": "rgrp"},
+    )
+    assert grp_resp.status_code == 201, grp_resp.text
+    group_id = grp_resp.json()["id"]
+
+    grant_resp = await client.post(
+        f"{GROUPS_URL}/{group_id}/services",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"service_name": service_x.service_name},
+    )
+    assert grant_resp.status_code == 201, grant_resp.text
+
+    add_resp = await client.post(
+        f"{GROUPS_URL}/{group_id}/members",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"user_id": user_a.id},
+    )
+    assert add_resp.status_code in (200, 201), add_resp.text
+
+    # До revoke — service_x присутствует в allowed_services через group-канал.
+    me_before = await client.get(
+        "/api/auth/v1/me",
+        headers={"Authorization": f"Bearer {user_a_token}"},
+    )
+    assert me_before.status_code == 200
+    assert service_x.service_name in me_before.json()["allowed_services"]
+
+    # Revoke сервиса у отдела.
+    rurl = REVOKE_URL.format(dept_id=dept_a_with_service.id, svc_name=service_x.service_name)
+    rresp = await client.delete(rurl, headers={"Authorization": f"Bearer {admin_token}"})
+    assert rresp.status_code == 200, rresp.text
+
+    # group_service_access должен быть деактивирован — service_x ушёл из allowed_services.
+    from sqlalchemy import select
+    from src.models.group_service_access import GroupServiceAccess
+    row = await db.scalar(
+        select(GroupServiceAccess).where(
+            GroupServiceAccess.group_id == group_id,
+            GroupServiceAccess.service_name == service_x.service_name,
+        )
+    )
+    assert row is not None
+    assert row.is_active is False, "GroupServiceAccess должен каскадно сняться"
+
+    me_after = await client.get(
+        "/api/auth/v1/me",
+        headers={"Authorization": f"Bearer {user_a_token}"},
+    )
+    assert me_after.status_code == 200
+    assert service_x.service_name not in me_after.json()["allowed_services"], (
+        "revoked-сервис не должен оставаться в allowed_services через group-канал"
+    )

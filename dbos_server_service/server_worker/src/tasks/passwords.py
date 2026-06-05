@@ -55,8 +55,11 @@ from src.clients.ipmitool import IpmitoolError
 from src.clients.redfish import RedfishError
 from src.core.config import get_settings  # noqa: F401 — re-exported for downstream / future tests
 from src.core.constants import STASH_TTL_SECONDS
+from src.core.exceptions import AppException
 from src.core.identifiers import validate_task_id
+from src.db.session import AsyncSessionLocal
 from src.main import broker
+from src.repositories import task as task_repo
 from src.services import redis_pool, server_service_client, ssh_client
 from src.tasks.users import _validate_payload_login
 from src.tasks._bmc_errors import (
@@ -311,6 +314,29 @@ async def _delete_account_rotate_password(task_id: str) -> None:
         )
 
 
+async def _current_attempt(task_id: str) -> int:
+    """Прочитать текущий `attempt` task'и из БД.
+
+    Используется handler'ами ротации паролей, чтобы отличить первый заход
+    (`attempt == 1` после mark_running) от retry'я. На retry'е пустой stash
+    — это сигнал, что предыдущая попытка либо не успела дойти до
+    `_store_*_rotate_password`, либо stash'а истёк TTL. Генерить новый
+    пароль в этой ситуации НЕЛЬЗЯ: если предыдущая попытка уже применила
+    свой пароль на BMC/хосте, новая попытка применит другой — storage
+    разъедется с реальностью.
+
+    `mark_running` в `_runner` инкрементит attempt ДО вызова impl, поэтому
+    первый заход видит `attempt == 1`, retry'и — `>= 2`.
+
+    Возвращает 0, если task'и нет в БД (никогда не должно случаться в
+    happy-path: handler стартует только когда `_runner` уже сделал
+    `mark_running`; защитный fallback).
+    """
+    async with AsyncSessionLocal() as session:
+        t = await task_repo.get_by_id(session, task_id)
+        return int(t.attempt) if t is not None else 0
+
+
 def _generate_password() -> str:
     """Сильный случайный пароль под типичную iDRAC/PAM-политику сложности.
 
@@ -406,6 +432,37 @@ async def account_rotate_password(task_id: str) -> None:
             await _read_account_rotate_state(task_id)
         )
         if stashed_password is None:
+            # Симметрично ipmi_rotate_password: пустой stash на retry'е
+            # (attempt >= 2) означает потерянный stash (либо предыдущая
+            # попытка не успела записать, либо истёк TTL). Если предыдущая
+            # попытка уже сделала chpasswd на хосте своим паролем, новый
+            # `_generate_password` приведёт к рассинхрону БД ↔ хост: на
+            # хосте окажется один пароль, в storage — другой, self-сессии
+            # сломаются. Fail-loud: оператор увидит явный
+            # ACCOUNT_STASH_MISS_ON_RETRY и сам решит, запускать новую
+            # ротацию или восстанавливать состояние вручную.
+            attempt = await _current_attempt(task_id)
+            if attempt >= 2:
+                logger.error(
+                    "account_rotate_password: stash MISS on retry for task_id=%s "
+                    "attempt=%s — refusing to generate new password to avoid "
+                    "host/storage drift",
+                    task_id, attempt,
+                )
+                raise AppException(
+                    error_code="ACCOUNT_STASH_MISS_ON_RETRY",
+                    message=(
+                        "Account rotate stash missing on retry; refusing to "
+                        "generate new password to avoid host/storage drift. "
+                        "Operator must inspect the host and start a new rotation."
+                    ),
+                    details={
+                        "task_id": task_id,
+                        "attempt": attempt,
+                        "server_id": server_id,
+                        "account_id": account_id,
+                    },
+                )
             new_password = _generate_password()
             # login на этом этапе уже известен (из payload либо fetch'а
             # выше) — кладём его в stash сразу, чтобы retry мог обойтись
@@ -496,6 +553,40 @@ async def ipmi_rotate_password(task_id: str) -> None:
         # сходятся к одному и тому же ciphertext'у.
         stashed_password, stashed_rotated_at = await _read_ipmi_rotate_state(task_id)
         if stashed_password is None:
+            # Stash пустой. На первом заходе (attempt == 1) это норма —
+            # генерим пароль и кладём в stash. На retry'е (attempt >= 2)
+            # пустой stash означает либо «прошлая попытка не дошла до
+            # `_store_ipmi_rotate_password`», либо «stash'а истёк TTL
+            # между попытками». Во втором случае генерация нового пароля
+            # опасна: если прошлая попытка успела применить свой пароль
+            # на BMC (например, упала на verify или submit), новый PATCH
+            # затрёт его другим секретом, и при следующей разнице между
+            # storage и реальным паролем на BMC расхождение зафиксируется
+            # навсегда (storage станет источником пароля, который BMC не
+            # принимал и принимать не будет). Fail-loud: пусть оператор
+            # увидит явный `IPMI_STASH_MISS_ON_RETRY` в audit и сам решит,
+            # запускать новую ротацию или разбираться с BMC вручную.
+            attempt = await _current_attempt(task_id)
+            if attempt >= 2:
+                logger.error(
+                    "ipmi_rotate_password: stash MISS on retry for task_id=%s "
+                    "attempt=%s — refusing to generate new password, BMC may "
+                    "already hold prior password from previous attempt",
+                    task_id, attempt,
+                )
+                raise AppException(
+                    error_code="IPMI_STASH_MISS_ON_RETRY",
+                    message=(
+                        "IPMI rotate stash missing on retry; refusing to "
+                        "generate new password to avoid BMC/storage drift. "
+                        "Operator must inspect BMC and start a new rotation."
+                    ),
+                    details={
+                        "task_id": task_id,
+                        "attempt": attempt,
+                        "server_id": server_id,
+                    },
+                )
             # 20-символьный CSPRNG-пароль с гарантией lower/upper/digit/punct
             # (см. `_generate_password`). Лимит iDRAC9 — 40 символов, влезает
             # с запасом. Все 4 класса symbol'ов нужны для совместимости с

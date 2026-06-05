@@ -312,6 +312,21 @@ async def _get_task_by_idempotency_key(
         return row[0], row[1], row[2]
 
 
+async def lookup_existing_task(
+    idempotency_key: str,
+) -> tuple[str, str, str | None] | None:
+    """Публичный SELECT существующего task'а по idempotency_key.
+
+    Возвращает `(task_id, task_kind, target_server_id)` либо `None`. Caller
+    использует ответ, чтобы решить, надо ли вообще генерить новые секреты
+    перед dispatch'ом: на idempotent-replay сторонние мутации (creds в БД,
+    stash в Redis) делать нельзя, иначе бокс и server-БД разойдутся.
+    Логика сверки kind/target — на caller'е (он знает, какой error_code
+    бить и какие audit-details писать).
+    """
+    return await _get_task_by_idempotency_key(idempotency_key)
+
+
 def _ensure_idempotency_matches(
     *,
     existing: tuple[str, str, str | None],

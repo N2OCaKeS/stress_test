@@ -233,6 +233,7 @@ async def ensure_provision_credentials(
     caller сначала зовёт `reset_provision_credentials`, потом этот метод.
     """
     generated = False
+    was_already_pending = bool(account.credentials_pending_apply)
 
     if account.password_encrypted is not None:
         password = secrets_service.decrypt(
@@ -283,7 +284,12 @@ async def ensure_provision_credentials(
     # retry должен форсить overwrite.
     account.credentials_pending_apply = True
 
-    if generated or account.credentials_pending_apply:
+    # Flush только когда реально есть, что слить: либо сгенерили новый
+    # секрет, либо подняли pending_apply с False на True. Когда оба секрета
+    # уже на месте и флаг был True ещё до вызова — это no-op-ensure
+    # (sticky-decrypt), лишний flush выносил бы in-flight мутации caller'а
+    # в транзакцию раньше времени.
+    if generated or not was_already_pending:
         await db.flush()
 
     creds = {

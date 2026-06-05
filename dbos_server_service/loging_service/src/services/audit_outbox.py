@@ -380,11 +380,21 @@ class AuditOutbox:
         ветка «пропустить envelope без requeue».
         """
         assert self._queue is not None
+        # Acquire `_writer_lock` перед чтением `committed_keys`: thread-side
+        # `_write_batch_locked` под GIL может ещё крутиться после прилёта
+        # `CancelledError` в корутину и пополнять set уже закоммитнутыми
+        # ключами. Без acquire здесь мы бы взяли snapshot до того, как thread
+        # закончил `committed_keys.add(...)`, и тот же envelope уехал бы и в
+        # `audit_events`, и в re-queue → повторный insert (ON CONFLICT DO
+        # NOTHING) + двойной инкремент `_drained_total`. Симметрично гарду в
+        # `_drain_remaining` (см. ниже).
+        with self._writer_lock:
+            committed_snapshot = frozenset(committed_keys)
         requeued = 0
         overflow_lost = 0
         skipped_committed = 0
         for envelope in batch:
-            if envelope.idempotency_key in committed_keys:
+            if envelope.idempotency_key in committed_snapshot:
                 skipped_committed += 1
                 continue
             try:

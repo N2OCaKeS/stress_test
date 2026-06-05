@@ -20,6 +20,11 @@ dispatch_outbox — всё в одной транзакции) и публика
      (cap 5 минут), тоже per-row commit. Без per-row commit'а Redis-transient
      после k успешных kiq откатывал бы все k записей и приводил к их
      передиспатчу — broker.kiq доставил бы тот же task_id повторно.
+     Перед kiq ставим Redis SET-NX `dbos:dispatch_dedup:<row.id>` (TTL 1ч):
+     если ключ уже стоит — другой заход уже kiq'нул эту row'у (commit
+     dispatched_at упал в прошлый раз), пропускаем kiq и просто
+     дотолкаваем dispatched_at. Иначе kiq дублировался бы в Redis-очередь
+     при каждом ретрае commit'а после успешного kiq.
   3. После `DISPATCH_OUTBOX_MAX_ATTEMPTS` row не закрываем — оставляем с
      attempts=MAX, паркуем `next_retry_at = now() + 24h`, логируем WARNING.
      Парковка нужна, чтобы row не входила в SELECT каждый poll-тик и не
@@ -47,9 +52,28 @@ from src.core.config import get_settings
 from src.core.constants import LAST_ERROR_MAX_LEN
 from src.db import dispatch_outbox_session
 from src.models.dispatch_outbox import DispatchOutbox
+from src.services import redis_pool
 from src.utils.redaction import redact_error_message
 
 logger = logging.getLogger(__name__)
+
+
+# Префикс ключа дедупа в Redis: outbox-row → пометка «kiq уже выполнен».
+# Защищает от P0-race'а «commit после kiq упал, следующий poll-тик увидит
+# row pending и kiq'нет повторно». Set-NX ставится ДО kiq; если он
+# возвращает false — другой poll-тик уже kiq'нул этот outbox_id, нам
+# остаётся только дотолкать `dispatched_at` в БД. Ключ снимается при
+# успешном commit'е dispatched_at (явный DELETE) либо по TTL.
+_DISPATCH_DEDUP_KEY_PREFIX = "dbos:dispatch_dedup:"
+
+# TTL ключа дедупа. Покрывает разумное окно «kiq успешен → дальнейшие
+# poll-тики». Час с запасом: per-row commit обычно занимает миллисекунды,
+# а MAX_ATTEMPTS-backoff не превышает 24h парка. Если worker и Redis вместе
+# умерли, TTL подстрахует от вечного блока: после часа row будет переотправлен,
+# но к этому моменту mark_running-CAS на consumer-стороне всё равно отобьёт
+# дубль (status уже не queued). Слишком короткий TTL → возвращается оригинальная
+# race; слишком длинный → blocked-row после rare-сбоя сидит дольше нужного.
+_DISPATCH_DEDUP_TTL_SECONDS = 3600
 
 # Cap на показатель степени в backoff'е — защита от accidental overflow
 # attempts (например, ручной reset с не-обнулённым счётчиком). 2^12 = 4096
@@ -229,9 +253,93 @@ async def poll_once() -> None:
                         )
                     continue
 
+                # Redis SET NX-дедуп. Защита от happy-path race'а: если
+                # `kiq` прошёл, а per-row commit упал на reconnect/timeout,
+                # row остаётся pending (`dispatched_at IS NULL`) и следующий
+                # poll-тик увидит её снова. Без guard'а мы kiq'нули бы её
+                # повторно → второе сообщение с тем же task_id в Redis →
+                # double-dispatch (mark_running CAS на consumer-стороне
+                # отбивает второй consume, но окно «duplicate_dispatch
+                # audit-row» + race с не-finalize'нутым первым consumer'ом
+                # реальны). Set-NX до kiq'а: если ключ уже стоит — мы
+                # знаем, что предыдущий заход уже опубликовал, и просто
+                # допишем `dispatched_at` в БД без повторного kiq.
+                dedup_key = f"{_DISPATCH_DEDUP_KEY_PREFIX}{row.id}"
+                dedup_acquired = True
+                try:
+                    redis = redis_pool.get_redis()
+                    acquired = await redis.set(
+                        dedup_key, "1",
+                        ex=_DISPATCH_DEDUP_TTL_SECONDS, nx=True,
+                    )
+                    # redis-py возвращает True если SET-NX выставил ключ,
+                    # None если ключ уже существовал.
+                    dedup_acquired = bool(acquired)
+                except Exception as exc:  # noqa: BLE001
+                    # Redis transient — не блокируем dispatch, идём в kiq
+                    # как раньше. Падение Redis = и kiq тоже упадёт, и мы
+                    # отыграем backoff. Никаких ложных skip'ов.
+                    redacted = redact_error_message(
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    logger.debug(
+                        "dispatch_outbox.poll: dedup SETNX failed for row=%s: %s",
+                        row.id, redacted,
+                    )
+
+                if not dedup_acquired:
+                    # Прошлый заход уже kiq'нул этот outbox_id; нам нужно
+                    # только дописать dispatched_at. Trade-off: мы доверяем
+                    # дедуп-ключу, что предыдущий kiq реально дошёл до
+                    # Redis-очереди — если ключ был set, но kiq упал
+                    # ровно после, message потерян. Цена ниже, чем риск
+                    # дубля: consumer-CAS отбивает второй запуск всё
+                    # равно, а потерянное сообщение лечит recovery-поток
+                    # (`_recover_scheduled_retries` + outbox-replay'ов нет,
+                    # потому что row у нас pending, она бы попала под
+                    # следующий тик при следующем `next_retry_at`). Здесь
+                    # мы СОЗНАТЕЛЬНО не делаем kiq повторно.
+                    logger.info(
+                        "dispatch_outbox.poll: dedup hit for row=%s task_id=%s — "
+                        "kiq skipped, marking dispatched",
+                        row.id, row.task_id,
+                    )
+                    row.dispatched_at = datetime.now(timezone.utc)
+                    row.next_retry_at = None
+                    row.last_error = None
+                    try:
+                        await session.commit()
+                    except Exception as commit_exc:  # noqa: BLE001
+                        await session.rollback()
+                        redacted = redact_error_message(
+                            f"{type(commit_exc).__name__}: {commit_exc}"
+                        )
+                        logger.warning(
+                            "dispatch_outbox.poll: dedup-skip commit failed "
+                            "for row=%s task_id=%s: %s",
+                            row.id, row.task_id, redacted,
+                        )
+                        failed_total += 1
+                        continue
+                    dispatched_total += 1
+                    continue
+
                 try:
                     await task.kicker().kiq(row.task_id)
                 except Exception as exc:  # noqa: BLE001 — publisher не должен падать
+                    # kiq не прошёл — снимаем дедуп-ключ, чтобы следующий
+                    # poll-тик мог нормально kiq'нуть заново. Best-effort:
+                    # ошибка delete не критична (TTL подстрахует).
+                    try:
+                        await redis_pool.get_redis().delete(dedup_key)
+                    except Exception as del_exc:  # noqa: BLE001
+                        logger.debug(
+                            "dispatch_outbox.poll: dedup DELETE failed for row=%s: %s",
+                            row.id,
+                            redact_error_message(
+                                f"{type(del_exc).__name__}: {del_exc}"
+                            ),
+                        )
                     row.attempts = (row.attempts or 0) + 1
                     redacted = redact_error_message(
                         f"{type(exc).__name__}: {exc}"
@@ -280,20 +388,37 @@ async def poll_once() -> None:
                 except Exception as commit_exc:  # noqa: BLE001
                     # Commit упал после успешного kiq — broker уже принял
                     # task_id, а БД не зафиксировала dispatched_at. Следующий
-                    # тик увидит row pending и kiq'нет повторно. Пишем WARNING
-                    # для оператора, но в нашу статистику row числится как
-                    # failed, а не dispatched (потому что в БД ничего не легло).
+                    # тик увидит row pending, но дедуп-ключ
+                    # `dbos:dispatch_dedup:<row.id>` стоит — повторный kiq
+                    # пропустим, добъём dispatched_at через dedup-hit ветку.
+                    # В нашу статистику этот тик числится failed (БД ничего
+                    # не приняла), но row не передиспатчится в Redis.
                     await session.rollback()
                     redacted = redact_error_message(
                         f"{type(commit_exc).__name__}: {commit_exc}"
                     )
                     logger.warning(
                         "dispatch_outbox.poll: kiq succeeded but commit failed "
-                        "for row=%s task_id=%s — row will be redispatched: %s",
+                        "for row=%s task_id=%s — dedup key holds, next tick "
+                        "will mark dispatched_at without redispatch: %s",
                         row.id, row.task_id, redacted,
                     )
                     failed_total += 1
                     continue
+                # Успех: row коммитнут как dispatched. Дедуп-ключ больше не
+                # нужен, явный DELETE сокращает Redis-footprint; TTL и так
+                # подстрахует на случай аварии.
+                try:
+                    await redis_pool.get_redis().delete(dedup_key)
+                except Exception as del_exc:  # noqa: BLE001
+                    logger.debug(
+                        "dispatch_outbox.poll: dedup DELETE after success "
+                        "failed for row=%s: %s",
+                        row.id,
+                        redact_error_message(
+                            f"{type(del_exc).__name__}: {del_exc}"
+                        ),
+                    )
                 dispatched_total += 1
     except Exception as exc:  # noqa: BLE001 — periodic не должен крэшить scheduler
         redacted = redact_error_message(f"{type(exc).__name__}: {exc}")

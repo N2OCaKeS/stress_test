@@ -555,6 +555,63 @@ async def _dispatch_account_provision(
         )
 
     idempotency_key = read_idempotency_key(request)
+    # Pre-check Idempotency-Key до любой generation creds. Если клиент
+    # повторяет тот же POST с уже зарегистрированным ключом — оригинальная
+    # task на worker'е применит сохранённые в её stash creds; никаких новых
+    # password/ssh-keypair'ов мы не имеем права генерить и коммитить в БД,
+    # иначе бокс получит OLD creds (из stash оригинала), а server-service-БД
+    # перепишется NEW — drift на drift, SSH под БД-кредами сломан.
+    if idempotency_key is not None:
+        existing = await worker_client.lookup_existing_task(idempotency_key)
+        if existing is not None:
+            existing_id, existing_kind, existing_target = existing
+            if existing_kind != task_kind or existing_target != server.id:
+                audit_service.emit(
+                    audit_action, target_id=account_id,
+                    target_type="server_account",
+                    status="failure", allowed=True,
+                    details={
+                        "reason": "idempotent_conflict",
+                        "task_kind": task_kind,
+                        "server_id": server.id,
+                        "operation": operation,
+                        "department_id": server.department_id,
+                    },
+                )
+                raise ConflictError(
+                    error_code="IDEMPOTENCY_KEY_REUSE_CONFLICT",
+                    message=(
+                        "Idempotency-Key already used for a different "
+                        "operation (task_kind/target_server_id mismatch)"
+                    ),
+                    details={
+                        "existing_task_kind": existing_kind,
+                        "existing_target_server_id": existing_target,
+                        "requested_task_kind": task_kind,
+                        "requested_target_server_id": server.id,
+                    },
+                )
+            audit_service.emit(
+                audit_action, target_id=account_id,
+                target_type="server_account",
+                status="success", allowed=True,
+                details={
+                    "task_id": existing_id,
+                    "task_kind": task_kind,
+                    "server_id": server.id,
+                    "operation": operation,
+                    "login": account.login,
+                    "department_id": server.department_id,
+                    "idempotent_hit": True,
+                },
+            )
+            return {
+                "operation": operation,
+                "server_id": server.id,
+                "task_id": existing_id,
+                "status": "queued",
+            }
+
     payload = _build_account_task_payload(
         server=server, account=account, include_attrs=True,
     )
@@ -683,12 +740,16 @@ async def _dispatch_account_provision(
             # creds не пойдёт; чистим вручную, чтобы plaintext не висел до TTL.
             await worker_client.delete_dispatch_creds(stash_key)
             await creds_sp.rollback()
-    # Idempotent-hit: новой публикации в брокер не было, но мы только что
-    # положили свежий stash — оригинальная task видит чужой ciphertext по
-    # своему ключу, наш stash висит сиротой до TTL. Чистим сразу.
+    # Idempotent-hit на race-пути (UNIQUE race в `_dispatch_task_inner` после
+    # нашего pre-check'а): новой публикации в брокер не было, оригинальная
+    # task видит свой ciphertext по своему stash_key. Нашу свежую generation
+    # КАТЕГОРИЧЕСКИ нельзя коммитить — иначе БД хранит NEW creds, бокс
+    # получает OLD. Rollback savepoint'а + cleanup нашего stash'а.
     if idempotent_hit:
         await worker_client.delete_dispatch_creds(stash_key)
-    await creds_sp.commit()
+        await creds_sp.rollback()
+    else:
+        await creds_sp.commit()
     await db.commit()
     await db.refresh(account)
     audit_service.emit(
@@ -1862,11 +1923,13 @@ async def ipmi_rotate_password_dispatch(
             idempotency_key=idempotency_key,
         )
     except ConflictError:
-        # Idempotent-конфликт: задача уже стоит на этом ресурсе, наш
-        # pending_apply-флаг подождёт того же callback'а. БД-обновление
-        # коммитим, чтобы flag не откатился к False — иначе следующий
-        # ручной dispatch не понял бы race-состояние.
-        await db.commit()
+        # ConflictError из dispatch_task_with_hit бьёт в двух сценариях:
+        # IDEMPOTENCY_KEY_REUSE_CONFLICT (клиент перепутал ключи) и
+        # TASK_IDEMPOTENT_CONFLICT (UNIQUE-race + повторный SELECT не нашёл
+        # строку). В обоих случаях ни одна task не поставлена в очередь —
+        # наша мутация `pending_apply=True` врала бы оператору про
+        # «незавершённую ротацию», которой нет. Откатываем.
+        await db.rollback()
         audit_service.emit(
             audit_action, target_id=controller_id, target_type="ipmi_controller",
             status="failure", allowed=True,

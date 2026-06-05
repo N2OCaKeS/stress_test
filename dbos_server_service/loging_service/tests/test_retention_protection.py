@@ -133,31 +133,30 @@ class TestLoginServiceProtection:
         total = db.execute(select(func.count()).select_from(AuditEvent)).scalar_one()
         assert total == 5
 
-    def test_case_variant_loging_service_not_in_db_after_ingest(self, db):
-        """После schema-нормализации (EventCreate.service валидатор) в БД
-        нельзя записать `LoGiNg_SeRvIcE` через ingest — `_normalize_service`
-        опускает в `loging_service` ещё до сохранения. `apply_active` поэтому
-        сравнивает raw-equality с `"loging_service"` и НЕ применяет
-        case-fold: case-variant rows возможны только при прямой ORM-вставке
-        (legacy / тесты), и для них защита не гарантирована — это
-        осознанный compromise ради `ix_audit_events_service` index seek.
+    def test_case_variant_loging_service_rejected_by_db_check(self, db):
+        """`ck_audit_events_service_canonical` запрещает запись
+        case-variant'а в БД даже минуя pydantic-валидатор.
 
-        Тест документирует это: case-variant rows, вставленные напрямую через
-        ORM, ротируются как обычные сервисы. Закрытие atack-vector'а
-        `service="LoGiNg_SeRvIcE"` живёт в `_normalize_service` (schemas/events.py).
+        До этой защиты row с `service="Loging_Service"` мог попасть в БД
+        через прямой ORM-add (миграция, ручной INSERT support'ом, seed)
+        и retention DELETE удалял его как «не loging_service». Теперь
+        ALTER TABLE CHECK совпадает с `_SERVICE_PATTERN` из
+        `schemas/events.py` (`^[a-z_]{1,64}$`) и отбивает любую запись
+        с заглавной буквой или другими не-канонической формой.
         """
+        from sqlalchemy.exc import IntegrityError
+
         _set_policy(db, retain_days=30)
         old = datetime.now(timezone.utc) - timedelta(days=400)
         for variant in ("LoGiNg_SeRvIcE", "LOGING_SERVICE", "Loging_Service"):
-            _make_event(db, service=variant, ts=old)
-        # Плюс одно лишнее старое от auth_service — тоже удалится
-        _make_event(db, service="auth_service", ts=old)
-        deleted = apply_active(db)
-        assert deleted == 4  # все 4: case-variants + auth_service
-
-        from sqlalchemy import select
-        remaining = db.execute(select(AuditEvent.service)).scalars().all()
-        assert remaining == []
+            try:
+                _make_event(db, service=variant, ts=old)
+            except IntegrityError:
+                db.rollback()
+            else:
+                raise AssertionError(
+                    f"CHECK constraint должен был отклонить service={variant!r}"
+                )
 
 
 # ── Граница cutoff ────────────────────────────────────────────────────────────
@@ -229,27 +228,27 @@ class TestLogingServiceProtectionUnicodeBypass:
         remaining = db.execute(select(AuditEvent.service)).scalars().all()
         assert remaining == ["loging_service"]
 
-    def test_legacy_row_with_zero_width_not_silently_deleted(self, db):
-        """Legacy-row с U+200B в ``service`` НЕ удаляется retention.
+    def test_row_with_zero_width_rejected_by_db_check(self, db):
+        """`ck_audit_events_service_canonical` запрещает запись
+        `loging_service` с zero-width (U+200B) даже минуя pydantic.
 
-        Even если до фикса в БД оказался row с зафиксированным
-        zero-width (``"loging_service​"``), retention.func.lower(...) !=
-        'loging_service'`` всё ещё считает его НЕ равным защищённому имени
-        и **удалит** его — это документированный edge-case (forward-only
-        защита). Тест фиксирует ожидание: legacy-rows с invisibles
-        удаляются (не задерживаются), но это не expanding-attack-surface,
-        потому что фикс на ingest блокирует появление новых таких
-        строк. Тест зафиксирован для явной документации поведения.
+        До фикса retention DELETE сравнивал raw-equality с
+        `"loging_service"` — invisible suffix не совпадал, событие
+        удалялось. CHECK-regexp на canonical `^[a-z_]{1,64}$` отбивает
+        строку с U+200B на insert: legacy-rows физически невозможны.
         """
+        from sqlalchemy.exc import IntegrityError
+
         _set_policy(db, retain_days=30)
         old = datetime.now(timezone.utc) - timedelta(days=400)
-        # Сэмулировать legacy-row напрямую через ORM (минуя schema-валидатор).
-        _make_event(db, service="loging_service​", ts=old)  # с U+200B
-        deleted = apply_active(db)
-        # Legacy-row с U+200B будет удалён ASCII-сравнением — это известный
-        # forward-only trade-off. Главное: новые ingest-rows нормализуются и
-        # защищены (см. test_ingest.py::TestIngestReservedServiceUnicodeBypass).
-        assert deleted == 1
+        try:
+            _make_event(db, service="loging_service​", ts=old)
+        except IntegrityError:
+            db.rollback()
+        else:
+            raise AssertionError(
+                "CHECK constraint должен был отклонить service с U+200B"
+            )
 
     def test_post_normalization_rows_protected_from_retention(self, db):
         """ingest-нормализованные ``loging_service`` строки

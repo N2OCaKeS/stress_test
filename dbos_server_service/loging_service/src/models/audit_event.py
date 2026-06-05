@@ -15,7 +15,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Index, String, Boolean, text
+from sqlalchemy import CheckConstraint, DateTime, Index, String, Boolean, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -109,5 +109,13 @@ class AuditEvent(Base):
             "idempotency_key",
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
+        # CHECK совпадает с `_SERVICE_PATTERN` в `schemas/events.py`. Защищает
+        # retention DELETE-clause (`service != 'loging_service'`) от row'ов,
+        # попавших в БД мимо pydantic-валидатора: ручной INSERT, ORM-add из
+        # будущего сервиса, seed. Миграция `l2m3n4o5p6q7`.
+        CheckConstraint(
+            "service ~ '^[a-z_]{1,64}$'",
+            name="ck_audit_events_service_canonical",
         ),
     )

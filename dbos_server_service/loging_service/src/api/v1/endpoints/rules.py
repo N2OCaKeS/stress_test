@@ -226,6 +226,14 @@ def create_rule(
         # отдельно — окно между двумя commit'ами теряет audit при OOM/network
         # drop, нарушает compliance «все admin-действия аудитируются».
         _audit(db, identity, "logging_rule.create", {"rule_id": rule.id, "rule_name": rule.name})
+        # Invalidate ДО commit'а: между `commit()` и `invalidate_cache()` в
+        # обратном порядке concurrent ingest на том же воркере держит stale
+        # snapshot (TTL не истёк) и пропускает только что созданное SUPPRESS-
+        # правило. Обратный порядок безопаснее: если invalidate сработал, а
+        # commit упал, следующий cache-miss перечитает БД без новой row'и —
+        # никакая запись не теряется, потеря лишь «свежести» кеша,
+        # восстанавливается следующим обращением.
+        rule_service.invalidate_cache()
         db.commit()
         db.refresh(rule)
     except IntegrityError as exc:
@@ -246,7 +254,6 @@ def create_rule(
             message="Database constraint violation during rule create",
             details={"name": payload.name},
         )
-    rule_service.invalidate_cache()
     return RuleResponse.model_validate(rule)
 
 
@@ -308,6 +315,8 @@ def update_rule(
     try:
         updated = rule_repo.update(db, rule, payload, commit=False)
         _audit(db, identity, "logging_rule.update", {"rule_id": rule_id, "changes": payload.model_dump(exclude_unset=True)})
+        # Invalidate ДО commit'а — см. комментарий в `create_rule`.
+        rule_service.invalidate_cache()
         db.commit()
         db.refresh(updated)
     except IntegrityError as exc:
@@ -331,7 +340,6 @@ def update_rule(
             message="Database constraint violation during rule update",
             details={"rule_id": rule_id},
         )
-    rule_service.invalidate_cache()
     return RuleResponse.model_validate(updated)
 
 
@@ -369,8 +377,9 @@ def delete_rule(
     # SIEM не врёт «удалено» о неудалённом правиле.
     rule_repo.delete(db, rule, commit=False)
     _audit(db, identity, "logging_rule.delete", {"rule_id": rule_id, "rule_name": original_name})
-    db.commit()
+    # Invalidate ДО commit'а — см. комментарий в `create_rule`.
     rule_service.invalidate_cache()
+    db.commit()
 
 
 def _validate_match_action(match_action: str | None, db: Session) -> None:

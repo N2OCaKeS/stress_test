@@ -369,7 +369,7 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                 # Без timestamp'а recovery её не увидит, и задача висит
                 # queued до orphan-sweep'а или ручного вмешательства.
                 if fresh.attempt < fresh.max_attempts:
-                    await task_repo.mark_pending_for_retry(
+                    marked = await task_repo.mark_pending_for_retry(
                         session,
                         fresh,
                         error_message,
@@ -378,9 +378,27 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                     audit_severity = "WARNING"
                     will_retry = True
                 else:
-                    await task_repo.mark_failed(session, fresh, error_message)
+                    marked = await task_repo.mark_failed(
+                        session, fresh, error_message,
+                    )
                     audit_severity = "ERROR"
                     will_retry = False
+
+                # CAS-guard в mark_pending_for_retry/mark_failed возвращает
+                # None, если row была cancel'нута между нашим get_by_id и
+                # UPDATE. Без этого check'а мы бы писали audit
+                # `task.worker_shutdown` поверх уже cancelled-task'и и
+                # `details.will_retry=True` обманывал бы оператора — retry
+                # не запланирован, потому что UPDATE не прошёл. Симметрия
+                # с `_runner.run_task`, который ровно так же скипает audit
+                # при CAS-miss.
+                if marked is None:
+                    logger.info(
+                        "graceful shutdown: task_id=%s cancelled mid-drain, "
+                        "skipping worker_shutdown audit",
+                        tid,
+                    )
+                    continue
 
                 details_payload: dict = {
                     "task_id": tid,

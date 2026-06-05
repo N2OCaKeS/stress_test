@@ -38,6 +38,7 @@ from taskiq_redis import ListQueueBroker
 from src.core.config import get_settings
 from src.core.exceptions import ConflictError, ServiceUnavailableError
 from src.repositories import dispatch_outbox as dispatch_outbox_repo
+from src.services import metrics
 from src.utils.ids import task_id
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,7 @@ def _engine_factory():
             pool_pre_ping=True,
             pool_size=5,
             max_overflow=5,
+            pool_recycle=1800,
         )
         _worker_session_factory = async_sessionmaker(
             bind=_worker_engine, expire_on_commit=False
@@ -802,6 +804,14 @@ async def _dispatch_task_inner(
     # останется orphan'ом без публикации в Redis (poller её не подберёт —
     # безопасно, но требует мониторинга). Сценарий узкий: локальный commit
     # после нескольких удачных async-операций обычно проходит.
+    #
+    # Ops-метрика: pending_depth +1 на успешный INSERT outbox-row. Decrement
+    # делается на стороне poller'а при `mark_dispatched`; in-process у нас
+    # счётчик-аппроксимация, точный snapshot можно поднять через
+    # `dispatch_outbox_repo.pending_count`.
+    metrics.set_dispatch_outbox_pending_depth(
+        metrics.get_dispatch_outbox_pending_depth() + 1,
+    )
     logger.info(
         "dispatch_task queued (worker-row + outbox)",
         extra={

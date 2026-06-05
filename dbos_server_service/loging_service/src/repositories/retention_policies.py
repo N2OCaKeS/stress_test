@@ -133,6 +133,11 @@ def list_active(db: Session) -> list[RetentionPolicy]:
 # держал бы row-locks на всю выборку, раздувал WAL и тормозил конкурентный
 # ingest-INSERT. Чанкуем по этому размеру и коммитим каждый чанк — autovacuum
 # успевает чистить dead tuples между коммитами, а транзакция остаётся короткой.
+#
+# Дефолт сознательно дублирует `Settings.retention_chunk_size`: импорт settings
+# на module-level развернул бы цикл (`config` → `repositories` → `models`),
+# поэтому keep-in-sync пара. `apply_active` сам уважает env-override через
+# параметр `chunk_size`, который `_retention_loop` подтягивает из settings.
 _SWEEP_CHUNK_SIZE = 10_000
 
 

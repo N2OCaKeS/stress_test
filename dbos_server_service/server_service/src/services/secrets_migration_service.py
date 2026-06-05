@@ -41,7 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.models import IpmiController, ReencryptOutboxEntry, ServerAccount
-from src.services import audit_service, secrets_service
+from src.services import audit_service, metrics, secrets_service
 
 logger = logging.getLogger(__name__)
 
@@ -454,7 +454,15 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
         skip_reason = "owner_ciphertext_changed"
     else:
         aad = _aad_for_entry(entry.entity_type, entry.entity_id)
-        plaintext = secrets_service.decrypt(entry.legacy_ciphertext, aad=aad)
+        try:
+            plaintext = secrets_service.decrypt(entry.legacy_ciphertext, aad=aad)
+        except Exception:
+            # `secrets_service.decrypt` поднимает AppException на decrypt-fail;
+            # пропускаем выше (endpoint оборачивает в `secrets.reencrypt_failed`),
+            # но успеваем поднять process-level counter — оператор видит
+            # волну fail'ов до того, как finalize_failed напишет audit'ы.
+            metrics.increment_secrets_decrypt_failures()
+            raise
         new_ciphertext = secrets_service.encrypt(plaintext, aad=aad)
         owner.password_encrypted = new_ciphertext
 
@@ -597,6 +605,7 @@ def _reencrypt_row(row, *, aad_fn, entity_type: str, log_label: str) -> dict | N
         # ciphertext vs decrypt с чужим AAD'ом). Сам plaintext или ключ
         # из exc-сообщений не достанем — пишем только класс.
         exc_class = type(exc).__name__
+        metrics.increment_secrets_decrypt_failures()
         logger.warning(
             "reencrypt_batch %s row %s failed: %s",
             log_label, row.id, exc_class,

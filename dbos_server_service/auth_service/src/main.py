@@ -19,6 +19,7 @@ from src.api.router import api_router
 from src.core.config import get_settings
 from src.core.exceptions import AppException
 from src.core.logging import configure_logging
+from src.db.session import engine
 from src.dependencies.db import get_db
 from src.services import audit_context, audit_service, http_pool
 from src.services.audit_context import AuditContext, extract_client_ip
@@ -109,6 +110,11 @@ _RATE_LIMITED_PATHS_FACTORY = {
     # M2M-call часто, но не безудержно — закрываем от scan/brute по введённым
     # токенам с одного IP.
     "POST /api/auth/v1/authorization/introspect": "introspect_rate_limit",
+    # /service-access — тонкая обёртка над introspect (тот же revalidate +
+    # фильтр по service_name). Без лимита атакующий с украденным
+    # SERVICE_API_KEY заваливает auth-pool через /service-access так же
+    # эффективно, как через /introspect. Переиспользуем тот же ключ.
+    "POST /api/auth/v1/authorization/service-access": "introspect_rate_limit",
 }
 
 
@@ -215,9 +221,28 @@ def create_application() -> FastAPI:
                         timeout=2.0,
                     )
 
+            # Симметрично drain'им `_BACKGROUND_TASKS` (там живёт
+            # `_startup_sequence` с register_events + service.started emit).
+            # Без drain'а SIGTERM в первые 5с после старта оставляет catalog
+            # нерегистрированным и не доехавший service.started в SIEM.
+            bg_pending = [t for t in _BACKGROUND_TASKS if not t.done()]
+            if bg_pending:
+                with suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(
+                        asyncio.gather(*bg_pending, return_exceptions=True),
+                        timeout=2.0,
+                    )
+
             # Обнуляем slot только после drain'а. Любые emit'ы, попавшие
             # сюда после этой строки, пойдут per-call fallback'ом.
             await http_pool.aclose_all()
+
+            # DB engine закрываем последним: после http_pool, чтобы любые
+            # in-flight emit'ы успели уйти, и symметрично с server_worker'ом.
+            # В dev `uvicorn --reload` без явного dispose старый pool
+            # удерживает FD'шники до GC модуля.
+            with suppress(Exception):
+                await engine.dispose()
 
     app = FastAPI(
         title=settings.app_name,

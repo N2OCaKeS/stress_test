@@ -74,11 +74,10 @@ _RETRY_DELAYS_ON_429 = (0.5, 1.5)
 # Монотонный счётчик за время жизни процесса. Ненулевое значение в проде
 # сигналит, что loging_service режет rate-limit'ом наши audit-emit'ы.
 #
-# Known limitation: счётчик per-process. При `uvicorn --workers N` каждый
-# процесс ведёт свой counter — общая картина не агрегируется. Для prod-наблюдаемости
-# вынести в Prometheus Counter (multi-process mode через PROMETHEUS_MULTIPROC_DIR)
-# или Redis INCR; пока — оператор должен суммировать по pod'ам/процессам вручную
-# (`/metrics`-aggregation на уровне scraper'а).
+# Known limitation: счётчик per-process, read через `get_dropped_429_total()`.
+# Multi-worker uvicorn ведёт свой counter в каждом процессе; внешний
+# Prometheus exporter / агрегатор должен суммировать сам, либо оператор
+# смотрит на pod-level через `kubectl logs`.
 _audit_dropped_429: int = 0
 
 

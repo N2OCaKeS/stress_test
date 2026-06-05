@@ -48,6 +48,10 @@ def get_session_factory() -> async_sessionmaker[AsyncSession] | None:
             pool_pre_ping=True,
             pool_size=settings.db_pool_size,
             max_overflow=settings.db_max_overflow,
+            # Симметрично основному engine'у (`db/session.py`): принудительная
+            # ротация idle-коннекта раз в 30 минут, до достижения idle-killer'а
+            # PgBouncer / cloud-NAT.
+            pool_recycle=1800,
         )
         _session_factory = async_sessionmaker(
             bind=_engine,

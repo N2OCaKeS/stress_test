@@ -1,9 +1,15 @@
 """Эндпоинты логина, refresh, logout и identity-контекста."""
 
+import asyncio
+import logging
+
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.db.session import AsyncSessionLocal
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.auth import IdentityContext, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest, RefreshResponse
@@ -12,6 +18,13 @@ from src.services import auth_service
 from src.services.audit_context import extract_client_ip
 
 router = APIRouter()
+
+_readiness_logger = logging.getLogger(__name__)
+
+# Внешний потолок на весь readiness-пинг. k8s readinessProbe.timeoutSeconds
+# обычно 1s — стараемся ответить раньше, даже если pgsql тупит на checkout'е
+# из пула. asyncio.wait_for режет вместе с TCP-таймером.
+_READINESS_TIMEOUT_SECONDS = 0.5
 
 
 @router.get(
@@ -24,14 +37,40 @@ async def healthcheck() -> dict[str, str]:
     return {"status": "ok", "service": "auth_service"}
 
 
+async def _ping_db() -> None:
+    """Короткий `SELECT 1` через общий engine."""
+    async with AsyncSessionLocal() as session:
+        await session.execute(text("SELECT 1"))
+
+
 @router.get(
     "/ready",
     summary="Readiness-проба",
-    description="Readiness-чек. Используется Kubernetes для определения готовности принимать трафик.",
+    description=(
+        "Readiness-чек. Пингует БД через `SELECT 1` с коротким timeout'ом. "
+        "При недоступной БД отвечает 503 — k8s ingress тогда не льёт трафик в pod."
+    ),
 )
-async def readiness() -> dict[str, str]:
-    """Readiness — отдаёт `{"status": "ready"}` если сервис готов принимать запросы."""
-    return {"status": "ready", "service": "auth_service"}
+async def readiness() -> JSONResponse:
+    """Readiness — БД-пинг через short-timeout `SELECT 1`.
+
+    На fail отдаём 503 + envelope `{"status": "not_ready", "reason": "db_unreachable"}`.
+    Upstream'ы (loging_service, audit-pool) не пингуем — это observability-канал,
+    не критическая зависимость для аутентификации (audit best-effort, sync fallback
+    рассасывает дроп). БД — единственная hard-dependency.
+    """
+    try:
+        await asyncio.wait_for(_ping_db(), timeout=_READINESS_TIMEOUT_SECONDS)
+    except Exception as exc:
+        _readiness_logger.warning("readiness probe: DB unreachable: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "reason": "db_unreachable", "service": "auth_service"},
+        )
+    return JSONResponse(
+        status_code=200,
+        content={"status": "ready", "service": "auth_service"},
+    )
 
 
 @router.post(

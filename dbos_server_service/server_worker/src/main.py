@@ -39,7 +39,7 @@ from src.core.constants import TaskStatus
 from src.db import dispatch_outbox_session
 from src.db.session import AsyncSessionLocal
 from src.repositories import task as task_repo
-from src.services import audit_outbox_publisher, http_pool
+from src.services import audit_outbox_publisher, http_pool, redis_pool
 from src.utils.redaction import redact_error_message
 
 # `from src.tasks._runner_state import RUNNING_TASKS` остаётся локальным:
@@ -89,6 +89,51 @@ broker = ListQueueBroker(url=_settings.redis_url).with_result_backend(
 _PUBLISHER_TASK_KEY = "audit_outbox_publisher_task"
 
 
+def _on_publisher_exit(task: asyncio.Task) -> None:
+    """Safety-net callback для фоновых publisher loop'ов.
+
+    Loop'ы (`audit_outbox_publisher.run_publisher_loop`,
+    `dispatch_outbox.run_publisher_loop`) внутри ловят `Exception`, но
+    `BaseException`-подкласс (Cancel — штатно; что-то другое — нет)
+    проскочит и task молча завершится. Без callback'а shutdown-хук
+    дождётся уже-завершённого task'а мгновенно и worker подумает, что
+    drain прошёл штатно. Здесь — ERROR-лог при unexpected exit, чтобы
+    оператор увидел сигнал в k8s log-aggregator'е.
+    """
+    if task.cancelled():
+        return
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:
+        return
+    if exc is not None:
+        logger.critical(
+            "background publisher loop exited unexpectedly: name=%s err=%s",
+            task.get_name(),
+            redact_error_message(f"{type(exc).__name__}: {exc}"),
+        )
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _warn_on_missing_audit_api_key(state: TaskiqState) -> None:
+    """Сигнал оператору при старте, если `LOGGING_SERVICE_API_KEY` пустой.
+
+    В non-prod-окружениях (`local`/`dev`/`test`/`staging`) settings-валидатор
+    разрешает пустой ключ — но это означает, что `audit_client.emit` тихо
+    дропает каждое событие и инкрементит `_audit_dropped_no_api_key`.
+    Без startup-WARNING'а оператор узнаёт о мисконфиге только если
+    специально читает grep по логам. Пишем WARNING явно с указанием
+    счётчика, чтобы k8s log-aggregator подсветил.
+    """
+    if not _settings.logging_service_api_key:
+        logger.warning(
+            "LOGGING_SERVICE_API_KEY is empty (app_env=%s); audit emits "
+            "will be silently dropped — see audit_client._audit_dropped_no_api_key "
+            "counter and `get_dropped_no_api_key_total()`",
+            _settings.app_env,
+        )
+
+
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def _warmup_http_pools(state: TaskiqState) -> None:
     """Прогрев pooled httpx.AsyncClient'ов для loging_service и server_service.
@@ -136,6 +181,7 @@ async def _start_dispatch_outbox_publisher(state: TaskiqState) -> None:
         dispatch_outbox.run_publisher_loop(),
         name="dispatch_outbox_publisher",
     )
+    task.add_done_callback(_on_publisher_exit)
     state[_DISPATCH_PUBLISHER_TASK_KEY] = task
     logger.info("dispatch_outbox publisher loop scheduled on worker startup")
 
@@ -179,6 +225,7 @@ async def _start_audit_outbox_publisher(state: TaskiqState) -> None:
         audit_outbox_publisher.run_publisher_loop(),
         name="audit_outbox_publisher",
     )
+    task.add_done_callback(_on_publisher_exit)
     # TaskiqState — UserDict-like + attr access. Пишем под фиксированным
     # ключом, shutdown-хук поднимает оттуда.
     state[_PUBLISHER_TASK_KEY] = task
@@ -378,7 +425,7 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
 
 @broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
 async def _close_http_pools(state: TaskiqState) -> None:
-    """Закрыть pooled HTTP-клиенты после graceful drain.
+    """Закрыть pooled HTTP-клиенты и shared Redis-pool после graceful drain.
 
     Ставится последним среди WORKER_SHUTDOWN-хендлеров, чтобы:
 
@@ -387,10 +434,26 @@ async def _close_http_pools(state: TaskiqState) -> None:
         `audit_client.emit` (он сам же дергает наш пул, поэтому пулы
         должны жить до этого момента).
 
+    Порядок shutdown'а (порядок регистрации хуков выше):
+
+      1. `_stop_dispatch_outbox_publisher` — отменяет dispatch loop.
+      2. `_stop_audit_outbox_publisher` — отменяет audit-loop.
+      3. `_drain_running_tasks` — ждёт running impl, mark_pending_for_retry
+         либо mark_failed survivor'ов, + best-effort `flush_outbox()`
+         (использует тот же `_publish_one` — пулы ещё живы).
+      4. Этот хук — закрывает HTTP-пулы и shared Redis-pool.
+
+    `_drain_running_tasks._safe_flush_outbox` идёт ПОСЛЕ stop'а publisher
+    loop'а сознательно: drain работает синхронно через `_publish_one`,
+    не зависит от background loop'а. Если порядок поменять (drain
+    раньше publisher-stop), drain мог бы конкурировать с loop'ом за
+    одни и те же row'ы, и SKIP LOCKED-выборка работала бы вхолостую.
+
     После выхода из этого хука taskiq закроет broker, и FD-учёт
-    httpx-пула должен быть чистым.
+    httpx-/Redis-пулов должен быть чистым.
     """
     await http_pool.aclose_all()
+    await redis_pool.aclose()
 
 
 # Регистрируем все task-handler'ы (должно идти после определения `broker`).
@@ -430,11 +493,15 @@ async def _recover_due_scheduled_retries_once() -> None:
     from src.utils.redaction import redact_error_message
 
     # Жёсткий cap на тик: даже если backlog огромный, не молотим в одном
-    # проходе всё подряд. Следующий cron-тик доберёт остаток. Cap
-    # совпадает с разумным размером Redis-burst'а; крайне маловероятно
-    # упереться в production'е (по факту >10 retry-pending за минуту —
-    # уже сигнал к investigation'у).
-    MAX_PER_TICK = 200
+    # проходе всё подряд. Следующий cron-тик доберёт остаток. Дефолт
+    # `WORKER_RETRY_RECOVERY_MAX_PER_TICK=200` хватает на штатные сценарии;
+    # incident-recovery (тысячи row'ов после длительного downtime'а)
+    # требует временно поднять env и вернуть обратно после разгребания.
+    # Cron `*/1 * * * *` и startup-hook оба зовут эту функцию, FOR UPDATE
+    # SKIP LOCKED делает race-safe — суммарная пропускная способность
+    # будет до 2 × cap/min (при одновременном starup + cron), но claim
+    # уникален per-row.
+    MAX_PER_TICK = _settings.worker_retry_recovery_max_per_tick
     recovered = 0
     skipped = 0
     failed_kiq = 0
@@ -588,17 +655,33 @@ scheduler = TaskiqScheduler(broker=broker, sources=[LabelScheduleSource(broker)]
     schedule=[{"cron": "*/1 * * * *"}] if _settings.scheduler_enabled else [],
 )
 async def system_heartbeat() -> None:
-    """Демо periodic task — тикает каждую минуту, когда scheduler enabled.
+    """Демо periodic task — тикает раз в минуту, когда scheduler enabled.
 
-    Пишет logger.info «alive» — заглушка для будущей логики: запись
-    `last_heartbeat_at` в DB для operator-monitoring, push Prometheus-
-    метрики или health-check для service mesh.
+    Расписание — `*/1 * * * *` (минимальная cron-гранулярность). DB-видимости
+    нет — для неё рядом крутится `worker.heartbeat`, который UPSERT'ит
+    `worker_heartbeats`. Эта же task пишет logger.info «alive» — заглушка
+    под будущий counter-snapshot (DLQ/breaker-skips/dropped_no_api_key)
+    с тем же cron'ом, чтобы оператор видел в k8s log-aggregator регулярный
+    маркер health'а worker'а.
 
     Когда `SCHEDULER_ENABLED=false` — task всё равно регистрируется на
     broker'е (нужна на worker-стороне, чтобы `find_task` её нашёл), но
     без `schedule` labels — scheduler её игнорирует.
     """
-    logger.info("system.heartbeat tick — worker alive")
+    # Counter-snapshot — дешёвый workaround под /metrics-endpoint, которого
+    # пока нет. Если кто-то отдельно реализует Prometheus-экспортер, эту
+    # snapshot-строку можно убрать. До тех пор INFO-строка раз в минуту в
+    # journald позволяет grep'нуть инцидент задним числом.
+    from src.services import audit_client as _ac
+    from src.services import audit_outbox_publisher as _aop
+
+    logger.info(
+        "system.heartbeat tick — worker alive; "
+        "audit_dlq_total=%s breaker_skips_total=%s dropped_no_api_key_total=%s",
+        _aop.get_dlq_total(),
+        _aop.get_breaker_skips_total(),
+        _ac.get_dropped_no_api_key_total(),
+    )
 
 
 @broker.task(

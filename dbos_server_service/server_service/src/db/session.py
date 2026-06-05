@@ -4,7 +4,9 @@
 (дефолты 10/20 живут в `core.config.Settings`, симметрично с
 `loging_service` и `server_worker`). `pool_pre_ping` пингует коннект
 перед использованием, чтобы не нарваться на closed-сокет после
-restart'а postgres.
+restart'а postgres. `pool_recycle=1800` — проактивный rotate коннекта
+раз в 30 минут, чтобы pgbouncer / NAT / `idle_in_transaction_session_timeout`
+не рвали idle-сокет наполовину открытым (pre_ping ловит уже-мёртвый).
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -18,6 +20,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=_settings.db_pool_size,
     max_overflow=_settings.db_max_overflow,
+    pool_recycle=1800,
 )
 
 # Sessionmaker, который раздаёт `AsyncSession` под `async with`-блоки.

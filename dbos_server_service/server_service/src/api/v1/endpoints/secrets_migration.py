@@ -20,11 +20,13 @@ Outbox-pattern. Старые `migration_status` / `reencrypt_batch` оставл
 Бизнес-логика — в `services/secrets_migration_service.py`.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.constants import Action, EntityType
 from src.core.exceptions import AppException, AuthorizationError
+from src.core.limiter import endpoint_limiter
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.schemas.secrets_migration import (
@@ -133,7 +135,9 @@ async def reencrypt_batch(
 
 
 @router.post("/reencrypt_outbox/seed", response_model=SeedOutboxResponse)
+@endpoint_limiter.limit(get_settings().worker_pool_rate_limit)
 async def seed_reencrypt_outbox(
+    request: Request,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(
@@ -176,7 +180,9 @@ async def seed_reencrypt_outbox(
     "/reencrypt_outbox/pending",
     response_model=OutboxClaimResponse,
 )
+@endpoint_limiter.limit(get_settings().worker_pool_rate_limit)
 async def claim_reencrypt_outbox(
+    request: Request,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=500),

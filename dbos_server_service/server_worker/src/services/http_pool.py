@@ -76,6 +76,8 @@ def get_audit_client() -> httpx.AsyncClient:
 
     Лениво создаётся на первом вызове. Размер пула — из
     `AUDIT_POOL_MAX_CONNECTIONS` / `AUDIT_POOL_MAX_KEEPALIVE_CONNECTIONS`.
+    Таймаут — `AUDIT_REQUEST_TIMEOUT_SECONDS` (default 5.0): emit'ы
+    короткие, ingest должен отвечать быстро.
     """
     global _audit_client
     if _audit_client is None or _audit_client.is_closed:
@@ -83,7 +85,7 @@ def get_audit_client() -> httpx.AsyncClient:
         _audit_client = _build_client(
             max_connections=settings.audit_pool_max_connections,
             max_keepalive=settings.audit_pool_max_keepalive_connections,
-            timeout=settings.http_request_timeout_seconds,
+            timeout=settings.audit_request_timeout_seconds,
         )
     return _audit_client
 
@@ -94,6 +96,9 @@ def get_server_service_client() -> httpx.AsyncClient:
     Лениво создаётся на первом вызове. Размер — из
     `SERVER_SERVICE_POOL_MAX_CONNECTIONS` /
     `SERVER_SERVICE_POOL_MAX_KEEPALIVE_CONNECTIONS`.
+    Таймаут — `SERVER_SERVICE_REQUEST_TIMEOUT_SECONDS` (default 15.0):
+    internal-callback'и тянут крипто-операции, batch'ам нужно больше
+    окна чем audit-emit'у.
     """
     global _server_service_client
     if _server_service_client is None or _server_service_client.is_closed:
@@ -101,7 +106,7 @@ def get_server_service_client() -> httpx.AsyncClient:
         _server_service_client = _build_client(
             max_connections=settings.server_service_pool_max_connections,
             max_keepalive=settings.server_service_pool_max_keepalive_connections,
-            timeout=settings.http_request_timeout_seconds,
+            timeout=settings.server_service_request_timeout_seconds,
         )
     return _server_service_client
 

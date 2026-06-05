@@ -279,7 +279,7 @@ class TestScrubPayloadBestEffort:
         get_settings.cache_clear()
 
         import json
-        import redis.asyncio as aioredis
+        from src.services import redis_pool
 
         fake_creds = json.dumps({"bootstrap_login": "boot", "bootstrap_password": "B00t1234"})
 
@@ -296,7 +296,7 @@ class TestScrubPayloadBestEffort:
             async def aclose(self):
                 pass
 
-        monkeypatch.setattr(aioredis, "from_url", lambda url: FakeRedisClient())
+        monkeypatch.setattr(redis_pool, "get_redis", lambda: FakeRedisClient())
 
         conn = make_conn([
             run_result("", "", 2),   # getent passwd → not found (new user)

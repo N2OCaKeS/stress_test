@@ -176,9 +176,10 @@ async def poll_once() -> None:
                             seconds=_CAP_REACHED_PARK_SECONDS,
                         )
                         logger.warning(
-                            "dispatch_outbox.poll: row=%s task_id=%s "
-                            "task_kind=%s reached attempts cap=%s (unknown task_kind); "
-                            "parking next_retry_at=+24h — operator must reset",
+                            "dispatch_outbox.poll: event=dispatch_park row=%s "
+                            "task_id=%s task_kind=%s reason=unknown_task_kind "
+                            "attempts_cap=%s — parking next_retry_at=+24h, "
+                            "operator must reset",
                             row.id,
                             row.task_id,
                             row.task_kind,
@@ -214,9 +215,10 @@ async def poll_once() -> None:
                             seconds=_CAP_REACHED_PARK_SECONDS,
                         )
                         logger.warning(
-                            "dispatch_outbox.poll: row=%s task_id=%s "
-                            "task_kind=%s reached attempts cap=%s last_error=%s; "
-                            "parking next_retry_at=+24h — operator must reset",
+                            "dispatch_outbox.poll: event=dispatch_park row=%s "
+                            "task_id=%s task_kind=%s reason=kiq_failed "
+                            "attempts_cap=%s last_error=%s — parking "
+                            "next_retry_at=+24h, operator must reset",
                             row.id,
                             row.task_id,
                             row.task_kind,

@@ -54,7 +54,7 @@ import redis.asyncio as aioredis
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
-from src.services import _breaker_core, _breaker_lua
+from src.services import _breaker_core, _breaker_lua, redis_pool
 from src.services._breaker_core import Thresholds as _Thresholds
 
 logger = logging.getLogger(__name__)
@@ -145,17 +145,22 @@ def _all_keys(host: str) -> tuple[str, str, str, str]:
 
 
 async def _get_client() -> aioredis.Redis:
-    """One-shot Redis-клиент.
+    """Вернуть singleton Redis-клиент из shared pool'а.
 
-    Не кэшируем глобально: ``aioredis.Redis`` держит pool, разрыв коннекта
-    из-за рестарта Redis тогда придётся отдельно лечить. Open-close
-    стоит мало по сравнению с BMC-roundtrip'ом.
+    Прежняя реализация открывала свежий `aioredis.from_url` на каждый
+    breaker-вызов («open-close дёшево по сравнению с BMC-roundtrip'ом»).
+    Под burst rotation'ов / power-cycles это давало десятки лишних
+    TCP/AUTH-handshake'ев в секунду и переживало рестарт Redis ровно
+    одним лишним RTT. Singleton из `redis_pool.get_redis()` амортизирует
+    handshake'и; разрыв коннекта переживает встроенный reconnect
+    redis-py.
 
     Подменяется в тестах через `install_fake_redis(monkeypatch, bmc_cb)` —
-    `_breaker_core` дёргает эту функцию как client_factory.
+    `_breaker_core` дёргает эту функцию как client_factory с
+    `close_after_use=False`, и singleton (или FakeRedis в тестах)
+    остаётся жив между вызовами.
     """
-    settings = get_settings()
-    return aioredis.from_url(settings.redis_url)
+    return redis_pool.get_redis()
 
 
 async def check(host: str) -> None:
@@ -174,6 +179,7 @@ async def check(host: str) -> None:
         log_prefix=f"bmc_breaker[host={host}]",
         logger=logger,
         now=time.time(),
+        close_after_use=False,
     )
     if state == "open":
         logger.warning(
@@ -196,6 +202,7 @@ async def record_success(host: str) -> None:
         keys=_all_keys(host),
         log_prefix=f"bmc_breaker[host={host}]",
         logger=logger,
+        close_after_use=False,
     )
 
 
@@ -215,6 +222,7 @@ async def record_failure(host: str) -> None:
         log_prefix=f"bmc_breaker[host={host}]",
         logger=logger,
         now=time.time(),
+        close_after_use=False,
     )
     if result is None:
         return
@@ -242,4 +250,5 @@ async def reset(host: str) -> None:
         keys=_all_keys(host),
         log_prefix=f"bmc_breaker[host={host}]",
         logger=logger,
+        close_after_use=False,
     )

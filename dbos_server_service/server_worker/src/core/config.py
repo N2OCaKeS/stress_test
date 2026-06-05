@@ -98,7 +98,39 @@ class Settings(BaseSettings):
         default="",
         description="Shared SERVICE_API_KEY used by loging_service /events ingest",
     )
-    http_request_timeout_seconds: float = Field(default=5.0, description="HTTP timeout")
+    http_request_timeout_seconds: float = Field(
+        default=5.0,
+        description=(
+            "Legacy общий HTTP timeout. Оставлен как fallback / для тестов; "
+            "production-path развёл audit и server_service через "
+            "`audit_request_timeout_seconds` / `server_service_request_timeout_seconds`."
+        ),
+    )
+    # Канал worker → loging_service: emit'ы аудита короткие, low-latency
+    # ожидается от ingest'а. 5s достаточно на TLS handshake + INSERT в logs.
+    audit_request_timeout_seconds: float = Field(
+        default=5.0,
+        gt=0.0,
+        description=(
+            "HTTP timeout для emit'ов в loging_service /events. Короткий — "
+            "ingest должен отвечать быстро; на медленных проходах rule_engine "
+            "5s включит outbox retry, что предпочтительнее зависшего worker'а."
+        ),
+    )
+    # Канал worker → server_service: internal-callback'и тащат крипто (decrypt
+    # /encrypt /UPDATE row под master-key); `finalize_reencrypt_outbox_done` на
+    # большом batch + slow PostgreSQL легко выйдет за 5s. 15s — компромисс
+    # между «не зависать» и «не ловить ложный SERVER_SERVICE_UNREACHABLE».
+    server_service_request_timeout_seconds: float = Field(
+        default=15.0,
+        gt=0.0,
+        description=(
+            "HTTP timeout для internal-callback'ов в server_service "
+            "(fetch_*/submit_*/reencrypt_outbox/*). Длиннее audit-timeout'а: "
+            "криптооперации сервера могут тянуться 50-200ms на row, batch "
+            "callback'и упираются в slow PG."
+        ),
+    )
     worker_log_level: str = Field(default="INFO", description="Python log level")
 
     # ── Pooled HTTP clients ──────────────────────────────────────────────
@@ -195,6 +227,22 @@ class Settings(BaseSettings):
             "Max seconds the worker waits for running tasks to finish on "
             "SIGTERM. After timeout — surviving tasks are marked "
             "pending-for-retry (if attempts left) or failed (terminal)."
+        ),
+    )
+
+    # Cap на recovery-проход `_recover_due_scheduled_retries_once`. Дефолт
+    # 200/тик хватает на штатные сценарии. После длительного downtime'а с
+    # тысячами потерянных retry-row'ов 200/min = неприемлемо медленный
+    # разгребатель — поднимать через env только под incident-recovery,
+    # потом возвращать в default.
+    worker_retry_recovery_max_per_tick: int = Field(
+        default=200,
+        ge=1,
+        description=(
+            "Hard cap для одного прохода recovery'я scheduled_retry'ев "
+            "(startup-hook и periodic-cron оба зовут `_recover_due_..._once`). "
+            "Поднимать только во время incident-recovery (>1000 потерянных "
+            "row'ов после длительного downtime'а)."
         ),
     )
 
@@ -304,7 +352,11 @@ class Settings(BaseSettings):
         description=(
             "Per-request timeout for Redfish HTTP calls (connect + read). "
             "BMC reset typically <2s; virtual media operations can take "
-            "longer. Worker retry/back-off handles transient failures."
+            "longer. Worker retry/back-off handles transient failures. "
+            "30s — compromise между fast verify-after-rotate (где overkill) и "
+            "slow virtual-media insert (где мало). Per-operation override "
+            "не реализован — owner trade-off; если станет тесно — разносить "
+            "по action'у через payload."
         ),
     )
 

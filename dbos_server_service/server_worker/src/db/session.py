@@ -20,6 +20,12 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=_settings.db_pool_size,
     max_overflow=_settings.db_max_overflow,
+    # PgBouncer / cloud-NAT / PostgreSQL `idle_in_transaction_session_timeout`
+    # рвут idle TCP-коннект тихо. `pool_pre_ping` ловит уже мёртвый сокет
+    # лишним RTT; `pool_recycle` принудительно ротирует коннект до его
+    # достижения возраста idle-killer'а. 1800s = 30 минут, ниже типичного
+    # cloud-killer'а в 60 минут.
+    pool_recycle=1800,
 )
 
 AsyncSessionLocal = async_sessionmaker(

@@ -48,6 +48,21 @@ class Settings(BaseSettings):
     # `loging_service`, `server_service` и `server_worker`.
     db_pool_size: int = Field(default=10, ge=1, alias="DB_POOL_SIZE")
     db_max_overflow: int = Field(default=20, ge=0, alias="DB_MAX_OVERFLOW")
+    # SQLAlchemy `pool_recycle`: коннект старше этого порога закрывается и
+    # пересоздаётся при следующем checkout'е. Закрывает PgBouncer / cloud-NAT
+    # idle-killer window: `pool_pre_ping` ловит мёртвый сокет лишним RTT, а
+    # этот параметр предотвращает «полузависшие» коннекты после proxy timeout.
+    # 1800s (30 min) — sane default под большинство DB-proxy конфигов.
+    db_pool_recycle_seconds: int = Field(
+        default=1800,
+        ge=1,
+        alias="DB_POOL_RECYCLE_SECONDS",
+        description=(
+            "SQLAlchemy pool_recycle в секундах. Коннект старше порога "
+            "пересоздаётся при checkout — закрывает PgBouncer/cloud-NAT "
+            "idle-killer window."
+        ),
+    )
     secret_key: str = Field(default="change-me", alias="SECRET_KEY")
     access_token_ttl_minutes: int = Field(default=10, alias="ACCESS_TOKEN_TTL_MINUTES")
     refresh_token_ttl_days: int = Field(default=14, alias="REFRESH_TOKEN_TTL_DAYS")

@@ -215,6 +215,19 @@ class Settings(BaseSettings):
             "(WARNING-лог + fallback в локальный logger)."
         ),
     )
+    register_events_timeout_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        alias="REGISTER_EVENTS_TIMEOUT_SECONDS",
+        description=(
+            "Таймаут sync `httpx.post` на регистрацию каталога событий в "
+            "loging_service (startup). Жирный timeout относительно общего "
+            "_STARTUP_AUDIT_TIMEOUT_SECONDS (10s) съедает бюджет на следующий "
+            "за ним `service.started` emit; держим узкий 2.0s — на медленном "
+            "loging регистрация просто пропускается с WARNING, lifecycle-event "
+            "успевает уйти."
+        ),
+    )
     loging_read_pool_max_connections: int = Field(
         default=10,
         ge=1,
@@ -347,6 +360,51 @@ class Settings(BaseSettings):
             "user-initiated ротация общего ciphertext'а без SSH-apply. CRITICAL-"
             "аудит; burst грозит шумом и парой race'ов с параллельным "
             "/rotate-dispatch'ем. Применяется поверх `global_rate_limit`."
+        ),
+    )
+    mass_rotate_dispatch_rate_limit: str = Field(
+        default="5/minute",
+        alias="MASS_ROTATE_DISPATCH_RATE_LIMIT",
+        description=(
+            "Per-IP rate-limit на POST /server-accounts/{id}/rotate (mass-"
+            "rotation dispatch через worker). Один запрос с mode=all шедулит "
+            "N задач (по числу привязанных серверов); burst пробивает worker-"
+            "redis и outbox. Применяется поверх `global_rate_limit`."
+        ),
+    )
+    mass_rotation_max_servers: int = Field(
+        default=200,
+        ge=1,
+        alias="MASS_ROTATION_MAX_SERVERS",
+        description=(
+            "Cap на число серверов в одном mass-rotation запросе. При "
+            "превышении endpoint отбивается 413 (request entity too large) — "
+            "оператор должен раздробить ротацию на батчи или сделать точечный "
+            "rotate по server_id'у. Дефолт 200 покрывает крупные "
+            "department'ы; снизить при перегруженном worker'е."
+        ),
+    )
+    fanout_update_on_host_max: int = Field(
+        default=200,
+        ge=1,
+        alias="FANOUT_UPDATE_ON_HOST_MAX",
+        description=(
+            "Cap на размер fan-out'а `account.update_on_host` (PATCH одного "
+            "управляемого атрибута аккаунта). PATCH с N привязанных серверов "
+            "шедулит N dispatch'ей по одному per host; при превышении cap'а "
+            "endpoint отбивает 413, эмитит `fanout_update_on_host.truncated`. "
+            "Дефолт симметричен `mass_rotation_max_servers`."
+        ),
+    )
+    worker_pool_rate_limit: str = Field(
+        default="60/minute",
+        alias="WORKER_POOL_RATE_LIMIT",
+        description=(
+            "Per-IP rate-limit на seed/claim outbox-эндпоинты в "
+            "/internal/secrets/. Worker по контракту poll'ит batch'ами раз в "
+            "секунду; глобальный 500/min слишком великодушен на случай bug'а "
+            "в worker'е (два poller'а / loop без back-off'а) — отдельный лимит "
+            "60/min задаёт жёсткий потолок."
         ),
     )
     password_reveal_audit_window_seconds: int = Field(

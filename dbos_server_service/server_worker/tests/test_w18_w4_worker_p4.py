@@ -314,9 +314,11 @@ class TestBreakerCore:
         assert retry == 17.0
 
     async def test_eval_check_redis_error_fail_open(self, caplog) -> None:
+        from redis.exceptions import RedisError
+
         class Boom:
             async def eval(self, *a, **kw):
-                raise RuntimeError("redis down")
+                raise RedisError("redis down")
 
             async def aclose(self):
                 pass
@@ -359,9 +361,11 @@ class TestBreakerCore:
         assert args[4:] == ("1700000000", "5", "60", "30")
 
     async def test_eval_record_failure_redis_error_returns_none(self) -> None:
+        from redis.exceptions import RedisError
+
         class Boom:
             async def eval(self, *a, **kw):
-                raise RuntimeError("oops")
+                raise RedisError("oops")
 
             async def aclose(self):
                 pass

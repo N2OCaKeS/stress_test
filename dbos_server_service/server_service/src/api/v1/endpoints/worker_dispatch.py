@@ -60,6 +60,7 @@ from src.core.config import get_settings
 from src.core.constants import AccountSource, Action, EntityType, ServerStatus
 from src.core.limiter import endpoint_limiter, per_account_key
 from src.core.exceptions import (
+    AppException,
     AuthorizationError,
     ConflictError,
     NotFoundError,
@@ -734,6 +735,27 @@ async def fanout_update_on_host(
     target_links = [
         link for link in account.server_links if link.present_on_server
     ]
+    # Cap на размер fan-out'а. Один PATCH управляемого атрибута не должен
+    # шедулить произвольное число dispatch'ей; при превышении эмитим
+    # `truncated` audit-event и режем хвост (хост, попавший в truncated-хвост,
+    # выровняется на следующем sweep/audit-цикле, ничего не теряется
+    # необратимо).
+    fanout_cap = get_settings().fanout_update_on_host_max
+    if len(target_links) > fanout_cap:
+        truncated_count = len(target_links) - fanout_cap
+        audit_service.emit(
+            "fanout_update_on_host.truncated",
+            target_id=account.id, target_type="server_account",
+            status="warning", allowed=True,
+            details={
+                "total_links": len(target_links),
+                "cap": fanout_cap,
+                "truncated_count": truncated_count,
+                "source": "edit_fanout",
+                "department_id": account.department_id,
+            },
+        )
+        target_links = target_links[:fanout_cap]
     # Batch-load: вместо N `load_visible_server` round-trip'ов один
     # `WHERE id IN (...)`. Cross-dept / отсутствующие — просто не попадают
     # в map, фильтрация остаётся та же, что в старом цикле.
@@ -1181,7 +1203,9 @@ async def server_prepare_dispatch(
         "уже-в-очереди (idempotent) пропускаются и попадают в `skipped`, "
         "остальные обрабатываются — один битый сервер не валит весь батч. "
         "Если списаны ВСЕ привязанные серверы → 409. Глобальная "
-        "недоступность воркера (redis down) отбивает весь запрос 503.\n\n"
+        "недоступность воркера (redis down) отбивает весь запрос 503. "
+        "Если число пригодных к dispatch'у серверов > "
+        "`MASS_ROTATION_MAX_SERVERS` → 413 MASS_ROTATION_TOO_LARGE.\n\n"
         "В отличие от `/server-accounts/{id}/rotate_password` (user-facing, "
         "меняет только запись в БД без apply'я) — этот dispatch обновляет "
         "пароль end-to-end. Plaintext клиенту не возвращается."
@@ -1191,13 +1215,16 @@ async def server_prepare_dispatch(
         403: {"description": "Нет роли с `rotate_password` либо чужой department."},
         404: {"description": "Аккаунт не найден / чужой dept, либо server_id не привязан."},
         409: {"description": "SERVER_DECOMMISSIONED (точечно либо все списаны) / TASK_IDEMPOTENT_CONFLICT (точечно) / NO_LINKED_SERVERS (массово, аккаунт без привязок)."},
+        413: {"description": "MASS_ROTATION_TOO_LARGE — батч превысил MASS_ROTATION_MAX_SERVERS."},
+        429: {"description": "Per-IP mass-rotate-rate-limit пробит."},
         503: {"description": "Worker недоступен (redis down / не сконфигурён)."},
     },
 )
+@endpoint_limiter.limit(get_settings().mass_rotate_dispatch_rate_limit)
 async def account_rotate_password_dispatch(
+    request: Request,
     account_id: str,
     identity: CurrentIdentity,
-    request: Request,
     db: AsyncSession = Depends(get_db),
     server_id: str | None = Query(
         default=None,
@@ -1347,6 +1374,30 @@ async def account_rotate_password_dispatch(
         raise ConflictError(
             error_code="SERVER_DECOMMISSIONED",
             message="All linked servers are decommissioned; password rotation via worker not allowed",
+        )
+
+    # Batch-cap на mode=all: один запрос не вправе шедулить произвольное число
+    # task'ов. Точечный режим (mode=single) под cap не попадает: там всегда
+    # ровно один target.
+    cap = get_settings().mass_rotation_max_servers
+    if mode == "all" and len(dispatchable) > cap:
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "mass_rotation_too_large",
+                "dispatchable_count": len(dispatchable),
+                "cap": cap,
+                "department_id": account.department_id,
+            },
+        )
+        raise AppException(
+            error_code="MASS_ROTATION_TOO_LARGE",
+            message=(
+                f"Mass rotation batch of {len(dispatchable)} servers exceeds "
+                f"cap {cap}; split into smaller batches"
+            ),
+            http_status=413,
         )
 
     tasks: list[dict] = []

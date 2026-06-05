@@ -51,11 +51,20 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             # read/write общий с introspect'ом, connect отдельно — чтобы
             # залипший handshake не съел read-budget; без явного connect
             # fallback тихо ловил бы залип на полный introspect_timeout.
+            # `Limits` симметричны pooled token-proxy клиенту: без них
+            # параллельные fallback-обращения (тест/REPL без TestClient под
+            # нагрузкой) могли бы открыть N TCP+TLS handshake'ов без cap'а —
+            # slowloris-сценарий. Лимит мелкий: fallback — это backstop, не
+            # production-hot-path.
             timeout = httpx.Timeout(
                 settings.introspect_timeout_seconds,
                 connect=settings.introspect_connect_timeout_seconds,
             )
-            async with httpx.AsyncClient(timeout=timeout) as ephemeral:
+            limits = httpx.Limits(
+                max_connections=settings.token_proxy_pool_max_connections,
+                max_keepalive_connections=0,
+            )
+            async with httpx.AsyncClient(timeout=timeout, limits=limits) as ephemeral:
                 resp = await ephemeral.post(
                     f"{settings.auth_service_url}{_TOKEN_PATH}",
                     data=data,

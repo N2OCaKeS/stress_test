@@ -256,6 +256,16 @@ class Settings(BaseSettings):
         default=30000, alias="AUDIT_QUERY_STATEMENT_TIMEOUT_MS", ge=0
     )
 
+    # Размер чанка для retention-DELETE. Один большой DELETE на миллионы строк
+    # держит row-locks на всю выборку, раздувает WAL и тормозит конкурентный
+    # ingest. Чанкуем по этому размеру и коммитим каждый чанк — autovacuum
+    # успевает чистить dead tuples между коммитами. Дефолт 10_000 — компромисс
+    # между WAL-amplification и длительностью одной транзакции; под более
+    # тяжёлый журнал оператор может крутить через env, не дёргая deploy.
+    retention_chunk_size: int = Field(
+        default=10_000, alias="RETENTION_CHUNK_SIZE", ge=1
+    )
+
     # Запускать ли retention-cleanup loop в lifespan'е. По умолчанию True —
     # production стартует daemon-thread, который раз в сутки в 00:00 MSK
     # применяет активную retention-политику.

@@ -9,9 +9,18 @@ from src.core.config import get_settings
 from src.core.http import bearer_header
 
 import logging
+import time
+
 import httpx
 
 logger = logging.getLogger("audit")
+
+# Registration — startup-cosmetic. Если loging-catalog временно лежит, для
+# работающего сервиса это не критично (severity-defaulting в loging падает
+# на INFO для нерегистрированных action'ов). Поэтому только короткий retry
+# для transient 5xx — без агрессивных backoff'ов, без блокировки старта.
+_REGISTER_EVENTS_MAX_ATTEMPTS = 2
+_REGISTER_EVENTS_RETRY_DELAY_SECONDS = 1.0
 
 # Запись: action, human description, default_severity (для success; для failure
 # loging_service переопределит на WARNING/CRITICAL через свои правила)
@@ -26,7 +35,7 @@ SERVICE_EVENTS = [
     {"action": "user.login", "description": "User authentication attempt", "default_severity": "INFO"},
     {"action": "user.refresh", "description": "Access token refresh", "default_severity": "INFO"},
     {"action": "user.logout", "description": "User session termination", "default_severity": "INFO"},
-    {"action": "user.me", "description": "Get current user identity", "default_severity": "INFO"},
+    {"action": "user.me", "description": "Get current user identity", "default_severity": "TRACE"},
     {"action": "token.refresh_reuse", "description": "Refresh token reuse detected (possible theft)", "default_severity": "CRITICAL"},
     {"action": "token.refresh_race", "description": "Concurrent refresh-token rotation lost CAS (benign race, retry expected)", "default_severity": "INFO"},
     # Users
@@ -114,8 +123,11 @@ def register_events() -> None:
     """POST'ит полный список событий в loging_service.
 
     Вызывается на startup в background-потоке. Если `LOGGING_SERVICE_URL` не
-    задан — пропускаем (dev-сценарий без logging-сервиса). HTTP-ошибки
-    логгируются как WARNING, но не валят процесс.
+    задан — пропускаем (dev-сценарий без logging-сервиса). На 5xx делаем
+    короткий retry: транзиентный ingress 502/503 не должен оставлять каталог
+    нерегистрированным до следующего рестарта pod'а. WARNING (не ERROR) —
+    регистрация косметика, отсутствие записей в каталоге даёт INFO-default
+    severity, не валит работу сервиса.
     """
     settings = get_settings()
     logging_url = getattr(settings, "logging_service_url", None)
@@ -123,20 +135,36 @@ def register_events() -> None:
     if not logging_url or not api_key:
         logger.debug("audit: skipping event registration — LOGGING_SERVICE_URL not configured")
         return
-    try:
-        resp = httpx.post(
-            f"{logging_url}/api/logging/v1/services/auth_service/events",
-            json={"events": SERVICE_EVENTS},
-            headers=bearer_header(api_key),
-            timeout=5.0,
-        )
+
+    url = f"{logging_url}/api/logging/v1/services/auth_service/events"
+    headers = bearer_header(api_key)
+    payload = {"events": SERVICE_EVENTS}
+
+    last_error: str | None = None
+    for attempt in range(_REGISTER_EVENTS_MAX_ATTEMPTS):
+        try:
+            resp = httpx.post(url, json=payload, headers=headers, timeout=5.0)
+        except Exception as exc:
+            last_error = f"transport error: {exc}"
+            if attempt + 1 < _REGISTER_EVENTS_MAX_ATTEMPTS:
+                time.sleep(_REGISTER_EVENTS_RETRY_DELAY_SECONDS)
+                continue
+            break
+
         if resp.status_code == 200:
             data = resp.json()
             logger.info(
                 "audit: registered %d events (added=%d updated=%d)",
                 data.get("total"), data.get("added"), data.get("updated"),
             )
-        else:
-            logger.warning("audit: event registration failed: %s %s", resp.status_code, resp.text)
-    except Exception as exc:
-        logger.warning("audit: event registration error: %s", exc)
+            return
+
+        last_error = f"{resp.status_code} {resp.text}"
+        # 5xx — транзиент, retry. 4xx — конфиг бит (миссинг api-key, кривой
+        # JSON), retry бесполезен.
+        if 500 <= resp.status_code < 600 and attempt + 1 < _REGISTER_EVENTS_MAX_ATTEMPTS:
+            time.sleep(_REGISTER_EVENTS_RETRY_DELAY_SECONDS)
+            continue
+        break
+
+    logger.warning("audit: event registration failed: %s", last_error)

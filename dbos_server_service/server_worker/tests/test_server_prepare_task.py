@@ -659,6 +659,7 @@ class TestReadBootstrapCredsMalformed:
     """
 
     async def test_malformed_json_raises_creds_missing(self, monkeypatch):
+        from src.services import redis_pool
         from src.tasks import prepare as prepare_mod
 
         class _Client:
@@ -668,16 +669,14 @@ class TestReadBootstrapCredsMalformed:
             async def aclose(self):
                 pass
 
-        def _from_url(_url):
-            return _Client()
-
-        monkeypatch.setattr(prepare_mod.aioredis, "from_url", _from_url)
+        monkeypatch.setattr(redis_pool, "get_redis", lambda: _Client())
 
         with pytest.raises(SshError) as ei:
             await prepare_mod._read_bootstrap_creds("dbos:prepare_creds:pcd_x")
         assert ei.value.error_code == "SSH_BOOTSTRAP_CREDS_MISSING"
 
     async def test_non_utf8_raises_creds_missing(self, monkeypatch):
+        from src.services import redis_pool
         from src.tasks import prepare as prepare_mod
 
         class _Client:
@@ -688,10 +687,7 @@ class TestReadBootstrapCredsMalformed:
             async def aclose(self):
                 pass
 
-        def _from_url(_url):
-            return _Client()
-
-        monkeypatch.setattr(prepare_mod.aioredis, "from_url", _from_url)
+        monkeypatch.setattr(redis_pool, "get_redis", lambda: _Client())
 
         with pytest.raises(SshError) as ei:
             await prepare_mod._read_bootstrap_creds("dbos:prepare_creds:pcd_x")

@@ -45,8 +45,8 @@ Outbox-паттерн: `push_nowait()` кладёт payload во внутрен�
 
 Геттеры `dropped_overflow_total()` / `dropped_cancel_total()` /
 `dropped_shutdown_total()` / `dropped_after_stop_total()` — публичные;
-ожидаются к экспозу через будущий `/metrics`, до тех пор читаются тестами
-напрямую через инстанс outbox'а.
+читаются тестами напрямую через инстанс outbox'а, а в эксплуатации
+снимаются через DLQ-логи и self-audit failures counter.
 Агрегата нет специально: SIEM по одному числу не отличит DoS-перегрузку от
 рваного shutdown'а — суммирование делается на стороне дашборда.
 
@@ -393,7 +393,12 @@ class AuditOutbox:
             except asyncio.QueueFull:
                 overflow_lost += 1
         if skipped_committed:
-            logger.warning(
+            # Happy-path cancel-after-commit race: envelope успел закоммититься
+            # ДО того, как `_flush_batch` поймал `CancelledError`, и теперь
+            # дублировать его в очередь не нужно. Под shutdown-штормом
+            # WARNING шумел на каждом таком envelope'е; снизили до DEBUG —
+            # инцидентов здесь нет, только трассировка.
+            logger.debug(
                 "audit outbox requeue skipped %d envelope(s) already committed",
                 skipped_committed,
             )

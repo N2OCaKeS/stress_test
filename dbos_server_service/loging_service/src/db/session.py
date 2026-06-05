@@ -16,6 +16,11 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_size=_settings.db_pool_size,
     max_overflow=_settings.db_max_overflow,
+    # PgBouncer / cloud-NAT / `idle_in_transaction_session_timeout` без
+    # предупреждения дропают коннекты после ~часа простоя. `pool_pre_ping`
+    # подхватит уже мёртвый сокет лишним RTT; `pool_recycle` превентивно
+    # пересоздаёт коннект до того, как idle-killer успеет его убить.
+    pool_recycle=1800,
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

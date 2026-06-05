@@ -114,6 +114,21 @@ async def mark_failed(
     )
 
 
+async def pending_count(db: AsyncSession) -> int:
+    """Сколько pending outbox-row'ов сейчас в очереди (`dispatched_at IS NULL`).
+
+    Снимок depth'а для ops-метрики `dispatch_outbox_pending_depth`. Зовётся
+    периодически из cleanup-cron'а / health-check'а — оператор по росту
+    счётчика видит, что poller отстал или умер. commit не делаем — read-only.
+    """
+    stmt = (
+        select(func.count(DispatchOutbox.id))
+        .where(DispatchOutbox.dispatched_at.is_(None))
+    )
+    result = await db.execute(stmt)
+    return int(result.scalar_one() or 0)
+
+
 async def cleanup_old_dispatched(
     db: AsyncSession,
     *,

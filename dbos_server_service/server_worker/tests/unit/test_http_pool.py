@@ -96,6 +96,8 @@ class TestPoolLifecycle:
             server_service_pool_max_connections = 20
             server_service_pool_max_keepalive_connections = 10
             http_request_timeout_seconds = 5.0
+            audit_request_timeout_seconds = 5.0
+            server_service_request_timeout_seconds = 15.0
 
         monkeypatch.setattr("src.services.http_pool.get_settings", lambda: _S())
 
@@ -143,6 +145,8 @@ class TestAuditClientUsesPool:
             logging_service_api_key = "k"
             worker_bot_token = ""
             http_request_timeout_seconds = 5.0
+            audit_request_timeout_seconds = 5.0
+            server_service_request_timeout_seconds = 15.0
             audit_pool_max_connections = 20
             audit_pool_max_keepalive_connections = 10
             server_service_pool_max_connections = 20
@@ -185,6 +189,8 @@ class TestServerServiceClientUsesPool:
             server_service_url = "http://srv.test"
             worker_bot_token = "wbt-1"
             http_request_timeout_seconds = 5.0
+            audit_request_timeout_seconds = 5.0
+            server_service_request_timeout_seconds = 15.0
             audit_pool_max_connections = 20
             audit_pool_max_keepalive_connections = 10
             server_service_pool_max_connections = 20
@@ -222,6 +228,8 @@ class TestPoolConfig:
             server_service_pool_max_connections = 99
             server_service_pool_max_keepalive_connections = 33
             http_request_timeout_seconds = 12.5
+            audit_request_timeout_seconds = 12.5
+            server_service_request_timeout_seconds = 15.0
 
         monkeypatch.setattr("src.services.http_pool.get_settings", lambda: _S())
 
@@ -251,6 +259,8 @@ class TestPoolConfig:
             server_service_pool_max_connections = 99
             server_service_pool_max_keepalive_connections = 33
             http_request_timeout_seconds = 7.0
+            audit_request_timeout_seconds = 5.0
+            server_service_request_timeout_seconds = 7.0
 
         monkeypatch.setattr("src.services.http_pool.get_settings", lambda: _S())
 

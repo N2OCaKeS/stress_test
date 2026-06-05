@@ -13,12 +13,19 @@ from src.core.config import get_settings
 from src.core.constants import PlatformRole
 from src.core.security import hash_password
 from src.repositories.users import UserRepository
+from src.services import audit_service
 
 logger = logging.getLogger(__name__)
 
 
 async def bootstrap_admin(db: AsyncSession) -> None:
-    """Засеять начального account_admin'а если БД пуста."""
+    """Засеять начального account_admin'а если БД пуста.
+
+    Идемпотентно: при непустой БД no-op. На фактическое создание пишем WARNING
+    (внеплановый seed = БД пересоздана / kustomize переустановил secret) и
+    эмитим CRITICAL `user.create` в audit-канал, чтобы SIEM увидел silent
+    re-creation root-юзера и оператор успел сменить дефолтный пароль.
+    """
     settings = get_settings()
     if not settings.initial_admin_username or not settings.initial_admin_password:
         return
@@ -27,7 +34,7 @@ async def bootstrap_admin(db: AsyncSession) -> None:
     if await repo.count() > 0:
         return
 
-    await repo.create(
+    user = await repo.create(
         username=settings.initial_admin_username,
         password_hash=hash_password(settings.initial_admin_password),
         department_id=None,
@@ -36,4 +43,24 @@ async def bootstrap_admin(db: AsyncSession) -> None:
         created_by="bootstrap",
     )
     await db.commit()
-    logger.info("Bootstrap: created account_admin '%s'", settings.initial_admin_username)
+    logger.warning(
+        "Bootstrap: created account_admin '%s' from INITIAL_ADMIN_* — "
+        "if you didn't expect this, the database has been recreated; "
+        "rotate the admin password immediately",
+        settings.initial_admin_username,
+    )
+    audit_service.emit(
+        "user.create",
+        actor_id="bootstrap",
+        actor_type="service",
+        target_id=user.id,
+        target_type="user",
+        status="success",
+        allowed=True,
+        username=settings.initial_admin_username,
+        details={
+            "reason": "bootstrap_seed",
+            "username": settings.initial_admin_username,
+            "platform_role": PlatformRole.ACCOUNT_ADMIN,
+        },
+    )

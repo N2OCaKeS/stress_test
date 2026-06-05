@@ -122,6 +122,7 @@ class TestStoreProvisionInlineSkipSemantics:
     async def test_store_no_op_when_nothing_to_save(self, monkeypatch):
         # `_store_provision_inline` — no-op, если оба inline-значения None
         # (нет смысла трогать Redis ради пустых полей).
+        from src.services import redis_pool
         from src.tasks import users
 
         called = {"set": False}
@@ -133,14 +134,12 @@ class TestStoreProvisionInlineSkipSemantics:
             async def aclose(self):
                 pass
 
-        def _from_url(url):
-            return _FakeClient()
-
-        monkeypatch.setattr(users.aioredis, "from_url", _from_url)
+        monkeypatch.setattr(redis_pool, "get_redis", lambda: _FakeClient())
         await users._store_provision_inline("tsk_t1", None, None)
         assert called["set"] is False
 
     async def test_store_writes_when_password_present(self, monkeypatch):
+        from src.services import redis_pool
         from src.tasks import users
 
         captured = {}
@@ -154,13 +153,14 @@ class TestStoreProvisionInlineSkipSemantics:
             async def aclose(self):
                 pass
 
-        monkeypatch.setattr(users.aioredis, "from_url", lambda url: _FakeClient())
+        monkeypatch.setattr(redis_pool, "get_redis", lambda: _FakeClient())
         await users._store_provision_inline("tsk_t2", "secret_pw", None)
         assert captured["key"].endswith("tsk_t2")
         assert "secret_pw" in captured["value"]
         assert captured["ex"] == users.STASH_TTL_SECONDS
 
     async def test_store_writes_when_only_private_key_present(self, monkeypatch):
+        from src.services import redis_pool
         from src.tasks import users
 
         captured = {}
@@ -172,7 +172,7 @@ class TestStoreProvisionInlineSkipSemantics:
             async def aclose(self):
                 pass
 
-        monkeypatch.setattr(users.aioredis, "from_url", lambda url: _FakeClient())
+        monkeypatch.setattr(redis_pool, "get_redis", lambda: _FakeClient())
         await users._store_provision_inline("tsk_t3", None, "PEM-PRIVATE")
         assert "PEM-PRIVATE" in captured["value"]
         # password=None всё ещё попадает в JSON как null.

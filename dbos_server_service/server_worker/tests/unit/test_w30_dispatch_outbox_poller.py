@@ -282,9 +282,13 @@ class TestPollOncePublishFailure:
 
         assert row.dispatched_at is None  # не закрыта
         assert row.attempts == max_attempts
-        # warning эмитился
+        # warning эмитился — структурированный park-event
         warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
-        assert any("attempts cap" in r.getMessage() for r in warnings)
+        assert any(
+            "event=dispatch_park" in r.getMessage()
+            and "attempts_cap=" in r.getMessage()
+            for r in warnings
+        )
 
 
 # ── poll_once: unknown task_kind ────────────────────────────────────────────

@@ -236,13 +236,14 @@ class TestExchangeCodeNoDoubleCommit:
 
 
 class TestBotIpTrackerDocstring:
-    def test_docstring_mentions_concurrency_undercount(self):
+    def test_docstring_mentions_concurrency_semantics(self):
         doc = bot_ip_tracker.track_bot_ip.__doc__ or ""
-        # Не строгое совпадение — ищем явное упоминание про N>1 и про то, что
-        # счётчик может недосчитать. Если кто-то перепишет docstring, тест
-        # отвалится — это и есть напоминание актуализировать поведение/доки.
-        assert "N>1" in doc or "конкурент" in doc.lower() or "concurrent" in doc.lower()
-        assert "недосчит" in doc.lower() or "miss" in doc.lower()
+        assert (
+            "race" in doc.lower()
+            or "конкурент" in doc.lower()
+            or "concurrent" in doc.lower()
+            or "for update" in doc.lower()
+        )
 
 
 # ── 6. /oauth2/authorize: state с `+` round-trip ─────────────────────────────

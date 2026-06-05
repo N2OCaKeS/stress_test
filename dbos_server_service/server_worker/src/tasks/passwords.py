@@ -49,15 +49,15 @@ import secrets
 import string
 from datetime import datetime, timezone
 
-import redis.asyncio as aioredis
+import redis.asyncio as aioredis  # noqa: F401 — re-exported for test monkeypatch backward compat
 
 from src.clients.ipmitool import IpmitoolError
 from src.clients.redfish import RedfishError
-from src.core.config import get_settings
+from src.core.config import get_settings  # noqa: F401 — re-exported for downstream / future tests
 from src.core.constants import STASH_TTL_SECONDS
 from src.core.identifiers import validate_task_id
 from src.main import broker
-from src.services import server_service_client, ssh_client
+from src.services import redis_pool, server_service_client, ssh_client
 from src.tasks.users import _validate_payload_login
 from src.tasks._bmc_errors import (
     dispatch_get_power_state,
@@ -198,12 +198,8 @@ async def _read_ipmi_rotate_state(task_id: str) -> tuple[str | None, str | None]
     на каждой повторной submit-попытке (drift до десятков секунд).
     """
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
-    try:
-        raw = await client.get(_IPMI_ROTATE_KEY_PREFIX + task_id)
-    finally:
-        await client.aclose()
+    client = redis_pool.get_redis()
+    raw = await client.get(_IPMI_ROTATE_KEY_PREFIX + task_id)
     if raw is None:
         return None, None
     return _ipmi_stash_parse(raw)
@@ -224,16 +220,12 @@ async def _store_ipmi_rotate_password(
     которые предзаполняют stash перед запуском handler'а.
     """
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
-    try:
-        await client.set(
-            _IPMI_ROTATE_KEY_PREFIX + task_id,
-            _ipmi_stash_value(password, rotated_at),
-            ex=STASH_TTL_SECONDS,
-        )
-    finally:
-        await client.aclose()
+    client = redis_pool.get_redis()
+    await client.set(
+        _IPMI_ROTATE_KEY_PREFIX + task_id,
+        _ipmi_stash_value(password, rotated_at),
+        ex=STASH_TTL_SECONDS,
+    )
 
 
 async def _delete_ipmi_rotate_password(task_id: str) -> None:
@@ -244,15 +236,11 @@ async def _delete_ipmi_rotate_password(task_id: str) -> None:
     провалить и без того happy-path задачу.
     """
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
+    client = redis_pool.get_redis()
     try:
-        try:
-            await client.delete(_IPMI_ROTATE_KEY_PREFIX + task_id)
-        except Exception:  # noqa: BLE001
-            logger.debug("failed to delete in-flight ipmi rotate password", exc_info=True)
-    finally:
-        await client.aclose()
+        await client.delete(_IPMI_ROTATE_KEY_PREFIX + task_id)
+    except Exception:  # noqa: BLE001
+        logger.debug("failed to delete in-flight ipmi rotate password", exc_info=True)
 
 
 async def _read_account_rotate_state(
@@ -266,12 +254,8 @@ async def _read_account_rotate_state(
     timestamp на submit, но переиспользуется на retry'ях submit'а).
     """
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
-    try:
-        raw = await client.get(_ACCOUNT_ROTATE_KEY_PREFIX + task_id)
-    finally:
-        await client.aclose()
+    client = redis_pool.get_redis()
+    raw = await client.get(_ACCOUNT_ROTATE_KEY_PREFIX + task_id)
     if raw is None:
         return None, None, None
     return _account_stash_parse(raw)
@@ -306,33 +290,25 @@ async def _store_account_rotate_password(
     дополнятся при следующих обновлениях stash'а.
     """
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
-    try:
-        await client.set(
-            _ACCOUNT_ROTATE_KEY_PREFIX + task_id,
-            _account_stash_value(password, login, rotated_at),
-            ex=STASH_TTL_SECONDS,
-        )
-    finally:
-        await client.aclose()
+    client = redis_pool.get_redis()
+    await client.set(
+        _ACCOUNT_ROTATE_KEY_PREFIX + task_id,
+        _account_stash_value(password, login, rotated_at),
+        ex=STASH_TTL_SECONDS,
+    )
 
 
 async def _delete_account_rotate_password(task_id: str) -> None:
     """Дропнуть in-flight account-ключ после успешного submit'а."""
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
+    client = redis_pool.get_redis()
     try:
-        try:
-            await client.delete(_ACCOUNT_ROTATE_KEY_PREFIX + task_id)
-        except Exception:  # noqa: BLE001
-            logger.debug(
-                "failed to delete in-flight account rotate password",
-                exc_info=True,
-            )
-    finally:
-        await client.aclose()
+        await client.delete(_ACCOUNT_ROTATE_KEY_PREFIX + task_id)
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "failed to delete in-flight account rotate password",
+            exc_info=True,
+        )
 
 
 def _generate_password() -> str:

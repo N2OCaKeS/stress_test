@@ -122,7 +122,7 @@ class TestRetentionLoopLastRunOutsideFinally:
         # Структурная проверка: внутри try-блока есть `last_run = today`
         # на той же отступности, что и `deleted = apply_active(db)`, и при
         # этом ВНУТРИ try-блока ДО finally:
-        try_idx = src.find("apply_active(db)")
+        try_idx = src.find("apply_active(db")
         finally_idx = src.find("finally:", try_idx)
         last_run_idx = src.find("last_run = today", try_idx)
         assert try_idx != -1 and finally_idx != -1 and last_run_idx != -1

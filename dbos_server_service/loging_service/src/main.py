@@ -173,7 +173,7 @@ def create_application() -> FastAPI:
             )
         if live_settings.retention_loop_enabled:
             # Retention-цикл — daemon thread, как и старый on_event hook.
-            t = threading.Thread(target=_retention_loop, daemon=True)
+            t = threading.Thread(target=_retention_loop_supervised, daemon=True)
             t.start()
         # Поднимаем self-audit outbox с актуальными настройками. Инстанс
         # делаем под `live_settings`, чтобы tests-overrides буфера/батча
@@ -182,6 +182,16 @@ def create_application() -> FastAPI:
         if live_settings.audit_outbox_enabled:
             _audit_outbox = _build_audit_outbox(live_settings)
             _audit_outbox.start(asyncio.get_running_loop())
+            # Drain-task создаётся внутри `start()` через `loop.create_task`,
+            # без callback. Если drain упадёт по unhandled exception (см.
+            # `_drain_loop` generic-except), task завершится тихо: `qsize`
+            # начнёт расти, `push_nowait` уйдёт в sync-fallback (новая
+            # `SessionLocal()` на каждое событие), `dropped_after_stop_total`
+            # пробудит SIEM только после `stop()`. Регистрируем CRITICAL-лог
+            # на unexpected exit, чтобы оператор увидел инцидент сразу.
+            drain_task = _audit_outbox._drain_task
+            if drain_task is not None:
+                drain_task.add_done_callback(_audit_drain_task_done_callback)
         try:
             yield
         finally:
@@ -709,6 +719,20 @@ def _build_retention_sweep_details(
 
 _RETENTION_TICK_INTERVAL_SECONDS = 60.0
 
+# Watchdog: last monotonic-timestamp успешного tick'а `_retention_loop`.
+# `_retention_loop_supervised` обновляет это значение на каждой итерации;
+# `/ready` сравнивает с `time.monotonic()` и кидает 503, если отставание
+# больше `_RETENTION_WATCHDOG_TTL_SECONDS`. None — loop ещё не успел
+# отработать первый tick (legitimate startup window).
+_retention_last_tick_monotonic: float | None = None
+_retention_watchdog_lock = threading.Lock()
+
+# TTL: сколько секунд между успешными tick'ами считается приемлемым.
+# Тик минутный (см. `_RETENTION_TICK_INTERVAL_SECONDS`), берём 5× запас на
+# сам sweep (apply_active под нагрузкой может занять минуты). Если loop
+# не дошёл до следующего tick'а за это окно — он либо умер, либо завис.
+_RETENTION_WATCHDOG_TTL_SECONDS = 5 * 60.0
+
 
 def _next_retention_boundary_from(now_monotonic: float, *, interval: float = _RETENTION_TICK_INTERVAL_SECONDS) -> float:
     """Возвращает абсолютный monotonic-timestamp ближайшего будущего tick'а.
@@ -808,7 +832,12 @@ def _retention_loop() -> None:
                         from src.repositories.retention_policies import list_active
                         snapshot = list_active(db)
                         try:
-                            deleted = apply_active(db)
+                            # Chunk size берём из live settings — оператор
+                            # может крутить `RETENTION_CHUNK_SIZE` под профиль
+                            # БД (WAL-amplification vs длительность транзакции)
+                            # без перевыкатки кода.
+                            chunk_size = get_settings().retention_chunk_size
+                            deleted = apply_active(db, chunk_size=chunk_size)
                             logger.info(
                                 "Retention cleanup [%s MSK]: deleted %d events",
                                 today, deleted,
@@ -876,6 +905,20 @@ def _retention_loop() -> None:
                                     unlock_exc,
                                 )
                             try:
+                                # `db.commit()` под зависший pgsql может
+                                # ждать до `tcp_keepalive_intvl × probes`
+                                # (>2 минут default), блокируя daemon-thread
+                                # и сдвигая следующий tick. Ограничиваем
+                                # commit-RTT отдельным `statement_timeout`
+                                # на эту транзакцию: apply_active уже
+                                # коммитил per-chunk, финальный commit
+                                # чистит пустой хвост и не должен висеть.
+                                try:
+                                    db.execute(
+                                        text("SET LOCAL statement_timeout = 2000")
+                                    )
+                                except Exception:
+                                    pass
                                 db.commit()
                             except Exception as commit_exc:
                                 logger.error(
@@ -897,7 +940,85 @@ def _retention_loop() -> None:
                 tick_duration, int(interval),
             )
 
+        # Watchdog: фиксируем факт «прошёл tick» (даже если sweep'а в этот
+        # слот не было — sleep+slot-проверка отработали штатно).
+        # `/ready` смотрит на эту метку, чтобы поймать зависший / упавший
+        # daemon-thread до того, как пользователь увидит молчаливый stall.
+        global _retention_last_tick_monotonic
+        with _retention_watchdog_lock:
+            _retention_last_tick_monotonic = time.monotonic()
+
         next_run = _next_retention_boundary_from(time.monotonic(), interval=interval)
+
+
+def _retention_loop_supervised() -> None:
+    """Внешний wrapper над `_retention_loop` с restart-петлёй.
+
+    Голый `_retention_loop` ловит exception только вокруг session-block
+    внутри try'а; всё, что вылетит из `time.sleep`/`datetime`/`zoneinfo`
+    (NTP-step, OS interruption, OOM), убьёт daemon-thread тихо.
+    Watchdog в `/ready` это поймает (last-tick TTL), но трафик уже
+    мог гнаться через мёртвый retention-цикл.
+
+    Здесь оборачиваем loop в while-True + try/except: на любую неожиданную
+    смерть логируем CRITICAL и стартуем заново через короткую паузу.
+    `_retention_loop` сам не возвращает управление в норме, поэтому штатный
+    выход из вложенной функции тоже трактуется как аномалия.
+    """
+    backoff_seconds = 5.0
+    while True:
+        try:
+            _retention_loop()
+            logger.critical(
+                "retention loop exited normally — daemon should run forever; "
+                "restarting after %.0fs",
+                backoff_seconds,
+            )
+        except Exception as exc:
+            logger.critical(
+                "retention loop crashed: %s — restarting after %.0fs",
+                exc,
+                backoff_seconds,
+                exc_info=True,
+            )
+        try:
+            time.sleep(backoff_seconds)
+        except Exception:
+            return
+
+
+def _audit_drain_task_done_callback(task: "asyncio.Task") -> None:
+    """Callback на завершение `_drain_task` audit outbox'а.
+
+    Штатное завершение происходит только через `stop()` (cancel → выход
+    из drain loop'а). Любой неожиданный exit — это потерянный hot-path:
+    `push_nowait` начнёт уходить в sync-fallback, `qsize()` будет расти,
+    SOC увидит инцидент только по `dropped_after_stop_total` после shutdown'а.
+    Логируем CRITICAL, чтобы оператор поймал момент смерти task'а сразу.
+    """
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.critical(
+            "audit outbox drain task died with exception: %s",
+            exc,
+            exc_info=exc,
+        )
+    else:
+        # `_drain_loop` вышел сам по себе (без exception), что возможно
+        # только через `_stopping=True` — но callback вызывается и при
+        # неожиданном return из-за breaking changes в loop'е. Помечаем как
+        # WARNING (нет exception → возможно legitimate stop).
+        logger.warning(
+            "audit outbox drain task exited without exception (expected only on stop)"
+        )
+
+
+def get_retention_last_tick_monotonic() -> float | None:
+    """Снапшот последнего успешного tick'а `_retention_loop`. Для `/ready` и тестов."""
+    with _retention_watchdog_lock:
+        return _retention_last_tick_monotonic
 
 
 def _action_for_path(method: str, path: str) -> str:
@@ -952,8 +1073,7 @@ def _action_for_path(method: str, path: str) -> str:
 
 # Defence-in-depth: counter тихих self-audit ошибок. Без него silent failure
 # маскирует регрессии (БД упала, schema mismatch, AppException от
-# `record_admin_action`). Когда в loging_service появится Prometheus-клиент,
-# эту переменную заменит `Counter("loging_self_audit_failures_total", ...)`.
+# `record_admin_action`).
 #
 # Hot-path инкремента — `audit_outbox._write_batch_locked` (исполняется в
 # ThreadPoolExecutor через `asyncio.to_thread` из `_drain_loop`), плюс
@@ -979,9 +1099,8 @@ def get_self_audit_failures_total() -> int:
     """Прочитать счётчик под тем же lock'ом, что и инкремент.
 
     Прямое чтение `self_audit_failures_total` из-под GIL атомарно для int,
-    но это implicit invariant: будущая замена на не-int (Prometheus Counter)
-    сломалась бы тихо. Внешним наблюдателям (`/metrics`, тесты) рекомендуется
-    идти через этот хелпер.
+    но это implicit invariant. Внешним наблюдателям (тесты, DLQ-инспекции)
+    рекомендуется идти через этот хелпер.
     """
     with _self_audit_failures_lock:
         return self_audit_failures_total

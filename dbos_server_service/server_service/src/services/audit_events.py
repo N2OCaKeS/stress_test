@@ -102,6 +102,7 @@ SERVICE_EVENTS = [
     {"action": "mass_rotation.partial_failure", "description": "Массовая ротация (mode=all) частично применилась: на K серверов dispatch успешен, на K+1 worker отбил ServiceUnavailable, остаток не пытались. Auto-cancel НЕ выполняется (риск частичных откатов) — оператору отдаются task_ids для ручной отмены", "default_severity": "WARNING"},
     {"action": "server_account.provision", "description": "OS-user provision (useradd) dispatched to worker", "default_severity": "WARNING"},
     {"action": "server_account.update_on_host", "description": "OS-user attribute sync (usermod) dispatched to worker", "default_severity": "INFO"},
+    {"action": "fanout_update_on_host.truncated", "description": "PATCH-fanout превысил FANOUT_UPDATE_ON_HOST_MAX — хвост серверов вырезан, выровняется на следующем sweep'е", "default_severity": "WARNING"},
     {"action": "server_account.deprovision", "description": "OS-user deprovision (userdel) dispatched to worker", "default_severity": "WARNING"},
     {"action": "ipmi_controller.rotate_dispatch", "description": "IPMI controller password rotation dispatched to worker (currently safety-guarded: worker fails fast until storage round-trip exists)", "default_severity": "CRITICAL"},
     # Busy-lease, OS-sync — пользовательский CRUD над servers.busy_state / os_version_id
@@ -141,7 +142,7 @@ def register_events() -> None:
             f"{logging_url}/api/logging/v1/services/{_SERVICE_NAME}/events",
             json={"events": SERVICE_EVENTS},
             headers=bearer_header(api_key),
-            timeout=5.0,
+            timeout=getattr(settings, "register_events_timeout_seconds", 2.0),
         )
         if resp.status_code == 200:
             data = resp.json()

@@ -163,7 +163,11 @@ def require_service_token(
         # должны быть сопоставимы; иначе фолбэк на 32 байта).
         sample_key = next(iter(settings.service_api_keys.values()), "x" * 32)
         secrets.compare_digest(credentials.credentials, sample_key)
-        logger.warning(
+        # Это ожидаемый bot/scan-трафик (header-fuzz, recon), не операционная
+        # аномалия. WARNING на каждое unknown identity создавал false-positive
+        # spike в alerting под массовым сканом. Реальные misconfig'и видны
+        # 401-ом в audit-канале (`http.access_denied`), который уровнем выше.
+        logger.debug(
             "loging: X-Service-Identity %r is not present in "
             "SERVICE_API_KEYS map (path=%s) — rejecting",
             raw_identity,

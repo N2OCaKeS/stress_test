@@ -40,7 +40,7 @@ import redis.asyncio as aioredis
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
-from src.services import _breaker_core, _breaker_lua
+from src.services import _breaker_core, _breaker_lua, redis_pool
 from src.services._breaker_core import Thresholds as _Thresholds
 
 logger = logging.getLogger(__name__)
@@ -129,13 +129,18 @@ def _all_keys() -> tuple[str, str, str, str]:
 
 
 async def _get_client() -> aioredis.Redis:
-    """One-shot Redis-клиент. Не кэшируем — см. комментарий в bmc_circuit_breaker.
+    """Вернуть singleton Redis-клиент из shared pool'а.
+
+    Прежняя реализация открывала свежий `aioredis.from_url` на каждый
+    check/record_* (по комментарию «open-close стоит мало по сравнению
+    с HTTP-roundtrip'ом»). На burst publisher'а это сотни handshake'ев
+    в минуту. Singleton — в `redis_pool.get_redis()`.
 
     Подменяется в тестах через `install_fake_redis(monkeypatch, audit_cb)` —
-    `_breaker_core` дёргает эту функцию как client_factory.
+    `_breaker_core` зовёт client_factory с `close_after_use=False`,
+    singleton (или FakeRedis в тестах) переживает eval.
     """
-    settings = get_settings()
-    return aioredis.from_url(settings.redis_url)
+    return redis_pool.get_redis()
 
 
 async def check() -> None:
@@ -152,6 +157,7 @@ async def check() -> None:
         log_prefix="audit_publisher_breaker",
         logger=logger,
         now=time.time(),
+        close_after_use=False,
     )
     if state == "open":
         logger.warning(
@@ -189,6 +195,7 @@ async def get_state() -> tuple[str, float]:
         log_prefix="audit_publisher_breaker",
         logger=logger,
         now=time.time(),
+        close_after_use=False,
     )
 
 
@@ -202,6 +209,7 @@ async def record_success() -> None:
         keys=_all_keys(),
         log_prefix="audit_publisher_breaker",
         logger=logger,
+        close_after_use=False,
     )
 
 
@@ -220,6 +228,7 @@ async def record_failure() -> None:
         log_prefix="audit_publisher_breaker",
         logger=logger,
         now=time.time(),
+        close_after_use=False,
     )
     if result is None:
         return
@@ -243,4 +252,5 @@ async def reset() -> None:
         keys=_all_keys(),
         log_prefix="audit_publisher_breaker",
         logger=logger,
+        close_after_use=False,
     )

@@ -51,7 +51,7 @@ from src.schemas.internal import (
     UsersInventoryCallbackRequest,
 )
 from src.schemas.server import ServerPrepareCallbackRequest
-from src.services import audit_service, permissions, secrets_service
+from src.services import audit_service, metrics, permissions, secrets_service
 from src.utils.ids import os_version_id, server_account_id, server_disk_id
 
 logger = logging.getLogger(__name__)
@@ -379,6 +379,7 @@ async def fetch_ipmi_credentials(
         # Симметрично с `ipmi_controller._reveal_controller_password`:
         # сломанный ciphertext должен оставить SIEM-след именно как
         # failure-audit, а не уезжать наверх голым 422.
+        metrics.increment_secrets_decrypt_failures()
         audit_service.emit(
             "ipmi_controller.view_credentials",
             target_id=ctrl.id, target_type="ipmi_controller",
@@ -530,6 +531,7 @@ async def fetch_account_password(
     except AppException:
         # Симметрично с `server_account._reveal_account_password`: на битом
         # ciphertext'е worker'у нужнее audit-trail, чем чистый 422-trace.
+        metrics.increment_secrets_decrypt_failures()
         audit_service.emit(
             "server_account.view_password",
             target_id=account_id, target_type="server_account",

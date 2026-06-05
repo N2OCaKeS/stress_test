@@ -19,17 +19,17 @@ import json
 import logging
 import re
 
-import redis.asyncio as aioredis
+import redis.asyncio as aioredis  # noqa: F401 — re-exported for test monkeypatch backward compat
 
 from src.clients.ssh import SshError
-from src.core.config import get_settings
+from src.core.config import get_settings  # noqa: F401 — re-exported for downstream / future tests
 from src.core.constants import SCRUBBED_SENTINEL, STASH_TTL_SECONDS
 from src.core.exceptions import CredentialFetchError
 from src.core.identifiers import validate_task_id
 from src.db.session import AsyncSessionLocal
 from src.main import broker
 from src.repositories import task as task_repo
-from src.services import server_service_client, ssh_client
+from src.services import redis_pool, server_service_client, ssh_client
 from src.tasks._account_helpers import resolve_ssh_creds
 from src.tasks._runner import run_task
 
@@ -60,12 +60,8 @@ async def _read_provision_inline(task_id: str) -> tuple[str | None, str | None]:
     оператора (server_service сгенерирует новые креды).
     """
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
-    try:
-        raw = await client.get(_PROVISION_INLINE_KEY_PREFIX + task_id)
-    finally:
-        await client.aclose()
+    client = redis_pool.get_redis()
+    raw = await client.get(_PROVISION_INLINE_KEY_PREFIX + task_id)
     if raw is None:
         return None, None
     text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
@@ -93,35 +89,27 @@ async def _store_provision_inline(
     if password_plaintext is None and ssh_private_key_plaintext is None:
         return
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
-    try:
-        await client.set(
-            _PROVISION_INLINE_KEY_PREFIX + task_id,
-            json.dumps({
-                "password_plaintext": password_plaintext,
-                "ssh_private_key_plaintext": ssh_private_key_plaintext,
-            }),
-            ex=STASH_TTL_SECONDS,
-        )
-    finally:
-        await client.aclose()
+    client = redis_pool.get_redis()
+    await client.set(
+        _PROVISION_INLINE_KEY_PREFIX + task_id,
+        json.dumps({
+            "password_plaintext": password_plaintext,
+            "ssh_private_key_plaintext": ssh_private_key_plaintext,
+        }),
+        ex=STASH_TTL_SECONDS,
+    )
 
 
 async def _delete_provision_inline(task_id: str) -> None:
     """Дропнуть stash после успешного submit'а. TTL подстрахует."""
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
+    client = redis_pool.get_redis()
     try:
-        try:
-            await client.delete(_PROVISION_INLINE_KEY_PREFIX + task_id)
-        except Exception:  # noqa: BLE001
-            logger.debug(
-                "failed to delete provision inline stash", exc_info=True,
-            )
-    finally:
-        await client.aclose()
+        await client.delete(_PROVISION_INLINE_KEY_PREFIX + task_id)
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "failed to delete provision inline stash", exc_info=True,
+        )
 
 
 def _validate_dispatch_creds_key(stash_key: str) -> None:
@@ -147,12 +135,8 @@ async def _read_dispatch_creds(stash_key: str) -> tuple[str | None, str | None]:
     создать), либо fail'ить с `DISPATCH_STASH_MISSING`.
     """
     _validate_dispatch_creds_key(stash_key)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
-    try:
-        raw = await client.get(stash_key)
-    finally:
-        await client.aclose()
+    client = redis_pool.get_redis()
+    raw = await client.get(stash_key)
     if raw is None:
         return None, None
     text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
@@ -185,17 +169,13 @@ async def _delete_dispatch_creds(stash_key: str) -> None:
             stash_key,
         )
         return
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
+    client = redis_pool.get_redis()
     try:
-        try:
-            await client.delete(stash_key)
-        except Exception:  # noqa: BLE001
-            logger.debug(
-                "failed to delete dispatch creds stash", exc_info=True,
-            )
-    finally:
-        await client.aclose()
+        await client.delete(stash_key)
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "failed to delete dispatch creds stash", exc_info=True,
+        )
 
 
 def _unscrub(value):

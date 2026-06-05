@@ -24,15 +24,15 @@ import json
 import logging
 import re
 
-import redis.asyncio as aioredis
+import redis.asyncio as aioredis  # noqa: F401 — re-exported for test monkeypatch backward compat
 
 from src.clients.ssh import SshError
-from src.core.config import get_settings
+from src.core.config import get_settings  # noqa: F401 — re-exported for downstream / future tests
 from src.core.identifiers import validate_task_id
 from src.db.session import AsyncSessionLocal
 from src.main import broker
 from src.repositories import task as task_repo
-from src.services import server_service_client, ssh_client
+from src.services import redis_pool, server_service_client, ssh_client
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
@@ -74,12 +74,8 @@ async def _read_bootstrap_creds(creds_key: str) -> dict:
     SSH_BOOTSTRAP_CREDS_MISSING)` — task завершится FAILED с понятным
     last_error, а не молчаливо зайдёт под `root` без пароля.
     """
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
-    try:
-        raw = await client.get(creds_key)
-    finally:
-        await client.aclose()
+    client = redis_pool.get_redis()
+    raw = await client.get(creds_key)
     if raw is None:
         raise SshError(
             error_code="SSH_BOOTSTRAP_CREDS_MISSING",
@@ -119,44 +115,32 @@ async def _mark_bootstrap_succeeded(task_id: str) -> None:
     отработает как раньше через cred'ы.
     """
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
+    client = redis_pool.get_redis()
     try:
-        try:
-            await client.set(
-                _PREPARED_MARKER_PREFIX + task_id, "1",
-                ex=_PREPARED_MARKER_TTL_SECONDS,
-            )
-        except Exception:  # noqa: BLE001
-            logger.debug("failed to set prepared marker", exc_info=True)
-    finally:
-        await client.aclose()
+        await client.set(
+            _PREPARED_MARKER_PREFIX + task_id, "1",
+            ex=_PREPARED_MARKER_TTL_SECONDS,
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("failed to set prepared marker", exc_info=True)
 
 
 async def _read_bootstrap_succeeded(task_id: str) -> bool:
     """Проверить, отработал ли SSH-bootstrap для этой task'и ранее."""
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
-    try:
-        raw = await client.get(_PREPARED_MARKER_PREFIX + task_id)
-    finally:
-        await client.aclose()
+    client = redis_pool.get_redis()
+    raw = await client.get(_PREPARED_MARKER_PREFIX + task_id)
     return raw is not None
 
 
 async def _delete_bootstrap_succeeded(task_id: str) -> None:
     """Снять маркер после успешного `submit_prepared` — best-effort cleanup."""
     validate_task_id(task_id)
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
+    client = redis_pool.get_redis()
     try:
-        try:
-            await client.delete(_PREPARED_MARKER_PREFIX + task_id)
-        except Exception:  # noqa: BLE001
-            logger.debug("failed to delete prepared marker", exc_info=True)
-    finally:
-        await client.aclose()
+        await client.delete(_PREPARED_MARKER_PREFIX + task_id)
+    except Exception:  # noqa: BLE001
+        logger.debug("failed to delete prepared marker", exc_info=True)
 
 
 async def _delete_bootstrap_creds(creds_key: str) -> None:
@@ -165,14 +149,11 @@ async def _delete_bootstrap_creds(creds_key: str) -> None:
     TTL подчистит ключ в любом случае; явный DELETE просто сокращает окно
     жизни кред до минимума. Ошибку глушим — это посмертный cleanup.
     """
-    settings = get_settings()
-    client = aioredis.from_url(settings.redis_url)
+    client = redis_pool.get_redis()
     try:
         await client.delete(creds_key)
     except Exception:  # noqa: BLE001
         logger.debug("failed to delete bootstrap creds key", exc_info=True)
-    finally:
-        await client.aclose()
 
 
 @broker.task("server.prepare")

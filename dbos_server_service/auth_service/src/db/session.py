@@ -4,7 +4,11 @@
 (дефолты 10/20 живут в `core.config.Settings`, симметрично с
 `loging_service`, `server_service` и `server_worker`). `pool_pre_ping`
 пингует коннект перед использованием, чтобы не нарваться на closed-сокет
-после restart'а postgres.
+после restart'а postgres. `pool_recycle` принудительно ротирует коннект
+старше N секунд — закрывает PgBouncer/cloud-proxy idle-killer окно, когда
+proxy молча перестаёт отвечать после истечения своего timeout'а
+(`pool_pre_ping` ловит уже-закрытый сокет, но не помогает на «полузависших»
+соединениях).
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -18,6 +22,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=_settings.db_pool_size,
     max_overflow=_settings.db_max_overflow,
+    pool_recycle=_settings.db_pool_recycle_seconds,
 )
 
 # `expire_on_commit=False` важен для FastAPI: после `db.commit()` мы продолжаем

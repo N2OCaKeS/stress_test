@@ -314,9 +314,10 @@ class TestGetStatePureRead:
         self, monkeypatch, fake_redis, frozen_clock,
     ) -> None:
         """Если Redis-eval бросает — возвращаем `("closed", 0.0)`, не пробрасываем."""
+        from redis.exceptions import RedisError
 
         async def boom_eval(*args, **kw):
-            raise RuntimeError("redis down")
+            raise RedisError("redis down")
 
         # Подменяем eval на FakeRedis-instance, который вернётся из _get_client.
         original_get_client = cb._get_client

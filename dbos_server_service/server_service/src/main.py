@@ -250,6 +250,16 @@ def create_application() -> FastAPI:
             # реиспользовал закрытый.
             await worker_client.shutdown_broker()
 
+            # Главный DB engine: закрываем самым последним, после всех
+            # HTTP/Redis pool'ов и worker-broker'а. К этой точке in-flight
+            # endpoint-запросы уже завершили транзакции (uvicorn graceful
+            # drain + closed introspect/audit pools), и держать live PG-pool
+            # больше незачем. Без dispose'а тесты через `lifespan_context`
+            # копят коннекты между прогонами, в k8s — pod уходит в TIME_WAIT
+            # на pgbouncer'е дольше, чем нужно.
+            from src.db.session import engine as _main_engine
+            await _main_engine.dispose()
+
     # В production закрываем публичный OpenAPI/Swagger UI — анонимы не должны
     # видеть каталог эндпоинтов (включая stub-501 с summary вроде «Reveal decrypted
     # IPMI credentials»). В dev/test/local остаётся открытым для разработки.

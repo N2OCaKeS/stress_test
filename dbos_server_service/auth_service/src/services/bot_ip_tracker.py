@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
@@ -63,14 +64,11 @@ async def track_bot_ip(
       4. Если уникальных >=2 — emit CRITICAL `bot.suspicious_multi_ip` с
          деталями `{ips, bot_id, time_window_seconds: <окно>}`.
 
-    Замечание про concurrency: два параллельных introspect'а одного бота
-    могут перетереть `last_known_ips` друг друга (last-write-wins). При
-    N>1 одновременных запросов с разных IP счётчик уникальных IP за окно
-    может недосчитать одну-две записи — следующий introspect (или один из
-    концурентных, который попадёт в commit позже) её догонит, и алерт
-    `bot.suspicious_multi_ip` всё равно сработает. CAS через JSONB-update
-    с условным WHERE не оправдан: окно из N IP — observability-сигнал,
-    не security-инвариант; редкий миссинг одной записи терпим.
+    Concurrency: read-modify-write по `last_known_ips` сериализуем через
+    `SELECT ... FOR UPDATE` на строке bot_accounts. Параллельные introspect'ы
+    одного бота встают в очередь на row-lock'е, и `suspicious_multi_ip`
+    детектится без race-окна, в которое раньше могла провалиться запись
+    из-за last-write-wins на JSONB.
     """
     if not caller_ip:
         return False
@@ -80,11 +78,22 @@ async def track_bot_ip(
     suspicious_window = timedelta(seconds=settings.bot_suspicious_ip_window_seconds)
 
     now = datetime.now(timezone.utc)
+
+    # Row-lock на bot'е и свежий перечит `last_known_ips` уже под lock'ом:
+    # без перечита параллельные introspect'ы взяли бы snapshot до acquire'а и
+    # всё равно перезаписали друг друга. На SQLite (in-memory тесты) FOR UPDATE
+    # игнорируется драйвером — fallback на исходный bot-инстанс безопасен,
+    # т.к. там нет concurrency, против которого мы защищаемся.
+    locked_bot = await db.scalar(
+        select(BotAccount).where(BotAccount.id == bot.id).with_for_update()
+    )
+    target_bot = locked_bot if locked_bot is not None else bot
+
     # Берём поверхностный список, но мутируем только через новые dict'ы:
     # in-place правка `window[-1]["ts"] = ...` модифицировала бы тот же
     # объект, что лежит в `bot.last_known_ips`, и ORM не всегда видит
     # такую мутацию JSONB как изменение атрибута.
-    window: list[dict] = list(bot.last_known_ips or [])
+    window: list[dict] = list(target_bot.last_known_ips or [])
 
     # Если последняя запись — тот же самый IP, просто обновляем её ts.
     # Long-poll CI-агент с фиксированного IP не должен забивать окно.
@@ -96,6 +105,10 @@ async def track_bot_ip(
     if len(window) > max_window:
         window = window[-max_window:]
 
+    target_bot.last_known_ips = window
+    # Если caller продолжает использовать оригинальный `bot`-инстанс,
+    # синхронизируем атрибут — иначе он останется на старом значении до
+    # следующего refresh'а.
     bot.last_known_ips = window
     # Атрибут переприсваиваем целиком (а не мутируем in-place), поэтому ORM
     # сам видит dirty — flag_modified тут не нужен.

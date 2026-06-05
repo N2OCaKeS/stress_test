@@ -101,9 +101,24 @@ async def fetch_drift_events(
             error_code="LOGING_SERVICE_UNAVAILABLE",
             message=f"loging_service returned {resp.status_code}",
         )
+    if resp.status_code in (401, 403):
+        # 401/403 — это operator-config error (misconfigured api-key либо
+        # роль). Под общим WARNING + LOGING_SERVICE_UNAVAILABLE такой случай
+        # неотличим от транзиентной 5xx-недоступности upstream'а. Поднимаем
+        # уровень до ERROR и отдельный error_code, чтобы алёрт триаж'ился
+        # в сторону config'а, а не в сторону health check'а loging'а.
+        logger.error(
+            "loging GET /events rejected as auth-failure %s: %s",
+            resp.status_code, resp.text[:300],
+        )
+        raise ServiceUnavailableError(
+            error_code="LOGING_SERVICE_AUTH_FAILED",
+            message="loging_service rejected drift query: auth failed",
+        )
     if resp.status_code >= 400:
-        # 401/403 = misconfigured api-key или роль; 4xx наружу — не наш case,
-        # но прячем за 503 чтобы не светить детали upstream'а.
+        # Прочий 4xx — это контракт-mismatch (валидация / unknown action),
+        # но не наш штатный путь; прячем за 503 чтобы не светить детали
+        # upstream'а, оставляем WARNING.
         logger.warning(
             "loging GET /events rejected with %s: %s",
             resp.status_code, resp.text[:300],

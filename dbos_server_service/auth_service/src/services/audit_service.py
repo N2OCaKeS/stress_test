@@ -104,10 +104,16 @@ async def _post_once(
     payload: dict,
     headers: dict,
 ) -> httpx.Response:
-    """Один POST attempt. Pooled при наличии клиента, иначе per-call."""
+    """Один POST attempt. Pooled при наличии клиента, иначе per-call.
+
+    Fallback тянет таймаут из settings (`audit_pool_timeout_seconds`), чтобы
+    pooled-path и fallback-path не расходились на одинаковом канале при
+    нестандартном `AUDIT_POOL_TIMEOUT_SECONDS`.
+    """
     if client is not None:
         return await client.post(_EVENTS_PATH, json=payload, headers=headers)
-    async with httpx.AsyncClient(timeout=2.0) as fallback:
+    fallback_timeout = getattr(get_settings(), "audit_pool_timeout_seconds", 3.0)
+    async with httpx.AsyncClient(timeout=fallback_timeout) as fallback:
         return await fallback.post(
             f"{url.rstrip('/')}{_EVENTS_PATH}",
             json=payload,

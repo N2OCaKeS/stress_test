@@ -354,18 +354,18 @@ class TestDispatchRotateUserPasswordErrors:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="APP_ENV mismatch: worker=local vs server=test — abort до сравнения id; "
-    "потребуется лак APP_ENV в Settings'е или fake-status, отдающий worker-овский env",
-)
 class TestReencryptLazyOutboxIdNotString:
     """non-string outbox_id в элементе claim-батча → errors счётчик увеличивается."""
 
     async def test_non_string_id_increments_errors(self, monkeypatch, captured_audit):
         """item.get("id") — не str → errors += 1, finalize_done не вызывается."""
-        from src.main import secrets_reencrypt_lazy
+        from src.main import secrets_reencrypt_lazy, _settings
         from src.services import server_service_client
+
+        # Worker и сервер должны быть в одном APP_ENV, иначе guard в
+        # secrets_reencrypt_lazy abort'ит тик до того, как мы дойдём до
+        # проверки типа outbox_id.
+        monkeypatch.setattr(_settings, "app_env", "test")
 
         done_calls: list = []
 
@@ -382,6 +382,11 @@ class TestReencryptLazyOutboxIdNotString:
             return [{"id": 42, "entity_type": "ipmi_controller"}]
 
         async def fake_done(outbox_id):
+            # Воспроизводим контракт реальной finalize_reencrypt_outbox_done:
+            # validate_outbox_id отбивает не-строки ValueError'ом, и main.py
+            # ловит его в счётчик errors.
+            from src.core.identifiers import validate_outbox_id
+            validate_outbox_id(outbox_id)
             done_calls.append(outbox_id)
             return {"skipped": False}
 

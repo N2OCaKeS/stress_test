@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 BASE = "/api/server/v1/servers"
 
@@ -33,16 +33,16 @@ BASE = "/api/server/v1/servers"
 class TestListServers:
     async def test_no_token_returns_401(self, client):
         resp = await client.get(BASE)
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_garbage_token_returns_401(self, client):
         resp = await client.get(BASE, headers=_hdr("bogus_unregistered"))
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_INVALID")
 
     async def test_no_role_user_returns_403(self, client, no_role_token_a, make_server):
         await make_server(department_id="dep_a")
         resp = await client.get(BASE, headers=_hdr(no_role_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_reader_sees_own_dept_only(self, client, reader_token_a, make_server):
         await make_server(department_id="dep_a")
@@ -130,12 +130,11 @@ class TestCreateServer:
 
     async def test_reader_cannot_create(self, client, reader_token_a):
         resp = await client.post(BASE, headers=_hdr(reader_token_a), json=self._payload())
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_guest_cannot_create(self, client, guest_token_a):
         resp = await client.post(BASE, headers=_hdr(guest_token_a), json=self._payload())
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_non_admin_cannot_create_in_other_dept(self, client, operator_token_a):
         resp = await client.post(
@@ -143,8 +142,7 @@ class TestCreateServer:
             headers=_hdr(operator_token_a),
             json=self._payload(department_id="dep_b", hostname="cross", ip_address="10.8.8.8"),
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "DEPARTMENT_ISOLATION"
+        assert_error(resp, 403, "DEPARTMENT_ISOLATION")
 
     async def test_department_admin_cannot_create_in_other_dept(self, client, admin_token):
         """`admin_token` теперь department_admin в dep_a → 403 для dep_b POST.
@@ -159,8 +157,7 @@ class TestCreateServer:
             headers=_hdr(admin_token),
             json=self._payload(department_id="dep_b", hostname="adm_cross", ip_address="10.9.9.9"),
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "DEPARTMENT_ISOLATION"
+        assert_error(resp, 403, "DEPARTMENT_ISOLATION")
 
     async def test_duplicate_hostname_conflict(self, client, admin_token, make_server):
         await make_server(department_id="dep_a", hostname="duphost")
@@ -168,9 +165,7 @@ class TestCreateServer:
             BASE, headers=_hdr(admin_token),
             json=self._payload(hostname="duphost", ip_address="10.10.10.10"),
         )
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body["error_code"] == "SERVER_DUPLICATE"
+        body = assert_error(resp, 409, "SERVER_DUPLICATE")
         # 409-response не должен утекать сырую строку psycopg в details.
         assert "db_error" not in (body.get("details") or {})
 
@@ -180,9 +175,7 @@ class TestCreateServer:
             BASE, headers=_hdr(admin_token),
             json=self._payload(hostname="other_host", ip_address="10.11.11.11"),
         )
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body["error_code"] == "SERVER_DUPLICATE"
+        body = assert_error(resp, 409, "SERVER_DUPLICATE")
         assert "db_error" not in (body.get("details") or {})
 
     async def test_create_conflict_does_not_leak_cross_dept_hostname(
@@ -199,9 +192,7 @@ class TestCreateServer:
                 ip_address="10.55.55.55",
             ),
         )
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body["error_code"] == "SERVER_DUPLICATE"
+        body = assert_error(resp, 409, "SERVER_DUPLICATE")
         # Главное: значение конкретного hostname чужого dept не должно засветиться
         # ни в каком поле ответа (message, details.db_error, request_id и т.д.).
         assert secret_hostname not in resp.text
@@ -222,9 +213,7 @@ class TestCreateServer:
                 ip_address=secret_ip,
             ),
         )
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body["error_code"] == "SERVER_DUPLICATE"
+        body = assert_error(resp, 409, "SERVER_DUPLICATE")
         assert secret_ip not in resp.text
         assert "db_error" not in (body.get("details") or {})
 
@@ -243,9 +232,7 @@ class TestCreateServer:
                 serial_number=secret_serial,
             ),
         )
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body["error_code"] == "SERVER_DUPLICATE"
+        body = assert_error(resp, 409, "SERVER_DUPLICATE")
         assert secret_serial not in resp.text
         assert "db_error" not in (body.get("details") or {})
 
@@ -273,8 +260,7 @@ class TestGetServer:
         """Кросс-департаментный сервер должен прятаться за 404, не 403."""
         srv = await make_server(department_id="dep_b")
         resp = await client.get(f"{BASE}/{srv.id}", headers=_hdr(reader_token_a))
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_department_admin_cannot_see_other_dept(self, client, admin_token, make_server):
         """`admin_token` теперь department_admin в dep_a → 404 для dep_b сервера.
@@ -284,12 +270,11 @@ class TestGetServer:
         """
         srv = await make_server(department_id="dep_b")
         resp = await client.get(f"{BASE}/{srv.id}", headers=_hdr(admin_token))
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_nonexistent_id_returns_404(self, client, reader_token_a):
         resp = await client.get(f"{BASE}/srv_ghost", headers=_hdr(reader_token_a))
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
 
 # ── PATCH /{id} ──────────────────────────────────────────────────────────────
@@ -312,7 +297,7 @@ class TestUpdateServer:
             headers=_hdr(reader_token_a),
             json={"display_name": "x"},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404_hidden(self, client, operator_token_a, make_server):
         srv = await make_server(department_id="dep_b")
@@ -321,7 +306,7 @@ class TestUpdateServer:
             headers=_hdr(operator_token_a),
             json={"display_name": "x"},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_empty_update_is_noop(self, client, operator_token_a, make_server):
         srv = await make_server(department_id="dep_a", hostname="original")
@@ -339,9 +324,7 @@ class TestUpdateServer:
             headers=_hdr(admin_token),
             json={"ip_address": "10.20.20.20"},
         )
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body["error_code"] == "SERVER_DUPLICATE"
+        body = assert_error(resp, 409, "SERVER_DUPLICATE")
         assert "db_error" not in (body.get("details") or {})
 
     # PATCH cross-dept hostname conflict: production-путь корректен и покрыт
@@ -375,21 +358,21 @@ class TestDeleteServer:
         """`delete` отсутствует в default operator-grants (см. seed migration)."""
         srv = await make_server(department_id="dep_a")
         resp = await client.delete(f"{BASE}/{srv.id}", headers=_hdr(operator_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_reader_cannot_delete(self, client, reader_token_a, make_server):
         srv = await make_server(department_id="dep_a")
         resp = await client.delete(f"{BASE}/{srv.id}", headers=_hdr(reader_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404_hidden(self, client, admin_role_token_a, make_server):
         srv = await make_server(department_id="dep_b")
         resp = await client.delete(f"{BASE}/{srv.id}", headers=_hdr(admin_role_token_a))
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_nonexistent_returns_404(self, client, admin_token):
         resp = await client.delete(f"{BASE}/srv_ghost", headers=_hdr(admin_token))
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
 
 # ── Banned user / inactive token ─────────────────────────────────────────────
@@ -399,14 +382,12 @@ class TestAuthDeniedPaths:
         token = make_token(department_id="dep_a", service_roles={"server_service": ["reader"]},
                            is_banned=True)
         resp = await client.get(BASE, headers=_hdr(token))
-        assert resp.status_code == 401
-        assert resp.json()["error_code"] == "USER_BANNED"
+        assert_error(resp, 401, "USER_BANNED")
 
     async def test_inactive_token_returns_401(self, client, make_token):
         token = make_token(department_id="dep_a", active=False)
         resp = await client.get(BASE, headers=_hdr(token))
-        assert resp.status_code == 401
-        assert resp.json()["error_code"] == "ACCESS_TOKEN_INVALID"
+        assert_error(resp, 401, "ACCESS_TOKEN_INVALID")
 
     async def test_user_without_service_in_allowed_returns_403(self, client, make_token):
         token = make_token(
@@ -415,7 +396,7 @@ class TestAuthDeniedPaths:
             service_roles={"server_service": ["reader"]},
         )
         resp = await client.get(BASE, headers=_hdr(token))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "SERVICE_ACCESS_DENIED")
 
 
 # ── CPU fields (inline в server, без отдельного каталога) ───────────────────

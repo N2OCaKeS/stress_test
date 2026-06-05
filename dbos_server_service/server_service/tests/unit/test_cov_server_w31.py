@@ -192,8 +192,10 @@ class TestDispatchForServerNoIpmiAudit:
 
 
 class TestCheckTargetDepartmentForServerActorMismatch:
-    """`_check_target_department_for_server` с `mask_as_not_found=True`:
-    actor.department_id ≠ server.department_id → 404 `SERVER_NOT_FOUND`.
+    """`_check_target_department_for_server`:
+    actor.department_id ≠ server.department_id → 404 `SERVER_NOT_FOUND`
+    (cross-dept actor получает то же 404, что и валидный caller на
+    несуществующем server_id).
 
     Симметричный к `test_credentials_rotated_actor_mismatch_returns_404_soft`
     тест для wrapper'а, отвечающего за server-target (а не controller).

@@ -26,7 +26,7 @@ import pytest
 BASE = "/api/server/v1/server-accounts"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 @pytest.fixture
@@ -127,8 +127,7 @@ class TestCreateAccount:
             headers=_hdr(reader_token_a),
             json={"server_ids": [srv.id], "login": "root"},
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_guest_cannot_create(self, client, guest_token_a, make_server):
         srv = await make_server(department_id="dep_a")
@@ -137,7 +136,7 @@ class TestCreateAccount:
             headers=_hdr(guest_token_a),
             json={"server_ids": [srv.id], "login": "root"},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_token_returns_401(self, client, make_server):
         srv = await make_server(department_id="dep_a")
@@ -145,7 +144,7 @@ class TestCreateAccount:
             BASE,
             json={"server_ids": [srv.id], "login": "root"},
         )
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_cross_dept_server_returns_404_hidden(
         self, client, operator_token_a, make_server,
@@ -157,8 +156,7 @@ class TestCreateAccount:
             headers=_hdr(operator_token_a),
             json={"server_ids": [srv.id], "login": "root"},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_has_sudo_without_grant_sudo_role_denied(
         self, client, operator_token_a, make_server,
@@ -170,8 +168,7 @@ class TestCreateAccount:
             headers=_hdr(operator_token_a),
             json={"server_ids": [srv.id], "login": "rooty", "has_sudo": True},
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_admin_creates_with_sudo(
         self, client, admin_role_token_a, make_server,
@@ -195,8 +192,7 @@ class TestCreateAccount:
             headers=_hdr(admin_token),
             json={"server_ids": [srv.id], "login": "root"},
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "ACCOUNT_DUPLICATE"
+        assert_error(resp, 409, "ACCOUNT_DUPLICATE")
 
     async def test_nonexistent_server_returns_404(
         self, client, admin_token,
@@ -206,7 +202,7 @@ class TestCreateAccount:
             headers=_hdr(admin_token),
             json={"server_ids": ["srv_ghost"], "login": "root"},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_valid_login_accepted(
         self, client, admin_token, make_server,
@@ -242,7 +238,7 @@ class TestCreateAccount:
             headers=_hdr(admin_token),
             json={"server_ids": [srv.id], "login": bad_login},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 # ── GET / (list) ─────────────────────────────────────────────────────────────
@@ -275,7 +271,7 @@ class TestListAccounts:
         resp = await client.get(
             BASE, headers=_hdr(reader_token_a), params={"server_id": srv.id},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_list_pagination(
         self, client, admin_token, make_server, make_account,
@@ -299,7 +295,7 @@ class TestListAccounts:
         self, client, reader_token_a,
     ):
         resp = await client.get(BASE, headers=_hdr(reader_token_a))
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_no_role_user_returns_403(
         self, client, no_role_token_a, make_server,
@@ -308,7 +304,7 @@ class TestListAccounts:
         resp = await client.get(
             BASE, headers=_hdr(no_role_token_a), params={"server_id": srv.id},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 # ── GET /{id} ────────────────────────────────────────────────────────────────
@@ -333,12 +329,11 @@ class TestGetAccount:
         srv = await make_server(department_id="dep_b")
         acc = await make_account(server_id=srv.id, login="root")
         resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(reader_token_a))
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_nonexistent_id_returns_404(self, client, reader_token_a):
         resp = await client.get(f"{BASE}/acc_ghost", headers=_hdr(reader_token_a))
-        assert resp.status_code == 404
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_no_role_returns_403(
         self, client, no_role_token_a, make_server, make_account,
@@ -346,7 +341,7 @@ class TestGetAccount:
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id)
         resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(no_role_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 # ── PATCH /{id} ──────────────────────────────────────────────────────────────
@@ -377,7 +372,7 @@ class TestUpdateAccount:
             headers=_hdr(reader_token_a),
             json={"shell": "/bin/zsh"},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404_hidden(
         self, client, operator_token_a, make_server, make_account,
@@ -389,7 +384,7 @@ class TestUpdateAccount:
             headers=_hdr(operator_token_a),
             json={"shell": "/bin/zsh"},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_empty_update_is_noop(
         self, client, operator_token_a, make_server, make_account,
@@ -415,8 +410,7 @@ class TestUpdateAccount:
             headers=_hdr(operator_token_a),
             json={"has_sudo": True},
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_admin_can_raise_sudo(
         self, client, admin_role_token_a, make_server, make_account,
@@ -588,7 +582,7 @@ class TestDeleteAccount:
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id)
         resp = await client.delete(f"{BASE}/{acc.id}", headers=_hdr(operator_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_reader_cannot_delete(
         self, client, reader_token_a, make_server, make_account,
@@ -596,7 +590,7 @@ class TestDeleteAccount:
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id)
         resp = await client.delete(f"{BASE}/{acc.id}", headers=_hdr(reader_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404_hidden(
         self, client, admin_role_token_a, make_server, make_account,
@@ -604,11 +598,11 @@ class TestDeleteAccount:
         srv = await make_server(department_id="dep_b")
         acc = await make_account(server_id=srv.id)
         resp = await client.delete(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
-        assert resp.status_code == 404
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_nonexistent_returns_404(self, client, admin_token):
         resp = await client.delete(f"{BASE}/acc_ghost", headers=_hdr(admin_token))
-        assert resp.status_code == 404
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
 
 # ── POST /{id}/rotate_password ──────────────────────────────────────────────
@@ -656,8 +650,7 @@ class TestRotatePassword:
             f"{BASE}/{acc.id}/rotate_password",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404_hidden(
         self, client, operator_token_a, make_server, make_account,
@@ -668,14 +661,14 @@ class TestRotatePassword:
             f"{BASE}/{acc.id}/rotate_password",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_nonexistent_returns_404(self, client, operator_token_a):
         resp = await client.post(
             f"{BASE}/acc_ghost/rotate_password",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_manual_password_is_applied(
         self, client, operator_token_a, make_server, make_account, db,
@@ -749,7 +742,7 @@ class TestPasswordPolicy:
             headers=_hdr(admin_token),
             json={"server_ids": [srv.id], "login": "root", "password": bad_password},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_create_accepts_compliant_password(
         self, client, admin_token, make_server,
@@ -789,7 +782,7 @@ class TestPasswordPolicy:
             headers=_hdr(operator_token_a),
             json={"password": bad_password},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 # ── GET /{id} — раскрытие пароля через view_password ────────────────────────
@@ -942,8 +935,7 @@ class TestGetAccountPassword:
         )
         await db.flush()
         resp = await client.get(f"{BASE}/{acc.id}", headers=_hdr(admin_role_token_a))
-        assert resp.status_code == 422
-        assert resp.json()["error_code"] == "DECRYPT_FAILED"
+        assert_error(resp, 422, "DECRYPT_FAILED")
 
     async def test_broken_ciphertext_invisible_to_reader(
         self, client, reader_token_a, make_server, make_account, db,
@@ -1009,7 +1001,7 @@ class TestMultiServerCreate:
             headers=_hdr(admin_token),
             json={"server_ids": [], "login": "x"},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_create_cross_dept_server_in_list_404(
         self, client, operator_token_a, make_server,
@@ -1022,8 +1014,7 @@ class TestMultiServerCreate:
             headers=_hdr(operator_token_a),
             json={"server_ids": [srv_a.id, srv_b.id], "login": "mixed"},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_login_unique_per_server_across_accounts(
         self, client, admin_token, make_server, make_account,
@@ -1036,8 +1027,7 @@ class TestMultiServerCreate:
             headers=_hdr(admin_token),
             json={"server_ids": [srv.id], "login": "root"},
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "ACCOUNT_DUPLICATE"
+        assert_error(resp, 409, "ACCOUNT_DUPLICATE")
 
     async def test_same_login_different_servers_allowed(
         self, client, admin_token, make_server,
@@ -1098,7 +1088,7 @@ class TestLinkUnlinkServers:
             headers=_hdr(operator_token_a),
             json={"server_ids": [srv_b.id]},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_link_login_taken_on_target_409(
         self, client, operator_token_a, make_server, make_account,
@@ -1113,8 +1103,7 @@ class TestLinkUnlinkServers:
             headers=_hdr(operator_token_a),
             json={"server_ids": [srv2.id]},
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "ACCOUNT_DUPLICATE"
+        assert_error(resp, 409, "ACCOUNT_DUPLICATE")
 
     async def test_reader_cannot_link(
         self, client, reader_token_a, make_server, make_account,
@@ -1127,7 +1116,7 @@ class TestLinkUnlinkServers:
             headers=_hdr(reader_token_a),
             json={"server_ids": [srv2.id]},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_unlink_removes_server(
         self, client, operator_token_a, make_server, make_account,
@@ -1155,8 +1144,7 @@ class TestLinkUnlinkServers:
             headers=_hdr(operator_token_a),
             json={"server_ids": [srv.id]},
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "ACCOUNT_NO_SERVERS"
+        assert_error(resp, 409, "ACCOUNT_NO_SERVERS")
 
     async def test_unlink_cross_dept_account_404(
         self, client, operator_token_a, make_server, make_account,
@@ -1169,7 +1157,7 @@ class TestLinkUnlinkServers:
             headers=_hdr(operator_token_a),
             json={"server_ids": [srv.id]},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
 
     async def test_unlink_unrelated_server_404(
         self, client, operator_token_a, make_server, make_account,
@@ -1185,9 +1173,7 @@ class TestLinkUnlinkServers:
             headers=_hdr(operator_token_a),
             json={"server_ids": [srv_other.id]},
         )
-        assert resp.status_code == 404, resp.text
-        body = resp.json()
-        assert body["error_code"] == "ACCOUNT_SERVER_LINK_NOT_FOUND"
+        body = assert_error(resp, 404, "ACCOUNT_SERVER_LINK_NOT_FOUND")
         assert srv_other.id in body.get("details", {}).get("unknown_server_ids", [])
 
     async def test_unlink_mixed_known_and_unknown_404(
@@ -1205,8 +1191,7 @@ class TestLinkUnlinkServers:
             headers=_hdr(operator_token_a),
             json={"server_ids": [srv2.id, srv_other.id]},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_SERVER_LINK_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_SERVER_LINK_NOT_FOUND")
         # Подтверждаем, что обе исходные связки на месте — атомарность операции.
         resp_get = await client.get(
             f"{BASE}/{acc.id}", headers=_hdr(operator_token_a),

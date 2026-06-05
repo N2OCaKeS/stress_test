@@ -106,10 +106,9 @@ def _check_target_department(
     server_department_id: str | None,
     header_department_id: str | None,
     actor_department_id: str | None,
+    not_found_error_code: str,
+    not_found_message: str,
     extra_details: dict | None = None,
-    mask_as_not_found: bool = False,
-    not_found_error_code: str | None = None,
-    not_found_message: str | None = None,
 ) -> None:
     """Cross-check caller department + `X-Target-Department-Id` header против
     server.department_id.
@@ -120,7 +119,9 @@ def _check_target_department(
        `server.department_id`. Это всегда блокирует, независимо от
        `internal_require_dept_header` — soft mode не должен открывать
        cross-department leak. `None` actor (platform-роли) тоже блокируется.
-       403 ``TARGET_DEPARTMENT_MISMATCH``, `reason=actor_department_mismatch`.
+       Caller'у уходит 404 (`not_found_error_code`), а не 403 — разница 403/404
+       для cross-dept caller'а работала бы enumeration-oracle'ом. В аудит
+       пишется `reason=actor_department_mismatch`.
 
     2. **Header** (`X-Target-Department-Id`). Бросает ``AuthorizationError``
        только в strict-режиме: header отсутствует → 403
@@ -158,26 +159,6 @@ def _check_target_department(
             details={**extra, "reason": reason},
         )
 
-    def _mask_or_403(message: str) -> None:
-        """Поднимает 404 если caller просил `mask_as_not_found`, иначе 403.
-
-        Маска применяется только к actor-mismatch'у: разница 403-vs-404 для
-        cross-dept caller'а работает enumeration-oracle'ом. Header mismatch
-        (worker bug-signal) оставляем 403 в strict-mode — это сигнал
-        misconfig'а, не enumeration.
-        """
-        if mask_as_not_found:
-            raise NotFoundError(
-                error_code=not_found_error_code or "RESOURCE_NOT_FOUND",
-                message=not_found_message or message,
-                details={"target_id": target_id},
-            )
-        raise AuthorizationError(
-            error_code="TARGET_DEPARTMENT_MISMATCH",
-            message=message,
-            details={"target_id": target_id},
-        )
-
     # Actor-vs-server check: всегда блокирующий, не зависит от soft/strict.
     # Closes cross-department password/credentials leak в soft-mode, где
     # отсутствие/несовпадение `X-Target-Department-Id` header'а не отбивалось.
@@ -185,8 +166,10 @@ def _check_target_department(
     # которых platform_admin_guard должен был отбить раньше; defense-in-depth.
     if actor_department_id is None or actor_department_id != server_department_id:
         _emit("actor_department_mismatch", denied=True)
-        _mask_or_403(
-            "Caller department does not match the server's actual department",
+        raise NotFoundError(
+            error_code=not_found_error_code,
+            message=not_found_message,
+            details={"target_id": target_id},
         )
 
     if header_department_id is None:
@@ -213,9 +196,9 @@ def _check_target_department(
     if header_department_id != server_department_id:
         # Mismatch эмитим всегда, независимо от режима — это сигнал бага в
         # worker'е (stale payload) или, хуже, PAT'а, который щупает чужие
-        # отделы. Header mismatch остаётся 403 даже при `mask_as_not_found` —
-        # actor уже подтвердил, что он в правильном dept'е (проверка выше),
-        # так что oracle'а тут нет, а 403 правильнее сигналит о misconfig'е.
+        # отделы. Header mismatch остаётся 403, а не 404 — actor уже
+        # подтвердил, что он в правильном dept'е (проверка выше), так что
+        # oracle'а тут нет, а 403 правильнее сигналит о misconfig'е.
         _emit("target_department_mismatch", denied=strict)
         if strict:
             raise AuthorizationError(
@@ -249,7 +232,6 @@ def _check_target_department_for_server(
         header_department_id=header_department_id,
         actor_department_id=actor_department_id,
         extra_details=extra_details,
-        mask_as_not_found=True,
         not_found_error_code="SERVER_NOT_FOUND",
         not_found_message="Server not found",
     )
@@ -272,7 +254,6 @@ def _check_target_department_for_account(
         header_department_id=header_department_id,
         actor_department_id=actor_department_id,
         extra_details=extra_details,
-        mask_as_not_found=True,
         not_found_error_code="ACCOUNT_NOT_FOUND",
         not_found_message="Server account not found on this server",
     )
@@ -295,7 +276,6 @@ def _check_target_department_for_controller(
         header_department_id=header_department_id,
         actor_department_id=actor_department_id,
         extra_details=extra_details,
-        mask_as_not_found=True,
         not_found_error_code="NO_IPMI_CONTROLLER",
         not_found_message="IPMI controller not found",
     )
@@ -346,7 +326,6 @@ async def fetch_ipmi_credentials(
         server_department_id=server_department_id,
         header_department_id=target_department_id,
         actor_department_id=identity.department_id,
-        mask_as_not_found=True,
         not_found_error_code="SERVER_NOT_FOUND",
         not_found_message="Server not found",
     )
@@ -438,8 +417,9 @@ async def fetch_account_password(
     # Dept-check РАНЬШЕ existence-проверок: иначе разная реакция
     # (404 ACCOUNT_NOT_FOUND vs 403 TARGET_DEPARTMENT_MISMATCH) сама по себе
     # сливает caller'у, привязан ли account_id к серверу чужого dept.
-    # mask_as_not_found унифицирует все «не твой dept» сценарии в 404,
-    # 403 остаётся только для permission_denied.
+    # Cross-dept actor получает то же 404 ACCOUNT_NOT_FOUND, что и валидный
+    # caller на несуществующем account_id, 403 остаётся только для
+    # permission_denied.
     # Исключение: если server_id фактически не существует — эмитим честный
     # `server_not_found` ДО dept-check'а. Иначе SIEM ловит фейковый
     # `actor_department_mismatch` на каждом тычке несуществующим server_id.
@@ -778,10 +758,11 @@ async def receive_inventory(
 
     # Dept-check ВЫШЕ existence-проверки: разница 404 SERVER_NOT_FOUND vs
     # 403 TARGET_DEPARTMENT_MISMATCH сама сливает caller'у факт существования
-    # сервера в чужом dept. `mask_as_not_found=True` унифицирует оба исхода
-    # «не твой dept» / «не существует» в 404 SERVER_NOT_FOUND. Несуществующий
-    # server_id обрабатываем ДО dept-check'а — иначе SIEM ловит фейковый
-    # actor_department_mismatch (server_dept=None vs actor.dept != None).
+    # сервера в чужом dept. `_check_target_department_for_server` отвечает
+    # 404 SERVER_NOT_FOUND, как и валидный caller на несуществующем server_id —
+    # оба исхода неотличимы. Несуществующий server_id обрабатываем ДО
+    # dept-check'а — иначе SIEM ловит фейковый actor_department_mismatch
+    # (server_dept=None vs actor.dept != None).
     server = await server_repo.get_by_id(db, server_id)
     if server is None:
         audit_service.emit(
@@ -920,9 +901,8 @@ async def receive_users_inventory(
     # Permission ВЫШЕ existence/dept: caller без grant'а получает 403 ровно
     # такой же, как same-dept caller без grant'а, и факт существования
     # сервера в чужом dept не утекает. Same-dept caller с grant'ом проходит
-    # дальше к existence+dept-check'у — там 404 SERVER_NOT_FOUND под маской
-    # `mask_as_not_found=True` одинаково покрывает «не твой dept» и «не
-    # существует».
+    # дальше к existence+dept-check'у — там 404 SERVER_NOT_FOUND одинаково
+    # покрывает «не твой dept» и «не существует».
     try:
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.INVENTORY_SUBMIT,
@@ -1163,7 +1143,7 @@ async def record_provision_status(
     # permission_denied вне зависимости от того, в каком dept'е сервер —
     # факт привязки account_id к серверу чужого dept не утекает. Само
     # cross-dept смешение остаётся скрытым за 404 ACCOUNT_NOT_FOUND ниже
-    # (`mask_as_not_found=True` в `_check_target_department_for_account`).
+    # (`_check_target_department_for_account` отвечает 404 ACCOUNT_NOT_FOUND).
     try:
         await permissions.require_action(
             db, identity, EntityType.SERVER_ACCOUNT, Action.PROVISION_ON_HOST,

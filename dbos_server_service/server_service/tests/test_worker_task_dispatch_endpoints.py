@@ -19,7 +19,7 @@ import pytest
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 @pytest.fixture
@@ -140,7 +140,7 @@ class TestPowerStatusDispatch:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
     async def test_cross_dept_returns_404(
@@ -151,7 +151,7 @@ class TestPowerStatusDispatch:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_no_ipmi_returns_404(
@@ -167,8 +167,7 @@ class TestPowerStatusDispatch:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         assert captured_dispatch == []
 
     async def test_decommissioned_returns_409(
@@ -183,8 +182,7 @@ class TestPowerStatusDispatch:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
     async def test_no_token_returns_401(
@@ -192,7 +190,7 @@ class TestPowerStatusDispatch:
     ):
         srv = await make_server(department_id="dep_a", with_ipmi=True)
         resp = await client.post(f"{BASE}/servers/{srv.id}/power/status")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
         assert captured_dispatch == []
 
 
@@ -233,7 +231,7 @@ class TestInventorySyncDispatch:
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
     async def test_decommissioned_returns_409(
@@ -248,8 +246,7 @@ class TestInventorySyncDispatch:
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
 
@@ -314,7 +311,7 @@ class TestAccountRotateDispatch:
             f"{BASE}/server-accounts/{acc.id}/rotate",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
     async def test_cross_dept_returns_404(
@@ -332,8 +329,7 @@ class TestAccountRotateDispatch:
             f"{BASE}/server-accounts/{acc.id}/rotate",
             headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "ACCOUNT_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_nonexistent_account_returns_404(
@@ -343,7 +339,7 @@ class TestAccountRotateDispatch:
             f"{BASE}/server-accounts/acc_ghost_xx/rotate",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_decommissioned_blocks_rotation(
@@ -360,8 +356,7 @@ class TestAccountRotateDispatch:
             f"{BASE}/server-accounts/{acc.id}/rotate",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
 
@@ -407,7 +402,7 @@ class TestIpmiControllerRotateDispatch:
             f"{BASE}/ipmi-controllers/{ctrl.id}/rotate",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
 
     async def test_cross_dept_returns_404(
@@ -420,8 +415,7 @@ class TestIpmiControllerRotateDispatch:
             f"{BASE}/ipmi-controllers/{ctrl.id}/rotate",
             headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         assert captured_dispatch == []
 
     async def test_nonexistent_controller_returns_404(
@@ -431,8 +425,7 @@ class TestIpmiControllerRotateDispatch:
             f"{BASE}/ipmi-controllers/ipm_ghost_xx/rotate",
             headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
         assert captured_dispatch == []
 
 
@@ -556,8 +549,7 @@ class TestDispatchAuditOnWorkerFailure:
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers={**_hdr(operator_token_a), "Idempotency-Key": "is-race"},
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "TASK_IDEMPOTENT_CONFLICT"
+        assert_error(resp, 409, "TASK_IDEMPOTENT_CONFLICT")
         failures = [
             e for e in _events(captured_emits, "server.inventory_sync")
             if e.get("status") == "failure"
@@ -698,8 +690,7 @@ class TestAccountRotateModes:
             headers=_hdr(operator_token_a),
             params={"server_id": other.id},
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "ACCOUNT_NOT_FOUND"
+        assert_error(resp, 404, "ACCOUNT_NOT_FOUND")
         assert captured_dispatch == []
 
     async def test_mass_idempotency_key_split_per_server(
@@ -804,8 +795,7 @@ class TestMassRotatePartialTolerance:
             f"{BASE}/server-accounts/{acc.id}/rotate",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
         assert captured_dispatch == []
 
     async def test_idempotent_conflict_skips_one_server(
@@ -973,9 +963,7 @@ class TestIdempotencyKeyLength:
             f"{BASE}/servers/{srv.id}/power/status",
             headers={**_hdr(operator_token_a), "Idempotency-Key": too_long},
         )
-        assert resp.status_code == 400, resp.text
-        body = resp.json()
-        assert body["error_code"] == "IDEMPOTENCY_KEY_TOO_LONG"
+        body = assert_error(resp, 400, "IDEMPOTENCY_KEY_TOO_LONG")
         assert body["details"]["max_length"] == 87
         assert body["details"]["got"] == 90
         # dispatch_task не должен быть вызван — guard срабатывает раньше.
@@ -1028,8 +1016,7 @@ class TestIdempotencyKeyLength:
             f"{BASE}/server-accounts/{acc.id}/rotate",
             headers={**_hdr(operator_token_a), "Idempotency-Key": too_long},
         )
-        assert resp.status_code == 400, resp.text
-        assert resp.json()["error_code"] == "IDEMPOTENCY_KEY_TOO_LONG"
+        assert_error(resp, 400, "IDEMPOTENCY_KEY_TOO_LONG")
         # Ни одна задача не поставилась — fan-out не запустился.
         assert captured_dispatch == []
 
@@ -1092,7 +1079,7 @@ class TestDispatchForServerAuthzErrorIsDenied:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
         denied = [
             e for e in _events(captured_emits, "server.power_status")
@@ -1126,7 +1113,7 @@ class TestDispatchForServerAuthzErrorIsDenied:
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 403, resp.text
+        assert_error(resp, 403, "PERMISSION_DENIED")
         assert captured_dispatch == []
         denied = [
             e for e in _events(captured_emits, "server.inventory_sync")
@@ -1160,7 +1147,7 @@ class TestDispatchForServerAuthzErrorIsDenied:
             f"{BASE}/servers/{srv.id}/power/status",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         assert captured_dispatch == []
         failures = [
             e for e in _events(captured_emits, "server.power_status")

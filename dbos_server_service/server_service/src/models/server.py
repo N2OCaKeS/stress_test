@@ -56,6 +56,9 @@ class Server(Base):
     busy_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     busy_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     busy_note: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # UNIQUE автоматически создаёт b-tree, поэтому отдельный `index=True`
+    # не пишем — лишний дубль в DDL. `ip_address` оставлен с `index=True`
+    # как косметика читаемости (alembic объединил физически в один индекс).
     serial_number: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
     asset_tag: Mapped[str | None] = mapped_column(String(128), nullable=True)
     location: Mapped[str | None] = mapped_column(String(256), nullable=True)

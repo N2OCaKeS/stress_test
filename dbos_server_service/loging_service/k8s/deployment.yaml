@@ -15,6 +15,14 @@ spec:
       labels:
         app: logging-service
     spec:
+      # AUDIT_DRAIN_TIMEOUT_SECONDS (default 2.0s) задаёт бюджет финального
+      # drain'а self-audit outbox в lifespan finally. Pod должен пережить
+      # этот drain ДО SIGKILL'а — иначе in-flight self-audit события
+      # потеряются. Беру buffer ×3 (default kubelet grace 30s минус
+      # drain-budget) — хватит, чтобы FastAPI lifespan вызвал stop'ы клиентов
+      # и outbox.drain(). Если повысить AUDIT_DRAIN_TIMEOUT_SECONDS — поднять
+      # это значение синхронно.
+      terminationGracePeriodSeconds: 30
       containers:
         - name: logging-service
           image: dbos/logging-service:latest

@@ -533,7 +533,7 @@ def _select_unpublished(limit: int):
                 AuditOutbox.next_retry_at <= now,
             ),
         )
-        .order_by(AuditOutbox.created_at.asc())
+        .order_by(AuditOutbox.created_at.asc(), AuditOutbox.id.asc())
         .limit(limit)
         .with_for_update(skip_locked=True)
     )
@@ -559,7 +559,7 @@ def _select_unpublished_excluding(limit: int, exclude_ids: list[int]):
                 AuditOutbox.next_retry_at <= now,
             ),
         )
-        .order_by(AuditOutbox.created_at.asc())
+        .order_by(AuditOutbox.created_at.asc(), AuditOutbox.id.asc())
         .limit(limit)
         .with_for_update(skip_locked=True)
     )

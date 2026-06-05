@@ -196,7 +196,7 @@ async def create_user(
 
     dept = await dept_repo.get_by_id(department_id) if department_id else None
     if department_id and dept is None:
-        raise NotFoundError(error_code="DEPARTMENT_NOT_FOUND", message=f"Department {department_id} not found")
+        raise NotFoundError(error_code="DEPARTMENT_NOT_FOUND", message=f"Department '{department_id}' not found")
 
     if await user_repo.exists_username(username):
         raise ConflictError(error_code="USER_ALREADY_EXISTS", message=f"Username '{username}' is already taken")

@@ -28,16 +28,16 @@
 
 ## AUTH-TEST-010 · Login (`POST /api/auth/v1/login`)
 
-- [ ] Успешный логин возвращает `access_token`, `refresh_token`, `identity`
-- [ ] Identity содержит корректные `allowed_services` и `service_roles`
-- [ ] Неверный пароль → 401 `INVALID_CREDENTIALS`
-- [ ] Несуществующий пользователь → 401 `INVALID_CREDENTIALS` (не раскрывать, что user не найден)
-- [ ] Заблокированный пользователь (status=blocked) → 403 `USER_BLOCKED`
-- [ ] Забаненный пользователь (status=banned) → 403 `USER_BANNED`
-- [ ] После 5 неудачных попыток → 429 `ACCOUNT_TEMPORARILY_LOCKED` с `retry_after_seconds`
-- [ ] После lockout истекает — логин снова проходит
-- [ ] account_admin логинится без department_id и получает `allowed_services=[]`
-- [ ] Ответ содержит заголовок `X-Request-ID`
+- [x] Успешный логин возвращает `access_token`, `refresh_token`, `identity`
+- [x] Identity содержит корректные `allowed_services` и `service_roles`
+- [x] Неверный пароль → 401 `INVALID_CREDENTIALS`
+- [x] Несуществующий пользователь → 401 `INVALID_CREDENTIALS` (не раскрывать, что user не найден)
+- [x] Заблокированный пользователь (status=blocked) → 403 `USER_BLOCKED`
+- [x] Забаненный пользователь (status=banned) → 403 `USER_BANNED`
+- [x] После 5 неудачных попыток → 429 `ACCOUNT_TEMPORARILY_LOCKED` с `retry_after_seconds`
+- [x] После lockout истекает — логин снова проходит
+- [x] account_admin логинится без department_id и получает `allowed_services=[]`
+- [x] Ответ содержит заголовок `X-Request-ID`
 
 ---
 
@@ -54,9 +54,9 @@
 
 ## AUTH-TEST-030 · Logout (`POST /api/auth/v1/logout`)
 
-- [ ] Logout отзывает refresh_token
-- [ ] После logout refresh тем же токеном → 401
-- [ ] Logout с невалидным токеном → 200 (idempotent, не раскрывает информацию)
+- [x] Logout отзывает refresh_token
+- [x] После logout refresh тем же токеном → 401
+- [x] Logout с невалидным токеном → 200 (idempotent, не раскрывает информацию)
 
 ---
 
@@ -86,36 +86,36 @@
 
 ## AUTH-TEST-060 · Отделы и доступ к сервисам (`/api/auth/v1/departments`)
 
-- [ ] `POST /departments` — account_admin создаёт отдел → 201
-- [ ] `POST /departments` — дублирующее name → 409
-- [ ] `GET /departments` — возвращает список активных отделов
-- [ ] `POST /departments/{id}/services` — выдать отделу доступ → 201 `enabled=true`
-- [ ] `POST /departments/{id}/services` — несуществующий отдел → 404
-- [ ] `POST /departments/{id}/services` — несуществующий сервис → 404
-- [ ] `POST /departments/{id}/services` — повторный grant → 409
-- [ ] `DELETE /departments/{id}/services/{name}` — отозвать доступ → 200
-- [ ] `DELETE /departments/{id}/services/{name}` — после отзыва логин пользователя не содержит этот сервис
+- [x] `POST /departments` — account_admin создаёт отдел → 201
+- [x] `POST /departments` — дублирующее name → 409
+- [x] `GET /departments` — возвращает список активных отделов
+- [x] `POST /departments/{id}/services` — выдать отделу доступ → 201 `enabled=true`
+- [x] `POST /departments/{id}/services` — несуществующий отдел → 404
+- [x] `POST /departments/{id}/services` — несуществующий сервис → 404
+- [x] `POST /departments/{id}/services` — повторный grant → 409
+- [x] `DELETE /departments/{id}/services/{name}` — отозвать доступ → 200
+- [x] `DELETE /departments/{id}/services/{name}` — после отзыва логин пользователя не содержит этот сервис
 
 ---
 
 ## AUTH-TEST-070 · Пользователи (`/api/auth/v1/users`)
 
-- [ ] `POST /users` — account_admin создаёт пользователя с department → 201
-- [ ] `POST /users` — account_admin создаёт account_admin без department → 201
-- [ ] `POST /users` — department_admin создаёт пользователя в своём отделе → 201
-- [ ] `POST /users` — department_admin создаёт пользователя в чужом отделе → 403
-- [ ] `POST /users` — дублирующий username → 409
-- [ ] `POST /users` — несуществующий department_id → 404
-- [ ] `POST /users` — обычный пользователь без department_id → 422
+- [x] `POST /users` — account_admin создаёт пользователя с department → 201
+- [x] `POST /users` — account_admin создаёт account_admin без department → 201
+- [x] `POST /users` — department_admin создаёт пользователя в своём отделе → 201
+- [x] `POST /users` — department_admin создаёт пользователя в чужом отделе → 403
+- [x] `POST /users` — дублирующий username → 409
+- [x] `POST /users` — несуществующий department_id → 404
+- [x] `POST /users` — обычный пользователь без department_id → 422
 - [x] `PATCH /users/{id}` — обновление email, status, department_id, 404 на чужого, 403 для dept_admin/regular, 422 на invalid email (`tests/users/test_update.py`, 7 тестов)
-- [ ] `POST /users/{id}/roles` — назначить роли в сервисе → 200
-- [ ] `POST /users/{id}/roles` — сервис не разрешён отделу → 403 `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT`
-- [ ] `POST /users/{id}/roles` — department_admin назначает роли в чужом отделе → 403
-- [ ] `POST /users/{id}/reset-password` — сбрасывает пароль + отзывает все сессии и PAT
-- [ ] `POST /users/{id}/ban` — аккаунт блокируется, активные сессии отзываются
-- [ ] `POST /users/{id}/ban` — повторный бан → 409 `BAN_ALREADY_ACTIVE`
-- [ ] `POST /users/{id}/unban` — снимает бан, status возвращается в active
-- [ ] `POST /users/{id}/unban` — нет активного бана → 404
+- [x] `POST /users/{id}/roles` — назначить роли в сервисе → 200
+- [x] `POST /users/{id}/roles` — сервис не разрешён отделу → 403 `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT`
+- [x] `POST /users/{id}/roles` — department_admin назначает роли в чужом отделе → 403
+- [x] `POST /users/{id}/reset-password` — сбрасывает пароль + отзывает все сессии и PAT
+- [x] `POST /users/{id}/ban` — аккаунт блокируется, активные сессии отзываются
+- [x] `POST /users/{id}/ban` — повторный бан → 409 `BAN_ALREADY_ACTIVE`
+- [x] `POST /users/{id}/unban` — снимает бан, status возвращается в active
+- [x] `POST /users/{id}/unban` — нет активного бана → 404
 
 ---
 

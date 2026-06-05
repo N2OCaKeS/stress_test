@@ -55,6 +55,18 @@ Downgrade-safety:
   formally — это data-loss, downgrade оставлен для симметрии (dev-only).
 * Восстановить дропнутый `ix_audit_outbox_task_id` downgrade умеет.
 
+Convention для будущих миграций на «горячих» таблицах (`tasks`,
+`audit_outbox`):
+
+* `CREATE INDEX` обязан использовать `postgresql_concurrently=True` +
+  `op.get_context().autocommit_block()` (либо `op.execute("CREATE INDEX
+  CONCURRENTLY IF NOT EXISTS ...")` напрямую). Без этого index-build
+  берёт `ShareLock` и блокирует INSERT'ы publisher'ов до окончания
+  build'а — на 100k+ row's это секунды-десятки секунд лагов в очереди.
+* Эта ревизия (`m0n1o2p3q4r5`) сознательно не использует CONCURRENTLY:
+  она запускается через `make seed` на пустой dev-БД, где блокировка
+  безопасна. На prod-БД (когда туда дойдёт) либо вручную раскатать
+  index'ы через `psql`, либо переписать миграцию под autocommit_block.
 """
 from typing import Sequence, Union
 

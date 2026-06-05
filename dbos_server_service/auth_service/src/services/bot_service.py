@@ -237,7 +237,7 @@ async def update_bot(
             )
             raise AuthorizationError(error_code="BOT_UPDATE_FORBIDDEN", message="Cannot update bot outside your department")
 
-    updates = {k: v for k, v in data.model_dump(exclude_none=True).items()}
+    updates = data.model_dump(exclude_none=True)
     removed_services: list[str] = []
     if "allowed_services" in updates:
         dept_repo = DepartmentRepository(db)

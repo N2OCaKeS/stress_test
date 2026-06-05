@@ -1,5 +1,33 @@
 """Доменные константы, общие на весь сервис."""
 
+from typing import Literal
+
+
+# Шесть уровней severity для audit-событий. Источник истины: эта tuple
+# плюс производный `Severity` Literal. Schemas/events.py, schemas/rules.py,
+# schemas/services.py, schemas/retention.py и endpoints/events.py
+# исторически дублировали список вшитым `Literal[...]` — это безопасно
+# (mypy сравнивает структурно), но при добавлении нового уровня менять
+# приходилось в 5 местах. Новый код использует `Severity` отсюда.
+SEVERITY_LEVELS: tuple[str, ...] = (
+    "TRACE",
+    "DEBUG",
+    "INFO",
+    "WARNING",
+    "ERROR",
+    "CRITICAL",
+)
+Severity = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
+# Платформенные роли, которые видят только свой департамент. Используется
+# `dependencies/auth.py::require_reader` для сужения dept-scope read'а.
+# Содержательно живёт policy-решением: `loging_reader` сознательно
+# dept-scoped (см. README.md → «loging_reader vs loging_admin»),
+# `department_admin` по определению — admin своего dept'а. Изменение
+# набора — breaking-change для авторизации; согласуй с owner'ом.
+DEPT_SCOPED_ROLES: frozenset[str] = frozenset({"loging_reader", "department_admin"})
+
 
 # Whitelist значений `actor_type` для audit-событий. Должен совпадать с
 # Literal у `EventCreate.actor_type` в `src/schemas/events.py` — там

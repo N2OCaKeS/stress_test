@@ -56,6 +56,15 @@ def _rate_limit_key(request: Request) -> str:
 # slowapi сам не пересчитывает `headers_enabled` по запросу. Тестам это
 # не мешает: настройка переключается до первого импорта модуля либо
 # проверяется на уровне Settings (см. `TestRateLimitHeadersConfig`).
+#
+# ANTI-DRIFT: `SlowAPIMiddleware` НЕ подключён в `src/main.py` намеренно.
+# Эндпоинты декорируются `@limiter.limit(...)` и slowapi-decorator сам
+# инкрементит counter ровно один раз на handler. Если кто-то добавит
+# `app.add_middleware(SlowAPIMiddleware)` ради `X-RateLimit-*` headers —
+# каждый decorated-endpoint получит double-count: middleware считает
+# по path, decorator — по своей func-key. Bucket будет исчерпан вдвое
+# быстрее реального трафика. Headers включаются через `headers_enabled=True`
+# на самом `Limiter`, middleware для этого не нужен.
 limiter = Limiter(
     key_func=_rate_limit_key,
     default_limits=[],

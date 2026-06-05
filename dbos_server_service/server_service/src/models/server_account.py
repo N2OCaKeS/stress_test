@@ -32,6 +32,11 @@ class ServerAccountServer(Base):
 
     __tablename__ = "server_account_servers"
 
+    # PK с префиксом `acs_<hex>` — внутренний idempotency-toolkit для
+    # join-row, не показывается в API. В отличие от `dispatch_outbox`
+    # (raw UUID — там нет user-facing endpoint'а и читателей PK), здесь
+    # префиксованная схема симметрична остальным `server_account.id`/`server.id`
+    # для grep'а в логах и audit-trail.
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     account_id: Mapped[str] = mapped_column(
         String(64),

@@ -45,6 +45,7 @@ from fastapi import Depends, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.core.config import get_settings
+from src.core.constants import DEPT_SCOPED_ROLES
 from src.core.exceptions import AppException
 from src.core.http import bearer_header
 
@@ -75,7 +76,9 @@ _bearer = HTTPBearer(auto_error=False)
 # вынести `loging_reader` из `_DEPT_SCOPED_ROLES` и вернуть
 # `_dept_scope=None` в `require_reader`. Тест-контракт фиксирующий текущее
 # поведение: `tests/test_cov_focus.py::TestDeptScopedRolesQuirk`.
-_DEPT_SCOPED_ROLES = {"loging_reader", "department_admin"}
+# policy-константа `DEPT_SCOPED_ROLES` живёт в `core/constants.py`;
+# здесь — локальный alias под исторический leading-underscore.
+_DEPT_SCOPED_ROLES = DEPT_SCOPED_ROLES
 
 # Module-level pooled client. Инициализируется в `main.lifespan` (startup),
 # закрывается в shutdown. Остаётся `None` вне app-lifecycle — в этом случае

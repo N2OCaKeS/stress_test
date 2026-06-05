@@ -214,8 +214,10 @@ def create_application() -> FastAPI:
             pending = list(audit_service._EMIT_TASKS)
             if pending:
                 # Под timeout остаётся часть тасок — потеряем их,
-                # но не подвешиваем shutdown.
-                with suppress(asyncio.TimeoutError):
+                # но не подвешиваем shutdown. CancelledError ловим тоже:
+                # под SIGTERM parent-task может уже быть cancel'нут,
+                # gather пробрасывает CancelledError наружу без drain'а.
+                with suppress(asyncio.TimeoutError, asyncio.CancelledError):
                     await asyncio.wait_for(
                         asyncio.gather(*pending, return_exceptions=True),
                         timeout=2.0,
@@ -227,7 +229,7 @@ def create_application() -> FastAPI:
             # нерегистрированным и не доехавший service.started в SIEM.
             bg_pending = [t for t in _BACKGROUND_TASKS if not t.done()]
             if bg_pending:
-                with suppress(asyncio.TimeoutError):
+                with suppress(asyncio.TimeoutError, asyncio.CancelledError):
                     await asyncio.wait_for(
                         asyncio.gather(*bg_pending, return_exceptions=True),
                         timeout=2.0,

@@ -94,7 +94,7 @@ class TestRefreshReuse:
 
         await client.post(REFRESH_URL, json={"refresh_token": raw})
         reuse_events = [e for e in captured if e and e.get("action") == "token.refresh_reuse"]
-        assert reuse_events
+        assert len(reuse_events) == 1
         assert reuse_events[0]["status"] == "failure"
         assert reuse_events[0]["allowed"] is False
 

@@ -8,14 +8,14 @@ GET  /events — читают `loging_admin | loging_reader | department_admin |
 
 import unicodedata
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from src.core.config import get_settings
-from src.core.constants import RESERVED_SERVICE_NAMES
+from src.core.constants import RESERVED_SERVICE_NAMES, Severity
 from src.core.exceptions import AppException, AuthorizationError, DomainValidationError
 from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
 from src.dependencies.auth import ReaderIdentity, require_service_token
@@ -317,7 +317,7 @@ def list_events(
     db: Session = Depends(get_db),
     department_id: str | None = Query(default=None, description="Фильтр по ID отдела"),
     service: str | None = Query(default=None, description="Фильтр по имени сервиса-источника"),
-    severity: Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = Query(default=None),
+    severity: Severity | None = Query(default=None),
     action: str | None = Query(default=None, description="Фильтр по имени action (точное совпадение)"),
     from_time: datetime | None = Query(default=None, description="Начало диапазона времени (ISO 8601)"),
     to_time: datetime | None = Query(default=None, description="Конец диапазона времени (ISO 8601)"),

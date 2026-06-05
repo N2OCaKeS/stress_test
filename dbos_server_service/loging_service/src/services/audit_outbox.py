@@ -453,7 +453,11 @@ class AuditOutbox:
                     if lost:
                         with self._counters_lock:
                             self._dropped_shutdown_total += lost
-                        logger.warning(
+                        # Уровень ERROR: shutdown-drain timeout = compliance-loss,
+                        # фактически потерянные audit-events, не «может быть».
+                        # SIEM-правило ловит ERROR-and-above; WARNING тонул
+                        # в шуме штатных rate-limit'ов.
+                        logger.error(
                             "audit outbox shutdown drain timed out, %d events lost",
                             lost,
                         )
@@ -675,7 +679,11 @@ class AuditOutbox:
         """Только для тестов: обнуляет все cause-counters и drained.
 
         Префикс `_` отмечает «не публичный API»: production-код не должен
-        зачищать счётчики в полёте.
+        зачищать счётчики в полёте. Имя сохранено с одиночным подчёркиванием
+        для обратной совместимости с тестами `test_audit_outbox*`; новый
+        production-код подобные test-only методы должен выносить в
+        `tests/_helpers/`. Если возникнет misuse — переименовать в
+        `_TESTS_reset_counters` (явное соглашение) и обновить тесты.
         """
         with self._counters_lock:
             self._dropped_overflow_total = 0

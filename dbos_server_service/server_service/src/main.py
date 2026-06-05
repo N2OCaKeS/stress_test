@@ -563,6 +563,13 @@ async def _drain_pending_audit_tasks() -> None:
 
     Best-effort: любые ошибки внутри глушим в WARNING, lifespan не должен
     падать на shutdown.
+
+    Sync-path `_send_sync` (`audit_service.py:267`) **не дренируется** этой
+    функцией — он работает синхронным `httpx.post` без `_pending_audit_tasks`
+    регистрации. На SIGTERM узкое окно: если в момент сигнала висит sync-emit
+    с retry'ями, lifespan ждёт его блокирующе через GIL — это не баг, а
+    осознанное упрощение (sync-path используется только в startup/shutdown
+    хуках, где async loop ещё/уже недоступен).
     """
     try:
         current = asyncio.current_task()

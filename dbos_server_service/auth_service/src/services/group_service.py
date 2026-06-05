@@ -20,7 +20,13 @@ from src.utils.pagination import PaginationParams
 
 
 def _require_admin(identity: IdentityContext) -> None:
-    """Гард — требует account_admin. Жёсткий вариант, для глобальных операций."""
+    """Гард — требует account_admin. Жёсткий вариант, для глобальных операций.
+
+    Сознательный дубль с `dependencies/auth.py::require_account_admin`: тот стоит
+    на dependency-уровне эндпоинтов, а этот — inner check внутри сервиса для
+    ветвей, где точка входа допускает dept_or_account_admin, но конкретная
+    операция требует строгий account_admin.
+    """
     if identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
         raise AuthorizationError(error_code="ROLE_REQUIRED", message="account_admin role required")
 

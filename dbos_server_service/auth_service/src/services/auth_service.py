@@ -477,6 +477,7 @@ async def refresh(
             await session_repo.mark_suspicious(old_sess)
             await session_repo.revoke_all_for_user(old_sess.user_id)
             await db.commit()
+            audit_service.incr_refresh_reuse_total()
             audit_service.emit("token.refresh_reuse", old_sess.user_id, status="failure", allowed=False, details={"session_id": old_sess.id}, request_id=request_id)
         raise AuthenticationError(error_code="REFRESH_TOKEN_INVALID", message="Invalid refresh token")
 

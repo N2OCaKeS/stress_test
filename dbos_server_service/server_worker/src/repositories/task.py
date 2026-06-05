@@ -313,7 +313,7 @@ async def list_due_scheduled_retries(
             Task.scheduled_retry_at.is_not(None),
             Task.scheduled_retry_at <= threshold,
         )
-        .order_by(Task.scheduled_retry_at.asc())
+        .order_by(Task.scheduled_retry_at.asc(), Task.id.asc())
         .with_for_update(skip_locked=True)
     )
     return list((await db.execute(stmt)).scalars().all())
@@ -350,7 +350,7 @@ async def claim_one_due_scheduled_retry(
             Task.scheduled_retry_at.is_not(None),
             Task.scheduled_retry_at <= threshold,
         )
-        .order_by(Task.scheduled_retry_at.asc())
+        .order_by(Task.scheduled_retry_at.asc(), Task.id.asc())
         .limit(1)
         .with_for_update(skip_locked=True)
     )

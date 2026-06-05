@@ -56,6 +56,10 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             # нагрузкой) могли бы открыть N TCP+TLS handshake'ов без cap'а —
             # slowloris-сценарий. Лимит мелкий: fallback — это backstop, не
             # production-hot-path.
+            # `httpx.Timeout(default, connect=...)` устанавливает default'ом
+            # одновременно `read`/`write`/`pool` — единый бюджет на каждый
+            # этап (без отдельной разводки). Это сознательный выбор: token-proxy
+            # обращение редкое (swagger-login), отдельные SLA не нужны.
             timeout = httpx.Timeout(
                 settings.introspect_timeout_seconds,
                 connect=settings.introspect_connect_timeout_seconds,

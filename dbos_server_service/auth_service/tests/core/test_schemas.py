@@ -1,6 +1,6 @@
 """Unit-тесты Pydantic-схем — без HTTP/БД."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -96,7 +96,7 @@ class TestBanRequest:
             BanRequest(ban_type="temporary", reason="testing")
 
     def test_explicit_temporary_with_expires_at(self):
-        future = datetime(2030, 1, 1, tzinfo=timezone.utc)
+        future = datetime.now(tz=timezone.utc) + timedelta(days=365 * 5)
         m = BanRequest(ban_type="temporary", expires_at=future, reason="ddos")
         assert m.expires_at == future
 

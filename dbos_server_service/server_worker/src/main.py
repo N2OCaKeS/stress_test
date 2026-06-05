@@ -88,6 +88,15 @@ broker = ListQueueBroker(url=_settings.redis_url).with_result_backend(
 # в одном процессе (например, в тестах) каждый имел собственную ссылку.
 _PUBLISHER_TASK_KEY = "audit_outbox_publisher_task"
 
+# Флаг «HTTP/Redis-пулы закрыты» — выставляется `_close_http_pools` после
+# `aclose_all()`. Защищает от use-after-aclose в shutdown-window'е, если
+# в будущем порядок WORKER_SHUTDOWN-хуков случайно перетасуют (taskiq
+# вызывает их в порядке регистрации — `flush_outbox` после `_close_http_pools`
+# попытается ходить по уже закрытому httpx-клиенту). Любая попытка
+# `_safe_flush_outbox` под выставленный флаг тихо возвращает — drain
+# уже сделал своё, добивать нечего.
+_pools_closed = False
+
 
 def _on_publisher_exit(task: asyncio.Task) -> None:
     """Safety-net callback для фоновых publisher loop'ов.
@@ -415,14 +424,23 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
     # Best-effort: пытаемся доставить audit о shutdown'е в loging_service
     # до того, как процесс умрёт. Если loging лёг — outbox-publisher
     # следующего worker'а подхватит при старте.
-    try:
-        await audit_outbox_publisher.flush_outbox()
-    except Exception as exc:  # noqa: BLE001
-        redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
+    if _pools_closed:
+        # Кто-то перетасовал порядок WORKER_SHUTDOWN-хуков и пулы уже
+        # закрыты — flush_outbox по-любому уйдёт в use-after-aclose.
+        # Тихо выходим: drain уже отметил task'ам финальный status,
+        # publisher следующего старта добьёт row из outbox.
         logger.warning(
-            "graceful shutdown: outbox flush failed: %s",
-            redacted,
+            "graceful shutdown: outbox flush skipped — http pools already closed"
         )
+    else:
+        try:
+            await audit_outbox_publisher.flush_outbox()
+        except Exception as exc:  # noqa: BLE001
+            redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
+            logger.warning(
+                "graceful shutdown: outbox flush failed: %s",
+                redacted,
+            )
 
 
 @broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
@@ -454,8 +472,10 @@ async def _close_http_pools(state: TaskiqState) -> None:
     После выхода из этого хука taskiq закроет broker, и FD-учёт
     httpx-/Redis-пулов должен быть чистым.
     """
+    global _pools_closed
     await http_pool.aclose_all()
     await redis_pool.aclose()
+    _pools_closed = True
 
 
 # Регистрируем все task-handler'ы (должно идти после определения `broker`).

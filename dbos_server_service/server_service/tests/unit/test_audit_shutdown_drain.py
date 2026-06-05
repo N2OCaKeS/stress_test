@@ -102,10 +102,13 @@ async def test_drain_does_not_block_on_unrelated_tasks(monkeypatch):
     audit_service._pending_audit_tasks.clear()
 
     unrelated_completed = {"done": False}
+    never_set = asyncio.Event()
 
     async def some_other_task():
-        # Имитируем долгую background-task'у (10s), которая НЕ audit-emit.
-        await asyncio.sleep(10.0)
+        # Имитируем долгую background-task'у, которая НЕ audit-emit.
+        # `Event.wait()` без `set()` ждёт до cancel — короче и надёжнее
+        # `asyncio.sleep(10.0)`, который зависнет на flaky cancel.
+        await never_set.wait()
         unrelated_completed["done"] = True
 
     loop = asyncio.get_running_loop()
@@ -138,9 +141,12 @@ async def test_drain_respects_timeout(monkeypatch):
     from src.services import audit_service
 
     audit_service._pending_audit_tasks.clear()
+    never_set = asyncio.Event()
 
     async def hung_send():
-        await asyncio.sleep(10.0)
+        # `Event.wait()` без `set()` — висим до cancel'а, аналог `sleep(10)`
+        # без риска флэйки cancel'а под лоадом CI.
+        await never_set.wait()
 
     # Сокращаем timeout до 0.3s, чтобы тест не тратил 2 секунды.
     monkeypatch.setattr(main_mod, "_AUDIT_DRAIN_TIMEOUT_SECONDS", 0.3)

@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -57,4 +57,26 @@ class DispatchOutbox(DispatchOutboxBase):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     next_retry_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    # ORM-mirror индексов, реально создаваемых миграцией
+    # `server_service/.../e7a4d951c3b2_dispatch_outbox.py`. Worker-Alembic
+    # эту модель НЕ подбирает (отдельный `DispatchOutboxBase`-metadata), но
+    # читатель кода видит здесь те же partial-индексы, что и в server_service,
+    # — нет drift'а между «как ORM описывает» и «что в БД». Если cross-DB
+    # source-of-truth когда-то переедет в worker, эти строки уже зафиксируют
+    # ожидаемые pending/retry-фильтры.
+    __table_args__ = (
+        Index(
+            "ix_dispatch_outbox_pending",
+            "created_at",
+            postgresql_where=text("dispatched_at IS NULL"),
+        ),
+        Index(
+            "ix_dispatch_outbox_retry",
+            "next_retry_at",
+            postgresql_where=text(
+                "dispatched_at IS NULL AND next_retry_at IS NOT NULL"
+            ),
+        ),
     )

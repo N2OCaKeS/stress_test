@@ -53,6 +53,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # WARNING: downgrade теряет аудит-трейл по всем уже отменённым task'ам:
+    # `cancelled_by` (кто), `cancelled_at` (когда) и `cancel_reason` (почему)
+    # вычищаются молча без бэкапа. Для prod-отката сначала экспортировать
+    # содержимое таблицы (`COPY tasks(id, status, cancelled_by, cancelled_at,
+    # cancel_reason) TO ...`) либо `pg_dump --table=tasks` — после drop_column
+    # восстановление этих полей невозможно. Сам status='cancelled' остаётся в
+    # колонке `status`, но компанию ему уже не составят поля «кто/когда/зачем».
     op.drop_column("tasks", "cancel_reason")
     op.drop_column("tasks", "cancelled_at")
     op.drop_column("tasks", "cancelled_by")

@@ -84,8 +84,11 @@ async def fetch_drift_events(
         else:
             # Lifespan ещё не поднялся (unit-тест без TestClient) —
             # эфемерный AsyncClient ровно на один GET. Производственный
-            # путь всегда идёт через пул.
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            # путь всегда идёт через пул. Limits явные, чтобы тесты под
+            # многопоточной нагрузкой не плодили connection'ы — fallback
+            # обслуживает максимум один in-flight запрос.
+            fallback_limits = httpx.Limits(max_connections=5, max_keepalive_connections=0)
+            async with httpx.AsyncClient(timeout=5.0, limits=fallback_limits) as client:
                 resp = await client.get(
                     f"{base}{events_path}", params=params, headers=headers,
                 )

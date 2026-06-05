@@ -101,12 +101,14 @@ router = APIRouter(prefix="/tasks")
 @router.post(
     "/{task_id}/cancel",
     response_model=TaskCancelResponse,
-    summary="Отменить pending/running worker-task'у",
+    summary="Отменить pending/running worker-task'у (опц. с reason)",
     description=(
         "Помечает row в `dev_server_worker.tasks` как `cancelled`. "
         "Pending-task пропускается перед запуском через CAS на mark_running. "
         "Running-task graceful: текущий stage доживает, следующий не стартует. "
-        "Force-kill нет. Доступ: `(task, cancel)` — по-дефолту только `admin`."
+        "Force-kill нет. Body опционально несёт `{reason: str}` — фиксируется "
+        "в `cancel_reason` колонке и в audit-event'е `task.cancelled`. "
+        "Доступ: `(task, cancel)` — по-дефолту только `admin`."
     ),
     responses={
         403: {"description": "Нет роли с `cancel` на task либо системная task требует account_admin."},

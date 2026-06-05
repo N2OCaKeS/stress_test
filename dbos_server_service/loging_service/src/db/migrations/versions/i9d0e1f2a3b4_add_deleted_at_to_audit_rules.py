@@ -35,4 +35,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # ВНИМАНИЕ: drop'нувшая колонка теряет soft-delete state — row'и,
+    # помеченные `deleted_at IS NOT NULL`, после revert'а потеряют флаг
+    # «удалено», но `is_active=false` у них останется (delete_rule ставит
+    # оба поля). Правила НЕ «оживут» сами — `get_active_sorted` фильтрует
+    # `is_active=true`. Чтобы вернуть видимость удалённых правил, нужно
+    # вручную выставить `is_active=true`. Это by-design: soft-delete для
+    # cross-worker cache-invalidation, hard-delete оставлен админу.
     op.drop_column("audit_rules", "deleted_at")

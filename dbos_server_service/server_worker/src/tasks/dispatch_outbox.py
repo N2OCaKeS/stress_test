@@ -71,6 +71,32 @@ _BACKOFF_MAX_SECONDS = 300.0
 _CAP_REACHED_PARK_SECONDS = 24 * 3600.0
 
 
+# Monotonic per-process counter row'ов, упёршихся в `attempts >= max_attempts`.
+# Stub под Prometheus-метрику `dispatch_outbox_cap_reached_total` (симметрично
+# `_dlq_total` / `_audit_dropped_no_api_key_total` в audit_outbox_publisher).
+# Растёт обеими ветками парковки (`unknown_task_kind`, `kiq_failed`); сбрасы-
+# вается только рестартом процесса либо `_reset_counters_for_tests()`.
+_dispatch_outbox_cap_reached_total: int = 0
+
+
+def get_dispatch_outbox_cap_reached_total() -> int:
+    """Сколько row'ов publisher запарковал на +24h из-за исчерпания attempts.
+
+    Health-check `system.heartbeat` снимает значение раз в минуту, что даёт
+    оператору grep-able сигнал «park-rate растёт» без обхода БД. Резкий
+    рост = либо неизвестный task_kind в server-side dispatch'е (deploy-
+    drift), либо длительный сбой broker.kiq — в обоих случаях оператор
+    должен разбираться вручную: parked-row сама не разболокируется.
+    """
+    return _dispatch_outbox_cap_reached_total
+
+
+def _reset_counters_for_tests() -> None:
+    """Test helper: сбросить module-level cap_reached counter."""
+    global _dispatch_outbox_cap_reached_total
+    _dispatch_outbox_cap_reached_total = 0
+
+
 def _compute_next_retry_at(attempts: int) -> datetime:
     """Назначить `next_retry_at = now + 2^attempts` секунд, ограниченное cap'ом."""
     delay = compute_retry_delay(
@@ -112,6 +138,7 @@ async def poll_once() -> None:
     `DISPATCH_OUTBOX_POLL_INTERVAL_SECONDS`. Если `SERVER_SERVICE_DATABASE_URL`
     пустой — выходим, нечего читать.
     """
+    global _dispatch_outbox_cap_reached_total
     # Локальный импорт broker'а — symmetric с `_runner._schedule_retry`,
     # чтобы при импорте `src.tasks.dispatch_outbox` из `src.tasks/__init__.py`
     # не было циклического импорта (broker создаётся в main.py после
@@ -169,6 +196,7 @@ async def poll_once() -> None:
                     )[:LAST_ERROR_MAX_LEN]
                     if row.attempts >= max_attempts:
                         cap_reached += 1
+                        _dispatch_outbox_cap_reached_total += 1
                         # Парковка до +24h: row остаётся pending, но не входит
                         # в SELECT каждый poll-тик. Оператор увидит её в админке
                         # и решит — ручной reset либо ждать до следующего парка.
@@ -211,6 +239,7 @@ async def poll_once() -> None:
                     row.last_error = redacted[:LAST_ERROR_MAX_LEN]
                     if row.attempts >= max_attempts:
                         cap_reached += 1
+                        _dispatch_outbox_cap_reached_total += 1
                         row.next_retry_at = datetime.now(timezone.utc) + timedelta(
                             seconds=_CAP_REACHED_PARK_SECONDS,
                         )

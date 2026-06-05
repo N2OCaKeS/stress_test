@@ -132,10 +132,13 @@ class TestBatchSize:
 
         published = await audit_outbox_publisher.flush_outbox()
 
-        # Дефолтный _BATCH_SIZE = 5.
-        assert published == 5
+        # Дефолтный batch берётся из модульной константы — не хардкодим
+        # «5» в тесте, иначе bump в env-конфиге сделает тест красным без
+        # реального бага.
+        default_batch = audit_outbox_publisher._BATCH_SIZE
+        assert published == default_batch
         after = await _unpublished_rows()
-        assert len(after) == 3
+        assert len(after) == 8 - default_batch
 
 
 class TestPartialBatchFailure:

@@ -273,6 +273,11 @@ def _send_sync(payload: dict, logging_url: str, api_key: str) -> None:
     """
     url_full = f"{logging_url}/api/logging/v1/events"
     headers = bearer_header(api_key)
+    # Если sync-path попал на 429 и нас прервали SIGINT'ом прямо в `_time.sleep`,
+    # KeyboardInterrupt в Python ≥ 3.5 проходит через except Exception мимо.
+    # Считаем дроп через флаг + try/finally на отдельной ветке retry — counter
+    # инкрементится и при штатном выходе по «3x429», и при interrupt'е.
+    dropped_429 = False
     try:
         for attempt in range(len(_SYNC_RETRY_DELAYS_ON_429) + 1):
             try:
@@ -290,9 +295,13 @@ def _send_sync(payload: dict, logging_url: str, api_key: str) -> None:
                 # подвешивать shutdown больше пары секунд суммарно.
                 delay = min(max(base_delay, hinted) if hinted is not None else base_delay, 1.0)
                 import time as _time
-                _time.sleep(delay)
-        global _audit_dropped_429
-        _audit_dropped_429 += 1
+                try:
+                    _time.sleep(delay)
+                except BaseException:
+                    # SIGINT/SIGTERM в середине sleep'а — это тоже дроп.
+                    dropped_429 = True
+                    raise
+        dropped_429 = True
         logger.warning(
             "audit_service: drop after 3x429 sync (action=%s)", payload.get("action"),
         )
@@ -300,3 +309,7 @@ def _send_sync(payload: dict, logging_url: str, api_key: str) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("audit_service: unexpected error (sync): %s", exc)
         logger.info("audit_event_fallback %s", payload)
+    finally:
+        if dropped_429:
+            global _audit_dropped_429
+            _audit_dropped_429 += 1

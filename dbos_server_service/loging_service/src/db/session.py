@@ -9,6 +9,12 @@ from sqlalchemy.orm import sessionmaker
 
 from src.core.config import get_settings
 
+# `_settings` снепшотится на module-import: engine собирается один раз
+# и переживает все запросы. Тесты, которые меняют DB-pool через
+# `monkeypatch.setenv` ПОСЛЕ первого импорта `src.db.session`, увидят
+# дефолтные значения, а не свои overrides — engine уже создан.
+# Корректный паттерн в тестах: настроить env до import'а сервиса
+# (fixture в `conftest.py`) либо пересоздать engine вручную.
 _settings = get_settings()
 
 engine = create_engine(

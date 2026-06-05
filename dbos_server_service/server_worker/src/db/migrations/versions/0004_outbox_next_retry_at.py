@@ -55,4 +55,13 @@ def downgrade() -> None:
     op.drop_index(
         "ix_audit_outbox_unpublished_retry", table_name="audit_outbox"
     )
+    # Восстанавливаем старый partial-index из 0002 — без него publisher
+    # после revert'а будет идти seq-scan'ом по `audit_outbox` на каждом
+    # тике (фильтр `published_at IS NULL`).
+    op.create_index(
+        "ix_audit_outbox_unpublished",
+        "audit_outbox",
+        ["created_at"],
+        postgresql_where=sa.text("published_at IS NULL"),
+    )
     op.drop_column("audit_outbox", "next_retry_at")

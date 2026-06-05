@@ -41,7 +41,10 @@ router = APIRouter(prefix="/permissions")
         "сервисная роль `admin` своего отдела). "
         "Scope: department-bound caller получает system-wide + свой dept; "
         "platform-уровневые (`account_admin`/`loging_admin`) видят всю "
-        "матрицу, но до endpoint'а не доходят — их режет middleware."
+        "матрицу, но до endpoint'а не доходят — их режет middleware. "
+        "**Pagination**: non-paginated by design — матрица закрыта каталогом "
+        "(`ENTITY_ACTIONS` × ролей × департаментов), ожидаемый размер < 200 "
+        "строк; cursor/limit будут введены, если в проде вырастет до >500."
     ),
     responses={
         403: {"description": "Нет роли с `view` на permission либо platform-админ заблокирован middleware'ом."},

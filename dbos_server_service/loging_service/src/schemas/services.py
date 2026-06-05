@@ -2,10 +2,10 @@
 
 import re
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.core.constants import Severity
 from src.utils.normalization import normalize_identifier
 
 
@@ -65,9 +65,7 @@ class EventDefinition(BaseModel):
     )
     # Whitelist. Без него `default_severity="ROFL"` валидно проходит,
     # потом всплывает в `_DEFAULT_SEVERITY` lookup'е как тихий no-op.
-    default_severity: Literal[
-        "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
-    ] | None = Field(
+    default_severity: Severity | None = Field(
         default=None,
         description="Дефолтная severity (TRACE/DEBUG/INFO/WARNING/ERROR/CRITICAL)",
     )

@@ -475,6 +475,28 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _warn_on_audit_pool_vs_db_pool(self) -> "Settings":
+        """Cross-pool sanity: audit-pool не должен превышать DB connect budget.
+
+        Под sustained load каждый audit-emit держит httpx-коннект; если
+        `audit_pool_max_connections > db_pool_size + db_max_overflow`, то
+        bottleneck смещается с БД на audit-канал и приоритет ресурсов
+        ломается (request обслуживается, но audit-emit держит pool slot,
+        а DB-write на login fail встаёт в очередь). Не ошибка — warning,
+        чтобы оператор пересмотрел соотношение.
+        """
+        db_budget = self.db_pool_size + self.db_max_overflow
+        if self.audit_pool_max_connections > db_budget:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "AUDIT_POOL_MAX_CONNECTIONS (%d) > DB_POOL_SIZE+OVERFLOW (%d); "
+                "bottleneck смещается на audit-канал, пересмотрите соотношение",
+                self.audit_pool_max_connections,
+                db_budget,
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_production_secrets(self) -> "Settings":
         """Запретить дефолтные секреты в проде. Запускается после загрузки всех полей."""
         if self.app_env != "production":

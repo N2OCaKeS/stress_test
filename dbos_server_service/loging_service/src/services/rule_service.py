@@ -349,6 +349,10 @@ class _RuleCache:
     def _db_empty(self, value: bool) -> None:
         # Сеттер нужен только для тестов, которые форсят флаг. Не трогаем
         # `_loaded_at` / `_loaded_monotonic`: они под контролем `get`/`invalidate`.
+        # Без `self._lock`: production-код сюда не ходит, а в тестах рантайм
+        # single-threaded (pytest-event-loop). Если в будущем появится
+        # threaded-тест на rule-cache — обернуть в `with self._lock`,
+        # иначе composite-check на `_state`/`_rules` race'нет.
         if value:
             self._state = CacheState.EMPTY
         else:

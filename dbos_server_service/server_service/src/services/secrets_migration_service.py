@@ -394,11 +394,16 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
     entry = (await db.execute(sel)).scalar_one_or_none()
     if entry is None:
         return {"id": outbox_id, "status": "missing", "skipped": False}
+    # Skipped/done emit'ы буферизуем и отправляем ПОСЛЕ commit'а — иначе
+    # fire-and-forget emit может опередить commit, SIEM увидит skipped-event
+    # для outbox-row, который реально остался в `processing` (если commit упал
+    # или текущий код передумает). См. паттерн `receive_users_inventory`
+    # с `drift_emits: list[dict]` буфером.
+    deferred_emits: list[dict] = []
     if entry.status != STATUS_PROCESSING:
         # Закрыта другой ветвью (race / повторный POST). Идемпотентность:
-        # не трогаем, отдаём текущий статус. Эмитим warning-audit, иначе
-        # массовые skip'ы (например, при двойном claim'е батча) тихо проходят
-        # мимо SIEM.
+        # не трогаем, отдаём текущий статус. На этом пути нет последующего
+        # commit'а, поэтому эмитим сразу — нечего ждать.
         audit_service.emit(
             "secrets.migration.skipped",
             target_id=outbox_id,
@@ -470,24 +475,27 @@ async def finalize_done(db: AsyncSession, outbox_id: str) -> dict:
         # Owner-row пропал / ротировал ciphertext параллельно — outbox-row всё
         # равно закрываем `done`, но эмитим warning, чтобы оператор увидел
         # массовые `vanished` (rare-edge mid-migration drop) или фоновые гонки
-        # с user-initiated rotate'ом.
-        audit_service.emit(
-            "secrets.migration.skipped",
-            target_id=outbox_id,
-            target_type="secrets_reencrypt_outbox",
-            status="warning",
-            allowed=True,
-            details={
+        # с user-initiated rotate'ом. Откладываем emit до commit'а.
+        deferred_emits.append({
+            "action": "secrets.migration.skipped",
+            "target_id": outbox_id,
+            "target_type": "secrets_reencrypt_outbox",
+            "status": "warning",
+            "allowed": True,
+            "details": {
                 "reason": skip_reason,
                 "entity_type": entry.entity_type,
                 "entity_id": entry.entity_id,
             },
-        )
+        })
 
     entry.status = STATUS_DONE
     entry.processed_at = datetime.now(timezone.utc)
     entry.last_error = None
     await db.commit()
+    for emit_kwargs in deferred_emits:
+        action = emit_kwargs.pop("action")
+        audit_service.emit(action, **emit_kwargs)
     return {
         "id": outbox_id,
         "status": STATUS_DONE,

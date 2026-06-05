@@ -46,7 +46,9 @@ def _make_client(handler) -> RedfishClient:
     )
     # Заменяем underlying httpx-инстанс на свой с MockTransport. Это нужно
     # потому что transport нельзя передать в конструктор public API
-    # RedfishClient — он намеренно скрыт.
+    # RedfishClient — он намеренно скрыт. Если когда-нибудь конструктор
+    # начнёт принимать `transport=` kwarg — заменить эту подмену на
+    # `RedfishClient(..., transport=transport)` и не лезть в private attr.
     client._client = httpx.AsyncClient(
         base_url="https://bmc.test",
         auth=("root", "Calvin"),

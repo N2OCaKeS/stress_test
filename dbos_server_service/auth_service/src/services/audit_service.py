@@ -98,6 +98,29 @@ def _reset_dropped_429_for_tests() -> None:
     _audit_dropped_429 = 0
 
 
+# Локальный fast-signal счётчик для critical-action'а token.refresh_reuse.
+# Эмитим в audit-канал (CRITICAL), но при перегруженном/лежащем loging внешний
+# SIEM-сигнал теряется; per-process counter позволяет alert'ить по ad-hoc
+# diagnostic-payload'у даже при flapping'е audit-канала.
+_refresh_reuse_total: int = 0
+
+
+def get_refresh_reuse_total() -> int:
+    """Сколько раз был обнаружен reuse refresh-token'а за жизнь процесса."""
+    return _refresh_reuse_total
+
+
+def incr_refresh_reuse_total() -> None:
+    """Инкремент счётчика token.refresh_reuse (вызывается из auth_service.refresh)."""
+    global _refresh_reuse_total
+    _refresh_reuse_total += 1
+
+
+def _reset_refresh_reuse_for_tests() -> None:
+    global _refresh_reuse_total
+    _refresh_reuse_total = 0
+
+
 async def _post_once(
     client: httpx.AsyncClient | None,
     url: str,

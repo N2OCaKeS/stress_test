@@ -38,9 +38,14 @@ def init_pools(settings) -> None:
         return
     if audit_service._audit_client is not None:
         return
+    # Развести таймауты по стадиям: read берёт полный budget из настроек
+    # (медленный loging под нагрузкой), connect/write/pool жёстко лимитим в
+    # 2с — connect/handshake/pool checkout не должны зависеть от latency
+    # самого loging'а.
+    read_timeout = settings.audit_pool_timeout_seconds
     audit_service._audit_client = httpx.AsyncClient(
         base_url=logging_url,
-        timeout=settings.audit_pool_timeout_seconds,
+        timeout=httpx.Timeout(read_timeout, connect=2.0, write=2.0, pool=2.0),
         limits=httpx.Limits(
             max_connections=settings.audit_pool_max_connections,
             max_keepalive_connections=settings.audit_pool_max_keepalive,

@@ -73,7 +73,10 @@ class TestSafeFlushOutboxCancelledPassThrough:
             await task
 
 
-@pytest.mark.skip(reason="parametrized doc-coverage парсинг не совпадает с реальным форматом AUDIT_EVENTS.md (markdown headers вместо inline ticks); doc-drift проверяется главным вручную")
+@pytest.mark.skipif(
+    not _AUDIT_EVENTS_MD.exists(),
+    reason="AUDIT_EVENTS.md not mounted in test container (CI-only check)",
+)
 class TestAuditEventsDocCoverage:
     """`AUDIT_EVENTS.md` перечисляет все worker-уровневые action'ы.
 

@@ -201,6 +201,12 @@ def apply_active(db: Session, *, chunk_size: int = _SWEEP_CHUNK_SIZE) -> int:
     if not policies:
         return 0
 
+    # `now` снимается ОДИН раз на старте sweep'а; на 50M-таблице chunked-DELETE
+    # идёт часами, и без зафиксированного cutoff'а каждый chunk удалял бы
+    # «всё, что старше cutoff на момент чанка», постепенно сдвигая границу
+    # внутрь in-flight ingest'а. Зафиксированный `now` гарантирует, что
+    # события, упавшие в БД позже старта sweep'а, точно не будут затронуты —
+    # by-design, не баг.
     now = datetime.now(timezone.utc)
     policy_predicates = []
     for policy in policies:
@@ -213,6 +219,14 @@ def apply_active(db: Session, *, chunk_size: int = _SWEEP_CHUNK_SIZE) -> int:
         policy_predicates.append(and_(*clauses))
 
     # Один OR на все политики — событие удаляется, если попадает под любую.
+    # Планировщик на multimillion-журнале — lottery: без composite
+    # `(service, timestamp, id)` запрос идёт либо `ix_audit_events_timestamp`
+    # + filter on service, либо bitmap-OR по нескольким single-column
+    # индексам. На 50M-таблице обе стратегии становятся seq-scan-friendly.
+    # Если retention sweep начнёт упираться в latency — собрать EXPLAIN
+    # (ANALYZE, BUFFERS) и добавить partial composite (`severity IS NULL`
+    # ветка лидирует по cardinality). Текущая нагрузка (~1M событий)
+    # держит план через timestamp-index.
     match_any = or_(*policy_predicates)
     id_select = (
         select(AuditEvent.id)

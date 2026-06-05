@@ -39,4 +39,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # ВНИМАНИЕ: drop column удалит все накопленные `idempotency_payload_hash`.
+    # Повторный upgrade колонку вернёт пустой — backfill'а нет: writer
+    # выставляет hash только на новый INSERT (`endpoints/events.py`).
+    # На отрезке после revert и до полного re-fill'а security-окно 409
+    # IDEMPOTENCY_KEY_CONFLICT (`(service, idempotency_key)` poisoning
+    # guard) открыто: ON CONFLICT DO NOTHING вернётся к старому поведению
+    # «молча отдать существующий row», без сравнения payload'а.
+    # Перед prod-revert'ом: pg_dump таблицы целиком, чтобы при re-apply
+    # колонку можно было восстановить из dump'а.
     op.drop_column("audit_events", "idempotency_payload_hash")

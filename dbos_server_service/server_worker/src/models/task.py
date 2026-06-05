@@ -22,11 +22,23 @@ class Task(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     # `task_kind` — taskiq broker label (`power.on`, `inventory.sync`, ...).
     # Индексируется для запросов «все power.on за сутки» / health-check'ов.
+    # CHECK constraint по `TaskKind` enum'у сознательно не выставлен:
+    # каждое новое значение требовало бы alembic-миграцию вдогонку за код-
+    # релизом, что замедляет добавление task-handler'а. Опечатка пройдёт в
+    # БД, но `broker.find_task` вернёт None и dispatch_outbox запаркует row
+    # с reason=unknown_task_kind (см. `tasks/dispatch_outbox.py`) — fail-loud,
+    # без silent-drop.
     task_kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     # `target_server_id` — основной target. Индекс для UI «история task'ов
     # по серверу». nullable для system.heartbeat и подобных bookkeeping-
     # task'ов без конкретного сервера.
     target_server_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # `target_resource_id` — зарезервировано под secondary-target (server_account
+    # id для password-task'ов, ipmi_controller id и т.д.). На сегодня пишется
+    # лишь несколькими handler'ами для UI-фильтрации «история task'ов по
+    # аккаунту»; индекс не вешаем сознательно — горячих WHERE-фильтров по
+    # этой колонке в коде нет, добавим вместе с UI-эндпоинтом, который
+    # реально начнёт его читать.
     target_resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     status: Mapped[str] = mapped_column(

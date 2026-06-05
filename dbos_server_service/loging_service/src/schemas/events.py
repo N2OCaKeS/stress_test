@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.core.constants import Severity
 from src.utils.normalization import normalize_service_name_preserve_case
 
 
@@ -106,7 +107,7 @@ class EventCreate(BaseModel):
     # missing header в soft mode, dept mismatch без strict-fail и т.п.
     status: Literal["success", "failure", "denied", "warning"] = Field(description="Исход действия")
     allowed: bool = Field(description="Было ли действие авторизовано")
-    severity: Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = Field(
+    severity: Severity | None = Field(
         default=None,
         description="Важность события. Если опущено — loging_service подставит из defaults и правил.",
     )

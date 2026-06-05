@@ -171,33 +171,57 @@ def create_application() -> FastAPI:
                 ),
                 verify=live_settings.introspect_tls_verify,
             )
-        if live_settings.retention_loop_enabled:
+        # Порядок старта: сначала self-audit outbox, потом retention-thread.
+        # Retention эмитит `logging.retention_sweep` через outbox; если
+        # outbox упадёт на старте, retention-thread не должен оставаться
+        # живым с полу-инициализированным окружением (writes пойдут в
+        # sync-fallback с `SessionLocal()` на каждое событие).
+        # `_build_audit_outbox + start()` обёрнуты в try/except: если
+        # они упадут — retention НЕ стартуем, lifespan продолжит yield
+        # с already-broken outbox-каналом, alert-сигналом будет CRITICAL
+        # из `_audit_drain_task_done_callback` либо self-audit-failure
+        # counter в health-probe.
+        global _audit_outbox
+        outbox_ready = False
+        if live_settings.audit_outbox_enabled:
+            try:
+                _audit_outbox = _build_audit_outbox(live_settings)
+                _audit_outbox.start(asyncio.get_running_loop())
+                outbox_ready = True
+                # Drain-task создаётся внутри `start()` через `loop.create_task`,
+                # без callback. Если drain упадёт по unhandled exception (см.
+                # `_drain_loop` generic-except), task завершится тихо: `qsize`
+                # начнёт расти, `push_nowait` уйдёт в sync-fallback (новая
+                # `SessionLocal()` на каждое событие), `dropped_after_stop_total`
+                # пробудит SIEM только после `stop()`. Регистрируем CRITICAL-лог
+                # на unexpected exit, чтобы оператор увидел инцидент сразу.
+                drain_task = _audit_outbox._drain_task
+                if drain_task is not None:
+                    drain_task.add_done_callback(_audit_drain_task_done_callback)
+            except Exception as exc:
+                logger.critical(
+                    "audit outbox failed to start: %s — retention thread NOT spawned",
+                    exc,
+                    exc_info=True,
+                )
+                _audit_outbox = None
+        else:
+            outbox_ready = True
+        if live_settings.retention_loop_enabled and outbox_ready:
             # Retention-цикл — daemon thread, как и старый on_event hook.
             t = threading.Thread(target=_retention_loop_supervised, daemon=True)
             t.start()
-        # Поднимаем self-audit outbox с актуальными настройками. Инстанс
-        # делаем под `live_settings`, чтобы tests-overrides буфера/батча
-        # подтянулись после `get_settings.cache_clear()`.
-        global _audit_outbox
-        if live_settings.audit_outbox_enabled:
-            _audit_outbox = _build_audit_outbox(live_settings)
-            _audit_outbox.start(asyncio.get_running_loop())
-            # Drain-task создаётся внутри `start()` через `loop.create_task`,
-            # без callback. Если drain упадёт по unhandled exception (см.
-            # `_drain_loop` generic-except), task завершится тихо: `qsize`
-            # начнёт расти, `push_nowait` уйдёт в sync-fallback (новая
-            # `SessionLocal()` на каждое событие), `dropped_after_stop_total`
-            # пробудит SIEM только после `stop()`. Регистрируем CRITICAL-лог
-            # на unexpected exit, чтобы оператор увидел инцидент сразу.
-            drain_task = _audit_outbox._drain_task
-            if drain_task is not None:
-                drain_task.add_done_callback(_audit_drain_task_done_callback)
         try:
             yield
         finally:
             # Graceful drain self-audit outbox'а с бюджетом
             # `audit_drain_timeout_seconds`. Что не успело — теряется и
-            # логируется как warning (см. `_drain_remaining`).
+            # логируется как ERROR (см. `_drain_remaining`).
+            # K8s-инвариант: `terminationGracePeriodSeconds` в
+            # `k8s/deployment.yaml` должен покрывать
+            # `AUDIT_DRAIN_TIMEOUT_SECONDS` + buffer на aclose клиентов
+            # + retention-thread join. При повышении drain-таймаута
+            # синхронно поднять grace-period в манифесте.
             outbox = _audit_outbox
             if outbox is not None:
                 drain_timeout = live_settings.audit_drain_timeout_seconds
@@ -574,6 +598,11 @@ def create_application() -> FastAPI:
                         return replay.pop(0)
                     return {"type": "http.request", "body": b"", "more_body": False}
 
+                # `request._receive` — Starlette-private attr, alt-name'а
+                # для подмены receive-callable в публичном API сейчас нет.
+                # Upstream-смена имени станет тихим breakage'ом: pinned
+                # `starlette>=` в `pyproject.toml` фиксирует версию,
+                # `test_body_size_limit.py` проверит regression на 413.
                 request._receive = replay_receive  # type: ignore[attr-defined]
                 return await call_next(request)
         return await call_next(request)
@@ -1085,13 +1114,19 @@ def _action_for_path(method: str, path: str) -> str:
 # setter, чтобы все апдейты шли через него.
 self_audit_failures_total = 0
 _self_audit_failures_lock = threading.Lock()
+# Timestamp последнего инкремента — для SIEM-правил «failures за последние N
+# минут». Без него scrape'у пришлось бы держать diff'ы между опросами, а
+# редкие одиночные failure'ы маскировались бы шагом scrape-интервала.
+# UTC, под тем же lock'ом, что и `self_audit_failures_total`.
+_self_audit_last_failure_at: datetime | None = None
 
 
 def _bump_self_audit_failures() -> int:
     """Атомарно увеличить счётчик self-audit ошибок, вернуть новое значение."""
-    global self_audit_failures_total
+    global self_audit_failures_total, _self_audit_last_failure_at
     with _self_audit_failures_lock:
         self_audit_failures_total += 1
+        _self_audit_last_failure_at = datetime.now(timezone.utc)
         return self_audit_failures_total
 
 
@@ -1104,6 +1139,16 @@ def get_self_audit_failures_total() -> int:
     """
     with _self_audit_failures_lock:
         return self_audit_failures_total
+
+
+def get_self_audit_last_failure_at() -> datetime | None:
+    """Прочитать UTC-timestamp последнего инкремента под тем же lock'ом.
+
+    `None` до первого инкремента или после перезапуска процесса.
+    Полезно SIEM-правилу «не было ли failure'ов в окно [now-5min; now]».
+    """
+    with _self_audit_failures_lock:
+        return _self_audit_last_failure_at
 
 
 def _build_audit_outbox(settings) -> AuditOutbox:

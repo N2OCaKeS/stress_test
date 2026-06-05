@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.core.constants import Severity
 from src.utils.normalization import normalize_service_name_preserve_case
 
 # Тот же charset, что у `EventCreate.service`: snake_case ASCII после NFKC.
@@ -97,7 +98,7 @@ RuleEffect = Literal["SUPPRESS", "DROP", "ALLOW", "OVERRIDE_SEVERITY"]
 # `match_status="warning"` в правиле отбивался валидатором, и админ не мог
 # создать SUPPRESS/OVERRIDE правило для warning-событий.
 RuleStatus = Literal["success", "failure", "denied", "warning"]
-RuleSeverity = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+RuleSeverity = Severity
 
 
 class RuleCreate(BaseModel):

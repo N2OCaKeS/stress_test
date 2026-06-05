@@ -10,7 +10,8 @@
 - **Rule engine.** Цепочка правил на каждом событии: `OVERRIDE_SEVERITY` меняет уровень, `SUPPRESS` отбрасывает событие до записи, `ALLOW` сохраняет и прерывает цепочку. Match по `service`, `action` (glob `user.*`), `status`, `severity`, `allowed`. Реализация — `src/services/rule_service.py`.
 - **Retention.** Per-severity / per-service политики в `retention_policies`. Фоновый sweep раз в сутки в 00:00 MSK; advisory-lock защищает от двойного срабатывания в multi-replica; DELETE чанкуется (commit на чанк), чтобы не лочить огромные выборки. `PUT` и `DELETE /retention` работают со ВСЕМ активным набором (при filtered-режиме это N×M строк). События самого `loging_service` ретеншном никогда не удаляются.
 - **Storage.** Append-only таблица `audit_events`; партиционирование/ротация снаружи, средствами Postgres.
-- **Read API.** `GET /events`, `GET /rules`, `GET /services`, `GET /retention` — для admin/reader. Dept-скоуп применяется автоматически для не-глобальных ролей. На `GET /events` точный `total` считается только при `?include_total=true` (иначе `total=null`, признак следующей страницы — `has_more`).
+- **Read API.** `GET /events`, `GET /rules`, `GET /rules/{rule_id}`, `GET /services`, `GET /services/{service}/events`, `GET /retention` — для admin/reader. Dept-скоуп применяется автоматически для не-глобальных ролей. На `GET /events` точный `total` считается только при `?include_total=true` (иначе `total=null`, признак следующей страницы — `has_more`).
+- **Write API.** `POST/PATCH/DELETE /rules` — `loging_admin` или `account_admin`; `PUT /retention` (replace) и `DELETE /retention` (idempotent) — только `loging_admin`. `POST /events` — service-to-service ingest по `SERVICE_API_KEYS`. `POST /services/{service}/events` — реестр event'ов от service-caller'а. `POST /token` — swagger-login проксируется в `auth_service`.
 
 ## Архитектура
 

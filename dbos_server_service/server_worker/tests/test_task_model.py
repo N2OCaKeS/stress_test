@@ -131,6 +131,22 @@ class TestSchema:
                          "request_id", "idempotency_key"):
             assert cols[optional] == "YES", f"{optional} must allow NULL"
 
+    def test_max_attempts_has_no_server_default(self):
+        """`max_attempts.server_default` сознательно None.
+
+        Если кто-нибудь добавит `server_default=text("3")`, autogenerate начнёт
+        плодить alter-миграции на каждый relock'нутый `Task`-model. Тест
+        фиксирует контракт: дефолт `3` пишется на Python-уровне (см.
+        `default=3` в `models/task.py`), DDL-сторона остаётся NULL-able-free.
+        """
+        col = Task.__table__.c.max_attempts
+        assert col.server_default is None, (
+            "max_attempts should NOT have a server_default — see model docstring"
+        )
+        assert col.default is not None, (
+            "Python-side default for max_attempts is required (must be 3)"
+        )
+
     async def test_payload_default_empty_json(self):
         """server_default='{}' — INSERT без payload через raw SQL даёт {}."""
         tid = _new_id()

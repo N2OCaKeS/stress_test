@@ -2,10 +2,10 @@
 
 import re
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.core.constants import Severity
 from src.utils.normalization import normalize_service_name
 
 # Тот же charset, что и у `EventCreate.service` после `normalize_service_name`
@@ -21,9 +21,9 @@ _SERVICE_FILTER_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_]{1,64}$")
 # а не молча создаём dead-row, который вводит оператора в заблуждение.
 _PROTECTED_SERVICE = "loging_service"
 
-# Severity-уровни синхронизированы с `schemas/events.py::EventCreate.severity`
-# — единый whitelist по всему сервису. Любая правка одного — править оба.
-Severity = Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+# `Severity` (`core/constants.py::Severity`) — единый whitelist шести
+# уровней. Импорт оставлен через alias-import, чтобы не править все
+# downstream-use внутри файла.
 
 
 def _normalise_filter(values: list[str] | None) -> list[str] | None:

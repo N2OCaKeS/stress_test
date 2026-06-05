@@ -4,6 +4,13 @@ Revision ID: a1b2c3d4e5f6
 Revises:
 Create Date: 2026-04-19 00:00:00.000000
 
+ВНИМАНИЕ: downgrade() делает `drop_table('audit_events')` — стирает весь
+audit-журнал целиком. Это compliance-issue: даже временный downgrade на
+prod уничтожает audit-trail без возможности восстановления, кроме как из
+backup'а БД. Перед `alembic downgrade base` на prod-кластере: снять
+полный SQL-dump таблицы `audit_events` (`pg_dump -t audit_events`) и
+сохранить вне сервиса. Для dev/test-окружений предупреждение не
+актуально — TRUNCATE перед каждым тестом и так очищает таблицу.
 """
 from typing import Sequence, Union
 

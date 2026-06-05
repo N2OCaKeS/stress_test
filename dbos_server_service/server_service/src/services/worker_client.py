@@ -25,6 +25,7 @@ outbox остался без worker-row — невозможен, потому �
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -242,10 +243,10 @@ async def shutdown_broker() -> None:
     global _worker_broker, _broker_started, _worker_engine, _worker_session_factory
     broker = _worker_broker
     if broker is not None and _broker_started:
-        try:
+        # broker.shutdown() best-effort: Redis недоступен, разрыв соединения —
+        # неважно, lifespan продолжаем закрывать. Suppress вместо try/except: pass.
+        with contextlib.suppress(Exception):
             await broker.shutdown()
-        except Exception:  # noqa: BLE001
-            pass
     _worker_broker = None
     _broker_started = False
     # Engine для cross-DB вставок в `dev_server_worker.tasks` тоже надо
@@ -253,10 +254,8 @@ async def shutdown_broker() -> None:
     # держит pool до 5+5 connections к worker-БД.
     engine = _worker_engine
     if engine is not None:
-        try:
+        with contextlib.suppress(Exception):
             await engine.dispose()
-        except Exception:  # noqa: BLE001
-            pass
     _worker_engine = None
     _worker_session_factory = None
 

@@ -205,3 +205,22 @@ Authorization: Bearer <admin-jwt>
 Доступные значения `effect_severity`: `TRACE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
 
 Критерии совпадения: `match_service`, `match_action` (glob `user.*` — одна точка), `match_status`, `match_severity`, `match_allowed`. `None` = «любое».
+
+---
+
+## In-process metrics counters
+
+`loging_service` не выставляет `/metrics`-эндпоинт; вместо этого in-process counter'ы доступны через public getter'ы Python-API и читаются тестами / отладочными скриптами. SIEM-интеграция: пока ручная (developer запрашивает getter), при появлении prometheus-экспозиции — выставить как gauge'ы.
+
+| Counter | Где | Что считает |
+|---|---|---|
+| `dropped_overflow_total` | `services/audit_outbox.py::AuditOutbox` | Очередь self-audit переполнена на `push_nowait` — дропнут старейший. |
+| `dropped_cancel_total` | `services/audit_outbox.py::AuditOutbox` | Drain-task отменён (`stop()` либо unhandled), события батча не закоммичены. |
+| `dropped_shutdown_total` | `services/audit_outbox.py::AuditOutbox` | Финальный drain не уложился в `AUDIT_DRAIN_TIMEOUT_SECONDS`. |
+| `dropped_after_stop_total` | `services/audit_outbox.py::AuditOutbox` | `push_nowait` вызван ПОСЛЕ `stop()` — outbox уже не дренирует. |
+| `drained_total` | `services/audit_outbox.py::AuditOutbox` | Сколько envelope'ов реально закоммитилось в БД. |
+| `self_audit_failures_total` | `src/main.py::get_self_audit_failures_total` | Fallback `_emit_audit_envelope` под graceful-shutdown упал. |
+
+Инвариант: `enqueued = drained_total + dropped_overflow_total + dropped_cancel_total + dropped_shutdown_total + dropped_after_stop_total`.
+
+При появлении prometheus-экспортёра: семейство `loging_audit_outbox_*` с label'ами `outcome={drained,overflow,cancel,shutdown,after_stop}` плюс отдельный `loging_self_audit_failures_total`.

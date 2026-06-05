@@ -59,6 +59,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # WARNING: downgrade deletes data — irreversible.
+    # Дроп колонки `previous_token_hashes` уносит sliding-window поколений
+    # 2..N, остаётся только скалярный `previous_token_hash` с последним хэшем;
+    # reuse-detection после отката увидит лишь одну прошлую ревизию refresh'а.
     op.drop_constraint("uq_bot_accounts_name", "bot_accounts", type_="unique")
     op.drop_index("ix_sessions_previous_token_hashes", table_name="sessions")
     op.drop_column("sessions", "previous_token_hashes")

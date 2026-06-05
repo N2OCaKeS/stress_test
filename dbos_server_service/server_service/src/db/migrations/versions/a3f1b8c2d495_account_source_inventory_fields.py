@@ -51,8 +51,22 @@ def upgrade() -> None:
     )
     # server_default нужен только для backfill существующих строк; новые
     # строки получают значение из ORM-дефолта.
-    op.alter_column("server_accounts", "source", server_default=None)
-    op.alter_column("server_account_servers", "present_on_server", server_default=None)
+    op.alter_column(
+        "server_accounts",
+        "source",
+        existing_type=sa.String(length=16),
+        existing_nullable=False,
+        existing_server_default="managed",
+        server_default=None,
+    )
+    op.alter_column(
+        "server_account_servers",
+        "present_on_server",
+        existing_type=sa.Boolean(),
+        existing_nullable=False,
+        existing_server_default=sa.true(),
+        server_default=None,
+    )
 
 
 def downgrade() -> None:

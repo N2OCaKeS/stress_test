@@ -56,7 +56,13 @@ class EntityPermission(Base):
     # FK на departments здесь нет — server_service держит свою БД, departments
     # принадлежат auth_service. Целостность обеспечивает application code,
     # который пишет ID'шники только из валидированного IdentityContext.
-    department_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Индекс по одной колонке не нужен: write-uniqueness покрывает partial
+    # unique `uq_entity_permissions_per_dept`, read-pattern — composite
+    # (entity_type, role, action, department_id).
+    department_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Формат soft-FK на auth_service.users.id / bot_accounts.id —
+    # `usr_<hex>` либо `bot_<hex>`. CHECK на стороне БД —
+    # ck_entity_permissions_granted_by_format.
     granted_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

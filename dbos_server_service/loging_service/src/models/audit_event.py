@@ -1,4 +1,17 @@
-"""ORM-модель `AuditEvent` — append-only журнал аудита."""
+"""ORM-модель `AuditEvent` — append-only журнал аудита.
+
+Партиционирование (`PARTITION BY RANGE (timestamp)`) — открытый вопрос:
+сейчас retention DELETE'ит чанками по 10k, при росте до миллионов row/день
+накопление dead-tuples и index bloat станут болезненными. Решение
+отложено на отдельный owner-decision (см. `obsidian/TODO.md` секция
+«Open questions»).
+
+Замечание про `uq_audit_events_service_idempotency_key`: имя с префиксом
+`uq_`, но физически это partial UNIQUE INDEX (не UniqueConstraint) —
+`UniqueConstraint` не поддерживает `WHERE`-предикат, поэтому только
+индекс. Имя стабильно (используется в `repositories/events.py` upsert'е),
+рефакторить дорого; стиль расходится с остальными `ix_*` индексами.
+"""
 
 from datetime import datetime, timezone
 
@@ -28,27 +41,35 @@ class AuditEvent(Base):
     )
 
     # Источник.
-    service: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # Single-col индекс снят в k1l2m3n4o5p6 — leading-column composite
+    # `ix_audit_events_service_timestamp` покрывает.
+    service: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    # Что произошло.
-    action: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    # Что произошло. Single-col индекс снят — фильтр всегда комбинируется
+    # с `timestamp DESC`, planner выбирает composite.
+    action: Mapped[str] = mapped_column(String(128), nullable=False)
 
-    # Кто сделал.
-    actor_id: Mapped[str | None] = mapped_column(String(48), nullable=True, index=True)
+    # Кто сделал. Single-col индексы по actor_id/username сняты — не
+    # используются в hot-query'ах (потенциальный UI-фильтр, dead).
+    actor_id: Mapped[str | None] = mapped_column(String(48), nullable=True)
     actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    username: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    department_id: Mapped[str | None] = mapped_column(String(48), nullable=True, index=True)
+    username: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Single-col индекс снят — leading-column composite
+    # `ix_audit_events_department_timestamp` покрывает.
+    department_id: Mapped[str | None] = mapped_column(String(48), nullable=True)
 
-    # Над чем.
+    # Над чем. target_id mirrors source-of-truth ID schema, 48 chars cap.
     target_id: Mapped[str | None] = mapped_column(String(48), nullable=True)
     target_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    # Исход.
-    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
-    # True если операция авторизована (status != "denied").
-    allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, index=True)
-    # TRACE | DEBUG | INFO | WARNING | ERROR | CRITICAL.
-    severity: Mapped[str] = mapped_column(String(16), nullable=False, index=True, default="INFO")
+    # Исход. Single-col индекс снят — фильтра только по status нет.
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    # True если операция авторизована (status != "denied"). Single-col
+    # индекс снят — boolean ≈2 значения, b-tree ≈seq-scan.
+    allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # TRACE | DEBUG | INFO | WARNING | ERROR | CRITICAL. Single-col индекс
+    # снят — селективность 1/6; будущий шаг — composite `(severity, timestamp DESC)`.
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, default="INFO")
 
     # Трассировка.
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

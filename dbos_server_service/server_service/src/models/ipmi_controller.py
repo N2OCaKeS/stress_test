@@ -23,7 +23,9 @@ class IpmiController(Base):
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     endpoint_url: Mapped[str] = mapped_column(String(512), nullable=False)
     username: Mapped[str] = mapped_column(String(128), nullable=False)
-    # Формат secrets_service: `v<key>$<nonce>$<ciphertext>`.
+    # Envelope AES-256-GCM secrets_service: `v<key_ver>$<base64-nonce>$<base64-ct+tag>`.
+    # На БД лежит CHECK length(...) < 8192 — двукратный запас от tooling-bug'а
+    # (реальный envelope для BMC-пароля укладывается в ~400 символов).
     password_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     password_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Помечается на dispatch'е ротации (worker должен apply'ить + verify'ить +

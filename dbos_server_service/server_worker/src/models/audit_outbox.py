@@ -43,7 +43,7 @@ loging_service row крутилась бы в каждом тике loop'а и a
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Index, Integer, String, func, text
+from sqlalchemy import BigInteger, DateTime, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -79,7 +79,14 @@ class AuditOutbox(Base):
     attempts: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0"), default=0
     )
-    last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # `last_error` — Text, без фиксированной длины. Раньше был
+    # `String(512)`, что симметрично `LAST_ERROR_MAX_LEN=512` в
+    # `core/constants.py`, но `tasks.last_error` уже Text — оба поля
+    # хранят одинаковый по характеру текст, разнотипия путала reader'ов
+    # и оставляла окно для `StringDataRightTruncation` при будущем
+    # поднятии cap'а. App-side обрезка через `LAST_ERROR_MAX_LEN`
+    # остаётся защитой от пухлых stack-trace'ов в БД.
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Backoff per row: после очередного fail'а publisher ставит сюда
     # `now() + 2^attempts seconds`. SELECT отфильтровывает строки, у
     # которых это время ещё не наступило, — между retry'ями row отдыхает
@@ -95,6 +102,14 @@ class AuditOutbox(Base):
         # только их, цена INSERT для уже отправленных копеечная. Ключ
         # `(next_retry_at, created_at)` — фильтр по «можно ретраить»
         # сразу попадает в b-tree.
+        #
+        # SELECT в publisher'е обязан добавлять `id ASC` третьим уровнем
+        # ORDER BY: при микросекундной коллизии `created_at` (высокий
+        # INSERT-rate) две row становятся неотличимыми, и под FOR UPDATE
+        # SKIP LOCKED порядок drain'а становится недетерминированным.
+        # Это не корректность (события всё равно поедут), а
+        # observability — два разных прохода видят row'ы в разном порядке,
+        # что путает диагностику застрявших batches.
         Index(
             "ix_audit_outbox_unpublished_retry",
             "next_retry_at",

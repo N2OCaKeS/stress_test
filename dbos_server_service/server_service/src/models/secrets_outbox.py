@@ -51,7 +51,13 @@ class ReencryptOutboxEntry(Base):
     # seed'а. Источник истины для decrypt'а: даже если кто-то параллельно
     # ротирует пароль на этой строке, outbox получит фиктивную ошибку при
     # write-back'е (текущее значение в БД уже не совпадёт с legacy_ciphertext).
+    #
+    # Контракт: outbox-row всегда содержит ciphertext (NOT NULL). Seed-логика
+    # `_legacy_ciphertext_filter` пропускает owner-row'ы с NULL ciphertext'ом
+    # (discovered-аккаунты без пароля) — они не попадают в outbox.
     legacy_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    # CHECK на БД ограничивает множество значений —
+    # ck_secrets_reencrypt_outbox_status.
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default="pending"
     )

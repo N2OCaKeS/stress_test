@@ -17,8 +17,15 @@ class Server(Base):
     __tablename__ = "servers"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # hostname / ip_address / serial_number — globally unique across
+    # departments, не per-dept. Документировано в `services/server.py`
+    # (`_DUPLICATE_HINT`); ниже зеркалится в ORM как ориентир для читателя.
     hostname: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # `unique=True` уже создаёт UNIQUE-индекс — `index=True` здесь даёт
+    # дополнительный обычный B-tree, но alembic-autogenerate комбинирует их
+    # в один `ix_servers_ip_address (UNIQUE)`. Оставлено для совместимости
+    # с initial-миграцией; на физической схеме лишних индексов нет.
     ip_address: Mapped[IPv4Address | IPv6Address] = mapped_column(
         INET, unique=True, nullable=False, index=True
     )
@@ -30,6 +37,8 @@ class Server(Base):
         nullable=True,
         index=True,
     )
+    # Обновляется write-callback'ами worker'а: `services/server.py:873`
+    # (admin-PATCH) и `services/internal_service.py:831` (inventory submit).
     os_last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     department_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(
@@ -41,6 +50,9 @@ class Server(Base):
     busy_state: Mapped[str] = mapped_column(
         String(32), default=BusyState.FREE, nullable=False
     )
+    # Soft-FK на auth_service.users.id / bot_accounts.id; формат
+    # `usr_<hex>` либо `bot_<hex>` (FK через DB-границу не натянуть).
+    # CHECK на БД — ck_servers_busy_user_id_format.
     busy_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     busy_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     busy_note: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -71,6 +83,8 @@ class Server(Base):
         onupdate=func.now(),
         nullable=False,
     )
+    # Soft-FK на auth_service identity (`usr_<hex>` / `bot_<hex>`).
+    # CHECK на БД — ck_servers_created_by_format.
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     __table_args__ = (

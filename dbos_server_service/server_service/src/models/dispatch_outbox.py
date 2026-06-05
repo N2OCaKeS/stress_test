@@ -41,7 +41,10 @@ class DispatchOutbox(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # task_id хранится без индекса — repositories/dispatch_outbox.py делает
+    # только INSERT, SELECT по task_id отсутствует. При появлении ops-debug
+    # эндпоинта индекс восстанавливается отдельной миграцией.
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False)
     task_kind: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

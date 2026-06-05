@@ -297,7 +297,7 @@ class TestPatInactiveUser:
         from src.models import User
         await db.execute(
             update(User).where(User.id == user_a.id).values(
-                is_active=False, status="disabled",
+                is_active=False, status="blocked",
             )
         )
         await db.commit()

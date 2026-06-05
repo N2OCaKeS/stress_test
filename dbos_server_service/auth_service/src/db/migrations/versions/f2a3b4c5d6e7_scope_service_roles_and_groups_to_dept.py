@@ -127,6 +127,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # WARNING: downgrade deletes data — irreversible.
+    # upgrade() ранее сделал `DELETE FROM ... WHERE department_id IS NULL`
+    # после backfill'а; здесь дропаются колонки `department_id` и `is_system`,
+    # восстановить уничтоженные «безотдельные» строки невозможно. Для отката
+    # на проде — сначала экспорт через COPY, затем ручной replay.
     # ── user_groups ─────────────────────────────────────────────────────────
     op.drop_constraint("uq_dept_user_group_name", "user_groups", type_="unique")
     op.drop_index("ix_user_groups_department_id", table_name="user_groups")

@@ -111,6 +111,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # WARNING: downgrade теряет данные. `DISTINCT ON (account_id)` берёт первую
+    # связку аккаунта (по `created_at`), остальные N-1 связки молча удаляются
+    # вместе с join-таблицей. Также пропадает `server_accounts.department_id`.
+    # Для prod-отката оператор обязан сначала выгрузить join через COPY.
     # Вернуть одиночный server_id. Берём первую связку каждого аккаунта.
     op.add_column(
         "server_accounts",

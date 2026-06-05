@@ -91,14 +91,19 @@ class ServerAccount(Base):
     login: Mapped[str] = mapped_column(String(128), nullable=False)
     # Происхождение аккаунта: `managed` — заведён через API (с паролем),
     # `discovered` — найден инвентаризацией на сервере (пароль API неизвестен,
-    # password_encrypted = NULL до ручной ротации).
+    # password_encrypted = NULL до ручной ротации). CHECK на БД —
+    # ck_server_accounts_source.
     source: Mapped[str] = mapped_column(String(16), default="managed", nullable=False)
-    # Формат: `v<key>$<nonce>$<ciphertext>` (см. secrets_service.py).
+    # Envelope формат AES-256-GCM: `v<key_ver>$<base64-nonce>$<base64-ct+tag>`
+    # (см. secrets_service.py). Для пароля до 256 байт plaintext ~400 символов;
+    # для приватного SSH-ключа (Ed25519 ~120 байт, RSA-4096 ~3 КБ) — до ~4 КБ.
+    # На БД лежит CHECK length(...) < 8192 — двукратный запас от tooling-bug'а.
     password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # SSH-ключ для входа под аккаунтом. Public — в открытом виде, кладётся в
     # `~/.ssh/authorized_keys` на боксе при provision'е. Private — зашифрован
-    # тем же `secrets_service.encrypt()`, что и пароль, по своему AAD.
+    # тем же `secrets_service.encrypt()`, что и пароль, по своему AAD; на тот
+    # же envelope распространяется length-cap (CHECK < 8192).
     # Оба поля NULL у managed-аккаунтов, заведённых до фичи, и у discovered —
     # на provision-вызове они заполняются автогенерацией Ed25519.
     ssh_public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -114,6 +119,10 @@ class ServerAccount(Base):
     unix_groups: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, default=list
     )
+    # Soft-FK на auth_service.users.id (`usr_<hex>`) — кто из людей живёт под
+    # этой OS-учёткой. Боты сюда не привязываются. CHECK на БД —
+    # ck_server_accounts_linked_user_id_format (допускает и usr_, и bot_ для
+    # forward-совместимости, но в практике пишутся только usr_).
     linked_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     shell: Mapped[str | None] = mapped_column(String(64), nullable=True)
     home_dir: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -127,6 +136,8 @@ class ServerAccount(Base):
         onupdate=func.now(),
         nullable=False,
     )
+    # Soft-FK на auth_service identity (`usr_<hex>` / `bot_<hex>`).
+    # CHECK на БД — ck_server_accounts_created_by_format.
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     server_links: Mapped[list["ServerAccountServer"]] = relationship(

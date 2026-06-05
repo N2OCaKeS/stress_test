@@ -68,6 +68,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # WARNING: downgrade теряет данные. Таблица `cpu_models` и
+    # `servers.cpu_id` восстанавливаются пустыми (cpu_id = NULL у всех
+    # серверов); inline-поля `cpu_brand`/`cpu_model`/`cpu_cores`/`cpu_threads`/
+    # `cpu_frequency_ghz` дропаются безвозвратно. Для prod-отката оператор
+    # обязан сначала выгрузить inline-поля через COPY.
     # 1. Восстановить таблицу cpu_models в том же виде, что initial-миграция.
     op.create_table(
         "cpu_models",

@@ -20,10 +20,16 @@ class AuditRule(Base):
     id: Mapped[str] = mapped_column(String(48), primary_key=True, default=audit_rule_id)
     name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # server_default зеркалит миграцию (c3d4e5f6a7b8): create_all в тестах
+    # должен ставить ту же DEFAULT-метку, что `make seed`.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
 
     # Правила с большим `priority` выполняются первыми.
-    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=100, server_default="100"
+    )
 
     # ── Критерии совпадения (None = любое значение) ───────────────────────────
     match_service: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 BASE = "/api/server/v1/os-versions"
 
@@ -58,18 +58,18 @@ class TestCreateOsVersion:
         resp = await client.post(
             BASE, headers=_hdr(reader_token_a), json=_payload(name="x"),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_operator_cannot_create(self, client, operator_token_a):
         """operator не имеет create на os_version."""
         resp = await client.post(
             BASE, headers=_hdr(operator_token_a), json=_payload(name="y"),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_token_returns_401(self, client):
         resp = await client.post(BASE, json=_payload())
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_duplicate_name_conflict(self, client, admin_role_token_a):
         resp = await client.post(
@@ -79,8 +79,7 @@ class TestCreateOsVersion:
         resp2 = await client.post(
             BASE, headers=_hdr(admin_role_token_a), json=_payload(name="ubuntu-22.04"),
         )
-        assert resp2.status_code == 409
-        assert resp2.json()["error_code"] == "OS_VERSION_DUPLICATE"
+        assert_error(resp2, 409, "OS_VERSION_DUPLICATE")
 
 
 # ── Валидация repositories ────────────────────────────────────────────────────
@@ -102,7 +101,7 @@ class TestRepositoriesValidation:
             headers=_hdr(admin_role_token_a),
             json=_payload(name="osv-bad-repo", repositories=[bad_repo]),
         )
-        assert resp.status_code == 422, resp.text
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_create_rejects_too_many_repos(self, client, admin_role_token_a):
         repos = [f"https://repo.example.org/{i}" for i in range(65)]
@@ -111,7 +110,7 @@ class TestRepositoriesValidation:
             headers=_hdr(admin_role_token_a),
             json=_payload(name="osv-too-many", repositories=repos),
         )
-        assert resp.status_code == 422, resp.text
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_create_rejects_overlong_repo_url(self, client, admin_role_token_a):
         long_url = "https://repo.example.org/" + "a" * 2100
@@ -120,7 +119,7 @@ class TestRepositoriesValidation:
             headers=_hdr(admin_role_token_a),
             json=_payload(name="osv-long", repositories=[long_url]),
         )
-        assert resp.status_code == 422, resp.text
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_create_accepts_http_and_https(self, client, admin_role_token_a):
         repos = ["http://repo.example.org/a", "https://repo.example.org/b"]
@@ -142,7 +141,7 @@ class TestRepositoriesValidation:
             headers=_hdr(admin_role_token_a),
             json={"repositories": ["ftp://repo.example.org/x"]},
         )
-        assert resp.status_code == 422, resp.text
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
 
 # ── GET (list) — публичный ────────────────────────────────────────────────────
@@ -219,8 +218,7 @@ class TestGetOsVersion:
 
     async def test_nonexistent_returns_404(self, client):
         resp = await client.get(f"{BASE}/osv_ghost")
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "OS_VERSION_NOT_FOUND"
+        assert_error(resp, 404, "OS_VERSION_NOT_FOUND")
 
     async def test_anonymous_get_emits_audit(
         self, client, admin_role_token_a, captured_emits,
@@ -266,8 +264,7 @@ class TestGetOsVersionByName:
 
     async def test_by_name_nonexistent_returns_404(self, client):
         resp = await client.get(f"{BASE}/by-name/ghost-os-name")
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "OS_VERSION_NOT_FOUND"
+        assert_error(resp, 404, "OS_VERSION_NOT_FOUND")
 
     async def test_anonymous_by_name_emits_audit(
         self, client, admin_role_token_a, captured_emits,
@@ -338,7 +335,7 @@ class TestUpdateOsVersion:
             f"{BASE}/{ov_id}", headers=_hdr(reader_token_a),
             json={"description": "no"},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_token_cannot_update(self, client, admin_role_token_a):
         created = await client.post(
@@ -346,7 +343,7 @@ class TestUpdateOsVersion:
         )
         ov_id = created.json()["id"]
         resp = await client.patch(f"{BASE}/{ov_id}", json={"description": "no"})
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_empty_update_is_noop(self, client, admin_role_token_a):
         created = await client.post(
@@ -372,15 +369,14 @@ class TestUpdateOsVersion:
             headers=_hdr(admin_role_token_a),
             json={"name": "osv-existing"},
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "OS_VERSION_DUPLICATE"
+        assert_error(resp, 409, "OS_VERSION_DUPLICATE")
 
     async def test_nonexistent_returns_404(self, client, admin_role_token_a):
         resp = await client.patch(
             f"{BASE}/osv_ghost", headers=_hdr(admin_role_token_a),
             json={"description": "x"},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "OS_VERSION_NOT_FOUND")
 
 
 # ── DELETE ─────────────────────────────────────────────────────────────────
@@ -400,7 +396,7 @@ class TestDeleteOsVersion:
         )
         ov_id = created.json()["id"]
         resp = await client.delete(f"{BASE}/{ov_id}", headers=_hdr(reader_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_no_token_cannot_delete(self, client, admin_role_token_a):
         created = await client.post(
@@ -408,7 +404,7 @@ class TestDeleteOsVersion:
         )
         ov_id = created.json()["id"]
         resp = await client.delete(f"{BASE}/{ov_id}")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_delete_in_use_returns_409(
         self, client, admin_role_token_a, make_server, db,
@@ -424,11 +420,10 @@ class TestDeleteOsVersion:
         resp = await client.delete(
             f"{BASE}/{ov_id}", headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "OS_VERSION_IN_USE"
+        assert_error(resp, 409, "OS_VERSION_IN_USE")
 
     async def test_delete_nonexistent_returns_404(self, client, admin_role_token_a):
         resp = await client.delete(
             f"{BASE}/osv_ghost", headers=_hdr(admin_role_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "OS_VERSION_NOT_FOUND")

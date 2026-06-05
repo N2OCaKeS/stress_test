@@ -28,7 +28,7 @@ BASE = "/api/server/v1/servers"
 LIST = "/api/server/v1/ipmi_controllers"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
 # ── POST /ipmi (create) ──────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ class TestCreateController:
                 "password": "bmc-pass-1",
             },
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_guest_cannot_create(self, client, guest_token_a, make_server):
         srv = await make_server(department_id="dep_a")
@@ -129,7 +129,7 @@ class TestCreateController:
                 "password": "bmc-pass-1",
             },
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404(self, client, operator_token_b, make_server):
         srv = await make_server(department_id="dep_a")
@@ -143,8 +143,7 @@ class TestCreateController:
                 "password": "bmc-pass-1",
             },
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_duplicate_returns_409(self, client, admin_token, make_server, make_ipmi):
         srv = await make_server(department_id="dep_a")
@@ -159,8 +158,7 @@ class TestCreateController:
                 "password": "bmc-pass-1",
             },
         )
-        assert resp.status_code == 409
-        assert resp.json().get("error_code") == "IPMI_DUPLICATE"
+        assert_error(resp, 409, "IPMI_DUPLICATE")
 
     async def test_no_token_returns_401(self, client, make_server):
         srv = await make_server(department_id="dep_a")
@@ -168,7 +166,7 @@ class TestCreateController:
             f"{BASE}/{srv.id}/ipmi",
             json={"kind": "idrac", "endpoint_url": "https://x", "username": "u", "password": "bmc-pass-1"},
         )
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
 
 # ── GET /ipmi (get one) ──────────────────────────────────────────────────────
@@ -190,8 +188,7 @@ class TestGetController:
     async def test_no_controller_returns_404(self, client, reader_token_a, make_server):
         srv = await make_server(department_id="dep_a")
         resp = await client.get(f"{BASE}/{srv.id}/ipmi", headers=_hdr(reader_token_a))
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
     async def test_cross_dept_returns_404(
         self, client, reader_token_b, make_server, make_ipmi,
@@ -199,16 +196,15 @@ class TestGetController:
         srv = await make_server(department_id="dep_a")
         await make_ipmi(server_id=srv.id)
         resp = await client.get(f"{BASE}/{srv.id}/ipmi", headers=_hdr(reader_token_b))
-        assert resp.status_code == 404
         # Cross-dept скрыт за тем же SERVER_NOT_FOUND, что и несуществующий —
         # иначе по разнице ответов можно перечислить чужие server_id
-        assert resp.json().get("error_code") == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_no_role_returns_403(self, client, no_role_token_a, make_server, make_ipmi):
         srv = await make_server(department_id="dep_a")
         await make_ipmi(server_id=srv.id)
         resp = await client.get(f"{BASE}/{srv.id}/ipmi", headers=_hdr(no_role_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 # ── GET /ipmi_controllers (list) ─────────────────────────────────────────────
@@ -247,7 +243,7 @@ class TestListControllers:
 
     async def test_no_role_returns_403(self, client, no_role_token_a):
         resp = await client.get(LIST, headers=_hdr(no_role_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
 
 # ── PATCH /ipmi (update) ─────────────────────────────────────────────────────
@@ -304,7 +300,7 @@ class TestUpdateController:
             headers=_hdr(reader_token_a),
             json={"username": "x"},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404(
         self, client, admin_token_b, make_server, make_ipmi,
@@ -316,8 +312,7 @@ class TestUpdateController:
             headers=_hdr(admin_token_b),
             json={"username": "x"},
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_no_controller_returns_404(
         self, client, admin_token, make_server,
@@ -328,8 +323,7 @@ class TestUpdateController:
             headers=_hdr(admin_token),
             json={"username": "x"},
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "NO_IPMI_CONTROLLER"
+        assert_error(resp, 404, "NO_IPMI_CONTROLLER")
 
 
 # ── DELETE /ipmi ─────────────────────────────────────────────────────────────
@@ -360,7 +354,7 @@ class TestDeleteController:
         resp = await client.delete(
             f"{BASE}/{srv.id}/ipmi", headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404(
         self, client, admin_token_b, make_server, make_ipmi,
@@ -370,8 +364,7 @@ class TestDeleteController:
         resp = await client.delete(
             f"{BASE}/{srv.id}/ipmi", headers=_hdr(admin_token_b),
         )
-        assert resp.status_code == 404
-        assert resp.json().get("error_code") == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
 
 # ── POST /credentials/rotate ────────────────────────────────────────────────
@@ -398,9 +391,7 @@ class TestRotateCredentials:
             headers=_hdr(admin_token),
             json={},
         )
-        assert resp.status_code == 410
-        body = resp.json()
-        assert body["error_code"] == "IPMI_ROTATE_USER_FACING_DEPRECATED"
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
 
     async def test_operator_gets_410(
         self, client, operator_token_a, make_server, make_ipmi,
@@ -411,7 +402,7 @@ class TestRotateCredentials:
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
             headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 410
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
 
     async def test_reader_gets_410(
         self, client, reader_token_a, make_server, make_ipmi,
@@ -423,7 +414,7 @@ class TestRotateCredentials:
             f"{BASE}/{srv.id}/ipmi/credentials/rotate",
             headers=_hdr(reader_token_a),
         )
-        assert resp.status_code == 410
+        assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
 
     async def test_410_details_do_not_echo_server_id(
         self, client, admin_token, make_server, make_ipmi,
@@ -443,8 +434,7 @@ class TestRotateCredentials:
                 headers=_hdr(admin_token),
                 json={},
             )
-            assert resp.status_code == 410
-            body = resp.json()
+            body = assert_error(resp, 410, "IPMI_ROTATE_USER_FACING_DEPRECATED")
             details = body.get("details") or {}
             assert "server_id" not in details, (
                 f"410 details echoed server_id for variant {variant!r}: {details!r}"
@@ -501,7 +491,7 @@ class TestPasswordPolicy:
                 "password": bad_password,
             },
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_create_accepts_compliant_password(
         self, client, admin_token, make_server,
@@ -536,7 +526,7 @@ class TestPasswordPolicy:
             headers=_hdr(worker_bot_token_a),
             json={"password": bad_password},
         )
-        assert resp.status_code == 422
+        assert_error(resp, 422, "VALIDATION_ERROR")
 
     async def test_rotate_accepts_compliant_password(
         self, client, worker_bot_token_a, make_server, make_ipmi, db,
@@ -644,7 +634,7 @@ class TestAuditEmission:
                 "password": "bmc-pass-1",
             },
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [
             e for e in _events(captured_emits, "ipmi_controller.create")
             if e.get("status") == "denied"

@@ -51,6 +51,16 @@ async def assert_dept_admin_target_dept(
     * `error_code="ACTOR_VANISHED"` — actor отсутствует (race-condition
       между issue JWT и check'ом). HTTP 403; смысл — fail-closed.
     * `error_code=<caller's>` — actor есть, но dept не совпадает.
+
+    Про `target_dept_id=None`: сигнатура допускает None, но любой actor
+    в БД имеет непустой `department_id`, поэтому сравнение
+    `actor.department_id != None` для DA всегда даст 403 с caller-овым
+    `error_code`. Это безопасный дефолт: если caller случайно прокинул
+    None, запрос отбрасывается, а не пропускается. На практике None сюда
+    не доходит — все вызовы передают `target_dept_id` из Pydantic-схем,
+    где поле объявлено как Required `str` (см. OAuth/User/Docker-registry
+    схемы). None-ветка оставлена как defensive guard на случай будущих
+    caller'ов, которые могут принимать опциональный dept.
     """
     actor = await user_repo.get_by_id(actor_id)
     if actor is None:

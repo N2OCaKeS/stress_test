@@ -41,7 +41,7 @@ BASE = "/api/server/v1"
 BASE_DISPATCH = BASE
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import auth_hdr as _hdr, make_emit_capture  # noqa: E402
 
 
 def _make_identity(
@@ -80,18 +80,10 @@ class TestSavepointRollbackAuditEmit:
 
     @pytest.fixture
     def captured_emits(self, monkeypatch):
-        captured: list[dict] = []
-
-        def fake_emit(action, actor_id=None, **kwargs):
-            captured.append({"action": action, "actor_id": actor_id, **kwargs})
-
-        import src.services.audit_service as audit_mod
-        monkeypatch.setattr(audit_mod, "emit", fake_emit)
-        monkeypatch.setattr(
+        return make_emit_capture(
+            monkeypatch,
             "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
-            fake_emit,
         )
-        return captured
 
     async def test_service_unavailable_emits_failure_with_worker_unreachable_reason(
         self, client, operator_token_a, make_server, make_account, db,
@@ -265,16 +257,9 @@ class TestIpmiRotatePasswordDispatchEdges:
         self, client, admin_role_token_a, make_server, make_ipmi, db, monkeypatch,
     ):
         """Decommissioned → audit failure с reason=decommissioned."""
-        captured: list[dict] = []
-
-        def fake_emit(action, actor_id=None, **kwargs):
-            captured.append({"action": action, **kwargs})
-
-        import src.services.audit_service as audit_mod
-        monkeypatch.setattr(audit_mod, "emit", fake_emit)
-        monkeypatch.setattr(
+        captured = make_emit_capture(
+            monkeypatch,
             "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
-            fake_emit,
         )
 
         srv = await make_server(department_id="dep_a")
@@ -333,16 +318,9 @@ class TestIpmiRotatePasswordDispatchEdges:
         self, client, admin_role_token_a, make_server, make_ipmi, monkeypatch,
     ):
         """Cross-dept через server path → failure audit с reason=not_found_or_cross_dept."""
-        captured: list[dict] = []
-
-        def fake_emit(action, actor_id=None, **kwargs):
-            captured.append({"action": action, **kwargs})
-
-        import src.services.audit_service as audit_mod
-        monkeypatch.setattr(audit_mod, "emit", fake_emit)
-        monkeypatch.setattr(
+        captured = make_emit_capture(
+            monkeypatch,
             "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
-            fake_emit,
         )
 
         srv = await make_server(department_id="dep_a")
@@ -388,20 +366,10 @@ class TestDispatchForServerNoIpmiAudit:
         self, client, operator_token_a, make_server, monkeypatch,
     ):
         """POST /power/status без IPMI → failure audit reason=no_ipmi."""
-        captured: list[dict] = []
-
-        def fake_emit(action, actor_id=None, **kwargs):
-            captured.append({"action": action, **kwargs})
-
-        import src.services.audit_service as audit_mod
-        monkeypatch.setattr(audit_mod, "emit", fake_emit)
-        monkeypatch.setattr(
+        captured = make_emit_capture(
+            monkeypatch,
             "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
-            fake_emit,
-        )
-        monkeypatch.setattr(
             "src.services.server.audit_service.emit",
-            fake_emit,
         )
 
         srv = await make_server(department_id="dep_a")  # без IPMI
@@ -427,16 +395,9 @@ class TestDispatchForServerNoIpmiAudit:
         self, client, operator_token_a, make_server, monkeypatch,
     ):
         """В no_ipmi audit target_id — сервер (не controller), target_type — server."""
-        captured: list[dict] = []
-
-        def fake_emit(action, actor_id=None, **kwargs):
-            captured.append({"action": action, **kwargs})
-
-        import src.services.audit_service as audit_mod
-        monkeypatch.setattr(audit_mod, "emit", fake_emit)
-        monkeypatch.setattr(
+        captured = make_emit_capture(
+            monkeypatch,
             "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
-            fake_emit,
         )
 
         srv = await make_server(department_id="dep_a")
@@ -500,12 +461,7 @@ class TestCheckTargetDeptForServerActorMismatch:
         monkeypatch.setattr(internal_service.server_repo, "get_by_id", _get_server)
         monkeypatch.setattr(internal_service.permissions, "require_action", _require_ok)
 
-        captured: list[dict] = []
-
-        def fake_emit(action, **kwargs):
-            captured.append({"action": action, **kwargs})
-
-        monkeypatch.setattr(internal_service.audit_service, "emit", fake_emit)
+        captured = make_emit_capture(monkeypatch)
 
         identity_b = IdentityContext(
             user_id="bot_b",
@@ -566,12 +522,7 @@ class TestCheckTargetDeptForServerActorMismatch:
         monkeypatch.setattr(internal_service.server_repo, "get_by_id", _get_server)
         monkeypatch.setattr(internal_service.permissions, "require_action", _require_ok)
 
-        captured: list[dict] = []
-
-        def fake_emit(action, **kwargs):
-            captured.append({"action": action, **kwargs})
-
-        monkeypatch.setattr(internal_service.audit_service, "emit", fake_emit)
+        captured = make_emit_capture(monkeypatch)
 
         identity_b = IdentityContext(
             user_id="bot_b2",
@@ -626,19 +577,11 @@ class TestSubjectTypeInDeniedAudit:
 
     @pytest.fixture
     def captured_emits(self, monkeypatch):
-        captured: list[dict] = []
-
-        def fake_emit(action, actor_id=None, **kwargs):
-            captured.append({"action": action, **kwargs})
-
-        import src.services.audit_service as audit_mod
-        monkeypatch.setattr(audit_mod, "emit", fake_emit)
-        monkeypatch.setattr(
+        return make_emit_capture(
+            monkeypatch,
             "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
-            fake_emit,
+            "src.services.server.audit_service.emit",
         )
-        monkeypatch.setattr("src.services.server.audit_service.emit", fake_emit)
-        return captured
 
     async def test_bot_denied_power_status_contains_subject_type(
         self, client, make_server, make_token, dept_a, captured_emits,

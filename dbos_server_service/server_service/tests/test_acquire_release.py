@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from tests._helpers import auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr
 
 BASE = "/api/server/v1/servers"
 
@@ -90,8 +90,7 @@ class TestAcquireServer:
         r1 = await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a))
         assert r1.status_code == 200
         r2 = await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a))
-        assert r2.status_code == 409
-        assert r2.json()["error_code"] == "SERVER_ALREADY_BUSY"
+        assert_error(r2, 409, "SERVER_ALREADY_BUSY")
 
     async def test_decommissioned_returns_409(
         self, client, operator_token_a, make_server, db,
@@ -104,8 +103,7 @@ class TestAcquireServer:
         resp = await client.post(
             f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
 
     async def test_decommission_race_does_not_busy_decommissioned(
         self, client, operator_token_a, make_server, db, monkeypatch,
@@ -151,8 +149,7 @@ class TestAcquireServer:
         # Гонка должна быть пойдана: либо 409 SERVER_DECOMMISSIONED (после
         # re-fetch'а), либо мы вообще не дошли до CAS (если load увидел уже
         # decommissioned). 200 (busy+decommissioned) был бы багом.
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
 
         # Проверяем итоговое состояние строки — busy НЕ должен встать.
         from sqlalchemy import select
@@ -169,8 +166,7 @@ class TestAcquireServer:
     ):
         srv = await make_server(department_id="dep_a")
         resp = await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(reader_token_a))
-        assert resp.status_code == 403
-        assert resp.json()["error_code"] == "PERMISSION_DENIED"
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404(
         self, client, operator_token_b, make_server,
@@ -179,13 +175,12 @@ class TestAcquireServer:
         resp = await client.post(
             f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_b),
         )
-        assert resp.status_code == 404
-        assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
     async def test_no_token_returns_401(self, client, make_server):
         srv = await make_server(department_id="dep_a")
         resp = await client.post(f"{BASE}/{srv.id}/busy")
-        assert resp.status_code == 401
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
     async def test_nonexistent_server_returns_404(
         self, client, operator_token_a,
@@ -193,7 +188,7 @@ class TestAcquireServer:
         resp = await client.post(
             f"{BASE}/srv_ghost_42/busy", headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
 
 # ── DELETE /busy (release) ───────────────────────────────────────────────────
@@ -218,8 +213,7 @@ class TestReleaseServer:
     ):
         srv = await make_server(department_id="dep_a")
         resp = await client.delete(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a))
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_NOT_BUSY"
+        assert_error(resp, 409, "SERVER_NOT_BUSY")
 
     async def test_admin_can_release_someone_elses_acquisition(
         self, client, operator_token_a, admin_role_token_a, make_server,
@@ -237,7 +231,7 @@ class TestReleaseServer:
         srv = await make_server(department_id="dep_a")
         await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a))
         resp = await client.delete(f"{BASE}/{srv.id}/busy", headers=_hdr(reader_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404(
         self, client, operator_token_a, operator_token_b, make_server,
@@ -245,7 +239,7 @@ class TestReleaseServer:
         srv = await make_server(department_id="dep_a")
         await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a))
         resp = await client.delete(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_b))
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
 
 # ── POST /os-sync (update_os_version) ────────────────────────────────────────
@@ -294,8 +288,7 @@ class TestUpdateOsVersion:
             headers=_hdr(operator_token_a),
             json={"os_version_id": "osv_nonexistent_ghost"},
         )
-        assert resp.status_code == 422
-        assert resp.json()["error_code"] == "INVALID_OS_VERSION"
+        assert_error(resp, 422, "INVALID_OS_VERSION")
 
     async def test_reader_cannot_update_os_version(
         self, client, reader_token_a, make_server, make_os_version,
@@ -307,7 +300,7 @@ class TestUpdateOsVersion:
             headers=_hdr(reader_token_a),
             json={"os_version_id": osv.id},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
 
     async def test_cross_dept_returns_404(
         self, client, operator_token_b, make_server, make_os_version,
@@ -319,7 +312,7 @@ class TestUpdateOsVersion:
             headers=_hdr(operator_token_b),
             json={"os_version_id": osv.id},
         )
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
 
 
 # ── Audit emission sanity ────────────────────────────────────────────────────
@@ -381,7 +374,7 @@ class TestBusyAuditEmission:
         """
         srv = await make_server(department_id="dep_a")
         resp = await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(reader_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [e for e in _events(captured_emits, "server.acquire") if e["status"] == "denied"]
         assert len(denied) == 1
         assert denied[0]["details"]["reason"] == "permission_denied"
@@ -392,7 +385,7 @@ class TestBusyAuditEmission:
         """Cross-dept caller — visibility ДО permission, reason=not_found_or_cross_dept."""
         srv = await make_server(department_id="dep_a")
         resp = await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_b))
-        assert resp.status_code == 404
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
         failures = [e for e in _events(captured_emits, "server.acquire") if e["status"] == "failure"]
         assert len(failures) == 1
         assert failures[0]["details"]["reason"] == "not_found_or_cross_dept"
@@ -403,7 +396,7 @@ class TestBusyAuditEmission:
         srv = await make_server(department_id="dep_a")
         await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a))
         resp = await client.delete(f"{BASE}/{srv.id}/busy", headers=_hdr(reader_token_a))
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [e for e in _events(captured_emits, "server.release") if e["status"] == "denied"]
         assert len(denied) == 1
         assert denied[0]["details"]["reason"] == "permission_denied"
@@ -418,7 +411,7 @@ class TestBusyAuditEmission:
             headers=_hdr(reader_token_a),
             json={"os_version_id": osv.id},
         )
-        assert resp.status_code == 403
+        assert_error(resp, 403, "PERMISSION_DENIED")
         denied = [e for e in _events(captured_emits, "server.update_os_version") if e["status"] == "denied"]
         assert len(denied) == 1
         assert denied[0]["details"]["reason"] == "permission_denied"
@@ -478,12 +471,11 @@ class TestAcquireRaceRollback:
         resp = await client.post(
             f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
         # Главное: reason — именно decommissioned, а не already_busy.
         # Если rollback() отсутствует, re-fetch может вернуть кэшированный
         # ACTIVE-objects → ветка `current.status == DECOMMISSIONED` не сработает,
         # уйдёт в SERVER_ALREADY_BUSY.
-        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert_error(resp, 409, "SERVER_DECOMMISSIONED")
 
     async def test_expire_called_before_refetch(
         self, client, operator_token_a, make_server, monkeypatch,
@@ -533,8 +525,7 @@ class TestAcquireRaceRollback:
         resp = await client.post(
             f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a),
         )
-        assert resp.status_code == 409
-        assert resp.json()["error_code"] == "SERVER_ALREADY_BUSY"
+        assert_error(resp, 409, "SERVER_ALREADY_BUSY")
         assert expire_count["n"] >= 1, (
             "expected db.expire() to be called before CAS-miss re-fetch"
         )

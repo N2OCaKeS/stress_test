@@ -66,6 +66,45 @@ async def test_list_sessions_requires_auth(client):
     assert resp.status_code == 401
 
 
+async def test_list_sessions_without_sid_marks_all_not_current(db, user_a):
+    """Legacy access-токен без `sid` claim'а: `list_sessions` вызывается с
+    `current_session_id=None` → все entries `is_current=False`. До фикса
+    HTTP-слой всегда прокидывал `sid` из текущего JWT, и эту ветку нечем
+    было покрыть через client; вызываем сервис-функцию напрямую.
+    """
+    from datetime import timedelta
+
+    from src.repositories.sessions import SessionRepository
+    from src.services.user_service import list_sessions
+    from src.utils.time import utcnow
+
+    session_repo = SessionRepository(db)
+    s1 = await session_repo.create(
+        user_id=user_a.id,
+        refresh_token_hash="hash_legacy_1",
+        expires_at=utcnow() + timedelta(days=14),
+        user_agent="ua",
+        ip_address="127.0.0.1",
+    )
+    s2 = await session_repo.create(
+        user_id=user_a.id,
+        refresh_token_hash="hash_legacy_2",
+        expires_at=utcnow() + timedelta(days=14),
+        user_agent="ua",
+        ip_address="127.0.0.1",
+    )
+    await db.commit()
+
+    resp = await list_sessions(db, user_a.id, current_session_id=None)
+    assert resp.total == 2
+    session_ids = {it.session_id for it in resp.items}
+    assert session_ids == {s1.id, s2.id}
+    assert all(it.is_current is False for it in resp.items), (
+        "legacy JWT без sid → все entries должны быть is_current=False, "
+        f"got: {[(it.session_id, it.is_current) for it in resp.items]}"
+    )
+
+
 # ── revoke all sessions ────────────────────────────────────────────────────
 
 

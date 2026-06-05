@@ -400,12 +400,18 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                     )
                     continue
 
+                # `pre_drain_status` фиксирует, в каком состоянии row была
+                # на момент drain'а. QUEUED означает, что `mark_running` CAS
+                # ещё не прошёл (register_running_task вызван до commit'а),
+                # и `attempt=0` тут — это «нулевая попытка», а не «упало на
+                # первой» — без этого поля оператор не отличит две ситуации.
                 details_payload: dict = {
                     "task_id": tid,
                     "reason": "worker_shutdown",
                     "attempt": fresh.attempt,
                     "max_attempts": fresh.max_attempts,
                     "will_retry": will_retry,
+                    "pre_drain_status": fresh.status,
                 }
                 if fresh.target_server_id:
                     details_payload["server_id"] = fresh.target_server_id

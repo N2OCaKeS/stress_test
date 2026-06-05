@@ -162,6 +162,7 @@ Public endpoint'ы, через которые user (обычно admin) запу
 | `server_account.view` | INFO | denied на GET (cross-dept / nonexistent) — success на read не аудитим (шум) | `server_account` | `reason in {permission_denied, cross_department}` |
 | `server_account.list` | INFO | denied на GET list (success — by design не аудитится) | `server_account` | `reason=permission_denied` |
 | `server_account.update` | INFO | PATCH — изменение метаданных (login/unix_groups/sudo) | `server_account` | поля diff'а (whitelist) |
+| `fanout_update_on_host.truncated` | WARNING | PATCH аккаунта затронул сервер-список длиннее `FANOUT_UPDATE_ON_HOST_MAX`; хвост обрезан, обрезанные хосты выровняются следующим sweep/audit-циклом | `server_account` | `total_links`, `cap`, `truncated_count`, `source=edit_fanout`, `department_id` |
 | `server_account.link_servers` | INFO | POST `/server-accounts/{id}/servers` — привязка аккаунта к дополнительным серверам | `server_account` | `server_ids`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server_account.unlink_servers` | INFO | DELETE `/server-accounts/{id}/servers` — отвязка от серверов | `server_account` | `server_ids`, `department_id`. denied: `reason in {permission_denied, not_found_or_cross_dept}` |
 | `server_account.delete` | CRITICAL | hard-delete | `server_account` | `server_id`, `login` |

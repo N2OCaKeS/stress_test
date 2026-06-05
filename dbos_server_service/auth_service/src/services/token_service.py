@@ -2,6 +2,7 @@
 
 from datetime import timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import AuthorizationError, ConflictError, DomainValidationError, NotFoundError
@@ -89,15 +90,28 @@ async def create_pat(
         raise ConflictError(error_code="TOKEN_NAME_ALREADY_EXISTS", message=f"Token '{name}' already exists")
 
     raw, prefix, token_hash = generate_pat()
-    pat = await token_repo.create(
-        user_id=actor_id,
-        name=name,
-        token_hash=token_hash,
-        token_prefix=prefix,
-        allowed_services=allowed_services,
-        expires_at=exp_dt,
-    )
-    await db.commit()
+    # `exists_name`-чек выше может проиграть гонку: два параллельных
+    # запроса с одинаковым `name` оба видят 0 строк, оба создают PAT,
+    # и второй коммит уносит IntegrityError на `uq_pat_user_name_active`.
+    # Без перехвата ORM-исключение поднимается до глобального handler'а
+    # как 500. Сворачиваем в стабильный 409 — тот же error_code, что и
+    # на честно прошедшем `exists_name`-чеке.
+    try:
+        pat = await token_repo.create(
+            user_id=actor_id,
+            name=name,
+            token_hash=token_hash,
+            token_prefix=prefix,
+            allowed_services=allowed_services,
+            expires_at=exp_dt,
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise ConflictError(
+            error_code="TOKEN_NAME_ALREADY_EXISTS",
+            message=f"Token '{name}' already exists",
+        )
     # raw PAT уходит в details — sanitizer заменит на <TOKEN> по эвристике dbos_pat_…
     audit_service.emit(
         "pat.create", actor_id, target_id=pat.id, target_type="pat",

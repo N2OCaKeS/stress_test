@@ -220,6 +220,39 @@ class TestSshClientRun:
         assert rc == 7
         assert err == "boom\n"
 
+    async def test_run_decodes_bytes_stdout_stderr(self, monkeypatch):
+        """asyncssh с `encoding=None` отдаёт bytes — `run()` должен прогнать
+        их через `.decode('utf-8', errors='replace')`, не падая на не-str.
+
+        Тестовая ветка: симулируем bytes-stdout/stderr (включая невалидный
+        UTF-8 — последовательность `\\xff`), проверяем что `errors='replace'`
+        подставляет replacement-char, а не выкидывает UnicodeDecodeError.
+        """
+        bytes_result = _run_result(b"ok\n", b"warn\xff\n", 0)
+        conn = _make_fake_conn(run_results=bytes_result)
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "u", "p") as ssh:
+            rc, out, err = await ssh.run("echo ok")
+        assert rc == 0
+        assert out == "ok\n"
+        # `\xff` — невалидный UTF-8 → заменён на U+FFFD.
+        assert err.startswith("warn") and err.endswith("\n")
+        assert "�" in err
+
+    async def test_run_handles_none_stdout(self, monkeypatch):
+        """`result.stdout=None` (теоретический edge от asyncssh) не должен
+        падать — `(result.stdout or b"").decode()` отдаёт пустую строку."""
+        none_result = _run_result(None, None, 0)
+        conn = _make_fake_conn(run_results=none_result)
+        monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+
+        async with SshClient("h", "u", "p") as ssh:
+            rc, out, err = await ssh.run("noop")
+        assert rc == 0
+        assert out == ""
+        assert err == ""
+
     async def test_run_without_connect_raises(self):
         client = SshClient("h", "u", "p")
         with pytest.raises(SshError) as exc_info:

@@ -1,6 +1,7 @@
 """Бизнес-логика приёма и чтения событий аудита."""
 
 import logging
+import os
 import traceback
 from datetime import datetime, timezone
 
@@ -162,10 +163,13 @@ def record_admin_action(
     if payload.service != "loging_service":
         # Логируем стек вызова, чтобы invariant-500 не маскировал bug call-site:
         # traceback покажет, какой endpoint вызвал record_admin_action с чужим сервисом.
+        # Пишем только basename файла и lineno + имя функции, без абсолютного пути:
+        # log-aggregation внешний, не нужно сливать внутреннюю раскладку проекта.
         caller = traceback.extract_stack(limit=4)[-2]
+        caller_basename = os.path.basename(caller.filename)
         logger.error(
             "record_admin_action invariant violation: service=%r at %s:%d in %s",
-            payload.service, caller.filename, caller.lineno, caller.name,
+            payload.service, caller_basename, caller.lineno, caller.name,
         )
         raise AppException(
             error_code="ADMIN_AUDIT_WRONG_SERVICE",

@@ -64,6 +64,80 @@ async def test_bootstrap_admin_emits_user_create_with_bootstrap_seed_reason(
 
 
 @pytest.mark.asyncio
+async def test_bootstrap_admin_noop_when_initial_username_unset(
+    db, monkeypatch,
+):
+    """`INITIAL_ADMIN_USERNAME` пустой → bootstrap_admin сразу `return` без
+    обращения к UserRepository. Защищает от регрессии «admin создаётся
+    несмотря на отсутствие настройки» при изменении ENV-merge'а в config.
+    """
+    captured: list[dict] = []
+
+    def _spy(action, actor_id=None, **kw):
+        captured.append({"action": action})
+
+    monkeypatch.setattr(bootstrap_service.audit_service, "emit", _spy)
+
+    from src.core import config as config_mod
+    monkeypatch.delenv("INITIAL_ADMIN_USERNAME", raising=False)
+    monkeypatch.setenv("INITIAL_ADMIN_PASSWORD", "Bootstrap1234!")
+    config_mod.get_settings.cache_clear()
+
+    # Подменяем `count`, чтобы fail громко, если до него дойдёт.
+    from src.repositories import users as users_repo_mod
+    count_called = {"n": 0}
+
+    async def _spy_count(self):
+        count_called["n"] += 1
+        return 0
+
+    monkeypatch.setattr(users_repo_mod.UserRepository, "count", _spy_count)
+
+    await bootstrap_service.bootstrap_admin(db)
+
+    assert captured == []
+    assert count_called["n"] == 0, (
+        "bootstrap_admin должен `return` до touch'а UserRepository, "
+        f"но count вызван {count_called['n']}× — early-return сломан"
+    )
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_noop_when_initial_password_unset(
+    db, monkeypatch,
+):
+    """`INITIAL_ADMIN_PASSWORD` пустой — симметричный кейс. До фикса bootstrap
+    мог попытаться хэшировать пустой пароль и заведомо создавал юзера, в
+    которого нельзя залогиниться (lockout/password validators).
+    """
+    captured: list[dict] = []
+
+    def _spy(action, actor_id=None, **kw):
+        captured.append({"action": action})
+
+    monkeypatch.setattr(bootstrap_service.audit_service, "emit", _spy)
+
+    from src.core import config as config_mod
+    monkeypatch.setenv("INITIAL_ADMIN_USERNAME", "boot_no_pwd")
+    monkeypatch.delenv("INITIAL_ADMIN_PASSWORD", raising=False)
+    config_mod.get_settings.cache_clear()
+
+    from src.repositories import users as users_repo_mod
+    count_called = {"n": 0}
+
+    async def _spy_count(self):
+        count_called["n"] += 1
+        return 0
+
+    monkeypatch.setattr(users_repo_mod.UserRepository, "count", _spy_count)
+
+    await bootstrap_service.bootstrap_admin(db)
+
+    assert captured == []
+    assert count_called["n"] == 0
+
+
+@pytest.mark.asyncio
 async def test_bootstrap_admin_noop_when_users_present_emits_nothing(
     db, monkeypatch,
 ):

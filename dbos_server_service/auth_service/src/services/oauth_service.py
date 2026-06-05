@@ -280,6 +280,16 @@ async def issue_authorization_code(
     # plain не защищает от перехвата кода (verifier == challenge тривиально).
     # Для confidential — поведение прежнее (back-compat): если challenge есть,
     # method из дозволенного множества; если нет — пропускаем.
+    #
+    # Отдельная защита: `code_challenge_method` без `code_challenge` —
+    # явная клиентская ошибка (RFC 7636 §4.3 method имеет смысл только
+    # вместе с challenge). До фикса метод тихо игнорировался, клиент мог
+    # годами слать неправильную пару и не узнать.
+    if code_challenge_method and not code_challenge:
+        raise AuthorizationError(
+            error_code="PKCE_CHALLENGE_REQUIRED",
+            message="code_challenge_method requires code_challenge",
+        )
     pkce_challenge: str | None = None
     pkce_method: str | None = None
     if client.is_public:

@@ -18,8 +18,8 @@
 ### Недавно добавленное покрытие
 
 - `server_worker/tests/test_retention_cleanup_tasks.py` — покрытие periodic-задач `tasks.cleanup_completed_old` и `audit_outbox.cleanup_published_old`: cutoff по `TASKS_RETENTION_DAYS` / `AUDIT_OUTBOX_RETENTION_DAYS`, удаление только терминальных task'ов, публикованных outbox-row, идемпотентность повторного запуска.
-- `auth_service/tests/auth/test_login.py` расширен сценариями lockout вокруг `services/_lockout.py` (счётчик неудач, окно `LOCKOUT_MINUTES`, сброс при успешном входе, `MAX_FAILED_LOGIN_ATTEMPTS` как порог). Отдельный `test_lockout.py` не создавался — модуль покрывается inline в login-тестах.
-- `server_service/tests/test_server_accounts_endpoints.py` — фактический CRUD `server_account` (6 endpoints) + ротация пароля под action-based permissions.
+- `auth_service/tests/auth/test_login.py` расширен сценариями lockout вокруг `services/_lockout.py` (счётчик неудач, окно `LOCKOUT_MINUTES`, сброс при успешном входе, `MAX_FAILED_LOGIN_ATTEMPTS` как порог) — login-flow интеграционно. Generic-хелперы того же модуля (`release_principal_if_expired`, `assert_principal_not_locked`, `register_principal_failure` — используются OAuth client_credentials / bot-token lockout'ом) покрыты отдельным unit-тестом `auth_service/tests/unit/test_lockout_generic_helpers.py`.
+- `server_service/tests/test_server_accounts_endpoints.py` — фактический CRUD `server_account` (6 endpoints), link/unlink M2M (`POST`/`DELETE /server-accounts/{id}/servers`) + ротация пароля под action-based permissions.
 
 > Разделы ниже отражают более ранний снимок и могут отставать. Актуальный test-count и список открытых задач — в `STATUS.md`.
 
@@ -206,8 +206,8 @@
 
 Прорыв в этой итерации: **181 тест** (было 4). Покрыты все реализованные слои —
 endpoints, services, repositories, миграции, dependencies, схемы, секреты, permission
-matrix. Заглушки 501 (`server_accounts`, `inventory`, `installed_packages`,
-`cpu_models`, `os_versions`, `disks`) тестируются как 501.
+matrix. `server_accounts`, `os_versions`, `installed_packages`, `inventory` реализованы
+и покрыты живым CRUD; чистых 501-заглушек на момент актуализации не осталось.
 
 ### Unit-тесты (78)
 
@@ -273,11 +273,9 @@ matrix. Заглушки 501 (`server_accounts`, `inventory`, `installed_package
 
 ### Не покрыто
 
-- **`audit_service.py` в server_service не существует** — STATUS.md фиксирует это
-  как TODO. Cross-service `server_service → loging_service` тестировать пока нечем.
-- `server_accounts`, `inventory`, `installed_packages`, `cpu_models`, `os_versions`,
-  `disks` — все endpoints возвращают 501. Тесты на 501 есть, но реальное CRUD не
-  написано.
+- `cpu_models`, `disks` — отдельных user-facing CRUD endpoints нет (поля живут
+  внутри карточки сервера; ingest идёт через worker inventory). Полный отдельный
+  CRUD не запланирован.
 - Field-level gate `has_sudo=True → Action.GRANT_SUDO` — поведение запланировано в
   STATUS.md, не реализовано.
 - Кэш introspect в server_service — намеренно отсутствует (свежий introspect на каждом запросе, чтобы revoke/ban действовали мгновенно). В auth_service есть identity-cache `_identity_cache` с TTL `IDENTITY_CACHE_TTL_SECONDS` (default 5.0s), не плановая, а штатная фича.

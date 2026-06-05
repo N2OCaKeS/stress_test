@@ -388,7 +388,14 @@ class AuditOutbox:
         `_dropped_cancel_total` — резерв на случай, если в будущем появится
         ветка «пропустить envelope без requeue».
         """
-        assert self._queue is not None
+        # Симметрия с `_drain_loop` / `_drain_remaining`: explicit if-None
+        # guard вместо `assert` — под `python -O` ассерт сносится, а здесь
+        # будет `AttributeError` на `put_nowait`. Если очередь не поднята,
+        # учёта не делаем — batch и committed_keys были собраны вызывающим
+        # `_flush_batch`, который запускается только при работающем outbox'е,
+        # так что в проде сюда с `_queue is None` мы не попадаем.
+        if self._queue is None:
+            return
         # Acquire `_writer_lock` перед чтением `committed_keys`: thread-side
         # `_write_batch_locked` под GIL может ещё крутиться после прилёта
         # `CancelledError` в корутину и пополнять set уже закоммитнутыми
@@ -445,6 +452,13 @@ class AuditOutbox:
         (до `batch_size` events) считается потерянным, даже если БД мгновенно
         бы его приняла — но мы и так в shutdown'е, дополнительные ~poll_interval
         мс держать процесс смысла нет.
+
+        Инвариант на cancel-ветке: `committed_keys` снимается под
+        `_writer_lock`, чтобы дождаться thread-side `_write_batch_locked`,
+        который может пополнить set уже после прилёта `CancelledError`.
+        Симметрия — `_account_cancelled_batch` (drain-loop), он держит тот же
+        контракт. Без acquire был бы двойной учёт: тот же envelope попал бы и
+        в `audit_events` (через `to_thread`), и в `_dropped_shutdown_total`.
         """
         if self._queue is None:
             return

@@ -48,10 +48,16 @@ from src.services import _breaker_lua
 # Транспорт-уровень: то, что breaker'у легитимно «fail-open'ить». Всё
 # остальное — program bug, должно пройти наружу с ERROR-логом, чтобы не
 # маскироваться под недоступность Redis.
+#
+# `EOFError` ловит `asyncio.IncompleteReadError` (его base-class) — это
+# обрыв TCP-потока внутри asyncio.StreamReader, который redis-py может
+# пробросить при разрыве соединения. По смыслу — тот же transport-fail,
+# что и OSError/RedisError, не bug в нашем коде.
 _TRANSPORT_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RedisError,
     OSError,
     asyncio.TimeoutError,
+    EOFError,
 )
 
 # Тип фабрики: вызов без аргументов, возвращает корутину с готовым

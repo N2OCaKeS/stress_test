@@ -35,8 +35,7 @@ async def mark_running(
     * **duplicate enqueue** — если task_id был ``kiq``-нут дважды (по
       ошибке dispatch_task retry в server_service или Redis-replay) и
       первый worker уже завершил его (terminal status), второй worker не
-      должен снова перевести его в RUNNING, обнулить ``last_error`` и
-      пере-запустить impl.
+      должен снова перевести его в RUNNING и пере-запустить impl.
     * **double-claim в multi-worker** — taskiq-broker гарантирует, что
       одно сообщение получит ровно один consumer, но CAS — defence in
       depth на случай мисконфига очереди (visibility timeout / re-enqueue
@@ -77,12 +76,16 @@ async def mark_running(
             status=TaskStatus.RUNNING,
             attempt=next_attempt,
             started_at=now,
-            last_error=None,
             scheduled_retry_at=None,
             worker_id=worker_id,
         )
         .returning(Task.id)
     )
+    # `last_error` не трогаем — на retry в нём лежит сообщение от
+    # `mark_pending_for_retry`, и оператор должен видеть «почему предыдущий
+    # attempt упал». Перезапишется `mark_pending_for_retry`/`mark_failed`
+    # на новом fail'е; на success остаётся как историческая отметка рядом
+    # с финальным `result`.
     result = await db.execute(stmt)
     if result.scalar_one_or_none() is None:
         # CAS не сработал — task в нестандартном статусе. НЕ трогаем
@@ -93,7 +96,6 @@ async def mark_running(
     task.status = TaskStatus.RUNNING
     task.attempt = next_attempt
     task.started_at = now
-    task.last_error = None
     task.scheduled_retry_at = None
     task.worker_id = worker_id
     await db.flush()

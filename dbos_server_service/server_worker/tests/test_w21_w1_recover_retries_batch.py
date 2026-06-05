@@ -98,6 +98,33 @@ class TestParallelReplicasDisjointClaim:
                 assert row.status == TaskStatus.QUEUED
 
 
+class TestBatchClaimByOneReplica:
+    async def test_five_due_rows_get_five_kiqs_in_single_pass(self, monkeypatch):
+        """Один вызов `_recover_due_scheduled_retries_once` поднимает все 5
+        due-row'ов (per-row claim в цикле), у каждого после прохода
+        `scheduled_retry_at=None`."""
+        from src.main import _recover_due_scheduled_retries_once, broker
+
+        ids = await _seed_due(5)
+
+        fake_broker = make_broker()
+        monkeypatch.setattr(broker, "find_task", fake_broker.find_task)
+
+        await _recover_due_scheduled_retries_once()
+
+        kicked = [c.args[0] for c in fake_broker._kiq.call_args_list]
+        assert sorted(kicked) == sorted(ids), (
+            f"kicked={sorted(kicked)} ids={sorted(ids)}"
+        )
+
+        async with AsyncSessionLocal() as session:
+            for tid in ids:
+                row = await task_repo.get_by_id(session, tid)
+                assert row is not None
+                assert row.scheduled_retry_at is None
+                assert row.status == TaskStatus.QUEUED
+
+
 class TestKiqFailureReleasesClaim:
     async def test_kiq_failure_restores_scheduled_retry_at(self, monkeypatch):
         """Если kiq() падает на конкретном task'е, `scheduled_retry_at`

@@ -275,6 +275,25 @@ class TestPKCEFailureModes:
         assert resp.status_code == 403, resp.text
         assert resp.json()["error_code"] == "PKCE_METHOD_INVALID"
 
+    async def test_method_without_challenge_rejected(
+        self, client, admin_token, user_a_token, dept_a,
+    ):
+        """`code_challenge_method=S256` без `code_challenge` — 403.
+
+        Метод без challenge'а не имеет смысла (RFC 7636 §4.3 описывает
+        пару). До фикса метод тихо игнорировался и клиент мог не заметить,
+        что PKCE фактически не активирован.
+        """
+        oauth_client = await _create_authcode_client(
+            client, admin_token, dept_a.id, name="pkce_method_no_challenge_app",
+        )
+        resp = await _authorize(
+            client, user_a_token, oauth_client,
+            challenge=None, method="S256",
+        )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["error_code"] == "PKCE_CHALLENGE_REQUIRED"
+
 
 # ── 3. Backward compat — confidential client без PKCE ───────────────────────
 

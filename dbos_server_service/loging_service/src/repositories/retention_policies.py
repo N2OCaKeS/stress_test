@@ -174,6 +174,17 @@ def apply_active(
     по уже нормализованному значению (ingest-валидатор канонизирует),
     чтобы не терять `ix_audit_events_service` index seek.
 
+    `service != _PROTECTED_SERVICE` фильтр снаружи OR'а — gating-условие,
+    которое исключает loging-self-audit из удаления любой политикой. PG
+    обычно сначала отрабатывает `match_any` (он селективнее по timestamp),
+    а потом дочищает `!=`-anti-filter. На текущей нагрузке (~1M событий)
+    план держится через `ix_audit_events_timestamp`; на 50M-таблице, если
+    `_PROTECTED_SERVICE` начнёт лидировать по cardinality (массовая
+    публикация loging-self-events), стоит добавить partial composite
+    `(timestamp, severity) WHERE service != 'loging_service'`. Сигнал —
+    рост latency retention sweep'а в `_build_retention_sweep_details`
+    audit-row'ах.
+
     DELETE идёт чанками по `chunk_size` строк с коммитом на каждый чанк —
     на append-only журнале в миллионы строк один безлимитный DELETE держал бы
     блокировки и раздувал WAL, тормозя ingest.

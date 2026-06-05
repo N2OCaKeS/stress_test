@@ -1,6 +1,6 @@
 # auth_service · реестр тестов
 
-**Всего тестов**: актуальное число — в `../STATUS.md` / `../TEST_COVERAGE.md`. На момент последней синхронизации Test.md: ~145 файлов под `auth_service/tests/`. Быстрый прогон (`make test-auth`) — ~80–100 сек на свежем стенде. E2E (`make test-auth-e2e`) добавляет ~22 теста и ~2–3 мин (поднимает `auth-service-e2e` + `fetch-cert` + `docker-registry` через профиль compose `e2e`).
+**Всего тестов**: актуальное число — в `../STATUS.md` / `../TEST_COVERAGE.md`. На момент последней синхронизации Test.md: ~155 файлов под `auth_service/tests/`, ~1535 `def test_*` (после параметризации ~1539 passed). Быстрый прогон (`make test-auth`) — ~80–100 сек на свежем стенде. E2E (`make test-auth-e2e`) добавляет ~22 теста и ~2–3 мин (поднимает `auth-service-e2e` + `fetch-cert` + `docker-registry` через профиль compose `e2e`).
 
 Файл фиксирует структуру каталогов и состав групп. Перечень тестовых функций ниже — снимок, точечные имена и счётчики могут эволюционировать вместе с фичами; для актуальной картины смотреть `STATUS.md` / `TEST_COVERAGE.md` и сам код тестов.
 
@@ -20,24 +20,24 @@ docker compose -f auth_service/tests/docker-compose.test.yml run --rm test-runne
 
 | Каталог | Файлы | Тесты | Зона |
 |---|---:|---:|---|
-| `auth/` | 9 | 73 | login / logout / refresh / me / health / token form / concurrency / admin guard / account-admin без департамента |
-| `authorization/` | 2 | 48 | introspect, service-access, edge-кейсы, service API key |
-| `bots/` | 5 | 53 | боты, bot-токены, ролевая модель, lifecycle, edge |
-| `core/` | 15 | 268 | юниты: security, redaction, audit context, schemas, dependencies, IDs, utils, config |
-| `db/` | 1 | 16 | Alembic up/down, инварианты колонок |
-| `departments/` | 1 | 10 | CRUD департамента и грантов сервисов |
-| `docker/` | 3 | 50 | docker-config, docker-token, edge (PEM/JWKS) |
+| `auth/` | 13 | 89 | login / logout / refresh / me / health / token form / concurrency / admin guard / account-admin без департамента |
+| `authorization/` | 3 | 58 | introspect, service-access, edge-кейсы, service API key |
+| `bots/` | 19 | 125 | боты, bot-токены, ролевая модель, lifecycle, edge |
+| `core/` | 20 | 337 | юниты: security, redaction, audit context, schemas, dependencies, IDs, utils, config |
+| `db/` | 2 | 23 | Alembic up/down, инварианты колонок |
+| `departments/` | 1 | 15 | CRUD департамента и грантов сервисов |
+| `docker/` | 7 | 87 | docker-config, docker-token, edge (PEM/JWKS) |
 | `e2e/` | 1 | 22 | реальный registry + auth-service-e2e |
 | `error_format/` | 1 | 7 | единый envelope ошибок + X-Request-ID |
-| `groups/` | 1 | 30 | группы, members, грант сервисов и ролей на группу |
-| `middleware/` | 1 | 11 | rate limit на login/refresh/docker/token |
-| `oauth2/` | 7 | 86 | clients, authorization_code, PKCE, redirect_uri, code replay, user-context |
-| `services/` | 7 | 81 | services, service-roles, bulk-roles, audit pool, hardening, cross-dept |
-| `tokens/` | 1 | 11 | Personal Access Tokens |
-| `users/` | 10 | 147 | CRUD, ban/unban, reset-password, roles, group attach, list, permissions endpoint, identity/ban cache |
-| **итого** | **65** | **913 + параметризация = 943** | |
+| `groups/` | 4 | 52 | группы, members, грант сервисов и ролей на группу |
+| `middleware/` | 1 | 13 | rate limit на login/refresh/docker/token |
+| `oauth2/` | 18 | 124 | clients, authorization_code, PKCE, redirect_uri, code replay, user-context |
+| `services/` | 37 | 305 | services, service-roles, bulk-roles, audit pool, hardening, cross-dept, lockout helpers |
+| `tokens/` | 4 | 17 | Personal Access Tokens (CRUD, expires_at, recreate-after-revoke, integrity-race) |
+| `users/` | 19 | 224 | CRUD, ban/unban, reset-password, roles, group attach, list, permissions endpoint, identity/ban cache, sessions management |
+| **итого** | **~155** | **~1535 + параметризация ≈ 1539** | |
 
-> Число «913» — это `def test_*` через grep. Pytest с параметризацией (`@pytest.mark.parametrize`, `hypothesis`) разворачивает их до **943 passed**.
+> Числа в строках выше — ориентировочные снимки (`def test_*` через grep, файлы через `find`). Точные актуальные значения — в `STATUS.md` / `TEST_COVERAGE.md`; pytest-параметризация (`@pytest.mark.parametrize`, `hypothesis`) разворачивает их до passed-числа.
 
 ---
 
@@ -376,3 +376,4 @@ Account_admin/dept_admin/regular user добавляют/удаляют учас
 - `refresh_token` grant в `oauth2/token` — не реализован в `src/services/oauth_service.py`.
 - E2E с docker-registry требует профиля `e2e` в `docker-compose.test.yml`, поэтому пропускается в обычном `make test-auth`.
 - Производительность / нагрузочные — не входят в этот реестр.
+- Точечные coverage-gap'ы из аудитных волн фиксируются в `obsidian/TODO.md` (секции `## 🔎 Аудит кода …`), Test.md их пофайлово не дублирует — `STATUS.md` / `TEST_COVERAGE.md` остаются единственным актуальным срезом покрытия.

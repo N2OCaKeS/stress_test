@@ -703,7 +703,7 @@ Auth: Bearer (user JWT; `actor_type=oauth_client` отбивается `require_
 
 Response: 302 redirect на `{redirect_uri}?code=…&state=…`.
 
-Errors: `UNSUPPORTED_RESPONSE_TYPE` (400), `REDIRECT_URI_MISMATCH` (403) — uri не в whitelist'е клиента, `OAUTH_CLIENT_INVALID` (401) — нет такого client_id или клиент деактивирован, `GRANT_TYPE_NOT_ALLOWED` (403) — `authorization_code` не в `grant_types` клиента, `PKCE_REQUIRED` (403) — для public-клиента, `PKCE_METHOD_INVALID` (403) — public требует `S256`, confidential — `S256`/`plain`, `USER_CONTEXT_REQUIRED` (403) — m2m-токен на user-endpoint.
+Errors: `UNSUPPORTED_RESPONSE_TYPE` (400), `REDIRECT_URI_MISMATCH` (403) — uri не в whitelist'е клиента, `OAUTH_CLIENT_INVALID` (401) — нет такого client_id или клиент деактивирован, `GRANT_TYPE_NOT_ALLOWED` (403) — `authorization_code` не в `grant_types` клиента, `PKCE_REQUIRED` (403) — для public-клиента, `PKCE_CHALLENGE_REQUIRED` (403) — `code_challenge_method` передан без `code_challenge`, `PKCE_METHOD_INVALID` (403) — public требует `S256`, confidential — `S256`/`plain`, `USER_CONTEXT_REQUIRED` (403) — m2m-токен на user-endpoint.
 
 **`state` — обязанности клиента.** Параметр `state` сервер прозрачно прокидывает обратно в `redirect_uri` без интерпретации (RFC 6749 §10.12). Защита от CSRF на этом канале — на стороне клиента: клиент **обязан** генерировать криптостойкий `state` (например `secrets.token_urlsafe(32)`), привязывать его к сессии (cookie/session storage) и при колбэке проверять равенство `state`-присланного и сохранённого. Сервер ограничивает длину 2048 символами, но не валидирует содержимое и не помнит выданные значения.
 
@@ -911,6 +911,7 @@ Auth: public. Response: JWKS (RS256).
 - `GRANT_TYPE_NOT_ALLOWED` (403) — grant не в `client.grant_types`.
 - `INVALID_GRANT` (400) — PKCE verifier mismatch / code-row marked used между check и mark.
 - `PKCE_REQUIRED` (403) — public client без `code_challenge`.
+- `PKCE_CHALLENGE_REQUIRED` (403) — `code_challenge_method` передан без `code_challenge` (метод имеет смысл только в паре с challenge).
 - `PKCE_METHOD_INVALID` (403) — public требует `S256`, confidential — `S256`/`plain`.
 
 ### Docker

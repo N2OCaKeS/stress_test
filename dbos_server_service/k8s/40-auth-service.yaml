@@ -72,14 +72,16 @@ spec:
             - configMapRef:
                 name: auth-service-config
           env:
-            - name: DATABASE_URL
-              value: "postgresql+psycopg://$(AUTH_DB_USER):$(AUTH_DB_PASSWORD)@auth-postgres:5432/auth_db"
+            # AUTH_DB_USER/PASSWORD объявлены до DATABASE_URL — kubelet
+            # подставляет $(VAR) только из ранее объявленных env-записей.
             - name: AUTH_DB_USER
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: AUTH_DB_USER }
             - name: AUTH_DB_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: AUTH_DB_PASSWORD }
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(AUTH_DB_USER):$(AUTH_DB_PASSWORD)@auth-postgres:5432/auth_db"
             - name: SECRET_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: AUTH_SECRET_KEY }
@@ -108,6 +110,7 @@ spec:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }
+            # RATE_LIMIT_STORAGE_URI должен идти после REDIS_PASSWORD для $(VAR)-expansion.
             - name: RATE_LIMIT_STORAGE_URI
               value: "redis://:$(REDIS_PASSWORD)@redis:6379/1"
           # Миграции вынесены в Job auth-migrate (см. 45-migrations.yaml).

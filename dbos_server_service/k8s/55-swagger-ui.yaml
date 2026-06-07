@@ -1,0 +1,75 @@
+# Общий Swagger UI для трёх сервисов: auth / logging / server.
+#
+# Spec'ы лежат в ConfigMap `dbos-openapi-specs` (auth.json, logging.json,
+# server.json) — генерируются скриптом scripts/k8s/dump_openapi.sh из
+# работающих pod'ов через `python -c app.openapi()`. Регенерация — только
+# когда меняется набор endpoint'ов; в проде /openapi.json у сервисов отключён
+# намеренно.
+#
+# Доступ: https://<host>/docs (через Ingress, см. 50-ingress.yaml).
+# В dropdown'е переключение между Auth / Logging / Server.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dbos-swagger-ui
+  namespace: dbos
+  labels:
+    app: dbos-swagger-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dbos-swagger-ui
+  template:
+    metadata:
+      labels:
+        app: dbos-swagger-ui
+    spec:
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        runAsNonRoot: true
+      containers:
+        - name: swagger-ui
+          image: swaggerapi/swagger-ui:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: BASE_URL
+              value: /docs
+            - name: URLS
+              value: '[{"url":"/docs/specs/auth.json","name":"auth_service"},{"url":"/docs/specs/logging.json","name":"loging_service"},{"url":"/docs/specs/server.json","name":"server_service"}]'
+            - name: URLS_PRIMARY_NAME
+              value: auth_service
+            - name: PERSIST_AUTHORIZATION
+              value: "true"
+            - name: DEEP_LINKING
+              value: "true"
+          volumeMounts:
+            - name: specs
+              mountPath: /usr/share/nginx/html/specs
+              readOnly: true
+          resources:
+            requests: { cpu: "10m", memory: "32Mi" }
+            limits:   { cpu: "200m", memory: "128Mi" }
+      volumes:
+        - name: specs
+          configMap:
+            name: dbos-openapi-specs
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dbos-swagger-ui
+  namespace: dbos
+spec:
+  type: ClusterIP
+  selector:
+    app: dbos-swagger-ui
+  ports:
+    - port: 8080
+      targetPort: 8080

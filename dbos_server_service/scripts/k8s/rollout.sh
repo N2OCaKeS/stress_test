@@ -11,6 +11,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="${1:-all}"
+K3S_BIN="$(command -v k3s || echo /usr/local/bin/k3s)"
 
 build_one() {
     local svc=$1
@@ -19,7 +20,7 @@ build_one() {
     docker build -t "dbos/${svc}:latest" -f "$dir/docker/Dockerfile" "$dir"
     local tmp=$(mktemp)
     docker save "dbos/${svc}:latest" -o "$tmp"
-    sudo k3s ctr images import "$tmp"
+    sudo "$K3S_BIN" ctr images import "$tmp"
     rm -f "$tmp"
 }
 

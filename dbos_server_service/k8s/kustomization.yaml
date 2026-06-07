@@ -6,6 +6,8 @@ namespace: dbos
 resources:
   - 00-namespace.yaml
   - 10-postgres-auth.yaml
+  - 10-postgres-server.yaml
+  - 10-postgres-worker.yaml
   - 11-postgres-logging.yaml
   - 12-redis.yaml            # Redis для taskiq broker + slowapi rate-limit storage
   - 20-secrets.yaml          # генерируется scripts/k8s/gen_secrets.sh
@@ -17,6 +19,7 @@ resources:
   - 70-pdb.yaml              # PodDisruptionBudget на все сервисы с replicas=2
   - 80-networkpolicy.yaml    # default-deny ingress + явные allow между подграфами
   - 50-ingress.yaml          # TLS-secret'ы выпускает cert-manager (91/92-*.yaml)
+  - 55-swagger-ui.yaml       # общий Swagger UI для трёх сервисов на /docs
   - 100-postgres-backup.yaml # CronJob pg_dump для auth/logging кластеров
   - 101-backup-pvc.yaml      # PV под бэкапы (общий на оба CronJob'а)
 

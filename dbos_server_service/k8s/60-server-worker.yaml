@@ -82,19 +82,19 @@ spec:
             - configMapRef:
                 name: server-worker-config
           env:
-            # Собственная БД worker'а (tasks, outbox, heartbeats)
-            - name: DATABASE_URL
-              value: "postgresql+psycopg://$(WORKER_DB_USER):$(WORKER_DB_PASSWORD)@worker-postgres:5432/worker_db"
+            # *_USER/*_PASSWORD/REDIS_PASSWORD объявлены до DATABASE_URL и
+            # REDIS_URL — kubelet раскрывает $(VAR) только из ранее объявленных.
             - name: WORKER_DB_USER
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: WORKER_DB_USER }
             - name: WORKER_DB_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: WORKER_DB_PASSWORD }
-            # taskiq broker (Redis с обязательным password в prod).
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(WORKER_DB_USER):$(WORKER_DB_PASSWORD)@worker-postgres:5432/worker_db"
             - name: REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
             # PAT (bot-token) для bearer-аутентификации worker'а в /internal/*

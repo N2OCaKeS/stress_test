@@ -5,6 +5,7 @@ metadata:
   namespace: dbos
 data:
   APP_ENV: production
+  APP_DEBUG: "false"
   APP_HOST: 0.0.0.0
   APP_PORT: "8001"
   APP_LOG_LEVEL: INFO
@@ -71,14 +72,16 @@ spec:
             - configMapRef:
                 name: logging-service-config
           env:
-            - name: DATABASE_URL
-              value: "postgresql+psycopg://$(LOGGING_DB_USER):$(LOGGING_DB_PASSWORD)@logging-postgres:5432/logging_db"
+            # LOGGING_DB_USER/PASSWORD объявлены до DATABASE_URL — $(VAR) expansion
+            # резолвит только предыдущие env.
             - name: LOGGING_DB_USER
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_USER }
             - name: LOGGING_DB_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: LOGGING_DB_PASSWORD }
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(LOGGING_DB_USER):$(LOGGING_DB_PASSWORD)@logging-postgres:5432/logging_db"
             # Per-service ingest keys (единственный режим service-to-service auth).
             # JSON map identity → bearer. Operator должен синхронизировать ключи
             # с outbound LOGGING_SERVICE_API_KEY каждого внутреннего caller'а:

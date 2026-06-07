@@ -33,14 +33,16 @@ for image in "${!SERVICES[@]}"; do
     docker save "dbos/${image}:${TAG}" -o "$TMP/${image}.tar"
 done
 
+K3S_BIN="$(command -v k3s || echo /usr/local/bin/k3s)"
+
 for image in "${!SERVICES[@]}"; do
     echo "→ Импортируем dbos/${image}:${TAG} в k3s containerd..."
-    sudo k3s ctr images import "$TMP/${image}.tar"
+    sudo "$K3S_BIN" ctr images import "$TMP/${image}.tar"
 done
 
 echo ""
 echo "✓ Образы готовы и доступны k3s:"
-sudo k3s ctr images list | grep -E "dbos/(auth|logging|server)-(service|worker)" || true
+sudo "$K3S_BIN" ctr images list | grep -E "dbos/(auth|logging|server)-(service|worker)" || true
 
 echo ""
 echo "  Чтобы развернуть/обновить: scripts/k8s/deploy.sh"

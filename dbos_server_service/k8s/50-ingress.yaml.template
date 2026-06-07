@@ -7,15 +7,17 @@ metadata:
   name: dbos-ingress
   namespace: dbos
   annotations:
-    # Traefik: редирект HTTP → HTTPS
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
+    # cert-manager выпускает leaf для __INGRESS_HOST__ через внутренний CA
+    # (dbos-ca-issuer). Авто-ренью за 30 дней до истечения.
+    cert-manager.io/issuer: dbos-ca-issuer
 spec:
   ingressClassName: traefik
   tls:
     - hosts:
         - __INGRESS_HOST__
-      secretName: dbos-tls
+      secretName: dbos-ingress-tls
   rules:
     - host: __INGRESS_HOST__
       http:
@@ -34,6 +36,20 @@ spec:
                 name: logging-service
                 port:
                   number: 8001
+          - path: /api/server
+            pathType: Prefix
+            backend:
+              service:
+                name: server-service
+                port:
+                  number: 8002
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: dbos-swagger-ui
+                port:
+                  number: 8080
 
 ---
 # Отдельный Ingress на HTTP (80) — редиректит на HTTPS

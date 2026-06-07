@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from src.core import http_clients
 from src.db.session import engine
-from src.services import audit_service, worker_client
+from src.services import audit_service, metrics, worker_client
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +78,15 @@ async def _ping_audit_liveness() -> str:
         "уезжает в payload для оператора. k8s readiness probe."
     ),
 )
-async def ready() -> dict[str, str]:
-    """БД доступна — SELECT 1 проходит. Redis/audit — best-effort, в payload."""
+async def ready() -> dict:
+    """БД доступна — SELECT 1 проходит. Redis/audit — best-effort, в payload.
+
+    В payload также уезжают process-local counters: глубина outbox'а на момент
+    последнего dispatch'а и `worker_dispatch_orphans_total` (cross-DB worker-row
+    без outbox-row после compensation-фейла). Это per-process snapshot; при
+    нескольких pod'ах суммирование — забота внешнего агрегатора (Prometheus +
+    `kubectl get pods -l ...`).
+    """
     async with engine.connect() as conn:
         await conn.execute(text("SELECT 1"))
     redis_status = await _ping_worker_redis()
@@ -90,4 +97,6 @@ async def ready() -> dict[str, str]:
         "db": "ok",
         "worker_redis": redis_status,
         "audit": audit_status,
+        "dispatch_outbox_pending_depth": metrics.get_dispatch_outbox_pending_depth(),
+        "worker_dispatch_orphans_total": metrics.get_worker_dispatch_orphans_total(),
     }

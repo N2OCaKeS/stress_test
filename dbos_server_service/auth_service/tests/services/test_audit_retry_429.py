@@ -210,3 +210,63 @@ async def test_fallback_path_retries_on_429(monkeypatch):
 
     assert len(received) == 1
     assert audit_service.get_dropped_429_total() == 0
+
+
+def test_parse_retry_after_seconds_valid():
+    """Целочисленный delta-seconds — float, неотрицательный, cap'нутый на 30."""
+    assert audit_service._parse_retry_after_seconds("5") == 5.0
+    assert audit_service._parse_retry_after_seconds("0") == 0.0
+    # Cap на 30s.
+    assert audit_service._parse_retry_after_seconds("3600") == 30.0
+
+
+def test_parse_retry_after_seconds_invalid():
+    """None / пустота / нечисло / HTTP-date / отрицательное → None."""
+    assert audit_service._parse_retry_after_seconds(None) is None
+    assert audit_service._parse_retry_after_seconds("") is None
+    assert audit_service._parse_retry_after_seconds("   ") is None
+    assert audit_service._parse_retry_after_seconds("Wed, 21 Oct 2026 07:28:00 GMT") is None
+    assert audit_service._parse_retry_after_seconds("-1") is None
+
+
+@pytest.mark.asyncio
+async def test_retry_respects_retry_after_header(monkeypatch):
+    """Retry-After в 429-ответе → берётся max(retry_after, backoff).
+
+    Если loging-сервер просит подождать дольше нашего базового бэкоффа —
+    подчиняемся (с cap'ом 30s в `_parse_retry_after_seconds`).
+    """
+    statuses = iter([429, 201])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        code = next(statuses)
+        if code == 201:
+            return httpx.Response(201, json={"accepted": True})
+        return httpx.Response(429, headers={"Retry-After": "10"}, json={"error": "rate_limited"})
+
+    pooled = httpx.AsyncClient(
+        base_url="http://loging-mock",
+        transport=httpx.MockTransport(handler),
+        timeout=2.0,
+    )
+    monkeypatch.setattr(audit_service, "_audit_client", pooled)
+
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(audit_service.asyncio, "sleep", fake_sleep)
+
+    try:
+        await audit_service._send_to_logging_service(
+            {"action": "user.login"}, "http://loging-mock", "k",
+        )
+    finally:
+        await pooled.aclose()
+
+    # Один retry → один sleep. Должен быть >= 10s (Retry-After), а не базовый 0.5.
+    assert len(sleeps) == 1
+    assert sleeps[0] >= 10.0, (
+        f"Retry-After=10 должен победить базовый backoff ~0.5s, got {sleeps[0]}"
+    )

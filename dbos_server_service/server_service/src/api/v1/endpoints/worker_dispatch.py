@@ -9,7 +9,8 @@ SSH-apply). Дисптачи через `worker_client.dispatch_task`:
 * ``POST /servers/{id}/inventory/sync``    → `inventory.sync`
   (full SSH-probe: lscpu/lsblk/os-release).
 * ``POST /servers/{id}/users/inventory``   → `users.inventory`
-  (getent → reconcile в server_accounts).
+  (getent → reconcile в server_accounts; роут живёт в `endpoints/inventory.py`,
+  здесь упомянут только для полноты карты диспатчей).
 * ``POST /server-accounts/{id}/rotate``    → `account.rotate_password`
   (worker: generate → SSH chpasswd → submit ciphertext; точечная
   `?server_id=` либо массовый fan-out на все linked серверы).
@@ -313,6 +314,38 @@ async def _dispatch_for_server(
     return {"task_id": task_id, "status": "queued"}
 
 
+def _decommissioned_account_dispatch_guard(
+    *,
+    server,
+    account_id: str,
+    audit_action: str,
+    operation: str,
+) -> None:
+    """Отдельный decommissioned-gate для account-dispatch'ей.
+
+    Вынесен из `_resolve_account_and_server`, потому что dispatch'ам, у которых
+    есть `Idempotency-Key`, decommission-проверку надо делать ПОСЛЕ replay'я
+    (иначе повторный POST после decommission'а отвечает 409 вместо existing
+    task_id, retry-семантика ломается). Без ключа порядок прежний.
+    """
+    if server.status != ServerStatus.DECOMMISSIONED:
+        return
+    audit_service.emit(
+        audit_action, target_id=account_id, target_type="server_account",
+        status="failure", allowed=True,
+        details={
+            "reason": "decommissioned",
+            "server_id": server.id,
+            "operation": operation,
+            "department_id": server.department_id,
+        },
+    )
+    raise ConflictError(
+        error_code="SERVER_DECOMMISSIONED",
+        message="Server is decommissioned and cannot accept worker operations",
+    )
+
+
 async def _resolve_account_and_server(
     *,
     db: AsyncSession,
@@ -322,6 +355,7 @@ async def _resolve_account_and_server(
     action: str,
     audit_action: str,
     operation: str,
+    check_decommissioned: bool = True,
 ):
     """Permission + visibility + dept-isolation для пары account+server.
 
@@ -330,6 +364,10 @@ async def _resolve_account_and_server(
     `account_rotate_password_dispatch`: permission ДО visibility (иначе
     enumeration), затем dept-isolated lookup аккаунта, проверка что
     `server_id` среди привязанных, decommissioned-gate.
+
+    `check_decommissioned=False` отключает финальный decommission-check —
+    caller тогда отвечает за `_decommissioned_account_dispatch_guard` после
+    своей idempotency-replay-ветки.
     """
     with emit_denied_on_authz_error(
         audit_action,
@@ -385,20 +423,12 @@ async def _resolve_account_and_server(
             },
         )
         raise
-    if server.status == ServerStatus.DECOMMISSIONED:
-        audit_service.emit(
-            audit_action, target_id=account_id, target_type="server_account",
-            status="failure", allowed=True,
-            details={
-                "reason": "decommissioned",
-                "server_id": server.id,
-                "operation": operation,
-                "department_id": server.department_id,
-            },
-        )
-        raise ConflictError(
-            error_code="SERVER_DECOMMISSIONED",
-            message="Server is decommissioned and cannot accept worker operations",
+    if check_decommissioned:
+        _decommissioned_account_dispatch_guard(
+            server=server,
+            account_id=account_id,
+            audit_action=audit_action,
+            operation=operation,
         )
     return account, server
 
@@ -521,38 +551,16 @@ async def _dispatch_account_provision(
       `server.prepare` (bootstrap_creds_key).
     """
     operation = "provision"
+    # decommissioned-check и account_has_no_password откладываем — Idempotency-Key
+    # replay должен отработать ДО них. Повторный POST с тем же ключом после
+    # decommission'а / удаления пароля обязан вернуть existing task_id, иначе
+    # клиент видит 409 на ретрае собственной успешной операции. Если ключа
+    # нет — гарды ниже отбоят как раньше.
     account, server = await _resolve_account_and_server(
         db=db, identity=identity, account_id=account_id, server_id=server_id,
         action=Action.CREATE, audit_action=audit_action, operation=operation,
+        check_decommissioned=False,
     )
-
-    # Discovered без сохранённого пароля и без явного force_password —
-    # fail-fast 409 ДО любых side-effect'ов: ни stash в Redis, ни savepoint,
-    # ни generation. Caller знает что делает: либо ротировать пароль через
-    # `/rotate_password`, либо явно передать `?force_password=true`.
-    if (
-        account.source == AccountSource.DISCOVERED.value
-        and account.password_encrypted is None
-        and not force_password
-    ):
-        audit_service.emit(
-            audit_action, target_id=account_id, target_type="server_account",
-            status="denied", allowed=False,
-            details={
-                "reason": "account_has_no_password",
-                "server_id": server.id,
-                "operation": operation,
-                "department_id": server.department_id,
-            },
-        )
-        raise ConflictError(
-            error_code="ACCOUNT_HAS_NO_PASSWORD",
-            message=(
-                "Discovered account has no stored password; rotate the "
-                "password first or pass ?force_password=true to generate a "
-                "new one and overwrite the on-host password via chpasswd"
-            ),
-        )
 
     idempotency_key = read_idempotency_key(request)
     # Pre-check Idempotency-Key до любой generation creds. Если клиент
@@ -611,6 +619,40 @@ async def _dispatch_account_provision(
                 "task_id": existing_id,
                 "status": "queued",
             }
+
+    # Idempotency-replay не сработал (ключа нет, либо ключ есть, но task'и
+    # под ним ещё нет). Теперь применяем гарды, которые должны блокировать
+    # новый dispatch, но не должны мешать replay'ю существующего:
+    # decommissioned-server и discovered+no-password.
+    _decommissioned_account_dispatch_guard(
+        server=server,
+        account_id=account_id,
+        audit_action=audit_action,
+        operation=operation,
+    )
+    if (
+        account.source == AccountSource.DISCOVERED.value
+        and account.password_encrypted is None
+        and not force_password
+    ):
+        audit_service.emit(
+            audit_action, target_id=account_id, target_type="server_account",
+            status="denied", allowed=False,
+            details={
+                "reason": "account_has_no_password",
+                "server_id": server.id,
+                "operation": operation,
+                "department_id": server.department_id,
+            },
+        )
+        raise ConflictError(
+            error_code="ACCOUNT_HAS_NO_PASSWORD",
+            message=(
+                "Discovered account has no stored password; rotate the "
+                "password first or pass ?force_password=true to generate a "
+                "new one and overwrite the on-host password via chpasswd"
+            ),
+        )
 
     payload = _build_account_task_payload(
         server=server, account=account, include_attrs=True,
@@ -1091,17 +1133,6 @@ async def server_prepare_dispatch(
             )
         raise
 
-    if server.status == ServerStatus.DECOMMISSIONED:
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={"reason": "decommissioned"},
-        )
-        raise ConflictError(
-            error_code="SERVER_DECOMMISSIONED",
-            message="Server is decommissioned and cannot accept worker operations",
-        )
-
     idempotency_key = read_idempotency_key(request)
 
     # Idempotency-replay должен идти ДО `store_prepare_creds`. Иначе любой
@@ -1109,6 +1140,10 @@ async def server_prepare_dispatch(
     # под orphan-ключами, которые задача никогда не прочтёт — каждый висит
     # PREPARE_CREDS_TTL_SECONDS (900s) до естественного истечения. Caller с
     # валидным `update` за это окно может забить Redis plaintext'ом.
+    #
+    # Также replay должен идти ДО decommissioned-check'а: повторный POST с
+    # тем же ключом после decommission'а обязан вернуть existing task_id,
+    # иначе retry-семантика клиента ломается на 409 SERVER_DECOMMISSIONED.
     if idempotency_key is not None:
         existing = await worker_client._get_task_by_idempotency_key(idempotency_key)
         if existing is not None:
@@ -1141,6 +1176,20 @@ async def server_prepare_dispatch(
                 },
             )
             return ServerPrepareResponse(task_id=existing_id, status="queued")
+
+    # Idempotency-replay не сработал. Decommissioned-check теперь блокирует
+    # новый dispatch — но не мешает retry'ю существующей задачи (см. ветку
+    # выше, она уже return'нула existing task_id для replay'я).
+    if server.status == ServerStatus.DECOMMISSIONED:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "decommissioned"},
+        )
+        raise ConflictError(
+            error_code="SERVER_DECOMMISSIONED",
+            message="Server is decommissioned and cannot accept worker operations",
+        )
 
     # base64 уже провалидирован схемой; декодируем plaintext для воркера.
     # Креды НЕ кладём в task-payload (иначе plaintext осел бы в worker-БД).

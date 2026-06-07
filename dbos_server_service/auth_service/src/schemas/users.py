@@ -17,7 +17,18 @@ class InitialRoleAssignment(BaseModel):
 
 class UserCreate(BaseModel):
     """Тело `POST /users`."""
-    username: str = Field(min_length=3, max_length=128, description="Уникальный username (3..128 символов).")
+    # `pattern` отбивает `\n`, `\0`, control chars, Unicode-homoglyphs
+    # (кириллический `а` против латинского `a`) и пробелы. Без него UI/SIEM
+    # путали бы юзеров `admin` и `аdmin`; перенос строки в username ломал
+    # log-parser'ы как `Banner Grabbing`. Допустимый алфавит — latin
+    # alphanumerics + `_`, `-`, `.`, чтобы корпоративные `first.last`
+    # имена проходили.
+    username: str = Field(
+        min_length=3,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_\-\.]+$",
+        description="Уникальный username (3..128 символов, латиница + цифры + `_-.`).",
+    )
     password: str = Field(min_length=8, description="Пароль в plaintext. Минимум 8 символов, буквы + цифры. Хэшируется Argon2id перед записью.")
     email: EmailStr | None = Field(default=None, description="Email (опционально).")
     # У account_admin юзеров нет отдела; для всех остальных ролей department_id обязателен

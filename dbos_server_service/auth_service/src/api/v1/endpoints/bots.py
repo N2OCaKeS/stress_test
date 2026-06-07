@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AnyAdmin
+from src.dependencies.auth import AnyAdmin, require_auth_management_scope
 from src.dependencies.db import get_db
 from src.utils.pagination import PaginationParams, pagination_params
 from src.schemas.bots import (
@@ -19,7 +19,16 @@ from src.schemas.bots import (
 from src.schemas.common import OkResponse
 from src.services import bot_service
 
-router = APIRouter(prefix="/bots")
+# Router-level scope-guard: OAuth2 authorization_code JWT без `auth_service`
+# в approved scope'ах не должен попадать ни в одну bot-ручку (включая GET-list),
+# чтобы узко-scoped third-party app не вычитывал департаментские
+# service-account'ы. Не-OAuth токены (login, refresh, PAT) — пропуск
+# (см. `require_auth_management_scope` в dependencies/auth.py). `AnyAdmin`
+# в каждой ручке остаётся — он держит role-check сверху scope-check'а.
+router = APIRouter(
+    prefix="/bots",
+    dependencies=[Depends(require_auth_management_scope)],
+)
 
 
 @router.post(

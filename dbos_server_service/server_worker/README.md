@@ -225,7 +225,7 @@ make test-worker
 |---|---|---|
 | `APP_ENV` | `local` | `production` включает REDIS_URL password-validator, https-guard для outbound URL и обязательность `LOGGING_SERVICE_API_KEY` |
 | `DATABASE_URL` | — | async DSN к `dev_server_worker` |
-| `SERVER_SERVICE_DATABASE_URL` | — | cross-DB DSN на БД `server_service` для poller'а `dispatch_outbox`. Если не задан — fallback на `DATABASE_URL` |
+| `SERVER_SERVICE_DATABASE_URL` | — | cross-DB DSN на БД `server_service` для poller'а `dispatch_outbox`. Если не задан — fallback на `DATABASE_URL`. **Minimum-grant:** учётка из этого DSN должна иметь только `SELECT` на таблицу `dispatch_outbox` (worker лочит row через `FOR UPDATE SKIP LOCKED` и пишет `dispatched_at`/`attempts`/`last_error` — для этого нужны ещё `UPDATE` на те же колонки). Никаких прав на другие таблицы server_service'а быть не должно — компрометация worker'а не даёт доступ к `servers`/`server_account`/`ipmi_controllers` напрямую |
 | `DB_POOL_SIZE` | `5` | SQLAlchemy pool_size воркер-engine'а; рассчитан на 1-2 handler'а + heartbeat/sweep/outbox-publisher. При росте `WORKER_HANDLER_CONCURRENCY` или `taskiq --workers` — поднимать |
 | `DB_MAX_OVERFLOW` | `10` | burst-кап поверх `DB_POOL_SIZE` под короткие пики (fan-out reconcile, drain) |
 | `REDIS_URL` | `redis://redis:6379/0` | taskiq broker. В `production` обязан содержать password-сегмент (`redis://:<pwd>@host:port/db`) — иначе старт падает на validator'е |

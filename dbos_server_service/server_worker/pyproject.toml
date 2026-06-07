@@ -30,3 +30,6 @@ build-backend = "poetry.core.masonry.api"
 testpaths = ["tests"]
 addopts = "--tb=short -q"
 asyncio_mode = "auto"
+markers = [
+    "enforce_bmc_ssrf_guard: keep the real ensure_bmc_host_allowed (no monkeypatch)",
+]

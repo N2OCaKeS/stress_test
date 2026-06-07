@@ -86,6 +86,30 @@ def _reset_emit_tasks_overflow_for_tests() -> None:
 # число дополнительных попыток сверх первой; итого 3 попытки.
 _RETRY_DELAYS_ON_429 = (0.5, 1.5)
 
+# Cap на Retry-After, чтобы broken upstream не подвесил emit на минуты.
+_RETRY_AFTER_CAP_SECONDS = 30.0
+
+
+def _parse_retry_after_seconds(value: str | None) -> float | None:
+    """Распарсить `Retry-After` (только целочисленный delta-seconds).
+
+    HTTP-date форма (RFC 7231) намеренно игнорируется: некоторые прокси
+    отдают сломанный формат, парсинг с учётом часовых поясов добавит
+    отдельный класс ошибок в hot-path аудита. Cap'имся на 30s.
+    """
+    if not value:
+        return None
+    v = value.strip()
+    if not v:
+        return None
+    try:
+        seconds = float(v)
+    except ValueError:
+        return None
+    if seconds < 0:
+        return None
+    return min(seconds, _RETRY_AFTER_CAP_SECONDS)
+
 # Сколько событий отброшено после исчерпания retry-бюджета на 429.
 # Монотонный счётчик за время жизни процесса. Ненулевое значение в проде
 # сигналит, что loging_service режет rate-limit'ом наши audit-emit'ы.
@@ -131,6 +155,23 @@ def _reset_refresh_reuse_for_tests() -> None:
     _refresh_reuse_total = 0
 
 
+def _fallback_summary(payload: dict) -> dict:
+    """Минимальное представление audit-payload'а для stdout-fallback'а.
+
+    Полный sanitized payload содержит username/department_id/allowed_services/
+    platform_role — даже после `redact()` это PII-плотная связка, которую SIEM
+    повторно увидит из stdout-инжеста, если loging_service временно недоступен.
+    Для расследования инцидента (что пытались сделать и кто) достаточно
+    `action/actor_id/status` — остальные поля найдутся в DB-логах после того,
+    как loging встанет.
+    """
+    return {
+        "action": payload.get("action"),
+        "actor_id": payload.get("actor_id"),
+        "status": payload.get("status"),
+    }
+
+
 async def _post_once(
     client: httpx.AsyncClient | None,
     url: str,
@@ -162,9 +203,11 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
     для unit-тестов, которые импортят модуль до lifespan startup.
 
     На 429 от loging_service делаем до двух дополнительных попыток с
-    exponential backoff (0.5s, 1.5s) ± jitter. После трёх подряд 429 —
-    drop в WARNING + инкремент `_audit_dropped_429`. Любая транспортная
-    ошибка → drop сразу (best-effort, не блокируем main-flow).
+    exponential backoff (0.5s, 1.5s) ± jitter. Если в ответе есть числовой
+    `Retry-After` (delta-seconds) — берём `max(retry_after, backoff)`,
+    HTTP-date форма игнорируется. После трёх подряд 429 — drop в WARNING +
+    инкремент `_audit_dropped_429`. Любая транспортная ошибка → drop сразу
+    (best-effort, не блокируем main-flow).
     """
     headers = bearer_header(api_key)
     client = _audit_client
@@ -174,20 +217,22 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
             if response.status_code != 429:
                 return
             if attempt < len(_RETRY_DELAYS_ON_429):
-                delay = _RETRY_DELAYS_ON_429[attempt] * secrets.SystemRandom().uniform(0.8, 1.2)
+                base_delay = _RETRY_DELAYS_ON_429[attempt] * secrets.SystemRandom().uniform(0.8, 1.2)
+                hinted = _parse_retry_after_seconds(response.headers.get("Retry-After"))
+                delay = max(base_delay, hinted) if hinted is not None else base_delay
                 await asyncio.sleep(delay)
         global _audit_dropped_429
         _audit_dropped_429 += 1
         logger.warning(
             "audit_service: drop after 3x429 (action=%s)", payload.get("action"),
         )
-        logger.info("audit_event_fallback %s", payload)
+        logger.info("audit_event_fallback %s", _fallback_summary(payload))
     except httpx.HTTPError as exc:
         logger.warning("audit_service: failed to send event: %s", exc)
-        logger.info("audit_event_fallback %s", payload)
+        logger.info("audit_event_fallback %s", _fallback_summary(payload))
     except Exception as exc:  # best-effort, не должно падать в hot path
         logger.warning("audit_service: unexpected error sending event: %s", exc)
-        logger.info("audit_event_fallback %s", payload)
+        logger.info("audit_event_fallback %s", _fallback_summary(payload))
 
 
 def _enrich_details(details: dict | None) -> dict:

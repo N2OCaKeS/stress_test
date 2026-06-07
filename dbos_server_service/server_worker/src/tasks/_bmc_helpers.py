@@ -17,6 +17,7 @@ Shared circuit breaker (`services.bmc_circuit_breaker`) handler'ы дёргаю�
 
 from __future__ import annotations
 
+import ipaddress
 from urllib.parse import urlparse
 
 from src.clients import get_bmc_client
@@ -43,6 +44,14 @@ def extract_bmc_host(endpoint_url: str) -> str:
     в `path`, а не `netloc`, поэтому split('/')[0] возвращает исходную
     строку as-is — корректное поведение для downstream подстановки в URL.
 
+    Bare IPv6 без скобок (`::1`, `fe80::1`) неоднозначен: формально
+    некорректный URL-component, но входит в realный payload — нормализуем
+    через `ipaddress.ip_address`, оборачиваем в `[...]` чтобы downstream
+    подстановка в `https://{host}/...` не сломалась на двоеточиях.
+    `2001:db8::1:443` тут НЕ распознать как «host + port» (двоеточие
+    одновременно разделитель IPv6-групп и порта) — оставляем as-is,
+    оператор должен прислать скобочный формат.
+
     Пустая строка → возвращаем как есть, BMC-клиент упадёт с понятной
     ошибкой connect'а.
     """
@@ -54,6 +63,17 @@ def extract_bmc_host(endpoint_url: str) -> str:
         netloc = endpoint_url.split("/")[0]
     if "@" in netloc:
         netloc = netloc.rsplit("@", 1)[1]
+    # Bare-IPv6 detection: если netloc не начинается со скобки, нет `://`
+    # и парсится как IPv6 — оборачиваем в скобки. IPv4 / hostname /
+    # уже-скобочный IPv6 / host:port не попадают сюда.
+    if netloc and not netloc.startswith("["):
+        try:
+            parsed_ip = ipaddress.ip_address(netloc)
+        except ValueError:
+            pass
+        else:
+            if isinstance(parsed_ip, ipaddress.IPv6Address):
+                netloc = f"[{netloc}]"
     return netloc
 
 

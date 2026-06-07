@@ -1,10 +1,15 @@
-"""W22-W4 P3: `EventCreate.timestamp` ±1ч от `datetime.now(UTC)`.
+"""`EventCreate.timestamp` дрифт-окно зависит от `actor_type`.
 
 `_bound_timestamp` отбивает backdating (атакующий с `SERVICE_API_KEY` мог бы
 прислать event «год назад» — retention уничтожил бы трассу инцидента) и
 forward-dating (event «в будущем» уехал бы за `to_time` SOC'а).
 
-Окно ровно ±1ч. Naive datetime трактуется как UTC.
+User/bot/anonymous/oauth_client — ±1ч (UI-flow, сессии короче часа).
+Service — ±24ч (outbox-retry после длительного outage). Naive datetime
+трактуется как UTC.
+
+Тесты в этом файле работают с дефолтом `actor_type="user"`; per-actor
+поведение покрыто в `test_payload_validation.py::TestTimestampActorTypeSkew`.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -67,7 +72,6 @@ class TestTimestampBoundsOutsideWindow:
             EventCreate(**_payload(timestamp=ts))
         err = ei.value.errors()[0]
         assert err["type"] == "value_error"
-        assert err["loc"] == ("timestamp",)
 
     def test_2h_future_rejected(self):
         ts = datetime.now(timezone.utc) + timedelta(hours=2)
@@ -75,7 +79,6 @@ class TestTimestampBoundsOutsideWindow:
             EventCreate(**_payload(timestamp=ts))
         err = ei.value.errors()[0]
         assert err["type"] == "value_error"
-        assert err["loc"] == ("timestamp",)
 
     def test_year_past_rejected(self):
         """Классический backdating-приём: «событие год назад»."""
@@ -84,7 +87,6 @@ class TestTimestampBoundsOutsideWindow:
             EventCreate(**_payload(timestamp=ts))
         err = ei.value.errors()[0]
         assert err["type"] == "value_error"
-        assert err["loc"] == ("timestamp",)
 
     def test_year_future_rejected(self):
         ts = datetime.now(timezone.utc) + timedelta(days=365)
@@ -123,3 +125,63 @@ class TestTimestampTimezoneOffsets:
         """Тот же момент в EDT (-04:00) — проходит."""
         edt = datetime.now(timezone(timedelta(hours=-4)))
         EventCreate(**_payload(timestamp=edt))
+
+
+class TestTimestampActorTypeSkew:
+    """`actor_type` определяет окно дрифта `timestamp`.
+
+    * service → ±24ч (outbox-retry допустим)
+    * user/bot/anonymous/oauth_client → ±1ч (UI-flow)
+    """
+
+    def test_service_caller_12h_past_accepted(self):
+        ts = datetime.now(timezone.utc) - timedelta(hours=12)
+        ev = EventCreate(**_payload(timestamp=ts, actor_type="service"))
+        assert ev.timestamp == ts
+
+    def test_service_caller_12h_future_accepted(self):
+        ts = datetime.now(timezone.utc) + timedelta(hours=12)
+        ev = EventCreate(**_payload(timestamp=ts, actor_type="service"))
+        assert ev.timestamp == ts
+
+    def test_service_caller_25h_past_rejected(self):
+        ts = datetime.now(timezone.utc) - timedelta(hours=25)
+        with pytest.raises(ValidationError) as ei:
+            EventCreate(**_payload(timestamp=ts, actor_type="service"))
+        # model_validator пишет ошибку на уровне модели — `loc` пустой или ()
+        # для root-level ошибки. Достаточно проверить, что валидация падает
+        # и причина именно value_error (а не type_error на каком-то поле).
+        assert any(
+            err["type"] == "value_error" for err in ei.value.errors()
+        )
+
+    def test_service_caller_25h_future_rejected(self):
+        ts = datetime.now(timezone.utc) + timedelta(hours=25)
+        with pytest.raises(ValidationError):
+            EventCreate(**_payload(timestamp=ts, actor_type="service"))
+
+    def test_user_caller_2h_past_rejected_with_default_window(self):
+        ts = datetime.now(timezone.utc) - timedelta(hours=2)
+        with pytest.raises(ValidationError):
+            EventCreate(**_payload(timestamp=ts, actor_type="user"))
+
+    def test_user_caller_30min_past_accepted(self):
+        ts = datetime.now(timezone.utc) - timedelta(minutes=30)
+        ev = EventCreate(**_payload(timestamp=ts, actor_type="user"))
+        assert ev.timestamp == ts
+
+    def test_bot_caller_uses_user_window(self):
+        """bot — UI-flow class, окно ±1ч."""
+        ts = datetime.now(timezone.utc) - timedelta(hours=12)
+        with pytest.raises(ValidationError):
+            EventCreate(**_payload(timestamp=ts, actor_type="bot"))
+
+    def test_oauth_client_caller_uses_user_window(self):
+        ts = datetime.now(timezone.utc) - timedelta(hours=12)
+        with pytest.raises(ValidationError):
+            EventCreate(**_payload(timestamp=ts, actor_type="oauth_client"))
+
+    def test_anonymous_caller_uses_user_window(self):
+        ts = datetime.now(timezone.utc) - timedelta(hours=12)
+        with pytest.raises(ValidationError):
+            EventCreate(**_payload(timestamp=ts, actor_type="anonymous"))

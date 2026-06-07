@@ -62,8 +62,11 @@
   `get_by_id` в session 2 вернул None. Пишем отдельный audit
   `action="task.deleted_midrun"` с `original_action`,
   `severity=WARNING` — обычный success/failure под `audit_action`
-  handler'а врал бы оператору, что row ещё жива. Retry не
-  шедулится (re-kick попал бы в task_not_found → loop).
+  handler'а врал бы оператору, что row ещё жива. `target_type`
+  оставляем handler'ский (`server` / `ipmi_controller`) — он указывает,
+  к какому объекту относилась исчезнувшая задача, и SIEM по нему
+  отфильтрует события правильно. Retry не шедулится (re-kick попал
+  бы в task_not_found → loop).
 
 Гарантии:
 
@@ -136,6 +139,13 @@ logger = logging.getLogger(__name__)
 # (5 минут). Для max_attempts=3 фактические паузы: 10s, 20s.
 _RETRY_BASE_DELAY_SECONDS = 10.0
 _RETRY_MAX_DELAY_SECONDS = 300.0
+# Cap на показатель степени. `2 ** attempt` для случайно высоких attempt
+# (например, поврежденный row после ручного re-attempt'а с не обнулённым
+# счётчиком) даёт большие int'ы — Python считает, но это CPU/память впустую.
+# Бизнес-cap по секундам всё равно режет результат через
+# `_RETRY_MAX_DELAY_SECONDS`, exp-cap нужен только как CPU-guard.
+# Симметрично `audit_outbox_publisher._BACKOFF_EXPONENT_CAP`.
+_BACKOFF_EXPONENT_CAP = 16
 
 # Сильные ссылки на фоновые retry-таски. `asyncio.create_task` сам по себе
 # держит на task только weakref через event loop, поэтому на длинном back-off
@@ -692,9 +702,16 @@ def _compute_backoff_delay(attempt: int) -> float:
     Вынесено в отдельную функцию, чтобы caller failure-path'а мог
     использовать те же миллисекунды для записи `scheduled_retry_at` в БД
     и для in-process sleep'а.
+
+    Показатель степени cap'ается `_BACKOFF_EXPONENT_CAP` — на cap'нутом
+    attempt'е `_RETRY_BASE_DELAY_SECONDS * 2 ** 16 = 655360s` всё равно
+    режется до `_RETRY_MAX_DELAY_SECONDS`, но без exp-cap'а строки с
+    бешенным attempt-счётчиком (например, после ручного re-attempt'а
+    без сброса) тратили бы CPU на pow.
     """
+    exponent = min(max(attempt - 1, 0), _BACKOFF_EXPONENT_CAP)
     return min(
-        _RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)),
+        _RETRY_BASE_DELAY_SECONDS * (2 ** exponent),
         _RETRY_MAX_DELAY_SECONDS,
     )
 

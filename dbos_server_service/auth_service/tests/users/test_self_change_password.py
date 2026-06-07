@@ -97,7 +97,7 @@ async def test_new_password_same_as_old_returns_422(client, user_a_token):
     assert resp.json()["error_code"] == "SAME_PASSWORD"
 
 
-# ── Sessions revoked, PAT preserved ─────────────────────────────────────────
+# ── Sessions and PATs revoked on self-reset ─────────────────────────────────
 
 
 async def test_self_reset_revokes_active_refresh(client, user_a):
@@ -121,8 +121,13 @@ async def test_self_reset_revokes_active_refresh(client, user_a):
     assert refresh_resp.status_code == 401
 
 
-async def test_self_reset_does_not_revoke_pat(client, user_a_token):
-    """PAT юзера продолжают работать после self-reset — отдельная identity."""
+async def test_self_reset_revokes_own_pat(client, user_a_token):
+    """Свои PAT'ы юзера revoke'ятся при смене пароля.
+
+    Защита от sticky-takeover: атакующий с угнанным access-токеном
+    создаёт PAT, юзер меняет пароль — PAT обязан умереть, иначе
+    атакующий держит доступ дальше TTL.
+    """
     pat_resp = await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
@@ -139,6 +144,82 @@ async def test_self_reset_does_not_revoke_pat(client, user_a_token):
     assert change_resp.status_code == 200
 
     introspect = await client.post(INTROSPECT_URL, json={"token": pat_token})
+    assert introspect.status_code == 200
+    assert introspect.json()["active"] is False
+
+
+async def test_self_reset_does_not_touch_other_users_pats(
+    client, user_a_token, db, dept_a_with_service, service_x,
+):
+    """change_own_password юзера A не трогает PAT юзера B.
+
+    Bulk-revoke в репозитории идёт по `user_id` — регрессия-canary против
+    случайного расширения WHERE.
+    """
+    from tests.conftest import _make_user, _assign_role, _login
+
+    user_b = await _make_user(
+        db, "t_user_b_pat", "User1234!", department_id=dept_a_with_service.id,
+    )
+    await _assign_role(db, user_b.id, service_x.service_name, "reader")
+    await db.commit()
+    user_b_token = await _login(client, "t_user_b_pat", "User1234!")
+
+    pat_b_resp = await client.post(
+        TOKENS_URL,
+        headers={"Authorization": f"Bearer {user_b_token}"},
+        json={"name": "user_b_pat", "allowed_services": ["service_x"]},
+    )
+    assert pat_b_resp.status_code == 201, pat_b_resp.text
+    pat_b_token = pat_b_resp.json()["token"]
+
+    change_resp = await client.post(
+        URL,
+        headers={"Authorization": f"Bearer {user_a_token}"},
+        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+    )
+    assert change_resp.status_code == 200
+
+    introspect = await client.post(INTROSPECT_URL, json={"token": pat_b_token})
+    assert introspect.status_code == 200
+    assert introspect.json()["active"] is True
+
+
+async def test_self_reset_preserves_department_bots(
+    client, user_a_token, dept_admin_a_token, dept_a_with_service, service_x,
+):
+    """Bot-токены департамента переживают смену пароля одного юзера.
+
+    Боты — отдельная identity отдела, не привязаны к конкретному юзеру.
+    """
+    bot_resp = await client.post(
+        "/api/auth/v1/bots",
+        headers={"Authorization": f"Bearer {dept_admin_a_token}"},
+        json={
+            "name": "ci_bot_self_reset",
+            "department_id": dept_a_with_service.id,
+            "allowed_services": ["service_x"],
+        },
+    )
+    assert bot_resp.status_code == 201, bot_resp.text
+    bot_id = bot_resp.json()["bot_id"]
+
+    bot_token_resp = await client.post(
+        f"/api/auth/v1/bots/{bot_id}/tokens",
+        headers={"Authorization": f"Bearer {dept_admin_a_token}"},
+        json={"name": "ci"},
+    )
+    assert bot_token_resp.status_code == 201, bot_token_resp.text
+    bot_token = bot_token_resp.json()["token"]
+
+    change_resp = await client.post(
+        URL,
+        headers={"Authorization": f"Bearer {user_a_token}"},
+        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+    )
+    assert change_resp.status_code == 200
+
+    introspect = await client.post(INTROSPECT_URL, json={"token": bot_token})
     assert introspect.status_code == 200
     assert introspect.json()["active"] is True
 
@@ -180,7 +261,8 @@ async def test_admin_self_reset_emits_audit_with_caller_is_admin(
     details = captured[0]["kwargs"]["details"]
     assert details["caller_is_admin"] is True
     assert details["sessions_revoked"] is True
-    assert details["tokens_revoked"] is False
+    assert details["tokens_revoked"] is True
+    assert details["pat_revoked_count"] == 0
 
 
 async def test_regular_user_self_reset_audit_has_caller_is_admin_false(

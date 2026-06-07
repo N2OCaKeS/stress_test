@@ -274,3 +274,37 @@ class TestCollectUserPermissionsEmptyScopes:
         assert empty_services == []
         assert empty_roles == {}
         assert empty_groups == {}
+
+    async def test_partial_oauth_scopes_keeps_only_intersection(self, db, dept_a):
+        """Частичное пересечение: scope-список содержит часть live-сервисов.
+        Остаются только те, что есть и у юзера, и в scope'ах. То, что в одном
+        и нет в другом, — выкидывается. Покрывает строки 204-205 (фильтр по
+        allowed_services и service_roles).
+        """
+        from tests.conftest import (
+            _assign_role,
+            _grant_service,
+            _make_service,
+            _make_user,
+        )
+
+        for svc_name in ("svc_p1", "svc_p2", "svc_p3"):
+            await _make_service(db, svc_name)
+            await _grant_service(db, dept_a.id, svc_name)
+        user = await _make_user(
+            db, "t_partial_scope_unit", "User1234!", department_id=dept_a.id,
+        )
+        for svc_name in ("svc_p1", "svc_p2", "svc_p3"):
+            await _assign_role(db, user.id, svc_name, "reader")
+        await db.commit()
+
+        # Scope-список покрывает 2 из 3 live-сервисов + один не-выданный.
+        scopes = ["svc_p1", "svc_p3", "svc_not_granted"]
+        services, roles, _groups = await auth_service.collect_user_permissions(
+            db, user, oauth_scopes=scopes,
+        )
+        assert set(services) == {"svc_p1", "svc_p3"}, (
+            f"intersection should keep svc_p1+svc_p3, drop svc_p2 and svc_not_granted, got {services}"
+        )
+        assert set(roles.keys()) == {"svc_p1", "svc_p3"}
+        assert "svc_p2" not in roles

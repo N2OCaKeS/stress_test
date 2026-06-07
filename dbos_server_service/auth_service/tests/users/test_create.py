@@ -145,3 +145,62 @@ async def test_regular_user_cannot_create_users(client, user_a_token, dept_a):
 async def test_unauthenticated_cannot_create_users(client, dept_a):
     resp = await client.post(URL, json={"username": "anon", "password": "Pass1234!", "department_id": dept_a.id})
     assert resp.status_code == 401
+
+
+# ── Username charset (Pydantic pattern) ─────────────────────────────────────
+
+
+async def test_username_cyrillic_homoglyph_rejected(client, admin_token, dept_a):
+    """Кириллический `а` в "аdmin" — Unicode-homoglyph для латинского `a`.
+
+    Без pattern'а юзеры `admin` и `аdmin` ходят как разные сущности, но в
+    UI/SIEM выглядят одинаково. Pattern режет на 422.
+    """
+    resp = await client.post(
+        URL, headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "username": "аdmin",
+            "password": "Pass1234!",
+            "department_id": dept_a.id,
+        },
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_username_with_newline_rejected(client, admin_token, dept_a):
+    """`\n` в username — log-poisoning вектор."""
+    resp = await client.post(
+        URL, headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "username": "alice\nadmin",
+            "password": "Pass1234!",
+            "department_id": dept_a.id,
+        },
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_username_with_space_rejected(client, admin_token, dept_a):
+    resp = await client.post(
+        URL, headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "username": "alice bob",
+            "password": "Pass1234!",
+            "department_id": dept_a.id,
+        },
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_username_latin_alphanumeric_accepted(client, admin_token, dept_a):
+    """Латиница + цифры + `_-.` — корпоративные `first.last`, `ci_bot-1` и т.п."""
+    for valid in ("user.name", "user-name", "user_name", "User123", "a.b.c-1_2"):
+        resp = await client.post(
+            URL, headers={"Authorization": f"Bearer {admin_token}"},
+            json={
+                "username": valid,
+                "password": "Pass1234!",
+                "department_id": dept_a.id,
+            },
+        )
+        assert resp.status_code == 201, f"valid username {valid!r} rejected: {resp.text}"

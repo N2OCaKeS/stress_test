@@ -21,6 +21,7 @@ from __future__ import annotations
 
 _dispatch_outbox_pending_depth: int = 0
 _secrets_decrypt_failures_total: int = 0
+_worker_dispatch_orphans_total: int = 0
 
 
 def set_dispatch_outbox_pending_depth(value: int) -> None:
@@ -43,8 +44,28 @@ def get_secrets_decrypt_failures_total() -> int:
     return _secrets_decrypt_failures_total
 
 
+def increment_worker_dispatch_orphans(by: int = 1) -> None:
+    """+1 при компенсирующем delete worker-row после неудачного outbox-INSERT'а.
+
+    Cross-DB сценарий: worker-row уже закоммичен в `dev_server_worker`, outbox-INSERT
+    в caller'скую db упал. Best-effort `_delete_task_row` пробует снести worker-row,
+    но если и его DELETE сам падает — остаётся настоящий orphan, который никем
+    не подберётся (без outbox-row poller на него не выйдет). Счётчик растёт на
+    каждый такой случай — ненулевое значение в проде сигналит про дефекты
+    cross-DB writeback'а либо worker-БД flapping.
+    """
+    global _worker_dispatch_orphans_total
+    _worker_dispatch_orphans_total += max(0, int(by))
+
+
+def get_worker_dispatch_orphans_total() -> int:
+    return _worker_dispatch_orphans_total
+
+
 def _reset_for_tests() -> None:
     """Сбросить счётчики между прогонами тестов."""
     global _dispatch_outbox_pending_depth, _secrets_decrypt_failures_total
+    global _worker_dispatch_orphans_total
     _dispatch_outbox_pending_depth = 0
     _secrets_decrypt_failures_total = 0
+    _worker_dispatch_orphans_total = 0

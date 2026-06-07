@@ -6,7 +6,7 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.core.constants import Severity
 from src.utils.normalization import normalize_service_name_preserve_case
@@ -79,11 +79,12 @@ _TARGET_TYPE_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_.]{1,64}$")
 _IDEMPOTENCY_KEY_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_\-.]{1,128}$")
 
 # Допустимый дрифт timestamp'а ingest-payload'а относительно now() сервера.
-# Окно ±1ч ловит NTP-разъезжание клиентских часов (минуты-десятки минут) и
-# при этом отбивает backdating-атаки: caller с `SERVICE_API_KEY` не может
-# подделать «событие год назад» (исказив retention/SUPPRESS-окна по времени)
-# или «событие в будущем» (вытолкнуть запись за to_time-фильтр SOC'а).
-_TIMESTAMP_SKEW: timedelta = timedelta(hours=1)
+# Окно зависит от `actor_type`: user/bot/anonymous/oauth_client получают
+# узкое окно (UI-flow, сессии короче часа), service-token caller'ы — широкое
+# (outbox-retry после длительного outage может прислать событие через часы
+# после реального возникновения). Конкретные значения берутся из настроек
+# `EVENT_TIMESTAMP_SKEW_SECONDS_USER` / `EVENT_TIMESTAMP_SKEW_SECONDS_SERVICE`,
+# дефолты — 1ч и 24ч соответственно.
 
 
 class EventCreate(BaseModel):
@@ -136,28 +137,56 @@ class EventCreate(BaseModel):
 
     @field_validator("timestamp")
     @classmethod
-    def _bound_timestamp(cls, v: datetime) -> datetime:
-        """Окно ±1ч от now() сервера; naive datetime → нормализуется как UTC.
-
-        Backdating-атаки на retention: правило ретеншена удаляет старое;
-        атакующий с `SERVICE_API_KEY` мог бы прислать `timestamp` лет на
-        десять в прошлое — следующая retention-итерация снесла бы запись,
-        и трасса инцидента исчезла. Аналогично с `timestamp` в будущем:
-        SOC-запрос с `to_time=now()` пропустил бы событие до тех пор, пока
-        реальное время не догнало бы спуфленное.
+    def _normalize_timestamp_tz(cls, v: datetime) -> datetime:
+        """Naive datetime → UTC. Сами bounds считаются в model-валидаторе ниже —
+        для них нужен `actor_type`, а field_validator его не видит.
         """
         if v.tzinfo is None:
             v = v.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        if v < now - _TIMESTAMP_SKEW:
-            raise ValueError(
-                f"timestamp too far in the past (>1h from now): {v.isoformat()}"
-            )
-        if v > now + _TIMESTAMP_SKEW:
-            raise ValueError(
-                f"timestamp too far in the future (>1h from now): {v.isoformat()}"
-            )
         return v
+
+    @model_validator(mode="after")
+    def _bound_timestamp(self) -> "EventCreate":
+        """Окно дрифта `timestamp` относительно `now()` зависит от `actor_type`.
+
+        Service-token caller'ы (`actor_type=service`) пишут через outbox-retry
+        и могут реплеить событие через часы после реального возникновения
+        (внешний outage, рестарт worker'а). Узкое ±1ч окно теряло такие
+        события навсегда. User/bot/anonymous/oauth_client идут через UI-flow,
+        там сессии короче часа — для них узкое окно остаётся.
+
+        Backdating-атаки: ограничены retention-окнами (минимум сутки), так что
+        24-часовой service-bound не открывает «событие год назад»-вектор.
+        Forward-dating (за `to_time` SOC'а) — то же ограничение.
+
+        Значения окон тянутся из настроек (`EVENT_TIMESTAMP_SKEW_SECONDS_USER`,
+        `EVENT_TIMESTAMP_SKEW_SECONDS_SERVICE`); `get_settings()` lru-кэширован,
+        чтение на каждый payload — практически бесплатно.
+        """
+        # Локальный импорт ради разрыва цикла: `core.config` не должен зависеть
+        # от схем, схемы исторически не тянули config — оставляем эту инверсию
+        # точечно в одном валидаторе.
+        from src.core.config import get_settings
+
+        settings = get_settings()
+        if self.actor_type == "service":
+            skew_seconds = settings.event_timestamp_skew_seconds_service
+        else:
+            skew_seconds = settings.event_timestamp_skew_seconds_user
+        skew = timedelta(seconds=skew_seconds)
+
+        now = datetime.now(timezone.utc)
+        if self.timestamp < now - skew:
+            raise ValueError(
+                f"timestamp too far in the past (>{skew_seconds}s from now "
+                f"for actor_type={self.actor_type!r}): {self.timestamp.isoformat()}"
+            )
+        if self.timestamp > now + skew:
+            raise ValueError(
+                f"timestamp too far in the future (>{skew_seconds}s from now "
+                f"for actor_type={self.actor_type!r}): {self.timestamp.isoformat()}"
+            )
+        return self
 
     @field_validator("service")
     @classmethod

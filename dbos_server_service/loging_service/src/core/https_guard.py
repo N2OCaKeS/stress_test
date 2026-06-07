@@ -1,0 +1,83 @@
+"""HTTPS-guard middleware для loging_service.
+
+В production/staging отбивает cleartext-HTTP с 403 `HTTPS_REQUIRED`. Зеркалит
+`server_service/src/middleware/https_guard.py` — единая модель угроз: за
+ingress'ом всегда стоит TLS-терминатор, любой http-запрос до пода — либо
+mis-config, либо попытка обхода. Падать должно явно, а не молча отдавать
+audit-журнал в plain text.
+
+Health/ready пропускаются (k8s probe ходит на pod-network http). В dev/test/local
+middleware выключен — devcontainer и тесты не поднимают TLS.
+
+Регистрируется в `main.py` после SecurityHeadersMiddleware → outermost-слой:
+http-запросы отбиваются ДО rate-limit'а, audit_access, body-size middleware'ов.
+Никакого audit-amplification на http-флуд.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
+
+HTTPS_REQUIRED_ENVS: frozenset[str] = frozenset({"production", "staging"})
+
+_HEALTH_PATHS: frozenset[str] = frozenset({
+    "/api/logging/v1/health",
+    "/api/logging/v1/ready",
+})
+
+
+def _is_request_https(request: Request) -> bool:
+    """True если запрос пришёл по https напрямую или через TLS-терминатор.
+
+    Доверяем правому-крайнему токену `X-Forwarded-Proto`: он от closest-hop'а
+    (нашего ingress'а), а всё, что левее — от внешних прокси, которым доверять
+    нельзя. Если ingress сваливает входящий XFP в список, мы хотя бы не
+    принимаем чужой `https` в начале цепочки.
+    """
+    if request.url.scheme == "https":
+        return True
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "").strip().lower()
+    if not forwarded_proto:
+        return False
+    last = forwarded_proto.rsplit(",", 1)[-1].strip()
+    return last == "https"
+
+
+def _build_https_required_response(request: Request) -> JSONResponse:
+    """403 envelope с error_code=HTTPS_REQUIRED. Совместим с `app_exception_handler`."""
+    return JSONResponse(
+        status_code=403,
+        content={
+            "error": "forbidden",
+            "error_code": "HTTPS_REQUIRED",
+            "message": (
+                "Cleartext HTTP requests are rejected in this environment; "
+                "use https:// (TLS must be terminated by the ingress)."
+            ),
+            "details": {"scheme": request.url.scheme},
+            "request_id": getattr(request.state, "request_id", None),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+class HTTPSRequiredMiddleware(BaseHTTPMiddleware):
+    """В production/staging отбивает cleartext-HTTP с 403 HTTPS_REQUIRED."""
+
+    def __init__(self, app, *, app_env: str):
+        super().__init__(app)
+        self._enabled = app_env.lower() in HTTPS_REQUIRED_ENVS
+
+    async def dispatch(self, request: Request, call_next):
+        if not self._enabled:
+            return await call_next(request)
+        if request.url.path in _HEALTH_PATHS:
+            return await call_next(request)
+        if _is_request_https(request):
+            return await call_next(request)
+        return _build_https_required_response(request)

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import CurrentUserIdentity
+from src.dependencies.auth import AuthManagementIdentity, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
 from src.schemas.tokens import PATCreate, PATCreateResponse, PATListItem
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/tokens")
 async def create_token(
     body: PATCreate,
     request: Request,
-    identity: CurrentUserIdentity,
+    identity: AuthManagementIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> PATCreateResponse:
     """Создать Personal Access Token.
@@ -33,7 +33,10 @@ async def create_token(
         `allowed_services` ограничивает scope токена.
 
     Доступ:
-        Любой залогиненный юзер — создаёт PAT только себе.
+        Любой залогиненный юзер — создаёт PAT только себе. Для OAuth2
+        authorization_code JWT — дополнительно требуется `auth_service`
+        в approved scope'ах, иначе 403 OAUTH_SCOPE_INSUFFICIENT (узко-
+        scoped third-party app не должен крутить юзеру PAT'ы).
     """
     return await token_service.create_pat(
         db=db,

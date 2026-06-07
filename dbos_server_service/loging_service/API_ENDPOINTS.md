@@ -174,6 +174,15 @@ Write-эндпоинты `/rules` (POST/PATCH/DELETE) и `/retention` (PUT/DELET
 - `POST /services/{service}/events` идемпотентен по природе (upsert по `(service, action)`), отдельного `idempotency_key` нет.
 - `DELETE /retention` идемпотентен — повторный вызов на пустом активе всё равно отдаёт 204.
 
+### Frozen-contract: hash считается ПОСЛЕ apply_rules + redact
+
+Дедуп `(service, idempotency_key)` сравнивает не голый payload, а `idempotency_payload_hash` — SHA-256 от уже **отредактированного и прогнанного через rule engine** envelope'а. Это значит:
+
+- **Outbox-retry caller'а safe** только при стабильных входах в hash. Входы: набор `OVERRIDE_SEVERITY`/`SUPPRESS`/`ALLOW`-правил, дефолтная severity-таблица (`_DEFAULT_SEVERITY` в `rule_service.py`) и конфигурация redaction (`utils/redaction.py`).
+- **Hot-fix этих структур (правило поменяли, severity-таблицу подправили, redaction-mask расширили) меняет каноничную форму** того же исходного payload'а. Canonical retry того же `(service, idempotency_key)` тогда вернёт **409 `IDEMPOTENCY_KEY_CONFLICT`** — это не баг, а ожидаемое следствие frozen-контракта: в БД уже лежит row с прежним hash'ем.
+- **На стороне caller'а** — `IDEMPOTENCY_KEY_CONFLICT` после ingest-config-change всегда трактуй как «событие уже принято в прежней нормализации, ретраить не нужно». Outbox-worker должен зафиксировать send как успешный и идти дальше; ровно так делает `server_worker/src/services/audit_outbox.py::_publish_envelope` (409 → drop из outbox без retry).
+- **Свойство «hash от raw payload'а»** в обозримом будущем не планируется: нужно гарантировать, что подавленное SUPPRESS-правилом событие не примется тихо после первого 204, а повторный ingest того же raw payload'а с теми же эффектами правил возвращал тот же row, а не дублировал запись. Frozen-contract сохраняет оба инварианта ценой одной нюансной 409-ветки.
+
 ## Pagination shape
 
 | Endpoint | Shape |

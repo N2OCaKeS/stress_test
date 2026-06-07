@@ -187,6 +187,23 @@ class Settings(BaseSettings):
         default=False, alias="RATE_LIMIT_HEADERS_ENABLED"
     )
 
+    # slowapi storage backend для rate-limit'а. `None`/пусто → `memory://`
+    # (per-process). В K8s с 2+ репликами memory:// даёт фактический лимит
+    # ~N × заявленного: round-robin ingress раскладывает запросы по подам,
+    # каждый держит свой счётчик. Для prod нужен общий backend (`redis://...`,
+    # `memcached://...`). Production-валидатор ниже не делает это поле
+    # обязательным (совместимость с single-replica staging'ом), но
+    # `main.py` пишет WARNING на старте, если в prod выбран memory://.
+    rate_limit_storage_uri: str | None = Field(
+        default=None,
+        alias="RATE_LIMIT_STORAGE_URI",
+        description=(
+            "slowapi storage backend (например `redis://host:6379/0`). "
+            "Если не задан — fallback на `memory://` (dev/test only; "
+            "в K8s с 2+ репликами лимит обходится round-robin'ом)."
+        ),
+    )
+
     # Включает `Strict-Transport-Security` на всех ответах. Только за
     # https-фронтом — иначе HTTP-клиенты получают header и ломаются на
     # rebound'е. Симметрично auth_service.
@@ -286,6 +303,25 @@ class Settings(BaseSettings):
     # тяжёлый журнал оператор может крутить через env, не дёргая deploy.
     retention_chunk_size: int = Field(
         default=10_000, alias="RETENTION_CHUNK_SIZE", ge=1
+    )
+
+    # Допустимый дрифт `EventCreate.timestamp` относительно `now()` сервера
+    # для actor_type=user|bot|anonymous|oauth_client. Окно ±1ч ловит
+    # NTP-разъезжание клиентских часов (минуты-десятки минут) и при этом
+    # отбивает backdating-атаки от человеческого UI-flow'а: сессия редко
+    # длится больше часа, легитимный user-payload не может «опоздать» сильнее.
+    event_timestamp_skew_seconds_user: int = Field(
+        default=3600, alias="EVENT_TIMESTAMP_SKEW_SECONDS_USER", ge=0
+    )
+
+    # То же окно, но для actor_type=service. Сервисы используют outbox-retry
+    # и могут реплеить событие через часы после его реального возникновения
+    # (внешний outage, рестарт worker'а, отложенный flush). Дефолт ±24ч
+    # достаточен для типичного maintenance-окна. Дороже backdating-атаки
+    # держателя SERVICE_API_KEY ограничивает retention-окнами (минимум сутки),
+    # не годами.
+    event_timestamp_skew_seconds_service: int = Field(
+        default=86400, alias="EVENT_TIMESTAMP_SKEW_SECONDS_SERVICE", ge=0
     )
 
     # Запускать ли retention-cleanup loop в lifespan'е. По умолчанию True —

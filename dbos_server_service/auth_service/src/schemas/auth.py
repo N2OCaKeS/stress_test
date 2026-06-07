@@ -52,6 +52,21 @@ class IdentityContext(BaseModel):
         default=SubjectType.USER,
         description='Тип субъекта: "user" (обычный юзер/PAT/bot) или "oauth_client" (m2m).',
     )
+    # `oauth_scopes`: снапшот approved scope'ов, если JWT выписан через
+    # OAuth2 `authorization_code` grant; None для не-OAuth токенов (логин,
+    # refresh, PAT, m2m client_credentials). Поле читается guard'ом
+    # `require_auth_management_scope`, чтобы отрезать узкоscoped'ные
+    # third-party JWT от self-management операций (PAT, bots, password,
+    # sessions): без `auth_service` в scope-set'е такие ручки 403.
+    oauth_scopes: list[str] | None = Field(
+        default=None,
+        description=(
+            "Список approved scope'ов OAuth `authorization_code` JWT "
+            "(== снапшот выписанных клиенту scope'ов после INTERSECT с "
+            "client.allowed_scopes). None — не-OAuth токен; пустой список "
+            "— OAuth, но без единого approved scope'а."
+        ),
+    )
 
 
 class LoginRequest(BaseModel):

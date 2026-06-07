@@ -290,6 +290,55 @@ class TestProvisionCredsRedisStash:
         ]
         assert len(creds_failures) == 1, captured_emits
 
+    async def test_generic_store_creds_exception_emits_creds_store_failed(
+        self,
+        client,
+        operator_token_a,
+        make_server,
+        make_account,
+        captured_emits,
+        captured_dispatch,
+        stub_redis,
+        monkeypatch,
+    ):
+        """Generic Exception в store_dispatch_creds → 503 WORKER_REDIS_UNAVAILABLE,
+        reason=creds_store_failed, error_class в details, dispatch не идёт.
+
+        Покрывает не-ServiceUnavailable ветку (`except Exception as exc:`) в
+        `_dispatch_account_provision`, которая до этого подтверждалась только
+        source-inspection'ом.
+        """
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="ops", password=None)
+
+        async def boom_store(*args, **kwargs):
+            raise RuntimeError("redis ConnectionResetError simulated")
+
+        monkeypatch.setattr(worker_client, "store_dispatch_creds", boom_store)
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.worker_dispatch.worker_client.store_dispatch_creds",
+            boom_store,
+        )
+
+        resp = await client.post(
+            f"{BASE}/{acc.id}/provision?server_id={srv.id}&force_password=true",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 503, resp.text
+        body = resp.json()
+        assert body.get("error_code") == "WORKER_REDIS_UNAVAILABLE", body
+        # dispatch'а быть не должно — креды не легли в Redis
+        assert captured_dispatch == []
+        creds_failures = [
+            e for e in captured_emits
+            if e["action"] == "server_account.provision"
+            and e.get("status") == "failure"
+            and (e.get("details") or {}).get("reason") == "creds_store_failed"
+        ]
+        assert len(creds_failures) == 1, captured_emits
+        details = creds_failures[0]["details"]
+        assert details.get("error_class") == "RuntimeError", details
+
 
 @pytest.mark.asyncio
 class TestDispatchCredsHelpers:

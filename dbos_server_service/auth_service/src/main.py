@@ -105,6 +105,10 @@ _RATE_LIMITED_PATHS_FACTORY = {
     # без per-client lockout — без per-IP лимита атакующий с известным
     # client_id перебирает секрет без ограничений. Тот же login-лимит.
     "POST /api/auth/v1/oauth2/token": "login_rate_limit",
+    # `/authorize` без лимита — анонимный GET с произвольными query-параметрами,
+    # атакующий сканирует client_id'ы и enumerates redirect_uri-маппинги. Тот
+    # же login-лимит ограничивает per-IP бюджет на пробу OAuth-площадки.
+    "GET /api/auth/v1/oauth2/authorize": "login_rate_limit",
     "POST /api/auth/v1/refresh": "refresh_rate_limit",
     "GET /api/auth/v1/docker/token": "docker_token_rate_limit",
     # M2M-call часто, но не безудержно — закрываем от scan/brute по введённым

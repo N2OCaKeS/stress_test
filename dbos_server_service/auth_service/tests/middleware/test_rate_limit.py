@@ -238,6 +238,46 @@ class TestOAuth2TokenRateLimit:
         assert resp.status_code == 429, f"expected 429, got {resp.status_code}: {resp.text}"
 
 
+# ── GET /oauth2/authorize rate limit ─────────────────────────────────────────
+
+
+class TestOAuth2AuthorizeRateLimit:
+    """GET /oauth2/authorize — анонимный endpoint, сканер enumerate'ит client_id
+    и redirect_uri-маппинги без ограничений, если не лимитировать. Делит
+    `login_rate_limit` (тот же дешёвый бюджет на пробу OAuth-площадки).
+    """
+
+    async def test_authorize_429_after_exceeding_limit(
+        self, tight_login_limit, client,
+    ):
+        """С тайтлимитом 3/minute: 4-й GET /authorize → 429.
+
+        Параметры намеренно битые — нам важно, что rate-limit срабатывает ДО
+        бизнес-валидации; статус первых трёх ответов нерелевантен, главное
+        чтобы НЕ был 429.
+        """
+        params = {
+            "client_id": "cli_nonexistent",
+            "redirect_uri": "https://app.example.com/cb",
+            "response_type": "code",
+            "scope": "svc_a",
+        }
+        for i in range(3):
+            resp = await client.get(
+                "/api/auth/v1/oauth2/authorize", params=params,
+            )
+            assert resp.status_code != 429, (
+                f"premature 429 на запросе #{i + 1}: {resp.text}"
+            )
+
+        resp = await client.get(
+            "/api/auth/v1/oauth2/authorize", params=params,
+        )
+        assert resp.status_code == 429, (
+            f"expected 429, got {resp.status_code}: {resp.text}"
+        )
+
+
 # ── Health не лимитируется ───────────────────────────────────────────────────
 
 

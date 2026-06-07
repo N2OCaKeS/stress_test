@@ -115,7 +115,9 @@ Response 200:
 }
 ```
 
-Errors: `INVALID_CREDENTIALS` (401), `USER_BANNED` (401), `ACCOUNT_TEMPORARILY_LOCKED` (429 + `retry_after_seconds`).
+Errors: `INVALID_CREDENTIALS` (401), `USER_BANNED` (401), `USER_BLOCKED` (401, `user.status=BLOCKED` — административно заблокированный аккаунт, не путать с временным lockout'ом по неудачным попыткам), `ACCOUNT_TEMPORARILY_LOCKED` (429 + `retry_after_seconds`).
+
+`USER_BANNED` для `ban_type=temporary` снимается автоматически при первом логине после `expires_at`: `auto_unban_if_expired` атомарно деактивирует ban-row, реактивирует PAT'ы, выписанные до бана (`reactivate_ban_revoked`), эмитит `user.unban` с `source="auto"` и продолжает обычный login-flow. `permanent` ban снимается только через `POST /users/{id}/unban`.
 
 ### `POST /refresh`
 
@@ -913,6 +915,7 @@ Auth: public. Response: JWKS (RS256).
 - `PKCE_REQUIRED` (403) — public client без `code_challenge`.
 - `PKCE_CHALLENGE_REQUIRED` (403) — `code_challenge_method` передан без `code_challenge` (метод имеет смысл только в паре с challenge).
 - `PKCE_METHOD_INVALID` (403) — public требует `S256`, confidential — `S256`/`plain`.
+- `OAUTH_SCOPE_INSUFFICIENT` (403) — `authorization_code` JWT попадает на self-management ручку (PAT-create, `/bots/*`), но `auth_service` нет в approved scope'ах. Не-OAuth токены (login/refresh/PAT/m2m) под guard не попадают.
 
 ### Docker
 

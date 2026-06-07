@@ -39,7 +39,7 @@ from taskiq_redis import ListQueueBroker
 from src.core.config import get_settings
 from src.core.exceptions import ConflictError, ServiceUnavailableError
 from src.repositories import dispatch_outbox as dispatch_outbox_repo
-from src.services import metrics
+from src.services import audit_service, metrics
 from src.utils.ids import task_id
 
 logger = logging.getLogger(__name__)
@@ -575,7 +575,10 @@ async def _delete_task_row(task_id_to_delete: str) -> None:
         # best-effort rollback — оригинальная ошибка важнее. Структурный
         # warning даёт операторам сигнал «остался orphan worker-row, без
         # выполнения, без публикации в Redis» — он безопасен, но забивает
-        # таблицу tasks до retention cleanup'а.
+        # таблицу tasks до retention cleanup'а. Счётчик `worker_dispatch_orphans`
+        # бьём здесь, а не при удачном DELETE: успешная компенсация orphan'а не
+        # оставляет, growth счётчика — это именно «реальный orphan лёг».
+        metrics.increment_worker_dispatch_orphans()
         logger.warning(
             "worker-row compensation delete failed, orphan task row remains",
             extra={
@@ -584,6 +587,20 @@ async def _delete_task_row(task_id_to_delete: str) -> None:
                 "exc_type": exc.__class__.__name__,
             },
         )
+        # Парный audit-event в loging — SIEM видит факт orphan'а отдельно от
+        # логов pod'а. emit best-effort, на ошибке audit-канала глушим, иначе
+        # рекурсия в compensation-fail'е никому не помогает.
+        try:
+            audit_service.emit(
+                "worker_dispatch.orphan_detected",
+                target_id=task_id_to_delete,
+                target_type="task",
+                status="failure",
+                allowed=True,
+                details={"compensation_exc": exc.__class__.__name__},
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
 
 async def delete_prepare_creds(creds_key: str) -> None:

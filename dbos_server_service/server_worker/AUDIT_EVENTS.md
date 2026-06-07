@@ -71,10 +71,13 @@ worker'а и владеет бизнес-смыслом операции.
 | `server_account.password_rotate` | `tasks/passwords.py` | `server_account` |
 | `ipmi_controller.password_rotate` | `tasks/passwords.py` | `ipmi_controller` |
 | `bmc.tls_downgrade` | `clients/__init__.py` | `ipmi_controller` |
+| `bmc.endpoint_blocked` | `clients/__init__.py` | `ipmi_controller` |
 
 `server_account.users_inventory` — `target_type=server` (а не `server_account`), потому что inventory снимает срез всех ОС-пользователей хоста, а не работает с конкретной учёткой; ключ корреляции в audit'е — `server_id`. Симметрично соседнему `server.inventory_sync` (`tasks/inventory.py`).
 
 `bmc.tls_downgrade` — отдельное worker-level WARNING, эмитится из `_probe_redfish_cascade` при каждом фактическом переходе на менее защищённый канал BMC: `https_verify → https_noverify` (self-signed cert или MITM-подозрение) и `https_verify → http` / `https_noverify → http` (legacy BMC без TLS). Severity всегда `WARNING`, status `success`, `actor_type=service` (явный override в payload — остальные worker-actions полагаются на дефолт `service` из `audit_client.emit`), `target_type=ipmi_controller`, `target_id` совпадает с `details.host`. Поля `details`: `host` (host[:port] BMC), `from` (`https_verify` | `https_noverify`), `to` (`https_noverify` | `http`). Эмит через transactional outbox (`enqueue_audit`); при недоступности outbox event теряется silent — probe-loop не должен крэшить из-за audit'а.
+
+`bmc.endpoint_blocked` — SSRF-guard event. `ensure_bmc_host_allowed` (`clients/__init__.py`) резолвит `endpoint_url` в IP до любого сетевого вызова и hard-block'ает loopback (`127.0.0.0/8`, `::1`) и link-local (`169.254.0.0/16`, `fe80::/10`, в т.ч. cloud-metadata `169.254.169.254`). Severity `WARNING`, status `failure`, `allowed=false`, `actor_type=service`, `target_type=ipmi_controller`, `target_id` — исходный `endpoint_url`. `details`: `host`, `resolved` (если был резолв), `reason` (`loopback` | `link_local` | `resolve_failed` | `empty_host`). Эмит через transactional outbox; при провале outbox теряется silent. После события поднимается `BmcEndpointBlockedError(BMC_ENDPOINT_BLOCKED)` — task падает с этим `error_code` в `task.last_error`.
 
 На failure-ветке `ipmi_controller.password_rotate`, когда BMC принял пароль
 (apply прошёл), но read-only verify под новым паролем не сработал, runner

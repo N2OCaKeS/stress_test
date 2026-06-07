@@ -35,7 +35,11 @@ error_code'ах. Общий набор для всех internal-эндпоинт
 * 403 TARGET_DEPARTMENT_HEADER_REQUIRED — strict-режим, header не
   прислан.
 * 404 SERVER_NOT_FOUND / ACCOUNT_NOT_FOUND / NO_IPMI_CONTROLLER —
-  целевой ресурс не найден.
+  целевой ресурс не найден. Сюда же попадает actor_department_mismatch
+  (caller'ский dept не совпал с server.department_id) — отдаётся 404
+  той же маски, чтобы 403/404 не работали enumeration-oracle'ом для
+  cross-dept caller'а; deny-аудит при этом эмитится с
+  `reason=actor_department_mismatch`.
 """
 
 from fastapi import APIRouter, Depends, Header
@@ -70,8 +74,8 @@ router = APIRouter(prefix="/internal", include_in_schema=False)
 # конкретный handler делается локально (например, `record_ipmi_credentials_rotated`
 # имеет специфичный CREDENTIALS_ALREADY_APPLIED / BMC_VERIFY_REQUIRED).
 _INTERNAL_RESPONSES_BASE: dict[int | str, dict] = {
-    403: {"description": "PERMISSION_DENIED / TARGET_DEPARTMENT_MISMATCH / TARGET_DEPARTMENT_HEADER_REQUIRED."},
-    404: {"description": "SERVER_NOT_FOUND / ACCOUNT_NOT_FOUND / NO_IPMI_CONTROLLER."},
+    403: {"description": "PERMISSION_DENIED (нет action'а в матрице) / TARGET_DEPARTMENT_MISMATCH / TARGET_DEPARTMENT_HEADER_REQUIRED. actor_department_mismatch отдаётся 404, а не 403 — см. ниже."},
+    404: {"description": "SERVER_NOT_FOUND / ACCOUNT_NOT_FOUND / NO_IPMI_CONTROLLER. Сюда же маскируется actor_department_mismatch — caller'ский dept не совпал с server.department_id, в audit пишется `reason=actor_department_mismatch`."},
 }
 
 _INTERNAL_RESPONSES_CALLBACK: dict[int | str, dict] = {

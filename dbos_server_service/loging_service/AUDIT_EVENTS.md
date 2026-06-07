@@ -80,10 +80,12 @@ Severity вычисляется автоматически в `src/services/rule
 
 | action | status | severity | Когда возникает | target_type |
 |---|---|---|---|---|
-| `logging.events_queried` | `success` | INFO | `GET /api/logging/v1/events` (любой фильтр); путь `/services/{svc}/events` тоже сюда — `_action_for_path` проверяет `/events` раньше `/services` | `audit_event` |
+| `logging.events_queried` | `success` | INFO | `GET /api/logging/v1/events` — чтение audit-журнала | `audit_event` |
+| `logging.events_queried` | `warning` | WARNING | `GET /api/logging/v1/events` отменён по `statement_timeout` (COUNT/SELECT) — self-audit с timeout-флагами в `details` | `audit_event` |
 | `logging.rules_read` | `success` | INFO | `GET /api/logging/v1/rules` или `GET /rules/{id}` | `audit_rule` |
 | `logging.rules_write` | `success` | WARNING | `POST/PATCH/DELETE /api/logging/v1/rules*` (поверх `logging_rule.*`) | `audit_rule` |
 | `logging.services_read` | `success` | INFO | `GET /api/logging/v1/services` (список зарегистрированных сервисов) | `service_event` |
+| `logging.service_events_browsed` | `success` | INFO | `GET /api/logging/v1/services/{svc}/events` — чтение каталога зарегистрированных action'ов сервиса (не audit-журнала) | `service_event` |
 | `logging.admin_access` | `success` | INFO | Любой admin-endpoint без явного маппинга в `_action_for_path` | — |
 | `logging.retention_read` | `success` | INFO | `GET /api/logging/v1/retention` — чтение активных политик хранения | `retention_policy` |
 | `logging.retention_write` | `success` | WARNING | `PUT/DELETE /api/logging/v1/retention` — изменение или отключение политики хранения | `retention_policy` |

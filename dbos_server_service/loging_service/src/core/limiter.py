@@ -69,4 +69,10 @@ limiter = Limiter(
     key_func=_rate_limit_key,
     default_limits=[],
     headers_enabled=get_settings().rate_limit_headers_enabled,
+    # `storage_uri` тянется из `RATE_LIMIT_STORAGE_URI`. None/пусто → `memory://`
+    # (per-process). Под multi-replica memory:// раздаёт фактически N × лимит:
+    # round-robin по подам, каждый со своим счётчиком. Для prod указывай общий
+    # backend (`redis://...`), иначе ingest/login-лимиты обходятся тривиально.
+    # `main.lifespan` пишет WARNING на старте, если в prod выбран memory://.
+    storage_uri=get_settings().rate_limit_storage_uri or "memory://",
 )

@@ -250,4 +250,5 @@ async def me(request: Request, identity: CurrentUserIdentity, db: AsyncSession =
         db=db,
         user_id=identity.user_id,
         request_id=getattr(request.state, "request_id", None),
+        oauth_scopes=identity.oauth_scopes,
     )

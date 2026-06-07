@@ -470,10 +470,22 @@ async def run_publisher_loop() -> None:
 
 
 async def cleanup_old() -> None:
-    """Daily retention: дропаем dispatched outbox-row'ы старше N дней.
+    """Daily retention: дропаем dispatched и parked outbox-row'ы старше N дней.
 
-    Pending (`dispatched_at IS NULL`) не трогаем — они in-flight либо
-    залипли в DLQ-style по `attempts=MAX`; решение по ним за оператором.
+    Две ветки удаления:
+
+    * dispatched (`dispatched_at IS NOT NULL`) старше cutoff — обычная
+      успешно доставленная история.
+    * parked: `dispatched_at IS NULL AND attempts >= max_attempts` старше
+      `created_at + retention`. Это row'ы, упёршиеся в attempts-cap
+      (`unknown_task_kind`, `kiq_failed`) и пристёгнутые `next_retry_at=+24h`.
+      Раньше cleanup их игнорировал (фильтр был только по `dispatched_at IS NOT NULL`),
+      и при постоянном deploy-drift'е они копились в БД линейно. Cutoff
+      считается по `created_at`: row создан давно, оператор так и не разрулил —
+      retention применяется как к успешным.
+
+    Pending (`dispatched_at IS NULL AND attempts < max_attempts`) не трогаем —
+    они in-flight, retry-loop сам разберётся.
 
     Audit emit пропускаем — административная housekeeping (как у
     `audit_outbox.cleanup_published_old`). Ошибки логируются и НЕ
@@ -490,11 +502,20 @@ async def cleanup_old() -> None:
     cutoff = datetime.now(timezone.utc) - timedelta(
         days=settings.dispatch_outbox_retention_days
     )
+    max_attempts = settings.dispatch_outbox_max_attempts
     try:
         async with factory() as session:
             stmt = delete(DispatchOutbox).where(
-                DispatchOutbox.dispatched_at.is_not(None),
-                DispatchOutbox.dispatched_at < cutoff,
+                or_(
+                    # Доставленные старше cutoff.
+                    (DispatchOutbox.dispatched_at.is_not(None))
+                    & (DispatchOutbox.dispatched_at < cutoff),
+                    # Parked: attempts уже упёрлись в cap, доставка так и
+                    # не состоялась — row простояла в БД дольше retention'а.
+                    (DispatchOutbox.dispatched_at.is_(None))
+                    & (DispatchOutbox.attempts >= max_attempts)
+                    & (DispatchOutbox.created_at < cutoff),
+                ),
             )
             result = await session.execute(stmt)
             await session.commit()
@@ -506,8 +527,8 @@ async def cleanup_old() -> None:
 
     if deleted:
         logger.info(
-            "dispatch_outbox.cleanup_old: dropped %s dispatched row(s) "
-            "older than %s",
+            "dispatch_outbox.cleanup_old: dropped %s row(s) "
+            "(dispatched or parked) older than %s",
             deleted,
             cutoff.isoformat(),
         )

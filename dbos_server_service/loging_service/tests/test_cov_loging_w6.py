@@ -580,12 +580,12 @@ class TestActionForPath:
         from src.main import _action_for_path
         assert _action_for_path("GET", "/api/logging/v1/events") == "logging.events_queried"
 
-    def test_services_events_path_prefers_events_queried(self):
-        """Путь /services/{svc}/events содержит оба подстрока; должен отдать
-        logging.events_queried (events проверяется первее services)."""
+    def test_services_events_path_returns_service_events_browsed(self):
+        """Путь /services/{svc}/events — каталог action'ов сервиса,
+        отдельный action `logging.service_events_browsed` (не audit-журнал)."""
         from src.main import _action_for_path
         result = _action_for_path("GET", "/api/logging/v1/services/auth_service/events")
-        assert result == "logging.events_queried"
+        assert result == "logging.service_events_browsed"
 
     def test_services_path_without_events_returns_services_read(self):
         from src.main import _action_for_path

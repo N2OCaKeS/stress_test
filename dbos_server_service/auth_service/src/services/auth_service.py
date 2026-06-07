@@ -259,12 +259,18 @@ def _build_identity(
     allowed_services: list[str],
     service_roles: dict,
     groups: dict[str, list[str]] | None = None,
+    oauth_scopes: list[str] | None = None,
 ) -> IdentityContext:
     """Собрать `IdentityContext` для login/refresh/get_identity-ответов.
 
     Для account_admin зануляем allowed_services/service_roles/groups — у них нет
     отдела, и сами по себе они не являются service-юзерами (admin-роли на
     platform-уровне).
+
+    `oauth_scopes` (опционально) копируется в результат — для `/me` под
+    OAuth2 authorization_code JWT, чтобы клиент UI знал, какой scope-снапшот
+    стоит за токеном. Для login/refresh-ответов параметр None — там identity
+    выписывается без OAuth-обёртки.
     """
     is_account_admin = user.platform_role == PlatformRole.ACCOUNT_ADMIN
     return IdentityContext(
@@ -277,6 +283,7 @@ def _build_identity(
         groups={} if is_account_admin else (groups or {}),
         is_banned=user.status == UserStatus.BANNED,
         platform_role=user.platform_role,
+        oauth_scopes=oauth_scopes,
     )
 
 
@@ -501,6 +508,16 @@ async def refresh(
             request_id=request_id,
         )
         raise AuthorizationError(error_code="USER_NOT_FOUND", message="User not found")
+    # Симметрия с login: если у юзера активный temporary ban с истёкшим
+    # `expires_at` — снимаем inline и продолжаем рефреш. Иначе SPA с фоновой
+    # ротацией access-токена ловит 401 USER_BANNED и принудительно требует
+    # повторного логина, даже когда ban уже отгорел.
+    if user.status == UserStatus.BANNED:
+        from src.services import user_service
+        if await user_service.auto_unban_if_expired(db, user, request_id=request_id):
+            reloaded = await user_repo.get_by_id(user.id)
+            if reloaded is not None:
+                user = reloaded
     if user.status == UserStatus.BANNED:
         await session_repo.revoke(sess)
         await db.commit()
@@ -588,8 +605,21 @@ async def logout(db: AsyncSession, raw_refresh_token: str, request_id: str | Non
         )
 
 
-async def get_identity(db: AsyncSession, user_id: str, request_id: str | None = None) -> IdentityContext:
-    """Свежий identity-снимок юзера из БД. Используется `/me`."""
+async def get_identity(
+    db: AsyncSession,
+    user_id: str,
+    request_id: str | None = None,
+    oauth_scopes: list[str] | None = None,
+) -> IdentityContext:
+    """Свежий identity-снимок юзера из БД. Используется `/me`.
+
+    `oauth_scopes` — снапшот approved scope'ов из OAuth `authorization_code`
+    JWT, прокинутый из `_identity_from_user_jwt`. Если задан — `/me`
+    отдаёт `allowed_services` / `service_roles` / `groups`, обрезанные
+    ровно по scope (симметрично introspect-у); иначе видим scope-creep:
+    узко-scoped third-party JWT увидит все live-сервисы юзера. `None`
+    означает не-OAuth токен — фильтрация не применяется.
+    """
     user_repo = UserRepository(db)
     role_repo = RoleRepository(db)
     dept_repo = DepartmentRepository(db)
@@ -607,6 +637,17 @@ async def get_identity(db: AsyncSession, user_id: str, request_id: str | None = 
     groups_summary = await group_repo.list_groups_with_roles_for_user(user.id)
     dept = await dept_repo.get_by_id(user.department_id) if user.department_id else None
 
+    if oauth_scopes is not None:
+        scope_set = set(oauth_scopes)
+        allowed_services = [s for s in allowed_services if s in scope_set]
+        service_roles = {s: r for s, r in service_roles.items() if s in scope_set}
+        filtered_groups: dict[str, list[str]] = {}
+        for name, items in groups_summary.items():
+            kept = [i for i in items if i.split(".", 1)[0] in scope_set]
+            if kept:
+                filtered_groups[name] = kept
+        groups_summary = filtered_groups
+
     audit_service.emit(
         "user.me", user_id, status="success", allowed=True, request_id=request_id,
         details={
@@ -619,4 +660,5 @@ async def get_identity(db: AsyncSession, user_id: str, request_id: str | None = 
     return _build_identity(
         user, dept.display_name if dept else None,
         allowed_services, service_roles, groups_summary,
+        oauth_scopes=oauth_scopes,
     )

@@ -371,7 +371,7 @@ class TestIpmiControllerRotateDispatch:
         captured_dispatch,
     ):
         srv = await make_server(department_id="dep_a")
-        ctrl = await make_ipmi(server_id=srv.id)
+        ctrl = await make_ipmi(server_id=srv.id, credentials_pending_apply=False)
         resp = await client.post(
             f"{BASE}/ipmi-controllers/{ctrl.id}/rotate",
             headers=_hdr(admin_role_token_a),

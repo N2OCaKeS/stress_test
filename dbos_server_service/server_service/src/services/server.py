@@ -780,17 +780,35 @@ async def release_server(
             details={"reason": "not_found_or_cross_dept"},
         )
         raise
-    if obj.busy_state == BusyState.FREE:
+    # Симметрия с `acquire_server`: pre-check `busy_state` без лока читал бы
+    # stale значение, если параллельный release/acquire уже изменил строку
+    # между `load_visible_server` и проверкой. Re-fetch с FOR UPDATE даёт
+    # live snapshot и сериализует с другими release'ами по этой же строке.
+    db.expire(obj)
+    locked = await repo.get_for_update(db, server_id)
+    if locked is None:
         audit_service.emit(
             "server.release",
             target_id=server_id, target_type="server",
             status="failure", allowed=True,
-            details={"reason": "not_busy", "department_id": obj.department_id},
+            details={"reason": "vanished_during_release"},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND",
+            message="Server not found",
+        )
+    if locked.busy_state == BusyState.FREE:
+        audit_service.emit(
+            "server.release",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "not_busy", "department_id": locked.department_id},
         )
         raise ConflictError(
             error_code="SERVER_NOT_BUSY",
             message="Server is already free",
         )
+    obj = locked
     previous_user_id = obj.busy_user_id
     # Атомарный release из любого non-free состояния (busy / testing). Свежий
     # SELECT мог увидеть state='busy', но к моменту UPDATE параллельный

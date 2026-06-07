@@ -25,6 +25,7 @@ from src.api.router import api_router
 from src.core.config import get_settings
 from src.core.constants import ADVISORY_LOCKS
 from src.core.exceptions import AppException
+from src.core.https_guard import HTTPSRequiredMiddleware
 from src.core.limiter import limiter
 from src.core.logging import configure_logging
 from src.dependencies import auth as auth_deps
@@ -208,6 +209,20 @@ def create_application() -> FastAPI:
                 ),
                 verify=verify_param,
             )
+        # Rate-limit storage backend: фиксируем в логах + WARNING для prod
+        # на memory://. SlowAPI хранит счётчики в этом backend'е; per-pod
+        # memory:// под multi-replica раздаёт фактически N × лимит.
+        storage_uri = live_settings.rate_limit_storage_uri or "memory://"
+        logger.info("rate_limit_storage: %s", storage_uri)
+        if storage_uri == "memory://" and live_settings.app_env in (
+            "production", "staging"
+        ):
+            logger.warning(
+                "rate_limit_storage=memory:// in %s: ingest/query window "
+                "expands per-replica. Set RATE_LIMIT_STORAGE_URI=redis://...",
+                live_settings.app_env,
+            )
+
         # Порядок старта: сначала self-audit outbox, потом retention-thread.
         # Retention эмитит `logging.retention_sweep` через outbox; если
         # outbox упадёт на старте, retention-thread не должен оставаться
@@ -649,6 +664,17 @@ def create_application() -> FastAPI:
         hsts_enabled=settings.security_hsts_enabled,
     )
 
+    # HTTPS-guard ставим ПОСЛЕ SecurityHeadersMiddleware → становится самым
+    # outermost'ом. Cleartext-запрос в prod/staging отбивается 403 ДО body-limit,
+    # rate-limit, audit_access — нет audit-amplification на http-флуд, нет
+    # расхода introspect-pool на запросы, которые мы и так отвергнем. В
+    # local/dev/test middleware пропускает всё (uvicorn в devcontainer на http,
+    # тесты через ASGI без TLS).
+    app.add_middleware(
+        HTTPSRequiredMiddleware,
+        app_env=settings.app_env,
+    )
+
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException):
         return JSONResponse(
@@ -801,6 +827,17 @@ _RETENTION_TICK_INTERVAL_SECONDS = 60.0
 # больше `_RETENTION_WATCHDOG_TTL_SECONDS`. None — loop ещё не успел
 # отработать первый tick (legitimate startup window).
 _retention_last_tick_monotonic: float | None = None
+
+# Отдельный watchdog для последнего УСПЕШНОГО sweep'а `apply_active`.
+# Минутный tick фиксирует `_retention_last_tick_monotonic` независимо от
+# того, прошёл ли sweep — если sweep в 00:00 MSK падает каждый день, а
+# daemon-thread продолжает спать-просыпаться, `/ready` оставался бы зелёным.
+# `_retention_last_successful_sweep_monotonic` обновляется только после
+# успешного возврата `apply_active`; `/ready` сверяет его с двумя
+# retention-tick-интервалами и кидает 503, если sweep тихо не идёт.
+# None — sweep ещё ни разу не прошёл в этом процессе (legitimate startup
+# window до первой 00:00 MSK granicy).
+_retention_last_successful_sweep_monotonic: float | None = None
 _retention_watchdog_lock = threading.Lock()
 
 # TTL: сколько секунд между успешными tick'ами считается приемлемым.
@@ -808,6 +845,18 @@ _retention_watchdog_lock = threading.Lock()
 # сам sweep (apply_active под нагрузкой может занять минуты). Если loop
 # не дошёл до следующего tick'а за это окно — он либо умер, либо завис.
 _RETENTION_WATCHDOG_TTL_SECONDS = 5 * 60.0
+
+# TTL для успешного sweep'а: каждый retention-tick минутный, sweep идёт
+# раз в сутки в 00:00 MSK. Если sweep тихо падает каждый день, минутный
+# `_retention_last_tick_monotonic` всё равно обновляется и `/ready`
+# остаётся зелёным. Этот watchdog ловит именно «sweep'а нет», а не
+# «loop встал». Дефолт — 2 × retention_interval_seconds, но не короче
+# 25 часов, чтобы успеть переждать одну пропущенную 00:00 MSK границу
+# без флапа readiness'а в долгоиграющий sweep.
+_RETENTION_SWEEP_WATCHDOG_TTL_SECONDS = max(
+    2 * _RETENTION_TICK_INTERVAL_SECONDS,
+    25 * 3600.0,
+)
 
 
 def _next_retention_boundary_from(now_monotonic: float, *, interval: float = _RETENTION_TICK_INTERVAL_SECONDS) -> float:
@@ -846,6 +895,7 @@ def _retention_loop() -> None:
     from datetime import date
     from zoneinfo import ZoneInfo
     from sqlalchemy import text
+    global _retention_last_tick_monotonic, _retention_last_successful_sweep_monotonic
     _MSK = ZoneInfo("Europe/Moscow")
     last_run: date | None = None
     interval = _RETENTION_TICK_INTERVAL_SECONDS
@@ -884,6 +934,14 @@ def _retention_loop() -> None:
                             today,
                         )
                         last_run = today
+                        # Watchdog: для каждой replica successful_sweep —
+                        # локальный маркер «sweep отработал в этом окне», и
+                        # «другая replica взяла лок» — это легитимный успех
+                        # текущей итерации. Без этого non-holder replica'и
+                        # навсегда показывали бы stale successful_sweep и
+                        # отдавали бы 503 на `/ready` через TTL.
+                        with _retention_watchdog_lock:
+                            _retention_last_successful_sweep_monotonic = time.monotonic()
                     else:
                         # Снимаем snapshot активных политик ДО sweep'а: иначе
                         # concurrent admin-DELETE между apply_active и сбором
@@ -925,6 +983,16 @@ def _retention_loop() -> None:
                                 chunk_size=chunk_size,
                                 now=cutoff_at,
                             )
+                            # Сразу после apply_active фиксируем «sweep прошёл».
+                            # Это до self-audit'а сознательно: если audit упадёт
+                            # (БД проблемная, ошибка сериализации), сам sweep
+                            # уже сделал работу — watchdog не должен из-за этого
+                            # 503'ить. Если apply_active кинул — управление
+                            # улетает в outer `except Exception`, marker не
+                            # обновляется, и watchdog поймает stall через
+                            # `_RETENTION_SWEEP_WATCHDOG_TTL_SECONDS`.
+                            with _retention_watchdog_lock:
+                                _retention_last_successful_sweep_monotonic = time.monotonic()
                             logger.info(
                                 "Retention cleanup [%s MSK]: deleted %d events",
                                 today, deleted,
@@ -1032,7 +1100,6 @@ def _retention_loop() -> None:
         # слот не было — sleep+slot-проверка отработали штатно).
         # `/ready` смотрит на эту метку, чтобы поймать зависший / упавший
         # daemon-thread до того, как пользователь увидит молчаливый stall.
-        global _retention_last_tick_monotonic
         with _retention_watchdog_lock:
             _retention_last_tick_monotonic = time.monotonic()
 
@@ -1109,6 +1176,18 @@ def get_retention_last_tick_monotonic() -> float | None:
         return _retention_last_tick_monotonic
 
 
+def get_retention_last_successful_sweep_monotonic() -> float | None:
+    """Снапшот monotonic-времени последнего успешного sweep'а `apply_active`.
+
+    None — sweep ещё не прошёл в этом процессе. `/ready` тогда не блокирует
+    pod (startup window до первой 00:00 MSK границы). После первого
+    успешного sweep'а отстававание сравнивается с
+    `_RETENTION_SWEEP_WATCHDOG_TTL_SECONDS` (см. `health.py::ready`).
+    """
+    with _retention_watchdog_lock:
+        return _retention_last_successful_sweep_monotonic
+
+
 def _action_for_path(method: str, path: str) -> str:
     """Возвращает имя action для успешного обращения к admin-эндпоинту loging_service.
 
@@ -1120,18 +1199,30 @@ def _action_for_path(method: str, path: str) -> str:
     послал бы в SIEM не тот action.
 
     Здесь идём через segment walk: режем path на компоненты и берём первый
-    под `/v1/` как resource, а последний — для override'а на `events`
-    (специальный случай catalog'а: `/services/{svc}/events` — это всё-таки
-    чтение событий, а не реестра).
+    под `/v1/` как resource. Хвостовой сегмент `events` под `/services/{svc}/`
+    ведёт в отдельный action `logging.service_events_browsed` — это чтение
+    каталога зарегистрированных action'ов сервиса, не audit-журнала; SOC
+    не должен путать «листинг описания сервиса» с «чтение событий».
     """
     # Хвостовой `/` и пустые сегменты не должны мешать lookup'у:
     # path вида `/api/logging/v1/rules/` после split'а даёт пустую финальную
     # компоненту; фильтруем сразу.
     segments = [s for s in path.split("/") if s]
 
-    # Финальный сегмент `events` всегда классифицируется как чтение events,
-    # даже если он висит под `/services/{svc}/events`. Сохраняет
-    # backwards-compat с прежним substring-порядком.
+    # `/services/{svc}/events` — каталог зарегистрированных action'ов
+    # сервиса (`endpoints/services.py::list_service_events`), не audit-журнал.
+    # Отдельный action, чтобы SOC-фильтр по `logging.events_queried` ловил
+    # только чтения journal'а.
+    if (
+        len(segments) >= 2
+        and segments[-1] == "events"
+        and len(segments) >= 4
+        and segments[-3] == "services"
+    ):
+        return "logging.service_events_browsed"
+
+    # Голое `/events` (или любое другое окончание на `events`, не под
+    # `/services/{svc}/`) — чтение audit-журнала.
     if segments and segments[-1] == "events":
         return "logging.events_queried"
 

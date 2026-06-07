@@ -19,15 +19,20 @@ internal endpoints).
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import socket
 import ssl
-from typing import Literal
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Literal, NamedTuple
 
 import httpx
 
 from src.clients.ipmitool import IpmitoolClient, IpmitoolError
 from src.clients.redfish import RedfishClient, resolve_manager_id
 from src.core.config import get_settings
+from src.core.exceptions import AppException
 from src.services.http_pool import (
     get_bmc_probe_client,
     get_bmc_redfish_transport,
@@ -36,15 +41,228 @@ from src.services.http_pool import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "BmcEndpointBlockedError",
     "IpmitoolClient",
     "IpmitoolError",
     "RedfishClient",
+    "ensure_bmc_host_allowed",
     "get_bmc_client",
+    "tls_downgrade_audit_dedup",
 ]
+
+
+class BmcEndpointBlockedError(AppException):
+    """BMC endpoint указывает на запрещённый IP (loopback/link-local).
+
+    Поднимается до probe'а Redfish/ipmitool: hostname резолвится в IP,
+    и если попадает в локальный диапазон (`127.0.0.0/8`, `169.254.0.0/16`,
+    `::1`, `fe80::/10`) — операция отбивается до сетевого вызова.
+    Защита от SSRF: server_service может прислать любой `endpoint_url`,
+    включая `169.254.169.254` (cloud-metadata) или `localhost`, и
+    worker не должен туда ходить.
+    """
+
+
+# Task-локальный set уже-эмитированных `bmc.tls_downgrade` событий.
+# Ключ — `(host, from_level, to_level)`. Нужен handler'ам, которые в рамках
+# одного task'а зовут `_get_bmc` несколько раз (например, ipmi_rotate_password:
+# apply + verify + verify-retry). Без дедупа BMC с self-signed cert'ом давал бы
+# 3+ одинаковых `bmc.tls_downgrade` row'ы за одну ротацию — лишний шум в SIEM
+# и cardinality, поднятая на ровном месте. Handler входит в
+# `tls_downgrade_audit_dedup()` context — пока он активен, повторные эмиссии
+# для тех же `(host, from, to)` становятся no-op. Probe сам по себе всё ещё
+# стучится на каждом вызове (no-cache инвариант для BMC), кэшируется только
+# эмиссия audit'а.
+_tls_downgrade_emitted: "ContextVar[set[tuple[str, str, str]] | None]" = ContextVar(
+    "_tls_downgrade_emitted", default=None,
+)
+
+
+@contextmanager
+def tls_downgrade_audit_dedup():
+    """Дедуп `bmc.tls_downgrade` audit-events в рамках своего scope'а.
+
+    Используется handler'ами, которые могут несколько раз поднимать клиент
+    к тому же BMC за один task (ipmi_rotate_password apply + verify-loop).
+    Первая встреча `(host, from, to)` эмитит audit как обычно, повторные —
+    тихо пропускаются. Выход из контекста очищает дедуп-set, следующий task
+    стартует с пустого.
+    """
+    token = _tls_downgrade_emitted.set(set())
+    try:
+        yield
+    finally:
+        _tls_downgrade_emitted.reset(token)
 
 
 _REDFISH_PROBE_PATH = "/redfish/v1/"
 _REDFISH_PROBE_TIMEOUT_SECONDS = 1.5
+
+
+def _strip_host_port(host: str) -> str:
+    """Отделить host от опционального port в строке вида `host` / `host:port` /
+    `[v6]` / `[v6]:port`.
+
+    Возвращает чистый host без квадратных скобок (готов для `ipaddress` и
+    `getaddrinfo`). Пустая строка → пустая строка.
+    """
+    s = host.strip()
+    if not s:
+        return ""
+    if s.startswith("["):
+        end = s.find("]")
+        if end != -1:
+            return s[1:end]
+        # Битый bracket — отдадим как есть, дальше getaddrinfo упадёт.
+        return s
+    # IPv4 / hostname: отрезаем последний `:port`, если он один.
+    # Голый IPv6 без скобок (`::1`) содержит несколько двоеточий и обработан выше.
+    if s.count(":") == 1:
+        return s.split(":", 1)[0]
+    return s
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Запрещённые для BMC диапазоны: loopback + link-local (v4 и v6).
+
+    `link_local` для IPv4 покрывает `169.254.0.0/16` (включая cloud-metadata
+    `169.254.169.254`); для IPv6 — `fe80::/10`. `loopback` — `127.0.0.0/8`
+    для IPv4 и `::1/128` для IPv6.
+    """
+    return ip.is_loopback or ip.is_link_local
+
+
+async def _emit_bmc_endpoint_blocked_audit(host: str, *, reason: str) -> None:
+    """WARNING-event о попытке достучаться до запрещённого endpoint'а.
+
+    Best-effort: если outbox недоступен — только лог. Идёт через тот же
+    transactional outbox, что и `bmc.tls_downgrade`.
+    """
+    try:
+        from src.db.session import AsyncSessionLocal
+        from src.repositories import task as task_repo
+    except Exception:  # noqa: BLE001
+        logger.debug("bmc.endpoint_blocked: audit infra unavailable, host=%s", host)
+        return
+
+    payload = {
+        "action": "bmc.endpoint_blocked",
+        "status": "failure",
+        "allowed": False,
+        "actor_type": "service",
+        "target_type": "ipmi_controller",
+        "target_id": host,
+        "severity": "WARNING",
+        "details": {
+            "host": host,
+            "reason": reason,
+        },
+    }
+    try:
+        async with AsyncSessionLocal() as session:
+            await task_repo.enqueue_audit(session, task_id=None, payload=payload)
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.debug(
+            "bmc.endpoint_blocked audit emit failed host=%s: %s",
+            host, exc.__class__.__name__,
+        )
+
+
+async def ensure_bmc_host_allowed(host: str) -> None:
+    """SSRF-guard: резолвить `host` и отвергнуть, если попадает в локальный
+    диапазон (loopback / link-local IPv4 и IPv6).
+
+    `host` — то, что вернул `extract_bmc_host` (host либо host:port,
+    с возможной IPv6-bracket-нотацией). Если резолв не удаётся —
+    тоже отвергаем: не пытаемся работать с именами, которые мы не можем
+    проверить (защита от DNS rebinding на этом уровне всё равно неполная,
+    но хотя бы блокирует тривиальные мисконфиги).
+
+    Эмитит audit `bmc.endpoint_blocked` (WARNING) и поднимает
+    `BmcEndpointBlockedError(BMC_ENDPOINT_BLOCKED)`.
+
+    Список запрещённых диапазонов фиксированный, без env-toggle: BMC
+    физически живут в management-сети, локальные адреса там не нужны,
+    а единственное оперативное применение — атака.
+    """
+    bare = _strip_host_port(host)
+    if not bare:
+        await _emit_bmc_endpoint_blocked_audit(host, reason="empty_host")
+        raise BmcEndpointBlockedError(
+            error_code="BMC_ENDPOINT_BLOCKED",
+            message="empty BMC host",
+            details={"host": host, "reason": "empty_host"},
+        )
+
+    # Если уже валидный IP — проверяем сразу, без DNS.
+    try:
+        ip_obj = ipaddress.ip_address(bare)
+    except ValueError:
+        ip_obj = None
+
+    if ip_obj is not None:
+        if _is_blocked_ip(ip_obj):
+            reason = "loopback" if ip_obj.is_loopback else "link_local"
+            await _emit_bmc_endpoint_blocked_audit(host, reason=reason)
+            raise BmcEndpointBlockedError(
+                error_code="BMC_ENDPOINT_BLOCKED",
+                message=f"BMC endpoint {bare} is in blocked range ({reason})",
+                details={"host": host, "resolved": bare, "reason": reason},
+            )
+        return
+
+    # Hostname: резолвим в IP, проверяем каждую запись.
+    try:
+        infos = socket.getaddrinfo(bare, None, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        await _emit_bmc_endpoint_blocked_audit(host, reason="resolve_failed")
+        raise BmcEndpointBlockedError(
+            error_code="BMC_ENDPOINT_BLOCKED",
+            message=f"cannot resolve BMC host {bare!r}: {exc}",
+            details={"host": host, "reason": "resolve_failed"},
+        ) from exc
+
+    for info in infos:
+        sockaddr = info[4]
+        addr = sockaddr[0]
+        # IPv6 scope-id: `fe80::1%eth0` → отрезаем суффикс перед ip_address.
+        if "%" in addr:
+            addr = addr.split("%", 1)[0]
+        try:
+            resolved = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if _is_blocked_ip(resolved):
+            reason = "loopback" if resolved.is_loopback else "link_local"
+            await _emit_bmc_endpoint_blocked_audit(host, reason=reason)
+            raise BmcEndpointBlockedError(
+                error_code="BMC_ENDPOINT_BLOCKED",
+                message=(
+                    f"BMC hostname {bare!r} resolves to blocked address "
+                    f"{addr} ({reason})"
+                ),
+                details={
+                    "host": host,
+                    "resolved": addr,
+                    "reason": reason,
+                },
+            )
+
+
+class ProbeResult(NamedTuple):
+    """Исход каскадного probe'а: ступень, на которой BMC ответил.
+
+    * `reachable=False` — ни один уровень не ответил, caller уходит на ipmitool.
+    * `reachable=True` — Redfish доступен; `scheme` (`https`/`http`) и
+      `verify_tls` показывают, как именно достучались. RedfishClient нужно
+      собрать с теми же параметрами, иначе реальные operations пойдут не туда,
+      куда отвечал probe (например, BMC только http, а клиент идёт по https).
+    """
+
+    reachable: bool
+    scheme: Literal["https", "http"]
+    verify_tls: bool
 
 
 def _is_tls_error(exc: BaseException) -> bool:
@@ -128,6 +346,17 @@ async def _emit_tls_downgrade_audit(
     `host` — host[:port] BMC. Не редактируем: в audit'е оператору важно
     видеть, какой именно контроллер ответил только через http.
     """
+    # Дедуп в рамках task-scope'а: если handler обернулся в
+    # `tls_downgrade_audit_dedup()` и тот же downgrade уже эмитили —
+    # повторно не пишем. SIEM/operator увидят одно событие на ротацию,
+    # а не по одному на apply/verify/verify-retry.
+    emitted = _tls_downgrade_emitted.get()
+    if emitted is not None:
+        key = (host, from_level, to_level)
+        if key in emitted:
+            return
+        emitted.add(key)
+
     # Локальные импорты: модуль `clients` грузится из `main` ДО того, как
     # `repositories.task` / `db.session` готовы; держим import call-time'но.
     try:
@@ -162,7 +391,7 @@ async def _emit_tls_downgrade_audit(
         )
 
 
-async def _probe_redfish_cascade(host: str) -> bool:
+async def _probe_redfish_cascade(host: str) -> ProbeResult:
     """Каскадный probe BMC: https-verify → https-no-verify → http.
 
     Архитектурный порядок: сначала самый защищённый канал (TLS + verify),
@@ -172,8 +401,12 @@ async def _probe_redfish_cascade(host: str) -> bool:
     минуту (apply сертификата, обновление firmware, network-route change),
     и кэш бы залип на прошлом ответе.
 
-    Возвращает True если ХОТЯ БЫ один уровень увидел Redfish. False если
-    все три провалились — caller уйдёт на ipmitool.
+    Возвращает `ProbeResult(reachable, scheme, verify_tls)`: caller строит
+    RedfishClient с тем же scheme/verify, на котором отозвался BMC. Если бы
+    мы возвращали голый bool, клиент уходил бы на default `https + verify`
+    даже когда BMC отвечает только через http (или только без verify) —
+    реальные операции упали бы на TLS/connect, а ipmitool fallback не
+    сработал бы (probe уже сказал «доступен»).
 
     Lowering security level каскадно логируется на WARNING и эмитит
     audit-event `bmc.tls_downgrade` (через outbox), чтобы оператор
@@ -187,7 +420,7 @@ async def _probe_redfish_cascade(host: str) -> bool:
     # настроен в окружении: prod — verify=True, dev/staging с self-signed
     # iDRAC — verify=False (но всё равно поверх TLS).
     if await _probe_redfish(host, scheme="https"):
-        return True
+        return ProbeResult(reachable=True, scheme="https", verify_tls=verify)
 
     # Уровень, с которого мы стартовали — нужен для audit-события
     # `bmc.tls_downgrade`. Если verify=False с самого начала, шаг 2 пропускаем,
@@ -213,7 +446,7 @@ async def _probe_redfish_cascade(host: str) -> bool:
                 await _emit_tls_downgrade_audit(
                     host, from_level="https_verify", to_level="https_noverify",
                 )
-                return True
+                return ProbeResult(reachable=True, scheme="https", verify_tls=False)
         except (httpx.HTTPError, OSError) as exc:
             logger.info(
                 "Redfish probe https-no-verify failed for %s: %s",
@@ -231,9 +464,9 @@ async def _probe_redfish_cascade(host: str) -> bool:
         await _emit_tls_downgrade_audit(
             host, from_level=from_level, to_level="http",
         )
-        return True
+        return ProbeResult(reachable=True, scheme="http", verify_tls=True)
 
-    return False
+    return ProbeResult(reachable=False, scheme="https", verify_tls=verify)
 
 
 async def get_bmc_client(
@@ -258,7 +491,14 @@ async def get_bmc_client(
     `kind` — тип BMC из `ipmi_controllers.kind`
     (`idrac`/`ilo`/`ipmi`/`redfish`). Используется для подбора Manager-id
     Redfish-пути. Если не передан — RedfishClient берёт default (iDRAC).
+
+    До любого сетевого вызова `host` проходит SSRF-guard
+    (`ensure_bmc_host_allowed`): резолв в IP + hard-block loopback /
+    link-local. Это применяется к обоим транспортам (redfish и ipmitool):
+    оператор всё равно не должен иметь возможность направить worker в
+    `127.0.0.1` или `169.254.169.254`.
     """
+    await ensure_bmc_host_allowed(host)
     if prefer == "ipmitool":
         return IpmitoolClient(
             host=host,
@@ -268,21 +508,26 @@ async def get_bmc_client(
             interface=ipmitool_interface,
         )
 
-    if await _probe_redfish_cascade(host):
+    probe = await _probe_redfish_cascade(host)
+    if probe.reachable:
         settings = get_settings()
-        # Shared transport под verify-уровень: TCP/TLS connections к одному
-        # BMC переиспользуются между RedfishClient'ами одного worker'а.
-        # `verify_tls` уносится в transport, RedfishClient передаёт его
-        # туда же — клиенту дублировать не надо (httpx ругается на конфликт).
-        transport = get_bmc_redfish_transport(verify=settings.redfish_verify_tls)
+        # Берём scheme/verify ровно с той ступени, на которой BMC ответил
+        # probe'у. Иначе клиент уходил бы на settings.redfish_verify_tls
+        # дефолт и реальные операции пошли бы не туда: BMC ответил по http —
+        # клиент стучится в https; BMC ответил без verify — клиент валидирует
+        # cert и падает на TLS. Transport разделён по verify-уровню (https-
+        # verify, https-no-verify), для http transport не нужен (httpx
+        # сам поднимет plain-HTTP-pool на standalone-клиенте).
+        host_with_scheme = f"{probe.scheme}://{host}"
         kwargs: dict = {
-            "host": host,
+            "host": host_with_scheme,
             "username": username,
             "password": password,
-            "verify_tls": settings.redfish_verify_tls,
+            "verify_tls": probe.verify_tls,
             "timeout": settings.redfish_timeout_seconds,
-            "transport": transport,
         }
+        if probe.scheme == "https":
+            kwargs["transport"] = get_bmc_redfish_transport(verify=probe.verify_tls)
         if kind:
             manager_id = resolve_manager_id(kind)
             # Пустой '' для generic-kind (ipmi/redfish) → discovery через

@@ -89,4 +89,24 @@ def ready(db: Session = Depends(get_db)):
                     },
                 )
 
+        # Отдельный watchdog: «loop живой, но sweep падает каждый день».
+        # Минутный tick обновляется в _retention_loop безусловно, поэтому
+        # `retention_loop_stalled` выше не ловит «apply_active молча валится
+        # в 00:00 MSK». Сверяем отдельный marker, который двигается только
+        # после успешного sweep'а (или после skip'а по advisory-lock'у,
+        # когда работу делает другая replica). None — sweep ещё ни разу
+        # не прошёл в этом процессе (legitimate startup до первой границы).
+        last_sweep = main_module.get_retention_last_successful_sweep_monotonic()
+        if last_sweep is not None:
+            sweep_age = time.monotonic() - last_sweep
+            if sweep_age > main_module._RETENTION_SWEEP_WATCHDOG_TTL_SECONDS:
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "status": "not_ready",
+                        "reason": "retention_sweep_stalled",
+                        "last_successful_sweep_age_seconds": int(sweep_age),
+                    },
+                )
+
     return {"status": "ready"}

@@ -669,6 +669,14 @@ async def update_account(
     # Сравниваем с текущим состоянием — PATCH `{has_sudo: True}` на уже-True
     # аккаунт оседает как no-op, fanout его не должен запускать. Для
     # коллекций сравниваем как множества (порядок групп не значим).
+    #
+    # `raw_changes = payload.model_dump(mode="json")` — enum'ы/datetime
+    # уезжают как строки/iso-8601. На сегодняшней схеме (`has_sudo: bool`,
+    # `unix_groups: list[str]`, `shell: str`, `home_dir: str`) сравнение
+    # `current != new_value` корректно. При добавлении non-string поля
+    # (datetime / enum / decimal) обновить этот comparator — иначе str-vs-
+    # native сравнение даст false-positive «изменилось», PATCH станет no-op
+    # с лишним fanout'ом.
     def _is_changed(field: str, new_value) -> bool:
         current = getattr(obj, field, None)
         if field == "unix_groups":
@@ -829,7 +837,11 @@ async def unlink_servers(
         )
         raise
 
-    current = set(repo.linked_server_ids(obj))
+    # Берём FOR UPDATE на M2M-строках аккаунта — сериализует с параллельными
+    # правками связок (link_servers, link inventory). selectin-загруженный
+    # `obj.server_links` мог отстать от БД, под лок'ом перечитываем live-state.
+    live_links = await repo.lock_links_for_account(db, account_id)
+    current = {link.server_id for link in live_links}
     unknown = [sid for sid in payload.server_ids if sid not in current]
     if unknown:
         audit_service.emit(
@@ -860,6 +872,11 @@ async def unlink_servers(
             message="Cannot unlink the last server — account must stay on at least one",
         )
 
+    # `remove_servers` идёт по selectin-загруженному `obj.server_links`. После
+    # `lock_links_for_account` session-кэш может расходиться с live-state —
+    # обновляем relationship, чтобы DELETE'ил по тому же набору, что и
+    # snapshot-check выше.
+    await db.refresh(obj, attribute_names=["server_links"])
     removed = await repo.remove_servers(db, obj, payload.server_ids)
     await db.commit()
     await db.refresh(obj)

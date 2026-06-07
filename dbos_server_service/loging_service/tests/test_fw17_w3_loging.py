@@ -67,11 +67,13 @@ class TestActionForPathCollisions:
         assert _action_for_path("GET", "/api/logging/v1/services") == "logging.services_read"
 
     def test_existing_services_events_path(self):
-        """Caталог события под `/services/{svc}/events` — `logging.events_queried`."""
+        """Каталог action'ов сервиса под `/services/{svc}/events` —
+        `logging.service_events_browsed` (отдельный action; SOC-фильтр по
+        `logging.events_queried` ловит только чтения audit-журнала)."""
         from src.main import _action_for_path
         assert (
             _action_for_path("GET", "/api/logging/v1/services/auth_service/events")
-            == "logging.events_queried"
+            == "logging.service_events_browsed"
         )
 
     def test_existing_retention_paths(self):

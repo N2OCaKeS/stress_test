@@ -93,6 +93,17 @@ async def get_by_id(db: AsyncSession, server_id: str) -> Server | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_for_update(db: AsyncSession, server_id: str) -> Server | None:
+    """SELECT по PK с FOR UPDATE row-lock.
+
+    `release_server` использует это, чтобы re-fetch'нуть `busy_state` перед
+    pre-check'ом 409 SERVER_NOT_BUSY. Без лока caller мог бы прочитать stale
+    BUSY из чужой session-cache; параллельный release сериализуется здесь.
+    """
+    stmt = select(Server).where(Server.id == server_id).with_for_update(of=Server)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def get_many_by_ids(
     db: AsyncSession, server_ids: list[str]
 ) -> dict[str, Server]:

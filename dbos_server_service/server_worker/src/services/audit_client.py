@@ -70,12 +70,27 @@ class AuditEmitError(Exception):
     где ответа не было. Publisher использует это поле, чтобы отличить
     permanent-fatal 4xx (плохой payload, dead key — retry'ить бесполезно,
     сразу в DLQ) от transient 5xx/transport (retry через outbox).
+
+    `config_error=True` — это не сбой loging_service, а ошибка конфига
+    worker'а (например, пустой LOGGING_SERVICE_API_KEY). Publisher в этом
+    случае не должен дёргать `record_failure` на shared breaker'е: один
+    мисконфиг отравил бы канал ко всем будущим audit'ам, в т.ч. тем,
+    которые бы прошли. Row остаётся unpublished с backoff'ом — оператор
+    правит ENV, publisher добивает row обычным retry'ем; cap по attempts
+    уведёт её в DLQ только если мисконфиг затянется.
     """
 
-    def __init__(self, error_message: str, *, status_code: int | None = None):
+    def __init__(
+        self,
+        error_message: str,
+        *,
+        status_code: int | None = None,
+        config_error: bool = False,
+    ):
         super().__init__(error_message)
         self.error_message = error_message
         self.status_code = status_code
+        self.config_error = config_error
 
 
 async def emit(
@@ -163,8 +178,15 @@ async def emit(
             action,
             _audit_dropped_no_api_key,
         )
+        # `config_error=True` — publisher оставит row unpublished (attempts++
+        # + backoff) и НЕ дёрнет record_failure() на shared circuit breaker'е:
+        # loging_service тут не виноват, открывать на него breaker = глушить
+        # все остальные events до перезапуска. Row дождётся, пока оператор
+        # поправит ENV, и доедет обычным retry'ем; если ENV не поправят —
+        # уедет в DLQ по cap'у attempts (reason=attempts_cap).
         raise AuditEmitError(
             "LOGGING_SERVICE_API_KEY is not set; audit emit refused",
+            config_error=True,
         )
     headers = bearer_header(api_key)
     client = get_audit_client()

@@ -153,14 +153,39 @@ class TestFilterByTimeRange:
             params={"from_time": ts_list[1], "include_total": "true"},
         ).json()["total"] == 2
 
-    def test_to_time_inclusive(self, client, admin_client, auth_headers):
+    def test_to_time_exclusive(self, client, admin_client, auth_headers):
+        # `to_time` exclusive: события с `timestamp == to_time` НЕ попадают
+        # в выдачу. Это исключает дубли на стыке sliding-window запросов,
+        # где caller передаёт `from_time=prev_to`.
         ts_list = _three_points_and_mid()
         for ts in ts_list:
             _ingest(client, auth_headers, timestamp=ts)
+        # to_time = середина → берём только первую точку (раньше середины).
         assert admin_client.get(
             "/api/logging/v1/events",
             params={"to_time": ts_list[1], "include_total": "true"},
-        ).json()["total"] == 2
+        ).json()["total"] == 1
+
+    def test_to_time_sliding_window_no_duplicate(self, client, admin_client, auth_headers):
+        # Окно [t0, t1) + окно [t1, t2): событие на t1 попадает ровно
+        # во второе окно, не в оба.
+        ts_list = _three_points_and_mid()
+        for ts in ts_list:
+            _ingest(client, auth_headers, timestamp=ts)
+        first = admin_client.get(
+            "/api/logging/v1/events",
+            params={"from_time": ts_list[0], "to_time": ts_list[1], "include_total": "true"},
+        ).json()
+        second = admin_client.get(
+            "/api/logging/v1/events",
+            params={"from_time": ts_list[1], "to_time": ts_list[2], "include_total": "true"},
+        ).json()
+        ids_first = {i["id"] for i in first["items"]}
+        ids_second = {i["id"] for i in second["items"]}
+        assert ids_first.isdisjoint(ids_second)
+        # Граничное событие (ts_list[1]) ушло именно во второе окно.
+        assert first["total"] == 1
+        assert second["total"] == 1
 
     def test_time_range_combined(self, client, admin_client, auth_headers):
         ts_list = _three_points_and_mid()

@@ -74,6 +74,16 @@ async def _identity_from_user_jwt(
     Stale payload больше не даёт привилегий: каждое privilege-поле
     (`platform_role`, `department_id`, `allowed_services`, `service_roles`)
     пересобирается из живой user-row + roles + groups.
+
+    Если JWT выписан через OAuth2 `authorization_code` grant — `payload`
+    несёт `oauth_scopes` (снапшот approved scope'ов). Симметрично
+    `authorization_service.introspect` мы пересекаем эти scope'ы с live
+    `client.allowed_scopes` (на случай, если admin сузил scope клиента
+    после выпуска кода) и протаскиваем результат в `collect_user_permissions`,
+    чтобы `allowed_services` / `service_roles` / `groups` для in-process
+    guard'ов (например, `/me`) отражали ровно тот scope, что approved юзер.
+    Без этого узко-scoped third-party JWT видел бы через `/users/me`
+    все live-сервисы юзера (scope-creep).
     """
     sub = payload.get("sub")
     if not sub:
@@ -90,6 +100,20 @@ async def _identity_from_user_jwt(
             message="User is no longer active",
         )
 
+    # OAuth scope-creep guard: пересекаем зафиксированные в JWT scope'ы с
+    # live `client.allowed_scopes` (если client удалён / деактивирован —
+    # обнуляем). `None` означает не-OAuth JWT — фильтрация не применяется.
+    oauth_scopes = payload.get("oauth_scopes")
+    if oauth_scopes is not None:
+        oauth_cid = payload.get("oauth_client_id")
+        if oauth_cid:
+            client = await OAuthClientRepository(db).get_by_client_id(oauth_cid)
+            if client is None or not client.is_active:
+                oauth_scopes = []
+            else:
+                client_allowed = set(client.allowed_scopes or [])
+                oauth_scopes = [s for s in oauth_scopes if s in client_allowed]
+
     # account_admin намеренно не имеет service-level grants (зеркало
     # `_build_identity` из services/auth_service.py).
     is_account_admin = user.platform_role == PlatformRole.ACCOUNT_ADMIN
@@ -98,7 +122,9 @@ async def _identity_from_user_jwt(
         service_roles: dict[str, list[str]] = {}
         groups: dict[str, list[str]] = {}
     else:
-        allowed_services, service_roles, groups = await collect_user_permissions(db, user)
+        allowed_services, service_roles, groups = await collect_user_permissions(
+            db, user, oauth_scopes=oauth_scopes
+        )
 
     dept_name: str | None = None
     if user.department_id:
@@ -116,6 +142,7 @@ async def _identity_from_user_jwt(
         is_banned=user.status == UserStatus.BANNED,
         platform_role=user.platform_role,
         subject_type="user",
+        oauth_scopes=oauth_scopes,
     )
 
 
@@ -142,11 +169,7 @@ async def _identity_from_oauth_client_jwt(
     # Пересчитываем allowed_services как live (dept-grants ∩ client.scopes),
     # чтобы revoke на уровне отдела моментально доходил до guard'а.
     dept_repo = DepartmentRepository(db)
-    dept_services = (
-        await dept_repo.list_active_services(client.department_id)
-        if client.department_id
-        else []
-    )
+    dept_services = await dept_repo.list_active_services(client.department_id)
     allowed_services = [s for s in dept_services if s in client.allowed_scopes]
 
     # OAuth client_credentials — m2m, никаких platform_role или per-service
@@ -442,6 +465,48 @@ def require_any_admin(identity: CurrentUserIdentity) -> IdentityContext:
 
 AccountAdmin = Annotated[IdentityContext, Depends(require_account_admin)]
 AnyAdmin = Annotated[IdentityContext, Depends(require_any_admin)]
+
+
+# Scope-имя, разрешающее третьестороннему OAuth2-приложению ходить в self-management
+# auth-ручки (создание/отзыв PAT, управление ботами). Совпадает с именем самого
+# сервиса в DepartmentServiceAccess: чтобы клиент мог попросить `auth_service` в
+# scope, у его отдела должен быть выдан access к сервису `auth_service` —
+# тот же gate, что и для остальных сервисов.
+AUTH_MANAGEMENT_SCOPE = "auth_service"
+
+
+def require_auth_management_scope(identity: CurrentUserIdentity) -> IdentityContext:
+    """Гард для self-management auth-ручек (PAT-create, /bots/*).
+
+    Не-OAuth токены (login, refresh, PAT, m2m client_credentials) — пропуск:
+    `identity.oauth_scopes is None` означает, что токен выписан без участия
+    OAuth2 authorization_code flow и его область действия определяется
+    ролями субъекта, а не scope-снапшотом.
+
+    OAuth2 authorization_code JWT: пускаем только если `AUTH_MANAGEMENT_SCOPE`
+    лежит в approved scope'ах. Иначе 403 OAUTH_SCOPE_INSUFFICIENT —
+    узко-scoped third-party app, получивший токен с условным
+    `scope=server_service`, не должен через тот же токен крутить юзеру
+    PAT'ы и ботов. Чтобы такой клиент получил доступ — admin'у отдела
+    надо явно включить `auth_service` в `OAuthClient.allowed_scopes` и
+    юзер обязан approve'нуть scope на /authorize.
+    """
+    if identity.oauth_scopes is None:
+        return identity
+    if AUTH_MANAGEMENT_SCOPE not in identity.oauth_scopes:
+        raise AuthorizationError(
+            error_code="OAUTH_SCOPE_INSUFFICIENT",
+            message=(
+                f"OAuth token scope does not include '{AUTH_MANAGEMENT_SCOPE}'; "
+                "self-management operation not allowed"
+            ),
+        )
+    return identity
+
+
+AuthManagementIdentity = Annotated[
+    IdentityContext, Depends(require_auth_management_scope)
+]
 
 
 def require_service_token(

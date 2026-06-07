@@ -360,6 +360,13 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                 if fresh.status not in (TaskStatus.RUNNING, TaskStatus.QUEUED):
                     continue
 
+                # Снимаем pre-drain статус ДО `mark_*` — иначе ниже в
+                # `details_payload` мы бы записали уже переписанный
+                # `fresh.status` (QUEUED после mark_pending_for_retry или
+                # FAILED после mark_failed) и оператор не отличил бы
+                # «drain поймал running» от «drain поймал ещё queued».
+                pre_drain_status = fresh.status
+
                 error_message = "worker_shutdown: terminated by SIGTERM/shutdown event"
 
                 # Retry vs terminal — то же правило, что в `_runner`.
@@ -411,7 +418,7 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                     "attempt": fresh.attempt,
                     "max_attempts": fresh.max_attempts,
                     "will_retry": will_retry,
-                    "pre_drain_status": fresh.status,
+                    "pre_drain_status": pre_drain_status,
                 }
                 if fresh.target_server_id:
                     details_payload["server_id"] = fresh.target_server_id
@@ -569,7 +576,13 @@ async def _recover_due_scheduled_retries_once() -> None:
                 "scheduled_retries recovery: claim failed: %s",
                 redacted,
             )
-            return
+            # DB-flap на одном claim'е не должен класть весь recovery-цикл —
+            # `continue` оставляет шанс остальным due-row'ам в backlog'е.
+            # Cap-by-budget (`recovered+skipped+failed_kiq < MAX_PER_TICK`)
+            # всё равно ограничивает proход; пустая выборка либо новый
+            # exception выведут loop сами.
+            failed_kiq += 1
+            continue
 
         # Lock уже отпущен — kiq без открытой транзакции.
         target_task = broker.find_task(task_kind)

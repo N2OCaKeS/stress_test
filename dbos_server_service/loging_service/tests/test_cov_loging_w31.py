@@ -317,18 +317,18 @@ class TestApplyActiveMultiPolicyOr:
 
 
 class TestActionForPathServicesEventsSuffix:
-    """`_action_for_path` помечает `segments[-1] == "events"` как
-    `logging.events_queried`, даже когда resource — `services`. Это
-    сохраняет backward-compat с substring-эпохой, где `/events` всегда
-    бил по events-чтению независимо от namespace path-а.
+    """`_action_for_path` мапит `/services/{svc}/events` в отдельный action
+    `logging.service_events_browsed` — это каталог зарегистрированных
+    action'ов сервиса, не чтение audit-журнала. SOC-фильтр по
+    `logging.events_queried` ловит только journal-чтения.
     """
 
-    def test_services_subresource_events_returns_events_queried(self):
+    def test_services_subresource_events_returns_service_events_browsed(self):
         from src.main import _action_for_path
 
         assert (
             _action_for_path("GET", "/api/logging/v1/services/auth_service/events")
-            == "logging.events_queried"
+            == "logging.service_events_browsed"
         )
 
     def test_services_subresource_events_with_trailing_slash(self):
@@ -338,7 +338,7 @@ class TestActionForPathServicesEventsSuffix:
         # последний — `events`.
         assert (
             _action_for_path("GET", "/api/logging/v1/services/auth_service/events/")
-            == "logging.events_queried"
+            == "logging.service_events_browsed"
         )
 
     def test_top_level_services_without_events_returns_services_read(self):

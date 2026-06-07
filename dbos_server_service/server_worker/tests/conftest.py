@@ -97,12 +97,21 @@ async def _truncate_tasks():
     Redis недоступен — breaker и так fail-open'ит, тесту это не помешает.
     """
     from src.db.session import engine
-    from src.services import audit_publisher_breaker
+    from src.services import audit_publisher_breaker, redis_pool
     from src.tasks._runner_state import reset_for_tests
     async with engine.begin() as conn:
         await conn.execute(text("TRUNCATE tasks CASCADE"))
         await conn.execute(text("TRUNCATE audit_outbox RESTART IDENTITY CASCADE"))
         await conn.execute(text("TRUNCATE worker_heartbeats CASCADE"))
+    # `redis_pool.get_redis()` кеширует `aioredis.Redis` на module-level.
+    # Под `asyncio_mode = "auto"` pytest-asyncio даёт каждому тесту свой
+    # event loop, а закешированный клиент остаётся привязан к loop'у
+    # первого теста, который его создал. Любой `await client.eval(...)`
+    # из последующего теста кидает `RuntimeError: got Future attached to
+    # a different loop`. Сбрасываем кеш до того, как дёргаем breaker.reset
+    # — `audit_publisher_breaker.reset()` лениво поднимет новый клиент
+    # уже на текущем loop'е.
+    redis_pool.reset_for_tests()
     try:
         await audit_publisher_breaker.reset()
     except Exception:
@@ -221,6 +230,23 @@ async def stash_dispatch_creds():
                 pass
     finally:
         await client.aclose()
+
+
+@pytest.fixture(autouse=True)
+def _bypass_bmc_ssrf_guard(request, monkeypatch):
+    """По умолчанию выключаем SSRF-guard `ensure_bmc_host_allowed` в тестах.
+
+    Большая часть suite'а гоняет `get_bmc_client` против hostname'ов вроде
+    `bmc.test`, которые не резолвятся в DNS — guard бы валил их с
+    `BMC_ENDPOINT_BLOCKED` ещё до probe'а. Тест, который проверяет сам
+    guard, навешивает маркер `enforce_bmc_ssrf_guard` и получает
+    оригинальную функцию обратно.
+    """
+    if request.node.get_closest_marker("enforce_bmc_ssrf_guard"):
+        return
+    async def _noop(_host: str) -> None:
+        return None
+    monkeypatch.setattr("src.clients.ensure_bmc_host_allowed", _noop)
 
 
 @pytest.fixture

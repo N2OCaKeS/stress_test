@@ -67,7 +67,7 @@ async def delete_service(
         if access and access.is_active:
             await dept_repo.revoke_access(access, revoked_by=actor_id)
 
-    await role_repo.deactivate_all_for_service(service_name)
+    affected_user_ids = await role_repo.deactivate_all_for_service(service_name)
     role_def_repo = ServiceRoleDefinitionRepository(db)
     await role_def_repo.deactivate_all_for_service(service_name)
     from src.repositories.bot_roles import BotRoleRepository
@@ -75,10 +75,12 @@ async def delete_service(
     affected_bot_ids = await bot_role_repo.deactivate_all_for_service(service_name)
     await svc_repo.deactivate(svc)
     await db.commit()
-    # Сервис снесён глобально — у ботов с прямой ролью на нём нужно сбросить
-    # identity-cache, иначе до истечения TTL они продолжат видеть роль в
-    # introspect. Группомемберский путь покрыт через каскад на dept-revoke,
-    # вызванный выше для каждого отдела.
+    # Сервис снесён глобально — у юзеров и ботов с прямой ролью на нём нужно
+    # сбросить identity-cache, иначе до истечения TTL они продолжат видеть
+    # роль в introspect. Группомемберский путь покрыт через каскад на
+    # dept-revoke, вызванный выше для каждого отдела.
+    for uid in affected_user_ids:
+        _invalidate_identity_cache(uid)
     for bid in affected_bot_ids:
         _invalidate_identity_cache(bid)
     audit_service.emit(
@@ -89,6 +91,7 @@ async def delete_service(
             "display_name": svc.display_name,
             "cascade_revoked_department_access": True,
             "cascade_deactivated_roles": True,
+            "affected_user_count": len(affected_user_ids),
             "affected_bot_count": len(affected_bot_ids),
         },
     )

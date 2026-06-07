@@ -792,3 +792,99 @@ class TestRetentionLoopSupervised:
 
         # tick встал.
         assert main_module.get_retention_last_tick_monotonic() is not None
+
+
+class TestRetentionSweepWatchdog:
+    """Отдельный watchdog для последнего УСПЕШНОГО sweep'а.
+
+    Минутный `_retention_last_tick_monotonic` обновляется на каждой итерации
+    `_retention_loop`, даже если sweep'а в этом слоте не было или он молча
+    упал. SOC-инцидент «retention тихо не идёт каждый день» поэтому проходил
+    мимо `/ready`. `_retention_last_successful_sweep_monotonic` двигается
+    только после успешного `apply_active` (или skip'а по advisory-lock'у), и
+    `/ready` ловит stall через `_RETENTION_SWEEP_WATCHDOG_TTL_SECONDS`.
+    """
+
+    def test_initial_none_does_not_block_readiness(self, client, monkeypatch):
+        """Startup window до первой 00:00 MSK границы — sweep ещё не прошёл,
+        marker None, `/ready` не должен 503'ить."""
+        from src import main as main_module
+        from src.core.config import get_settings
+
+        # Включаем retention loop в settings, чтобы health-эндпоинт пошёл
+        # в ветку watchdog'а.
+        monkeypatch.setenv("RETENTION_LOOP_ENABLED", "true")
+        get_settings.cache_clear()
+        try:
+            with main_module._retention_watchdog_lock:
+                main_module._retention_last_tick_monotonic = None
+                main_module._retention_last_successful_sweep_monotonic = None
+            r = client.get("/api/logging/v1/ready")
+            assert r.status_code == 200
+        finally:
+            get_settings.cache_clear()
+
+    def test_stale_successful_sweep_returns_503(self, client, monkeypatch):
+        """Marker есть, но отстал больше TTL — `/ready` отдаёт 503 с
+        `reason=retention_sweep_stalled`."""
+        import time as _time
+        from src import main as main_module
+        from src.core.config import get_settings
+
+        monkeypatch.setenv("RETENTION_LOOP_ENABLED", "true")
+        get_settings.cache_clear()
+        try:
+            now = _time.monotonic()
+            stale = now - (main_module._RETENTION_SWEEP_WATCHDOG_TTL_SECONDS + 60)
+            with main_module._retention_watchdog_lock:
+                main_module._retention_last_tick_monotonic = now  # tick свежий
+                main_module._retention_last_successful_sweep_monotonic = stale
+            r = client.get("/api/logging/v1/ready")
+            assert r.status_code == 503
+            body = r.json()
+            assert body["reason"] == "retention_sweep_stalled"
+            assert body["last_successful_sweep_age_seconds"] >= int(
+                main_module._RETENTION_SWEEP_WATCHDOG_TTL_SECONDS
+            )
+        finally:
+            with main_module._retention_watchdog_lock:
+                main_module._retention_last_successful_sweep_monotonic = None
+            get_settings.cache_clear()
+
+    def test_fresh_successful_sweep_ok(self, client, monkeypatch):
+        """Свежий marker + свежий tick — `/ready` зелёный."""
+        import time as _time
+        from src import main as main_module
+        from src.core.config import get_settings
+
+        monkeypatch.setenv("RETENTION_LOOP_ENABLED", "true")
+        get_settings.cache_clear()
+        try:
+            now = _time.monotonic()
+            with main_module._retention_watchdog_lock:
+                main_module._retention_last_tick_monotonic = now
+                main_module._retention_last_successful_sweep_monotonic = now
+            r = client.get("/api/logging/v1/ready")
+            assert r.status_code == 200
+        finally:
+            with main_module._retention_watchdog_lock:
+                main_module._retention_last_successful_sweep_monotonic = None
+            get_settings.cache_clear()
+
+    def test_getter_returns_watchdog_value(self):
+        """`get_retention_last_successful_sweep_monotonic` берёт значение
+        под тем же lock'ом, что и writer в loop'е."""
+        import time as _time
+        from src import main as main_module
+
+        marker = _time.monotonic()
+        with main_module._retention_watchdog_lock:
+            main_module._retention_last_successful_sweep_monotonic = marker
+        try:
+            assert (
+                main_module.get_retention_last_successful_sweep_monotonic()
+                == marker
+            )
+        finally:
+            with main_module._retention_watchdog_lock:
+                main_module._retention_last_successful_sweep_monotonic = None

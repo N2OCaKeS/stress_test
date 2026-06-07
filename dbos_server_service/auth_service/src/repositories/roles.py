@@ -88,13 +88,22 @@ class RoleRepository:
             row.is_active = False
         await self._db.flush()
 
-    async def deactivate_all_for_service(self, service_name: str) -> None:
+    async def deactivate_all_for_service(self, service_name: str) -> list[str]:
+        """Снять все user-роли на сервисе. Возвращает user_id, у которых хотя
+        бы одна роль действительно была деактивирована — caller использует
+        список для сброса identity-кэша (без него юзер до TTL продолжает
+        видеть роль в introspect).
+        """
         rows = await self._db.scalars(
             select(UserServiceRole).where(UserServiceRole.service_name == service_name)
         )
+        affected: set[str] = set()
         for row in rows:
+            if row.is_active:
+                affected.add(row.user_id)
             row.is_active = False
         await self._db.flush()
+        return list(affected)
 
     async def deactivate_all_for_user(self, user_id: str) -> int:
         """Снять все service-роли с юзера. Возвращает count затронутых строк.

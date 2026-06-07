@@ -17,6 +17,7 @@ from src.schemas.groups import (
 from src.services import audit_service
 from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 from src.utils.pagination import PaginationParams
+from src.utils.time import utcnow
 
 
 def _require_admin(identity: IdentityContext) -> None:
@@ -519,7 +520,12 @@ async def grant_service_to_group(
                             message=f"Group already has access to '{service_name}'")
     reactivated = bool(existing and not existing.is_active)
     if existing:
+        # Реактивация — фактически новая выдача: ставим `granted_at`/`granted_by`
+        # на текущий момент и актора. Без этого list-эндпоинты группы
+        # показывают «выдал такой-то такого-то числа», что больше не правда.
         existing.is_active = True
+        existing.granted_at = utcnow()
+        existing.granted_by = identity.user_id
         await db.flush()
         obj = existing
     else:

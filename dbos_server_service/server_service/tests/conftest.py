@@ -506,6 +506,7 @@ async def make_ipmi(db):
         endpoint_url: str = "https://idrac.example.com",
         username: str = "ipmi_user",
         password: str = "ipmi-plaintext-secret",
+        credentials_pending_apply: bool = True,
     ) -> IpmiController:
         ctrl_id = _new_id("ipm_")
         ctrl = IpmiController(
@@ -518,6 +519,7 @@ async def make_ipmi(db):
                 password,
                 aad=secrets_service.aad_for_ipmi_credential(ctrl_id),
             ),
+            credentials_pending_apply=credentials_pending_apply,
         )
         db.add(ctrl)
         await db.flush()

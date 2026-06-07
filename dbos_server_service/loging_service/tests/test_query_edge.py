@@ -42,7 +42,9 @@ class TestTimeRangeEdge:
         assert resp.status_code == 200
         assert resp.json()["items"] == []
 
-    def test_from_equals_to_inclusive_window(self, client, admin_client, auth_headers):
+    def test_from_equals_to_empty_window(self, client, admin_client, auth_headers):
+        # `to_time` exclusive: окно [t, t) логически пустое, события на
+        # границе попадают только в окно, для которого граница — `from_time`.
         ts = _ts(-30)
         _ingest(client, auth_headers, timestamp=ts)
         resp = admin_client.get(
@@ -50,7 +52,7 @@ class TestTimeRangeEdge:
             params={"from_time": ts, "to_time": ts, "include_total": "true"},
         )
         assert resp.status_code == 200
-        assert resp.json()["total"] >= 1
+        assert resp.json()["total"] == 0
 
 
 # ── Combined filters ─────────────────────────────────────────────────────────

@@ -35,10 +35,12 @@ class TestActionForPathSegmentCollisions:
             # Substring-collision на `/retention_*`.
             ("GET", "/api/logging/v1/retention_archive", "logging.admin_access"),
             ("PUT", "/api/logging/v1/retention_archive", "logging.admin_access"),
-            # Вложенные пути под `/services/{svc}/...` — финальный `events`
-            # форсит классификацию как чтение events, что бы ни было до.
-            ("GET", "/api/logging/v1/services/auth_service/events", "logging.events_queried"),
-            ("GET", "/api/logging/v1/services/server_service/events", "logging.events_queried"),
+            # `/services/{svc}/events` — каталог action'ов сервиса,
+            # отдельный action `logging.service_events_browsed`, чтобы
+            # SOC-фильтр по `logging.events_queried` ловил только
+            # чтения audit-журнала.
+            ("GET", "/api/logging/v1/services/auth_service/events", "logging.service_events_browsed"),
+            ("GET", "/api/logging/v1/services/server_service/events", "logging.service_events_browsed"),
             # А вот `/services/{svc}/sub` без `events`-суффикса — это
             # всё ещё services-resource.
             ("GET", "/api/logging/v1/services/auth_service", "logging.services_read"),

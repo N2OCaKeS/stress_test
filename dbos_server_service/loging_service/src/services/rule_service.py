@@ -16,6 +16,7 @@
 
 import enum
 import logging
+import os
 import re
 import threading
 import time
@@ -227,6 +228,7 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("logging.rules_read",       "success"): "INFO",
     ("logging.rules_write",      "success"): "WARNING",
     ("logging.services_read",    "success"): "INFO",
+    ("logging.service_events_browsed", "success"): "INFO",
     ("logging.admin_access",     "success"): "INFO",
     ("logging.retention_read",   "success"): "INFO",
     ("logging.retention_write",  "success"): "WARNING",
@@ -359,12 +361,21 @@ class _RuleCache:
 
     @_db_empty.setter
     def _db_empty(self, value: bool) -> None:
-        # Сеттер нужен только для тестов, которые форсят флаг. Не трогаем
-        # `_loaded_at` / `_loaded_monotonic`: они под контролем `get`/`invalidate`.
-        # Без `self._lock`: production-код сюда не ходит, а в тестах рантайм
-        # single-threaded (pytest-event-loop). Если в будущем появится
-        # threaded-тест на rule-cache — обернуть в `with self._lock`,
-        # иначе composite-check на `_state`/`_rules` race'нет.
+        # Сеттер — test-only shim для исторических тестов, которые форсят
+        # флаг. Production-код сюда не ходит: `_state` меняется внутри `get`
+        # / `invalidate` под `self._lock`. Без lock'а здесь сознательно —
+        # pytest single-threaded, lock не нужен; но если кто-то позовёт
+        # этот сеттер из prod-пути, composite-check на `_state` / `_rules`
+        # race'нет с `get`, а `_loaded_at` / `_loaded_monotonic` останутся
+        # неконсистентны (мы их тут не трогаем). Защищаемся env-guard'ом
+        # на `PYTEST_CURRENT_TEST`: pytest всегда выставляет её на каждый
+        # активный тест, любая другая среда (uvicorn / alembic / cli)
+        # его не несёт, и `AssertionError` встанет колом ровно там, где
+        # появился незаконный setter-call.
+        assert os.environ.get("PYTEST_CURRENT_TEST"), (
+            "_RuleCache._db_empty setter is test-only; "
+            "production must mutate state via get()/invalidate() under lock"
+        )
         if value:
             self._state = CacheState.EMPTY
         else:

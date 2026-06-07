@@ -532,6 +532,104 @@ class TestIpmiCredentialsRotatedCallback:
         )
         assert resp.status_code == 200, resp.text
 
+    async def test_repeat_callback_returns_409_credentials_already_applied(
+        self, client, admin_role_token_a, make_server, make_ipmi, db, dept_a,
+    ):
+        """Повторный callback на уже не-pending row → 409 CREDENTIALS_ALREADY_APPLIED.
+
+        Контракт `API_ENDPOINTS.md` и `internal.py:305` обещают этот код для
+        ретрая worker'а после успешного первого callback'а. Сторадж не должен
+        мутироваться: ciphertext остаётся тот, что положил первый callback.
+        """
+        from src.models import IpmiController
+
+        srv = await make_server(department_id=dept_a)
+        ctrl = await make_ipmi(server_id=srv.id, password="old-pwd")
+        first = await client.post(
+            f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "new_password": "FirstApply1234",
+                "rotated_at": _iso(),
+                "verified_at": _iso(),
+            },
+        )
+        assert first.status_code == 200, first.text
+
+        second = await client.post(
+            f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "new_password": "SecondApply9999",
+                "rotated_at": _iso(),
+                "verified_at": _iso(),
+            },
+        )
+        assert_error(second, 409, "CREDENTIALS_ALREADY_APPLIED")
+
+        await db.commit()
+        refreshed = (await db.execute(
+            select(IpmiController).where(IpmiController.id == ctrl.id)
+        )).scalar_one()
+        # Storage остался от первого callback'а.
+        assert secrets_service.decrypt(
+            refreshed.password_encrypted,
+            aad=secrets_service.aad_for_ipmi_credential(refreshed.id),
+        ) == "FirstApply1234"
+        assert refreshed.credentials_pending_apply is False
+
+    async def test_callback_on_not_pending_controller_returns_409(
+        self, client, admin_role_token_a, make_server, make_ipmi, dept_a,
+    ):
+        """Свежеcозданный controller без pending_apply → 409 на первом же callback'е.
+
+        Сценарий «worker дёрнул endpoint, не выставив pending через dispatch».
+        Без enforcement'а row тихо переписалась бы — теперь отбиваем 409.
+        """
+        srv = await make_server(department_id=dept_a)
+        ctrl = await make_ipmi(
+            server_id=srv.id,
+            password="kept",
+            credentials_pending_apply=False,
+        )
+        resp = await client.post(
+            f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "new_password": "WouldOverwrite1234",
+                "rotated_at": _iso(),
+                "verified_at": _iso(),
+            },
+        )
+        assert_error(resp, 409, "CREDENTIALS_ALREADY_APPLIED")
+
+    async def test_credentials_already_applied_emits_failure_audit(
+        self, client, admin_role_token_a, make_server, make_ipmi,
+        captured_emits, dept_a,
+    ):
+        """409 CREDENTIALS_ALREADY_APPLIED ложится в audit как failure."""
+        srv = await make_server(department_id=dept_a)
+        ctrl = await make_ipmi(
+            server_id=srv.id, credentials_pending_apply=False,
+        )
+        await client.post(
+            f"{BASE_INT}/ipmi-controllers/{ctrl.id}/credentials_rotated",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "new_password": "NoApply1234",
+                "rotated_at": _iso(),
+                "verified_at": _iso(),
+            },
+        )
+        events = _by_action(captured_emits, "ipmi_controller.credentials_rotated_callback")
+        failures = [
+            e for e in events
+            if e.get("status") == "failure"
+            and e["details"].get("reason") == "credentials_already_applied"
+        ]
+        assert failures, f"expected credentials_already_applied failure, got {events}"
+        assert failures[0].get("target_id") == ctrl.id
+
 
 # ── X-Target-Department-Id strict mode ──────────────────────────────────────
 

@@ -36,7 +36,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.constants import AccountSource, Action, EntityType
-from src.core.exceptions import AppException, AuthorizationError, BadRequestError, NotFoundError
+from src.core.exceptions import (
+    AppException,
+    AuthorizationError,
+    BadRequestError,
+    ConflictError,
+    NotFoundError,
+)
 from src.core.known_os import is_known_os
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import os_version as osv_repo
@@ -1082,7 +1088,7 @@ async def receive_users_inventory(
             details["is_new_drift"] = emit["is_new_drift"]
         audit_service.emit(
             "server_account.drift_detected",
-            target_id=server_id, target_type="server",
+            target_id=server_id, target_type="server_account",
             status="warning", allowed=True,
             details=details,
         )
@@ -1527,11 +1533,43 @@ async def record_ipmi_credentials_rotated(
             },
         )
 
+    # Берём row-lock перед чтением `credentials_pending_apply` — ретрай
+    # worker'а после успешного callback'а (или умышленно повторённый POST)
+    # без лока успел бы пройти pending-проверку оба раза и второй раз
+    # перезаписал бы свежий ciphertext чужим plaintext'ом. Под FOR UPDATE
+    # второй callback ждёт коммит первого и видит уже снятый флаг.
+    locked = await ipmi_repo.get_for_update(db, controller_id)
+    if locked is None:
+        audit_service.emit(
+            "ipmi_controller.credentials_rotated_callback",
+            target_id=controller_id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={"reason": "controller_not_found"},
+        )
+        raise NotFoundError(
+            error_code="NO_IPMI_CONTROLLER",
+            message="IPMI controller not found",
+        )
+    if not locked.credentials_pending_apply:
+        audit_service.emit(
+            "ipmi_controller.credentials_rotated_callback",
+            target_id=controller_id, target_type="ipmi_controller",
+            status="failure", allowed=True,
+            details={
+                "reason": "credentials_already_applied",
+                "server_id": locked.server_id,
+            },
+        )
+        raise ConflictError(
+            error_code="CREDENTIALS_ALREADY_APPLIED",
+            message="IPMI credentials are not pending apply",
+        )
+
     encrypted = secrets_service.encrypt(
         payload.new_password,
-        aad=secrets_service.aad_for_ipmi_credential(ctrl.id),
+        aad=secrets_service.aad_for_ipmi_credential(locked.id),
     )
-    await ipmi_repo.update(db, ctrl, {
+    await ipmi_repo.update(db, locked, {
         "password_encrypted": encrypted,
         "password_rotated_at": rotated_at,
         # Callback worker'а — единственная точка, где БД-ciphertext

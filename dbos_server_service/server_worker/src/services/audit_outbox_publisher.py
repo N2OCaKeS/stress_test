@@ -344,12 +344,11 @@ async def _publish_one(
     `next_retry_at` не приедет в БД и SELECT следующего poll-цикла подберёт
     ту же row снова.
 
-    Исключение из «обязан commit'нуть»: на `breaker_skipped=True` метод
-    делает `session.flush()` только если `retry_after > 0` (есть что
-    зафиксировать в БД). При `retry_after == 0` row не меняется, flush
-    отсутствует, и `commit()` caller'а — noop. Caller всё равно может
-    звать `commit()` безусловно (симметрия с остальными ветками,
-    эффективно ничего не пишет), либо bail-out'ить из batch'а сразу.
+    На `breaker_skipped=True` flush делается всегда: `next_retry_at`
+    сдвигается на capped cooldown breaker'а либо на `_CB_SLEEP_CHUNK_SECONDS`
+    (для retry_after=0). Без этой записи row оставалась бы eligible на
+    ближайший poll-тик и публикатор бы крутил `check()` на той же строке.
+    Caller обязан commit'нуть как и в остальных ветках.
     """
     payload = dict(row.payload)
     action = payload.pop("action", None)
@@ -392,15 +391,23 @@ async def _publish_one(
         global _breaker_skips_total
         _breaker_skips_total += 1
         retry_after = float(exc.details.get("retry_after_seconds", 0) or 0)
+        # Cap'аем окном `_BREAKER_SKIP_RETRY_CAP_SECONDS` — иначе row
+        # ждёт весь cooldown breaker'а, даже если probe прошёл успехом
+        # через секунду и канал уже работает. На `retry_after == 0`
+        # (граничный случай: cooldown истёк, но breaker ещё `open`,
+        # либо результат int()-округления в `CircuitBreakerOpenError`)
+        # всё равно сдвигаем `next_retry_at` на `_CB_SLEEP_CHUNK_SECONDS`
+        # вперёд. Без этого row остаётся eligible на ближайший poll-тик,
+        # `check()` снова кидает open, и publisher крутит CPU-loop'ом
+        # по одной и той же строке без HTTP-roundtrip'а.
         if retry_after > 0:
-            # Cap'аем окном `_BREAKER_SKIP_RETRY_CAP_SECONDS` — иначе row
-            # ждёт весь cooldown breaker'а, даже если probe прошёл успехом
-            # через секунду и канал уже работает.
             capped_retry_after = min(retry_after, _BREAKER_SKIP_RETRY_CAP_SECONDS)
-            row.next_retry_at = datetime.now(timezone.utc) + timedelta(
-                seconds=capped_retry_after,
-            )
-            await session.flush()
+        else:
+            capped_retry_after = _CB_SLEEP_CHUNK_SECONDS
+        row.next_retry_at = datetime.now(timezone.utc) + timedelta(
+            seconds=capped_retry_after,
+        )
+        await session.flush()
         return PublishResult(
             closed=True, audit_emit_error=False, was_published=False,
             breaker_skipped=True,
@@ -439,6 +446,27 @@ async def _publish_one(
         error_message = redact_error_message(exc.error_message)
         row.last_error = error_message[:LAST_ERROR_MAX_LEN]
 
+        # Config-error (например, пустой LOGGING_SERVICE_API_KEY) — это
+        # ошибка конфигурации worker'а, а не сбой loging_service.
+        # Поведение: row остаётся unpublished, attempts уже инкрементнут
+        # выше, ставим backoff — общий retry-loop добьёт её. По cap'у
+        # attempts row уедет в DLQ через `_maybe_poison` (reason=attempts_cap).
+        # Раньше тут стоял `_send_to_dlq(reason="config_error")` — он
+        # помечал row published_at=now(), и событие тихо терялось при
+        # первом же неудачном emit'е, хотя оператор мог поправить ENV за
+        # секунды. Сейчас row живёт до тех пор, пока ключ не появится в
+        # конфиге, и сразу довезёт audit как только emit пройдёт.
+        # `record_failure()` на shared breaker'е НЕ дёргаем: один мисконфиг
+        # не должен глушить весь audit-канал для других реплик. WARN уже
+        # ушёл в логи внутри `audit_client.emit`.
+        if exc.config_error:
+            if _maybe_poison(row):
+                await session.flush()
+                return PublishResult(closed=True, audit_emit_error=False, was_published=False)
+            _apply_backoff(row)
+            await session.flush()
+            return PublishResult(closed=False, audit_emit_error=False, was_published=False)
+
         # Classify 4xx как permanent-fatal — loging_service ответил, что
         # этот конкретный payload неприемлем (плохая схема, dead key,
         # отозванный actor). Retry не починит. Сразу в DLQ. Breaker такие
@@ -463,8 +491,18 @@ async def _publish_one(
         await session.flush()
         # Transient HTTP-failure от loging_service (5xx/timeout/connect) —
         # сигнал shared breaker'у. 4xx не доходят сюда: они уходят в DLQ
-        # выше и не нагружают канал в смысле «он лежит».
-        await audit_publisher_breaker.record_failure()
+        # выше и не нагружают канал в смысле «он лежит». Сбой Redis на
+        # этом шаге глотаем: backoff и attempts уже зафлашены, ронять
+        # их через outer-rollback нет смысла — потеряем счётчик retry'ев
+        # и снова отправим тот же payload без задержки.
+        try:
+            await audit_publisher_breaker.record_failure()
+        except Exception as exc:  # noqa: BLE001 — bookkeeping must not undo a recorded failure
+            logger.warning(
+                "audit_publisher_breaker.record_failure failed row=%s err=%s",
+                row.id,
+                redact_error_message(f"{type(exc).__name__}: {exc}"),
+            )
         logger.warning(
             "audit_outbox publish HTTP-failed row=%s attempts=%s status=%s next_retry_at=%s",
             row.id,
@@ -503,7 +541,21 @@ async def _publish_one(
     # Закрываем shared breaker: канал отвечает 2xx, дальше работаем штатно.
     # Дёргается на каждый успех — Redis-команда дешёвая (DEL × 3), а
     # симметрия с record_failure упрощает чтение кода.
-    await audit_publisher_breaker.record_success()
+    #
+    # Любой сбой Redis на этом шаге глотаем: row уже физически отправлена
+    # в loging_service (audit_client.emit вернул 2xx) и помечена published
+    # в сессии. Если эта exception'а уйдёт наверх, `_flush_outbox_once`
+    # сделает rollback и row снова окажется в выборке — мы пошлём дубликат.
+    # Breaker сам по себе fail-open'ит на ошибках Redis, лишний failure
+    # его открыть не должен.
+    try:
+        await audit_publisher_breaker.record_success()
+    except Exception as exc:  # noqa: BLE001 — bookkeeping must not undo a successful publish
+        logger.warning(
+            "audit_publisher_breaker.record_success failed row=%s err=%s",
+            row.id,
+            redact_error_message(f"{type(exc).__name__}: {exc}"),
+        )
     return PublishResult(closed=True, audit_emit_error=False, was_published=True)
 
 

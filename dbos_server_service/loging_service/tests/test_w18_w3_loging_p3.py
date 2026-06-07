@@ -232,7 +232,7 @@ class TestActionForPathSegmentWalk:
         "method,path,expected",
         [
             ("GET", "/api/logging/v1/services", "logging.services_read"),
-            ("GET", "/api/logging/v1/services/auth_service/events", "logging.events_queried"),
+            ("GET", "/api/logging/v1/services/auth_service/events", "logging.service_events_browsed"),
             ("GET", "/api/logging/v1/rules", "logging.rules_read"),
             ("POST", "/api/logging/v1/rules", "logging.rules_write"),
             ("GET", "/api/logging/v1/retention", "logging.retention_read"),

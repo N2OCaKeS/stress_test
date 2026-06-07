@@ -343,7 +343,11 @@ def query(
     if from_time is not None:
         filters.append(AuditEvent.timestamp >= from_time)
     if to_time is not None:
-        filters.append(AuditEvent.timestamp <= to_time)
+        # `to_time` exclusive: при sliding-window пагинации (`from_time=prev_to`,
+        # `to_time=now`) inclusive-граница давала бы дубль на событиях ровно
+        # с `timestamp == prev_to`. `from_time` остаётся inclusive — окно
+        # вида `[from_time, to_time)`, дубля на стыке окон нет.
+        filters.append(AuditEvent.timestamp < to_time)
 
     for f in filters:
         stmt = stmt.where(f)

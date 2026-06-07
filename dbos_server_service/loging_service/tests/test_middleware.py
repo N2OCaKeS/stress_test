@@ -41,13 +41,14 @@ class TestActionForPath:
         assert _action_for_path("GET",
                                 "/api/logging/v1/services") == "logging.services_read"
 
-    def test_services_events_subpath_maps_to_events_queried(self):
-        """GET /services/{svc}/events содержит и `/services`, и `/events`;
-        правильная атрибуция в SIEM — чтение событий, не реестр сервисов."""
+    def test_services_events_subpath_maps_to_service_events_browsed(self):
+        """GET /services/{svc}/events — каталог зарегистрированных action'ов
+        сервиса, отдельный action `logging.service_events_browsed`. SOC
+        не должен путать его с чтением audit-журнала."""
         from src.main import _action_for_path
         assert _action_for_path(
             "GET", "/api/logging/v1/services/auth_service/events"
-        ) == "logging.events_queried"
+        ) == "logging.service_events_browsed"
 
     def test_events_get_maps_to_events_queried(self):
         from src.main import _action_for_path

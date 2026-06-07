@@ -298,6 +298,53 @@ class TestPayloadHashContract:
             event_repo.insert(db, second)
         assert ei.value.error_code == "IDEMPOTENCY_KEY_CONFLICT"
 
+    def test_idempotency_conflict_severity_comes_from_default_table(
+        self, db: Session
+    ):
+        """`_emit_idempotency_conflict_audit` подтягивает severity из
+        `_DEFAULT_SEVERITY`, а не хардкодит "WARNING" в payload'е. Поднимем
+        запись в таблице до CRITICAL и убедимся, что эмитнутое событие
+        получает именно её.
+        """
+        from src.services import event_service as evt_svc
+        from src.services import rule_service
+
+        original = rule_service._DEFAULT_SEVERITY[
+            ("audit.idempotency_conflict", "warning")
+        ]
+        rule_service._DEFAULT_SEVERITY[
+            ("audit.idempotency_conflict", "warning")
+        ] = "CRITICAL"
+        try:
+            poison_payload = EventCreate(
+                timestamp=datetime.now(timezone.utc),
+                service="auth_service",
+                action="user.login",
+                status="success",
+                allowed=True,
+                severity="INFO",
+                idempotency_key="evt-sev-table-1",
+                details={"ip": "1.1.1.1"},
+            )
+            exc = ConflictError(
+                error_code="IDEMPOTENCY_KEY_CONFLICT",
+                message="payload hash mismatch",
+            )
+            evt_svc._emit_idempotency_conflict_audit(db, poison_payload, exc)
+            rows = db.execute(
+                select(AuditEvent).where(
+                    AuditEvent.service == "loging_service",
+                    AuditEvent.action == "audit.idempotency_conflict",
+                    AuditEvent.details["idempotency_key"].astext == "evt-sev-table-1",
+                )
+            ).scalars().all()
+            assert len(rows) == 1
+            assert rows[0].severity == "CRITICAL"
+        finally:
+            rule_service._DEFAULT_SEVERITY[
+                ("audit.idempotency_conflict", "warning")
+            ] = original
+
     def test_repo_insert_same_payload_returns_existing(self, db: Session):
         payload = EventCreate(
             timestamp=datetime.now(timezone.utc),

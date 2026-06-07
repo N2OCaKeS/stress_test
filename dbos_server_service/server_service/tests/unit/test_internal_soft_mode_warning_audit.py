@@ -500,14 +500,21 @@ async def test_record_ipmi_credentials_rotated_soft_mode_no_header_emits_warning
         server_id = "srv_1"
         password_encrypted = None
         password_rotated_at = None
+        credentials_pending_apply = True
+
+    ctrl_obj = _Ctrl()
 
     async def get_by_id(db, cid):
-        return _Ctrl()
+        return ctrl_obj
+
+    async def get_for_update(db, cid):
+        return ctrl_obj
 
     async def update(db, ctrl, fields):
         return None
 
     monkeypatch.setattr(internal_service.ipmi_repo, "get_by_id", get_by_id)
+    monkeypatch.setattr(internal_service.ipmi_repo, "get_for_update", get_for_update)
     monkeypatch.setattr(internal_service.ipmi_repo, "update", update)
 
     class _Sess:

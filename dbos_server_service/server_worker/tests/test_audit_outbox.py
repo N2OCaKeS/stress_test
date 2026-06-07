@@ -927,6 +927,61 @@ class TestPublishHttpFailLoud:
         assert rows[0].attempts == 1
         assert "ConnectError" in (rows[0].last_error or "")
 
+    async def test_emit_config_error_leaves_row_unpublished_without_breaker(
+        self, make_task, monkeypatch,
+    ):
+        """Пустой LOGGING_SERVICE_API_KEY → AuditEmitError(config_error=True).
+        Publisher оставляет row unpublished (attempts++ + backoff) и НЕ
+        дёргает record_failure() на shared breaker'е: один мисконфиг не
+        должен глушить весь audit-канал, а row должна дождаться, пока
+        оператор поправит ENV, и доехать обычным retry'ем."""
+        from src.services import audit_publisher_breaker as breaker
+
+        tid = await make_task(task_kind="power.on")
+
+        async def fake_emit_no_api_key(action, **kw):
+            raise AuditEmitError(
+                "LOGGING_SERVICE_API_KEY is not set; audit emit refused",
+                config_error=True,
+            )
+
+        record_failure_calls: list[int] = []
+        orig_record_failure = breaker.record_failure
+
+        async def spy_record_failure():
+            record_failure_calls.append(1)
+            await orig_record_failure()
+
+        monkeypatch.setattr(
+            "src.services.audit_outbox_publisher.audit_client.emit",
+            fake_emit_no_api_key,
+        )
+        monkeypatch.setattr(
+            "src.services.audit_outbox_publisher.audit_publisher_breaker.record_failure",
+            spy_record_failure,
+        )
+
+        async def impl(_):
+            return {"power_state": "on"}
+
+        await run_task(
+            tid,
+            audit_action="server.power_on",
+            audit_target_type="server",
+            impl=impl,
+            audit_safe_fields={"power_state"},
+        )
+
+        rows = await _all_outbox_rows()
+        assert len(rows) == 1
+        # Row осталась unpublished — publisher не пометил её доставленной
+        # на мисконфиге; attempts инкрементнут, backoff выставлен.
+        assert rows[0].published_at is None
+        assert rows[0].attempts == 1
+        assert rows[0].next_retry_at is not None
+        # Breaker НЕ дёргался — config_error для него невидим.
+        assert record_failure_calls == []
+
     async def test_recovery_after_5xx_publishes_on_next_flush(
         self, make_task, monkeypatch,
     ):

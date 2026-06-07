@@ -25,6 +25,24 @@ async def get_by_id(db: AsyncSession, controller_id: str) -> IpmiController | No
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_for_update(
+    db: AsyncSession, controller_id: str
+) -> IpmiController | None:
+    """SELECT по PK с row-lock'ом на строке ipmi_controllers.
+
+    Нужен в callback'ах worker'а, где параллельные ретраи могут гонять
+    `credentials_pending_apply`-флаг. Без лока двойной callback успел бы пройти
+    pending-проверку оба раза до того, как первый снимает флаг — и второй
+    перезаписал бы ciphertext свежим plaintext'ом мимо CREDENTIALS_ALREADY_APPLIED.
+    """
+    stmt = (
+        select(IpmiController)
+        .where(IpmiController.id == controller_id)
+        .with_for_update(of=IpmiController)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def list_in_departments(
     db: AsyncSession,
     department_ids: list[str] | None,

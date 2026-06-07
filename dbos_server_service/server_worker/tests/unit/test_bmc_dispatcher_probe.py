@@ -275,9 +275,11 @@ class TestProbeCascade:
         captured: dict[str, Any] = {}
         _patch_probe_pool(monkeypatch, captured, status_code=200)
 
-        ok = await _probe_redfish_cascade("bmc.example.com")
+        result = await _probe_redfish_cascade("bmc.example.com")
 
-        assert ok is True
+        assert result.reachable is True
+        assert result.scheme == "https"
+        assert result.verify_tls is True
         # Первый успешный шаг — verify=True.
         assert captured["verify"] is True
 
@@ -316,9 +318,11 @@ class TestProbeCascade:
 
         monkeypatch.setattr("src.clients.get_bmc_probe_client", _fake_get)
 
-        ok = await _probe_redfish_cascade("bmc.example.com")
+        result = await _probe_redfish_cascade("bmc.example.com")
 
-        assert ok is True
+        assert result.reachable is True
+        # Финальная ступень — plain HTTP, клиент должен это видеть.
+        assert result.scheme == "http"
         # Каскад прошёл https-verify → https-no-verify → http.
         assert calls == [
             ("https", True),
@@ -335,8 +339,8 @@ class TestProbeCascade:
             raise_exc=httpx.ConnectError("down"),
         )
 
-        ok = await _probe_redfish_cascade("dead.example.com")
-        assert ok is False
+        result = await _probe_redfish_cascade("dead.example.com")
+        assert result.reachable is False
 
     async def test_cascade_skips_no_verify_when_settings_verify_false(self, monkeypatch):
         """settings.verify=False — первый шаг уже без verify, второй
@@ -363,8 +367,8 @@ class TestProbeCascade:
 
         monkeypatch.setattr("src.clients.get_bmc_probe_client", _fake_get)
 
-        ok = await _probe_redfish_cascade("bmc.example.com")
-        assert ok is False
+        result = await _probe_redfish_cascade("bmc.example.com")
+        assert result.reachable is False
         # Должны увидеть: https с verify=False (settings), затем http с verify=True.
         # Никакого «и https-verify, и https-no-verify» — без дубля.
         assert calls == [False, True]
@@ -401,3 +405,102 @@ class TestIsTlsErrorHelper:
         b.__cause__ = a
         # Никакого SSL — просто отстреливаемся False, без бесконечного цикла.
         assert _is_tls_error(a) is False
+
+
+# ── get_bmc_client использует результат probe-каскада ───────────────────────
+
+
+class TestGetBmcClientUsesProbeResult:
+    """Каскадный probe возвращает ступень, на которой BMC ответил; клиент
+    собирается с теми же scheme/verify. Иначе реальные операции пойдут не
+    туда, куда отвечал probe (BMC на http → клиент на https → connect fail).
+    """
+
+    async def test_https_verify_branch_builds_verifying_client(self, monkeypatch):
+        """BMC отвечает на https-verify → клиент с verify=True и https-схемой."""
+        import src.clients as clients_mod
+
+        async def fake_probe(host: str):
+            return clients_mod.ProbeResult(
+                reachable=True, scheme="https", verify_tls=True,
+            )
+
+        captured: dict = {}
+
+        class FakeRedfish:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def aclose(self):
+                pass
+
+        monkeypatch.setattr(clients_mod, "_probe_redfish_cascade", fake_probe)
+        monkeypatch.setattr(clients_mod, "RedfishClient", FakeRedfish)
+
+        await clients_mod.get_bmc_client(
+            host="bmc.example.com", username="u", password="p",
+        )
+
+        assert captured["host"] == "https://bmc.example.com"
+        assert captured["verify_tls"] is True
+        assert "transport" in captured
+
+    async def test_https_noverify_branch_builds_noverify_client(self, monkeypatch):
+        """BMC отвечает только на https-no-verify (self-signed) → клиент
+        с verify=False и https-схемой, чтобы не упасть на TLS validation."""
+        import src.clients as clients_mod
+
+        async def fake_probe(host: str):
+            return clients_mod.ProbeResult(
+                reachable=True, scheme="https", verify_tls=False,
+            )
+
+        captured: dict = {}
+
+        class FakeRedfish:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def aclose(self):
+                pass
+
+        monkeypatch.setattr(clients_mod, "_probe_redfish_cascade", fake_probe)
+        monkeypatch.setattr(clients_mod, "RedfishClient", FakeRedfish)
+
+        await clients_mod.get_bmc_client(
+            host="idrac.example.com", username="u", password="p",
+        )
+
+        assert captured["host"] == "https://idrac.example.com"
+        assert captured["verify_tls"] is False
+        assert "transport" in captured
+
+    async def test_http_branch_builds_http_client(self, monkeypatch):
+        """BMC отвечает только по http (legacy) → клиент с http-схемой;
+        shared transport НЕ подсовываем (он under https-verify-pool)."""
+        import src.clients as clients_mod
+
+        async def fake_probe(host: str):
+            return clients_mod.ProbeResult(
+                reachable=True, scheme="http", verify_tls=True,
+            )
+
+        captured: dict = {}
+
+        class FakeRedfish:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            async def aclose(self):
+                pass
+
+        monkeypatch.setattr(clients_mod, "_probe_redfish_cascade", fake_probe)
+        monkeypatch.setattr(clients_mod, "RedfishClient", FakeRedfish)
+
+        await clients_mod.get_bmc_client(
+            host="legacy-bmc.example.com", username="u", password="p",
+        )
+
+        assert captured["host"] == "http://legacy-bmc.example.com"
+        # На plain HTTP transport не нужен (его пул заточен под verify-уровни).
+        assert "transport" not in captured

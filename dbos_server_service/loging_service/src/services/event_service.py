@@ -119,6 +119,12 @@ def _emit_idempotency_conflict_audit(
         )
         return
     try:
+        # severity не задаём явно — `record_admin_action` подтягивает её из
+        # `_DEFAULT_SEVERITY[("audit.idempotency_conflict", "warning")]`.
+        # Раньше тут стояло хардкод-значение "WARNING", дублировавшее таблицу:
+        # подняли бы severity в таблице до CRITICAL — событие всё равно
+        # уезжало бы WARNING'ом из-за explicit override, источник истины
+        # расходился бы со SIEM-rule'ами.
         warning_payload = EventCreate(
             timestamp=datetime.now(timezone.utc),
             service="loging_service",
@@ -128,7 +134,7 @@ def _emit_idempotency_conflict_audit(
             username=None,
             status="warning",
             allowed=True,
-            severity="WARNING",
+            severity=None,
             details={
                 "claimed_service": payload.service,
                 "idempotency_key": payload.idempotency_key,

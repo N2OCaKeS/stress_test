@@ -757,13 +757,16 @@ async def change_own_password(
           через `/me/password` упирался в тот же `ACCOUNT_TEMPORARILY_LOCKED`.
         * При успехе — новый хэш Argon2id, revoke всех активных сессий
           (включая ту, которой пришёл вызов: пользователь должен залогиниться
-          заново и получить свежий refresh), identity-cache reset, audit
-          `user.self_password_reset` (CRITICAL). PAT'ы оставляем — они
-          представляют отдельную identity юзера и часто привязаны к CI/боту,
-          смена пароля не должна их валить.
+          заново и получить свежий refresh), revoke всех собственных PAT'ов
+          (`revoked_reason="admin_reset"`), identity-cache reset, audit
+          `user.self_password_reset` (CRITICAL) с `pat_revoked_count`.
+          Bot-токены НЕ трогаем — бот принадлежит департаменту, не юзеру
+          (см. obsidian/Ролевая модель.md): смена пароля одного человека
+          не должна валить CI/integration отдела.
     """
     user_repo = UserRepository(db)
     session_repo = SessionRepository(db)
+    token_repo = TokenRepository(db)
 
     user = await user_repo.get_by_id(user_id)
     if user is None:
@@ -827,6 +830,17 @@ async def change_own_password(
 
     await user_repo.update(user, password_hash=hash_password(new_password))
     await session_repo.revoke_all_for_user(user_id)
+    # PAT-revoke на смене собственного пароля: до фикса юзер с угнанным
+    # access'ом мог менять пароль, а ранее созданные PAT'ы атакующего
+    # переживали ротацию — perm-takeover через PAT, выписанный до смены
+    # пароля. `reason="admin_reset"` — самый близкий из существующих
+    # значений `RevokeReason`-литерала (password-reset driven revoke);
+    # `reactivate_ban_revoked` смотрит только на `reason="ban"`, так что
+    # эти PAT'ы остаются навсегда мёртвыми. Боты НЕ трогаем — они
+    # принадлежат департаменту, не юзеру.
+    pat_revoked_count = await token_repo.revoke_all_for_user(
+        user_id, reason="admin_reset"
+    )
     await db.commit()
     # Identity-cache: без сброса закэшированный access-token продолжит
     # пускать юзера на /me и introspect до истечения TTL даже после revoke
@@ -840,7 +854,8 @@ async def change_own_password(
         details={
             "caller_is_admin": user.platform_role in _ADMIN_PLATFORM_ROLES,
             "sessions_revoked": True,
-            "tokens_revoked": False,
+            "tokens_revoked": True,
+            "pat_revoked_count": pat_revoked_count,
             "actor_role": "self",
         },
         request_id=request_id,

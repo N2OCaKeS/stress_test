@@ -12,6 +12,7 @@ from src.repositories.services import ServiceRepository
 from src.schemas.departments import DepartmentResponse, ServiceAccessResponse
 from src.services import audit_service
 from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
+from src.utils.time import utcnow
 
 
 async def create_department(
@@ -84,9 +85,15 @@ async def grant_service_access(
     reactivated = bool(existing and not existing.is_active)
 
     if existing and not existing.is_active:
+        # Реактивация — это эффективно новый grant: обновляем `granted_at` и
+        # `granted_by` на текущего актора, иначе list-эндпоинты показывают
+        # автора первой выдачи, а ответственным за актуальный доступ
+        # числится кто-то другой.
         existing.is_active = True
         existing.revoked_at = None
         existing.revoked_by = None
+        existing.granted_at = utcnow()
+        existing.granted_by = actor_id
         await db.flush()
     else:
         await dept_repo.grant_access(department_id, service_name, granted_by=actor_id)

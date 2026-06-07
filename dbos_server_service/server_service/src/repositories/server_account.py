@@ -141,6 +141,23 @@ async def delete(db: AsyncSession, obj: ServerAccount) -> None:
     await db.flush()
 
 
+async def lock_links_for_account(
+    db: AsyncSession, account_id: str
+) -> list[ServerAccountServer]:
+    """SELECT всех M2M-связок аккаунта с FOR UPDATE.
+
+    Берётся в `unlink_servers` перед чтением `linked_server_ids` и `remove_servers`,
+    чтобы сериализовать с параллельными правками этих же связок. Возвращает
+    свежий live-snapshot из БД (а не selectin-кэш на parent'е).
+    """
+    stmt = (
+        select(ServerAccountServer)
+        .where(ServerAccountServer.account_id == account_id)
+        .with_for_update(of=ServerAccountServer)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def add_servers(
     db: AsyncSession, account: ServerAccount, server_ids: list[str]
 ) -> None:

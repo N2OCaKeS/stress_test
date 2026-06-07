@@ -67,6 +67,7 @@ from src.tasks._bmc_errors import (
     dispatch_rotate_user_password,
     wrap_bmc_error,
 )
+from src.clients import tls_downgrade_audit_dedup
 from src.services import bmc_circuit_breaker as _breaker
 from src.tasks._bmc_helpers import aclose_bmc as _aclose_bmc
 from src.tasks._bmc_helpers import extract_bmc_host as _extract_bmc_host
@@ -548,6 +549,14 @@ async def ipmi_rotate_password(task_id: str) -> None:
     `server_service` endpoint `POST .../ipmi/credentials_rotated`.
     """
     async def _impl(payload: dict) -> dict:
+        # Дедуп `bmc.tls_downgrade` audit-events на всю ротацию (apply +
+        # verify + verify-retry). Без него BMC с self-signed cert'ом плодит
+        # 3+ одинаковых tls_downgrade row'ы за одну ротацию — лишний шум
+        # для SIEM и поднятая cardinality.
+        with tls_downgrade_audit_dedup():
+            return await _do_rotate(payload)
+
+    async def _do_rotate(payload: dict) -> dict:
         server_id = payload["server_id"]
         target_dept = payload.get("target_department_id")
         settings = get_settings()

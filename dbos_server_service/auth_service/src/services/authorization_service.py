@@ -57,17 +57,9 @@ async def _introspect_oauth_client_jwt(
         return IntrospectResponse(active=False)
 
     dept_repo = DepartmentRepository(db)
-    # Если у клиента не выставлен department_id — пропускаем SELECT с
-    # `WHERE department_id IS NULL` (он гарантированно вернёт []). Симметрично
-    # с `dependencies/auth._identity_from_oauth_client_jwt`, где такой же guard
-    # уже стоит на cold-пути.
-    if client.department_id:
-        dept_services = await dept_repo.list_active_services(client.department_id)
-        allowed_services = [s for s in dept_services if s in client.allowed_scopes]
-        dept = await dept_repo.get_by_id(client.department_id)
-    else:
-        allowed_services = []
-        dept = None
+    dept_services = await dept_repo.list_active_services(client.department_id)
+    allowed_services = [s for s in dept_services if s in client.allowed_scopes]
+    dept = await dept_repo.get_by_id(client.department_id)
 
     audit_service.emit(
         "token.introspect",
@@ -316,7 +308,12 @@ async def introspect(
         # last_used_at дёргаем только после revalidate'а юзера: для banned/blocked
         # introspect отвечает active=False, "касаться" такой PAT смысла нет —
         # лишний UPDATE и недостоверная статистика "недавно использован".
+        # Коммитим touch отдельной транзакцией, не дожидаясь
+        # `collect_user_permissions` — если дальше что-то упадёт, rollback
+        # уже не вытрет `last_used_at`. PAT успешно прошёл аутентификацию,
+        # факт обращения должен быть зафиксирован.
         await token_repo.touch(pat)
+        await db.commit()
         # Effective view юзера revalidate'им из БД через тот же путь, что и
         # JWT-ветка: collect_user_permissions учитывает dept-access И
         # group-derived service-access (group_services + group_roles). Без этого
@@ -443,7 +440,12 @@ async def introspect(
         # тот же приём, что и в PAT-ветке для banned/blocked юзера — лишний
         # UPDATE для токена, который мы всё равно отклонили, искажает
         # «недавно использован» в админке.
+        # Touch коммитим отдельной транзакцией ещё до `track_bot_ip`: тот
+        # делает write по `bot.last_known_ips` и может поднять ошибку. Без
+        # отдельного коммита rollback в `get_db()` потёр бы `last_used_at`
+        # для токена, который аутентификацию прошёл.
         await bot_token_repo.touch(bot_token)
+        await db.commit()
         effective_services, effective_roles = await collect_bot_permissions(db, bot)
 
         # Multi-IP detector: пишем caller_ip в `bot.last_known_ips`, при

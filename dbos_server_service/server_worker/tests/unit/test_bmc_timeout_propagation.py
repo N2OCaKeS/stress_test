@@ -25,8 +25,10 @@ class TestRedfishClientKwargsFromSettings:
         monkeypatch.setenv("REDFISH_VERIFY_TLS", "true")
         monkeypatch.setenv("REDFISH_TIMEOUT_SECONDS", "12.5")
 
-        async def fake_probe(host: str) -> bool:
-            return True
+        async def fake_probe(host: str):
+            return clients_mod.ProbeResult(
+                reachable=True, scheme="https", verify_tls=True,
+            )
 
         monkeypatch.setattr(clients_mod, "_probe_redfish_cascade", fake_probe)
 
@@ -49,7 +51,9 @@ class TestRedfishClientKwargsFromSettings:
             )
             assert captured["verify_tls"] is True
             assert captured["timeout"] == pytest.approx(12.5)
-            assert captured["host"] == "bmc.test"
+            # Probe вернул scheme=https → клиенту host передаётся уже с схемой,
+            # чтобы RedfishClient._normalize_host не дописывал свой default.
+            assert captured["host"] == "https://bmc.test"
             assert captured["username"] == "u"
             assert captured["password"] == "p"
         finally:
@@ -64,8 +68,10 @@ class TestRedfishClientKwargsFromSettings:
         monkeypatch.delenv("REDFISH_VERIFY_TLS", raising=False)
         monkeypatch.delenv("REDFISH_TIMEOUT_SECONDS", raising=False)
 
-        async def fake_probe(host: str) -> bool:
-            return True
+        async def fake_probe(host: str):
+            return clients_mod.ProbeResult(
+                reachable=True, scheme="https", verify_tls=False,
+            )
 
         monkeypatch.setattr(clients_mod, "_probe_redfish_cascade", fake_probe)
 

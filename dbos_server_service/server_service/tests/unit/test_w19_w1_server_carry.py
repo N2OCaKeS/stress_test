@@ -1,4 +1,4 @@
-"""W19-W1: carry-фиксы P3/P4 по server_service.
+"""Carry-фиксы по server_service: N+1, soft-mode, NTP-skew window.
 
 Покрывает:
 
@@ -133,7 +133,7 @@ class TestResolveSameDeptServersBatch:
 
 
 class TestSoftModeCommentExplicit:
-    """P3/W14 carry: код должен явно говорить, что soft-mode — это
+    """Код должен явно говорить, что soft-mode — это
     намеренное dev/test ослабление, а не упущенный denied-audit.
     """
 

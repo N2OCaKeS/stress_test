@@ -1,4 +1,4 @@
-"""Финальные покрытия P2 для loging_service: branch'и helper'ов и middleware.
+"""Финальные покрытия для loging_service: branch'и helper'ов и middleware.
 
 Зоны:
   1. `_idempotency_key_from_header` charset-fail (кириллица, NUL, CR/LF).

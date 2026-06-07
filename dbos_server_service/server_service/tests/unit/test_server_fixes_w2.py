@@ -236,7 +236,7 @@ class TestProvisionForcePasswordGuard:
         )
         assert resp.status_code == 202, resp.text
         assert len(captured) == 1
-        # Plaintext-креды теперь уходят через Redis-stash (W18-W1 P0 fix); payload
+        # Plaintext-креды теперь уходят через Redis-stash; payload
         # несёт только stash-ключ + force_replace=True.
         payload = captured[0]["payload"]
         assert "creds_stash_key" in payload

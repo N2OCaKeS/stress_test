@@ -1,4 +1,4 @@
-"""Worker W12 coverage — граничные сценарии второго уровня.
+"""Worker coverage — граничные сценарии второго уровня.
 
 Покрываемые области:
   * scrub finally — `account_provision._impl` finally-scrub запускается даже
@@ -84,7 +84,7 @@ async def _cancel_with_cancelled_at(
 
 
 # Класс TestScrubFinallyRunsOnHappyPathFailure (payload-plaintext scrub)
-# удалён: payload больше не содержит plaintext-полей после P0-фикса
+# удалён: payload больше не содержит plaintext-полей после фикса
 # server_service. Защиту от inline-плэйнтекста закрывает запрет на
 # `password_plaintext`/`ssh_private_key_plaintext` в payload на уровне
 # server_service.
@@ -364,7 +364,7 @@ class TestCancelTimestampMidrunPaths:
     ):
         """Если `cancelled_at` не задан — в audit идёт worker_clock_now,
         timestamp всё равно выставляется (детерминированный поведение
-        после F-W13-W4: midrun-cancel без явного cancel-timestamp получает
+        контракт: midrun-cancel без явного cancel-timestamp получает
         timestamp из worker'а)."""
         tid = await make_task(task_kind="power.on", target_server_id="srv_cm3")
 

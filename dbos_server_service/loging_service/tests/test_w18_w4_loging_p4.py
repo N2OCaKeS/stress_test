@@ -1,10 +1,10 @@
-"""Тесты P4-кластера loging (carry из W13/W14/W15/W16, фиксы в W18).
+"""Тесты loging: регрессии по charset/offset/rate-limit/rule cache.
 
 Пункты задачи:
-1. idempotency_key charset / offset cap — подтверждение, что фиксы W15 P3
+1. idempotency_key charset / offset cap — подтверждение, что фиксы
    на месте (charset pattern, le=MAX_QUERY_OFFSET на /events и /rules).
-2. GET /retention rate-limit — закрыт F-W17-W3, подтверждение.
-3. RuleCreate.description max_length=1024 (W16 Info).
+2. GET /retention rate-limit — подтверждение.
+3. RuleCreate.description max_length=1024.
 4. _drain_loop cancel-requeue overflow/cancel split — QueueFull при requeue
    считается _dropped_overflow_total, не _dropped_cancel_total.
 5. _emit_audit делегирует _emit_audit_envelope (TD1/TD2 DRY).
@@ -317,7 +317,7 @@ class TestStatementTimeoutResetsToZero:
 # Класс TestOverrideSeverityHighestPriorityWins удалён: контракт
 # last-match-wins зафиксирован в test_rule_engine_edge.py::
 # test_override_chain_picks_last_match. «Highest priority wins» был
-# временной ветвью owner Q2 и сейчас не реализован.
+# временной альтернативой и сейчас не реализован.
 
 
 # ── 9. _DEFAULT_SEVERITY fallback для warning ────────────────────────────

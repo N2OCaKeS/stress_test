@@ -1,6 +1,6 @@
 """Edge cases для `bulk_revoke` с дубликатами user_ids.
 
-W8: bulk_assign дедуплицирует через dict.fromkeys(), но bulk_revoke — нет.
+`bulk_assign` дедуплицирует через `dict.fromkeys()`, но `bulk_revoke` — нет.
 Тест фиксирует текущее поведение: idempotent UPDATE/deactivate не падает
 на дубликатах (в отличие от INSERT с UNIQUE).
 """

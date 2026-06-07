@@ -2,7 +2,7 @@
 
 Тесты этого файла раньше проверяли, что worker маскирует plaintext
 `password_plaintext` / `ssh_private_key_plaintext` в `tasks.payload`
-прямо в `finally`, даже если SSH или callback ломались. После P0-фикса
+прямо в `finally`, даже если SSH или callback ломались. После фикса
 server_service вообще не кладёт plaintext в payload — секреты передаются
 через Redis-stash (`creds_stash_key`). Сценарий «scrub отрабатывает на
 inline-плэйнтекст в payload'е» стал не воспроизводим — оставлять тесты

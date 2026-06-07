@@ -7,7 +7,7 @@
 * схема: ssh_public_key + ssh_private_key_encrypted колонки прочитаны после
   ensure_provision_credentials и читаются обратно через secrets_service.
 
-Контракт W18-W1: plaintext password + ssh_private_key в payload больше НЕ
+Контракт: plaintext password + ssh_private_key в payload больше НЕ
 кладутся — server_service пишет их в Redis под `dbos:dispatch_creds:<id>`
 с TTL, в payload едет только `creds_stash_key`. Тесты ниже читают
 plaintext из stash'а через тот же ключ, что попал в payload.

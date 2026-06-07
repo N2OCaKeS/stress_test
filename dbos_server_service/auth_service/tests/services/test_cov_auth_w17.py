@@ -1,4 +1,4 @@
-"""auth_service COV-W17: покрытие оставшихся непокрытых веток после F-W16 (1401 passed).
+"""auth_service: точечное покрытие непокрытых веток docker_registry_service.
 
 Целевые ветки:
   - docker_registry_service._parse_scope: сегменты < 3 пропускаются, пустая строка
@@ -308,7 +308,7 @@ class TestResetPasswordActorRoleNone:
                 user_id=target.id,
                 new_password="NewPass1!",
             )
-        # F-W17-W1: переехало на _dept_guard, error_code теперь
+        # Переехало на _dept_guard, error_code теперь
         # USER_RESET_PASSWORD_FORBIDDEN (raised из helper'а).
         assert exc.value.error_code in {"DEPARTMENT_ISOLATION", "USER_RESET_PASSWORD_FORBIDDEN"}
 

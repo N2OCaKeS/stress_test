@@ -1,19 +1,19 @@
-"""Worker W11 coverage — дополнительные сценарии.
+"""Worker coverage — дополнительные сценарии.
 
 Покрываемые области:
-  * F-W6-A  — cancel race: CAS-методы (mark_running CAS отбивает на running/failed/succeeded)
-              и реакция _runner'а (аудит duplicate_dispatch без вызова impl).
-  * F-W6-B  — scrub payload best-effort: scrub_payload_keys бросает →
-              task остаётся SUCCEEDED, warning в лог.
-  * W7      — breaker open skip: детальная проверка счётчиков и exact
-              state-ключей в FakeRedis для bmc_circuit_breaker.
-  * W7      — bmc_host port: IPv6 с brackets, userinfo с %40 (percent-encoded @).
-  * W8      — _install_authorized_key: truncate vs append семантика — sudo stdin
-              shape edge'ы (whitespace-only key с truncate=True, CRLF-only key).
-  * W9      — shared breaker independence: bmc и audit breaker независимы (сброс
-              одного не задевает другой).
-  * W9/W10  — _runner cancel audit metadata под exception: cancelled_by/
-              cancel_reason propagation в failure-midrun с нулевым cancel_reason.
+  * Cancel race: CAS-методы (mark_running CAS отбивает на running/failed/succeeded)
+    и реакция _runner'а (аудит duplicate_dispatch без вызова impl).
+  * Scrub payload best-effort: scrub_payload_keys бросает →
+    task остаётся SUCCEEDED, warning в лог.
+  * Breaker open skip: детальная проверка счётчиков и exact
+    state-ключей в FakeRedis для bmc_circuit_breaker.
+  * bmc_host port: IPv6 с brackets, userinfo с %40 (percent-encoded @).
+  * _install_authorized_key: truncate vs append семантика — sudo stdin
+    shape edge'ы (whitespace-only key с truncate=True, CRLF-only key).
+  * Shared breaker independence: bmc и audit breaker независимы (сброс
+    одного не задевает другой).
+  * _runner cancel audit metadata под exception: cancelled_by/
+    cancel_reason propagation в failure-midrun с нулевым cancel_reason.
 """
 
 from __future__ import annotations
@@ -96,7 +96,7 @@ async def _cancel_with_metadata(
         await session.commit()
 
 
-# ── F-W6-A: cancel race — CAS-методы ────────────────────────────────────────
+# ── cancel race — CAS-методы ────────────────────────────────────────────────
 
 
 class TestMarkRunningCasRejectsNonQueued:
@@ -239,7 +239,7 @@ class TestRunnerDuplicateDispatchAudit:
         assert captured_audit[0]["details"]["observed_status"] == TaskStatus.SUCCEEDED.value
 
 
-# ── F-W6-B: scrub payload best-effort ────────────────────────────────────────
+# ── scrub payload best-effort ───────────────────────────────────────────────
 
 
 class TestScrubPayloadBestEffort:
@@ -333,7 +333,7 @@ class TestScrubPayloadBestEffort:
         assert scrub_warnings, "должен быть WARNING о сбое scrub"
 
 
-# ── W7: BMC breaker — детальные счётчики ─────────────────────────────────────
+# ── BMC breaker — детальные счётчики ────────────────────────────────────────
 
 
 class TestBmcBreakerCounterDetails:
@@ -411,7 +411,7 @@ class TestBmcBreakerCounterDetails:
         assert retry_after == bmc_cb.DEFAULT_COOLDOWN_SECONDS
 
 
-# ── W7: bmc_host IPv6 и percent-encoded userinfo ─────────────────────────────
+# ── bmc_host IPv6 и percent-encoded userinfo ────────────────────────────────
 
 
 class TestExtractBmcHostEdgeCases:
@@ -457,11 +457,11 @@ class TestExtractBmcHostEdgeCases:
         assert "@" not in result and "admin" not in result and "secret" not in result
 
 
-# ── W8: _install_authorized_key truncate vs append граничные случаи ──────────
+# ── _install_authorized_key truncate vs append граничные случаи ─────────────
 
 
 class TestInstallAuthorizedKeyEdgeCases:
-    """Граничные случаи _install_authorized_key сверх W10-параметризации."""
+    """Граничные случаи _install_authorized_key сверх базовой параметризации."""
 
     def _make_client(self, run_results):
         from src.clients.ssh import SshClient
@@ -528,7 +528,7 @@ class TestInstallAuthorizedKeyEdgeCases:
         assert stdin.count(clean_key) == 1
 
 
-# ── W9: shared breaker independence ──────────────────────────────────────────
+# ── shared breaker independence ─────────────────────────────────────────────
 
 
 def _make_store_redis(store: dict):
@@ -664,7 +664,7 @@ class TestSharedBreakerIndependence:
         await bmc_cb.check("10.2.0.2")
 
 
-# ── W9/W10: cancel audit metadata — null cancel_reason propagation ────────────
+# ── cancel audit metadata — null cancel_reason propagation ──────────────────
 
 
 class TestCancelAuditMetadataNullReason:
@@ -767,7 +767,7 @@ class TestCancelAuditMetadataNullReason:
         assert details["will_retry"] is False
 
 
-# ── W7: BMC cascade probe — full ipmitool fallback ───────────────────────────
+# ── BMC cascade probe — full ipmitool fallback ──────────────────────────────
 
 
 class TestBmcCascadeFullFallback:

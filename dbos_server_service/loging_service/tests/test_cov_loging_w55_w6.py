@@ -1,4 +1,4 @@
-"""Coverage gaps W55 W6 — loging_service.
+"""Coverage gaps — loging_service.
 
 Покрывает четыре ветки, не задетые предыдущими тестами:
 
@@ -209,7 +209,7 @@ class TestSanitizeRequestIdUnit:
 
 
 class TestRecordAdminActionInvariantLogPath:
-    """P4 SEC: `record_admin_action` bypass-guard логирует caller, но без
+    """SEC: `record_admin_action` bypass-guard логирует caller, но без
     абсолютного пути. Внешний log-aggregator не должен видеть внутреннюю
     раскладку проекта."""
 

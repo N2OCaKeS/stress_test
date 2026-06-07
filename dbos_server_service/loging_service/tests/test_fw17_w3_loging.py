@@ -1,4 +1,4 @@
-"""P4 cleanup из W17 для loging_service.
+"""Cleanup для loging_service: rate-limit на retention, segment-based action,
 
 1) `GET /retention` под `audit_query_rate_limit` (симметрия с остальными
    read-эндпоинтами).
@@ -254,7 +254,7 @@ class TestRedactBytes:
 
 
 class TestSchemaSanityNotes:
-    """W17 inventory указал на `\\x0d` (CR) и `_CONTENT_LENGTH_RE` без
+    """Inventory указал на `\\x0d` (CR) и `_CONTENT_LENGTH_RE` без
     якорей. Реально description-regex `[\\x00-\\x08\\x0a-\\x1f\\x7f]` уже
     блокирует CR (0x0d ∈ [0x0a, 0x1f]); `_CONTENT_LENGTH_RE` используется
     через `.fullmatch()` — якоря избыточны. Тесты-инварианты, чтобы

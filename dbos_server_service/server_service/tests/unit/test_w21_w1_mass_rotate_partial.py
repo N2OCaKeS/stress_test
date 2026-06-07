@@ -1,6 +1,6 @@
 """Mass-rotation partial-failure: структурный ответ + audit `mass_rotation.partial_failure`.
 
-Owner W21-W1: при ServiceUnavailableError на K-м сервере в mode=all (mass
+Контракт: при ServiceUnavailableError на K-м сервере в mode=all (mass
 rotate) больше НЕ отбиваем 503. Возвращаем 202 со structured response:
 
 * `partial_failure: True`

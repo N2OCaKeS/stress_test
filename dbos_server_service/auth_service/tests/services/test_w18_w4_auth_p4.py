@@ -1,4 +1,4 @@
-"""P4 кластер auth (carry W13/W14/W15/W16).
+"""auth: ещё один набор carry-фиксов (group_service GET, redaction, oauth).
 
 Точки:
   1. group_service GET endpoints (list_members / list_bot_members /

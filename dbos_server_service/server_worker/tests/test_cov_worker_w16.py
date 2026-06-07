@@ -1,4 +1,4 @@
-"""Coverage W16 — точечные пробелы после F-W15.
+"""Coverage — точечные пробелы.
 
 GAP-1  _ipmi_stash_parse: backward-compat plain-string path (non-JSON → (text, None)),
         bytes input, str input, JSON с non-dict top-level, пустой JSON.

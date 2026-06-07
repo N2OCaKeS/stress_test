@@ -1,4 +1,4 @@
-"""Тесты под шесть P3 P4-фиксов loging_service из W17.
+"""Тесты под шесть фиксов loging_service.
 
 1) `GET /services` и `GET /services/{svc}/events` под `audit_query_rate_limit`;
    offset-cap на `list_service_events`.

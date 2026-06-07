@@ -93,7 +93,7 @@ async def create_bot(
         actor_department_id = await _resolve_actor_dept(db, actor_id, actor_department_id)
         # `actor_department_id is None` для DEPARTMENT_ADMIN — broken identity:
         # такая запись невалидна и пропускать её через guard нельзя. Симметрия
-        # с update_bot, который тоже падает 403 при None-dept (см. W14).
+        # с update_bot, который тоже падает 403 при None-dept.
         if actor_department_id != data.department_id:
             raise AuthorizationError(error_code="BOT_CREATION_FORBIDDEN", message="department_admin can only create bots in their own department")
 

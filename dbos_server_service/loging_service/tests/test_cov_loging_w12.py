@@ -1,4 +1,4 @@
-"""Coverage gaps wave 12 — loging_service.
+"""Coverage gaps — loging_service.
 
 Areas:
   1. normalize service/action in GET /events query params — confusable/uppercase

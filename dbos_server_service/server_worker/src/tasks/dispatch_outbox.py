@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 
 
 # Префикс ключа дедупа в Redis: outbox-row → пометка «kiq уже выполнен».
-# Защищает от P0-race'а «commit после kiq упал, следующий poll-тик увидит
+# Защищает от race'а «commit после kiq упал, следующий poll-тик увидит
 # row pending и kiq'нет повторно». Set-NX ставится ДО kiq; если он
 # возвращает false — другой poll-тик уже kiq'нул этот outbox_id, нам
 # остаётся только дотолкать `dispatched_at` в БД. Ключ снимается при

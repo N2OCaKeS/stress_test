@@ -1,4 +1,4 @@
-"""auth_service COV-W16: оставшиеся пробелы после F-W15 (1356 passed).
+"""auth_service coverage gaps: точечные ветки, оставшиеся непокрытыми.
 
 Целевые ветки:
   - GAP-5: bot.token_create failure-audit содержит token_name в details

@@ -49,7 +49,7 @@ def _new_id(prefix: str = "tsk_") -> str:
     return f"{prefix}{uuid.uuid4().hex[:16]}"
 
 
-# ── P1 BUG: breaker-skip retry_after=0 теперь сдвигает next_retry_at ────────
+# ── breaker-skip retry_after=0 теперь сдвигает next_retry_at ────────────────
 
 
 class TestBreakerSkipRetryAfterZero:
@@ -506,7 +506,7 @@ class TestDrainPreDrainStatusCapturedBefore:
         )
 
 
-# ── _filter_result_for_audit sentinel-ы (P2 #6 — fix-волна закрыла раньше) ──
+# ── _filter_result_for_audit sentinel-ы (фикс закрыл раньше) ────────────────
 
 
 class TestFilterResultForAuditSentinels:
@@ -536,7 +536,7 @@ class TestFilterResultForAuditSentinels:
         }
 
 
-# ── _compute_backoff_delay exponent cap (P3 #11) ───────────────────────────
+# ── _compute_backoff_delay exponent cap ─────────────────────────────────────
 
 
 class TestComputeBackoffDelayExponentCap:
@@ -568,7 +568,7 @@ class TestComputeBackoffDelayExponentCap:
         assert _BACKOFF_EXPONENT_CAP == 16
 
 
-# ── extract_bmc_host bare-IPv6 normalization (P3 #12) ──────────────────────
+# ── extract_bmc_host bare-IPv6 normalization ────────────────────────────────
 
 
 class TestExtractBmcHostIPv6Normalization:

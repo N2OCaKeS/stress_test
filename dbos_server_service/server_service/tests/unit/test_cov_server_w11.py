@@ -1,12 +1,12 @@
-"""Coverage gaps — server_service w11.
+"""Coverage gaps — server_service.
 
 Области:
-* W8: system-task admin guard — дополнительные role/task-kind вариации
-* W7: cancel race task_not_found → failure status (дублирует ли существующее — нет,
-  здесь проверяется created_by присутствует, но target отсутствует; ещё не покрыт)
-* W7: cursor cap 500 boundary — normalize_limit(None) дефолт
-* W8: cursor row_id regex — граница 63/64/65 и всего по одному символу
-* W9/W10: audit emit для outbox lifecycle (seed/done/failed/cleanup) —
+* System-task admin guard — дополнительные role/task-kind вариации
+* Cancel race task_not_found → failure status (created_by присутствует,
+  target отсутствует; ветка ранее не покрыта)
+* Cursor cap 500 boundary — normalize_limit(None) дефолт
+* Cursor row_id regex — граница 63/64/65 и всего по одному символу
+* Audit emit для outbox lifecycle (seed/done/failed/cleanup) —
   все четыре действия ни разу не проверялись на факт передачи правильных details
 * os_version.list_anonymous cursor-mode — emit в cursor-path не покрыт
 """
@@ -176,7 +176,7 @@ class TestNormalizeLimitDefault:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# W8: System-task guard — дополнительные вариации ролей и task_kind
+# System-task guard — дополнительные вариации ролей и task_kind
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -384,7 +384,7 @@ class TestSystemTaskGuardRoleVariations:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# W9/W10: Audit emit — outbox lifecycle endpoints
+# Audit emit — outbox lifecycle endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
 

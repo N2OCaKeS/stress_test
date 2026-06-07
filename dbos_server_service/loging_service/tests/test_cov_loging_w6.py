@@ -1,4 +1,4 @@
-"""Coverage audit wave 6 — loging_service.
+"""Coverage audit — loging_service.
 
 Три зоны:
   1. AuditOutbox — непокрытые ветки: invalid params, start idempotency,

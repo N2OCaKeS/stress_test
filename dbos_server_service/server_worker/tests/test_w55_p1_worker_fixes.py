@@ -1,7 +1,6 @@
-"""W55 P1 regressions для server_worker.
+"""Regressions для server_worker.
 
-Покрытие пяти ранее необкатанных веток (источник — `cov-worker-W12.md`,
-`bug-worker-W12.md`):
+Покрытие пяти ранее необкатанных веток:
 
 * **mark_running CAS на attempt-guard** — stale Redis-message с
   in-memory `attempt=0` vs обновлённое `attempt` в БД (retry-recovery

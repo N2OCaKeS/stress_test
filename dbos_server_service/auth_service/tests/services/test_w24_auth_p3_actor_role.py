@@ -1,4 +1,4 @@
-"""W24 P3: `actor_role` явно публикуется в details audit-событий
+"""`actor_role` явно публикуется в details audit-событий
 
 `user.password_reset` (admin-ручка) и `user.self_password_reset`
 (self-ручка `/me/password`).

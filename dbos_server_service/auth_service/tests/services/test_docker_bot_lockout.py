@@ -1,6 +1,6 @@
 """Lockout per-bot для `/docker/token` brute-force.
 
-Закрывает SEC-auth P1-2: счётчик `failed_token_attempts` + `locked_until`
+Счётчик `failed_token_attempts` + `locked_until`
 на `BotAccount`. Симметрия с user-password lockout пути.
 
 Identifying бота: бот ищется по `username` из Basic-auth (поле `bot.name`).

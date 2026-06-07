@@ -284,8 +284,8 @@ def admin_client(db, monkeypatch):
 
     app.dependency_overrides[get_db] = _db_override(db)
     # Админ имеет admin, reader, и rules-admin доступы — переопределяем все
-    # три зависимости. `require_admin_or_account_admin` — новая dep'ка из
-    # W22-W4 (rules accessible только loging_admin / account_admin).
+    # три зависимости. `require_admin_or_account_admin` — отдельная dep'ка
+    # для rules (доступно только loging_admin / account_admin).
     app.dependency_overrides[require_admin] = lambda: ADMIN_IDENTITY
     app.dependency_overrides[require_reader] = lambda: ADMIN_IDENTITY
     app.dependency_overrides[require_admin_or_account_admin] = lambda: ADMIN_IDENTITY

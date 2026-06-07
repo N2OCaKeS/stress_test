@@ -1,4 +1,4 @@
-"""Coverage W31 — точечные пробелы вокруг `_write_authorized_key`,
+"""Coverage — точечные пробелы вокруг `_write_authorized_key`,
 `_install_authorized_key`, `_sudo_group_membership` и audit-маски
 `installed_packages.pattern`.
 
@@ -6,7 +6,7 @@ GAP-12  `_write_authorized_key` через `create_user(force_replace=True)`:
         existing user, force_replace=True → bash-команда содержит overwrite
         (`>` без `>>`), ключ уходит на stdin.
 GAP-13  `_write_authorized_key` напрямую (existing user path): stdin
-        содержит ровно ключ, не команду — закрывает GAP-13 из W6 cov-report'а.
+        содержит ровно ключ, не команду — закрывает GAP-13.
 GAP-14  `_install_authorized_key` принимает `target_home` через
         `create_user(home_dir=...)`: системный home отбивается до SSH.
 GAP-15  `_sudo_group_membership` `id -nG` rc!=0 → пустое множество (юзер

@@ -1,6 +1,6 @@
 """bot_ip_tracker — покрытие веток, не охваченных test_bot_ip_tracker.py.
 
-W8: проверяем ветку `bot_suspicious_ip_window_seconds` из Settings и
+Проверяем ветку `bot_suspicious_ip_window_seconds` из Settings и
 поведение трекера при граничном размере окна (window_size=1).
 """
 

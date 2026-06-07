@@ -1,6 +1,6 @@
 """Lockout per-client для OAuth `client_credentials` brute-force.
 
-Закрывает SEC-auth P1-1: счётчик `failed_secret_attempts` + `locked_until`
+Счётчик `failed_secret_attempts` + `locked_until`
 на `OAuthClient`. Симметрия с user-lockout (5 промахов → 15 минут).
 """
 

@@ -122,7 +122,7 @@ class TestBannedUserPasswordPath:
         self, client, user_a, dept_a, registry_a_pull_all, db, monkeypatch,
     ):
         """`status=BANNED` + `is_active=False` + правильный пароль → 401
-        INVALID_CREDENTIALS ДО Argon2id verify. W31 покрыл PAT-inactive путь,
+        INVALID_CREDENTIALS ДО Argon2id verify. PAT-inactive путь покрыт отдельно,
         здесь — password-канал (отдельная ветка после `get_by_username`)."""
         await db.execute(
             update(User).where(User.id == user_a.id).values(

@@ -563,12 +563,10 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
     # DB-выпадениях (см. `_RuleCache.get` except-ветку), так что окно "500 на
     # ingest" — только до первого успешного refresh'а.
     # Правила отсортированы по `priority DESC` в `get_active_sorted`,
-    # то есть первый OVERRIDE-матч — highest priority. Owner Q2 (highest-
-    # priority wins vs last-match wins) закрыт в пользу highest-priority
-    # (см. TODO.md, W14 P4 logging override priority). Эффективно код отдаёт
+    # то есть первый OVERRIDE-матч — highest priority. Эффективно код отдаёт
     # severity первого OVERRIDE-матча: последующие матчи перетирают severity
     # тем же значением (UNIQUE priority + DESC sort → детерминированный
-    # порядок). Явный break-on-first рассмотрен как micro-opt (P4 carry).
+    # порядок). Явный break-on-first рассмотрен как micro-opt.
     # SUPPRESS/ALLOW обрывают цепочку явно сами по своему контракту.
     rules = _cache.get(db)
     for rule in rules:

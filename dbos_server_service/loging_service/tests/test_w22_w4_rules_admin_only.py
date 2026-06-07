@@ -1,4 +1,4 @@
-"""W22-W4 P3: `GET /rules` доступен только `loging_admin` / `account_admin`.
+"""`GET /rules` доступен только `loging_admin` / `account_admin`.
 
 Owner-decision: `loging_reader` / `department_admin` / service-роли в
 `loging_service` НЕ видят правила. Симметрично для `GET /rules/{id}` и для

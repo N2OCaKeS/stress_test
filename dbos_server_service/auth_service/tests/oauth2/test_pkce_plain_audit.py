@@ -1,6 +1,6 @@
 """Тест: PKCE-plain для confidential клиентов эмитит audit-event.
 
-W12-SEC-P2: до фикса `logger.warning` на `code_challenge_method=plain` уходил
+До фикса `logger.warning` на `code_challenge_method=plain` уходил
 только в локальный лог контейнера — SIEM не видел. После фикса параллельно
 эмитится `oauth.pkce_plain_used` (WARNING), чтобы попадало в loging_service
 и можно было отслеживать неправильно сконфигурённые интеграции.

@@ -1,6 +1,6 @@
 """GET /users/department/{dept_id} — status_filter и include_banned.
 
-W7: dept-уровень list_users_by_department не имел тестов на status_filter.
+Dept-уровень `list_users_by_department` не имел тестов на `status_filter`.
 Базовые тесты global-листинга с include_banned/status в test_list_users.py;
 здесь — аналогичные случаи, но для dept-scoped endpoint'а.
 """

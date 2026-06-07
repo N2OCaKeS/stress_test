@@ -1,4 +1,4 @@
-"""P3 carry-over fixes для server_worker — кластер из шести правок.
+"""Carry-over fixes для server_worker — кластер из шести правок.
 
 Зачем отдельный файл, а не дозалить ассерты в существующие сьюты:
 дельта закрывает разнородные точки (UUID-валидация в HTTP-клиенте,
@@ -38,7 +38,7 @@ from tests.unit._breaker_test_helpers import (
 
 
 class TestValidateOutboxId:
-    """W17-W2 уже добавил `validate_outbox_id`; проверяем, что callers ходят через него."""
+    """`validate_outbox_id` уже добавлен; проверяем, что callers ходят через него."""
 
     def test_validate_outbox_id_is_imported_from_identifiers(self) -> None:
         assert (
@@ -124,7 +124,7 @@ class TestRotateUserPasswordDocstring:
 
 
 class TestInstallAuthorizedKeyHomeGuard:
-    """`target_home` параметр + check'и `_FORBIDDEN_HOMES` уже wired W17-W3."""
+    """`target_home` параметр + check'и `_FORBIDDEN_HOMES` уже wired."""
 
     def test_install_authorized_key_accepts_target_home(self) -> None:
         sig = inspect.signature(ssh_client.SshClient._install_authorized_key)
@@ -151,7 +151,7 @@ class TestInstallAuthorizedKeyHomeGuard:
         # Caller-сайт в provision-пути должен пробрасывать home аккаунта
         # вместо None, иначе guard остаётся пустым.
         src = inspect.getsource(ssh_client.SshClient)
-        # Минимум одно явное `target_home=home_dir` (W17-W3 wire-up).
+        # Минимум одно явное `target_home=home_dir`.
         assert "target_home=home_dir" in src
 
 

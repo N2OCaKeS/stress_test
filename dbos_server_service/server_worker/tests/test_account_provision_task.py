@@ -182,7 +182,7 @@ class TestProvisionHandlers:
         self, make_task, fetch_task, captured_audit, monkeypatch,
         stash_dispatch_creds,
     ):
-        # W21-W1: provision требует dispatch-stash в Redis вместо
+        # provision требует dispatch-stash в Redis вместо
         # plaintext-полей в payload. Эмулируем то, что server_service
         # делает перед dispatch'ем.
         stash_key = await stash_dispatch_creds(password_plaintext="sess-pwd")
@@ -394,7 +394,7 @@ class TestAuthorizedKeyWrite:
 
 
 class TestProvisionTaskWithInlineCreds:
-    """`account.provision` тянет провижн-креды из Redis-stash'а (W21-W1)."""
+    """`account.provision` тянет провижн-креды из Redis-stash'а."""
 
     async def test_inline_password_and_pubkey_used(
         self, make_task, fetch_task, captured_audit, monkeypatch,

@@ -1,7 +1,7 @@
 """Интеграционный тест: `subject_type: "bot"` в denied-audit на endpoint'ах
 с `identity=` в `emit_denied_on_authz_error`.
 
-W13 ввёл проброс `identity=identity` в helper, чтобы denied-trail
+Helper получает `identity=identity`, чтобы denied-trail
 SIEM мог отличать bot'ов от user'ов. Unit-тесты на helper уже есть
 (`tests/unit/test_audit_helpers_subject_type.py`,
 `tests/unit/test_subject_type_propagation.py`). Этот файл закрывает

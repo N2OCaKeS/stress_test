@@ -1,4 +1,4 @@
-"""Coverage gaps W55 P2 — loging_service.
+"""Coverage gaps — loging_service.
 
 Покрывает три ветки, не задетые предыдущими тестами:
 

@@ -1,4 +1,4 @@
-"""Closeouts оставшихся P3/P4 carry для server_worker.
+"""Closeouts оставшихся carry-фиксов для server_worker.
 
 Покрывает:
   * `_safe_flush_outbox` пробрасывает `asyncio.CancelledError`;
@@ -149,7 +149,7 @@ class TestRotatedAtBehavior:
 
 
 class TestBmcHostIPv6Verified:
-    """Re-verify W14 carry: `extract_bmc_host` парсит IPv6 в `[...]`."""
+    """Re-verify: `extract_bmc_host` парсит IPv6 в `[...]`."""
 
     @pytest.mark.parametrize("endpoint,expected", [
         ("https://[2001:db8::1]:443", "[2001:db8::1]:443"),

@@ -1,4 +1,4 @@
-"""Coverage gaps wave 11 — loging_service.
+"""Coverage gaps — loging_service.
 
 Areas:
   1. normalize_service_name in path-params: GET /services/{service}/events

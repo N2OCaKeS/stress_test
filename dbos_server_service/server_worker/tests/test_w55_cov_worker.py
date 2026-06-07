@@ -1,4 +1,4 @@
-"""Регрессии под cov-gap W55 (worker).
+"""Регрессии под cov-gap (worker).
 
 * `dispatch_outbox.poll_once` — multi-replica на реальном PostgreSQL: два
   concurrent тика делят непересекающиеся подмножества row'ов, ни одна

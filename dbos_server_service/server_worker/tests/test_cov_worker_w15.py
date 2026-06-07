@@ -1,4 +1,4 @@
-"""Coverage W15 — пять точечных пробелов после F-W14.
+"""Coverage — пять точечных пробелов.
 
 GAP-1  _FORBIDDEN_HOMES: Python-guard (target_home=) через _write_authorized_key
         и bootstrap; подтверждение, что ssh_public_key НЕ в scrub-листе provision.

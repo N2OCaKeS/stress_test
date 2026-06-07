@@ -1,4 +1,4 @@
-"""P3 кластер auth (carry W14/W15/W16):
+"""auth: набор регрессий по carry-фиксам из прошлых сессий.
 
 1. is_active-guard в `assign_roles` / `assign_bot_roles` / `bulk_assign` —
    нельзя навешать роль забаненному юзеру или disabled-боту (role-resurrection

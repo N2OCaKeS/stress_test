@@ -1,4 +1,4 @@
-"""Регрессионные тесты на хвост verified-open carry P3/P4 по loging:
+"""Регрессионные тесты на хвост ранее открытых багов по loging:
 
 1. `INGEST_BURST_PER_SECOND` — second-tier rule поверх `INGEST_RATE_LIMIT`
    закрывает burst-сценарий (legitimate logon-storm: 10 событий × 200

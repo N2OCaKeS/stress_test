@@ -9,7 +9,7 @@
 
 IPMI POST CREATE cross-dept уже покрыт в
 `test_ipmi_controllers_crud.py::TestCreateController::test_cross_dept_returns_404`
-— дополнительный кейс не нужен (отмечено в W44 audit-report).
+— дополнительный кейс не нужен.
 
 Fan-out N-server failure midway не покрывается до owner-decision: PATCH
 fan-out сейчас best-effort, dispatch_task бросок исключения на K-м сервере

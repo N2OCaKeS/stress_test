@@ -1,4 +1,4 @@
-"""Coverage W17 — точечные пробелы после F-W16.
+"""Coverage — точечные пробелы.
 
 GAP-1  _attach_cancel_metadata unit: task=None (early return), задача без
         поля (getattr fallback), все три поля заполнены → details.
@@ -569,7 +569,7 @@ class TestMidrunCancelWithoutCancelledAt:
         ev = captured_audit[0]
         assert ev["status"] == "failure"
         assert ev["details"]["reason"] == "cancelled_midrun"
-        # F-W13-W4-cross: worker всегда выставляет timestamp (worker_clock_now)
+        # Worker всегда выставляет timestamp (worker_clock_now)
         # даже при cancelled_at=NULL. Cancel-event metadata content проверяется
         # отдельно в test_cov_worker_w15 / test_runner_cancel_audit_metadata.
         assert "details" in ev
@@ -606,5 +606,5 @@ class TestMidrunCancelWithoutCancelledAt:
         assert len(captured_audit) == 1
         ev = captured_audit[0]
         assert ev["status"] == "failure"
-        # F-W13-W4-cross: timestamp всегда выставляется (worker_clock_now path).
+        # Timestamp всегда выставляется (worker_clock_now path).
         assert "details" in ev

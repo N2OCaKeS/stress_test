@@ -1,6 +1,6 @@
-"""W22-W4 P3: `_action_for_path` — регрессия на substring-collision.
+"""`_action_for_path` — регрессия на substring-collision.
 
-`_action_for_path` ещё в F-W17-W3 был переведён с substring (`in`) на
+`_action_for_path` ранее был переведён с substring (`in`) на
 segment walk (`path.split('/')` + явный match на `parts[idx_after_v1]`).
 Тесты в `test_w18_w3_loging_p3.py::TestActionForPathSegmentWalk` и
 `test_cov_loging_w6.py` уже проверяли happy + один collision-case

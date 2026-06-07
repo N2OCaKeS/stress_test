@@ -1,4 +1,4 @@
-"""Unit-тесты P4 cleanup'а для server_worker.
+"""Unit-тесты cleanup'а для server_worker.
 
 Покрытие:
 

@@ -1,6 +1,6 @@
-"""Юнит-тесты F-W17-W3 для server_service.
+"""Юнит-тесты server_service: cleanup-кластер.
 
-Покрывают P4 кластер:
+Покрывают:
 
 1. `audit_service._send_to_logging_service` уважает числовой
    `Retry-After` на 429.

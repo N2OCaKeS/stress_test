@@ -1,4 +1,4 @@
-"""Покрытие gaps loging_service после F-W14.
+"""Покрытие gaps loging_service: rules / RuleCache / time-window edge cases.
 
 1. rules.get_all / get_by_id — фактическое срабатывание 57014 (query_canceled):
    COUNT → 0, SELECT → [], get_by_id → None без raise наружу.

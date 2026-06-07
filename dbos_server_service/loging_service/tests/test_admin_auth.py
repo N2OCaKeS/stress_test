@@ -32,7 +32,7 @@ class TestRequireAdmin:
         assert r.status_code == 401
 
     def test_wrong_platform_role_returns_403(self, client, mock_introspect):
-        """`loging_reader` не управляет правилами (rules — admin-only после W22-W4).
+        """`loging_reader` не управляет правилами (rules — admin-only).
 
         POST /rules теперь принимает `loging_admin` ИЛИ `account_admin`; reader-
         роли возвращают 403 LOGING_ADMIN_REQUIRED. Раньше тест проверял

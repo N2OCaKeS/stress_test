@@ -1,16 +1,16 @@
-"""Регрессии под W55 P0+P1 в server_worker.
+"""Регрессии под критические фиксы в server_worker.
 
-* P0-1 — `dispatch_outbox.poll_once` ставит Redis SET-NX до kiq и
+* `dispatch_outbox.poll_once` ставит Redis SET-NX до kiq и
   пропускает повторный kiq, если ключ уже стоит (commit упал в прошлый
   тик после успешного kiq). Подмена redis_pool — единственный mock,
   остальное (broker / session) реальное либо имитируется fake-row'ой.
 
-* P0-2 — `ipmi_rotate_password` / `account_rotate_password` отказываются
+* `ipmi_rotate_password` / `account_rotate_password` отказываются
   генерировать новый пароль на retry'е (`attempt >= 2`) с пустым stash'ем
   и поднимают `AppException(*_STASH_MISS_ON_RETRY)`. Тест на реальной БД
   + Redis.
 
-* P1 — `_drain_running_tasks` не пишет `task.worker_shutdown` audit, если
+* `_drain_running_tasks` не пишет `task.worker_shutdown` audit, если
   task была cancel'нута между `get_by_id` и UPDATE (CAS-miss в
   `mark_pending_for_retry` / `mark_failed`).
 """
@@ -36,7 +36,7 @@ from tests._helpers.broker_mocks import make_broker as _make_broker
 pytestmark = pytest.mark.asyncio
 
 
-# ── dispatch_outbox P0-1 ────────────────────────────────────────────────────
+# ── dispatch_outbox: idempotent kiq ─────────────────────────────────────────
 
 
 class _Row:
@@ -200,7 +200,7 @@ class TestDispatchOutboxDedupSetNx:
         assert len(dedup_dels) == 1
 
 
-# ── passwords P0-2 ──────────────────────────────────────────────────────────
+# ── passwords: stash-miss на retry ──────────────────────────────────────────
 
 
 class TestIpmiStashMissOnRetry:
@@ -423,7 +423,7 @@ class TestAccountStashMissOnRetry:
         assert chpasswd_called["flag"] is False
 
 
-# ── _drain_running_tasks P1 ─────────────────────────────────────────────────
+# ── _drain_running_tasks: audit skip on CAS-miss ────────────────────────────
 
 
 def _new_id() -> str:

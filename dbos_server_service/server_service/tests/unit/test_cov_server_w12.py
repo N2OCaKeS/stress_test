@@ -368,7 +368,7 @@ class TestDriftDedupIsNewDrift:
     """receive_users_inventory: missing_on_box drift emitted only on transition.
 
     HTTP-сценарии (users/inventory с bot+admin) удалены: permission-gate
-    после F-W12 отдаёт 403 на этом контуре и xfail'ы превратились в шум.
+    отдаёт 403 на этом контуре и xfail'ы превратились в шум.
     Покрытие drift-эмиссии живёт в `test_drift_dedup.py` / internal-callback'ах.
     """
 
@@ -678,7 +678,7 @@ class TestVerifyAgeFutureMessage:
     """record_ipmi_credentials_rotated: verified_at проверки.
 
     HTTP-сценарии (POST `/internal/ipmi-controllers/.../credentials_rotated`
-    с bot+admin) удалены: permission-gate после F-W12 отдаёт 403, и
+    с bot+admin) удалены: permission-gate отдаёт 403, и
     xfail'ы превратились в шум. Покрытие credentials_rotated живёт в
     internal-callback'ах (`test_internal_callbacks.py`); чистая логика
     verify_age остаётся ниже.

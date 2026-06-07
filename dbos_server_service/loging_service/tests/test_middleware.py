@@ -376,7 +376,7 @@ class TestEmitAuditBypassesRules:
                 raise RuntimeError("db is on fire")
 
             def execute(self, *_a, **_k):
-                # После W18-W4 refactor _emit_audit ходит через
+                # После refactor _emit_audit ходит через
                 # record_admin_action → event_repo.insert → db.execute(stmt).
                 # Мокаем тот же путь, поднимая идентичное исключение.
                 raise RuntimeError("db is on fire")

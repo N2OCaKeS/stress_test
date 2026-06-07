@@ -1,4 +1,4 @@
-"""Тесты P3-кластера loging (carry из W14/W15/W16, фиксы в W18).
+"""Тесты loging: набор регрессий по action-glob, retention snapshot, registers.
 
 1) `action_is_registered` glob — фильтр в БД через LIKE, не full scan +
    python-цикл; `has_any` через `SELECT EXISTS`.

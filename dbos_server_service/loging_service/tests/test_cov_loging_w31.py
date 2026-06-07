@@ -1,7 +1,6 @@
-"""Coverage gaps loging_service — W31 P4 pass.
+"""Coverage gaps loging_service — точечный edge-pass.
 
-Восемь edge-case'ов, оставшихся непокрытыми после W26 (нормальные cov-волны
-закрыли основные ветки, эти остались в углах):
+Восемь edge-case'ов, оставшихся в углах после основных cov-проходов:
 
   1. `_fetch_identity` runtime-ветка `INTROSPECT_KEY_NOT_CONFIGURED` —
      `introspect_service_api_key` пуст уже после старта (env-override через
@@ -24,8 +23,8 @@
      даёт `logging.events_queried` (catalog read), даже когда resource —
      `services`; backward-compat с substring-эпохой.
 
-  7. `_RuleCache.invalidate` сбрасывает `_last_db_max` (введён в W26 как
-     основной watermark вместо `_loaded_at`); без сброса cross-worker
+  7. `_RuleCache.invalidate` сбрасывает `_last_db_max` (основной watermark
+     изменений вместо `_loaded_at`); без сброса cross-worker
      UPDATE не подхватывается после явного `invalidate_cache()`.
 
   8. `apply_rules` с `payload.service="loging_service"` обходит rule
@@ -255,7 +254,7 @@ class TestApplyActiveMultiPolicyOr:
     """`apply_active` собирает все активные политики в одно OR-выражение —
     одно событие, попавшее под несколько политик, удаляется один раз, а
     счётчик `total` отражает уникальный размер набора, не сумму per-policy
-    rowcount'ов. Регрессия N-pass подхода (W14): два прохода считали
+    rowcount'ов. Регрессия N-pass подхода: два прохода считали
     одно событие дважды, в SIEM ехало завышенное число.
     """
 
@@ -354,7 +353,7 @@ class TestActionForPathServicesEventsSuffix:
 
 
 class TestRuleCacheInvalidateClearsLastDbMax:
-    """W26 ввёл `_last_db_max` — основной watermark изменений вместо
+    """`_last_db_max` — основной watermark изменений вместо
     `_loaded_at` (NTP-skew fix). `invalidate()` обязан сбросить ЕГО ТОЖЕ,
     иначе после явного `invalidate_cache()` ветка `changed` сравнит свежий
     `db_updated_at` с замороженным `_last_db_max` и может не подтянуть

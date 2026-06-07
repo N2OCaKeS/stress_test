@@ -107,7 +107,7 @@ class TestLegacyGuardAuditShape:
         self, client, user_a, dept_a, monkeypatch,
     ):
         """У caller'а нет docker config, legacy scope → DOCKER_ACCESS_DENIED +
-        audit с полным набором деталей. Существующий W17-тест проверяет только
+        audit с полным набором деталей. Существующий тест проверяет только
         `reason=NO_CFG`; SOC ещё ищет `username`/`service`/`requested_scope`
         для корреляции попыток конфигурации registry'я по логам."""
         captured = _capture_audit(monkeypatch)

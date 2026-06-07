@@ -31,7 +31,7 @@ def _client(run_results):
 class TestCreateUserWiresTargetHome:
     """`create_user` передаёт `home_dir` в `_write_authorized_key`.
 
-    До W17-W3 параметр `target_home` существовал, но ни один caller его не
+    Раньше параметр `target_home` существовал, но ни один caller его не
     передавал — guard в Python был мёртвым. После фикса payload-поле
     `home_dir` (которое и так используется в `useradd -d`) идёт в guard,
     и системный home отбивается ДО отправки команды на хост.

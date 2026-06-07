@@ -1,6 +1,6 @@
-"""Юнит-тесты F-W17-W2 для server_service.
+"""Юнит-тесты для server_service.
 
-Покрывают пять P3-фиксов:
+Покрывают пять фиксов:
 
 1. `secrets.migration.skipped` зарегистрирован в `SERVICE_EVENTS`.
 2. `InventoryUserItem.unix_groups` / `ServerAccount*.unix_groups` —

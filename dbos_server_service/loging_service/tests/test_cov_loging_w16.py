@@ -1,4 +1,4 @@
-"""Coverage gaps loging_service — F-W15 follow-up.
+"""Coverage gaps loging_service — follow-up.
 
 1. redact depth boundary: the xfail from test_cov_loging_w11 wrapped
    _MAX_DEPTH times — innermost dict lands at depth = _MAX_DEPTH, which is

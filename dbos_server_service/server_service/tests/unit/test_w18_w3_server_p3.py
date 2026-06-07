@@ -1,4 +1,4 @@
-"""P3 carry-over по server_service из W14/W15/W16.
+"""Carry-over по server_service: redaction / secrets migration / requeue.
 
 Покрыто:
 
@@ -21,7 +21,7 @@
    не в `_SYSTEM_TASK_KINDS` отдаёт 403 ``TASK_NOT_CANCELLABLE_WITHOUT_TARGET``,
    эмитит denied-audit и `cancel_task` не вызывается.
 8. `worker_dispatch.server_prepare_dispatch` имеет audit-trail на
-   `creds_store_unavailable` и `creds_store_failed` (подтверждение W18-W1).
+   `creds_store_unavailable` и `creds_store_failed`.
 """
 from __future__ import annotations
 
@@ -572,13 +572,13 @@ class TestCancelTaskWithoutTargetNotCancellable:
         cancel_mock.assert_not_awaited()
 
 
-# ── 8. W18-W1 подтверждение: audit на Redis-failure при prepare ──────────────
+# ── 8. audit на Redis-failure при prepare ───────────────────────────────────
 
 
 class TestPrepareDispatchRedisAuditTrail:
     """Проверяем, что код prepare-dispatch'а несёт эмиты на оба
     Redis-failure пути (`creds_store_unavailable` / `creds_store_failed`).
-    Это smoke-проверка, что фикс W18-W1 не откатился."""
+    Это smoke-проверка, что фикс не откатился."""
 
     def test_creds_store_unavailable_emit_present(self):
         import inspect

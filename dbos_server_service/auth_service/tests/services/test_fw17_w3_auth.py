@@ -1,4 +1,4 @@
-"""P4 кластер auth: charset-валидация имени сервиса/роли, fail-closed для
+"""auth: charset-валидация имени сервиса/роли, fail-closed для
 read-операций OAuth-клиентов, дедуп legacy-ключа в bot.list-audit и маска
 PII-email'а в user.create/user.update.
 

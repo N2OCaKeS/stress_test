@@ -199,7 +199,7 @@ class TestSmokeFieldCount:
     """
 
     def test_settings_has_enough_fields(self):
-        # На момент написания (W32) — около 35 полей. Граница 20 — sane
+        # На момент написания — около 35 полей. Граница 20 — sane
         # lower bound: если кто-то по ошибке удалил половину Settings,
         # это поймаем.
         assert len(Settings.model_fields) >= 20, (

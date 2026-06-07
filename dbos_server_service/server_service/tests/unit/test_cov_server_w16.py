@@ -312,7 +312,7 @@ class TestDispatchForServerNoViewPermission:
     """_dispatch_for_server: get_server → AuthorizationError → denied audit.
 
     AuthorizationError = access-deny, status=denied + allowed=False. NotFoundError
-    = visibility-mask, status=failure + allowed=True (см. F-W16-W1 fix
+    = visibility-mask, status=failure + allowed=True (см. фикс
     в worker_dispatch.py:206-225).
     """
 

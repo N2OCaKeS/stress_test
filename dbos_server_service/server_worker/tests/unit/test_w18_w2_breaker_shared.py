@@ -1,11 +1,11 @@
-"""Регрессия P2/W14: shared circuit breaker для audit-publisher + concurrent
+"""Регрессия: shared circuit breaker для audit-publisher + concurrent
 SELECT'ы по `audit_outbox` через `FOR UPDATE SKIP LOCKED`.
 
 Покрывает две гарантии, важные при multi-replica deploy worker'а:
 
 1. Failure'ы accumulate'ятся в общем Redis-store. Если «реплика A» дала
    N-1 fail'ов, а «реплика B» добила до threshold'а — следующий `check()`
-   у обеих видит open (а не у каждой свой счётчик, как было до W11/W14).
+   у обеих видит open (а не у каждой свой счётчик, как было раньше).
    После cooldown'а и success'а пробного запроса обе реплики снова
    видят closed.
 

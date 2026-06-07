@@ -177,7 +177,7 @@ def _patch_introspect(monkeypatch):
 def _stub_prepare_redis(monkeypatch):
     """In-memory stub для `worker_client._prepare_redis_client`.
 
-    `store_prepare_creds` / `store_dispatch_creds` (W18-W1) обращаются к
+    `store_prepare_creds` / `store_dispatch_creds` обращаются к
     pooled Redis-клиенту. В тестах без live-Redis это вылетало бы в
     `WORKER_REDIS_NOT_CONFIGURED` 503. Подкладываем простой dict-storage
     под все тесты; тесты, которым важно поведение storage явно, ставят

@@ -1,9 +1,9 @@
-"""Carry-fixes для server_service по итогам очередного TODO-sync'а.
+"""Carry-fixes для server_service.
 
 Покрывает:
 
-  * `dispatch_task` / `dispatch_task_with_hit` миграция (F-W17-W3 +
-    W18-W1). Source-inspection всех call-sites в `src/api/`: ни один
+  * `dispatch_task` / `dispatch_task_with_hit` миграция.
+    Source-inspection всех call-sites в `src/api/`: ни один
     не пробрасывает legacy-kwarg `return_hit`, каждый сайт явно выбирает
     одну из двух функций. Кодом эта инвариантность не enforces'ится,
     но регрессия означает Union-возврат и невозможность статически
@@ -41,7 +41,7 @@ class TestDispatchTaskMigration:
             if "return_hit=" in text:
                 offenders.append(str(py))
         assert not offenders, (
-            "Found legacy `return_hit=` kwarg in src/api/* — миграция F-W17-W3 "
+            "Found legacy `return_hit=` kwarg in src/api/* — миграция "
             f"должна была их вычистить: {offenders}"
         )
 
@@ -55,7 +55,7 @@ class TestDispatchTaskMigration:
         )
         params = sig.parameters
         assert "return_hit" not in params, (
-            "Параметр `return_hit` удалён в W17-W3 split'е"
+            "Параметр `return_hit` удалён при split'е"
         )
 
     def test_dispatch_task_with_hit_returns_tuple(self):

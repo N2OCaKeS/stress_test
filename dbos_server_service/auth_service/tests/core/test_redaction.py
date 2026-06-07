@@ -22,7 +22,7 @@ class TestKeyBasedRedaction:
 
     def test_token_keys(self):
         # `refresh_token_hash` переехал в _HASH_KEYS — это хэш, не токен;
-        # покрывается test_hash_keys (W18-W4 разнос).
+        # покрывается test_hash_keys.
         for key in ("token", "access_token", "refresh_token", "id_token",
                     "oauth_token", "bearer", "jwt", "jwt_token",
                     "session_token",

@@ -1,4 +1,4 @@
-"""Coverage gaps — server_service w31 (P4 cov-gap closures from w13/w14 report).
+"""Coverage gaps — server_service: точечные cov-gap closures.
 
 Areas:
 * GAP-2: ipmi_rotate_password_dispatch — SERVER_DECOMMISSIONED (409) для IPMI rotate.

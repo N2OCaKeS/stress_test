@@ -1,6 +1,6 @@
 """Worker `account.provision` читает inline-creds из dispatch-stash в Redis.
 
-Контракт (W18-W1): server_service кладёт password + ssh_private_key в Redis
+Контракт: server_service кладёт password + ssh_private_key в Redis
 под `dbos:dispatch_creds:<id>` с TTL, в payload — только `creds_stash_key`.
 Воркер на первой попытке читает stash, копирует creds в task-local stash
 (`_PROVISION_INLINE_KEY_PREFIX:<task_id>`) для будущих retry'ев и DEL'ит

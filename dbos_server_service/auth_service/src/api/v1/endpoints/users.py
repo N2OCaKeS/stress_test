@@ -91,7 +91,7 @@ async def change_own_password(
     return OkResponse()
 
 
-# ── Session management (P2: list / revoke-all / revoke-one) ────────────────
+# ── Session management (list / revoke-all / revoke-one) ────────────────
 # Все три ручки идут под `/users/me/...` и регистрируются ДО любых
 # `/users/{user_id}/...`-роутов (см. комментарий выше про `/me/password`):
 # FastAPI матчит routes по порядку, иначе "me" улетит в `{user_id}`-параметр.

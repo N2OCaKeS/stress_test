@@ -1,4 +1,4 @@
-"""P3 кластер auth: симметрия cache invalidation в auto-unban, fail-closed
+"""auth: симметрия cache invalidation в auto-unban, fail-closed
 в `create_pat`, и порядок dept-guard в `assign_roles`.
 
 Три зоны:

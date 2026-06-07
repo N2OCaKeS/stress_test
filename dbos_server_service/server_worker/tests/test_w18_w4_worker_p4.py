@@ -1,4 +1,4 @@
-"""Регрессы и верификация P4-кластера worker'а (carry W14/W15/W16).
+"""Регрессы и верификация cleanup-фиксов worker'а.
 
 В основном — verify-проверки уже закрытых пунктов (PEM-regex,
 identifier validators, STASH-константы, PublishResult NamedTuple,
@@ -37,7 +37,7 @@ from src.tasks._bmc_helpers import extract_bmc_host
 from src.utils.redaction import redact_error_message
 
 
-# ────────────────────────────── PEM redact (verify F-W17-W2) ─────────────────
+# ────────────────────────────── PEM redact (verify) ─────────────────────────
 
 
 class TestPEMRedaction:
@@ -146,7 +146,7 @@ class TestPublishResultNamedTuple:
         assert r.breaker_skipped is True
 
     def test_field_order_back_compat(self) -> None:
-        # Old positional callers — pre-W8 — должны по-прежнему работать.
+        # Old positional callers — должны по-прежнему работать.
         r = PublishResult(True, False, True)
         assert r.closed and not r.audit_emit_error and r.was_published
 

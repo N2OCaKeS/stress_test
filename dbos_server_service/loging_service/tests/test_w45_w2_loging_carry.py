@@ -1,4 +1,4 @@
-"""Anti-drift фиксы по deferred-bullet'ам loging-triage: dependency-order
+"""Anti-drift фиксы loging: dependency-order
 для register_events rate-limit + observability-counters для `_RuleCache`
 + TLS CA-bundle Settings-поле.
 

@@ -1,6 +1,6 @@
 """Tests: public OAuth-клиенты обязаны идти PKCE S256.
 
-Закрывает SEC-auth P1-3: `is_public=True` принудительно требует
+`is_public=True` принудительно требует
 `code_challenge` + `code_challenge_method=S256`. Confidential
 (`is_public=False`, default) — поведение без изменений (back-compat).
 """

@@ -1,4 +1,4 @@
-"""Carry-closures auth_service из W11/W13/W14/W15/W16 после W17/W18.
+"""auth_service: финальные регрессии по ранее открытым багам.
 
 1. `authorization_service.introspect` (bot-token ветка) — defence-in-depth:
    `bot.status` теперь тоже проверяется, drift `is_active=True, status=BLOCKED`
@@ -157,7 +157,7 @@ class TestDockerRegistryLegacyCacheSavesOneSelect:
 
 
 class TestCallerIpWiredThroughIntrospectEndpoint:
-    """GAP-5 W6 (critical): если кто-то уберёт `caller_ip=body.caller_ip` из
+    """Critical regression: если кто-то уберёт `caller_ip=body.caller_ip` из
     `endpoints/authorization.py`, multi-IP detector тихо умрёт. Поэтому
     регрессия — spy на `authorization_service.introspect` и проверка, что
     `caller_ip` доехал из тела запроса."""

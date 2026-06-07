@@ -1,4 +1,4 @@
-"""Coverage gaps loging_service — after F-W16.
+"""Coverage gaps loging_service — follow-up.
 
 Areas:
   1. GET /events DEPARTMENT_SCOPE_VIOLATION: dept-scoped reader passes a

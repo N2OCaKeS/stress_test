@@ -1,4 +1,4 @@
-"""Carry-фиксы по deferred-bullet'ам loging-triage W45 (read-API tests):
+"""Доборные фиксы по read-API loging:
 
 1. `has_more` shape — поле появилось на `RuleListResponse`, `ServiceListResponse`
    и `ServiceEventsResponse`; до этого тестировалась только `EventListResponse`.

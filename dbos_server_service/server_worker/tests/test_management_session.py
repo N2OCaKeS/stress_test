@@ -582,7 +582,7 @@ class TestManagedDiscoveredAccountProvision:
         self, make_task, fetch_task, captured_audit, monkeypatch, mgmt_key,
         stash_dispatch_creds,
     ):
-        # Managed-provision: password приходит из dispatch-stash'а (W21-W1),
+        # Managed-provision: password приходит из dispatch-stash'а,
         # `_fetch_password_to_set` к server_service не зовётся — креды уже
         # есть.
         stash_key = await stash_dispatch_creds(password_plaintext="sess-pwd")

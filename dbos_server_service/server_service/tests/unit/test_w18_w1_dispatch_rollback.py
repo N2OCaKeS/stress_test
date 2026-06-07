@@ -1,6 +1,6 @@
 """Race: commit creds в БД до успешного dispatch'а → drift со штатом коробки.
 
-До W17 `_dispatch_account_on_host` (`worker_dispatch.py`) шёл:
+Раньше `_dispatch_account_on_host` (`worker_dispatch.py`) шёл:
   1. generate P_new (`reset_provision_credentials` + `ensure_provision_credentials`);
   2. `await db.commit()` ← creds зафиксированы в server-БД;
   3. `worker_client.dispatch_task(...)` ← мог упасть с
@@ -10,13 +10,13 @@ Retry без `force_password=true` видел уже-сохранённый `P_n
 `had_password_before=True` → `force_replace=False` → worker НЕ chpasswd'ил
 коробку. БД с `P_new`, коробка с `P_old`, out-of-band доступ потерян.
 
-Фикс (W17 + W18): `creds_sp = await db.begin_nested()`. Reset/ensure
+Фикс: `creds_sp = await db.begin_nested()`. Reset/ensure
 выполняются внутри savepoint'а, `dispatch_task` тоже под ним; на любом
 исключении из dispatch'а — `creds_sp.rollback()` (через `finally` гарантия
 покрытия и `Conflict/ServiceUnavailable`, и любых других исключений).
 `creds_sp.commit()` + `db.commit()` только если `dispatch_ok=True`.
 
-Также W18: на rollback'е стираем dispatch-stash из Redis, чтобы plaintext
+Также: на rollback'е стираем dispatch-stash из Redis, чтобы plaintext
 не висел до TTL.
 """
 

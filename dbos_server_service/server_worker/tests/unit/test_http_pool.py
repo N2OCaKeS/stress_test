@@ -74,7 +74,7 @@ class TestPoolLifecycle:
         """Если aclose() бросит исключение с URL-секретом в repr — лог должен
         пройти через `redact_error_message`, не утечь password.
 
-        Симметрия с W15-фиксом CLI (там та же дыра была закрыта в shutdown-логе).
+        Симметрия с фиксом CLI (там та же дыра была закрыта в shutdown-логе).
         """
         import logging
 

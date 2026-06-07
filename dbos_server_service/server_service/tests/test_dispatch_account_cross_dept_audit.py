@@ -6,7 +6,7 @@
 `audit_service.emit(...)`, security-trail терял evidence.
 Фикс: ловим `NotFoundError` после `load_visible_server` и эмитим
 `status="failure"` с reason=server_not_found_or_cross_dept (паттерн
-`services/server_account.py::get_account`; convention F-W4 — visibility-404
+`services/server_account.py::get_account`; visibility-404
 это business-failure, не access-deny).
 
 Сценарий моделируем напрямую через monkeypatch `load_visible_server`:

@@ -237,7 +237,7 @@ class TestFetchIdentityNetworkErrors:
         assert exc.value.error_code == "AUTH_SERVICE_UNREACHABLE"
 
     def test_non_200_response_returns_503(self, monkeypatch):
-        # После удаления httpx-fallback (W8) на `_introspect_client.pool=None`
+        # После удаления httpx-fallback на `_introspect_client.pool=None`
         # сразу поднимается INTROSPECT_NOT_INITIALIZED (503) — non-200 ветка
         # достижима только через настоящий pooled client, который здесь не
         # инициализирован. Тест зафиксирован под новый контракт.

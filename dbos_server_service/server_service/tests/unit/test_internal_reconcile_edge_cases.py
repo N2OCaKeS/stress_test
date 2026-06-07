@@ -178,7 +178,7 @@ class TestResolveOrCreateOs:
         BASE_INT = "/api/server/v1/internal"
 
         # Имя обязано пройти KNOWN_OS_PREFIXES — иначе запись не создаётся
-        # (whitelist W21-W1).
+        # (whitelist).
         r1 = await client.post(
             f"{BASE_INT}/servers/{srv1.id}/inventory",
             headers={"Authorization": "Bearer " + worker_bot_token_a},

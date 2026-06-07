@@ -1,7 +1,7 @@
-"""Carry-фиксы loging (W11/W12/W14/W15/W16 → закрыты в W19).
+"""Финальные регрессии loging — закрытые баги.
 
 Пункты задачи:
-1. `_dropped_overflow_total` split — verify (закрыто W18-W4).
+1. `_dropped_overflow_total` split — verify.
 2. `apply_active` snapshot race — регрессия на «policies взяты раз, изменение
    в середине цикла видно только на следующем sweep».
 3. `_retention_loop` last_run race — verify (last_run выставлен ДО finally,
@@ -39,7 +39,7 @@ from src.services.rule_service import _RuleSnapshot
 
 
 class TestDroppedOverflowSplitVerify:
-    """Гарант, что W18-W4 фикс не откатили: drain-loop CancelledError-handler
+    """Гарант, что фикс не откатили: drain-loop CancelledError-handler
     различает QueueFull (overflow) и обычные cancel-losses."""
 
     def test_drain_loop_has_overflow_branch(self):

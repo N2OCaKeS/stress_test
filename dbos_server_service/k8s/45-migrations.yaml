@@ -348,3 +348,86 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: secret-migrate
+  namespace: dbos
+  labels:
+    job: secret-migrate
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        job: secret-migrate
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alembic
+          image: dbos/secret-service:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          env:
+            - name: APP_ENV
+              value: production
+            - name: APP_DEBUG
+              value: "false"
+            - name: SECRET_DB_USER
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SECRET_DB_USER }
+            - name: SECRET_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SECRET_DB_PASSWORD }
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(SECRET_DB_USER):$(SECRET_DB_PASSWORD)@secret-postgres:5432/secret_db"
+            - name: AUTH_SERVICE_URL
+              value: https://auth-service:8000
+            - name: LOGGING_SERVICE_URL
+              value: https://logging-service:8001
+            - name: SECRET_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SECRET_ENCRYPTION_KEY }
+            - name: SECRET_ENCRYPTION_KEY_VERSION
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SECRET_ENCRYPTION_KEY_VERSION }
+            - name: HKDF_SALT_HEX
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: HKDF_SALT_HEX }
+            - name: SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVICE_API_KEY }
+            - name: SERVICE_API_KEYS
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SECRET_INBOUND_SERVICE_API_KEYS }
+            - name: LOGGING_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY_SECRET }
+            - name: INTROSPECT_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SECRET_INTROSPECT_SERVICE_API_KEY }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

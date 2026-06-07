@@ -77,6 +77,36 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
+  name: secret-service-tls
+  namespace: dbos
+spec:
+  secretName: secret-service-tls
+  duration: 8760h
+  renewBefore: 720h
+  commonName: secret.dbos.local
+  dnsNames:
+    - secret.dbos.local
+    - secret-service
+    - secret-service.dbos
+    - secret-service.dbos.svc
+    - secret-service.dbos.svc.cluster.local
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  issuerRef:
+    name: dbos-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
   name: server-service-tls
   namespace: dbos
 spec:

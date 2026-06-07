@@ -68,6 +68,7 @@ AUTH_DB_PASSWORD=$(rand 32)
 LOGGING_DB_PASSWORD=$(rand 32)
 SERVER_DB_PASSWORD=$(rand 32)
 WORKER_DB_PASSWORD=$(rand 32)
+SECRET_DB_PASSWORD=$(rand 32)
 
 # auth_service
 AUTH_SECRET_KEY=$(rand 64)
@@ -78,6 +79,7 @@ LOGGING_SERVICE_API_KEY_AUTH=$(rand 48)
 LOGGING_SERVICE_API_KEY_SERVER=$(rand 48)
 LOGGING_SERVICE_API_KEY_CONFIG=$(rand 48)
 LOGGING_SERVICE_API_KEY_WORKER=$(rand 48)
+LOGGING_SERVICE_API_KEY_SECRET=$(rand 48)
 # loging_service single outbound для backward-compat (caller'ы пока используют
 # одно поле; map выше — для inbound key-separation в loging_service Settings).
 LOGGING_SERVICE_API_KEY="$LOGGING_SERVICE_API_KEY_AUTH"
@@ -99,6 +101,21 @@ WORKER_BOT_TOKEN="dbos_bot_$(rand 48)"
 # Inbound SERVICE_API_KEYS-map для server_service (worker_bot — единственный
 # inbound caller сегодня; формат kv-list).
 SERVER_INBOUND_SERVICE_API_KEYS="worker_bot:${WORKER_BOT_TOKEN}"
+
+# secret_service envelope encryption (HKDF_SALT_HEX переиспользуется общий)
+SECRET_ENCRYPTION_KEY=$(rand_b64 32)
+SECRET_ENCRYPTION_KEY_VERSION=2
+
+# secret_service: introspect ключ для исходящих /authorization/introspect
+SECRET_INTROSPECT_SERVICE_API_KEY=$(rand 48)
+
+# secret_service: inbound s2s map. Worker и auth дёргают /internal/* для
+# управления записями и cascade-revoke; server_service — для bootstrap'а
+# server_account credentials. Формат kv-list.
+SECRET_INBOUND_WORKER_KEY=$(rand 48)
+SECRET_INBOUND_AUTH_KEY=$(rand 48)
+SECRET_INBOUND_SERVER_KEY=$(rand 48)
+SECRET_INBOUND_SERVICE_API_KEYS="worker_bot:${SECRET_INBOUND_WORKER_KEY},auth_service:${SECRET_INBOUND_AUTH_KEY},server_service:${SECRET_INBOUND_SERVER_KEY}"
 
 # Redis
 REDIS_PASSWORD=$(rand 32)
@@ -125,7 +142,7 @@ TLS_KEY_B64=$(base64 -w0 < "$TMP/tls.key")
 
 # ── JSON map для loging_service (inbound) ────────────────────────────────────
 LOGGING_SERVICE_API_KEYS_JSON=$(cat <<EOF
-{"auth_service":"${LOGGING_SERVICE_API_KEY_AUTH}","server_service":"${LOGGING_SERVICE_API_KEY_SERVER}","config_service":"${LOGGING_SERVICE_API_KEY_CONFIG}","server_worker":"${LOGGING_SERVICE_API_KEY_WORKER}"}
+{"auth_service":"${LOGGING_SERVICE_API_KEY_AUTH}","server_service":"${LOGGING_SERVICE_API_KEY_SERVER}","config_service":"${LOGGING_SERVICE_API_KEY_CONFIG}","server_worker":"${LOGGING_SERVICE_API_KEY_WORKER}","secret_service":"${LOGGING_SERVICE_API_KEY_SECRET}"}
 EOF
 )
 
@@ -152,6 +169,8 @@ stringData:
   SERVER_DB_PASSWORD: ${SERVER_DB_PASSWORD}
   WORKER_DB_USER: worker_user
   WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD}
+  SECRET_DB_USER: secret_user
+  SECRET_DB_PASSWORD: ${SECRET_DB_PASSWORD}
 
   # auth_service
   AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
@@ -167,6 +186,7 @@ cat <<EOF
 
   # loging_service: outbound + inbound map + introspect
   LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY}
+  LOGGING_SERVICE_API_KEY_SECRET: ${LOGGING_SERVICE_API_KEY_SECRET}
   LOGGING_SERVICE_API_KEYS_JSON: |
     ${LOGGING_SERVICE_API_KEYS_JSON}
   LOGGING_INTROSPECT_SERVICE_API_KEY: ${LOGGING_INTROSPECT_SERVICE_API_KEY}
@@ -186,6 +206,14 @@ cat <<EOF
   # server_worker
   WORKER_BOT_TOKEN: ${WORKER_BOT_TOKEN}
   WORKER_SERVICE_API_KEY: ${WORKER_SERVICE_API_KEY}
+
+  # secret_service: envelope encryption (общий HKDF_SALT_HEX переиспользуется)
+  SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+  SECRET_ENCRYPTION_KEY_VERSION: "${SECRET_ENCRYPTION_KEY_VERSION}"
+
+  # secret_service: s2s (introspect + inbound map)
+  SECRET_INTROSPECT_SERVICE_API_KEY: ${SECRET_INTROSPECT_SERVICE_API_KEY}
+  SECRET_INBOUND_SERVICE_API_KEYS: '${SECRET_INBOUND_SERVICE_API_KEYS}'
 
   # Redis (taskiq broker + rate-limit storage)
   REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -236,6 +264,12 @@ MASTER ENCRYPTION KEY (server_service)
   HKDF_SALT_HEX:                 ${HKDF_SALT_HEX}
 
 ============================================================
+MASTER ENCRYPTION KEY (secret_service)
+============================================================
+  SECRET_ENCRYPTION_KEY:         ${SECRET_ENCRYPTION_KEY}
+  SECRET_ENCRYPTION_KEY_VERSION: ${SECRET_ENCRYPTION_KEY_VERSION}
+
+============================================================
 WORKER BOT TOKEN (server_worker → server_service /internal/*)
 ============================================================
   ${WORKER_BOT_TOKEN}
@@ -247,6 +281,7 @@ DB passwords (per-service)
   logging_db / logging_user: ${LOGGING_DB_PASSWORD}
   server_db  / server_user:  ${SERVER_DB_PASSWORD}
   worker_db  / worker_user:  ${WORKER_DB_PASSWORD}
+  secret_db  / secret_user:  ${SECRET_DB_PASSWORD}
 
 ============================================================
 REDIS

@@ -2,11 +2,13 @@
 #
 # Поднимает на хосте:
 #   postgres        :5432  (четыре БД: dev_auth, dev_logging, dev_server, dev_server_worker)
-#   redis           :6379  (брокер задач для server_worker)
+#   secret_postgres :5435  (отдельный кластер для secret_service: dev_secret)
+#   redis           :6379  (брокер задач для server_worker, ratelimit storage)
 #   loging_service  :8001  (uvicorn --reload, src/ примонтирован)
 #   auth_service    :8000  (uvicorn --reload, src/ примонтирован)
 #   server_service  :8002  (uvicorn --reload, src/ примонтирован)
 #   server_worker          (taskiq worker, src/ примонтирован)
+#   secret_service  :8003  (uvicorn --reload, src/ примонтирован)
 #
 # Использование:
 #   make up           поднять стек (данные сохраняются)
@@ -59,7 +61,7 @@ services:
     init: true
     environment:
       DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_logging
-      SERVICE_API_KEYS: '{"auth_service":"audit_auth_service_dev_key","server_service":"audit_server_service_dev_key","config_service":"audit_config_service_dev_key","server_worker":"audit_server_worker_dev_key"}'
+      SERVICE_API_KEYS: '{"auth_service":"audit_auth_service_dev_key","server_service":"audit_server_service_dev_key","config_service":"audit_config_service_dev_key","server_worker":"audit_server_worker_dev_key","secret_service":"audit_secret_service_dev_key"}'
       INTROSPECT_SERVICE_API_KEY: dev-logging-introspect-key
       AUTH_SERVICE_URL: http://auth_service:8000
       LOGGING_ADMIN_USERNAME: admin
@@ -206,6 +208,68 @@ services:
       server_service:
         condition: service_healthy
 
+  secret_postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: dev_secret
+    ports:
+      - "5435:5432"
+    volumes:
+      - dbos_dev_secret_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  secret_service:
+    build:
+      context: ./secret_service
+      dockerfile: docker/Dockerfile
+    init: true
+    environment:
+      APP_ENV: local
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8003
+      DATABASE_URL: postgresql+psycopg://app_user:app_password@secret_postgres:5432/dev_secret
+      AUTH_SERVICE_URL: http://auth_service:8000
+      INTROSPECT_SERVICE_API_KEY: dev-introspect-api-key
+      LOGGING_SERVICE_URL: http://loging_service:8001
+      LOGGING_SERVICE_API_KEY: audit_secret_service_dev_key
+      SERVICE_API_KEY: dev-introspect-api-key
+      SECRET_ENCRYPTION_KEY: dev-secret-service-encryption-key-do-not-use!
+      SECRET_ENCRYPTION_KEY_VERSION: "2"
+      # Redis index 2 — отдельно от taskiq broker (0) и других потенциальных
+      # потребителей (1). Используется как опциональное хранилище slowapi-счётчиков.
+      RATE_LIMIT_STORAGE_URI: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/2
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-dev-redis-password}
+      SWEEP_ENABLED: "false"
+      APP_LOG_LEVEL: INFO
+    command: >
+      sh -c "python -m alembic upgrade head &&
+             exec uvicorn src.main:app --host 0.0.0.0 --port 8003 --reload"
+    volumes:
+      - ./secret_service/src:/app/src
+      - ./secret_service/alembic.ini:/app/alembic.ini:ro
+    ports:
+      - "8003:8003"
+    depends_on:
+      secret_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+      loging_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 --connect-timeout 2 http://localhost:8003/api/secret/v1/health || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
   # Одноразовый раннер seed_dev.py. Не стартует автоматически (profile=tools).
   # Запуск:  docker compose -f docker-compose.dev.yml run --rm seeder
   seeder:
@@ -232,3 +296,4 @@ services:
 volumes:
   dbos_dev_pg:
   dbos_dev_redis:
+  dbos_dev_secret_pg:

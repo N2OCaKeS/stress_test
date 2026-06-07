@@ -6,6 +6,7 @@
 #   scripts/k8s/rollout.sh logging        — только logging_service
 #   scripts/k8s/rollout.sh server         — только server_service
 #   scripts/k8s/rollout.sh worker         — только server_worker
+#   scripts/k8s/rollout.sh secret         — только secret_service
 
 set -euo pipefail
 
@@ -58,6 +59,13 @@ case "$TARGET" in
     worker|all)
         build_one "server-worker" "$ROOT_DIR/server_worker"
         rollout_one "server-worker"
+        ;;
+esac
+
+case "$TARGET" in
+    secret|all)
+        build_one "secret-service" "$ROOT_DIR/secret_service"
+        rollout_one "secret-service"
         ;;
 esac
 

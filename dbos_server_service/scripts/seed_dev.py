@@ -25,6 +25,7 @@ import httpx
 AUTH_URL    = os.environ.get("AUTH_URL", "http://localhost:8000")
 LOG_URL     = os.environ.get("LOG_URL", "http://localhost:8001")
 SERVER_URL  = os.environ.get("SERVER_URL", "http://localhost:8002")
+SECRET_URL  = os.environ.get("SECRET_URL", "http://localhost:8003")
 ADMIN_USER  = "admin"
 ADMIN_PASS  = "1234"
 LOG_API_KEY = "dev-logging-api-key"
@@ -254,6 +255,12 @@ def main() -> None:
     _wait(LOG_URL,    "/api/logging/v1/health", "loging_service"); print()
     _wait(AUTH_URL,   "/api/auth/v1/health",    "auth_service");   print()
     _wait(SERVER_URL, "/api/server/v1/health",  "server_service"); print()
+    # secret_service может стартовать позже остальных — best-effort, не fatal
+    try:
+        _wait(SECRET_URL, "/api/secret/v1/health", "secret_service", retries=15)
+        print()
+    except SystemExit:
+        print("  (secret_service пропущен — сидинг ролей будет недоступен)")
 
     # Логин как account_admin
     r = httpx.post(f"{AUTH_URL}/api/auth/v1/login",
@@ -275,6 +282,8 @@ def main() -> None:
          "description": "Инвентаризация и управление тестовыми серверами"},
         {"service_name": "loging_service",  "display_name": "Аудит и логирование",
          "description": "Централизованный сервис аудита. reader-роль даёт доступ к просмотру логов"},
+        {"service_name": "secret_service",  "display_name": "Хранилище секретов",
+         "description": "Безопасное хранение токенов и учётных данных для внешних систем (Jira, Confluence, Git и т.п.)"},
     ]:
         s, b = post(auth, "/api/auth/v1/services", svc)
         must(s, b, f"{svc['service_name']} ({svc['display_name']})")
@@ -289,7 +298,7 @@ def main() -> None:
     dept = must(s, b, "отдел НТ")
     dept_id = dept["department_id"]
 
-    for svc_name in ["config_service", "server_service", "loging_service"]:
+    for svc_name in ["config_service", "server_service", "loging_service", "secret_service"]:
         s, b = post(auth, f"/api/auth/v1/departments/{dept_id}/services",
                     {"service_name": svc_name})
         must(s, b, f"НТ → доступ к {svc_name}")
@@ -316,6 +325,11 @@ def main() -> None:
         ],
         "loging_service": [
             ("reader",   "Читатель", "Просмотр логов отдела"),
+        ],
+        "secret_service": [
+            ("guest",    "Гость",    "Просмотр документации сервиса"),
+            ("reader",   "Читатель", "Просмотр кред и reveal с can_read"),
+            ("operator", "Оператор", "Создание/изменение кред в своей зоне"),
         ],
     }.items():
         for role_name, display, desc in roles:

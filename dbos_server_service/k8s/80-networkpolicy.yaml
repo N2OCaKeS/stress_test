@@ -54,6 +54,9 @@ spec:
         - podSelector:
             matchLabels:
               app: server-worker
+        - podSelector:
+            matchLabels:
+              app: secret-service
       ports:
         - protocol: TCP
           port: 8000
@@ -87,6 +90,9 @@ spec:
         - podSelector:
             matchLabels:
               app: server-worker
+        - podSelector:
+            matchLabels:
+              app: secret-service
       ports:
         - protocol: TCP
           port: 8001
@@ -258,6 +264,9 @@ spec:
         - podSelector:
             matchLabels:
               app: server-worker
+        - podSelector:
+            matchLabels:
+              app: secret-service
       ports:
         - protocol: TCP
           port: 6379
@@ -283,3 +292,69 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+
+---
+# ────────────────────────────────────────────────────────────────────────────
+# secret-service: вход от ingress-контроллера и от соседей по namespace
+# (server_service, server_worker и auth_service дёргают /internal/* для
+# управления записями и cascade-revoke).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secret-service-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: secret-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              app: auth-service
+        - podSelector:
+            matchLabels:
+              app: logging-service
+        - podSelector:
+            matchLabels:
+              app: server-service
+        - podSelector:
+            matchLabels:
+              app: server-worker
+      ports:
+        - protocol: TCP
+          port: 8003
+
+---
+# secret-postgres: только secret-service и его migration Job.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secret-postgres-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: secret-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: secret-service
+        - podSelector:
+            matchLabels:
+              job: secret-migrate
+        - podSelector:
+            matchLabels:
+              app: pg-backup
+              target: secret-postgres
+      ports:
+        - protocol: TCP
+          port: 5432

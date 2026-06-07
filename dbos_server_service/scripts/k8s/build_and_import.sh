@@ -14,6 +14,7 @@ declare -A SERVICES=(
     [logging-service]="loging_service"
     [server-service]="server_service"
     [server-worker]="server_worker"
+    [secret-service]="secret_service"
 )
 
 TMP=$(mktemp -d)
@@ -42,7 +43,7 @@ done
 
 echo ""
 echo "✓ Образы готовы и доступны k3s:"
-sudo "$K3S_BIN" ctr images list | grep -E "dbos/(auth|logging|server)-(service|worker)" || true
+sudo "$K3S_BIN" ctr images list | grep -E "dbos/(auth|logging|server|secret)-(service|worker)" || true
 
 echo ""
 echo "  Чтобы развернуть/обновить: scripts/k8s/deploy.sh"

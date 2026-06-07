@@ -10,12 +10,14 @@ resources:
   - 10-postgres-worker.yaml
   - 11-postgres-logging.yaml
   - 12-redis.yaml            # Redis для taskiq broker + slowapi rate-limit storage
+  - 13-postgres-secret.yaml
   - 20-secrets.yaml          # генерируется scripts/k8s/gen_secrets.sh
   - 45-migrations.yaml       # Alembic Job'ы на каждый сервис (применять до Deployment'ов)
   - 30-logging-service.yaml
   - 40-auth-service.yaml
   - 50-server-service.yaml
   - 60-server-worker.yaml
+  - 13-secret-service.yaml
   - 70-pdb.yaml              # PodDisruptionBudget на все сервисы с replicas=2
   - 80-networkpolicy.yaml    # default-deny ingress + явные allow между подграфами
   - 50-ingress.yaml          # TLS-secret'ы выпускает cert-manager (91/92-*.yaml)

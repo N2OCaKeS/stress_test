@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-TARGET="${1:?usage: rollback.sh auth|logging|server|worker [revision]}"
+TARGET="${1:?usage: rollback.sh auth|logging|server|worker|secret [revision]}"
 REVISION="${2:-}"
 
 case "$TARGET" in
@@ -14,7 +14,8 @@ case "$TARGET" in
     logging) DEPLOY="logging-service" ;;
     server)  DEPLOY="server-service" ;;
     worker)  DEPLOY="server-worker" ;;
-    *)       echo "ОШИБКА: цель должна быть 'auth', 'logging', 'server' или 'worker'" >&2; exit 1 ;;
+    secret)  DEPLOY="secret-service" ;;
+    *)       echo "ОШИБКА: цель должна быть 'auth', 'logging', 'server', 'worker' или 'secret'" >&2; exit 1 ;;
 esac
 
 echo "→ История ревизий $DEPLOY:"

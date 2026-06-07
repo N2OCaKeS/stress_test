@@ -49,3 +49,15 @@ spec:
   selector:
     matchLabels:
       app: server-worker
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: secret-service-pdb
+  namespace: dbos
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: secret-service

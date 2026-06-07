@@ -14,17 +14,18 @@
 
 ## Целевая архитектура
 
-На текущий момент в проекте выделены 7 компонентов:
+На текущий момент в проекте выделены 8 компонентов:
 
 - `auth_service` — единая точка аутентификации и авторизации;
 - `logging_service` — централизованный аудит действий;
 - `server_service` — операции по управлению серверами (REST-фасад);
 - `server_worker` — фоновый исполнитель hardware-задач (Redfish / ipmitool / SSH);
-- `config_service` — хранение и выдача секретов и служебных учётных данных (отложен);
+- `secret_service` — безопасное хранение токенов / учётных данных для внешних систем (Jira, Confluence, Git и т.п.);
+- `config_service` — хранение и выдача конфигурации приложений (отложен; ниша секретов закрыта `secret_service`);
 - `web_settings` — web-интерфейс для администрирования платформы (отложен);
 - `cli` — кроссплатформенный CLI-клиент для работы с сервисами из консоли (отложен).
 
-Состояние реализации: 4 backend-сервиса production-ready (`auth_service`, `logging_service`, `server_service`, `server_worker`), 6938 проходящих тестов (1539 + 1514 + 1671 + 2214) + 495 integration, открытых критичных задач нет. Подробности — `STATUS.md`.
+Состояние реализации: 4 backend-сервиса production-ready (`auth_service`, `logging_service`, `server_service`, `server_worker`), 6938 проходящих тестов (1539 + 1514 + 1671 + 2214) + 495 integration. `secret_service` — backend-готов (Phase 1-7, ~269 unit-тестов), Phase 8 (integration) / Phase 9 (k8s) / Phase 10 (docs+infra) в работе. Подробности — `STATUS.md`.
 
 Типовая схема развёртывания одного сервиса:
 
@@ -144,9 +145,13 @@ make scan
 
 Отдельное направление развития сервиса — выделение ботов и сервисных учёток в самостоятельную модель доступа.
 
+### `secret_service`
+
+Отвечает за безопасное хранение и выдачу токенов / учётных данных для внешних систем — Jira, Confluence, Git и т.п. Одна сущность `credential` хранит пару `(login, secret)` под одним из трёх scope: `personal` (владелец-пользователь), `department` (владелец-департамент), `cross_department` (двух-уровневая модель `DeptGrant` + `RoleACL`). Шифрование — AES-256-GCM + HKDF-SHA256 с `AAD=cred:{cred_id}`, master key через env `SECRET_ENCRYPTION_KEY` (Kubernetes Secret). Lifecycle blocked/recover на 30-дневное окно для cred'ы с удалённым владельцем; sweep уносит просроченные. См. `secret_service/README.md`, `secret_service/API_ENDPOINTS.md`, `secret_service/AUDIT_EVENTS.md`.
+
 ### `config_service`
 
-Отвечает за безопасное хранение и выдачу секретов, токенов, служебных логинов и паролей.
+Отвечает за хранение и выдачу конфигурации приложений. На текущий момент отложен — ниша секретов и токенов закрыта `secret_service`.
 
 ### `logging_service`
 

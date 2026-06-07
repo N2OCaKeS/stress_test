@@ -43,6 +43,13 @@ spec:
                 name: server-service
                 port:
                   number: 8002
+          - path: /api/secret
+            pathType: Prefix
+            backend:
+              service:
+                name: secret-service
+                port:
+                  number: 8003
           - path: /docs
             pathType: Prefix
             backend:

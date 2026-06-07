@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  secret_service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: secret_service
+    environment:
+      APP_ENV: local
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8003
+      DATABASE_URL: postgresql+psycopg://secret_user:secret_password@secret_postgres:5432/secret_db
+      AUTH_SERVICE_URL: http://auth_service:8000
+      SECRET_ENCRYPTION_KEY: dev-secret-encryption-key-do-not-use-in-prod
+      SECRET_ENCRYPTION_KEY_VERSION: "2"
+    ports:
+      - "8003:8003"
+    volumes:
+      - ../src:/app/src
+      - ../alembic.ini:/app/alembic.ini:ro
+    # Run migrations, then start uvicorn with auto-reload
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn src.main:app --host 0.0.0.0 --port 8003 --reload"
+    depends_on:
+      - secret_postgres
+
+  secret_postgres:
+    image: postgres:16
+    container_name: secret_postgres
+    environment:
+      POSTGRES_DB: secret_db
+      POSTGRES_USER: secret_user
+      POSTGRES_PASSWORD: secret_password
+    ports:
+      - "5435:5432"
+    volumes:
+      - secret_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  secret_postgres_data:

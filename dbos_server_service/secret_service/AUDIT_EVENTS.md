@@ -1,0 +1,92 @@
+# secret_service · audit events
+
+Каталог событий, которые secret_service публикует в `loging_service` через `audit_service.emit(...)`. Источник истины — `src/services/audit_events.py` (`SERVICE_EVENTS` + `_DEFAULT_SEVERITY` таблица); этот документ дублирует таблицу для удобства ревью.
+
+## Общие принципы
+
+- Имя действия — `<object>.<verb>`. Для credentials используется префикс `tokens.*` (исторический выбор: одна сущность хранит `(login, secret)` пары для внешних токенов).
+- Severity-дефолты задаются для пары `(action, status)` в `_DEFAULT_SEVERITY`. Failure-ось эскалируется вверх (CRUD → ERROR; reveal / transfer / dept-grant / cascade → CRITICAL).
+- Поля envelope: `actor_id`, `actor_type` (`user` / `bot` / `oauth_client` / `service`), `actor_username`, `subject_id` (как правило `cred_id`), `subject_type`, `service`, `request_id`, `ip_address`, `user_agent`, `details` (action-specific, см. ниже), `status`, `severity`, `timestamp`.
+- `details.secret` / `details.login` / `details.password` / `details.token` маскируются `redact_payload` перед отправкой (см. `src/services/redaction.py`).
+- Health/ready НЕ логируются.
+
+## Lifecycle
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `service.started` | success | INFO | `{ "version": "0.1.0" }`. Эмитится при старте lifespan'а. |
+
+## HTTP middleware
+
+`AuditAccessMiddleware` пишет outcome каждого HTTP-запроса. Применяется ко всем path'ам, кроме `/health` и `/ready`.
+
+| Action | Status | Severity | Описание / payload |
+|---|---|---|---|
+| `http.client_error` | failure | INFO | 4xx ответ (кроме 401/403). `details = { method, path, status_code, request_id }`. |
+| `http.unauthorized` | failure | WARNING | 401 или 403. `details = { method, path, status_code, error_code, request_id }`. |
+| `http.server_error` | failure | ERROR | 5xx ответ. `details = { method, path, status_code, request_id }`. |
+
+## Credentials — CRUD
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `tokens.create` | success | INFO | `{ cred_id, name, service, scope, owner_user_id?, owner_dept_id? }`. `secret` маскируется. |
+| `tokens.create` | failure | ERROR | `{ error_code, message, name, service, scope }`. |
+| `tokens.update` | success | INFO | `{ cred_id, changed_fields }`. `changed_fields` — список из `name` / `login` / `secret`. |
+| `tokens.update` | failure | ERROR | `{ error_code, message, cred_id }`. |
+| `tokens.delete` | success | WARNING | `{ cred_id, scope, owner_user_id?, owner_dept_id? }`. |
+| `tokens.delete` | failure | ERROR | `{ error_code, message, cred_id }`. |
+| `tokens.admin_override_delete` | success | **CRITICAL** | `{ cred_id, scope, original_owner_user_id?, original_owner_dept_id?, reason }`. `reason` обязателен в request body. |
+| `tokens.admin_override_delete` | failure | **CRITICAL** | `{ error_code, message, cred_id, reason }`. |
+
+## Reveal + throttle
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `tokens.revealed` | success | **CRITICAL** | `{ cred_id, scope, throttle_window_seconds: 300 }`. Первый reveal в 5-мин окне per `(actor_id, cred_id)`. |
+| `tokens.revealed` | failure | **CRITICAL** | `{ error_code, message, cred_id }`. Decrypt-провал тоже сюда. |
+| `tokens.revealed_throttled` | success | INFO | `{ cred_id, count }`. Повторные reveals в окне. `count` — суммарное число reveals в текущем окне. |
+
+## DeptGrant (cross_department flow)
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `tokens.dept_grant_added` | success | **CRITICAL** | `{ cred_id, recipient_dept_id, grant_id }`. |
+| `tokens.dept_grant_added` | failure | **CRITICAL** | `{ error_code, message, cred_id, recipient_dept_id }`. |
+| `tokens.dept_grant_revoked` | success | **CRITICAL** | `{ cred_id, recipient_dept_id, grant_id, cascaded_role_acls: N }`. |
+| `tokens.dept_grant_revoked` | failure | **CRITICAL** | `{ error_code, message, cred_id, grant_id }`. |
+| `tokens.dept_revoke_cascade` | success | **CRITICAL** | `{ dept_id, dept_grants_revoked: K, role_acls_revoked: M }`. Триггер — `revoke department_service_access`. |
+| `tokens.dept_revoke_cascade` | failure | **CRITICAL** | `{ error_code, message, dept_id }`. |
+| `tokens.dept_recipient_cascade` | success | **CRITICAL** | `{ dept_id, dept_grants_revoked: K, role_acls_revoked: M }`. Триггер — `delete_dept(recipient)`. |
+| `tokens.dept_recipient_cascade` | failure | **CRITICAL** | `{ error_code, message, dept_id }`. |
+
+## RoleACL
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `tokens.role_acl_added` | success | INFO | `{ cred_id, acl_id, dept_id, role_name, can_read, can_write }`. |
+| `tokens.role_acl_added` | failure | ERROR | `{ error_code, message, cred_id, dept_id, role_name }`. |
+| `tokens.role_acl_revoked` | success | INFO | `{ cred_id, acl_id, dept_id, role_name }`. |
+| `tokens.role_acl_revoked` | failure | ERROR | `{ error_code, message, cred_id, acl_id }`. |
+
+## Owner deleted lifecycle
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `tokens.owner_user_deleted_block` | success | WARNING | `{ cred_id, owner_user_id, role_acls_count }`. Эмитится handler'ом `/internal/lifecycle/user-deleted` для personal cred с grantees. Orphan creds (no grants) идут как `tokens.delete`. |
+| `tokens.owner_dept_deleted_block` | success | WARNING | `{ cred_id, owner_dept_id, scope }`. Эмитится handler'ом `/internal/lifecycle/dept-deleted` для cred'ы, где dep — owner. |
+
+## Ownership recovery
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `tokens.transfer_ownership` | success | **CRITICAL** | `{ cred_id, scope, old_owner_user_id?, old_owner_dept_id?, new_owner_user_id?, new_owner_dept_id?, override_actor_id }`. |
+| `tokens.transfer_ownership` | failure | **CRITICAL** | `{ error_code, message, cred_id }`. |
+| `tokens.recover` | success | WARNING | `{ cred_id, blocked_at, recovered_at }`. |
+| `tokens.recover` | failure | ERROR | `{ error_code, message, cred_id }`. |
+
+## Authorization
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `tokens.access_denied` | failure | INFO | `{ cred_id?, error_code, scope, attempted_action }`. Эмитится при `403 CREDENTIAL_ACCESS_DENIED` / `SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT` / scope-mismatch. Используется lockout-сервисом для счёта denied-попыток. |

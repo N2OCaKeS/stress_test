@@ -212,7 +212,7 @@ URL prefix: `/api/secret/v1/`.
 ## Шифрование
 
 - **Алгоритм**: AES-256-GCM + HKDF-SHA256.
-- **Master key**: env-вар `SECRETS_MASTER_KEY_B64` (Kubernetes Secret при deploy). Симметрия с server_service.
+- **Master key**: env-вар `SECRET_ENCRYPTION_KEY` (Kubernetes Secret при deploy). Симметрия с server_service. Старые версии ключа подгружаются через `SECRET_ENCRYPTION_KEY__v<N>` (legacy v1 — SHA-256 без HKDF; в production обязательно `SECRET_ENCRYPTION_KEY_VERSION >= 2`).
 - **AAD**: `f"cred:{cred_id}"` — credential id входит в AAD, защита от swap-атак.
 - **Envelope**: `v<ver>$<nonce>$<ciphertext>` — версия ключа в envelope, для будущей rotation. `<ver>` начинается с `1`.
 - **Reveal**: secret base64-кодируется при выдаче из API. Это не дополнительное шифрование — это просто транспортный encoding, чтобы клиент не парсил Unicode.
@@ -270,7 +270,7 @@ URL prefix: `/api/secret/v1/`.
 
 - 2 реплики API в Kubernetes.
 - Отдельный PostgreSQL-кластер (2 реплики).
-- `SECRETS_MASTER_KEY_B64` через Kubernetes Secret, монтируется в env.
+- `SECRET_ENCRYPTION_KEY` (+ опциональные `SECRET_ENCRYPTION_KEY__v<N>` для legacy-версий) через Kubernetes Secret, монтируется в env.
 - Внутренний доступ через сервисную сеть Kubernetes.
 
 ## Что НЕ делает сервис

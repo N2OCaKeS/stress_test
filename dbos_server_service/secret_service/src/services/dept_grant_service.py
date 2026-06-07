@@ -1,0 +1,143 @@
+"""Use cases для /credentials/{id}/dept-grants (только cross_department).
+
+DeptGrant — owner-side операция: его выдаёт dep_admin владеющего dep'а или
+service_admin. Revoke каскадно сносит все RoleACL'и (cred_id, recipient_dept).
+"""
+
+from __future__ import annotations
+
+import secrets as _secrets
+
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.core.exceptions import (
+    ConflictError,
+    DomainValidationError,
+    NotFoundError,
+)
+from src.dependencies.auth import Identity
+from src.models import DeptGrant
+from src.repositories import dept_grants as repo
+from src.repositories import role_acls as acl_repo
+from src.schemas.dept_grants import DeptGrantCreate
+from src.services import audit_service
+from src.services.credential_service import load_for_action
+
+
+def _new_grant_id() -> str:
+    return f"dgr_{_secrets.token_hex(16)}"
+
+
+def _ensure_cross_dep_scope(cred) -> None:
+    if cred.scope != "cross_department":
+        raise DomainValidationError(
+            error_code="DEPT_GRANT_NOT_APPLICABLE",
+            message="DeptGrant is only applicable to cross_department credentials",
+        )
+
+
+async def add(
+    db: AsyncSession,
+    identity: Identity,
+    cred_id: str,
+    payload: DeptGrantCreate,
+) -> DeptGrant:
+    """Создать DeptGrant. Только owner dep_admin / service_admin."""
+    cred = await load_for_action(db, identity, cred_id, "grant_dept")
+    _ensure_cross_dep_scope(cred)
+
+    if payload.recipient_dept_id == cred.owner_dept_id:
+        raise DomainValidationError(
+            error_code="DEPT_GRANT_RECIPIENT_IS_OWNER",
+            message="Recipient_dept_id must differ from owner_dept_id",
+        )
+
+    existing = await repo.find(db, cred.id, payload.recipient_dept_id)
+    if existing is not None:
+        raise ConflictError(
+            error_code="DEPT_GRANT_DUPLICATE",
+            message="DeptGrant for this recipient already exists",
+        )
+
+    try:
+        grant = await repo.create(
+            db,
+            id=_new_grant_id(),
+            cred_id=cred.id,
+            recipient_dept_id=payload.recipient_dept_id,
+            granted_by_user_id=identity.user_id,
+        )
+        await db.commit()
+        await db.refresh(grant)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ConflictError(
+            error_code="DEPT_GRANT_DUPLICATE",
+            message="DeptGrant conflict (race)",
+        ) from exc
+
+    audit_service.emit(
+        "tokens.dept_grant_added",
+        target_id=grant.id,
+        target_type="dept_grant",
+        details={
+            "cred_id": cred.id,
+            "recipient_dept_id": grant.recipient_dept_id,
+        },
+    )
+    return grant
+
+
+async def list_for(
+    db: AsyncSession, identity: Identity, cred_id: str
+) -> list[DeptGrant]:
+    """Список DeptGrant'ов кред'ы. Видно owner/recipient dep_admin'ам + service_admin."""
+    cred = await load_for_action(db, identity, cred_id, "read")
+    _ensure_cross_dep_scope(cred)
+    return await repo.get_for_cred(db, cred.id)
+
+
+async def revoke(
+    db: AsyncSession, identity: Identity, cred_id: str, grant_id: str
+) -> None:
+    """Снять DeptGrant + каскадно RoleACL'и в recipient_dep."""
+    cred = await load_for_action(db, identity, cred_id, "grant_dept")
+    _ensure_cross_dep_scope(cred)
+
+    grants = await repo.get_for_cred(db, cred.id)
+    target = next((g for g in grants if g.id == grant_id), None)
+    if target is None:
+        raise NotFoundError(
+            error_code="DEPT_GRANT_NOT_FOUND",
+            message="DeptGrant not found for this credential",
+        )
+
+    recipient = target.recipient_dept_id
+    grant_id_snapshot = target.id
+
+    # Каскадное удаление RoleACL'ей (cred_id, recipient_dept).
+    cascade_count = await acl_repo.delete_for_cred_dept(db, cred.id, recipient)
+    await repo.delete(db, target)
+    await db.commit()
+
+    audit_service.emit(
+        "tokens.dept_grant_revoked",
+        target_id=grant_id_snapshot,
+        target_type="dept_grant",
+        details={
+            "cred_id": cred.id,
+            "recipient_dept_id": recipient,
+            "cascade_role_acls": cascade_count,
+        },
+    )
+    if cascade_count:
+        audit_service.emit(
+            "tokens.dept_revoke_cascade",
+            target_id=cred.id,
+            target_type="credential",
+            details={
+                "recipient_dept_id": recipient,
+                "removed_role_acls": cascade_count,
+            },
+        )

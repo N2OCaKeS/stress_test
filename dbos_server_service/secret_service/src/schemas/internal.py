@@ -1,0 +1,70 @@
+"""Pydantic-схемы для /internal lifecycle-эндпоинтов.
+
+Все события приходят от auth_service / account_admin handler'а после того,
+как там удалили user'а / dep'а / отозвали department-service-access. Поля
+`actor_*` идентифицируют, кто эту операцию инициировал — мы их прокидываем
+в audit-эмиты.
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+from src.core.constants import SERVICE_NAME
+
+
+class UserDeletedEvent(BaseModel):
+    """`auth_service` сообщает, что user удалён.
+
+    Мы блокируем все его personal-креды, у которых есть RoleACL grantees
+    (operator+ admins могут их потом transfer'ить), и просто удаляем
+    "сиротские" — некому передать, ACL.count == 0.
+    """
+
+    user_id: str = Field(description="ID удалённого пользователя (usr_<hex>).")
+    actor_id: str = Field(description="ID actor'а, который выполнил delete_user.")
+    actor_username: str = Field(default="", description="Username actor'а — для audit.")
+
+
+class DeptDeletedEvent(BaseModel):
+    """`auth_service` сообщает, что dep удалён.
+
+    Cascade'им сразу обе ветки:
+      * dep как owner cred → cred → blocked (account_admin потом transfer'нёт);
+      * dep как recipient в DeptGrant → cascade delete grants + RoleACL.
+    """
+
+    dept_id: str = Field(description="ID удалённого dep'а (dep_<hex>).")
+    actor_id: str = Field(description="ID actor'а, который выполнил delete_dept.")
+    actor_username: str = Field(default="", description="Username actor'а — для audit.")
+
+
+class DeptServiceAccessRevokedEvent(BaseModel):
+    """`auth_service` сообщает, что у dep'а отозван доступ к нашему сервису.
+
+    `service` должно быть `secret_service` — иначе обработчик игнорирует
+    событие. Cascade сносит все DeptGrant'ы для этого dep'а + RoleACL'и в
+    нём. Свои cred'ы dep'а оставляем — у нас всё ещё может быть доступ
+    через account_admin transfer'а; их трогает только `delete_dept`.
+    """
+
+    dept_id: str = Field(description="ID dep'а (dep_<hex>).")
+    service: str = Field(
+        description=(
+            "Имя сервиса, у которого отозвали access. Только "
+            f"{SERVICE_NAME!r} распознаётся; остальные — no-op."
+        ),
+    )
+    actor_id: str = Field(description="ID actor'а, который выполнил revoke.")
+    actor_username: str = Field(default="", description="Username actor'а — для audit.")
+
+
+class LifecycleSummary(BaseModel):
+    """Ответ lifecycle-handler'а. Все счётчики необязательны — каждый handler
+    заполняет только то, что для него релевантно."""
+
+    blocked_count: int = 0
+    deleted_count: int = 0
+    dept_grants_revoked: int = 0
+    role_acls_revoked: int = 0
+    errors: list[str] = Field(default_factory=list)

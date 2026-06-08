@@ -45,6 +45,8 @@ SERVICE_EVENTS = [
     {"action": "user.roles_assign", "description": "Service roles assigned to user", "default_severity": "INFO"},
     {"action": "user.password_reset", "description": "User password reset", "default_severity": "CRITICAL"},
     {"action": "user.self_password_reset", "description": "User changed own password via /users/me/password", "default_severity": "CRITICAL"},
+    {"action": "user.must_change_password_cleared", "description": "Force-password-change flag cleared after successful self-reset", "default_severity": "INFO"},
+    {"action": "user.password_change_required_blocked", "description": "Request blocked by middleware because user has must_change_password=True", "default_severity": "INFO"},
     {"action": "user.ban", "description": "User account banned", "default_severity": "CRITICAL"},
     {"action": "user.unban", "description": "User account unbanned", "default_severity": "CRITICAL"},
     {"action": "user.ban_deactivated_via_status_change", "description": "Active ban deactivated as side-effect of PATCH /users/{id}/status", "default_severity": "WARNING"},

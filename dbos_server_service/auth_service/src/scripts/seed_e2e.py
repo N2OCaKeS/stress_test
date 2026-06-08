@@ -26,6 +26,10 @@ def seed() -> None:
         if db.query(User).filter_by(username=ADMIN_USERNAME).first():
             print(f"[seed_e2e] user '{ADMIN_USERNAME}' already exists — skipping")
             return
+        # `must_change_password=False`: e2e-suite ходит реальными запросами
+        # под этим логином, заставлять её сначала проходить смену пароля —
+        # лишнее. Боевой bootstrap_admin ставит TRUE; принуждение к смене
+        # покрывается отдельным suite'ом `tests/users/test_must_change_password.py`.
         db.add(User(
             id=_new_id("usr_"),
             username=ADMIN_USERNAME,
@@ -33,6 +37,7 @@ def seed() -> None:
             platform_role="account_admin",
             status="active",
             is_active=True,
+            must_change_password=False,
         ))
         db.commit()
         print(f"[seed_e2e] created account_admin '{ADMIN_USERNAME}'")

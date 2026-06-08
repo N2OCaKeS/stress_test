@@ -46,6 +46,7 @@
 | `tokens.revealed` | success | **CRITICAL** | `{ cred_id, scope, throttle_window_seconds: 300 }`. Первый reveal в 5-мин окне per `(actor_id, cred_id)`. |
 | `tokens.revealed` | failure | **CRITICAL** | `{ error_code, message, cred_id }`. Decrypt-провал тоже сюда. |
 | `tokens.revealed_throttled` | success | INFO | `{ cred_id, count }`. Повторные reveals в окне. `count` — суммарное число reveals в текущем окне. |
+| `tokens.revealed_blocked_by_validity` | failure | INFO | `{ cred_id, error_code: "SECRET_NOT_YET_VALID" \| "SECRET_EXPIRED", scope, service, valid_from?, valid_to? }`. Эмитится при reveal вне окна `[valid_from, valid_to]`. HTTP 410. Access-check (load_for_action) уже прошёл успешно — actor имел право на reveal, отбило именно окно валидности. |
 
 ## DeptGrant (cross_department flow)
 

@@ -199,6 +199,9 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("tokens.transfer_ownership", "success"): "CRITICAL",
     ("tokens.recover", "success"): "WARNING",
     ("tokens.access_denied", "failure"): "INFO",
+    ("tokens.revealed_blocked_by_validity", "failure"): "INFO",
+    ("user.password_change_required_blocked", "failure"): "INFO",
+    ("user.must_change_password_cleared", "success"): "INFO",
     # auth_service secret_lifecycle: callback в secret_service упал на
     # транспортном уровне — WARNING (не CRITICAL: один сбой компенсируется
     # retry'ем, статус сервиса не страдает).

@@ -91,6 +91,16 @@ class Credential(Base):
     )
     blocked_reason: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
+    # Окно валидности секрета. Применяется только в reveal'е — metadata GET
+    # отдаётся независимо от срока (UI должен показать «токен истёк, продлите»).
+    # Хранится в timestamptz; сравнение с `datetime.now(timezone.utc)`.
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Guest-видимость: если True — носители роли `guest` в owner-dep'е видят
     # креду в списке (id, name, service, scope) без reveal'а и без metadata.
     visible_to_dept: Mapped[bool] = mapped_column(
@@ -120,6 +130,12 @@ class Credential(Base):
         CheckConstraint(
             r"secret_encrypted ~ '^v\d+\$'",
             name="ck_credentials_secret_envelope",
+        ),
+        # Окно валидности: если оба заданы — valid_to строго больше valid_from.
+        # Одиночные NULL'ы разрешены (open-ended окно).
+        CheckConstraint(
+            "valid_to IS NULL OR valid_from IS NULL OR valid_to > valid_from",
+            name="ck_credentials_validity_window",
         ),
         Index("ix_credentials_owner_user_scope", "owner_user_id", "scope"),
         Index("ix_credentials_owner_dept_scope", "owner_dept_id", "scope"),

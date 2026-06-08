@@ -45,6 +45,8 @@ def _to_read(cred: Credential) -> CredentialRead:
         blocked_at=cred.blocked_at,
         blocked_reason=cred.blocked_reason,
         visible_to_dept=cred.visible_to_dept,
+        valid_from=cred.valid_from,
+        valid_to=cred.valid_to,
     )
 
 

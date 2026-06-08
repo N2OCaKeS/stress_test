@@ -201,6 +201,10 @@ async def create_user(
     if await user_repo.exists_username(username):
         raise ConflictError(error_code="USER_ALREADY_EXISTS", message=f"Username '{username}' is already taken")
 
+    # `must_change_password=True`: dep_admin/account_admin создал юзера с
+    # временным паролем (видимым в audit details — sanitizer заменит на
+    # <PASSWORD>). До первой самостоятельной смены через POST /users/me/password
+    # middleware заблокирует доступ ко всем остальным endpoint'ам.
     user = await user_repo.create(
         username=username,
         password_hash=hash_password(password),
@@ -208,6 +212,7 @@ async def create_user(
         email=email,
         platform_role=platform_role,
         created_by=actor_id,
+        must_change_password=True,
     )
 
     if initial_roles:
@@ -687,7 +692,16 @@ async def reset_password(
     # (cross-dept guard выше + endpoint-level `AnyAdmin`). Self-reset идёт
     # через отдельный `change_own_password` с обязательным old_password.
 
-    await user_repo.update(user, password_hash=hash_password(new_password))
+    # `must_change_password=True`: admin сбросил пароль чужому юзеру → юзер
+    # обязан сменить пароль на свой при первом login'е, до доступа к остальным
+    # endpoint'ам. Защита от ситуации «admin знает временный пароль, юзер о нём
+    # не знает». Self-reset через `/me/password` ниже не доходит сюда — у того
+    # отдельный handler, `must_change_password` там сбрасывается в False.
+    await user_repo.update(
+        user,
+        password_hash=hash_password(new_password),
+        must_change_password=True,
+    )
     await session_repo.revoke_all_for_user(user_id)
     await token_repo.revoke_all_for_user(user_id)
     await db.commit()
@@ -828,7 +842,17 @@ async def change_own_password(
             message="New password must differ from the current one",
         )
 
-    await user_repo.update(user, password_hash=hash_password(new_password))
+    # Сбрасываем `must_change_password` — юзер сам сменил пароль, форсить
+    # повторную смену больше не нужно. Если флаг и так был False (обычный
+    # self-reset) — no-op. Отдельный INFO-audit `user.must_change_password_cleared`
+    # эмитим ниже, чтобы SIEM видел снятие force-flag отдельным сигналом
+    # (полезно для отчётов «сколько новых юзеров активировались»).
+    was_forced = bool(user.must_change_password)
+    await user_repo.update(
+        user,
+        password_hash=hash_password(new_password),
+        must_change_password=False,
+    )
     await session_repo.revoke_all_for_user(user_id)
     # PAT-revoke на смене собственного пароля: до фикса юзер с угнанным
     # access'ом мог менять пароль, а ранее созданные PAT'ы атакующего
@@ -857,9 +881,23 @@ async def change_own_password(
             "tokens_revoked": True,
             "pat_revoked_count": pat_revoked_count,
             "actor_role": "self",
+            "must_change_password_was_forced": was_forced,
         },
         request_id=request_id,
     )
+    # Отдельный сигнал «force-flag снят» — только если он реально был. Без
+    # отдельного event'а SIEM'у пришлось бы парсить details внутри
+    # `user.self_password_reset`, а отчёт «сколько новых юзеров активировались»
+    # хочется строить простым group-by по action'у.
+    if was_forced:
+        audit_service.emit(
+            "user.must_change_password_cleared",
+            user_id,
+            target_id=user_id,
+            target_type="user",
+            details={"source": "self_password_reset"},
+            request_id=request_id,
+        )
 
 
 async def ban_user(

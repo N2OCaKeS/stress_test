@@ -143,6 +143,12 @@ async def _identity_from_user_jwt(
         platform_role=user.platform_role,
         subject_type="user",
         oauth_scopes=oauth_scopes,
+        # `must_change_password` revalidate'им каждый раз: миддлварь решает по
+        # свежему значению из БД. Если admin сбросил пароль или dep_admin
+        # создал юзера в параллельном запросе — это тут же отразится
+        # (identity-cache сбрасывается на mutate). False у legacy-юзеров
+        # (server_default).
+        must_change_password=bool(user.must_change_password),
     )
 
 

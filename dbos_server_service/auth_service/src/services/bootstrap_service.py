@@ -34,6 +34,11 @@ async def bootstrap_admin(db: AsyncSession) -> None:
     if await repo.count() > 0:
         return
 
+    # `must_change_password=True`: initial admin поднимается с паролем из
+    # `INITIAL_ADMIN_PASSWORD` (для k8s deploy — сгенерирован gen_secrets.sh).
+    # Пароль виден оператору в k8s-секрете и сертификатах развёртывания, пока
+    # admin не сменит его сам. До первой самостоятельной смены через
+    # POST /users/me/password middleware режет доступ ко всем endpoint'ам.
     user = await repo.create(
         username=settings.initial_admin_username,
         password_hash=hash_password(settings.initial_admin_password),
@@ -41,6 +46,7 @@ async def bootstrap_admin(db: AsyncSession) -> None:
         email=settings.initial_admin_email,
         platform_role=PlatformRole.ACCOUNT_ADMIN,
         created_by="bootstrap",
+        must_change_password=True,
     )
     await db.commit()
     logger.warning(

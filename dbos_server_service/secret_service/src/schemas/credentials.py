@@ -2,10 +2,25 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _to_utc(value: datetime) -> datetime:
+    """Naive datetime трактуем как UTC; aware — конвертим в UTC.
+
+    Сравнения valid_from/valid_to идут в UTC; иначе naive vs aware datetime
+    кидает TypeError.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 _VALID_SCOPES = ("personal", "department", "cross_department")
@@ -27,6 +42,11 @@ class CredentialCreate(BaseModel):
     secret: str = Field(min_length=1, max_length=8192)
     owner_dept_id: str | None = Field(default=None, max_length=64)
     visible_to_dept: bool = False
+    # Окно валидности секрета (UTC). NULL = open-ended с этой стороны.
+    # valid_from в прошлом разрешён (=> сразу активен); valid_to обязан быть
+    # в будущем — создавать уже-expired кред'у нельзя (зачем?).
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
 
     @model_validator(mode="after")
     def _check_owner_dept_for_dept_scope(self) -> "CredentialCreate":
@@ -40,13 +60,37 @@ class CredentialCreate(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _check_validity_window(self) -> "CredentialCreate":
+        if self.valid_from is not None and self.valid_to is not None:
+            if _to_utc(self.valid_to) <= _to_utc(self.valid_from):
+                raise ValueError("valid_to must be strictly greater than valid_from")
+        if self.valid_to is not None and _to_utc(self.valid_to) <= _now_utc():
+            raise ValueError("valid_to must be in the future (refuse to create already-expired credential)")
+        return self
+
 
 class CredentialUpdate(BaseModel):
-    """Тело PATCH /credentials/{id}. Все поля optional, partial update."""
+    """Тело PATCH /credentials/{id}. Все поля optional, partial update.
+
+    `valid_from` / `valid_to` — admin может продлевать срок токена; для отмены
+    окна с какой-то стороны юзеру придётся пересоздавать креду (NULL через
+    PATCH намеренно не маппим, иначе случайный `{"valid_to": null}` снимет
+    защиту).
+    """
 
     name: str | None = Field(default=None, min_length=1, max_length=64)
     login: str | None = Field(default=None, max_length=4096)
     secret: str | None = Field(default=None, min_length=1, max_length=8192)
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+
+    @model_validator(mode="after")
+    def _check_validity_window(self) -> "CredentialUpdate":
+        if self.valid_from is not None and self.valid_to is not None:
+            if _to_utc(self.valid_to) <= _to_utc(self.valid_from):
+                raise ValueError("valid_to must be strictly greater than valid_from")
+        return self
 
 
 class CredentialRead(BaseModel):
@@ -66,6 +110,8 @@ class CredentialRead(BaseModel):
     blocked_at: datetime | None = None
     blocked_reason: str | None = None
     visible_to_dept: bool = False
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
 
 
 class CredentialGuestRead(BaseModel):

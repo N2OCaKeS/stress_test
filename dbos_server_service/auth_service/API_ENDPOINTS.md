@@ -869,6 +869,7 @@ Auth: public. Response: JWKS (RS256).
 - `USER_BLOCKED` (401) — `user.status=BLOCKED`.
 - `INVALID_OLD_PASSWORD` (401) — `POST /users/me/password` — старый пароль не подошёл (инкрементит lockout-счётчик).
 - `SAME_PASSWORD` (422) — `new_password` совпадает с текущим.
+- `PASSWORD_CHANGE_REQUIRED` (403) — может прилететь с **любого** endpoint'а кроме whitelist'а. Юзер должен сменить пароль через `POST /users/me/password` до доступа к остальной части API. Whitelist: `/api/auth/v1/users/me/password`, `/api/auth/v1/logout`, `/api/auth/v1/health`, `/api/auth/v1/ready`. Флаг `must_change_password=True` выставляется при: (а) bootstrap initial account_admin'а из ENV; (б) `POST /users` (dep_admin/account_admin создал юзера с временным паролем); (в) `POST /users/{id}/reset-password` (админ сбросил чужой пароль). Сбрасывается в False автоматически при успешной самостоятельной смене через `/me/password`. `/login` сам по себе проходит (юзер получает access_token), но следующий же запрос упирается в 403. Поле также экспортируется наружу через `POST /authorization/introspect` (`must_change_password: bool`), чтобы client-сервисы могли применять собственную логику если захотят. Details ответа: `{"allowed_endpoint": "/api/auth/v1/users/me/password"}`. Audit: `user.password_change_required_blocked` (INFO).
 - `SESSION_NOT_FOUND` (404) — `DELETE /users/me/sessions/{id}`.
 - `REFRESH_TOKEN_INVALID` (401) — токен не найден / отозван / reuse-detection (kill-switch).
 - `REFRESH_TOKEN_EXPIRED` (401).

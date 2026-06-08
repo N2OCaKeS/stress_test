@@ -67,6 +67,18 @@ class IdentityContext(BaseModel):
             "— OAuth, но без единого approved scope'а."
         ),
     )
+    # Принудительная смена пароля. Если TRUE — middleware режет все запросы
+    # кроме `/users/me/password` (и health/logout) с 403 PASSWORD_CHANGE_REQUIRED.
+    # Источники TRUE: bootstrap admin, dep_admin создал юзера, admin сбросил
+    # чужой пароль. Сбрасывается в FALSE при успешном self-change.
+    must_change_password: bool = Field(
+        default=False,
+        description=(
+            "True — юзер должен сменить пароль до доступа к остальным "
+            "endpoint'ам. Middleware блокирует с 403 PASSWORD_CHANGE_REQUIRED, "
+            "кроме `/users/me/password`, `/logout`, health/ready."
+        ),
+    )
 
 
 class LoginRequest(BaseModel):

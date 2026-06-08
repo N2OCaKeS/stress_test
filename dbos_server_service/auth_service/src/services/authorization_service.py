@@ -245,6 +245,7 @@ async def introspect(
             service_roles=service_roles,
             groups=groups,
             exp=payload.get("exp"),
+            must_change_password=bool(user.must_change_password),
         )
 
     # 2. Пробуем PAT
@@ -372,6 +373,7 @@ async def introspect(
             allowed_services=effective_services,
             service_roles=effective_roles,
             groups=effective_groups,
+            must_change_password=bool(user.must_change_password),
         )
 
     # 3. Пробуем bot-токен

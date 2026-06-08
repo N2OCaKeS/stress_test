@@ -36,6 +36,7 @@ SERVICE_EVENTS = [
     # Reveal + throttle
     {"action": "tokens.revealed", "description": "Decrypted secret revealed to user (first reveal in 5-min window)", "default_severity": "CRITICAL"},
     {"action": "tokens.revealed_throttled", "description": "Subsequent reveal within 5-min window (INFO trace for noisy UI-polling)", "default_severity": "INFO"},
+    {"action": "tokens.revealed_blocked_by_validity", "description": "Reveal denied because current time is outside [valid_from, valid_to] window (410 SECRET_NOT_YET_VALID / SECRET_EXPIRED)", "default_severity": "INFO"},
     # Dept-grants (cross_department flow)
     {"action": "tokens.dept_grant_added", "description": "DeptGrant added by owner dep_admin or secret_service admin of the owning department", "default_severity": "CRITICAL"},
     {"action": "tokens.dept_grant_revoked", "description": "DeptGrant revoked (cascades RoleACL for recipient_dept)", "default_severity": "CRITICAL"},
@@ -70,6 +71,7 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("tokens.admin_override_delete", "success"): "CRITICAL",
     ("tokens.revealed", "success"): "CRITICAL",
     ("tokens.revealed_throttled", "success"): "INFO",
+    ("tokens.revealed_blocked_by_validity", "failure"): "INFO",
     ("tokens.dept_grant_added", "success"): "CRITICAL",
     ("tokens.dept_grant_revoked", "success"): "CRITICAL",
     ("tokens.dept_revoke_cascade", "success"): "CRITICAL",

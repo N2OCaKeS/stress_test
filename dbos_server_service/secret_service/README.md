@@ -30,12 +30,14 @@
 | `created_by` | `str` | NO | `usr_…`/`bot_…` (immutable). |
 | `created_at` / `updated_at` | `timestamptz` | NO | Стандарт. |
 | `blocked_at` / `blocked_reason` | `timestamptz` / `str` | YES | Заполняются при автоблокировке (delete owner, dep deleted, dep_revoke cascade). |
+| `valid_from` / `valid_to` | `timestamptz` | YES | Окно валидности секрета (UTC). Применяется только в `reveal` — вне окна → `410 SECRET_NOT_YET_VALID` / `SECRET_EXPIRED`. Метаданные (GET без reveal) отдаются независимо от срока. NULL = open-ended с этой стороны. |
 
 **CHECK инварианты**:
 - `scope='personal'` ⇒ `owner_user_id IS NOT NULL AND owner_dept_id IS NULL`
 - `scope IN ('department','cross_department')` ⇒ `owner_dept_id IS NOT NULL AND owner_user_id IS NULL`
 - `length(secret_encrypted) < 8192`
 - `secret_encrypted ~ '^v\d+\$'` (envelope format)
+- `valid_to IS NULL OR valid_from IS NULL OR valid_to > valid_from` (окно валидности; одиночные NULL разрешены)
 
 **UNIQUE**: `(COALESCE(owner_user_id, owner_dept_id), service, name) WHERE status='active'`. Soft-delete-friendly: hard delete + recreate с тем же `(owner, service, name)` — OK.
 
@@ -196,6 +198,8 @@ URL prefix: `/api/secret/v1/`.
 - `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT` — у dep'а нет access к secret_service.
 - `404 CREDENTIAL_NOT_FOUND` — не существует ИЛИ cross-dep visibility miss.
 - `410 CREDENTIAL_BLOCKED` — `status=blocked` с `blocked_reason`.
+- `410 SECRET_NOT_YET_VALID` — reveal до `valid_from`. `details = { valid_from }`. Metadata GET по-прежнему 200.
+- `410 SECRET_EXPIRED` — reveal после `valid_to`. `details = { valid_to }`. Metadata GET по-прежнему 200. Sweep автоматически НЕ удаляет expired-кред'ы — юзер сам решает.
 - `409 NAME_DUPLICATE` — UNIQUE collision.
 - `403 CREDENTIAL_ACCESS_DENIED` — actor не имеет прав (нет ACL).
 - `422 ADMIN_OVERRIDE_REASON_REQUIRED` — admin override без `reason`.

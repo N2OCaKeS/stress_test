@@ -72,6 +72,35 @@ def _decrypt_envelope(token: str, cred_id: str) -> str:
     )
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Naive → UTC, aware → astimezone(UTC). БД отдаёт timestamptz, но fixture'ы
+    в тестах иногда суют naive datetime; нормализуем тут, чтобы сравнение не
+    кидало TypeError.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _check_validity_or_raise(cred: Credential) -> None:
+    """410 GONE если `now` вне окна [valid_from, valid_to]. Используется только
+    в reveal'е — metadata GET'ы остаются доступны, чтобы UI мог показать
+    "продлите токен"."""
+    now = datetime.now(timezone.utc)
+    if cred.valid_from is not None and _as_utc(cred.valid_from) > now:
+        raise GoneError(
+            error_code="SECRET_NOT_YET_VALID",
+            message="Credential is not valid yet; check valid_from",
+            details={"valid_from": _as_utc(cred.valid_from).isoformat()},
+        )
+    if cred.valid_to is not None and _as_utc(cred.valid_to) < now:
+        raise GoneError(
+            error_code="SECRET_EXPIRED",
+            message="Credential has expired; renew or extend valid_to",
+            details={"valid_to": _as_utc(cred.valid_to).isoformat()},
+        )
+
+
 def _ensure_active_or_raise(cred: Credential) -> None:
     """Заблокированная — 410 GONE с blocked_reason в details."""
     if cred.status == "blocked":
@@ -193,6 +222,8 @@ async def create(
             status="active",
             created_by=identity.user_id,
             visible_to_dept=payload.visible_to_dept,
+            valid_from=payload.valid_from,
+            valid_to=payload.valid_to,
         )
         await db.commit()
         await db.refresh(cred)
@@ -550,6 +581,10 @@ async def update(
         fields["login"] = payload.login
     if payload.secret is not None:
         fields["secret_encrypted"] = _to_envelope(payload.secret, cred.id)
+    if payload.valid_from is not None:
+        fields["valid_from"] = payload.valid_from
+    if payload.valid_to is not None:
+        fields["valid_to"] = payload.valid_to
 
     if not fields:
         return cred
@@ -663,6 +698,26 @@ async def reveal(
     → INFO `tokens.revealed_throttled` с `count` в details.
     """
     cred = await load_for_action(db, identity, cred_id, "reveal")
+    # Окно валидности проверяется ПОСЛЕ access-check, но ДО decrypt'а: actor
+    # с доступом, который запросил истёкший токен, получает понятный
+    # SECRET_EXPIRED / SECRET_NOT_YET_VALID; неавторизованный — обычный 404/403.
+    try:
+        _check_validity_or_raise(cred)
+    except GoneError as exc:
+        audit_service.emit(
+            "tokens.revealed_blocked_by_validity",
+            target_id=cred.id,
+            target_type="credential",
+            status="failure",
+            allowed=False,
+            details={
+                "error_code": exc.error_code,
+                "scope": cred.scope,
+                "service": cred.service,
+                **exc.details,
+            },
+        )
+        raise
     plaintext = _decrypt_envelope(cred.secret_encrypted, cred.id)
     secret_b64 = base64.b64encode(plaintext.encode("utf-8")).decode("ascii")
 

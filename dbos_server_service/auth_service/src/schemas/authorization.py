@@ -48,6 +48,20 @@ class IntrospectResponse(BaseModel):
         ),
     )
     exp: int | None = Field(default=None, description="JWT exp (unix timestamp), если применимо.")
+    # Принудительная смена пароля — публикуется наружу через introspect, чтобы
+    # client-сервисы (loging/secret/...) могли применять свою логику если
+    # захотят (например, отказывать в чувствительных операциях до смены).
+    # У ботов / oauth_client / не-user субъектов всегда False.
+    must_change_password: bool = Field(
+        default=False,
+        description=(
+            "True — у юзера выставлен флаг принудительной смены пароля. "
+            "В auth_service'е middleware уже блокирует не-`/me/password` "
+            "запросы с PASSWORD_CHANGE_REQUIRED; client-сервисы могут "
+            "ограничить свой доступ дополнительно. У bot/PAT/oauth_client "
+            "значение всегда False — флаг живёт только на user-row."
+        ),
+    )
 
 
 class ServiceAccessRequest(BaseModel):

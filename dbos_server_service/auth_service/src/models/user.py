@@ -41,6 +41,13 @@ class User(Base):
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # TRUE → юзер обязан сменить пароль через POST /users/me/password до доступа
+    # к остальным endpoint'ам. Middleware блокирует с 403 PASSWORD_CHANGE_REQUIRED.
+    # Сбрасывается в FALSE автоматически после успешной самостоятельной смены.
+    # server_default=false — existing rows получают FALSE без миграции данных.
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

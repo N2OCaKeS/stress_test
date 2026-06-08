@@ -28,6 +28,19 @@ from src.services.bootstrap_service import bootstrap_admin
 
 _HEALTH_PATHS = {"/api/auth/v1/health", "/api/auth/v1/ready"}
 
+# Пути, доступные юзеру с `must_change_password=True`. Самое узкое окно:
+# сменить пароль → можно работать. `/logout` оставлен, чтобы юзер мог
+# завершить сессию, если решит не менять пароль; health/ready — чтобы
+# балансировщику не пришлось получать 403 на свои пробы (хотя они и так
+# идут без bearer и до миддлварных проверок не доходят, но симметрия с
+# `_HEALTH_PATHS`).
+_PASSWORD_CHANGE_REQUIRED_ALLOW = {
+    "/api/auth/v1/users/me/password",
+    "/api/auth/v1/logout",
+    "/api/auth/v1/health",
+    "/api/auth/v1/ready",
+}
+
 # Сильные ссылки на startup-таски (`_startup_sequence` в фоне). Без этого
 # `asyncio.ensure_future` держит только weakref через loop, GC может собрать
 # task до её завершения, и `register_events` молча не доедет до loging_service.
@@ -330,6 +343,106 @@ def create_application() -> FastAPI:
             details=details,
         )
         return response
+
+    @app.middleware("http")
+    async def must_change_password_check(request: Request, call_next):
+        """Заблокировать всё, кроме `/users/me/password` и whitelist'а, если у
+        текущего юзера выставлен `must_change_password=True`.
+
+        Регистрируется ПОСЛЕ `audit_access` и ДО `attach_request_id_and_context`
+        — в runtime-цепочке оказывается внутри attach_request_id (audit_context
+        уже выставлен — emit подхватит actor/ip/ua) и снаружи audit_access
+        (тот эмитит `http.access_denied` для возвращённого нами 403).
+
+        Дёшево: декодит JWT из request.state.jwt_payload (его уже разобрал
+        `_extract_actor_info`), при `actor_type=user` тянет одну row из БД по
+        sub, читает флаг. На не-Bearer / m2m / health-путях моментально пропускает.
+        """
+        path = request.url.path
+        if path in _PASSWORD_CHANGE_REQUIRED_ALLOW:
+            return await call_next(request)
+
+        payload = getattr(request.state, "jwt_payload", None)
+        # Не-юзер JWT (m2m / no token / битый): не наше дело — пускаем дальше,
+        # пусть auth-guard'ы и/или 401 разбираются. `must_change_password` —
+        # свойство юзера, у oauth_client / service-token его нет.
+        if not isinstance(payload, dict):
+            return await call_next(request)
+        if (payload.get("actor_type") or "user") != "user":
+            return await call_next(request)
+        sub = payload.get("sub")
+        if not sub:
+            return await call_next(request)
+
+        # Одна row из БД: SELECT must_change_password FROM users WHERE id=:sub.
+        # Тестовый conftest подменяет `get_db`-override в `app.dependency_overrides`,
+        # завязывая сессию на внешний SAVEPOINT. Middleware вне DI-scope, поэтому
+        # дёргаем override руками если он есть — иначе откроем свежую сессию
+        # из `AsyncSessionLocal`. Без этого в тестах middleware ходил бы в
+        # реальный test-postgres мимо SAVEPOINT-фикстуры, не видел бы только
+        # что созданных юзеров и валил весь suite.
+        from sqlalchemy import select as _select
+
+        from src.dependencies.db import get_db as _get_db
+        from src.models.user import User as _User
+
+        override = app.dependency_overrides.get(_get_db)
+        if override is not None:
+            agen = override()
+            try:
+                db = await agen.__anext__()
+                must_change = await db.scalar(
+                    _select(_User.must_change_password).where(_User.id == sub)
+                )
+            finally:
+                try:
+                    await agen.aclose()
+                except Exception:
+                    pass
+        else:
+            from src.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                must_change = await db.scalar(
+                    _select(_User.must_change_password).where(_User.id == sub)
+                )
+
+        # `must_change is None` — юзер удалён между login'ом и текущим запросом.
+        # Не наше дело: `get_current_identity` всё равно вернёт
+        # USER_BANNED_OR_INACTIVE / INVALID_TOKEN. Пропускаем дальше.
+        if not must_change:
+            return await call_next(request)
+
+        # 403 PASSWORD_CHANGE_REQUIRED. Возвращаем тот же envelope, что и
+        # AppException-handler — middleware вне FastAPI exception-chain'а,
+        # поэтому raise тут не подхватится.
+        audit_service.emit(
+            "user.password_change_required_blocked",
+            sub,
+            target_id=sub,
+            target_type="user",
+            status="failure",
+            allowed=False,
+            details={
+                "method": request.method,
+                "path": path,
+            },
+        )
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "forbidden",
+                "error_code": "PASSWORD_CHANGE_REQUIRED",
+                "message": (
+                    "Password change required. Use POST /api/auth/v1/users/me/password "
+                    "to set a new password before accessing other endpoints."
+                ),
+                "details": {
+                    "allowed_endpoint": "/api/auth/v1/users/me/password",
+                },
+                "request_id": getattr(request.state, "request_id", None),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
     @app.middleware("http")
     async def attach_request_id_and_context(request: Request, call_next):

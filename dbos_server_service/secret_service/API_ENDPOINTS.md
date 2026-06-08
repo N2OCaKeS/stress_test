@@ -103,7 +103,7 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 
 **Auth:** Bearer user/bot/PAT.
 **Query:** `scope`, `service`, `status`, `limit`, `cursor` (см. §Пагинация).
-**Response 200:** `CredentialList = { items: CredentialRead[], next_cursor: str | null }`. `CredentialRead` содержит метаданные кред'ы (`id`, `name`, `service`, `scope`, `owner_user_id`, `owner_dept_id`, `login`, `status`, `created_by`, `created_at`, `updated_at`, `blocked_at`, `blocked_reason`) — без plaintext-secret.
+**Response 200:** `CredentialList = { items: CredentialRead[], next_cursor: str | null }`. `CredentialRead` содержит метаданные кред'ы (`id`, `name`, `service`, `scope`, `owner_user_id`, `owner_dept_id`, `login`, `status`, `created_by`, `created_at`, `updated_at`, `blocked_at`, `blocked_reason`, `visible_to_dept`, `valid_from`, `valid_to`) — без plaintext-secret. Guest-роль получает `CredentialGuestList` — только `id`, `name`, `service`, `scope`, `visible_to_dept`; `valid_from` / `valid_to` гостю НЕ видны.
 **Error codes:** `400 INVALID_CURSOR`, `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`.
 
 ### POST /credentials
@@ -121,6 +121,8 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 | `login` | str \| null | нет | До 4096 chars; null допустим для токен-only кред. |
 | `secret` | str | да | 1..8192 chars plaintext, шифруется. |
 | `owner_dept_id` | str \| null | для `department`/`cross_department` | Игнорируется для `personal` (owner = текущий user). |
+| `valid_from` | datetime \| null | нет | UTC. Если задано — `reveal` до этого момента → `410 SECRET_NOT_YET_VALID`. |
+| `valid_to` | datetime \| null | нет | UTC. Если задано — `reveal` после → `410 SECRET_EXPIRED`. Должен быть строго в будущем; `valid_to > valid_from`. |
 
 **Response 201:** `CredentialRead`.
 **Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED` (нет права на create в данном scope/dep'е), `409 NAME_DUPLICATE`, `422 VALIDATION_ERROR` (несовместимость scope/owner_dept_id), `422 PLAINTEXT_TOO_LARGE`, `422 ENCRYPT_INPUT_INVALID`.
@@ -138,7 +140,7 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 Изменить `name` / `login` / `secret`. На `secret` — повторно шифрует.
 
 **Auth:** Bearer (owner / dep_admin / admin secret_service своего dept'а — per scope).
-**Body (`CredentialUpdate`):** все поля optional, partial update. Размеры — те же, что в create.
+**Body (`CredentialUpdate`):** все поля optional, partial update. Размеры — те же, что в create. Дополнительно `valid_from` / `valid_to` (datetime UTC) — позволяет admin'у продлить срок действия. NULL через PATCH не сбрасывает значение (если поле опущено — не трогаем); чтобы убрать окно — пересоздать креду.
 **Response 200:** `CredentialRead`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 NAME_DUPLICATE`, `410 CREDENTIAL_BLOCKED`, `422 VALIDATION_ERROR`.
 
@@ -159,7 +161,8 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 **Body:** пусто.
 **Response 200:** `{ "login": str | null, "secret_b64": "<base64(plaintext)>" }`.
 **Throttle:** 5-минутное окно per `(actor_id, cred_id)`. Первый reveal — audit `tokens.revealed` **CRITICAL**, повторные в окне — `tokens.revealed_throttled` **INFO** с `count` в details. Окно скользящее.
-**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `410 CREDENTIAL_BLOCKED`, `422 DECRYPT_FAILED` (ciphertext/AAD испорчены), `500 DECRYPT_INTERNAL_ERROR`, `503 ENCRYPTION_KEY_MISSING`.
+**Validity window:** перед decrypt'ом проверяется `[valid_from, valid_to]` (UTC). До `valid_from` → `410 SECRET_NOT_YET_VALID` с `details.valid_from`. После `valid_to` → `410 SECRET_EXPIRED` с `details.valid_to`. В обоих случаях аудит `tokens.revealed_blocked_by_validity` (INFO, failure). Metadata-эндпоинты (`GET /credentials`, `GET /credentials/{id}`) НЕ блокируются — UI должен показать «продлите токен».
+**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `410 CREDENTIAL_BLOCKED`, `410 SECRET_NOT_YET_VALID`, `410 SECRET_EXPIRED`, `422 DECRYPT_FAILED` (ciphertext/AAD испорчены), `500 DECRYPT_INTERNAL_ERROR`, `503 ENCRYPTION_KEY_MISSING`.
 
 ### POST /credentials/{cred_id}/transfer
 
@@ -307,6 +310,8 @@ Cascade revoke `DeptGrant`'ов и `RoleACL`'ей где dep — recipient. Св
 | `CREDENTIAL_ACCESS_DENIED` | 403 | Actor не имеет прав (no ACL / wrong scope / dep mismatch). |
 | `CREDENTIAL_NOT_FOUND` | 404 | Не существует ИЛИ cross-dep visibility miss (для нечлена dep'а — `404`, не `403`, чтобы не лікнуть существование). |
 | `CREDENTIAL_BLOCKED` | 410 | `status=blocked`. Detail: `{ "blocked_reason": "...", "blocked_at": "..." }`. |
+| `SECRET_NOT_YET_VALID` | 410 | Reveal вызван до `valid_from`. Detail: `{ "valid_from": "<iso UTC>" }`. Metadata-GET остаётся 200. |
+| `SECRET_EXPIRED` | 410 | Reveal вызван после `valid_to`. Detail: `{ "valid_to": "<iso UTC>" }`. Metadata-GET остаётся 200. Sweep НЕ удаляет expired-кред'ы автоматически. |
 | `CREDENTIAL_NOT_BLOCKED` | 422 | `transfer` / `recover` вызван для active cred'ы. |
 | `NAME_DUPLICATE` | 409 | UNIQUE collision `(owner, service, name)` среди active. |
 | `ADMIN_OVERRIDE_REASON_REQUIRED` | 422 | Admin override без `reason` в body. |

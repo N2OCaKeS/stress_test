@@ -77,11 +77,23 @@ Liveness probe. Не трогает БД и не зовёт внешние се�
 
 ### GET /ready
 
-Readiness probe. БД обязательна — `SELECT 1` через async engine.
+Readiness probe + counters. БД обязательна для `status=ok`; на её фейле —
+`status=degraded` (HTTP всё равно 200, payload едет оператору). Redis и
+audit-counter best-effort. См. README §Healthcheck для семантики полей.
 
 **Auth:** public.
-**Response 200:** `{ "status": "ready", "timestamp": "...", "db": "ok" }`.
-**Errors:** `500` если БД недоступна.
+**Response 200:**
+```json
+{
+  "status": "ok",                       // "ok" | "degraded"
+  "timestamp": "...",
+  "db": true,                           // bool
+  "redis_connected": true,              // PING на reveal_throttle redis-клиент
+  "secrets_total": 42,                  // SELECT COUNT(*) FROM credentials
+  "blocked_total": 3,                   // WHERE status='blocked'
+  "audit_dropped_429_total": 0          // per-process
+}
+```
 
 ## Credentials
 
@@ -214,7 +226,7 @@ ACL даёт читать (`can_read`) или менять (`can_write`) creds �
 Revoke `RoleACL`.
 
 **Auth:** Bearer (owner / dep_admin / service_admin).
-**Response 204:** пусто.
+**Response 200:** `OkResponse = { ok: true }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `404 ROLE_ACL_NOT_FOUND`.
 
 ## DeptGrant (только `cross_department`)
@@ -243,7 +255,7 @@ Revoke `RoleACL`.
 Revoke `DeptGrant`. Каскадно сносит все `RoleACL(cred_id, dept_id=recipient_dept_id)`.
 
 **Auth:** Bearer (owner dep_admin / service_admin).
-**Response 204:** пусто.
+**Response 200:** `OkResponse = { ok: true }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `404 DEPT_GRANT_NOT_FOUND`.
 
 ## Internal lifecycle (для auth_service / account_admin handler'а)

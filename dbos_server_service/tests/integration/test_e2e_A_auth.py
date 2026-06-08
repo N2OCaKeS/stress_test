@@ -567,7 +567,7 @@ class TestUsersCRUD:
 
     @pytest.mark.parametrize(
         "platform_role",
-        ["account_admin", "loging_admin", "loging_reader"],
+        ["account_admin", "loging_admin", "loging_reader", "service_admin"],
     )
     def test_create_platform_admin_without_dept_succeeds(
         self,

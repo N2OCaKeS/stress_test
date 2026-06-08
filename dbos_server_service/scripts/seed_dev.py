@@ -335,6 +335,9 @@ def main() -> None:
         "loging_service": [
             ("reader",   "Читатель", "Просмотр логов отдела"),
         ],
+        # secret_service: `admin` сеется автоматически при grant_service_access
+        # (через `seed_system_admin` → ServiceRoleDefinitionRepository) с
+        # is_system=True. Здесь добавляем только остальные роли.
         "secret_service": [
             ("guest",    "Гость",    "Просмотр документации сервиса"),
             ("reader",   "Читатель", "Просмотр кред и reveal с can_read"),
@@ -375,6 +378,12 @@ def main() -> None:
          "platform_role": "loging_reader",
          "department_id": dept_id,
          "_label": "loging_reader (читатель логов НТ через platform_role)"},
+        # service_admin — cross-dept админ secret_service: read_for_audit,
+        # admin_override_delete, transfer_ownership, recover. Department=NULL
+        # (как loging_admin); права действуют во ВСЕХ depts.
+        {"username": "service_admin", "password": DEV_PASS,
+         "platform_role": "service_admin",
+         "_label": "service_admin (cross-dept secret_service: audit/override/transfer/recover)"},
         {"username": "user", "password": DEV_PASS,
          "department_id": dept_id,
          "initial_roles": [
@@ -553,6 +562,7 @@ def main() -> None:
     {'admin':<16}  {'account_admin':<26}  —
     {'loging_admin':<16}  {'loging_admin':<26}  Все логи + правила + ротация
     {'loging_reader':<16}  {'loging_reader':<26}  Все логи НТ (только чтение)
+    {'service_admin':<16}  {'service_admin':<26}  — (secret_service cross-dept)
     {'nt_admin':<16}  {'department_admin (НТ)':<26}  Логи НТ (только чтение)
     {'nt_senior':<16}  {'reader в loging_service':<26}  Логи НТ (только чтение)
     {'nt_developer':<16}  {'пользователь НТ':<26}  —

@@ -163,7 +163,7 @@ URL prefix: `/api/secret/v1/`.
 | `POST` | `/credentials` | operator+ | Создать. Body: `{name, service, scope, login?, secret, owner_dept_id?}`. Header `Idempotency-Key` поддерживается. UNIQUE `(owner, service, name)` → `409 NAME_DUPLICATE`. |
 | `GET` | `/credentials/{id}` | reader (per scope) | Метаданные. Без secret. |
 | `PATCH` | `/credentials/{id}` | owner / dep_admin / service_admin (per scope) | Изменить `name`, `login`, `secret`. На `secret` — повторно шифрует. |
-| `DELETE` | `/credentials/{id}` | owner / dep_admin / service_admin | Удалить. Если `scope=personal` и удаляет НЕ owner → требуется `reason` (admin override). |
+| `DELETE` | `/credentials/{id}` | owner / dep_admin / service_admin | Удалить. Если `scope=personal` и удаляет НЕ owner → требуется `reason` (admin override). Ответ — `200 OkResponse = { ok: true }`. |
 | `POST` | `/credentials/{id}/reveal` | reader+can_read | Возвращает `{login, secret_b64}`. Эмитит audit CRITICAL/INFO (throttle). |
 | `POST` | `/credentials/{id}/transfer` | service_admin / account_admin | `{new_owner_user_id?, new_owner_dept_id?}`. Только для blocked creds с grants. |
 | `POST` | `/credentials/{id}/recover` | service_admin / account_admin | Снять `status=blocked`. Только в окне 30 дней. |
@@ -173,7 +173,7 @@ URL prefix: `/api/secret/v1/`.
 | Метод | Path | Доступ | Описание |
 |---|---|---|---|
 | `POST` | `/credentials/{id}/acl` | owner (personal) / dep_admin (department/cross_dep recipient) | `{dept_id, role_name, can_read, can_write}`. Для cross_dep требует существующего `DeptGrant`. |
-| `DELETE` | `/credentials/{id}/acl/{acl_id}` | owner / dep_admin | Revoke. |
+| `DELETE` | `/credentials/{id}/acl/{acl_id}` | owner / dep_admin | Revoke. Ответ — `200 OkResponse = { ok: true }`. |
 | `GET` | `/credentials/{id}/acl` | reader+can_manage_acl | Список ACL. |
 
 ### DeptGrant CRUD (только `cross_department`)
@@ -181,7 +181,7 @@ URL prefix: `/api/secret/v1/`.
 | Метод | Path | Доступ | Описание |
 |---|---|---|---|
 | `POST` | `/credentials/{id}/dept-grants` | owner dep_admin / service_admin | `{recipient_dept_id}`. |
-| `DELETE` | `/credentials/{id}/dept-grants/{grant_id}` | owner dep_admin / service_admin | Revoke. Cascade'ит `RoleACL(cred_id, dept_id=recipient_dept_id)`. |
+| `DELETE` | `/credentials/{id}/dept-grants/{grant_id}` | owner dep_admin / service_admin | Revoke. Cascade'ит `RoleACL(cred_id, dept_id=recipient_dept_id)`. Ответ — `200 OkResponse = { ok: true }`. |
 | `GET` | `/credentials/{id}/dept-grants` | owner dep_admin / recipient dep_admin / service_admin | Список. |
 
 ### Error codes
@@ -265,6 +265,41 @@ URL prefix: `/api/secret/v1/`.
 - `PostgreSQL` (отдельный кластер)
 - `Docker`
 - `Kubernetes`
+
+## Healthcheck
+
+Два публичных endpoint'а под k8s probe'ы (без auth, без rate-limit).
+
+### `GET /health` — liveness
+
+Сервис жив, процесс не повис. Не трогает БД, не зовёт зависимости.
+
+```json
+{ "status": "ok", "timestamp": "2026-06-08T12:34:56.000+00:00" }
+```
+
+### `GET /ready` — readiness + counters
+
+БД обязательна для зелёного `status=ok`; иначе `status=degraded` (HTTP всё
+равно 200 — payload едет оператору, k8s reacts на тег). Redis и audit-counter
+best-effort: их фейл не валит ready.
+
+```json
+{
+  "status": "ok",                       // "ok" | "degraded"
+  "timestamp": "2026-06-08T12:34:56.000+00:00",
+  "db": true,                           // SELECT 1 + COUNT прошли
+  "redis_connected": true,              // PING на reveal_throttle redis-клиент (timeout 0.5s)
+  "secrets_total": 42,                  // SELECT COUNT(*) FROM credentials
+  "blocked_total": 3,                   // SELECT COUNT(*) WHERE status='blocked'
+  "audit_dropped_429_total": 0          // per-process; сколько событий отброшено после исчерпания retry на 429
+}
+```
+
+`secrets_total` / `blocked_total` — общие по БД, одинаковы между pod'ами.
+`audit_dropped_429_total` — per-process; при нескольких репликах суммирует
+внешний агрегатор. На любой ошибке counter'а — `status=degraded` + WARNING в
+лог, payload отдаётся с нулями.
 
 ## Развёртывание
 

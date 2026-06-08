@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
@@ -15,6 +16,8 @@ from src.schemas.common import OkResponse
 from src.schemas.credentials import (
     AdminDeleteRequest,
     CredentialCreate,
+    CredentialGuestList,
+    CredentialGuestRead,
     CredentialList,
     CredentialRead,
     CredentialRevealResponse,
@@ -41,6 +44,18 @@ def _to_read(cred: Credential) -> CredentialRead:
         updated_at=cred.updated_at,
         blocked_at=cred.blocked_at,
         blocked_reason=cred.blocked_reason,
+        visible_to_dept=cred.visible_to_dept,
+    )
+
+
+def _to_guest_read(cred: Credential) -> CredentialGuestRead:
+    """Минимальная проекция для guest-роли — без owner/login/timestamps/created_by."""
+    return CredentialGuestRead(
+        id=cred.id,
+        name=cred.name,
+        service=cred.service,
+        scope=cred.scope,  # type: ignore[arg-type]
+        visible_to_dept=cred.visible_to_dept,
     )
 
 
@@ -72,8 +87,16 @@ async def list_credentials(
     limit: int = Query(default=50, ge=1, le=200),
     cursor: str | None = Query(default=None, description="Opaque cursor предыдущей страницы."),
     db: AsyncSession = Depends(get_db),
-) -> CredentialList:
-    """Список credentials, отфильтрованный по access-check."""
+):
+    """Список credentials, отфильтрованный по access-check.
+
+    Для роли `guest` (одна-единственная роль `guest` в secret_service) возвращается
+    урезанный shape `CredentialGuestList`: только cred'ы своего dep'а с
+    `visible_to_dept=True`, и в каждой строке — лишь (id, name, service, scope,
+    visible_to_dept). Никакого owner_user_id, login, created_by, timestamps,
+    blocked-полей. Сделано так, чтобы guest «знал о существовании» секрета и
+    мог запросить доступ через dep_admin'а, но не получал metadata-leak'а.
+    """
     require_user_context(identity)
     cursor_pair = _parse_cursor(cursor)
     items, next_cursor = await credential_service.list_visible(
@@ -85,6 +108,12 @@ async def list_credentials(
         limit=limit,
         cursor=cursor_pair,
     )
+    if credential_service.is_guest_only(identity):
+        guest_resp = CredentialGuestList(
+            items=[_to_guest_read(c) for c in items],
+            next_cursor=next_cursor,
+        )
+        return JSONResponse(content=guest_resp.model_dump(mode="json"))
     return CredentialList(
         items=[_to_read(c) for c in items],
         next_cursor=next_cursor,

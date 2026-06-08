@@ -10,7 +10,7 @@ from src.repositories.roles import RoleRepository
 from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.services import ServiceRepository
 from src.schemas.departments import DepartmentResponse, ServiceAccessResponse
-from src.services import audit_service
+from src.services import audit_service, secret_service_client
 from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 from src.utils.time import utcnow
 
@@ -188,3 +188,29 @@ async def revoke_service_access(
         },
         request_id=request_id,
     )
+
+    # Lifecycle-callback в secret_service — только для service=="secret_service".
+    # Когда отдел теряет access к secret_service, secret_service должен
+    # каскадно revoke'нуть DeptGrant'ы / RoleACL, где этот отдел — recipient.
+    # Best-effort: ошибки внутри клиента уходят в audit, наружу не пробрасываем.
+    if service_name == "secret_service":
+        actor_username: str | None = None
+        try:
+            from src.repositories.users import UserRepository
+            actor = await UserRepository(db).get_by_id(actor_id)
+            if actor is not None:
+                actor_username = actor.username
+        except Exception:
+            pass
+        try:
+            await secret_service_client.notify_dept_service_access_revoked(
+                dept_id=department_id,
+                service=service_name,
+                actor_id=actor_id,
+                actor_username=actor_username,
+            )
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "secret_service notify failed (revoke_service_access): %s", exc,
+            )

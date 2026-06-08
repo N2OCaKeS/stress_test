@@ -240,6 +240,37 @@ class Settings(BaseSettings):
     logging_service_url: str | None = Field(default=None, alias="LOGGING_SERVICE_URL")
     logging_service_api_key: str | None = Field(default=None, alias="LOGGING_SERVICE_API_KEY")
 
+    # ── Outbound lifecycle-callback'и в secret_service ──────────────────────
+    # auth_service шлёт уведомления `/api/secret/v1/internal/lifecycle/*` при
+    # удалении юзера/отдела и при revoke access к secret_service. Best-effort
+    # канал: пустой URL = no-op (для dev/test без secret_service). Bearer
+    # синхронизирован с записью secret_service'а в `SERVICE_API_KEYS`.
+    secret_service_url: str = Field(
+        default="",
+        alias="SECRET_SERVICE_URL",
+        description=(
+            "Base URL secret_service для lifecycle-callback'ов. Пустой "
+            "= skip (dev/test без secret_service)."
+        ),
+    )
+    secret_internal_api_key: str = Field(
+        default="",
+        alias="SECRET_INTERNAL_API_KEY",
+        description=(
+            "Shared bearer для `/api/secret/v1/internal/lifecycle/*`. Должен "
+            "совпадать со значением в `SERVICE_API_KEYS['auth_service']` на "
+            "стороне secret_service."
+        ),
+    )
+    secret_service_tls_verify: bool = Field(
+        default=True,
+        alias="SECRET_SERVICE_TLS_VERIFY",
+        description=(
+            "Проверять TLS-сертификат secret_service. Выключать только в "
+            "dev/test со self-signed."
+        ),
+    )
+
     # ── Pool под audit-emit в loging_service ────────────────────────────────
     # Каждый authenticated request может породить audit-emission (login,
     # refresh, ban, http.client_error в middleware), per-call client под

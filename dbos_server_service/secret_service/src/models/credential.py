@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -84,6 +85,12 @@ class Credential(Base):
         DateTime(timezone=True), nullable=True
     )
     blocked_reason: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    # Guest-видимость: если True — носители роли `guest` в owner-dep'е видят
+    # креду в списке (id, name, service, scope) без reveal'а и без metadata.
+    visible_to_dept: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
     __table_args__ = (
         # personal ⇒ только user-owner.

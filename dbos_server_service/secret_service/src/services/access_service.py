@@ -41,6 +41,10 @@ from src.repositories import role_acls as role_acls_repo
 
 # Все поддерживаемые actions. Список замкнут — caller'ы передают строкой,
 # Literal даёт mypy подсветить опечатку.
+#
+# `list_guest` — отдельная проверка для guest-роли. Возвращает True только
+# на `visible_to_dept=True` AND owner_dept == identity.dept. Прочие actions
+# для guest всегда False (даже на свои dep-cred'ы без visible_to_dept).
 Action = Literal[
     "read",
     "reveal",
@@ -49,6 +53,7 @@ Action = Literal[
     "grant_acl",
     "grant_dept",
     "manage_status",
+    "list_guest",
 ]
 
 # Actions, которые требуют can_write на RoleACL (не просто can_read).
@@ -71,6 +76,12 @@ def _is_service_admin(identity: Identity) -> bool:
 
 def _is_account_admin(identity: Identity) -> bool:
     return identity.platform_role == "account_admin"
+
+
+def _is_guest_only(identity: Identity) -> bool:
+    """Guest = носитель ТОЛЬКО роли `guest` в secret_service."""
+    roles = identity.roles_for(SERVICE_NAME)
+    return bool(roles) and all(r == "guest" for r in roles)
 
 
 def _has_acl_permission(acls: list, action: Action, identity_roles: list[str]) -> tuple[bool, str]:
@@ -209,6 +220,19 @@ async def check_access(
     action: Action,
 ) -> tuple[bool, str]:
     """Главный entry-point. См. модуль-docstring."""
+    # 0. Guest-only: видит только visible_to_dept-cred'ы своего dep'а в listing.
+    # Любой другой action (read/reveal/write/delete/...) — мгновенный False.
+    if _is_guest_only(identity):
+        if action == "list_guest":
+            if (
+                cred.visible_to_dept
+                and cred.owner_dept_id is not None
+                and cred.owner_dept_id == identity.department_id
+            ):
+                return True, "guest_visible_to_dept"
+            return False, "guest_not_visible"
+        return False, "guest_role_no_access"
+
     # 1. Blocked status — почти всё запрещено.
     if cred.status == "blocked":
         # service_admin может читать заблокированные креды для аудита.

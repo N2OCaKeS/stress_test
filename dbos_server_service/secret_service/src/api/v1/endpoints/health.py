@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -9,10 +10,16 @@ from fastapi import APIRouter
 from sqlalchemy import text
 
 from src.db.session import engine
+from src.services import audit_service, reveal_throttle
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Бюджет на best-effort пинг Redis в `/ready`. k8s readinessProbe обычно имеет
+# timeout ~1s; короче, чтобы probe-таймаут не отбился из-за подвисшего upstream'а —
+# на сбое Redis ready всё равно отдаёт 200 + degraded.
+_REDIS_PING_TIMEOUT_SECONDS = 0.5
 
 
 @router.get(
@@ -28,21 +35,78 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
+async def _check_db_and_counts() -> tuple[bool, int | None, int | None]:
+    """SELECT 1 + COUNT по credentials. Возвращает `(db_ok, total, blocked)`.
+
+    На любой ошибке connect/execute — `(False, None, None)`. Считаем оба COUNT'а
+    в одном connect'е, чтобы не дёргать пул дважды per-probe.
+    """
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+            total_row = await conn.execute(text("SELECT COUNT(*) FROM credentials"))
+            total = int(total_row.scalar() or 0)
+            blocked_row = await conn.execute(
+                text("SELECT COUNT(*) FROM credentials WHERE status = 'blocked'")
+            )
+            blocked = int(blocked_row.scalar() or 0)
+            return True, total, blocked
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ready: db/counts probe failed (%s)", exc)
+        return False, None, None
+
+
+async def _ping_redis() -> bool:
+    """best-effort PING на reveal_throttle redis-клиент. False если URI не задан
+    или клиент не отвечает в бюджете. Не бросает."""
+    client = reveal_throttle._ensure_redis_client()
+    if client is None:
+        return False
+    try:
+        ping = getattr(client, "ping", None)
+        if ping is None:
+            return False
+        await asyncio.wait_for(ping(), timeout=_REDIS_PING_TIMEOUT_SECONDS)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ready: redis ping failed (%s)", exc)
+        return False
+
+
+def _safe_audit_dropped_total() -> int:
+    """Per-process counter дропов аудита на 429. На ошибке — 0 + log."""
+    try:
+        return int(audit_service.get_dropped_429_total())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ready: audit drop counter unreadable (%s)", exc)
+        return 0
+
+
 @router.get(
     "/ready",
-    summary="Readiness probe — БД доступна, можно принимать трафик",
+    summary="Readiness probe — БД доступна + counters для оператора",
     description=(
-        "БД обязательна: SELECT 1 не прошёл — 500, k8s выводит pod из трафика. "
-        "На следующих фазах сюда добавятся пинги Redis / loging_service / "
-        "auth_service (best-effort, статус каждого в payload)."
+        "БД обязательна для зелёного `status=ok`: SELECT 1 не прошёл — "
+        "`status=degraded`, k8s держит pod вне трафика по logic'е probe'а "
+        "(но HTTP-код всё равно 200, payload — оператору). Redis best-effort "
+        "пингуется (`reveal_throttle` shared client) — фейл не валит ready, но "
+        "уезжает в payload. Дополнительно: `secrets_total` / `blocked_total` "
+        "(SELECT COUNT по `credentials`) и `audit_dropped_429_total` "
+        "(per-process)."
     ),
 )
 async def ready() -> dict:
-    """БД доступна — SELECT 1 проходит."""
-    async with engine.connect() as conn:
-        await conn.execute(text("SELECT 1"))
+    """БД + counters + redis ping. На любой ошибке counter'а — degraded + log."""
+    db_ok, secrets_total, blocked_total = await _check_db_and_counts()
+    redis_connected = await _ping_redis()
+    audit_dropped = _safe_audit_dropped_total()
+    overall = "ok" if db_ok else "degraded"
     return {
-        "status": "ready",
+        "status": overall,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "db": "ok",
+        "db": db_ok,
+        "redis_connected": redis_connected,
+        "secrets_total": secrets_total if secrets_total is not None else 0,
+        "blocked_total": blocked_total if blocked_total is not None else 0,
+        "audit_dropped_429_total": audit_dropped,
     }

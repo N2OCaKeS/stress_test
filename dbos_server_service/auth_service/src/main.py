@@ -21,7 +21,7 @@ from src.core.exceptions import AppException
 from src.core.logging import configure_logging
 from src.db.session import engine
 from src.dependencies.db import get_db
-from src.services import audit_context, audit_service, http_pool
+from src.services import audit_context, audit_service, http_pool, secret_service_client
 from src.services.audit_context import AuditContext, extract_client_ip
 from src.services.audit_events import register_events
 from src.services.bootstrap_service import bootstrap_admin
@@ -198,6 +198,11 @@ def create_application() -> FastAPI:
         # `_send_to_logging_service` идёт по per-call fallback'у.
         http_pool.init_pools(settings)
 
+        # Pooled httpx-client для outbound lifecycle-callback'ов в secret_service.
+        # Пустой SECRET_SERVICE_URL → клиент не создаётся, notify_* идёт в no-op
+        # с WARNING (dev/test без secret_service).
+        secret_service_client.init_pool(settings)
+
         # Запуск sequence как task'а В loop'е, а не через asyncio.to_thread:
         # внутри потока emit() ловит RuntimeError на asyncio.get_running_loop()
         # и теряет service.started — наблюдаемо в audit-канале loging_service.
@@ -242,6 +247,7 @@ def create_application() -> FastAPI:
             # Обнуляем slot только после drain'а. Любые emit'ы, попавшие
             # сюда после этой строки, пойдут per-call fallback'ом.
             await http_pool.aclose_all()
+            await secret_service_client.aclose_pool()
 
             # DB engine закрываем последним: после http_pool, чтобы любые
             # in-flight emit'ы успели уйти, и symметрично с server_worker'ом.

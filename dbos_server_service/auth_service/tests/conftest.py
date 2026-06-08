@@ -290,6 +290,14 @@ _DEFAULT_SERVICE_ROLES = ["operator", "reader", "guest"]
 async def _make_service(db, name):
     """Create a platform service. Role definitions are seeded per-department
     when access is granted (see _grant_service)."""
+    from sqlalchemy import select
+
+    existing = await db.scalar(select(PlatformService).where(PlatformService.service_name == name))
+    if existing is not None:
+        if not existing.is_active:
+            existing.is_active = True
+            await db.flush()
+        return existing
     svc = PlatformService(service_name=name, display_name=name.title(), is_active=True)
     db.add(svc)
     await db.flush()

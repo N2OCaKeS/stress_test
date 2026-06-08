@@ -18,6 +18,11 @@ class PlatformRole(StrEnum):
     # Read-only роль для loging_service — тест test_p2_identity_ban_cache.py
     # парам-итерирует все значения enum'а, бизнес-логика рулится через guard'ы.
     LOGING_READER = "loging_reader"
+    # Cross-department админ secret_service: read_for_audit,
+    # admin_override_delete, transfer_ownership, recover на всех отделах.
+    # Department=NULL (как loging_admin). Enforcement происходит в
+    # secret_service; auth_service только хранит роль и кладёт её в JWT.
+    SERVICE_ADMIN = "service_admin"
 
 
 class ServiceRole(StrEnum):

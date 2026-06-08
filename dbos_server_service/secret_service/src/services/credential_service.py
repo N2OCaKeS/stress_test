@@ -85,6 +85,21 @@ def _is_account_admin(identity: Identity) -> bool:
     return identity.platform_role == "account_admin"
 
 
+def is_guest_only(identity: Identity) -> bool:
+    """Guest = носитель ТОЛЬКО роли `guest` в secret_service.
+
+    Если у actor'а есть ещё какая-то роль (reader/operator/admin) — он не
+    guest, идёт обычным путём. Чистый guest получает урезанный listing
+    (только id/name/service/scope/visible_to_dept) и больше ничего.
+    """
+    roles = identity.roles_for(SERVICE_NAME)
+    return bool(roles) and all(r == "guest" for r in roles)
+
+
+# Internal alias — для краткости в этом модуле.
+_is_guest_only = is_guest_only
+
+
 async def create(
     db: AsyncSession, identity: Identity, payload: CredentialCreate
 ) -> Credential:
@@ -140,6 +155,7 @@ async def create(
             secret_encrypted=envelope,
             status="active",
             created_by=identity.user_id,
+            visible_to_dept=payload.visible_to_dept,
         )
         await db.commit()
         await db.refresh(cred)
@@ -181,7 +197,32 @@ async def list_visible(
 
     Это не самая эффективная стратегия, но safe и читаема. Под нагрузкой
     можно перейти на JOIN через DeptGrant в репо.
+
+    Guest-role: отдельный путь. Видит только `visible_to_dept=True` AND
+    `owner_dept_id == identity.department_id` (своего dep'а). Никаких ACL,
+    никаких DeptGrant'ов, никаких personal. Caller-endpoint должен сериализовать
+    через CredentialGuestRead (без metadata).
     """
+    if _is_guest_only(identity):
+        if not identity.department_id:
+            return [], None
+        dept_creds = await repo.list_for_dept(
+            db,
+            identity.department_id,
+            scope=scope,
+            status=status,
+            limit=limit * 2,
+            cursor=cursor,
+        )
+        guest_visible = [c for c in dept_creds if c.visible_to_dept]
+        guest_visible.sort(key=lambda c: (c.created_at, c.id), reverse=True)
+        sliced = guest_visible[:limit]
+        next_cursor = None
+        if len(guest_visible) > limit:
+            last = sliced[-1]
+            next_cursor = f"{last.created_at.isoformat()}|{last.id}"
+        return sliced, next_cursor
+
     visible: list[Credential] = []
 
     # Personal-креды и dept-креды одного запроса нет — сделаем по отдельности и
@@ -265,9 +306,17 @@ async def load_for_action(
     db: AsyncSession, identity: Identity, cred_id: str, action: str
 ) -> Credential:
     """SELECT по PK + access-check. NotFound → 404, blocked → 410 для тех,
-    кто имел бы read-доступ на active; для остальных — 404 (info-leak)."""
+    кто имел бы read-доступ на active; для остальных — 404 (info-leak).
+
+    На любой denied-ветке (404 info-leak, 410 blocked-без-доступа, 403) эмитим
+    `tokens.access_denied / failure` — иначе SOC не видит попыток
+    несанкционированного доступа. `details.reason` различает ветки:
+    `info_leak_404` для маскировки в 404, `blocked` — для blocked-cred, иначе
+    конкретный reason от `check_access`.
+    """
     cred = await repo.get_by_id(db, cred_id)
     if cred is None:
+        # cred физически отсутствует — это не маскировка прав, audit не нужен.
         raise NotFoundError(
             error_code="CREDENTIAL_NOT_FOUND",
             message="Credential not found",
@@ -276,9 +325,25 @@ async def load_for_action(
     allowed, reason = await access_service.check_access(db, identity, cred, action)  # type: ignore[arg-type]
     if not allowed:
         if reason == "blocked":
-            # Решаем 410 vs 404: 410 видят те, кто имел бы read-доступ на
-            # active; остальные — 404 (не светим существование).
-            if await _would_have_read_access_if_active(db, identity, cred):
+            # 410 vs 404: 410 видят те, кто имел бы read-доступ на active;
+            # остальные — 404. Audit-emit в обоих случаях, чтобы SOC видел.
+            would_see_active = await _would_have_read_access_if_active(
+                db, identity, cred
+            )
+            audit_service.emit(
+                "tokens.access_denied",
+                target_id=cred.id,
+                target_type="credential",
+                status="failure",
+                allowed=False,
+                details={
+                    "action": action,
+                    "reason": "blocked",
+                    "scope": cred.scope,
+                    "masked_as": "410" if would_see_active else "404",
+                },
+            )
+            if would_see_active:
                 _ensure_active_or_raise(cred)
             raise NotFoundError(
                 error_code="CREDENTIAL_NOT_FOUND",
@@ -292,19 +357,33 @@ async def load_for_action(
             or reason in _NOT_VISIBLE_REASONS
         )
         if is_info_leak:
+            # 404-маскировка — audit обязателен, иначе SOC не видит попытку.
+            audit_service.emit(
+                "tokens.access_denied",
+                target_id=cred.id,
+                target_type="credential",
+                status="failure",
+                allowed=False,
+                details={
+                    "action": action,
+                    "reason": "info_leak_404",
+                    "scope": cred.scope,
+                    "underlying_reason": reason,
+                },
+            )
             raise NotFoundError(
                 error_code="CREDENTIAL_NOT_FOUND",
                 message="Credential not found",
             )
 
-        # Audit denied — только для реальных 403 (actor видит cred, но не имеет права).
+        # Реальный 403 — actor видит cred, но конкретного права нет.
         audit_service.emit(
             "tokens.access_denied",
             target_id=cred.id,
             target_type="credential",
             status="failure",
             allowed=False,
-            details={"action": action, "reason": reason},
+            details={"action": action, "reason": reason, "scope": cred.scope},
         )
         raise AuthorizationError(
             error_code="CREDENTIAL_ACCESS_DENIED",

@@ -26,6 +26,7 @@ class CredentialCreate(BaseModel):
     login: str | None = Field(default=None, max_length=4096)
     secret: str = Field(min_length=1, max_length=8192)
     owner_dept_id: str | None = Field(default=None, max_length=64)
+    visible_to_dept: bool = False
 
     @model_validator(mode="after")
     def _check_owner_dept_for_dept_scope(self) -> "CredentialCreate":
@@ -64,12 +65,35 @@ class CredentialRead(BaseModel):
     updated_at: datetime
     blocked_at: datetime | None = None
     blocked_reason: str | None = None
+    visible_to_dept: bool = False
+
+
+class CredentialGuestRead(BaseModel):
+    """Минимальные поля кред для guest-listing.
+
+    Guest видит только факт существования (id, name, service, scope) и
+    `visible_to_dept` (фильтр уже применён, но возвращаем флаг явно).
+    Никаких owner_*/login/secret/created_by/timestamps/blocked-полей.
+    """
+
+    id: str
+    name: str
+    service: str
+    scope: Literal["personal", "department", "cross_department"]
+    visible_to_dept: bool
 
 
 class CredentialList(BaseModel):
     """Cursor-пагинированный список кред."""
 
     items: list[CredentialRead]
+    next_cursor: str | None = None
+
+
+class CredentialGuestList(BaseModel):
+    """Cursor-пагинированный список кред для guest-роли."""
+
+    items: list[CredentialGuestRead]
     next_cursor: str | None = None
 
 

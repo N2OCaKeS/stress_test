@@ -274,14 +274,23 @@ def main() -> None:
                            headers={"Authorization": f"Bearer {LOG_API_KEY}"}, timeout=10)
 
     # ── Платформенные сервисы ─────────────────────────────────────────────────
+    # display_name держим как `DTQC-EMM <name>` для платформенных компонентов:
+    # auth/loging/server/worker — единый префикс DTQC-EMM (Департамент тестирования
+    # качества и контроля → Enterprise Mgmt Module). Остальные (config/secret)
+    # сохраняют доменные имена. internal `service_name` остаётся business key'ом
+    # и не меняется (URL'ы, audit-события, FK), переименование — только в UI.
     section("Платформенные сервисы")
     for svc in [
+        {"service_name": "auth_service",    "display_name": "DTQC-EMM auth",
+         "description": "Аутентификация, авторизация и управление аккаунтами"},
+        {"service_name": "loging_service",  "display_name": "DTQC-EMM loging",
+         "description": "Централизованный сервис аудита. reader-роль даёт доступ к просмотру логов"},
+        {"service_name": "server_service",  "display_name": "DTQC-EMM server",
+         "description": "Инвентаризация и управление тестовыми серверами"},
+        {"service_name": "server_worker",   "display_name": "DTQC-EMM worker",
+         "description": "Фоновые операции по серверам (power, ssh, ipmi) под worker_bot"},
         {"service_name": "config_service",  "display_name": "Конфигурация",
          "description": "Хранение и раздача конфигурации приложений"},
-        {"service_name": "server_service",  "display_name": "Управление серверами",
-         "description": "Инвентаризация и управление тестовыми серверами"},
-        {"service_name": "loging_service",  "display_name": "Аудит и логирование",
-         "description": "Централизованный сервис аудита. reader-роль даёт доступ к просмотру логов"},
         {"service_name": "secret_service",  "display_name": "Хранилище секретов",
          "description": "Безопасное хранение токенов и учётных данных для внешних систем (Jira, Confluence, Git и т.п.)"},
     ]:

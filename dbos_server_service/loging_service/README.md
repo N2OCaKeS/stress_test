@@ -10,8 +10,8 @@
 - **Rule engine.** Цепочка правил на каждом событии: `OVERRIDE_SEVERITY` меняет уровень, `SUPPRESS` отбрасывает событие до записи, `ALLOW` сохраняет и прерывает цепочку. Match по `service`, `action` (glob `user.*`), `status`, `severity`, `allowed`. Реализация — `src/services/rule_service.py`.
 - **Retention.** Per-severity / per-service политики в `retention_policies`. Фоновый sweep раз в сутки в 00:00 MSK; advisory-lock защищает от двойного срабатывания в multi-replica; DELETE чанкуется (commit на чанк), чтобы не лочить огромные выборки. `PUT` и `DELETE /retention` работают со ВСЕМ активным набором (при filtered-режиме это N×M строк). События самого `loging_service` ретеншном никогда не удаляются.
 - **Storage.** Append-only таблица `audit_events`; партиционирование/ротация снаружи, средствами Postgres.
-- **Read API.** `GET /events`, `GET /rules`, `GET /rules/{rule_id}`, `GET /services`, `GET /services/{service}/events`, `GET /retention` — для admin/reader. Dept-скоуп применяется автоматически для не-глобальных ролей. На `GET /events` точный `total` считается только при `?include_total=true` (иначе `total=null`, признак следующей страницы — `has_more`).
-- **Write API.** `POST/PATCH/DELETE /rules` — `loging_admin` или `account_admin`; `PUT /retention` (replace) и `DELETE /retention` (idempotent) — только `loging_admin`. `POST /events` — service-to-service ingest по `SERVICE_API_KEYS`. `POST /services/{service}/events` — реестр event'ов от service-caller'а. `POST /token` — swagger-login проксируется в `auth_service`.
+- **Read API.** `GET /events`, `GET /rules`, `GET /rules/{rule_id}`, `GET /services`, `GET /services/{service}/events`, `GET /retention` — для `loging_admin` / `loging_reader`. Обе роли глобальные (видят журнал cross-dept целиком), dept-скоуп не применяется. На `GET /events` точный `total` считается только при `?include_total=true` (иначе `total=null`, признак следующей страницы — `has_more`).
+- **Write API.** `POST/PATCH/DELETE /rules` и `PUT/DELETE /retention` — только `loging_admin`. `POST /events` — service-to-service ingest по `SERVICE_API_KEYS`. `POST /services/{service}/events` — реестр event'ов от service-caller'а. `POST /token` — swagger-login проксируется в `auth_service`.
 
 ## Архитектура
 
@@ -26,24 +26,22 @@
 
 | Роль | Что может |
 |---|---|
-| `platform_role=loging_admin` | Управление правилами и retention, ingest-ключами. Чтение **всех** событий |
-| `platform_role=account_admin` | Чтение **всех** событий аудита + **управление правилами** (CRUD `/rules`). **Без** управления retention |
-| `platform_role=loging_reader` | Read-only, только свой департамент. **Требует `department_id`**: без него первое чтение событий → 403 `NO_DEPARTMENT` (by design, см. ниже) |
-| `platform_role=department_admin` | Read-only, только свой департамент |
-| `loging_service.reader` / `operator` / `admin` | Read-only, только свой департамент. Все три роли дают одно и то же — отдельных прав у service-`admin` тут нет |
+| `platform_role=loging_admin` | Управление правилами и retention. Чтение **всех** событий cross-dept |
+| `platform_role=loging_reader` | Read-only, **всех** событий cross-dept (никакого dept-scope) |
+| `platform_role=account_admin` | **НЕТ доступа** к loging_service. Чтобы account_admin'у читать audit — выдай ему отдельную `loging_reader` |
+| `platform_role=department_admin` | **НЕТ доступа** к loging_service. Чтобы dep_admin'у читать audit его отдела — выдай ему отдельную `loging_reader` (платформенную, без dept-scope) |
+| `loging_service.reader` / `operator` / `admin` | **НЕТ доступа** к чтению/управлению audit'ом. Service-роли в loging_service не пускают к API: нужна именно платформенная роль |
 | Сервисы-источники | Только **запись** через per-service `SERVICE_API_KEYS` map + `X-Service-Identity` |
 
-Управление правилами (`POST/PATCH/DELETE /rules`) допускают и `loging_admin`, и `account_admin` (зависимость `require_admin_or_account_admin`). Управление retention-политиками (`PUT/DELETE /retention`) — **только у `platform_role=loging_admin`** (зависимость `require_admin`). Ни service-`admin`, ни `department_admin` в обе группы не пройдут. Все изменения правил и retention пишутся в собственный аудит сервиса.
+И rules-CRUD, и retention-CRUD под одной зависимостью `require_admin` — пускают только `loging_admin`. Read-канал (`require_reader`) пускает `loging_admin` и `loging_reader`. Все остальные платформенные/service-роли получают 403 `INSUFFICIENT_ROLE`. Все изменения правил и retention пишутся в собственный аудит сервиса.
 
 Роли пользователей создаются и меняются **только в `auth_service`**; `loging_service` лишь читает их из JWT-introspect ответа.
 
-### loging_reader vs loging_admin — dept-scope
+### loging_reader = глобальный read-only
 
-`loging_reader` — это **dept-scoped reader**. Введён осознанно: оператор отдела видит аудит только своего отдела, а не всей платформы. Поэтому пользователь с `platform_role=loging_reader` **обязан** иметь `department_id`.
+`loging_reader` — это **глобальный read-only**: видит журнал всех отделов сразу, как и `loging_admin`. Платформенная роль создаётся без `department_id`. Раньше `loging_reader` был dept-scoped (видел только свой отдел) — owner-decision эту семантику снял: dep-scoped read мог утечь через ошибку выдачи прав, а проще явно ограничить allow-list ролей до `loging_admin` / `loging_reader`.
 
-Если такой пользователь окажется без отдела — `auth_service` на `POST /users` его не пустит (`department_id` обязателен для всех platform-ролей, кроме `account_admin`), но даже при обходе на первом GET в `loging_service` сработает гард в `src/dependencies/auth.py` и вернёт **403 `NO_DEPARTMENT`**. Fallback «нет dept → показать всё» **намеренно не сделан**.
-
-Если задача — дать сотруднику глобальный read-only по аудиту, выдай `platform_role=loging_admin` (видит все события + управляет правилами/retention) или `platform_role=account_admin` (read-only по всему аудиту, без управления правилами/retention). Эти platform-роли создаются без `department_id` — это их штатное состояние.
+Если dep_admin'у нужно расследовать инцидент в своём отделе — выдай ему `loging_reader` отдельной командой `POST /api/auth/v1/users` (account_admin). Эта роль НЕ привязана к dept, видит cross-dept; чтобы ограничить вывод одним отделом — фильтр `?department_id=...` в `GET /events`.
 
 ## Уровни severity
 

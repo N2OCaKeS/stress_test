@@ -599,15 +599,16 @@ class TestRateLimitKeyFunction:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# dependencies/auth.py — _DEPT_SCOPED_ROLES quirk: loging_reader без dept_id
+# dependencies/auth.py — require_reader: только loging_admin / loging_reader
 # ────────────────────────────────────────────────────────────────────────────
 
-class TestDeptScopedRolesQuirk:
-    """loging_reader без department_id → 403 NO_DEPARTMENT.
+class TestReaderAllowlist:
+    """К чтению audit'а допускаются ТОЛЬКО `loging_admin` и `loging_reader`.
 
-    Это известная квирка: platform-role loging_reader создаётся без dept_id
-    (как и loging_admin), но в require_reader он попадает в _DEPT_SCOPED_ROLES
-    → scope к dept_id → None → 403. Тест фиксирует это поведение как ожидаемое.
+    Обе — глобальные read (никакого dept-scope), обе могут не иметь
+    `department_id`. `account_admin` и `department_admin` отбиваются
+    `INSUFFICIENT_ROLE` — если dep_admin'у нужен read его отдела, ему
+    отдельно выдаётся платформенная `loging_reader`.
     """
 
     def test_loging_reader_with_dept_id_passes(self, client, mock_introspect):
@@ -620,7 +621,9 @@ class TestDeptScopedRolesQuirk:
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 200
 
-    def test_loging_reader_without_dept_id_returns_403_no_department(self, client, mock_introspect):
+    def test_loging_reader_without_dept_id_passes(self, client, mock_introspect):
+        """loging_reader теперь global-read — отсутствие department_id не
+        отбивает (платформенная роль создаётся без dept)."""
         EVENTS_URL = "/api/logging/v1/events"
         with mock_introspect(json_body={
             "active": True, "subject_type": "user",
@@ -628,22 +631,22 @@ class TestDeptScopedRolesQuirk:
             "platform_role": "loging_reader", "department_id": None,
         }):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
-        assert r.status_code == 403
-        assert r.json()["error_code"] == "NO_DEPARTMENT"
+        assert r.status_code == 200
 
-    def test_department_admin_without_dept_id_returns_403(self, client, mock_introspect):
+    def test_department_admin_returns_403_insufficient_role(self, client, mock_introspect):
+        """department_admin к чтению аудита НЕ допускается."""
         EVENTS_URL = "/api/logging/v1/events"
         with mock_introspect(json_body={
             "active": True, "subject_type": "user",
             "sub": "usr_da", "username": "da",
-            "platform_role": "department_admin", "department_id": None,
+            "platform_role": "department_admin", "department_id": "dep_a",
         }):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 403
-        assert r.json()["error_code"] == "NO_DEPARTMENT"
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
     def test_loging_admin_without_dept_id_passes(self, client, mock_introspect):
-        """loging_admin НЕ в _DEPT_SCOPED_ROLES → dept_scope=None → 200."""
+        """loging_admin без department_id → global-read → 200."""
         EVENTS_URL = "/api/logging/v1/events"
         with mock_introspect(json_body={
             "active": True, "subject_type": "user",
@@ -653,8 +656,8 @@ class TestDeptScopedRolesQuirk:
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 200
 
-    def test_account_admin_without_dept_id_passes(self, client, mock_introspect):
-        """account_admin НЕ в _DEPT_SCOPED_ROLES → dept_scope=None → 200."""
+    def test_account_admin_returns_403_insufficient_role(self, client, mock_introspect):
+        """account_admin к чтению аудита НЕ допускается (owner-decision)."""
         EVENTS_URL = "/api/logging/v1/events"
         with mock_introspect(json_body={
             "active": True, "subject_type": "user",
@@ -662,7 +665,8 @@ class TestDeptScopedRolesQuirk:
             "platform_role": "account_admin", "department_id": None,
         }):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
-        assert r.status_code == 200
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
 
 # ────────────────────────────────────────────────────────────────────────────

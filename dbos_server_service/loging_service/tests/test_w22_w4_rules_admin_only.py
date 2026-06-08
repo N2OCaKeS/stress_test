@@ -1,6 +1,7 @@
-"""`GET /rules` доступен только `loging_admin` / `account_admin`.
+"""`GET /rules` доступен только `loging_admin`.
 
-Owner-decision: `loging_reader` / `department_admin` / service-роли в
+Owner-decision: rules-CRUD теперь admin-only через `require_admin`.
+`account_admin` / `loging_reader` / `department_admin` / service-роли в
 `loging_service` НЕ видят правила. Симметрично для `GET /rules/{id}` и для
 POST/PATCH/DELETE.
 
@@ -28,14 +29,6 @@ class TestAllowedRolesCanReadRules:
         body = r.json()
         assert "items" in body
 
-    def test_account_admin_can_list_rules(self, client, mock_introspect):
-        with mock_introspect(json_body={
-            "active": True, "subject_type": "user", "sub": "usr_2",
-            "username": "acc_admin", "platform_role": "account_admin",
-        }):
-            r = client.get(RULES_URL, headers={"Authorization": "Bearer jwt"})
-        assert r.status_code == 200
-
     def test_loging_admin_can_get_rule_by_id(self, client, mock_introspect):
         with mock_introspect(json_body={
             "active": True, "subject_type": "user", "sub": "usr_1",
@@ -43,14 +36,6 @@ class TestAllowedRolesCanReadRules:
         }):
             r = client.get(f"{RULES_URL}/rl_nope", headers={"Authorization": "Bearer jwt"})
         # 404 (правила нет в чистой БД) — но не 403 / не 401: dependency пропустил.
-        assert r.status_code == 404
-
-    def test_account_admin_can_get_rule_by_id(self, client, mock_introspect):
-        with mock_introspect(json_body={
-            "active": True, "subject_type": "user", "sub": "usr_2",
-            "username": "acc_admin", "platform_role": "account_admin",
-        }):
-            r = client.get(f"{RULES_URL}/rl_nope", headers={"Authorization": "Bearer jwt"})
         assert r.status_code == 404
 
 
@@ -79,7 +64,28 @@ class TestLogingReaderDeniedFromRules:
                 kwargs["json"] = json_body
             r = getattr(client, method)(url, **kwargs)
         assert r.status_code == 403
-        assert r.json()["error_code"] == "LOGING_ADMIN_REQUIRED"
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+
+
+class TestAccountAdminDeniedFromRules:
+    def test_account_admin_403_on_list(self, client, mock_introspect):
+        """account_admin больше НЕ управляет rules — только loging_admin."""
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user", "sub": "usr_2",
+            "username": "acc_admin", "platform_role": "account_admin",
+        }):
+            r = client.get(RULES_URL, headers={"Authorization": "Bearer jwt"})
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+
+    def test_account_admin_403_on_get_by_id(self, client, mock_introspect):
+        with mock_introspect(json_body={
+            "active": True, "subject_type": "user", "sub": "usr_2",
+            "username": "acc_admin", "platform_role": "account_admin",
+        }):
+            r = client.get(f"{RULES_URL}/rl_nope", headers={"Authorization": "Bearer jwt"})
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
 
 class TestDepartmentAdminDeniedFromRules:
@@ -91,7 +97,7 @@ class TestDepartmentAdminDeniedFromRules:
         }):
             r = client.get(RULES_URL, headers={"Authorization": "Bearer jwt"})
         assert r.status_code == 403
-        assert r.json()["error_code"] == "LOGING_ADMIN_REQUIRED"
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
 
 class TestServiceRoleDeniedFromRules:
@@ -106,7 +112,7 @@ class TestServiceRoleDeniedFromRules:
         }):
             r = client.get(RULES_URL, headers={"Authorization": "Bearer jwt"})
         assert r.status_code == 403
-        assert r.json()["error_code"] == "LOGING_ADMIN_REQUIRED"
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
 
 class TestUnauthenticatedDeniedFromRules:

@@ -86,19 +86,16 @@ def _register_events_rate_limit_key(request: Request) -> str:
         "Список заведомо короткий (десятки сервисов на платформе), поэтому "
         "пагинации нет: `has_more=False`, `limit`/`offset` всегда `null`, "
         "`total = len(items)`.\n\n"
-        "**Доступ:**\n"
-        "- `loging_admin` / `account_admin` — видят все сервисы;\n"
-        "- `loging_reader` / `department_admin` / service-роли в "
-        "`loging_service` — видят только сервисы, писавшие события из их "
-        "`department_id`. `event_count` / `last_event_at` агрегируются "
-        "только по их отделу.\n\n"
+        "**Доступ:** `loging_admin` или `loging_reader` — обе роли видят "
+        "агрегат cross-dept целиком. `account_admin` / `department_admin` "
+        "к чтению audit'а не допускаются.\n\n"
         "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
         "**Связано:** `GET /services/{service}/events` — каталог action'ов "
         "конкретного сервиса; `GET /events` — собственно события."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
-        403: {"model": ErrorEnvelope, "description": "`INSUFFICIENT_ROLE` / `NO_DEPARTMENT`"},
+        403: {"model": ErrorEnvelope, "description": "`INSUFFICIENT_ROLE`"},
         429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
@@ -115,20 +112,12 @@ def list_services(
     identity: ReaderIdentity,
     db: Session = Depends(get_db),
 ) -> ServiceListResponse:
-    # Dept-scope enforcement: без фильтра dept-scoped reader
-    # (loging_reader / department_admin / юзер с service-ролью в
-    # loging_service) увидел бы `event_count` и `last_event_at` любого
-    # сервиса, когда-либо писавшего из любого отдела — лик факта и
-    # интенсивности cross-dept использования. Зеркалит `GET /events`,
-    # который всегда форсит `_dept_scope`.
-    #
-    # `_dept_scope` выставляется в `require_reader`:
-    #   * `loging_admin` / `account_admin` → `None` → unscoped (всё видно);
-    #   * dept-scoped роли (`loging_reader` / `department_admin` / service-role
-    #     в `loging_service`) → `<их department_id>` → repository агрегирует
-    #     только по их отделу.
-    dept_scope = identity.get("_dept_scope")
-    rows = events_repo.list_services(db, department_id=dept_scope)
+    # Read-роли (`loging_admin` / `loging_reader`) обе глобальные — агрегат
+    # GROUP BY service отдаётся cross-dept без фильтра. Историческая
+    # dept-scoped семантика для `loging_reader` / `department_admin` снята:
+    # `department_admin` к loging_service не допускается, а `loging_reader`
+    # теперь global-read (см. `dependencies/auth.py::require_reader`).
+    rows = events_repo.list_services(db)
     items = [
         ServiceInfo(service=r.service, event_count=r.event_count, last_event_at=r.last_event_at)
         for r in rows
@@ -318,18 +307,15 @@ def register_events(
     description=(
         "Постранично отдаёт `service_events` конкретного сервиса: `action`, "
         "`description`, `default_severity`, `registered_at`, `updated_at`.\n\n"
-        "**Доступ:** read-роли (`loging_admin` / `account_admin` / "
-        "`loging_reader` / `department_admin` / service-роли в "
-        "`loging_service`). Реестр сам по себе не содержит dept-зависимых "
-        "данных, но `loging_reader` / `department_admin` всё равно обязаны "
-        "иметь `department_id` (общий гард `require_reader`).\n\n"
+        "**Доступ:** `loging_admin` или `loging_reader`. `account_admin` / "
+        "`department_admin` к чтению реестра не допускаются.\n\n"
         "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
         "**Связано:** `POST /services/{service}/events` — регистрация "
         "action'ов; `POST /rules` — правила на эти action'ы."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
-        403: {"model": ErrorEnvelope, "description": "`INSUFFICIENT_ROLE` / `NO_DEPARTMENT`"},
+        403: {"model": ErrorEnvelope, "description": "`INSUFFICIENT_ROLE`"},
         429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },

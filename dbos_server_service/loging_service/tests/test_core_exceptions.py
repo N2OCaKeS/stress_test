@@ -305,5 +305,4 @@ class TestFetchIdentityNetworkErrors:
         with mock_introspect(json_body=body):
             identity = _run(auth_dep._fetch_identity(_Creds(), req))
         assert identity["user_id"] == "usr_1"
-        assert identity["_loging_service_roles"] == ["reader"]
         assert req.state.auth_identity["sub"] == "usr_1"

@@ -20,7 +20,7 @@ from src.core.exceptions import (
 )
 from src.core.limiter import limiter
 from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
-from src.dependencies.auth import RulesAdminIdentity
+from src.dependencies.auth import AdminIdentity
 from src.dependencies.db import get_db
 from src.repositories import rules as rule_repo
 from src.repositories import service_events as se_repo
@@ -107,8 +107,8 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
     summary="Список всех правил аудита",
     description=(
         "Постранично отдаёт правила, отсортированные по `priority DESC`.\n\n"
-        "**Доступ:** только `loging_admin` или `account_admin`. `loging_reader` / "
-        "`department_admin` / service-роли в `loging_service` сюда не пускаются — "
+        "**Доступ:** только `loging_admin`. `loging_reader` / `account_admin` / "
+        "`department_admin` и service-роли в `loging_service` сюда не пускаются — "
         "правила глобальны и leak их состояния (SUPPRESS/OVERRIDE-политики) "
         "раскрывает топологию мониторинга.\n\n"
         "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
@@ -117,7 +117,7 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
-        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`LOGING_ADMIN_REQUIRED`)"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`INSUFFICIENT_ROLE`)"},
         429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
@@ -131,7 +131,7 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
 def list_rules(
     request: Request,
     response: Response,
-    identity: RulesAdminIdentity,
+    identity: AdminIdentity,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=MAX_QUERY_LIMIT),
     offset: int = Query(default=0, ge=0, le=MAX_QUERY_OFFSET),
@@ -151,12 +151,12 @@ def list_rules(
     response_model=RuleResponse,
     summary="Получить правило по ID",
     description=(
-        "**Доступ:** только `loging_admin` или `account_admin`.\n\n"
+        "**Доступ:** только `loging_admin`.\n\n"
         "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README)."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
-        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`LOGING_ADMIN_REQUIRED`)"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`INSUFFICIENT_ROLE`)"},
         404: {"model": ErrorEnvelope, "description": "`RULE_NOT_FOUND` — правила с таким ID нет"},
         429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
@@ -168,7 +168,7 @@ def list_rules(
 def get_rule(
     request: Request,
     response: Response,
-    identity: RulesAdminIdentity,
+    identity: AdminIdentity,
     rule_id: str = Path(
         min_length=1,
         max_length=48,
@@ -194,14 +194,14 @@ def get_rule(
         "`user.login.extra`. Точное `match_action` валидируется против реестра "
         "`service_events` — нельзя завести правило на action, которого никто не "
         "регистрировал (но только если реестр непустой).\n\n"
-        "**Доступ:** `platform_role` ∈ {`loging_admin`, `account_admin`}.\n\n"
+        "**Доступ:** `platform_role=loging_admin`.\n\n"
         "Rate-limit: **не применяется** — admin write, see-also `API_ENDPOINTS.md`.\n\n"
         "**Связано:** изменение правил сбрасывает in-memory кеш "
         "(`rule_service.invalidate_cache`)."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
-        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`LOGING_ADMIN_REQUIRED`)"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`INSUFFICIENT_ROLE`)"},
         409: {"model": ErrorEnvelope, "description": "`RULE_NAME_CONFLICT` — UNIQUE на name"},
         422: {
             "model": ErrorEnvelope,
@@ -216,7 +216,7 @@ def get_rule(
 )
 def create_rule(
     payload: RuleCreate,
-    identity: RulesAdminIdentity,
+    identity: AdminIdentity,
     db: Session = Depends(get_db),
 ) -> RuleResponse:
     _validate_match_action(payload.match_action, db)
@@ -264,12 +264,12 @@ def create_rule(
     description=(
         "Partial-update: меняет только переданные поля. После обновления "
         "сбрасывает in-memory кеш rule engine.\n\n"
-        "**Доступ:** `platform_role` ∈ {`loging_admin`, `account_admin`}.\n\n"
+        "**Доступ:** `platform_role=loging_admin`.\n\n"
         "Rate-limit: **не применяется** — admin write."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
-        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`LOGING_ADMIN_REQUIRED`)"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`INSUFFICIENT_ROLE`)"},
         404: {"model": ErrorEnvelope, "description": "`RULE_NOT_FOUND`"},
         409: {"model": ErrorEnvelope, "description": "`RULE_NAME_CONFLICT`"},
         422: {
@@ -285,7 +285,7 @@ def create_rule(
 )
 def update_rule(
     payload: RuleUpdate,
-    identity: RulesAdminIdentity,
+    identity: AdminIdentity,
     rule_id: str = Path(
         min_length=1,
         max_length=48,
@@ -349,18 +349,18 @@ def update_rule(
     summary="Удалить правило",
     description=(
         "Полностью удаляет правило и сбрасывает кеш rule engine.\n\n"
-        "**Доступ:** `platform_role` ∈ {`loging_admin`, `account_admin`}.\n\n"
+        "**Доступ:** `platform_role=loging_admin`.\n\n"
         "Rate-limit: **не применяется** — admin write."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
-        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`LOGING_ADMIN_REQUIRED`)"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит (`INSUFFICIENT_ROLE`)"},
         404: {"model": ErrorEnvelope, "description": "`RULE_NOT_FOUND`"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
 )
 def delete_rule(
-    identity: RulesAdminIdentity,
+    identity: AdminIdentity,
     rule_id: str = Path(
         min_length=1,
         max_length=48,

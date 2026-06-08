@@ -7,9 +7,12 @@
                            предъявленному ключу + обязательному
                            `X-Service-Identity` header'у.
   `require_admin`         — `loging_admin` JWT: полный доступ, включая правила.
-  `require_reader`        — read-only: `loging_admin` / `loging_reader` /
-                           `department_admin` / `account_admin`. `loging_reader`
-                           и `department_admin` auto-scoped к своему отделу.
+  `require_reader`        — read-only: `loging_admin` / `loging_reader`. Обе
+                           роли видят весь журнал cross-dept (dept-scope не
+                           применяется). `account_admin` / `department_admin`
+                           к чтению аудита не допускаются — owner-decision:
+                           если dep_admin'у нужно читать журнал своего отдела,
+                           ему явно выдаётся платформенная роль `loging_reader`.
 
 ### Connection pool
 
@@ -45,7 +48,6 @@ from fastapi import Depends, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.core.config import get_settings
-from src.core.constants import DEPT_SCOPED_ROLES
 from src.core.exceptions import AppException
 from src.core.http import bearer_header
 
@@ -53,32 +55,19 @@ logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer(auto_error=False)
 
-# Роли, scoped к своему отделу.
-#
 # `KNOWN_SERVICE_IDENTITIES` снят: в per-service-only режиме allow-list — это
 # сам `SERVICE_API_KEYS` map. Identity вне map'а отвергается на этапе
 # `require_service_token`; отдельный hard-coded set дублировал бы операторскую
 # конфигурацию и приводил к расхождениям при добавлении нового внутреннего
 # сервиса.
 #
-# По platform-модели auth_service `loging_reader` создаётся БЕЗ
-# `department_id` (как `loging_admin` / `account_admin`) и описан как
-# «чтение аудит-событий по всем департаментам». Здесь же он попадает в
-# dept-scope гард: без `department_id` `require_reader` отдаёт
-# 403 NO_DEPARTMENT.
-#
-# Это сознательная локальная политика loging_service'а: даже platform-роль
-# «reader» сужается до своего отдела, чтобы read-доступ не утекал
-# кросс-департаментно через одну ошибку выдачи прав. Полное «видеть всё»
-# остаётся за `loging_admin` и `account_admin`.
-#
-# Если когда-нибудь понадобится глобальный read без admin-привилегий —
-# вынести `loging_reader` из `_DEPT_SCOPED_ROLES` и вернуть
-# `_dept_scope=None` в `require_reader`. Тест-контракт фиксирующий текущее
-# поведение: `tests/test_cov_focus.py::TestDeptScopedRolesQuirk`.
-# policy-константа `DEPT_SCOPED_ROLES` живёт в `core/constants.py`;
-# здесь — локальный alias под исторический leading-underscore.
-_DEPT_SCOPED_ROLES = DEPT_SCOPED_ROLES
+# Dept-scope для read-роли: НЕТ. Owner-decision: к чтению audit'а допускаются
+# только `loging_admin` и `loging_reader`, обе платформенные роли создаются без
+# `department_id` и видят журнал cross-dept целиком. Историческая dept-scoped
+# семантика для `loging_reader` / `department_admin` снята — `department_admin`
+# к loging_service не допускается, а `loging_reader` теперь global-read.
+# Соответственно ни `_DEPT_SCOPED_ROLES`, ни `identity["_dept_scope"]` больше
+# не нужны: вызывающие эндпоинты репозиториям dept-фильтр не пробрасывают.
 
 # Module-level pooled client. Инициализируется в `main.lifespan` (startup),
 # закрывается в shutdown. Остаётся `None` вне app-lifecycle — в этом случае
@@ -330,11 +319,6 @@ async def _fetch_identity(
     # Сохраняем ДО role-check'а, чтобы у audit-middleware всегда был actor.
     request.state.auth_identity = identity
 
-    # Также проверяем service-роли в `loging_service` (у пользователя может
-    # быть reader через service-role систему).
-    loging_svc_roles = identity.get("service_roles", {}).get("loging_service", [])
-    identity["_loging_service_roles"] = loging_svc_roles
-
     return identity
 
 
@@ -342,7 +326,8 @@ async def require_admin(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
 ) -> dict:
-    """Требует `platform_role=loging_admin`. Полный доступ, включая правила."""
+    """Требует `platform_role=loging_admin`. Полный доступ, включая правила
+    и retention."""
     identity = await _fetch_identity(credentials, request)
     if identity.get("platform_role") != "loging_admin":
         raise AppException(
@@ -350,35 +335,6 @@ async def require_admin(
             error_code="INSUFFICIENT_ROLE",
             message="platform_role=loging_admin is required to manage loging_service",
         )
-    identity["_dept_scope"] = None  # loging_admin видит всё
-    return identity
-
-
-async def require_admin_or_account_admin(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
-) -> dict:
-    """Требует `platform_role` ∈ {`loging_admin`, `account_admin`}.
-
-    Управление и просмотр правил аудита — admin-only. `loging_reader` /
-    `department_admin` / service-роли в loging_service сюда не пускаются,
-    даже на GET: rules видны и эффективны глобально, и leak их состояния
-    reader'у раскрывает топологию SUPPRESS/OVERRIDE-политик отдела (что
-    дропается, какая severity форсируется, какой match_target_id под
-    наблюдением). На GET /events read-доступ остаётся per `require_reader`
-    с dept-scope.
-    """
-    identity = await _fetch_identity(credentials, request)
-    role = identity.get("platform_role")
-    if role not in ("loging_admin", "account_admin"):
-        raise AppException(
-            http_status=403,
-            error_code="LOGING_ADMIN_REQUIRED",
-            message=(
-                "Rules access requires platform_role in (loging_admin, account_admin)"
-            ),
-        )
-    identity["_dept_scope"] = None  # admin-роли — без scope
     return identity
 
 
@@ -388,43 +344,33 @@ async def require_reader(
 ) -> dict:
     """Read-only доступ. Допустимые роли:
 
-      `loging_admin`    → без dept-scope (видит всё)
-      `account_admin`   → без dept-scope (видит всё)
-      `loging_reader`   → scoped к своему `department_id`
-      `department_admin`→ scoped к своему `department_id`
-      любой пользователь с reader/operator/admin service-ролью в
-      `loging_service` → scoped к своему отделу
+      `loging_admin`    — глобальный read (видит все события);
+      `loging_reader`   — глобальный read (видит все события).
+
+    `account_admin` и `department_admin` к чтению audit'а НЕ допускаются.
+    Если `dep_admin`'у нужен read журнала своего отдела — ему выдаётся
+    отдельная платформенная роль `loging_reader` через `auth_service`
+    `POST /users` (account_admin).
+
+    Dept-scope больше не применяется: обе допустимые роли — глобальные.
+    Эндпоинты, ранее форсившие `identity["_dept_scope"]`, теперь работают
+    cross-dept по умолчанию.
     """
     identity = await _fetch_identity(credentials, request)
     role = identity.get("platform_role")
-    loging_roles = identity.get("_loging_service_roles", [])
-
-    # Определяем доступ и scope.
-    if role in ("loging_admin", "account_admin"):
-        identity["_dept_scope"] = None
-        return identity
-
-    if role in _DEPT_SCOPED_ROLES or any(r in loging_roles for r in ("reader", "operator", "admin")):
-        # Scoped к собственному отделу.
-        dept_id = identity.get("department_id")
-        if not dept_id:
-            raise AppException(
-                http_status=403, error_code="NO_DEPARTMENT",
-                message="User has no department assigned — cannot scope log access",
-            )
-        identity["_dept_scope"] = dept_id
+    if role in ("loging_admin", "loging_reader"):
         return identity
 
     raise AppException(
         http_status=403,
         error_code="INSUFFICIENT_ROLE",
         message=(
-            "Access requires: platform_role in (loging_admin, loging_reader, "
-            "account_admin, department_admin) or reader/operator/admin role in loging_service"
+            "Access requires platform_role in (loging_admin, loging_reader). "
+            "account_admin and department_admin are not authorised to read the "
+            "loging_service audit trail; assign loging_reader explicitly if needed."
         ),
     )
 
 
 AdminIdentity = Annotated[dict, Depends(require_admin)]
 ReaderIdentity = Annotated[dict, Depends(require_reader)]
-RulesAdminIdentity = Annotated[dict, Depends(require_admin_or_account_admin)]

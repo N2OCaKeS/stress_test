@@ -10,8 +10,8 @@
 
 - Все эндпоинты под `/api/logging/v1`. В prod доступны только по HTTPS (TLS-guard middleware).
 - Service-to-service ingest (`POST /events`, `POST /services/{service}/events`) защищён `SERVICE_API_KEYS` map + обязательный `X-Service-Identity` заголовок.
-- Read-эндпоинты (`GET /events`, `GET /services`, `GET /services/{service}/events`, `GET /rules`, `GET /rules/{rule_id}`, `GET /retention`) идут по user JWT — introspect в `auth_service`.
-- Write на `/rules` доступен `platform_role ∈ {loging_admin, account_admin}`; write на `/retention` — только `loging_admin`.
+- Read-эндпоинты (`GET /events`, `GET /services`, `GET /services/{service}/events`, `GET /rules`, `GET /rules/{rule_id}`, `GET /retention`) идут по user JWT — introspect в `auth_service`. Допускаются ТОЛЬКО `loging_admin` / `loging_reader`. `account_admin` / `department_admin` к чтению audit'а не имеют доступа: если dep_admin'у нужен read его отдела, ему выдаётся отдельная `loging_reader`.
+- Write на `/rules` и `/retention` доступен только `loging_admin`. `account_admin` / `department_admin` к управлению loging_service не допускаются.
 - Все значимые действия публикуются как self-audit (`logging.*` actions, см. `AUDIT_EVENTS.md`).
 - Эндпоинты `/health`, `/ready`, `/token` исключены из OpenAPI (`include_in_schema=False`).
 
@@ -79,10 +79,7 @@ Write-эндпоинты `/rules` (POST/PATCH/DELETE) и `/retention` (PUT/DELET
 
 | `error_code` | HTTP | Источник |
 |---|---|---|
-| `INSUFFICIENT_ROLE` | 403 | `require_admin` / `require_reader`: роль не подходит |
-| `LOGING_ADMIN_REQUIRED` | 403 | rules-CRUD требует `loging_admin` или `account_admin` |
-| `NO_DEPARTMENT` | 403 | dept-scoped роль без `department_id` |
-| `DEPARTMENT_SCOPE_VIOLATION` | 403 | dept-scoped reader просит чужой `department_id` |
+| `INSUFFICIENT_ROLE` | 403 | `require_admin` (нужен `loging_admin`) / `require_reader` (нужен `loging_admin` или `loging_reader`): роль не подходит |
 
 ### Upstream (auth_service)
 
@@ -133,19 +130,19 @@ Write-эндпоинты `/rules` (POST/PATCH/DELETE) и `/retention` (PUT/DELET
 
 | Method | URL | Auth | Response | Возможные `error_code` |
 |---|---|---|---|---|
-| GET | `/events` | user-JWT (reader+) | `EventListResponse` (items+`has_more`+`limit`+`offset`+nullable `total`) | `MISSING_TOKEN`, `INVALID_TOKEN`, `USER_BANNED`, `INSUFFICIENT_ROLE`, `NO_DEPARTMENT`, `DEPARTMENT_SCOPE_VIOLATION`, `AUTH_SERVICE_NOT_CONFIGURED`, `AUTH_SERVICE_TIMEOUT`, `AUTH_SERVICE_UNREACHABLE`, `AUTH_SERVICE_ERROR`, `INTROSPECT_KEY_NOT_CONFIGURED`, `INTROSPECT_NOT_INITIALIZED`, `RATE_LIMIT_EXCEEDED` |
-| GET | `/services` | user-JWT (reader+) | `ServiceListResponse` (items+`has_more=False`+`limit=null`+`offset=null`) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
-| GET | `/services/{service}/events` | user-JWT (reader+) | `ServiceEventsResponse` (items+`has_more`+`limit`+`offset`) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
+| GET | `/events` | `loging_admin` / `loging_reader` | `EventListResponse` (items+`has_more`+`limit`+`offset`+nullable `total`) | `MISSING_TOKEN`, `INVALID_TOKEN`, `USER_BANNED`, `INSUFFICIENT_ROLE`, `AUTH_SERVICE_NOT_CONFIGURED`, `AUTH_SERVICE_TIMEOUT`, `AUTH_SERVICE_UNREACHABLE`, `AUTH_SERVICE_ERROR`, `INTROSPECT_KEY_NOT_CONFIGURED`, `INTROSPECT_NOT_INITIALIZED`, `RATE_LIMIT_EXCEEDED` |
+| GET | `/services` | `loging_admin` / `loging_reader` | `ServiceListResponse` (items+`has_more=False`+`limit=null`+`offset=null`) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
+| GET | `/services/{service}/events` | `loging_admin` / `loging_reader` | `ServiceEventsResponse` (items+`has_more`+`limit`+`offset`) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
 
 ### Rules
 
 | Method | URL | Auth | Response | Возможные `error_code` |
 |---|---|---|---|---|
-| GET | `/rules` | `loging_admin` / `account_admin` | `RuleListResponse` (items+`has_more`+`limit`+`offset`+`total`) | 401/403 auth, `LOGING_ADMIN_REQUIRED`, `RATE_LIMIT_EXCEEDED` |
-| GET | `/rules/{rule_id}` | `loging_admin` / `account_admin` | `RuleResponse` | + `RULE_NOT_FOUND`, `RATE_LIMIT_EXCEEDED` |
-| POST | `/rules` | `loging_admin` / `account_admin` | 201 `RuleResponse` | + `RULE_NAME_CONFLICT`, `EFFECT_SEVERITY_REQUIRED`, `EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`, `VALIDATION_ERROR`, `INTERNAL_ERROR` |
-| PATCH | `/rules/{rule_id}` | `loging_admin` / `account_admin` | `RuleResponse` | + `RULE_NOT_FOUND`, `RULE_NAME_CONFLICT`, `EFFECT_SEVERITY_REQUIRED`, `EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`, `INTERNAL_ERROR` |
-| DELETE | `/rules/{rule_id}` | `loging_admin` / `account_admin` | 204 | + `RULE_NOT_FOUND` |
+| GET | `/rules` | `loging_admin` | `RuleListResponse` (items+`has_more`+`limit`+`offset`+`total`) | 401/403 auth, `INSUFFICIENT_ROLE`, `RATE_LIMIT_EXCEEDED` |
+| GET | `/rules/{rule_id}` | `loging_admin` | `RuleResponse` | + `RULE_NOT_FOUND`, `RATE_LIMIT_EXCEEDED` |
+| POST | `/rules` | `loging_admin` | 201 `RuleResponse` | + `RULE_NAME_CONFLICT`, `EFFECT_SEVERITY_REQUIRED`, `EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`, `VALIDATION_ERROR`, `INTERNAL_ERROR` |
+| PATCH | `/rules/{rule_id}` | `loging_admin` | `RuleResponse` | + `RULE_NOT_FOUND`, `RULE_NAME_CONFLICT`, `EFFECT_SEVERITY_REQUIRED`, `EFFECT_SEVERITY_NOT_ALLOWED`, `UNKNOWN_MATCH_ACTION`, `INTERNAL_ERROR` |
+| DELETE | `/rules/{rule_id}` | `loging_admin` | 204 | + `RULE_NOT_FOUND` |
 
 ### Retention
 

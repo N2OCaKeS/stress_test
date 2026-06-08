@@ -69,7 +69,6 @@ from sqlalchemy.orm import sessionmaker, Session
 from src.db.base import Base
 from src.dependencies.auth import (
     require_admin,
-    require_admin_or_account_admin,
     require_reader,
 )
 from src.dependencies.db import get_db
@@ -82,9 +81,6 @@ ADMIN_IDENTITY = {
     "department_id": None,
     "allowed_services": [],
     "service_roles": {},
-    # loging_admin не привязан к отделу — видит все события
-    "_dept_scope": None,
-    "_loging_service_roles": [],
 }
 
 
@@ -283,12 +279,11 @@ def admin_client(db, monkeypatch):
     get_settings.cache_clear()
 
     app.dependency_overrides[get_db] = _db_override(db)
-    # Админ имеет admin, reader, и rules-admin доступы — переопределяем все
-    # три зависимости. `require_admin_or_account_admin` — отдельная dep'ка
-    # для rules (доступно только loging_admin / account_admin).
+    # `loging_admin` покрывает и rules-CRUD, и retention-CRUD, и read-канал —
+    # одна dep `require_admin` + одна `require_reader`. `account_admin`
+    # отдельная роль больше не использует loging_service.
     app.dependency_overrides[require_admin] = lambda: ADMIN_IDENTITY
     app.dependency_overrides[require_reader] = lambda: ADMIN_IDENTITY
-    app.dependency_overrides[require_admin_or_account_admin] = lambda: ADMIN_IDENTITY
 
     with TestClient(app) as c:
         yield c

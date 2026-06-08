@@ -537,53 +537,38 @@ class TestRuleMatchActionValidation:
         assert se_repo.action_is_registered(db, "user.unknown") is False
 
 
-# ── GET /services — scope-leak fix ──────────────────────────────────────────
+# ── GET /services — global cross-dept aggregate ─────────────────────────────
 
 
-class TestListServicesDeptScope:
-    """A dept-scoped reader (loging_reader, department_admin, or a user with
-    ``reader/operator/admin`` role in ``loging_service``) must only see
-    services where their own department actually wrote audit events.
+class TestListServicesAccess:
+    """`GET /services` отдаёт глобальный GROUP BY service агрегат по
+    ``audit_events`` без dept-фильтра. Раньше `loging_reader` /
+    `department_admin` / service-role был dept-scoped (видел только агрегат
+    своего dep'а), но owner-decision: к чтению audit'а допускаются ТОЛЬКО
+    `loging_admin` / `loging_reader`, обе — глобальные. `account_admin` /
+    `department_admin` отбиваются `INSUFFICIENT_ROLE` в `require_reader`.
 
-    Pre-fix: ``GET /services`` returned the global ``GROUP BY service`` over
-    ``audit_events`` with **no** dept filter. A reader scoped to ``dep_a``
-    could read ``service=server_service, event_count=12345`` where the 12345
-    events actually came from ``dep_b`` — cross-department metadata leak.
-
-    The fix passes ``_dept_scope`` down into ``events_repo.list_services``;
-    when set, the aggregate ``COUNT/MAX(timestamp)`` is computed only over
-    events where ``department_id == _dept_scope``. Services that never
-    emitted an event for the reader's department disappear from the list.
+    Тесты под прежний scope-фильтр на endpoint'е сняты — фильтр в
+    `events_repo.list_services` всё ещё доступен через API репозитория
+    (см. `test_repo_list_services_with_dept_scope_unit`), но endpoint его
+    больше не использует.
     """
 
-    def test_dept_reader_sees_only_own_department_services(
+    def test_loging_reader_sees_all_services_cross_dept(
         self, client, auth_headers
     ):
-        """loging_reader in ``dep_a`` ingests one event into auth_service from
-        ``dep_a`` and two events into config_service from ``dep_b``. The
-        scoped reader sees only ``auth_service`` (1 event); ``config_service``
-        is invisible because no ``dep_a`` event ever landed in it.
-        """
-        # Ingest as if from auth_service / dep_a — one event.
-        r = client.post(
-            EVENTS_URL,
-            headers=auth_headers | {"X-Service-Identity": "auth_service"},
-            json=make_event(service="auth_service", department_id="dep_a"),
-        )
-        assert r.status_code == 201
-        # Ingest as if from config_service / dep_b — two events (no dep_a here).
-        for _ in range(2):
-            r = client.post(
-                EVENTS_URL,
-                headers=auth_headers | {"X-Service-Identity": "config_service"},
-                json=make_event(service="config_service", department_id="dep_b"),
-            )
-            assert r.status_code == 201
+        """`loging_reader` теперь global-read: видит сервисы и события всех
+        отделов в агрегате, никакого dept-scope нет."""
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "auth_service"},
+                    json=make_event(service="auth_service", department_id="dep_a"))
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "config_service"},
+                    json=make_event(service="config_service", department_id="dep_b"))
 
-        # Reader scoped to dep_a calls GET /services.
         p = _mock_identity({
-            "user_id": "u1",
-            "username": "lr_a",
+            "user_id": "u_lr",
+            "username": "lr",
             "platform_role": "loging_reader",
             "department_id": "dep_a",
         })
@@ -593,127 +578,13 @@ class TestListServicesDeptScope:
             p.stop()
         assert r.status_code == 200
         body = r.json()
+        assert body["total"] == 2
         services = {s["service"] for s in body["items"]}
-        # Only auth_service is visible — config_service has no dep_a events.
-        assert services == {"auth_service"}
-        # event_count reflects only dep_a's events (== 1, not 1+2).
-        assert body["items"][0]["event_count"] == 1
+        assert services == {"auth_service", "config_service"}
 
-    def test_dept_admin_sees_per_dept_event_count(self, client, auth_headers):
-        """Both ``dep_a`` and ``dep_b`` write into auth_service; each scoped
-        reader sees only the count of their own department's events, not
-        the cross-department total.
-        """
-        # 3 events from dep_a, 7 from dep_b — all in auth_service.
-        for _ in range(3):
-            client.post(EVENTS_URL, headers=auth_headers,
-                        json=make_event(service="auth_service", department_id="dep_a"))
-        for _ in range(7):
-            client.post(EVENTS_URL, headers=auth_headers,
-                        json=make_event(service="auth_service", department_id="dep_b"))
-
-        # department_admin of dep_a → event_count == 3 (NOT 10).
-        p = _mock_identity({
-            "user_id": "u_a",
-            "username": "da_a",
-            "platform_role": "department_admin",
-            "department_id": "dep_a",
-        })
-        try:
-            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
-        finally:
-            p.stop()
-        assert r.status_code == 200
-        body = r.json()
-        assert body["total"] == 1
-        assert body["items"][0]["service"] == "auth_service"
-        assert body["items"][0]["event_count"] == 3, (
-            "dep_a reader must not see dep_b's 7 events in the aggregate"
-        )
-
-        # department_admin of dep_b → event_count == 7 (NOT 10).
-        p = _mock_identity({
-            "user_id": "u_b",
-            "username": "da_b",
-            "platform_role": "department_admin",
-            "department_id": "dep_b",
-        })
-        try:
-            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
-        finally:
-            p.stop()
-        assert r.status_code == 200
-        body = r.json()
-        assert body["total"] == 1
-        assert body["items"][0]["event_count"] == 7
-
-    def test_service_role_reader_is_dept_scoped(self, client, auth_headers):
-        """User with ``service_roles={loging_service: [reader]}`` is also
-        dept-scoped (mirrors require_reader dept-scope logic for
-        non-platform_role users).
-        """
-        client.post(EVENTS_URL, headers=auth_headers,
-                    json=make_event(service="auth_service", department_id="dep_a"))
-        client.post(EVENTS_URL, headers=auth_headers,
-                    json=make_event(service="server_service", department_id="dep_b"))
-
-        p = _mock_identity({
-            "user_id": "u_sr",
-            "username": "sr_reader",
-            "platform_role": None,
-            "department_id": "dep_a",
-            "service_roles": {"loging_service": ["reader"]},
-        })
-        try:
-            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
-        finally:
-            p.stop()
-        assert r.status_code == 200
-        services = {s["service"] for s in r.json()["items"]}
-        # Only auth_service (dep_a) — server_service (dep_b) is hidden.
-        assert services == {"auth_service"}
-
-    def test_account_admin_sees_all_services_unscoped_regression(
-        self, client, auth_headers
-    ):
-        """Regression: account_admin (``_dept_scope=None``) keeps seeing the
-        global aggregate across all departments — the fix must NOT break
-        the unscoped path.
-        """
-        client.post(EVENTS_URL,
-                    headers=auth_headers | {"X-Service-Identity": "auth_service"},
-                    json=make_event(service="auth_service", department_id="dep_a"))
-        client.post(EVENTS_URL,
-                    headers=auth_headers | {"X-Service-Identity": "config_service"},
-                    json=make_event(service="config_service", department_id="dep_b"))
-        client.post(EVENTS_URL,
-                    headers=auth_headers | {"X-Service-Identity": "server_service"},
-                    json=make_event(service="server_service", department_id="dep_c"))
-
-        p = _mock_identity({
-            "user_id": "u_aa",
-            "username": "acc_admin",
-            "platform_role": "account_admin",
-            "department_id": None,
-        })
-        try:
-            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
-        finally:
-            p.stop()
-        assert r.status_code == 200
-        body = r.json()
-        assert body["total"] == 3
-        services = {s["service"] for s in body["items"]}
-        assert services == {"auth_service", "config_service", "server_service"}
-
-    def test_loging_admin_sees_all_services_unscoped_regression(
-        self, client, auth_headers
-    ):
-        """Regression: loging_admin (``_dept_scope=None``) keeps seeing the
-        global aggregate. ``admin_client`` fixture also covers this through
-        the dependency-override path, but here we exercise the real
-        ``require_reader`` to confirm symmetry.
-        """
+    def test_loging_admin_sees_all_services(self, client, auth_headers):
+        """`loging_admin` — глобальный read, видит всё (smoke против регрессии
+        на dept-фильтр)."""
         client.post(EVENTS_URL,
                     headers=auth_headers | {"X-Service-Identity": "auth_service"},
                     json=make_event(service="auth_service", department_id="dep_a"))
@@ -737,31 +608,55 @@ class TestListServicesDeptScope:
         services = {s["service"] for s in body["items"]}
         assert services == {"auth_service", "config_service"}
 
-    def test_dept_reader_sees_empty_list_when_no_own_dept_events(
-        self, client, auth_headers
-    ):
-        """No event ever landed in dep_a → scoped reader gets an empty list,
-        not a leak of dep_b's services.
-        """
-        client.post(EVENTS_URL, headers=auth_headers,
-                    json=make_event(service="auth_service", department_id="dep_b"))
-        client.post(EVENTS_URL, headers=auth_headers,
-                    json=make_event(service="server_service", department_id="dep_b"))
-
+    def test_account_admin_403(self, client, auth_headers):
+        """`account_admin` к чтению реестра не допускается."""
+        client.post(EVENTS_URL,
+                    headers=auth_headers | {"X-Service-Identity": "auth_service"},
+                    json=make_event(service="auth_service", department_id="dep_a"))
         p = _mock_identity({
-            "user_id": "u_dr",
-            "username": "dr_a",
-            "platform_role": "loging_reader",
+            "user_id": "u_aa",
+            "username": "acc_admin",
+            "platform_role": "account_admin",
+            "department_id": None,
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+
+    def test_department_admin_403(self, client, auth_headers):
+        """`department_admin` к чтению реестра не допускается."""
+        p = _mock_identity({
+            "user_id": "u_da",
+            "username": "dept_admin",
+            "platform_role": "department_admin",
             "department_id": "dep_a",
         })
         try:
             r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
         finally:
             p.stop()
-        assert r.status_code == 200
-        body = r.json()
-        assert body["items"] == []
-        assert body["total"] == 0
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+
+    def test_service_role_in_loging_service_403(self, client, auth_headers):
+        """Service-роль в `loging_service` больше не пускает к чтению — нужна
+        платформенная `loging_reader`."""
+        p = _mock_identity({
+            "user_id": "u_sr",
+            "username": "sr_reader",
+            "platform_role": None,
+            "department_id": "dep_a",
+            "service_roles": {"loging_service": ["reader"]},
+        })
+        try:
+            r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
     def test_repo_list_services_with_dept_scope_unit(self, db):
         """Pin the repository contract directly: ``department_id`` argument

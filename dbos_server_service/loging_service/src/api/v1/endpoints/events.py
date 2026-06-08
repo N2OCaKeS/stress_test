@@ -1,9 +1,10 @@
 """Эндпоинты приёма (ingest) и чтения событий аудита.
 
 POST /events — пишут другие сервисы (SERVICE_API_KEY).
-GET  /events — читают `loging_admin | loging_reader | department_admin | account_admin`;
-              `department_admin` и `loging_reader` автоматически ограничены
-              своим отделом.
+GET  /events — читают `loging_admin` / `loging_reader`. Обе роли видят журнал
+              cross-dept целиком. `account_admin` / `department_admin` к
+              чтению аудита НЕ допускаются (owner-decision): если dep_admin'у
+              нужен read его отдела — выдать ему отдельную `loging_reader`.
 """
 
 import unicodedata
@@ -254,20 +255,16 @@ def create_event(
     description=(
         "Постранично отдаёт записанные события аудита. Сортировка по "
         "`timestamp DESC` (свежие первыми).\n\n"
-        "**Доступ:**\n"
-        "- `loging_admin` и `account_admin` — видят все события;\n"
-        "- `loging_reader`, `department_admin` и пользователи с service-ролью "
-        "`reader|operator|admin` в `loging_service` — автоматически ограничены "
-        "своим `department_id` (`_dept_scope`).\n\n"
+        "**Доступ:** `loging_admin` или `loging_reader` — обе роли видят "
+        "журнал cross-dept. `account_admin` / `department_admin` к чтению "
+        "audit'а не допускаются (если dep_admin'у нужно читать журнал — "
+        "выдай ему отдельную `loging_reader`).\n\n"
         "**Фильтры** (любая комбинация, all-AND): `department_id`, `service`, "
         "`severity`, `action`, `from_time`, `to_time`, `limit`, `offset`.\n\n"
         "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
         "**Возможные ошибки:**\n"
         "- 401 `INVALID_TOKEN` / `MISSING_TOKEN` / `USER_BANNED` — нет или неверный JWT.\n"
         "- 403 `INSUFFICIENT_ROLE` — роль не в allow-list.\n"
-        "- 403 `NO_DEPARTMENT` — dept-scoped роль без `department_id`.\n"
-        "- 403 `DEPARTMENT_SCOPE_VIOLATION` — попытка dept-scoped пользователя "
-        "запросить чужой `department_id`.\n"
         "- 429 `RATE_LIMIT_EXCEEDED` — превышен per-IP лимит.\n"
         "- 503 `AUTH_SERVICE_NOT_CONFIGURED` / `AUTH_SERVICE_TIMEOUT` / "
         "`AUTH_SERVICE_UNREACHABLE` / `AUTH_SERVICE_ERROR` / "
@@ -325,16 +322,10 @@ def list_events(
         ),
     ),
 ) -> EventListResponse:
-    # Dept-scope: если пользователь ограничен отделом — форсим его scope.
-    dept_scope = identity.get("_dept_scope")
-    if dept_scope:
-        if department_id and department_id != dept_scope:
-            raise AuthorizationError(
-                error_code="DEPARTMENT_SCOPE_VIOLATION",
-                message=f"Access restricted to department '{dept_scope}'",
-                details={"requested": department_id, "allowed": dept_scope},
-            )
-        department_id = dept_scope
+    # Dept-scope больше не применяется: `require_reader` пропускает только
+    # `loging_admin` / `loging_reader`, обе роли — глобальные. Фильтр
+    # `department_id` — обычный пользовательский query-параметр без
+    # принудительного override'а.
 
     # Ingest нормализует service/action через `normalize_identifier`
     # (NFKC + invisibles + homoglyph fold + lower), а query до сих пор гнал

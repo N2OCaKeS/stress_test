@@ -294,7 +294,6 @@ class TestAdminAudit:
         """Если у admin'а есть department_id — он попадает в audit-event."""
         from src.dependencies.auth import (
             require_admin,
-            require_admin_or_account_admin,
             require_reader,
         )
         from src.main import app
@@ -308,8 +307,6 @@ class TestAdminAudit:
             "department_id": "dep_finance",
             "allowed_services": [],
             "service_roles": {},
-            "_dept_scope": "dep_finance",
-            "_loging_service_roles": [],
         }
         monkeypatch.setenv(
             "SERVICE_API_KEYS",
@@ -327,7 +324,6 @@ class TestAdminAudit:
         app.dependency_overrides[get_db] = _override
         app.dependency_overrides[require_admin] = lambda: scoped_identity
         app.dependency_overrides[require_reader] = lambda: scoped_identity
-        app.dependency_overrides[require_admin_or_account_admin] = lambda: scoped_identity
         try:
             with TestClient(app) as c:
                 c.post(RULES_URL, json=make_rule(name="scoped-audit-rule"))

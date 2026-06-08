@@ -1,8 +1,9 @@
 """Coverage gaps loging_service — follow-up.
 
 Areas:
-  1. GET /events DEPARTMENT_SCOPE_VIOLATION: dept-scoped reader passes a
-     department_id query param that differs from their own scope → 403.
+  1. GET /events cross-dept access: `loging_reader` глобален и видит журнал
+     любого отдела по `department_id` query param (никакого dept-scope
+     enforcement'а — owner-decision: `loging_reader` теперь global-read).
 
   2. update_rule IntegrityError → 500 path: non-unique IntegrityError during
      PATCH (monkeypatched) where the rule_repo.update raises with orig.pgcode
@@ -59,21 +60,20 @@ class _OkSession:
         pass
 
 
-# ── 1. DEPARTMENT_SCOPE_VIOLATION ─────────────────────────────────────────────
+# ── 1. loging_reader — global read (dept-scope снят) ──────────────────────────
 
 
-class TestDepartmentScopeViolation:
-    """GET /events with a dept-scoped identity passes department_id that
-    differs from the caller's own scope → 403 DEPARTMENT_SCOPE_VIOLATION.
-
-    The branch lives at events.py list_events: when dept_scope is set and
-    the query param department_id != dept_scope, an AuthorizationError is raised.
+class TestLogingReaderCrossDept:
+    """`loging_reader` теперь global-read: запрос любого `department_id`
+    проходит как обычный фильтр, никакого 403 DEPARTMENT_SCOPE_VIOLATION
+    больше нет. `account_admin` / `department_admin` отдельно отбиваются
+    `INSUFFICIENT_ROLE` в `require_reader`.
     """
 
-    def test_dept_scoped_reader_different_dept_id_returns_403(
-        self, client, mock_introspect
+    def test_loging_reader_can_query_other_department(
+        self, client, mock_introspect, db
     ):
-        """loging_reader scoped to dept_A requests dept_B → 403."""
+        """loging_reader с department_id=dept_A может запросить dept_B → 200."""
         identity = {
             "active": True,
             "sub": "usr_reader",
@@ -91,45 +91,19 @@ class TestDepartmentScopeViolation:
                 params={"department_id": "dept_B"},
                 headers={"Authorization": "Bearer test-token"},
             )
-        assert r.status_code == 403, r.text
-        body = r.json()
-        assert body["error_code"] == "DEPARTMENT_SCOPE_VIOLATION"
-        assert "dept_A" in body["details"].get("allowed", "") or "dept_B" in body["details"].get("requested", "")
+        assert r.status_code == 200, r.text
 
-    def test_dept_scoped_reader_own_dept_id_passes(
+    def test_loging_reader_without_dept_id_passes(
         self, client, mock_introspect, db
     ):
-        """loging_reader scoped to dept_A requests their own dept_A → 200."""
+        """loging_reader без department_id (platform-роль создаётся без
+        отдела) видит весь журнал cross-dept → 200."""
         identity = {
             "active": True,
             "sub": "usr_reader2",
             "username": "reader2",
             "platform_role": "loging_reader",
-            "department_id": "dept_A",
-            "subject_type": "user",
-            "allowed_services": [],
-            "service_roles": {},
-            "is_banned": False,
-        }
-        with mock_introspect(json_body=identity):
-            r = client.get(
-                EVENTS_URL,
-                params={"department_id": "dept_A"},
-                headers={"Authorization": "Bearer test-token"},
-            )
-        assert r.status_code == 200, r.text
-
-    def test_dept_scoped_reader_no_dept_id_param_passes(
-        self, client, mock_introspect, db
-    ):
-        """loging_reader scoped to dept_A without department_id param → 200
-        (scope is silently forced to dept_A by the endpoint)."""
-        identity = {
-            "active": True,
-            "sub": "usr_reader3",
-            "username": "reader3",
-            "platform_role": "loging_reader",
-            "department_id": "dept_A",
+            "department_id": None,
             "subject_type": "user",
             "allowed_services": [],
             "service_roles": {},

@@ -34,10 +34,9 @@ class TestRequireAdmin:
     def test_wrong_platform_role_returns_403(self, client, mock_introspect):
         """`loging_reader` не управляет правилами (rules — admin-only).
 
-        POST /rules теперь принимает `loging_admin` ИЛИ `account_admin`; reader-
-        роли возвращают 403 LOGING_ADMIN_REQUIRED. Раньше тест проверял
-        `account_admin` → 403, но owner-decision сменил правило: account_admin
-        получил доступ к управлению rules вместе с loging_admin.
+        POST /rules теперь принимает ТОЛЬКО `loging_admin`. `account_admin`
+        к управлению rules больше не допускается — owner-decision: account_admin
+        и dep_admin к loging_service не имеют доступа вообще.
         """
         with mock_introspect(json_body={
             "active": True, "subject_type": "user", "sub": "usr_1",
@@ -50,7 +49,7 @@ class TestRequireAdmin:
                 json={"name": "x", "effect": "SUPPRESS", "priority": 100},
             )
         assert r.status_code == 403
-        assert r.json()["error_code"] == "LOGING_ADMIN_REQUIRED"
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
     def test_loging_admin_role_grants_access(self, admin_client):
         """admin_client использует dependency override — всегда 200."""

@@ -394,7 +394,7 @@ class SshClient:
           `last_error`). Здесь дополнительно вырезаем сам `login:pwd`
           payload из stderr на случай, если chpasswd его echo'нул.
         """
-        if not _LOGIN_RE.match(login):
+        if not _LOGIN_RE.fullmatch(login):
             raise SshError(
                 error_code="SSH_INVALID_LOGIN",
                 host=self.host,
@@ -434,7 +434,7 @@ class SshClient:
         rc=2 если нет. Используется для idempotency: provision не падает на
         уже-существующем, deprovision — на отсутствующем.
         """
-        if not _LOGIN_RE.match(login):
+        if not _LOGIN_RE.fullmatch(login):
             raise SshError(
                 error_code="SSH_INVALID_LOGIN",
                 host=self.host,
@@ -914,7 +914,7 @@ class SshClient:
         `_validate_login` мгновенно открывает command-injection. Если ослабить
         `_LOGIN_RE`, потребуется переход на `shlex.quote` во всех call-site'ах.
         """
-        if not _LOGIN_RE.match(login):
+        if not _LOGIN_RE.fullmatch(login):
             raise SshError(
                 error_code="SSH_INVALID_LOGIN",
                 host=self.host,
@@ -928,7 +928,7 @@ class SshClient:
         Принимаем только безопасный набор (буквы/цифры/`/._-`), без пробелов
         и shell-метасимволов — это аргумент команды, не stdin.
         """
-        if not _PATH_RE.match(value):
+        if not _PATH_RE.fullmatch(value):
             raise SshError(
                 error_code="SSH_INVALID_ARG",
                 host=self.host,
@@ -947,7 +947,7 @@ class SshClient:
         """
         result: list[str] = []
         for g in groups or []:
-            if not _GROUP_RE.match(g):
+            if not _GROUP_RE.fullmatch(g):
                 raise SshError(
                     error_code="SSH_INVALID_ARG",
                     host=self.host,

@@ -110,7 +110,14 @@ async def _check_personal(
     cred: Credential,
     action: Action,
 ) -> tuple[bool, str]:
-    """personal: owner — всегда allowed; иначе RoleACL в его dep'е."""
+    """personal: owner — всегда allowed; иначе RoleACL в dep'е ВЛАДЕЛЬЦА.
+
+    Cross-dep leak: раньше ACL искался в dep'е actor'а, что позволяло Bob'у из
+    dep_B читать personal Alice'ы из dep_A, если кто-то завёл `RoleACL(cred,
+    dept_id=dep_B)` — теоретически такой ACL не должен существовать, но
+    role_acl_service до фикса не проверял. Теперь требуем actor.dept ==
+    cred.owner_user_dept_id ДО фильтра по dept_id.
+    """
     if cred.owner_user_id == identity.user_id and identity.actor_type == "user":
         return True, "owner_match"
 
@@ -130,10 +137,17 @@ async def _check_personal(
     if action == "grant_dept":
         return False, "scope_mismatch"
 
-    # Read/reveal — через RoleACL в dep'е actor'а. У personal cred'ы ACL
-    # всегда выдают «в своём dep'е владельца» — actor должен быть в том же dep'е.
     if identity.department_id is None:
         return False, "scope_mismatch"
+
+    # ACL живёт в dep'е владельца; actor должен быть в том же dep'е. Если
+    # `owner_user_dept_id` пуст (старые записи до миграции c3b5e7d2a1f8),
+    # дозволяем старый путь как best-effort — миграция не backfill'ила
+    # значения. Backfill — отдельной задачей.
+    owner_dept = cred.owner_user_dept_id
+    if owner_dept is not None and owner_dept != identity.department_id:
+        return False, "scope_mismatch"
+
     acls = await role_acls_repo.get_for_cred_dept(
         db, cred.id, identity.department_id
     )
@@ -218,8 +232,17 @@ async def check_access(
     identity: Identity,
     cred: Credential,
     action: Action,
+    *,
+    status_override: str | None = None,
 ) -> tuple[bool, str]:
-    """Главный entry-point. См. модуль-docstring."""
+    """Главный entry-point. См. модуль-docstring.
+
+    `status_override` — для гипотетического check'а вида «а если бы cred была
+    active»: caller передаёт `"active"` без мутации ORM-объекта. Не используется
+    в обычном flow; задействован только в credential_service для решения
+    «410 vs 404» на blocked-кред'ах.
+    """
+    effective_status = status_override if status_override is not None else cred.status
     # 0. Guest-only: видит только visible_to_dept-cred'ы своего dep'а в listing.
     # Любой другой action (read/reveal/write/delete/...) — мгновенный False.
     if _is_guest_only(identity):
@@ -234,7 +257,7 @@ async def check_access(
         return False, "guest_role_no_access"
 
     # 1. Blocked status — почти всё запрещено.
-    if cred.status == "blocked":
+    if effective_status == "blocked":
         # service_admin может читать заблокированные креды для аудита.
         if action == "read" and _is_service_admin(identity):
             return True, "admin_override"

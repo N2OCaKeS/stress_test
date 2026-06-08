@@ -275,6 +275,12 @@ def _emit_query_timeout_audit(
             "query_timeout": bool(timeout_state.get("query_timeout")),
             "filters": filters,
         }
+        # severity не задаём явно — `record_admin_action` подтягивает её из
+        # `_DEFAULT_SEVERITY[("logging.events_queried", "warning")]`.
+        # Хардкод "WARNING" расходился бы с таблицей, если её когда-нибудь
+        # поднимут до CRITICAL (массовый timeout-флуд = DoS-сигнал) — событие
+        # всё равно уезжало бы WARNING'ом из-за explicit override. Зеркалит
+        # фикс в `_emit_idempotency_conflict_audit`.
         warning_payload = EventCreate(
             timestamp=datetime.now(timezone.utc),
             service="loging_service",
@@ -285,7 +291,7 @@ def _emit_query_timeout_audit(
             department_id=(identity or {}).get("department_id"),
             status="warning",
             allowed=True,
-            severity="WARNING",
+            severity=None,
             details=details,
         )
         record_admin_action(db, warning_payload, commit=True)

@@ -19,6 +19,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.router import api_router
@@ -412,6 +413,13 @@ def create_application() -> FastAPI:
     # (single source) — middleware на success дублировал бы запись.
     # Ошибки (401/403/4xx/5xx) всё равно эмитятся как `http.*` ниже.
     _RETENTION_PATH = "/api/logging/v1/retention"
+    # POST/PATCH/DELETE на `/rules*` эндпоинт сам эмитит `logging_rule.*`
+    # через `rules.py::_audit`. Без этого скипа middleware на success
+    # дополнительно писал бы `logging.rules_write`, и SOC видел бы дубль
+    # на каждое admin-action (один CRITICAL `logging_rule.update` + один
+    # WARNING `logging.rules_write`). 4xx/5xx по-прежнему уходят через
+    # `http.*` ветку ниже — auth-фейлы на admin-эндпоинте нельзя скипать.
+    _RULES_PATH_PREFIX = "/api/logging/v1/rules"
 
     @app.middleware("http")
     async def audit_access(request: Request, call_next):
@@ -444,6 +452,18 @@ def create_application() -> FastAPI:
         ):
             return response
 
+        # Successful rule CRUD покрывается endpoint-уровневым `logging_rule.*`
+        # self-audit'ом (`rules.py::_audit`). Скипаем middleware-эмиссию,
+        # чтобы не было дубля `logging.rules_write` + `logging_rule.<verb>`
+        # на одно admin-action. 4xx/5xx идут через `http.*` (см. ниже) —
+        # auth-фейлы на admin-эндпоинте остаются видимыми.
+        if (
+            request.method in ("POST", "PATCH", "DELETE")
+            and path.startswith(_RULES_PATH_PREFIX)
+            and status_code < 400
+        ):
+            return response
+
         identity = getattr(request.state, "auth_identity", None)
         actor_id = identity.get("user_id") if identity else None
         username = identity.get("username") if identity else None
@@ -465,6 +485,19 @@ def create_application() -> FastAPI:
             action, emit_status, allowed = "http.client_error", "failure", False
         else:
             action, emit_status, allowed = _action_for_path(request.method, path), "success", True
+
+        # IP клиента кладём для auth-провалов (401/403) и rate-limit отбивов
+        # (429), но не для штатных success — IP на каждое чтение раздул бы
+        # audit_events и не даёт сигнала ни SOC, ни SIEM. На 401/403/429 IP
+        # критичен: одно failed-attempt в потоке успехов от одного источника —
+        # перебор `SERVICE_API_KEY` или flood. `get_remote_address` возвращает
+        # `request.client.host` (без честного парсинга X-Forwarded-For — это
+        # на стороне reverse-proxy), но как минимум разделяет «локальный
+        # docker-compose сосед» от внешнего сканера.
+        if status_code in (401, 403, 429):
+            client_ip = get_remote_address(request)
+            if client_ip:
+                details["client_ip"] = client_ip
 
         envelope = make_envelope(
             action=action,
@@ -1138,8 +1171,20 @@ def _retention_loop_supervised() -> None:
             )
         try:
             time.sleep(backoff_seconds)
-        except Exception:
-            return
+        except Exception as sleep_exc:
+            # `time.sleep` редко падает (KeyboardInterrupt / signal-handler с
+            # raise). Раньше тут стоял `return` — daemon-thread мгновенно
+            # умирал, retention sweep останавливался, `/ready` ловил это
+            # только через TTL. Логируем и крутим цикл дальше: следующий
+            # `_retention_loop()` сразу полезет в sleep_until_boundary
+            # и переждёт минуту. Если sleep падает каждый раз (broken signal
+            # handler), цикл будет писать CRITICAL в лог — диагностируемо.
+            logger.critical(
+                "retention loop backoff sleep failed: %s — continuing",
+                sleep_exc,
+                exc_info=True,
+            )
+            continue
 
 
 def _audit_drain_task_done_callback(task: "asyncio.Task") -> None:

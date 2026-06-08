@@ -137,16 +137,20 @@ class TestRetentionChunkSizeOne:
 # ── 2. events.insert legacy row без hash ──────────────────────────────────────
 
 class TestInsertLegacyRowWithoutPayloadHash:
-    """Backward-compat ветка `existing.idempotency_payload_hash is None`.
+    """Fail-closed ветка `existing.idempotency_payload_hash is None`.
 
     Сценарий: до миграции `j0e1f2a3b4c5` колонки `idempotency_payload_hash`
-    не было. Старые row'ы, оставшиеся после апгрейда, имеют NULL hash.
-    Повторный insert с тем же `(service, idempotency_key)` должен вернуть
-    этот legacy row без 409, не сверяя hash.
+    не было. Миграция `m3n4o5p6q7r8` физически удаляет такие row'и старше
+    30 дней; для row'ей моложе 30 дней — поведение fail-closed: на replay
+    с NULL-hash legacy row репозиторий поднимает 409 IDEMPOTENCY_KEY_CONFLICT
+    с reason="legacy_null_hash" (раньше silently возвращал existing row,
+    открывая poisoning-window).
     """
 
-    def test_legacy_row_without_hash_returns_existing(self, db):
-        # Имитируем legacy row через прямой ORM-add без hash.
+    def test_legacy_null_hash_replay_raises_conflict(self, db):
+        from src.core.exceptions import ConflictError
+        import pytest
+
         legacy = AuditEvent(
             id=audit_event_id(),
             timestamp=datetime.now(timezone.utc),
@@ -158,62 +162,20 @@ class TestInsertLegacyRowWithoutPayloadHash:
             severity="INFO",
             details={},
             idempotency_key="legacy-key-1",
-            idempotency_payload_hash=None,  # legacy — до миграции
+            idempotency_payload_hash=None,  # legacy — до миграции j0e1f2a3b4c5
         )
         db.add(legacy)
         db.commit()
-        legacy_id = legacy.id
 
-        # Повторный insert с тем же ключом, но другим payload'ом (другой actor,
-        # другой action) — нормально это вернуло бы 409 IDEMPOTENCY_KEY_CONFLICT,
-        # но из-за NULL hash должно вернуться existing.
         replay_payload = _make_event_payload(
             service="auth_service",
             action="user.logout",
             idempotency_key="legacy-key-1",
         )
-        # actor_id отличается от legacy
-        replay = events_repo.insert(db, replay_payload)
-        assert replay.id == legacy_id
-        # Hash так и остался None — мы не апдейтили legacy row.
-        assert replay.idempotency_payload_hash is None
-
-    def test_legacy_row_then_third_replay_still_returns_existing(self, db):
-        """Дважды повторённый replay на legacy row остаётся идемпотентным."""
-        legacy = AuditEvent(
-            id=audit_event_id(),
-            timestamp=datetime.now(timezone.utc),
-            service="server_service",
-            action="server.create",
-            actor_type="service",
-            status="success",
-            allowed=True,
-            severity="INFO",
-            details={},
-            idempotency_key="legacy-key-2",
-            idempotency_payload_hash=None,
-        )
-        db.add(legacy)
-        db.commit()
-
-        first = events_repo.insert(
-            db,
-            _make_event_payload(
-                service="server_service",
-                action="server.delete",
-                idempotency_key="legacy-key-2",
-            ),
-        )
-        second = events_repo.insert(
-            db,
-            _make_event_payload(
-                service="server_service",
-                action="server.update",
-                idempotency_key="legacy-key-2",
-            ),
-        )
-        assert first.id == legacy.id
-        assert second.id == legacy.id
+        with pytest.raises(ConflictError) as exc:
+            events_repo.insert(db, replay_payload)
+        assert exc.value.error_code == "IDEMPOTENCY_KEY_CONFLICT"
+        assert exc.value.details.get("reason") == "legacy_null_hash"
 
 
 # ── 3. rules.get_all с timeout=0 ──────────────────────────────────────────────

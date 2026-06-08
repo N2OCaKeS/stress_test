@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 
@@ -56,6 +57,26 @@ from src.services.audit_publisher_breaker import CircuitBreakerOpenError
 from src.utils.redaction import redact_error_message
 
 logger = logging.getLogger(__name__)
+
+
+# Set row.id'шек, для которых HTTP-emit к loging_service уже вернул 2xx и
+# `row.published_at` проставлен. Используется как защёлка: если `_publish_one`
+# попадает на row, чей id здесь — выходим до emit'а с `was_published=False`
+# (физически событие уже доставлено, повторно слать = дубликат). Контекст
+# держится per-task через contextvar; продакшен-loop живёт в одном task'е,
+# inline-flush из `_runner` — в другом, дедуп держится в своём.
+#
+# Защита от редкого, но болезненного бага: `record_success()` после
+# `row.published_at = now` бросает (Redis-flap), внешний caller делает
+# rollback и `published_at` исчезает из БД — row уходит в следующий SELECT
+# и шлётся повторно. Сам `_publish_one` ловит `Exception` из record_success
+# (try/except ниже), но `BaseException` (CancelledError при shutdown
+# через таймаут) пройдёт мимо и сделает то же самое. Защёлка инвариантна
+# к типу exception'а.
+_published_row_ids: "ContextVar[set[int] | None]" = ContextVar(
+    "_published_row_ids", default=None,
+)
+
 
 class PublishResult(NamedTuple):
     """Исход одной попытки `_publish_one`.
@@ -350,6 +371,17 @@ async def _publish_one(
     ближайший poll-тик и публикатор бы крутил `check()` на той же строке.
     Caller обязан commit'нуть как и в остальных ветках.
     """
+    # In-process защёлка: если предыдущий проход физически отправил
+    # эту row в loging_service (2xx), а потом упал на book-keeping'е до
+    # commit'а внешней транзакции — row снова попадёт в SELECT, но повторно
+    # слать нельзя. Считаем такую попытку «закрытой» без publish'а.
+    sent_ids = _published_row_ids.get()
+    if sent_ids is not None and row.id in sent_ids:
+        row.published_at = datetime.now(timezone.utc)
+        row.next_retry_at = None
+        await session.flush()
+        return PublishResult(closed=True, audit_emit_error=False, was_published=False)
+
     payload = dict(row.payload)
     action = payload.pop("action", None)
     if not action:
@@ -538,6 +570,17 @@ async def _publish_one(
     # но row всё равно уйдёт из выборки по `published_at IS NOT NULL`).
     row.next_retry_at = None
     await session.flush()
+    # Защёлку выставляем ДО record_success: после этой точки повторно
+    # отправлять row нельзя ни при каком исключении внутри record_success
+    # (включая Redis-flap, CancelledError на shutdown). Если внешний caller
+    # сделает rollback и `published_at` исчезнет, защёлка на этом процессе
+    # отобьёт повторный publish; в multi-replica setup'е страхует
+    # `with_for_update(skip_locked=True)` + ON CONFLICT на стороне loging.
+    sent_ids = _published_row_ids.get()
+    if sent_ids is None:
+        sent_ids = set()
+        _published_row_ids.set(sent_ids)
+    sent_ids.add(row.id)
     # Закрываем shared breaker: канал отвечает 2xx, дальше работаем штатно.
     # Дёргается на каждый успех — Redis-команда дешёвая (DEL × 3), а
     # симметрия с record_failure упрощает чтение кода.

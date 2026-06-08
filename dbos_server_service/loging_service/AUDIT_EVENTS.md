@@ -174,6 +174,21 @@ Details:
   - `server_account.password_revealed` / `ipmi_controller.credentials_revealed` — CRITICAL
   - `installed_packages.list` — INFO (success) / WARNING (failure/denied)
 - `server_worker` — на сегодня собственного `AUDIT_EVENTS.md` нет; action'ы worker'а наследуют каталог `server_service` (worker эмитит те же `server.prepared` / `server_account.*` callback-события).
+- `secret_service` — `dbos_server_service/secret_service/src/services/audit_events.py`. Дефолтные severity дублируются в `_DEFAULT_SEVERITY` loging-сервиса для следующих action'ов:
+  - `tokens.create` / `tokens.update` — INFO (success); WARNING — default для unknown failure.
+  - `tokens.delete` — WARNING (success).
+  - `tokens.admin_override_delete` — CRITICAL (success): account-admin override delete с обязательным `reason`.
+  - `tokens.revealed` — CRITICAL (success): декодированный секрет показан пользователю (первое раскрытие в 5-минутном окне).
+  - `tokens.revealed_throttled` — INFO (success): subsequent reveal в том же окне (UI-polling шум).
+  - `tokens.dept_grant_added` / `tokens.dept_grant_revoked` — CRITICAL (success): межотдельная выдача доступа к credential.
+  - `tokens.dept_revoke_cascade` / `tokens.dept_recipient_cascade` — CRITICAL (success): каскадный revoke на отзыве department_service_access или удалении recipient-отдела.
+  - `tokens.role_acl_added` / `tokens.role_acl_revoked` — INFO (success): per-credential role-grant внутри отдела.
+  - `tokens.owner_user_deleted_block` / `tokens.owner_dept_deleted_block` — WARNING (success): auto-block по удалению owner'а (grace window 30 дней).
+  - `tokens.transfer_ownership` — CRITICAL (success): передача владения credential (service_admin / account_admin override).
+  - `tokens.recover` — WARNING (success): восстановление blocked credential в течение 30-дневного окна.
+  - `tokens.access_denied` — INFO (failure): попытка reader'а/operator'а без RoleACL или с неверным scope.
+- `auth_service` дополнительно эмитит callback'и в `secret_service`:
+  - `secret_lifecycle.notify_failed` — WARNING (failure): транспортный или HTTP-сбой outbound-callback'а в secret_service.
 - `config_service` — не реализован, см. `obsidian/TODO.md`.
 
 `loging_service` не валидирует `action` против чьего-либо whitelist'а на ingest'е — реестр `service_events` нужен только для правил (нельзя завести правило на незарегистрированный action). Зарегистрированные action'ы появляются при первом `POST /services/{service}/events` от источника.

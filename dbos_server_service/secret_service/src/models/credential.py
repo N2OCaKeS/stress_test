@@ -59,6 +59,11 @@ class Credential(Base):
     # Реального FK нет — auth_service живёт в своей БД.
     owner_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     owner_dept_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Denormalized dept-id владельца personal-кред'ы на момент создания.
+    # Для department/cross_department кред'ы — NULL (owner_dept_id уже знает).
+    # Нужно для проверки RoleACL в access_service._check_personal: ACL должна
+    # жить в dep'е владельца, иначе non-owner из чужого dep'а получит leak.
+    owner_user_dept_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     login: Mapped[str | None] = mapped_column(Text, nullable=True)
     secret_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
@@ -118,6 +123,7 @@ class Credential(Base):
         ),
         Index("ix_credentials_owner_user_scope", "owner_user_id", "scope"),
         Index("ix_credentials_owner_dept_scope", "owner_dept_id", "scope"),
+        Index("ix_credentials_owner_user_dept", "owner_user_dept_id"),
         Index("ix_credentials_status", "status"),
         # Partial UNIQUE: имя кред уникально на пару (owner, service) только
         # среди active. Заблокированные не блокируют новый insert. Migration

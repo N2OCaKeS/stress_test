@@ -40,6 +40,10 @@ _VALID_PROD_KWARGS: dict[str, object] = {
     "SERVICE_API_KEY": "b" * 48,
     "LOGGING_SERVICE_API_KEY": "c" * 32,
     "DOCKER_RSA_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----",
+    # Lifecycle-канал в secret_service: production validator требует
+    # непустой ключ; URL может быть пустым (no-op для стендов без secret_service).
+    "SECRET_INTERNAL_API_KEY": "d" * 32,
+    "SECRET_SERVICE_URL": "",
 }
 
 

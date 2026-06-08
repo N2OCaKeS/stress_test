@@ -38,6 +38,7 @@ class _RedisLike(Protocol):
     async def incr(self, key: str) -> int: ...
     async def expire(self, key: str, seconds: int) -> bool: ...
     async def get(self, key: str) -> bytes | str | None: ...
+    def pipeline(self): ...  # noqa: ANN201
 
 
 # Module-level Redis-клиент. Поднимается в lifespan'е (lazy, при первом вызове).
@@ -128,10 +129,16 @@ async def record_reveal(actor_id: str, cred_id: str) -> tuple[bool, int]:
 
     key = _key(actor_id, cred_id)
     try:
-        count = await client.incr(key)
-        if count == 1:
-            await client.expire(key, _WINDOW_SECONDS)
-        return count == 1, int(count)
+        # INCR + EXPIRE одной транзакцией: при kill процесса между шагами ключ
+        # не остаётся без TTL и не «протухает» бессмертным счётчиком, иначе
+        # первый reveal следующего окна засчитается как throttled (INFO) и
+        # CRITICAL `tokens.revealed` пропадёт.
+        pipe = client.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, _WINDOW_SECONDS)
+        results = await pipe.execute()
+        count = int(results[0])
+        return count == 1, count
     except Exception as exc:  # noqa: BLE001 — best-effort
         _warn_fallback_once(f"redis error: {exc!r}")
         return _record_inmem(actor_id, cred_id)

@@ -296,6 +296,34 @@ class TestProvisionStatusCallback:
         )
         assert_error(resp, 422, "VALIDATION_ERROR")
 
+    async def test_invalid_dept_pair_rejected(
+        self, client, worker_bot_token_a, make_server, make_account, db, dept_a,
+        dept_b,
+    ):
+        # Defense-in-depth: link есть, но dept аккаунта не совпадает с dept
+        # сервера. Это аварийная ситуация (попадание мимо доменных guard'ов
+        # репозитория), callback обязан отбить запись 409 INVALID_DEPT_PAIR.
+        # Сценарий имитируем прямым UPDATE'ом dept аккаунта.
+        from src.models import ServerAccount
+
+        srv = await make_server(department_id=dept_a)
+        acc = await make_account(server_id=srv.id, login="ops")
+        # Прямой UPDATE мимо репозитория: cross-dept linkage, который guard
+        # должен поймать.
+        acc_db = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc.id)
+        )).scalar_one()
+        acc_db.department_id = dept_b
+        await db.flush()
+        await db.commit()
+
+        resp = await client.post(
+            f"{BASE_INT}/servers/{srv.id}/accounts/{acc.id}/provision_status",
+            headers=_hdr(worker_bot_token_a),
+            json={"operation": "provision", "present": True},
+        )
+        assert_error(resp, 409, "INVALID_DEPT_PAIR")
+
 
 # ── Management-session hints in dispatch payload ─────────────────────────────
 

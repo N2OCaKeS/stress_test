@@ -196,10 +196,12 @@ async def test_guest_cannot_get_visible_cred(http_client, adb):
     await adb.commit()
 
     resp = await http_client.get(f"/api/secret/v1/credentials/{cred.id}")
-    # access_service вернёт guest_role_no_access → reason не info-leak,
-    # scope=department, поэтому endpoint отдаёт 403, не 404.
-    assert resp.status_code == 403
-    assert resp.json()["error_code"] == "CREDENTIAL_ACCESS_DENIED"
+    # guest_role_no_access теперь включён в _NOT_VISIBLE_REASONS — прямой GET
+    # известного cred_id отдаёт 404 (info-leak protection), а не 403, чтобы
+    # guest не мог перебирать ID и обнаруживать существование чужих кред с
+    # `visible_to_dept=False`.
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "CREDENTIAL_NOT_FOUND"
 
 
 @pytest.mark.asyncio
@@ -214,7 +216,8 @@ async def test_guest_cannot_reveal(http_client, adb):
     await adb.commit()
 
     resp = await http_client.post(f"/api/secret/v1/credentials/{cred.id}/reveal")
-    assert resp.status_code == 403
+    # Тот же info-leak protection — reveal по известному id для guest → 404.
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -232,7 +235,8 @@ async def test_guest_cannot_update(http_client, adb):
         f"/api/secret/v1/credentials/{cred.id}",
         json={"name": "renamed"},
     )
-    assert resp.status_code == 403
+    # update проходит через load_for_action → info-leak 404 для guest.
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio

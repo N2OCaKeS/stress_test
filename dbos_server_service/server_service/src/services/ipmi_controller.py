@@ -22,6 +22,7 @@ Department-isolation скрывает cross-dept-сервер за 404 (`SERVER_
 import base64
 import logging
 import time
+from collections import OrderedDict
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,7 +50,11 @@ logger = logging.getLogger(__name__)
 # для server_account password reveal: UI-tooltip с автообновлением иначе
 # зальёт SIEM CRITICAL'ами. Окно/политика — общий `password_reveal_audit_window_seconds`
 # (отдельный bucket по `(actor, controller_id)`, без коллизий с account-словарём).
-_REVEAL_AUDIT_WINDOW: dict[tuple[str, str], tuple[float, int]] = {}
+#
+# Bounded LRU: см. комментарий у `server_account._REVEAL_AUDIT_WINDOW`. Кэп
+# не даёт словарю распухать при штурме длинного списка уникальных пар.
+_REVEAL_AUDIT_WINDOW_MAX = 10000
+_REVEAL_AUDIT_WINDOW: "OrderedDict[tuple[str, str], tuple[float, int]]" = OrderedDict()
 
 
 def _record_controller_reveal_attempt(
@@ -69,14 +74,18 @@ def _record_controller_reveal_attempt(
     entry = _REVEAL_AUDIT_WINDOW.get(key)
     if entry is None or (now - entry[0]) >= window:
         _REVEAL_AUDIT_WINDOW[key] = (now, 1)
+        _REVEAL_AUDIT_WINDOW.move_to_end(key)
         stale_cutoff = now - window
         stale_keys = [k for k, (ts, _cnt) in _REVEAL_AUDIT_WINDOW.items() if ts < stale_cutoff]
         for k in stale_keys:
             _REVEAL_AUDIT_WINDOW.pop(k, None)
+        while len(_REVEAL_AUDIT_WINDOW) > _REVEAL_AUDIT_WINDOW_MAX:
+            _REVEAL_AUDIT_WINDOW.popitem(last=False)
         return True, 1
     last_at, count = entry
     new_count = count + 1
     _REVEAL_AUDIT_WINDOW[key] = (last_at, new_count)
+    _REVEAL_AUDIT_WINDOW.move_to_end(key)
     return False, new_count
 
 

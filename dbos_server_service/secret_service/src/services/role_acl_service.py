@@ -38,6 +38,20 @@ async def add(
     """Создать ACL. cross_dep recipient требует DeptGrant."""
     cred = await load_for_action(db, identity, cred_id, "grant_acl")
 
+    # personal: ACL только в dep'е владельца. Иначе non-owner из чужого dep'а
+    # получит ACL'ную дыру в обход cross-dep flow.
+    if cred.scope == "personal":
+        owner_dept = cred.owner_user_dept_id or identity.department_id
+        if payload.dept_id != owner_dept:
+            raise DomainValidationError(
+                error_code="PERSONAL_ACL_OWNER_DEPT_ONLY",
+                message=(
+                    "personal credential ACL must be granted in the owner's "
+                    "department only"
+                ),
+                details={"dept_id": payload.dept_id, "owner_dept_id": owner_dept},
+            )
+
     # cross_dep: если ACL выдаётся НЕ owner_dep'у — нужен DeptGrant.
     if cred.scope == "cross_department" and payload.dept_id != cred.owner_dept_id:
         has_grant = await dept_grants_repo.exists_for(db, cred.id, payload.dept_id)

@@ -13,12 +13,22 @@ from src.schemas.rules import RuleCreate, RuleUpdate
 
 
 def get_active_sorted(db: Session) -> list[AuditRule]:
-    """Все активные не-удалённые правила, отсортированные по `priority DESC`."""
+    """Все активные не-удалённые правила, отсортированные по `priority DESC, id ASC`.
+
+    Tiebreaker по `id ASC` нужен, чтобы порядок применения правил с одинаковым
+    `priority` был детерминированным. Без второго ключа Postgres вправе
+    вернуть row'и в любом порядке (heap-scan), и `apply_rules` на двух
+    правилах с одинаковым priority и эффектом `OVERRIDE_SEVERITY` мог бы
+    отдавать разный результат между запросами — flap по severity без
+    единой реальной причины. `id` ULID-like opaque (`utils/ids.audit_rule_id`),
+    UNIQUE в схеме, так что лексикографический порядок стабилен и не зависит
+    от content row'а.
+    """
     stmt = (
         select(AuditRule)
         .where(AuditRule.is_active == True)  # noqa: E712
         .where(AuditRule.deleted_at.is_(None))
-        .order_by(AuditRule.priority.desc())
+        .order_by(AuditRule.priority.desc(), AuditRule.id.asc())
     )
     return list(db.execute(stmt).scalars().all())
 

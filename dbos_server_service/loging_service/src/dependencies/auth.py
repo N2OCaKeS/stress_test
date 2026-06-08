@@ -110,8 +110,14 @@ def require_service_token(
 
     Семантика:
 
-    * `SERVICE_API_KEYS` пуст → 503 `SERVICE_TOKEN_NOT_CONFIGURED`
-      (deployment-misconfig, никакой ingest не работает).
+    * `SERVICE_API_KEYS` пуст → 401 `INVALID_SERVICE_KEY`
+      (deployment-misconfig; раньше отвечали 503 SERVICE_TOKEN_NOT_CONFIGURED,
+      но снаружи это утечка информации о состоянии конфигурации: атакующий
+      по 503-ответу узнаёт, что ingest вообще выключен, и переходит на
+      другой вектор. 401 единообразно отвечает «ключ невалиден» — внутреннее
+      состояние не утекает, оператор всё равно видит проблему по
+      `SERVICE_API_KEYS`-валидации на startup'е и self-audit-failure
+      counter'у). Лог сохраняет диагностику.
     * Нет `Authorization` → 401 `INVALID_SERVICE_KEY`.
     * Нет `X-Service-Identity` → 401 `MISSING_SERVICE_IDENTITY`.
     * Identity нормализована и НЕ в map'е → 401 `INVALID_SERVICE_KEY`
@@ -130,11 +136,20 @@ def require_service_token(
     if not settings.service_api_keys:
         # Конфиг-промах: ingest невозможен ни от какого сервиса. Production
         # guard уже отбивает это на старте; здесь — для local/dev, где
-        # оператор может прокинуть пустой map'ы случайно.
+        # оператор может прокинуть пустой map'ы случайно. Унифицируем ответ
+        # с остальными невалидно-ключ ветками (401 INVALID_SERVICE_KEY): 503
+        # снаружи выдавал бы атакующему «ingest выключен», и тот переходил
+        # бы на другой вектор. В лог пишем подсказку, чтобы оператор видел
+        # отличие misconfig от реального перебора ключа.
+        logger.warning(
+            "SERVICE_API_KEYS map is empty — rejecting service-to-service ingest "
+            "(path=%s, method=%s)",
+            request.url.path, request.method,
+        )
         raise AppException(
-            http_status=503,
-            error_code="SERVICE_TOKEN_NOT_CONFIGURED",
-            message="SERVICE_API_KEYS is empty — service-to-service ingest is disabled",
+            http_status=401,
+            error_code="INVALID_SERVICE_KEY",
+            message="Invalid service API key",
         )
 
     if credentials is None:

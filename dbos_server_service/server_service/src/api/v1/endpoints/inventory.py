@@ -122,6 +122,12 @@ async def trigger_users_inventory(
     payload = {
         "server_id": server_id,
         "target_department_id": server.department_id,
+        # Адресация по SSH: ключи `host`/`ssh_port` читает воркер в
+        # `ssh_client._extract_host` / `_extract_port`; без них fallback на
+        # `server_id` (UUID) — попытка SSH в UUID-как-имя, а не в реальный
+        # FQDN/IP. Симметрия с `_dispatch_for_server` в worker_dispatch.py.
+        "host": server.hostname,
+        "ssh_port": server.ssh_port,
         # Подготовленный сервер инвентаризируется под управляющим пользователем
         # по ключу; иначе — под дефолтным/переданным аккаунтом.
         "is_managed": server.is_managed,

@@ -14,13 +14,12 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.db.session import AsyncSessionLocal
 from src.models import Credential
-from src.repositories import credentials as cred_repo
 from src.services import audit_service
 
 logger = logging.getLogger(__name__)
@@ -31,40 +30,45 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-async def _list_blocked_older_than(
-    db: AsyncSession, cutoff: datetime
-) -> list[Credential]:
-    """Все cred'ы со status=blocked и blocked_at < cutoff. Без курсора — батча хватает."""
-    stmt = select(Credential).where(
-        Credential.status == "blocked",
-        Credential.blocked_at.is_not(None),
-        Credential.blocked_at < cutoff,
-    )
-    return list((await db.execute(stmt)).scalars())
-
-
 async def sweep_expired_blocked(db: AsyncSession) -> dict:
-    """Один проход sweep'а. Возвращает counter для логов / тестов."""
+    """Один проход sweep'а. Возвращает counter для логов / тестов.
+
+    Гонка с recover: ранее использовался SELECT-then-DELETE, между этапами
+    `recover` мог поставить `status=active` и sweep всё равно сносил cred по
+    PK. Теперь — атомарный `DELETE WHERE status='blocked' AND blocked_at <
+    cutoff RETURNING *` за один SQL-выстрел; параллельный recover либо
+    выигрывает (его UPDATE отстреливает sweep'овский row), либо проигрывает
+    (sweep удаляет до его flush'а).
+    """
     settings = get_settings()
     cutoff = _now_utc() - timedelta(days=settings.blocked_retention_days)
     summary = {"deleted_count": 0, "errors": []}
     try:
-        expired = await _list_blocked_older_than(db, cutoff)
-        for cred in expired:
-            cred_id_snap = cred.id
-            cred_scope = cred.scope
-            cred_service = cred.service
-            cred_name = cred.name
-            await cred_repo.delete(db, cred)
+        stmt = (
+            sa_delete(Credential)
+            .where(
+                Credential.status == "blocked",
+                Credential.blocked_at.is_not(None),
+                Credential.blocked_at < cutoff,
+            )
+            .returning(
+                Credential.id,
+                Credential.scope,
+                Credential.service,
+                Credential.name,
+            )
+        )
+        deleted_rows = (await db.execute(stmt)).all()
+        for row in deleted_rows:
             summary["deleted_count"] += 1
             audit_service.emit(
                 "tokens.delete",
-                target_id=cred_id_snap,
+                target_id=row.id,
                 target_type="credential",
                 details={
-                    "scope": cred_scope,
-                    "service": cred_service,
-                    "name": cred_name,
+                    "scope": row.scope,
+                    "service": row.service,
+                    "name": row.name,
                     "auto_delete": True,
                     "reason": "blocked_window_expired",
                     "retention_days": settings.blocked_retention_days,

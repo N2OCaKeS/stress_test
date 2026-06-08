@@ -175,6 +175,32 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("logging_rule.create", "success"): "WARNING",
     ("logging_rule.update", "success"): "CRITICAL",
     ("logging_rule.delete", "success"): "CRITICAL",
+    # secret_service tokens.* — зеркало `_DEFAULT_SEVERITY` из
+    # `secret_service/src/services/audit_events.py`. Держим тут копию, чтобы
+    # ingest без explicit severity получал ту же иерархию, что в источнике
+    # (reveal/transfer/cross-dep grant — CRITICAL; CRUD-чтения — INFO;
+    # auto-block/delete/recover — WARNING).
+    ("tokens.create", "success"): "INFO",
+    ("tokens.update", "success"): "INFO",
+    ("tokens.delete", "success"): "WARNING",
+    ("tokens.admin_override_delete", "success"): "CRITICAL",
+    ("tokens.revealed", "success"): "CRITICAL",
+    ("tokens.revealed_throttled", "success"): "INFO",
+    ("tokens.dept_grant_added", "success"): "CRITICAL",
+    ("tokens.dept_grant_revoked", "success"): "CRITICAL",
+    ("tokens.dept_revoke_cascade", "success"): "CRITICAL",
+    ("tokens.dept_recipient_cascade", "success"): "CRITICAL",
+    ("tokens.role_acl_added", "success"): "INFO",
+    ("tokens.role_acl_revoked", "success"): "INFO",
+    ("tokens.owner_user_deleted_block", "success"): "WARNING",
+    ("tokens.owner_dept_deleted_block", "success"): "WARNING",
+    ("tokens.transfer_ownership", "success"): "CRITICAL",
+    ("tokens.recover", "success"): "WARNING",
+    ("tokens.access_denied", "failure"): "INFO",
+    # auth_service secret_lifecycle: callback в secret_service упал на
+    # транспортном уровне — WARNING (не CRITICAL: один сбой компенсируется
+    # retry'ем, статус сервиса не страдает).
+    ("secret_lifecycle.notify_failed", "failure"): "WARNING",
     # Управление серверами (server_service / server_worker)
     ("server.prepare", "success"): "CRITICAL",
     ("server.prepare", "failure"): "CRITICAL",
@@ -562,11 +588,13 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
     # После первой удачной загрузки кеш отдаёт stale snapshot при последующих
     # DB-выпадениях (см. `_RuleCache.get` except-ветку), так что окно "500 на
     # ingest" — только до первого успешного refresh'а.
-    # Правила отсортированы по `priority DESC` в `get_active_sorted`,
-    # то есть первый OVERRIDE-матч — highest priority. Эффективно код отдаёт
+    # Правила отсортированы по `priority DESC, id ASC` в `get_active_sorted`
+    # (tiebreaker по `id ASC` гарантирует детерминированный порядок при
+    # равном priority — без него heap-scan мог бы отдать row'и в любом
+    # порядке, и severity на match'е флапала бы между запросами). Первый
+    # OVERRIDE-матч — highest priority + lowest id; эффективно код отдаёт
     # severity первого OVERRIDE-матча: последующие матчи перетирают severity
-    # тем же значением (UNIQUE priority + DESC sort → детерминированный
-    # порядок). Явный break-on-first рассмотрен как micro-opt.
+    # тем же значением. Явный break-on-first рассмотрен как micro-opt.
     # SUPPRESS/ALLOW обрывают цепочку явно сами по своему контракту.
     rules = _cache.get(db)
     for rule in rules:

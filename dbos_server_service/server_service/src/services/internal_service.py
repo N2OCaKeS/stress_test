@@ -1212,6 +1212,32 @@ async def record_provision_status(
             message="Server account not found on this server",
         )
 
+    # Defense-in-depth: dept-pair sanity check. Аккаунт и сервер обязаны
+    # быть в одном dept'е — link (`server_account_servers`) теоретически
+    # позволил бы пробросить cross-dept linkage'у через прямой UPDATE'ом
+    # репозитория мимо доменных guard'ов. На callback'е воркера это финальная
+    # точка верификации перед записью в БД: рассинхрон рассматриваем как
+    # incident, в БД не пишем, возвращаем 422 INVALID_DEPT_PAIR.
+    if account.department_id != server_department_id:
+        audit_service.emit(
+            "server_account.provision_status",
+            target_id=account_id, target_type="server_account",
+            status="failure", allowed=True,
+            details={
+                "reason": "invalid_dept_pair",
+                "server_id": server_id,
+                "server_department_id": server_department_id,
+                "account_department_id": account.department_id,
+            },
+        )
+        raise ConflictError(
+            error_code="INVALID_DEPT_PAIR",
+            message=(
+                "Server account department does not match server department; "
+                "cross-department linkage is not allowed"
+            ),
+        )
+
     await account_repo.set_link_presence(db, link, present=payload.present)
     # Callback от worker'а подтверждает, что credentials, сгенерированные на
     # dispatch'е и сохранённые в server_accounts.password_encrypted /

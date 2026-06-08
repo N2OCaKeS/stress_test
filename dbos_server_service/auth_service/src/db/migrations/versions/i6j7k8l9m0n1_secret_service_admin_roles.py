@@ -89,9 +89,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # CHECK constraint откатываем к прежнему набору. Если в таблице
-    # users успели появиться записи с platform_role='service_admin' —
-    # downgrade упадёт; такие строки нужно вычистить руками заранее.
+    # CHECK constraint откатываем к прежнему набору. До revert'а CHECK'а
+    # обнуляем все строки с `platform_role='service_admin'` (это значение
+    # ушло из enum'а после downgrade'а): без шага UPDATE re-create CHECK
+    # сразу же фейлит на conflicting rows и операторы получают
+    # `IntegrityError: violates new check constraint` без явного указания,
+    # где чистить. Семантика: service_admin → NULL, юзер теряет cross-dept
+    # доступ к secret_service, но остаётся валидным аккаунтом.
+    op.execute(
+        "UPDATE users SET platform_role = NULL "
+        "WHERE platform_role = 'service_admin'"
+    )
+
     op.drop_constraint("ck_users_platform_role", "users", type_="check")
     values = ", ".join(f"'{v}'" for v in _ALLOWED_OLD)
     op.create_check_constraint(

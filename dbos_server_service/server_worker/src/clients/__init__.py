@@ -123,13 +123,24 @@ def _strip_host_port(host: str) -> str:
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """Запрещённые для BMC диапазоны: loopback + link-local (v4 и v6).
+    """Запрещённые для BMC диапазоны: loopback + link-local + unspecified.
 
     `link_local` для IPv4 покрывает `169.254.0.0/16` (включая cloud-metadata
     `169.254.169.254`); для IPv6 — `fe80::/10`. `loopback` — `127.0.0.0/8`
-    для IPv4 и `::1/128` для IPv6.
+    для IPv4 и `::1/128` для IPv6. `is_unspecified` блокирует `0.0.0.0` и
+    `::` — на ряде платформ kernel роутит их в loopback, мимо отдельных
+    ip_is_loopback-проверок, и SSRF в localhost проходит.
     """
-    return ip.is_loopback or ip.is_link_local
+    return ip.is_loopback or ip.is_link_local or ip.is_unspecified
+
+
+def _blocked_reason(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
+    """Категория, под которую попал IP — для `reason` в audit/exception."""
+    if ip.is_loopback:
+        return "loopback"
+    if ip.is_unspecified:
+        return "unspecified"
+    return "link_local"
 
 
 async def _emit_bmc_endpoint_blocked_audit(host: str, *, reason: str) -> None:
@@ -203,7 +214,7 @@ async def ensure_bmc_host_allowed(host: str) -> None:
 
     if ip_obj is not None:
         if _is_blocked_ip(ip_obj):
-            reason = "loopback" if ip_obj.is_loopback else "link_local"
+            reason = _blocked_reason(ip_obj)
             await _emit_bmc_endpoint_blocked_audit(host, reason=reason)
             raise BmcEndpointBlockedError(
                 error_code="BMC_ENDPOINT_BLOCKED",
@@ -234,7 +245,7 @@ async def ensure_bmc_host_allowed(host: str) -> None:
         except ValueError:
             continue
         if _is_blocked_ip(resolved):
-            reason = "loopback" if resolved.is_loopback else "link_local"
+            reason = _blocked_reason(resolved)
             await _emit_bmc_endpoint_blocked_audit(host, reason=reason)
             raise BmcEndpointBlockedError(
                 error_code="BMC_ENDPOINT_BLOCKED",

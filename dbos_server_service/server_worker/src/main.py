@@ -28,8 +28,9 @@ dev/test/CI не делали лишних запросов.
 import asyncio
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from taskiq import TaskiqEvents, TaskiqScheduler, TaskiqState
 from taskiq.schedule_sources import LabelScheduleSource
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
@@ -369,16 +370,51 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
 
                 error_message = "worker_shutdown: terminated by SIGTERM/shutdown event"
 
+                # Берём блокирующий SELECT FOR UPDATE: если `_runner`
+                # успел пройти `mark_running` (или `mark_pending_for_retry`)
+                # между нашим `get_by_id` и нашим UPDATE'ом, его транзакция
+                # держит lock — мы дождёмся релиза и увидим уже-актуальные
+                # `attempt` / `worker_id` / `scheduled_retry_at`. Это
+                # закрывает micro-race с `register_running_task` → drain
+                # перетёр attempt/worker_id и потерял один retry.
+                stmt = (
+                    select(task_repo.Task)
+                    .where(task_repo.Task.id == tid)
+                    .with_for_update()
+                )
+                locked = (await session.execute(stmt)).scalar_one_or_none()
+                if locked is None:
+                    continue
+
+                if (
+                    locked.status == TaskStatus.QUEUED
+                    and locked.scheduled_retry_at is not None
+                ):
+                    # `_runner.run_task` уже переложил row в queued со своим
+                    # `scheduled_retry_at` (его back-off). Drain не должен
+                    # переписывать поля — иначе мы сдвинем retry на now() и
+                    # обнулим `worker_id`, что обманет sweep. Audit пишем как
+                    # «зацепили queued»; pre_drain_status уже снят выше.
+                    marked = locked
+                    will_retry = locked.attempt < locked.max_attempts
+                    audit_severity = "WARNING" if will_retry else "ERROR"
+                # Pre-commit window (`register_running_task` уже выполнился,
+                # но `mark_running` ещё не закоммитился) — `scheduled_retry_at`
+                # тут None, и без drain'а row остаётся без timestamp'а: никто
+                # её не подберёт. Здесь mark_pending_for_retry безопасен,
+                # потому что _runner физически не может быть в середине
+                # UPDATE — мы держим FOR UPDATE lock.
+                #
                 # Retry vs terminal — то же правило, что в `_runner`.
                 # scheduled_retry_at = now() — следующий стартующий worker
                 # подхватит row через `_recover_scheduled_retries` (он
                 # фильтрует по `scheduled_retry_at IS NOT NULL AND <= now()`).
                 # Без timestamp'а recovery её не увидит, и задача висит
                 # queued до orphan-sweep'а или ручного вмешательства.
-                if fresh.attempt < fresh.max_attempts:
+                elif locked.attempt < locked.max_attempts:
                     marked = await task_repo.mark_pending_for_retry(
                         session,
-                        fresh,
+                        locked,
                         error_message,
                         scheduled_retry_at=datetime.now(timezone.utc),
                     )
@@ -386,7 +422,7 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                     will_retry = True
                 else:
                     marked = await task_repo.mark_failed(
-                        session, fresh, error_message,
+                        session, locked, error_message,
                     )
                     audit_severity = "ERROR"
                     will_retry = False
@@ -569,6 +605,7 @@ async def _recover_due_scheduled_retries_once() -> None:
                     break
                 task_id = t.id
                 task_kind = t.task_kind
+                attempt = t.attempt or 0
                 await session.commit()
         except Exception as exc:  # noqa: BLE001
             redacted = redact_error_message(f"{type(exc).__name__}: {exc}")
@@ -590,15 +627,32 @@ async def _recover_due_scheduled_retries_once() -> None:
             # Неизвестный task_kind: row claim'нута (scheduled_retry_at=NULL),
             # надо явно вернуть её, иначе она «потеряется». Здесь это
             # симптом deployment drift'а — operator-alert уровень.
+            #
+            # release_claimed_retry без аргумента ставит scheduled_retry_at=now(),
+            # и следующий тик через минуту снова claim'нет ту же row, упрётся в
+            # тот же `find_task is None` и пожжёт MAX_PER_TICK на пустой
+            # busy-loop. Toggle с floor=60s через computed backoff даёт
+            # operator'у окно поднять missing handler без того, чтобы recovery
+            # пожирал весь cap каждую минуту.
+            from src.tasks._runner import _compute_backoff_delay
+            try:
+                computed = _compute_backoff_delay(max(attempt, 1))
+            except Exception:  # noqa: BLE001 — backoff'у нельзя ронять recovery
+                computed = 0.0
+            retry_in = max(60.0, computed)
+            scheduled_at = datetime.now(timezone.utc) + timedelta(seconds=retry_in)
             logger.warning(
                 "scheduled_retries recovery: broker does not know "
-                "task_kind=%s (task_id=%s); releasing claim",
+                "task_kind=%s (task_id=%s); deferring claim by %.0fs",
                 task_kind,
                 task_id,
+                retry_in,
             )
             try:
                 async with AsyncSessionLocal() as session:
-                    await task_repo.release_claimed_retry(session, task_id)
+                    await task_repo.release_claimed_retry(
+                        session, task_id, scheduled_retry_at=scheduled_at,
+                    )
                     await session.commit()
             except Exception as exc:  # noqa: BLE001
                 redacted = redact_error_message(
@@ -1376,6 +1430,23 @@ async def secrets_reencrypt_lazy() -> None:
                 "secrets.reencrypt_lazy: malformed outbox_id from server_service: %r",
                 outbox_id,
             )
+            # finalize_failed чтобы row не остался в `processing` навсегда:
+            # claim уже забрал её, и без явного перевода в failed следующий
+            # тик ничего не подберёт (claim берёт только pending), а оператор
+            # увидит row, зависшую без видимых причин. Best-effort: сам id
+            # битый, finalize_failed может тоже не пройти валидацию на стороне
+            # server_service — тогда пишем в лог и идём дальше, cleanup-задача
+            # позже подберёт.
+            try:
+                await server_service_client.finalize_reencrypt_outbox_failed(
+                    outbox_id, error="malformed outbox_id from server_service",
+                )
+            except Exception as inner:  # noqa: BLE001
+                logger.warning(
+                    "secrets.reencrypt_lazy: finalize_failed on malformed id %r: %s",
+                    outbox_id,
+                    redact_error_message(f"{type(inner).__name__}: {inner}"),
+                )
             continue
         except CredentialFetchError as exc:
             errors += 1

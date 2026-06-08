@@ -352,8 +352,10 @@ class TestPerServiceApiKeys:
       * Identity не в map'е → 401 INVALID_SERVICE_KEY.
       * Key mismatch → 401 INVALID_SERVICE_KEY.
       * Missing identity header → 401 MISSING_SERVICE_IDENTITY.
-      * Пустой `SERVICE_API_KEYS` → 503 SERVICE_TOKEN_NOT_CONFIGURED
-        (legacy single-key fallback убран).
+      * Пустой `SERVICE_API_KEYS` → 401 INVALID_SERVICE_KEY
+        (legacy single-key fallback убран; раньше отвечали 503
+        SERVICE_TOKEN_NOT_CONFIGURED, но 503 утекало состояние конфигурации
+        атакующему — теперь унифицированный 401).
     """
 
     def test_per_service_key_matches(self, monkeypatch, db):

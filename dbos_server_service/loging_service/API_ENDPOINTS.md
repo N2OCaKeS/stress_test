@@ -60,9 +60,8 @@ Write-эндпоинты `/rules` (POST/PATCH/DELETE) и `/retention` (PUT/DELET
 
 | `error_code` | HTTP | Источник |
 |---|---|---|
-| `INVALID_SERVICE_KEY` | 401 | Нет/неверный SERVICE_API_KEY или identity вне `SERVICE_API_KEYS` |
+| `INVALID_SERVICE_KEY` | 401 | Нет/неверный SERVICE_API_KEY, identity вне `SERVICE_API_KEYS`, или `SERVICE_API_KEYS` пуст (deployment misconfig) |
 | `MISSING_SERVICE_IDENTITY` | 401 | Не задан заголовок `X-Service-Identity` |
-| `SERVICE_TOKEN_NOT_CONFIGURED` | 503 | `SERVICE_API_KEYS` пуст (deployment misconfig) |
 | `RESERVED_SERVICE_NAME` | 403 | Попытка писать события под `loging_service` |
 | `SERVICE_IDENTITY_PAYLOAD_MISMATCH` | 403 | `X-Service-Identity` ≠ `payload.service` (`POST /events`) |
 | `SERVICE_IDENTITY_PATH_MISMATCH` | 403 | `X-Service-Identity` ≠ `{service}` в URL (`POST /services/{service}/events`) |
@@ -127,8 +126,8 @@ Write-эндпоинты `/rules` (POST/PATCH/DELETE) и `/retention` (PUT/DELET
 
 | Method | URL | Auth | Body | Response | Возможные `error_code` |
 |---|---|---|---|---|---|
-| POST | `/events` | service-token | `EventCreate` | 201 `EventResponse`; 204 при SUPPRESS | `INVALID_SERVICE_KEY`, `MISSING_SERVICE_IDENTITY`, `SERVICE_TOKEN_NOT_CONFIGURED`, `RESERVED_SERVICE_NAME`, `SERVICE_IDENTITY_PAYLOAD_MISMATCH`, `PAYLOAD_TOO_LARGE`, `INVALID_CONTENT_LENGTH`, `VALIDATION_ERROR`, `RATE_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_CONFLICT` |
-| POST | `/services/{service}/events` | service-token | `RegisterEventsRequest` | 200 `RegisterEventsResponse` | `INVALID_SERVICE_KEY`, `MISSING_SERVICE_IDENTITY`, `SERVICE_TOKEN_NOT_CONFIGURED`, `RESERVED_SERVICE_NAME`, `SERVICE_IDENTITY_PATH_MISMATCH`, `PAYLOAD_TOO_LARGE`, `VALIDATION_ERROR`, `RATE_LIMIT_EXCEEDED` |
+| POST | `/events` | service-token | `EventCreate` | 201 `EventResponse`; 204 при SUPPRESS | `INVALID_SERVICE_KEY`, `MISSING_SERVICE_IDENTITY`, `RESERVED_SERVICE_NAME`, `SERVICE_IDENTITY_PAYLOAD_MISMATCH`, `PAYLOAD_TOO_LARGE`, `INVALID_CONTENT_LENGTH`, `VALIDATION_ERROR`, `RATE_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_CONFLICT` |
+| POST | `/services/{service}/events` | service-token | `RegisterEventsRequest` | 200 `RegisterEventsResponse` | `INVALID_SERVICE_KEY`, `MISSING_SERVICE_IDENTITY`, `RESERVED_SERVICE_NAME`, `SERVICE_IDENTITY_PATH_MISMATCH`, `PAYLOAD_TOO_LARGE`, `VALIDATION_ERROR`, `RATE_LIMIT_EXCEEDED` |
 
 ### Read events / services
 

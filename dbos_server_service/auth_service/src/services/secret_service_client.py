@@ -28,12 +28,14 @@ block/revoke на personal-кред, DeptGrant, RoleACL.
 from __future__ import annotations
 
 import logging
+import time
 
 import httpx
 
 from src.core.config import get_settings
 from src.core.http import bearer_header
 from src.services import audit_service
+from src.services.redaction import redact as _redact
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,85 @@ _LIFECYCLE_PATH = "/api/secret/v1/internal/lifecycle"
 _TIMEOUT_SECONDS = 5.0
 _MAX_CONNECTIONS = 10
 _MAX_KEEPALIVE = 5
+
+# Identity, который мы шлём в `X-Service-Identity` outbound'ом. secret_service'у
+# нужен для (а) lookup'а нашего ключа в его per-caller map'е, (б) rate-limit-
+# bucket'инга. Имя должно совпадать с тем, как secret_service нас знает в своих
+# `SERVICE_API_KEYS`.
+_OUTBOUND_SERVICE_IDENTITY = "auth_service"
+
+# ── In-process circuit breaker ─────────────────────────────────────────────────
+# secret_service может быть полностью down (deploy, миграция, network split) —
+# каждый последующий emit ждёт TIMEOUT_SECONDS, login-burst упирается в
+# httpx-пул. Если 3 fail подряд → open для COOLDOWN; дальше short-circuit'им
+# до истечения cooldown'а и audit'им как `circuit_open`. После cooldown'а
+# первая попытка снова идёт в сеть (half-open semantically); успех ресетит
+# счётчик, провал перевзводит окно.
+_BREAKER_FAIL_THRESHOLD = 3
+_BREAKER_COOLDOWN_SECONDS = 60.0
+_breaker_fail_count: int = 0
+_breaker_open_until: float = 0.0
+
+
+def _breaker_is_open() -> bool:
+    """True пока не истёк cooldown после порога fail'ов."""
+    return time.monotonic() < _breaker_open_until
+
+
+def _breaker_record_failure() -> None:
+    """Инкрементируем счётчик; на N-м fail подряд open'аем."""
+    global _breaker_fail_count, _breaker_open_until
+    _breaker_fail_count += 1
+    if _breaker_fail_count >= _BREAKER_FAIL_THRESHOLD:
+        _breaker_open_until = time.monotonic() + _BREAKER_COOLDOWN_SECONDS
+
+
+def _breaker_record_success() -> None:
+    """Любой успех сбрасывает счётчик и закрывает breaker."""
+    global _breaker_fail_count, _breaker_open_until
+    _breaker_fail_count = 0
+    _breaker_open_until = 0.0
+
+
+def _breaker_reset() -> None:
+    """Тестовый ресет внутреннего состояния breaker'а."""
+    global _breaker_fail_count, _breaker_open_until
+    _breaker_fail_count = 0
+    _breaker_open_until = 0.0
+
+
+_PII_KEYS_IN_PAYLOAD = ("user_id", "dept_id", "actor_id", "actor_username")
+
+
+def _mask_id(value: object) -> object:
+    """Маскировка ID/username: оставляем тип + хвост (4 символа) для корреляции
+    с logs/SIEM, тело прячем. None/пустое пропускаем как есть.
+    """
+    if value is None:
+        return None
+    s = str(value)
+    if len(s) <= 4:
+        return "<REDACTED>"
+    return f"<REDACTED:{s[-4:]}>"
+
+
+def _redact_audit_payload(payload: dict) -> dict:
+    """Снимок payload'а с маскированными PII-полями для записи в audit details.
+
+    `payload` мы кладём в `details["payload"]` внутри `notify_failed` — он
+    оседает в SIEM. `user_id` / `actor_id` / `actor_username` снаружи плейс-
+    холдерами `_classify_key` не покрыты, поэтому маскируем явно.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    masked = dict(payload)
+    for key in _PII_KEYS_IN_PAYLOAD:
+        if key in masked:
+            masked[key] = _mask_id(masked[key])
+    # Прогоняем через общий redact на случай, если в payload забредёт
+    # что-то ещё подозрительное (token-like значение).
+    further = _redact(masked)
+    return further if isinstance(further, dict) else masked
 
 
 def init_pool(settings) -> None:
@@ -85,9 +166,14 @@ async def aclose_pool() -> None:
 
 
 def reset_for_tests() -> None:
-    """Синхронный сброс slot'а без `aclose` — для monkeypatch'а в тестах."""
+    """Синхронный сброс slot'а без `aclose` — для monkeypatch'а в тестах.
+
+    Заодно гасит circuit-breaker, чтобы прошлый прогон с искусственными
+    fail'ами не блокировал следующий.
+    """
     global _client
     _client = None
+    _breaker_reset()
 
 
 async def _post(
@@ -106,9 +192,31 @@ async def _post(
         )
         return
 
+    # Circuit-breaker: если secret_service лёг и мы уже знаем, что подряд
+    # >=N запросов упали — short-circuit'им остальные на COOLDOWN, чтобы
+    # login-burst не садился в TIMEOUT_SECONDS × N.
+    if _breaker_is_open():
+        logger.warning(
+            "secret_service_client: %s skipped (circuit-breaker open)", suffix,
+        )
+        audit_service.emit(
+            "secret_lifecycle.notify_failed",
+            actor_id=actor_id,
+            username=actor_username,
+            status="failure",
+            allowed=True,
+            details={
+                "endpoint": suffix,
+                "reason": "circuit_open",
+                "payload": _redact_audit_payload(payload),
+            },
+        )
+        return
+
     api_key = getattr(settings, "secret_internal_api_key", "") or ""
     headers = bearer_header(api_key)
     headers["Content-Type"] = "application/json"
+    headers["X-Service-Identity"] = _OUTBOUND_SERVICE_IDENTITY
 
     full_path = f"{_LIFECYCLE_PATH}/{suffix}"
 
@@ -126,6 +234,7 @@ async def _post(
                     headers=headers,
                 )
     except Exception as exc:
+        _breaker_record_failure()
         logger.warning(
             "secret_service_client: %s failed (transport): %s", suffix, exc,
         )
@@ -139,12 +248,13 @@ async def _post(
                 "endpoint": suffix,
                 "reason": "transport_error",
                 "error": str(exc),
-                "payload": payload,
+                "payload": _redact_audit_payload(payload),
             },
         )
         return
 
     if response.status_code >= 400:
+        _breaker_record_failure()
         logger.warning(
             "secret_service_client: %s returned %d (best-effort, не падаем)",
             suffix,
@@ -167,9 +277,13 @@ async def _post(
                 "reason": "http_error",
                 "status_code": response.status_code,
                 "body_preview": body_preview,
-                "payload": payload,
+                "payload": _redact_audit_payload(payload),
             },
         )
+        return
+
+    # 2xx — закрываем breaker, обнуляем счётчик неудач.
+    _breaker_record_success()
 
 
 async def notify_user_deleted(

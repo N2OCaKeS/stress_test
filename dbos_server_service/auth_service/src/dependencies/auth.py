@@ -463,8 +463,28 @@ def require_any_admin(identity: CurrentUserIdentity) -> IdentityContext:
     return identity
 
 
+def require_service_admin(identity: CurrentUserIdentity) -> IdentityContext:
+    """Гард — требует platform_role=service_admin.
+
+    Cross-department админ secret_service'а: read_for_audit /
+    admin_override_delete / transfer_ownership / recover поверх всех отделов.
+    Department=NULL (как loging_admin). Enforcement в самих сервисах,
+    auth_service только хранит роль и кладёт её в JWT — но если мы повесим
+    эту проверку, например, на эндпоинт «список всех секретов отдела» в
+    auth_service (отчёт-проксирование), без guard'а в зону полезут другие
+    platform admin'ы, которым доступа к secret_service быть не должно.
+    """
+    if identity.platform_role != PlatformRole.SERVICE_ADMIN:
+        raise AuthorizationError(
+            error_code="ROLE_REQUIRED",
+            message="service_admin role required",
+        )
+    return identity
+
+
 AccountAdmin = Annotated[IdentityContext, Depends(require_account_admin)]
 AnyAdmin = Annotated[IdentityContext, Depends(require_any_admin)]
+ServiceAdmin = Annotated[IdentityContext, Depends(require_service_admin)]
 
 
 # Scope-имя, разрешающее третьестороннему OAuth2-приложению ходить в self-management

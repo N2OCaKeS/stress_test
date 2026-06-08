@@ -18,6 +18,7 @@ import logging
 import secrets as _secrets
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,9 +29,10 @@ from src.core.exceptions import (
     DomainValidationError,
     GoneError,
     NotFoundError,
+    RateLimitError,
 )
 from src.dependencies.auth import Identity
-from src.models import Credential
+from src.models import Credential, DeptGrant, RoleACL
 from src.repositories import credentials as repo
 from src.schemas.credentials import (
     AdminDeleteRequest,
@@ -38,7 +40,13 @@ from src.schemas.credentials import (
     CredentialUpdate,
     TransferRequest,
 )
-from src.services import access_service, audit_service, reveal_throttle, secrets_service
+from src.services import (
+    access_service,
+    audit_service,
+    lockout_service,
+    reveal_throttle,
+    secrets_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +150,11 @@ async def create(
 
     cred_id = _new_cred_id()
     envelope = _to_envelope(payload.secret, cred_id)
+    # Denormalize owner's dept на personal-кред, чтобы access-check мог
+    # отбивать ACL'и из чужих dep'ов без обратного запроса в auth_service.
+    owner_user_dept_id: str | None = (
+        identity.department_id if payload.scope == "personal" else None
+    )
     try:
         cred = await repo.create(
             db,
@@ -151,6 +164,7 @@ async def create(
             scope=payload.scope,
             owner_user_id=owner_user_id,
             owner_dept_id=owner_dept_id,
+            owner_user_dept_id=owner_user_dept_id,
             login=payload.login,
             secret_encrypted=envelope,
             status="active",
@@ -264,6 +278,68 @@ async def list_visible(
             if allowed:
                 visible.append(cred)
 
+        # cross_department recipient: cred'ы из чужих dep'ов, на которые наш
+        # dep имеет DeptGrant + RoleACL (can_read). Раньше эта ветка только
+        # обещалась в docstring'е, но фактически не делалась — recipient'ы не
+        # видели cross-dep cred в листе.
+        seen = {c.id for c in visible}
+        role_names = identity.roles_for(SERVICE_NAME) or []
+        if role_names:
+            grant_subq = (
+                select(DeptGrant.id)
+                .where(
+                    DeptGrant.cred_id == Credential.id,
+                    DeptGrant.recipient_dept_id == identity.department_id,
+                )
+            )
+            acl_subq = (
+                select(RoleACL.id)
+                .where(
+                    RoleACL.cred_id == Credential.id,
+                    RoleACL.dept_id == identity.department_id,
+                    RoleACL.role_name.in_(role_names),
+                    RoleACL.can_read.is_(True),
+                )
+            )
+            stmt = (
+                select(Credential)
+                .where(
+                    Credential.scope == "cross_department",
+                    Credential.owner_dept_id != identity.department_id,
+                    exists(grant_subq),
+                    exists(acl_subq),
+                )
+            )
+            if scope is not None:
+                stmt = stmt.where(Credential.scope == scope)
+            if status is not None:
+                stmt = stmt.where(Credential.status == status)
+            if cursor is not None:
+                after_created_at, after_id = cursor
+                stmt = stmt.where(
+                    or_(
+                        Credential.created_at < after_created_at,
+                        and_(
+                            Credential.created_at == after_created_at,
+                            Credential.id < after_id,
+                        ),
+                    )
+                )
+            stmt = stmt.order_by(
+                Credential.created_at.desc(), Credential.id.desc()
+            ).limit(limit * 2)
+            cross_creds = list((await db.execute(stmt)).scalars())
+            for cred in cross_creds:
+                if cred.id in seen:
+                    continue
+                # check_access всё равно — там сидят дополнительные правила
+                # (blocked, can_read и т.п.). SQL-precheck лишь сужает выборку.
+                allowed, _reason = await access_service.check_access(
+                    db, identity, cred, "read"
+                )
+                if allowed:
+                    visible.append(cred)
+
     # Сортировка по (created_at DESC, id DESC) и обрезка под limit.
     visible.sort(key=lambda c: (c.created_at, c.id), reverse=True)
     sliced = visible[:limit]
@@ -280,25 +356,27 @@ async def _would_have_read_access_if_active(
     """Помогает решить blocked → 410 vs 404: были бы у actor read-права на
     active-версии этой cred'ы.
 
-    check_access первым делом ловит status=="blocked", поэтому, чтобы спросить
-    «а если бы было active», временно подменяем статус в in-memory объекте,
-    делаем повторную проверку и возвращаем флаг. Объект не комитится.
+    Раньше функция временно подменяла `cred.status = "active"` — это создавало
+    окно autoflush'а, в котором другие транзакции могли увидеть active. Теперь
+    спрашиваем check_access через `status_override`, ORM-объект не трогаем.
     """
-    saved_status = cred.status
-    cred.status = "active"
-    try:
-        allowed, _reason = await access_service.check_access(db, identity, cred, "read")
-        return allowed
-    finally:
-        cred.status = saved_status
+    allowed, _reason = await access_service.check_access(
+        db, identity, cred, "read", status_override="active"
+    )
+    return allowed
 
 
 # Reasons, которые означают «cred вне зоны видимости actor'а» — отдаём 404
 # (info-leak protection). Остальные denied-reasons означают «cred в зоне
 # видимости, но конкретного права нет» — отдаём 403.
+#
+# `guest_role_no_access` — guest на прямом GET известного cred_id; раньше
+# отвечали 403, что позволяло перебирать ID-шники чужих кред с
+# `visible_to_dept=False`. Маскируем под 404.
 _NOT_VISIBLE_REASONS: frozenset[str] = frozenset({
     "scope_mismatch",
     "dept_grant_missing",
+    "guest_role_no_access",
 })
 
 
@@ -313,7 +391,21 @@ async def load_for_action(
     несанкционированного доступа. `details.reason` различает ветки:
     `info_leak_404` для маскировки в 404, `blocked` — для blocked-cred, иначе
     конкретный reason от `check_access`.
+
+    Защита от brute-force: каждый denied access инкрементит счётчик в
+    `lockout_service`; превышение порога — 429 + Retry-After. Перед load'ом
+    проверяем существующий lockout и сразу отбиваем 429. На успехе clear'им
+    счётчик, чтобы случайные denied'ы не накапливались.
     """
+    actor_id = identity.user_id
+    if lockout_service.is_locked(actor_id):
+        retry_after = lockout_service.retry_after_seconds(actor_id)
+        raise RateLimitError(
+            error_code="ACTOR_LOCKED_OUT",
+            message="Too many denied access attempts; try again later",
+            details={"retry_after_seconds": retry_after, "action": action},
+        )
+
     cred = await repo.get_by_id(db, cred_id)
     if cred is None:
         # cred физически отсутствует — это не маскировка прав, audit не нужен.
@@ -324,6 +416,20 @@ async def load_for_action(
 
     allowed, reason = await access_service.check_access(db, identity, cred, action)  # type: ignore[arg-type]
     if not allowed:
+        # Incr lockout-counter. True == порог пробит этой попыткой → WARNING.
+        lockout_now = lockout_service.record_denied(actor_id)
+        if lockout_now:
+            audit_service.emit(
+                "tokens.lockout_triggered",
+                target_id=actor_id,
+                target_type="user",
+                severity="WARNING",
+                details={
+                    "action": action,
+                    "cred_id": cred.id,
+                    "retry_after_seconds": lockout_service.retry_after_seconds(actor_id),
+                },
+            )
         if reason == "blocked":
             # 410 vs 404: 410 видят те, кто имел бы read-доступ на active;
             # остальные — 404. Audit-emit в обоих случаях, чтобы SOC видел.
@@ -394,6 +500,9 @@ async def load_for_action(
     # Доступ есть; если cred blocked И action != read — отдаём 410 явно.
     if cred.status == "blocked" and action != "read" and action != "manage_status":
         _ensure_active_or_raise(cred)
+    # Успешный access сбрасывает lockout-счётчик: одна случайная denied-попытка
+    # не накапливается до бесконечности.
+    lockout_service.clear(actor_id)
     return cred
 
 
@@ -559,13 +668,21 @@ async def transfer(
     cred_id: str,
     payload: TransferRequest,
 ) -> Credential:
-    """Transfer ownership. Только для blocked-кред, service_admin/account_admin."""
+    """Transfer ownership. Только для blocked-кред, service_admin/account_admin.
+
+    FOR UPDATE на cred: два параллельных transfer'а на одну креду читают одну
+    и ту же blocked-строку и оба пишут разный owner — без локa последний
+    UPDATE побеждает и owner становится непредсказуемым.
+
+    IntegrityError на partial UNIQUE — переводим в 409 NAME_DUPLICATE; иначе
+    aborted-state соединения роняет endpoint 500'кой.
+    """
     if not (_is_service_admin(identity) or _is_account_admin(identity)):
         raise AuthorizationError(
             error_code="CREDENTIAL_ACCESS_DENIED",
             message="Only service_admin or account_admin can transfer ownership",
         )
-    cred = await repo.get_by_id(db, cred_id)
+    cred = await repo.get_by_id_for_update(db, cred_id)
     if cred is None:
         raise NotFoundError(
             error_code="CREDENTIAL_NOT_FOUND",
@@ -577,6 +694,9 @@ async def transfer(
             error_code="CREDENTIAL_NOT_BLOCKED",
             message="Transfer is only allowed for blocked credentials",
         )
+
+    old_owner_user_id = cred.owner_user_id
+    old_owner_dept_id = cred.owner_dept_id
 
     # Совместимость нового владельца со scope:
     if cred.scope == "personal":
@@ -600,9 +720,16 @@ async def transfer(
     cred.status = "active"
     cred.blocked_at = None
     cred.blocked_reason = None
-    await db.flush()
-    await db.commit()
-    await db.refresh(cred)
+    try:
+        await db.flush()
+        await db.commit()
+        await db.refresh(cred)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ConflictError(
+            error_code="NAME_DUPLICATE",
+            message="Credential name conflict on transfer (race or duplicate target)",
+        ) from exc
 
     audit_service.emit(
         "tokens.transfer_ownership",
@@ -610,8 +737,11 @@ async def transfer(
         target_type="credential",
         details={
             "scope": cred.scope,
+            "old_owner_user_id": old_owner_user_id,
+            "old_owner_dept_id": old_owner_dept_id,
             "new_owner_user_id": cred.owner_user_id,
             "new_owner_dept_id": cred.owner_dept_id,
+            "reason": payload.reason,
         },
     )
     return cred
@@ -620,13 +750,17 @@ async def transfer(
 async def recover(
     db: AsyncSession, identity: Identity, cred_id: str
 ) -> Credential:
-    """Recover blocked-кред. Окно — 30 дней с момента блокировки."""
+    """Recover blocked-кред. Окно — 30 дней с момента блокировки.
+
+    FOR UPDATE + try/except IntegrityError — симметрия с transfer; параллельный
+    recover/transfer на одну креду не должен ронять 500.
+    """
     if not (_is_service_admin(identity) or _is_account_admin(identity)):
         raise AuthorizationError(
             error_code="CREDENTIAL_ACCESS_DENIED",
             message="Only service_admin or account_admin can recover credential",
         )
-    cred = await repo.get_by_id(db, cred_id)
+    cred = await repo.get_by_id_for_update(db, cred_id)
     if cred is None:
         raise NotFoundError(
             error_code="CREDENTIAL_NOT_FOUND",
@@ -648,9 +782,16 @@ async def recover(
                 message=f"Recover window of {_RECOVER_WINDOW_DAYS} days has expired",
             )
 
-    cred = await repo.mark_active(db, cred)
-    await db.commit()
-    await db.refresh(cred)
+    try:
+        cred = await repo.mark_active(db, cred)
+        await db.commit()
+        await db.refresh(cred)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ConflictError(
+            error_code="NAME_DUPLICATE",
+            message="Credential name conflict on recover (active duplicate exists)",
+        ) from exc
 
     audit_service.emit(
         "tokens.recover",

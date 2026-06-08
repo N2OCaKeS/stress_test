@@ -410,6 +410,10 @@ async def test_record_provision_status_soft_mode_no_header_emits_warning(
     class _Account:
         id = "acc_1"
         login = "root"
+        # `record_provision_status` сверяет dept аккаунта с dept сервера
+        # (defense-in-depth от cross-dept linkage). Стабим тот же dept,
+        # что у _stub_server_repo выше.
+        department_id = "dep_a"
         # record_provision_status читает флаг, чтобы снять pending_apply на
         # успешном callback'е. Стартовое значение False — путь «уже применено,
         # ничего не трогаем», для проверки soft-warning'а этого достаточно.

@@ -17,7 +17,13 @@ pytestmark = pytest.mark.asyncio
 
 
 def _internal_header() -> dict:
-    return {"Authorization": f"Bearer {INTERNAL_KEY}"}
+    # `/internal/lifecycle/*` обслуживает строго auth_service:
+    # `require_caller_identity("auth_service")` смотрит в `X-Service-Identity`,
+    # без него — 401 INTERNAL_AUTH_REQUIRED, даже при валидном bearer.
+    return {
+        "Authorization": f"Bearer {INTERNAL_KEY}",
+        "X-Service-Identity": "auth_service",
+    }
 
 
 async def test_user_deleted_cascade_mix_of_blocked_and_deleted(

@@ -50,6 +50,9 @@ def _prod_kwargs(**overrides) -> dict:
         # Без него `_validate_production_secrets` падает раньше, чем дойдёт
         # до docker-проверки (см. `core/config.py:_validate_production_secrets`).
         "LOGGING_SERVICE_API_KEY": "prod-logging-api-key-strong-random-value-1234567890",
+        # Lifecycle-guard в production-validator'е требует непустой ключ;
+        # URL может быть пустым (no-op).
+        "SECRET_INTERNAL_API_KEY": "prod-secret-internal-api-key-1234567890",
     }
     base.update(overrides)
     return base

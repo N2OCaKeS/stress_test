@@ -117,12 +117,14 @@ class CredentialBlockedResponse(BaseModel):
 class TransferRequest(BaseModel):
     """Тело POST /credentials/{id}/transfer.
 
-    Ровно одно из полей должно быть задано. Сервис проверяет совместимость
-    с scope кред'ы.
+    Ровно одно из owner-полей должно быть задано. `reason` обязателен, как и у
+    admin_override_delete — transfer считается CRITICAL-операцией и след в
+    аудите без причины бесполезен.
     """
 
     new_owner_user_id: str | None = Field(default=None, max_length=64)
     new_owner_dept_id: str | None = Field(default=None, max_length=64)
+    reason: str = Field(min_length=1, max_length=256)
 
     @model_validator(mode="after")
     def _exactly_one_owner(self) -> "TransferRequest":

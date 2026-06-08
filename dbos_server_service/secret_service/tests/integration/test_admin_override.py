@@ -105,7 +105,10 @@ async def test_service_admin_can_read_blocked_for_audit(
 
     resp = await client.post(
         f"{BASE}/internal/lifecycle/user-deleted",
-        headers={"Authorization": f"Bearer {INTERNAL_KEY}"},
+        headers={
+            "Authorization": f"Bearer {INTERNAL_KEY}",
+            "X-Service-Identity": "auth_service",
+        },
         json={"user_id": owner_id, "actor_id": "usr_admin"},
     )
     assert resp.status_code == 200
@@ -152,7 +155,10 @@ async def test_account_admin_transfer_blocked_cross_dep_cred(
     # Блокируем owner dep через lifecycle.
     resp = await client.post(
         f"{BASE}/internal/lifecycle/dept-deleted",
-        headers={"Authorization": f"Bearer {INTERNAL_KEY}"},
+        headers={
+            "Authorization": f"Bearer {INTERNAL_KEY}",
+            "X-Service-Identity": "auth_service",
+        },
         json={"dept_id": "dep_owner_t", "actor_id": "usr_account_admin"},
     )
     assert resp.status_code == 200
@@ -168,7 +174,7 @@ async def test_account_admin_transfer_blocked_cross_dep_cred(
     transfer = await client.post(
         f"{BASE}/credentials/{cred_id}/transfer",
         headers=auth_header(account_admin),
-        json={"new_owner_dept_id": "dep_new_owner"},
+        json={"new_owner_dept_id": "dep_new_owner", "reason": "owner dept dissolved"},
     )
     assert transfer.status_code == 200, transfer.text
     body = transfer.json()

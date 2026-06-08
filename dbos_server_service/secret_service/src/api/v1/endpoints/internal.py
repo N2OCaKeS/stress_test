@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import AppException
 from src.dependencies.db import get_db
-from src.dependencies.internal_auth import require_internal_caller
+from src.dependencies.internal_auth import require_caller_identity
 from src.schemas.internal import (
     DeptDeletedEvent,
     DeptServiceAccessRevokedEvent,
@@ -28,15 +28,20 @@ from src.services import lifecycle_service
 
 logger = logging.getLogger(__name__)
 
+# Lifecycle-эндпоинты обслуживают строго auth_service — отдельный guard на
+# X-Service-Identity. Любой другой caller с действительным SERVICE_API_KEY
+# отбивается 401 WRONG_CALLER.
+_require_auth_service = require_caller_identity("auth_service")
+
 router = APIRouter(
     prefix="/internal",
     include_in_schema=False,
-    dependencies=[Depends(require_internal_caller)],
+    dependencies=[Depends(_require_auth_service)],
 )
 
 
 _INTERNAL_RESPONSES: dict[int | str, dict] = {
-    401: {"description": "INTERNAL_AUTH_REQUIRED — bearer отсутствует / не совпал."},
+    401: {"description": "INTERNAL_AUTH_REQUIRED — bearer отсутствует / не совпал / wrong caller."},
     500: {"description": "LIFECYCLE_HANDLER_FAILED — внутренняя ошибка обработчика."},
 }
 

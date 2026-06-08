@@ -95,6 +95,17 @@ def db() -> Session:
 _async_engine = create_async_engine(TEST_DATABASE_URL_SYNC, pool_pre_ping=True)
 
 
+@pytest.fixture(autouse=True)
+def _reset_lockout_state():
+    """Сбросить in-memory lockout-стейт между тестами — иначе одни тесты с
+    denied-access'ами могут залочить user'а для последующих в той же session."""
+    from src.services import lockout_service
+
+    lockout_service._reset_for_tests()
+    yield
+    lockout_service._reset_for_tests()
+
+
 @pytest_asyncio.fixture()
 async def adb() -> AsyncSession:
     """AsyncSession с SAVEPOINT-rollback'ом — для async-repo/service-тестов.

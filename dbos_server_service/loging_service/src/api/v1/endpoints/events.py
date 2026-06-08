@@ -115,7 +115,7 @@ def _ingest_rate_limit_key(request: Request) -> str:
         "- 429 `RATE_LIMIT_EXCEEDED` — превышен лимит на сервис-идентичность "
         "(`X-Service-Identity`, fallback на IP; `INGEST_RATE_LIMIT`, по "
         "умолчанию 100/min).\n"
-        "- 503 `SERVICE_TOKEN_NOT_CONFIGURED` — `SERVICE_API_KEYS` пуст.\n\n"
+        "\n"
         "**Связано:** `POST /services/{service}/events` — регистрация каталога "
         "action'ов; `GET /events` — чтение записанных событий."
     ),
@@ -135,7 +135,6 @@ def _ingest_rate_limit_key(request: Request) -> str:
         413: {"model": ErrorEnvelope, "description": "`PAYLOAD_TOO_LARGE`"},
         422: {"model": ErrorEnvelope, "description": "`VALIDATION_ERROR` — см. `error_code` в envelope"},
         429: {"model": ErrorEnvelope, "description": "`RATE_LIMIT_EXCEEDED` (per-service-identity)"},
-        503: {"model": ErrorEnvelope, "description": "`SERVICE_TOKEN_NOT_CONFIGURED`"},
     },
     dependencies=[Depends(require_service_token)],
 )

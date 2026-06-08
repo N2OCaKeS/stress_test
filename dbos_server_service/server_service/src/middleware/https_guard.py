@@ -46,6 +46,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from src.core.constants import HEALTH_PATHS
+from src.services.audit_context import _is_trusted_proxy
 
 # Окружения, в которых требуется HTTPS. Зеркалит `_HTTPS_REQUIRED_ENVS` из
 # `server_worker/src/core/config.py` и список из `_require_https_*_in_prod`
@@ -53,7 +54,7 @@ from src.core.constants import HEALTH_PATHS
 HTTPS_REQUIRED_ENVS: frozenset[str] = frozenset({"production", "staging"})
 
 
-def _is_request_https(request: Request) -> bool:
+def _is_request_https(request: Request, trusted_proxy_ips: list[str]) -> bool:
     """True если запрос пришёл по https (напрямую или через TLS-терминатор).
 
     Источников два:
@@ -62,8 +63,15 @@ def _is_request_https(request: Request) -> bool:
       контейнере за TLS-терминатором всегда ``http`` (терминатор открыл
       TLS до нас).
     * ``X-Forwarded-Proto`` — стандартный header'а от ingress'а / mesh'а
-      (envoy, nginx-ingress, traefik). Если он ``https`` — клиент пришёл
-      по TLS, мы за прокси.
+      (envoy, nginx-ingress, traefik). Доверять заголовку можно ТОЛЬКО
+      если он пришёл от proxy из allow-list ``trusted_proxy_ips``: иначе
+      любой внешний клиент мог бы прислать ``X-Forwarded-Proto: https``
+      по cleartext-HTTP и обойти guard.
+
+    Если ``trusted_proxy_ips`` пустой (default) — XFP игнорируется
+    полностью, остаётся только ``request.url.scheme``. Это безопасный
+    default: без явно сконфигурированных доверенных прокси сервис не
+    стоит за L7-балансировщиком и схему берём напрямую.
 
     Доверять можно только **последнему** значению в цепочке XFP: оно от
     closest-hop'а (нашего ingress'а), а всё, что левее, — приходит от
@@ -74,6 +82,12 @@ def _is_request_https(request: Request) -> bool:
     """
     if request.url.scheme == "https":
         return True
+    if not trusted_proxy_ips:
+        # Без allow-list'а XFP подделывается любым клиентом — игнорируем.
+        return False
+    direct_ip = request.client.host if request.client else None
+    if not direct_ip or not _is_trusted_proxy(direct_ip, trusted_proxy_ips):
+        return False
     forwarded_proto = request.headers.get("X-Forwarded-Proto", "").strip().lower()
     if not forwarded_proto:
         return False
@@ -114,23 +128,33 @@ class HTTPSRequiredMiddleware(BaseHTTPMiddleware):
     * ``app_env`` — текущее окружение, обычно ``settings.app_env``. Если
       оно не в ``HTTPS_REQUIRED_ENVS``, middleware выключен и просто
       пропускает все запросы.
+    * ``trusted_proxy_ips`` — allow-list IP-адресов / CIDR-блоков, чьему
+      ``X-Forwarded-Proto`` можно доверять. Пустой список = доверять
+      только ``request.url.scheme`` (XFP игнорируется полностью).
 
     Поведение для production/staging:
 
     * health/ready — всегда проходят (k8s probe на pod-network http).
-    * Всё остальное — должно быть https (request.url.scheme или
-      X-Forwarded-Proto). Иначе 403 ``HTTPS_REQUIRED``.
+    * Всё остальное — должно быть https (request.url.scheme либо
+      X-Forwarded-Proto от trusted-proxy). Иначе 403 ``HTTPS_REQUIRED``.
     """
 
-    def __init__(self, app, *, app_env: str):
+    def __init__(
+        self,
+        app,
+        *,
+        app_env: str,
+        trusted_proxy_ips: list[str] | None = None,
+    ):
         super().__init__(app)
         self._enabled = app_env.lower() in HTTPS_REQUIRED_ENVS
+        self._trusted_proxy_ips = list(trusted_proxy_ips or [])
 
     async def dispatch(self, request: Request, call_next):
         if not self._enabled:
             return await call_next(request)
         if request.url.path in HEALTH_PATHS:
             return await call_next(request)
-        if _is_request_https(request):
+        if _is_request_https(request, self._trusted_proxy_ips):
             return await call_next(request)
         return _build_https_required_response(request)

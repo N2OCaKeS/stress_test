@@ -453,7 +453,7 @@ async def test_transfer_requires_admin(http_client, adb):
     # Текущий identity = owner (operator), не админ.
     resp = await http_client.post(
         f"/api/secret/v1/credentials/{cred.id}/transfer",
-        json={"new_owner_user_id": "usr_new000000000000000000000001"},
+        json={"new_owner_user_id": "usr_new000000000000000000000001", "reason": "owner left org"},
     )
     assert resp.status_code == 403
 
@@ -478,7 +478,7 @@ async def test_transfer_personal_blocked_by_service_admin(http_client, adb):
     _set_identity(_identity(user_id=SVC_ADMIN_ID, roles=["admin"]))
     resp = await http_client.post(
         f"/api/secret/v1/credentials/{cred.id}/transfer",
-        json={"new_owner_user_id": "usr_new000000000000000000000001"},
+        json={"new_owner_user_id": "usr_new000000000000000000000001", "reason": "owner left org"},
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -505,7 +505,7 @@ async def test_transfer_active_cred_rejected(http_client, adb):
     _set_identity(_identity(user_id=SVC_ADMIN_ID, roles=["admin"]))
     resp = await http_client.post(
         f"/api/secret/v1/credentials/{cred.id}/transfer",
-        json={"new_owner_user_id": "usr_new000000000000000000000001"},
+        json={"new_owner_user_id": "usr_new000000000000000000000001", "reason": "owner left org"},
     )
     assert resp.status_code == 422
     assert resp.json()["error_code"] == "CREDENTIAL_NOT_BLOCKED"

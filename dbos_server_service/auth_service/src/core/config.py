@@ -614,6 +614,34 @@ class Settings(BaseSettings):
         if not self.docker_rsa_private_key:
             raise ValueError("DOCKER_RSA_PRIVATE_KEY required in production")
 
+        # ── SECRET_INTERNAL_API_KEY ─────────────────────────────────────────
+        # Bearer для outbound POST'ов в `/api/secret/v1/internal/lifecycle/*`.
+        # Если пустой в prod — secret_service отшивает наши emit'ы с 401, и
+        # каскад на dep-revoke / user-delete рвётся: при удалении юзера его
+        # personal-кред и DeptGrant'ы остаются дрейфовать в secret_service до
+        # ручной чистки. Требуем непустой ключ.
+        if not (self.secret_internal_api_key or "").strip():
+            raise ValueError(
+                "SECRET_INTERNAL_API_KEY must be set in production "
+                "(outbound lifecycle callbacks to secret_service will get 401 otherwise)"
+            )
+
+        # ── SECRET_SERVICE_URL — https-only ─────────────────────────────────
+        # Пустой URL разрешён — это намеренный no-op для standalone-стенда без
+        # secret_service. Но если задан — должен быть https (localhost-исключение
+        # для devcontainer/sidecar). Plain http выпускает Bearer SERVICE_API_KEY
+        # эквивалент в открытый сегмент сети.
+        if self.secret_service_url:
+            parsed = urlparse(self.secret_service_url)
+            scheme = (parsed.scheme or "").lower()
+            host = (parsed.hostname or "").lower()
+            if scheme != "https" and host not in _LOCAL_HOSTS:
+                raise ValueError(
+                    "SECRET_SERVICE_URL must use https:// in production "
+                    f"(got scheme={scheme!r}, host={host!r}); plain http "
+                    "exposes the lifecycle bearer to MITM/sniff in the cluster"
+                )
+
         # ── LOGGING_SERVICE_URL https-only ──────────────────────────────────
         # audit-канал по plain http внутри кластера снифается/перехватывается
         # — атакующий с network-namespace доступом подменит ack/тихо съест

@@ -82,7 +82,10 @@ async def test_credential_blocked_410(
     )
     await client.post(
         f"{BASE}/internal/lifecycle/user-deleted",
-        headers={"Authorization": f"Bearer {INTERNAL_KEY}"},
+        headers={
+            "Authorization": f"Bearer {INTERNAL_KEY}",
+            "X-Service-Identity": "auth_service",
+        },
         json={"user_id": owner_id, "actor_id": "usr_admin"},
     )
 

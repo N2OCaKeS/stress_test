@@ -71,7 +71,10 @@ async def http_client(adb, monkeypatch):
         get_settings.cache_clear()
 
 
-_HEADERS_OK = {"Authorization": f"Bearer {_API_KEY}"}
+_HEADERS_OK = {
+    "Authorization": f"Bearer {_API_KEY}",
+    "X-Service-Identity": "auth_service",
+}
 
 
 @pytest.mark.asyncio
@@ -186,3 +189,30 @@ async def test_per_caller_key_requires_identity_header(http_client, monkeypatch)
         },
     )
     assert resp_ok.status_code == 200, resp_ok.text
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_rejects_wrong_caller_identity_legacy(http_client):
+    """Legacy single-key режим: чужой X-Service-Identity → 401 несмотря на валидный bearer."""
+    resp = await http_client.post(
+        "/api/secret/v1/internal/lifecycle/user-deleted",
+        json={"user_id": "usr_x", "actor_id": "usr_a", "actor_username": "a"},
+        headers={
+            "Authorization": f"Bearer {_API_KEY}",
+            "X-Service-Identity": "server_service",
+        },
+    )
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "INTERNAL_AUTH_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_rejects_missing_caller_identity_legacy(http_client):
+    """Legacy single-key режим: без X-Service-Identity новый guard тоже бьёт 401."""
+    resp = await http_client.post(
+        "/api/secret/v1/internal/lifecycle/dept-deleted",
+        json={"dept_id": "dep_x", "actor_id": "usr_a", "actor_username": "a"},
+        headers={"Authorization": f"Bearer {_API_KEY}"},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["error_code"] == "INTERNAL_AUTH_REQUIRED"

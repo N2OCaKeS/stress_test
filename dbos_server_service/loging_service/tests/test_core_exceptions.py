@@ -72,7 +72,12 @@ def _fake_request(headers: dict | None = None):
     namespace with an empty headers dict is enough.
     """
     from types import SimpleNamespace
-    return SimpleNamespace(headers=headers or {}, state=SimpleNamespace(), url=SimpleNamespace(path="/"))
+    return SimpleNamespace(
+        headers=headers or {},
+        state=SimpleNamespace(),
+        url=SimpleNamespace(path="/"),
+        method="POST",
+    )
 
 
 class TestRequireServiceToken:
@@ -87,7 +92,10 @@ class TestRequireServiceToken:
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.setenv("SERVICE_API_KEYS", keys)
 
-    def test_empty_keys_returns_503(self, monkeypatch):
+    def test_empty_keys_returns_401(self, monkeypatch):
+        """Пустой `SERVICE_API_KEYS` → 401 INVALID_SERVICE_KEY (унифицировано
+        с остальными «ключ невалиден»-ветками; раньше отвечали 503
+        SERVICE_TOKEN_NOT_CONFIGURED, что утекало атакующему статус ingest'а)."""
         from src.core.config import get_settings
         get_settings.cache_clear()  # type: ignore[attr-defined]
         monkeypatch.delenv("SERVICE_API_KEYS", raising=False)
@@ -96,8 +104,8 @@ class TestRequireServiceToken:
                 request=_fake_request(headers={"X-Service-Identity": "auth_service"}),
                 credentials=None,
             )
-        assert exc.value.error_code == "SERVICE_TOKEN_NOT_CONFIGURED"
-        assert exc.value.http_status == 503
+        assert exc.value.error_code == "INVALID_SERVICE_KEY"
+        assert exc.value.http_status == 401
 
     def test_missing_credentials_returns_401(self, monkeypatch):
         self._setup(monkeypatch)

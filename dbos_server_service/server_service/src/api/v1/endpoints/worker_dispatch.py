@@ -1145,15 +1145,10 @@ async def server_prepare_dispatch(
     # тем же ключом после decommission'а обязан вернуть existing task_id,
     # иначе retry-семантика клиента ломается на 409 SERVER_DECOMMISSIONED.
     if idempotency_key is not None:
-        existing = await worker_client._get_task_by_idempotency_key(idempotency_key)
+        existing = await worker_client.lookup_existing_task(idempotency_key)
         if existing is not None:
-            try:
-                worker_client._ensure_idempotency_matches(
-                    existing=existing,
-                    task_kind=task_kind,
-                    target_server_id=server_id,
-                )
-            except ConflictError:
+            existing_id, existing_kind, existing_target = existing
+            if existing_kind != task_kind or existing_target != server_id:
                 audit_service.emit(
                     audit_action, target_id=server_id, target_type="server",
                     status="failure", allowed=True,
@@ -1163,8 +1158,19 @@ async def server_prepare_dispatch(
                         "department_id": server.department_id,
                     },
                 )
-                raise
-            existing_id = existing[0]
+                raise ConflictError(
+                    error_code="IDEMPOTENCY_KEY_REUSE_CONFLICT",
+                    message=(
+                        "Idempotency-Key already used for a different "
+                        "operation (task_kind/target_server_id mismatch)"
+                    ),
+                    details={
+                        "existing_task_kind": existing_kind,
+                        "existing_target_server_id": existing_target,
+                        "requested_task_kind": task_kind,
+                        "requested_target_server_id": server_id,
+                    },
+                )
             audit_service.emit(
                 audit_action, target_id=server_id, target_type="server",
                 status="success", allowed=True,

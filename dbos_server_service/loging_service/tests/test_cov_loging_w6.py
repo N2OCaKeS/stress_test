@@ -621,9 +621,14 @@ class TestActionForPath:
 
 
 class TestRequireServiceTokenEmptyMap:
-    """Пустой SERVICE_API_KEYS → 503 SERVICE_TOKEN_NOT_CONFIGURED на ingest."""
+    """Пустой SERVICE_API_KEYS → 401 INVALID_SERVICE_KEY на ingest.
 
-    def test_empty_map_returns_503_on_ingest(self, monkeypatch, db):
+    Раньше отвечали 503 SERVICE_TOKEN_NOT_CONFIGURED, но 503 утекал атакующему
+    факт «ingest выключен» — он переходил на другой вектор. 401 единообразно
+    отвечает «ключ невалиден», внутреннее состояние не утекает.
+    """
+
+    def test_empty_map_returns_401_on_ingest(self, monkeypatch, db):
         from fastapi.testclient import TestClient
         from src.core.config import get_settings
         from src.dependencies.db import get_db
@@ -655,10 +660,10 @@ class TestRequireServiceTokenEmptyMap:
             app.dependency_overrides.clear()
             get_settings.cache_clear()
 
-        assert r.status_code == 503
-        assert r.json()["error_code"] == "SERVICE_TOKEN_NOT_CONFIGURED"
+        assert r.status_code == 401
+        assert r.json()["error_code"] == "INVALID_SERVICE_KEY"
 
-    def test_empty_map_returns_503_on_register_events(self, monkeypatch, db):
+    def test_empty_map_returns_401_on_register_events(self, monkeypatch, db):
         from fastapi.testclient import TestClient
         from src.core.config import get_settings
         from src.dependencies.db import get_db
@@ -690,8 +695,8 @@ class TestRequireServiceTokenEmptyMap:
             app.dependency_overrides.clear()
             get_settings.cache_clear()
 
-        assert r.status_code == 503
-        assert r.json()["error_code"] == "SERVICE_TOKEN_NOT_CONFIGURED"
+        assert r.status_code == 401
+        assert r.json()["error_code"] == "INVALID_SERVICE_KEY"
 
 
 class TestRequireServiceTokenTimingOracle:

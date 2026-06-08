@@ -87,4 +87,8 @@ KNOWN_SERVICE_IDENTITIES: frozenset[str] = frozenset({
     "loging_service",
     "server_service",
     "config_service",
+    # secret_service ходит в auth_service за introspect токенов и сам auth_service
+    # ходит в secret_service за lifecycle-callback'ами под тем же identity'ем —
+    # без allow-list'а strict-режим резал бы такой trip с 401.
+    "secret_service",
 })

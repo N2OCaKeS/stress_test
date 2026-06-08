@@ -427,6 +427,7 @@ def create_application() -> FastAPI:
     app.add_middleware(
         HTTPSRequiredMiddleware,
         app_env=settings.app_env,
+        trusted_proxy_ips=list(settings.trusted_proxy_ips or []),
     )
 
     # SecurityHeadersMiddleware регистрируем последним → outermost слой.

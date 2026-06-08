@@ -52,6 +52,7 @@ SERVICE_EVENTS = [
     {"action": "tokens.recover", "description": "Blocked credential recovered (status returned to active within 30-day window)", "default_severity": "WARNING"},
     # Authorization
     {"action": "tokens.access_denied", "description": "Reader/operator attempted action without permission (no RoleACL or wrong scope)", "default_severity": "INFO"},
+    {"action": "tokens.lockout_triggered", "description": "Per-actor lockout activated after repeated denied access attempts (brute-force defense)", "default_severity": "WARNING"},
 ]
 
 # Дефолтные severity для пары (action, status). loging_service применяет это
@@ -80,6 +81,7 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("tokens.transfer_ownership", "success"): "CRITICAL",
     ("tokens.recover", "success"): "WARNING",
     ("tokens.access_denied", "failure"): "INFO",
+    ("tokens.lockout_triggered", "success"): "WARNING",
     # Failure-ось: эскалация вверх. CRUD-операции — ERROR; высоко-чувствительные
     # (reveal / transfer / cross-dep grants) — CRITICAL; служебные — WARNING.
     ("tokens.create", "failure"): "ERROR",

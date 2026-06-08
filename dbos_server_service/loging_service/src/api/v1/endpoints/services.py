@@ -185,7 +185,6 @@ def list_services(
         413: {"model": ErrorEnvelope, "description": "`PAYLOAD_TOO_LARGE`"},
         422: {"model": ErrorEnvelope, "description": "`VALIDATION_ERROR`"},
         429: {"model": ErrorEnvelope, "description": "Превышен per-service-identity rate-limit"},
-        503: {"model": ErrorEnvelope, "description": "`SERVICE_TOKEN_NOT_CONFIGURED`"},
     },
     dependencies=[Depends(require_service_token)],
 )

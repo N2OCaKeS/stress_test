@@ -97,6 +97,8 @@ class TestUsersInventoryTrigger:
         assert captured_dispatch[0]["payload"] == {
             "server_id": srv.id,
             "target_department_id": "dep_a",
+            "host": srv.hostname,
+            "ssh_port": srv.ssh_port,
             "is_managed": False,
             "management_user": None,
         }
@@ -115,6 +117,25 @@ class TestUsersInventoryTrigger:
         payload = captured_dispatch[0]["payload"]
         assert payload["is_managed"] is True
         assert payload["management_user"] == "dbos"
+
+    async def test_dispatch_payload_includes_host_and_port(
+        self, client, operator_token_a, make_server, captured_dispatch,
+    ):
+        # Симметрия с `_dispatch_for_server`: dispatch payload должен нести
+        # `host`/`ssh_port`, иначе SSH-клиент воркера фоллбэкается на
+        # `server_id` (UUID) и ходит в несуществующий хост.
+        srv = await make_server(
+            department_id="dep_a",
+            hostname="srv-with-host.example.local",
+        )
+        resp = await client.post(
+            f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        payload = captured_dispatch[0]["payload"]
+        assert payload["host"] == "srv-with-host.example.local"
+        assert payload["host"] != srv.id
+        assert payload["ssh_port"] == srv.ssh_port
 
     async def test_reader_cannot_trigger(
         self, client, reader_token_a, make_server, captured_dispatch,

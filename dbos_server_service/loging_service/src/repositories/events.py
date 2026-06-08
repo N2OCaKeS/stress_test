@@ -270,11 +270,32 @@ def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEv
     ).scalar_one()
 
     # Legacy row, записанный до миграции j0e1f2a3b4c5, мог не иметь hash'а.
-    # Это редкий backward-compat случай: возвращаем существующий row без
-    # 409, чтобы не ломать ingest на старых данных. Новые row'ы всегда
-    # получают hash при вставке выше.
+    # Миграция m3n4o5p6q7r8 физически удаляет такие row'и старше 30 дней;
+    # для row'ей моложе 30 дней — здесь fail-closed: WARNING-лог + 409
+    # IDEMPOTENCY_KEY_CONFLICT. Раньше отдавали существующий row без
+    # проверки, открывая poisoning-window (атакующий «столбил» ключ
+    # фейковым payload'ом до bump'а миграции, legitimate caller на retry
+    # получал чужой row). Замена на 409 — fail-closed: legitimate
+    # outbox-retry в редком legacy-окне получит conflict и логирует
+    # инцидент, что лучше, чем silent return чужого payload'а.
     if existing.idempotency_payload_hash is None:
-        return existing
+        logger.warning(
+            "legacy NULL idempotency_payload_hash on replay: service=%s "
+            "idempotency_key=%s id=%s — treating as conflict (fail-closed)",
+            payload.service, payload.idempotency_key, existing.id,
+        )
+        raise ConflictError(
+            error_code="IDEMPOTENCY_KEY_CONFLICT",
+            message=(
+                "idempotency_key already used by a legacy row without "
+                "payload hash (cannot verify replay)"
+            ),
+            details={
+                "service": payload.service,
+                "idempotency_key": payload.idempotency_key,
+                "reason": "legacy_null_hash",
+            },
+        )
 
     if existing.idempotency_payload_hash != payload_hash:
         # Idempotency poisoning detected — payload разошёлся с тем, что

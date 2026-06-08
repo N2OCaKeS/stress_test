@@ -123,7 +123,11 @@ async def test_sweep_honours_settings_retention(adb):
 
 @pytest.mark.asyncio
 async def test_sweep_collects_handler_errors(adb):
-    """Если delete-у репо плохо — sweep ловит, summary.errors заполнен."""
+    """Если SQL-DELETE падает — sweep ловит, summary.errors заполнен.
+
+    Sweep делает атомарный `DELETE ... RETURNING` за один execute; чтобы
+    смоделировать сбой, патчим `adb.execute` и поднимаем оттуда.
+    """
     await _blocked_cred(
         adb, cred_id="cred_sw_e01", name="e",
         blocked_at=datetime.now(timezone.utc) - timedelta(days=99),
@@ -132,7 +136,7 @@ async def test_sweep_collects_handler_errors(adb):
     async def _boom(*_a, **_k):
         raise RuntimeError("simulated delete failure")
 
-    with patch.object(sweep_service.cred_repo, "delete", side_effect=_boom), \
+    with patch.object(adb, "execute", side_effect=_boom), \
          patch.object(sweep_service.audit_service, "emit", side_effect=lambda *a, **k: None):
         summary = await sweep_service.sweep_expired_blocked(adb)
 

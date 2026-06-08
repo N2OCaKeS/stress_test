@@ -785,9 +785,12 @@ class TestNormalizeServiceNamePreserveCase:
 
 
 class TestRequireServiceTokenEmptyMap:
-    """Empty SERVICE_API_KEYS map → 503 SERVICE_TOKEN_NOT_CONFIGURED on any
-    ingest endpoint. Mirrors existing test in test_cov_loging_w6 but confirms
-    the path via both POST /events and POST /services/{svc}/events.
+    """Empty SERVICE_API_KEYS map → 401 INVALID_SERVICE_KEY on any ingest
+    endpoint. Раньше отдавали 503 SERVICE_TOKEN_NOT_CONFIGURED, но снаружи
+    это утечка состояния конфигурации (атакующий понимает, что ingest вообще
+    выключен). Унифицировали ответ с остальными невалидно-ключ ветками —
+    наружу всегда 401 INVALID_SERVICE_KEY, реальный misconfig виден по логам
+    и self-audit failure counter.
     """
 
     def _empty_map_client(self, db, monkeypatch):
@@ -815,8 +818,8 @@ class TestRequireServiceTokenEmptyMap:
                     "X-Service-Identity": "auth_service",
                 },
             )
-            assert r.status_code == 503
-            assert r.json()["error_code"] == "SERVICE_TOKEN_NOT_CONFIGURED"
+            assert r.status_code == 401
+            assert r.json()["error_code"] == "INVALID_SERVICE_KEY"
         finally:
             from src.main import app
             app.dependency_overrides.clear()
@@ -833,8 +836,8 @@ class TestRequireServiceTokenEmptyMap:
                     "X-Service-Identity": "auth_service",
                 },
             )
-            assert r.status_code == 503
-            assert r.json()["error_code"] == "SERVICE_TOKEN_NOT_CONFIGURED"
+            assert r.status_code == 401
+            assert r.json()["error_code"] == "INVALID_SERVICE_KEY"
         finally:
             from src.main import app
             app.dependency_overrides.clear()

@@ -430,6 +430,53 @@ class TestPrepareDispatch:
         # captured_dispatch обновляется только при реальном вызове fake_dispatch.
         assert len(captured_dispatch) == 1
 
+    async def test_prepare_uses_public_lookup_existing_task(
+        self, client, operator_token_a, make_server, captured_dispatch,
+        monkeypatch,
+    ):
+        """Prepare-эндпоинт идёт через публичный `lookup_existing_task`.
+
+        Симметрия с остальными dispatch'ами (`_dispatch_for_server`). Если
+        внутрь worker_client'а добавится новый guard в `lookup_existing_task`
+        (например, дополнительная валидация), prepare обязан его подхватить
+        автоматически, без точечной правки в endpoint'е.
+        """
+        srv = await make_server(department_id="dep_a")
+        idem_key = "ik-lookup-symmetry"
+        first_task_id = "tsk_server_prepare_via_lookup"
+        existing: dict[str, tuple[str, str, str | None]] = {}
+        lookup_calls: list[str] = []
+
+        async def fake_lookup(key):
+            lookup_calls.append(key)
+            return existing.get(key)
+
+        import src.services.worker_client as worker_mod
+        monkeypatch.setattr(worker_mod, "lookup_existing_task", fake_lookup)
+
+        resp1 = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": idem_key},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
+        )
+        assert resp1.status_code == 202, resp1.text
+        # Эндпоинт обязан был вызвать публичный lookup_existing_task —
+        # не приватный _get_task_by_idempotency_key.
+        assert lookup_calls == [idem_key]
+        first_task_id = resp1.json()["task_id"]
+
+        # Replay-hit: lookup отдаёт существующий task — endpoint возвращает
+        # тот же task_id без второго dispatch'а.
+        existing[idem_key] = (first_task_id, "server.prepare", srv.id)
+        resp2 = await client.post(
+            f"{BASE}/{srv.id}/prepare",
+            headers={**_hdr(operator_token_a), "Idempotency-Key": idem_key},
+            json={"username_b64": _b64("bootadmin"), "password_b64": _b64("Boot1234!StrongPwd")},
+        )
+        assert resp2.status_code == 202, resp2.text
+        assert resp2.json()["task_id"] == first_task_id
+        assert lookup_calls == [idem_key, idem_key]
+
     async def test_idempotent_hit_with_kind_mismatch_emits_failure(
         self, client, operator_token_a, make_server, captured_dispatch,
         captured_emits_prepare, monkeypatch,

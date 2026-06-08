@@ -17,6 +17,7 @@ import logging
 import secrets
 import string
 import time
+from collections import OrderedDict
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -55,7 +56,17 @@ logger = logging.getLogger(__name__)
 # In-memory словарь живёт на процесс, при рестарте теряется (приемлемо:
 # SIEM всё равно увидит первый CRITICAL после рестарта). Multi-worker деплой
 # даст по одному CRITICAL на воркера, но не водопад.
-_REVEAL_AUDIT_WINDOW: dict[tuple[str, str], tuple[float, int]] = {}
+#
+# Bounded LRU: при штурме длинного списка уникальных (actor, account) пар
+# словарь рос бы безгранично между sweep'ами (stale-cleanup срабатывает
+# только на cache-miss того же окна). Кэп `_REVEAL_AUDIT_WINDOW_MAX`
+# держит размер в пределе — на вытеснении уходит самый старый по
+# обращению ключ (LRU). Throttle-семантика самой статистики не страдает:
+# вытесненный actor получит ещё один CRITICAL на следующем reveal'е
+# вместо INFO, что в случае реального шторма даёт SIEM больше сигнала,
+# а не меньше.
+_REVEAL_AUDIT_WINDOW_MAX = 10000
+_REVEAL_AUDIT_WINDOW: "OrderedDict[tuple[str, str], tuple[float, int]]" = OrderedDict()
 
 
 def _record_reveal_attempt(actor_id: str | None, account_id: str) -> tuple[bool, int]:
@@ -83,6 +94,7 @@ def _record_reveal_attempt(actor_id: str | None, account_id: str) -> tuple[bool,
     entry = _REVEAL_AUDIT_WINDOW.get(key)
     if entry is None or (now - entry[0]) >= window:
         _REVEAL_AUDIT_WINDOW[key] = (now, 1)
+        _REVEAL_AUDIT_WINDOW.move_to_end(key)
         # Best-effort sweep устаревших ключей — иначе словарь распухает
         # на долгоживущем процессе. Линейный пробег, выполняется только
         # при miss'е (т.е. редко), для O(n) словаря допустимо.
@@ -90,10 +102,15 @@ def _record_reveal_attempt(actor_id: str | None, account_id: str) -> tuple[bool,
         stale_keys = [k for k, (ts, _cnt) in _REVEAL_AUDIT_WINDOW.items() if ts < stale_cutoff]
         for k in stale_keys:
             _REVEAL_AUDIT_WINDOW.pop(k, None)
+        # LRU-eviction: после insert'а размер мог превысить кэп (хвост
+        # старее всех — `popitem(last=False)` его сбросит).
+        while len(_REVEAL_AUDIT_WINDOW) > _REVEAL_AUDIT_WINDOW_MAX:
+            _REVEAL_AUDIT_WINDOW.popitem(last=False)
         return True, 1
     last_at, count = entry
     new_count = count + 1
     _REVEAL_AUDIT_WINDOW[key] = (last_at, new_count)
+    _REVEAL_AUDIT_WINDOW.move_to_end(key)
     return False, new_count
 
 

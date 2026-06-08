@@ -35,6 +35,17 @@ from src.services import audit_service
 logger = logging.getLogger(__name__)
 
 
+# Аудит-payload для cascade'ов не должен раздуваться на dep с сотнями кред.
+# Хвост ID-шников сверх лимита отрезаем + ставим `truncated: True`.
+_AUDIT_CRED_IDS_CAP = 50
+
+
+def _cap_cred_ids(ids: list[str]) -> tuple[list[str], bool]:
+    if len(ids) <= _AUDIT_CRED_IDS_CAP:
+        return ids, False
+    return ids[:_AUDIT_CRED_IDS_CAP], True
+
+
 # ── Internal queries (нет нужды раздувать репо ради двух одноразовых select'ов) ─
 
 
@@ -175,6 +186,10 @@ async def handle_dept_deleted_as_recipient(
     summary = {"dept_grants_revoked": 0, "role_acls_revoked": 0, "errors": []}
     try:
         grants = await _list_dept_grants_for_recipient(db, dept_id)
+        if not grants:
+            # Идемпотентность: повторный event без новых grant'ов — no-op,
+            # симметрично handle_dept_deleted_as_owner.
+            return summary
         affected_cred_ids: list[str] = []
         for grant in grants:
             removed = await acl_repo.delete_for_cred_dept(db, grant.cred_id, dept_id)
@@ -184,18 +199,23 @@ async def handle_dept_deleted_as_recipient(
             await db.flush()
             summary["dept_grants_revoked"] += 1
         if affected_cred_ids:
+            capped_ids, truncated = _cap_cred_ids(affected_cred_ids)
+            audit_details = {
+                "recipient_dept_id": dept_id,
+                "cred_ids": capped_ids,
+                "removed_dept_grants": summary["dept_grants_revoked"],
+                "removed_role_acls": summary["role_acls_revoked"],
+            }
+            if truncated:
+                audit_details["truncated"] = True
+                audit_details["total_cred_ids"] = len(affected_cred_ids)
             audit_service.emit(
                 "tokens.dept_recipient_cascade",
                 actor_id=actor_id,
                 target_id=dept_id,
                 target_type="department",
                 severity="CRITICAL",
-                details={
-                    "recipient_dept_id": dept_id,
-                    "cred_ids": affected_cred_ids,
-                    "removed_dept_grants": summary["dept_grants_revoked"],
-                    "removed_role_acls": summary["role_acls_revoked"],
-                },
+                details=audit_details,
             )
         await db.commit()
     except Exception as exc:  # noqa: BLE001
@@ -245,19 +265,24 @@ async def handle_dept_service_access_revoked(
             if cred_id not in affected_cred_ids:
                 affected_cred_ids.append(cred_id)
 
+        capped_ids, truncated = _cap_cred_ids(affected_cred_ids)
+        cascade_details: dict = {
+            "dept_id": dept_id,
+            "service": service,
+            "cred_ids": capped_ids,
+            "removed_dept_grants": summary["dept_grants_revoked"],
+            "removed_role_acls": summary["role_acls_revoked"],
+        }
+        if truncated:
+            cascade_details["truncated"] = True
+            cascade_details["total_cred_ids"] = len(affected_cred_ids)
         audit_service.emit(
             "tokens.dept_revoke_cascade",
             actor_id=actor_id,
             target_id=dept_id,
             target_type="department",
             severity="CRITICAL",
-            details={
-                "dept_id": dept_id,
-                "service": service,
-                "cred_ids": affected_cred_ids,
-                "removed_dept_grants": summary["dept_grants_revoked"],
-                "removed_role_acls": summary["role_acls_revoked"],
-            },
+            details=cascade_details,
         )
         await db.commit()
     except Exception as exc:  # noqa: BLE001

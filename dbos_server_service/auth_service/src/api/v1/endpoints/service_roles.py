@@ -1,7 +1,7 @@
 """Эндпоинты управления `ServiceRoleDefinition` (per-department scope)."""
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import CurrentUserIdentity
@@ -15,9 +15,18 @@ from src.schemas.service_roles import (
 from src.services import service_role_service
 
 
+_BULK_ROLE_MAX_USER_IDS = 200
+
+
 class BulkRoleRequest(BaseModel):
-    """Тело bulk assign/revoke — список user_id, которым назначаем/у которых снимаем роль."""
-    user_ids: list[str]
+    """Тело bulk assign/revoke — список user_id, которым назначаем/у которых снимаем роль.
+
+    `max_length=200` отбивает DoS-like нагрузки: bulk_assign внутри открывает
+    транзакцию и аплоадит N×UserServiceRole INSERT'ов. Без верхней границы
+    одиночный запрос на 100k user_ids держит коннект к БД минутами и блокирует
+    остальной login-flow.
+    """
+    user_ids: list[str] = Field(..., max_length=_BULK_ROLE_MAX_USER_IDS)
 
 
 router = APIRouter(

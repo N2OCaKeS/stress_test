@@ -1,7 +1,9 @@
 """Use cases для /credentials/{id}/dept-grants (только cross_department).
 
 DeptGrant — owner-side операция: его выдаёт dep_admin владеющего dep'а или
-service_admin. Revoke каскадно сносит все RoleACL'и (cred_id, recipient_dept).
+admin `secret_service` того же dep'а (per-(dept, service) роль, cross-dept
+привилегий не даёт). Revoke каскадно сносит все RoleACL'и
+(cred_id, recipient_dept).
 """
 
 from __future__ import annotations
@@ -43,7 +45,7 @@ async def add(
     cred_id: str,
     payload: DeptGrantCreate,
 ) -> DeptGrant:
-    """Создать DeptGrant. Только owner dep_admin / service_admin."""
+    """Создать DeptGrant. Только owner dep_admin или admin secret_service владеющего dep'а."""
     cred = await load_for_action(db, identity, cred_id, "grant_dept")
     _ensure_cross_dep_scope(cred)
 
@@ -92,7 +94,7 @@ async def add(
 async def list_for(
     db: AsyncSession, identity: Identity, cred_id: str
 ) -> list[DeptGrant]:
-    """Список DeptGrant'ов кред'ы. Видно owner/recipient dep_admin'ам + service_admin."""
+    """Список DeptGrant'ов кред'ы. Видно owner/recipient dep_admin'ам и admin secret_service владеющего dep'а."""
     cred = await load_for_action(db, identity, cred_id, "read")
     _ensure_cross_dep_scope(cred)
     return await repo.get_for_cred(db, cred.id)

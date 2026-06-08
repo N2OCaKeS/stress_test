@@ -33,3 +33,12 @@ class ServiceAccessResponse(BaseModel):
     service_name: str
     enabled: bool
     granted_at: datetime | None = None
+
+
+class HardDeleteDepartmentRequest(BaseModel):
+    """Тело `DELETE /departments/{department_id}`. `reason` обязателен для compliance-аудита."""
+    reason: str = Field(
+        min_length=1,
+        max_length=256,
+        description="Человекочитаемое обоснование hard-delete'а (compliance).",
+    )

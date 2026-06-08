@@ -61,6 +61,11 @@ from src.db.session import AsyncSessionLocal
 from src.main import broker
 from src.repositories import task as task_repo
 from src.services import redis_pool, server_service_client, ssh_client
+from src.services.redis_stash_crypto import (
+    aad_for_redis_stash,
+    decrypt_stash,
+    encrypt_stash,
+)
 from src.tasks.users import _validate_payload_login
 from src.tasks._bmc_errors import (
     dispatch_get_power_state,
@@ -200,13 +205,19 @@ async def _read_ipmi_rotate_state(task_id: str) -> tuple[str | None, str | None]
     storage получал тот же timestamp, что и при первой успешной попытке —
     без этого rotated_at дрейфил бы между BMC apply и записью в storage
     на каждой повторной submit-попытке (drift до десятков секунд).
+
+    Stash зашифрован тем же общим master-key, что и dispatch-stash'и;
+    AAD binding'уется к task_id (он же stash-id в этом keyspace'е).
+    Битый/swap-нутый stash → `AppException(STASH_DECRYPT_*)`.
     """
     validate_task_id(task_id)
     client = redis_pool.get_redis()
     raw = await client.get(_IPMI_ROTATE_KEY_PREFIX + task_id)
     if raw is None:
         return None, None
-    return _ipmi_stash_parse(raw)
+    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    plaintext = decrypt_stash(text, aad=aad_for_redis_stash(task_id))
+    return _ipmi_stash_parse(plaintext)
 
 
 async def _store_ipmi_rotate_password(
@@ -233,9 +244,13 @@ async def _store_ipmi_rotate_password(
     """
     validate_task_id(task_id)
     client = redis_pool.get_redis()
+    token = encrypt_stash(
+        _ipmi_stash_value(password, rotated_at),
+        aad=aad_for_redis_stash(task_id),
+    )
     await client.set(
         _IPMI_ROTATE_KEY_PREFIX + task_id,
-        _ipmi_stash_value(password, rotated_at),
+        token,
         ex=STASH_TTL_SECONDS,
     )
 
@@ -270,7 +285,9 @@ async def _read_account_rotate_state(
     raw = await client.get(_ACCOUNT_ROTATE_KEY_PREFIX + task_id)
     if raw is None:
         return None, None, None
-    return _account_stash_parse(raw)
+    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    plaintext = decrypt_stash(text, aad=aad_for_redis_stash(task_id))
+    return _account_stash_parse(plaintext)
 
 
 async def _read_account_rotate_password(task_id: str) -> str | None:
@@ -306,9 +323,13 @@ async def _store_account_rotate_password(
     """
     validate_task_id(task_id)
     client = redis_pool.get_redis()
+    token = encrypt_stash(
+        _account_stash_value(password, login, rotated_at),
+        aad=aad_for_redis_stash(task_id),
+    )
     await client.set(
         _ACCOUNT_ROTATE_KEY_PREFIX + task_id,
-        _account_stash_value(password, login, rotated_at),
+        token,
         ex=STASH_TTL_SECONDS,
     )
 

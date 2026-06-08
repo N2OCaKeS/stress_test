@@ -90,6 +90,12 @@ SERVER_ENCRYPTION_KEY=$(rand_b64 32)
 SERVER_ENCRYPTION_KEY_VERSION=2
 HKDF_SALT_HEX=$(rand_hex 16)
 
+# Redis-stash envelope encryption (общий между server_service и server_worker)
+# Ключ отдельный от SERVER_ENCRYPTION_KEY: тот живёт только в server_service
+# (БД ciphertext'ы), этот — симметрично в обоих сервисах (provision-stash).
+REDIS_STASH_ENCRYPTION_KEY=$(rand_b64 32)
+REDIS_STASH_ENCRYPTION_KEY_VERSION=1
+
 # Legacy SERVICE_API_KEY (один общий секрет для всех caller'ов; в коде
 # используется как fallback если per-service SERVICE_API_KEYS не задан).
 SERVICE_API_KEY=$(rand 48)
@@ -196,6 +202,10 @@ cat <<EOF
   SERVER_ENCRYPTION_KEY_VERSION: "${SERVER_ENCRYPTION_KEY_VERSION}"
   HKDF_SALT_HEX: ${HKDF_SALT_HEX}
 
+  # Redis-stash envelope encryption (mounted в server_service + server_worker)
+  REDIS_STASH_ENCRYPTION_KEY: ${REDIS_STASH_ENCRYPTION_KEY}
+  REDIS_STASH_ENCRYPTION_KEY_VERSION: "${REDIS_STASH_ENCRYPTION_KEY_VERSION}"
+
   # Legacy shared SERVICE_API_KEY (fallback при пустых per-service maps)
   SERVICE_API_KEY: ${SERVICE_API_KEY}
 
@@ -259,9 +269,11 @@ ADMIN (initial bootstrap, после первого старта смени па
 ============================================================
 MASTER ENCRYPTION KEY (server_service)
 ============================================================
-  SERVER_ENCRYPTION_KEY:         ${SERVER_ENCRYPTION_KEY}
-  SERVER_ENCRYPTION_KEY_VERSION: ${SERVER_ENCRYPTION_KEY_VERSION}
-  HKDF_SALT_HEX:                 ${HKDF_SALT_HEX}
+  SERVER_ENCRYPTION_KEY:             ${SERVER_ENCRYPTION_KEY}
+  SERVER_ENCRYPTION_KEY_VERSION:     ${SERVER_ENCRYPTION_KEY_VERSION}
+  HKDF_SALT_HEX:                     ${HKDF_SALT_HEX}
+  REDIS_STASH_ENCRYPTION_KEY:        ${REDIS_STASH_ENCRYPTION_KEY}
+  REDIS_STASH_ENCRYPTION_KEY_VERSION:${REDIS_STASH_ENCRYPTION_KEY_VERSION}
 
 ============================================================
 MASTER ENCRYPTION KEY (secret_service)

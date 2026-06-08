@@ -129,10 +129,10 @@ async def test_dept_deleted_as_owner_blocks_creds(
     assert resp.status_code == 200, resp.text
     assert resp.json()["blocked_count"] == 1
 
-    # service_admin читает blocked cred — статус blocked.
+    # admin secret_service'а dep_x читает blocked cred своего dep'а — статус blocked.
     admin = identity_factory(
         user_id="usr_svc_admin",
-        department_id="dep_a",
+        department_id="dep_x",
         service_roles={"secret_service": ["admin"]},
     )
     get_blocked = await client.get(

@@ -78,6 +78,39 @@ class Settings(BaseSettings):
             "в той же сети может RPUSH-нуть payload в очередь воркера."
         ),
     )
+    redis_stash_encryption_key: str = Field(
+        default="",
+        description=(
+            "Симметричный master-ключ для decrypt'а Redis-stash'а кред, "
+            "положенного server_service'ом (provision/prepare dispatch). "
+            "Mount'ится из того же Secret'а, что и у server_service'а — "
+            "обязан совпадать байт-в-байт, иначе worker увидит "
+            "STASH_DECRYPT_FAILED и task FAILED. В production проверяется "
+            "только когда фактически нужен (handler'у пришёл шифр-токен), "
+            "пустота на старте не валит worker — некоторые дев-сценарии "
+            "ходят без stash'ей. Генерить: `openssl rand -base64 32`."
+        ),
+    )
+    redis_stash_encryption_key_version: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Активная версия `REDIS_STASH_ENCRYPTION_KEY` на worker-стороне. "
+            "Симметрично server_service'у. Старые версии читаются по "
+            "`REDIS_STASH_ENCRYPTION_KEY__v<N>` env — нужно при ротации, "
+            "чтобы stash'и в полёте от предыдущей версии остались читаемыми."
+        ),
+    )
+    hkdf_salt_hex: str = Field(
+        default="",
+        description=(
+            "HKDF-salt в hex для деривации stash-AES-ключа. ОБЯЗАН совпадать "
+            "с `HKDF_SALT_HEX` у server_service'а, иначе KDF-output разъедется "
+            "и worker не decrypt'нёт ни один stash. Минимум 32 hex-символа "
+            "(16 байт). Пустая строка — fallback на dev-константу (только для "
+            "dev/test/local; prod-guard у server_service'а отбивает пустоту)."
+        ),
+    )
     server_service_url: str = Field(
         ...,
         description="Base URL of server_service for internal credential calls",

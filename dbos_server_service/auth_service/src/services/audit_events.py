@@ -54,11 +54,13 @@ SERVICE_EVENTS = [
     {"action": "user.sessions_listed", "description": "User listed own active sessions (GET /users/me/sessions)", "default_severity": "INFO"},
     {"action": "user.sessions_revoked_all", "description": "User revoked all own sessions (POST /users/me/sessions/revoke)", "default_severity": "CRITICAL"},
     {"action": "user.session_revoked_one", "description": "User revoked one own session (DELETE /users/me/sessions/{id})", "default_severity": "WARNING"},
+    {"action": "user.hard_deleted", "description": "User row hard-deleted (cascade revoke + secret_service notify)", "default_severity": "CRITICAL"},
     # Departments
     {"action": "department.create", "description": "New department created", "default_severity": "CRITICAL"},
     {"action": "department.list", "description": "Department list retrieved", "default_severity": "INFO"},
     {"action": "department.service_grant", "description": "Service access granted to department", "default_severity": "CRITICAL"},
     {"action": "department.service_revoke", "description": "Service access revoked from department", "default_severity": "CRITICAL"},
+    {"action": "department.hard_deleted", "description": "Department row hard-deleted (cascade bots/oauth + secret_service notify)", "default_severity": "CRITICAL"},
     # Groups
     {"action": "group.create", "description": "New group created", "default_severity": "INFO"},
     {"action": "group.update", "description": "Group updated", "default_severity": "INFO"},

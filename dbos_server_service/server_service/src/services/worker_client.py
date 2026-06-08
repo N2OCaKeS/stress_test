@@ -40,6 +40,11 @@ from src.core.config import get_settings
 from src.core.exceptions import ConflictError, ServiceUnavailableError
 from src.repositories import dispatch_outbox as dispatch_outbox_repo
 from src.services import audit_service, metrics
+from src.services.redis_stash_crypto import (
+    aad_for_redis_stash,
+    encrypt_stash,
+    stash_id_from_key,
+)
 from src.utils.ids import task_id
 
 logger = logging.getLogger(__name__)
@@ -647,10 +652,17 @@ async def store_prepare_creds(creds_key: str, creds: dict) -> None:
             error_code="WORKER_REDIS_NOT_CONFIGURED",
             message="SERVER_WORKER_REDIS_URL is not set",
         )
+    # Envelope-шифрование перед записью в Redis: plaintext (bootstrap_password)
+    # больше не оседает в Redis-keyspace в открытом виде. AAD binding'уется
+    # к stash-id (хвост ключа), swap-attack ловится InvalidTag на decrypt'е.
+    token = encrypt_stash(
+        json.dumps(creds),
+        aad=aad_for_redis_stash(stash_id_from_key(creds_key)),
+    )
     pooled = _prepare_redis_client
     if pooled is not None:
         await pooled.set(
-            creds_key, json.dumps(creds), ex=settings.prepare_creds_ttl_seconds,
+            creds_key, token, ex=settings.prepare_creds_ttl_seconds,
         )
         return
     # Fallback: lifespan не поднял пул (unit-тест / standalone-вызов). Чтобы
@@ -658,7 +670,7 @@ async def store_prepare_creds(creds_key: str, creds: dict) -> None:
     client = aioredis.from_url(settings.server_worker_redis_url)
     try:
         await client.set(
-            creds_key, json.dumps(creds), ex=settings.prepare_creds_ttl_seconds,
+            creds_key, token, ex=settings.prepare_creds_ttl_seconds,
         )
     finally:
         await client.aclose()
@@ -714,16 +726,24 @@ async def store_dispatch_creds(stash_key: str, creds: dict) -> None:
             error_code="WORKER_REDIS_NOT_CONFIGURED",
             message="SERVER_WORKER_REDIS_URL is not set",
         )
+    # Envelope-шифрование перед записью в Redis: plaintext password +
+    # ssh_private_key больше не оседают в Redis-keyspace в открытом виде.
+    # AAD binding'уется к stash-id (хвост ключа), swap-attack ловится
+    # InvalidTag на decrypt'е воркером.
+    token = encrypt_stash(
+        json.dumps(creds),
+        aad=aad_for_redis_stash(stash_id_from_key(stash_key)),
+    )
     pooled = _prepare_redis_client
     if pooled is not None:
         await pooled.set(
-            stash_key, json.dumps(creds), ex=settings.dispatch_creds_ttl_seconds,
+            stash_key, token, ex=settings.dispatch_creds_ttl_seconds,
         )
         return
     client = aioredis.from_url(settings.server_worker_redis_url)
     try:
         await client.set(
-            stash_key, json.dumps(creds), ex=settings.dispatch_creds_ttl_seconds,
+            stash_key, token, ex=settings.dispatch_creds_ttl_seconds,
         )
     finally:
         await client.aclose()

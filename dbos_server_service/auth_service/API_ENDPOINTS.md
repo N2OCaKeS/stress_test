@@ -284,6 +284,27 @@ Errors: `USER_NOT_FOUND` (404), 422 — cross-field инварианты.
 
 Auth: `account_admin`. Errors: `USER_NOT_FOUND` (404), `BAN_NOT_FOUND` (404).
 
+### `DELETE /users/{user_id}`
+
+Hard-delete юзера: row в `users` сносится физически. ORM-cascade уносит `Session`, `PersonalAccessToken`, `Ban`, `UserServiceRole`, `UserGroupMembership`. Боты, которых создал этот юзер, НЕ трогаются (бот = dept-owned entity). После commit'а инициируется best-effort `POST /api/secret/v1/internal/lifecycle/user-deleted` на secret_service — он блокирует personal credentials удалённого юзера (`tokens.owner_user_deleted_block`).
+
+Auth: `account_admin` (платформенный). Department_admin не пускаем — hard-delete пересекается с зоной secret_service и должен идти через один тип actor'а, что и transfer/create.
+
+Body:
+
+```json
+{ "reason": "Q3 reorg / left company / ..." }
+```
+
+`reason` обязателен (min 1, max 256 символов) — пишется в `details.reason` события `user.hard_deleted`, нужен для compliance-аудита.
+
+Audit: `user.hard_deleted` (CRITICAL) с `target_username`, `target_department_id`, `reason`, `sessions_revoked`, `pat_revoked_count`.
+
+Errors:
+- `USER_NOT_FOUND` (404).
+- `LAST_ACCOUNT_ADMIN` (422) — нельзя снести последнего активного account_admin'а, иначе платформа теряет admin-управление.
+- `ROLE_REQUIRED` (403) — actor не `account_admin`.
+
 ### `GET /users/{user_id}/groups`
 
 Auth: Bearer. `account_admin` — любой; `department_admin` — только свой отдел (cross-dept → 404); regular — только self.
@@ -360,6 +381,27 @@ Auth: `account_admin`. Body: `{ "service_name": "config_service" }`. Созда�
 ### `DELETE /departments/{department_id}/services/{service_name}`
 
 Auth: `account_admin`. После revoke роли пользователей формально остаются, но эффективно отбрасываются `_merge_permissions` INTERSECT'ом.
+
+### `DELETE /departments/{department_id}`
+
+Hard-delete отдела. CASCADE-FK уносят `DepartmentServiceAccess`, `ServiceRoleDefinition`, `UserGroup` (с её membership'ами и role-bindings), `DepartmentDockerRegistry`. Боты dept'а и oauth_clients'ы (FK RESTRICT) сносятся явно ДО dept-row'а; bot tokens, BotServiceRole, BotGroupMembership уходят через ORM-cascade на самом боте. После commit'а — best-effort `POST /api/secret/v1/internal/lifecycle/dept-deleted` на secret_service: блокирует cred'ы, где dept — owner (`tokens.owner_dept_deleted_block`), и каскадно снимает DeptGrant'ы / RoleACL, где dept — recipient.
+
+Auth: `account_admin`.
+
+Body:
+
+```json
+{ "reason": "Q3 reorg / department closed / ..." }
+```
+
+`reason` обязателен (min 1, max 256 символов).
+
+Audit: `department.hard_deleted` (CRITICAL) с `department_name`, `department_display_name`, `reason`, `bots_deleted`, `bot_tokens_revoked`, `oauth_clients_deleted`.
+
+Errors:
+- `DEPARTMENT_NOT_FOUND` (404).
+- `USERS_REMAIN_IN_DEPT` (422) — в отделе остался хотя бы один `is_active=True` юзер. Сначала перевести их в другой отдел через `PATCH /users/{id}` либо снести каждого через `DELETE /users/{id}`.
+- `ROLE_REQUIRED` (403).
 
 ---
 

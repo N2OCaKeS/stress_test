@@ -63,9 +63,23 @@ def stub_redis(monkeypatch):
 
 
 def _stash_creds(storage: dict, stash_key: str) -> dict:
-    """Декодировать stash'ед creds для assertion-ов."""
+    """Декодировать stash'ед creds для assertion-ов.
+
+    Под капотом `store_dispatch_creds` envelope-шифрует JSON через
+    `redis_stash_crypto.encrypt_stash` — сюда прилетает уже token, поэтому
+    decrypt'имся тем же AAD, что и worker (`aad_for_redis_stash`).
+    """
+    from src.services.redis_stash_crypto import (
+        aad_for_redis_stash,
+        decrypt_stash,
+        stash_id_from_key,
+    )
+
     raw, _ttl = storage[stash_key]
-    return json.loads(raw)
+    plain = decrypt_stash(
+        raw, aad=aad_for_redis_stash(stash_id_from_key(stash_key)),
+    )
+    return json.loads(plain)
 
 
 @pytest.fixture

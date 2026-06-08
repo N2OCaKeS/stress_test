@@ -2,10 +2,13 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import ConflictError, NotFoundError
+from src.core.exceptions import ConflictError, DomainValidationError, NotFoundError
+from src.repositories.bots import BotRepository
 from src.repositories.bot_roles import BotRoleRepository
+from src.repositories.bot_tokens import BotTokenRepository
 from src.repositories.departments import DepartmentRepository
 from src.repositories.groups import GroupRepository
+from src.repositories.oauth_clients import OAuthClientRepository
 from src.repositories.roles import RoleRepository
 from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.services import ServiceRepository
@@ -214,3 +217,118 @@ async def revoke_service_access(
             _logging.getLogger(__name__).warning(
                 "secret_service notify failed (revoke_service_access): %s", exc,
             )
+
+
+async def hard_delete_department(
+    db: AsyncSession,
+    actor_id: str,
+    actor_username: str | None,
+    department_id: str,
+    reason: str,
+    request_id: str | None = None,
+) -> dict:
+    """Hard-delete отдела.
+
+    Жёсткое удаление: row в `departments` сносится. CASCADE-FK уносят
+    `DepartmentServiceAccess`, `ServiceRoleDefinition`, `UserGroup` (с её
+    membership'ами и role-bindings через свои cascade), `DepartmentDockerRegistry`.
+    `bots.department_id` и `oauth_clients.department_id` имеют ondelete=RESTRICT —
+    эти сущности надо снести явно ДО `DELETE departments`, иначе Postgres
+    выкинет ForeignKeyViolation.
+
+    Защита:
+        Если в отделе остались активные юзеры (`is_active=True`) — отказ
+        `USERS_REMAIN_IN_DEPT` (422). Сначала их надо перевести в другой
+        отдел через `PATCH /users/{id}` или hard-delete каждого. Это не
+        технический инвариант (FK `users.department_id` имеет
+        ondelete=RESTRICT — Postgres всё равно отказал бы), но мы хотим
+        вернуть actionable error code до того, как мы начнём что-либо
+        мутировать в БД.
+
+    Cascade на ботов и oauth_clients'ы:
+        Боты dept'а удаляются вместе с отделом — бот это dept-owned
+        entity, без отдела теряет смысл. ORM-cascade ботов снесёт их
+        токены и role-bindings.
+
+    Audit:
+        `department.hard_deleted` CRITICAL с `reason`. После commit'а
+        `secret_service_client.notify_dept_deleted` best-effort.
+    """
+    dept_repo = DepartmentRepository(db)
+    bot_repo = BotRepository(db)
+    bot_token_repo = BotTokenRepository(db)
+    oauth_client_repo = OAuthClientRepository(db)
+
+    dept = await dept_repo.get_for_update(department_id)
+    if dept is None:
+        raise NotFoundError(error_code="DEPARTMENT_NOT_FOUND", message="Department not found")
+
+    active_users = await dept_repo.count_active_users(department_id)
+    if active_users > 0:
+        raise DomainValidationError(
+            error_code="USERS_REMAIN_IN_DEPT",
+            message=(
+                f"Department has {active_users} active user(s); "
+                "transfer or hard-delete them before deleting the department"
+            ),
+        )
+
+    # ── Bots cascade ──────────────────────────────────────────────────────────
+    # FK RESTRICT — снимаем bot-токены оптом (для audit-counter'а) и затем
+    # сами bot-row'ы (ORM-cascade проведёт BotServiceRole/BotGroupMembership).
+    bots = await bot_repo.list_by_department(department_id)
+    bot_ids = [b.id for b in bots]
+    bot_tokens_revoked = 0
+    if bot_ids:
+        bot_tokens_revoked = await bot_token_repo.revoke_all_for_bots(bot_ids)
+        for bot in bots:
+            await db.delete(bot)
+        await db.flush()
+
+    # ── OAuth clients cascade ────────────────────────────────────────────────
+    # FK RESTRICT — снимаем confidential OAuth-клиентов отдела. Их authorization
+    # codes цепляются по FK CASCADE (см. модель), специальной чистки не нужно.
+    oauth_clients = await oauth_client_repo.list_by_department(department_id)
+    oauth_client_count = len(oauth_clients)
+    for client in oauth_clients:
+        await db.delete(client)
+    if oauth_clients:
+        await db.flush()
+
+    dept_name = dept.name
+    dept_display_name = dept.display_name
+
+    await dept_repo.delete(dept)
+    await db.commit()
+
+    audit_service.emit(
+        "department.hard_deleted", actor_id, target_id=department_id, target_type="department",
+        details={
+            "department_name": dept_name,
+            "department_display_name": dept_display_name,
+            "reason": reason,
+            "bots_deleted": len(bot_ids),
+            "bot_tokens_revoked": bot_tokens_revoked,
+            "oauth_clients_deleted": oauth_client_count,
+        },
+        request_id=request_id,
+    )
+
+    try:
+        await secret_service_client.notify_dept_deleted(
+            dept_id=department_id,
+            actor_id=actor_id,
+            actor_username=actor_username,
+        )
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "secret_service notify failed (hard_delete_department): %s", exc,
+        )
+
+    return {
+        "department_id": department_id,
+        "bots_deleted": len(bot_ids),
+        "bot_tokens_revoked": bot_tokens_revoked,
+        "oauth_clients_deleted": oauth_client_count,
+    }

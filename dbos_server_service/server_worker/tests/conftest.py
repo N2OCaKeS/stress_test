@@ -26,6 +26,16 @@ os.environ.setdefault("SERVER_SERVICE_URL", "http://not-used")
 os.environ.setdefault("AUTH_SERVICE_URL", "http://not-used")
 os.environ.setdefault("LOGGING_SERVICE_URL", "http://not-used")
 os.environ.setdefault("WORKER_BOT_TOKEN", "dummy-test-token")
+# Redis-stash decrypt — общий c server_service'ом ключ. Тесты
+# round-trip'ят encrypt/decrypt внутри worker'а; кросс-сервисный round-trip
+# покрывается deployment-конфигом (`scripts/k8s/gen_secrets.sh` кладёт один
+# REDIS_STASH_ENCRYPTION_KEY в общий Secret).
+os.environ.setdefault(
+    "REDIS_STASH_ENCRYPTION_KEY",
+    "test-redis-stash-encryption-key-do-not-use-anywhere-else",
+)
+os.environ.setdefault("REDIS_STASH_ENCRYPTION_KEY_VERSION", "1")
+os.environ.setdefault("HKDF_SALT_HEX", "deadbeefcafebabe0011223344556677")
 
 import pytest
 import pytest_asyncio
@@ -203,16 +213,22 @@ async def stash_dispatch_creds():
         token = suffix or _uuid.uuid4().hex[:16]
         key = f"dbos:dispatch_creds:{token}"
         settings = get_settings()
+        from src.services.redis_stash_crypto import (
+            aad_for_redis_stash,
+            encrypt_stash,
+            stash_id_from_key,
+        )
+
+        payload = json.dumps({
+            "password_plaintext": password_plaintext,
+            "ssh_private_key_plaintext": ssh_private_key_plaintext,
+        })
+        envelope = encrypt_stash(
+            payload, aad=aad_for_redis_stash(stash_id_from_key(key)),
+        )
         client = aioredis.from_url(settings.redis_url)
         try:
-            await client.set(
-                key,
-                json.dumps({
-                    "password_plaintext": password_plaintext,
-                    "ssh_private_key_plaintext": ssh_private_key_plaintext,
-                }),
-                ex=300,
-            )
+            await client.set(key, envelope, ex=300)
         finally:
             await client.aclose()
         written.append(key)

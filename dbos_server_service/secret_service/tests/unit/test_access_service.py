@@ -4,8 +4,9 @@
 * personal — owner / чужой через ACL / без ACL;
 * department — внутри owner_dep / снаружи;
 * cross_department — owner_dep / recipient_dep с DeptGrant / без него;
-* admin overrides — service_admin read-only / account_admin transfer;
-* blocked cred — block all except admin override;
+* admin overrides — admin secret_service'а своего dept'а read-only /
+  cross-dept admin отбит / account_admin transfer;
+* blocked cred — block all except admin override своего dept'а;
 * can_read vs can_write на разные action'ы.
 """
 
@@ -49,6 +50,7 @@ async def _create_personal(
     *,
     id: str = "cred_pers_a01",
     owner_user_id: str = "usr_actor000000000000000000001",
+    owner_user_dept_id: str | None = None,
     status: str = "active",
 ):
     return await cred_repo.create(
@@ -59,6 +61,7 @@ async def _create_personal(
         scope="personal",
         owner_user_id=owner_user_id,
         owner_dept_id=None,
+        owner_user_dept_id=owner_user_dept_id,
         login="x",
         secret_encrypted=_envelope(),
         status=status,
@@ -395,6 +398,67 @@ async def test_service_admin_cannot_reveal(adb) -> None:
     assert not allowed
     # Реальная причина — он не owner и не в его dep'е, попадает в scope_mismatch.
     assert reason in {"scope_mismatch", "role_not_in_acl"}
+
+
+@pytest.mark.asyncio
+async def test_service_admin_in_other_dept_cannot_read_personal(adb) -> None:
+    """admin secret_service'а dep_B НЕ имеет read-override на personal-cred'у
+    юзера из dep_A. Cross-dept привилегий у per-(dept, service) роли нет.
+    """
+    cred = await _create_personal(
+        adb,
+        id="cred_pers_dept_a",
+        owner_user_id="usr_in_dept_a000000000000000001",
+        owner_user_dept_id="dep_owner00000000000000000001",
+    )
+    foreign_admin = _identity(
+        user_id="usr_foreign_admin0000000000000001",
+        department_id="dep_foreign0000000000000000001",
+        roles=["admin"],
+    )
+    allowed, reason = await access_service.check_access(adb, foreign_admin, cred, "read")
+    assert not allowed
+    assert reason in {"scope_mismatch", "role_not_in_acl"}
+
+
+@pytest.mark.asyncio
+async def test_service_admin_in_other_dept_cannot_recover_blocked(adb) -> None:
+    """Blocked-cred dep_A: admin dep_B не должен мочь recover'нуть её."""
+    cred = await _create_personal(
+        adb,
+        id="cred_pers_blkB",
+        owner_user_id="usr_blocked_pers_owner00000001",
+        owner_user_dept_id="dep_owner00000000000000000001",
+        status="blocked",
+    )
+    foreign_admin = _identity(
+        user_id="usr_foreign_admin_rec00000000001",
+        department_id="dep_foreign0000000000000000001",
+        roles=["admin"],
+    )
+    allowed, reason = await access_service.check_access(
+        adb, foreign_admin, cred, "manage_status"
+    )
+    assert not allowed and reason == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_service_admin_in_other_dept_cannot_read_blocked(adb) -> None:
+    """Blocked-cred dep_A — admin dep_B не должен видеть её для аудита."""
+    cred = await _create_personal(
+        adb,
+        id="cred_pers_blkR",
+        owner_user_id="usr_blocked_pers_owner_r0000001",
+        owner_user_dept_id="dep_owner00000000000000000001",
+        status="blocked",
+    )
+    foreign_admin = _identity(
+        user_id="usr_foreign_admin_blkR0000000001",
+        department_id="dep_foreign0000000000000000001",
+        roles=["admin"],
+    )
+    allowed, reason = await access_service.check_access(adb, foreign_admin, cred, "read")
+    assert not allowed and reason == "blocked"
 
 
 @pytest.mark.asyncio

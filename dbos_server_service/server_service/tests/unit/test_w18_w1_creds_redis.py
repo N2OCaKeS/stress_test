@@ -164,8 +164,18 @@ class TestProvisionCredsRedisStash:
         assert stash_key in stub_redis
         raw, ttl = stub_redis[stash_key]
         assert ttl == 900
+        # В Redis лежит envelope-token; decrypt с AAD от stash-id даёт JSON.
         import json
-        data = json.loads(raw)
+        from src.services.redis_stash_crypto import (
+            aad_for_redis_stash,
+            decrypt_stash,
+            stash_id_from_key,
+        )
+        assert isinstance(raw, str) and raw.startswith("v1$")
+        plaintext = decrypt_stash(
+            raw, aad=aad_for_redis_stash(stash_id_from_key(stash_key)),
+        )
+        data = json.loads(plaintext)
         assert data.get("password_plaintext")
         assert data.get("ssh_private_key_plaintext")
 

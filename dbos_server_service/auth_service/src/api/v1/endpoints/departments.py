@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import AccountAdmin
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
-from src.schemas.departments import DepartmentCreate, DepartmentResponse, GrantServiceAccessRequest, ServiceAccessResponse
+from src.schemas.departments import (
+    DepartmentCreate,
+    DepartmentResponse,
+    GrantServiceAccessRequest,
+    HardDeleteDepartmentRequest,
+    ServiceAccessResponse,
+)
 from src.services import department_service
 
 router = APIRouter(prefix="/departments")
@@ -126,6 +132,65 @@ async def revoke_service_access(
         actor_id=identity.user_id,
         department_id=department_id,
         service_name=service_name,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return OkResponse()
+
+
+@router.delete(
+    "/{department_id}",
+    response_model=OkResponse,
+    summary="Hard-delete отдела (с указанием причины)",
+    description=(
+        "Жёсткое удаление отдела: row в `departments` сносится физически. "
+        "CASCADE-FK уносят `DepartmentServiceAccess`, `ServiceRoleDefinition`, "
+        "`UserGroup` (с её membership'ами и role-bindings), "
+        "`DepartmentDockerRegistry`. Боты отдела и oauth_clients'ы (RESTRICT-FK) "
+        "удаляются явно ДО dept-row'а (ORM-cascade уносит bot tokens / "
+        "service roles / group memberships). "
+        "После commit'а secret_service получает best-effort notify "
+        "(`/internal/lifecycle/dept-deleted`), который блокирует cred'ы, "
+        "принадлежащие отделу, и каскадно снимает DeptGrant'ы / RoleACL, "
+        "где dept — recipient."
+    ),
+    responses={
+        404: {"description": "DEPARTMENT_NOT_FOUND — отдела нет."},
+        422: {"description": "USERS_REMAIN_IN_DEPT — в отделе остались активные юзеры, сначала их перевести или удалить."},
+        403: {"description": "ROLE_REQUIRED — нужен account_admin."},
+    },
+)
+async def hard_delete_department(
+    department_id: str,
+    body: HardDeleteDepartmentRequest,
+    request: Request,
+    identity: AccountAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Hard-delete отдела.
+
+    Доступ:
+        Только `account_admin`.
+
+    Защита:
+        Запрет если в отделе остался хотя бы один активный юзер
+        (`USERS_REMAIN_IN_DEPT` 422) — сначала перевести их в другой
+        отдел через `PATCH /users/{id}` либо снести каждого hard-delete'ом.
+
+    Возможные ошибки:
+        * `DEPARTMENT_NOT_FOUND` (404).
+        * `USERS_REMAIN_IN_DEPT` (422).
+        * `ROLE_REQUIRED` (403) — не account_admin.
+
+    Audit:
+        `department.hard_deleted` (CRITICAL) с `reason`,
+        `bots_deleted`, `bot_tokens_revoked`, `oauth_clients_deleted`.
+    """
+    await department_service.hard_delete_department(
+        db=db,
+        actor_id=identity.user_id,
+        actor_username=identity.username,
+        department_id=department_id,
+        reason=body.reason,
         request_id=getattr(request.state, "request_id", None),
     )
     return OkResponse()

@@ -11,18 +11,19 @@ class UserStatus(StrEnum):
 
 
 class PlatformRole(StrEnum):
-    """Platform-уровень: роли, которые управляет только auth_service."""
+    """Platform-уровень: роли, которые управляет только auth_service.
+
+    `department_admin` — per-dept (всегда вместе с `department_id`), остальные
+    три cross-platform (department_id=NULL допустим). Админство в отдельных
+    сервисах (например `admin` в secret_service) живёт в service_roles, а не
+    в platform_role: оно per-(dept, service) и не даёт cross-dept привилегий.
+    """
     ACCOUNT_ADMIN = "account_admin"
     DEPARTMENT_ADMIN = "department_admin"
     LOGING_ADMIN = "loging_admin"
     # Read-only роль для loging_service — тест test_p2_identity_ban_cache.py
     # парам-итерирует все значения enum'а, бизнес-логика рулится через guard'ы.
     LOGING_READER = "loging_reader"
-    # Cross-department админ secret_service: read_for_audit,
-    # admin_override_delete, transfer_ownership, recover на всех отделах.
-    # Department=NULL (как loging_admin). Enforcement происходит в
-    # secret_service; auth_service только хранит роль и кладёт её в JWT.
-    SERVICE_ADMIN = "service_admin"
 
 
 class ServiceRole(StrEnum):

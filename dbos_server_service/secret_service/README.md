@@ -66,7 +66,7 @@
 | `id` | `str` | NO | `dgr_…` |
 | `cred_id` | `str` | NO | FK → `credentials.id` |
 | `recipient_dept_id` | `str` | NO | Кому открыт доступ. |
-| `granted_by_user_id` | `str` | NO | Должен быть dep_admin владеющего dep'а (или service_admin). |
+| `granted_by_user_id` | `str` | NO | Должен быть dep_admin владеющего dep'а или admin `secret_service` того же dep'а. |
 | `granted_at` | `timestamptz` | NO | |
 
 **UNIQUE**: `(cred_id, recipient_dept_id)`.
@@ -83,7 +83,7 @@
 
 ### `department`
 - Владелец — департамент.
-- Управление: dep_admin владеющего dep'а + service_admin.
+- Управление: dep_admin владеющего dep'а + admin `secret_service` того же dep'а.
 - Выдача `RoleACL`: dep_admin владеющего dep'а; `dept_id = owner_dept_id`.
 - Reveal: grantees через `RoleACL.can_read`.
 
@@ -92,7 +92,7 @@
 - Cross-dep двухуровневый flow:
   1. Owner dep_admin создаёт `DeptGrant(cred_id, recipient_dept_id)`.
   2. Recipient dep_admin (в своём dep'е) создаёт `RoleACL(cred_id, recipient_dept_id, role, can_read)`.
-- Управление и удаление: dep_admin владеющего dep'а + service_admin. Recipient dep_admin может только выдавать/отзывать собственные `RoleACL` внутри своего dep'а.
+- Управление и удаление: dep_admin владеющего dep'а + admin `secret_service` того же dep'а. Recipient dep_admin может только выдавать/отзывать собственные `RoleACL` внутри своего dep'а.
 
 ## Модель доступа
 
@@ -112,16 +112,21 @@
 - **PAT user_a**: identity actor_type=user, user_id=user_a → видит личные креды user_a + всё что доступно user_a по `RoleACL` в его dep'е.
 - **Bot dep_a**: identity actor_type=bot, dept_id=dep_a → видит креды dep_a + cross_dep creds, к которым его dep имеет `DeptGrant` + `RoleACL`. **Не видит** ничьи personal creds (у бота нет user-identity).
 
-### Service admin
+### Service admin (per-(dept, service))
 
-`service_admin` (роль с правом `*` в `secret_service`) — может:
+`admin` в `secret_service` — это per-(dept, service) роль из `service_role_definitions`, а **не** платформенный флаг. Она сидится автоматически при `grant_service_access(dep_X, secret_service)`. Носитель такой роли в dep_X может действовать **только над cred'ами своего dept'а** — cross-dept привилегий у роли нет.
 
-- читать (без reveal) любую креду в любом scope для аудита;
-- **удалять** любую креду — с обязательным `reason: str` в body. Без `reason` → `422`. Эмитит `tokens.admin_override_delete` CRITICAL;
-- **transfer ownership** (только эти случаи):
-  - personal cred, владелец удалён, `RoleACL.count > 0` → передать одному из grantees;
-  - cross_dep cred, owner_dept удалён → передать другому dep (любому). Берёт на себя `account_admin` (см. ниже).
-- **НЕ может изменять** content (`login`/`secret`) personal-кред живого владельца. Только `delete` + `transfer`.
+Что разрешено `admin secret_service` в его dept'е:
+
+- **читать** (без reveal) любую креду dept'а — personal владельцев из своего dept'а, department, и cross_department с `owner_dept_id` равным своему;
+- **удалять** не-свою креду в своём dept'е с обязательным `reason: str` в body. Без `reason` → `422`. Эмитит `tokens.admin_override_delete` CRITICAL;
+- **recover** blocked cred'у своего dept'а в окне 30 дней;
+- **transfer ownership** blocked cred'ы своего dept'а (например, personal с удалённым owner-user → передать одному из grantees);
+- **управлять каталогом ролей** своего сервиса в своём dept'е (`POST/PATCH/DELETE /api/auth/v1/departments/{dep}/services/secret_service/roles`). Системные роли `admin`/`guest` неизменяемы.
+- **НЕ может изменять** content (`login`/`secret`) personal-кред живого владельца.
+- **НЕ может** ничего делать с cred'ами других dept'ов — для cross-dept-аудита нужен отдельный design (например, кастомная роль `audit_officer`); пока такого механизма нет.
+
+Cross-dep transfer удалённого owner_dept'а (когда `cred.owner_dept_id` больше не указывает на живой dep) — отдельный случай: см. §«Account admin».
 
 ### Account admin (платформенный)
 
@@ -136,7 +141,7 @@
 | Сценарий | Действие |
 |---|---|
 | `ban_user(user_a)` | Cred продолжает работать. Sole owner просто заблокирован в auth, но cred ему «принадлежит». |
-| `delete_user(user_a)`, `RoleACL.count > 0` | Cred → `status=blocked`. service_admin может **transfer ownership** одному из grantees (в течение 30 дней). После 30 дней — hard delete по retention sweep. |
+| `delete_user(user_a)`, `RoleACL.count > 0` | Cred → `status=blocked`. admin `secret_service` того же dept'а может **transfer ownership** одному из grantees (в течение 30 дней). После 30 дней — hard delete по retention sweep. |
 | `delete_user(user_a)`, `RoleACL.count == 0` | Hard delete сразу (некому передавать). |
 
 #### `department` / `cross_department` cred, владелец = dep
@@ -162,11 +167,11 @@ URL prefix: `/api/secret/v1/`.
 | `GET` | `/credentials` | reader (per scope) | Список с пагинацией (`limit`/`cursor`). `secret_encrypted` НЕ отдаётся, только метаданные. |
 | `POST` | `/credentials` | operator+ | Создать. Body: `{name, service, scope, login?, secret, owner_dept_id?}`. Header `Idempotency-Key` поддерживается. UNIQUE `(owner, service, name)` → `409 NAME_DUPLICATE`. |
 | `GET` | `/credentials/{id}` | reader (per scope) | Метаданные. Без secret. |
-| `PATCH` | `/credentials/{id}` | owner / dep_admin / service_admin (per scope) | Изменить `name`, `login`, `secret`. На `secret` — повторно шифрует. |
-| `DELETE` | `/credentials/{id}` | owner / dep_admin / service_admin | Удалить. Если `scope=personal` и удаляет НЕ owner → требуется `reason` (admin override). Ответ — `200 OkResponse = { ok: true }`. |
+| `PATCH` | `/credentials/{id}` | owner / dep_admin / admin secret_service (per scope, own dept) | Изменить `name`, `login`, `secret`. На `secret` — повторно шифрует. |
+| `DELETE` | `/credentials/{id}` | owner / dep_admin / admin secret_service (own dept) | Удалить. Если `scope=personal` и удаляет НЕ owner → требуется `reason` (admin override). Ответ — `200 OkResponse = { ok: true }`. |
 | `POST` | `/credentials/{id}/reveal` | reader+can_read | Возвращает `{login, secret_b64}`. Эмитит audit CRITICAL/INFO (throttle). |
-| `POST` | `/credentials/{id}/transfer` | service_admin / account_admin | `{new_owner_user_id?, new_owner_dept_id?}`. Только для blocked creds с grants. |
-| `POST` | `/credentials/{id}/recover` | service_admin / account_admin | Снять `status=blocked`. Только в окне 30 дней. |
+| `POST` | `/credentials/{id}/transfer` | admin secret_service своего dept'а / account_admin | `{new_owner_user_id?, new_owner_dept_id?}`. Только для blocked creds с grants. |
+| `POST` | `/credentials/{id}/recover` | admin secret_service своего dept'а / account_admin | Снять `status=blocked`. Только в окне 30 дней. |
 
 ### RoleACL CRUD
 
@@ -180,9 +185,9 @@ URL prefix: `/api/secret/v1/`.
 
 | Метод | Path | Доступ | Описание |
 |---|---|---|---|
-| `POST` | `/credentials/{id}/dept-grants` | owner dep_admin / service_admin | `{recipient_dept_id}`. |
-| `DELETE` | `/credentials/{id}/dept-grants/{grant_id}` | owner dep_admin / service_admin | Revoke. Cascade'ит `RoleACL(cred_id, dept_id=recipient_dept_id)`. Ответ — `200 OkResponse = { ok: true }`. |
-| `GET` | `/credentials/{id}/dept-grants` | owner dep_admin / recipient dep_admin / service_admin | Список. |
+| `POST` | `/credentials/{id}/dept-grants` | owner dep_admin / admin secret_service владеющего dep'а | `{recipient_dept_id}`. |
+| `DELETE` | `/credentials/{id}/dept-grants/{grant_id}` | owner dep_admin / admin secret_service владеющего dep'а | Revoke. Cascade'ит `RoleACL(cred_id, dept_id=recipient_dept_id)`. Ответ — `200 OkResponse = { ok: true }`. |
+| `GET` | `/credentials/{id}/dept-grants` | owner dep_admin / recipient dep_admin / admin secret_service владеющего dep'а | Список. |
 
 ### Error codes
 

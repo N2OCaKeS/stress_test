@@ -111,6 +111,19 @@ spec:
             - name: SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: WORKER_SERVICE_API_KEY }
+            # Envelope-расшифровка Redis-stash'а кред, положенного server_service'ом
+            # (provision/prepare dispatch). Mount'ится из того же Secret'а, что и
+            # у server_service'а — обязан совпадать байт-в-байт, иначе worker
+            # увидит STASH_DECRYPT_FAILED и task FAILED.
+            - name: REDIS_STASH_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_STASH_ENCRYPTION_KEY }
+            - name: REDIS_STASH_ENCRYPTION_KEY_VERSION
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_STASH_ENCRYPTION_KEY_VERSION }
+            - name: HKDF_SALT_HEX
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: HKDF_SALT_HEX }
             # В k8s hostname == имя pod'а: достаточно для стабильного worker_id.
             - name: WORKER_ID
               valueFrom:

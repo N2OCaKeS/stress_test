@@ -16,6 +16,11 @@ import pytest
 
 from src.core.exceptions import ServiceUnavailableError
 from src.services import worker_client
+from src.services.redis_stash_crypto import (
+    aad_for_redis_stash,
+    decrypt_stash,
+    stash_id_from_key,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -78,9 +83,18 @@ class TestStorePrepareCredsTTL:
         key = "dbos:prepare_creds:pcd_ttl_test"
         await worker_client.store_prepare_creds(key, creds)
 
-        pooled.set.assert_awaited_once_with(
-            key, json.dumps(creds), ex=1234,
+        pooled.set.assert_awaited_once()
+        call_args = pooled.set.call_args
+        # Args: (key, encrypted_token); kwargs={"ex": 1234}.
+        assert call_args.args[0] == key
+        token = call_args.args[1]
+        assert isinstance(token, str) and token.startswith("v1$")
+        assert "s3cret" not in token
+        assert call_args.kwargs["ex"] == 1234
+        decrypted = decrypt_stash(
+            token, aad=aad_for_redis_stash(stash_id_from_key(key)),
         )
+        assert json.loads(decrypted) == creds
 
     @pytest.mark.asyncio
     async def test_fallback_path_uses_settings_ttl(self, monkeypatch):
@@ -105,9 +119,16 @@ class TestStorePrepareCredsTTL:
         key = "dbos:prepare_creds:pcd_fallback_ttl"
         await worker_client.store_prepare_creds(key, creds)
 
-        fake_client.set.assert_awaited_once_with(
-            key, json.dumps(creds), ex=777,
+        fake_client.set.assert_awaited_once()
+        call_args = fake_client.set.call_args
+        assert call_args.args[0] == key
+        token = call_args.args[1]
+        assert token.startswith("v1$")
+        assert call_args.kwargs["ex"] == 777
+        decrypted = decrypt_stash(
+            token, aad=aad_for_redis_stash(stash_id_from_key(key)),
         )
+        assert json.loads(decrypted) == creds
         # Per-call client закрывается.
         fake_client.aclose.assert_awaited_once()
 
@@ -127,12 +148,16 @@ class TestStorePrepareCredsJsonSerialization:
         monkeypatch.setattr(worker_client, "get_settings", lambda: _Settings())
 
         creds = {"bootstrap_login": "admin", "bootstrap_password": "qwerty123"}
-        await worker_client.store_prepare_creds("key", creds)
+        key = "key"
+        await worker_client.store_prepare_creds(key, creds)
 
         call_args = pooled.set.call_args
         stored_value = call_args[0][1]
-        # Значение должно быть строкой, которая десериализуется обратно.
-        assert json.loads(stored_value) == creds
+        # Значение — envelope-token; round-trip даёт исходный JSON.
+        decrypted = decrypt_stash(
+            stored_value, aad=aad_for_redis_stash(stash_id_from_key(key)),
+        )
+        assert json.loads(decrypted) == creds
 
     @pytest.mark.asyncio
     async def test_creds_with_special_chars_serialized_correctly(self, monkeypatch):
@@ -151,7 +176,11 @@ class TestStorePrepareCredsJsonSerialization:
             "bootstrap_login": "root",
             "bootstrap_password": "P@$$w0rd!#%&*()\"';:",
         }
-        await worker_client.store_prepare_creds("key2", creds)
+        key = "key2"
+        await worker_client.store_prepare_creds(key, creds)
 
         stored_value = pooled.set.call_args[0][1]
-        assert json.loads(stored_value) == creds
+        decrypted = decrypt_stash(
+            stored_value, aad=aad_for_redis_stash(stash_id_from_key(key)),
+        )
+        assert json.loads(decrypted) == creds

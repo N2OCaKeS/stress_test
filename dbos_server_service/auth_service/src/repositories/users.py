@@ -187,3 +187,42 @@ class UserRepository:
 
     async def count(self) -> int:
         return await self._db.scalar(select(func.count()).select_from(User)) or 0
+
+    async def count_active_account_admins(self) -> int:
+        """Сколько активных account_admin'ов осталось в системе.
+
+        Используется hard-delete guard'ом: запретить снос последнего
+        account_admin'а, иначе платформа теряет access к управлению.
+        Считаем только `is_active=True` — забаненные/disabled админы
+        не способны войти, и формально учитывать их как «защитников»
+        нельзя.
+        """
+        from src.core.constants import PlatformRole
+        stmt = (
+            select(func.count())
+            .select_from(User)
+            .where(
+                User.platform_role == PlatformRole.ACCOUNT_ADMIN.value,
+                User.is_active.is_(True),
+            )
+        )
+        return await self._db.scalar(stmt) or 0
+
+    async def get_for_update(self, uid: str) -> User | None:
+        """`SELECT ... FOR UPDATE` — берём row-lock на юзера.
+
+        Нужно hard-delete'у: между «check single-admin» / «cascade revoke» /
+        собственно `DELETE` запросами параллельный writer мог бы изменить
+        `platform_role`/`status` и сломать инвариант. FOR UPDATE сериализует
+        конкурентные hard-delete'ы на одном user_id и держит lock на любого
+        кто решит этого юзера апдейтить параллельно.
+        """
+        stmt = select(User).where(User.id == uid).with_for_update()
+        return await self._db.scalar(stmt)
+
+    async def delete(self, user: User) -> None:
+        """Hard-delete юзера. Все cascade-relationship'ы (sessions, PAT,
+        UserServiceRole, Ban, UserGroupMembership) уходят по
+        ``cascade="all, delete-orphan"`` из ORM-модели."""
+        await self._db.delete(user)
+        await self._db.flush()

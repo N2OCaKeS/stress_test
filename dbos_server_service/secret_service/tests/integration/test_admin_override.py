@@ -1,9 +1,10 @@
-"""Admin override flows: service_admin (DELETE/READ blocked) + account_admin (transfer).
+"""Admin override flows: admin secret_service'а своего dept'а + account_admin.
 
 README §«Service admin» / §«Account admin»:
-* service_admin DELETE без reason → 422 ADMIN_OVERRIDE_REASON_REQUIRED.
-* service_admin DELETE с reason → 200 + CRITICAL `tokens.admin_override_delete`.
-* service_admin READ blocked cred → 200 (для аудита).
+* admin своего dept'а DELETE без reason → 422 ADMIN_OVERRIDE_REASON_REQUIRED.
+* admin своего dept'а DELETE с reason → 200 + CRITICAL `tokens.admin_override_delete`.
+* admin своего dept'а READ blocked cred → 200 (для аудита).
+* admin ЧУЖОГО dept'а → 404 CREDENTIAL_NOT_FOUND (cross-dept privileges нет).
 * account_admin transfer на blocked cross_dep cred → 200 + transfer_ownership.
 """
 
@@ -33,9 +34,10 @@ async def test_service_admin_delete_without_reason_422(
     )
     cred_id = cred.json()["id"]
 
+    # admin per-(dept, service) — должен сидеть в том же dept'е, что и владелец cred'ы.
     svc_admin = identity_factory(
         user_id="usr_svc_admin",
-        department_id="dep_b",  # сам в другом dep'е — переопределяет чужой personal
+        department_id="dep_a",
         service_roles={"secret_service": ["admin"]},
     )
 
@@ -62,7 +64,7 @@ async def test_service_admin_delete_with_reason_succeeds_critical(
 
     svc_admin = identity_factory(
         user_id="usr_svc_admin2",
-        department_id="dep_b",
+        department_id="dep_a",
         service_roles={"secret_service": ["admin"]},
     )
 
@@ -114,10 +116,10 @@ async def test_service_admin_can_read_blocked_for_audit(
     assert resp.status_code == 200
 
     # Не-admin reader получит 410 GONE (или 404, если нет ACL).
-    # service_admin — 200 c blocked-метой.
+    # admin своего dept'а — 200 с blocked-метой.
     svc_admin = identity_factory(
         user_id="usr_svc_admin3",
-        department_id="dep_b",
+        department_id="dep_a",
         service_roles={"secret_service": ["admin"]},
     )
     get_resp = await client.get(
@@ -127,6 +129,54 @@ async def test_service_admin_can_read_blocked_for_audit(
     body = get_resp.json()
     assert body["status"] == "blocked"
     assert body["blocked_reason"] == "owner_user_deleted"
+
+
+async def test_service_admin_cannot_delete_cred_in_other_dept(
+    client, identity_factory,
+):
+    """admin secret_service'а dep_a НЕ имеет прав над personal-cred'ой dep_b.
+
+    Регрессия на cleanup модели ролей: раньше admin был cross-dept (read /
+    delete override любой cred'ы). Теперь роль per-(dept, service), и admin
+    dep_a, дергая endpoint dep_b'шной cred'ы, видит 404 — endpoint
+    защищается тем же visibility-фильтром, что и обычный actor.
+    """
+    owner = identity_factory(
+        user_id="usr_owner_z",
+        department_id="dep_a",
+        service_roles={"secret_service": ["operator"]},
+    )
+    cred = await client.post(
+        f"{BASE}/credentials", headers=auth_header(owner),
+        json={"name": "off_limits", "service": "jira", "scope": "personal", "secret": "x"},
+    )
+    cred_id = cred.json()["id"]
+
+    # admin живёт в dep_b — должен получить 404 / 403.
+    foreign_admin = identity_factory(
+        user_id="usr_foreign_admin",
+        department_id="dep_b",
+        service_roles={"secret_service": ["admin"]},
+    )
+
+    resp = await client.request(
+        "DELETE",
+        f"{BASE}/credentials/{cred_id}",
+        headers=auth_header(foreign_admin),
+        json={"reason": "should not be allowed"},
+    )
+    # Cross-dept visibility-miss → 404 (info leak protection); 403 тоже
+    # приемлем, если запрос дошёл до access_service.check_access.
+    assert resp.status_code in (403, 404), resp.text
+    assert resp.json().get("error_code") in {
+        "CREDENTIAL_NOT_FOUND",
+        "CREDENTIAL_ACCESS_DENIED",
+    }
+
+    get_resp = await client.get(
+        f"{BASE}/credentials/{cred_id}", headers=auth_header(foreign_admin),
+    )
+    assert get_resp.status_code in (403, 404)
 
 
 async def test_account_admin_transfer_blocked_cross_dep_cred(

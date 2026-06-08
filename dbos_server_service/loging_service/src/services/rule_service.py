@@ -116,11 +116,13 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("user.password_reset", "success"): "CRITICAL",
     ("user.ban", "success"): "CRITICAL",
     ("user.unban", "success"): "CRITICAL",
+    ("user.hard_deleted", "success"): "CRITICAL",
     # Отделы
     ("department.create", "success"): "CRITICAL",
     ("department.list", "success"): "INFO",
     ("department.service_grant", "success"): "CRITICAL",
     ("department.service_revoke", "success"): "CRITICAL",
+    ("department.hard_deleted", "success"): "CRITICAL",
     # Группы
     ("group.create", "success"): "INFO",
     ("group.update", "success"): "INFO",

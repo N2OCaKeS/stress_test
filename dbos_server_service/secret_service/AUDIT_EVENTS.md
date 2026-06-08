@@ -73,8 +73,8 @@
 
 | Action | Status | Severity | Payload (`details`) |
 |---|---|---|---|
-| `tokens.owner_user_deleted_block` | success | WARNING | `{ cred_id, owner_user_id, role_acls_count }`. Эмитится handler'ом `/internal/lifecycle/user-deleted` для personal cred с grantees. Orphan creds (no grants) идут как `tokens.delete`. |
-| `tokens.owner_dept_deleted_block` | success | WARNING | `{ cred_id, owner_dept_id, scope }`. Эмитится handler'ом `/internal/lifecycle/dept-deleted` для cred'ы, где dep — owner. |
+| `tokens.owner_user_deleted_block` | success | WARNING | `{ cred_id, owner_user_id, role_acls_count }`. Эмитится handler'ом `/internal/lifecycle/user-deleted` для personal cred с grantees. Orphan creds (no grants) идут как `tokens.delete`. Trigger: `auth_service.user_service.hard_delete_user` → `secret_service_client.notify_user_deleted` (best-effort POST). |
+| `tokens.owner_dept_deleted_block` | success | WARNING | `{ cred_id, owner_dept_id, scope }`. Эмитится handler'ом `/internal/lifecycle/dept-deleted` для cred'ы, где dep — owner. Trigger: `auth_service.department_service.hard_delete_department` → `secret_service_client.notify_dept_deleted` (best-effort POST). |
 
 ## Ownership recovery
 

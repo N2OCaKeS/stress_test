@@ -3,7 +3,6 @@
 P0:
   * `secret_service_client._post` шлёт `X-Service-Identity: auth_service`.
   * `secret_service` лежит в `KNOWN_SERVICE_IDENTITIES`.
-  * `require_service_admin` отбивает не-service_admin'ов.
 
 P1:
   * `delete_service` каскадно гасит GroupServiceRole/GroupServiceAccess и
@@ -15,8 +14,8 @@ P1:
   * `BulkRoleRequest.user_ids` имеет ограничение `max_length=200`.
   * Circuit-breaker уходит в open после 3 fail'ов подряд.
 
-Миграция `i6j7k8l9m0n1` downgrade-safety: проверяется отдельным db-тестом
-ниже (`test_migration_downgrade_clears_service_admin_first`).
+Управление каталогом service-ролей админом secret_service в своём dept'е
+покрыто отдельно (`test_service_roles.py::test_service_admin_can_create_role_*`).
 """
 
 from __future__ import annotations
@@ -259,49 +258,6 @@ async def test_breaker_resets_on_success(
 def test_secret_service_in_known_identities():
     from src.core.constants import KNOWN_SERVICE_IDENTITIES
     assert "secret_service" in KNOWN_SERVICE_IDENTITIES
-
-
-# ── P0 #3 — require_service_admin guard ─────────────────────────────────────
-
-
-def test_require_service_admin_rejects_non_service_admin():
-    """Гость с platform_role=None / account_admin / department_admin отбит 403."""
-    from src.core.exceptions import AuthorizationError
-    from src.dependencies.auth import require_service_admin
-    from src.schemas.auth import IdentityContext
-
-    for role in (None, "account_admin", "department_admin", "loging_admin"):
-        identity = IdentityContext(
-            user_id="usr_1",
-            username="t",
-            department_id=None,
-            allowed_services=[],
-            service_roles={},
-            is_banned=False,
-            platform_role=role,
-            subject_type="user",
-        )
-        with pytest.raises(AuthorizationError) as exc:
-            require_service_admin(identity)
-        assert exc.value.error_code == "ROLE_REQUIRED"
-
-
-def test_require_service_admin_accepts_service_admin():
-    from src.dependencies.auth import require_service_admin
-    from src.schemas.auth import IdentityContext
-
-    identity = IdentityContext(
-        user_id="usr_1",
-        username="t",
-        department_id=None,
-        allowed_services=[],
-        service_roles={},
-        is_banned=False,
-        platform_role="service_admin",
-        subject_type="user",
-    )
-    result = require_service_admin(identity)
-    assert result is identity
 
 
 # ── P1 #9 — BulkRoleRequest.user_ids max_length=200 ─────────────────────────

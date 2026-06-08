@@ -7,8 +7,8 @@
 Семантика веток — README §«Lifecycle»:
 
 * personal cred, owner=user удалён:
-    - есть RoleACL grantees → cred → blocked + WARNING. service_admin
-      потом может transfer'ить в 30-day окне;
+    - есть RoleACL grantees → cred → blocked + WARNING. admin secret_service
+      того же dept'а потом может transfer'ить в 30-day окне;
     - нет ACL → hard delete, удалять некому.
 * department/cross_department cred, owner=dep удалён:
     - cred → blocked + WARNING. account_admin в 30-day окне делает transfer.

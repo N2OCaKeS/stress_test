@@ -15,9 +15,12 @@ from src.utils.time import utcnow
 #   "ban"         — bulk при ban'е; `unban_user` именно по нему ищет PAT для
 #                   реактивации.
 #   "admin_reset" — каскад при password-reset.
+#   "hard_delete" — bulk при `DELETE /users/{id}` перед ORM-cascade'ом
+#                   (нужен для audit `pat_revoked_count`).
 # Любое другое значение → пакеты выше по стеку молча писали бы строку в БД;
-# Literal даёт mypy/pyright отсечь опечатки.
-RevokeReason = Literal["user", "ban", "admin_reset"]
+# Literal даёт mypy/pyright отсечь опечатки. Значения зеркалят DB-CHECK
+# `ck_personal_access_tokens_revoked_reason` в `g4h5i6j7k8l9_auth_db_hardening`.
+RevokeReason = Literal["user", "ban", "admin_reset", "hard_delete"]
 
 
 class TokenRepository:

@@ -332,10 +332,12 @@ def require_account_admin(identity: Identity) -> Identity:
 
 
 def require_service_admin(identity: Identity) -> Identity:
-    """`service_admin` — носитель `admin` роли в `secret_service`.
+    """Носитель `admin`-роли `secret_service` (per-(dept, service)).
 
-    Может: читать (без reveal) любую креду, удалять с обязательным reason,
-    transfer ownership в ограниченных случаях.
+    Этот guard не привязан к конкретному dept'у — он только отсекает не-админов
+    на endpoint-level. Per-dept-binding (admin dep_A не лезет в cred'ы dep_B)
+    enforce'ится в business-логике через `access_service._is_service_admin_for`
+    и `credential_service._is_service_admin_for`.
     """
     if "admin" not in identity.roles_for(SERVICE_NAME):
         raise AuthorizationError(

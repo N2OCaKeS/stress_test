@@ -111,6 +111,15 @@ spec:
             - name: HKDF_SALT_HEX
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: HKDF_SALT_HEX }
+            # Envelope-шифрование Redis-stash'а кред между server_service и
+            # server_worker (provision/prepare dispatch). Тот же ключ mount'ится
+            # в 60-server-worker.yaml — обязан совпадать байт-в-байт.
+            - name: REDIS_STASH_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_STASH_ENCRYPTION_KEY }
+            - name: REDIS_STASH_ENCRYPTION_KEY_VERSION
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_STASH_ENCRYPTION_KEY_VERSION }
             # SERVICE_API_KEY — outbound bearer для introspect/service-access
             # в auth_service. Должен совпадать с SERVICE_API_KEYS[server_service]
             # на стороне auth_service.

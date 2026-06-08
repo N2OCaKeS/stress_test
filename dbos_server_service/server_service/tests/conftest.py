@@ -29,6 +29,14 @@ os.environ.setdefault("SERVER_ENCRYPTION_KEY_VERSION", "2")
 # secrets_service подхватится сам). Здесь выставляем явно, чтобы прогон тестов
 # был детерминированным и не зависел от наличия .env в репо.
 os.environ.setdefault("HKDF_SALT_HEX", "deadbeefcafebabe0011223344556677")
+# Общий с server_worker'ом ключ для envelope-шифрования Redis-stash'а кред
+# (см. `services/redis_stash_crypto.py`). В dev/test/local фиксированная строка;
+# в prod/staging обязателен через `_require_redis_stash_key_in_prod`.
+os.environ.setdefault(
+    "REDIS_STASH_ENCRYPTION_KEY",
+    "test-redis-stash-encryption-key-do-not-use-anywhere-else",
+)
+os.environ.setdefault("REDIS_STASH_ENCRYPTION_KEY_VERSION", "1")
 os.environ.setdefault("AUTH_SERVICE_URL", "http://auth-not-used")
 os.environ.setdefault("SERVER_SERVICE_PAT", "dbos_pat_test_not_used")
 

@@ -249,6 +249,15 @@ spec:
             - name: HKDF_SALT_HEX
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: HKDF_SALT_HEX }
+            # Settings server_service'а требует ключ stash-crypto в prod, если
+            # задан SERVER_WORKER_REDIS_URL. Миграция не пишет в Redis, но
+            # импортирует тот же Settings — без env'а валидатор отбьёт старт.
+            - name: REDIS_STASH_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_STASH_ENCRYPTION_KEY }
+            - name: REDIS_STASH_ENCRYPTION_KEY_VERSION
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: REDIS_STASH_ENCRYPTION_KEY_VERSION }
             - name: SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SERVER_SERVICE_API_KEY }

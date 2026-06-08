@@ -1,12 +1,13 @@
-"""secret_service: системная роль `admin` и платформенная роль `service_admin`.
+"""secret_service: системная роль `admin` per-(dept, service).
 
 Проверки:
   * После grant_service_access к secret_service в каждом dept появляется
-    `admin` (is_system=True, is_active=True).
-  * `service_admin` — валидное значение PlatformRole, проходит CHECK
-    `ck_users_platform_role`, создаётся без department_id.
-  * Запись пользователя с `platform_role=service_admin` идёт через POST
-    `/users` (account_admin only); department_id не требуется.
+    `admin` (is_system=True, is_active=True) в `service_role_definitions`.
+  * Платформенной роли `service_admin` нет: админство сервиса — это per-dept
+    service_role, не cross-dept platform-флаг.
+  * PlatformRole enum остаётся ровно из четырёх значений (account_admin,
+    department_admin, loging_admin, loging_reader) — регрессия на случай
+    рассинхрона enum'а с CHECK constraint'ом.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from src.core.constants import PlatformRole
-from src.models import PlatformService, ServiceRoleDefinition, User
+from src.models import PlatformService, ServiceRoleDefinition
 from src.repositories.service_role_definitions import SYSTEM_ADMIN_ROLE_NAME
 
 
@@ -81,60 +82,18 @@ async def test_admin_role_visible_in_definitions(
     assert role.is_active is True
 
 
-# ── 2. platform_role `service_admin` ─────────────────────────────────────────
+# ── 2. PlatformRole enum coverage ────────────────────────────────────────────
 
-def test_service_admin_in_platform_role_enum():
-    """`service_admin` присутствует в PlatformRole enum и сравнивается со строкой."""
-    assert PlatformRole.SERVICE_ADMIN == "service_admin"
-    assert PlatformRole("service_admin") is PlatformRole.SERVICE_ADMIN
+def test_service_admin_not_in_platform_role_enum():
+    """Платформенной роли `service_admin` нет: админство сервиса — per-(dept,service)."""
+    with pytest.raises(ValueError):
+        PlatformRole("service_admin")
+    assert not hasattr(PlatformRole, "SERVICE_ADMIN")
 
-
-async def test_create_user_with_service_admin_platform_role(
-    client, admin_token,
-):
-    """`service_admin` — это cross-dept роль, department_id не нужен."""
-    resp = await client.post(
-        "/api/auth/v1/users",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "username": "svc_admin_test",
-            "password": "ServiceAdm1234!",
-            "platform_role": "service_admin",
-        },
-    )
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
-    assert body["platform_role"] == "service_admin"
-    assert body.get("department_id") is None
-
-
-async def test_service_admin_persisted_with_null_department(
-    db, client, admin_token,
-):
-    resp = await client.post(
-        "/api/auth/v1/users",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "username": "svc_admin_persisted",
-            "password": "ServiceAdm1234!",
-            "platform_role": "service_admin",
-        },
-    )
-    assert resp.status_code == 201, resp.text
-
-    user = await db.scalar(
-        select(User).where(User.username == "svc_admin_persisted")
-    )
-    assert user is not None
-    assert user.platform_role == "service_admin"
-    assert user.department_id is None
-
-
-# ── 3. PlatformRole enum coverage ────────────────────────────────────────────
 
 @pytest.mark.parametrize(
     "role_name",
-    ["account_admin", "department_admin", "loging_admin", "loging_reader", "service_admin"],
+    ["account_admin", "department_admin", "loging_admin", "loging_reader"],
 )
 def test_platform_role_string_round_trip(role_name: str):
     """Все значения PlatformRole коэрсятся туда-обратно. Регрессия на тот

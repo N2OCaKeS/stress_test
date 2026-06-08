@@ -269,3 +269,133 @@ spec:
             - name: backup
               persistentVolumeClaim:
                 claimName: dbos-backup-pv
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup-server
+  namespace: dbos
+spec:
+  # 02:45 MSK — четвёртый слот после auth (02:00), logging (02:15), secret (02:30).
+  schedule: "45 23 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: pg-backup
+            target: server-postgres
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+          containers:
+            - name: backup
+              image: postgres:16
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/backup.sh"]
+              env:
+                - name: TARGET_DEPLOY
+                  value: server-postgres
+                - name: TARGET_DB
+                  value: server_db
+                - name: TARGET_USER
+                  valueFrom:
+                    secretKeyRef: { name: dbos-secrets, key: SERVER_DB_USER }
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: dbos-secrets, key: SERVER_DB_PASSWORD }
+                - name: BACKUP_ROOT
+                  value: /backup
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests: { cpu: "100m", memory: "128Mi" }
+                limits:   { cpu: "1000m", memory: "512Mi" }
+          volumes:
+            - name: scripts
+              configMap:
+                name: pg-backup-script
+                defaultMode: 0o555
+            - name: backup
+              persistentVolumeClaim:
+                claimName: dbos-backup-pv
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup-worker
+  namespace: dbos
+spec:
+  # 03:00 MSK — пятый слот, последний из основных.
+  schedule: "0 0 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: pg-backup
+            target: worker-postgres
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+          containers:
+            - name: backup
+              image: postgres:16
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/backup.sh"]
+              env:
+                - name: TARGET_DEPLOY
+                  value: worker-postgres
+                - name: TARGET_DB
+                  value: worker_db
+                - name: TARGET_USER
+                  valueFrom:
+                    secretKeyRef: { name: dbos-secrets, key: WORKER_DB_USER }
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: dbos-secrets, key: WORKER_DB_PASSWORD }
+                - name: BACKUP_ROOT
+                  value: /backup
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests: { cpu: "100m", memory: "128Mi" }
+                limits:   { cpu: "1000m", memory: "512Mi" }
+          volumes:
+            - name: scripts
+              configMap:
+                name: pg-backup-script
+                defaultMode: 0o555
+            - name: backup
+              persistentVolumeClaim:
+                claimName: dbos-backup-pv

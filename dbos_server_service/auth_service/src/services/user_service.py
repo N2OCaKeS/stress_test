@@ -189,10 +189,8 @@ async def create_user(
     from src.core.constants import PlatformRole as PR
     # Платформенные роли без привязки к департаменту: account_admin —
     # глобальный админ платформы, loging_admin/loging_reader — централизованное
-    # управление и чтение аудит-событий по всем департаментам, service_admin —
-    # cross-dept админ secret_service для read_for_audit / admin_override_delete /
-    # transfer_ownership / recover.
-    _platform_admins = {PR.ACCOUNT_ADMIN, PR.LOGING_ADMIN, PR.LOGING_READER, PR.SERVICE_ADMIN}
+    # управление и чтение аудит-событий по всем департаментам.
+    _platform_admins = {PR.ACCOUNT_ADMIN, PR.LOGING_ADMIN, PR.LOGING_READER}
     if platform_role not in _platform_admins and not department_id:
         raise DomainValidationError(error_code="MISSING_REQUIRED_FIELD", message="department_id is required for non-admin users")
 
@@ -730,7 +728,6 @@ _ADMIN_PLATFORM_ROLES = frozenset(
         PlatformRole.DEPARTMENT_ADMIN,
         PlatformRole.LOGING_ADMIN,
         PlatformRole.LOGING_READER,
-        PlatformRole.SERVICE_ADMIN,
     }
 )
 
@@ -1040,6 +1037,119 @@ async def unban_user(
         request_id=pending_audit["request_id"],
     )
     return None
+
+
+async def hard_delete_user(
+    db: AsyncSession,
+    actor_id: str,
+    actor_username: str | None,
+    user_id: str,
+    reason: str,
+    request_id: str | None = None,
+) -> dict:
+    """Hard-delete юзера.
+
+    Жёсткое удаление: row в `users` сносится, ORM-cascade сметает
+    `UserServiceRole`, `Session`, `PersonalAccessToken`, `Ban`,
+    `UserGroupMembership` (см. `User.relationship(..., cascade="all,
+    delete-orphan")`). Бот-аккаунты юзера остаются (бот — dept-owned
+    entity, не наследуется за создателем; FK `bots.created_by` —
+    nullable string без referential constraint, см. модель).
+
+    Защита:
+        * Отказ удалять последнего активного `account_admin`'а — иначе
+          платформа теряет admin-управление. Сравнение «один и единственный
+          оставшийся» делается через `count_active_account_admins` ПОД
+          row-lock'ом самого user'а (FOR UPDATE), чтобы конкурентные
+          hard-delete'ы двух разных админов не схлопнули счётчик до нуля.
+
+    Cascade-revoke перед DELETE:
+        Хотя ORM-cascade всё равно снесёт сессии/PAT, мы делаем явный
+        `revoke_all_for_user` для них ДО `db.delete(user)`. Это нужно,
+        чтобы audit-trail увидел `pat_revoked_count` отдельным числом
+        (важно для compliance: «при удалении сняли N токенов»), и чтобы
+        identity-cache был honestly invalidated одной и той же логикой,
+        что в ban/reset-password. Bot-токены ботов, которые создал этот
+        юзер, НЕ трогаем — симметрично `user.ban` policy.
+
+    Audit:
+        `user.hard_deleted` CRITICAL. `details.reason` — обязательное
+        пользовательское обоснование (compliance). После commit'а вызываем
+        `secret_service_client.notify_user_deleted` best-effort — secret_service
+        блокирует personal cred'ы юзера. Callback не блокирует ответ:
+        ошибка best-effort, попадёт в `secret_lifecycle.notify_failed` audit.
+
+    Возвращает dict со сводкой (sessions/PAT revoked) для дополнительной
+    отдачи endpoint'у, если потребуется.
+    """
+    from src.services import secret_service_client
+
+    user_repo = UserRepository(db)
+    session_repo = SessionRepository(db)
+    token_repo = TokenRepository(db)
+
+    user = await user_repo.get_for_update(user_id)
+    if user is None:
+        raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
+
+    target_username = user.username
+    target_department_id = user.department_id
+
+    # ── Last-admin guard ────────────────────────────────────────────────────
+    # Снос последнего активного account_admin'а оставит инсталляцию без
+    # admin-доступа — bootstrap'ить нового admin'а можно только через
+    # manual DB-INSERT / `bootstrap_service`, что requires-ops-intervention.
+    # Лучше отбить на endpoint'е: 422 + actionable error code.
+    if user.platform_role == PlatformRole.ACCOUNT_ADMIN:
+        remaining = await user_repo.count_active_account_admins()
+        if remaining <= 1:
+            raise DomainValidationError(
+                error_code="LAST_ACCOUNT_ADMIN",
+                message="Cannot hard-delete the last active account_admin",
+            )
+
+    # Снимаем счётчики ДО delete'а, чтобы попасть в audit-detail.
+    sessions_revoked = await session_repo.revoke_all_for_user(user_id)
+    pat_revoked = await token_repo.revoke_all_for_user(user_id, reason="hard_delete")
+
+    await user_repo.delete(user)
+    await db.commit()
+    # Кэш мог нести идентичность удалённого юзера; новый запрос с тем же
+    # access-токеном должен сразу провалиться в `_resolve_user_identity`
+    # (нет такого user'а в БД), а не висеть до TTL.
+    _invalidate_identity_cache(user_id)
+
+    audit_service.emit(
+        "user.hard_deleted", actor_id, target_id=user_id, target_type="user",
+        details={
+            "target_username": target_username,
+            "target_department_id": target_department_id,
+            "reason": reason,
+            "sessions_revoked": sessions_revoked,
+            "pat_revoked_count": pat_revoked,
+        },
+        request_id=request_id,
+    )
+
+    # secret_service notify — best-effort; ошибки уходят в audit
+    # `secret_lifecycle.notify_failed` внутри клиента, наружу не пробрасываем.
+    try:
+        await secret_service_client.notify_user_deleted(
+            user_id=user_id,
+            actor_id=actor_id,
+            actor_username=actor_username,
+        )
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "secret_service notify failed (hard_delete_user): %s", exc,
+        )
+
+    return {
+        "user_id": user_id,
+        "sessions_revoked": sessions_revoked,
+        "pat_revoked_count": pat_revoked,
+    }
 
 
 async def auto_unban_if_expired(

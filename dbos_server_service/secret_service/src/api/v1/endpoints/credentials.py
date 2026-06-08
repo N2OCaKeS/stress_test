@@ -208,7 +208,7 @@ async def reveal_credential(
 @router.post(
     "/{cred_id}/transfer",
     response_model=CredentialRead,
-    summary="Передать ownership заблокированной credential (service_admin/account_admin)",
+    summary="Передать ownership заблокированной credential (admin secret_service своего dept'а / account_admin)",
 )
 @limiter.limit(get_settings().rate_limit_transfer)
 async def transfer_credential(
@@ -226,7 +226,7 @@ async def transfer_credential(
 @router.post(
     "/{cred_id}/recover",
     response_model=CredentialRead,
-    summary="Снять блокировку credential в окне 30 дней (service_admin/account_admin)",
+    summary="Снять блокировку credential в окне 30 дней (admin secret_service своего dept'а / account_admin)",
 )
 @limiter.limit(get_settings().rate_limit_recover)
 async def recover_credential(

@@ -28,7 +28,7 @@ _USER_STATUS = ("active", "blocked", "banned")
 _BAN_TYPE = ("temporary", "permanent")
 _BOT_STATUS = ("active", "disabled")
 _PULL_POLICY = ("all", "restricted")
-_REVOKED_REASON = ("ban", "user", "expired", "admin_reset")
+_REVOKED_REASON = ("ban", "user", "expired", "admin_reset", "hard_delete")
 _PKCE_METHOD = ("S256", "plain")
 
 

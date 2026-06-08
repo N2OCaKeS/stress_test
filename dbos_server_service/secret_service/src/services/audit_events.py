@@ -32,12 +32,12 @@ SERVICE_EVENTS = [
     {"action": "tokens.create", "description": "Credential created", "default_severity": "INFO"},
     {"action": "tokens.update", "description": "Credential updated (name/login/secret)", "default_severity": "INFO"},
     {"action": "tokens.delete", "description": "Credential deleted by owner / dep_admin", "default_severity": "WARNING"},
-    {"action": "tokens.admin_override_delete", "description": "Credential deleted by service_admin via admin override (requires reason)", "default_severity": "CRITICAL"},
+    {"action": "tokens.admin_override_delete", "description": "Credential deleted by secret_service admin within own department via admin override (requires reason)", "default_severity": "CRITICAL"},
     # Reveal + throttle
     {"action": "tokens.revealed", "description": "Decrypted secret revealed to user (first reveal in 5-min window)", "default_severity": "CRITICAL"},
     {"action": "tokens.revealed_throttled", "description": "Subsequent reveal within 5-min window (INFO trace for noisy UI-polling)", "default_severity": "INFO"},
     # Dept-grants (cross_department flow)
-    {"action": "tokens.dept_grant_added", "description": "DeptGrant added by owner dep_admin / service_admin", "default_severity": "CRITICAL"},
+    {"action": "tokens.dept_grant_added", "description": "DeptGrant added by owner dep_admin or secret_service admin of the owning department", "default_severity": "CRITICAL"},
     {"action": "tokens.dept_grant_revoked", "description": "DeptGrant revoked (cascades RoleACL for recipient_dept)", "default_severity": "CRITICAL"},
     {"action": "tokens.dept_revoke_cascade", "description": "Cascade revoke of DeptGrants and RoleACLs caused by revoke department_service_access", "default_severity": "CRITICAL"},
     {"action": "tokens.dept_recipient_cascade", "description": "Cascade DeptGrant + RoleACL deletion triggered by delete_dept(recipient)", "default_severity": "CRITICAL"},
@@ -48,7 +48,7 @@ SERVICE_EVENTS = [
     {"action": "tokens.owner_user_deleted_block", "description": "Credential auto-blocked because owner user was deleted (grace window starts)", "default_severity": "WARNING"},
     {"action": "tokens.owner_dept_deleted_block", "description": "Credential auto-blocked because owner department was deleted (grace window starts)", "default_severity": "WARNING"},
     # Ownership recovery
-    {"action": "tokens.transfer_ownership", "description": "Credential ownership transferred (service_admin / account_admin override)", "default_severity": "CRITICAL"},
+    {"action": "tokens.transfer_ownership", "description": "Credential ownership transferred (secret_service admin of owning department, or account_admin for cross-dep transfer after owner_dept deletion)", "default_severity": "CRITICAL"},
     {"action": "tokens.recover", "description": "Blocked credential recovered (status returned to active within 30-day window)", "default_severity": "WARNING"},
     # Authorization
     {"action": "tokens.access_denied", "description": "Reader/operator attempted action without permission (no RoleACL or wrong scope)", "default_severity": "INFO"},

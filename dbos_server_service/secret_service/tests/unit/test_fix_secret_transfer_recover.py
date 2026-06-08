@@ -21,12 +21,16 @@ from src.schemas.credentials import TransferRequest
 from src.services import credential_service
 
 
-def _admin(user_id: str = "usr_svc_admin01") -> Identity:
+def _admin(user_id: str = "usr_svc_admin01", department_id: str = "dep_admin01") -> Identity:
+    """secret_service admin. Cleanup сделал роль per-dept: admin может оперировать
+    кред'ой только своего dept'а (`cred.owner_user_dept_id == identity.department_id`
+    для personal). В тестах ниже dept admin'а выровнен с `owner_user_dept_id`
+    каждой cred'ы."""
     return Identity(
         user_id=user_id,
         username="adm",
         actor_type="user",
-        department_id="dep_admin01",
+        department_id=department_id,
         allowed_services=["secret_service"],
         service_roles={"secret_service": ["admin"]},
         is_banned=False,
@@ -73,7 +77,9 @@ async def test_transfer_audit_includes_old_owner_and_reason(adb) -> None:
         "emit",
         side_effect=lambda action, **kw: emitted.append({"action": action, **kw}),
     ):
-        await credential_service.transfer(adb, _admin(), cred.id, payload)
+        await credential_service.transfer(
+            adb, _admin(department_id="dep_oldowner01"), cred.id, payload,
+        )
 
     transfer_events = [e for e in emitted if e["action"] == "tokens.transfer_ownership"]
     assert len(transfer_events) == 1
@@ -112,7 +118,7 @@ async def test_transfer_integrity_error_translates_to_conflict(adb, monkeypatch)
         with pytest.raises(ConflictError) as exc:
             await credential_service.transfer(
                 adb,
-                _admin(),
+                _admin(department_id="dep_oldowner02"),
                 cred.id,
                 TransferRequest(new_owner_user_id="usr_newowner02", reason="race test"),
             )
@@ -149,6 +155,8 @@ async def test_recover_integrity_error_translates_to_conflict(adb, monkeypatch) 
 
     with patch.object(credential_service.audit_service, "emit", lambda *a, **k: None):
         with pytest.raises(ConflictError) as exc:
-            await credential_service.recover(adb, _admin(), cred.id)
+            await credential_service.recover(
+                adb, _admin(department_id="dep_oldowner03"), cred.id,
+            )
 
     assert exc.value.error_code == "NAME_DUPLICATE"

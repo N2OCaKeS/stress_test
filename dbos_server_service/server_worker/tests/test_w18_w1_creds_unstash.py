@@ -30,21 +30,32 @@ _ED25519_PUB = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITESTKEY dbos-account"
 
 
 async def _put_dispatch_stash(stash_key: str, password: str, private_key: str) -> None:
-    """Положить creds в Redis под dispatch-stash ключом (через тот же aioredis,
-    что использует production-код)."""
+    """Положить creds в Redis под dispatch-stash ключом.
+
+    Симулирует server_service'овский `store_dispatch_creds`: envelope-шифрует
+    payload общим master-key (тестовый conftest задаёт его симметрично) и
+    binding'ует AAD к stash-id. Worker'овский `_read_dispatch_creds` ожидает
+    именно этот формат — plaintext JSON отбился бы STASH_TOKEN_INVALID.
+    """
     import redis.asyncio as aioredis
     from src.core.config import get_settings
+    from src.services.redis_stash_crypto import (
+        aad_for_redis_stash,
+        encrypt_stash,
+        stash_id_from_key,
+    )
     settings = get_settings()
     client = aioredis.from_url(settings.redis_url)
+    payload_json = json.dumps({
+        "password_plaintext": password,
+        "ssh_private_key_plaintext": private_key,
+    })
+    token = encrypt_stash(
+        payload_json,
+        aad=aad_for_redis_stash(stash_id_from_key(stash_key)),
+    )
     try:
-        await client.set(
-            stash_key,
-            json.dumps({
-                "password_plaintext": password,
-                "ssh_private_key_plaintext": private_key,
-            }),
-            ex=900,
-        )
+        await client.set(stash_key, token, ex=900)
     finally:
         await client.aclose()
 
@@ -163,6 +174,36 @@ async def test_retry_uses_task_local_stash_after_dispatch_stash_deleted(
 
     assert len(provision_calls) == 1
     assert provision_calls[0]["new_password"] == original_password
+
+
+async def test_corrupt_dispatch_stash_raises_decrypt_failed(make_task, monkeypatch):
+    """Corrupt token в Redis (без префикса / битый base64) → AppException.
+
+    Имитирует compromised-сценарий: атакующий с write-к Redis перетёр валидный
+    stash на мусор. Worker должен подняться с STASH_TOKEN_INVALID/_FAILED — не
+    тихо вернуть None и продолжить с пустыми кредами, и не пускать данные через
+    AppException наружу как «истёк TTL».
+    """
+    import redis.asyncio as aioredis
+    from src.core.config import get_settings
+    from src.core.exceptions import AppException
+
+    stash_key = "dbos:dispatch_creds:dcd_w18_corrupt"
+    # Кладём в Redis заведомо невалидный (plaintext) payload — старая схема.
+    settings = get_settings()
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        await client.set(stash_key, "not-a-token-without-version-prefix", ex=900)
+    finally:
+        await client.aclose()
+
+    with pytest.raises(AppException) as ei:
+        await users._read_dispatch_creds(stash_key)
+    assert ei.value.error_code in {
+        "STASH_TOKEN_INVALID",
+        "STASH_TOKEN_MALFORMED",
+        "STASH_DECRYPT_FAILED",
+    }
 
 
 async def test_missing_stash_fails_fast(make_task, monkeypatch):

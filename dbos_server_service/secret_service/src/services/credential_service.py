@@ -89,6 +89,28 @@ def _is_service_admin(identity: Identity) -> bool:
     return "admin" in identity.roles_for(SERVICE_NAME)
 
 
+def _is_service_admin_for(identity: Identity, cred: Credential) -> bool:
+    """admin secret_service'а с правом действовать над `cred` — only own dept.
+
+    Cred сидит в dept'е actor'а, если:
+      * `cred.owner_dept_id == identity.department_id` (department / cross_dep), или
+      * `cred.owner_user_dept_id == identity.department_id` (personal владельца
+        того же dept'а; пустой owner_user_dept_id — допуск как best-effort).
+    Cross-dept привилегий у роли нет — admin dep_A не лезет в cred'ы dep_B.
+    """
+    if not _is_service_admin(identity):
+        return False
+    if identity.department_id is None:
+        return False
+    if cred.owner_dept_id is not None and cred.owner_dept_id == identity.department_id:
+        return True
+    if cred.scope == "personal":
+        owner_dept = cred.owner_user_dept_id
+        if owner_dept is None or owner_dept == identity.department_id:
+            return True
+    return False
+
+
 def _is_account_admin(identity: Identity) -> bool:
     return identity.platform_role == "account_admin"
 
@@ -124,11 +146,12 @@ async def create(
         owner_user_id = identity.user_id
     else:
         owner_dept_id = payload.owner_dept_id
-        # Только dep_admin собственного dep'а или service_admin может заводить
-        # креды на чужой dep. Для своего dep'а — обычный operator+, тут не
-        # фильтруем (auth+role-каталог уже отсеяли guest'ов на endpoint-level).
+        # На свой dep заводит обычный operator+ (auth+role-каталог уже отсеяли
+        # guest'ов на endpoint-level). На чужой dep — только account_admin:
+        # у `admin` secret_service'а cross-dept привилегий нет, он живёт
+        # per-(dept, service).
         if identity.department_id != owner_dept_id:
-            if not (_is_service_admin(identity) or _is_account_admin(identity)):
+            if not _is_account_admin(identity):
                 raise AuthorizationError(
                     error_code="CREDENTIAL_ACCESS_DENIED",
                     message="Cannot create credential for another department",
@@ -557,7 +580,7 @@ async def delete(
     cred_id: str,
     payload: AdminDeleteRequest | None,
 ) -> None:
-    """DELETE кред. Admin override (service_admin/account_admin не-owner) требует reason."""
+    """DELETE кред. Admin override (admin своего dept'а / account_admin не-owner) требует reason."""
     cred = await repo.get_by_id(db, cred_id)
     if cred is None:
         raise NotFoundError(
@@ -565,7 +588,7 @@ async def delete(
             message="Credential not found",
         )
 
-    # Проверка: владелец / dep_admin owner_dep / service_admin / account_admin.
+    # Проверка: владелец / dep_admin owner_dep / service-admin своего dept'а / account_admin.
     is_owner = (
         cred.scope == "personal"
         and identity.actor_type == "user"
@@ -573,13 +596,13 @@ async def delete(
     )
     is_admin_override = False
     if not is_owner:
-        # Попробуем разрешить как dep_admin owner_dep / service_admin.
+        # Попробуем разрешить как dep_admin owner_dep / service-admin своего dept'а.
         allowed, reason = await access_service.check_access(
             db, identity, cred, "delete"
         )
         if allowed:
-            pass  # legitimate owner-side delete (dep_admin/service_admin внутри scope)
-        elif _is_service_admin(identity) or _is_account_admin(identity):
+            pass  # legitimate owner-side delete (dep_admin/admin внутри scope)
+        elif _is_service_admin_for(identity, cred) or _is_account_admin(identity):
             is_admin_override = True
         else:
             audit_service.emit(
@@ -668,7 +691,13 @@ async def transfer(
     cred_id: str,
     payload: TransferRequest,
 ) -> Credential:
-    """Transfer ownership. Только для blocked-кред, service_admin/account_admin.
+    """Transfer ownership. Только для blocked-кред.
+
+    Допустимо для:
+      * admin secret_service'а — только над cred'ой своего dept'а
+        (per-(dept, service) роль, cross-dept привилегий не даёт);
+      * account_admin — cross_dep transfer при удалённом owner_dep
+        (даже когда `cred.owner_dept_id` уже сменился на NULL).
 
     FOR UPDATE на cred: два параллельных transfer'а на одну креду читают одну
     и ту же blocked-строку и оба пишут разный owner — без локa последний
@@ -677,16 +706,17 @@ async def transfer(
     IntegrityError на partial UNIQUE — переводим в 409 NAME_DUPLICATE; иначе
     aborted-state соединения роняет endpoint 500'кой.
     """
-    if not (_is_service_admin(identity) or _is_account_admin(identity)):
-        raise AuthorizationError(
-            error_code="CREDENTIAL_ACCESS_DENIED",
-            message="Only service_admin or account_admin can transfer ownership",
-        )
     cred = await repo.get_by_id_for_update(db, cred_id)
     if cred is None:
         raise NotFoundError(
             error_code="CREDENTIAL_NOT_FOUND",
             message="Credential not found",
+        )
+
+    if not (_is_service_admin_for(identity, cred) or _is_account_admin(identity)):
+        raise AuthorizationError(
+            error_code="CREDENTIAL_ACCESS_DENIED",
+            message="Only secret_service admin of the owning department or account_admin can transfer ownership",
         )
 
     if cred.status != "blocked":
@@ -752,19 +782,23 @@ async def recover(
 ) -> Credential:
     """Recover blocked-кред. Окно — 30 дней с момента блокировки.
 
+    Допустимо для admin secret_service'а своего dept'а либо для account_admin
+    (cross-dept привилегий у service-роли admin нет — он работает только над
+    cred'ами своего dept'а).
+
     FOR UPDATE + try/except IntegrityError — симметрия с transfer; параллельный
     recover/transfer на одну креду не должен ронять 500.
     """
-    if not (_is_service_admin(identity) or _is_account_admin(identity)):
-        raise AuthorizationError(
-            error_code="CREDENTIAL_ACCESS_DENIED",
-            message="Only service_admin or account_admin can recover credential",
-        )
     cred = await repo.get_by_id_for_update(db, cred_id)
     if cred is None:
         raise NotFoundError(
             error_code="CREDENTIAL_NOT_FOUND",
             message="Credential not found",
+        )
+    if not (_is_service_admin_for(identity, cred) or _is_account_admin(identity)):
+        raise AuthorizationError(
+            error_code="CREDENTIAL_ACCESS_DENIED",
+            message="Only secret_service admin of the owning department or account_admin can recover credential",
         )
     if cred.status != "blocked":
         raise DomainValidationError(

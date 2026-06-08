@@ -137,16 +137,16 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 
 Изменить `name` / `login` / `secret`. На `secret` — повторно шифрует.
 
-**Auth:** Bearer (owner / dep_admin / service_admin per scope).
+**Auth:** Bearer (owner / dep_admin / admin secret_service своего dept'а — per scope).
 **Body (`CredentialUpdate`):** все поля optional, partial update. Размеры — те же, что в create.
 **Response 200:** `CredentialRead`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 NAME_DUPLICATE`, `410 CREDENTIAL_BLOCKED`, `422 VALIDATION_ERROR`.
 
 ### DELETE /credentials/{cred_id}
 
-Удалить credential. Admin override (не-owner через service_admin / account_admin) требует `reason`.
+Удалить credential. Admin override (не-owner через admin secret_service своего dept'а или account_admin) требует `reason`.
 
-**Auth:** Bearer (owner / dep_admin / service_admin / account_admin).
+**Auth:** Bearer (owner / dep_admin / admin secret_service своего dept'а / account_admin).
 **Body (`AdminDeleteRequest`, optional):** `{ "reason": "..." }` (1..256 chars). Обязателен для admin override, иначе `422 ADMIN_OVERRIDE_REASON_REQUIRED`.
 **Response 200:** `OkResponse = { ok: true }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `422 ADMIN_OVERRIDE_REASON_REQUIRED`.
@@ -165,7 +165,7 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 
 Передать ownership заблокированной кред'ы. Только для blocked кред с grants.
 
-**Auth:** Bearer service_admin (personal cred → новый user из числа grantees) или account_admin (cross_dep cred → новый dep).
+**Auth:** Bearer admin secret_service'а владеющего dep'а (personal cred → новый user из числа grantees) или account_admin (cross_dep cred с удалённым owner_dept → новый dep).
 **Body (`TransferRequest`):** ровно одно поле:
 
 ```json
@@ -177,16 +177,16 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 ```
 
 **Response 200:** `CredentialRead` (со снятым `status=blocked`).
-**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_ADMIN_REQUIRED` / `403 ACCOUNT_ADMIN_REQUIRED`, `404 CREDENTIAL_NOT_FOUND`, `422 CREDENTIAL_NOT_BLOCKED`, `422 INVALID_TRANSFER_TARGET` (несоответствие scope или target не подходит).
+**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED` (admin не своего dept'а, нет account_admin), `404 CREDENTIAL_NOT_FOUND`, `422 CREDENTIAL_NOT_BLOCKED`, `422 INVALID_TRANSFER_TARGET` (несоответствие scope или target не подходит).
 
 ### POST /credentials/{cred_id}/recover
 
 Снять `status=blocked` в окне `BLOCKED_RETENTION_DAYS` (default 30 дней от `blocked_at`).
 
-**Auth:** Bearer service_admin / account_admin.
+**Auth:** Bearer admin secret_service'а владеющего dep'а / account_admin.
 **Body:** пусто.
 **Response 200:** `CredentialRead`.
-**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_ADMIN_REQUIRED`, `404 CREDENTIAL_NOT_FOUND`, `422 CREDENTIAL_NOT_BLOCKED`, `422 RECOVER_WINDOW_EXPIRED`.
+**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `422 CREDENTIAL_NOT_BLOCKED`, `422 RECOVER_WINDOW_EXPIRED`.
 
 ## RoleACL
 
@@ -217,7 +217,7 @@ ACL даёт читать (`can_read`) или менять (`can_write`) creds �
 
 Список `RoleACL`.
 
-**Auth:** Bearer (owner / dep_admin владеющего dep'а / recipient dep_admin для cross_dep / service_admin).
+**Auth:** Bearer (owner / dep_admin владеющего dep'а / recipient dep_admin для cross_dep / admin secret_service владеющего dep'а).
 **Response 200:** `RoleACLList = { items: RoleACLRead[] }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`.
 
@@ -225,7 +225,7 @@ ACL даёт читать (`can_read`) или менять (`can_write`) creds �
 
 Revoke `RoleACL`.
 
-**Auth:** Bearer (owner / dep_admin / service_admin).
+**Auth:** Bearer (owner / dep_admin / admin secret_service владеющего dep'а).
 **Response 200:** `OkResponse = { ok: true }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `404 ROLE_ACL_NOT_FOUND`.
 
@@ -237,7 +237,7 @@ Revoke `RoleACL`.
 
 Выдать `DeptGrant`.
 
-**Auth:** Bearer (owner dep_admin / service_admin).
+**Auth:** Bearer (owner dep_admin / admin secret_service владеющего dep'а).
 **Body (`DeptGrantCreate`):** `{ "recipient_dept_id": "dep_..." }` (1..64 chars).
 **Response 201:** `DeptGrantRead`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 DEPT_GRANT_DUPLICATE`, `422 DEPT_GRANT_NOT_APPLICABLE` (cred не `cross_department`), `422 DEPT_GRANT_RECIPIENT_IS_OWNER`.
@@ -246,7 +246,7 @@ Revoke `RoleACL`.
 
 Список `DeptGrant`.
 
-**Auth:** Bearer (owner dep_admin / recipient dep_admin / service_admin).
+**Auth:** Bearer (owner dep_admin / recipient dep_admin / admin secret_service владеющего dep'а).
 **Response 200:** `DeptGrantList = { items: DeptGrantRead[] }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`.
 
@@ -254,7 +254,7 @@ Revoke `RoleACL`.
 
 Revoke `DeptGrant`. Каскадно сносит все `RoleACL(cred_id, dept_id=recipient_dept_id)`.
 
-**Auth:** Bearer (owner dep_admin / service_admin).
+**Auth:** Bearer (owner dep_admin / admin secret_service владеющего dep'а).
 **Response 200:** `OkResponse = { ok: true }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `404 DEPT_GRANT_NOT_FOUND`.
 
@@ -326,7 +326,7 @@ Cascade revoke `DeptGrant`'ов и `RoleACL`'ей где dep — recipient. Св
 | `PLAINTEXT_TOO_LARGE` | 422 | Plaintext превышает `MAX_PLAINTEXT_BYTES`. |
 | `INVALID_CURSOR` | 400 | `cursor` не парсится в `<iso-timestamp>\|<cred_id>`. |
 | `ACCOUNT_ADMIN_REQUIRED` | 403 | Эндпоинт требует platform-роли `account_admin`. |
-| `SERVICE_ADMIN_REQUIRED` | 403 | Эндпоинт требует service-роли `service_admin` для secret_service. |
+| `SERVICE_ADMIN_REQUIRED` | 403 | Эндпоинт требует service-роли `admin` в secret_service. Per-(dept, service) проверка: guard отсекает не-админов на endpoint-level, дальнейшая привязка к dep'у — в business-логике. |
 | `DEPT_ADMIN_REQUIRED` | 403 | Эндпоинт требует platform-роли `department_admin`. |
 | `LIFECYCLE_HANDLER_FAILED` | 500 | Внутренняя ошибка lifecycle-handler'а; в `details.errors` — список накопленных ошибок. |
 | `VALIDATION_ERROR` | 422 | Pydantic-валидация request body (envelope с `details.errors`). |

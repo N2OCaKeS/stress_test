@@ -14,6 +14,7 @@ from src.schemas.users import (
     AddUserToGroupRequest,
     AssignRolesRequest,
     BanRequest,
+    HardDeleteUserRequest,
     ResetPasswordRequest,
     RevokeSessionsRequest,
     RevokeSessionsResponse,
@@ -692,6 +693,64 @@ async def remove_user_from_group(
         identity=identity,
         group_id=group_id,
         user_id=user_id,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return OkResponse()
+
+
+@router.delete(
+    "/{user_id}",
+    response_model=OkResponse,
+    summary="Hard-delete юзера (с указанием причины)",
+    description=(
+        "Жёсткое удаление юзера: row в `users` сносится физически. "
+        "ORM-cascade уносит сессии/PAT/Ban/UserServiceRole/UserGroupMembership. "
+        "Ботов юзера НЕ трогаем — бот это dept-owned entity. "
+        "После commit'а secret_service получает best-effort notify "
+        "(`/internal/lifecycle/user-deleted`), который блокирует personal "
+        "credentials удалённого юзера."
+    ),
+    responses={
+        404: {"description": "USER_NOT_FOUND — юзера нет."},
+        422: {"description": "LAST_ACCOUNT_ADMIN — нельзя удалить последнего активного account_admin'а."},
+        403: {"description": "PERMISSION_DENIED / ROLE_REQUIRED — нужен account_admin."},
+    },
+)
+async def hard_delete_user(
+    user_id: str,
+    body: HardDeleteUserRequest,
+    request: Request,
+    identity: AccountAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Hard-delete юзера.
+
+    Доступ:
+        Только `account_admin` (платформенный, без отдела). Department_admin
+        не пускаем намеренно — hard-delete сразу касается секретов в
+        secret_service и должен идти через одного и того же тип actor'а,
+        что и create/transfer.
+
+    Защита:
+        Запрет удалять последнего активного account_admin'а
+        (`LAST_ACCOUNT_ADMIN` 422), иначе платформа теряет admin-управление.
+
+    Возможные ошибки:
+        * `USER_NOT_FOUND` (404).
+        * `LAST_ACCOUNT_ADMIN` (422) — единственный оставшийся
+          account_admin защищён от снесения.
+        * `ROLE_REQUIRED` (403) — actor не account_admin.
+
+    Audit:
+        `user.hard_deleted` (CRITICAL). `details.reason` — то, что
+        прислал юзер. Также пишутся `sessions_revoked` и `pat_revoked_count`.
+    """
+    await user_service.hard_delete_user(
+        db=db,
+        actor_id=identity.user_id,
+        actor_username=identity.username,
+        user_id=user_id,
+        reason=body.reason,
         request_id=getattr(request.state, "request_id", None),
     )
     return OkResponse()

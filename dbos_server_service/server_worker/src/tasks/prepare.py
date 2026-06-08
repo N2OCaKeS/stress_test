@@ -33,6 +33,11 @@ from src.db.session import AsyncSessionLocal
 from src.main import broker
 from src.repositories import task as task_repo
 from src.services import redis_pool, server_service_client, ssh_client
+from src.services.redis_stash_crypto import (
+    aad_for_redis_stash,
+    decrypt_stash,
+    stash_id_from_key,
+)
 from src.tasks._runner import run_task
 
 logger = logging.getLogger(__name__)
@@ -96,13 +101,18 @@ async def _read_bootstrap_creds(creds_key: str) -> dict:
                 "re-run prepare to supply them again"
             ),
         )
-    # Битый payload (не-JSON, не-UTF8) обрабатываем как «креды отсутствуют»:
-    # task FAILED с понятным last_error, а не traceback в логи. Source — sender
-    # из server_service; в норме pickle/encoding-несовместимости быть не должно,
-    # но если что-то починили на той стороне криво, не хочется зависнуть на
-    # таске с непонятным `JSONDecodeError`.
+    # Stash в Redis — envelope-token (`v<N>$<nonce>$<ct>`) поверх общего с
+    # server_service master-key'я. Decrypt с AAD от stash-id; corrupt/swap/
+    # mismatch'нутый AAD → AppException(STASH_DECRYPT_*) пробрасывается до
+    # `_runner` (task FAILED с явным error_code). Битый AppException не
+    # сворачиваем в SSH_BOOTSTRAP_CREDS_MISSING — это разные сигналы для
+    # оператора: «истёк TTL» vs «крипто отказало».
+    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    plaintext = decrypt_stash(
+        text, aad=aad_for_redis_stash(stash_id_from_key(creds_key)),
+    )
     try:
-        return json.loads(raw)
+        return json.loads(plaintext)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise SshError(
             error_code="SSH_BOOTSTRAP_CREDS_MISSING",

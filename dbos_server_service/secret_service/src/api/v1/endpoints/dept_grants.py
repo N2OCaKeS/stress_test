@@ -29,7 +29,7 @@ def _to_read(g: DeptGrant) -> DeptGrantRead:
     "/{cred_id}/dept-grants",
     response_model=DeptGrantRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Выдать DeptGrant recipient-dep'у (owner dep_admin / service_admin)",
+    summary="Выдать DeptGrant recipient-dep'у (owner dep_admin / admin secret_service владеющего dep'а)",
 )
 @limiter.limit(get_settings().rate_limit_dept_grant)
 async def add_dept_grant(

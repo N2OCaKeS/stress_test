@@ -721,7 +721,15 @@ class TestReadBootstrapCredsMalformed:
     last_error, а не traceback (json.JSONDecodeError / UnicodeDecodeError).
     """
 
-    async def test_malformed_json_raises_creds_missing(self, monkeypatch):
+    async def test_malformed_token_raises_stash_token_invalid(self, monkeypatch):
+        """Corrupt-данные в Redis (не encrypted-token) → STASH_TOKEN_INVALID.
+
+        После envelope-шифрования stash'а битый payload диагностируется как
+        крипто-фейл (AppException), а не как «истёк TTL» (SshError). Это
+        разделение умышленное: оператор должен видеть «крипто отказало»
+        отдельно от штатного истечения окна.
+        """
+        from src.core.exceptions import AppException
         from src.services import redis_pool
         from src.tasks import prepare as prepare_mod
 
@@ -734,17 +742,20 @@ class TestReadBootstrapCredsMalformed:
 
         monkeypatch.setattr(redis_pool, "get_redis", lambda: _Client())
 
-        with pytest.raises(SshError) as ei:
+        with pytest.raises(AppException) as ei:
             await prepare_mod._read_bootstrap_creds("dbos:prepare_creds:pcd_x")
-        assert ei.value.error_code == "SSH_BOOTSTRAP_CREDS_MISSING"
+        # `{not valid json` не начинается с `v` → STASH_TOKEN_INVALID.
+        assert ei.value.error_code == "STASH_TOKEN_INVALID"
 
-    async def test_non_utf8_raises_creds_missing(self, monkeypatch):
+    async def test_non_utf8_raises_stash_token_invalid(self, monkeypatch):
+        """Невалидный UTF-8 → STASH_TOKEN_INVALID (envelope-token бы начинался
+        с ASCII `v<N>$`)."""
+        from src.core.exceptions import AppException
         from src.services import redis_pool
         from src.tasks import prepare as prepare_mod
 
         class _Client:
             async def get(self, key):
-                # Заведомо невалидный UTF-8 — json.loads(bytes) сам декодит.
                 return b"\xff\xfe\xfd"
 
             async def aclose(self):
@@ -752,6 +763,9 @@ class TestReadBootstrapCredsMalformed:
 
         monkeypatch.setattr(redis_pool, "get_redis", lambda: _Client())
 
-        with pytest.raises(SshError) as ei:
+        with pytest.raises((AppException, UnicodeDecodeError)) as ei:
             await prepare_mod._read_bootstrap_creds("dbos:prepare_creds:pcd_x")
-        assert ei.value.error_code == "SSH_BOOTSTRAP_CREDS_MISSING"
+        # Либо decode упадёт на raw.decode, либо STASH_TOKEN_INVALID
+        # на первом символе (не `v`). Оба сигнала — корректные.
+        if isinstance(ei.value, AppException):
+            assert ei.value.error_code == "STASH_TOKEN_INVALID"

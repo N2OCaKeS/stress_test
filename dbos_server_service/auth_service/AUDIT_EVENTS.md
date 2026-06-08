@@ -73,6 +73,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `user.sessions_listed` | INFO | `GET /users/me/sessions` | user (== actor) | `count` активных сессий. |
 | `user.sessions_revoked_all` | CRITICAL | `POST /users/me/sessions/revoke` | user (== actor) | `revoked_count`, `except_session_id`, `except_current`. PAT и bot-токены не трогаются. |
 | `user.session_revoked_one` | WARNING | `DELETE /users/me/sessions/{id}` | user (== actor) | `session_id`, `was_current`. |
+| `user.hard_deleted` | CRITICAL | `user_service.hard_delete_user` (`DELETE /users/{id}`) | user | `target_username`, `target_department_id`, `reason` (обязательный человекочитаемый), `sessions_revoked`, `pat_revoked_count`. После commit'а инициирует best-effort callback в `secret_service.notify_user_deleted` — secret_service блокирует personal credentials удалённого юзера. Боты юзера НЕ трогаются (dept-owned entity). |
 
 ## Departments
 
@@ -82,6 +83,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `department.list` | INFO | `GET /departments` | — | Только account_admin. |
 | `department.service_grant` | CRITICAL | `department_service.grant_service_access` | department | `service_name`. |
 | `department.service_revoke` | CRITICAL | `department_service.revoke_service_access` | department | `service_name`. |
+| `department.hard_deleted` | CRITICAL | `department_service.hard_delete_department` (`DELETE /departments/{id}`) | department | `department_name`, `department_display_name`, `reason` (обязательный), `bots_deleted`, `bot_tokens_revoked`, `oauth_clients_deleted`. CASCADE-FK уносят DepartmentServiceAccess / ServiceRoleDefinition / UserGroup / DepartmentDockerRegistry. Боты и oauth_clients (RESTRICT-FK) сносятся явно до dept-row'а. После commit'а — best-effort `secret_service.notify_dept_deleted`: блокирует cred'ы dept'а и каскадно снимает DeptGrant'ы/RoleACL, где dept — recipient. |
 
 ## Groups
 

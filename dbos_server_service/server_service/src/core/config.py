@@ -127,7 +127,33 @@ class Settings(BaseSettings):
             "независимых деплоя не получили одинаковый KDF-output и общий "
             "ciphertext domain. В dev/test/local пустое значение допустимо: "
             "secrets_service подставляет фиксированный fallback (`_FALLBACK_HKDF_SALT`). "
-            "Сгенерить: `python -c \"import secrets; print(secrets.token_hex(32))\"`."
+            "Сгенерить: `python -c \"import secrets; print(secrets.token_hex(32))\"`. "
+            "Этот же salt используется и для `redis_stash_crypto` (info-метка "
+            "разная, KDF-output изолирован по domain-separator)."
+        ),
+    )
+    redis_stash_encryption_key: str = Field(
+        default="",
+        description=(
+            "Master-ключ для envelope-шифрования Redis-stash'а кред между "
+            "server_service и server_worker (provision/prepare dispatch). "
+            "Отдельный от `SERVER_ENCRYPTION_KEY` (тот живёт ТОЛЬКО в "
+            "server_service, БД-ciphertext'ы) — этот mount'ится симметрично "
+            "в оба сервиса. min_length=32 — нижняя граница энтропии. Сгенерить: "
+            "`openssl rand -base64 32`. В production/staging обязателен — без "
+            "него server_worker_redis_url триггерит strict-validator."
+        ),
+    )
+    redis_stash_encryption_key_version: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Активная версия `REDIS_STASH_ENCRYPTION_KEY`, пишется в новые "
+            "stash-токены (`v<N>$...`). Ротация: bump'нуть version + положить "
+            "новый ключ в `REDIS_STASH_ENCRYPTION_KEY`, старый — в "
+            "`REDIS_STASH_ENCRYPTION_KEY__v<N-1>` env (для чтения in-flight "
+            "stash'ей). TTL stash'а ~15 минут — окно coexistence версий "
+            "короткое, легко закрыть rolling restart'ом обоих сервисов."
         ),
     )
     server_worker_database_url: str = Field(
@@ -576,6 +602,29 @@ class Settings(BaseSettings):
                 f"{self.app_env} (format: redis://:<password>@host:port/db). "
                 "Anonymous Redis exposes the taskiq queue to RPUSH from "
                 "any co-located container."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_redis_stash_key_in_prod(self) -> "Settings":
+        """В production/staging `REDIS_STASH_ENCRYPTION_KEY` обязателен.
+
+        Без ключа `redis_stash_crypto.encrypt_stash` упадёт на первом же
+        dispatch'е (`min_length=32` Field-level не покрывает дефолтную пустую
+        строку — Field-level check там стоит как `default=""`). Без strict-
+        guard'а пустота словится только в рантайме при первом /provision,
+        что хуже fail-fast'а на старте. Если `server_worker_redis_url`
+        пустой — dispatch отключён, ключ не нужен.
+        """
+        if self.app_env.lower() not in {"production", "staging"}:
+            return self
+        if not self.server_worker_redis_url:
+            return self
+        if not self.redis_stash_encryption_key or len(self.redis_stash_encryption_key) < 32:
+            raise ValueError(
+                f"REDIS_STASH_ENCRYPTION_KEY must be set (min 32 chars) in "
+                f"{self.app_env} when SERVER_WORKER_REDIS_URL is configured. "
+                "Generate: openssl rand -base64 32"
             )
         return self
 

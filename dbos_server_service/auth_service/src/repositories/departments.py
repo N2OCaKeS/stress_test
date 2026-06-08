@@ -16,6 +16,16 @@ class DepartmentRepository:
     async def get_by_id(self, dept_id: str) -> Department | None:
         return await self._db.get(Department, dept_id)
 
+    async def get_for_update(self, dept_id: str) -> Department | None:
+        """`SELECT ... FOR UPDATE` — row-lock на отдел для hard-delete.
+
+        Сериализует параллельные hard-delete'ы и блокирует concurrent
+        мутации (`update_department`, grant/revoke service access) до
+        commit'а.
+        """
+        stmt = select(Department).where(Department.id == dept_id).with_for_update()
+        return await self._db.scalar(stmt)
+
     async def get_by_name(self, name: str) -> Department | None:
         return await self._db.scalar(select(Department).where(Department.name == name))
 
@@ -73,4 +83,32 @@ class DepartmentRepository:
         access.is_active = False
         access.revoked_at = utcnow()
         access.revoked_by = revoked_by
+        await self._db.flush()
+
+    async def count_active_users(self, dept_id: str) -> int:
+        """Сколько активных юзеров живёт в отделе.
+
+        Hard-delete guard'у нужно отличить «отдел пустой» от «там кто-то
+        ещё есть» — забаненных/disabled не считаем, они уже не пользуются
+        платформой и не блокируют выпиливание отдела (если так решит admin).
+        """
+        from sqlalchemy import func
+        from src.models.user import User
+        stmt = (
+            select(func.count())
+            .select_from(User)
+            .where(
+                User.department_id == dept_id,
+                User.is_active.is_(True),
+            )
+        )
+        return await self._db.scalar(stmt) or 0
+
+    async def delete(self, dept: Department) -> None:
+        """Hard-delete отдела. CASCADE'ятся `DepartmentServiceAccess`,
+        `ServiceRoleDefinition`, `UserGroup`, `DepartmentDockerRegistry`
+        через ondelete='CASCADE' на FK. Bots и oauth_clients имеют
+        ondelete='RESTRICT' — за их зачистку отвечает caller (service-уровень).
+        """
+        await self._db.delete(dept)
         await self._db.flush()

@@ -137,6 +137,11 @@ services:
       SERVICE_API_KEY: dev-introspect-api-key
       SERVER_ENCRYPTION_KEY: dev-server-encryption-key-do-not-use-in-prod
       SERVER_ENCRYPTION_KEY_VERSION: "1"
+      # Общий с server_worker'ом ключ для envelope-шифрования Redis-stash'а
+      # кред (provision/prepare dispatch). Должен совпадать байт-в-байт с
+      # REDIS_STASH_ENCRYPTION_KEY у server_worker'а ниже.
+      REDIS_STASH_ENCRYPTION_KEY: dev-redis-stash-encryption-key-do-not-use-in-prod
+      REDIS_STASH_ENCRYPTION_KEY_VERSION: "1"
       SERVER_WORKER_DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server_worker
       SERVER_WORKER_REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/0
       APP_LOG_LEVEL: INFO
@@ -177,6 +182,11 @@ services:
       # Bearer для вызовов auth_service /introspect (где worker ходит за
       # introspect'ом своего bot-токена) — shared cross-service.
       SERVICE_API_KEY: dev-introspect-api-key
+      # Симметричный с server_service'ом ключ для decrypt'а Redis-stash'а
+      # кред. Обязан совпадать со значением выше — иначе worker увидит
+      # STASH_DECRYPT_FAILED и все provision/prepare таски FAILED.
+      REDIS_STASH_ENCRYPTION_KEY: dev-redis-stash-encryption-key-do-not-use-in-prod
+      REDIS_STASH_ENCRYPTION_KEY_VERSION: "1"
       WORKER_LOG_LEVEL: INFO
     # If WORKER_BOT_TOKEN is not provided via env but a PAT file is mounted
     # (written by `make seed`), source it before starting taskiq. Seeder

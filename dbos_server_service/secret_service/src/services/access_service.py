@@ -6,7 +6,8 @@
 
 Порядок проверок строго фиксирован (README §«Модель доступа»):
 
-  1. Cred status — blocked-креды видят только admin'ы для аудита/recover.
+  1. Cred status — blocked-креды видят только admin'ы своего dept'а для
+     аудита/recover.
   2. Department service-access уже проверено `require_user_context`,
      отдельной проверки тут нет.
   3. Scope-зависимая проверка: personal — owner_match или RoleACL у actor.dept;
@@ -14,10 +15,12 @@
      actor.dept == owner_dept (тогда DeptGrant не нужен), либо DeptGrant
      для actor.dept + RoleACL.
   4. Action-specific: delete/manage_status/grant_dept — только owner-side
-     dep_admin или service_admin; grant_acl — owner для personal, dep_admin
-     соответствующей стороны для department/cross.
-  5. Admin overrides: service_admin — read-only любую креду;
-     account_admin — только cross_dep transfer при удалённом owner_dep.
+     dep_admin или service-роль admin того же dept'а; grant_acl — owner для
+     personal, dep_admin соответствующей стороны для department/cross.
+  5. Admin overrides:
+     - admin secret_service'а — read-only любую креду СВОЕГО dept'а
+       (cross-dept привилегий у этой роли нет);
+     - account_admin — только cross_dep transfer при удалённом owner_dep.
 
 Все ветки возвращают конкретный reason: `owner_match`, `acl_read`,
 `acl_write`, `dept_admin`, `service_admin`, `account_admin`, `blocked`,
@@ -66,12 +69,38 @@ _PERSONAL_OWNER_ONLY: frozenset[str] = frozenset({"write", "delete", "manage_sta
 
 
 def _is_service_admin(identity: Identity) -> bool:
-    """`service_admin` = носитель `admin` роли в secret_service.
+    """Носитель `admin`-роли secret_service (без привязки к конкретному dept'у).
 
     Symmetric с require_service_admin guard'ом: одна точка истины «кто
-    считается админом сервиса».
+    считается админом сервиса». Привязка к dep'у самой кред'ы — отдельный
+    шаг (`_is_service_admin_for`), потому что admin per-(dept, service) и не
+    имеет cross-dept привилегий.
     """
     return "admin" in identity.roles_for(SERVICE_NAME)
+
+
+def _is_service_admin_for(identity: Identity, cred: Credential) -> bool:
+    """`admin` secret_service'а с правом действовать ИМЕННО над `cred`.
+
+    Допустимо, если actor владеет admin-ролью И cred сидит в том же dept'е:
+      * `cred.owner_dept_id == identity.department_id` — department / cross_dep;
+      * `cred.owner_user_dept_id == identity.department_id` — personal владельца
+        из того же dept'а;
+      * personal с пустым owner_user_dept_id (старые записи до миграции
+        c3b5e7d2a1f8) — допускаем, чтобы admin своего dep'а мог хотя бы
+        прочитать аудиторскую креду; жёсткий cut-off потребует backfill'а.
+    """
+    if not _is_service_admin(identity):
+        return False
+    if identity.department_id is None:
+        return False
+    if cred.owner_dept_id is not None and cred.owner_dept_id == identity.department_id:
+        return True
+    if cred.scope == "personal":
+        owner_dept = cred.owner_user_dept_id
+        if owner_dept is None or owner_dept == identity.department_id:
+            return True
+    return False
 
 
 def _is_account_admin(identity: Identity) -> bool:
@@ -126,7 +155,8 @@ async def _check_personal(
     if identity.actor_type == "bot":
         return False, "scope_mismatch"
 
-    # Чужой personal — admin actions запрещены без service_admin override.
+    # Чужой personal — admin actions запрещены без service-admin override
+    # своего dept'а (override обрабатывается выше в check_access).
     if action in _PERSONAL_OWNER_ONLY:
         return False, "scope_mismatch"
     # grant_acl на personal — только владельцу. Проверили выше owner_match,
@@ -258,21 +288,23 @@ async def check_access(
 
     # 1. Blocked status — почти всё запрещено.
     if effective_status == "blocked":
-        # service_admin может читать заблокированные креды для аудита.
-        if action == "read" and _is_service_admin(identity):
+        # admin secret_service'а своего dept'а может читать blocked кред для аудита.
+        if action == "read" and _is_service_admin_for(identity, cred):
             return True, "admin_override"
-        # Recover (manage_status) — service_admin или account_admin.
+        # Recover (manage_status) — admin secret_service'а своего dept'а,
+        # либо account_admin (cross_dep transfer при удалённом owner_dep).
         if action == "manage_status":
-            if _is_service_admin(identity):
+            if _is_service_admin_for(identity, cred):
                 return True, "service_admin"
             if _is_account_admin(identity):
                 return True, "account_admin"
         # Все остальные операции на blocked → запрещены.
         return False, "blocked"
 
-    # 5a. service_admin read-only override на active cred'ах любого scope.
-    # Кладём ДО scope-проверки — это override, а не fallback.
-    if _is_service_admin(identity) and action == "read":
+    # 5a. admin secret_service'а — read-only override на active cred'ах
+    # своего dept'а в любом scope. Кладём ДО scope-проверки — это override,
+    # а не fallback. Cross-dept привилегий у роли нет.
+    if action == "read" and _is_service_admin_for(identity, cred):
         return True, "admin_override"
 
     # 5b. account_admin cross_dep transfer — только для cross_department.

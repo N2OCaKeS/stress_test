@@ -138,7 +138,8 @@ class TransferRequest(BaseModel):
 class AdminDeleteRequest(BaseModel):
     """Тело DELETE /credentials/{id} для admin override.
 
-    Если делает не-owner (через service_admin), `reason` обязателен.
+    Если делает не-owner (admin secret_service своего dept'а или account_admin),
+    `reason` обязателен.
     """
 
     reason: str | None = Field(default=None, min_length=1, max_length=256)

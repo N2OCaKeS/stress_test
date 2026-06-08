@@ -130,6 +130,15 @@ class AddUserToGroupRequest(BaseModel):
     group_id: str = Field(description="ID группы, в которую добавляем юзера.")
 
 
+class HardDeleteUserRequest(BaseModel):
+    """Тело `DELETE /users/{user_id}`. `reason` обязателен для compliance-аудита."""
+    reason: str = Field(
+        min_length=1,
+        max_length=256,
+        description="Человекочитаемое обоснование hard-delete'а (compliance).",
+    )
+
+
 class BanRequest(BaseModel):
     """Тело `POST /users/{user_id}/ban`."""
     # `ban_type` ограничен enum'ом `BanType`. Раньше был `str` — admin клал

@@ -140,6 +140,10 @@ class TestStoreProvisionInlineSkipSemantics:
 
     async def test_store_writes_when_password_present(self, monkeypatch):
         from src.services import redis_pool
+        from src.services.redis_stash_crypto import (
+            aad_for_redis_stash,
+            decrypt_stash,
+        )
         from src.tasks import users
 
         captured = {}
@@ -156,11 +160,18 @@ class TestStoreProvisionInlineSkipSemantics:
         monkeypatch.setattr(redis_pool, "get_redis", lambda: _FakeClient())
         await users._store_provision_inline("tsk_t2", "secret_pw", None)
         assert captured["key"].endswith("tsk_t2")
-        assert "secret_pw" in captured["value"]
+        # `_store_provision_inline` envelope-шифрует JSON: проверяем plaintext
+        # через decrypt_stash с тем же AAD (`task_id`).
+        plain = decrypt_stash(captured["value"], aad=aad_for_redis_stash("tsk_t2"))
+        assert "secret_pw" in plain
         assert captured["ex"] == users.STASH_TTL_SECONDS
 
     async def test_store_writes_when_only_private_key_present(self, monkeypatch):
         from src.services import redis_pool
+        from src.services.redis_stash_crypto import (
+            aad_for_redis_stash,
+            decrypt_stash,
+        )
         from src.tasks import users
 
         captured = {}
@@ -174,6 +185,7 @@ class TestStoreProvisionInlineSkipSemantics:
 
         monkeypatch.setattr(redis_pool, "get_redis", lambda: _FakeClient())
         await users._store_provision_inline("tsk_t3", None, "PEM-PRIVATE")
-        assert "PEM-PRIVATE" in captured["value"]
+        plain = decrypt_stash(captured["value"], aad=aad_for_redis_stash("tsk_t3"))
+        assert "PEM-PRIVATE" in plain
         # password=None всё ещё попадает в JSON как null.
-        assert "null" in captured["value"] or "None" not in captured["value"]
+        assert "null" in plain or "None" not in plain

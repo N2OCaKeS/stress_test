@@ -30,6 +30,11 @@ from src.db.session import AsyncSessionLocal
 from src.main import broker
 from src.repositories import task as task_repo
 from src.services import redis_pool, server_service_client, ssh_client
+from src.services.redis_stash_crypto import (
+    aad_for_redis_stash,
+    decrypt_stash,
+    stash_id_from_key,
+)
 from src.tasks._account_helpers import resolve_ssh_creds
 from src.tasks._runner import run_task
 
@@ -58,6 +63,11 @@ async def _read_provision_inline(task_id: str) -> tuple[str | None, str | None]:
     для каждого поля означает «не было в payload первой попытки» либо
     «TTL истёк». Поднимать новые retry'и при истечении TTL — задача
     оператора (server_service сгенерирует новые креды).
+
+    Stash зашифрован тем же master-key, что и dispatch-stash'и; AAD
+    binding'уется к task_id (он же stash-id в этом keyspace'е). Corrupt-
+    token / swap-attack → `AppException(STASH_DECRYPT_*)` пробрасывается,
+    task FAILED с явным error_code.
     """
     validate_task_id(task_id)
     client = redis_pool.get_redis()
@@ -65,8 +75,9 @@ async def _read_provision_inline(task_id: str) -> tuple[str | None, str | None]:
     if raw is None:
         return None, None
     text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    plaintext = decrypt_stash(text, aad=aad_for_redis_stash(task_id))
     try:
-        data = json.loads(text)
+        data = json.loads(plaintext)
     except (ValueError, TypeError):
         return None, None
     if not isinstance(data, dict):
@@ -95,12 +106,18 @@ async def _store_provision_inline(
         return
     validate_task_id(task_id)
     client = redis_pool.get_redis()
+    # Lazy import нужен только для encrypt-стороны: импорт `encrypt_stash` на
+    # module-top подтянул бы settings.redis_stash_encryption_key даже у
+    # читателей stash'а, у которых ключ может быть пустым в dev-сценариях.
+    from src.services.redis_stash_crypto import encrypt_stash
+    payload_json = json.dumps({
+        "password_plaintext": password_plaintext,
+        "ssh_private_key_plaintext": ssh_private_key_plaintext,
+    })
+    token = encrypt_stash(payload_json, aad=aad_for_redis_stash(task_id))
     await client.set(
         _PROVISION_INLINE_KEY_PREFIX + task_id,
-        json.dumps({
-            "password_plaintext": password_plaintext,
-            "ssh_private_key_plaintext": ssh_private_key_plaintext,
-        }),
+        token,
         ex=STASH_TTL_SECONDS,
     )
 
@@ -138,6 +155,13 @@ async def _read_dispatch_creds(stash_key: str) -> tuple[str | None, str | None]:
     должен распознать это и либо fall-back'нуться на task-local
     `_PROVISION_INLINE_KEY_PREFIX`-stash (если первая попытка успела его
     создать), либо fail'ить с `DISPATCH_STASH_MISSING`.
+
+    Stash в Redis лежит как envelope-token (`v<N>$<nonce>$<ct>`) под общим
+    с server_service master-key. Decrypt с AAD от stash_key — если token
+    битый / swap'нут / прислан с чужим AAD — `AppException(STASH_DECRYPT_*)`
+    пробрасывается, task FAILED с понятным error_code (без silent-fallback
+    на None — иначе fail-fast в `_impl` принял бы compromised stash за
+    «missing» и пропустил бы swap-attack как штатное истечение TTL).
     """
     _validate_dispatch_creds_key(stash_key)
     client = redis_pool.get_redis()
@@ -145,8 +169,11 @@ async def _read_dispatch_creds(stash_key: str) -> tuple[str | None, str | None]:
     if raw is None:
         return None, None
     text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    plaintext = decrypt_stash(
+        text, aad=aad_for_redis_stash(stash_id_from_key(stash_key)),
+    )
     try:
-        data = json.loads(text)
+        data = json.loads(plaintext)
     except (ValueError, TypeError):
         return None, None
     if not isinstance(data, dict):

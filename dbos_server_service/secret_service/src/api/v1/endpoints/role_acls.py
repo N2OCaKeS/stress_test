@@ -1,10 +1,10 @@
 """HTTP-эндпоинты /credentials/{id}/acl — RoleACL CRUD."""
 
-from __future__ import annotations
-
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
+from src.core.limiter import limiter
 from src.dependencies.auth import CurrentIdentity, require_user_context
 from src.dependencies.db import get_db
 from src.models import RoleACL
@@ -34,8 +34,10 @@ def _to_read(acl: RoleACL) -> RoleACLRead:
     status_code=status.HTTP_201_CREATED,
     summary="Выдать RoleACL (cross_department recipient требует DeptGrant)",
 )
+@limiter.limit(get_settings().rate_limit_acl)
 async def add_acl(
     cred_id: str,
+    request: Request,
     payload: RoleACLCreate,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),

@@ -12,31 +12,20 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.exc import IntegrityError
 
 from src.api.router import api_router
 from src.core.config import get_settings
 from src.core.exceptions import AppException
+from src.core.limiter import limiter
 from src.core.security import SecurityHeadersMiddleware
 from src.middleware.audit_middleware import AuditAccessMiddleware
 from src.middleware.https_guard import HTTPSRequiredMiddleware
 from src.services import audit_context, audit_events
 
 logger = logging.getLogger("secret_service.startup")
-
-
-# Глобальный SlowAPI Limiter. Endpoint-декораторы (reveal/transfer/recover/delete)
-# поднимают per-IP лимит выше дефолта. Создаём здесь — модуль `src.main` уже не
-# участвует в цикле импортов с endpoints (они подтягиваются через router).
-_settings_snapshot = get_settings()
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=[_settings_snapshot.slowapi_rate_limit],
-    headers_enabled=False,
-)
 
 
 def _rate_limit_exceeded_response(request: Request, exc: RateLimitExceeded) -> JSONResponse:
@@ -143,12 +132,16 @@ def create_application() -> FastAPI:
         return response
 
     # add_middleware-стек идёт в обратном порядке: последний добавленный = outermost.
-    # Желаемый порядок (outer→inner): SecurityHeaders → HTTPSGuard → attach_request_id → audit_access → route.
+    # Желаемый порядок (outer→inner): SecurityHeaders → HTTPSGuard → SlowAPI → attach_request_id → audit_access → route.
     # audit_access добавляем ПЕРВЫМ через add_middleware (innermost), потом
-    # attach_request_id уже зарегистрирован через @app.middleware выше (он
-    # сейчас outermost среди функциональных middleware). HTTPSGuard и
-    # SecurityHeaders регистрируем последними → outermost.
+    # attach_request_id уже зарегистрирован через @app.middleware выше.
+    # SlowAPIMiddleware регистрируется ПОСЛЕ audit_access — выше по стеку,
+    # чтобы 429-ответ от endpoint-декораторов `@limiter.limit(...)` всплывал
+    # МИМО audit_access и НЕ порождал `http.client_error` audit-event'ов на
+    # rate-limited трафике (защита audit-канала от amplification).
+    # HTTPSGuard и SecurityHeaders регистрируем последними → outermost.
     app.add_middleware(AuditAccessMiddleware)
+    app.add_middleware(SlowAPIMiddleware)
 
     # HTTPSRequiredMiddleware регистрируется ПЕРЕД SecurityHeadersMiddleware,
     # чтобы security-headers оборачивали 403 cleartext-ответ. В dev/test/local

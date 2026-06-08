@@ -1,13 +1,13 @@
 """HTTP-эндпоинты /credentials — CRUD + reveal + transfer + recover."""
 
-from __future__ import annotations
-
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.exceptions import BadRequestError
+from src.core.limiter import limiter
 from src.dependencies.auth import CurrentIdentity, require_user_context
 from src.dependencies.db import get_db
 from src.models import Credential
@@ -97,7 +97,9 @@ async def list_credentials(
     status_code=status.HTTP_201_CREATED,
     summary="Создать credential (encrypted at-rest, plaintext не возвращается)",
 )
+@limiter.limit(get_settings().rate_limit_create)
 async def create_credential(
+    request: Request,
     payload: CredentialCreate,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
@@ -144,8 +146,10 @@ async def update_credential(
     response_model=OkResponse,
     summary="Удалить credential (admin override требует reason в body)",
 )
+@limiter.limit(get_settings().rate_limit_delete)
 async def delete_credential(
     cred_id: str,
+    request: Request,
     identity: CurrentIdentity,
     payload: AdminDeleteRequest | None = None,
     db: AsyncSession = Depends(get_db),
@@ -160,6 +164,7 @@ async def delete_credential(
     response_model=CredentialRevealResponse,
     summary="Расшифровать secret (CRITICAL audit + 5-min throttle)",
 )
+@limiter.limit(get_settings().rate_limit_reveal)
 async def reveal_credential(
     cred_id: str,
     request: Request,
@@ -176,8 +181,10 @@ async def reveal_credential(
     response_model=CredentialRead,
     summary="Передать ownership заблокированной credential (service_admin/account_admin)",
 )
+@limiter.limit(get_settings().rate_limit_transfer)
 async def transfer_credential(
     cred_id: str,
+    request: Request,
     payload: TransferRequest,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
@@ -192,8 +199,10 @@ async def transfer_credential(
     response_model=CredentialRead,
     summary="Снять блокировку credential в окне 30 дней (service_admin/account_admin)",
 )
+@limiter.limit(get_settings().rate_limit_recover)
 async def recover_credential(
     cred_id: str,
+    request: Request,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> CredentialRead:

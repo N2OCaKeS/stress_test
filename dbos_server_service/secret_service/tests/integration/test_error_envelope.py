@@ -206,65 +206,52 @@ async def test_dept_grant_required_422(client, identity_factory):
     _assert_envelope(resp.json(), error_code="DEPT_GRANT_REQUIRED")
 
 
-@pytest.mark.skip(
-    reason=(
-        "Глобальный slowapi default_limits не enforce'ится: в src/main.py нет "
-        "ни SlowAPIMiddleware, ни @limiter.limit на роутах. Лимитер создан и "
-        "exception-handler зарегистрирован, но без middleware/декоратора "
-        "лимит никогда не срабатывает. RATE_LIMIT_EXCEEDED envelope покрыт "
-        "юнит-тестом обработчика; интеграционный тест откладывается до "
-        "включения SlowAPIMiddleware."
-    )
-)
-async def test_rate_limit_exceeded_429(client, identity_factory, monkeypatch):
-    """Глобальный slowapi-лимит — на высоком пределе по умолчанию, но
-    SLOWAPI поддерживает endpoint-decorator'ы. В нашем сервисе явных
-    `@limiter.limit` на reveal нет, но глобальный лимит может срабатывать.
+async def test_rate_limit_exceeded_429(client, identity_factory, cred_factory):
+    """Per-endpoint `@limiter.limit` на /reveal — 5/minute per IP.
 
-    Тест: понижаем глобальный лимит до 2/minute через cleanup limiter'а
-    и попадаем в 429. Чтобы не наследовать состояние, делаем явный
-    `limiter.reset()` после.
+    Создаём cred, шестью подряд POST /reveal с одного IP (TestClient default
+    `127.0.0.1`) пробиваем 5/minute → шестой возвращает 429 с нашим
+    error-envelope (`RATE_LIMIT_EXCEEDED`, request_id, timestamp).
+
+    Limiter живёт в `src.core.limiter` (in-memory storage), сбрасываем
+    его перед и после, чтобы предыдущие тесты не подъедали бюджет.
     """
-    from src.main import app
+    from src.core.limiter import limiter
 
-    limiter = getattr(app.state, "limiter", None)
-    assert limiter is not None
-    # Подменяем default_limits на жёсткие.
     limiter.reset()
-    original = limiter._default_limits
     try:
-        from limits import parse  # type: ignore
-        from slowapi.wrappers import Limit  # type: ignore
-
-        limiter._default_limits = [
-            Limit(
-                limit=parse("2/minute"),
-                key_func=limiter._key_func,
-                scope=None,
-                per_method=False,
-                methods=None,
-                error_message=None,
-                exempt_when=None,
-                cost=1,
-                override_defaults=False,
-            )
-        ]
-
-        actor = identity_factory(
-            user_id="usr_rate_target",
+        owner = identity_factory(
+            user_id="usr_rate_owner",
             department_id="dep_a",
-            service_roles={"secret_service": ["reader"]},
+            service_roles={"secret_service": ["operator"]},
         )
+        # slowapi считает корзину по `_endpoint_key = request.path` (default
+        # key_style="url"), поэтому шесть burst-reveal'ов в один cred_id
+        # делят один bucket. 5 проходят, шестой получает 429 с нашим
+        # RATE_LIMIT_EXCEEDED envelope. Actor-throttle (reveal_throttle)
+        # не отбивает повторы тем же 429 — он только меняет audit-action
+        # на `tokens.revealed_throttled` (см. credential_service.reveal).
+        cred = await cred_factory(
+            owner_user_id="usr_rate_owner",
+            scope="personal",
+            service="jira",
+        )
+        cred_id = cred.id
+
         last_status = None
-        # Долбим до 429 (или до 10 попыток).
+        last_body = None
         for _ in range(10):
-            r = await client.get(f"{BASE}/credentials", headers=auth_header(actor))
+            r = await client.post(
+                f"{BASE}/credentials/{cred_id}/reveal", headers=auth_header(owner),
+            )
             last_status = r.status_code
+            last_body = r.json()
             if r.status_code == 429:
                 break
-        assert last_status == 429
-        body = r.json()
-        _assert_envelope(body, error_code="RATE_LIMIT_EXCEEDED")
+
+        assert last_status == 429, (
+            f"ожидали 429 на burst reveal'ах за минуту, получили {last_status}"
+        )
+        _assert_envelope(last_body, error_code="RATE_LIMIT_EXCEEDED")
     finally:
-        limiter._default_limits = original
         limiter.reset()

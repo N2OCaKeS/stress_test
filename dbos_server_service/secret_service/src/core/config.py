@@ -169,6 +169,51 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Per-endpoint rate-limits (slowapi syntax). Применяются `@limiter.limit(...)`
+    # декораторами на чувствительных handler'ах поверх глобального лимита.
+    # Глобальный slowapi_rate_limit остаётся spam-щитом, эти — тонкая настройка
+    # на reveal / transfer / recover / delete / create / dept-grant / acl.
+    rate_limit_reveal: str = Field(
+        default="5/minute",
+        alias="RATE_LIMIT_REVEAL",
+        description=(
+            "Per-IP rate-limit для POST /credentials/{id}/reveal. Основной "
+            "throttle reveal'а — per-(actor, cred) внутри `reveal_throttle`; "
+            "этот IP-level — защита от попыток обойти actor-throttle сменой "
+            "учётки с одного хоста."
+        ),
+    )
+    rate_limit_transfer: str = Field(
+        default="10/minute",
+        alias="RATE_LIMIT_TRANSFER",
+        description="Per-IP rate-limit для POST /credentials/{id}/transfer (admin override).",
+    )
+    rate_limit_recover: str = Field(
+        default="10/minute",
+        alias="RATE_LIMIT_RECOVER",
+        description="Per-IP rate-limit для POST /credentials/{id}/recover.",
+    )
+    rate_limit_delete: str = Field(
+        default="30/minute",
+        alias="RATE_LIMIT_DELETE",
+        description="Per-IP rate-limit для DELETE /credentials/{id}.",
+    )
+    rate_limit_create: str = Field(
+        default="60/minute",
+        alias="RATE_LIMIT_CREATE",
+        description="Per-IP rate-limit для POST /credentials.",
+    )
+    rate_limit_dept_grant: str = Field(
+        default="20/minute",
+        alias="RATE_LIMIT_DEPT_GRANT",
+        description="Per-IP rate-limit для POST /credentials/{id}/dept-grants.",
+    )
+    rate_limit_acl: str = Field(
+        default="30/minute",
+        alias="RATE_LIMIT_ACL",
+        description="Per-IP rate-limit для POST /credentials/{id}/acl.",
+    )
+
     # ── Lockout (per-user denied-access throttle) ─────────────────────────────
 
     lockout_threshold: int = Field(

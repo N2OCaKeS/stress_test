@@ -7,6 +7,7 @@ no-op (идемпотентно).
 
 import logging
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
@@ -39,16 +40,22 @@ async def bootstrap_admin(db: AsyncSession) -> None:
     # Пароль виден оператору в k8s-секрете и сертификатах развёртывания, пока
     # admin не сменит его сам. До первой самостоятельной смены через
     # POST /users/me/password middleware режет доступ ко всем endpoint'ам.
-    user = await repo.create(
-        username=settings.initial_admin_username,
-        password_hash=hash_password(settings.initial_admin_password),
-        department_id=None,
-        email=settings.initial_admin_email,
-        platform_role=PlatformRole.ACCOUNT_ADMIN,
-        created_by="bootstrap",
-        must_change_password=True,
-    )
-    await db.commit()
+    try:
+        user = await repo.create(
+            username=settings.initial_admin_username,
+            password_hash=hash_password(settings.initial_admin_password),
+            department_id=None,
+            email=settings.initial_admin_email,
+            platform_role=PlatformRole.ACCOUNT_ADMIN,
+            created_by="bootstrap",
+            must_change_password=True,
+        )
+        await db.commit()
+    except IntegrityError:
+        # Конкурентный запуск нескольких реплик k8s: одна выиграла INSERT,
+        # остальные ловят UniqueViolation. count() > 0 проверка не атомарна.
+        await db.rollback()
+        return
     logger.warning(
         "Bootstrap: created account_admin '%s' from INITIAL_ADMIN_* — "
         "if you didn't expect this, the database has been recreated; "

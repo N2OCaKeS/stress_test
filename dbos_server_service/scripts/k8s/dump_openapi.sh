@@ -24,6 +24,7 @@ declare -A SVC_TO_FILE=(
     [auth-service]=auth.json
     [logging-service]=logging.json
     [server-service]=server.json
+    [secret-service]=secret.json
 )
 
 for svc in "${!SVC_TO_FILE[@]}"; do
@@ -45,7 +46,8 @@ kubectl -n dbos delete configmap dbos-openapi-specs --ignore-not-found
 kubectl -n dbos create configmap dbos-openapi-specs \
     --from-file=auth.json="$TMP/auth.json" \
     --from-file=logging.json="$TMP/logging.json" \
-    --from-file=server.json="$TMP/server.json"
+    --from-file=server.json="$TMP/server.json" \
+    --from-file=secret.json="$TMP/secret.json"
 
 echo "→ Рестартим dbos-swagger-ui (чтобы подхватил новые файлы)..."
 kubectl -n dbos rollout restart deploy/dbos-swagger-ui

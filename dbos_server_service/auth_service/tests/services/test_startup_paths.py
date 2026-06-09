@@ -167,6 +167,48 @@ async def test_bootstrap_admin_noop_when_users_present_emits_nothing(
     assert captured == []
 
 
+@pytest.mark.asyncio
+async def test_bootstrap_admin_handles_concurrent_unique_violation(
+    db, monkeypatch,
+):
+    """Под N>1 репликами в k8s `count() > 0` не атомарна: два пода читают 0,
+    оба идут на INSERT, второй ловит UniqueViolation на users_email_key.
+    Bootstrap должен поглотить ошибку и выйти без audit-emit'а.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    captured: list[dict] = []
+
+    def _spy(action, actor_id=None, **kw):
+        captured.append({"action": action})
+
+    monkeypatch.setattr(bootstrap_service.audit_service, "emit", _spy)
+
+    from src.core import config as config_mod
+    monkeypatch.setenv("INITIAL_ADMIN_USERNAME", "boot_race")
+    monkeypatch.setenv("INITIAL_ADMIN_PASSWORD", "Bootstrap1234!")
+    monkeypatch.setenv("INITIAL_ADMIN_EMAIL", "race@dbos.local")
+    config_mod.get_settings.cache_clear()
+
+    from src.repositories import users as users_repo_mod
+
+    async def _empty(self):
+        return 0
+
+    async def _race_insert(self, **kw):
+        raise IntegrityError("INSERT ...", {}, Exception("duplicate key"))
+
+    monkeypatch.setattr(users_repo_mod.UserRepository, "count", _empty)
+    monkeypatch.setattr(users_repo_mod.UserRepository, "create", _race_insert)
+
+    await bootstrap_service.bootstrap_admin(db)
+
+    assert captured == [], (
+        "bootstrap_admin под гонкой реплик не должен эмитить user.create, "
+        f"но получили {captured}"
+    )
+
+
 # ── 2. engine.dispose() в lifespan-shutdown ──────────────────────────────────
 
 

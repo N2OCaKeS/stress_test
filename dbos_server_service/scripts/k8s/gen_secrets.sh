@@ -121,7 +121,10 @@ SECRET_INTROSPECT_SERVICE_API_KEY=$(rand 48)
 SECRET_INBOUND_WORKER_KEY=$(rand 48)
 SECRET_INBOUND_AUTH_KEY=$(rand 48)
 SECRET_INBOUND_SERVER_KEY=$(rand 48)
-SECRET_INBOUND_SERVICE_API_KEYS="worker_bot:${SECRET_INBOUND_WORKER_KEY},auth_service:${SECRET_INBOUND_AUTH_KEY},server_service:${SECRET_INBOUND_SERVER_KEY}"
+SECRET_INBOUND_SERVICE_API_KEYS_JSON="{\"worker_bot\":\"${SECRET_INBOUND_WORKER_KEY}\",\"auth_service\":\"${SECRET_INBOUND_AUTH_KEY}\",\"server_service\":\"${SECRET_INBOUND_SERVER_KEY}\"}"
+# auth_service бьёт в /internal/* secret_service под идентичностью auth_service —
+# его Bearer == ключу `auth_service` из inbound-map secret_service.
+SECRET_INTERNAL_API_KEY="${SECRET_INBOUND_AUTH_KEY}"
 
 # Redis
 REDIS_PASSWORD=$(rand 32)
@@ -223,7 +226,10 @@ cat <<EOF
 
   # secret_service: s2s (introspect + inbound map)
   SECRET_INTROSPECT_SERVICE_API_KEY: ${SECRET_INTROSPECT_SERVICE_API_KEY}
-  SECRET_INBOUND_SERVICE_API_KEYS: '${SECRET_INBOUND_SERVICE_API_KEYS}'
+  SECRET_INBOUND_SERVICE_API_KEYS: '${SECRET_INBOUND_SERVICE_API_KEYS_JSON}'
+
+  # auth_service → secret_service /internal/* (Bearer == ключ auth_service в inbound-map secret)
+  SECRET_INTERNAL_API_KEY: ${SECRET_INTERNAL_API_KEY}
 
   # Redis (taskiq broker + rate-limit storage)
   REDIS_PASSWORD: ${REDIS_PASSWORD}

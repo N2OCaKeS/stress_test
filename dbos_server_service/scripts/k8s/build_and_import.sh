@@ -20,10 +20,15 @@ declare -A SERVICES=(
 TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
 
+DOCKER="docker"
+if ! docker info >/dev/null 2>&1; then
+    DOCKER="sudo docker"
+fi
+
 for image in "${!SERVICES[@]}"; do
     dir="${SERVICES[$image]}"
     echo "→ Собираем dbos/${image}:${TAG}..."
-    docker build \
+    $DOCKER build \
         -t "dbos/${image}:${TAG}" \
         -f "$ROOT_DIR/${dir}/docker/Dockerfile" \
         "$ROOT_DIR/${dir}"
@@ -31,8 +36,9 @@ done
 
 for image in "${!SERVICES[@]}"; do
     echo "→ Экспортируем dbos/${image}:${TAG}..."
-    docker save "dbos/${image}:${TAG}" -o "$TMP/${image}.tar"
+    $DOCKER save "dbos/${image}:${TAG}" -o "$TMP/${image}.tar"
 done
+sudo chmod 644 "$TMP"/*.tar 2>/dev/null || true
 
 K3S_BIN="$(command -v k3s || echo /usr/local/bin/k3s)"
 

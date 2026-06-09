@@ -1,7 +1,7 @@
-# Общий Swagger UI для трёх сервисов: auth / logging / server.
+# Общий Swagger UI для четырёх сервисов: auth / logging / server / secret.
 #
 # Spec'ы лежат в ConfigMap `dbos-openapi-specs` (auth.json, logging.json,
-# server.json) — генерируются скриптом scripts/k8s/dump_openapi.sh из
+# server.json, secret.json) — генерируются скриптом scripts/k8s/dump_openapi.sh из
 # работающих pod'ов через `python -c app.openapi()`. Регенерация — только
 # когда меняется набор endpoint'ов; в проде /openapi.json у сервисов отключён
 # намеренно.
@@ -41,7 +41,7 @@ spec:
             - name: BASE_URL
               value: /docs
             - name: URLS
-              value: '[{"url":"/docs/specs/auth.json","name":"auth_service"},{"url":"/docs/specs/logging.json","name":"loging_service"},{"url":"/docs/specs/server.json","name":"server_service"}]'
+              value: '[{"url":"/docs/specs/auth.json","name":"auth_service"},{"url":"/docs/specs/logging.json","name":"loging_service"},{"url":"/docs/specs/server.json","name":"server_service"},{"url":"/docs/specs/secret.json","name":"secret_service"}]'
             - name: URLS_PRIMARY_NAME
               value: auth_service
             - name: PERSIST_AUTHORIZATION

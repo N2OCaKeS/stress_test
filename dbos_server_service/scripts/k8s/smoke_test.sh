@@ -23,6 +23,13 @@ set -euo pipefail
 
 BASE_URL="${BASE_URL:-https://dbos.local}"
 ADMIN_USER="${ADMIN_USER:-admin}"
+# По умолчанию тянем admin-пароль из k8s-секрета dbos-secrets, чтобы smoke
+# не падал на 401 после `gen_secrets.sh` (где пароль каждый раз новый).
+# Fallback на dev-дефолт `1234` (соответствует `make seed`).
+if [[ -z "${ADMIN_PASS:-}" ]] && command -v kubectl >/dev/null 2>&1; then
+    ADMIN_PASS=$(kubectl -n dbos get secret dbos-secrets \
+        -o jsonpath='{.data.INITIAL_ADMIN_PASSWORD}' 2>/dev/null | base64 -d 2>/dev/null || true)
+fi
 ADMIN_PASS="${ADMIN_PASS:-1234}"
 CURL_OPTS="${CURL_OPTS:--k}"
 

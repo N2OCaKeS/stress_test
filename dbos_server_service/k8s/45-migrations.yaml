@@ -88,6 +88,9 @@ spec:
             - name: INITIAL_ADMIN_EMAIL
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_EMAIL }
+            - name: SECRET_INTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SECRET_INTERNAL_API_KEY }
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: REDIS_PASSWORD }

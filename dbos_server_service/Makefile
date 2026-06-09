@@ -465,9 +465,9 @@ k8s-install-k3s: ## [VM, sudo] Установить k3s на текущий хо
 
 k8s-install: k8s-install-k3s ## Алиас k8s-install-k3s (обратная совместимость)
 
-k8s-install-cert-manager: ## [VM] Установить cert-manager в кластер (один раз). Идемпотентно.
+k8s-install-cert-manager: ## [VM, sudo] Установить cert-manager в кластер (один раз). Идемпотентно.
 	@if [ -x scripts/k8s/install_cert_manager.sh ]; then \
-		bash scripts/k8s/install_cert_manager.sh; \
+		sudo -E env KUBECONFIG=/etc/rancher/k3s/k3s.yaml bash scripts/k8s/install_cert_manager.sh; \
 	else \
 		echo "scripts/k8s/install_cert_manager.sh не найден — см. obsidian/infra/Production deploy runbook.md."; \
 		exit 1; \
@@ -503,6 +503,67 @@ k8s-smoke: ## Smoke-тесты после деплоя (health/ready/login дл�
 		echo "scripts/k8s/smoke_test.sh не найден — см. obsidian/infra/Production checklist.md."; \
 		exit 1; \
 	fi
+
+k8s-install-docker: ## [VM, sudo] Установить docker engine, если его нет. Идемпотентно.
+	@if command -v docker >/dev/null 2>&1; then \
+		echo "✓ docker уже установлен: $$(docker --version)"; \
+	else \
+		echo "→ Устанавливаем docker через apt..."; \
+		sudo apt-get update -qq && sudo apt-get install -y -qq docker.io; \
+		sudo systemctl enable --now docker; \
+		echo "✓ docker установлен: $$(docker --version)"; \
+	fi
+	@sudo usermod -aG docker "$$(id -un)" 2>/dev/null || true
+
+k8s-install-cert-manager-images: ## [VM, sudo] Спулить cert-manager образы и импортировать в k3s containerd. CM_VERSION=v1.15.3.
+	@CM_VERSION="$${CM_VERSION:-v1.15.3}"; \
+	for img in controller webhook cainjector startupapicheck; do \
+		ref="quay.io/jetstack/cert-manager-$$img:$$CM_VERSION"; \
+		if sudo k3s ctr images ls -q | grep -qx "$$ref"; then \
+			echo "  • $$ref уже в containerd"; \
+		else \
+			echo "  • docker pull $$ref"; \
+			sudo docker pull "$$ref" && sudo docker save "$$ref" | sudo k3s ctr images import -; \
+		fi; \
+	done
+
+k8s-zero: ## [VM, sudo] Полный deploy с нуля: docker + k3s + образы + cert-manager + secrets + apply + migrate + smoke. DOMAIN=dbos.local CM_VERSION=v1.15.3.
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo "  DBOS zero-deploy на $$(hostname)"
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "▶ [1/8] docker engine"
+	@$(MAKE) k8s-install-docker --no-print-directory
+	@echo ""
+	@echo "▶ [2/8] k3s"
+	@$(MAKE) k8s-install-k3s --no-print-directory
+	@echo ""
+	@echo "▶ [3/8] Сборка и импорт 5 образов сервисов"
+	@$(MAKE) k8s-build --no-print-directory
+	@echo ""
+	@echo "▶ [4/8] cert-manager образы (pull + import)"
+	@$(MAKE) k8s-install-cert-manager-images --no-print-directory
+	@echo ""
+	@echo "▶ [5/8] cert-manager apply + CA + leaf-сертификаты"
+	@$(MAKE) k8s-install-cert-manager --no-print-directory
+	@echo ""
+	@echo "▶ [6/8] secrets + ingress (DOMAIN=$(if $(DOMAIN),$(DOMAIN),dbos.local))"
+	@if [ -f k8s/20-secrets.yaml ] && [ -f k8s/50-ingress.yaml ]; then \
+		echo "  • k8s/20-secrets.yaml и k8s/50-ingress.yaml уже сгенерированы — пропускаем"; \
+	else \
+		echo "y" | bash scripts/k8s/gen_secrets.sh $(if $(DOMAIN),$(DOMAIN),dbos.local); \
+	fi
+	@echo ""
+	@echo "▶ [7/8] kubectl apply -k k8s/ + ожидание rollout"
+	@$(MAKE) k8s-deploy --no-print-directory
+	@echo ""
+	@echo "▶ [8/8] smoke"
+	@$(MAKE) k8s-smoke --no-print-directory
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@echo "  ✓ zero-deploy завершён"
+	@echo "═══════════════════════════════════════════════════════════════════"
+	@$(K8S) get pods
 
 k8s-rollout: ## Пересобрать образы и сделать rolling update. SVC=auth|logging|all (default: all)
 	bash scripts/k8s/rollout.sh $(SVC)

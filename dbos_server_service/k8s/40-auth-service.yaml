@@ -103,6 +103,9 @@ spec:
             - name: INITIAL_ADMIN_EMAIL
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_EMAIL }
+            - name: SECRET_INTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SECRET_INTERNAL_API_KEY }
             # Per-IP rate-limit storage. `memory://` fallback в multi-replica
             # деплое не работает: round-robin ingress даёт атакующему
             # `replicas × LOGIN_RATE_LIMIT` попыток. Используем общий Redis

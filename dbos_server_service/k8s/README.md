@@ -14,6 +14,7 @@ make k8s-install-k3s                 # один раз, на чистой VM (su
 make k8s-install-cert-manager        # один раз, после k3s
 make k8s-build                       # после каждого изменения кода
 make k8s-secrets DOMAIN=dbos.local   # один раз, заполнить k8s/20-secrets.yaml
+                                     # (для closed-net можно DOMAIN=10.177.103.102)
 make prod-deploy                     # build → check → deploy → migrate → smoke
 ```
 
@@ -113,7 +114,23 @@ make k8s-install
 make k8s-secrets                              # спросит домен интерактивно
 # или сразу:
 bash scripts/k8s/gen_secrets.sh dbos.example.com
+
+# Closed network без DNS — можно сразу указать IPv4:
+bash scripts/k8s/gen_secrets.sh 10.177.103.102
+make k8s-secrets DOMAIN=10.177.103.102
+
+# Cert с обоими — IP сейчас, DNS-имя на будущее (повторный logon будет
+# валиден и по https://10.177.103.102/, и по https://dbos.example.com/):
+SAN_EXTRA="DNS:dbos.example.com" \
+    bash scripts/k8s/gen_secrets.sh 10.177.103.102
 ```
+
+В IP-режиме скрипт:
+
+- кладёт `subjectAltName=IP:<addr>` в self-signed cert (вместо `DNS:`);
+- убирает `host:` из `k8s/50-ingress.yaml` — Traefik принимает любой
+  Host header, включая `Host: 10.177.103.102`;
+- `/etc/hosts` править не нужно — обращайтесь напрямую по IP.
 
 Создаст `k8s/20-secrets.yaml` (gitignored, `chmod 600`) со случайными:
 
@@ -429,6 +446,10 @@ BASE_URL=https://dbos.local ADMIN_PASS=<пароль> \
 
 Проверяет `/health` + `/ready` всех HTTP-сервисов, login admin → JWT,
 `/me`, и что login-event дошёл до `GET /api/logging/v1/events`.
+
+Если `BASE_URL` не задан, smoke сам подтянет endpoint из
+`k8s/.env.k8s` (`INGRESS_HOST=<dns-or-ip>` — пишет `gen_secrets.sh`),
+а если файла нет — попробует `kubectl -n dbos get ingress dbos-ingress`.
 
 ### Применить изменение конфига (без пересборки)
 

@@ -21,6 +21,29 @@
 
 set -euo pipefail
 
+# BASE_URL: если оператор не задал явно, пытаемся восстановить из
+#   1) k8s/.env.k8s (его пишет gen_secrets.sh — INGRESS_HOST=<dns-or-ip>),
+#   2) kubectl -n dbos get ingress dbos-ingress -o jsonpath=… (rules[0].host
+#      может быть пустым при IP-режиме — в этом случае fallback не сработает).
+# Финальный дефолт — https://dbos.local (исторический dev-стенд).
+if [[ -z "${BASE_URL:-}" ]]; then
+    SCRIPT_DIR_SMOKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    ENV_K8S="$SCRIPT_DIR_SMOKE/../../k8s/.env.k8s"
+    if [[ -f "$ENV_K8S" ]]; then
+        # shellcheck source=/dev/null
+        . "$ENV_K8S"
+        if [[ -n "${INGRESS_HOST:-}" ]]; then
+            BASE_URL="https://${INGRESS_HOST}"
+        fi
+    fi
+    if [[ -z "${BASE_URL:-}" ]] && command -v kubectl >/dev/null 2>&1; then
+        H=$(kubectl -n dbos get ingress dbos-ingress \
+            -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
+        if [[ -n "$H" ]]; then
+            BASE_URL="https://${H}"
+        fi
+    fi
+fi
 BASE_URL="${BASE_URL:-https://dbos.local}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 # По умолчанию тянем admin-пароль из k8s-секрета dbos-secrets, чтобы smoke

@@ -9,9 +9,12 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    # cert-manager выпускает leaf для __INGRESS_HOST__ через внутренний CA
-    # (dbos-ca-issuer). Авто-ренью за 30 дней до истечения.
-    cert-manager.io/issuer: dbos-ca-issuer
+    # Edge-TLS-cert лежит готовым в Secret `dbos-ingress-tls`, его кладёт
+    # scripts/k8s/gen_secrets.sh (self-signed, SAN под DNS/IP). cert-manager
+    # сюда не подключаем: для IP-режима он leaf под host=IP не выпустит, а
+    # для DNS-режима overhead с двойным источником ничего не даёт. Внутренние
+    # service-to-service сертификаты (auth-service-tls / logging-service-tls /
+    # server-service-tls) всё равно остаются за cert-manager — см. 92-certificates.yaml.
 spec:
   ingressClassName: traefik
   tls:

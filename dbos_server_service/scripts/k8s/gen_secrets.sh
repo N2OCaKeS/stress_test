@@ -4,7 +4,17 @@
 #
 # Использование:
 #   scripts/k8s/gen_secrets.sh                  — спросит домен интерактивно
-#   scripts/k8s/gen_secrets.sh dbos.example.com — домен аргументом
+#   scripts/k8s/gen_secrets.sh dbos.example.com — DNS-имя аргументом
+#   scripts/k8s/gen_secrets.sh 10.177.103.102   — IPv4 аргументом (для closed
+#                                                 network без DNS; cert.SAN=IP:,
+#                                                 Ingress без host: → принимает
+#                                                 любой Host header).
+#
+#   SAN_EXTRA="DNS:dbos.local"  scripts/k8s/gen_secrets.sh 10.177.103.102
+#       — добавить второй SAN-entry (например DNS-имя, когда оператор пока
+#       ходит по IP, но хочет, чтобы тот же cert валидировался и по
+#       будущему DNS-имени). Формат: одно или несколько "TYPE:VALUE",
+#       разделённых запятыми (DNS:host, IP:1.2.3.4).
 #
 # Внутри:
 #   - openssl rand -base64 32 для encryption-keys
@@ -26,18 +36,52 @@ ENV_FILE="$K8S_DIR/.env.k8s"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 SUMMARY_OUT="/tmp/dbos-secrets-${TS}.txt"
 
-# ── Domain (для Ingress + CN сертификата) ──────────────────────────────────────
+# ── Domain или IP (для Ingress + CN/SAN сертификата) ──────────────────────────
+# DOMAIN на входе может быть:
+#   - DNS-именем (dbos.example.com)             → SAN=DNS:<host>, host: в Ingress
+#   - IPv4-адресом (10.177.103.102)             → SAN=IP:<addr>, host: пустой
+#                                                 в Ingress (Traefik принимает
+#                                                 любой Host header).
+# Имя переменной оставлено DOMAIN ради backward-совместимости с .env.k8s.
 DOMAIN="${1:-}"
 if [[ -z "$DOMAIN" ]]; then
     if [[ -f "$ENV_FILE" ]]; then
         # shellcheck source=/dev/null
         . "$ENV_FILE"
-        echo "→ Использую сохранённый домен: $INGRESS_HOST"
+        echo "→ Использую сохранённое значение INGRESS_HOST: $INGRESS_HOST"
         DOMAIN="$INGRESS_HOST"
     else
-        read -p "Домен (например dbos.example.com): " DOMAIN
-        [[ -n "$DOMAIN" ]] || { echo "ОШИБКА: домен пустой." >&2; exit 1; }
+        read -p "Домен или IP (например dbos.example.com или 10.177.103.102): " DOMAIN
+        [[ -n "$DOMAIN" ]] || { echo "ОШИБКА: значение пустое." >&2; exit 1; }
     fi
+fi
+
+# Определяем тип: IP или DNS. Регэксп грубый (не проверяет 0..255), но достаточен
+# для отличения от DNS-имени; openssl потом всё равно отвергнет невалидный IP.
+IS_IP=0
+if [[ "$DOMAIN" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    IS_IP=1
+fi
+
+# subjectAltName: основная запись + опциональные дополнительные из $SAN_EXTRA.
+if [[ "$IS_IP" -eq 1 ]]; then
+    SAN_PRIMARY="IP:${DOMAIN}"
+else
+    SAN_PRIMARY="DNS:${DOMAIN}"
+fi
+if [[ -n "${SAN_EXTRA:-}" ]]; then
+    SAN_ARG="${SAN_PRIMARY},${SAN_EXTRA}"
+else
+    SAN_ARG="${SAN_PRIMARY}"
+fi
+
+# Email для INITIAL_ADMIN: при IP-режиме у нас нет валидного домена, чтобы
+# собрать admin@<host>, поэтому подставляем нейтральный плейсхолдер. При DNS —
+# admin@<domain> как раньше.
+if [[ "$IS_IP" -eq 1 ]]; then
+    ADMIN_EMAIL="admin@dbos.local"
+else
+    ADMIN_EMAIL="admin@${DOMAIN}"
 fi
 
 # ── Перезапись ─────────────────────────────────────────────────────────────────
@@ -143,7 +187,7 @@ openssl req -x509 -nodes -newkey rsa:2048 \
     -out    "$TMP/tls.crt" \
     -days   365 \
     -subj   "/CN=$DOMAIN/O=DBOS Server Manager" \
-    -addext "subjectAltName=DNS:$DOMAIN" \
+    -addext "subjectAltName=${SAN_ARG}" \
     2>/dev/null
 
 TLS_CRT_B64=$(base64 -w0 < "$TMP/tls.crt")
@@ -191,7 +235,7 @@ cat <<EOF
 
   INITIAL_ADMIN_USERNAME: admin
   INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
-  INITIAL_ADMIN_EMAIL: admin@${DOMAIN}
+  INITIAL_ADMIN_EMAIL: ${ADMIN_EMAIL}
 
   # loging_service: outbound + inbound map + introspect
   LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY}
@@ -235,11 +279,15 @@ cat <<EOF
   REDIS_PASSWORD: ${REDIS_PASSWORD}
 
 ---
-# TLS-сертификат для Traefik (Ingress host: ${DOMAIN})
+# TLS-сертификат для Traefik (Ingress endpoint: ${DOMAIN}, SAN: ${SAN_ARG}).
+# Имя `dbos-ingress-tls` совпадает с `tls.secretName` в Ingress
+# (k8s/50-ingress.yaml). cert-manager-shim не дёргается (мы заранее кладём
+# готовый Secret), что важно для IP-режима, где cert-manager не умеет
+# выпускать leaf-сертификаты под host = IP-адрес.
 apiVersion: v1
 kind: Secret
 metadata:
-  name: dbos-tls
+  name: dbos-ingress-tls
   namespace: dbos
 type: kubernetes.io/tls
 data:
@@ -252,7 +300,19 @@ chmod 600 "$SECRETS_OUT"
 
 # ── 50-ingress.yaml ───────────────────────────────────────────────────────────
 echo "→ Генерируем $INGRESS_OUT из шаблона..."
-sed "s|__INGRESS_HOST__|${DOMAIN}|g" "$INGRESS_TEMPLATE" > "$INGRESS_OUT"
+if [[ "$IS_IP" -eq 1 ]]; then
+    # IP-режим: HTTP-роуты Ingress'а не могут иметь host: <ip-литерал>
+    # (большинство контроллеров игнорируют такой rule). Поэтому:
+    #   - в tls.hosts: оставляем IP — Traefik сматчит TLS SNI; клиенты,
+    #     ходящие по IP без SNI, всё равно получат cert и проверят SAN=IP.
+    #   - строки `host: __INGRESS_HOST__` в правилах убираем целиком,
+    #     чтобы Ingress принимал любой Host header (включая Host: <ip>).
+    sed -e "/^[[:space:]]*-[[:space:]]*host:[[:space:]]*__INGRESS_HOST__[[:space:]]*$/d" \
+        -e "s|__INGRESS_HOST__|${DOMAIN}|g" \
+        "$INGRESS_TEMPLATE" > "$INGRESS_OUT"
+else
+    sed "s|__INGRESS_HOST__|${DOMAIN}|g" "$INGRESS_TEMPLATE" > "$INGRESS_OUT"
+fi
 
 # ── .env.k8s — сохраним домен для повторных запусков ──────────────────────────
 echo "INGRESS_HOST=${DOMAIN}" > "$ENV_FILE"
@@ -270,7 +330,7 @@ ADMIN (initial bootstrap, после первого старта смени па
 ============================================================
   username: admin
   password: ${INITIAL_ADMIN_PASSWORD}
-  email:    admin@${DOMAIN}
+  email:    ${ADMIN_EMAIL}
 
 ============================================================
 MASTER ENCRYPTION KEY (server_service)
@@ -321,7 +381,7 @@ echo ""
 echo "✓ Готово."
 echo ""
 echo "  Сгенерированы:"
-echo "    $SECRETS_OUT       (Secret dbos-secrets + dbos-tls, chmod 600)"
+echo "    $SECRETS_OUT       (Secret dbos-secrets + dbos-ingress-tls, chmod 600)"
 echo "    $INGRESS_OUT       (Ingress + Middleware с host=$DOMAIN)"
 echo "    $ENV_FILE          (домен для повторных запусков)"
 echo "    $SUMMARY_OUT       (summary — admin-пароль + master-key + DB-passwords)"
@@ -333,5 +393,11 @@ echo "  После переноса:  shred -u ${SUMMARY_OUT}"
 echo ""
 echo "  Self-signed cert валиден 365 дней. Перевыпуск: ${0} ${DOMAIN}"
 echo ""
-echo "  Для доступа с локальной машины пропиши в /etc/hosts:"
-echo "    <VM_IP>  ${DOMAIN}"
+if [[ "$IS_IP" -eq 1 ]]; then
+    echo "  Доступ — напрямую по IP, /etc/hosts не нужен:"
+    echo "    curl --cacert <ca> https://${DOMAIN}/api/auth/v1/health"
+    echo "  (или curl -k, если CA ещё не импортирован)."
+else
+    echo "  Для доступа с локальной машины пропиши в /etc/hosts:"
+    echo "    <VM_IP>  ${DOMAIN}"
+fi

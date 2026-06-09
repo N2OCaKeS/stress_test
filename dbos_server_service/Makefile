@@ -95,6 +95,9 @@ _DEV_ADMIN_EMAIL = admin@example.com
         k8s-install k8s-install-k3s k8s-install-cert-manager k8s-secrets k8s-build \
         k8s-deploy k8s-migrate k8s-smoke k8s-rollout k8s-rollback \
         k8s-logs k8s-status k8s-backup k8s-destroy \
+        k8s-zero k8s-install-docker k8s-install-cert-manager-images \
+        k8s-rotate-server-master k8s-rotate-secret-master k8s-rotate-redis-stash-master \
+        k8s-rotate-db-passwords k8s-rotate-redis-password k8s-rotate-s2s-keys \
         prod-deploy
 
 ##@ Dev: стек в Docker (без devcontainer)
@@ -527,37 +530,43 @@ k8s-install-cert-manager-images: ## [VM, sudo] Спулить cert-manager об�
 		fi; \
 	done
 
-k8s-zero: ## [VM, sudo] Полный deploy с нуля: docker + k3s + образы + cert-manager + secrets + apply + migrate + smoke. DOMAIN=dbos.local CM_VERSION=v1.15.3.
+k8s-zero: ## [VM, sudo] Полный deploy с нуля: docker + k3s + образы + cert-manager + secrets + apply + openapi + smoke. DOMAIN=dbos.local CM_VERSION=v1.15.3.
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@echo "  DBOS zero-deploy на $$(hostname)"
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@echo ""
-	@echo "▶ [1/8] docker engine"
+	@echo "▶ pre-check: свободное место на /"
+	@df -BG / | awk 'NR==2 {gsub("G","",$$4); if($$4<10) {print "ОШИБКА: <10G свободно на /, для билда 5 образов нужно ~5G"; exit 1} else {print "  • " $$4 "G свободно — ок"}}'
+	@echo ""
+	@echo "▶ [1/9] docker engine"
 	@$(MAKE) k8s-install-docker --no-print-directory
 	@echo ""
-	@echo "▶ [2/8] k3s"
+	@echo "▶ [2/9] k3s"
 	@$(MAKE) k8s-install-k3s --no-print-directory
 	@echo ""
-	@echo "▶ [3/8] Сборка и импорт 5 образов сервисов"
+	@echo "▶ [3/9] Сборка и импорт 5 образов сервисов"
 	@$(MAKE) k8s-build --no-print-directory
 	@echo ""
-	@echo "▶ [4/8] cert-manager образы (pull + import)"
+	@echo "▶ [4/9] cert-manager образы (pull + import)"
 	@$(MAKE) k8s-install-cert-manager-images --no-print-directory
 	@echo ""
-	@echo "▶ [5/8] cert-manager apply + CA + leaf-сертификаты"
+	@echo "▶ [5/9] cert-manager apply + CA + leaf-сертификаты"
 	@$(MAKE) k8s-install-cert-manager --no-print-directory
 	@echo ""
-	@echo "▶ [6/8] secrets + ingress (DOMAIN=$(if $(DOMAIN),$(DOMAIN),dbos.local))"
+	@echo "▶ [6/9] secrets + ingress (DOMAIN=$(if $(DOMAIN),$(DOMAIN),dbos.local))"
 	@if [ -f k8s/20-secrets.yaml ] && [ -f k8s/50-ingress.yaml ]; then \
 		echo "  • k8s/20-secrets.yaml и k8s/50-ingress.yaml уже сгенерированы — пропускаем"; \
 	else \
 		echo "y" | bash scripts/k8s/gen_secrets.sh $(if $(DOMAIN),$(DOMAIN),dbos.local); \
 	fi
 	@echo ""
-	@echo "▶ [7/8] kubectl apply -k k8s/ + ожидание rollout"
+	@echo "▶ [7/9] kubectl apply -k k8s/ + ожидание rollout"
 	@$(MAKE) k8s-deploy --no-print-directory
 	@echo ""
-	@echo "▶ [8/8] smoke"
+	@echo "▶ [8/9] dump openapi + restart swagger-ui"
+	@sudo -E env KUBECONFIG=/etc/rancher/k3s/k3s.yaml bash scripts/k8s/dump_openapi.sh
+	@echo ""
+	@echo "▶ [9/9] smoke"
 	@$(MAKE) k8s-smoke --no-print-directory
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════════════════"
@@ -594,11 +603,51 @@ k8s-destroy: ## ОПАСНО: удалить весь namespace dbos (включ
 	@echo "Это удалит ВСЕ данные. Подтвердить: 'y' для продолжения"
 	@read confirm && [ "$$confirm" = "y" ] && $(K8S) delete namespace dbos
 
-prod-deploy: ## Meta: build → check secrets → deploy → migrate → smoke. Требует k3s и cert-manager уже установленными.
-	@echo "→ [1/5] Сборка образов и импорт в k3s..."
+##@ Ротация секретов
+# Все скрипты в scripts/k8s/rotate_*.sh — интерактивные, поддерживают --status / --finalize
+# где применимо. Подробный runbook — obsidian/infra/runbooks/Rotation.md.
+
+k8s-rotate-server-master: ## Ротация SERVER_ENCRYPTION_KEY (server_service). FLAG=--status|--finalize|пусто.
+	@if [ ! -f scripts/k8s/rotate_master_key.sh ]; then \
+		echo "ОШИБКА: scripts/k8s/rotate_master_key.sh не найден."; exit 1; \
+	fi
+	bash scripts/k8s/rotate_master_key.sh $(if $(FLAG),$(FLAG),)
+
+k8s-rotate-secret-master: ## Ротация SECRET_ENCRYPTION_KEY (secret_service). FLAG=--status|--finalize|пусто.
+	@if [ ! -f scripts/k8s/rotate_secret_master_key.sh ]; then \
+		echo "ОШИБКА: scripts/k8s/rotate_secret_master_key.sh ещё не создан."; exit 1; \
+	fi
+	bash scripts/k8s/rotate_secret_master_key.sh $(if $(FLAG),$(FLAG),)
+
+k8s-rotate-redis-stash-master: ## Ротация master-ключа redis-stash (provision creds). FLAG=--status|--finalize|пусто.
+	@if [ ! -f scripts/k8s/rotate_redis_stash_master_key.sh ]; then \
+		echo "ОШИБКА: scripts/k8s/rotate_redis_stash_master_key.sh ещё не создан."; exit 1; \
+	fi
+	bash scripts/k8s/rotate_redis_stash_master_key.sh $(if $(FLAG),$(FLAG),)
+
+k8s-rotate-db-passwords: ## Ротация паролей PostgreSQL для одного или всех сервисов. SERVICE=auth|logging|server|worker|secret (default: all).
+	@if [ ! -f scripts/k8s/rotate_db_passwords.sh ]; then \
+		echo "ОШИБКА: scripts/k8s/rotate_db_passwords.sh ещё не создан."; exit 1; \
+	fi
+	bash scripts/k8s/rotate_db_passwords.sh $(if $(SERVICE),--service $(SERVICE),)
+
+k8s-rotate-redis-password: ## Ротация пароля Redis (broker + rate-limit storage).
+	@if [ ! -f scripts/k8s/rotate_redis_password.sh ]; then \
+		echo "ОШИБКА: scripts/k8s/rotate_redis_password.sh ещё не создан."; exit 1; \
+	fi
+	bash scripts/k8s/rotate_redis_password.sh
+
+k8s-rotate-s2s-keys: ## Ротация service-to-service API-ключей (SERVICE_API_KEYS, INTROSPECT_SERVICE_API_KEY).
+	@if [ ! -f scripts/k8s/rotate_s2s_keys.sh ]; then \
+		echo "ОШИБКА: scripts/k8s/rotate_s2s_keys.sh ещё не создан."; exit 1; \
+	fi
+	bash scripts/k8s/rotate_s2s_keys.sh
+
+prod-deploy: ## Meta: build → check secrets → deploy → migrate → openapi → smoke. Требует k3s и cert-manager уже установленными.
+	@echo "→ [1/6] Сборка образов и импорт в k3s..."
 	@$(MAKE) k8s-build --no-print-directory
 	@echo ""
-	@echo "→ [2/5] Проверка секретов..."
+	@echo "→ [2/6] Проверка секретов..."
 	@if [ ! -f k8s/20-secrets.yaml ]; then \
 		echo "ОШИБКА: k8s/20-secrets.yaml отсутствует. Запусти 'make k8s-secrets' и заполни значения."; \
 		exit 1; \
@@ -609,13 +658,16 @@ prod-deploy: ## Meta: build → check secrets → deploy → migrate → smoke. 
 	fi
 	@echo "  k8s/20-secrets.yaml и k8s/50-ingress.yaml на месте."
 	@echo ""
-	@echo "→ [3/5] Применение манифестов..."
+	@echo "→ [3/6] Применение манифестов..."
 	@$(MAKE) k8s-deploy --no-print-directory
 	@echo ""
-	@echo "→ [4/5] Миграции..."
+	@echo "→ [4/6] Миграции..."
 	@$(MAKE) k8s-migrate --no-print-directory
 	@echo ""
-	@echo "→ [5/5] Smoke-тесты..."
+	@echo "→ [5/6] OpenAPI dump + restart swagger-ui (иначе swagger-ui в CrashLoop)..."
+	@sudo -E env KUBECONFIG=/etc/rancher/k3s/k3s.yaml bash scripts/k8s/dump_openapi.sh
+	@echo ""
+	@echo "→ [6/6] Smoke-тесты..."
 	@$(MAKE) k8s-smoke --no-print-directory
 	@echo ""
 	@echo "✓ prod-deploy завершён."

@@ -68,14 +68,24 @@ if [[ -z "${BASE_URL:-}" ]]; then
 fi
 BASE_URL="${BASE_URL:-https://dbos.local}"
 ADMIN_USER="${ADMIN_USER:-admin}"
-# По умолчанию тянем admin-пароль из k8s-секрета dbos-secrets, чтобы smoke
-# не падал на 401 после `gen_secrets.sh` (где пароль каждый раз новый).
-# Fallback на dev-дефолт `1234` (соответствует `make seed`).
+# По умолчанию тянем admin-пароль из k8s-секрета dbos-secrets. Если smoke
+# уже однажды менял пароль (см. шаг 2a — сохраняет в `dbos-smoke-new-admin-pass`),
+# Secret отстаёт от реального, поэтому смотрим и в /tmp-файл, и пробуем оба
+# по порядку — initial → smoke-rotated. Fallback на dev-дефолт `1234`.
+SMOKE_PASS_FILE="${SMOKE_PASS_FILE:-/tmp/dbos-smoke-new-admin-pass.txt}"
 if [[ -z "${ADMIN_PASS:-}" ]] && command -v kubectl >/dev/null 2>&1; then
     ADMIN_PASS=$(kubectl -n dbos get secret dbos-secrets \
         -o jsonpath='{.data.INITIAL_ADMIN_PASSWORD}' 2>/dev/null | base64 -d 2>/dev/null || true)
 fi
 ADMIN_PASS="${ADMIN_PASS:-1234}"
+# Альтернативный пароль из /tmp (заполняется шагом 2a при первом смене).
+# Используется как fallback ниже в шаге 2, если первый login отдаст 401.
+ADMIN_PASS_ALT=""
+if [[ -r "$SMOKE_PASS_FILE" ]]; then
+    # Шаг 2a пишет файл из shell-комментариев (# ...) и одной строки пароля.
+    # Берём последнюю не-комментарий, не-пустую строку.
+    ADMIN_PASS_ALT=$(awk '!/^[[:space:]]*#/ && NF > 0 {p=$0} END{print p}' "$SMOKE_PASS_FILE" 2>/dev/null || true)
+fi
 CURL_OPTS="${CURL_OPTS:--k}"
 
 pass=0
@@ -138,6 +148,21 @@ LOGIN_RESPONSE=$(curl $CURL_OPTS -s -w "\n%{http_code}" \
     -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}")
 LOGIN_CODE=$(echo "$LOGIN_RESPONSE" | tail -n1)
 LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | head -n -1)
+# Если Secret-пароль отдаёт 401 (например, smoke ранее уже сменил admin'у
+# пароль на одноразовый и сохранил в /tmp/dbos-smoke-new-admin-pass.txt) —
+# пробуем альтернативный пароль из этого файла.
+if [[ "$LOGIN_CODE" != "200" && -n "$ADMIN_PASS_ALT" && "$ADMIN_PASS_ALT" != "$ADMIN_PASS" ]]; then
+    echo "  ↻ Secret-пароль вернул $LOGIN_CODE; пробую сохранённый ($SMOKE_PASS_FILE)..."
+    LOGIN_RESPONSE=$(curl $CURL_OPTS -s -w "\n%{http_code}" \
+        -X POST "$BASE_URL/api/auth/v1/login" \
+        -H "Content-Type: application/json" \
+        -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS_ALT\"}")
+    LOGIN_CODE=$(echo "$LOGIN_RESPONSE" | tail -n1)
+    LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | head -n -1)
+    if [[ "$LOGIN_CODE" == "200" ]]; then
+        ADMIN_PASS="$ADMIN_PASS_ALT"
+    fi
+fi
 if [[ "$LOGIN_CODE" == "200" ]]; then
     report PASS "login → 200"
 else

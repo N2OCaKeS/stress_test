@@ -1,32 +1,35 @@
 #!/usr/bin/env bash
-# Ротация Redis-пароля без потери доступа.
+# Ротация Redis-пароля.
 #
-# Redis запущен с `--requirepass $(REDIS_PASSWORD)` из env (см. k8s/12-redis.yaml).
-# В PVC лежит только AOF (`/data/appendonly.aof`), redis.conf не используется.
-# Поэтому:
-#   - CONFIG SET requirepass меняет пароль live, существующие connection'ы
-#     остаются auth'енчены (Redis их не разрывает).
-#   - CONFIG REWRITE НЕ НУЖЕН — нет файла-конфига на диске, writeable conf path
-#     не задан, и REWRITE упадёт с "The server is running without a config file".
-#     При следующем рестарте Redis перечитает env REDIS_PASSWORD из Secret'а,
-#     который мы тут же патчим.
+# Почему НЕ через `CONFIG SET requirepass`:
+#   readinessProbe для redis-pod'а в k8s/12-redis.yaml жёстко прибит к
+#   env-переменной REDIS_PASSWORD:
+#       readinessProbe:
+#         exec:
+#           command: [redis-cli, -a, $(REDIS_PASSWORD), ping]
+#   Если сделать CONFIG SET requirepass <new>, requirepass станет <new>,
+#   но env в pod'е (и в команде probe) останется <old>. Probe начнёт
+#   получать WRONGPASS → pod → NotReady → Service drop endpoints → все
+#   consumer'ы (auth/server/secret/worker) теряют доступ к Redis. Это RED.
 #
-# Flow:
+# Новый flow (без CONFIG SET):
+#   0. Pre-check: текущий REDIS_PASSWORD из Secret'а реально подходит к pod'у.
 #   1. Сгенерировать новый пароль (32 символа [A-Za-z0-9]).
-#   2. redis-cli CONFIG SET requirepass <new>  внутри pod'а.
-#   3. Sanity: AUTH <new> внутри того же pod'а (быстрый smoke).
-#   4. Patch Secret dbos-secrets.REDIS_PASSWORD.
-#   5. Rolling restart всех consumer'ов, читающих REDIS_PASSWORD из env:
-#         auth-service, logging-service, server-service, server-worker, secret-service.
-#      Они подхватят новый Secret и откроют новые connection'ы с новым AUTH.
-#   6. (Опционально) удалить старые connection'ы, висящие со старым AUTH —
-#      `redis-cli CLIENT KILL` по filter'у. Сейчас пропускаем: pods'ы уже
-#      рестартнулись, старых клиентов быть не должно.
-#
-# Скрипт ИНТЕРАКТИВНЫЙ.
+#   2. Сохранить старый пароль в /tmp/dbos-rotate-redis-<ts>.txt (chmod 600),
+#      туда же новый — для recovery при сбое в середине flow.
+#   3. Patch dbos-secrets.REDIS_PASSWORD <new>.
+#   4. Rolling restart deploy/redis (strategy: Recreate в манифесте, ~5-15s
+#      downtime — pod пересоздаётся с новым env, --requirepass подставляется
+#      из нового Secret'а).
+#   5. Rolling restart consumer'ов: auth-service, server-service,
+#      server-worker, secret-service. logging-service в списке НЕТ — он
+#      Redis не использует (проверено grep REDIS_PASSWORD k8s/*.yaml).
+#   6. kubectl rollout status для redis + 4 consumer'ов.
+#   7. Verify: redis-cli -a <new> ping внутри pod'а → PONG.
 #
 # Использование:
-#   scripts/k8s/rotate_redis_password.sh           # полный flow
+#   scripts/k8s/rotate_redis_password.sh           # полный flow (интерактивно)
+#   scripts/k8s/rotate_redis_password.sh --yes     # полный flow без prompt'ов (для CronJob)
 #   scripts/k8s/rotate_redis_password.sh --status  # текущее состояние
 #
 # Требования: kubectl, jq, openssl.
@@ -37,14 +40,20 @@ NS="${DBOS_NAMESPACE:-dbos}"
 SECRET="${DBOS_SECRET_NAME:-dbos-secrets}"
 REDIS_DEPLOY="redis"
 
-# Список deploy'ев, которые читают REDIS_PASSWORD из dbos-secrets (см. grep -l
-# REDIS_PASSWORD по k8s/*.yaml).
-CONSUMERS=(auth-service logging-service server-service server-worker secret-service)
+# Список deploy'ев, которые читают REDIS_PASSWORD из dbos-secrets
+# (grep -l REDIS_PASSWORD по k8s/*.yaml даёт ровно эти четыре +
+# сам redis-pod). logging-service Redis не использует.
+CONSUMERS=(auth-service server-service server-worker secret-service)
+
+ASSUME_YES="false"
 
 # ── Утилиты ───────────────────────────────────────────────────────────────────
 
 confirm() {
     local prompt="$1"
+    if [[ "$ASSUME_YES" == "true" ]]; then
+        return 0
+    fi
     read -p "  ${prompt} [yes/no]: " yn
     [[ "$yn" == "yes" ]]
 }
@@ -68,6 +77,12 @@ secret_set_string() {
         -p "$(jq -n --arg k "$key" --arg v "$val" '{stringData: {($k): $v}}')"
 }
 
+# Возвращает текущий пароль из Secret'а (base64-decoded).
+secret_get_redis_pw() {
+    kubectl -n "$NS" get secret "$SECRET" -o jsonpath='{.data.REDIS_PASSWORD}' \
+        | base64 -d
+}
+
 show_status() {
     echo ""
     echo "Namespace: $NS"
@@ -80,6 +95,11 @@ show_status() {
     echo "Redis pod:"
     kubectl -n "$NS" get pod -l app=redis -o wide 2>/dev/null | tail -n +1
     echo ""
+    echo "Последний rollout redis:"
+    local r
+    r=$(kubectl -n "$NS" get deploy "$REDIS_DEPLOY" -o jsonpath='{.spec.template.metadata.annotations.kubectl\.kubernetes\.io/restartedAt}' 2>/dev/null || true)
+    printf "  %-18s restartedAt=%s\n" "$REDIS_DEPLOY" "${r:-<never>}"
+    echo ""
     echo "Consumer'ы (последний restartedAt):"
     for d in "${CONSUMERS[@]}"; do
         local restarted
@@ -87,32 +107,34 @@ show_status() {
         printf "  %-18s restartedAt=%s\n" "$d" "${restarted:-<never>}"
     done
     echo ""
-    echo "Подсказка: текущий пароль (если нужно проверить вручную):"
-    echo "  kubectl -n ${NS} get secret ${SECRET} -o jsonpath='{.data.REDIS_PASSWORD}' | base64 -d; echo"
-    echo ""
 }
 
-# ── --status ──────────────────────────────────────────────────────────────────
+# ── Парсинг аргументов ────────────────────────────────────────────────────────
 
-if [[ "${1:-}" == "--status" ]]; then
-    show_status
-    exit 0
-fi
-
-if [[ "${1:-}" != "" ]]; then
-    echo "ОШИБКА: неизвестный аргумент: $1" >&2
-    echo "Используй: $0 [--status]" >&2
-    exit 1
-fi
+case "${1:-}" in
+    --status)
+        show_status
+        exit 0
+        ;;
+    --yes|-y)
+        ASSUME_YES="true"
+        ;;
+    "")
+        ;;
+    *)
+        echo "ОШИБКА: неизвестный аргумент: $1" >&2
+        echo "Используй: $0 [--status|--yes]" >&2
+        exit 1
+        ;;
+esac
 
 # ── Полный flow ───────────────────────────────────────────────────────────────
 
 echo "=== РОТАЦИЯ REDIS_PASSWORD ==="
 show_status
 
-# Step 0: убедиться, что redis pod жив и текущий пароль вообще валиден
-# (на случай если Secret и pod уже разъехались).
-echo "→ Step 0: проверка текущего AUTH..."
+# Step 0: pre-check — текущий пароль из Secret'а должен подходить к живому pod'у.
+echo "→ Step 0: pre-check (текущий AUTH работает)..."
 if ! kubectl -n "$NS" exec "deploy/${REDIS_DEPLOY}" -- \
         sh -c 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping' \
         >/dev/null 2>&1; then
@@ -122,17 +144,28 @@ if ! kubectl -n "$NS" exec "deploy/${REDIS_DEPLOY}" -- \
 fi
 echo "  OK (PONG)."
 
+# Generate новый пароль + backup старого.
 NEW_PW=$(rand_pw)
 if [[ ${#NEW_PW} -ne 32 ]]; then
     echo "ОШИБКА: rand_pw вернул не 32 символа (${#NEW_PW})." >&2
     exit 1
 fi
 
+OLD_PW=$(secret_get_redis_pw || true)
+if [[ -z "$OLD_PW" ]]; then
+    echo "ОШИБКА: не удалось прочитать текущий REDIS_PASSWORD из Secret'а." >&2
+    exit 1
+fi
+
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="/tmp/dbos-rotate-redis-${TS}.txt"
+umask 077
 {
     echo "DBOS Redis password rotation"
     echo "timestamp: ${TS}"
+    echo ""
+    echo "OLD REDIS_PASSWORD (для recovery при сбое в середине flow):"
+    echo "${OLD_PW}"
     echo ""
     echo "NEW REDIS_PASSWORD:"
     echo "${NEW_PW}"
@@ -142,68 +175,51 @@ chmod 600 "$OUT"
 cat <<EOF
 
 Будет сделано:
-  1. CONFIG SET requirepass <new> внутри redis-pod (без рестарта самого Redis).
-  2. AUTH <new> sanity внутри pod'а.
-  3. Patch Secret ${SECRET}.REDIS_PASSWORD.
-  4. Rolling restart consumer'ов:
+  1. Patch Secret ${SECRET}.REDIS_PASSWORD <new>.
+  2. Rolling restart deploy/${REDIS_DEPLOY}  (strategy: Recreate, ~5-15s downtime).
+  3. Rolling restart consumer'ов:
        ${CONSUMERS[*]}
-  5. (CONFIG REWRITE не выполняется — Redis запущен без conf-файла,
-      перезапуск Redis заберёт пароль из env REDIS_PASSWORD, который
-      мы патчим на шаге 3.)
+  4. kubectl rollout status (redis + consumers).
+  5. Verify: redis-cli -a <new> ping → PONG.
 
-Новый Redis-пароль (СОХРАНИ — без него re-deploy потеряет доступ к AOF
-до следующего CONFIG SET):
+Старый и новый пароли сохранены в:
+  ${OUT}   (chmod 600)
 
-  REDIS_PASSWORD:
+Новый Redis-пароль:
   ${NEW_PW}
-
-Дубликат: ${OUT}
 
 EOF
 
 confirm "Продолжить ротацию?" || { echo "Отменено."; shred -u "$OUT" 2>/dev/null || rm -f "$OUT"; exit 0; }
 
-# Step 1: CONFIG SET requirepass <new>. Передаём через stdin, чтобы пароль
-# не попал в kubectl exec args / audit log. redis-cli при пустом аргументе
-# заходит в interactive REPL; чтобы он принял команду из stdin, используем
-# `-x` (читает последний аргумент из stdin) — но `-x` подставляет stdin как
-# единственный аргумент команды, что нам и нужно для requirepass <value>.
+# Step 1: patch Secret.
 echo ""
-echo "→ Step 1: CONFIG SET requirepass <new> в redis-pod..."
-if ! printf '%s' "$NEW_PW" | kubectl -n "$NS" exec -i "deploy/${REDIS_DEPLOY}" -- \
-        sh -c 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning -x CONFIG SET requirepass'; then
-    echo "ОШИБКА: CONFIG SET requirepass провалился. Redis остался со старым паролем." >&2
-    echo "         Secret не тронут — система в исходном состоянии. ${OUT} с новым (неприменённым) паролем не удалён." >&2
-    exit 1
-fi
-
-# Step 2: sanity — AUTH с новым паролем.
-echo "→ Step 2: AUTH <new> sanity..."
-if ! printf 'AUTH %s\nPING\n' "$NEW_PW" | kubectl -n "$NS" exec -i "deploy/${REDIS_DEPLOY}" -- \
-        redis-cli --no-auth-warning >/dev/null; then
-    echo "ОШИБКА: AUTH <new> не прошёл. CONFIG SET prima facie сработал, но новый AUTH не принимается." >&2
-    echo "         Чтобы откатить, исполни в redis-pod'е:" >&2
-    echo "           redis-cli -a <старый из Secret'а> CONFIG SET requirepass <старый>" >&2
-    exit 1
-fi
-echo "  OK."
-
-# Step 3: patch Secret. С этого момента новый pod, поднявшийся на
-# REDIS_PASSWORD из Secret'а, получит новый пароль; старые pod'ы продолжат
-# работать на старых open connection'ах до их рестарта.
-echo ""
-echo "→ Step 3: patch Secret ${SECRET}.REDIS_PASSWORD..."
+echo "→ Step 1: patch Secret ${SECRET}.REDIS_PASSWORD..."
 if ! secret_set_string "REDIS_PASSWORD" "$NEW_PW"; then
-    echo "ОШИБКА: patch Secret провалился. Redis уже с НОВЫМ паролем, Secret — со СТАРЫМ." >&2
-    echo "         Если consumer rollout'ы рестартнутся сейчас (любая причина) — auth-failure." >&2
-    echo "         Запатчь Secret руками (пароль в ${OUT}):" >&2
-    echo "           kubectl -n ${NS} patch secret ${SECRET} --type=merge -p '{\"stringData\":{\"REDIS_PASSWORD\":\"<пароль>\"}}'" >&2
+    echo "ОШИБКА: patch Secret провалился. Redis ещё со старым паролем, Secret тоже." >&2
+    echo "         Система в исходном состоянии. ${OUT} с неприменённым паролем оставлен." >&2
     exit 1
 fi
 
-# Step 4: rolling restart consumer'ов.
+# Step 2: rolling restart redis. strategy=Recreate в манифесте — старый pod
+# умирает до запуска нового, ~5-15s downtime. Это допустимо: redis stash
+# у нас транзиентный, очереди taskiq переживут (worker сделает reconnect).
 echo ""
-echo "→ Step 4: rolling restart consumer'ов..."
+echo "→ Step 2: rolling restart deploy/${REDIS_DEPLOY} (Recreate strategy)..."
+confirm "Рестартовать deploy/${REDIS_DEPLOY}?" \
+    || { echo "→ Pause. Дальше — kubectl -n ${NS} rollout restart deploy/${REDIS_DEPLOY}"; exit 0; }
+
+kubectl -n "$NS" rollout restart "deploy/${REDIS_DEPLOY}"
+if ! kubectl -n "$NS" rollout status "deploy/${REDIS_DEPLOY}" --timeout=180s; then
+    echo "ОШИБКА: rollout status redis не завершился за 180s." >&2
+    echo "         Secret уже с НОВЫМ паролем; pod либо не стартует с новым env," >&2
+    echo "         либо stuck на старом. Проверь: kubectl -n ${NS} describe pod -l app=redis" >&2
+    exit 1
+fi
+
+# Step 3: rolling restart consumer'ов.
+echo ""
+echo "→ Step 3: rolling restart consumer'ов..."
 confirm "Рестартовать ${CONSUMERS[*]}?" \
     || { echo "→ Pause. Запусти руками: kubectl -n ${NS} rollout restart deploy/${CONSUMERS[*]/#/deploy/}"; exit 0; }
 
@@ -211,16 +227,36 @@ for d in "${CONSUMERS[@]}"; do
     kubectl -n "$NS" rollout restart "deploy/${d}"
 done
 for d in "${CONSUMERS[@]}"; do
-    kubectl -n "$NS" rollout status "deploy/${d}" --timeout=300s
+    if ! kubectl -n "$NS" rollout status "deploy/${d}" --timeout=300s; then
+        echo "ОШИБКА: rollout status ${d} не завершился за 300s." >&2
+        echo "         Скорее всего — pod не может авторизоваться в Redis. Логи:" >&2
+        echo "           kubectl -n ${NS} logs deploy/${d} --tail=200" >&2
+        exit 1
+    fi
 done
+
+# Step 4: verify connectivity внутри pod'а — берём пароль из env (= новый
+# Secret), пингуем сами себя. Это catch-all для случая, когда rollout прошёл,
+# но Redis по какой-то причине поднялся со старым env (например, Secret
+# не пере-resolve'ился).
+echo ""
+echo "→ Step 4: verify redis-cli ping..."
+if ! kubectl -n "$NS" exec "deploy/${REDIS_DEPLOY}" -- \
+        sh -c 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping' \
+        >/dev/null 2>&1; then
+    echo "ОШИБКА: после ротации redis-cli ping провалился. Проверь руками:" >&2
+    echo "  kubectl -n ${NS} exec deploy/${REDIS_DEPLOY} -- redis-cli -a \"\$REDIS_PASSWORD\" ping" >&2
+    exit 1
+fi
+echo "  OK (PONG)."
 
 cat <<EOF
 
 ✓ Готово.
 
-Что осталось проверить:
-  - kubectl -n ${NS} logs deploy/auth-service     | grep -iE 'redis|auth'   — не должно быть 'NOAUTH'/'WRONGPASS'.
-  - kubectl -n ${NS} logs deploy/server-worker    | grep -iE 'redis|taskiq' — то же.
+Что осталось проверить руками:
+  kubectl -n ${NS} logs deploy/auth-service     --tail=200 | grep -iE 'redis|auth'   — без NOAUTH/WRONGPASS.
+  kubectl -n ${NS} logs deploy/server-worker    --tail=200 | grep -iE 'redis|taskiq' — то же.
 
 Дубликат пароля: ${OUT} (chmod 600).
 После переноса в password manager:  shred -u ${OUT}

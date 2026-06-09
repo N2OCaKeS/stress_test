@@ -41,6 +41,7 @@
 #
 # Использование:
 #   scripts/k8s/rotate_s2s_keys.sh             # полный flow
+#   scripts/k8s/rotate_s2s_keys.sh --yes       # полный flow без prompt'ов (для CronJob / harness)
 #   scripts/k8s/rotate_s2s_keys.sh --dry-run   # показать список ключей и diff Secret'а, не применяя
 #   scripts/k8s/rotate_s2s_keys.sh --status    # возраст Secret'а + restartedAt consumer'ов
 #
@@ -54,10 +55,15 @@ SECRET="${DBOS_SECRET_NAME:-dbos-secrets}"
 # Все deploy'и, которые в любом качестве (caller или callee) используют s2s-ключи.
 CONSUMERS=(auth-service logging-service server-service server-worker secret-service)
 
+ASSUME_YES="false"
+
 # ── Утилиты ───────────────────────────────────────────────────────────────────
 
 confirm() {
     local prompt="$1"
+    if [[ "$ASSUME_YES" == "true" ]]; then
+        return 0
+    fi
     read -p "  ${prompt} [yes/no]: " yn
     [[ "$yn" == "yes" ]]
 }
@@ -103,16 +109,19 @@ show_status() {
 # ── Парсинг аргументов ────────────────────────────────────────────────────────
 
 MODE=full
-case "${1:-}" in
-    --status)  show_status; exit 0 ;;
-    --dry-run) MODE=dryrun ;;
-    "")        MODE=full ;;
-    *)
-        echo "ОШИБКА: неизвестный аргумент: $1" >&2
-        echo "Используй: $0 [--status|--dry-run]" >&2
-        exit 1
-        ;;
-esac
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --status)  show_status; exit 0 ;;
+        --dry-run) MODE=dryrun; shift ;;
+        --yes|-y)  ASSUME_YES="true"; shift ;;
+        "")        shift ;;
+        *)
+            echo "ОШИБКА: неизвестный аргумент: $1" >&2
+            echo "Используй: $0 [--status|--dry-run|--yes]" >&2
+            exit 1
+            ;;
+    esac
+done
 
 # ── Генерация нового набора ключей ────────────────────────────────────────────
 

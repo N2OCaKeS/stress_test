@@ -32,6 +32,7 @@
 #
 # Использование:
 #   scripts/k8s/rotate_db_passwords.sh                       # все 5 (по очереди, с подтверждением)
+#   scripts/k8s/rotate_db_passwords.sh --yes                 # без подтверждений (для harness/CronJob)
 #   scripts/k8s/rotate_db_passwords.sh --service auth        # только один
 #   scripts/k8s/rotate_db_passwords.sh --service all         # эквивалент без аргументов
 #   scripts/k8s/rotate_db_passwords.sh --status              # возраст Secret'а + последний rollout
@@ -43,10 +44,15 @@ set -euo pipefail
 NS="${DBOS_NAMESPACE:-dbos}"
 SECRET="${DBOS_SECRET_NAME:-dbos-secrets}"
 
+ASSUME_YES="false"
+
 # ── Утилиты (стиль rotate_master_key.sh) ──────────────────────────────────────
 
 confirm() {
     local prompt="$1"
+    if [[ "$ASSUME_YES" == "true" ]]; then
+        return 0
+    fi
     read -p "  ${prompt} [yes/no]: " yn
     [[ "$yn" == "yes" ]]
 }
@@ -217,6 +223,23 @@ rotate_one() {
         return 1
     fi
 
+    # Step 1a: post-ALTER sanity check. Логинимся в pod psql'ом с НОВЫМ паролем
+    # и SELECT 1 — это catch-all для случая, когда ALTER USER вернул 0, но
+    # пароль не применился (теоретически не должно быть, но дешевле проверить
+    # сейчас, чем чинить упавший Secret patch потом). Пароль передаём через
+    # stdin → PGPASSWORD внутри pod'а, не через kubectl exec args.
+    echo "→ Step 1a: sanity-check логина с новым паролем..."
+    if ! printf "%s" "$new_pw" | kubectl -n "$NS" exec -i "deploy/${pg_deploy}" -- \
+            bash -c 'PGPASSWORD="$(cat)" psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -q -c "SELECT 1;" >/dev/null'
+    then
+        echo "ОШИБКА: ALTER USER вернул 0, но логин с новым паролем не проходит." >&2
+        echo "         БД в неконсистентом состоянии. Secret НЕ патчился." >&2
+        echo "         Новый пароль в ${out} — попробуй вручную:" >&2
+        echo "           kubectl -n ${NS} exec -it deploy/${pg_deploy} -- psql -U ${pg_user} -d ${pg_db}" >&2
+        return 1
+    fi
+    echo "  OK."
+
     # Step 2: patch Secret. Если этот шаг провалится — БД уже с новым паролем,
     # а consumer'ы ещё со старым → они зафейлят connection при следующем reconnect.
     # Поэтому patch должен идти СРАЗУ после ALTER USER, без интерактивов между.
@@ -262,6 +285,10 @@ while [[ $# -gt 0 ]]; do
             shift
             TARGET="${1:-}"
             [[ -n "$TARGET" ]] || { echo "ОШИБКА: --service требует значение." >&2; exit 1; }
+            shift
+            ;;
+        --yes|-y)
+            ASSUME_YES="true"
             shift
             ;;
         -h|--help)

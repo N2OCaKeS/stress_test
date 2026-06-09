@@ -1,0 +1,99 @@
+# CronJob автоматической ротации секретов (раз в 6 мес).
+#
+# Запускает scripts/k8s/test_rotation_safety.sh — orchestrator:
+#   backup_secret_full → rotate_db_passwords → rotate_redis_password → rotate_s2s_keys
+#   → smoke_test → (если smoke красный) restore из backup'а.
+#
+# Master-key ротации (rotate_master_key, rotate_secret_master_key,
+# rotate_redis_stash_master_key) сюда НЕ заведены — у них двухфазный
+# процесс (issue → re-encrypt outbox → finalize) с long-running migration'ом,
+# который не укладывается в один CronJob-run. Их ротирует оператор руками
+# раз в год (см. runbook obsidian/infra/runbooks/Rotation.md).
+#
+# Schedule: 0 3 1 1,7 *
+#   • 1 января 03:00 UTC = 06:00 MSK
+#   • 1 июля   03:00 UTC = 06:00 MSK
+#   В namespace отдельный timeZone не указан — UTC explicit'но в schedule.
+#   03:00 UTC выбран как low-traffic окно после ночных pg-backup'ов
+#   (auth 02:00, logging 02:15, secret 02:30, server 02:45, worker 03:00 MSK)
+#   — пересечения с CronJob'ами pg-backup нет.
+#
+# concurrencyPolicy: Forbid — если предыдущий ротейшн ещё идёт (например,
+# залип на rollout status), второй не стартует. Лучше пропустить slot,
+# чем запустить две ротации параллельно.
+#
+# ttlSecondsAfterFinished: 86400 — Job-объект живёт ещё сутки после
+# завершения, чтобы оператор успел посмотреть `kubectl logs job/...`.
+# История сохраняется через successfulJobsHistoryLimit / failedJobsHistoryLimit.
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rotation-scheduler
+  namespace: dbos
+  labels:
+    app: rotation-scheduler
+spec:
+  schedule: "0 3 1 1,7 *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600   # 1 час — если хост лежал, пропустить slot
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  suspend: false                  # включён по умолчанию; снимать через make k8s-rotation-disable
+  jobTemplate:
+    spec:
+      backoffLimit: 0             # не ретраить — test_rotation_safety делает restore сам
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: rotation-scheduler
+        spec:
+          serviceAccountName: rotation-runner
+          restartPolicy: OnFailure
+          # securityContext: image alpine, kubectl требует UID 0 для чтения
+          # /var/run/secrets/.../token (mode 0600 owned by root). Можно было
+          # запустить под non-root + fsGroup, но проще оставить дефолт —
+          # blast radius уже ограничен SA RBAC.
+          containers:
+            - name: rotation
+              image: dbos/tools:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash"]
+              args:
+                - "-c"
+                - |
+                  set -euo pipefail
+                  echo "→ Старт автоматической ротации $(date -u +%FT%TZ)"
+                  echo "  pod=$HOSTNAME  ns=$NAMESPACE  sa=rotation-runner"
+                  bash /scripts/test_rotation_safety.sh --yes
+              env:
+                - name: NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                # NS — переменная, которую читают все rotate_*.sh
+                # (default в скриптах = "dbos", но передаём явно).
+                - name: NS
+                  value: "dbos"
+                # Скрипты-orchestrator'ы предполагают неинтерактивный режим;
+                # confirm() во всех rotate_*.sh уже умеет --yes / DBOS_ROTATION_YES.
+                - name: DBOS_ROTATION_YES
+                  value: "1"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+          volumes:
+            - name: scripts
+              configMap:
+                name: rotation-scripts
+                defaultMode: 0o555  # rwxr-xr-x — скрипты исполняемые

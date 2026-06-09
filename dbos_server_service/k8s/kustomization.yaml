@@ -24,7 +24,37 @@ resources:
   - 55-swagger-ui.yaml       # общий Swagger UI для трёх сервисов на /docs
   - 100-postgres-backup.yaml # CronJob pg_dump для auth/logging кластеров
   - 101-backup-pvc.yaml      # PV под бэкапы (общий на оба CronJob'а)
+  - 120-rotation-rbac.yaml   # ServiceAccount + Role + RoleBinding для CronJob ротации
+  - 121-rotation-cronjob.yaml # CronJob: автоматическая ротация раз в 6 мес (1 янв / 1 июл)
 
 # 91-ca-issuer.yaml и 92-certificates.yaml в этот kustomize НЕ включены —
 # их применяет scripts/k8s/install_cert_manager.sh до основного apply,
 # потому что они зависят от CRD cert-manager, которого тут ещё нет.
+
+# ConfigMap rotation-scripts собирается из scripts/k8s/*.sh на момент
+# `kustomize build` / `kubectl apply -k`. Скрипты приедут в pod как
+# /scripts/<name>.sh (см. 121-rotation-cronjob.yaml volumeMount).
+#
+# disableNameSuffixHash: true — иначе kustomize добавит хэш к имени
+# (rotation-scripts-abc12), и CronJob с фиксированным name из volumeMount
+# не найдёт ConfigMap. Цена — обновление ConfigMap'а не триггерит
+# автоматический rollout, но CronJob и так читает скрипты при каждом запуске.
+configMapGenerator:
+  - name: rotation-scripts
+    files:
+      - ../scripts/k8s/rotate_db_passwords.sh
+      - ../scripts/k8s/rotate_redis_password.sh
+      - ../scripts/k8s/rotate_s2s_keys.sh
+      - ../scripts/k8s/rotate_master_key.sh
+      - ../scripts/k8s/rotate_secret_master_key.sh
+      - ../scripts/k8s/rotate_redis_stash_master_key.sh
+      - ../scripts/k8s/backup_secret_full.sh
+      - ../scripts/k8s/backup_master_keys.sh
+      - ../scripts/k8s/restore_master_keys.sh
+      - ../scripts/k8s/smoke_test.sh
+      - ../scripts/k8s/test_rotation_safety.sh
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app: rotation-scheduler

@@ -1,0 +1,87 @@
+# ServiceAccount + RBAC для CronJob автоматической ротации секретов.
+#
+# Scope ограничен namespace dbos — никаких ClusterRole'ов. CronJob внутри
+# namespace получит токен SA через /var/run/secrets/kubernetes.io/serviceaccount/
+# и сможет дёрнуть kubectl только в пределах ниже описанных глаголов.
+#
+# Что должен уметь рантайм ротации (см. scripts/k8s/rotate_*.sh,
+# scripts/k8s/test_rotation_safety.sh):
+#   • secrets get/list/patch         — патчить dbos-secrets / dbos-encryption-keys.
+#   • pods get/list/exec             — kubectl exec в postgres-* и redis-* для ALTER USER / CONFIG SET.
+#   • deployments get/list/patch     — kubectl rollout restart deploy/<svc>.
+#   • events get/list                — kubectl wait использует events для прогресса.
+#   • pods/log get                   — финальный sanity (grep по логам после restart'а).
+#   • replicasets get                — kubectl rollout status читает rs.
+#
+# Verbs «create/delete» намеренно не дано — ротация только патчит уже существующие
+# ресурсы. Если что-то нужно создавать с нуля (новый Secret, новый deployment) —
+# это уже не штатная ротация, оператор делает руками.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rotation-runner
+  namespace: dbos
+  labels:
+    app: rotation-scheduler
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rotation-runner
+  namespace: dbos
+  labels:
+    app: rotation-scheduler
+rules:
+  # Чтение и патч k8s Secret'ов (dbos-secrets, dbos-encryption-keys).
+  # delete не даём — старые версии ключей snimaет тот же patch (remove path).
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "patch"]
+
+  # exec в pod'ы postgres-* и redis-* (ALTER USER, CONFIG SET requirepass,
+  # дёрганье seed-endpoint'ов re-encrypt outbox).
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+
+  # kubectl logs deploy/<svc> --tail=N — финальный sanity после рестарта.
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+
+  # rollout restart = patch deployment'у аннотации .spec.template.metadata.annotations.
+  # rollout status читает ReplicaSet'ы.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]
+
+  # kubectl wait / kubectl rollout status опираются на events
+  # для прогресса (Pulling/Started/Killing).
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rotation-runner
+  namespace: dbos
+  labels:
+    app: rotation-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: rotation-runner
+    namespace: dbos
+roleRef:
+  kind: Role
+  name: rotation-runner
+  apiGroup: rbac.authorization.k8s.io

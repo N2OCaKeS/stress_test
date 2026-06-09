@@ -104,6 +104,8 @@ _DEV_ADMIN_EMAIL = admin@example.com
         k8s-zero k8s-install-docker k8s-install-cert-manager-images \
         k8s-rotate-server-master k8s-rotate-secret-master k8s-rotate-redis-stash-master \
         k8s-rotate-db-passwords k8s-rotate-redis-password k8s-rotate-s2s-keys \
+        k8s-rotation-image k8s-rotation-trigger k8s-rotation-status k8s-rotation-logs \
+        k8s-rotation-disable k8s-rotation-enable \
         prod-deploy
 
 ##@ Dev: стек в Docker (без devcontainer)
@@ -513,7 +515,7 @@ k8s-smoke: ## Smoke-тесты после деплоя (health/ready/login дл�
 		exit 1; \
 	fi
 
-k8s-install-docker: ## [VM, sudo] Установить docker engine, если его нет. Идемпотентно.
+k8s-install-docker: ## [VM, sudo] Установить docker engine + jq + python3, если их нет. Идемпотентно.
 	@if command -v docker >/dev/null 2>&1; then \
 		echo "✓ docker уже установлен: $$(docker --version)"; \
 	else \
@@ -523,6 +525,15 @@ k8s-install-docker: ## [VM, sudo] Установить docker engine, если �
 		echo "✓ docker установлен: $$(docker --version)"; \
 	fi
 	@sudo usermod -aG docker "$$(id -un)" 2>/dev/null || true
+	@# jq нужен для kubectl-patch'ей в rotation-скриптах; python3 — для регенерации
+	@# Ingress в IP-режиме (gen_secrets.sh) и инлайн-скриптов в smoke. Оба обычно
+	@# уже стоят на Astra SE, но проверяем — без них k8s-zero/ротация падают.
+	@for pkg in jq python3; do \
+		if ! command -v $$pkg >/dev/null 2>&1; then \
+			echo "→ Устанавливаем $$pkg..."; \
+			sudo apt-get install -y -qq $$pkg; \
+		fi; \
+	done
 
 k8s-install-cert-manager-images: ## [VM, sudo] Спулить cert-manager образы и импортировать в k3s containerd. CM_VERSION=v1.15.3.
 	@CM_VERSION="$${CM_VERSION:-v1.15.3}"; \
@@ -648,6 +659,56 @@ k8s-rotate-s2s-keys: ## Ротация service-to-service API-ключей (SERV
 		echo "ОШИБКА: scripts/k8s/rotate_s2s_keys.sh ещё не создан."; exit 1; \
 	fi
 	bash scripts/k8s/rotate_s2s_keys.sh
+
+##@ Автоматическая ротация (CronJob)
+# CronJob rotation-scheduler гоняет scripts/k8s/test_rotation_safety.sh
+# 1 января и 1 июля в 03:00 UTC. См. k8s/121-rotation-cronjob.yaml и
+# runbook obsidian/infra/runbooks/Rotation.md §«Автоматическая ротация».
+
+k8s-rotation-image: ## [VM] Собрать dbos/tools:latest (kubectl+bash+jq+openssl) и импортировать в k3s
+	@TAG="$${TAG:-latest}"; \
+	echo "→ Сборка dbos/tools:$$TAG из scripts/k8s/dbos-tools/Dockerfile..."; \
+	DOCKER="docker"; \
+	docker info >/dev/null 2>&1 || DOCKER="sudo docker"; \
+	$$DOCKER build -t "dbos/tools:$$TAG" scripts/k8s/dbos-tools/; \
+	echo "→ Экспортируем в k3s containerd..."; \
+	TMP=$$(mktemp -d); \
+	trap "rm -rf $$TMP" EXIT; \
+	$$DOCKER save "dbos/tools:$$TAG" -o "$$TMP/tools.tar"; \
+	sudo chmod 644 "$$TMP"/*.tar 2>/dev/null || true; \
+	K3S_BIN="$$(command -v k3s || echo /usr/local/bin/k3s)"; \
+	sudo "$$K3S_BIN" ctr images import "$$TMP/tools.tar"; \
+	echo "✓ dbos/tools:$$TAG готов и доступен k3s."
+
+k8s-rotation-trigger: ## Запустить rotation-scheduler вручную (создаст Job из CronJob). Параметр SUFFIX=<метка>.
+	@SUFFIX="$${SUFFIX:-manual-$$(date +%s)}"; \
+	echo "→ Создаём Job rotation-scheduler-$$SUFFIX из CronJob rotation-scheduler..."; \
+	$(K8S) create job --from=cronjob/rotation-scheduler "rotation-scheduler-$$SUFFIX"; \
+	echo ""; \
+	echo "  Логи:    $(K8S) logs -f job/rotation-scheduler-$$SUFFIX"; \
+	echo "  Статус:  make k8s-rotation-status"
+
+k8s-rotation-status: ## Статус CronJob'а и последних Job'ов ротации
+	@echo "→ CronJob rotation-scheduler:"
+	@$(K8S) get cronjob rotation-scheduler
+	@echo ""
+	@echo "→ Последние Job'ы ротации (история):"
+	@$(K8S) get jobs -l app=rotation-scheduler --sort-by=.metadata.creationTimestamp
+	@echo ""
+	@echo "→ Pod'ы текущего ротирующего Job'а (если идёт):"
+	@$(K8S) get pods -l app=rotation-scheduler --field-selector=status.phase!=Succeeded 2>/dev/null || true
+
+k8s-rotation-logs: ## Логи последнего ротирующего Job'а (tail=200)
+	@$(K8S) logs -l app=rotation-scheduler --tail=200 --all-containers=true 2>/dev/null \
+		|| echo "Job'ов с label app=rotation-scheduler не найдено."
+
+k8s-rotation-disable: ## Приостановить автоматическую ротацию (suspend=true). Ручной запуск k8s-rotation-trigger остаётся доступен.
+	$(K8S) patch cronjob rotation-scheduler -p '{"spec":{"suspend":true}}'
+	@echo "✓ CronJob rotation-scheduler приостановлен."
+
+k8s-rotation-enable: ## Возобновить автоматическую ротацию (suspend=false).
+	$(K8S) patch cronjob rotation-scheduler -p '{"spec":{"suspend":false}}'
+	@echo "✓ CronJob rotation-scheduler возобновлён."
 
 prod-deploy: ## Meta: build → check secrets → deploy → migrate → openapi → smoke. Требует k3s и cert-manager уже установленными.
 	@echo "→ [1/6] Сборка образов и импорт в k3s..."

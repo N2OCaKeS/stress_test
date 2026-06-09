@@ -661,3 +661,55 @@ spec:
   policyTypes:
     - Egress
   egress: []
+
+---
+# Egress allow для всех migrate Job'ов. Они короткоживущие, ходят в postgres +
+# logging_service (audit emit). Используют label `job: <name>-migrate`, не
+# попадают под `*-service-egress` (тот по `app:`).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: migrate-jobs-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchExpressions:
+      - key: job
+        operator: In
+        values:
+          - auth-migrate
+          - logging-migrate
+          - server-migrate
+          - worker-migrate
+          - secret-migrate
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - auth-postgres
+                  - logging-postgres
+                  - server-postgres
+                  - worker-postgres
+                  - secret-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: logging-service
+      ports:
+        - protocol: TCP
+          port: 8001
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379

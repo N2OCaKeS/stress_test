@@ -150,14 +150,20 @@ spec:
           # period 30s = 2.5 min — даём worker'у пережить ipmitool-таймауты.
           startupProbe:
             exec:
-              command: ["sh", "-c", "pgrep -f 'taskiq' >/dev/null"]
+              command:
+                - sh
+                - -c
+                - "grep -aql taskiq /proc/[0-9]*/cmdline 2>/dev/null || exit 1"
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 18
           livenessProbe:
             exec:
-              command: ["sh", "-c", "pgrep -f 'taskiq' >/dev/null"]
+              command:
+                - sh
+                - -c
+                - "grep -aql taskiq /proc/[0-9]*/cmdline 2>/dev/null || exit 1"
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5

@@ -3,8 +3,10 @@
 Этот каталог содержит k8s-манифесты для single-node k3s-деплоя на Astra Linux SE.
 Сценарий: одна VM, она же master и worker. k3s даёт self-healing, rolling updates и откаты.
 
-> **Полный end-to-end runbook** — `obsidian/infra/Production deploy runbook.md`.
-> **Чек-листы** (pre-/post-deploy, SLO/SLI) — `obsidian/infra/Production checklist.md`.
+> **Чек-листы** (pre-/post-deploy, smoke) — `obsidian/infra/runbooks/Production-checklist.md`.
+> **Ротация ключей и паролей** — `obsidian/infra/runbooks/Rotation.md`.
+> **Backup и DR** — `obsidian/infra/runbooks/Backup-DR.md`.
+> **Incident response** — `obsidian/infra/runbooks/Incident-response.md`.
 > Этот README остаётся как краткая справка про конкретные манифесты и устройство каталога.
 
 ## TL;DR
@@ -22,61 +24,75 @@ make prod-deploy                     # build → check → deploy → migrate �
 
 ```text
               VM (Astra Linux SE) + k3s
-              ┌──────────────────────────────────────┐
-              │  namespace: dbos                     │
-              │                                      │
-              │  ┌─auth-postgres──┐  ┌─logging-pg──┐ │
-              │  │ Deployment×1   │  │ Deployment×1│ │
-              │  │ PVC 5 Gi       │  │ PVC 5 Gi    │ │
-              │  └────────────────┘  └─────────────┘ │
-              │         ▲                  ▲         │
-              │         │                  │         │
-              │  ┌─auth-service──┐  ┌─logging-service┐
-              │  │ Deployment×2  │  │ Deployment×2  ││
-              │  │ ClusterIP     │  │ ClusterIP     ││
-              │  └───────┬───────┘  └───────┬───────┘│
-              │          │                  │        │
-              │          ▼                  ▼        │
-              │     /api/auth/*       /api/logging/* │
-              │          └────────┬─────────┘        │
-              │                   ▼                  │
-              │           Traefik (Ingress)          │
-              │           :80 → 301 → :443           │
-              │           :443 + TLS (cert-manager)  │
-              └───────────────────┬──────────────────┘
-                                  ▼
-              https://auth.dbos.local/api/auth/...
-              https://loging.dbos.local/api/logging/...
-              https://server.dbos.local/api/server/...
+              ┌─────────────────────────────────────────────────────┐
+              │  namespace: dbos                                    │
+              │                                                     │
+              │  ┌auth-pg┐ ┌log-pg┐ ┌srv-pg┐ ┌wrk-pg┐ ┌secret-pg┐   │
+              │  │ Dpl×1 │ │ Dpl×1│ │ Dpl×1│ │ Dpl×1│ │ Dpl×1   │   │
+              │  │ PVC   │ │ PVC  │ │ PVC  │ │ PVC  │ │ PVC     │   │
+              │  └───┬───┘ └───┬──┘ └───┬──┘ └───┬──┘ └───┬─────┘   │
+              │      │         │        │        │        │         │
+              │  ┌auth-svc┐ ┌log-svc┐ ┌srv-svc┐ ┌worker┐ ┌sec-svc┐  │
+              │  │ Dpl×2  │ │ Dpl×2 │ │ Dpl×2 │ │taskiq│ │ Dpl×2 │  │
+              │  │ :8000  │ │ :8001 │ │ :8002 │ │ pod  │ │ :8003 │  │
+              │  └───┬────┘ └──┬────┘ └──┬────┘ └──────┘ └──┬────┘  │
+              │      │         │         │                  │       │
+              │   /api/auth /api/logging /api/server   /api/secret  │
+              │      └─────────┴─────────┴───────┬──────────┘       │
+              │                                  ▼                  │
+              │                          Traefik (Ingress)          │
+              │                          :80 → 301 → :443           │
+              │                          :443 + TLS (dbos-ingress-tls)
+              └──────────────────────────────────┬──────────────────┘
+                                                 ▼
+              https://<host>/api/auth/...     (auth_service)
+              https://<host>/api/logging/...  (loging_service)
+              https://<host>/api/server/...   (server_service)
+              https://<host>/api/secret/...   (secret_service)
+              https://<host>/docs             (объединённый Swagger UI)
 ```
 
-## TLS-стратегия: internal CA + cert-manager
+`<host>` — это либо DNS-имя (`dbos.example.com`), либо IP (`10.177.103.102`),
+которое оператор передаёт в `make k8s-secrets DOMAIN=...`. Все API крутятся за
+одним Ingress'ом на одном хосте; разделение — по path-prefix'у.
+
+## TLS-стратегия: self-signed на Ingress
 
 Платформа разворачивается в closed network — Let's Encrypt и ACME недоступны.
-TLS-сертификаты выпускает cert-manager изнутри кластера, корневой CA — собственный.
+Edge-TLS на Ingress — **один** self-signed сертификат для всего платформенного
+хоста, который кладёт `scripts/k8s/gen_secrets.sh` в Secret `dbos-ingress-tls`.
+Traefik (k3s) подхватывает его автоматически.
 
 ```
-   self-signed Issuer (bootstrap)
+   scripts/k8s/gen_secrets.sh
+            │
+            │  генерирует self-signed cert (5 лет, CN=<host>,
+            │  SAN: DNS:<host> или IP:<addr>, + опц. extra SAN'ы)
+            ▼
+   Secret dbos-ingress-tls (kubernetes.io/tls)
             │
             ▼
-   Certificate "DBOS Server Manager Internal CA"   ← 10 лет, isCA: true
-            │  (приватный ключ в Secret dbos-ca-key-pair)
-            ▼
-   CA Issuer (dbos-ca-issuer)
-            │
-            ├──► Certificate auth-service-tls       ← 1 год, renew за 30 дней
-            ├──► Certificate logging-service-tls    ← 1 год, renew за 30 дней
-            └──► Certificate server-service-tls     ← 1 год, renew за 30 дней
-                       │
-                       ▼
-                 Ingress TLS (Traefik)
+   Ingress dbos-ingress (Traefik)
+   - tls.secretName: dbos-ingress-tls
+   - path /api/auth    → auth-service:8000
+   - path /api/logging → logging-service:8001
+   - path /api/server  → server-service:8002
+   - path /api/secret  → secret-service:8003
+   - path /docs        → dbos-swagger-ui:8080
 ```
 
-**Автоматическая ротация** — cert-manager Renewal Controller сам пересчитывает
-`renewBefore` и за 30 дней до истечения leaf'а перевыпускает Secret;
-Traefik подхватывает новый TLS-секрет без рестарта. Вмешательство админа не
-требуется. Корневой CA живёт 10 лет (за год до истечения тоже автоперевыпуск,
-но это означает смену CA — придётся переимпортировать на admin-машинах).
+**cert-manager в edge-цепочке не используется.** Issuer'ы и leaf-сертификаты,
+которые могли быть в репо ранее (`auth-service-tls`, `logging-service-tls`,
+`server-service-tls`), к Ingress'у не подключены — Traefik читает только
+`dbos-ingress-tls`. См. также §«Авто-ротация сертификатов» ниже.
+
+**Service-to-service TLS** — между подами не используется (NetworkPolicy
+default-deny в namespace, plain http между ClusterIP-сервисами). Cluster-internal
+вызовы (auth ↔ logging, server ↔ secret и т.п.) идут по http://*.dbos.svc.cluster.local.
+
+**Ротация edge-сертификата** — `scripts/k8s/gen_secrets.sh` при повторном запуске
+перевыпускает `dbos-ingress-tls`. Cadence/процедура — `obsidian/infra/runbooks/Rotation.md`.
+Срок жизни сертификата 5 лет; ротация по compliance — отдельная задача.
 
 ## Что делает k3s за вас
 
@@ -154,7 +170,7 @@ cert-manager (см. шаг 2a).
 
 `SERVER_ENCRYPTION_KEY` — корень envelope encryption паролей `server_account`/IPMI. Wire-format ciphertext'а версионирован (`v<N>$<nonce>$<ct>`), KDF — HKDF-SHA256. Ротация без re-encrypt'а возможна: старый ключ остаётся в Secret под `SERVER_ENCRYPTION_KEY__v<old>`, новый шифрует новые строки, фоновый `secrets.reencrypt_lazy` в server-worker перешивает существующие.
 
-Полный runbook — `obsidian/infra/Secrets management.md`. Краткая последовательность:
+Полный runbook — `obsidian/infra/runbooks/Rotation.md` (§1-3 «Master keys»). Краткая последовательность:
 
 ```bash
 # 1. Проверить, что предыдущая миграция завершена (remaining=0):
@@ -183,29 +199,20 @@ kubectl -n dbos exec deploy/server-service -- \
 bash scripts/k8s/rotate_master_key.sh --finalize
 ```
 
-**Compromise мастер-ключа** (утёк в git / чат / dump pod env) — см. секцию «Incident response» в `obsidian/infra/Secrets management.md`. Кратко: ротация + параллельно ротировать сами пароли в системах назначения через `/server-accounts/<id>/rotate-password` и `/ipmi-controllers/<id>/rotate-credentials`.
+**Compromise мастер-ключа** (утёк в git / чат / dump pod env) — см. `obsidian/infra/runbooks/Incident-response.md` (§5) и `obsidian/infra/runbooks/Rotation.md`. Кратко: ротация + параллельно ротировать сами пароли в системах назначения через `/server-accounts/<id>/rotate-password` и `/ipmi-controllers/<id>/rotate-credentials`.
 
-### 2a. Установка cert-manager + выпуск TLS (один раз)
+### 2a. Edge-TLS-сертификат
 
-```bash
-# на машине с интернетом — скачать манифест и docker-образы (см. инструкции
-# в шапке k8s/90-cert-manager-install.yaml), перенести на VM.
-sudo bash scripts/k8s/install_cert_manager.sh
-```
+Никакой отдельной установки cert-manager **не требуется** — `gen_secrets.sh`
+(шаг 2) одновременно с `dbos-secrets` создаёт Secret `dbos-ingress-tls`
+с self-signed сертификатом под выбранный `<host>` (DNS или IP). Traefik
+подхватит его при `make k8s-deploy`.
 
-Скрипт:
-
-- `kubectl apply -f scripts/k8s/cert-manager.yaml` — ставит cert-manager v1.15.3
-- Ждёт rollout cert-manager-controller / cainjector / webhook
-- Применяет `k8s/91-ca-issuer.yaml` — self-signed bootstrap, CA Certificate
-  (CN `DBOS Server Manager Internal CA`, 10 лет), CA Issuer
-- Применяет `k8s/92-certificates.yaml` — leaf-сертификаты для
-  `auth.dbos.local`, `loging.dbos.local`, `server.dbos.local`
-  (1 год, renew за 30 дней)
-- Дожидается готовности всех сертификатов
-
-После шага в namespace `dbos` появятся Secret'ы `auth-service-tls`,
-`logging-service-tls`, `server-service-tls` — Ingress подхватит их автоматически.
+Если нужно перевыпустить только TLS (например, сменили IP/DNS) — повторно
+запусти `make k8s-secrets DOMAIN=<...>`. **Внимание:** это пересоздаст
+`dbos-secrets` целиком, что вытрет master-ключи; используй точечную
+ротацию TLS через прямой `kubectl create secret tls dbos-ingress-tls ...`
+(см. содержимое `gen_secrets.sh`).
 
 ### 3. Сборка образов на VM (каждый раз при изменении кода)
 
@@ -238,112 +245,103 @@ auth_service    →  https://<domain>/api/auth/v1/docs
 logging_service →  https://<domain>/api/logging/v1/docs
 ```
 
-### 5. Доступ к hostnames с клиента
+### 5. Доступ к hostname с клиента
 
-Если `*.dbos.local` не разрешается через корпоративный DNS — пропишите три записи в `/etc/hosts` на клиенте:
+Один платформенный хост (DNS-имя или IP), который оператор задал в
+`make k8s-secrets DOMAIN=...`. Если DNS не разрешается из клиентской сети —
+добавить запись в `/etc/hosts`:
 
 ```bash
 sudo tee -a /etc/hosts <<EOF
-<VM_IP>  auth.dbos.local
-<VM_IP>  loging.dbos.local
-<VM_IP>  server.dbos.local
+<VM_IP>  dbos.example.com
 EOF
 ```
 
-### 5a. Импорт CA на admin-машины
+В IP-режиме (`make k8s-secrets DOMAIN=10.177.103.102`) hosts-файл не нужен.
 
-Чтобы браузер и curl доверяли сертификатам без `-k`, нужно один раз импортировать
-корневой CA-сертификат (выпущенный cert-manager'ом) как trusted.
+### 5a. Доверие к edge-сертификату на admin-машинах
 
-**Экспорт CA с VM:**
+`dbos-ingress-tls` — self-signed. Браузер и curl без `-k` сертификат не
+примут, пока его не добавить в trust store как trusted (это публичный
+cert, а не CA — поэтому он импортируется как «exception» / «trust this
+certificate» для конкретного хоста, а не на весь TLS).
+
+**Экспорт публичной части с VM:**
 
 ```bash
-kubectl -n dbos get secret dbos-ca-key-pair \
-    -o jsonpath='{.data.ca\.crt}' | base64 -d > dbos-ca.crt
+kubectl -n dbos get secret dbos-ingress-tls \
+    -o jsonpath='{.data.tls\.crt}' | base64 -d > dbos-ingress.crt
 ```
 
 **Импорт на Linux (Debian/Astra/Ubuntu):**
 
 ```bash
-sudo cp dbos-ca.crt /usr/local/share/ca-certificates/dbos-ca.crt
+sudo cp dbos-ingress.crt /usr/local/share/ca-certificates/dbos-ingress.crt
 sudo update-ca-certificates
-# Проверка:
-curl https://auth.dbos.local/api/auth/v1/health
+curl https://<host>/api/auth/v1/health
 ```
 
 **Импорт на Linux (RHEL/CentOS/Fedora):**
 
 ```bash
-sudo cp dbos-ca.crt /etc/pki/ca-trust/source/anchors/dbos-ca.crt
+sudo cp dbos-ingress.crt /etc/pki/ca-trust/source/anchors/dbos-ingress.crt
 sudo update-ca-trust
 ```
 
 **Импорт в Firefox** — Settings → Privacy & Security → View Certificates →
-Authorities → Import → выбрать `dbos-ca.crt` → отметить "Trust this CA to
-identify websites".
-
-**Импорт в Chrome / Chromium** — использует системный trust store на Linux,
-команды выше достаточно. На Windows — `certmgr.msc` → Trusted Root
-Certification Authorities → Import.
+Servers → Add Exception → ввести https://<host>/, принять.
 
 **Импорт в Windows (PowerShell, admin):**
 
 ```powershell
-Import-Certificate -FilePath dbos-ca.crt -CertStoreLocation Cert:\LocalMachine\Root
+Import-Certificate -FilePath dbos-ingress.crt -CertStoreLocation Cert:\LocalMachine\Root
 ```
+
+Альтернатива для команд CLI — `curl -k`, `kubectl ... --insecure-skip-tls-verify`.
+Для production-операций — лучше импортировать.
 
 ### 6. Проверка работоспособности
 
 ```bash
-# Без -k — браузер и curl доверяют CA после импорта
-curl https://auth.dbos.local/api/auth/v1/health
-curl https://loging.dbos.local/api/logging/v1/health
-curl https://server.dbos.local/api/server/v1/health
+# Без -k — после импорта (5a)
+curl https://<host>/api/auth/v1/health
+curl https://<host>/api/logging/v1/health
+curl https://<host>/api/server/v1/health
+curl https://<host>/api/secret/v1/health
 
 # Логин:
-curl -X POST https://auth.dbos.local/api/auth/v1/login \
+curl -X POST https://<host>/api/auth/v1/login \
     -H "Content-Type: application/json" \
     -d '{"username":"admin","password":"<пароль из make k8s-secrets>"}'
 
 # Swagger UI:
-#   https://auth.dbos.local/api/auth/v1/docs
-#   https://loging.dbos.local/api/logging/v1/docs
-#   https://server.dbos.local/api/server/v1/docs
+#   https://<host>/docs                          (общий, через dbos-swagger-ui)
+#   https://<host>/api/auth/v1/docs              (per-service)
+#   https://<host>/api/logging/v1/docs
+#   https://<host>/api/server/v1/docs
+#   https://<host>/api/secret/v1/docs
 ```
 
 **HTTP→HTTPS редирект:** `http://<host>/...` отвечает 301 на `https://...`. Это настроено отдельным Ingress + Traefik middleware.
 
-### Авто-ротация сертификатов
+### Ротация edge-сертификата
 
-Никаких действий админа не требуется:
-
-- **Leaf-сертификаты** (1 год). За 30 дней до истечения cert-manager Renewal
-  Controller перевыпускает Secret. Traefik watch'ит Secret и переключается на
-  новый ключ без рестарта подов. Проверить статус:
-
-  ```bash
-  kubectl -n dbos get certificate
-  kubectl -n dbos describe certificate auth-service-tls
-  ```
-
-- **Корневой CA** (10 лет). За год до истечения cert-manager перевыпустит
-  CA Certificate, но это означает смену CA-ключа — на admin-машинах нужно
-  будет переимпортировать `dbos-ca.crt`. Заранее запланируйте, лучше за
-  пару месяцев до истечения вручную ротировать (создать новый CA, переключить
-  Issuer, дать leaf'ам перевыпуститься, потом удалить старый).
-
-**Принудительный перевыпуск leaf'а** (если, например, скомпрометировался ключ):
+Auto-renewal'а **нет** (cert-manager не подключён к Ingress'у).
+`dbos-ingress-tls` живёт 5 лет; ротировать по compliance — раз в год руками.
+Процедура — `obsidian/infra/runbooks/Rotation.md`. Когда срок подходит к концу
+или ключ скомпрометирован:
 
 ```bash
-kubectl -n dbos delete secret auth-service-tls
-# cert-manager увидит, что Certificate указывает на отсутствующий Secret,
-# и сразу его пересоздаст.
-```
-
-или через cmctl:
-
-```bash
-cmctl renew -n dbos auth-service-tls
+# Перегенерировать tls-Secret под тот же host, не трогая dbos-secrets:
+HOST=<dbos.example.com или IP>
+openssl req -x509 -nodes -newkey rsa:2048 -days 1825 \
+    -keyout /tmp/tls.key -out /tmp/tls.crt \
+    -subj "/CN=$HOST" -addext "subjectAltName=DNS:$HOST"
+kubectl -n dbos create secret tls dbos-ingress-tls \
+    --cert=/tmp/tls.crt --key=/tmp/tls.key --dry-run=client -o yaml \
+    | kubectl apply -f -
+shred -u /tmp/tls.key
+# Traefik подхватит обновлённый Secret без рестарта подов.
 ```
 
 ## Повседневные операции
@@ -416,8 +414,9 @@ make k8s-backup DEST=/var/backups/dbos
 **Восстановление из CronJob-бэкапа (custom-формат):**
 
 ```bash
-# 1. через одноразовый pod, монтирующий dbos-backup-pv:
-#    kubectl run inspect --image=postgres:16 ... --overrides='{...}' (см. Observability.md)
+# 1. через одноразовый pod, монтирующий dbos-backup-pv
+#    (kubectl run inspect --image=postgres:16 ... --overrides='{...}';
+#     полная процедура — obsidian/infra/runbooks/Backup-DR.md):
 # 2. накатить:
 kubectl -n dbos exec -i deploy/auth-postgres -- \
     pg_restore -U auth_user -d auth_db --clean --if-exists < /tmp/auth.dump
@@ -434,8 +433,9 @@ kubectl -n dbos exec -i deploy/auth-postgres -- \
 - Audit-стрим: `GET /api/logging/v1/events` (loging_service); SIEM-rule'ы
   подключаются полингом since/until.
 - Worker (без HTTP) — liveness через `worker_heartbeats` + `audit_outbox`.
-- Подробно: `obsidian/infra/Observability.md` (counter'ы, SIEM-rules,
-  Loki-friendly logging contract).
+- Подробно по DR / counter'ам — `obsidian/infra/runbooks/Backup-DR.md` и
+  `obsidian/infra/runbooks/Incident-response.md`. Отдельного Observability.md
+  пока нет; правила SIEM подключаются полингом `GET /api/logging/v1/events`.
 
 ### Smoke-test после деплоя
 
@@ -494,36 +494,57 @@ make k8s-destroy           # требует подтверждения 'y'
 
 ```
 k8s/
-├── README.md                    # этот файл
-├── kustomization.yaml           # точка входа для `kubectl apply -k`
+├── README.md                       # этот файл
+├── kustomization.yaml              # точка входа для `kubectl apply -k`
 ├── 00-namespace.yaml
-├── 10-postgres-auth.yaml        # PVC + Deployment + Service для auth-postgres
-├── 11-postgres-logging.yaml     # то же для logging-postgres
-├── 20-secrets.yaml              # генерируется gen_secrets.sh (gitignored)
-├── 20-secrets.yaml.example      # шаблон
-├── 30-logging-service.yaml      # ConfigMap + Deployment + Service ClusterIP + PDB
-├── 40-auth-service.yaml         # то же для auth_service
-├── 50-server-service.yaml       # то же для server_service
-├── 60-server-worker.yaml        # taskiq-worker (без HTTP)
-├── 50-ingress.yaml              # Ingress для auth/loging/server.dbos.local
-├── 50-ingress.yaml.template     # legacy-шаблон (не используется, оставлен для истории)
-├── 90-cert-manager-install.yaml # инструкции по установке cert-manager (offline)
-├── 91-ca-issuer.yaml            # bootstrap Issuer + CA Certificate + CA Issuer
-├── 92-certificates.yaml         # leaf Certificate'ы для трёх hostname'ов
-├── 100-postgres-backup.yaml     # CronJob pg_dump для auth/logging кластеров
-├── 101-backup-pvc.yaml          # PVC dbos-backup-pv (20 GiB)
-└── .env.k8s                     # домен для повторных запусков (gitignored)
+├── 10-postgres-auth.yaml           # PVC + Deployment + Service для auth-postgres
+├── 11-postgres-logging.yaml        # то же для logging-postgres
+├── 12-postgres-server.yaml         # postgres для server_service
+├── 12-postgres-worker.yaml         # postgres для server_worker
+├── 13-postgres-secret.yaml         # postgres для secret_service
+├── 13-secret-service.yaml          # ConfigMap + Deployment + Service + PDB для secret_service
+├── 20-secrets.yaml                 # генерируется gen_secrets.sh (gitignored)
+├── 20-secrets.yaml.example         # шаблон
+├── 30-logging-service.yaml         # ConfigMap + Deployment + Service ClusterIP + PDB
+├── 40-auth-service.yaml            # то же для auth_service
+├── 50-server-service.yaml          # то же для server_service
+├── 60-server-worker.yaml           # taskiq-worker (без HTTP)
+├── 50-ingress.yaml                 # Ingress (path-based: /api/auth, /api/logging, /api/server, /api/secret, /docs)
+├── 50-ingress.yaml.template        # legacy-шаблон (не используется, оставлен для истории)
+├── 55-swagger-ui.yaml              # объединённый Swagger UI (dbos-swagger-ui за /docs)
+├── 90-cert-manager-install.yaml    # инструкции по установке cert-manager (опционально, к Ingress'у не подключён)
+├── 100-postgres-backup.yaml        # CronJob pg_dump для всех postgres-кластеров
+├── 101-backup-pvc.yaml             # PVC dbos-backup-pv (20 GiB)
+├── 102-master-keys-backup.yaml     # CronJob master-keys-backup (ежедневно)
+├── 103-secret-full-backup.yaml     # CronJob secret-full-backup (еженедельно)
+├── 104-pg-restore-drill.yaml       # CronJob pg-restore-drill (ежемесячно)
+├── 120-rotation-rbac.yaml          # ServiceAccount/Role/RoleBinding rotation-runner
+└── .env.k8s                        # домен для повторных запусков (gitignored)
 
 scripts/k8s/
-├── install_k3s.sh               # установка k3s на Astra Linux SE
-├── install_cert_manager.sh      # offline-установка cert-manager + CA + leaf'ы
-├── cert-manager.yaml            # манифест cert-manager v1.15.3 (gitignored, скачать вручную)
-├── gen_secrets.sh               # генерация 20-secrets.yaml (полный набор секретов)
-├── rotate_master_key.sh         # ротация SERVER_ENCRYPTION_KEY (интерактивно)
-├── build_and_import.sh          # docker build + import в k3s
-├── deploy.sh                    # kubectl apply -k + rollout status
-├── rollout.sh                   # rebuild + rolling update
-├── rollback.sh                  # rollout undo
-├── backup_pg.sh                 # pg_dump custom-формат (in-cluster + host режимы)
-└── smoke_test.sh                # post-deploy verification (health/login/me/audit)
+├── install_k3s.sh                  # установка k3s на Astra Linux SE
+├── install_cert_manager.sh         # offline-установка cert-manager (опционально, для будущих фич)
+├── cert-manager.yaml               # манифест cert-manager v1.15.3 (gitignored)
+├── gen_secrets.sh                  # генерация 20-secrets.yaml + dbos-ingress-tls
+├── rotate_master_key.sh            # ротация SERVER_ENCRYPTION_KEY
+├── rotate_secret_master_key.sh     # ротация SECRET_ENCRYPTION_KEY
+├── rotate_redis_stash_master_key.sh # ротация REDIS_STASH_ENCRYPTION_KEY
+├── rotate_db_passwords.sh          # ротация DB-паролей (per-service)
+├── rotate_redis_password.sh        # ротация REDIS_PASSWORD
+├── rotate_s2s_keys.sh              # ротация S2S API-ключей
+├── _rotation_helpers.sh            # общий код проверки migration_status / TTL gating
+├── test_rotation_safety.sh         # orchestrator (backup → rotate → smoke → restore-on-fail)
+├── backup_master_keys.sh           # backup master-keys в зашифрованный архив
+├── backup_secret_full.sh           # backup всего Secret'а dbos-secrets
+├── restore_master_keys.sh          # restore master-keys из архива
+├── pg_restore_drill.sh             # проверка восстанавливаемости pg_dump'ов
+├── backup_pg.sh                    # pg_dump custom-формат (in-cluster + host режимы)
+├── build_and_import.sh             # docker build + import в k3s
+├── deploy.sh                       # kubectl apply -k + rollout status
+├── rollout.sh                      # rebuild + rolling update
+├── rollback.sh                     # rollout undo
+├── dump_openapi.sh                 # дамп OpenAPI-схем из подов
+├── smoke_test.sh                   # post-deploy verification (health/login/me/audit)
+├── README-MASTER-KEYS.md           # backup/restore master-keys и rotation overview
+└── README-PG-RESTORE-DRILL.md      # процедура pg_restore_drill.sh
 ```

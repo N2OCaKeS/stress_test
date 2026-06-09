@@ -20,6 +20,7 @@ from src.api.router import api_router
 from src.core.config import get_settings
 from src.core.exceptions import AppException
 from src.core.limiter import limiter
+from src.core.logging import configure_logging, request_id_var
 from src.core.security import SecurityHeadersMiddleware
 from src.middleware.audit_middleware import AuditAccessMiddleware
 from src.middleware.https_guard import HTTPSRequiredMiddleware
@@ -55,6 +56,7 @@ def _rate_limit_exceeded_response(request: Request, exc: RateLimitExceeded) -> J
 def create_application() -> FastAPI:
     """Собрать FastAPI app: lifespan + middleware + exception handlers + роутер."""
     settings = get_settings()
+    configure_logging("secret_service", level=settings.app_log_level)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -115,6 +117,9 @@ def create_application() -> FastAPI:
         """request_id + audit_context на каждый запрос."""
         request_id = request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:12]}"
         request.state.request_id = request_id
+        # ContextVar для JSON-логгера — попадает в `request_id` поле каждой
+        # log-записи внутри этого запроса.
+        rid_token = request_id_var.set(request_id)
 
         ip = request.client.host if request.client else None
         ua = request.headers.get("User-Agent")
@@ -128,6 +133,7 @@ def create_application() -> FastAPI:
             response = await call_next(request)
         finally:
             audit_context.reset_context(token)
+            request_id_var.reset(rid_token)
         response.headers["X-Request-ID"] = request_id
         return response
 

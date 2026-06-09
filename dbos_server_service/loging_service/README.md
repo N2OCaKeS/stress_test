@@ -162,7 +162,7 @@ API: http://localhost:8001/docs
 
 ## Тесты
 
-Актуальный счётчик — в выводе `make test-logging` (последняя зафиксированная цифра — `777 passed`, перепроверяется по `pytest --collect-only -q`). Реальный PostgreSQL в Docker, между тестами `TRUNCATE ... RESTART IDENTITY CASCADE` — никакого SQLite/моков БД. Реестр файлов и зон — в `Test.md`.
+Актуальный счётчик — в выводе `make test-logging` и в `../TEST_COVERAGE.md` (на момент последней синхронизации — `1514 passed`). Реальный PostgreSQL в Docker, между тестами `TRUNCATE ... RESTART IDENTITY CASCADE` — никакого SQLite/моков БД. Реестр файлов и зон — в `Test.md`.
 
 Покрытие: ingest, query, rules CRUD, rule_service unit (glob/severity/cache + stress), services registry, retention (+ protection + multi-replica + per-severity/per-service фильтры), admin/reader auth, payload validation, body-size limit + negative CL, rate-limit (per-IP + per-service), Unicode normalization, config validation (https, prod-guard `verify=false`), timezones, redaction, IDs, concurrency, schema validators (shadow-keys, NUL, charset, idempotency_key), introspect pool.
 

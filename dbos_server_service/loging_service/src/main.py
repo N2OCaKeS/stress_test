@@ -28,7 +28,7 @@ from src.core.constants import ADVISORY_LOCKS
 from src.core.exceptions import AppException
 from src.core.https_guard import HTTPSRequiredMiddleware
 from src.core.limiter import limiter
-from src.core.logging import configure_logging
+from src.core.logging import configure_logging, request_id_var
 from src.dependencies import auth as auth_deps
 from src.services.audit_outbox import (
     AuditEnvelope,
@@ -135,7 +135,7 @@ def _sanitize_request_id(raw: str | None) -> str:
 
 def create_application() -> FastAPI:
     settings = get_settings()
-    configure_logging(settings.app_log_level)
+    configure_logging("loging_service", level=settings.app_log_level)
 
     # `staging` приравнивается к `production`: prod-guard'ы (TLS-enforcement,
     # отказ от persistAuthorization в Swagger UI, валидация SERVICE_API_KEY)
@@ -393,7 +393,13 @@ def create_application() -> FastAPI:
         else:
             request_id = _sanitize_request_id(request.headers.get("X-Request-ID"))
             request.state.request_id = request_id
-        response = await call_next(request)
+        # ContextVar для JSON-логгера — попадает в `request_id` поле каждой
+        # log-записи внутри этого запроса.
+        rid_token = request_id_var.set(request_id)
+        try:
+            response = await call_next(request)
+        finally:
+            request_id_var.reset(rid_token)
         response.headers["X-Request-ID"] = request_id
         return response
 

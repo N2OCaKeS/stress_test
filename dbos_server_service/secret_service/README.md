@@ -312,10 +312,95 @@ best-effort: их фейл не валит ready.
 
 ## Развёртывание
 
-- 2 реплики API в Kubernetes.
-- Отдельный PostgreSQL-кластер (2 реплики).
-- `SECRET_ENCRYPTION_KEY` (+ опциональные `SECRET_ENCRYPTION_KEY__v<N>` для legacy-версий) через Kubernetes Secret, монтируется в env.
-- Внутренний доступ через сервисную сеть Kubernetes.
+- 2 реплики API в Kubernetes (`k8s/13-secret-service.yaml`).
+- Отдельный PostgreSQL-кластер (`k8s/13-postgres-secret.yaml`).
+- `SECRET_ENCRYPTION_KEY` (+ опциональные `SECRET_ENCRYPTION_KEY__v<N>` для legacy-версий) и `HKDF_SALT_HEX` берутся из k8s Secret'а `dbos-secrets`, монтируются в env.
+- Внутренний доступ через сервисную сеть Kubernetes (ClusterIP `:8003`); наружу — через Ingress `https://<host>/api/secret/...`.
+
+## Переменные окружения
+
+Все алиасы соответствуют `src/core/config.py`. Default'ы безопасны для dev; в prod значения шифрования/auth обязательны и валидируются на старте.
+
+### App
+
+| Variable | Default | Что |
+|---|---|---|
+| `APP_ENV` | `local` | `local` / `dev` / `prod`. В `prod` включаются доп. инварианты (`SECRET_ENCRYPTION_KEY_VERSION >= 2`, `INTROSPECT_TLS_VERIFY=true`, HTTPS-guard). |
+| `APP_HOST` | `0.0.0.0` | uvicorn bind host. |
+| `APP_PORT` | `8003` | TCP-порт. |
+| `APP_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. |
+| `APP_DEBUG` | `false` | `true` включает stack trace в HTTP-ответах. В prod — `false`. |
+
+### Database
+
+| Variable | Default | Что |
+|---|---|---|
+| `DATABASE_URL` | — (обязательно) | DSN `postgresql+asyncpg://user:pass@host:5432/secret_db`. |
+| `DB_POOL_SIZE` | `10` | Размер базового пула asyncpg. |
+| `DB_MAX_OVERFLOW` | `20` | Дополнительные соединения сверх пула. |
+
+### Auth + introspect
+
+| Variable | Default | Что |
+|---|---|---|
+| `AUTH_SERVICE_URL` | — (обязательно) | URL auth_service для `POST /api/auth/v1/introspect`. |
+| `INTROSPECT_SERVICE_API_KEY` | — (обязательно) | Bearer для intra-cluster introspect. |
+| `INTROSPECT_TLS_VERIFY` | `true` | В prod должно быть `true`. |
+| `INTROSPECT_TLS_CA_BUNDLE` | `""` | Путь к CA-bundle для introspect, если internal CA. |
+| `SERVICE_API_KEY` | — (исходящий) | Outbound API-key для походов в loging_service / server_service. |
+| `SERVICE_API_KEYS` | — (входящий, JSON) | Карта `{identity: api_key}` входящих S2S-запросов. |
+
+### Audit (loging_service)
+
+| Variable | Default | Что |
+|---|---|---|
+| `LOGGING_SERVICE_URL` | — (обязательно) | URL loging_service. |
+| `LOGGING_SERVICE_API_KEY` | — (обязательно) | API-key для записи audit-событий. |
+
+### Encryption
+
+| Variable | Default | Что |
+|---|---|---|
+| `SECRET_ENCRYPTION_KEY` | — (обязательно) | base64 32-байтный master-key AES-256-GCM. В prod — из k8s Secret. Legacy-версии: `SECRET_ENCRYPTION_KEY__v<N>`. |
+| `SECRET_ENCRYPTION_KEY_VERSION` | `2` | Активная версия ключа; в prod должна быть >= 2 (v1 — legacy SHA-256 без HKDF). |
+| `HKDF_SALT_HEX` | — (обязательно) | Hex-строка salt'а для HKDF-SHA256. Симметрия с server_service. |
+
+### Rate-limit (slowapi)
+
+| Variable | Default | Что |
+|---|---|---|
+| `SLOWAPI_RATE_LIMIT` | `500/minute` | Общий cap per-IP. |
+| `RATE_LIMIT_STORAGE_URI` | `memory://` | `redis://...` в prod для шейринга между репликами. |
+| `REDIS_PASSWORD` | `""` | Если задан, добавляется в DSN при `redis://` storage. |
+| `RATE_LIMIT_REVEAL` | `5/minute` | Per-actor лимит на `POST /credentials/{id}/reveal`. |
+| `RATE_LIMIT_TRANSFER` | `10/minute` | На `/transfer`. |
+| `RATE_LIMIT_RECOVER` | `10/minute` | На `/recover`. |
+| `RATE_LIMIT_DELETE` | `30/minute` | На `DELETE /credentials/{id}`. |
+| `RATE_LIMIT_CREATE` | `60/minute` | На `POST /credentials`. |
+| `RATE_LIMIT_DEPT_GRANT` | `20/minute` | На `/dept-grants` CRUD. |
+| `RATE_LIMIT_ACL` | `30/minute` | На `/acl` CRUD. |
+
+### Lockout
+
+| Variable | Default | Что |
+|---|---|---|
+| `LOCKOUT_THRESHOLD` | `10` | Сколько denied-failures до lock'а. |
+| `LOCKOUT_WINDOW_SECONDS` | `300` | Окно, в котором считаются failure'ы. |
+| `LOCKOUT_DURATION_SECONDS` | `900` | Продолжительность lock'а. |
+
+### Sweep + retention
+
+| Variable | Default | Что |
+|---|---|---|
+| `BLOCKED_RETENTION_DAYS` | `30` | Сколько blocked-cred живёт до hard-delete sweep'ом. |
+| `SWEEP_INTERVAL_SECONDS` | `3600` | Период фонового sweep'а. |
+| `SWEEP_ENABLED` | `true` | Можно выключить sweep на dev/test. |
+
+### Security
+
+| Variable | Default | Что |
+|---|---|---|
+| `SECURITY_HSTS_ENABLED` | `false` | `true` в prod (за Ingress'ом с TLS). |
 
 ## Что НЕ делает сервис
 

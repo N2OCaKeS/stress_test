@@ -15,13 +15,11 @@
 #                                     /root/.ssh/id_ed25519, отдельная задача).
 #
 # Какие CronJob'ы это потребляют:
+#   - 100-postgres-backup.yaml      sidecar offsite-sync × 5 → /backup/<deploy>/
+#                                   в REMOTE_DEST/<deploy>/ (auth/logging/secret/
+#                                   server/worker — каждый под своим суффиксом).
 #   - 102-master-keys-backup.yaml   sidecar offsite-sync → весь /backup/master-keys/
 #   - 103-secret-full-backup.yaml   sidecar offsite-sync → /backup/secrets/ под /secrets/
-#
-# pg-backup CronJob'ы (100-postgres-backup.yaml) ещё НЕ имеют sidecar'а — для
-# них offsite реализуется через тот же ConfigMap, когда в 100-postgres-backup
-# добавится offsite-sync (next wave). Пока pg-dump'ы копируются вручную через
-# `rsync /backup/<deploy>/ backup-host::backup/dbos/<deploy>/` (см. runbook).
 #
 # Проверка:
 #   kubectl -n dbos create job --from=cronjob/master-keys-backup offsite-test-$(date +%s)

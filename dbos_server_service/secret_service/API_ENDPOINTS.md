@@ -2,7 +2,7 @@
 
 > **Версия сервиса:** `0.1.0` (см. `pyproject.toml`, OpenAPI `version` в `src/main.py`).
 > **Базовый префикс:** `/api/secret/v1`.
-> **Статус реализации:** Phase 1-7 закрыты, Phase 8 (integration) / Phase 9 (k8s) / Phase 10 (docs+infra) в работе. См. `STATUS.md`.
+> **Статус реализации:** Phase 1-7 + 9 + 10 закрыты; Phase 8 (integration) в работе. Подробности — `STATUS.md` (в этой же папке).
 > **Аудит-события:** перечислены в `AUDIT_EVENTS.md`.
 
 ## Общие правила

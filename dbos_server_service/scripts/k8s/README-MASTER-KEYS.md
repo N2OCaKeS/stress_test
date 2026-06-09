@@ -150,14 +150,18 @@ TLS-сертификаты сервисам. `backup_master_keys.sh` забир�
 backup нужно обновить — старая legacy-версия ключа должна попасть в архив,
 иначе ciphertext'ы, шифрованные под старым ключом, не расшифруются после DR.
 
-| Script | Что ротирует | Auto-finalize |
-|--------|-------------|---------------|
-| `rotate_master_key.sh`        | `SERVER_ENCRYPTION_KEY` (двухфазно: bump + re-encrypt + drop legacy) | через `secrets.reencrypt_lazy` periodic |
-| `rotate_secret_master_key.sh` | `SECRET_ENCRYPTION_KEY` (то же, через secret_service) | через `secrets.reencrypt_lazy` periodic |
-| `rotate_redis_stash_master_key.sh` | `REDIS_STASH_ENCRYPTION_KEY` | через stash re-encrypt task |
-| `rotate_db_passwords.sh`      | DB-пароли (POSTGRES_PASSWORD_*) | — (rolling restart) |
-| `rotate_s2s_keys.sh`          | S2S API-ключи между сервисами | — (rolling restart) |
-| `rotate_redis_password.sh`    | REDIS_PASSWORD / REDIS_STASH_PASSWORD | — (rolling restart) |
+| Script | Что ротирует | Двухфазно (lazy re-encrypt + finalize) | `--auto-finalize` поддерживается |
+|--------|-------------|-------------|----------------------------------|
+| `rotate_master_key.sh`             | `SERVER_ENCRYPTION_KEY` (server_service) | да, через `secrets.reencrypt_lazy` | да |
+| `rotate_secret_master_key.sh`      | `SECRET_ENCRYPTION_KEY` (secret_service) | да, через `secrets.reencrypt_lazy` | да |
+| `rotate_redis_stash_master_key.sh` | `REDIS_STASH_ENCRYPTION_KEY` (provision creds stash) | да, TTL-gated (≤1ч) | да |
+| `rotate_db_passwords.sh`           | DB-пароли (`*_DB_PASSWORD`, per-service `SERVICE=auth\|logging\|server\|worker\|secret`) | — (синхронный ALTER USER + rolling restart) | — |
+| `rotate_s2s_keys.sh`               | `SERVICE_API_KEYS`, `INTROSPECT_SERVICE_API_KEY`, `WORKER_BOT_TOKEN` | grace-period (новый + старый, finalize по подтверждению) | — |
+| `rotate_redis_password.sh`         | `REDIS_PASSWORD` (общий broker) | — (CONFIG SET + rolling restart) | — |
+
+Полный flow каждого, troubleshooting, `--status`/`--finalize`/`--force-finalize`, identity `rotation_runner`, проверки migration_status — `obsidian/infra/runbooks/Rotation.md`.
+
+Helper-скрипт `_rotation_helpers.sh` (sourced остальными) содержит общий код для проверки `migration_status` и TTL-gating'а. `test_rotation_safety.sh` — orchestrator для CronJob'а `rotation-scheduler` (backup → rotate → smoke → restore-on-fail).
 
 После любой из ротаций **триггернуть** `master-keys-backup` вручную:
 

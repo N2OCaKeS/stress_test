@@ -3,7 +3,7 @@
 > **Версия сервиса:** `0.1.0` (см. `pyproject.toml`, OpenAPI `version` в `src/main.py`).
 > **Базовый префикс:** `/api/auth/v1`.
 > **Всего endpoints:** **78** (auth 7, users 16, departments 4, services 3, service_roles 6, tokens 3, bots 9, groups 16, authorization 2, oauth2 5, docker 7).
-> **Статус реализации:** production-ready (см. `../STATUS.md`).
+> **Статус реализации:** production-ready (test-count'ы — `../TEST_COVERAGE.md`).
 > **Аудит-события:** перечислены в `AUDIT_EVENTS.md`.
 
 ## Общие правила

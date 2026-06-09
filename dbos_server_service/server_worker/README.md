@@ -47,7 +47,7 @@ cd ..              # to dbos_server_service/
 make up            # postgres + redis + auth + logging + server + worker
 make logs          # tail worker logs
 make sh-worker     # bash inside the running worker container
-make test-worker   # run worker pytest suite (актуальное число — STATUS.md / TEST_COVERAGE.md)
+make test-worker   # run worker pytest suite (актуальное число — ../TEST_COVERAGE.md)
 make down          # stop the stack
 ```
 
@@ -214,7 +214,7 @@ SCHEDULER_ENABLED=true taskiq scheduler src.main:scheduler
 
 ```bash
 make test-worker
-# точные цифры — STATUS.md и TEST_COVERAGE.md
+# точные цифры — ../TEST_COVERAGE.md
 ```
 
 ## Конфигурация (env-vars)

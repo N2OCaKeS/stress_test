@@ -77,6 +77,9 @@ class MigrationStatus(BaseModel):
     `remaining_legacy > 0`, удалять старые `SECRET_ENCRYPTION_KEY__v<N>` из
     env'а нельзя — read-path упрётся в ENCRYPTION_KEY_MISSING на не-мигрированных
     строках.
+
+    `outbox_pending_count` — сколько proactive-задач ждёт обработки.
+    Финальный гейт — `remaining_legacy == 0 AND outbox_pending_count == 0`.
     """
 
     active_version: int
@@ -84,3 +87,34 @@ class MigrationStatus(BaseModel):
     by_version: dict[str, int]
     remaining_legacy: int
     migrated_pct: float
+    outbox_pending_count: int = 0
+
+
+class ReencryptOutboxSeedResponse(BaseModel):
+    """Сколько pending row'ов опубликовано после `seed`-вызова.
+
+    `inserted` — новые pending row'ы (с учётом partial-UNIQUE).
+    `scanned` — credential'ов с legacy-prefix'ом просканировано.
+    `active_version` — текущая активная версия мастер-ключа на момент seed'а.
+    """
+
+    inserted: int
+    scanned: int
+    active_version: int
+
+
+class ReencryptOutboxProcessResponse(BaseModel):
+    """Сводка одной process-итерации: сколько перешифровано / упало."""
+
+    processed: int
+    errors: int
+    failed: list[dict] = Field(default_factory=list)
+
+
+class ReencryptOutboxStatus(BaseModel):
+    """Полная сводка по outbox-таблице — для оператора и monitoring'а."""
+
+    pending: int
+    done: int
+    error: int
+    total: int

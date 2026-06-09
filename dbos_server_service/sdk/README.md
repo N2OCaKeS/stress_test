@@ -30,6 +30,7 @@
 | `extract_client_ip.py` | `auth_service/src/services/audit_context.py`, `server_service/src/services/audit_context.py` | Безопасный парсер `X-Forwarded-For`/`X-Real-IP` с allow-list доверенных proxy. |
 | `security_headers.py` | `auth_service/src/main.py`, `loging_service/src/main.py`, `server_service/src/main.py` | `SecurityHeadersMiddleware` (HSTS опционально, X-Frame, CSP, Referrer-Policy, Permissions-Policy). |
 | `redaction.py` | `auth_service/src/services/redaction.py`, `loging_service/src/utils/redaction.py`, `server_service/src/services/redaction.py` | Dict/list redactor: маскирует password/token/secret/hash/credential по имени ключа и JWT/argon2/bcrypt по форме значения. Версия `loging_service` — самая консервативная (всегда схлопывает контейнер на ключе-классификаторе). |
+| `logging.py` | `auth_service/src/core/logging.py`, `loging_service/src/core/logging.py`, `server_service/src/core/logging.py`, `secret_service/src/core/logging.py`, `server_worker/src/core/logging.py` | JSON-formatter + `configure_logging(service_name)`. Поля `timestamp/level/service/logger/message/request_id`. Глушит `httpx/httpcore/hpack/urllib3` до WARNING. Bearer-redact regex в `message`/`exception`. `request_id_var` ContextVar — заполняется per-request middleware'ом. |
 
 `server_worker/src/utils/redaction.py` — **отдельный модуль**, маскирует
 free-form строки ошибок (URL-credentials, ipmitool-args). Под копи-паст

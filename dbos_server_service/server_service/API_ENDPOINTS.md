@@ -2,7 +2,7 @@
 
 > **Версия сервиса:** `0.1.0` (см. `pyproject.toml`, OpenAPI `version` в `src/main.py`).
 > **Базовый префикс:** `/api/server/v1`.
-> **Статус реализации:** production-ready (см. `../STATUS.md`).
+> **Статус реализации:** production-ready (test-count'ы — `../TEST_COVERAGE.md`).
 > **Аудит-события:** перечислены в `AUDIT_EVENTS.md`.
 > **Worker-side dispatch'ы:** код в `src/api/v1/endpoints/worker_dispatch.py` + `installed_packages.py` + `inventory.py`; ставят задачи через `worker_client.dispatch_task` в `dev_server_worker.tasks` + taskiq publish.
 

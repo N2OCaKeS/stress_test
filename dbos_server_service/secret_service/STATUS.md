@@ -1,6 +1,6 @@
 # secret_service · статус
 
-Снимок состояния сервиса. Backend близок к production-ready, инфраструктура (k8s + dev-стек) и часть документации в работе.
+Снимок состояния сервиса. Backend, инфраструктура (k8s + dev-стек), Makefile и базовая документация готовы; integration-тесты — единственная остающаяся область в работе.
 
 ## Общий статус
 
@@ -13,9 +13,9 @@
 | Access policy + repos | готов | scope-зависимые проверки (`personal` / `department` / `cross_department`), reader/operator/admin secret_service'а своего dept'а/account_admin (admin per-(dept, service), cross-dept привилегий нет), repos для credentials / role_acls / dept_grants. |
 | HTTP endpoints | готов | CRUD credentials + reveal/transfer/recover, RoleACL CRUD, DeptGrant CRUD, internal lifecycle. Reveal-throttle 5-мин window. |
 | Lifecycle + sweep | готов | `handle_user_deleted` / `handle_dept_deleted_as_owner/recipient` / `handle_dept_service_access_revoked`, фоновый sweep блокированных кред за `BLOCKED_RETENTION_DAYS`. |
-| Integration-тесты | в работе | Реальный PostgreSQL + mocked introspect + cross-service smoke. |
-| k8s манифесты | в работе | Deployment×2 + ClusterIP `:8003` + PDB + отдельный PostgreSQL-кластер + Secret для `SECRET_ENCRYPTION_KEY`. |
-| Docs + Makefile + dev-стек seed | в работе | Регистрация сервиса в корневом `Makefile` (`make test-secret` / `run-secret` / `sh-secret` / `logs-secret`), включение в `docker-compose.dev.yml`, seed платформенного сервиса и системных ролей в `scripts/seed_dev.py`. |
+| k8s манифесты | готов | `k8s/13-secret-service.yaml` (Deployment×2 + ClusterIP `:8003` + PDB) + `k8s/13-postgres-secret.yaml` (отдельный PostgreSQL-кластер) + Secret-поля `SECRET_ENCRYPTION_KEY` / `HKDF_SALT_HEX` в `dbos-secrets`, Ingress-route `/api/secret`. |
+| Docs + Makefile + dev-стек | готов | Регистрация в корневом `Makefile` (`make test-secret` / `run-secret` / `sh-secret` / `logs-secret`), `docker-compose.dev.yml` (`secret-postgres` + `secret_service:8003`), seed платформенного сервиса и системных ролей в `scripts/seed_dev.py`. README / API_ENDPOINTS / AUDIT_EVENTS / Test каталоги. |
+| Integration-тесты | в работе | Реальный PostgreSQL + mocked introspect + cross-service smoke. Цель — паритет с auth/server. |
 
 ## Закрытые фазы
 
@@ -27,11 +27,12 @@
 - **Phase 6 — endpoints + reveal-throttle.** Endpoints `GET/POST/GET-one/PATCH/DELETE /credentials` + UNIQUE collision → `409 NAME_DUPLICATE`, `POST /credentials/{id}/reveal` с 5-минутным окном per `(actor_id, cred_id)` (первый reveal — CRITICAL, повторные — INFO с `count`), `POST /credentials/{id}/transfer`, `POST /credentials/{id}/recover`, RoleACL CRUD под `/credentials/{id}/acl` + DeptGrant CRUD под `/credentials/{id}/dept-grants`, cross-dep правило `DEPT_GRANT_REQUIRED`.
 - **Phase 7 — lifecycle + sweep.** Внутренние lifecycle-эндпоинты под `/api/secret/v1/internal/lifecycle/{user-deleted,dept-deleted,dept-service-access-revoked}` (`include_in_schema=False`, shared bearer); транзитивные блокировки и cascade-revoke DeptGrant + RoleACL; transfer ownership — admin secret_service'а своего dept'а или account_admin (для cross-dep transfer при удалённом owner_dep); recover window 30 дней; фоновый sweep блокированных кред за `BLOCKED_RETENTION_DAYS` (default 30) с интервалом `SWEEP_INTERVAL_SECONDS` (default 3600).
 
+- **Phase 9 — k8s (закрыто).** Манифесты `k8s/13-secret-service.yaml` (Deployment×2 + ClusterIP `:8003` + PDB), `k8s/13-postgres-secret.yaml` (отдельный кластер), Secret-поля `SECRET_ENCRYPTION_KEY` / `SECRET_ENCRYPTION_KEY_VERSION` / `HKDF_SALT_HEX` в `dbos-secrets`, Ingress-маршрут `/api/secret` в `k8s/50-ingress.yaml`.
+- **Phase 10 — docs + Makefile + dev-стек + seed (закрыто).** API_ENDPOINTS / AUDIT_EVENTS / Test каталоги, регистрация сервиса в корневом `Makefile` (`make test-secret` / `run-secret` / `sh-secret` / `logs-secret`), включение в `docker-compose.dev.yml` (`secret-postgres` + `secret_service` :8003), seed платформенного сервиса `secret_service` и системных ролей (`guest`/`reader`/`operator`/`admin`) в `scripts/seed_dev.py`.
+
 ## Фазы в работе
 
 - **Phase 8 — integration tests.** Реальный PostgreSQL через `tests/docker-compose.test.yml`, фабрики токенов/identity (mocked introspect), фабрики кред/ACL, end-to-end сценарии CRUD + reveal-throttle + lifecycle + cross-dep. Цель — паритет по стилю с `auth_service/server_service`.
-- **Phase 9 — k8s.** Манифесты `k8s/70-secret-service.yaml` (Deployment×2 + ClusterIP `:8003` + PDB), `k8s/12-postgres-secret.yaml` (отдельный кластер), ConfigMap + Secret для `SECRET_ENCRYPTION_KEY` / `HKDF_SALT_HEX`, ingress-маршрут.
-- **Phase 10 — docs + Makefile + dev-стек + seed.** API_ENDPOINTS / AUDIT_EVENTS / Test каталоги, регистрация сервиса в корневом `Makefile` (`make test-secret` / `run-secret` / `sh-secret` / `logs-secret`), включение в `docker-compose.dev.yml` (`secret-postgres` + `secret_service` :8003), seed платформенного сервиса `secret_service` и системных ролей (`guest`/`reader`/`operator`/`admin`) в `scripts/seed_dev.py`.
 
 ## Тесты
 

@@ -713,3 +713,160 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+
+---
+# ────────────────────────────────────────────────────────────────────────────
+# CronJob egress: rotation-scheduler / master-keys-backup / secret-full-backup
+# / pg-restore-drill.
+#
+# Все четыре ходят к kube-apiserver через kubectl (rollout restart, get/exec,
+# apply, namespace create/delete). Прямого доступа к postgres/redis/services
+# не нужно: rotation-helpers и pg_restore_drill дёргают БД/redis через
+# `kubectl exec deploy/... -- psql/redis-cli`. То же — для curl
+# /internal/migration_status (через `kubectl exec deploy/server -- curl
+# localhost:8002/...`).
+#
+# k3s kube-apiserver слушает на 6443/TCP на каждой ноде; внутри кластера
+# Service `kubernetes.default.svc` отображается на ClusterIP с port 443/TCP.
+# NetworkPolicy фильтрует ДО iptables-DNAT'а ClusterIP → endpoint, поэтому
+# allow открываем по 443/6443 на ipBlock 0.0.0.0/0 (как в server-service-egress
+# для docker-registry): operator сужает ipBlock'ом в overlay-NP, когда CIDR
+# мастер-нод зафиксируется.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rotation-scheduler-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: rotation-scheduler
+  policyTypes:
+    - Egress
+  egress:
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: master-keys-backup-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: master-keys-backup
+  policyTypes:
+    - Egress
+  egress:
+    # kube-apiserver — backup_master_keys.sh патчит Secret через kubectl.
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+    # offsite-sync sidecar: rsync daemon (873/TCP) либо ssh (22/TCP). Дальний
+    # хост CIDR неизвестен на этапе манифеста — оставляем allow-all, operator
+    # сужает в env-overlay (см. 105-offsite-backup ConfigMap).
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 873
+        - protocol: TCP
+          port: 22
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secret-full-backup-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: secret-full-backup
+  policyTypes:
+    - Egress
+  egress:
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 873
+        - protocol: TCP
+          port: 22
+
+---
+# pg-restore-drill: kubectl create ns, kubectl apply temp postgres pod,
+# kubectl exec для psql внутрь prod-pg и drill-pg. Прямого 5432 не открывает.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pg-restore-drill-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: pg-restore-drill
+  policyTypes:
+    - Egress
+  egress:
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+
+---
+# pg-backup CronJob'ы (5 шт, label app=pg-backup + target=<deploy>) ходят
+# напрямую к своему postgres на 5432 + (через offsite-sync sidecar) rsync на
+# внешний хост. Одной NP покрываем все 5: каждый pod-backup'а может говорить
+# с любой из 5 postgres-БД — это шире чем нужно, но не критично: у каждого
+# pod'а в env только пароль СВОЕЙ БД (см. TARGET_DB / PGPASSWORD), так что
+# доступ к чужой постгресе он не реализует. Сужать ipBlock'ом per-target
+# смысла нет — все 5 postgres в том же namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pg-backup-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: pg-backup
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - auth-postgres
+                  - logging-postgres
+                  - server-postgres
+                  - worker-postgres
+                  - secret-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    # offsite-sync sidecar: rsync daemon (873/TCP) либо ssh (22/TCP).
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 873
+        - protocol: TCP
+          port: 22

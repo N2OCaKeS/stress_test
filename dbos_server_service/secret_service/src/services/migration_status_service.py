@@ -12,9 +12,10 @@ GROUP BY по версии. CHECK на формат на БД гарантиру
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models import ReencryptOutboxEntry
 from src.schemas.internal import MigrationStatus
 
 
@@ -32,6 +33,19 @@ _VERSION_HISTOGRAM_SQL = text(
     GROUP BY 1
     """
 )
+
+
+async def _outbox_pending_count(db: AsyncSession) -> int:
+    """Сколько proactive-задач в очереди ожидают обработки.
+
+    Финализация ротации требует и `remaining_legacy == 0`, и
+    `outbox_pending_count == 0` — иначе worker дозакроет row уже под
+    дропнутым мастер-ключом и упадёт ENCRYPTION_KEY_MISSING.
+    """
+    stmt = select(func.count(ReencryptOutboxEntry.id)).where(
+        ReencryptOutboxEntry.status == "pending"
+    )
+    return int((await db.execute(stmt)).scalar_one())
 
 
 async def compute(
@@ -57,10 +71,12 @@ async def compute(
         migrated_pct = 100.0
     else:
         migrated_pct = round((total - remaining_legacy) * 100.0 / total, 2)
+    outbox_pending = await _outbox_pending_count(db)
     return MigrationStatus(
         active_version=active_version,
         total_rows=total,
         by_version=by_version,
         remaining_legacy=remaining_legacy,
         migrated_pct=migrated_pct,
+        outbox_pending_count=outbox_pending,
     )

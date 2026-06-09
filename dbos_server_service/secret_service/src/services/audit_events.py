@@ -54,6 +54,9 @@ SERVICE_EVENTS = [
     # Authorization
     {"action": "tokens.access_denied", "description": "Reader/operator attempted action without permission (no RoleACL or wrong scope)", "default_severity": "INFO"},
     {"action": "tokens.lockout_triggered", "description": "Per-actor lockout activated after repeated denied access attempts (brute-force defense)", "default_severity": "WARNING"},
+    # Re-encrypt outbox (proactive key rotation)
+    {"action": "secrets.reencrypt_seed", "description": "Reencrypt-outbox seeded with pending rows after master-key rotation", "default_severity": "INFO"},
+    {"action": "secrets.reencrypt_process", "description": "Reencrypt-outbox batch processed (decrypt → encrypt under active key)", "default_severity": "INFO"},
 ]
 
 # Дефолтные severity для пары (action, status). loging_service применяет это
@@ -84,6 +87,9 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("tokens.recover", "success"): "WARNING",
     ("tokens.access_denied", "failure"): "INFO",
     ("tokens.lockout_triggered", "success"): "WARNING",
+    ("secrets.reencrypt_seed", "success"): "INFO",
+    ("secrets.reencrypt_process", "success"): "INFO",
+    ("secrets.reencrypt_process", "failure"): "ERROR",
     # Failure-ось: эскалация вверх. CRUD-операции — ERROR; высоко-чувствительные
     # (reveal / transfer / cross-dep grants) — CRITICAL; служебные — WARNING.
     ("tokens.create", "failure"): "ERROR",

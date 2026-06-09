@@ -23,6 +23,7 @@ from src.core.config import get_settings
 from src.core.constants import HEALTH_PATHS
 from src.core.limiter import limiter
 from src.core.exceptions import AppException
+from src.core.logging import configure_logging, request_id_var
 from src.dependencies import auth as auth_deps
 from src.middleware.https_guard import HTTPSRequiredMiddleware
 from src.middleware.platform_admin_guard import platform_admin_guard
@@ -129,6 +130,9 @@ def _rate_limit_exceeded_response(request: Request, exc: RateLimitExceeded) -> J
 def create_application() -> FastAPI:
     """Собрать FastAPI app: lifespan + middleware + exception handlers + роутер."""
     settings = get_settings()
+    # `APP_LOG_LEVEL` — не оформлен в Settings (server_service исторически
+    # не имел log-level настройки в config'е), читаем напрямую из env.
+    configure_logging("server_service", level=os.environ.get("APP_LOG_LEVEL", "INFO"))
 
     # Slowloris-защита часть (b): per-IP rate-limit на 401-pipeline (и любой
     # другой). Bearer-shape pre-check (часть c) отбивает заведомо невалидные
@@ -378,6 +382,9 @@ def create_application() -> FastAPI:
         """Middle middleware: ставит request_id и audit_context на каждый запрос."""
         request_id = request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:12]}"
         request.state.request_id = request_id
+        # ContextVar для JSON-логгера — попадает в `request_id` поле каждой
+        # log-записи внутри этого запроса.
+        rid_token = request_id_var.set(request_id)
 
         ip = audit_context.extract_client_ip(request)
         ua = request.headers.get("User-Agent")
@@ -393,6 +400,7 @@ def create_application() -> FastAPI:
             response = await call_next(request)
         finally:
             audit_context.reset_context(token)
+            request_id_var.reset(rid_token)
         response.headers["X-Request-ID"] = request_id
         return response
 

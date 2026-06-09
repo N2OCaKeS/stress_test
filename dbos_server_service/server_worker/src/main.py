@@ -37,6 +37,7 @@ from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from src.core.config import get_settings
 from src.core.constants import TaskStatus
+from src.core.logging import configure_logging
 from src.db import dispatch_outbox_session
 from src.db.session import AsyncSessionLocal
 from src.repositories import task as task_repo
@@ -58,25 +59,18 @@ except ValueError as _exc:
     # в dev/staging/production). taskiq при импорте broker'а покажет
     # длинный pydantic traceback; перехватываем и пишем человекочитаемую
     # строку в stderr/journald, потом выходим с кодом 1.
-    logging.basicConfig(
-        level="ERROR",
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    # Settings ещё не построились — поднимаем JSON-логгер с дефолтным уровнем
+    # ERROR, чтобы хотя бы критическая строка ушла в журнал в общем формате.
+    configure_logging("server_worker", level="ERROR")
     logging.getLogger(__name__).critical(
         "server_worker startup aborted: %s", _exc,
     )
     sys.exit(1)
 
-logging.basicConfig(
-    level=_settings.worker_log_level,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
-
-# Глушим говорливых HTTP-логгеров: при WORKER_LOG_LEVEL=DEBUG `httpx._client`
-# пишет в stdout полные запросы вместе с заголовками `Authorization: Bearer ...`
-# → journald/k8s log-aggregator. Жёстко загоняем в WARNING.
-for _noisy in ("httpx", "httpcore", "hpack"):
-    logging.getLogger(_noisy).setLevel(logging.WARNING)
+# JSON-логгер с единым форматом — глушение httpx/httpcore/hpack/urllib3 до
+# WARNING делается внутри configure_logging (DEBUG-httpx утечёт
+# `Authorization: Bearer ...` в журнал).
+configure_logging("server_worker", level=_settings.worker_log_level)
 
 logger = logging.getLogger(__name__)
 

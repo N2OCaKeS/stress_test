@@ -1,8 +1,8 @@
 # auth_service · реестр тестов
 
-**Всего тестов**: актуальное число — в `../STATUS.md` / `../TEST_COVERAGE.md`. На момент последней синхронизации Test.md: ~155 файлов под `auth_service/tests/`, ~1535 `def test_*` (после параметризации ~1539 passed). Быстрый прогон (`make test-auth`) — ~80–100 сек на свежем стенде. E2E (`make test-auth-e2e`) добавляет ~22 теста и ~2–3 мин (поднимает `auth-service-e2e` + `fetch-cert` + `docker-registry` через профиль compose `e2e`).
+**Всего тестов**: актуальное число — в `../TEST_COVERAGE.md`. На момент последней синхронизации Test.md: ~155 файлов под `auth_service/tests/`, ~1535 `def test_*` (после параметризации ~1539 passed). Быстрый прогон (`make test-auth`) — ~80–100 сек на свежем стенде. E2E (`make test-auth-e2e`) добавляет ~22 теста и ~2–3 мин (поднимает `auth-service-e2e` + `fetch-cert` + `docker-registry` через профиль compose `e2e`).
 
-Файл фиксирует структуру каталогов и состав групп. Перечень тестовых функций ниже — снимок, точечные имена и счётчики могут эволюционировать вместе с фичами; для актуальной картины смотреть `STATUS.md` / `TEST_COVERAGE.md` и сам код тестов.
+Файл фиксирует структуру каталогов и состав групп. Перечень тестовых функций ниже — снимок, точечные имена и счётчики могут эволюционировать вместе с фичами; для актуальной картины смотреть `../TEST_COVERAGE.md` и сам код тестов.
 
 ## Запуск
 
@@ -37,7 +37,7 @@ docker compose -f auth_service/tests/docker-compose.test.yml run --rm test-runne
 | `users/` | 19 | 224 | CRUD, ban/unban, reset-password, roles, group attach, list, permissions endpoint, identity/ban cache, sessions management |
 | **итого** | **~155** | **~1535 + параметризация ≈ 1539** | |
 
-> Числа в строках выше — ориентировочные снимки (`def test_*` через grep, файлы через `find`). Точные актуальные значения — в `STATUS.md` / `TEST_COVERAGE.md`; pytest-параметризация (`@pytest.mark.parametrize`, `hypothesis`) разворачивает их до passed-числа.
+> Числа в строках выше — ориентировочные снимки (`def test_*` через grep, файлы через `find`). Точные актуальные значения — в `../TEST_COVERAGE.md`; pytest-параметризация (`@pytest.mark.parametrize`, `hypothesis`) разворачивает их до passed-числа.
 
 ---
 
@@ -376,4 +376,4 @@ Account_admin/dept_admin/regular user добавляют/удаляют учас
 - `refresh_token` grant в `oauth2/token` — не реализован в `src/services/oauth_service.py`.
 - E2E с docker-registry требует профиля `e2e` в `docker-compose.test.yml`, поэтому пропускается в обычном `make test-auth`.
 - Производительность / нагрузочные — не входят в этот реестр.
-- Точечные coverage-gap'ы из аудитных волн фиксируются в `obsidian/TODO.md` (секции `## 🔎 Аудит кода …`), Test.md их пофайлово не дублирует — `STATUS.md` / `TEST_COVERAGE.md` остаются единственным актуальным срезом покрытия.
+- Точечные coverage-gap'ы из аудитных волн фиксируются в `obsidian/TODO.md` (секции `## 🔎 Аудит кода …`), Test.md их пофайлово не дублирует — `../TEST_COVERAGE.md` остаётся единственным актуальным срезом покрытия.

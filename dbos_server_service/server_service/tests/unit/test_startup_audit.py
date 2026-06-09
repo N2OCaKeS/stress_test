@@ -109,7 +109,7 @@ async def test_startup_calls_register_events_once(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_startup_emit_failure_does_not_break_startup(monkeypatch, caplog):
+async def test_startup_emit_failure_does_not_break_startup(monkeypatch, capsys):
     """Если emit бросает — startup продолжается, не падает.
 
     Симулирует недоступность loging_service после lifespan startup. Это
@@ -126,23 +126,22 @@ async def test_startup_emit_failure_does_not_break_startup(monkeypatch, caplog):
     # Lifespan ловит исключения внутри try/except + log WARNING.
     # Проверяем именно lifespan-обёртку (а не сам `_run_startup_audit_sequence`,
     # который raise-it'ит наружу). Используем live create_application().
-    caplog.set_level(logging.WARNING, logger="server_service.startup")
-
+    # caplog не ловит JSON-logging (configure_logging кладёт записи в stdout
+    # напрямую через свой handler без propagate). Используем capsys.
     app = create_application()
     # ВАЖНО: lifespan не должен бросить, даже если emit boom'ит.
     async with app.router.lifespan_context(app):
         pass  # lifespan startup пройден — фикс работает.
 
-    # Проверяем что WARNING был залогирован.
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("startup audit sequence failed" in r.getMessage() for r in warnings), (
-        f"expected 'startup audit sequence failed' warning, got: "
-        f"{[r.getMessage() for r in warnings]}"
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "startup audit sequence failed" in combined, (
+        f"expected 'startup audit sequence failed' in stdout/stderr; got:\n{combined[-500:]}"
     )
 
 
 @pytest.mark.asyncio
-async def test_startup_register_events_failure_does_not_break_startup(monkeypatch, caplog):
+async def test_startup_register_events_failure_does_not_break_startup(monkeypatch, capsys):
     """Если `register_events()` бросает — startup продолжается."""
 
     def boom_register():
@@ -152,16 +151,14 @@ async def test_startup_register_events_failure_does_not_break_startup(monkeypatc
     # emit оставляем тоже no-op чтобы не было side-effect от него:
     monkeypatch.setattr(audit_service, "emit", lambda *a, **kw: None)
 
-    caplog.set_level(logging.WARNING, logger="server_service.startup")
-
     app = create_application()
     async with app.router.lifespan_context(app):
         pass
 
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("startup audit sequence failed" in r.getMessage() for r in warnings), (
-        f"expected 'startup audit sequence failed' warning, got: "
-        f"{[r.getMessage() for r in warnings]}"
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "startup audit sequence failed" in combined, (
+        f"expected 'startup audit sequence failed' in stdout/stderr; got:\n{combined[-500:]}"
     )
 
 
@@ -199,7 +196,7 @@ async def test_lifespan_awaits_startup_sequence_before_yield(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_lifespan_startup_timeout_does_not_block(monkeypatch, caplog):
+async def test_lifespan_startup_timeout_does_not_block(monkeypatch, capsys):
     """Если sequence висит дольше timeout'а — lifespan продолжается + WARNING.
 
     Имитируем «зависший» `register_events` (sleep больше timeout'а). Проверяем
@@ -218,8 +215,6 @@ async def test_lifespan_startup_timeout_does_not_block(monkeypatch, caplog):
     monkeypatch.setattr("src.main.register_events", slow_register)
     monkeypatch.setattr(audit_service, "emit", lambda *a, **kw: None)
 
-    caplog.set_level(logging.WARNING, logger="server_service.startup")
-
     app = create_application()
     start = time.monotonic()
     async with app.router.lifespan_context(app):
@@ -232,9 +227,10 @@ async def test_lifespan_startup_timeout_does_not_block(monkeypatch, caplog):
         f"timeout не сработал, startup завис на register_events"
     )
 
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("timed out" in r.getMessage() for r in warnings), (
-        f"expected 'timed out' warning, got: {[r.getMessage() for r in warnings]}"
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    assert "timed out" in combined, (
+        f"expected 'timed out' in stdout/stderr; got:\n{combined[-500:]}"
     )
 
     # asyncio.TimeoutError должен был быть пойман — этот импорт нужен только

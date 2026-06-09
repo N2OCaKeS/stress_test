@@ -25,7 +25,7 @@
 - `web_settings` — web-интерфейс для администрирования платформы (отложен);
 - `cli` — кроссплатформенный CLI-клиент для работы с сервисами из консоли (отложен).
 
-Состояние реализации: 4 backend-сервиса production-ready (`auth_service`, `logging_service`, `server_service`, `server_worker`), 6938 проходящих тестов (1539 + 1514 + 1671 + 2214) + 495 integration. `secret_service` — backend-готов (Phase 1-7, ~269 unit-тестов), Phase 8 (integration) / Phase 9 (k8s) / Phase 10 (docs+infra) в работе. Подробности — `STATUS.md`.
+Состояние реализации: 4 backend-сервиса production-ready (`auth_service`, `logging_service`, `server_service`, `server_worker`), 6938 проходящих тестов (1539 + 1514 + 1671 + 2214) + 495 integration. `secret_service` — backend и инфра готовы (Phase 1-7, 9, 10 закрыты; Phase 8 integration-tests в работе), ~269 unit-тестов. Подробности по сервисам — `TEST_COVERAGE.md` и `<service>/STATUS.md` (например, `secret_service/STATUS.md`).
 
 Типовая схема развёртывания одного сервиса:
 

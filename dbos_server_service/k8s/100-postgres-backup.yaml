@@ -72,6 +72,45 @@ data:
     echo "✓ $TARGET_DEPLOY: $SIZE"
     ls -lh "$DEST"
 
+    # Маркер для sidecar'а offsite-sync — он спит до его появления.
+    : > "$DEST/.ready"
+
+  offsite_sync.sh: |
+    #!/usr/bin/env bash
+    # Sidecar offsite-sync для pg-backup CronJob'ов. Ждёт маркер .ready от
+    # основного backup-container'а и пушит /backup/<TARGET_DEPLOY>/ через rsync
+    # в OFFSITE_RSYNC_DEST/<TARGET_DEPLOY>/. Если OFFSITE_RSYNC_DEST пуст —
+    # тихо выходит (ConfigMap dbos-offsite-config, ключ optional).
+    set -euo pipefail
+
+    : "${TARGET_DEPLOY:?required}"
+    : "${BACKUP_ROOT:?required}"
+
+    DEST="$BACKUP_ROOT/$TARGET_DEPLOY"
+    MARKER="$DEST/.ready"
+
+    # 150 × 10s = 25 минут — потолок ниже activeDeadlineSeconds (1ч у pg-backup).
+    for _ in $(seq 1 150); do
+      [[ -f "$MARKER" ]] && break
+      sleep 10
+    done
+
+    if [[ ! -f "$MARKER" ]]; then
+      echo "offsite-sync ($TARGET_DEPLOY): маркер .ready не появился — основной backup не закончился, выхожу без ошибки"
+      exit 0
+    fi
+    rm -f "$MARKER"
+
+    if [[ -z "${OFFSITE_RSYNC_DEST:-}" ]]; then
+      echo "offsite copy disabled (no OFFSITE_RSYNC_DEST set)"
+      exit 0
+    fi
+
+    REMOTE_DEST="${OFFSITE_RSYNC_DEST%/}/$TARGET_DEPLOY/"
+    echo "→ rsync $DEST/ → $REMOTE_DEST"
+    rsync -av --delete "$DEST/" "$REMOTE_DEST"
+    echo "✓ offsite copy готов ($TARGET_DEPLOY)"
+
 ---
 # CronJob: daily 02:00 MSK (Europe/Moscow = UTC+3) → 23:00 UTC предыдущих суток.
 # k8s CronJob.spec.timeZone доступен с v1.27; в k3s старых версий fallback на
@@ -131,6 +170,31 @@ spec:
               resources:
                 requests: { cpu: "100m", memory: "128Mi" }
                 limits:   { cpu: "1000m", memory: "512Mi" }
+            - name: offsite-sync
+              image: dbos/tools:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/offsite_sync.sh"]
+              env:
+                - name: TARGET_DEPLOY
+                  value: auth-postgres
+                - name: BACKUP_ROOT
+                  value: /backup
+                - name: OFFSITE_RSYNC_DEST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: dbos-offsite-config
+                      key: OFFSITE_RSYNC_DEST
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                # backup mount writable — sidecar удаляет .ready после пуша.
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests: { cpu: "50m", memory: "64Mi" }
+                limits:   { cpu: "500m", memory: "256Mi" }
           volumes:
             - name: scripts
               configMap:
@@ -197,6 +261,30 @@ spec:
               resources:
                 requests: { cpu: "100m", memory: "128Mi" }
                 limits:   { cpu: "1000m", memory: "512Mi" }
+            - name: offsite-sync
+              image: dbos/tools:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/offsite_sync.sh"]
+              env:
+                - name: TARGET_DEPLOY
+                  value: secret-postgres
+                - name: BACKUP_ROOT
+                  value: /backup
+                - name: OFFSITE_RSYNC_DEST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: dbos-offsite-config
+                      key: OFFSITE_RSYNC_DEST
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests: { cpu: "50m", memory: "64Mi" }
+                limits:   { cpu: "500m", memory: "256Mi" }
           volumes:
             - name: scripts
               configMap:
@@ -264,6 +352,30 @@ spec:
               resources:
                 requests: { cpu: "100m", memory: "128Mi" }
                 limits:   { cpu: "1000m", memory: "512Mi" }
+            - name: offsite-sync
+              image: dbos/tools:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/offsite_sync.sh"]
+              env:
+                - name: TARGET_DEPLOY
+                  value: logging-postgres
+                - name: BACKUP_ROOT
+                  value: /backup
+                - name: OFFSITE_RSYNC_DEST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: dbos-offsite-config
+                      key: OFFSITE_RSYNC_DEST
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests: { cpu: "50m", memory: "64Mi" }
+                limits:   { cpu: "500m", memory: "256Mi" }
           volumes:
             - name: scripts
               configMap:
@@ -330,6 +442,30 @@ spec:
               resources:
                 requests: { cpu: "100m", memory: "128Mi" }
                 limits:   { cpu: "1000m", memory: "512Mi" }
+            - name: offsite-sync
+              image: dbos/tools:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/offsite_sync.sh"]
+              env:
+                - name: TARGET_DEPLOY
+                  value: server-postgres
+                - name: BACKUP_ROOT
+                  value: /backup
+                - name: OFFSITE_RSYNC_DEST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: dbos-offsite-config
+                      key: OFFSITE_RSYNC_DEST
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests: { cpu: "50m", memory: "64Mi" }
+                limits:   { cpu: "500m", memory: "256Mi" }
           volumes:
             - name: scripts
               configMap:
@@ -396,6 +532,30 @@ spec:
               resources:
                 requests: { cpu: "100m", memory: "128Mi" }
                 limits:   { cpu: "1000m", memory: "512Mi" }
+            - name: offsite-sync
+              image: dbos/tools:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/offsite_sync.sh"]
+              env:
+                - name: TARGET_DEPLOY
+                  value: worker-postgres
+                - name: BACKUP_ROOT
+                  value: /backup
+                - name: OFFSITE_RSYNC_DEST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: dbos-offsite-config
+                      key: OFFSITE_RSYNC_DEST
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests: { cpu: "50m", memory: "64Mi" }
+                limits:   { cpu: "500m", memory: "256Mi" }
           volumes:
             - name: scripts
               configMap:

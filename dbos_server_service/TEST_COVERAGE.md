@@ -1,6 +1,6 @@
 # DBOS Server Manager — карта тестового покрытия
 
-Источники: фактическое содержимое `*/tests/` и [STATUS.md](STATUS.md).
+Источники: фактическое содержимое `*/tests/` и per-service `STATUS.md` (например, [secret_service/STATUS.md](secret_service/STATUS.md)). Корневого `STATUS.md` нет — этот файл выполняет его роль.
 
 | Сервис | Состояние кода | Тесты | Прогон |
 |---|---|---|---|
@@ -21,7 +21,7 @@
 - `auth_service/tests/auth/test_login.py` расширен сценариями lockout вокруг `services/_lockout.py` (счётчик неудач, окно `LOCKOUT_MINUTES`, сброс при успешном входе, `MAX_FAILED_LOGIN_ATTEMPTS` как порог) — login-flow интеграционно. Generic-хелперы того же модуля (`release_principal_if_expired`, `assert_principal_not_locked`, `register_principal_failure` — используются OAuth client_credentials / bot-token lockout'ом) покрыты отдельным unit-тестом `auth_service/tests/unit/test_lockout_generic_helpers.py`.
 - `server_service/tests/test_server_accounts_endpoints.py` — фактический CRUD `server_account` (6 endpoints), link/unlink M2M (`POST`/`DELETE /server-accounts/{id}/servers`) + ротация пароля под action-based permissions.
 
-> Разделы ниже отражают более ранний снимок и могут отставать. Актуальный test-count и список открытых задач — в `STATUS.md`.
+> Разделы ниже отражают более ранний снимок и могут отставать. Актуальный test-count — в таблице выше, открытые задачи — в `obsidian/TODO.md` и per-service `STATUS.md`.
 
 ---
 
@@ -277,7 +277,7 @@ matrix. `server_accounts`, `os_versions`, `installed_packages`, `inventory` ре
   внутри карточки сервера; ingest идёт через worker inventory). Полный отдельный
   CRUD не запланирован.
 - Field-level gate `has_sudo=True → Action.GRANT_SUDO` — поведение запланировано в
-  STATUS.md, не реализовано.
+  `obsidian/TODO.md`, не реализовано.
 - Кэш introspect в server_service — намеренно отсутствует (свежий introspect на каждом запросе, чтобы revoke/ban действовали мгновенно). В auth_service есть identity-cache `_identity_cache` с TTL `IDENTITY_CACHE_TTL_SECONDS` (default 5.0s), не плановая, а штатная фича.
 - FK RESTRICT на `os_version_id`/`cpu_id` (попытка удалить → 409) — миграция
   есть, но интеграционного теста нет.
@@ -367,8 +367,8 @@ handlers, модель Task, HTTP-клиенты, mock'и iDRAC/SSH, enum'ы.
 - **Periodic scheduler** (пока не реализован): `taskiq.scheduler` для `power.status` /
   `inventory.sync` per-department — не реализован.
 - **End-to-end через все 3 сервиса** в формальных тестах нет (только живой
-  happy path через swagger, описан в STATUS.md). Mock-стек server_service +
-  loging_service в test stack не собран.
+  happy path через swagger). Mock-стек server_service + loging_service в test stack
+  не собран.
 - Concurrent worker'ы (race в pick task из Redis) — нет тестов.
 - Реальные iDRAC/SSH-клиенты (Redfish через `sushy`/прямой httpx; `asyncssh`)
   не реализованы; тесты против mock'ов.

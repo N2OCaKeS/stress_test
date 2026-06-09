@@ -10,11 +10,17 @@
 # secret_service автоматически перешифровывает row под активный ключ. Прогресс
 # виден через GET /api/secret/v1/internal/migration_status.
 #
+# Proactive outbox: после rotate можно запустить
+# POST /internal/reencrypt_outbox/seed → POST /internal/reencrypt_outbox/process,
+# чтобы перешифровать «холодные» credential'ы, которые никто не reveal'ит,
+# и опустить migration_status.remaining_legacy до нуля быстрее. См. --seed-outbox.
+#
 # Использование:
 #   scripts/k8s/rotate_secret_master_key.sh                  # фаза 1: rotate + restart
 #   scripts/k8s/rotate_secret_master_key.sh --finalize       # фаза 2: drop __v<old>, если 100%
 #   scripts/k8s/rotate_secret_master_key.sh --auto-finalize  # CronJob: finalize prev-prev + rotate
 #   scripts/k8s/rotate_secret_master_key.sh --status         # текущее состояние
+#   scripts/k8s/rotate_secret_master_key.sh --seed-outbox    # publish proactive re-encrypt tasks
 #
 # Флаги-модификаторы:
 #   --yes              non-interactive (для CronJob)
@@ -41,9 +47,10 @@ while [[ $# -gt 0 ]]; do
         --status)         ACTION="status";         shift ;;
         --finalize)       ACTION="finalize";       shift ;;
         --auto-finalize)  ACTION="auto-finalize";  shift ;;
+        --seed-outbox)    ACTION="seed-outbox";    shift ;;
         --force-finalize) FORCE_FINALIZE="true";   shift ;;
         --yes|-y)         ASSUME_YES="true";       shift ;;
-        -h|--help)        sed -n '2,25p' "$0";     exit 0 ;;
+        -h|--help)        sed -n '2,30p' "$0";     exit 0 ;;
         *) echo "ОШИБКА: неизвестный аргумент: $1" >&2; exit 1 ;;
     esac
 done
@@ -295,6 +302,48 @@ if [[ "$ACTION" == "rotate" ]]; then
     echo "=== РОТАЦИЯ SECRET_ENCRYPTION_KEY (фаза 1) ==="
     show_status
     do_rotate
+    cat <<EOF
+
+(опционально) запустить proactive re-encrypt outbox для «холодных» credential'ов:
+  $0 --seed-outbox
+
+Без него lazy re-encrypt отработает только на credential'ах, которые reveal'ят.
+EOF
+    exit 0
+fi
+
+# ── ACTION: seed-outbox ───────────────────────────────────────────────────────
+
+if [[ "$ACTION" == "seed-outbox" ]]; then
+    echo "=== SEED REENCRYPT-OUTBOX ==="
+    if [[ -z "${ROTATION_RUNNER_API_KEY:-}" ]]; then
+        echo "ОШИБКА: установи переменную окружения ROTATION_RUNNER_API_KEY." >&2
+        echo "    Это значение из SERVICE_API_KEYS['rotation_runner'] для secret-service." >&2
+        exit 1
+    fi
+    echo "→ POST /internal/reencrypt_outbox/seed ..."
+    kubectl -n "$NS" exec "deploy/${SECRET_DEPLOY}" -- sh -c \
+        "curl -sf -X POST \
+            -H 'X-Service-Identity: rotation_runner' \
+            -H 'Authorization: Bearer ${ROTATION_RUNNER_API_KEY}' \
+            http://localhost:${SECRET_PORT}/api/secret/v1/internal/reencrypt_outbox/seed"
+    echo ""
+    echo "→ POST /internal/reencrypt_outbox/process ..."
+    kubectl -n "$NS" exec "deploy/${SECRET_DEPLOY}" -- sh -c \
+        "curl -sf -X POST \
+            -H 'X-Service-Identity: rotation_runner' \
+            -H 'Authorization: Bearer ${ROTATION_RUNNER_API_KEY}' \
+            'http://localhost:${SECRET_PORT}/api/secret/v1/internal/reencrypt_outbox/process?batch_size=500'"
+    echo ""
+    echo "→ GET /internal/reencrypt_outbox/status ..."
+    kubectl -n "$NS" exec "deploy/${SECRET_DEPLOY}" -- sh -c \
+        "curl -sf \
+            -H 'X-Service-Identity: rotation_runner' \
+            -H 'Authorization: Bearer ${ROTATION_RUNNER_API_KEY}' \
+            http://localhost:${SECRET_PORT}/api/secret/v1/internal/reencrypt_outbox/status"
+    echo ""
+    echo ""
+    echo "✓ Готово. Повтори process до pending=0 (на больших БД может потребоваться несколько раундов)."
     exit 0
 fi
 

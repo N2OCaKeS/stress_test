@@ -18,7 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from src.api.router import api_router
 from src.core.config import get_settings
 from src.core.exceptions import AppException
-from src.core.logging import configure_logging
+from src.core.logging import configure_logging, request_id_var
 from src.db.session import engine
 from src.dependencies.db import get_db
 from src.services import audit_context, audit_service, http_pool, secret_service_client
@@ -178,7 +178,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 def create_application() -> FastAPI:
     """Собрать FastAPI-приложение. Один раз на процесс — все middleware/handlers wire'аются здесь."""
     settings = get_settings()
-    configure_logging(settings.app_log_level)
+    configure_logging("auth_service", level=settings.app_log_level)
 
     _is_prod = settings.app_env == "production"
 
@@ -449,6 +449,10 @@ def create_application() -> FastAPI:
         """Поставить request_id + audit_context для всего запроса."""
         request_id = request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:12]}"
         request.state.request_id = request_id
+        # ContextVar для JSON-логгера — попадает в `request_id` поле каждой
+        # log-записи внутри этого запроса. reset'им в finally вместе с
+        # audit_context, чтобы id не утёк в фоновую таску.
+        rid_token = request_id_var.set(request_id)
 
         # Заполняем audit_context из JWT (если есть) и сетевого контекста.
         # `subject_type` берём из JWT claim'а `actor_type`: "user" /
@@ -476,6 +480,7 @@ def create_application() -> FastAPI:
             response = await call_next(request)
         finally:
             audit_context.reset_context(token)
+            request_id_var.reset(rid_token)
         response.headers["X-Request-ID"] = request_id
         return response
 

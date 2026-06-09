@@ -3,7 +3,11 @@
 # Идемпотентный: если файлы уже существуют — спрашивает, перезаписывать ли.
 #
 # Использование:
-#   scripts/k8s/gen_secrets.sh                  — спросит домен интерактивно
+#   scripts/k8s/gen_secrets.sh                  — авто-детект IP хоста по
+#                                                 default-route src; интерактивно
+#                                                 предложит подтвердить. При
+#                                                 non-tty (вызов из make k8s-zero)
+#                                                 берёт IP без вопроса.
 #   scripts/k8s/gen_secrets.sh dbos.example.com — DNS-имя аргументом
 #   scripts/k8s/gen_secrets.sh 10.177.103.102   — IPv4 аргументом (для closed
 #                                                 network без DNS; cert.SAN=IP:,
@@ -51,7 +55,25 @@ if [[ -z "$DOMAIN" ]]; then
         echo "→ Использую сохранённое значение INGRESS_HOST: $INGRESS_HOST"
         DOMAIN="$INGRESS_HOST"
     else
-        read -p "Домен или IP (например dbos.example.com или 10.177.103.102): " DOMAIN
+        # Автоопределение primary-IP: src адрес default-route. Работает без DNS,
+        # без интерактива и стабильно для одно-NIC VM (наш типичный prod-стенд).
+        AUTO_IP=$(ip -4 route get 1.1.1.1 2>/dev/null \
+                  | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
+        if [[ -n "$AUTO_IP" ]]; then
+            if [[ -t 0 ]]; then
+                echo "→ Автоопределённый IP хоста: $AUTO_IP"
+                echo "  (комбо IP+DNS: SAN_EXTRA=\"DNS:host.example.com\" $0)"
+                read -p "  Использовать $AUTO_IP? [Enter=да / введи другой host]: " RESP
+                DOMAIN="${RESP:-$AUTO_IP}"
+            else
+                # non-tty: вызывали из make k8s-zero — берём auto-IP без вопросов.
+                echo "→ Автоопределённый IP хоста: $AUTO_IP (non-tty, принят автоматически)"
+                DOMAIN="$AUTO_IP"
+            fi
+        else
+            [[ -t 0 ]] || { echo "ОШИБКА: IP не автодетектится и нет tty для prompt'а." >&2; exit 1; }
+            read -p "Домен или IP (например dbos.example.com или 10.177.103.102): " DOMAIN
+        fi
         [[ -n "$DOMAIN" ]] || { echo "ОШИБКА: значение пустое." >&2; exit 1; }
     fi
 fi

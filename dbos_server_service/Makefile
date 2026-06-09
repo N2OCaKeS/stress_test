@@ -530,7 +530,7 @@ k8s-install-cert-manager-images: ## [VM, sudo] Спулить cert-manager об�
 		fi; \
 	done
 
-k8s-zero: ## [VM, sudo] Полный deploy с нуля: docker + k3s + образы + cert-manager + secrets + apply + openapi + smoke. DOMAIN=dbos.local CM_VERSION=v1.15.3.
+k8s-zero: ## [VM, sudo] Полный deploy с нуля. Без аргументов — IP хоста автоопределяется. DOMAIN=<dns|ip> — переопределить. SAN_EXTRA="DNS:emm.devos.astralinux.ru" — combo-cert IP+DNS. CM_VERSION=v1.15.3.
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@echo "  DBOS zero-deploy на $$(hostname)"
 	@echo "═══════════════════════════════════════════════════════════════════"
@@ -553,11 +553,11 @@ k8s-zero: ## [VM, sudo] Полный deploy с нуля: docker + k3s + обра
 	@echo "▶ [5/9] cert-manager apply + CA + leaf-сертификаты"
 	@$(MAKE) k8s-install-cert-manager --no-print-directory
 	@echo ""
-	@echo "▶ [6/9] secrets + ingress (DOMAIN=$(if $(DOMAIN),$(DOMAIN),dbos.local))"
+	@echo "▶ [6/9] secrets + ingress (DOMAIN=$(if $(DOMAIN),$(DOMAIN),<auto-IP>))"
 	@if [ -f k8s/20-secrets.yaml ] && [ -f k8s/50-ingress.yaml ]; then \
 		echo "  • k8s/20-secrets.yaml и k8s/50-ingress.yaml уже сгенерированы — пропускаем"; \
 	else \
-		echo "y" | bash scripts/k8s/gen_secrets.sh $(if $(DOMAIN),$(DOMAIN),dbos.local); \
+		bash scripts/k8s/gen_secrets.sh $(if $(DOMAIN),$(DOMAIN),) </dev/null; \
 	fi
 	@echo ""
 	@echo "▶ [7/9] kubectl apply -k k8s/ + ожидание rollout"

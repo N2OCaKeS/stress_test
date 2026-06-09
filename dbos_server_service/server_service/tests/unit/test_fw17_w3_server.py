@@ -555,7 +555,7 @@ async def test_ipmi_get_controller_no_success_if_reveal_fails(
 
     ipmi_svc, captured = _ipmi_view_stubs
 
-    def boom_reveal(_obj, _dep):
+    async def boom_reveal(_db, _obj, _dep):
         raise AppException(
             error_code="DECRYPT_FAILED",
             message="bad tag",
@@ -580,9 +580,12 @@ async def test_ipmi_get_controller_success_after_reveal_ok(
 ):
     """Reveal прошёл → view-success эмитится один раз."""
     ipmi_svc, captured = _ipmi_view_stubs
+
+    async def fake_reveal(_db, _obj, _dep):
+        return "decoded-base64"
+
     monkeypatch.setattr(
-        ipmi_svc, "_reveal_controller_password",
-        lambda _obj, _dep: "decoded-base64",
+        ipmi_svc, "_reveal_controller_password", fake_reveal,
     )
 
     obj, revealed = await ipmi_svc.get_controller(
@@ -639,7 +642,7 @@ async def test_server_account_get_no_success_if_reveal_fails(
 
     captured = _sa_view_stubs
 
-    def boom_reveal(_acc):
+    async def boom_reveal(_db, _acc):
         raise AppException(
             error_code="DECRYPT_FAILED",
             message="bad tag",

@@ -68,3 +68,19 @@ class LifecycleSummary(BaseModel):
     dept_grants_revoked: int = 0
     role_acls_revoked: int = 0
     errors: list[str] = Field(default_factory=list)
+
+
+class MigrationStatus(BaseModel):
+    """Прогресс lazy re-encrypt'а под активную версию мастер-ключа.
+
+    Используется ротационным скриптом как гейт `--finalize`: пока
+    `remaining_legacy > 0`, удалять старые `SECRET_ENCRYPTION_KEY__v<N>` из
+    env'а нельзя — read-path упрётся в ENCRYPTION_KEY_MISSING на не-мигрированных
+    строках.
+    """
+
+    active_version: int
+    total_rows: int
+    by_version: dict[str, int]
+    remaining_legacy: int
+    migrated_pct: float

@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import and_, or_, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import Credential
@@ -144,6 +145,33 @@ async def update(db: AsyncSession, cred: Credential, **fields) -> Credential:
         setattr(cred, key, value)
     await db.flush()
     return cred
+
+
+async def cas_update_secret_encrypted(
+    db: AsyncSession,
+    *,
+    cred_id: str,
+    expected_blob: str,
+    new_blob: str,
+) -> bool:
+    """Compare-and-swap `secret_encrypted` строки `cred_id`.
+
+    Возвращает True, если ровно одна строка обновилась — значит, race не
+    случился и ciphertext перешит под новый ключ. False означает «кто-то
+    опередил» (соседний reveal уже мигрировал строку, либо PATCH секрета
+    переписал blob): для lazy-миграции это норма — следующий reveal
+    либо ничего не сделает (актуальная версия), либо мигрирует свежий blob.
+    """
+    stmt = (
+        sa_update(Credential)
+        .where(
+            Credential.id == cred_id,
+            Credential.secret_encrypted == expected_blob,
+        )
+        .values(secret_encrypted=new_blob)
+    )
+    result = await db.execute(stmt)
+    return result.rowcount == 1
 
 
 async def delete(db: AsyncSession, cred: Credential) -> None:

@@ -624,19 +624,19 @@ k8s-destroy: ## ОПАСНО: удалить весь namespace dbos (включ
 # Все скрипты в scripts/k8s/rotate_*.sh — интерактивные, поддерживают --status / --finalize
 # где применимо. Подробный runbook — obsidian/infra/runbooks/Rotation.md.
 
-k8s-rotate-server-master: ## Ротация SERVER_ENCRYPTION_KEY (server_service). FLAG=--status|--finalize|пусто.
+k8s-rotate-server-master: ## Ротация SERVER_ENCRYPTION_KEY (server_service). FLAG=--status|--finalize|--auto-finalize|пусто.
 	@if [ ! -f scripts/k8s/rotate_master_key.sh ]; then \
 		echo "ОШИБКА: scripts/k8s/rotate_master_key.sh не найден."; exit 1; \
 	fi
 	bash scripts/k8s/rotate_master_key.sh $(if $(FLAG),$(FLAG),)
 
-k8s-rotate-secret-master: ## Ротация SECRET_ENCRYPTION_KEY (secret_service). FLAG=--status|--finalize|пусто.
+k8s-rotate-secret-master: ## Ротация SECRET_ENCRYPTION_KEY (secret_service). FLAG=--status|--finalize|--auto-finalize|пусто.
 	@if [ ! -f scripts/k8s/rotate_secret_master_key.sh ]; then \
 		echo "ОШИБКА: scripts/k8s/rotate_secret_master_key.sh ещё не создан."; exit 1; \
 	fi
 	bash scripts/k8s/rotate_secret_master_key.sh $(if $(FLAG),$(FLAG),)
 
-k8s-rotate-redis-stash-master: ## Ротация master-ключа redis-stash (provision creds). FLAG=--status|--finalize|пусто.
+k8s-rotate-redis-stash-master: ## Ротация master-ключа redis-stash (provision creds). FLAG=--status|--finalize|--auto-finalize|пусто.
 	@if [ ! -f scripts/k8s/rotate_redis_stash_master_key.sh ]; then \
 		echo "ОШИБКА: scripts/k8s/rotate_redis_stash_master_key.sh ещё не создан."; exit 1; \
 	fi

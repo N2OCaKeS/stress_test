@@ -62,10 +62,22 @@ def _stub_permissions_ok(monkeypatch):
 
 
 def _stub_secrets(monkeypatch):
+    from src.services.secrets_service import DecryptResult
+
     monkeypatch.setattr(
         internal_service.secrets_service,
         "decrypt",
         lambda c, **_kw: "plaintext",
+    )
+    # internal_service переключён на decrypt_with_meta — стабим его тоже,
+    # возвращая DecryptResult с needs_reencrypt=False (тесты soft-mode не
+    # проверяют lazy-flow, им важна только успешная расшифровка).
+    monkeypatch.setattr(
+        internal_service.secrets_service,
+        "decrypt_with_meta",
+        lambda c, **_kw: DecryptResult(
+            plaintext="plaintext", source_version=1, needs_reencrypt=False,
+        ),
     )
     monkeypatch.setattr(
         internal_service.secrets_service,

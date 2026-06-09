@@ -15,16 +15,21 @@ import logging
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.core.exceptions import AppException
 from src.dependencies.db import get_db
-from src.dependencies.internal_auth import require_caller_identity
+from src.dependencies.internal_auth import (
+    require_caller_identity,
+    require_internal_caller,
+)
 from src.schemas.internal import (
     DeptDeletedEvent,
     DeptServiceAccessRevokedEvent,
     LifecycleSummary,
+    MigrationStatus,
     UserDeletedEvent,
 )
-from src.services import lifecycle_service
+from src.services import lifecycle_service, migration_status_service
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +42,15 @@ router = APIRouter(
     prefix="/internal",
     include_in_schema=False,
     dependencies=[Depends(_require_auth_service)],
+)
+
+# Отдельный sub-router без жёсткой привязки caller'а: ротационный скрипт
+# может прийти из k8s job'а под service identity ротатора, а не auth_service'а.
+# Достаточно валидного bearer'а из SERVICE_API_KEY / SERVICE_API_KEYS.
+ops_router = APIRouter(
+    prefix="/internal",
+    include_in_schema=False,
+    dependencies=[Depends(require_internal_caller)],
 )
 
 
@@ -130,3 +144,25 @@ async def dept_service_access_revoked(
         role_acls_revoked=summary["role_acls_revoked"],
         errors=summary["errors"],
     )
+
+
+@ops_router.get(
+    "/migration_status",
+    response_model=MigrationStatus,
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {"description": "INTERNAL_AUTH_REQUIRED — bearer отсутствует / не совпал."},
+    },
+)
+async def migration_status(
+    db: AsyncSession = Depends(get_db),
+) -> MigrationStatus:
+    """Прогресс lazy re-encrypt'а под активную версию мастер-ключа.
+
+    Группирует строки `credentials` по wire-префиксу `v<N>$` и считает,
+    сколько осталось переехать. Гейт для `--finalize` в ротационном скрипте:
+    дропать `SECRET_ENCRYPTION_KEY__v<N>` из env'а можно только когда
+    `remaining_legacy == 0`.
+    """
+    active_version = get_settings().secret_encryption_key_version
+    return await migration_status_service.compute(db, active_version=active_version)

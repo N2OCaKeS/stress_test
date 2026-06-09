@@ -170,9 +170,12 @@ SERVICE_API_KEY=$(rand 48)
 SERVER_SERVICE_API_KEY=$(rand 48)
 WORKER_SERVICE_API_KEY=$(rand 48)
 WORKER_BOT_TOKEN="dbos_bot_$(rand 48)"
-# Inbound SERVICE_API_KEYS-map для server_service (worker_bot — единственный
-# inbound caller сегодня; формат kv-list).
-SERVER_INBOUND_SERVICE_API_KEYS="worker_bot:${WORKER_BOT_TOKEN}"
+# rotation_runner identity — ключ, под которым CronJob rotation-scheduler ходит
+# в /internal/migration_status для гейтинга `--auto-finalize` master-ротаций.
+ROTATION_RUNNER_API_KEY=$(rand 48)
+# Inbound SERVICE_API_KEYS-map для server_service: worker_bot + rotation_runner.
+# Формат kv-list.
+SERVER_INBOUND_SERVICE_API_KEYS="worker_bot:${WORKER_BOT_TOKEN},rotation_runner:${ROTATION_RUNNER_API_KEY}"
 
 # secret_service envelope encryption (HKDF_SALT_HEX переиспользуется общий)
 SECRET_ENCRYPTION_KEY=$(rand_b64 32)
@@ -187,7 +190,7 @@ SECRET_INTROSPECT_SERVICE_API_KEY=$(rand 48)
 SECRET_INBOUND_WORKER_KEY=$(rand 48)
 SECRET_INBOUND_AUTH_KEY=$(rand 48)
 SECRET_INBOUND_SERVER_KEY=$(rand 48)
-SECRET_INBOUND_SERVICE_API_KEYS_JSON="{\"worker_bot\":\"${SECRET_INBOUND_WORKER_KEY}\",\"auth_service\":\"${SECRET_INBOUND_AUTH_KEY}\",\"server_service\":\"${SECRET_INBOUND_SERVER_KEY}\"}"
+SECRET_INBOUND_SERVICE_API_KEYS_JSON="{\"worker_bot\":\"${SECRET_INBOUND_WORKER_KEY}\",\"auth_service\":\"${SECRET_INBOUND_AUTH_KEY}\",\"server_service\":\"${SECRET_INBOUND_SERVER_KEY}\",\"rotation_runner\":\"${ROTATION_RUNNER_API_KEY}\"}"
 # auth_service бьёт в /internal/* secret_service под идентичностью auth_service —
 # его Bearer == ключу `auth_service` из inbound-map secret_service.
 SECRET_INTERNAL_API_KEY="${SECRET_INBOUND_AUTH_KEY}"
@@ -325,6 +328,10 @@ cat <<EOF
 
   # auth_service → secret_service /internal/* (Bearer == ключ auth_service в inbound-map secret)
   SECRET_INTERNAL_API_KEY: ${SECRET_INTERNAL_API_KEY}
+
+  # CronJob rotation-scheduler → server/secret /internal/migration_status
+  # (Bearer == ключ rotation_runner в inbound-map'ах server и secret сервисов).
+  ROTATION_RUNNER_API_KEY: ${ROTATION_RUNNER_API_KEY}
 
   # Redis (taskiq broker + rate-limit storage)
   REDIS_PASSWORD: ${REDIS_PASSWORD}

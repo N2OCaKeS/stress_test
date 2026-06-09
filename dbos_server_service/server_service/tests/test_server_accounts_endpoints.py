@@ -934,8 +934,12 @@ class TestGetAccountPassword:
             )
 
         monkeypatch.setattr(secrets_service, "decrypt", boom)
+        monkeypatch.setattr(secrets_service, "decrypt_with_meta", boom)
         monkeypatch.setattr(
             "src.services.server_account.secrets_service.decrypt", boom,
+        )
+        monkeypatch.setattr(
+            "src.services.server_account.secrets_service.decrypt_with_meta", boom,
         )
 
         captured: list[dict] = []

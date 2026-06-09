@@ -355,11 +355,10 @@ async def fetch_ipmi_credentials(
             error_code="NO_IPMI_CONTROLLER",
             message="No IPMI controller is registered for this server",
         )
+    aad = secrets_service.aad_for_ipmi_credential(ctrl.id)
+    old_blob = ctrl.password_encrypted
     try:
-        plain = secrets_service.decrypt(
-            ctrl.password_encrypted,
-            aad=secrets_service.aad_for_ipmi_credential(ctrl.id),
-        )
+        result = secrets_service.decrypt_with_meta(old_blob, aad=aad)
     except AppException:
         # Симметрично с `ipmi_controller._reveal_controller_password`:
         # сломанный ciphertext должен оставить SIEM-след именно как
@@ -376,6 +375,19 @@ async def fetch_ipmi_credentials(
             },
         )
         raise
+    plain = result.plaintext
+    if result.needs_reencrypt:
+        # Lazy миграция legacy-ciphertext'а под активный ключ. Read worker'а
+        # не блокируется ошибками UPDATE'а — outbox-flow подчистит остальное.
+        await secrets_service.lazy_reencrypt_owner_column(
+            db,
+            table="ipmi_controllers",
+            column="password_encrypted",
+            row_id=ctrl.id,
+            old_blob=old_blob,
+            plaintext=plain,
+            aad=aad,
+        )
     audit_service.emit(
         "ipmi_controller.view_credentials",
         target_id=ctrl.id, target_type="ipmi_controller",
@@ -509,11 +521,10 @@ async def fetch_account_password(
             error_code="ACCOUNT_HAS_NO_PASSWORD",
             message="Account has no stored password",
         )
+    aad = secrets_service.aad_for_server_account_password(account.id)
+    old_blob = account.password_encrypted
     try:
-        plain = secrets_service.decrypt(
-            account.password_encrypted,
-            aad=secrets_service.aad_for_server_account_password(account.id),
-        )
+        result = secrets_service.decrypt_with_meta(old_blob, aad=aad)
     except AppException:
         # Симметрично с `server_account._reveal_account_password`: на битом
         # ciphertext'е worker'у нужнее audit-trail, чем чистый 422-trace.
@@ -529,6 +540,19 @@ async def fetch_account_password(
             },
         )
         raise
+    plain = result.plaintext
+    if result.needs_reencrypt:
+        # Lazy миграция legacy-ciphertext'а под активный ключ — параллельно
+        # с outbox-flow. Read не блокируется ошибками UPDATE'а.
+        await secrets_service.lazy_reencrypt_owner_column(
+            db,
+            table="server_accounts",
+            column="password_encrypted",
+            row_id=account.id,
+            old_blob=old_blob,
+            plaintext=plain,
+            aad=aad,
+        )
     audit_service.emit(
         "server_account.view_password",
         target_id=account_id, target_type="server_account",

@@ -16,10 +16,10 @@
 #   4. Финальный smoke + summary.
 #
 # Master-key ротации (rotate_master_key.sh / rotate_secret_master_key.sh /
-# rotate_redis_stash_master_key.sh) в auto-test НЕ запускаются — у них
-# двухфазный flow (rotate → app re-encrypts data → finalize), который требует
-# app-level миграции между фазами. Их можно запускать только вручную через
-# опцию --rotation <name>.
+# rotate_redis_stash_master_key.sh) запускаются в `--auto-finalize` режиме:
+# одна команда делает безопасный шаг forward — finalize previous-previous (если
+# миграция за прошлый cycle дошла до 100%) + rotate новой версии. До migration
+# не доходит = просто rotate без drop'а текущего __v<N-1>.
 #
 # Использование:
 #   scripts/k8s/test_rotation_safety.sh                       # интерактивно, полный набор
@@ -27,7 +27,8 @@
 #   scripts/k8s/test_rotation_safety.sh --dry-run             # показать план, не выполнять
 #   scripts/k8s/test_rotation_safety.sh --restore-only DIR    # только восстановление из <DIR>
 #   scripts/k8s/test_rotation_safety.sh --rotation server-master   # ручной запуск ONE-OF
-#       Возможные значения: s2s | redis | db | server-master | secret-master | redis-stash-master
+#       Возможные значения: s2s | redis | db |
+#                            secret-master | redis-stash-master | server-master
 #
 # Требования: kubectl, jq, bash, sibling-скрипты в той же папке.
 # Должны быть смонтированы прямо рядом:
@@ -226,26 +227,53 @@ fi
 
 # ── Список ротаций ────────────────────────────────────────────────────────────
 
-# Map: rotation_id → command. Порядок безопасности (от менее инвазивной к более):
-#   1. s2s   — только Secret patch + restart всех consumer'ов.
-#   2. redis — Secret patch + restart redis (Recreate, 5-15s downtime) + consumers.
-#   3. db    — ALTER USER в 5 БД + Secret patch + restart consumers.
-ROTATION_IDS=(s2s redis db)
-
-declare -A ROTATION_CMD=(
-    [s2s]="$SCRIPT_DIR/rotate_s2s_keys.sh --yes"
-    [redis]="$SCRIPT_DIR/rotate_redis_password.sh --yes"
-    [db]="$SCRIPT_DIR/rotate_db_passwords.sh --service all --yes"
-    [server-master]="$SCRIPT_DIR/rotate_master_key.sh"
-    [secret-master]="$SCRIPT_DIR/rotate_secret_master_key.sh"
-    [redis-stash-master]="$SCRIPT_DIR/rotate_redis_stash_master_key.sh"
+# Порядок безопасности (от менее инвазивной к более):
+#   1. s2s                — только Secret patch + restart всех consumer'ов.
+#   2. redis              — Secret patch + restart redis (Recreate, 5-15s downtime) + consumers.
+#   3. db                 — ALTER USER в 5 БД + Secret patch + restart consumers.
+#   4. secret-master      — auto-finalize: rotate SECRET_ENCRYPTION_KEY + drop ancient legacy.
+#   5. redis-stash-master — auto-finalize: rotate REDIS_STASH_ENCRYPTION_KEY.
+#   6. server-master      — auto-finalize: rotate SERVER_ENCRYPTION_KEY.
+#
+# Master-key последними, потому что rolling restart всего стека (server+worker+secret)
+# затрагивает Traefik endpoint slices сильнее, чем s2s/db/redis по отдельности.
+#
+# Format: "id | script | args" — id используется в логах и result map, script — bash file
+# в SCRIPT_DIR, args — собираются в bash -c.
+ROTATION_SPECS=(
+    "s2s                | rotate_s2s_keys.sh                 | --yes"
+    "redis              | rotate_redis_password.sh           | --yes"
+    "db                 | rotate_db_passwords.sh             | --service all --yes"
+    "secret-master      | rotate_secret_master_key.sh        | --auto-finalize --yes"
+    "redis-stash-master | rotate_redis_stash_master_key.sh   | --auto-finalize --yes"
+    "server-master      | rotate_master_key.sh               | --auto-finalize --yes"
 )
 
-# Master-key ротации запускаются ТОЛЬКО через --rotation <name>.
+# Парсим в две параллельные структуры: ROTATION_IDS (порядок) и
+# ROTATION_CMD (map id → full command).
+ROTATION_IDS=()
+declare -A ROTATION_CMD=()
+for spec in "${ROTATION_SPECS[@]}"; do
+    # Trim каждое поле от пробелов вокруг "|".
+    rid=$(echo "$spec"   | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1}')
+    script=$(echo "$spec"| awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2}')
+    args=$(echo "$spec"  | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $3); print $3}')
+    ROTATION_IDS+=("$rid")
+    ROTATION_CMD[$rid]="${SCRIPT_DIR}/${script} ${args}"
+done
+
+# Master-key ротации требуют rolling restart всего стека — Traefik endpoint slices
+# обновляются с задержкой. После рестарта добавляем пауза в run_rotation_smoke().
+declare -A ROTATION_POST_PAUSE=(
+    [secret-master]=30
+    [redis-stash-master]=30
+    [server-master]=30
+)
+
 if [[ -n "$SINGLE_ROTATION" ]]; then
     if [[ -z "${ROTATION_CMD[$SINGLE_ROTATION]:-}" ]]; then
         log_err "неизвестная ротация: ${SINGLE_ROTATION}"
-        echo "Возможные: ${!ROTATION_CMD[@]}" >&2
+        echo "Возможные: ${ROTATION_IDS[*]}" >&2
         exit 1
     fi
     ROTATION_IDS=("$SINGLE_ROTATION")
@@ -259,9 +287,14 @@ if [[ "$DRY_RUN" == "true" ]]; then
     echo ""
     log_info "План (ничего не выполняется):"
     for rid in "${ROTATION_IDS[@]}"; do
-        echo "  - ${rid}: ${ROTATION_CMD[$rid]}"
+        pause="${ROTATION_POST_PAUSE[$rid]:-0}"
+        if [[ "$pause" -gt 0 ]]; then
+            echo "  - ${rid}: ${ROTATION_CMD[$rid]}  +pause=${pause}s"
+        else
+            echo "  - ${rid}: ${ROTATION_CMD[$rid]}"
+        fi
     done
-    echo "  + smoke после каждой"
+    echo "  + smoke после каждой (с 3x retry)"
     echo ""
     log_ok "dry-run завершён."
     exit 0
@@ -287,6 +320,15 @@ for rid in "${ROTATION_IDS[@]}"; do
             printf "  %-22s %s\n" "$k" "${ROTATION_RESULT[$k]}"
         done
         exit 1
+    fi
+
+    # Master-key rotation требует extra времени на rolling restart всего стека +
+    # обновление Traefik endpoint slices. Без паузы smoke ловит 502/connection refused
+    # на свежезарестартированных pod'ах, даже несмотря на 3x retry в run_smoke.
+    pause="${ROTATION_POST_PAUSE[$rid]:-0}"
+    if [[ "$pause" -gt 0 ]]; then
+        log_info "пауза ${pause}s перед smoke (waiting for endpoint slices)..."
+        sleep "$pause"
     fi
 
     if ! run_smoke "after-${rid}"; then

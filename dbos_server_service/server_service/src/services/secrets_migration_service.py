@@ -96,6 +96,48 @@ async def _count_by_version(db: AsyncSession) -> dict[int, int]:
     return by_version
 
 
+async def _count_by_version_for_column(db: AsyncSession, column) -> dict[int, int]:
+    """То же, что :func:`_count_by_version`, но по одной колонке.
+
+    Используется для per-table разбивки в migration_status: оператор хочет
+    видеть, какая именно колонка тащит legacy-токены, чтобы прицеливаться
+    seed_outbox / drop старого ключа.
+    """
+    by_version: dict[int, int] = {}
+    stmt = select(column).where(column.is_not(None))
+    rows = (await db.execute(stmt)).scalars()
+    for token in rows:
+        v = _parse_version(token)
+        if v is None:
+            continue
+        by_version[v] = by_version.get(v, 0) + 1
+    return by_version
+
+
+async def _column_breakdown(
+    db: AsyncSession, column, active: int,
+) -> dict:
+    """Per-column сводка `{total, by_version, remaining_legacy}`.
+
+    `remaining_legacy` — сумма счётчиков по версиям, отличным от
+    ``active``; malformed-токены (без `v<N>$` префикса) не учитываются.
+    """
+    total = int(
+        (
+            await db.execute(
+                select(func.count()).where(column.is_not(None))
+            )
+        ).scalar_one()
+    )
+    by_version = await _count_by_version_for_column(db, column)
+    remaining_legacy = sum(c for v, c in by_version.items() if v != active)
+    return {
+        "total": total,
+        "by_version": by_version,
+        "remaining_legacy": remaining_legacy,
+    }
+
+
 async def _total(db: AsyncSession) -> int:
     """Сумма `password_encrypted IS NOT NULL` по обеим таблицам."""
     sa_total = (
@@ -129,14 +171,25 @@ async def status(db: AsyncSession) -> dict:
     """Сводка по миграции для worker'а / оператора.
 
     Возвращает: ``{remaining, total, active_version, by_version, app_env,
-    outbox}``.
+    outbox, server_account_password_encrypted, ipmi_controller_password_encrypted,
+    remaining_legacy_total, migrated_pct, outbox_pending}``.
 
     * ``total`` — все non-NULL `password_encrypted` в обеих таблицах.
-    * ``by_version`` — `{N: count}` по версиям из префиксов.
+    * ``by_version`` — `{N: count}` по версиям из префиксов (агрегат).
     * ``remaining`` — сумма `count`'ов для версий, отличных от активной;
-      malformed строки в `by_version` не попадают.
+      malformed строки в `by_version` не попадают (это legacy-поле,
+      эквивалентное ``remaining_legacy_total``).
     * ``outbox`` — `{pending, processing, done, failed}` — сколько работ
       в очереди / в полёте / закрыто / провалено.
+    * ``server_account_password_encrypted`` / ``ipmi_controller_password_encrypted``
+      — per-column `{total, by_version, remaining_legacy}` для прицельной
+      диагностики: оператор видит, какая колонка тащит legacy-токены.
+    * ``remaining_legacy_total`` — суммарный `remaining_legacy` по обеим
+      колонкам. Дублирует ``remaining`` ради явности контракта.
+    * ``migrated_pct`` — доля row'ов под активной версией, ``0..100``.
+      Когда `total=0`, отдаём ``100.0`` (нечего мигрировать = всё мигрировано).
+    * ``outbox_pending`` — синоним ``outbox.pending`` под top-level именем,
+      чтобы caller'у с lazy-страницы не лезть в nested-объект.
     """
     settings = get_settings()
     active = settings.server_encryption_key_version
@@ -150,6 +203,22 @@ async def status(db: AsyncSession) -> dict:
         STATUS_DONE: outbox_counts.get(STATUS_DONE, 0),
         STATUS_FAILED: outbox_counts.get(STATUS_FAILED, 0),
     }
+    sa_breakdown = await _column_breakdown(
+        db, ServerAccount.password_encrypted, active
+    )
+    ipmi_breakdown = await _column_breakdown(
+        db, IpmiController.password_encrypted, active
+    )
+    remaining_legacy_total = (
+        sa_breakdown["remaining_legacy"] + ipmi_breakdown["remaining_legacy"]
+    )
+    if total == 0:
+        migrated_pct = 100.0
+    else:
+        migrated_count = total - remaining_legacy_total
+        # round до десятых — оператору не нужны 14 знаков после запятой,
+        # SIEM-индексы дольше парсят длинные float'ы.
+        migrated_pct = round(100.0 * migrated_count / total, 1)
     return {
         "remaining": remaining,
         "total": total,
@@ -157,6 +226,11 @@ async def status(db: AsyncSession) -> dict:
         "by_version": by_version,
         "app_env": settings.app_env,
         "outbox": outbox_snapshot,
+        "server_account_password_encrypted": sa_breakdown,
+        "ipmi_controller_password_encrypted": ipmi_breakdown,
+        "remaining_legacy_total": remaining_legacy_total,
+        "migrated_pct": migrated_pct,
+        "outbox_pending": outbox_snapshot[STATUS_PENDING],
     }
 
 

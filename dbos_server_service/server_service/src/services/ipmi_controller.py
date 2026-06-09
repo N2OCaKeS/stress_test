@@ -243,7 +243,7 @@ async def get_controller(
     # не пишется, остаётся только failure-аудит из самого reveal'а.
     revealed: str | None = None
     if has_credentials_action:
-        revealed = _reveal_controller_password(obj, server.department_id)
+        revealed = await _reveal_controller_password(db, obj, server.department_id)
 
     audit_service.emit(
         "ipmi_controller.view",
@@ -474,7 +474,8 @@ async def delete_controller(
     )
 
 
-def _reveal_controller_password(
+async def _reveal_controller_password(
+    db: AsyncSession,
     obj: IpmiController,
     department_id: str | None,
 ) -> str | None:
@@ -504,11 +505,10 @@ def _reveal_controller_password(
         )
         return None
 
+    aad = secrets_service.aad_for_ipmi_credential(obj.id)
+    old_blob = obj.password_encrypted
     try:
-        plain = secrets_service.decrypt(
-            obj.password_encrypted,
-            aad=secrets_service.aad_for_ipmi_credential(obj.id),
-        )
+        result = secrets_service.decrypt_with_meta(old_blob, aad=aad)
     except AppException:
         audit_service.emit(
             audit_action,
@@ -541,6 +541,20 @@ def _reveal_controller_password(
             message=f"Failed to decrypt IPMI password: {type(exc).__name__}",
             http_status=500,
         ) from exc
+    plain = result.plaintext
+    if result.needs_reencrypt:
+        # Lazy миграция под активный ключ — параллельно с outbox-flow.
+        # При любых ошибках UPDATE'а reveal всё равно отдаёт правильный
+        # base64-plaintext.
+        await secrets_service.lazy_reencrypt_owner_column(
+            db,
+            table="ipmi_controllers",
+            column="password_encrypted",
+            row_id=obj.id,
+            old_blob=old_blob,
+            plaintext=plain,
+            aad=aad,
+        )
 
     actor_id = audit_context.get_context().actor_id
     should_emit_critical, total_in_window = _record_controller_reveal_attempt(

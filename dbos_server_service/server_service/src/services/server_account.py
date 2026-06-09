@@ -529,7 +529,7 @@ async def get_account(
     # `ipmi_controller.get_controller`.
     revealed: str | None = None
     if has_password_action:
-        revealed = _reveal_account_password(account)
+        revealed = await _reveal_account_password(db, account)
 
     audit_service.emit(
         "server_account.view",
@@ -1011,7 +1011,9 @@ async def rotate_password(
     return updated
 
 
-def _reveal_account_password(account: ServerAccount) -> str | None:
+async def _reveal_account_password(
+    db: AsyncSession, account: ServerAccount,
+) -> str | None:
     """Расшифровать пароль аккаунта в base64 и записать аудит раскрытия.
 
     Вызывается из `get_account` только после успешной проверки `view_password`,
@@ -1048,11 +1050,10 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
         )
         return None
 
+    aad = secrets_service.aad_for_server_account_password(account.id)
+    old_blob = account.password_encrypted
     try:
-        plain = secrets_service.decrypt(
-            account.password_encrypted,
-            aad=secrets_service.aad_for_server_account_password(account.id),
-        )
+        result = secrets_service.decrypt_with_meta(old_blob, aad=aad)
     except AppException:
         audit_service.emit(
             "server_account.password_revealed",
@@ -1084,6 +1085,21 @@ def _reveal_account_password(account: ServerAccount) -> str | None:
             message=f"Failed to decrypt account password: {type(exc).__name__}",
             http_status=500,
         ) from exc
+    plain = result.plaintext
+    if result.needs_reencrypt:
+        # Lazy миграция под активный ключ. Не блокирует ответ: при любых
+        # ошибках обновления (CAS-проигрыш, БД-lock, encrypt-фейл) reveal
+        # всё равно отдаёт корректный plaintext, а outbox-flow дочистит
+        # остальное.
+        await secrets_service.lazy_reencrypt_owner_column(
+            db,
+            table="server_accounts",
+            column="password_encrypted",
+            row_id=account.id,
+            old_blob=old_blob,
+            plaintext=plain,
+            aad=aad,
+        )
 
     should_emit_critical, total_in_window = _record_reveal_attempt(actor_id, account.id)
     if should_emit_critical:

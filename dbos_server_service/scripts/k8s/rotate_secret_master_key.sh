@@ -6,48 +6,55 @@
 # существующие строки продолжают читаться через SECRET_ENCRYPTION_KEY__v<old>,
 # а новые encrypt'ы идут под актуальной версией.
 #
-# Flow:
-#   1. Прочитать текущие SECRET_ENCRYPTION_KEY / _VERSION из Secret'а.
-#   2. Сгенерировать новый ключ, version = current + 1.
-#   3. Пропатчить Secret:
-#        - SECRET_ENCRYPTION_KEY            ← new
-#        - SECRET_ENCRYPTION_KEY_VERSION    ← new_version
-#        - SECRET_ENCRYPTION_KEY__v<old>    ← old (для on-the-fly decrypt'а
-#                                              старых ciphertext'ов)
-#   4. Rolling restart secret-service (других потребителей этого ключа нет,
-#      auth/server его не читают).
-#   5. !!! GAP: в secret_service пока НЕТ /reencrypt_outbox endpoint'а как
-#      в server_service. Существующие строки credentials.secret_encrypted под
-#      v<old> остаются на месте и читаются через SECRET_ENCRYPTION_KEY__v<old>.
-#      Перешифровать их можно только либо через app-уровень (UPDATE secret
-#      перезаписывает encrypted-payload активной версией ключа), либо
-#      offline-скриптом, либо дождаться, пока owner всех credential'ов сам
-#      ротирует пароли через UI/API. Финализация удаления __v<old> возможна
-#      только когда оператор гарантировал, что v<old> ciphertext'ов не осталось.
-#   6. Финализация `--finalize`: удалить SECRET_ENCRYPTION_KEY__v<old> после
-#      подтверждения, что все старые ciphertext'ы перешифрованы.
-#   7. `--status`: показать active version + список legacy versions в Secret.
-#
-# Скрипт ИНТЕРАКТИВНЫЙ: на каждом шаге подтверждение. НЕ silent.
+# Lazy re-encrypt (добавлен параллельным агентом): на каждом read-path'е
+# secret_service автоматически перешифровывает row под активный ключ. Прогресс
+# виден через GET /api/secret/v1/internal/migration_status.
 #
 # Использование:
-#   scripts/k8s/rotate_secret_master_key.sh                  # полный flow
-#   scripts/k8s/rotate_secret_master_key.sh --finalize       # drop previous-key
+#   scripts/k8s/rotate_secret_master_key.sh                  # фаза 1: rotate + restart
+#   scripts/k8s/rotate_secret_master_key.sh --finalize       # фаза 2: drop __v<old>, если 100%
+#   scripts/k8s/rotate_secret_master_key.sh --auto-finalize  # CronJob: finalize prev-prev + rotate
 #   scripts/k8s/rotate_secret_master_key.sh --status         # текущее состояние
 #
-# Требования:
-#   kubectl, jq, openssl
+# Флаги-модификаторы:
+#   --yes              non-interactive (для CronJob)
+#   --force-finalize   bypass migration_status (только DR/incident)
+#
+# Требования: kubectl, jq, openssl, curl (в pod'е secret-service)
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NS="${DBOS_NAMESPACE:-dbos}"
 SECRET="${DBOS_SECRET_NAME:-dbos-secrets}"
 SECRET_DEPLOY="secret-service"
+SECRET_PORT="8003"
+MIGRATION_STATUS_PATH="/api/secret/v1/internal/migration_status"
+
+# ── Аргументы ─────────────────────────────────────────────────────────────────
+ACTION="rotate"
+ASSUME_YES="false"
+FORCE_FINALIZE="false"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --status)         ACTION="status";         shift ;;
+        --finalize)       ACTION="finalize";       shift ;;
+        --auto-finalize)  ACTION="auto-finalize";  shift ;;
+        --force-finalize) FORCE_FINALIZE="true";   shift ;;
+        --yes|-y)         ASSUME_YES="true";       shift ;;
+        -h|--help)        sed -n '2,25p' "$0";     exit 0 ;;
+        *) echo "ОШИБКА: неизвестный аргумент: $1" >&2; exit 1 ;;
+    esac
+done
 
 # ── Утилиты ───────────────────────────────────────────────────────────────────
 
 confirm() {
     local prompt="$1"
+    if [[ "$ASSUME_YES" == "true" ]]; then
+        return 0
+    fi
     read -p "  ${prompt} [yes/no]: " yn
     [[ "$yn" == "yes" ]]
 }
@@ -60,7 +67,9 @@ require_bin kubectl
 require_bin jq
 require_bin openssl
 
-# Достать поле из Secret'а в открытом виде.
+# shellcheck source=_rotation_helpers.sh
+source "$SCRIPT_DIR/_rotation_helpers.sh"
+
 secret_get() {
     local key="$1"
     kubectl -n "$NS" get secret "$SECRET" -o json \
@@ -68,7 +77,6 @@ secret_get() {
         | { local b64; b64=$(cat); [[ -n "$b64" ]] && echo "$b64" | base64 -d || true; }
 }
 
-# Пропатчить одно поле Secret'а (через stringData, чтобы не возиться с base64).
 secret_set_string() {
     local key="$1"; shift
     local val="$1"
@@ -78,9 +86,15 @@ secret_set_string() {
 
 secret_unset() {
     local key="$1"
-    # JSON-patch remove из data. Если ключа нет — игнорируем 422.
     kubectl -n "$NS" patch secret "$SECRET" --type='json' \
         -p "[{\"op\":\"remove\",\"path\":\"/data/${key}\"}]" 2>/dev/null || true
+}
+
+list_legacy_keys() {
+    kubectl -n "$NS" get secret "$SECRET" -o json \
+        | jq -r '.data | keys[]' \
+        | grep -E '^SECRET_ENCRYPTION_KEY__v[0-9]+$' \
+        | sort -t v -k2 -n || true
 }
 
 show_status() {
@@ -94,51 +108,70 @@ show_status() {
     echo "SECRET_ENCRYPTION_KEY length: ${#cur} bytes"
     echo ""
     echo "Previous-keys в Secret'е (если есть):"
-    kubectl -n "$NS" get secret "$SECRET" -o json \
-        | jq -r '.data | keys[]' \
-        | grep -E '^SECRET_ENCRYPTION_KEY__v[0-9]+$' || echo "  (нет)"
-    echo ""
-    echo "Reencrypt-эндпоинта в secret_service НЕТ — миграция данных под"
-    echo "новый ключ делается app-уровнем (UPDATE secret перезаписывает"
-    echo "ciphertext активной версией) либо offline. Запускай --finalize"
-    echo "только когда уверен, что v<old> ciphertext'ов в БД не осталось."
+    list_legacy_keys | sed 's/^/  /' || echo "  (нет)"
     echo ""
 }
 
-# ── --status / --finalize subcommands ─────────────────────────────────────────
+check_migration_complete() {
+    local json
+    if ! json=$(fetch_migration_status_json "$SECRET_DEPLOY" "$SECRET_PORT" "$MIGRATION_STATUS_PATH"); then
+        return 1
+    fi
+    local reason
+    if reason=$(migration_status_is_complete "$json"); then
+        return 0
+    fi
+    echo "ОШИБКА: миграция secret_service не завершена (${reason})." >&2
+    echo "" >&2
+    echo "Что делать:" >&2
+    echo "  1. Подождать lazy re-encrypt (любое UPDATE/чтение credential'а перешифрует row)." >&2
+    echo "  2. Запустить proactive seed (если такой endpoint появится в secret_service):" >&2
+    echo "     kubectl -n $NS exec deploy/$SECRET_DEPLOY -- curl -s -X POST \\" >&2
+    echo "         -H \"X-Service-Identity: rotation_runner\" -H \"Authorization: Bearer \$KEY\" \\" >&2
+    echo "         http://localhost:${SECRET_PORT}/api/secret/v1/reencrypt_outbox/seed" >&2
+    echo "  3. Удалить мёртвые credential'ы (заброшенные dept'ы) — они не читаются, не мигрируют." >&2
+    return 1
+}
 
-if [[ "${1:-}" == "--status" ]]; then
+# ── ACTION: status ────────────────────────────────────────────────────────────
+
+if [[ "$ACTION" == "status" ]]; then
     show_status
     exit 0
 fi
 
-if [[ "${1:-}" == "--finalize" ]]; then
-    echo "=== ФИНАЛИЗАЦИЯ ротации SECRET_ENCRYPTION_KEY ==="
-    echo ""
-    echo "Этот шаг удалит все SECRET_ENCRYPTION_KEY__v<N> из Secret'а."
-    echo "ЗАПУСКАТЬ ТОЛЬКО ПОСЛЕ того, как все credentials.secret_encrypted"
-    echo "с v<old> были перешифрованы (через UPDATE или offline-миграцию)."
-    echo "Иначе старые ciphertext'ы станут недешифруемыми и secret_service"
-    echo "будет отвечать 500 ENCRYPTION_KEY_MISSING на чтение этих credential'ов."
+# ── ACTION: finalize / auto-finalize ──────────────────────────────────────────
+
+do_finalize() {
+    echo "=== FINALIZE SECRET_ENCRYPTION_KEY ==="
     echo ""
     show_status
-    confirm "Подтвердить: все старые ciphertext'ы перешифрованы, удалить ВСЕ previous-keys?" \
-        || { echo "Отменено."; exit 0; }
 
-    PREV_KEYS=$(kubectl -n "$NS" get secret "$SECRET" -o json \
-        | jq -r '.data | keys[]' \
-        | grep -E '^SECRET_ENCRYPTION_KEY__v[0-9]+$' || true)
-
-    if [[ -z "$PREV_KEYS" ]]; then
+    local prev_keys
+    prev_keys=$(list_legacy_keys)
+    if [[ -z "$prev_keys" ]]; then
         echo "→ Previous-keys уже не в Secret'е. Готово."
-        exit 0
+        return 0
+    fi
+
+    if [[ "$FORCE_FINALIZE" == "true" ]]; then
+        confirm_force_finalize "secret-master" || { echo "Отменено."; exit 1; }
+    else
+        if ! check_migration_complete; then
+            echo "" >&2
+            echo "ОТКАЗ: --finalize без --force-finalize требует migration_status: complete." >&2
+            exit 1
+        fi
+        echo "✓ migration_status: complete (0 legacy ciphertext'ов)."
+        echo ""
+        confirm "Удалить ВСЕ previous-keys из Secret'а?" || { echo "Отменено."; exit 0; }
     fi
 
     while read -r key; do
         [[ -z "$key" ]] && continue
         echo "→ Удаляю $key из Secret'а..."
         secret_unset "$key"
-    done <<< "$PREV_KEYS"
+    done <<< "$prev_keys"
 
     echo "→ Rolling restart secret-service..."
     kubectl -n "$NS" rollout restart deploy/"$SECRET_DEPLOY"
@@ -146,112 +179,167 @@ if [[ "${1:-}" == "--finalize" ]]; then
 
     echo ""
     echo "✓ Финализация завершена. Previous-keys удалены."
+}
+
+drop_legacy_older_than() {
+    local keep_ver="$1"
+    local key ver
+    while read -r key; do
+        [[ -z "$key" ]] && continue
+        ver="${key##*__v}"
+        if [[ "$ver" -lt "$keep_ver" ]]; then
+            echo "→ Удаляю $key (старее __v${keep_ver})..."
+            secret_unset "$key"
+        fi
+    done <<< "$(list_legacy_keys)"
+}
+
+if [[ "$ACTION" == "finalize" ]]; then
+    do_finalize
     exit 0
 fi
 
-# ── Полный flow ───────────────────────────────────────────────────────────────
+# ── ACTION: rotate ────────────────────────────────────────────────────────────
 
-echo "=== РОТАЦИЯ SECRET_ENCRYPTION_KEY ==="
-echo ""
-show_status
+do_rotate() {
+    local cur_key cur_ver new_ver new_key
+    cur_key=$(secret_get SECRET_ENCRYPTION_KEY)
+    cur_ver=$(secret_get SECRET_ENCRYPTION_KEY_VERSION)
 
-CUR_KEY=$(secret_get SECRET_ENCRYPTION_KEY)
-CUR_VER=$(secret_get SECRET_ENCRYPTION_KEY_VERSION)
+    if [[ -z "$cur_key" || -z "$cur_ver" ]]; then
+        echo "ОШИБКА: не нашёл SECRET_ENCRYPTION_KEY / _VERSION в Secret'е $NS/$SECRET." >&2
+        exit 1
+    fi
 
-if [[ -z "$CUR_KEY" || -z "$CUR_VER" ]]; then
-    echo "ОШИБКА: не нашёл SECRET_ENCRYPTION_KEY / _VERSION в Secret'е $NS/$SECRET." >&2
-    exit 1
-fi
+    new_ver=$((cur_ver + 1))
+    new_key=$(openssl rand -base64 32 | tr -d '\n=')
 
-NEW_VER=$((CUR_VER + 1))
-NEW_KEY=$(openssl rand -base64 32 | tr -d '\n=')
+    local ts summary_out
+    ts="$(date -u +%Y%m%dT%H%M%SZ)"
+    summary_out="/tmp/dbos-rotate-secret-${ts}.txt"
 
-TS="$(date -u +%Y%m%dT%H%M%SZ)"
-SUMMARY_OUT="/tmp/dbos-rotate-secret-${TS}.txt"
-
-cat <<EOF
+    cat <<EOF
 
 Будет сделано:
-  1. Текущий ключ (v${CUR_VER}) переедет в SECRET_ENCRYPTION_KEY__v${CUR_VER}
-     (нужен secret_service'у для on-the-fly decrypt старых ciphertext'ов).
-  2. SECRET_ENCRYPTION_KEY = <новый>, SECRET_ENCRYPTION_KEY_VERSION = ${NEW_VER}.
+  1. Текущий ключ (v${cur_ver}) переедет в SECRET_ENCRYPTION_KEY__v${cur_ver}.
+  2. SECRET_ENCRYPTION_KEY = <новый>, SECRET_ENCRYPTION_KEY_VERSION = ${new_ver}.
   3. Rolling restart secret-service.
-  4. Сообщение: перешифровать старые ciphertext'ы (UPDATE secret через UI/API
-     или offline-миграция) → потом ${0} --finalize.
+  4. Lazy re-encrypt мигрирует данные на чтении. Прогресс — --status.
 
+EOF
+
+    if [[ "$ASSUME_YES" != "true" ]]; then
+        cat <<EOF
 Новый мастер-ключ (СОХРАНИ — без него восстановление невозможно):
+  ${new_key}
 
-  SECRET_ENCRYPTION_KEY (v${NEW_VER}):
-  ${NEW_KEY}
-
-Дубликат в:
-  ${SUMMARY_OUT}
+Дубликат в: ${summary_out}
 
 EOF
+        {
+            echo "DBOS secret-service master-key rotation"
+            echo "timestamp: ${ts}"
+            echo "old_version: ${cur_ver}"
+            echo "new_version: ${new_ver}"
+            echo ""
+            echo "NEW SECRET_ENCRYPTION_KEY:"
+            echo "${new_key}"
+            echo ""
+            echo "PREVIOUS SECRET_ENCRYPTION_KEY (теперь под SECRET_ENCRYPTION_KEY__v${cur_ver}):"
+            echo "${cur_key}"
+        } > "$summary_out"
+        chmod 600 "$summary_out"
+    fi
 
-{
-    echo "DBOS secret-service master-key rotation"
-    echo "timestamp: ${TS}"
-    echo "old_version: ${CUR_VER}"
-    echo "new_version: ${NEW_VER}"
+    confirm "Продолжить ротацию?" || {
+        echo "Отменено."
+        [[ -f "$summary_out" ]] && { shred -u "$summary_out" 2>/dev/null || rm -f "$summary_out"; }
+        return 1
+    }
+
     echo ""
-    echo "NEW SECRET_ENCRYPTION_KEY:"
-    echo "${NEW_KEY}"
+    echo "→ Пишу previous-ключ в SECRET_ENCRYPTION_KEY__v${cur_ver}..."
+    secret_set_string "SECRET_ENCRYPTION_KEY__v${cur_ver}" "$cur_key"
+
+    echo "→ Подменяю SECRET_ENCRYPTION_KEY и SECRET_ENCRYPTION_KEY_VERSION..."
+    kubectl -n "$NS" patch secret "$SECRET" --type='merge' -p "$(jq -n \
+        --arg new_key "$new_key" \
+        --arg new_ver "$new_ver" \
+        '{stringData: {SECRET_ENCRYPTION_KEY: $new_key, SECRET_ENCRYPTION_KEY_VERSION: $new_ver}}')"
+
     echo ""
-    echo "PREVIOUS SECRET_ENCRYPTION_KEY (теперь под SECRET_ENCRYPTION_KEY__v${CUR_VER}):"
-    echo "${CUR_KEY}"
-} > "$SUMMARY_OUT"
-chmod 600 "$SUMMARY_OUT"
+    echo "→ Rolling restart secret-service..."
+    confirm "Рестартовать сейчас?" || {
+        echo "Pause. Запусти руками: kubectl -n $NS rollout restart deploy/$SECRET_DEPLOY"
+        return 0
+    }
 
-confirm "Продолжить ротацию?" || { echo "Отменено. Дубликат удалён."; shred -u "$SUMMARY_OUT" 2>/dev/null || rm -f "$SUMMARY_OUT"; exit 0; }
+    kubectl -n "$NS" rollout restart deploy/"$SECRET_DEPLOY"
+    kubectl -n "$NS" rollout status  deploy/"$SECRET_DEPLOY" --timeout=300s
 
-# ── Step 1: Patch Secret ──────────────────────────────────────────────────────
-echo ""
-echo "→ Step 1: пишу previous-ключ в SECRET_ENCRYPTION_KEY__v${CUR_VER}..."
-secret_set_string "SECRET_ENCRYPTION_KEY__v${CUR_VER}" "$CUR_KEY"
+    cat <<EOF
 
-echo "→ Step 2: подменяю SECRET_ENCRYPTION_KEY и SECRET_ENCRYPTION_KEY_VERSION..."
-# Объединяем оба патча в один merge, чтобы не было промежуточного состояния
-# (новый ключ + старая версия), когда secret_service попытался бы зашифровать
-# новые строки под v_old, но KDF дал бы материал нового ключа.
-kubectl -n "$NS" patch secret "$SECRET" --type='merge' -p "$(jq -n \
-    --arg new_key "$NEW_KEY" \
-    --arg new_ver "$NEW_VER" \
-    '{stringData: {SECRET_ENCRYPTION_KEY: $new_key, SECRET_ENCRYPTION_KEY_VERSION: $new_ver}}')"
+✓ Ключ ротирован. Активная версия = v${new_ver}.
 
-# ── Step 3: Rolling restart ────────────────────────────────────────────────────
-echo ""
-echo "→ Step 3: rolling restart secret-service..."
-confirm "Рестартовать сейчас?" || { echo "Pause. Запусти руками: kubectl -n $NS rollout restart deploy/$SECRET_DEPLOY"; exit 0; }
+Lazy re-encrypt автоматически мигрирует данные под новый ключ на чтении.
+Прогресс:
+    $0 --status
 
-kubectl -n "$NS" rollout restart deploy/"$SECRET_DEPLOY"
-kubectl -n "$NS" rollout status  deploy/"$SECRET_DEPLOY" --timeout=300s
-
-# ── Step 4: Подсказка про миграцию данных ─────────────────────────────────────
-cat <<EOF
-
-✓ Ключ ротирован. Активная версия = v${NEW_VER}.
-
-Сейчас secret_service шифрует НОВЫЕ ciphertext'ы под v${NEW_VER} и расшифровывает
-ЛЮБЫЕ существующие (v${CUR_VER} читается через SECRET_ENCRYPTION_KEY__v${CUR_VER}).
-
-ВНИМАНИЕ: в secret_service пока нет /reencrypt_outbox endpoint'а как в
-server_service, поэтому перешифровать существующие credentials.secret_encrypted
-автоматически нечем. Варианты:
-
-  a) Дождаться, пока owner всех credential'ов ротирует их сам через UI/API
-     (любой UPDATE secret перезапишет ciphertext активной версией).
-  b) Запустить offline-скрипт миграции (по аналогии с
-     scripts/migrate_secret_outbox.py из server_service, см. CRYPTO.md).
-  c) Если credential'ов мало — вручную пройти по списку.
-
-После того как убедился, что в credentials.secret_encrypted не осталось
-строк с префиксом 'v${CUR_VER}\$' — финализируй ротацию (удалит
-SECRET_ENCRYPTION_KEY__v${CUR_VER} из Secret'а):
-
-    ${0} --finalize
-
-Резервная копия ключей: ${SUMMARY_OUT} (chmod 600).
-После переноса в password manager:  shred -u ${SUMMARY_OUT}
+Финализация (после migration_status: complete):
+    $0 --finalize
 
 EOF
+}
+
+if [[ "$ACTION" == "rotate" ]]; then
+    echo "=== РОТАЦИЯ SECRET_ENCRYPTION_KEY (фаза 1) ==="
+    show_status
+    do_rotate
+    exit 0
+fi
+
+# ── ACTION: auto-finalize ──────────────────────────────────────────────────────
+
+if [[ "$ACTION" == "auto-finalize" ]]; then
+    echo "=== AUTO-FINALIZE SECRET_ENCRYPTION_KEY ==="
+    show_status
+
+    cur_ver=$(secret_get SECRET_ENCRYPTION_KEY_VERSION)
+    if [[ -z "$cur_ver" ]]; then
+        echo "ОШИБКА: SECRET_ENCRYPTION_KEY_VERSION пуст в Secret'е." >&2
+        exit 1
+    fi
+
+    legacy=$(list_legacy_keys || true)
+
+    if [[ -n "$legacy" ]]; then
+        if check_migration_complete 2>/dev/null; then
+            echo "✓ migration_status: complete → finalize."
+            while read -r key; do
+                [[ -z "$key" ]] && continue
+                echo "→ Удаляю $key..."
+                secret_unset "$key"
+            done <<< "$legacy"
+            echo "→ Rolling restart secret-service..."
+            kubectl -n "$NS" rollout restart deploy/"$SECRET_DEPLOY"
+            kubectl -n "$NS" rollout status  deploy/"$SECRET_DEPLOY" --timeout=300s
+        else
+            echo "⚠ migration_status: не complete → finalize пропускается."
+            echo "  Дроплю только __v<N-2> и старее, новейший __v<N-1> сохраняю."
+            drop_legacy_older_than "$cur_ver"
+        fi
+    else
+        echo "→ Legacy keys в Secret'е нет — finalize не требуется."
+    fi
+
+    echo ""
+    echo "=== ROTATE → новая версия ==="
+    do_rotate
+
+    echo ""
+    echo "✓ auto-finalize завершён."
+    exit 0
+fi
+
+echo "ОШИБКА: неизвестное действие: $ACTION" >&2
+exit 1

@@ -297,7 +297,7 @@ class TestRevealPasswordWrapsDecryptErrors:
     """Любой не-AppException в decrypt оборачивается в AppException(DECRYPT_FAILED)
     с http_status=500, audit failure эмитится."""
 
-    def test_server_account_reveal_wraps_runtime_error(self, monkeypatch):
+    async def test_server_account_reveal_wraps_runtime_error(self, monkeypatch):
         from src.services import server_account as sa_svc
 
         captured: list[dict] = []
@@ -311,8 +311,10 @@ class TestRevealPasswordWrapsDecryptErrors:
         def boom(_token, *, aad):
             raise RuntimeError("threadpool wrapper exploded")
 
+        # Reveal-helper'ы перешли на decrypt_with_meta — патчим именно его,
+        # legacy `decrypt` остаётся как обратно-совместимая обёртка.
         monkeypatch.setattr(
-            "src.services.server_account.secrets_service.decrypt", boom,
+            "src.services.server_account.secrets_service.decrypt_with_meta", boom,
         )
 
         class _Acc:
@@ -322,7 +324,7 @@ class TestRevealPasswordWrapsDecryptErrors:
             password_encrypted = "v1$nonce$ct"
 
         with pytest.raises(AppException) as exc_info:
-            sa_svc._reveal_account_password(_Acc())
+            await sa_svc._reveal_account_password(None, _Acc())
 
         assert exc_info.value.error_code == "DECRYPT_FAILED"
         assert exc_info.value.http_status == 500
@@ -334,7 +336,7 @@ class TestRevealPasswordWrapsDecryptErrors:
         assert len(failures) == 1
         assert failures[0]["details"]["reason"] == "decrypt_failed"
 
-    def test_server_account_reveal_passes_through_app_exception(
+    async def test_server_account_reveal_passes_through_app_exception(
         self, monkeypatch,
     ):
         """Если decrypt бросил AppException (штатный DECRYPT_FAILED) —
@@ -357,7 +359,7 @@ class TestRevealPasswordWrapsDecryptErrors:
             )
 
         monkeypatch.setattr(
-            "src.services.server_account.secrets_service.decrypt", boom,
+            "src.services.server_account.secrets_service.decrypt_with_meta", boom,
         )
 
         class _Acc:
@@ -367,11 +369,11 @@ class TestRevealPasswordWrapsDecryptErrors:
             password_encrypted = "v1$nonce$ct"
 
         with pytest.raises(AppException) as exc_info:
-            sa_svc._reveal_account_password(_Acc())
+            await sa_svc._reveal_account_password(None, _Acc())
         # Сообщение — оригинальное, не переобёрнутое
         assert exc_info.value.message == "bad tag"
 
-    def test_ipmi_reveal_wraps_runtime_error(self, monkeypatch):
+    async def test_ipmi_reveal_wraps_runtime_error(self, monkeypatch):
         from src.services import ipmi_controller as ipmi_svc
 
         captured: list[dict] = []
@@ -386,7 +388,7 @@ class TestRevealPasswordWrapsDecryptErrors:
             raise RuntimeError("unexpected")
 
         monkeypatch.setattr(
-            "src.services.ipmi_controller.secrets_service.decrypt", boom,
+            "src.services.ipmi_controller.secrets_service.decrypt_with_meta", boom,
         )
 
         class _Ctrl:
@@ -396,7 +398,7 @@ class TestRevealPasswordWrapsDecryptErrors:
             password_encrypted = "v1$nonce$ct"
 
         with pytest.raises(AppException) as exc_info:
-            ipmi_svc._reveal_controller_password(_Ctrl(), department_id="dep_a")
+            await ipmi_svc._reveal_controller_password(None, _Ctrl(), department_id="dep_a")
         assert exc_info.value.error_code == "DECRYPT_FAILED"
         assert exc_info.value.http_status == 500
         failures = [

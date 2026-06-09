@@ -44,6 +44,7 @@ import base64
 import hashlib
 import os
 import re
+from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
@@ -52,6 +53,21 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
+
+
+@dataclass(frozen=True)
+class DecryptResult:
+    """Результат `decrypt_with_metadata`: plaintext + флаги для lazy re-encrypt.
+
+    `needs_reencrypt` поднимается, когда ciphertext был сделан под версией
+    ключа, меньшей, чем текущая активная. Caller, у которого есть row-id и
+    запись на БД, может прозрачно перешифровать секрет и обновить строку
+    одним CAS-UPDATE'ом.
+    """
+
+    plaintext: str
+    source_version: int
+    needs_reencrypt: bool
 
 
 _NONCE_BYTES = 12  # стандартный AES-GCM
@@ -173,20 +189,17 @@ def encrypt(plaintext: str, *, aad: bytes) -> str:
     return f"v{version}${_b64e(nonce)}${_b64e(ciphertext)}"
 
 
-def decrypt(token: str, *, aad: bytes) -> str:
-    """Расшифровать ранее зашифрованный token.
+def decrypt_with_metadata(token: str, *, aad: bytes) -> DecryptResult:
+    """Расшифровать token и вернуть plaintext вместе с метаданными версии.
 
-    `aad` обязан совпадать с тем, что передавался в :func:`encrypt`. Несовпадение
-    или подмена ciphertext'а — `DECRYPT_FAILED` (под капотом InvalidTag).
+    Поле `needs_reencrypt=True` означает, что ciphertext был зашифрован под
+    версией ключа меньшей, чем активная: caller с доступом на запись может
+    выполнить lazy re-encrypt одним UPDATE'ом и постепенно мигрировать БД
+    под новый мастер-ключ без планового простоя.
 
-    Классификация ошибок (http_status):
-
-    * 422 — input-validation: пустой/без префикса token, неразбираемый формат,
-      битый base64, InvalidTag (несовпадение AAD / подмена ciphertext / битый
-      nonce). Caller прислал данные, которые корректный AEAD не принимает.
-    * 500 — настоящая инфраструктурная авария: ключ для версии токена не
-      сконфигурирован (`ENCRYPTION_KEY_MISSING`), либо неожиданное исключение
-      в crypto-стеке (`DECRYPT_INTERNAL_ERROR`).
+    Семантика ошибок — ровно та же, что в :func:`decrypt`. Эта функция —
+    суперсет: `decrypt` остался как тонкая обёртка для legacy call-site'ов,
+    которым плевать на версию.
     """
     if not token or not _TOKEN_FORMAT_RE.match(token):
         raise AppException(
@@ -216,7 +229,7 @@ def decrypt(token: str, *, aad: bytes) -> str:
             message=f"Failed to decrypt token: {type(exc).__name__}",
         ) from exc
     try:
-        plaintext = AESGCM(key).decrypt(nonce_bytes, ct_bytes, aad)
+        plaintext_bytes = AESGCM(key).decrypt(nonce_bytes, ct_bytes, aad)
     except (InvalidTag, ValueError) as exc:
         # InvalidTag — auth tag не сошёлся (подмена ciphertext'а, неправильный
         # aad, не тот ключ); ValueError — `cryptography` его поднимает для
@@ -232,4 +245,21 @@ def decrypt(token: str, *, aad: bytes) -> str:
             error_code="DECRYPT_INTERNAL_ERROR",
             message=f"Internal decrypt error: {type(exc).__name__}",
         ) from exc
-    return plaintext.decode("utf-8")
+
+    active_version = get_settings().secret_encryption_key_version
+    return DecryptResult(
+        plaintext=plaintext_bytes.decode("utf-8"),
+        source_version=version,
+        needs_reencrypt=version < active_version,
+    )
+
+
+def decrypt(token: str, *, aad: bytes) -> str:
+    """Расшифровать ранее зашифрованный token.
+
+    Тонкая обёртка вокруг :func:`decrypt_with_metadata` для call-site'ов,
+    которым не нужны метаданные версии (нет доступа на запись, либо плановая
+    миграция выключена). Семантика ошибок неизменна — см. docstring новой
+    функции.
+    """
+    return decrypt_with_metadata(token, aad=aad).plaintext

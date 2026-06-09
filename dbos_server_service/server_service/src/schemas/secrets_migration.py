@@ -14,6 +14,29 @@ class OutboxStatusSnapshot(BaseModel):
     )
 
 
+class ColumnMigrationBreakdown(BaseModel):
+    """Per-column сводка по миграции одной зашифрованной колонки.
+
+    `remaining_legacy` — сумма счётчиков по версиям, отличным от
+    активной. Когда оператор хочет дропнуть `SERVER_ENCRYPTION_KEY__v<N>`,
+    он смотрит на per-column `remaining_legacy=0`, чтобы убедиться, что
+    конкретная колонка уже не зависит от старого ключа.
+    """
+
+    total: int = Field(0, ge=0, description="Всего non-NULL row'ов в этой колонке.")
+    by_version: dict[int, int] = Field(
+        default_factory=dict,
+        description="`{N: count}` по wire-префиксам `v<N>$...` этой колонки.",
+    )
+    remaining_legacy: int = Field(
+        0, ge=0,
+        description=(
+            "Сколько row'ов ещё не под активной версией"
+            " (malformed-токены не учитываются)."
+        ),
+    )
+
+
 class MigrationStatusResponse(BaseModel):
     """Ответ GET /internal/secrets/migration_status."""
 
@@ -55,6 +78,42 @@ class MigrationStatusResponse(BaseModel):
             "Состояние outbox-таблицы `secrets_reencrypt_outbox`. Worker"
             " ориентируется на `pending` > 0 как сигнал «нужно работать»;"
             " оператор смотрит на `failed` для разбора инцидентов."
+        ),
+    )
+    # ── Extended per-column / progress fields ───────────────────────────────
+    server_account_password_encrypted: ColumnMigrationBreakdown = Field(
+        default_factory=ColumnMigrationBreakdown,
+        description=(
+            "Per-column сводка для `server_accounts.password_encrypted` —"
+            " оператор смотрит, какая именно колонка тащит legacy."
+        ),
+    )
+    ipmi_controller_password_encrypted: ColumnMigrationBreakdown = Field(
+        default_factory=ColumnMigrationBreakdown,
+        description=(
+            "Per-column сводка для `ipmi_controllers.password_encrypted` —"
+            " симметрично server_account-полю выше."
+        ),
+    )
+    remaining_legacy_total: int = Field(
+        0, ge=0,
+        description=(
+            "Суммарный `remaining_legacy` по обеим колонкам (дублирует"
+            " `remaining`, но семантически — для lazy-страницы)."
+        ),
+    )
+    migrated_pct: float = Field(
+        100.0, ge=0.0, le=100.0,
+        description=(
+            "Доля row'ов под активной версией, 0..100 (округление до"
+            " десятых). При `total=0` отдаётся 100.0."
+        ),
+    )
+    outbox_pending: int = Field(
+        0, ge=0,
+        description=(
+            "Синоним `outbox.pending` на верхнем уровне — для caller'ов"
+            " с короткой read-only-страницы."
         ),
     )
 

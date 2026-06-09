@@ -1,14 +1,20 @@
 # CronJob автоматической ротации секретов (раз в 6 мес).
 #
 # Запускает scripts/k8s/test_rotation_safety.sh — orchestrator:
-#   backup_secret_full → rotate_db_passwords → rotate_redis_password → rotate_s2s_keys
-#   → smoke_test → (если smoke красный) restore из backup'а.
+#   backup_secret_full
+#   → rotate_db_passwords → rotate_redis_password → rotate_s2s_keys
+#   → rotate_secret_master_key  --auto-finalize
+#   → rotate_redis_stash_master_key --auto-finalize
+#   → rotate_master_key            --auto-finalize  (server)
+#   → smoke_test после каждой → (если smoke красный) restore из backup'а.
 #
-# Master-key ротации (rotate_master_key, rotate_secret_master_key,
-# rotate_redis_stash_master_key) сюда НЕ заведены — у них двухфазный
-# процесс (issue → re-encrypt outbox → finalize) с long-running migration'ом,
-# который не укладывается в один CronJob-run. Их ротирует оператор руками
-# раз в год (см. runbook obsidian/infra/runbooks/Rotation.md).
+# Master-keys ротируются через --auto-finalize:
+#   * Если lazy re-encrypt дошла до 100% (миграция за прошлый cycle закрыта) —
+#     дроп старого __v<N-1> + rotate новой версии.
+#   * Если миграция не 100% — rotate без finalize; дроп __v<N-2> и старее,
+#     чтобы Secret не накапливал legacy keys.
+# Gating через GET /api/{server,secret}/v1/internal/migration_status
+# с identity rotation_runner (см. _rotation_helpers.sh).
 #
 # Schedule: 0 3 1 1,7 *
 #   • 1 января 03:00 UTC = 06:00 MSK
@@ -45,6 +51,9 @@ spec:
     spec:
       backoffLimit: 0             # не ретраить — test_rotation_safety делает restore сам
       ttlSecondsAfterFinished: 86400
+      # 6 ротаций × (rotate + rolling restart + smoke + 30s pause для master) — упор в потолок
+      # ~ 30-45 минут на средний прогон, hard-limit 90 минут страхует от залипшего rollout status.
+      activeDeadlineSeconds: 5400
       template:
         metadata:
           labels:
@@ -81,6 +90,12 @@ spec:
                 # confirm() во всех rotate_*.sh уже умеет --yes / DBOS_ROTATION_YES.
                 - name: DBOS_ROTATION_YES
                   value: "1"
+                # Bearer для GET /api/{server,secret}/v1/internal/migration_status —
+                # под идентичностью rotation_runner. Используется master-key
+                # ротаторами в --auto-finalize для гейтинга дропа legacy key'я.
+                - name: ROTATION_RUNNER_API_KEY
+                  valueFrom:
+                    secretKeyRef: { name: dbos-secrets, key: ROTATION_RUNNER_API_KEY }
               volumeMounts:
                 - name: scripts
                   mountPath: /scripts

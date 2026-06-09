@@ -48,6 +48,7 @@ configMapGenerator:
       - ../scripts/k8s/rotate_master_key.sh
       - ../scripts/k8s/rotate_secret_master_key.sh
       - ../scripts/k8s/rotate_redis_stash_master_key.sh
+      - ../scripts/k8s/_rotation_helpers.sh
       - ../scripts/k8s/backup_secret_full.sh
       - ../scripts/k8s/backup_master_keys.sh
       - ../scripts/k8s/restore_master_keys.sh

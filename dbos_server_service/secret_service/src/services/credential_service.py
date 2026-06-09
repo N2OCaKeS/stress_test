@@ -72,6 +72,58 @@ def _decrypt_envelope(token: str, cred_id: str) -> str:
     )
 
 
+def _decrypt_envelope_with_meta(
+    token: str, cred_id: str
+) -> secrets_service.DecryptResult:
+    return secrets_service.decrypt_with_metadata(
+        token, aad=secrets_service.aad_for_credential(cred_id)
+    )
+
+
+async def _lazy_reencrypt_if_needed(
+    db: AsyncSession,
+    cred: Credential,
+    result: secrets_service.DecryptResult,
+) -> None:
+    """Перешифровать ciphertext активной версией ключа в той же транзакции.
+
+    Вызывается из read-path'а (`reveal`) когда `result.needs_reencrypt` поднят.
+    Стратегия — idempotent CAS: новый blob ставится только если в БД ровно тот
+    blob, который мы только что прочитали. Конкурентный reveal/PATCH той же
+    строки увидит 0 rows affected — это норма, в чате остаётся одна актуальная
+    версия. Любая ошибка ловится и логируется WARNING — read-path должен
+    вернуться успешно даже при временной недоступности БД на запись.
+    """
+    old_blob = cred.secret_encrypted
+    try:
+        new_blob = _to_envelope(result.plaintext, cred.id)
+        swapped = await repo.cas_update_secret_encrypted(
+            db,
+            cred_id=cred.id,
+            expected_blob=old_blob,
+            new_blob=new_blob,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Lazy re-encrypt — best-effort. Падать ради миграции мы не имеем
+        # права: read должен отдать plaintext caller'у. Следующий reveal
+        # либо повторит попытку, либо обнаружит, что строка уже мигрирована.
+        logger.warning(
+            "lazy_reencrypt_failed cred_id=%s source_v=%s err=%s",
+            cred.id,
+            result.source_version,
+            type(exc).__name__,
+        )
+        return
+    if not swapped:
+        # Конкурент опередил (другой reveal / PATCH). Дублируем как INFO —
+        # это ожидаемая race, не баг.
+        logger.info(
+            "lazy_reencrypt_race cred_id=%s source_v=%s (row already migrated)",
+            cred.id,
+            result.source_version,
+        )
+
+
 def _as_utc(value: datetime) -> datetime:
     """Naive → UTC, aware → astimezone(UTC). БД отдаёт timestamptz, но fixture'ы
     в тестах иногда суют naive datetime; нормализуем тут, чтобы сравнение не
@@ -718,7 +770,10 @@ async def reveal(
             },
         )
         raise
-    plaintext = _decrypt_envelope(cred.secret_encrypted, cred.id)
+    decrypt_result = _decrypt_envelope_with_meta(cred.secret_encrypted, cred.id)
+    plaintext = decrypt_result.plaintext
+    if decrypt_result.needs_reencrypt:
+        await _lazy_reencrypt_if_needed(db, cred, decrypt_result)
     secret_b64 = base64.b64encode(plaintext.encode("utf-8")).decode("ascii")
 
     is_first, count = await reveal_throttle.record_reveal(identity.user_id, cred.id)

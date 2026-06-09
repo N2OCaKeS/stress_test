@@ -162,7 +162,10 @@ class TestViewSuccessAfterReveal:
         def sync_boom(*_a, **_kw):
             raise ValueError("synthetic decrypt failure")
 
+        # Reveal-путь сейчас идёт через decrypt_with_meta — патчим именно его;
+        # legacy decrypt-обёртку оставляем как фоллбэк для других тестов.
         monkeypatch.setattr(secrets_service, "decrypt", sync_boom)
+        monkeypatch.setattr(secrets_service, "decrypt_with_meta", sync_boom)
 
         srv = await make_server(department_id="dep_a")
         acc = await make_account(server_id=srv.id, password="real-secret")

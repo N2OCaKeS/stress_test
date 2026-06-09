@@ -44,15 +44,21 @@ Associated data
 
 import base64
 import hashlib
+import logging
 import os
+from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
+
+logger = logging.getLogger(__name__)
 
 
 _NONCE_BYTES = 12  # стандартный AES-GCM
@@ -194,20 +200,30 @@ def encrypt(plaintext: str, *, aad: bytes) -> str:
     return f"v{version}${_b64e(nonce)}${_b64e(ciphertext)}"
 
 
-def decrypt(token: str, *, aad: bytes) -> str:
-    """Расшифровать ранее зашифрованный token.
+@dataclass(frozen=True)
+class DecryptResult:
+    """Результат расшифровки токена с метаданными о версии ключа.
 
-    `aad` обязан совпадать с тем, что передавался в :func:`encrypt`. Несовпадение
-    или подмена ciphertext'а — `DECRYPT_FAILED` (под капотом InvalidTag).
+    Используется call-site'ами, которые хотят lazy re-encrypt: если
+    ``needs_reencrypt=True``, ciphertext был зашифрован устаревшей версией
+    мастер-ключа и должен быть переписан активной — обычно через
+    :func:`lazy_reencrypt_owner_column`.
 
-    Классификация ошибок (http_status):
+    * ``plaintext`` — декодированный UTF-8.
+    * ``source_version`` — версия ключа, под которой был зашифрован token.
+    * ``needs_reencrypt`` — ``source_version != active_version``.
+    """
 
-    * 422 — input-validation: пустой/без префикса token, неразбираемый формат,
-      битый base64, InvalidTag (несовпадение AAD / подмена ciphertext / битый
-      nonce). Caller прислал данные, которые корректный AEAD не принимает.
-    * 500 — настоящая инфраструктурная авария: ключ для версии токена не
-      сконфигурирован (`ENCRYPTION_KEY_MISSING` из :func:`_key_for_version`),
-      либо неожиданное исключение в crypto-стеке (`DECRYPT_INTERNAL_ERROR`).
+    plaintext: str
+    source_version: int
+    needs_reencrypt: bool
+
+
+def decrypt_with_meta(token: str, *, aad: bytes) -> DecryptResult:
+    """Расшифровать token и вернуть результат с метаданными о версии.
+
+    Семантика ошибок идентична :func:`decrypt` (тот же набор error_code'ов).
+    Использовать там, где нужен сигнал ``needs_reencrypt`` для lazy-миграции.
     """
     if not token or not token.startswith("v"):
         raise AppException(
@@ -237,7 +253,7 @@ def decrypt(token: str, *, aad: bytes) -> str:
             message=f"Failed to decrypt token: {type(exc).__name__}",
         ) from exc
     try:
-        plaintext = AESGCM(key).decrypt(nonce_bytes, ct_bytes, aad)
+        plaintext_bytes = AESGCM(key).decrypt(nonce_bytes, ct_bytes, aad)
     except (InvalidTag, ValueError) as exc:
         # InvalidTag — auth tag не сошёлся (подмена ciphertext'а, неправильный
         # aad, не тот ключ); ValueError — `cryptography` его поднимает для
@@ -257,4 +273,131 @@ def decrypt(token: str, *, aad: bytes) -> str:
             error_code="DECRYPT_INTERNAL_ERROR",
             message=f"Internal decrypt error: {type(exc).__name__}",
         ) from exc
-    return plaintext.decode("utf-8")
+
+    settings = get_settings()
+    active_version = settings.server_encryption_key_version
+    return DecryptResult(
+        plaintext=plaintext_bytes.decode("utf-8"),
+        source_version=version,
+        needs_reencrypt=(version != active_version),
+    )
+
+
+def decrypt(token: str, *, aad: bytes) -> str:
+    """Расшифровать token и вернуть plaintext.
+
+    Тонкая обёртка над :func:`decrypt_with_meta` для обратной совместимости.
+    Новым call-site'ам, где нужна lazy re-encrypt-логика, использовать
+    :func:`decrypt_with_meta`.
+
+    `aad` обязан совпадать с тем, что передавался в :func:`encrypt`. Несовпадение
+    или подмена ciphertext'а — `DECRYPT_FAILED` (под капотом InvalidTag).
+
+    Классификация ошибок (http_status):
+
+    * 422 — input-validation: пустой/без префикса token, неразбираемый формат,
+      битый base64, InvalidTag (несовпадение AAD / подмена ciphertext / битый
+      nonce). Caller прислал данные, которые корректный AEAD не принимает.
+    * 500 — настоящая инфраструктурная авария: ключ для версии токена не
+      сконфигурирован (`ENCRYPTION_KEY_MISSING` из :func:`_key_for_version`),
+      либо неожиданное исключение в crypto-стеке (`DECRYPT_INTERNAL_ERROR`).
+    """
+    return decrypt_with_meta(token, aad=aad).plaintext
+
+
+# ── Lazy re-encrypt helper ───────────────────────────────────────────────────
+
+
+_ALLOWED_LAZY_TARGETS: frozenset[tuple[str, str]] = frozenset({
+    ("server_accounts", "password_encrypted"),
+    ("server_accounts", "ssh_private_key_encrypted"),
+    ("ipmi_controllers", "password_encrypted"),
+})
+
+
+async def lazy_reencrypt_owner_column(
+    db: AsyncSession,
+    *,
+    table: str,
+    column: str,
+    row_id: str,
+    old_blob: str,
+    plaintext: str,
+    aad: bytes,
+) -> bool:
+    """Перешифровать одну ячейку под активный ключ через CAS-UPDATE.
+
+    Используется в read-path call-сайтах сразу после успешного
+    :func:`decrypt_with_meta` с ``needs_reencrypt=True``. Поведение:
+
+    * encrypt(plaintext) активной версией ключа;
+    * ``UPDATE <table> SET <column>=:new WHERE id=:id AND <column>=:old`` —
+      CAS-style на переданной сессии. Параллельный rotate / другой
+      lazy-победитель оставляет 0 rows affected, мы выходим тихо;
+    * ``db.commit()`` после успешного UPDATE'а: read-сессия в FastAPI
+      не делает commit штатно, и без него UPDATE откатится при teardown'е.
+      Read-endpoint'ы обычно не держат других pending-мутаций, так что
+      commit безопасен; если caller'у важно сохранить контроль над
+      транзакцией — он должен не дёргать lazy_reencrypt;
+    * любая ошибка БД (lock, connection drop) или encrypt — WARNING-лог,
+      ``return False``. **Read-path никогда не блокируется** — caller
+      продолжает работу с уже полученным plaintext'ом.
+
+    `table`/`column` whitelist'ятся через :data:`_ALLOWED_LAZY_TARGETS` —
+    лишний раз режет любые SQL-injection-векторы, даже несмотря на то,
+    что параметры приходят из кода, а не из user input'а.
+
+    Возвращает ``True`` при успешном UPDATE'е (1 row affected), ``False`` в
+    остальных случаях (concurrent winner / БД-ошибка / 0 rows).
+    """
+    if (table, column) not in _ALLOWED_LAZY_TARGETS:
+        # Защита от опечатки в caller'е: имена столбцов и таблиц захардкожены
+        # в коде, и любая комбинация вне whitelist'а — это bug, а не легитимный
+        # input.
+        logger.warning(
+            "lazy_reencrypt: refusing to UPDATE non-whitelisted target "
+            "(table=%r column=%r row_id=%s)",
+            table, column, row_id,
+        )
+        return False
+    try:
+        new_blob = encrypt(plaintext, aad=aad)
+    except Exception as exc:  # noqa: BLE001 — read не должен падать
+        logger.warning(
+            "lazy_reencrypt: encrypt failed for %s.%s row_id=%s err=%s",
+            table, column, row_id, type(exc).__name__,
+        )
+        return False
+
+    stmt = text(
+        f"UPDATE {table} SET {column} = :new "
+        f"WHERE id = :id AND {column} = :old"
+    )
+    try:
+        result = await db.execute(
+            stmt, {"new": new_blob, "id": row_id, "old": old_blob}
+        )
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001 — read не должен падать
+        # БД-lock, connection drop, любой другой сбой. Откатываем, чтобы не
+        # утянуть с собой транзакцию caller'а, и идём дальше.
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        logger.warning(
+            "lazy_reencrypt: UPDATE failed for %s.%s row_id=%s err=%s",
+            table, column, row_id, type(exc).__name__,
+        )
+        return False
+
+    rowcount = int(result.rowcount or 0)
+    if rowcount == 0:
+        # Concurrent winner (другой read или outbox-worker уже перешифровал
+        # эту строку). Штатное состояние при многопоточной работе.
+        logger.debug(
+            "lazy_reencrypt: 0 rows affected (concurrent winner) for %s.%s row_id=%s",
+            table, column, row_id,
+        )
+        return False
+    return True

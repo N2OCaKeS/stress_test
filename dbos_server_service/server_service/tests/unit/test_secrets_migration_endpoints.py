@@ -63,7 +63,10 @@ class TestMigrationStatusShape:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert set(body.keys()) == {
+        # Core keys (исторический контракт) — обязаны быть на месте всегда.
+        # Расширенные per-column / migrated_pct поля проверяются отдельно в
+        # `test_migration_status_extended.py`.
+        core_keys = {
             "remaining",
             "total",
             "active_version",
@@ -71,6 +74,7 @@ class TestMigrationStatusShape:
             "app_env",
             "outbox",
         }
+        assert core_keys.issubset(body.keys())
         assert set(body["outbox"].keys()) == {
             "pending",
             "processing",

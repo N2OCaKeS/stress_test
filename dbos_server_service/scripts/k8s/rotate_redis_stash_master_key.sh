@@ -7,42 +7,67 @@
 # в БД НЕТ — поэтому после max(TTL) от момента ротации старый ключ больше
 # никому не нужен и его можно безопасно дропнуть.
 #
-# Flow:
-#   1. Прочитать текущие REDIS_STASH_ENCRYPTION_KEY / _VERSION из Secret'а.
-#   2. Сгенерировать новый ключ, version = current + 1.
-#   3. Пропатчить Secret:
-#        - REDIS_STASH_ENCRYPTION_KEY            ← new
-#        - REDIS_STASH_ENCRYPTION_KEY_VERSION    ← new_version
-#        - REDIS_STASH_ENCRYPTION_KEY__v<old>    ← old (TTL-цикл для in-flight
-#                                                    stash'ей под старой версией)
-#   4. Rolling restart server-service + server-worker (оба читают этот ключ).
-#   5. Сообщение оператору: подожди max(TTL) (обычно <1 часа) и запусти
-#      --finalize. Скрипт сам sleep НЕ делает.
-#   6. Финализация --finalize: удалить REDIS_STASH_ENCRYPTION_KEY__v<old>
-#      + rolling restart.
-#   7. --status: показать active version + список legacy versions.
-#
-# Скрипт ИНТЕРАКТИВНЫЙ.
+# Безопасный finalize:
+#   migration_status в этом контуре не применим (нет БД-ciphertext'ов). Вместо
+#   него проверяем uptime Redis pod'а с момента (rolling restart server-svc +
+#   server-worker) → если прошло >REDIS_STASH_TTL_S (default 3600), все stash'и
+#   под старым ключом естественно протухли по TTL. До этого момента finalize
+#   откажется работать без --force-finalize.
 #
 # Использование:
-#   scripts/k8s/rotate_redis_stash_master_key.sh             # полный flow
-#   scripts/k8s/rotate_redis_stash_master_key.sh --finalize  # drop previous-key
-#   scripts/k8s/rotate_redis_stash_master_key.sh --status    # текущее состояние
+#   scripts/k8s/rotate_redis_stash_master_key.sh                  # фаза 1
+#   scripts/k8s/rotate_redis_stash_master_key.sh --finalize       # фаза 2 (TTL прошёл)
+#   scripts/k8s/rotate_redis_stash_master_key.sh --auto-finalize  # CronJob
+#   scripts/k8s/rotate_redis_stash_master_key.sh --status         # текущее состояние
 #
-# Требования:
-#   kubectl, jq, openssl
+# Флаги:
+#   --yes              non-interactive
+#   --force-finalize   bypass uptime-проверки (DR/incident)
+#
+# Требования: kubectl, jq, openssl
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NS="${DBOS_NAMESPACE:-dbos}"
 SECRET="${DBOS_SECRET_NAME:-dbos-secrets}"
 SERVER_DEPLOY="server-service"
 WORKER_DEPLOY="server-worker"
+REDIS_DEPLOY="redis"
+
+# Минимум секунд с момента (последнего restart redis или ротации), после
+# которого считаем in-flight stash'и под старым ключом протухшими по TTL.
+REDIS_STASH_TTL_S="${REDIS_STASH_TTL_S:-3600}"
+
+# Метка-таймстамп ротации, который мы сохраняем в Secret'е после rotate,
+# чтобы finalize мог посчитать elapsed относительно неё, а не uptime Redis'а
+# (uptime может сбиться, если Redis рестартовали по другой причине).
+ROTATE_TS_FIELD="REDIS_STASH_ENCRYPTION_KEY_ROTATED_AT"
+
+# ── Аргументы ─────────────────────────────────────────────────────────────────
+ACTION="rotate"
+ASSUME_YES="false"
+FORCE_FINALIZE="false"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --status)         ACTION="status";         shift ;;
+        --finalize)       ACTION="finalize";       shift ;;
+        --auto-finalize)  ACTION="auto-finalize";  shift ;;
+        --force-finalize) FORCE_FINALIZE="true";   shift ;;
+        --yes|-y)         ASSUME_YES="true";       shift ;;
+        -h|--help)        sed -n '2,30p' "$0";     exit 0 ;;
+        *) echo "ОШИБКА: неизвестный аргумент: $1" >&2; exit 1 ;;
+    esac
+done
 
 # ── Утилиты ───────────────────────────────────────────────────────────────────
 
 confirm() {
     local prompt="$1"
+    if [[ "$ASSUME_YES" == "true" ]]; then
+        return 0
+    fi
     read -p "  ${prompt} [yes/no]: " yn
     [[ "$yn" == "yes" ]]
 }
@@ -55,7 +80,9 @@ require_bin kubectl
 require_bin jq
 require_bin openssl
 
-# Достать поле из Secret'а в открытом виде.
+# shellcheck source=_rotation_helpers.sh
+source "$SCRIPT_DIR/_rotation_helpers.sh"
+
 secret_get() {
     local key="$1"
     kubectl -n "$NS" get secret "$SECRET" -o json \
@@ -63,7 +90,6 @@ secret_get() {
         | { local b64; b64=$(cat); [[ -n "$b64" ]] && echo "$b64" | base64 -d || true; }
 }
 
-# Пропатчить одно поле Secret'а (через stringData, чтобы не возиться с base64).
 secret_set_string() {
     local key="$1"; shift
     local val="$1"
@@ -77,8 +103,43 @@ secret_unset() {
         -p "[{\"op\":\"remove\",\"path\":\"/data/${key}\"}]" 2>/dev/null || true
 }
 
+list_legacy_keys() {
+    kubectl -n "$NS" get secret "$SECRET" -o json \
+        | jq -r '.data | keys[]' \
+        | grep -E '^REDIS_STASH_ENCRYPTION_KEY__v[0-9]+$' \
+        | sort -t v -k2 -n || true
+}
+
+# Сколько секунд прошло с последней ротации (по нашей собственной метке).
+# Если метки нет — возвращаем огромное число (считаем, что давно).
+seconds_since_rotation() {
+    local ts_str
+    ts_str=$(secret_get "$ROTATE_TS_FIELD" || true)
+    if [[ -z "$ts_str" ]]; then
+        echo "999999"
+        return 0
+    fi
+    local rotated_at now
+    # date -d на BusyBox alpine понимает только ISO8601 в специфичном формате;
+    # сохраняем как `date -u +%s` (epoch) — gnarly но переносимо.
+    rotated_at="$ts_str"
+    now=$(date -u +%s)
+    if [[ "$rotated_at" =~ ^[0-9]+$ ]]; then
+        echo $(( now - rotated_at ))
+    else
+        # Fallback: ISO8601 → epoch через date(1). Не работает в BusyBox для
+        # произвольных форматов; держим ради backward-compat.
+        if command -v date >/dev/null && date -u -d "$rotated_at" +%s >/dev/null 2>&1; then
+            rotated_at=$(date -u -d "$rotated_at" +%s)
+            echo $(( now - rotated_at ))
+        else
+            echo "999999"
+        fi
+    fi
+}
+
 show_status() {
-    local cur ver
+    local cur ver elapsed
     cur=$(secret_get REDIS_STASH_ENCRYPTION_KEY || true)
     ver=$(secret_get REDIS_STASH_ENCRYPTION_KEY_VERSION || true)
     echo ""
@@ -88,51 +149,67 @@ show_status() {
     echo "REDIS_STASH_ENCRYPTION_KEY length: ${#cur} bytes"
     echo ""
     echo "Previous-keys в Secret'е (если есть):"
-    kubectl -n "$NS" get secret "$SECRET" -o json \
-        | jq -r '.data | keys[]' \
-        | grep -E '^REDIS_STASH_ENCRYPTION_KEY__v[0-9]+$' || echo "  (нет)"
+    list_legacy_keys | sed 's/^/  /' || echo "  (нет)"
     echo ""
-    echo "Persistent-данных под этим ключом НЕТ — Redis-stash живёт под TTL"
-    echo "(обычно <1 часа). После полной ротации previous-key нужен только"
-    echo "на TTL-цикл, потом можно дропнуть через --finalize."
+    elapsed=$(seconds_since_rotation)
+    echo "Прошло с последней ротации: ${elapsed}s (требуется ≥${REDIS_STASH_TTL_S}s для безопасного finalize)"
     echo ""
 }
 
-# ── --status / --finalize subcommands ─────────────────────────────────────────
+# Проверка: можно ли безопасно дропать __v<old>? Да, если elapsed > TTL.
+check_ttl_expired() {
+    local elapsed
+    elapsed=$(seconds_since_rotation)
+    if [[ "$elapsed" -ge "$REDIS_STASH_TTL_S" ]]; then
+        return 0
+    fi
+    local wait_more=$(( REDIS_STASH_TTL_S - elapsed ))
+    echo "ОШИБКА: с момента ротации прошло ${elapsed}s, нужно ≥${REDIS_STASH_TTL_S}s." >&2
+    echo "  Подожди ещё ${wait_more}s, чтобы in-flight stash'и под старым ключом протухли." >&2
+    return 1
+}
 
-if [[ "${1:-}" == "--status" ]]; then
+# ── ACTION: status ────────────────────────────────────────────────────────────
+
+if [[ "$ACTION" == "status" ]]; then
     show_status
     exit 0
 fi
 
-if [[ "${1:-}" == "--finalize" ]]; then
-    echo "=== ФИНАЛИЗАЦИЯ ротации REDIS_STASH_ENCRYPTION_KEY ==="
-    echo ""
-    echo "Этот шаг удалит все REDIS_STASH_ENCRYPTION_KEY__v<N> из Secret'а."
-    echo "ЗАПУСКАТЬ ТОЛЬКО ПОСЛЕ того, как с момента полной ротации прошёл"
-    echo "max(TTL) Redis-stash'ей (обычно <1 часа), и in-flight stash'и"
-    echo "под старой версией ключа уже истекли по TTL. Если запустить раньше,"
-    echo "оставшиеся в Redis stash'и v<old> станут недешифруемыми и worker"
-    echo "поднимет REDIS_STASH_KEY_MISSING на dispatch'е."
+# ── ACTION: finalize / auto-finalize ──────────────────────────────────────────
+
+do_finalize() {
+    echo "=== FINALIZE REDIS_STASH_ENCRYPTION_KEY ==="
     echo ""
     show_status
-    confirm "Подтвердить: TTL-цикл прошёл, удалить ВСЕ previous-keys?" \
-        || { echo "Отменено."; exit 0; }
 
-    PREV_KEYS=$(kubectl -n "$NS" get secret "$SECRET" -o json \
-        | jq -r '.data | keys[]' \
-        | grep -E '^REDIS_STASH_ENCRYPTION_KEY__v[0-9]+$' || true)
-
-    if [[ -z "$PREV_KEYS" ]]; then
+    local prev_keys
+    prev_keys=$(list_legacy_keys)
+    if [[ -z "$prev_keys" ]]; then
         echo "→ Previous-keys уже не в Secret'е. Готово."
-        exit 0
+        # Заодно подчистим устаревшую метку.
+        secret_unset "$ROTATE_TS_FIELD"
+        return 0
+    fi
+
+    if [[ "$FORCE_FINALIZE" == "true" ]]; then
+        confirm_force_finalize "redis-stash-master" || { echo "Отменено."; exit 1; }
+    else
+        if ! check_ttl_expired; then
+            exit 1
+        fi
+        echo "✓ TTL-цикл прошёл, in-flight stash'и под старым ключом протухли."
+        echo ""
+        confirm "Удалить ВСЕ previous-keys из Secret'а?" || { echo "Отменено."; exit 0; }
     fi
 
     while read -r key; do
         [[ -z "$key" ]] && continue
         echo "→ Удаляю $key из Secret'а..."
         secret_unset "$key"
-    done <<< "$PREV_KEYS"
+    done <<< "$prev_keys"
+
+    secret_unset "$ROTATE_TS_FIELD"
 
     echo "→ Rolling restart server-service + server-worker..."
     kubectl -n "$NS" rollout restart deploy/"$SERVER_DEPLOY"
@@ -142,109 +219,176 @@ if [[ "${1:-}" == "--finalize" ]]; then
 
     echo ""
     echo "✓ Финализация завершена. Previous-keys удалены."
+}
+
+drop_legacy_older_than() {
+    local keep_ver="$1"
+    local key ver
+    while read -r key; do
+        [[ -z "$key" ]] && continue
+        ver="${key##*__v}"
+        if [[ "$ver" -lt "$keep_ver" ]]; then
+            echo "→ Удаляю $key (старее __v${keep_ver})..."
+            secret_unset "$key"
+        fi
+    done <<< "$(list_legacy_keys)"
+}
+
+if [[ "$ACTION" == "finalize" ]]; then
+    do_finalize
     exit 0
 fi
 
-# ── Полный flow ───────────────────────────────────────────────────────────────
+# ── ACTION: rotate ────────────────────────────────────────────────────────────
 
-echo "=== РОТАЦИЯ REDIS_STASH_ENCRYPTION_KEY ==="
-echo ""
-show_status
+do_rotate() {
+    local cur_key cur_ver new_ver new_key
+    cur_key=$(secret_get REDIS_STASH_ENCRYPTION_KEY)
+    cur_ver=$(secret_get REDIS_STASH_ENCRYPTION_KEY_VERSION)
 
-CUR_KEY=$(secret_get REDIS_STASH_ENCRYPTION_KEY)
-CUR_VER=$(secret_get REDIS_STASH_ENCRYPTION_KEY_VERSION)
+    if [[ -z "$cur_key" || -z "$cur_ver" ]]; then
+        echo "ОШИБКА: не нашёл REDIS_STASH_ENCRYPTION_KEY / _VERSION в Secret'е $NS/$SECRET." >&2
+        exit 1
+    fi
 
-if [[ -z "$CUR_KEY" || -z "$CUR_VER" ]]; then
-    echo "ОШИБКА: не нашёл REDIS_STASH_ENCRYPTION_KEY / _VERSION в Secret'е $NS/$SECRET." >&2
-    exit 1
-fi
+    new_ver=$((cur_ver + 1))
+    new_key=$(openssl rand -base64 32 | tr -d '\n=')
 
-NEW_VER=$((CUR_VER + 1))
-NEW_KEY=$(openssl rand -base64 32 | tr -d '\n=')
+    local ts summary_out now_epoch
+    ts="$(date -u +%Y%m%dT%H%M%SZ)"
+    now_epoch="$(date -u +%s)"
+    summary_out="/tmp/dbos-rotate-redis-stash-${ts}.txt"
 
-TS="$(date -u +%Y%m%dT%H%M%SZ)"
-SUMMARY_OUT="/tmp/dbos-rotate-redis-stash-${TS}.txt"
-
-cat <<EOF
+    cat <<EOF
 
 Будет сделано:
-  1. Текущий ключ (v${CUR_VER}) переедет в REDIS_STASH_ENCRYPTION_KEY__v${CUR_VER}
-     (нужен server-service/server-worker'у, чтобы добить in-flight stash'и
-     под старой версией до их TTL-expiry).
-  2. REDIS_STASH_ENCRYPTION_KEY = <новый>,
-     REDIS_STASH_ENCRYPTION_KEY_VERSION = ${NEW_VER}.
-  3. Rolling restart server-service + server-worker.
-  4. Сообщение: подожди max(TTL) Redis-stash'ей (обычно <1 часа) и потом
-     ${0} --finalize.
+  1. Текущий ключ (v${cur_ver}) переедет в REDIS_STASH_ENCRYPTION_KEY__v${cur_ver}.
+  2. REDIS_STASH_ENCRYPTION_KEY = <новый>, VERSION = ${new_ver}.
+  3. Метка ${ROTATE_TS_FIELD} = ${now_epoch} (для finalize gating через TTL).
+  4. Rolling restart server-service + server-worker.
+  5. Finalize возможен после ≥${REDIS_STASH_TTL_S}s от now (TTL-цикл).
 
+EOF
+
+    if [[ "$ASSUME_YES" != "true" ]]; then
+        cat <<EOF
 Новый мастер-ключ (СОХРАНИ — без него восстановление невозможно):
+  ${new_key}
 
-  REDIS_STASH_ENCRYPTION_KEY (v${NEW_VER}):
-  ${NEW_KEY}
-
-Дубликат в:
-  ${SUMMARY_OUT}
+Дубликат в: ${summary_out}
 
 EOF
+        {
+            echo "DBOS redis-stash master-key rotation"
+            echo "timestamp: ${ts}"
+            echo "old_version: ${cur_ver}"
+            echo "new_version: ${new_ver}"
+            echo ""
+            echo "NEW REDIS_STASH_ENCRYPTION_KEY:"
+            echo "${new_key}"
+            echo ""
+            echo "PREVIOUS REDIS_STASH_ENCRYPTION_KEY (теперь под REDIS_STASH_ENCRYPTION_KEY__v${cur_ver}):"
+            echo "${cur_key}"
+        } > "$summary_out"
+        chmod 600 "$summary_out"
+    fi
 
-{
-    echo "DBOS redis-stash master-key rotation"
-    echo "timestamp: ${TS}"
-    echo "old_version: ${CUR_VER}"
-    echo "new_version: ${NEW_VER}"
+    confirm "Продолжить ротацию?" || {
+        echo "Отменено."
+        [[ -f "$summary_out" ]] && { shred -u "$summary_out" 2>/dev/null || rm -f "$summary_out"; }
+        return 1
+    }
+
     echo ""
-    echo "NEW REDIS_STASH_ENCRYPTION_KEY:"
-    echo "${NEW_KEY}"
+    echo "→ Пишу previous-ключ в REDIS_STASH_ENCRYPTION_KEY__v${cur_ver}..."
+    secret_set_string "REDIS_STASH_ENCRYPTION_KEY__v${cur_ver}" "$cur_key"
+
+    echo "→ Подменяю REDIS_STASH_ENCRYPTION_KEY/VERSION + ставлю метку ротации..."
+    kubectl -n "$NS" patch secret "$SECRET" --type='merge' -p "$(jq -n \
+        --arg new_key "$new_key" \
+        --arg new_ver "$new_ver" \
+        --arg ts_field "$ROTATE_TS_FIELD" \
+        --arg ts_val "$now_epoch" \
+        '{stringData: {REDIS_STASH_ENCRYPTION_KEY: $new_key,
+                       REDIS_STASH_ENCRYPTION_KEY_VERSION: $new_ver,
+                       ($ts_field): $ts_val}}')"
+
     echo ""
-    echo "PREVIOUS REDIS_STASH_ENCRYPTION_KEY (теперь под REDIS_STASH_ENCRYPTION_KEY__v${CUR_VER}):"
-    echo "${CUR_KEY}"
-} > "$SUMMARY_OUT"
-chmod 600 "$SUMMARY_OUT"
+    echo "→ Rolling restart server-service + server-worker..."
+    confirm "Рестартовать сейчас?" || {
+        echo "Pause. Запусти руками: kubectl -n $NS rollout restart deploy/$SERVER_DEPLOY deploy/$WORKER_DEPLOY"
+        return 0
+    }
 
-confirm "Продолжить ротацию?" || { echo "Отменено. Дубликат удалён."; shred -u "$SUMMARY_OUT" 2>/dev/null || rm -f "$SUMMARY_OUT"; exit 0; }
+    kubectl -n "$NS" rollout restart deploy/"$SERVER_DEPLOY"
+    kubectl -n "$NS" rollout restart deploy/"$WORKER_DEPLOY"
+    kubectl -n "$NS" rollout status  deploy/"$SERVER_DEPLOY" --timeout=300s
+    kubectl -n "$NS" rollout status  deploy/"$WORKER_DEPLOY" --timeout=300s
 
-# ── Step 1: Patch Secret ──────────────────────────────────────────────────────
-echo ""
-echo "→ Step 1: пишу previous-ключ в REDIS_STASH_ENCRYPTION_KEY__v${CUR_VER}..."
-secret_set_string "REDIS_STASH_ENCRYPTION_KEY__v${CUR_VER}" "$CUR_KEY"
+    cat <<EOF
 
-echo "→ Step 2: подменяю REDIS_STASH_ENCRYPTION_KEY и REDIS_STASH_ENCRYPTION_KEY_VERSION..."
-# Объединяем оба патча в один merge, чтобы не было промежуточного состояния,
-# когда server_service попытался бы зашифровать новые stash'и под v_old, но
-# KDF дал бы материал нового ключа.
-kubectl -n "$NS" patch secret "$SECRET" --type='merge' -p "$(jq -n \
-    --arg new_key "$NEW_KEY" \
-    --arg new_ver "$NEW_VER" \
-    '{stringData: {REDIS_STASH_ENCRYPTION_KEY: $new_key, REDIS_STASH_ENCRYPTION_KEY_VERSION: $new_ver}}')"
+✓ Ключ ротирован. Активная версия = v${new_ver}.
 
-# ── Step 3: Rolling restart ────────────────────────────────────────────────────
-echo ""
-echo "→ Step 3: rolling restart server-service + server-worker..."
-confirm "Рестартовать сейчас?" || { echo "Pause. Запусти руками: kubectl -n $NS rollout restart deploy/$SERVER_DEPLOY deploy/$WORKER_DEPLOY"; exit 0; }
-
-kubectl -n "$NS" rollout restart deploy/"$SERVER_DEPLOY"
-kubectl -n "$NS" rollout restart deploy/"$WORKER_DEPLOY"
-kubectl -n "$NS" rollout status  deploy/"$SERVER_DEPLOY" --timeout=300s
-kubectl -n "$NS" rollout status  deploy/"$WORKER_DEPLOY" --timeout=300s
-
-# ── Step 4: Подсказка про TTL-цикл ────────────────────────────────────────────
-cat <<EOF
-
-✓ Ключ ротирован. Активная версия = v${NEW_VER}.
-
-Сейчас server-service шифрует НОВЫЕ stash'и под v${NEW_VER} и расшифровывает
-ЛЮБЫЕ существующие (v${CUR_VER} читается через REDIS_STASH_ENCRYPTION_KEY__v${CUR_VER}).
-
-Persistent-данных под REDIS_STASH_ENCRYPTION_KEY нет — Redis-stash короткоживущий
-(под TTL). Подожди max(TTL) (обычно <1 часа от момента ротации), чтобы
-in-flight stash'и под v${CUR_VER} истекли по TTL, и финализируй ротацию:
-
-    ${0} --finalize
-
-Это удалит REDIS_STASH_ENCRYPTION_KEY__v${CUR_VER} из Secret'а и сделает
-rolling restart обоих сервисов.
-
-Резервная копия ключей: ${SUMMARY_OUT} (chmod 600).
-После переноса в password manager:  shred -u ${SUMMARY_OUT}
+Подожди ≥${REDIS_STASH_TTL_S}s (TTL-цикл in-flight stash'ей под v${cur_ver}),
+потом финализируй:
+    $0 --finalize
 
 EOF
+}
+
+if [[ "$ACTION" == "rotate" ]]; then
+    echo "=== РОТАЦИЯ REDIS_STASH_ENCRYPTION_KEY (фаза 1) ==="
+    show_status
+    do_rotate
+    exit 0
+fi
+
+# ── ACTION: auto-finalize ──────────────────────────────────────────────────────
+
+if [[ "$ACTION" == "auto-finalize" ]]; then
+    echo "=== AUTO-FINALIZE REDIS_STASH_ENCRYPTION_KEY ==="
+    show_status
+
+    cur_ver=$(secret_get REDIS_STASH_ENCRYPTION_KEY_VERSION)
+    if [[ -z "$cur_ver" ]]; then
+        echo "ОШИБКА: REDIS_STASH_ENCRYPTION_KEY_VERSION пуст в Secret'е." >&2
+        exit 1
+    fi
+
+    legacy=$(list_legacy_keys || true)
+
+    if [[ -n "$legacy" ]]; then
+        if check_ttl_expired 2>/dev/null; then
+            echo "✓ TTL прошёл → finalize."
+            while read -r key; do
+                [[ -z "$key" ]] && continue
+                echo "→ Удаляю $key..."
+                secret_unset "$key"
+            done <<< "$legacy"
+            secret_unset "$ROTATE_TS_FIELD"
+            echo "→ Rolling restart..."
+            kubectl -n "$NS" rollout restart deploy/"$SERVER_DEPLOY"
+            kubectl -n "$NS" rollout restart deploy/"$WORKER_DEPLOY"
+            kubectl -n "$NS" rollout status  deploy/"$SERVER_DEPLOY" --timeout=300s
+            kubectl -n "$NS" rollout status  deploy/"$WORKER_DEPLOY" --timeout=300s
+        else
+            echo "⚠ TTL ещё не прошёл — finalize пропускается."
+            echo "  Дроплю только __v<N-2> и старее (если есть): они уже точно протухли"
+            echo "  за прошлый CronJob-цикл (6 мес)."
+            drop_legacy_older_than "$cur_ver"
+        fi
+    else
+        echo "→ Legacy keys в Secret'е нет — finalize не требуется."
+    fi
+
+    echo ""
+    echo "=== ROTATE → новая версия ==="
+    do_rotate
+
+    echo ""
+    echo "✓ auto-finalize завершён."
+    exit 0
+fi
+
+echo "ОШИБКА: неизвестное действие: $ACTION" >&2
+exit 1

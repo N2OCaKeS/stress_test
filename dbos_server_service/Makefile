@@ -61,6 +61,12 @@ E2E     = docker compose -f tests/integration/docker-compose.test.yml
 DEV     = docker compose -f docker-compose.dev.yml
 K8S     = kubectl -n dbos
 
+# Prod DNS-имя для будущего DNS-доступа. По умолчанию запекается в SAN
+# self-signed сертификата вместе с auto-IP, чтобы тот же cert валидировался
+# и сейчас (по IP), и позже (когда DNS пропишется), без перевыпуска.
+# Override: make k8s-zero DNS=other.example.com   |  отключить: DNS=
+DBOS_DNS ?= emm.devos.astralinux.ru
+
 # ── Dev-параметры (devcontainer postgres) ─────────────────────────────────────
 _DEV_PG         = postgresql+psycopg://app_user:app_password@postgres:5432
 _DEV_AUTH_DB    = $(_DEV_PG)/dev_auth
@@ -530,7 +536,7 @@ k8s-install-cert-manager-images: ## [VM, sudo] Спулить cert-manager об�
 		fi; \
 	done
 
-k8s-zero: ## [VM, sudo] Полный deploy с нуля. Без аргументов — IP хоста автоопределяется. DOMAIN=<dns|ip> — переопределить. SAN_EXTRA="DNS:emm.devos.astralinux.ru" — combo-cert IP+DNS. CM_VERSION=v1.15.3.
+k8s-zero: ## [VM, sudo] Полный deploy с нуля. Без аргументов: IP хоста авто + cert SAN под IP и DBOS_DNS ($(DBOS_DNS)). Override: DOMAIN=<host>, DBOS_DNS=<dns>, DBOS_DNS= (отключить DNS), CM_VERSION=v1.15.3.
 	@echo "═══════════════════════════════════════════════════════════════════"
 	@echo "  DBOS zero-deploy на $$(hostname)"
 	@echo "═══════════════════════════════════════════════════════════════════"
@@ -553,11 +559,11 @@ k8s-zero: ## [VM, sudo] Полный deploy с нуля. Без аргумент
 	@echo "▶ [5/9] cert-manager apply + CA + leaf-сертификаты"
 	@$(MAKE) k8s-install-cert-manager --no-print-directory
 	@echo ""
-	@echo "▶ [6/9] secrets + ingress (DOMAIN=$(if $(DOMAIN),$(DOMAIN),<auto-IP>))"
+	@echo "▶ [6/9] secrets + ingress (host=$(if $(DOMAIN),$(DOMAIN),<auto-IP>)$(if $(DBOS_DNS), + SAN DNS:$(DBOS_DNS),))"
 	@if [ -f k8s/20-secrets.yaml ] && [ -f k8s/50-ingress.yaml ]; then \
 		echo "  • k8s/20-secrets.yaml и k8s/50-ingress.yaml уже сгенерированы — пропускаем"; \
 	else \
-		bash scripts/k8s/gen_secrets.sh $(if $(DOMAIN),$(DOMAIN),) </dev/null; \
+		$(if $(DBOS_DNS),SAN_EXTRA="DNS:$(DBOS_DNS)" ,)bash scripts/k8s/gen_secrets.sh $(if $(DOMAIN),$(DOMAIN),) </dev/null; \
 	fi
 	@echo ""
 	@echo "▶ [7/9] kubectl apply -k k8s/ + ожидание rollout"

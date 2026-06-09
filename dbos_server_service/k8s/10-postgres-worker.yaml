@@ -1,9 +1,17 @@
+# Postgres для server_worker — один pod с persistent volume.
+# Резервирование делается через бэкапы (см. scripts/k8s/backup_pg.sh), не репликами.
+
+# PV под local-path: явный Retain, чтобы случайное удаление PVC не зачищало
+# данные. k3s local-path-provisioner создаёт PV динамически; здесь объявлен
+# guard на reclaim policy через StorageClass-параметры PVC + аннотация.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: worker-postgres-data
   namespace: dbos
   annotations:
+    # local-path provisioner k3s читает эту аннотацию и проставляет Retain
+    # на динамически созданный PV.
     helm.sh/resource-policy: keep
 spec:
   accessModes: ["ReadWriteOnce"]
@@ -23,7 +31,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate
+    type: Recreate                 # БД не может работать в двух копиях на одном PVC
   selector:
     matchLabels:
       app: worker-postgres
@@ -35,6 +43,9 @@ spec:
       terminationGracePeriodSeconds: 60
       automountServiceAccountToken: false
       securityContext:
+        # Postgres официальный image инициализирует data dir под UID 999 (postgres).
+        # fsGroup нужен чтобы новый PV получил группу postgres и pg_isready
+        # работал на shared volume.
         runAsNonRoot: true
         runAsUser: 999
         runAsGroup: 999
@@ -47,6 +58,9 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+            # postgres image пишет в /var/run/postgresql и /tmp; root-FS оставляем rw,
+            # т.к. официальный image не поддерживает readOnlyRootFilesystem без
+            # дополнительных volume mounts на десяток директорий.
             readOnlyRootFilesystem: false
           ports:
             - containerPort: 5432
@@ -93,7 +107,7 @@ metadata:
   name: worker-postgres
   namespace: dbos
 spec:
-  type: ClusterIP
+  type: ClusterIP                  # только внутри namespace, наружу не публикуется
   selector:
     app: worker-postgres
   ports:

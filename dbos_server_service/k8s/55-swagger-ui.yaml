@@ -34,7 +34,10 @@ spec:
         runAsNonRoot: true
       containers:
         - name: swagger-ui
-          image: swaggerapi/swagger-ui:latest
+          # Pin на конкретный тег вместо :latest — reproducible deploy между
+          # перезапусками pod'а. Обновление = ручной bump (после проверки CVE
+          # на новый image в registry).
+          image: swaggerapi/swagger-ui:v5.17.14
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

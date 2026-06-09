@@ -6,8 +6,10 @@ metadata:
     # PodSecurityAdmission: restricted профиль блокирует privileged, hostPath,
     # runAsRoot и т.п. Все наши Deployment'ы уже идут с runAsNonRoot + drop ALL +
     # seccomp RuntimeDefault, swagger-ui — c runAsUser=101 (nginx unprivileged).
-    # Если operator увидит warning'и из audit — снизить уровень до baseline.
+    # enforce=baseline — деплой проходит даже если у postgres'а readOnlyRootFilesystem
+    # не выставлен. warn/audit=restricted — оператор всё равно видит, какие pod'ы
+    # не дотягивают до restricted (postgres, redis), без блокировки.
     pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/enforce-version: v1.30
-    pod-security.kubernetes.io/audit: baseline
-    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

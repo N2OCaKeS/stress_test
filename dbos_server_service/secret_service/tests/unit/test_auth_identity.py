@@ -189,6 +189,67 @@ async def test_cache_miss_for_different_token():
     assert mock_client.post.await_count == 2
 
 
+# ── bounded LRU cache ────────────────────────────────────────────────────────
+
+
+def test_cache_evicts_oldest_when_maxsize_exceeded(monkeypatch):
+    """`_cache_put` сверх лимита `_INTROSPECT_CACHE_MAXSIZE` вытесняет старейшее.
+
+    Без верхней границы кэш растёт с каждым уникальным токеном (PAT/bot
+    per-request, бурст коротких JWT) и удерживается до рестарта pod'а →
+    memory leak. Bounded cache держит работающий объём константным.
+    """
+    monkeypatch.setattr(auth_dep, "_INTROSPECT_CACHE_MAXSIZE", 3)
+    auth_dep._cache_clear_for_tests()
+
+    auth_dep._cache_put("k1", {"active": True, "id": 1})
+    auth_dep._cache_put("k2", {"active": True, "id": 2})
+    auth_dep._cache_put("k3", {"active": True, "id": 3})
+    # До предела все на месте.
+    assert auth_dep._cache_get("k1") is not None
+    assert auth_dep._cache_get("k2") is not None
+    assert auth_dep._cache_get("k3") is not None
+
+    # Четвёртый put должен вытеснить самый ранний по доступу. После get'ов
+    # выше порядок (LRU): k1, k2, k3 — k1 самая «холодная».
+    auth_dep._cache_put("k4", {"active": True, "id": 4})
+
+    # Размер всё ещё ровно 3 — bound удержан.
+    assert len(auth_dep._introspect_cache) == 3
+    # k1 вылетел; k2/k3/k4 живы.
+    assert auth_dep._cache_get("k1") is None
+    assert auth_dep._cache_get("k2") is not None
+    assert auth_dep._cache_get("k3") is not None
+    assert auth_dep._cache_get("k4") is not None
+
+
+def test_cache_get_promotes_lru_position(monkeypatch):
+    """Cache hit двигает запись в хвост — недавно прочитанная не должна
+    вылетать раньше холодной."""
+    monkeypatch.setattr(auth_dep, "_INTROSPECT_CACHE_MAXSIZE", 2)
+    auth_dep._cache_clear_for_tests()
+
+    auth_dep._cache_put("hot", {"active": True, "id": 1})
+    auth_dep._cache_put("cold", {"active": True, "id": 2})
+    # «Греем» hot — теперь cold самый холодный.
+    assert auth_dep._cache_get("hot") is not None
+
+    # Третий put вытесняет cold, не hot.
+    auth_dep._cache_put("new", {"active": True, "id": 3})
+
+    assert auth_dep._cache_get("cold") is None
+    assert auth_dep._cache_get("hot") is not None
+    assert auth_dep._cache_get("new") is not None
+
+
+def test_cache_maxsize_default_is_reasonable():
+    """Дефолт maxsize ≥ 256 — sanity: не оставляем кэш слишком тесным
+    после lint'а / случайного редактирования. 1024 — текущее значение,
+    диапазон [256, 65536] — мягкий гард на ревью.
+    """
+    assert 256 <= auth_dep._INTROSPECT_CACHE_MAXSIZE <= 65536
+
+
 # ── guard helpers ────────────────────────────────────────────────────────────
 
 

@@ -36,6 +36,7 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NS="${DBOS_NAMESPACE:-dbos}"
 SECRET="${DBOS_SECRET_NAME:-dbos-secrets}"
 REDIS_DEPLOY="redis"
@@ -47,41 +48,24 @@ CONSUMERS=(auth-service server-service server-worker secret-service)
 
 ASSUME_YES="false"
 
+# Длина Redis-пароля (формат gen_secrets.sh::rand 32).
+readonly RAND_REDIS_PASS_LEN=32
+
 # ── Утилиты ───────────────────────────────────────────────────────────────────
+# confirm / require_bin / rand_alnum / secret_get / secret_set_string —
+# в _rotation_helpers.sh.
 
-confirm() {
-    local prompt="$1"
-    if [[ "$ASSUME_YES" == "true" ]]; then
-        return 0
-    fi
-    read -p "  ${prompt} [yes/no]: " yn
-    [[ "$yn" == "yes" ]]
-}
-
-require_bin() {
-    command -v "$1" >/dev/null 2>&1 || { echo "ОШИБКА: нужен $1 в PATH." >&2; exit 1; }
-}
+# shellcheck source=_rotation_helpers.sh
+source "$SCRIPT_DIR/_rotation_helpers.sh"
 
 require_bin kubectl
 require_bin jq
 require_bin openssl
 
-rand_pw() {
-    LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c 32 || true
-}
-
-secret_set_string() {
-    local key="$1"; shift
-    local val="$1"
-    kubectl -n "$NS" patch secret "$SECRET" --type='merge' \
-        -p "$(jq -n --arg k "$key" --arg v "$val" '{stringData: {($k): $v}}')"
-}
+rand_pw() { rand_alnum "$RAND_REDIS_PASS_LEN"; }
 
 # Возвращает текущий пароль из Secret'а (base64-decoded).
-secret_get_redis_pw() {
-    kubectl -n "$NS" get secret "$SECRET" -o jsonpath='{.data.REDIS_PASSWORD}' \
-        | base64 -d
-}
+secret_get_redis_pw() { secret_get REDIS_PASSWORD; }
 
 show_status() {
     echo ""
@@ -146,8 +130,8 @@ echo "  OK (PONG)."
 
 # Generate новый пароль + backup старого.
 NEW_PW=$(rand_pw)
-if [[ ${#NEW_PW} -ne 32 ]]; then
-    echo "ОШИБКА: rand_pw вернул не 32 символа (${#NEW_PW})." >&2
+if [[ ${#NEW_PW} -ne $RAND_REDIS_PASS_LEN ]]; then
+    echo "ОШИБКА: rand_pw вернул не ${RAND_REDIS_PASS_LEN} символов (${#NEW_PW})." >&2
     exit 1
 fi
 

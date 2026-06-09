@@ -225,6 +225,60 @@ async def test_change_own_password_invalidates_identity_cache(
     assert ok.status_code == 200
 
 
+# ── PAT тоже блокируется must_change_password-middleware ───────────────────
+#
+# До явного guard'а контракт держался косвенно: `reset_password` revoke'ит
+# все PAT юзера, поэтому после force-password-flag'а активных PAT просто не
+# было. Это хрупко: новая ветка кода, которая выставит флаг без revoke (или
+# гонка между UPDATE и refresh), оставит дыру. Middleware теперь явно
+# резолвит opaque PAT в user_id и режет.
+
+
+async def test_must_change_blocks_pat_request(client, db, user_a):
+    """PAT юзера с `must_change_password=True` → 403 PASSWORD_CHANGE_REQUIRED.
+
+    Создаём PAT, после этого ставим флаг (т.е. эмулируем сценарий, при котором
+    PAT уцелел: race между admin'ским сбросом и активным сессионным PAT, либо
+    миграция, выставившая флаг без cleanup).
+    """
+    user_a_token = await _login(client, "t_user_a", "User12345678!")
+    pat_resp = await client.post(
+        TOKENS_URL,
+        headers={"Authorization": f"Bearer {user_a_token}"},
+        json={"name": "pat_must_change", "allowed_services": ["service_x"]},
+    )
+    assert pat_resp.status_code == 201, pat_resp.text
+    raw_pat = pat_resp.json()["token"]
+    assert raw_pat.startswith("dbos_pat_")
+
+    # Ставим флаг прямым UPDATE'ом — minimал repro для случая, когда PAT
+    # уцелел.
+    user_a.must_change_password = True
+    await db.commit()
+
+    blocked = await client.get(ME_URL, headers={"Authorization": f"Bearer {raw_pat}"})
+    assert blocked.status_code == 403, blocked.text
+    assert blocked.json()["error_code"] == "PASSWORD_CHANGE_REQUIRED"
+
+
+async def test_must_change_allows_pat_on_whitelisted_endpoint(client, db, user_a):
+    """PAT не должен валить health/ready, даже если у юзера флаг True."""
+    user_a_token = await _login(client, "t_user_a", "User12345678!")
+    pat_resp = await client.post(
+        TOKENS_URL,
+        headers={"Authorization": f"Bearer {user_a_token}"},
+        json={"name": "pat_health_pass", "allowed_services": ["service_x"]},
+    )
+    assert pat_resp.status_code == 201, pat_resp.text
+    raw_pat = pat_resp.json()["token"]
+
+    user_a.must_change_password = True
+    await db.commit()
+
+    ok = await client.get(HEALTH_URL, headers={"Authorization": f"Bearer {raw_pat}"})
+    assert ok.status_code == 200
+
+
 # Sanity: _ORIG_TTL импортирован, чтобы lint не ругался на неиспользованный
 # импорт; значение нам нужно только косвенно для документации поведения.
 _ = _ORIG_TTL

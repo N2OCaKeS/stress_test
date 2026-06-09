@@ -720,3 +720,130 @@ class TestPatchStatusBlockedRevokesSessions:
         assert resp.status_code == 200
         assert resp.json()["status"] == "blocked"
         assert (await session_repo.list_active_for_user(user_a.id)) == []
+
+
+# ── PATCH status=blocked: PAT тоже revoke'ятся ───────────────────────────────
+#
+# До фикса BLOCKED-ветка снимала только сессии; PAT юзера оставались активными
+# и продолжали ходить во все сервисы. Симметрия с ban_user (где PAT
+# revoke'ятся reason="ban"): для BLOCKED reason="user" (admin'ская
+# блокировка, не lifecycle-ban), чтобы `unban_user.reactivate_ban_revoked` не
+# подхватил эти PAT при последующей разблокировке.
+
+
+class TestPatchStatusBlockedRevokesPATs:
+    async def _create_pat(self, client, token, name):
+        return await client.post(
+            TOKENS_URL,
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": name, "allowed_services": ["service_x"]},
+        )
+
+    async def test_active_to_blocked_revokes_pats(
+        self, client, admin_token, user_a, db,
+    ):
+        """ACTIVE → BLOCKED через PATCH: активные PAT юзера revoke'аются."""
+        # Логин как user_a и создание PAT.
+        login = await client.post(
+            LOGIN_URL,
+            json={"username": "t_user_a", "password": "User12345678!"},
+        )
+        assert login.status_code == 200, login.text
+        user_a_token = login.json()["access_token"]
+
+        pat_resp = await self._create_pat(client, user_a_token, "pat_block_test")
+        assert pat_resp.status_code == 201, pat_resp.text
+
+        from src.repositories.tokens import TokenRepository
+        token_repo = TokenRepository(db)
+        active_before = [
+            p for p in await token_repo.list_for_user(user_a.id)
+            if p.revoked_at is None
+        ]
+        assert len(active_before) >= 1
+
+        resp = await _patch(client, admin_token, user_a.id, {"status": "blocked"})
+        assert resp.status_code == 200, resp.text
+
+        active_after = [
+            p for p in await token_repo.list_for_user(user_a.id)
+            if p.revoked_at is None
+        ]
+        assert active_after == [], (
+            f"BLOCKED должен revoke'нуть активные PAT, осталось: {active_after}"
+        )
+
+    async def test_active_to_blocked_emits_pat_revoke_audit(
+        self, client, admin_token, user_a, capture_audit_payloads,
+    ):
+        """audit-trail содержит `user.pat_revoked_on_block` при revoke'е."""
+        login = await client.post(
+            LOGIN_URL,
+            json={"username": "t_user_a", "password": "User12345678!"},
+        )
+        assert login.status_code == 200
+        user_a_token = login.json()["access_token"]
+
+        pat = await self._create_pat(client, user_a_token, "pat_audit_test")
+        assert pat.status_code == 201
+
+        resp = await _patch(client, admin_token, user_a.id, {"status": "blocked"})
+        assert resp.status_code == 200
+
+        events = [
+            p for p in capture_audit_payloads
+            if p["action"] == "user.pat_revoked_on_block"
+            and p.get("target_id") == user_a.id
+        ]
+        assert len(events) == 1, (
+            f"ожидался ровно 1 user.pat_revoked_on_block, получили: {events}"
+        )
+        details = events[0]["details"]
+        assert details["pat_revoked"] >= 1
+        assert details["source"] == "patch_user_status_blocked"
+
+    async def test_blocked_without_pats_no_audit(
+        self, client, admin_token, user_a, capture_audit_payloads,
+    ):
+        """Если PAT не было — `user.pat_revoked_on_block` не эмитится."""
+        resp = await _patch(client, admin_token, user_a.id, {"status": "blocked"})
+        assert resp.status_code == 200
+
+        events = [
+            p for p in capture_audit_payloads
+            if p["action"] == "user.pat_revoked_on_block"
+            and p.get("target_id") == user_a.id
+        ]
+        assert events == [], (
+            f"audit не должен эмититься без revoke'нутых PAT, got: {events}"
+        )
+
+    async def test_blocked_revoked_pat_does_not_introspect_active(
+        self, client, admin_token, user_a,
+    ):
+        """End-to-end: revoke'нутый при BLOCKED PAT → introspect отдаёт
+        active=False (а не active=True user).
+        """
+        login = await client.post(
+            LOGIN_URL,
+            json={"username": "t_user_a", "password": "User12345678!"},
+        )
+        assert login.status_code == 200
+        user_a_token = login.json()["access_token"]
+
+        pat_resp = await self._create_pat(client, user_a_token, "pat_e2e_block")
+        raw_pat = pat_resp.json()["token"]
+
+        # До block — PAT валиден.
+        intro_before = await client.post(INTROSPECT_URL, json={"token": raw_pat})
+        assert intro_before.status_code == 200
+        assert intro_before.json()["active"] is True
+
+        # Блокируем юзера.
+        resp = await _patch(client, admin_token, user_a.id, {"status": "blocked"})
+        assert resp.status_code == 200
+
+        # После block — PAT мёртв.
+        intro_after = await client.post(INTROSPECT_URL, json={"token": raw_pat})
+        assert intro_after.status_code == 200
+        assert intro_after.json()["active"] is False

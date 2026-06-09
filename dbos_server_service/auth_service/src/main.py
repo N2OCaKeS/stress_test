@@ -363,14 +363,22 @@ def create_application() -> FastAPI:
             return await call_next(request)
 
         payload = getattr(request.state, "jwt_payload", None)
-        # Не-юзер JWT (m2m / no token / битый): не наше дело — пускаем дальше,
-        # пусть auth-guard'ы и/или 401 разбираются. `must_change_password` —
-        # свойство юзера, у oauth_client / service-token его нет.
-        if not isinstance(payload, dict):
-            return await call_next(request)
-        if (payload.get("actor_type") or "user") != "user":
-            return await call_next(request)
-        sub = payload.get("sub")
+        sub: str | None = None
+        if isinstance(payload, dict):
+            # Не-юзер JWT (m2m): `must_change_password` — свойство юзера, у
+            # oauth_client его нет, пропускаем.
+            if (payload.get("actor_type") or "user") != "user":
+                return await call_next(request)
+            sub = payload.get("sub")
+        else:
+            # JWT не распарсился (`_extract_actor_info` ловит exception и
+            # оставляет `request.state.jwt_payload` пустым). Это может быть
+            # opaque PAT — резолвим вручную в пользователя. Сам факт того, что
+            # PAT-юзеры в auth_service попадают только на узкую горловину
+            # endpoint'ов (`/users/me/password` уже в whitelist'е), guard
+            # держим defence-in-depth: контракт «PAT обязательно revoke'ится
+            # при force-password-change» — хрупкий, нужна явная проверка.
+            sub = await _resolve_opaque_token_user_id(request, app)
         if not sub:
             return await call_next(request)
 
@@ -692,6 +700,69 @@ def _extract_actor_info(
         return payload.get("sub"), actor_type
     except Exception:
         return None, None
+
+
+async def _resolve_opaque_token_user_id(request: Request, app: FastAPI) -> str | None:
+    """Резолвит bearer-токен в `user_id`, если это активный PAT.
+
+    Нужен для `must_change_password`-middleware: для opaque-токенов
+    (`dbos_pat_…`) JWT-payload отсутствует, и без этой ветки force-
+    password-change-flag обходится тем же контрактом PAT, что хранится в
+    `tokens` (revoke на password-reset держит этот инвариант, но это
+    хрупко).
+
+    Bot-токены (`dbos_bot_…`) намеренно пропускаются — у bot subject'а
+    нет `users.must_change_password`-колонки, флаг к ним не применим.
+    JWT (eyJ-префикс) тоже пропускаем — для них есть отдельная ветка
+    выше с уже декодированным payload'ом.
+
+    Возвращает `None` при любом не-PAT-токене / отсутствии row / DB-ошибке:
+    middleware не должен валить запрос на собственной диагностике.
+    """
+    auth = request.headers.get("Authorization", "")
+    if len(auth) < 7 or auth[:7].lower() != "bearer ":
+        return None
+    token = auth[7:]
+    # Импорт лениво — модуль грузится один раз на app-startup, дёшево.
+    from src.core.constants import PAT_PREFIX
+    from src.core.security import hash_opaque_token
+
+    if not token.startswith(PAT_PREFIX):
+        return None
+
+    from sqlalchemy import select as _select
+
+    from src.dependencies.db import get_db as _get_db
+    from src.models.personal_access_token import PersonalAccessToken
+
+    token_hash = hash_opaque_token(token)
+    override = app.dependency_overrides.get(_get_db)
+    try:
+        if override is not None:
+            agen = override()
+            try:
+                db = await agen.__anext__()
+                user_id = await db.scalar(
+                    _select(PersonalAccessToken.user_id).where(
+                        PersonalAccessToken.token_hash == token_hash,
+                        PersonalAccessToken.revoked_at.is_(None),
+                    )
+                )
+            finally:
+                with suppress(Exception):
+                    await agen.aclose()
+        else:
+            from src.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as db:
+                user_id = await db.scalar(
+                    _select(PersonalAccessToken.user_id).where(
+                        PersonalAccessToken.token_hash == token_hash,
+                        PersonalAccessToken.revoked_at.is_(None),
+                    )
+                )
+    except Exception:
+        return None
+    return user_id
 
 
 def _http_status_to_category(status: int) -> str:

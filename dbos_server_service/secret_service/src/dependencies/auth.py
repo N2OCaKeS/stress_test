@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
+from collections import OrderedDict
 from typing import Annotated
 
 import httpx
@@ -142,9 +143,19 @@ def _hash_token(token: str) -> str:
 
 # TTL в секундах. Короткое окно: отозванный токен перестаёт работать в течение
 # 5s, что приемлемо для UI-polling'а и не даёт slowloris-burst'у амплифицировать
-# на auth_service. dict ключ → (expires_at, body).
+# на auth_service.
+#
+# `_INTROSPECT_CACHE_MAXSIZE` — жёсткая верхняя граница числа entries в кэше.
+# До неё кэш рос как обычный `dict` без вытеснения: при большом числе уникальных
+# токенов (PAT/bot per request, burst short-lived JWT) объём в памяти прыгал
+# вверх и никогда не освобождался до рестарта pod'а. OrderedDict + LRU-вытеснение
+# при превышении maxsize удерживает работающий объём в постоянной памяти.
+# При TTL=5s и нормальном RPS realtime-окно содержит RPS×5 уникальных токенов;
+# 1024 покрывает burst до ~200 RPS уникальных токенов, что больше любого
+# текущего сценария.
 _INTROSPECT_TTL_SECONDS = 5.0
-_introspect_cache: dict[str, tuple[float, dict]] = {}
+_INTROSPECT_CACHE_MAXSIZE = 1024
+_introspect_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
 
 
 def _cache_get(key: str) -> dict | None:
@@ -158,11 +169,20 @@ def _cache_get(key: str) -> dict | None:
         # дешевле подметать на miss'е, чем держать тикающий sweep-таск.
         _introspect_cache.pop(key, None)
         return None
+    # Cache-hit — двигаем запись в хвост, чтобы LRU-eviction не выкидывал
+    # активно используемый токен.
+    _introspect_cache.move_to_end(key)
     return body
 
 
 def _cache_put(key: str, body: dict) -> None:
     _introspect_cache[key] = (time.monotonic() + _INTROSPECT_TTL_SECONDS, body)
+    _introspect_cache.move_to_end(key)
+    # Bounded size — LRU-вытеснение. `popitem(last=False)` снимает самый
+    # старый по последнему обращению; в норме это уже expired entry, в
+    # burst'е — самый «холодный» token, обновится при следующем introspect'е.
+    while len(_introspect_cache) > _INTROSPECT_CACHE_MAXSIZE:
+        _introspect_cache.popitem(last=False)
 
 
 def _cache_clear_for_tests() -> None:

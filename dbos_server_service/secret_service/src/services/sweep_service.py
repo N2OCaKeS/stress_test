@@ -14,7 +14,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete as sa_delete
+from sqlalchemy import delete as sa_delete, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
@@ -23,6 +23,19 @@ from src.models import Credential
 from src.services import audit_service
 
 logger = logging.getLogger(__name__)
+
+# Идентификатор postgres advisory-lock'а: signed 64-bit int. На N pod'ах
+# secret_service параллельно крутится `sweep_loop`, без координации они
+# одновременно бы выполняли DELETE на одних и тех же `blocked`-кред. DELETE
+# RETURNING атомарен, double-delete не страшен по корректности, но второй
+# pod зря тратит соединение и эмитит дубль-audit-event. Lock — короткий
+# (на одну транзакцию sweep'а), удерживается через `pg_try_advisory_lock`
+# (non-blocking — проигравший спокойно ждёт следующего тика).
+#
+# Значение выбрано как стабильный детерминированный hash от семантического
+# имени; пересчёт при ребрендинге допустим, конфликтов с другими advisory-
+# lock'ами в системе нет (мы единственный потребитель в secret_service).
+_SWEEP_ADVISORY_LOCK_ID = 0x5EC2E75EE7  # "secret sweep" stylised
 
 
 def _now_utc() -> datetime:
@@ -42,8 +55,32 @@ async def sweep_expired_blocked(db: AsyncSession) -> dict:
     """
     settings = get_settings()
     cutoff = _now_utc() - timedelta(days=settings.blocked_retention_days)
-    summary = {"deleted_count": 0, "errors": []}
+    summary = {"deleted_count": 0, "errors": [], "skipped": False}
     try:
+        # ── Postgres advisory-lock ───────────────────────────────────────────
+        # На несколько pod'ов один sweep-tick попадает синхронно по cron-окну;
+        # без lock'а оба бы делали тот же DELETE и эмитили дубль-audit.
+        # `pg_try_advisory_lock` — non-blocking: проигравший возвращает False,
+        # мы тихо выходим и попробуем на следующем тике. Lock держится только
+        # на эту транзакцию (через `_xact_lock`), автоматически освобождается
+        # по `COMMIT`/`ROLLBACK` — нам не нужно явно `unlock`.
+        acquired = await db.scalar(
+            sa_text("SELECT pg_try_advisory_xact_lock(:lock_id)").bindparams(
+                lock_id=_SWEEP_ADVISORY_LOCK_ID,
+            )
+        )
+        if not acquired:
+            logger.debug(
+                "sweep: another pod holds advisory lock %d, skipping tick",
+                _SWEEP_ADVISORY_LOCK_ID,
+            )
+            summary["skipped"] = True
+            # Транзакцию не закрываем здесь руками — caller (`sweep_loop`)
+            # завернул нас в `async with AsyncSessionLocal()`, на выходе из
+            # контекстника session закроется и любой висящий tx откатится.
+            # Advisory-lock `_xact_` тоже освободится тогда (он привязан к
+            # текущей транзакции, а не к session/connection).
+            return summary
         stmt = (
             sa_delete(Credential)
             .where(

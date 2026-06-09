@@ -14,6 +14,12 @@
 #                                                 Ingress без host: → принимает
 #                                                 любой Host header).
 #
+#   scripts/k8s/gen_secrets.sh --only-tls       — перевыпустить ТОЛЬКО TLS-cert
+#                                                 (срок 365 дней). admin password,
+#                                                 master-keys, s2s-ключи, DB-пароли
+#                                                 остаются нетронутыми. Использовать
+#                                                 для ежегодного продления cert'а.
+#
 #   SAN_EXTRA="DNS:dbos.local"  scripts/k8s/gen_secrets.sh 10.177.103.102
 #       — добавить второй SAN-entry (например DNS-имя, когда оператор пока
 #       ходит по IP, но хочет, чтобы тот же cert валидировался и по
@@ -39,6 +45,34 @@ ENV_FILE="$K8S_DIR/.env.k8s"
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 SUMMARY_OUT="/tmp/dbos-secrets-${TS}.txt"
+
+# ── Длины случайных секретов (единый источник истины) ─────────────────────────
+# Используются ниже в rand <N> и в rotate_*.sh (там — через _rotation_helpers.sh).
+# Если меняешь — обнови rotate_db_passwords.sh / rotate_redis_password.sh /
+# rotate_s2s_keys.sh, чтобы новые ключи совпадали по длине с историческими.
+readonly RAND_DB_PASS_LEN=32         # AUTH/LOGGING/SERVER/WORKER/SECRET_DB_PASSWORD
+readonly RAND_REDIS_PASS_LEN=32      # REDIS_PASSWORD
+readonly RAND_S2S_KEY_LEN=48         # *_SERVICE_API_KEY*, *_INTROSPECT_*, WORKER_BOT_TOKEN
+readonly RAND_INTROSPECT_KEY_LEN=48  # *_INTROSPECT_SERVICE_API_KEY (тот же тип)
+readonly RAND_ADMIN_PASS_LEN=16      # INITIAL_ADMIN_PASSWORD (короткий — оператор печатает)
+readonly RAND_AUTH_SECRET_LEN=64     # AUTH_SECRET_KEY (JWT signing)
+readonly RAND_MASTER_KEY_BYTES=32    # openssl rand -base64 32 → ~43 alnum
+readonly RAND_HKDF_SALT_BYTES=16     # openssl rand -hex 16
+
+# ── Парсинг флагов ────────────────────────────────────────────────────────────
+# --only-tls — перевыпустить только TLS-cert, не трогать остальные секреты.
+ONLY_TLS=0
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --only-tls|--cert-only) ONLY_TLS=1; shift ;;
+        -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+        --) shift; while [[ $# -gt 0 ]]; do ARGS+=("$1"); shift; done ;;
+        -*) echo "ОШИБКА: неизвестный флаг: $1" >&2; exit 1 ;;
+        *) ARGS+=("$1"); shift ;;
+    esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
 
 # ── Domain или IP (для Ingress + CN/SAN сертификата) ──────────────────────────
 # DOMAIN на входе может быть:
@@ -78,11 +112,19 @@ if [[ -z "$DOMAIN" ]]; then
     fi
 fi
 
-# Определяем тип: IP или DNS. Регэксп грубый (не проверяет 0..255), но достаточен
-# для отличения от DNS-имени; openssl потом всё равно отвергнет невалидный IP.
+# Определяем тип: IP или DNS. Проверяем каждый октет ≤255, чтобы строки вроде
+# "999.999.999.999" не проходили как IP и не уходили в openssl с невалидным
+# SAN'ом (там ошибка получится непрозрачная).
 IS_IP=0
-if [[ "$DOMAIN" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-    IS_IP=1
+if [[ "$DOMAIN" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+    if (( BASH_REMATCH[1] <= 255 && BASH_REMATCH[2] <= 255 \
+       && BASH_REMATCH[3] <= 255 && BASH_REMATCH[4] <= 255 )); then
+        IS_IP=1
+    else
+        echo "ОШИБКА: '${DOMAIN}' выглядит как IPv4, но один из октетов >255." >&2
+        echo "  Если это DNS-имя — оно не должно состоять только из цифр и точек." >&2
+        exit 1
+    fi
 fi
 
 # subjectAltName: основная запись + опциональные дополнительные из $SAN_EXTRA.
@@ -104,6 +146,67 @@ if [[ "$IS_IP" -eq 1 ]]; then
     ADMIN_EMAIL="admin@dbos.local"
 else
     ADMIN_EMAIL="admin@${DOMAIN}"
+fi
+
+# ── --only-tls: перевыпуск ТОЛЬКО TLS-cert (без regen остальных секретов) ─────
+#
+# Используется оператором каждый год для продления self-signed cert'а (срок 365).
+# Патчит живой Secret dbos-ingress-tls в namespace dbos через kubectl.
+# Не трогает k8s/20-secrets.yaml: admin-пароль, master-keys, s2s-ключи и DB-пароли
+# остаются без изменений. После патча оператор делает:
+#     kubectl -n dbos rollout restart deploy/traefik   # если traefik кеширует cert
+# или просто ждёт пока ingress-controller подхватит новый Secret.
+if [[ "$ONLY_TLS" -eq 1 ]]; then
+    echo "→ Режим --only-tls: перевыпуск только TLS-cert (365 дней)."
+    echo "  DOMAIN=${DOMAIN}, SAN=${SAN_ARG}."
+    echo "  Остальные секреты (admin/master-keys/s2s/DB) НЕ затрагиваются."
+    echo ""
+
+    if ! command -v kubectl >/dev/null 2>&1; then
+        echo "ОШИБКА: --only-tls требует kubectl (патчит Secret в cluster'е)." >&2
+        exit 1
+    fi
+
+    TMP_TLS=$(mktemp -d)
+    trap "rm -rf $TMP_TLS" EXIT
+
+    openssl req -x509 -nodes -newkey rsa:2048 \
+        -keyout "$TMP_TLS/tls.key" \
+        -out    "$TMP_TLS/tls.crt" \
+        -days   365 \
+        -subj   "/CN=$DOMAIN/O=DBOS Server Manager" \
+        -addext "subjectAltName=${SAN_ARG}" \
+        2>/dev/null
+
+    TLS_CRT_B64=$(base64 -w0 < "$TMP_TLS/tls.crt")
+    TLS_KEY_B64=$(base64 -w0 < "$TMP_TLS/tls.key")
+
+    # Бэкап старого cert'а (на случай rollback'а), потом merge-patch.
+    BACKUP_FILE="/tmp/dbos-ingress-tls-backup-${TS}.yaml"
+    if kubectl -n dbos get secret dbos-ingress-tls -o yaml > "$BACKUP_FILE" 2>/dev/null; then
+        chmod 600 "$BACKUP_FILE"
+        echo "→ Бэкап старого Secret'а dbos-ingress-tls: ${BACKUP_FILE} (chmod 600)."
+    else
+        echo "⚠ Старый Secret dbos-ingress-tls не найден — создам новый."
+    fi
+
+    echo "→ Patch Secret dbos-ingress-tls в namespace dbos..."
+    kubectl -n dbos patch secret dbos-ingress-tls --type='merge' -p "$(jq -n \
+        --arg crt "$TLS_CRT_B64" --arg key "$TLS_KEY_B64" \
+        '{data: {"tls.crt": $crt, "tls.key": $key}}')" 2>/dev/null \
+    || {
+        # Если Secret'а ещё нет — создаём.
+        kubectl -n dbos create secret tls dbos-ingress-tls \
+            --cert="$TMP_TLS/tls.crt" --key="$TMP_TLS/tls.key"
+    }
+
+    echo ""
+    echo "✓ TLS-cert обновлён."
+    echo ""
+    echo "  Срок действия — 365 дней с ${TS}."
+    echo "  Если ingress-controller кеширует cert — kubectl -n dbos rollout restart deploy/traefik."
+    echo "  Rollback: kubectl apply -f ${BACKUP_FILE}"
+    exit 0
 fi
 
 # ── Перезапись ─────────────────────────────────────────────────────────────────
@@ -130,73 +233,73 @@ rand_b64() { openssl rand -base64 "$1" | tr -d '\n='; }
 rand_hex() { openssl rand -hex "$1"; }
 
 # Postgres credentials (per-service)
-AUTH_DB_PASSWORD=$(rand 32)
-LOGGING_DB_PASSWORD=$(rand 32)
-SERVER_DB_PASSWORD=$(rand 32)
-WORKER_DB_PASSWORD=$(rand 32)
-SECRET_DB_PASSWORD=$(rand 32)
+AUTH_DB_PASSWORD=$(rand "$RAND_DB_PASS_LEN")
+LOGGING_DB_PASSWORD=$(rand "$RAND_DB_PASS_LEN")
+SERVER_DB_PASSWORD=$(rand "$RAND_DB_PASS_LEN")
+WORKER_DB_PASSWORD=$(rand "$RAND_DB_PASS_LEN")
+SECRET_DB_PASSWORD=$(rand "$RAND_DB_PASS_LEN")
 
 # auth_service
-AUTH_SECRET_KEY=$(rand 64)
-INITIAL_ADMIN_PASSWORD=$(rand 16)
+AUTH_SECRET_KEY=$(rand "$RAND_AUTH_SECRET_LEN")
+INITIAL_ADMIN_PASSWORD=$(rand "$RAND_ADMIN_PASS_LEN")
 
 # loging_service service-to-service
-LOGGING_SERVICE_API_KEY_AUTH=$(rand 48)
-LOGGING_SERVICE_API_KEY_SERVER=$(rand 48)
-LOGGING_SERVICE_API_KEY_CONFIG=$(rand 48)
-LOGGING_SERVICE_API_KEY_WORKER=$(rand 48)
-LOGGING_SERVICE_API_KEY_SECRET=$(rand 48)
+LOGGING_SERVICE_API_KEY_AUTH=$(rand "$RAND_S2S_KEY_LEN")
+LOGGING_SERVICE_API_KEY_SERVER=$(rand "$RAND_S2S_KEY_LEN")
+LOGGING_SERVICE_API_KEY_CONFIG=$(rand "$RAND_S2S_KEY_LEN")
+LOGGING_SERVICE_API_KEY_WORKER=$(rand "$RAND_S2S_KEY_LEN")
+LOGGING_SERVICE_API_KEY_SECRET=$(rand "$RAND_S2S_KEY_LEN")
 # loging_service single outbound для backward-compat (caller'ы пока используют
 # одно поле; map выше — для inbound key-separation в loging_service Settings).
 LOGGING_SERVICE_API_KEY="$LOGGING_SERVICE_API_KEY_AUTH"
-LOGGING_INTROSPECT_SERVICE_API_KEY=$(rand 48)
+LOGGING_INTROSPECT_SERVICE_API_KEY=$(rand "$RAND_INTROSPECT_KEY_LEN")
 
 # server_service envelope encryption
-SERVER_ENCRYPTION_KEY=$(rand_b64 32)
+SERVER_ENCRYPTION_KEY=$(rand_b64 "$RAND_MASTER_KEY_BYTES")
 SERVER_ENCRYPTION_KEY_VERSION=2
-HKDF_SALT_HEX=$(rand_hex 16)
+HKDF_SALT_HEX=$(rand_hex "$RAND_HKDF_SALT_BYTES")
 
 # Redis-stash envelope encryption (общий между server_service и server_worker)
 # Ключ отдельный от SERVER_ENCRYPTION_KEY: тот живёт только в server_service
 # (БД ciphertext'ы), этот — симметрично в обоих сервисах (provision-stash).
-REDIS_STASH_ENCRYPTION_KEY=$(rand_b64 32)
+REDIS_STASH_ENCRYPTION_KEY=$(rand_b64 "$RAND_MASTER_KEY_BYTES")
 REDIS_STASH_ENCRYPTION_KEY_VERSION=1
 
 # Legacy SERVICE_API_KEY (один общий секрет для всех caller'ов; в коде
 # используется как fallback если per-service SERVICE_API_KEYS не задан).
-SERVICE_API_KEY=$(rand 48)
+SERVICE_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
 
 # server_service / worker service-to-service
-SERVER_SERVICE_API_KEY=$(rand 48)
-WORKER_SERVICE_API_KEY=$(rand 48)
-WORKER_BOT_TOKEN="dbos_bot_$(rand 48)"
+SERVER_SERVICE_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
+WORKER_SERVICE_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
+WORKER_BOT_TOKEN="dbos_bot_$(rand "$RAND_S2S_KEY_LEN")"
 # rotation_runner identity — ключ, под которым CronJob rotation-scheduler ходит
 # в /internal/migration_status для гейтинга `--auto-finalize` master-ротаций.
-ROTATION_RUNNER_API_KEY=$(rand 48)
+ROTATION_RUNNER_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
 # Inbound SERVICE_API_KEYS-map для server_service: worker_bot + rotation_runner.
 # Формат kv-list.
 SERVER_INBOUND_SERVICE_API_KEYS="worker_bot:${WORKER_BOT_TOKEN},rotation_runner:${ROTATION_RUNNER_API_KEY}"
 
 # secret_service envelope encryption (HKDF_SALT_HEX переиспользуется общий)
-SECRET_ENCRYPTION_KEY=$(rand_b64 32)
+SECRET_ENCRYPTION_KEY=$(rand_b64 "$RAND_MASTER_KEY_BYTES")
 SECRET_ENCRYPTION_KEY_VERSION=2
 
 # secret_service: introspect ключ для исходящих /authorization/introspect
-SECRET_INTROSPECT_SERVICE_API_KEY=$(rand 48)
+SECRET_INTROSPECT_SERVICE_API_KEY=$(rand "$RAND_INTROSPECT_KEY_LEN")
 
 # secret_service: inbound s2s map. Worker и auth дёргают /internal/* для
 # управления записями и cascade-revoke; server_service — для bootstrap'а
 # server_account credentials. Формат kv-list.
-SECRET_INBOUND_WORKER_KEY=$(rand 48)
-SECRET_INBOUND_AUTH_KEY=$(rand 48)
-SECRET_INBOUND_SERVER_KEY=$(rand 48)
+SECRET_INBOUND_WORKER_KEY=$(rand "$RAND_S2S_KEY_LEN")
+SECRET_INBOUND_AUTH_KEY=$(rand "$RAND_S2S_KEY_LEN")
+SECRET_INBOUND_SERVER_KEY=$(rand "$RAND_S2S_KEY_LEN")
 SECRET_INBOUND_SERVICE_API_KEYS_JSON="{\"worker_bot\":\"${SECRET_INBOUND_WORKER_KEY}\",\"auth_service\":\"${SECRET_INBOUND_AUTH_KEY}\",\"server_service\":\"${SECRET_INBOUND_SERVER_KEY}\",\"rotation_runner\":\"${ROTATION_RUNNER_API_KEY}\"}"
 # auth_service бьёт в /internal/* secret_service под идентичностью auth_service —
 # его Bearer == ключу `auth_service` из inbound-map secret_service.
 SECRET_INTERNAL_API_KEY="${SECRET_INBOUND_AUTH_KEY}"
 
 # Redis
-REDIS_PASSWORD=$(rand 32)
+REDIS_PASSWORD=$(rand "$RAND_REDIS_PASS_LEN")
 
 # ── RSA private key для Docker registry token-flow ────────────────────────────
 echo "→ Генерируем RSA private key для Docker registry..."

@@ -274,30 +274,51 @@ async def _revoke_sessions_on_block(
     user,
     actor_id: str,
     request_id: str | None,
-) -> dict | None:
-    """Снести активные сессии при PATCH status → BLOCKED.
+) -> list[dict]:
+    """Снести активные сессии и PAT при PATCH status → BLOCKED.
 
-    Возвращает pending-audit dict (или None, если revoke'ить было нечего).
-    Audit-emit + commit делает caller — мы только flush'им изменения в ту же
-    транзакцию, чтобы один финальный `db.commit()` покрыл и status-update,
-    и session-revoke (атомарно).
+    Возвращает список pending-audit dict'ов (пустой — если revoke'ить было
+    нечего ни там, ни там). Audit-emit + commit делает caller — мы только
+    flush'им изменения в ту же транзакцию, чтобы один финальный
+    `db.commit()` покрыл и status-update, и session/PAT-revoke (атомарно).
+
+    PAT revoke'им под reason="user" (BLOCKED — административная блокировка
+    юзера, не ban; reason `ban` зарезервирован за `ban_user`, чтобы
+    `unban_user.reactivate_ban_revoked` не подхватил эти PAT'ы при
+    последующей разблокировке через ACTIVE).
     """
+    pending: list[dict] = []
     session_repo = SessionRepository(db)
-    revoked = await session_repo.revoke_all_for_user(user.id)
-    if not revoked:
-        return None
-    return {
-        "action": "user.sessions_revoked_on_block",
-        "actor_id": actor_id,
-        "target_id": user.id,
-        "target_type": "user",
-        "details": {
-            "target_username": user.username,
-            "sessions_revoked": revoked,
-            "source": "patch_user_status_blocked",
-        },
-        "request_id": request_id,
-    }
+    revoked_sessions = await session_repo.revoke_all_for_user(user.id)
+    if revoked_sessions:
+        pending.append({
+            "action": "user.sessions_revoked_on_block",
+            "actor_id": actor_id,
+            "target_id": user.id,
+            "target_type": "user",
+            "details": {
+                "target_username": user.username,
+                "sessions_revoked": revoked_sessions,
+                "source": "patch_user_status_blocked",
+            },
+            "request_id": request_id,
+        })
+    token_repo = TokenRepository(db)
+    revoked_pats = await token_repo.revoke_all_for_user(user.id, reason="user")
+    if revoked_pats:
+        pending.append({
+            "action": "user.pat_revoked_on_block",
+            "actor_id": actor_id,
+            "target_id": user.id,
+            "target_type": "user",
+            "details": {
+                "target_username": user.username,
+                "pat_revoked": revoked_pats,
+                "source": "patch_user_status_blocked",
+            },
+            "request_id": request_id,
+        })
+    return pending
 
 
 async def update_user(
@@ -376,7 +397,7 @@ async def update_user(
     # должны умереть — иначе access-token живёт ещё ~10 минут (TTL), и
     # заблокированный юзер успевает походить по системе через уже выданный
     # JWT. Симметрия с веткой BANNED (`ban_user` revoke'ит сессии сам).
-    pending_block_revoke_audit: dict | None = None
+    pending_block_revoke_audit: list[dict] = []
     if new_status is not None and new_status != current_status:
         # ACTIVE↔BANNED разрешено только account_admin'у. POST /users/{id}/ban
         # и /unban защищены `AccountAdmin`-guard'ом; PATCH /users/{id} идёт
@@ -543,7 +564,7 @@ async def update_user(
     if (
         pending_ban_audit is not None
         or pending_ban_deactivation_audit is not None
-        or pending_block_revoke_audit is not None
+        or pending_block_revoke_audit
         or pending_roles_purged_audit is not None
         or pending_groups_purged_audit is not None
         or filtered
@@ -558,7 +579,7 @@ async def update_user(
     if (
         pending_ban_audit is not None
         or pending_ban_deactivation_audit is not None
-        or pending_block_revoke_audit is not None
+        or pending_block_revoke_audit
         or pending_roles_purged_audit is not None
         or pending_groups_purged_audit is not None
         or (filtered and privilege_fields & set(filtered.keys()))
@@ -589,14 +610,14 @@ async def update_user(
             details=pending_ban_deactivation_audit["details"],
             request_id=pending_ban_deactivation_audit["request_id"],
         )
-    if pending_block_revoke_audit is not None:
+    for _evt in pending_block_revoke_audit:
         audit_service.emit(
-            pending_block_revoke_audit["action"],
-            pending_block_revoke_audit["actor_id"],
-            target_id=pending_block_revoke_audit["target_id"],
-            target_type=pending_block_revoke_audit["target_type"],
-            details=pending_block_revoke_audit["details"],
-            request_id=pending_block_revoke_audit["request_id"],
+            _evt["action"],
+            _evt["actor_id"],
+            target_id=_evt["target_id"],
+            target_type=_evt["target_type"],
+            details=_evt["details"],
+            request_id=_evt["request_id"],
         )
     if pending_roles_purged_audit is not None:
         audit_service.emit(

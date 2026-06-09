@@ -1,11 +1,70 @@
 #!/usr/bin/env bash
-# Общие helper'ы для master-key ротаторов: проверка migration_status через
-# `kubectl exec deploy/<svc> -- curl localhost:<port>/.../migration_status`.
+# Общие helper'ы для rotate_*.sh скриптов:
+#   - confirm / require_bin / rand_alnum — базовые утилиты,
+#   - secret_get / secret_set_string / secret_unset — обёртки над kubectl patch
+#     Secret'а dbos-secrets,
+#   - fetch_migration_status_json / migration_status_is_complete — проверка
+#     /internal/migration_status для master-key ротаторов.
 #
 # Не запускается напрямую — source'ится из rotate_master_key.sh,
-# rotate_secret_master_key.sh, rotate_redis_stash_master_key.sh.
+# rotate_secret_master_key.sh, rotate_redis_stash_master_key.sh,
+# rotate_db_passwords.sh, rotate_redis_password.sh, rotate_s2s_keys.sh.
+#
+# Контракт по env-переменным (выставляет caller перед source'ом):
+#   NS                  — namespace (обычно $DBOS_NAMESPACE / dbos)
+#   SECRET              — имя Secret'а (обычно $DBOS_SECRET_NAME / dbos-secrets)
+#   ASSUME_YES          — "true" → confirm() возвращает 0 без prompt'а
 
 # shellcheck shell=bash
+
+# ── Базовые утилиты (раньше дублировались в каждом rotate_*.sh) ───────────────
+
+# Подтверждение действия. Если ASSUME_YES=true — auto-yes (CronJob / harness).
+confirm() {
+    local prompt="$1"
+    if [[ "${ASSUME_YES:-false}" == "true" ]]; then
+        return 0
+    fi
+    read -p "  ${prompt} [yes/no]: " yn
+    [[ "$yn" == "yes" ]]
+}
+
+# Проверить, что бинарь доступен; иначе fail с понятным сообщением.
+require_bin() {
+    command -v "$1" >/dev/null 2>&1 || { echo "ОШИБКА: нужен $1 в PATH." >&2; exit 1; }
+}
+
+# Генератор alphanumeric строки заданной длины (gen_secrets.sh::rand-формат).
+# Используется для DB-паролей (32), Redis-пароля (32), S2S-ключей (48).
+rand_alnum() {
+    local n="$1"
+    LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c "$n" || true
+}
+
+# ── kubectl Secret обёртки ────────────────────────────────────────────────────
+
+# Прочитать одно поле Secret'а (base64-decoded). Пустую строку при отсутствии.
+secret_get() {
+    local key="$1"
+    kubectl -n "$NS" get secret "$SECRET" -o json 2>/dev/null \
+        | jq -r ".data.\"${key}\" // empty" \
+        | { local b64; b64=$(cat); [[ -n "$b64" ]] && echo "$b64" | base64 -d || true; }
+}
+
+# Пропатчить одно поле через stringData (kubectl сам base64-енкодит).
+secret_set_string() {
+    local key="$1"; shift
+    local val="$1"
+    kubectl -n "$NS" patch secret "$SECRET" --type='merge' \
+        -p "$(jq -n --arg k "$key" --arg v "$val" '{stringData: {($k): $v}}')"
+}
+
+# Удалить поле из Secret'а (JSON-patch). Тихо игнорирует «нет такого поля».
+secret_unset() {
+    local key="$1"
+    kubectl -n "$NS" patch secret "$SECRET" --type='json' \
+        -p "[{\"op\":\"remove\",\"path\":\"/data/${key}\"}]" 2>/dev/null || true
+}
 
 # ── Identity для запроса к /internal/migration_status ─────────────────────────
 #

@@ -30,6 +30,29 @@ router = APIRouter(prefix="/oauth2")
 _SUPPORTED_RESPONSE_TYPES: frozenset[str] = frozenset({"code"})
 
 
+def _extract_raw_state(raw_query: str) -> str | None:
+    """Достать сырое значение `state` из query-string запроса.
+
+    Возвращаем именно raw-байты (последовательность символов между `state=` и
+    следующим `&` либо концом строки), без `urldecode`. Если клиент прислал
+    `state=abc%20def`, возвращаем `"abc%20def"` — эту строку echo'им в
+    redirect 1:1, и при декоде клиентом получится тот же `"abc def"`, что и
+    у FastAPI Query-параметра. Если параметр повторяется — берём первое
+    вхождение (стандартное поведение Query). None если ключа нет.
+
+    Не используем `parse_qsl`: он бы декодил значение, обнуляя смысл всего
+    упражнения. Парсим вручную линейно — query короткая, regex не нужен.
+    """
+    if not raw_query:
+        return None
+    for chunk in raw_query.split("&"):
+        if chunk == "state" or chunk.startswith("state="):
+            if "=" not in chunk:
+                return ""
+            return chunk.split("=", 1)[1]
+    return None
+
+
 # ── Управление клиентами ─────────────────────────────────────────────────────
 
 @router.post(
@@ -193,22 +216,25 @@ async def authorize(
     # `…?env=prod?code=…` — второй `?` сламывает парсинг на клиенте. Разбираем
     # URI и дописываем `code`/`state` к существующему query без переэкодирования.
     #
-    # `state` echo'ится через `quote()` напрямую (RFC 6749 §4.1.2 — байт-в-байт),
-    # не через `parse_qsl`+`urlencode`: round-trip ломал `+` (parse_qsl декодит
-    # его в пробел, дальше `urlencode` ставит `%20`), а `quote()` оставляет `+`
-    # safe и не трогает уже-encoded последовательности из исходной query.
-    #
-    # Если клиент прислал в `state` уже percent-encoded последовательность
-    # (например `abc%20def`), `quote(safe='')` экранирует сам `%` как `%25`,
-    # итог — `state=abc%2520def`. Это by-design: RFC 6749 §4.1.2 трактует
-    # state как opaque-строку, передаваемую клиентом 1:1; ответственность за
-    # консистентный encoding на стороне клиента (не encode'ить дважды). Сервер
-    # echo'ит ровно те байты, что получил, поэтому round-trip
-    # decode→clientCompare даёт исходное значение.
+    # `state` echo'им из СЫРОЙ query запроса (`request.url.query`), а не из
+    # FastAPI-параметра `state`: Query-параметр приходит уже URL-decoded
+    # (`state=abc%20def` → `"abc def"`), и любой re-encode даёт расхождение
+    # байт-в-байт с тем, что прислал клиент. Раньше использовался
+    # `quote(state, safe='')`, который для уже-encoded литералов вроде
+    # `state=abc%20def` выдавал `abc%2520def` (двойной encode) — некоторые
+    # клиенты (Auth0/Keycloak SDK) сравнивают callback'овый `state` как opaque
+    # байты со своим хранилищем и ломались на `%25`-разнице. RFC 6749 §4.1.2
+    # требует exact echo: возвращаем то же значение, что клиент прислал
+    # в query, без второго encode/decode-раунда.
     parsed = urlparse(redirect_uri)
     appended = f"code={quote(code, safe='')}"
     if state:
-        appended += f"&state={quote(state, safe='')}"
+        raw_state = _extract_raw_state(request.url.query)
+        # Fallback на encode-через-quote только если raw-извлечение почему-то
+        # не нашло параметр (теоретически невозможно — Query прокинул значение
+        # ⇒ ключ есть в URL'е).
+        echo_state = raw_state if raw_state is not None else quote(state, safe="")
+        appended += f"&state={echo_state}"
     new_query = f"{parsed.query}&{appended}" if parsed.query else appended
     location = urlunparse(parsed._replace(query=new_query))
     return RedirectResponse(url=location, status_code=302)

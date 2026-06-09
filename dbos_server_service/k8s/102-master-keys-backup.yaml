@@ -133,9 +133,10 @@ spec:
                       key: OFFSITE_RSYNC_DEST
                       optional: true
               volumeMounts:
+                # backup mount writable — sidecar делает `rm -f .ready` после
+                # успешного push'а. readOnly: true даёт EROFS на cleanup.
                 - name: backup
                   mountPath: /backup
-                  readOnly: true
               resources:
                 requests: { cpu: "50m", memory: "64Mi" }
                 limits:   { cpu: "500m", memory: "256Mi" }

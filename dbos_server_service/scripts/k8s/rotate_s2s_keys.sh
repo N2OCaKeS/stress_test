@@ -49,6 +49,7 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NS="${DBOS_NAMESPACE:-dbos}"
 SECRET="${DBOS_SECRET_NAME:-dbos-secrets}"
 
@@ -57,30 +58,20 @@ CONSUMERS=(auth-service logging-service server-service server-worker secret-serv
 
 ASSUME_YES="false"
 
+# Длина s2s-ключа (формат gen_secrets.sh::rand 48). Бот-токен — dbos_bot_<rand 48>.
+readonly RAND_S2S_KEY_LEN=48
+
 # ── Утилиты ───────────────────────────────────────────────────────────────────
+# confirm / require_bin / rand_alnum — в _rotation_helpers.sh.
 
-confirm() {
-    local prompt="$1"
-    if [[ "$ASSUME_YES" == "true" ]]; then
-        return 0
-    fi
-    read -p "  ${prompt} [yes/no]: " yn
-    [[ "$yn" == "yes" ]]
-}
-
-require_bin() {
-    command -v "$1" >/dev/null 2>&1 || { echo "ОШИБКА: нужен $1 в PATH." >&2; exit 1; }
-}
+# shellcheck source=_rotation_helpers.sh
+source "$SCRIPT_DIR/_rotation_helpers.sh"
 
 require_bin kubectl
 require_bin jq
 require_bin openssl
 
-# 48 символов [A-Za-z0-9] — длина, которой пользуется gen_secrets.sh для
-# s2s-ключей (rand 48). Бот-токен — dbos_bot_<rand 48> (префикс отдельно).
-rand_key() {
-    LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c 48 || true
-}
+rand_key() { rand_alnum "$RAND_S2S_KEY_LEN"; }
 
 show_status() {
     echo ""

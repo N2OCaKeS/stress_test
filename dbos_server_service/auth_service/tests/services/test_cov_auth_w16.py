@@ -171,15 +171,20 @@ async def _make_oauth_client(client, admin_token, dept_id, *, name, redirect_uri
     return resp.json()
 
 
-class TestOAuthStateDoubleEncode:
-    async def test_state_with_percent_literal_double_encoded(
+class TestOAuthStateExactEcho:
+    async def test_state_with_percent_literal_round_trip_exact(
         self, client, admin_token, user_a_token, dept_a,
     ):
-        """state='value%20here' — % сам по себе должен стать %25.
+        """state='value%20here' — raw байты в callback'е те же, что в исходном
+        запросе (no double-encode).
 
-        Если quote() не включает % в safe-символы, `%20` → `%2520` в redirect.
-        Тест фиксирует поведение: state передаётся как есть (exact-echo),
-        т.е. `%` в state кодируется в `%25`, итого `%2520`.
+        Раньше сервер делал `quote(state, safe='')` поверх уже-decoded Query-
+        параметра: клиент послал `state=value%20here` (raw), FastAPI декодит в
+        `"value%20here"` (8 chars), `quote` re-encode'ит `%` в `%25` → callback
+        несёт `state=value%2520here`. Auth0/Keycloak-style SDK, сравнивающие
+        callback state byte-for-byte со своим хранилищем, ломались на `%25`.
+        Фикс: echo raw-байт из исходной query — клиент получает ровно те
+        байты, что прислал.
         """
         redirect = "https://app.example.com/cb"
         cl = await _make_oauth_client(
@@ -187,6 +192,10 @@ class TestOAuthStateDoubleEncode:
             name="state_pct_app", redirect_uris=[redirect],
         )
 
+        # httpx URL-encode'ит `%` в `%25` сам — на проводе пойдёт
+        # `state=value%2520here`. FastAPI decode'ит до `"value%20here"`. Сервер
+        # должен echo'ить сырые байты `value%2520here`, а не делать ещё один
+        # encode.
         state_with_pct = "value%20here"
         resp = await client.get(
             AUTHORIZE_URL,
@@ -200,16 +209,46 @@ class TestOAuthStateDoubleEncode:
         )
         assert resp.status_code == 302, resp.text
         location = resp.headers["location"]
-        parsed = urlparse(location)
-        # Декодируем query string один раз (распарсить сырую query без decode).
-        raw_query = parsed.query
-        # В raw_query state должен быть double-encoded: %25 для оригинального %
+        raw_query = urlparse(location).query
         assert "state=" in raw_query, f"state отсутствует в redirect: {location}"
-        # Проверяем, что % не "прошёл" как есть (было бы state=value%20here
-        # что означает один decode → "value here", не exact-echo).
-        # Ожидаем: state=value%2520here (% → %25, space → %20).
-        assert "state=value%2520here" in raw_query or "state=value%25" in raw_query, (
-            f"%-литерал в state не double-encoded. raw_query={raw_query!r}"
+        # Exact echo: на проводе было `value%2520here`, в callback'е то же.
+        assert "state=value%2520here" in raw_query, (
+            f"state не прошёл exact-echo: raw_query={raw_query!r}"
+        )
+        # Регрессия: НЕ должно быть тройного encode (`%252520`).
+        assert "state=value%252520here" not in raw_query, (
+            f"state получил лишний encode-раунд: raw_query={raw_query!r}"
+        )
+
+    async def test_state_with_plus_preserved_literal(
+        self, client, admin_token, user_a_token, dept_a,
+    ):
+        """state с literal `+` (закодированный как `%2B` на проводе) приходит
+        обратно как `%2B`, не как пробел.
+
+        Сценарий, в котором заметна разница со старым `quote(safe='')`-путём:
+        FastAPI декодит `+` в пробел (form-urlencoded семантика), а
+        `quote('value with space', safe='')` re-encode'ил это в `%20`. Клиент,
+        прислал `state=a%2Bb`, ждал обратно `a%2Bb`, получал `a%20b` →
+        CSRF-сравнение ломалось. Raw-echo возвращает байты как пришли.
+        """
+        redirect = "https://app.example.com/cb"
+        cl = await _make_oauth_client(
+            client, admin_token, dept_a.id,
+            name="state_plus_app", redirect_uris=[redirect],
+        )
+
+        # Шлём raw query вручную, чтобы контролировать сырую кодировку.
+        resp = await client.get(
+            f"{AUTHORIZE_URL}?client_id={cl['client_id']}"
+            f"&redirect_uri={redirect}&state=a%2Bb",
+            headers={"Authorization": f"Bearer {user_a_token}"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302, resp.text
+        raw_query = urlparse(resp.headers["location"]).query
+        assert "state=a%2Bb" in raw_query, (
+            f"state с `%2B` не сохранил байты: raw_query={raw_query!r}"
         )
 
     async def test_state_without_percent_single_encode_only(

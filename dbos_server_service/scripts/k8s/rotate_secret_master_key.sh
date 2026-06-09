@@ -56,46 +56,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Утилиты ───────────────────────────────────────────────────────────────────
-
-confirm() {
-    local prompt="$1"
-    if [[ "$ASSUME_YES" == "true" ]]; then
-        return 0
-    fi
-    read -p "  ${prompt} [yes/no]: " yn
-    [[ "$yn" == "yes" ]]
-}
-
-require_bin() {
-    command -v "$1" >/dev/null 2>&1 || { echo "ОШИБКА: нужен $1 в PATH." >&2; exit 1; }
-}
-
-require_bin kubectl
-require_bin jq
-require_bin openssl
+# confirm / require_bin / secret_get / secret_set_string / secret_unset —
+# в _rotation_helpers.sh.
 
 # shellcheck source=_rotation_helpers.sh
 source "$SCRIPT_DIR/_rotation_helpers.sh"
 
-secret_get() {
-    local key="$1"
-    kubectl -n "$NS" get secret "$SECRET" -o json \
-        | jq -r ".data.\"${key}\" // empty" \
-        | { local b64; b64=$(cat); [[ -n "$b64" ]] && echo "$b64" | base64 -d || true; }
-}
-
-secret_set_string() {
-    local key="$1"; shift
-    local val="$1"
-    kubectl -n "$NS" patch secret "$SECRET" --type='merge' \
-        -p "$(jq -n --arg k "$key" --arg v "$val" '{stringData: {($k): $v}}')"
-}
-
-secret_unset() {
-    local key="$1"
-    kubectl -n "$NS" patch secret "$SECRET" --type='json' \
-        -p "[{\"op\":\"remove\",\"path\":\"/data/${key}\"}]" 2>/dev/null || true
-}
+require_bin kubectl
+require_bin jq
+require_bin openssl
 
 list_legacy_keys() {
     kubectl -n "$NS" get secret "$SECRET" -o json \

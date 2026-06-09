@@ -106,6 +106,8 @@ _DEV_ADMIN_EMAIL = admin@example.com
         k8s-rotate-db-passwords k8s-rotate-redis-password k8s-rotate-s2s-keys \
         k8s-rotation-image k8s-rotation-trigger k8s-rotation-status k8s-rotation-logs \
         k8s-rotation-disable k8s-rotation-enable \
+        k8s-backup-secret-full k8s-tls-renew \
+        k8s-cronjob-list k8s-cronjob-history k8s-cronjob-suspend k8s-cronjob-resume \
         prod-deploy
 
 ##@ Dev: стек в Docker (без devcontainer)
@@ -709,6 +711,39 @@ k8s-rotation-disable: ## Приостановить автоматическую
 k8s-rotation-enable: ## Возобновить автоматическую ротацию (suspend=false).
 	$(K8S) patch cronjob rotation-scheduler -p '{"spec":{"suspend":false}}'
 	@echo "✓ CronJob rotation-scheduler возобновлён."
+
+##@ Backup / TLS / CronJob управление
+
+k8s-backup-secret-full: ## Полный snapshot Secret'а dbos-secrets (master-keys + DB + s2s + Redis). DEST=path (default: ./k8s/backups)
+	@if [ ! -f scripts/k8s/backup_secret_full.sh ]; then \
+		echo "ОШИБКА: scripts/k8s/backup_secret_full.sh не найден."; exit 1; \
+	fi
+	bash scripts/k8s/backup_secret_full.sh $(if $(DEST),$(DEST),./k8s/backups)
+
+k8s-tls-renew: ## Перевыпустить self-signed TLS-cert (365 дней) без regen остальных секретов. Использует .env.k8s или DOMAIN=<host>.
+	bash scripts/k8s/gen_secrets.sh --only-tls $(if $(DOMAIN),$(DOMAIN),)
+
+k8s-cronjob-list: ## Список всех CronJob'ов в namespace dbos
+	$(K8S) get cronjobs
+
+k8s-cronjob-history: ## История запусков всех CronJob'ов (Job'ы по metadata.creationTimestamp)
+	$(K8S) get jobs --sort-by=.metadata.creationTimestamp
+
+k8s-cronjob-suspend: ## Приостановить CronJob. SVC=<name> (например: SVC=rotation-scheduler).
+	@if [ -z "$(SVC)" ]; then \
+		echo "ОШИБКА: SVC=<cronjob-name> обязателен."; \
+		echo "  Список:  make k8s-cronjob-list"; exit 1; \
+	fi
+	$(K8S) patch cronjob $(SVC) -p '{"spec":{"suspend":true}}'
+	@echo "✓ CronJob $(SVC) приостановлен."
+
+k8s-cronjob-resume: ## Возобновить CronJob. SVC=<name>.
+	@if [ -z "$(SVC)" ]; then \
+		echo "ОШИБКА: SVC=<cronjob-name> обязателен."; \
+		echo "  Список:  make k8s-cronjob-list"; exit 1; \
+	fi
+	$(K8S) patch cronjob $(SVC) -p '{"spec":{"suspend":false}}'
+	@echo "✓ CronJob $(SVC) возобновлён."
 
 prod-deploy: ## Meta: build → check secrets → deploy → migrate → openapi → smoke. Требует k3s и cert-manager уже установленными.
 	@echo "→ [1/6] Сборка образов и импорт в k3s..."

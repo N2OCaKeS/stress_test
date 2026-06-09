@@ -2,6 +2,7 @@ import json
 
 from allta import MathModel
 from pathlib import Path
+from os.path import isfile
 
 from osb_logger import log
 from lib import system
@@ -15,10 +16,6 @@ from config.conf import (
 )
 
 
-
-
-with open(f"{RESULTS_MAIN_DIR}/subsystem_results.json", "r") as f:
-    dates = json.load(f)
 
 SUBSYSTEM_DATES = {
     'kernel': {'crit': KERNEL_CRITERIONS,
@@ -53,6 +50,18 @@ fpower_dict = {
 
 class IndexCalculator:
 
+    @property
+    def dates(self):
+        if not hasattr(self, '_dates'):
+            dates_path = f"{RESULTS_MAIN_DIR}/subsystem_results.json"
+            if isfile(dates_path):
+                with open(dates_path, "r") as f:
+                    self._dates = json.load(f)
+            else:
+                log.warning(f"Не найден отчетный файл - {dates_path}")
+                self._dates = {}
+        return self._dates
+
     def subsystem_index_calculator(self,
                                    criterions: dict, 
                                    subsystem: str, 
@@ -60,6 +69,8 @@ class IndexCalculator:
                                    handle: list = None,
                                    power_calc: bool = False) -> str | bool:
         
+        dates = self.dates
+
         if isinstance(power, float):
             fp = power
         else:

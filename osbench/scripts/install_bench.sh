@@ -1,5 +1,5 @@
 #!/bin/bash
-set -vx
+set -x
 
 install_deps() {
     if command -v apt-get &> /dev/null; then

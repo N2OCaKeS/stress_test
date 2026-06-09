@@ -97,26 +97,52 @@ sysctl -p /etc/sysctl.d/50-coredump.conf >/dev/null
 echo "  core_pattern: $(cat /proc/sys/kernel/core_pattern)"
 
 # ── 6. Установка k3s ──────────────────────────────────────────────────────────
-# На VM с заблокированным exit-IP github.com отдаёт 403 на /releases/download/*.
-# Зеркало rancher-mirror.rancher.cn содержит те же артефакты и доступно стабильно.
-# Если в окружении github доступен — переопредели INSTALL_K3S_MIRROR=github.
+# Зеркала: пробуем github → cn-mirror. На корп-сетях бывает каждое из двух.
+# На VM с заблокированным exit-IP github может отдать 403 / TLS-error /
+# таймаут — тогда автоматически уходим на rancher-mirror.rancher.cn (стабилен
+# в РФ, но иногда сам флакает). Если задан INSTALL_K3S_MIRROR — пробуем
+# только его, без fallback'а (для отладки).
 #
 # SKIP_ENABLE/SKIP_START: на Astra SE 1.8.5 (systemd 252.39-1~deb12u1astra.se3+ci5)
 # inline-цепочка `daemon-reload → enable k3s` внутри install.sh воспроизводимо
 # валит pid 1 по SIGABRT в startswith()/manager_load_unit() (libsystemd-shared).
 # Coredump лежит в /var/lib/systemd/coredump/. Воркэраунд — пропустить
 # systemctl-команды в установщике и выполнить их отдельным шагом (§7).
-K3S_MIRROR="${INSTALL_K3S_MIRROR:-cn}"
 if command -v k3s >/dev/null 2>&1; then
     echo "→ k3s уже установлен: $(k3s --version | head -1)"
 else
-    echo "→ Скачиваем и устанавливаем k3s (mirror=$K3S_MIRROR, с встроенным Traefik для Ingress)..."
-    curl -sfL https://get.k3s.io | \
-        INSTALL_K3S_MIRROR="$K3S_MIRROR" \
-        INSTALL_K3S_SKIP_ENABLE=true \
-        INSTALL_K3S_SKIP_START=true \
-        INSTALL_K3S_EXEC="server --write-kubeconfig-mode=644" \
-        sh -
+    if [[ -n "${INSTALL_K3S_MIRROR:-}" ]]; then
+        MIRRORS=("$INSTALL_K3S_MIRROR")
+    else
+        MIRRORS=("github" "cn")
+    fi
+    K3S_OK=0
+    for mirror in "${MIRRORS[@]}"; do
+        echo "→ Пробуем mirror=$mirror..."
+        # Сам get.k3s.io хостится на GitHub, поэтому для cn-mirror'а скачиваем
+        # установщик с rancher-mirror; для github — с канонического URL.
+        if [[ "$mirror" == "cn" ]]; then
+            INSTALLER_URL="https://rancher-mirror.rancher.cn/k3s/k3s-install.sh"
+        else
+            INSTALLER_URL="https://get.k3s.io"
+        fi
+        if curl -sfL "$INSTALLER_URL" | \
+            INSTALL_K3S_MIRROR="$mirror" \
+            INSTALL_K3S_SKIP_ENABLE=true \
+            INSTALL_K3S_SKIP_START=true \
+            INSTALL_K3S_EXEC="server --write-kubeconfig-mode=644" \
+            sh -; then
+            echo "  ✓ k3s установлен через mirror=$mirror"
+            K3S_OK=1
+            break
+        else
+            echo "  ✗ mirror=$mirror не сработал (exit $?), пробую следующий..."
+        fi
+    done
+    if [[ "$K3S_OK" -ne 1 ]]; then
+        echo "ОШИБКА: все mirror'ы (${MIRRORS[*]}) не сработали." >&2
+        exit 1
+    fi
 fi
 
 # ── 6.1 Enable + start k3s (отдельно, после daemon-reexec) ─────────────────────

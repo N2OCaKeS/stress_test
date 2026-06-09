@@ -221,6 +221,18 @@ LOGGING_SERVICE_API_KEYS_JSON=$(cat <<EOF
 EOF
 )
 
+# ── JSON map для auth_service (inbound, /authorization/introspect и др.) ─────
+# Caller'ы /authorization/introspect:
+#   loging_service  → bearer = LOGGING_INTROSPECT_SERVICE_API_KEY
+#   server_service  → bearer = SERVER_SERVICE_API_KEY (outbound SERVICE_API_KEY pod'а)
+#   secret_service  → bearer = SECRET_INTROSPECT_SERVICE_API_KEY
+# server_worker introspect не зовёт (только outbound audit-emit), но если в
+# будущем понадобится — добавляется здесь же.
+AUTH_INBOUND_SERVICE_API_KEYS_JSON=$(cat <<EOF
+{"loging_service":"${LOGGING_INTROSPECT_SERVICE_API_KEY}","server_service":"${SERVER_SERVICE_API_KEY}","secret_service":"${SECRET_INTROSPECT_SERVICE_API_KEY}"}
+EOF
+)
+
 # ── 20-secrets.yaml ───────────────────────────────────────────────────────────
 echo "→ Пишем $SECRETS_OUT..."
 {
@@ -260,7 +272,17 @@ cat <<EOF
   INITIAL_ADMIN_EMAIL: ${ADMIN_EMAIL}
 
   # loging_service: outbound + inbound map + introspect
+  # `LOGGING_SERVICE_API_KEY` — legacy общий outbound для backward-compat
+  # (если pod не получит per-caller ключ из манифеста, env будет указывать на него).
+  # Production-манифесты КАЖДОГО pod'а маппят свой LOGGING_SERVICE_API_KEY_* в
+  # env `LOGGING_SERVICE_API_KEY`, чтобы audit-emit шёл с identity-aware
+  # bearer'ом, и `LOGGING_SERVICE_API_KEYS_JSON` на стороне loging_service'а
+  # его принимал по X-Service-Identity. Сами per-caller ключи под именами
+  # LOGGING_SERVICE_API_KEY_AUTH/SERVER/WORKER/SECRET.
   LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY}
+  LOGGING_SERVICE_API_KEY_AUTH: ${LOGGING_SERVICE_API_KEY_AUTH}
+  LOGGING_SERVICE_API_KEY_SERVER: ${LOGGING_SERVICE_API_KEY_SERVER}
+  LOGGING_SERVICE_API_KEY_WORKER: ${LOGGING_SERVICE_API_KEY_WORKER}
   LOGGING_SERVICE_API_KEY_SECRET: ${LOGGING_SERVICE_API_KEY_SECRET}
   LOGGING_SERVICE_API_KEYS_JSON: |
     ${LOGGING_SERVICE_API_KEYS_JSON}
@@ -277,6 +299,13 @@ cat <<EOF
 
   # Legacy shared SERVICE_API_KEY (fallback при пустых per-service maps)
   SERVICE_API_KEY: ${SERVICE_API_KEY}
+
+  # auth_service inbound: per-caller bearer'ы для /authorization/introspect.
+  # Значения совпадают с outbound-ключами caller'ов (loging_service шлёт
+  # LOGGING_INTROSPECT_SERVICE_API_KEY, server_service — SERVER_SERVICE_API_KEY,
+  # secret_service — SECRET_INTROSPECT_SERVICE_API_KEY). Если map пустой —
+  # auth_service фолбэкается на legacy single SERVICE_API_KEY.
+  AUTH_INBOUND_SERVICE_API_KEYS_JSON: '${AUTH_INBOUND_SERVICE_API_KEYS_JSON}'
 
   # server_service: s2s
   SERVER_SERVICE_API_KEY: ${SERVER_SERVICE_API_KEY}

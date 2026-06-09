@@ -103,9 +103,11 @@ spec:
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: WORKER_BOT_TOKEN }
             # LOGGING_SERVICE_API_KEY — POST /events в loging_service.
+            # Per-caller bearer, valueFrom указывает на ключ под идентичностью
+            # server_worker в LOGGING_SERVICE_API_KEYS_JSON.
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY_WORKER }
             # SERVICE_API_KEY — outbound для introspect собственного
             # bot-токена worker'а в auth_service.
             - name: SERVICE_API_KEY

@@ -145,7 +145,7 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
     инкремент `_audit_dropped_429`. Любая транспортная ошибка → drop сразу
     (best-effort, не блокируем main-flow).
     """
-    headers = bearer_header(api_key)
+    headers = {**bearer_header(api_key), "X-Service-Identity": "server_service"}
     client = _audit_client
     try:
         for attempt in range(len(_RETRY_DELAYS_ON_429) + 1):
@@ -272,7 +272,7 @@ def _send_sync(payload: dict, logging_url: str, api_key: str) -> None:
     429 — инкремент `_audit_dropped_429`, как и в async-пути.
     """
     url_full = f"{logging_url}/api/logging/v1/events"
-    headers = bearer_header(api_key)
+    headers = {**bearer_header(api_key), "X-Service-Identity": "server_service"}
     # Если sync-path попал на 429 и нас прервали SIGINT'ом прямо в `_time.sleep`,
     # KeyboardInterrupt в Python ≥ 3.5 проходит через except Exception мимо.
     # Считаем дроп через флаг + try/finally на отдельной ветке retry — counter

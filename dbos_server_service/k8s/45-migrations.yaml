@@ -75,10 +75,13 @@ spec:
               value: https://logging-service:8001
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY_AUTH }
             - name: SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SERVICE_API_KEY }
+            - name: SERVICE_API_KEYS
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: AUTH_INBOUND_SERVICE_API_KEYS_JSON }
             - name: INITIAL_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_USERNAME }
@@ -269,7 +272,7 @@ spec:
                 secretKeyRef: { name: dbos-secrets, key: SERVER_INBOUND_SERVICE_API_KEYS }
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY_SERVER }
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -344,7 +347,7 @@ spec:
                 secretKeyRef: { name: dbos-secrets, key: WORKER_BOT_TOKEN }
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY_WORKER }
             - name: SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: WORKER_SERVICE_API_KEY }

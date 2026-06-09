@@ -187,7 +187,12 @@ async def _introspect(token: str) -> dict:
         )
 
     settings = get_settings()
-    headers = bearer_header(settings.introspect_service_api_key)
+    # X-Service-Identity для per-service режима в auth_service'е (SERVICE_API_KEYS
+    # под идентичностью secret_service содержит наш introspect_service_api_key).
+    headers = {
+        **bearer_header(settings.introspect_service_api_key),
+        "X-Service-Identity": "secret_service",
+    }
 
     client = _introspect_client
     try:

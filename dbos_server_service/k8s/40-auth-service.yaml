@@ -88,12 +88,26 @@ spec:
             - name: DOCKER_RSA_PRIVATE_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: DOCKER_RSA_PRIVATE_KEY }
+            # outbound bearer audit-emit'ов в loging_service. Per-caller
+            # значение (auth_service ↔ LOGGING_SERVICE_API_KEY_AUTH) — на
+            # стороне loging_service оно совпадает с LOGGING_SERVICE_API_KEYS_JSON
+            # под идентичностью auth_service.
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY_AUTH }
+            # legacy single bearer для service-to-service. Используется как
+            # fallback, если SERVICE_API_KEYS (см. ниже) окажется пустым —
+            # тогда auth_service отбивает по этому единому ключу.
             - name: SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SERVICE_API_KEY }
+            # inbound per-caller bearer map. Сейчас покрывает
+            # loging_service / server_service / secret_service — все, кто
+            # дёргает /authorization/introspect. Без этой map'ы auth_service
+            # в production-конфиге не может различить caller'ов.
+            - name: SERVICE_API_KEYS
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: AUTH_INBOUND_SERVICE_API_KEYS_JSON }
             - name: INITIAL_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: INITIAL_ADMIN_USERNAME }

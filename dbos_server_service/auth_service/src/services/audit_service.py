@@ -209,7 +209,7 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
     инкремент `_audit_dropped_429`. Любая транспортная ошибка → drop сразу
     (best-effort, не блокируем main-flow).
     """
-    headers = bearer_header(api_key)
+    headers = {**bearer_header(api_key), "X-Service-Identity": "auth_service"}
     client = _audit_client
     try:
         for attempt in range(len(_RETRY_DELAYS_ON_429) + 1):

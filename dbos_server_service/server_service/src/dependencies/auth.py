@@ -132,7 +132,13 @@ async def _introspect(token: str) -> dict:
         )
 
     settings = get_settings()
-    headers = bearer_header(settings.service_api_key)
+    # X-Service-Identity нужен auth_service, чтобы выбрать наш bearer из
+    # своего SERVICE_API_KEYS по идентичности server_service (без него
+    # auth_service вернёт 401 MISSING_SERVICE_IDENTITY в per-service режиме).
+    headers = {
+        **bearer_header(settings.service_api_key),
+        "X-Service-Identity": "server_service",
+    }
 
     client = _introspect_client
     try:

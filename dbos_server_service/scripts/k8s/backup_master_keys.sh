@@ -7,6 +7,9 @@
 #   - REDIS_STASH_ENCRYPTION_KEY (+ _VERSION) + legacy (если в Secret'е есть)
 #   - HKDF_SALT_HEX
 #   - AUTH_SECRET_KEY (JWT signing — без него все выданные токены умрут)
+#   - INITIAL_ADMIN_USERNAME / INITIAL_ADMIN_PASSWORD / INITIAL_ADMIN_EMAIL
+#       (без них после restore некому залогиниться, recovery-скрипт seed'а
+#        admin'а сравнивает hash именно с этим паролем).
 #   - DOCKER_RSA_PRIVATE_KEY (если есть; нужен для registry token-flow)
 #
 # Шифрование (в порядке предпочтения):
@@ -160,6 +163,9 @@ ALWAYS_KEYS=(
     SECRET_ENCRYPTION_KEY_VERSION
     HKDF_SALT_HEX
     AUTH_SECRET_KEY
+    INITIAL_ADMIN_USERNAME
+    INITIAL_ADMIN_PASSWORD
+    INITIAL_ADMIN_EMAIL
 )
 
 # Опциональные — если есть в Secret'е, тоже забираем.

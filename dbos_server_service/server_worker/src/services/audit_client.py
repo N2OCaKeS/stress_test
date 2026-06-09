@@ -188,7 +188,7 @@ async def emit(
             "LOGGING_SERVICE_API_KEY is not set; audit emit refused",
             config_error=True,
         )
-    headers = bearer_header(api_key)
+    headers = {**bearer_header(api_key), "X-Service-Identity": "server_worker"}
     client = get_audit_client()
     try:
         response = await client.post(url, json=payload, headers=headers)

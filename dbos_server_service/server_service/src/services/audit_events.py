@@ -156,7 +156,7 @@ def register_events() -> None:
         resp = httpx.post(
             f"{logging_url}/api/logging/v1/services/{_SERVICE_NAME}/events",
             json={"events": SERVICE_EVENTS},
-            headers=bearer_header(api_key),
+            headers={**bearer_header(api_key), "X-Service-Identity": "server_service"},
             timeout=getattr(settings, "register_events_timeout_seconds", 2.0),
         )
         if resp.status_code == 200:

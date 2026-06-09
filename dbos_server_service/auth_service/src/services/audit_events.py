@@ -144,7 +144,7 @@ def register_events() -> None:
         return
 
     url = f"{logging_url}/api/logging/v1/services/auth_service/events"
-    headers = bearer_header(api_key)
+    headers = {**bearer_header(api_key), "X-Service-Identity": "auth_service"}
     payload = {"events": SERVICE_EVENTS}
 
     last_error: str | None = None

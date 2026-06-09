@@ -131,9 +131,12 @@ spec:
             - name: SERVICE_API_KEYS
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SERVER_INBOUND_SERVICE_API_KEYS }
+            # Per-caller bearer для audit-emit'ов в loging_service.
+            # loging_service ищет identity в LOGGING_SERVICE_API_KEYS_JSON по
+            # заголовку X-Service-Identity: server_service.
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
-                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY }
+                secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY_SERVER }
           # Миграции вынесены в Job server-migrate (см. 45-migrations.yaml).
           command: ["uvicorn"]
           args:

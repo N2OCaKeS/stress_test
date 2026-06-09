@@ -123,7 +123,7 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
     `_audit_dropped_429`, в лог уходит sanitized stub. Любая транспортная
     ошибка → drop сразу (best-effort, не блокируем main-flow).
     """
-    headers = bearer_header(api_key)
+    headers = {**bearer_header(api_key), "X-Service-Identity": "secret_service"}
     client = _audit_client
     try:
         for attempt in range(len(_RETRY_DELAYS_ON_429) + 1):
@@ -243,7 +243,7 @@ _SYNC_RETRY_DELAYS_ON_429 = (0.2, 0.5)
 def _send_sync(payload: dict, logging_url: str, api_key: str) -> None:
     """Sync-отправка с симметричным async-пути retry на 429. Кап ~0.7s суммарно."""
     url_full = f"{logging_url}/api/logging/v1/events"
-    headers = bearer_header(api_key)
+    headers = {**bearer_header(api_key), "X-Service-Identity": "secret_service"}
     dropped_429 = False
     try:
         for attempt in range(len(_SYNC_RETRY_DELAYS_ON_429) + 1):

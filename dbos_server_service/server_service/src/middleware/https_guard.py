@@ -147,7 +147,16 @@ class HTTPSRequiredMiddleware(BaseHTTPMiddleware):
         trusted_proxy_ips: list[str] | None = None,
     ):
         super().__init__(app)
-        self._enabled = app_env.lower() in HTTPS_REQUIRED_ENVS
+        import os as _os_https_guard
+        # `DBOS_HTTPS_GUARD_DISABLED=true|1|yes` явно выключает middleware
+        # для intra-cluster-only deploy'я (NetworkPolicy default-deny
+        # держит границу namespace'а — внешний http не достучится).
+        _disabled = _os_https_guard.environ.get(
+            "DBOS_HTTPS_GUARD_DISABLED", ""
+        ).strip().lower() in {"true", "1", "yes"}
+        self._enabled = (
+            (app_env.lower() in HTTPS_REQUIRED_ENVS) and not _disabled
+        )
         self._trusted_proxy_ips = list(trusted_proxy_ips or [])
 
     async def dispatch(self, request: Request, call_next):

@@ -15,6 +15,20 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 _LOCAL_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
+def _is_intracluster_host(host: str) -> bool:
+    """Cluster-local DNS-имя (short name без точки или .svc/.cluster.local).
+    Внутрикластерный traffic закрыт NetworkPolicy default-deny + namespace
+    boundary, поэтому plain http между pod'ами equivalent по surface'у к
+    self-loop'у на localhost. External FQDN'ы (что-то.example.com) этой
+    проверки не пройдут — для них https:// остаётся обязательным.
+    """
+    return (
+        host in _LOCAL_HOSTS
+        or "." not in host
+        or host.endswith((".svc", ".svc.cluster.local", ".cluster.local"))
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -470,7 +484,7 @@ class Settings(BaseSettings):
                 parsed = urlparse(self.auth_service_url)
                 scheme = (parsed.scheme or "").lower()
                 host = (parsed.hostname or "").lower()
-                if scheme == "http" and host not in _LOCAL_HOSTS:
+                if scheme == "http" and not _is_intracluster_host(host):
                     raise ValueError(
                         "AUTH_SERVICE_URL must use https:// in production "
                         f"(got scheme={scheme!r}, host={host!r}); plain http "
@@ -487,7 +501,7 @@ class Settings(BaseSettings):
                 # исключение (self-signed devcontainer — другая модель угрозы).
                 if (
                     scheme == "https"
-                    and host not in _LOCAL_HOSTS
+                    and not _is_intracluster_host(host)
                     and not self.introspect_tls_verify
                 ):
                     raise ValueError(

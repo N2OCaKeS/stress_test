@@ -18,6 +18,19 @@ _REDIS_URL_PASSWORD_RE = re.compile(r"://[^/@]*:[^@/]+@")
 # `loging_service/src/core/config.py:_LOCAL_HOSTS`.
 _LOCAL_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
 
+def _is_intracluster_host(host: str) -> bool:
+    """Cluster-local DNS-имя (short name без точки или .svc/.cluster.local).
+    Plain http между pod'ами равноценен self-loop'у на localhost: внутрикластерный
+    traffic закрыт NetworkPolicy default-deny + namespace boundary. External
+    FQDN'ы (example.com) этот фильтр не пропускает — там https:// остаётся обязательным.
+    """
+    return (
+        host in _LOCAL_HOSTS
+        or "." not in host
+        or host.endswith((".svc", ".svc.cluster.local", ".cluster.local"))
+    )
+
+
 # Окружения, в которых требуется https:// для исходящих HTTP-вызовов.
 _HTTPS_REQUIRED_ENVS: frozenset[str] = frozenset({"production", "staging"})
 
@@ -772,7 +785,7 @@ class Settings(BaseSettings):
             parsed = urlparse(url)
             scheme = (parsed.scheme or "").lower()
             host = (parsed.hostname or "").lower()
-            if scheme == "http" and host not in _LOCAL_HOSTS:
+            if scheme == "http" and not _is_intracluster_host(host):
                 raise ValueError(
                     f"{name} must use https:// in {self.app_env} "
                     f"(got scheme={scheme!r}, host={host!r}); plain http "

@@ -18,6 +18,19 @@ _REDIS_URL_PASSWORD_RE = re.compile(r"://[^/@]*:[^@/]+@")
 # on-host port-forward, где TLS терминируется на той же машине).
 _LOCAL_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
 
+def _is_intracluster_host(host: str) -> bool:
+    """Cluster-local DNS-имя (short name без точки или .svc/.cluster.local).
+    Plain http между pod'ами равноценен self-loop'у на localhost: внутрикластерный
+    traffic закрыт NetworkPolicy default-deny + namespace boundary. External
+    FQDN'ы (example.com) этот фильтр не пропускает — там https:// остаётся обязательным.
+    """
+    return (
+        host in _LOCAL_HOSTS
+        or "." not in host
+        or host.endswith((".svc", ".svc.cluster.local", ".cluster.local"))
+    )
+
+
 
 class Settings(BaseSettings):
     """Контейнер настроек. Поля грузятся из env (case-insensitive) и из .env-файла."""
@@ -359,7 +372,7 @@ class Settings(BaseSettings):
         parsed = urlparse(self.auth_service_url)
         scheme = (parsed.scheme or "").lower()
         host = (parsed.hostname or "").lower()
-        if scheme == "http" and host not in _LOCAL_HOSTS:
+        if scheme == "http" and not _is_intracluster_host(host):
             raise ValueError(
                 "AUTH_SERVICE_URL must use https:// in "
                 f"{self.app_env} (got scheme={scheme!r}, host={host!r})"
@@ -375,7 +388,7 @@ class Settings(BaseSettings):
         parsed = urlparse(self.logging_service_url)
         scheme = (parsed.scheme or "").lower()
         host = (parsed.hostname or "").lower()
-        if scheme == "http" and host not in _LOCAL_HOSTS:
+        if scheme == "http" and not _is_intracluster_host(host):
             raise ValueError(
                 "LOGGING_SERVICE_URL must use https:// in "
                 f"{self.app_env} (got scheme={scheme!r}, host={host!r})"
@@ -401,8 +414,13 @@ class Settings(BaseSettings):
         if self.app_env.lower() not in {"production", "staging"}:
             return self
         parsed = urlparse(self.auth_service_url)
+        scheme = (parsed.scheme or "").lower()
         host = (parsed.hostname or "").lower()
-        if host in _LOCAL_HOSTS:
+        # http:// — verify=false тривиально true (нет TLS); проверка не имеет
+        # смысла. Запрещаем только для https:// remote endpoint'ов.
+        if scheme != "https":
+            return self
+        if _is_intracluster_host(host):
             return self
         raise ValueError(
             "INTROSPECT_TLS_VERIFY=false is forbidden on non-loopback "

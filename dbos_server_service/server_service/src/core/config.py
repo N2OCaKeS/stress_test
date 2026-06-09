@@ -19,6 +19,19 @@ _REDIS_URL_PASSWORD_RE = re.compile(r"://[^/@]*:[^@/]+@")
 # выглядит иначе). Симметрично `loging_service/src/core/config.py:_LOCAL_HOSTS`.
 _LOCAL_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
 
+def _is_intracluster_host(host: str) -> bool:
+    """Cluster-local DNS-имя (short name без точки или .svc/.cluster.local).
+    Plain http между pod'ами равноценен self-loop'у на localhost: внутрикластерный
+    traffic закрыт NetworkPolicy default-deny + namespace boundary. External
+    FQDN'ы (example.com) этот фильтр не пропускает — там https:// остаётся обязательным.
+    """
+    return (
+        host in _LOCAL_HOSTS
+        or "." not in host
+        or host.endswith((".svc", ".svc.cluster.local", ".cluster.local"))
+    )
+
+
 
 class Settings(BaseSettings):
     """Контейнер настроек. Поля грузятся из env (case-insensitive) и из .env-файла."""
@@ -149,18 +162,23 @@ class Settings(BaseSettings):
                         "SERVER_INBOUND_SERVICE_API_KEYS: JSON must decode to an object"
                     )
                 return {str(k).strip(): str(val) for k, val in parsed.items() if str(k).strip()}
-            # kv-list: `a=1,b=2`. Без `=` или с пустыми ключами / значениями —
+            # kv-list: `a:1,b:2` (двоеточие как separator — формат gen_secrets.sh
+            # для loging-style maps). Также допускается `a=1,b=2` для совместимости
+            # с pyhton-стилем env. Без любого separator или с пустыми частями —
             # отбиваем явно, чтобы оператор не получил тихий пустой dict.
             out: dict[str, str] = {}
             for raw in v.split(","):
                 item = raw.strip()
                 if not item:
                     continue
-                if "=" not in item:
+                if ":" in item:
+                    key, _, value = item.partition(":")
+                elif "=" in item:
+                    key, _, value = item.partition("=")
+                else:
                     raise ValueError(
-                        f"SERVER_INBOUND_SERVICE_API_KEYS: item {item!r} missing '=' separator"
+                        f"SERVER_INBOUND_SERVICE_API_KEYS: item {item!r} missing ':' or '=' separator"
                     )
-                key, _, value = item.partition("=")
                 key = key.strip()
                 value = value.strip()
                 if not key or not value:
@@ -772,7 +790,7 @@ class Settings(BaseSettings):
         parsed = urlparse(self.logging_service_url)
         scheme = (parsed.scheme or "").lower()
         host = (parsed.hostname or "").lower()
-        if scheme == "http" and host not in _LOCAL_HOSTS:
+        if scheme == "http" and not _is_intracluster_host(host):
             raise ValueError(
                 "LOGGING_SERVICE_URL must use https:// in "
                 f"{self.app_env} (got scheme={scheme!r}, host={host!r}); "
@@ -796,7 +814,7 @@ class Settings(BaseSettings):
         parsed = urlparse(self.auth_service_url)
         scheme = (parsed.scheme or "").lower()
         host = (parsed.hostname or "").lower()
-        if scheme == "http" and host not in _LOCAL_HOSTS:
+        if scheme == "http" and not _is_intracluster_host(host):
             raise ValueError(
                 "AUTH_SERVICE_URL must use https:// in "
                 f"{self.app_env} (got scheme={scheme!r}, host={host!r}); "

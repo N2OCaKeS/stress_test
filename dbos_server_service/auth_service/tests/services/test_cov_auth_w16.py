@@ -319,7 +319,7 @@ class TestDockerPullDeniedRegistryNotFound:
 
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic_hdr("t_user_a", "User1234!"),
+            headers=_basic_hdr("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": "repository:nonexistent_registry_xyz/image:pull",
@@ -378,7 +378,7 @@ class TestDockerPullDeniedRegistryNotFound:
 
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic_hdr("t_user_a", "User1234!"),
+            headers=_basic_hdr("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": f"repository:{dept_disabled.name}/image:pull",
@@ -689,7 +689,7 @@ class TestRefreshUpdatesSessionIpViaExtractClientIp:
 
         login = await client.post(
             LOGIN_URL,
-            json={"username": "t_admin", "password": "Admin1234!"},
+            json={"username": "t_admin", "password": "Admin12345678!"},
         )
         assert login.status_code == 200, login.text
         raw_rt = login.json()["refresh_token"]

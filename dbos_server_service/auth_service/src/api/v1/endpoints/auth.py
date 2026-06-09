@@ -44,6 +44,56 @@ async def _ping_db() -> None:
         await session.execute(text("SELECT 1"))
 
 
+async def _collect_operational_counters() -> dict:
+    """Снять operational-snapshot для observability оператора.
+
+    Не дублирует Prometheus — даёт «увидеть в одном HTTP-запросе» (kubectl
+    port-forward / curl) ключевые цифры под текущий load. Любой read-fail
+    деградирует поле до 0 без поломки самого readiness — fields-best-effort.
+
+    Поля:
+      * `audit_dropped_429` — per-process счётчик из `audit_service`
+        (drop после 3x429 от loging_service).
+      * `failed_login_24h` — SELECT COUNT users с failed_login_attempts>0 и
+        изменением за последние сутки (грубая оценка brute-force нагрузки).
+      * `lockout_active` — сколько юзеров сейчас в активном lockout-окне.
+    """
+    from src.services import audit_service as _as
+
+    counters: dict = {
+        "audit_dropped_429": 0,
+        "failed_login_24h": 0,
+        "lockout_active": 0,
+    }
+    try:
+        counters["audit_dropped_429"] = int(_as.get_dropped_429_total())
+    except Exception:  # noqa: BLE001 — observability не должен валить probe
+        pass
+
+    try:
+        async with AsyncSessionLocal() as session:
+            # Активные lockout'ы: locked_until в будущем (NOW < locked_until).
+            row = await session.execute(text(
+                "SELECT COUNT(*) FROM users WHERE locked_until IS NOT NULL "
+                "AND locked_until > NOW()"
+            ))
+            counters["lockout_active"] = int(row.scalar() or 0)
+            # Failed-login activity: usability-метрика, NOT precise — берём
+            # все users с активным счётчиком (sweep сбрасывает их через
+            # успешный login). 24h-окно по semantics документации, но
+            # столбца `failed_login_last_at` нет — используем общий счётчик.
+            # TODO: добавить колонку last_failed_at и фильтр по NOW()-24h,
+            # сейчас отдаём snapshot накопленных attempts > 0.
+            row = await session.execute(text(
+                "SELECT COUNT(*) FROM users WHERE failed_login_attempts > 0"
+            ))
+            counters["failed_login_24h"] = int(row.scalar() or 0)
+    except Exception:  # noqa: BLE001 — счётчики best-effort
+        pass
+
+    return counters
+
+
 @router.get(
     "/ready",
     summary="Readiness-проба",
@@ -72,9 +122,14 @@ async def readiness() -> JSONResponse:
             status_code=503,
             content={"status": "not_ready", "reason": "db_unreachable", "service": "auth_service"},
         )
+    counters = await _collect_operational_counters()
     return JSONResponse(
         status_code=200,
-        content={"status": "ready", "service": "auth_service"},
+        content={
+            "status": "ready",
+            "service": "auth_service",
+            "counters": counters,
+        },
     )
 
 

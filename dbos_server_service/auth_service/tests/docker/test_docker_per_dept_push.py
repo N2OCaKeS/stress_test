@@ -77,7 +77,7 @@ async def test_pull_with_permission_ok(client, dept_a, user_a, registry_dept_a):
     """user_a имеет docker_registry.dept_a.pull → 200 c pull."""
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test", "scope": f"repository:{dept_a.name}/image:pull"},
     )
     assert resp.status_code == 200, resp.text
@@ -91,7 +91,7 @@ async def test_push_to_own_registry_ok(client, dept_a, user_a, registry_dept_a):
     """user_a живёт в dept_a, имеет docker_registry.dept_a.push → push выдан."""
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test", "scope": f"repository:{dept_a.name}/image:push"},
     )
     assert resp.status_code == 200, resp.text
@@ -107,7 +107,7 @@ async def test_push_to_foreign_registry_denied(
     """user_a (dept_a) пытается push в registry dep_b → 403 PUSH_DEPT_MISMATCH."""
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test", "scope": f"repository:{dept_b.name}/image:push"},
     )
     assert resp.status_code == 403, resp.text
@@ -134,7 +134,7 @@ async def test_push_without_permission_in_own_dept_omitted(
 
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test", "scope": f"repository:{dept_a.name}/image:push"},
     )
     assert resp.status_code == 200, resp.text

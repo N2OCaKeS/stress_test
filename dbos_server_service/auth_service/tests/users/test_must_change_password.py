@@ -40,7 +40,7 @@ async def test_must_change_blocks_me(client, db, user_a):
     """GET /users/me → 403 PASSWORD_CHANGE_REQUIRED."""
     user_a.must_change_password = True
     await db.commit()
-    token = await _login(client, "t_user_a", "User1234!")
+    token = await _login(client, "t_user_a", "User12345678!")
 
     resp = await client.get(ME_URL, headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 403, resp.text
@@ -53,7 +53,7 @@ async def test_must_change_blocks_list_users(client, db, account_admin):
     """GET /users → 403."""
     account_admin.must_change_password = True
     await db.commit()
-    token = await _login(client, "t_admin", "Admin1234!")
+    token = await _login(client, "t_admin", "Admin12345678!")
 
     resp = await client.get(LIST_USERS_URL, headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 403
@@ -64,7 +64,7 @@ async def test_must_change_blocks_post_tokens(client, db, user_a):
     """POST /tokens → 403."""
     user_a.must_change_password = True
     await db.commit()
-    token = await _login(client, "t_user_a", "User1234!")
+    token = await _login(client, "t_user_a", "User12345678!")
 
     resp = await client.post(
         TOKENS_URL,
@@ -88,7 +88,7 @@ async def test_health_ok_with_must_change_user(client, db, user_a):
     """GET /health пропускается даже если у юзера флаг (хотя bearer тут вообще не валидируется)."""
     user_a.must_change_password = True
     await db.commit()
-    token = await _login(client, "t_user_a", "User1234!")
+    token = await _login(client, "t_user_a", "User12345678!")
 
     resp = await client.get(HEALTH_URL, headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
@@ -101,7 +101,7 @@ async def test_change_password_clears_flag(client, db, user_a):
     """POST /me/password успешный → флаг = False → GET /me → 200."""
     user_a.must_change_password = True
     await db.commit()
-    token = await _login(client, "t_user_a", "User1234!")
+    token = await _login(client, "t_user_a", "User12345678!")
 
     # Сначала убедимся, что флаг блокирует.
     blocked = await client.get(ME_URL, headers={"Authorization": f"Bearer {token}"})
@@ -111,12 +111,12 @@ async def test_change_password_clears_flag(client, db, user_a):
     change = await client.post(
         ME_PASSWORD_URL,
         headers={"Authorization": f"Bearer {token}"},
-        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+        json={"old_password": "User12345678!", "new_password": "NewSecret9012345!"},
     )
     assert change.status_code == 200, change.text
 
     # `change_own_password` revoke'ит все сессии — нужен новый login.
-    new_token = await _login(client, "t_user_a", "NewSecret9!")
+    new_token = await _login(client, "t_user_a", "NewSecret9012345!")
     ok = await client.get(ME_URL, headers={"Authorization": f"Bearer {new_token}"})
     assert ok.status_code == 200
 
@@ -133,7 +133,7 @@ async def test_admin_reset_sets_must_change(client, db, admin_token, user_a):
     resp = await client.post(
         f"/api/auth/v1/users/{user_a.id}/reset-password",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"new_password": "AdminSet9!"},
+        json={"new_password": "AdminSet9012345!"},
     )
     assert resp.status_code == 200
 
@@ -142,7 +142,7 @@ async def test_admin_reset_sets_must_change(client, db, admin_token, user_a):
     assert user_a.must_change_password is True
 
     # И поведенчески: login + любой gated endpoint → 403.
-    token = await _login(client, "t_user_a", "AdminSet9!")
+    token = await _login(client, "t_user_a", "AdminSet9012345!")
     blocked = await client.get(ME_URL, headers={"Authorization": f"Bearer {token}"})
     assert blocked.status_code == 403
     assert blocked.json()["error_code"] == "PASSWORD_CHANGE_REQUIRED"
@@ -158,14 +158,14 @@ async def test_create_user_sets_must_change(client, db, dept_admin_a_token, dept
         headers={"Authorization": f"Bearer {dept_admin_a_token}"},
         json={
             "username": "must_change_new",
-            "password": "Temp1234!",
+            "password": "Temp12345678!",
             "department_id": dept_a_with_service.id,
         },
     )
     assert resp.status_code == 201, resp.text
 
     # Логинимся как новый юзер — на любой gated endpoint должно прилетать 403.
-    token = await _login(client, "must_change_new", "Temp1234!")
+    token = await _login(client, "must_change_new", "Temp12345678!")
     blocked = await client.get(ME_URL, headers={"Authorization": f"Bearer {token}"})
     assert blocked.status_code == 403
     assert blocked.json()["error_code"] == "PASSWORD_CHANGE_REQUIRED"
@@ -174,7 +174,7 @@ async def test_create_user_sets_must_change(client, db, dept_admin_a_token, dept
     change = await client.post(
         ME_PASSWORD_URL,
         headers={"Authorization": f"Bearer {token}"},
-        json={"old_password": "Temp1234!", "new_password": "AfterTemp9!"},
+        json={"old_password": "Temp12345678!", "new_password": "AfterTemp9012345!"},
     )
     assert change.status_code == 200
 
@@ -205,7 +205,7 @@ async def test_change_own_password_invalidates_identity_cache(
     запрос видит must_change=False, не stale True из кэша."""
     user_a.must_change_password = True
     await db.commit()
-    token = await _login(client, "t_user_a", "User1234!")
+    token = await _login(client, "t_user_a", "User12345678!")
 
     # Прогреваем кэш (одним 403 на /me) — теперь там IdentityContext с must_change=True.
     first = await client.get(ME_URL, headers={"Authorization": f"Bearer {token}"})
@@ -215,12 +215,12 @@ async def test_change_own_password_invalidates_identity_cache(
     change = await client.post(
         ME_PASSWORD_URL,
         headers={"Authorization": f"Bearer {token}"},
-        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+        json={"old_password": "User12345678!", "new_password": "NewSecret9012345!"},
     )
     assert change.status_code == 200
 
     # change_own_password revoke'ит сессии — новый login для проверки.
-    new_token = await _login(client, "t_user_a", "NewSecret9!")
+    new_token = await _login(client, "t_user_a", "NewSecret9012345!")
     ok = await client.get(ME_URL, headers={"Authorization": f"Bearer {new_token}"})
     assert ok.status_code == 200
 

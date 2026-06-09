@@ -47,7 +47,7 @@ from src.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from src.dependencies.auth import CurrentIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.task import TaskCancelRequest, TaskCancelResponse
 from src.services import audit_service, permissions, worker_client
@@ -117,7 +117,7 @@ router = APIRouter(prefix="/tasks")
     },
 )
 async def cancel_task_endpoint(
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     task_id: str = Path(..., min_length=1, max_length=64),
     body: TaskCancelRequest | None = Body(default=None),
     db: AsyncSession = Depends(get_db),

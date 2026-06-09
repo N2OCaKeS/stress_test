@@ -56,6 +56,9 @@ spec:
         dbos.monitoring/source: "/api/auth/v1/ready"
     spec:
       terminationGracePeriodSeconds: 45
+      # auth-service не дёргает kube API — SA-токен не нужен. Уберём mount,
+      # чтобы скомпрометированный pod не мог говорить с apiserver.
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -143,6 +146,18 @@ spec:
             - "--host=0.0.0.0"
             - "--port=8000"
             - "--workers=2"
+          # startupProbe закрывает окно "DB ещё не отвечает / connection pool
+          # прогревается". До успеха startupProbe livenessProbe не считается,
+          # т.е. медленный старт не уронит pod в CrashLoopBackOff.
+          # 30 * 5s = 2.5 min grace на ready.
+          startupProbe:
+            httpGet:
+              path: /api/auth/v1/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /api/auth/v1/ready

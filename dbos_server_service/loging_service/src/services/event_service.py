@@ -187,8 +187,12 @@ def record_admin_action(
         )
     payload = _redact_payload(payload)
     if payload.severity is None:
+        # Catalog lookup тоже доступен self-audit'у — если кто-то когда-нибудь
+        # переименует logging.* action и зарегистрирует свой severity через
+        # `register_events`, hardcoded таблица всё равно поймает (там self-audit
+        # actions присутствуют), но передаём db для симметрии с `apply_rules`.
         payload = payload.model_copy(
-            update={"severity": _resolve_default_severity(payload.action, payload.status)}
+            update={"severity": _resolve_default_severity(payload.action, payload.status, db)}
         )
     return event_repo.insert(db, payload, commit=commit)
 
@@ -200,6 +204,10 @@ def query(
     service: str | None = None,
     severity: str | None = None,
     action: str | None = None,
+    actor_id: str | None = None,
+    target_id: str | None = None,
+    status: str | None = None,
+    request_id: str | None = None,
     from_time: datetime | None = None,
     to_time: datetime | None = None,
     limit: int = 100,
@@ -214,6 +222,10 @@ def query(
         service=service,
         severity=severity,
         action=action,
+        actor_id=actor_id,
+        target_id=target_id,
+        status=status,
+        request_id=request_id,
         from_time=from_time,
         to_time=to_time,
         limit=limit,
@@ -226,11 +238,20 @@ def query(
             db,
             identity=identity,
             timeout_state=timeout_state,
+            # `actor_id`/`actor_type` зарезервированы как top-level audit-колонки
+            # на _любой_ глубине вложения в details (см. `_RESERVED_DETAIL_KEYS`
+            # в `schemas/events.py`). Префиксуем фильтр-ключи, чтобы они не
+            # коллидили с гардом — read-фильтр это не actor события, а критерий
+            # отбора page'а в reader-side диагностике.
             filters={
                 "department_id": department_id,
                 "service": service,
                 "severity": severity,
                 "action": action,
+                "f_actor_id": actor_id,
+                "f_target_id": target_id,
+                "f_status": status,
+                "f_request_id": request_id,
                 "from_time": from_time.isoformat() if from_time else None,
                 "to_time": to_time.isoformat() if to_time else None,
                 "limit": limit,

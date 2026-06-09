@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import CurrentIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.drift import DriftEventItem, ServerDriftResponse
@@ -48,7 +48,7 @@ router = APIRouter(prefix="/servers")
     },
 )
 async def list_servers(
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0, description="DEPRECATED — используйте cursor-пагинацию (`after` + `cursor=true`)."),
@@ -131,7 +131,7 @@ async def list_servers(
 )
 async def create_server(
     body: ServerCreate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerResponse:
     """
@@ -171,7 +171,7 @@ async def create_server(
 )
 async def get_server(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerResponse:
     """
@@ -218,7 +218,7 @@ async def get_server(
 )
 async def get_server_drift(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     since: datetime | None = Query(
         default=None,
@@ -258,7 +258,7 @@ async def get_server_drift(
 async def update_server(
     server_id: str,
     body: ServerUpdate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerResponse:
     """
@@ -296,7 +296,7 @@ async def update_server(
 )
 async def delete_server(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
     """
@@ -335,7 +335,7 @@ async def delete_server(
 )
 async def acquire_server(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     body: ServerAcquireRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> ServerResponse:
@@ -375,7 +375,7 @@ async def acquire_server(
 )
 async def release_server(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerResponse:
     """
@@ -418,7 +418,7 @@ async def release_server(
 async def update_os_version(
     server_id: str,
     body: ServerOsVersionUpdate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerResponse:
     """

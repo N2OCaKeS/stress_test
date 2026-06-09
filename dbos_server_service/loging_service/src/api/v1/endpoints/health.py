@@ -109,4 +109,29 @@ def ready(db: Session = Depends(get_db)):
                     },
                 )
 
-    return {"status": "ready"}
+    # Operational counter snapshot для оператора. Best-effort: любая ошибка
+    # счётчика — отдаём 0/None, не валим ready. Подробное observability —
+    # отдельный канал (Prometheus / k8s log-aggregator).
+    counters: dict = {
+        "events_ingested_total": 0,      # TODO: завести counter в ingest endpoint
+        "events_dropped_429": 0,         # TODO: пробросить из rate-limit handler
+        "outbox_pending": 0,
+        "retention_last_sweep_at": None,
+    }
+    try:
+        if main_module._audit_outbox is not None:
+            counters["outbox_pending"] = int(main_module._audit_outbox.qsize())
+    except Exception:  # noqa: BLE001 — best-effort
+        pass
+    try:
+        ts = main_module.get_retention_last_successful_sweep_monotonic()
+        if ts is not None:
+            # monotonic clock → секунды-от-now (а не wall-time); этого
+            # хватает для «давно ли sweep тикал», но не для абсолютного UTC.
+            counters["retention_last_sweep_at"] = (
+                f"monotonic_age_seconds={int(time.monotonic() - ts)}"
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {"status": "ready", "counters": counters}

@@ -117,13 +117,30 @@ if [[ "$ENCRYPTOR" == "age" && -n "${BACKUP_AGE_RECIPIENTS:-}" ]]; then
 fi
 
 PASSPHRASE=""
+PASSPHRASE_SECRET_NAME="${BACKUP_PASSPHRASE_SECRET_NAME:-dbos-backup-passphrase}"
 if [[ "$USE_AGE_RECIPIENTS" == "false" ]]; then
     if [[ -n "${BACKUP_PASSPHRASE:-}" ]]; then
         PASSPHRASE="$BACKUP_PASSPHRASE"
+    elif kubectl -n "$NS" get secret "$PASSPHRASE_SECRET_NAME" >/dev/null 2>&1; then
+        # ad-hoc запуск с оператор-хоста: тянем passphrase из k8s Secret'а
+        # `dbos-backup-passphrase` (см. k8s/106-backup-passphrase.yaml.example).
+        # CronJob уже пробрасывает её через env BACKUP_PASSPHRASE — этот блок для него no-op.
+        PASSPHRASE="$(
+            kubectl -n "$NS" get secret "$PASSPHRASE_SECRET_NAME" -o json \
+                | jq -r '.data.BACKUP_PASSPHRASE // empty' \
+                | { b64=$(cat); [[ -n "$b64" ]] && echo "$b64" | base64 -d || true; }
+        )"
+        if [[ -z "$PASSPHRASE" ]]; then
+            echo "ОШИБКА: Secret ${NS}/${PASSPHRASE_SECRET_NAME} есть, но поле BACKUP_PASSPHRASE пустое." >&2
+            exit 1
+        fi
+        echo "→ passphrase подтянута из Secret ${NS}/${PASSPHRASE_SECRET_NAME}." >&2
     else
         # Интерактивный ввод.
         if [[ ! -t 0 ]]; then
             echo "ОШИБКА: stdin не terminal, и BACKUP_PASSPHRASE не задана." >&2
+            echo "  Создай Secret ${NS}/${PASSPHRASE_SECRET_NAME} (см. k8s/106-backup-passphrase.yaml.example)" >&2
+            echo "  или передай BACKUP_PASSPHRASE через env." >&2
             exit 1
         fi
         read -r -s -p "Passphrase для backup'а master-ключей: " PASSPHRASE

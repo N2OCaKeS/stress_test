@@ -103,7 +103,7 @@ class TestPlatformRoleEnum:
             headers={"Authorization": f"Bearer {admin_token}"},
             json={
                 "username": "p2b_user",
-                "password": "Password12!",
+                "password": "Password123456!",
                 "department_id": dept_a.id,
                 "platform_role": "hacker",
             },
@@ -117,7 +117,7 @@ class TestPlatformRoleEnum:
         for role in ("account_admin", "department_admin", "loging_admin", "loging_reader"):
             payload = {
                 "username": f"p2b_valid_{role}",
-                "password": "Password12!",
+                "password": "Password123456!",
                 "platform_role": role,
             }
             # account_admin/loging_admin — без department_id (см. service-logic);
@@ -140,7 +140,7 @@ class TestPlatformRoleEnum:
             headers={"Authorization": f"Bearer {admin_token}"},
             json={
                 "username": "p2b_regular",
-                "password": "Password12!",
+                "password": "Password123456!",
                 "department_id": dept_a.id,
             },
         )
@@ -255,7 +255,7 @@ class TestBannedToBlockedDeactivatesBan:
             headers={"Authorization": f"Bearer {admin_token}"},
             json={
                 "username": "p2c_initially_blocked",
-                "password": "Password12!",
+                "password": "Password123456!",
                 "department_id": dept_a.id,
             },
         )

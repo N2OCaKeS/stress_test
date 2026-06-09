@@ -56,13 +56,13 @@ async def test_logout_banned_user_active_session_returns_200(client, db):
     user = User(
         id=_new_id("usr_"),
         username="logout_banned",
-        password_hash=hash_password("Pass1234!"),
+        password_hash=hash_password("Pass12345678!"),
         status="active",
         is_active=True,
     )
     db.add(user)
     await db.flush()
-    data = await _login(client, username="logout_banned", password="Pass1234!")
+    data = await _login(client, username="logout_banned", password="Pass12345678!")
     # Жесткий бан после получения refresh — БД-стейт меняем напрямую.
     user.status = "banned"
     await db.flush()
@@ -79,7 +79,7 @@ async def test_logout_expired_session_returns_200_idempotent(client, db):
     user = User(
         id=_new_id("usr_"),
         username="logout_expired",
-        password_hash=hash_password("Pass1234!"),
+        password_hash=hash_password("Pass12345678!"),
         status="active",
         is_active=True,
     )

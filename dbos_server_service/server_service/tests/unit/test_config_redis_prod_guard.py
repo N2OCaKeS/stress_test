@@ -141,7 +141,7 @@ class TestProductionRequiresHttpsAuthUrl:
             _make_settings(
                 monkeypatch,
                 APP_ENV="production",
-                AUTH_SERVICE_URL="http://auth-service.cluster.svc:8000",
+                AUTH_SERVICE_URL="http://auth.example.com:8000",  # external FQDN
             )
 
     def test_production_accepts_https_auth_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,7 +163,7 @@ class TestProductionRequiresHttpsLoggingUrl:
                 monkeypatch,
                 APP_ENV="production",
                 AUTH_SERVICE_URL="https://auth.prod.svc:8000",
-                LOGGING_SERVICE_URL="http://logging.cluster.svc:8001",
+                LOGGING_SERVICE_URL="http://logging.example.com:8001",  # external FQDN
             )
 
     def test_staging_rejects_http_logging_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -172,7 +172,7 @@ class TestProductionRequiresHttpsLoggingUrl:
                 monkeypatch,
                 APP_ENV="staging",
                 AUTH_SERVICE_URL="https://auth.prod.svc:8000",
-                LOGGING_SERVICE_URL="http://logging.cluster.svc:8001",
+                LOGGING_SERVICE_URL="http://logging.example.com:8001",  # external FQDN
             )
 
     def test_production_accepts_https_logging_url(self, monkeypatch: pytest.MonkeyPatch) -> None:

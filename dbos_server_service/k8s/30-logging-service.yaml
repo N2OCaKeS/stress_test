@@ -56,6 +56,7 @@ spec:
       # AUDIT_DRAIN_TIMEOUT_SECONDS (default 2s) — финальный drain self-audit
       # outbox в lifespan; kubelet даёт грейс до SIGKILL, держим запас.
       terminationGracePeriodSeconds: 45
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -121,6 +122,16 @@ spec:
             - "--host=0.0.0.0"
             - "--port=8001"
             - "--workers=2"
+          # startupProbe — окно прогрева DB-pool и self-audit outbox.
+          # До успеха startupProbe liveness не учитывается. 30 * 5s = 2.5 min.
+          startupProbe:
+            httpGet:
+              path: /api/logging/v1/health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /api/logging/v1/ready

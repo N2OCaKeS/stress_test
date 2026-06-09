@@ -9,7 +9,7 @@ GET  /events — читают `loging_admin` / `loging_reader`. Обе роли 
 
 import unicodedata
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from slowapi.util import get_remote_address
@@ -29,7 +29,7 @@ from src.utils.normalization import normalize_identifier
 # Лимитер вынесен в `core.limiter` ради разрыва цикла import'ов
 # (`src.main` собирает routers, эти routers импортили `src.main`).
 # `app.state.limiter` указывает на тот же инстанс.
-from src.core.limiter import limiter
+from src.core.limiter import limiter, reader_rate_limit_key
 
 router = APIRouter()
 
@@ -260,12 +260,14 @@ def create_event(
         "audit'а не допускаются (если dep_admin'у нужно читать журнал — "
         "выдай ему отдельную `loging_reader`).\n\n"
         "**Фильтры** (любая комбинация, all-AND): `department_id`, `service`, "
-        "`severity`, `action`, `from_time`, `to_time`, `limit`, `offset`.\n\n"
-        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
+        "`severity`, `action`, `actor_id`, `target_id`, `status`, `request_id`, "
+        "`from_time`, `to_time`, `limit`, `offset`.\n\n"
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-user, fallback на IP "
+        "если identity не определена; см. README).\n\n"
         "**Возможные ошибки:**\n"
         "- 401 `INVALID_TOKEN` / `MISSING_TOKEN` / `USER_BANNED` — нет или неверный JWT.\n"
         "- 403 `INSUFFICIENT_ROLE` — роль не в allow-list.\n"
-        "- 429 `RATE_LIMIT_EXCEEDED` — превышен per-IP лимит.\n"
+        "- 429 `RATE_LIMIT_EXCEEDED` — превышен per-user лимит (fallback на IP).\n"
         "- 503 `AUTH_SERVICE_NOT_CONFIGURED` / `AUTH_SERVICE_TIMEOUT` / "
         "`AUTH_SERVICE_UNREACHABLE` / `AUTH_SERVICE_ERROR` / "
         "`INTROSPECT_KEY_NOT_CONFIGURED` / `INTROSPECT_NOT_INITIALIZED` — "
@@ -280,7 +282,7 @@ def create_event(
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
         403: {"model": ErrorEnvelope, "description": "Роль/scope не подходят"},
-        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user rate-limit"},
         503: {
             "model": ErrorEnvelope,
             "description": (
@@ -292,13 +294,16 @@ def create_event(
         },
     },
 )
-# Per-IP лимит на read-канал: даже валидный reader-JWT не должен иметь права
-# выжимать pgsql-пул широкими SELECT'ами по multi-million журналу. Лимит
-# отдельный от ingest'а, ключуется по IP (reader'ов мало, идут с разных
-# IP — глобальный bucket был бы over-restrictive). slowapi требует
-# `request: Request` параметром эндпоинта (см. комментарий у `create_event`).
+# Per-user лимит на read-канал: за k8s ingress все reader'ы приходят с
+# одного IP, общий per-IP bucket позволил бы одному злоупотребляющему
+# JWT/PAT'у выжать бюджет всех остальных операторов. Ключуемся по
+# `sub` из introspect (см. `reader_rate_limit_key`); fallback на IP
+# для запросов, где identity ещё не верифицирована (auth-fail —
+# обычно отбивается до limit'а, но fallback закрывает гонку).
+# slowapi требует `request: Request` параметром эндпоинта.
 @limiter.limit(
     lambda: get_settings().audit_query_rate_limit,
+    key_func=reader_rate_limit_key,
 )
 def list_events(
     request: Request,
@@ -309,6 +314,26 @@ def list_events(
     service: str | None = Query(default=None, description="Фильтр по имени сервиса-источника"),
     severity: Severity | None = Query(default=None),
     action: str | None = Query(default=None, description="Фильтр по имени action (точное совпадение)"),
+    actor_id: str | None = Query(
+        default=None,
+        max_length=48,
+        description="Фильтр по actor_id (точное совпадение)",
+    ),
+    target_id: str | None = Query(
+        default=None,
+        max_length=48,
+        description="Фильтр по target_id (точное совпадение)",
+    ),
+    status_filter: Literal["success", "failure", "denied", "warning"] | None = Query(
+        default=None,
+        alias="status",
+        description="Фильтр по исходу действия",
+    ),
+    request_id: str | None = Query(
+        default=None,
+        max_length=64,
+        description="Фильтр по request_id (трассировочный идентификатор)",
+    ),
     from_time: datetime | None = Query(default=None, description="Начало диапазона времени (ISO 8601)"),
     to_time: datetime | None = Query(default=None, description="Конец диапазона времени (ISO 8601)"),
     limit: int = Query(default=100, ge=1, le=MAX_QUERY_LIMIT),
@@ -345,6 +370,10 @@ def list_events(
         service=service,
         severity=severity,
         action=action,
+        actor_id=actor_id,
+        target_id=target_id,
+        status=status_filter,
+        request_id=request_id,
         from_time=from_time,
         to_time=to_time,
         limit=limit,

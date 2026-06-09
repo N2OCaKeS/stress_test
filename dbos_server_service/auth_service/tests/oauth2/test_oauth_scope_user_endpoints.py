@@ -81,7 +81,7 @@ async def user_multi_service(db, dept_a):
         await _make_service(db, svc_name)
         await _grant_service(db, dept_a.id, svc_name)
     user = await _make_user(
-        db, "t_oauth_user", "User1234!", department_id=dept_a.id,
+        db, "t_oauth_user", "User12345678!", department_id=dept_a.id,
     )
     for svc_name in ("svc_a", "svc_b", "auth_service"):
         await _assign_role(db, user.id, svc_name, "reader")
@@ -91,7 +91,7 @@ async def user_multi_service(db, dept_a):
 
 @pytest_asyncio.fixture()
 async def user_multi_token(client, user_multi_service):
-    return await _login(client, "t_oauth_user", "User1234!")
+    return await _login(client, "t_oauth_user", "User12345678!")
 
 
 # ── 1. /me видит только scope-разрешённые сервисы ────────────────────────────
@@ -202,7 +202,7 @@ async def dept_admin_multi(db, dept_a):
         await _make_service(db, svc_name)
         await _grant_service(db, dept_a.id, svc_name)
     user = await _make_user(
-        db, "t_da_oauth", "Admin1234!",
+        db, "t_da_oauth", "Admin12345678!",
         department_id=dept_a.id, platform_role="department_admin",
     )
     await db.commit()
@@ -211,7 +211,7 @@ async def dept_admin_multi(db, dept_a):
 
 @pytest_asyncio.fixture()
 async def dept_admin_multi_token(client, dept_admin_multi):
-    return await _login(client, "t_da_oauth", "Admin1234!")
+    return await _login(client, "t_da_oauth", "Admin12345678!")
 
 
 class TestBotsRouterScopeGuard:

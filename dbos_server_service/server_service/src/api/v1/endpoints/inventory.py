@@ -18,7 +18,7 @@ from src.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from src.dependencies.auth import CurrentIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.dependencies.idempotency import read_idempotency_key
 from src.schemas.server import ServerTaskDispatchResponse
@@ -62,7 +62,7 @@ users_router = APIRouter(prefix="/servers/{server_id}/users")
 )
 async def trigger_users_inventory(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ServerTaskDispatchResponse:

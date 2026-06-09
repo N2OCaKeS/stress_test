@@ -26,4 +26,4 @@ async def user_b_with_service(db, user_b, service_x):
 
 @pytest_asyncio.fixture()
 async def user_b_token(client, user_b_with_service):
-    return await _login(client, "t_user_b", "User1234!")
+    return await _login(client, "t_user_b", "User12345678!")

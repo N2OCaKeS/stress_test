@@ -134,7 +134,7 @@ class TestDockerRegistryLegacyCacheSavesOneSelect:
             await docker_registry_service.issue_token(
                 db,
                 username="t_user_a",
-                password="User1234!",
+                password="User12345678!",
                 service="registry.docker.io",
                 scope="repository:myapp:pull",
                 request_id=None,

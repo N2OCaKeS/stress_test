@@ -89,7 +89,7 @@ async def test_create_user_with_initial_roles(
         USERS_URL, headers={"Authorization": f"Bearer {admin_token}"},
         json={
             "username": "new_user_with_roles",
-            "password": "Secure1234!",
+            "password": "Secure12345678!",
             "department_id": dept_a_with_service.id,
             "initial_roles": [
                 {"service_name": service_x.service_name, "roles": ["reader"]}
@@ -106,7 +106,7 @@ async def test_create_user_with_invalid_initial_role_returns_422(
         USERS_URL, headers={"Authorization": f"Bearer {admin_token}"},
         json={
             "username": "bad_role_user",
-            "password": "Secure1234!",
+            "password": "Secure12345678!",
             "department_id": dept_a_with_service.id,
             "initial_roles": [
                 {"service_name": service_x.service_name, "roles": ["nonexistent"]}
@@ -125,7 +125,7 @@ async def test_create_user_initial_role_service_not_in_dept_returns_403(
         USERS_URL, headers={"Authorization": f"Bearer {admin_token}"},
         json={
             "username": "cross_dept_user",
-            "password": "Secure1234!",
+            "password": "Secure12345678!",
             "department_id": dept_b.id,
             "initial_roles": [
                 {"service_name": service_x.service_name, "roles": ["reader"]}

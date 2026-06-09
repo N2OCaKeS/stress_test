@@ -125,13 +125,14 @@ class TestInvalidFilterValues:
         resp = admin_client.get("/api/logging/v1/events", params={"severity": "FATAL"})
         assert resp.status_code == 422
 
-    def test_unknown_status_returns_empty(self, admin_client):
-        """GET /events не валидирует status строго (Query string без Literal) —
-        неизвестное значение просто никогда не матчится: 200 + пустой список.
-        Фиксируем поведение (TODO: добавить Literal-валидатор)."""
+    def test_unknown_status_rejected(self, admin_client):
+        """GET /events валидирует status по `Literal["success", "failure",
+        "denied", "warning"]` — неизвестное значение возвращает 422.
+        Симметрично `_unknown_severity_rejected` (Literal whitelist) и схеме
+        `EventCreate.status` на ingest'е.
+        """
         resp = admin_client.get("/api/logging/v1/events", params={"status": "ok"})
-        assert resp.status_code == 200
-        assert resp.json()["items"] == []
+        assert resp.status_code == 422
 
     def test_malformed_from_time_rejected(self, admin_client):
         resp = admin_client.get("/api/logging/v1/events", params={"from_time": "yesterday"})

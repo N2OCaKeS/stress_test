@@ -39,7 +39,7 @@ async def _make_user_in_dept(db, dept_id, username):
 
     u = User(
         id=_new_id("usr_"), username=username,
-        password_hash=hash_password("User1234!"),
+        password_hash=hash_password("User12345678!"),
         department_id=dept_id, is_active=True, status="active",
     )
     db.add(u)

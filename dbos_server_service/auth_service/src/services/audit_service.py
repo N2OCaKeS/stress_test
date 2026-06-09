@@ -210,6 +210,12 @@ async def _send_to_logging_service(payload: dict, url: str, api_key: str) -> Non
     (best-effort, не блокируем main-flow).
     """
     headers = {**bearer_header(api_key), "X-Service-Identity": "auth_service"}
+    # Прокидываем X-Request-ID в outbound POST, чтобы loging_service видел
+    # тот же request_id, что и source-сервис. Source — payload["request_id"],
+    # резолвится в `emit()` из ctx или явного аргумента.
+    rid = payload.get("request_id")
+    if rid:
+        headers["X-Request-ID"] = str(rid)
     client = _audit_client
     try:
         for attempt in range(len(_RETRY_DELAYS_ON_429) + 1):

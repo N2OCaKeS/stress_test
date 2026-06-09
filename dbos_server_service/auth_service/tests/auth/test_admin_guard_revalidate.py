@@ -45,13 +45,13 @@ async def test_banned_account_admin_jwt_rejected_on_next_request(client, db):
 
     alice = User(
         id=_new_id("usr_"), username="alice_admin",
-        password_hash=hash_password("Admin1234!"),
+        password_hash=hash_password("Admin12345678!"),
         platform_role="account_admin", status=UserStatus.ACTIVE.value,
         is_active=True,
     )
     bob = User(
         id=_new_id("usr_"), username="bob_admin",
-        password_hash=hash_password("Admin1234!"),
+        password_hash=hash_password("Admin12345678!"),
         platform_role="account_admin", status=UserStatus.ACTIVE.value,
         is_active=True,
     )
@@ -61,7 +61,7 @@ async def test_banned_account_admin_jwt_rejected_on_next_request(client, db):
     # Alice логинится.
     login_resp = await client.post(
         "/api/auth/v1/login",
-        json={"username": "alice_admin", "password": "Admin1234!"},
+        json={"username": "alice_admin", "password": "Admin12345678!"},
     )
     assert login_resp.status_code == 200
     alice_token = login_resp.json()["access_token"]
@@ -70,7 +70,7 @@ async def test_banned_account_admin_jwt_rejected_on_next_request(client, db):
     sanity = await client.post(
         USERS_URL,
         headers={"Authorization": f"Bearer {alice_token}"},
-        json={"username": "sanity_check_user", "password": "Pass1234!",
+        json={"username": "sanity_check_user", "password": "Pass12345678!",
               "platform_role": "account_admin"},
     )
     assert sanity.status_code == 201, sanity.text
@@ -78,7 +78,7 @@ async def test_banned_account_admin_jwt_rejected_on_next_request(client, db):
     # Bob банит Alice.
     bob_login = await client.post(
         "/api/auth/v1/login",
-        json={"username": "bob_admin", "password": "Admin1234!"},
+        json={"username": "bob_admin", "password": "Admin12345678!"},
     )
     bob_token = bob_login.json()["access_token"]
     ban_resp = await client.post(
@@ -93,7 +93,7 @@ async def test_banned_account_admin_jwt_rejected_on_next_request(client, db):
     after_ban = await client.post(
         USERS_URL,
         headers={"Authorization": f"Bearer {alice_token}"},
-        json={"username": "post_ban_user", "password": "Pass1234!",
+        json={"username": "post_ban_user", "password": "Pass12345678!",
               "platform_role": "account_admin"},
     )
     assert after_ban.status_code == 401
@@ -111,7 +111,7 @@ async def test_demoted_department_admin_jwt_loses_admin_guard(client, db, dept_a
     # Логинимся.
     login_resp = await client.post(
         "/api/auth/v1/login",
-        json={"username": "t_dept_admin_a", "password": "Admin1234!"},
+        json={"username": "t_dept_admin_a", "password": "Admin12345678!"},
     )
     assert login_resp.status_code == 200
     token = login_resp.json()["access_token"]
@@ -120,7 +120,7 @@ async def test_demoted_department_admin_jwt_loses_admin_guard(client, db, dept_a
     sanity = await client.post(
         USERS_URL,
         headers={"Authorization": f"Bearer {token}"},
-        json={"username": "before_demote_user", "password": "Pass1234!",
+        json={"username": "before_demote_user", "password": "Pass12345678!",
               "department_id": dept_a.id},
     )
     assert sanity.status_code == 201, sanity.text
@@ -135,7 +135,7 @@ async def test_demoted_department_admin_jwt_loses_admin_guard(client, db, dept_a
     after = await client.post(
         USERS_URL,
         headers={"Authorization": f"Bearer {token}"},
-        json={"username": "after_demote_user", "password": "Pass1234!",
+        json={"username": "after_demote_user", "password": "Pass12345678!",
               "department_id": dept_a.id},
     )
     assert after.status_code == 403
@@ -158,7 +158,7 @@ async def test_revoked_service_role_admin_loses_manage_permission(
     admin_assignment = await _assign_role(
         db, user_a.id, service_x.service_name, "admin",
     )
-    token = await _login(client, "t_user_a", "User1234!")
+    token = await _login(client, "t_user_a", "User12345678!")
 
     roles_url = (
         f"/api/auth/v1/departments/{dept_a_with_service.id}"
@@ -305,7 +305,7 @@ async def test_deactivated_user_jwt_rejected(client, db, user_a):
     Guard `get_current_identity` всё равно должен отказывать."""
     token_resp = await client.post(
         "/api/auth/v1/login",
-        json={"username": "t_user_a", "password": "User1234!"},
+        json={"username": "t_user_a", "password": "User12345678!"},
     )
     token = token_resp.json()["access_token"]
 

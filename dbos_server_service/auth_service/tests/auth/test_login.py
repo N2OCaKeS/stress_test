@@ -11,7 +11,7 @@ from src.core.security import hash_password
 URL = "/api/auth/v1/login"
 
 
-async def _login(client, username="t_admin", password="Admin1234!"):
+async def _login(client, username="t_admin", password="Admin12345678!"):
     return await client.post(URL, json={"username": username, "password": password})
 
 
@@ -45,7 +45,7 @@ async def test_login_account_admin_has_no_service_access(client, account_admin):
 
 async def test_login_regular_user_has_service_roles(client, user_a, service_x):
     """User whose dept has service access sees it in identity."""
-    resp = await client.post(URL, json={"username": "t_user_a", "password": "User1234!"})
+    resp = await client.post(URL, json={"username": "t_user_a", "password": "User12345678!"})
     assert resp.status_code == 200
     identity = resp.json()["identity"]
     assert service_x.service_name in identity["allowed_services"]
@@ -63,7 +63,7 @@ async def test_login_jwt_payload_has_no_sensitive_claims(client, user_a, service
     """
     from src.core.security import decode_access_token
 
-    resp = await client.post(URL, json={"username": "t_user_a", "password": "User1234!"})
+    resp = await client.post(URL, json={"username": "t_user_a", "password": "User12345678!"})
     assert resp.status_code == 200
     token = resp.json()["access_token"]
     payload = decode_access_token(token)
@@ -103,7 +103,7 @@ async def test_login_response_has_request_id_header(client, account_admin):
 
 
 async def test_login_propagates_custom_request_id(client, account_admin):
-    resp = await client.post(URL, json={"username": "t_admin", "password": "Admin1234!"},
+    resp = await client.post(URL, json={"username": "t_admin", "password": "Admin12345678!"},
                               headers={"X-Request-ID": "test-req-001"})
     assert resp.headers["x-request-id"] == "test-req-001"
 
@@ -136,13 +136,13 @@ async def test_login_blocked_user_returns_403(client, db):
     user = User(
         id=_new_id("usr_"),
         username="blocked_user",
-        password_hash=hash_password("Pass1234!"),
+        password_hash=hash_password("Pass12345678!"),
         status="blocked",
         is_active=True,
     )
     db.add(user)
     await db.flush()
-    resp = await _login(client, username="blocked_user", password="Pass1234!")
+    resp = await _login(client, username="blocked_user", password="Pass12345678!")
     assert resp.status_code == 403
     assert resp.json()["error_code"] == "USER_BLOCKED"
 
@@ -151,13 +151,13 @@ async def test_login_banned_user_returns_403(client, db):
     user = User(
         id=_new_id("usr_"),
         username="banned_user",
-        password_hash=hash_password("Pass1234!"),
+        password_hash=hash_password("Pass12345678!"),
         status="banned",
         is_active=True,
     )
     db.add(user)
     await db.flush()
-    resp = await _login(client, username="banned_user", password="Pass1234!")
+    resp = await _login(client, username="banned_user", password="Pass12345678!")
     assert resp.status_code == 403
     assert resp.json()["error_code"] == "USER_BANNED"
 
@@ -168,7 +168,7 @@ async def test_login_lockout_after_5_failed_attempts(client, db):
     user = User(
         id=_new_id("usr_"),
         username="lockout_target",
-        password_hash=hash_password("Correct1!"),
+        password_hash=hash_password("Correct12345678!"),
         status="active",
         is_active=True,
     )
@@ -178,7 +178,7 @@ async def test_login_lockout_after_5_failed_attempts(client, db):
     for _ in range(5):
         await client.post(URL, json={"username": "lockout_target", "password": "wrong"})
 
-    resp = await _login(client, username="lockout_target", password="Correct1!")
+    resp = await _login(client, username="lockout_target", password="Correct12345678!")
     assert resp.status_code == 429
     assert resp.json()["error_code"] == "ACCOUNT_TEMPORARILY_LOCKED"
     assert "retry_after_seconds" in resp.json().get("details", {})
@@ -188,7 +188,7 @@ async def test_login_lockout_response_contains_retry_after(client, db):
     user = User(
         id=_new_id("usr_"),
         username="lockout_target2",
-        password_hash=hash_password("Correct1!"),
+        password_hash=hash_password("Correct12345678!"),
         status="active",
         is_active=True,
     )
@@ -198,7 +198,7 @@ async def test_login_lockout_response_contains_retry_after(client, db):
     for _ in range(5):
         await client.post(URL, json={"username": "lockout_target2", "password": "wrong"})
 
-    resp = await _login(client, username="lockout_target2", password="Correct1!")
+    resp = await _login(client, username="lockout_target2", password="Correct12345678!")
     assert resp.json()["details"]["retry_after_seconds"] > 0
 
 
@@ -208,7 +208,7 @@ async def test_login_succeeds_after_lockout_expires(client, db):
     user = User(
         id=_new_id("usr_"),
         username="expired_lockout",
-        password_hash=hash_password("Correct1!"),
+        password_hash=hash_password("Correct12345678!"),
         status="active",
         is_active=True,
         failed_login_attempts=5,
@@ -217,7 +217,7 @@ async def test_login_succeeds_after_lockout_expires(client, db):
     db.add(user)
     await db.flush()
 
-    resp = await _login(client, username="expired_lockout", password="Correct1!")
+    resp = await _login(client, username="expired_lockout", password="Correct12345678!")
     assert resp.status_code == 200
 
 
@@ -235,7 +235,7 @@ async def test_login_failed_attempts_persist_in_db(client, db):
     user = User(
         id=_new_id("usr_"),
         username="persist_target",
-        password_hash=hash_password("Correct1!"),
+        password_hash=hash_password("Correct12345678!"),
         status="active",
         is_active=True,
     )
@@ -263,7 +263,7 @@ async def test_login_lockout_persists_locked_until_in_db(client, db):
     user = User(
         id=_new_id("usr_"),
         username="lock_persist_target",
-        password_hash=hash_password("Correct1!"),
+        password_hash=hash_password("Correct12345678!"),
         status="active",
         is_active=True,
     )
@@ -294,7 +294,7 @@ async def test_login_reset_after_expired_lockout_persists(client, db):
     user = User(
         id=_new_id("usr_"),
         username="reset_persist_target",
-        password_hash=hash_password("Correct1!"),
+        password_hash=hash_password("Correct12345678!"),
         status="active",
         is_active=True,
         failed_login_attempts=5,

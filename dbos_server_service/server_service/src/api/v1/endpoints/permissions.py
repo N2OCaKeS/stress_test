@@ -12,7 +12,7 @@ endpoint'а. Полный rule-set — в `services/permission_service.py`.
 from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import CurrentIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
 from src.schemas.permission import (
@@ -51,7 +51,7 @@ router = APIRouter(prefix="/permissions")
     },
 )
 async def list_permissions(
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     role: str | None = Query(
         default=None,
         max_length=64,
@@ -103,7 +103,7 @@ async def list_permissions(
     },
 )
 async def permissions_catalog(
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> list[CatalogEntity]:
     """
@@ -136,7 +136,7 @@ async def permissions_catalog(
 )
 async def list_permissions_for_entity(
     entity_type: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> PermissionListResponse:
     """
@@ -176,7 +176,7 @@ async def grant_permission(
     entity_type: str,
     role: str,
     action: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     body: PermissionGrant | None = Body(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> PermissionResponse:
@@ -220,7 +220,7 @@ async def revoke_permission(
     entity_type: str,
     role: str,
     action: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     target_department_id: str | None = Query(
         default=None,
         max_length=64,

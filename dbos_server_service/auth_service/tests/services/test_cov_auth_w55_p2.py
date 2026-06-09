@@ -116,7 +116,7 @@ async def _setup_user_with_three_services(db, dept_a):
         await _make_service(db, svc_name)
         await _grant_service(db, dept_a.id, svc_name)
     user = await _make_user(
-        db, "t_authorize_scope_filter", "User1234!", department_id=dept_a.id,
+        db, "t_authorize_scope_filter", "User12345678!", department_id=dept_a.id,
     )
     for svc_name in ("svc_a", "svc_b", "svc_c"):
         await _assign_role(db, user.id, svc_name, "reader")
@@ -133,7 +133,7 @@ class TestAuthorizeScopeIntersection:
         """
         user = await _setup_user_with_three_services(db, dept_a)
         await db.commit()
-        user_token = await _login(client, user.username, "User1234!")
+        user_token = await _login(client, user.username, "User12345678!")
 
         oauth_client = await _make_authcode_client(
             client, admin_token, dept_a.id,
@@ -254,7 +254,7 @@ class TestCollectUserPermissionsEmptyScopes:
             await _make_service(db, svc_name)
             await _grant_service(db, dept_a.id, svc_name)
         user = await _make_user(
-            db, "t_empty_scope_unit", "User1234!", department_id=dept_a.id,
+            db, "t_empty_scope_unit", "User12345678!", department_id=dept_a.id,
         )
         for svc_name in ("svc_a", "svc_b"):
             await _assign_role(db, user.id, svc_name, "reader")
@@ -292,7 +292,7 @@ class TestCollectUserPermissionsEmptyScopes:
             await _make_service(db, svc_name)
             await _grant_service(db, dept_a.id, svc_name)
         user = await _make_user(
-            db, "t_partial_scope_unit", "User1234!", department_id=dept_a.id,
+            db, "t_partial_scope_unit", "User12345678!", department_id=dept_a.id,
         )
         for svc_name in ("svc_p1", "svc_p2", "svc_p3"):
             await _assign_role(db, user.id, svc_name, "reader")

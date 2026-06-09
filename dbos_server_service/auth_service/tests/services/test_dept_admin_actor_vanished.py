@@ -48,7 +48,7 @@ async def test_create_user_actor_vanished(db, dept_a):
         await user_service.create_user(
             db, actor_id="usr_ghost",
             actor_role=PlatformRole.DEPARTMENT_ADMIN,
-            username="new_x", password="Pass1234!", department_id=dept_a.id,
+            username="new_x", password="Pass12345678!", department_id=dept_a.id,
         )
     assert ei.value.error_code == "ACTOR_VANISHED"
 

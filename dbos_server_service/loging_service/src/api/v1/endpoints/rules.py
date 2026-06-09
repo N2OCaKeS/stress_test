@@ -18,7 +18,7 @@ from src.core.exceptions import (
     DomainValidationError,
     NotFoundError,
 )
-from src.core.limiter import limiter
+from src.core.limiter import limiter, reader_rate_limit_key
 from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
 from src.dependencies.auth import AdminIdentity
 from src.dependencies.db import get_db
@@ -127,6 +127,7 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
 # постраничный листинг с большим offset'ом и держать пул коннектов.
 @limiter.limit(
     lambda: get_settings().audit_query_rate_limit,
+    key_func=reader_rate_limit_key,
 )
 def list_rules(
     request: Request,
@@ -164,6 +165,7 @@ def list_rules(
 )
 @limiter.limit(
     lambda: get_settings().audit_query_rate_limit,
+    key_func=reader_rate_limit_key,
 )
 def get_rule(
     request: Request,

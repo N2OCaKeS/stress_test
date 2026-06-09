@@ -89,7 +89,7 @@ class TestDeniedAuditShape:
 
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": f"repository:{dept_a.name}/image:push",
@@ -117,7 +117,7 @@ class TestDeniedAuditShape:
 
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": f"repository:{dept_a.name}/image:pull",
@@ -176,7 +176,7 @@ class TestResolveRegistryNotFound:
 
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": "repository:ghost_registry_xyz/image:push",
@@ -214,7 +214,7 @@ class TestEmptyScopeBehavior:
         Это типовая первая фаза docker login: handshake без операций."""
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={"service": "registry.test"},
         )
         assert resp.status_code == 200, resp.text
@@ -372,7 +372,7 @@ class TestRegistryDisabledPull:
         captured = _capture_audit(monkeypatch)
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": f"repository:{dept_a.name}/image:pull",
@@ -416,7 +416,7 @@ class TestPushDeptMismatchAuditShape:
         captured = _capture_audit(monkeypatch)
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": f"repository:{dept_b.name}/image:push",

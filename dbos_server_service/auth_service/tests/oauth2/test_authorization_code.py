@@ -102,7 +102,7 @@ async def _setup_user_with_three_services(db, dept_a):
         await _grant_service(db, dept_a.id, svc_name)
 
     user = await _make_user(
-        db, "t_oauth_scope_user", "User1234!",
+        db, "t_oauth_scope_user", "User12345678!",
         department_id=dept_a.id,
     )
     for svc_name in ("svc_a", "svc_b", "svc_c"):
@@ -120,7 +120,7 @@ class TestOAuthScopesInPayload:
         user = await _setup_user_with_three_services(db, dept_a)
         await db.commit()
         from tests.conftest import _login
-        user_token = await _login(client, user.username, "User1234!")
+        user_token = await _login(client, user.username, "User12345678!")
 
         oauth_client = await _create_authcode_client(
             client, admin_token, dept_a.id,
@@ -155,7 +155,7 @@ class TestOAuthScopesInPayload:
         user = await _setup_user_with_three_services(db, dept_a)
         await db.commit()
         from tests.conftest import _login
-        user_token = await _login(client, user.username, "User1234!")
+        user_token = await _login(client, user.username, "User12345678!")
 
         oauth_client = await _create_authcode_client(
             client, admin_token, dept_a.id,
@@ -195,7 +195,7 @@ class TestIntrospectScopeIntersection:
         user = await _setup_user_with_three_services(db, dept_a)
         await db.commit()
         from tests.conftest import _login
-        user_token = await _login(client, user.username, "User1234!")
+        user_token = await _login(client, user.username, "User12345678!")
 
         oauth_client = await _create_authcode_client(
             client, admin_token, dept_a.id,
@@ -231,7 +231,7 @@ class TestIntrospectScopeIntersection:
         user = await _setup_user_with_three_services(db, dept_a)
         await db.commit()
         from tests.conftest import _login
-        user_token = await _login(client, user.username, "User1234!")
+        user_token = await _login(client, user.username, "User12345678!")
 
         oauth_client = await _create_authcode_client(
             client, admin_token, dept_a.id,
@@ -275,7 +275,7 @@ class TestIntrospectScopeIntersection:
         user = await _setup_user_with_three_services(db, dept_a)
         await db.commit()
         from tests.conftest import _login
-        user_token = await _login(client, user.username, "User1234!")
+        user_token = await _login(client, user.username, "User12345678!")
 
         # Клиент допускает {svc_a, svc_b}, но юзер запрашивает пустой scope.
         oauth_client = await _create_authcode_client(
@@ -309,7 +309,7 @@ class TestServiceAccessRespectsOAuthScope:
         user = await _setup_user_with_three_services(db, dept_a)
         await db.commit()
         from tests.conftest import _login
-        user_token = await _login(client, user.username, "User1234!")
+        user_token = await _login(client, user.username, "User12345678!")
 
         oauth_client = await _create_authcode_client(
             client, admin_token, dept_a.id,

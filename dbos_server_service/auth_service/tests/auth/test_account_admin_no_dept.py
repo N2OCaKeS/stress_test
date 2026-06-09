@@ -21,7 +21,7 @@ class TestAccountAdminNoDept:
     async def test_login_succeeds_without_department(self, client, account_admin):
         """`account_admin` фикстура создаётся с `department_id=None`."""
         resp = await client.post(
-            LOGIN_URL, json={"username": "t_admin", "password": "Admin1234!"},
+            LOGIN_URL, json={"username": "t_admin", "password": "Admin12345678!"},
         )
         assert resp.status_code == 200
         identity = resp.json()["identity"]
@@ -42,7 +42,7 @@ class TestAccountAdminNoDept:
     async def test_refresh_works_without_department(self, client, account_admin):
         """Сценарий: login → refresh → не падает на `list_active_services(None)`."""
         login = await client.post(
-            LOGIN_URL, json={"username": "t_admin", "password": "Admin1234!"},
+            LOGIN_URL, json={"username": "t_admin", "password": "Admin12345678!"},
         )
         raw_refresh = login.json()["refresh_token"]
 

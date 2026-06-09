@@ -122,3 +122,72 @@ tests/k8s/test_master_keys_roundtrip.sh
 ## Связанное: проверка pg_dump-бэкапов
 
 Master-keys backup без БД-backup'а бесполезен (нечего расшифровывать). Проверка, что сами pg_dump'ы действительно восстанавливаются, делается отдельным manual-only скриптом — см. `scripts/k8s/README-PG-RESTORE-DRILL.md` и `scripts/k8s/pg_restore_drill.sh`. Запускать quarterly + после правок backup-pipeline.
+
+## Автоматизация: backup-CronJob'ы
+
+Помимо manual-only `backup_master_keys.sh` теперь развёрнуты CronJob'ы:
+
+| CronJob | Schedule (UTC) | Что делает | Manifest |
+|---------|----------------|-----------|----------|
+| `master-keys-backup`     | `0 4 * * *`   ежедневно        | прогоняет `backup_master_keys.sh`, кладёт `.gpg/.age` в `/backup/master-keys/`, sidecar `offsite-sync` пушит rsync'ом на `OFFSITE_RSYNC_DEST` | `k8s/102-master-keys-backup.yaml` |
+| `secret-full-backup`     | `0 5 * * 0`   воскресенье     | полный snapshot Secret'а `dbos-secrets` (DB-пароли + S2S + TLS + master-keys) | `k8s/103-secret-full-backup.yaml` |
+| `pg-restore-drill`       | `0 6 1 * *`   1-е число месяца | прогоняет `pg_restore_drill.sh` по 5 БД в throwaway-namespace | `k8s/104-pg-restore-drill.yaml` |
+
+Все три CronJob'а используют один backup-PV (`dbos-backup-pv`, см. `k8s/101-backup-pvc.yaml`) и `serviceAccountName: rotation-runner` (RBAC — `k8s/120-rotation-rbac.yaml`).
+
+### CA backup
+
+`dbos-ca-key-pair` — это **отдельный** Secret cert-manager'а с приватным ключом
+внутреннего CA. Без него после DR cert-manager не сможет пере-выпустить
+TLS-сертификаты сервисам. `backup_master_keys.sh` забирает его автоматически в
+подкаталог `ca/` внутри tar.gz-архива. Имя Secret'а переопределяется через
+`DBOS_CA_SECRET_NAME` (default `dbos-ca-key-pair`). При restore через
+`restore_master_keys.sh` CA-Secret раскатывается отдельным `kubectl apply -f`.
+
+### Rotation scripts
+
+В DBOS живёт 6 rotation-скриптов + auto-finalize'еры. После каждой ротации
+backup нужно обновить — старая legacy-версия ключа должна попасть в архив,
+иначе ciphertext'ы, шифрованные под старым ключом, не расшифруются после DR.
+
+| Script | Что ротирует | Auto-finalize |
+|--------|-------------|---------------|
+| `rotate_master_key.sh`        | `SERVER_ENCRYPTION_KEY` (двухфазно: bump + re-encrypt + drop legacy) | через `secrets.reencrypt_lazy` periodic |
+| `rotate_secret_master_key.sh` | `SECRET_ENCRYPTION_KEY` (то же, через secret_service) | через `secrets.reencrypt_lazy` periodic |
+| `rotate_redis_stash_master_key.sh` | `REDIS_STASH_ENCRYPTION_KEY` | через stash re-encrypt task |
+| `rotate_db_passwords.sh`      | DB-пароли (POSTGRES_PASSWORD_*) | — (rolling restart) |
+| `rotate_s2s_keys.sh`          | S2S API-ключи между сервисами | — (rolling restart) |
+| `rotate_redis_password.sh`    | REDIS_PASSWORD / REDIS_STASH_PASSWORD | — (rolling restart) |
+
+После любой из ротаций **триггернуть** `master-keys-backup` вручную:
+
+```bash
+kubectl -n dbos create job --from=cronjob/master-keys-backup \
+    master-keys-backup-after-rotation-$(date +%s)
+```
+
+Schedule `0 4 * * *` подхватит на следующий день автоматически — manual trigger нужен только если ротация была за несколько часов до catastrophe.
+
+### Passphrase setup
+
+CronJob'ы `master-keys-backup` и `secret-full-backup` читают
+`BACKUP_PASSPHRASE` из k8s Secret'а `dbos-backup-passphrase`. Если Secret
+отсутствует — backup пишется plaintext'ом с warning'ом.
+
+Создание (после первого деплоя):
+
+```bash
+PASS="$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)"
+kubectl -n dbos create secret generic dbos-backup-passphrase \
+    --from-literal=BACKUP_PASSPHRASE="$PASS"
+# Сохрани $PASS в offline-сейфе ДО того, как удалишь переменную.
+```
+
+Шаблон: `k8s/106-backup-passphrase.yaml.example`. Полный flow (ротация,
+recovery при утере passphrase) — `obsidian/infra/runbooks/Backup-DR.md`,
+раздел «Настройка passphrase для шифрованных backup'ов».
+
+Ad-hoc запуск `backup_master_keys.sh` / `backup_secret_full.sh` с
+оператор-хоста (вне CronJob'а) теперь сам подтягивает passphrase из
+Secret'а — `kubectl` достаточно. Env-override `BACKUP_PASSPHRASE` имеет
+приоритет над Secret'ом.

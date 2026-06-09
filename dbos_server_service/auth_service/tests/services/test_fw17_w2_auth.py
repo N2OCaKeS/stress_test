@@ -92,7 +92,7 @@ class TestAutoUnbanInvalidatesIdentityCache:
 
         login = await client.post(
             "/api/auth/v1/login",
-            json={"username": "t_user_a", "password": "User1234!"},
+            json={"username": "t_user_a", "password": "User12345678!"},
         )
         assert login.status_code == 200, login.text
         body = login.json()

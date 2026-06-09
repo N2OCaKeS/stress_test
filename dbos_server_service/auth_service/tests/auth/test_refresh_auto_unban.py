@@ -23,7 +23,7 @@ async def test_refresh_with_expired_temp_ban_auto_unbans_and_rotates(
     """Истёкший temp-ban на момент refresh — auto-unban inline, рефреш отрабатывает 200."""
     user_a_id = user_a.id
     login = await client.post(
-        LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+        LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
     )
     assert login.status_code == 200, login.text
     rt = login.json()["refresh_token"]
@@ -69,7 +69,7 @@ async def test_refresh_with_live_ban_still_fails_with_user_banned(
 ):
     """Живой ban (expires_at в будущем) — refresh продолжает отбивать 403 USER_BANNED."""
     login = await client.post(
-        LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+        LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
     )
     assert login.status_code == 200, login.text
     rt = login.json()["refresh_token"]

@@ -17,8 +17,8 @@ GROUPS_URL = "/api/auth/v1/groups"
 
 
 async def _make_second_admin_token(client, db, username="t_admin2"):
-    await _make_user(db, username, "Admin1234!", platform_role="account_admin")
-    return await _login(client, username, "Admin1234!")
+    await _make_user(db, username, "Admin12345678!", platform_role="account_admin")
+    return await _login(client, username, "Admin12345678!")
 
 
 async def test_dept_regrant_after_revoke_updates_granted_meta(

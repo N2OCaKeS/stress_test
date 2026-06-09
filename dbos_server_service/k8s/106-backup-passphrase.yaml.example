@@ -1,0 +1,75 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  ШАБЛОН Secret'а dbos-backup-passphrase.
+#
+#  Этот Secret потребляют CronJob'ы:
+#    - 102-master-keys-backup.yaml   (ежедневный backup_master_keys.sh)
+#    - 103-secret-full-backup.yaml   (еженедельный backup_secret_full.sh)
+#
+#  Поведение backup-скриптов в зависимости от наличия Secret'а:
+#    * Secret есть и не пустой → backup шифруется через gpg (или age, если
+#      установлен в образе) симметричным ключом из поля `BACKUP_PASSPHRASE`.
+#      Файлы пишутся с расширением .gpg / .age на backup-PV.
+#    * Secret отсутствует (`optional: true` у valueFrom в CronJob) →
+#      backup пишется в plaintext с громким WARNING в логах Job'а. Это
+#      сознательный fallback для свежей инсталляции: лучше иметь
+#      незашифрованный snapshot за encrypted PVC + offsite-каналом, чем
+#      не иметь снэпшота вообще. Для production — НЕ оставлять надолго.
+#
+#  Создание (production):
+#    1. Сгенерировать длинную passphrase (минимум 24 символа, лучше 32):
+#         openssl rand -base64 32 | tr -d '/+=' | head -c 32
+#    2. Создать Secret в k8s:
+#         kubectl -n dbos create secret generic dbos-backup-passphrase \
+#             --from-literal=BACKUP_PASSPHRASE='ВАША_PASSPHRASE'
+#    3. Сохранить passphrase в офлайн-сейфе (бумажный носитель, sealed envelope
+#       у CISO, отдельный HSM / KeePass — по политике организации).
+#       Без passphrase архивы master-ключей не восстановятся, всё содержимое
+#       Secret'а dbos-secrets утрачено навсегда.
+#    4. Триггернуть тестовый backup вручную:
+#         kubectl -n dbos create job --from=cronjob/master-keys-backup \
+#             master-keys-backup-manual-$(date +%s)
+#       и убедиться, что в /backup/master-keys лежит файл с расширением
+#       .gpg (или .age), а в логах Job'а нет «BACKUP_PASSPHRASE not set».
+#
+#  Ротация passphrase:
+#    - Создать новый Secret с другим значением (тот же `BACKUP_PASSPHRASE`-key).
+#    - Удалить старый: `kubectl -n dbos delete secret dbos-backup-passphrase`,
+#      затем заново `kubectl create secret` с новой passphrase.
+#    - Старые backup-архивы остаются зашифрованы старой passphrase'ой —
+#      её хранение в офлайн-сейфе оператор обеспечивает сам, иначе старые
+#      архивы становятся нечитаемыми.
+#    - Триггернуть один свежий backup вручную (см. п. 4 выше).
+#
+#  Что делать, если passphrase ПОТЕРЯНА:
+#    - Все архивы, зашифрованные этой passphrase'ой → unrecoverable.
+#      Восстановить их нельзя ни через age, ни через gpg, ни через openssl.
+#      Единственный способ восстановления master-ключей — взять последний
+#      РАБОЧИЙ snapshot dbos-secrets (или сам running Secret через
+#      `kubectl get secret dbos-secrets -o yaml`) и сразу же сгенерировать
+#      новую passphrase + триггернуть свежий backup.
+#    - Если running Secret тоже потерян (DR-сценарий «VM умерла») и
+#      passphrase нет — придётся пересоздать кластер с нуля
+#      (`gen_secrets.sh`), что означает потерю всех зашифрованных
+#      credentials в БД secret_service (master key изменился, ciphertext'ы
+#      не расшифровать). Audit-trail (loging_service) переживёт, но
+#      содержимое credentials придётся вводить заново.
+#
+#  Безопасность:
+#    - НИКОГДА не коммить файл `106-backup-passphrase.yaml` (без .example) в git.
+#    - Проверь .gitignore: `grep -F "k8s/106-backup-passphrase.yaml" .gitignore`.
+#    - chmod 600 на локальной копии файла после правки.
+#    - Не пиши passphrase в Slack / Teams / e-mail в plaintext.
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dbos-backup-passphrase
+  namespace: dbos
+  labels:
+    app: dbos-backup
+type: Opaque
+stringData:
+  # Минимум 24 символа. Сгенерировать:
+  #   openssl rand -base64 32 | tr -d '/+=' | head -c 32
+  BACKUP_PASSPHRASE: "CHANGE_ME_GENERATE_LONG_PASSPHRASE_FROM_OPENSSL"

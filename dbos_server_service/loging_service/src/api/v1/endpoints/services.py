@@ -37,7 +37,7 @@ from src.utils.normalization import normalize_service_name
 # Лимитер вынесен в `core.limiter` ради разрыва цикла import'ов
 # (`src.main` собирает routers, эти routers импортили `src.main`).
 # `app.state.limiter` указывает на тот же инстанс.
-from src.core.limiter import limiter
+from src.core.limiter import limiter, reader_rate_limit_key
 
 router = APIRouter()
 
@@ -100,11 +100,13 @@ def _register_events_rate_limit_key(request: Request) -> str:
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
 )
-# Per-IP лимит на read-канал реестра сервисов. Симметрия с `GET /events`:
+# Per-user лимит на read-канал реестра сервисов. Симметрия с `GET /events`:
 # даже валидный reader-JWT не должен иметь права burst'ом выжимать pgsql-пул
-# через group-by COUNT(*) агрегат по миллионному журналу.
+# через group-by COUNT(*) агрегат по миллионному журналу. За ingress общий
+# per-IP bucket позволил бы одному JWT выжать бюджет других reader'ов.
 @limiter.limit(
     lambda: get_settings().audit_query_rate_limit,
+    key_func=reader_rate_limit_key,
 )
 def list_services(
     request: Request,
@@ -254,6 +256,11 @@ def register_events(
 
     events_list = [ev.model_dump() for ev in payload.events]
     added, updated = se_repo.upsert_events(db, service, events_list, commit=False)
+    # Сбрасываем catalog-severity кеш сразу после upsert'а — без этого
+    # свежий `default_severity` подхватится только через TTL (до 30 сек
+    # lag в hot-ingest, заметно в тестах и в demo-флоу).
+    from src.services.rule_service import invalidate_catalog_severity_cache
+    invalidate_catalog_severity_cache()
     # Голый COUNT(*) вместо `list_for_service(..., limit=1000)`: total нужен
     # только для audit-details, материализация row'ей — впустую. На сервисе с
     # >1000 зарегистрированных action'ов прежний код ещё и врал бы (capped).
@@ -322,6 +329,7 @@ def register_events(
 )
 @limiter.limit(
     lambda: get_settings().audit_query_rate_limit,
+    key_func=reader_rate_limit_key,
 )
 def list_service_events(
     request: Request,

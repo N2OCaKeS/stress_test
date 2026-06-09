@@ -17,17 +17,17 @@ async def test_user_changes_own_password(client, user_a_token):
     resp = await client.post(
         URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+        json={"old_password": "User12345678!", "new_password": "NewSecret9012345!"},
     )
     assert resp.status_code == 200, resp.text
 
     login_old = await client.post(
-        LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"}
+        LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"}
     )
     assert login_old.status_code == 401
 
     login_new = await client.post(
-        LOGIN_URL, json={"username": "t_user_a", "password": "NewSecret9!"}
+        LOGIN_URL, json={"username": "t_user_a", "password": "NewSecret9012345!"}
     )
     assert login_new.status_code == 200
 
@@ -39,7 +39,7 @@ async def test_wrong_old_password_returns_invalid_old_password(client, user_a_to
     resp = await client.post(
         URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"old_password": "WrongOld1!", "new_password": "NewSecret9!"},
+        json={"old_password": "WrongOld1!", "new_password": "NewSecret9012345!"},
     )
     assert resp.status_code == 401
     assert resp.json()["error_code"] == "INVALID_OLD_PASSWORD"
@@ -57,7 +57,7 @@ async def test_wrong_old_password_locks_account_after_threshold(client, user_a_t
         last_resp = await client.post(
             URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"old_password": "WrongOld1!", "new_password": "NewSecret9!"},
+            json={"old_password": "WrongOld1!", "new_password": "NewSecret9012345!"},
         )
         last_status = last_resp.status_code
     # Последняя попытка либо 401 (последний промах до блокировки), либо уже 429.
@@ -67,7 +67,7 @@ async def test_wrong_old_password_locks_account_after_threshold(client, user_a_t
     locked = await client.post(
         URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+        json={"old_password": "User12345678!", "new_password": "NewSecret9012345!"},
     )
     assert locked.status_code == 429
     assert locked.json()["error_code"] == "ACCOUNT_TEMPORARILY_LOCKED"
@@ -81,7 +81,7 @@ async def test_new_password_must_satisfy_policy(client, user_a_token):
     resp = await client.post(
         URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"old_password": "User1234!", "new_password": "onlyletters"},
+        json={"old_password": "User12345678!", "new_password": "onlyletters"},
     )
     assert resp.status_code == 422
 
@@ -91,7 +91,7 @@ async def test_new_password_same_as_old_returns_422(client, user_a_token):
     resp = await client.post(
         URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"old_password": "User1234!", "new_password": "User1234!"},
+        json={"old_password": "User12345678!", "new_password": "User12345678!"},
     )
     assert resp.status_code == 422
     assert resp.json()["error_code"] == "SAME_PASSWORD"
@@ -104,7 +104,7 @@ async def test_self_reset_revokes_active_refresh(client, user_a):
     """После смены пароля refresh-токен старой сессии не работает."""
     login_data = (
         await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"}
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"}
         )
     ).json()
     access = login_data["access_token"]
@@ -113,7 +113,7 @@ async def test_self_reset_revokes_active_refresh(client, user_a):
     resp = await client.post(
         URL,
         headers={"Authorization": f"Bearer {access}"},
-        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+        json={"old_password": "User12345678!", "new_password": "NewSecret9012345!"},
     )
     assert resp.status_code == 200
 
@@ -139,7 +139,7 @@ async def test_self_reset_revokes_own_pat(client, user_a_token):
     change_resp = await client.post(
         URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+        json={"old_password": "User12345678!", "new_password": "NewSecret9012345!"},
     )
     assert change_resp.status_code == 200
 
@@ -159,11 +159,11 @@ async def test_self_reset_does_not_touch_other_users_pats(
     from tests.conftest import _make_user, _assign_role, _login
 
     user_b = await _make_user(
-        db, "t_user_b_pat", "User1234!", department_id=dept_a_with_service.id,
+        db, "t_user_b_pat", "User12345678!", department_id=dept_a_with_service.id,
     )
     await _assign_role(db, user_b.id, service_x.service_name, "reader")
     await db.commit()
-    user_b_token = await _login(client, "t_user_b_pat", "User1234!")
+    user_b_token = await _login(client, "t_user_b_pat", "User12345678!")
 
     pat_b_resp = await client.post(
         TOKENS_URL,
@@ -176,7 +176,7 @@ async def test_self_reset_does_not_touch_other_users_pats(
     change_resp = await client.post(
         URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+        json={"old_password": "User12345678!", "new_password": "NewSecret9012345!"},
     )
     assert change_resp.status_code == 200
 
@@ -215,7 +215,7 @@ async def test_self_reset_preserves_department_bots(
     change_resp = await client.post(
         URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+        json={"old_password": "User12345678!", "new_password": "NewSecret9012345!"},
     )
     assert change_resp.status_code == 200
 
@@ -253,7 +253,7 @@ async def test_admin_self_reset_emits_audit_with_caller_is_admin(
     resp = await client.post(
         URL,
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"old_password": "Admin1234!", "new_password": "NewAdmin9!"},
+        json={"old_password": "Admin12345678!", "new_password": "NewAdmin90123456!"},
     )
     assert resp.status_code == 200, resp.text
 
@@ -284,7 +284,7 @@ async def test_regular_user_self_reset_audit_has_caller_is_admin_false(
     resp = await client.post(
         URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+        json={"old_password": "User12345678!", "new_password": "NewSecret9012345!"},
     )
     assert resp.status_code == 200
 
@@ -299,6 +299,6 @@ async def test_unauthenticated_request_rejected(client):
     """Без Bearer-токена endpoint отбивается 401."""
     resp = await client.post(
         URL,
-        json={"old_password": "User1234!", "new_password": "NewSecret9!"},
+        json={"old_password": "User12345678!", "new_password": "NewSecret9012345!"},
     )
     assert resp.status_code == 401

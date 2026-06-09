@@ -66,7 +66,7 @@ class TestLoginAutoUnbanReloadedNone:
         try:
             login = await client.post(
                 LOGIN_URL,
-                json={"username": "t_user_a", "password": "User1234!"},
+                json={"username": "t_user_a", "password": "User12345678!"},
             )
         finally:
             monkeypatch.setattr(UserRepository, "get_by_id", original_get_by_id)

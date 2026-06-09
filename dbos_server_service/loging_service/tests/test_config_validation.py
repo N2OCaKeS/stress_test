@@ -98,9 +98,11 @@ class TestAuthServiceUrlHttpsGuard:
     """
 
     def test_production_http_remote_rejected(self, monkeypatch):
+        # FQDN с TLD — внешний (не intra-cluster). Short-hostname `auth` после
+        # W1 hardening считается cluster-local и пропускается.
         with pytest.raises(ValidationError) as excinfo:
             _load_settings_fresh(
-                monkeypatch, _prod_env(AUTH_SERVICE_URL="http://auth:8000")
+                monkeypatch, _prod_env(AUTH_SERVICE_URL="http://auth.example.com:8000")
             )
         assert "AUTH_SERVICE_URL" in str(excinfo.value)
         assert "https" in str(excinfo.value)
@@ -141,11 +143,13 @@ class TestIntrospectTlsVerifyProductionGuard:
     """
 
     def test_prod_https_remote_verify_false_rejected(self, monkeypatch):
+        # FQDN с TLD — внешний remote. `auth.cluster.svc` после W1 считается
+        # intra-cluster (заканчивается на .svc) и не проходит этот guard.
         with pytest.raises(ValidationError) as excinfo:
             _load_settings_fresh(
                 monkeypatch,
                 _prod_env(
-                    AUTH_SERVICE_URL="https://auth.cluster.svc:8000",
+                    AUTH_SERVICE_URL="https://auth.example.com:8000",
                     INTROSPECT_TLS_VERIFY="false",
                 ),
             )
@@ -155,7 +159,7 @@ class TestIntrospectTlsVerifyProductionGuard:
         s = _load_settings_fresh(
             monkeypatch,
             _prod_env(
-                AUTH_SERVICE_URL="https://auth.cluster.svc:8000",
+                AUTH_SERVICE_URL="https://auth.example.com:8000",
                 INTROSPECT_TLS_VERIFY="true",
             ),
         )

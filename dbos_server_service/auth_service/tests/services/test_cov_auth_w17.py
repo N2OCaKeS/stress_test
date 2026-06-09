@@ -211,7 +211,7 @@ class TestIssueTokenFailureAuditDetails:
 
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={"service": "registry.test"},
         )
         assert resp.status_code == 403, resp.text
@@ -244,7 +244,7 @@ class TestIssueTokenFailureAuditDetails:
 
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={"service": "registry.test"},
         )
         assert resp.status_code == 403, resp.text
@@ -280,7 +280,7 @@ class TestResetPasswordActorRoleNone:
         target = User(
             id=_new_id("usr_"),
             username="rp_none_target",
-            password_hash=hash_password("OldPass1!"),
+            password_hash=hash_password("OldPass12345678!"),
             department_id=dept_a.id,
             status="active",
             is_active=True,
@@ -291,7 +291,7 @@ class TestResetPasswordActorRoleNone:
         actor = User(
             id=_new_id("usr_"),
             username="rp_none_da_b",
-            password_hash=hash_password("Admin1234!"),
+            password_hash=hash_password("Admin12345678!"),
             department_id=dept_b.id,
             platform_role=PlatformRole.DEPARTMENT_ADMIN,
             status="active",
@@ -306,7 +306,7 @@ class TestResetPasswordActorRoleNone:
                 actor_id=actor.id,
                 actor_role=None,
                 user_id=target.id,
-                new_password="NewPass1!",
+                new_password="NewPass1234567!",
             )
         # Переехало на _dept_guard, error_code теперь
         # USER_RESET_PASSWORD_FORBIDDEN (raised из helper'а).
@@ -325,7 +325,7 @@ class TestResetPasswordActorRoleNone:
         target = User(
             id=_new_id("usr_"),
             username="rp_same_target",
-            password_hash=hash_password("OldPass1!"),
+            password_hash=hash_password("OldPass12345678!"),
             department_id=dept_a.id,
             status="active",
             is_active=True,
@@ -335,7 +335,7 @@ class TestResetPasswordActorRoleNone:
         actor = User(
             id=_new_id("usr_"),
             username="rp_same_da_a",
-            password_hash=hash_password("Admin1234!"),
+            password_hash=hash_password("Admin12345678!"),
             department_id=dept_a.id,
             platform_role=PlatformRole.DEPARTMENT_ADMIN,
             status="active",
@@ -350,7 +350,7 @@ class TestResetPasswordActorRoleNone:
             actor_id=actor.id,
             actor_role=None,
             user_id=target.id,
-            new_password="NewPass1!",
+            new_password="NewPass1234567!",
         )
 
 

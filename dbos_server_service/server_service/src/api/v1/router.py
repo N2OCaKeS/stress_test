@@ -1,4 +1,18 @@
-"""Сборка v1-роутера: подключаем все endpoint-файлы."""
+"""Сборка v1-роутера: подключаем все endpoint-файлы.
+
+User-facing endpoints, требующие user identity, защищены гардом
+`require_user_context` через тип-алиас `CurrentUserIdentity`
+(см. `src.dependencies.auth`): OAuth m2m identity (subject_type=oauth_client)
+отбивается с 403 USER_CONTEXT_REQUIRED ДО того, как endpoint увидит запрос.
+
+Гард применяется на уровне endpoint-функции (через подмену `CurrentIdentity`
+на `CurrentUserIdentity` в сигнатуре), а НЕ на уровне роутера — иначе
+публичные anonymous-ручки (`/os-versions` GET, `/health`) обязали бы Bearer,
+что сломало бы их контракт.
+
+Симметрично `auth_service.require_user_context` и
+`secret_service.require_user_context`.
+"""
 
 from fastapi import APIRouter
 

@@ -44,6 +44,10 @@ _VALID_PROD_KWARGS: dict[str, object] = {
     # непустой ключ; URL может быть пустым (no-op для стендов без secret_service).
     "SECRET_INTERNAL_API_KEY": "d" * 32,
     "SECRET_SERVICE_URL": "",
+    # Multi-replica brute-force guard: prod-validator требует общий backend
+    # (или явный opt-in через `RATE_LIMIT_ALLOW_MEMORY=true`). Базовый набор
+    # ставит redis://, остальные тесты переопределяют по необходимости.
+    "RATE_LIMIT_STORAGE_URI": "redis://redis:6379/0",
 }
 
 
@@ -329,3 +333,56 @@ def test_non_production_allows_http_logging_service_url(env):
         LOGGING_SERVICE_URL="http://logging.local:8001",
     )
     assert s.logging_service_url == "http://logging.local:8001"
+
+
+# ── RATE_LIMIT_STORAGE_URI: memory:// fail-fast в prod ───────────────────────
+
+
+def test_production_rejects_memory_rate_limit_storage():
+    """memory:// per-process даёт N × лимит на N pod'ах → brute-force окно
+    расширяется round-robin'ом. В prod без явного opt-in это запрещено."""
+    with pytest.raises(ValidationError) as exc:
+        _build(RATE_LIMIT_STORAGE_URI="memory://")
+    assert "RATE_LIMIT_STORAGE_URI" in str(exc.value)
+    assert "memory" in str(exc.value).lower()
+
+
+def test_production_rejects_unset_rate_limit_storage_defaults_to_memory():
+    """Дефолт `rate_limit_storage_uri=None` ⇒ runtime'но получаем memory://;
+    prod-guard должен отбить, чтобы оператор не забыл выставить redis://."""
+    with pytest.raises(ValidationError) as exc:
+        _build(RATE_LIMIT_STORAGE_URI=None)
+    assert "RATE_LIMIT_STORAGE_URI" in str(exc.value)
+
+
+def test_production_allows_memory_with_explicit_bypass():
+    """Single-replica deploy: оператор явно ставит RATE_LIMIT_ALLOW_MEMORY=true,
+    осознавая trade-off — guard пропускает."""
+    s = _build(RATE_LIMIT_STORAGE_URI="memory://", RATE_LIMIT_ALLOW_MEMORY=True)
+    assert s.rate_limit_storage_uri == "memory://"
+    assert s.rate_limit_allow_memory is True
+
+
+def test_production_accepts_redis_rate_limit_storage():
+    s = _build(RATE_LIMIT_STORAGE_URI="redis://redis:6379/0")
+    assert s.rate_limit_storage_uri == "redis://redis:6379/0"
+
+
+@pytest.mark.parametrize("env", ["local", "development", "test"])
+def test_non_production_allows_memory_rate_limit_storage(env):
+    """В local/development/test memory:// — норма для разработки."""
+    s = Settings(
+        _env_file=None,
+        APP_ENV=env,
+        DATABASE_URL="postgresql+psycopg://u:p@db:5432/auth",
+        SECRET_KEY="dev",
+        RATE_LIMIT_STORAGE_URI="memory://",
+    )
+    assert s.rate_limit_storage_uri == "memory://"
+
+
+def test_production_rejects_memory_with_subpath():
+    """`memory://something` тоже отбивается — guard матчит по префиксу."""
+    with pytest.raises(ValidationError) as exc:
+        _build(RATE_LIMIT_STORAGE_URI="memory://shared")
+    assert "RATE_LIMIT_STORAGE_URI" in str(exc.value)

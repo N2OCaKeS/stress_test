@@ -39,7 +39,7 @@ from src.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from src.dependencies.auth import CurrentIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.dependencies.idempotency import read_idempotency_key
 from src.schemas.server import ServerTaskDispatchResponse
@@ -90,7 +90,7 @@ _MAX_INSTALLED_PACKAGES_ROWS = 10000
 )
 async def list_installed_packages(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     pattern: str = Query(
         default="*",

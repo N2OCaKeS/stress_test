@@ -74,7 +74,7 @@ async def test_after_revoke_user_login_loses_service(client, admin_token, user_a
                                                       dept_a_with_service, service_x):
     url = REVOKE_URL.format(dept_id=dept_a_with_service.id, svc_name=service_x.service_name)
     await client.delete(url, headers={"Authorization": f"Bearer {admin_token}"})
-    resp = await client.post("/api/auth/v1/login", json={"username": "t_user_a", "password": "User1234!"})
+    resp = await client.post("/api/auth/v1/login", json={"username": "t_user_a", "password": "User12345678!"})
     assert service_x.service_name not in resp.json()["identity"]["allowed_services"]
 
 

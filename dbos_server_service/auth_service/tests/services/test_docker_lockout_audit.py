@@ -150,7 +150,7 @@ class TestDockerUserLockoutAudit:
 
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={"service": "registry.test"},
         )
         assert resp.status_code == 429, (

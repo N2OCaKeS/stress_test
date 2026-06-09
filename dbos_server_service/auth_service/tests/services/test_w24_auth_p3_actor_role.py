@@ -111,7 +111,7 @@ class TestSelfPasswordResetActorRole:
         await user_service.change_own_password(
             db,
             user_id=user_a.id,
-            old_password="User1234!",
+            old_password="User12345678!",
             new_password="NewSelf1234!",
         )
         ev = _pick(events, "user.self_password_reset")

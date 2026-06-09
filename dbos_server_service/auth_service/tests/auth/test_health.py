@@ -71,7 +71,11 @@ class TestReady:
 
     async def test_ready_body_shape(self, client):
         resp = await client.get(READY_URL)
-        assert resp.json() == {"status": "ready", "service": "auth_service"}
+        body = resp.json()
+        # После W2E `/ready` несёт operational counters; базовые поля остаются.
+        assert body["status"] == "ready"
+        assert body["service"] == "auth_service"
+        assert "counters" in body and isinstance(body["counters"], dict)
 
 
 # ── Audit skip ───────────────────────────────────────────────────────────────

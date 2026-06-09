@@ -157,4 +157,4 @@ from tests.conftest import _make_user
 @pytest_asyncio.fixture()
 async def db_user_no_dept(db):
     """Обычный юзер без отдела (не account_admin) — edge case для dept-skip."""
-    return await _make_user(db, "no_dept_user", "Pass1234!", department_id=None)
+    return await _make_user(db, "no_dept_user", "Pass12345678!", department_id=None)

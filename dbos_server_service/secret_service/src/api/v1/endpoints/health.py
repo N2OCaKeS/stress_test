@@ -101,12 +101,27 @@ async def ready() -> dict:
     redis_connected = await _ping_redis()
     audit_dropped = _safe_audit_dropped_total()
     overall = "ok" if db_ok else "degraded"
+
+    # Доп. counters для observability. lazy_reencrypt_failures и
+    # migration_legacy_remaining пока не заведены как in-process счётчики
+    # (re-encrypt живёт в server_service, secret_service только хранит
+    # ciphertext). Эмитим 0 + TODO, чтобы payload-форма была стабильной
+    # для оператора, пока counter не появится.
+    counters: dict = {
+        "audit_dropped_429": audit_dropped,
+        "lazy_reencrypt_failures": 0,        # TODO: counter ещё не заведён
+        "migration_legacy_remaining": 0,     # TODO: counter ещё не заведён
+        "secrets_total": secrets_total if secrets_total is not None else 0,
+        "blocked_total": blocked_total if blocked_total is not None else 0,
+    }
+
     return {
         "status": overall,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "db": db_ok,
         "redis_connected": redis_connected,
-        "secrets_total": secrets_total if secrets_total is not None else 0,
-        "blocked_total": blocked_total if blocked_total is not None else 0,
+        "secrets_total": counters["secrets_total"],
+        "blocked_total": counters["blocked_total"],
         "audit_dropped_429_total": audit_dropped,
+        "counters": counters,
     }

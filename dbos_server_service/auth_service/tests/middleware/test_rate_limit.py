@@ -91,14 +91,14 @@ class TestLoginRateLimit:
         for i in range(3):
             resp = await client.post(
                 LOGIN_URL,
-                json={"username": "t_admin", "password": "Admin1234!"},
+                json={"username": "t_admin", "password": "Admin12345678!"},
             )
             assert resp.status_code != 429, f"premature 429 на запросе #{i + 1}: {resp.text}"
 
         # 4-й — 429
         resp = await client.post(
             LOGIN_URL,
-            json={"username": "t_admin", "password": "Admin1234!"},
+            json={"username": "t_admin", "password": "Admin12345678!"},
         )
         assert resp.status_code == 429, f"expected 429, got {resp.status_code}: {resp.text}"
 
@@ -108,11 +108,11 @@ class TestLoginRateLimit:
         for _ in range(3):
             await client.post(
                 LOGIN_URL,
-                json={"username": "t_admin", "password": "Admin1234!"},
+                json={"username": "t_admin", "password": "Admin12345678!"},
             )
         resp = await client.post(
             LOGIN_URL,
-            json={"username": "t_admin", "password": "Admin1234!"},
+            json={"username": "t_admin", "password": "Admin12345678!"},
         )
         assert resp.status_code == 429
 
@@ -133,7 +133,7 @@ class TestLoginRateLimit:
         for _ in range(5):
             resp = await client.post(
                 LOGIN_URL,
-                json={"username": "t_admin", "password": "Admin1234!"},
+                json={"username": "t_admin", "password": "Admin12345678!"},
             )
             assert resp.status_code == 200, f"unexpected status: {resp.status_code} {resp.text}"
 
@@ -305,7 +305,7 @@ class TestPerRouteIsolation:
         for _ in range(3):
             resp = await client.post(
                 LOGIN_URL,
-                json={"username": "t_admin", "password": "Admin1234!"},
+                json={"username": "t_admin", "password": "Admin12345678!"},
             )
             assert resp.status_code != 429
 
@@ -349,13 +349,13 @@ class TestRateLimitNoAuditAmplification:
         for _ in range(3):
             await client.post(
                 LOGIN_URL,
-                json={"username": "t_admin", "password": "Admin1234!"},
+                json={"username": "t_admin", "password": "Admin12345678!"},
             )
         captured.clear()
 
         resp = await client.post(
             LOGIN_URL,
-            json={"username": "t_admin", "password": "Admin1234!"},
+            json={"username": "t_admin", "password": "Admin12345678!"},
         )
         assert resp.status_code == 429
 

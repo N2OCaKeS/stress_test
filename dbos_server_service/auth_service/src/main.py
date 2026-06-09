@@ -632,9 +632,14 @@ def _log_rate_limit_backend(settings) -> None:
     _startup_logger.info("rate_limit_storage: %s", safe)
 
     if storage_uri == "memory://" and settings.app_env in ("production", "prod"):
+        # До prod-guard'а config.py не пускает сюда без RATE_LIMIT_ALLOW_MEMORY=true.
+        # Если мы здесь — оператор явно opt-in'нулся в single-replica deploy'е.
+        # Оставляем WARNING как напоминалку в логе SIEM'у, чтобы факт намеренного
+        # bypass'а был фиксирован.
         _startup_logger.warning(
-            "rate_limit_storage=memory:// in production: brute-force window "
-            "expands per-replica. Set RATE_LIMIT_STORAGE_URI=redis://..."
+            "rate_limit_storage=memory:// in production (RATE_LIMIT_ALLOW_MEMORY=true "
+            "opt-in): brute-force window expands per-replica. Move to redis:// "
+            "as soon as deploy масштабируется."
         )
 
 

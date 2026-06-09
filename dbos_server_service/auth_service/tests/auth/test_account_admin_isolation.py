@@ -24,7 +24,7 @@ async def test_account_admin_can_be_created_without_department(
         headers={"Authorization": f"Bearer {admin_token}"},
         json={
             "username": "t_second_admin",
-            "password": "Admin5678!",
+            "password": "Admin567812345!",
             "platform_role": "account_admin",
             # department_id опущен намеренно — это валидно для платформенного
             # админа (см. `_platform_admins` в create_user).

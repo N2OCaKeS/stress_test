@@ -228,13 +228,14 @@ class Settings(BaseSettings):
     # этот toggle — временный defence-in-depth.
     strict_service_identity: bool = Field(default=False, alias="STRICT_SERVICE_IDENTITY")
 
-    # Запретить fallback на legacy shared `SERVICE_API_KEY`, когда задан
-    # непустой `SERVICE_API_KEYS`. При True — единственный валидный путь
-    # service-to-service auth — per-service ключ через `X-Service-Identity`
-    # + соответствующий Bearer из словаря; legacy путь reject'ится даже если
-    # caller прислал валидный `SERVICE_API_KEY`. Включать после миграции
-    # всех caller'ов на per-service ключи.
-    strict_service_api_keys: bool = Field(default=False, alias="STRICT_SERVICE_API_KEYS")
+    # Поле `STRICT_SERVICE_API_KEYS` удалено: strict-режим уже achieved
+    # implicit'но в `dependencies/auth.py` — при непустом `SERVICE_API_KEYS`
+    # ветка per-service ключей возвращается раньше, чем legacy-`SERVICE_API_KEY`
+    # fallback (см. инвариант на verify_service_api_key). Все caller'ы внутри
+    # кластера переведены на per-service Bearer'ы; держать отдельный toggle
+    # под dead-code'ом смысла больше нет. Если когда-либо понадобится явный
+    # «жёсткий запрет legacy fallback'а при непустом словаре», вернуть toggle
+    # сюда и активировать ветвление в `dependencies/auth.py`.
 
     # Docker registry token auth
     docker_registry_service: str = Field(default="registry.example.com", alias="DOCKER_REGISTRY_SERVICE")
@@ -401,8 +402,19 @@ class Settings(BaseSettings):
         description=(
             "slowapi storage backend (например `redis://host:6379/0`). "
             "Если не задан — fallback на `memory://` (dev/test only; "
-            "в K8s с 2+ репликами лимит обходится round-robin'ом)."
+            "в K8s с 2+ репликами лимит обходится round-robin'ом). В "
+            "production обязателен общий backend; для single-replica "
+            "deploy'а явный bypass — `RATE_LIMIT_ALLOW_MEMORY=true`."
         ),
+    )
+    # Escape hatch для single-replica production'а. По дефолту False —
+    # `memory://` в проде fail-fast на старте (см. `_validate_production_secrets`).
+    # Оператор, осознанно поднимающий один pod без redis'а, должен явно выставить
+    # этот флаг, чтобы случайный multi-replica rollout не открыл brute-force
+    # дыру тихо.
+    rate_limit_allow_memory: bool = Field(
+        default=False,
+        alias="RATE_LIMIT_ALLOW_MEMORY",
     )
 
     # ── CORS / security headers ─────────────────────────────────────────────
@@ -654,6 +666,23 @@ class Settings(BaseSettings):
                     f"(got scheme={scheme!r}, host={host!r}); plain http "
                     "exposes the lifecycle bearer to MITM/sniff in the cluster"
                 )
+
+        # ── RATE_LIMIT_STORAGE_URI: запрет memory:// в prod (если не bypass'нут) ─
+        # `memory://` per-process → каждый pod держит свой счётчик. В multi-
+        # replica deploy'е атакующий round-robin'ом получает N × лимит попыток
+        # на /login и других чувствительных эндпоинтах. Раньше main.py'я выдавал
+        # только WARNING — недостаточно, brute-force окно открыто молча.
+        # Bypass через `RATE_LIMIT_ALLOW_MEMORY=true` оставлен для оператора,
+        # сознательно поднимающего single-replica auth_service.
+        storage_uri = (self.rate_limit_storage_uri or "memory://").strip()
+        if storage_uri.startswith("memory://") and not self.rate_limit_allow_memory:
+            raise ValueError(
+                "RATE_LIMIT_STORAGE_URI=memory:// is not allowed in production "
+                "(per-process counter is bypassed by round-robin across replicas). "
+                "Set RATE_LIMIT_STORAGE_URI=redis://host:6379/0 (recommended), "
+                "or RATE_LIMIT_ALLOW_MEMORY=true to explicitly opt-in "
+                "(single-replica deploys only)."
+            )
 
         # ── LOGGING_SERVICE_URL https-only ──────────────────────────────────
         # audit-канал по plain http внутри кластера снифается/перехватывается

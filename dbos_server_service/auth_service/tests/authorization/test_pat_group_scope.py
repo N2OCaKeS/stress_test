@@ -62,7 +62,7 @@ async def user_with_group_service(db):
     # Отдел имеет прямой access только к direct_service.
     await _grant_service(db, dept.id, direct_svc.service_name)
 
-    user = await _make_user(db, "pgs_user", "User1234!", department_id=dept.id)
+    user = await _make_user(db, "pgs_user", "User12345678!", department_id=dept.id)
 
     group_repo = GroupRepository(db)
     grp = await group_repo.create(

@@ -295,6 +295,8 @@ def _valid_prod_kwargs() -> dict:
         "SECRET_INTERNAL_API_KEY": "d" * 32,
         # Пустой URL допустим: это no-op (нет secret_service на стенде).
         "SECRET_SERVICE_URL": "",
+        # prod-guard rejects memory:// — ставим redis-backend в базовом наборе.
+        "RATE_LIMIT_STORAGE_URI": "redis://redis:6379/0",
     }
 
 

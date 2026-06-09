@@ -189,7 +189,7 @@ class TestUserCreateEmailMasked:
             actor_id=account_admin.id,
             actor_role=PlatformRole.ACCOUNT_ADMIN,
             username="alice_pii_test",
-            password="Alice1234!",
+            password="Alice12345678!",
             department_id=dept_a_with_service.id,
             email=email,
         )

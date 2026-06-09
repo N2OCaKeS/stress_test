@@ -41,6 +41,7 @@ spec:
         app: auth-postgres
     spec:
       terminationGracePeriodSeconds: 60
+      automountServiceAccountToken: false
       securityContext:
         # Postgres официальный image инициализирует data dir под UID 999 (postgres).
         # fsGroup нужен чтобы новый PV получил группу postgres и pg_isready

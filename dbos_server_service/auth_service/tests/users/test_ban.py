@@ -29,13 +29,13 @@ async def test_admin_bans_user(client, admin_token, user_a):
 
 async def test_banned_user_cannot_login(client, admin_token, user_a):
     await _ban(client, admin_token, user_a.id)
-    resp = await client.post(LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"})
+    resp = await client.post(LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"})
     assert resp.status_code == 403
     assert resp.json()["error_code"] == "USER_BANNED"
 
 
 async def test_banned_user_refresh_fails(client, admin_token, user_a, user_a_token):
-    login_resp = await client.post(LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"})
+    login_resp = await client.post(LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"})
     refresh_token = login_resp.json()["refresh_token"]
     await _ban(client, admin_token, user_a.id)
     resp = await client.post("/api/auth/v1/refresh", json={"refresh_token": refresh_token})
@@ -52,7 +52,7 @@ async def test_duplicate_ban_returns_409(client, admin_token, user_a):
 async def test_unban_allows_login(client, admin_token, user_a):
     await _ban(client, admin_token, user_a.id)
     await client.post(UNBAN_URL.format(user_id=user_a.id), headers={"Authorization": f"Bearer {admin_token}"})
-    resp = await client.post(LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"})
+    resp = await client.post(LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"})
     assert resp.status_code == 200
 
 
@@ -77,7 +77,7 @@ async def test_ban_nonexistent_user_returns_404(client, admin_token):
 
 
 async def test_ban_revokes_active_sessions(client, admin_token, user_a):
-    login_data = (await client.post(LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"})).json()
+    login_data = (await client.post(LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"})).json()
     await _ban(client, admin_token, user_a.id)
     resp = await client.post("/api/auth/v1/refresh", json={"refresh_token": login_data["refresh_token"]})
     assert resp.status_code in (401, 403)

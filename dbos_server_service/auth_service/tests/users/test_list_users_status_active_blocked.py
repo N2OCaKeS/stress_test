@@ -22,7 +22,7 @@ async def _make_users(db, dept_id, n, prefix, status="active"):
     for i in range(n):
         u = User(
             id=_new_id("usr_"), username=f"{prefix}_{i}",
-            password_hash=hash_password("User1234!"),
+            password_hash=hash_password("User12345678!"),
             department_id=dept_id, is_active=(status == "active"), status=status,
         )
         db.add(u)

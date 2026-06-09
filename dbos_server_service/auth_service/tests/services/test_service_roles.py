@@ -140,7 +140,7 @@ async def test_service_admin_can_create_role_in_own_dept(
     for that service inside their own department."""
     from tests.conftest import _assign_role, _login
     await _assign_role(db, user_a.id, service_x.service_name, "admin")
-    token = await _login(client, "t_user_a", "User1234!")
+    token = await _login(client, "t_user_a", "User12345678!")
 
     resp = await client.post(
         _roles_url(dept_a_with_service.id, service_x.service_name),
@@ -156,7 +156,7 @@ async def test_service_admin_cannot_create_role_in_other_dept(
     from tests.conftest import _assign_role, _grant_service, _login
     await _grant_service(db, dept_b.id, service_x.service_name)
     await _assign_role(db, user_a.id, service_x.service_name, "admin")
-    token = await _login(client, "t_user_a", "User1234!")
+    token = await _login(client, "t_user_a", "User12345678!")
 
     resp = await client.post(
         _roles_url(dept_b.id, service_x.service_name),

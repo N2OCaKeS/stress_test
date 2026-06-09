@@ -23,7 +23,7 @@ async def _enable_docker(client, token, dept_id, pull_policy="all", pull_user_id
 # ── No config / disabled ──────────────────────────────────────────────────────
 
 async def test_no_docker_config_returns_403(client, user_a, dept_a):
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User12345678!"),
                       params={"service": "registry.test"})
     assert resp.status_code == 403
     assert resp.json()["error_code"] == "DOCKER_ACCESS_DENIED"
@@ -32,7 +32,7 @@ async def test_no_docker_config_returns_403(client, user_a, dept_a):
 async def test_disabled_docker_config_returns_403(client, admin_token, user_a, dept_a, docker_registry_enabled):
     await client.delete(CONFIG_URL.format(dept_id=dept_a.id),
                   headers={"Authorization": f"Bearer {admin_token}"})
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User12345678!"),
                       params={"service": "registry.test"})
     assert resp.status_code == 403
 
@@ -52,7 +52,7 @@ async def test_wrong_password_returns_401(client, docker_registry_enabled, user_
 
 
 async def test_nonexistent_user_returns_401(client, docker_registry_enabled, dept_a):
-    resp = await client.get(TOKEN_URL, headers=_basic("ghost_user", "Pass1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("ghost_user", "Pass12345678!"),
                       params={"service": "registry.test"})
     assert resp.status_code == 401
 
@@ -61,7 +61,7 @@ async def test_nonexistent_user_returns_401(client, docker_registry_enabled, dep
 
 async def test_authenticated_user_gets_token(client, admin_token, user_a, dept_a):
     await _enable_docker(client, admin_token, dept_a.id)
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User12345678!"),
                       params={"service": "registry.test"})
     assert resp.status_code == 200
     body = resp.json()
@@ -73,7 +73,7 @@ async def test_authenticated_user_gets_token(client, admin_token, user_a, dept_a
 
 async def test_token_response_has_issued_at(client, admin_token, user_a, dept_a):
     await _enable_docker(client, admin_token, dept_a.id)
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User12345678!"),
                       params={"service": "registry.test"})
     assert resp.status_code == 200
     assert "issued_at" in resp.json()
@@ -83,7 +83,7 @@ async def test_token_response_has_issued_at(client, admin_token, user_a, dept_a)
 
 async def test_pull_policy_all_grants_pull_to_any_user(client, admin_token, user_a, dept_a):
     await _enable_docker(client, admin_token, dept_a.id, pull_policy="all")
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User12345678!"),
                       params={"service": "registry.test", "scope": "repository:myapp:pull"})
     assert resp.status_code == 200
     access = resp.json().get("access", [])
@@ -95,7 +95,7 @@ async def test_pull_policy_all_grants_pull_to_any_user(client, admin_token, user
 async def test_pull_policy_all_user_b_in_other_dept_denied(client, admin_token, user_b, dept_b, dept_a):
     # dept_a has docker enabled, but user_b is in dept_b which has no config
     await _enable_docker(client, admin_token, dept_a.id, pull_policy="all")
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_b", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_b", "User12345678!"),
                       params={"service": "registry.test", "scope": "repository:myapp:pull"})
     assert resp.status_code == 403
 
@@ -105,7 +105,7 @@ async def test_pull_policy_all_user_b_in_other_dept_denied(client, admin_token, 
 async def test_restricted_policy_only_listed_user_can_pull(client, admin_token, user_a, user_b, dept_a):
     await _enable_docker(client, admin_token, dept_a.id,
                    pull_policy="restricted", pull_user_ids=[user_a.id])
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User12345678!"),
                       params={"service": "registry.test", "scope": "repository:myapp:pull"})
     assert resp.status_code == 200
 
@@ -114,7 +114,7 @@ async def test_restricted_policy_only_listed_user_can_pull(client, admin_token, 
 
 async def test_push_allowed_for_listed_user(client, admin_token, user_a, dept_a):
     await _enable_docker(client, admin_token, dept_a.id, push_user_ids=[user_a.id])
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User12345678!"),
                       params={"service": "registry.test", "scope": "repository:myapp:push"})
     assert resp.status_code == 200
     access = _decode_access(resp.json()["access_token"])
@@ -137,7 +137,7 @@ async def test_push_denied_for_user_not_in_push_list(client, admin_token, user_a
     await _enable_docker(client, admin_token, dept_a.id,
                          pull_policy="restricted",
                          pull_user_ids=[user_a.id], push_user_ids=[])
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User12345678!"),
                             params={"service": "registry.test", "scope": "repository:myapp:push"})
     assert resp.status_code == 200
     access = _decode_access(resp.json()["access_token"])
@@ -148,7 +148,7 @@ async def test_push_denied_for_user_not_in_push_list(client, admin_token, user_a
 async def test_push_denied_for_user_in_other_dept(client, admin_token, user_b, dept_a, dept_b):
     """user_b живёт в dept_b, конфиг включён только в dept_a → push отказан."""
     await _enable_docker(client, admin_token, dept_a.id, push_user_ids=[user_b.id])
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_b", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_b", "User12345678!"),
                             params={"service": "registry.test", "scope": "repository:myapp:push"})
     # dept_b не имеет docker_registry конфига → 403
     assert resp.status_code == 403
@@ -159,7 +159,7 @@ async def test_push_pull_combined_scope_returns_only_allowed_actions(client, adm
     """scope='repository:x:pull,push' для user_a с pull-only — токен содержит только pull."""
     await _enable_docker(client, admin_token, dept_a.id,
                          pull_policy="all", push_user_ids=[])
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User12345678!"),
                             params={"service": "registry.test", "scope": "repository:myapp:pull,push"})
     assert resp.status_code == 200
     access = _decode_access(resp.json()["access_token"])
@@ -170,7 +170,7 @@ async def test_push_pull_combined_scope_returns_only_allowed_actions(client, adm
 async def test_empty_push_user_ids_nobody_can_push(client, admin_token, user_a, dept_a):
     """push_user_ids=[] — никто не имеет push, токен возвращается без push в access."""
     await _enable_docker(client, admin_token, dept_a.id, push_user_ids=[])
-    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User1234!"),
+    resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", "User12345678!"),
                             params={"service": "registry.test", "scope": "repository:myapp:push"})
     assert resp.status_code == 200
     access = _decode_access(resp.json()["access_token"])
@@ -345,7 +345,7 @@ async def test_docker_token_locks_account_after_5_failed_attempts(
     # wrong-password 401.
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test"},
     )
     assert resp.status_code == 429
@@ -374,7 +374,7 @@ async def test_docker_token_locked_user_cannot_login(
     # Even with correct password, /docker/token must honour the lockout.
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test"},
     )
     assert resp.status_code == 429
@@ -435,7 +435,7 @@ async def test_docker_token_lockout_emits_audit_failure(
 
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test"},
     )
     assert resp.status_code == 429
@@ -483,7 +483,7 @@ async def test_docker_token_successful_login_resets_failed_attempts(
     # Successful Docker token request — should reset the counter.
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test"},
     )
     assert resp.status_code == 200
@@ -543,7 +543,7 @@ async def test_multi_legacy_scope_resolves_caller_dept_for_each_entry(
     await _enable_docker(client, admin_token, dept_a.id, pull_policy="all")
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={
             "service": "registry.test",
             "scope": "repository:foo:pull repository:bar:pull",

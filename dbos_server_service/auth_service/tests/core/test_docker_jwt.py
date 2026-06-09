@@ -53,6 +53,9 @@ def _prod_kwargs(**overrides) -> dict:
         # Lifecycle-guard в production-validator'е требует непустой ключ;
         # URL может быть пустым (no-op).
         "SECRET_INTERNAL_API_KEY": "prod-secret-internal-api-key-1234567890",
+        # rate-limit prod-guard требует общий backend; для unit-теста ставим
+        # redis-URI, чтобы не падать на проверке raньше docker-key-guard'а.
+        "RATE_LIMIT_STORAGE_URI": "redis://redis:6379/0",
     }
     base.update(overrides)
     return base

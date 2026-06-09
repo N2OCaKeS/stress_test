@@ -15,8 +15,8 @@ async def test_list_sessions_sees_own_active(client, user_a):
     """user_a логинится дважды → видит две свои активные сессии. is_current=True
     проставлено ровно у той сессии, чей access-токен использован для запроса.
     """
-    s1 = await _login_full(client, "t_user_a", "User1234!")
-    s2 = await _login_full(client, "t_user_a", "User1234!")
+    s1 = await _login_full(client, "t_user_a", "User12345678!")
+    s2 = await _login_full(client, "t_user_a", "User12345678!")
 
     resp = await client.get(
         LIST_URL, headers={"Authorization": f"Bearer {s2['access_token']}"}
@@ -48,9 +48,9 @@ async def test_list_sessions_sees_own_active(client, user_a):
 
 async def test_list_sessions_isolation_does_not_see_others(client, user_a, user_b):
     """user_a и user_b логинятся независимо; каждый видит ТОЛЬКО свои сессии."""
-    await _login_full(client, "t_user_a", "User1234!")
-    a2 = await _login_full(client, "t_user_a", "User1234!")
-    await _login_full(client, "t_user_b", "User1234!")
+    await _login_full(client, "t_user_a", "User12345678!")
+    a2 = await _login_full(client, "t_user_a", "User12345678!")
+    await _login_full(client, "t_user_b", "User12345678!")
 
     resp_a = await client.get(
         LIST_URL, headers={"Authorization": f"Bearer {a2['access_token']}"}
@@ -110,8 +110,8 @@ async def test_list_sessions_without_sid_marks_all_not_current(db, user_a):
 
 async def test_revoke_all_clears_every_session_including_current(client, user_a):
     """except_current=false → revoke всех, refresh любым из RT возвращает 401."""
-    s1 = await _login_full(client, "t_user_a", "User1234!")
-    s2 = await _login_full(client, "t_user_a", "User1234!")
+    s1 = await _login_full(client, "t_user_a", "User12345678!")
+    s2 = await _login_full(client, "t_user_a", "User12345678!")
 
     resp = await client.post(
         REVOKE_URL,
@@ -130,8 +130,8 @@ async def test_revoke_all_clears_every_session_including_current(client, user_a)
 
 async def test_revoke_except_current_keeps_current_session(client, user_a):
     """except_current=true → текущая сессия остаётся, остальные revoked."""
-    s1 = await _login_full(client, "t_user_a", "User1234!")
-    s2 = await _login_full(client, "t_user_a", "User1234!")
+    s1 = await _login_full(client, "t_user_a", "User12345678!")
+    s2 = await _login_full(client, "t_user_a", "User12345678!")
 
     resp = await client.post(
         REVOKE_URL,
@@ -153,8 +153,8 @@ async def test_revoke_except_current_keeps_current_session(client, user_a):
 
 async def test_revoke_does_not_affect_other_users(client, user_a, user_b):
     """user_a жмёт «logout-all» — сессии user_b не страдают."""
-    a1 = await _login_full(client, "t_user_a", "User1234!")
-    b1 = await _login_full(client, "t_user_b", "User1234!")
+    a1 = await _login_full(client, "t_user_a", "User12345678!")
+    b1 = await _login_full(client, "t_user_b", "User12345678!")
 
     resp = await client.post(
         REVOKE_URL,
@@ -178,8 +178,8 @@ async def test_revoke_requires_auth(client):
 
 async def test_revoke_one_session_targets_specific(client, user_a):
     """DELETE /me/sessions/{id} — снимает конкретную сессию, остальные живут."""
-    s1 = await _login_full(client, "t_user_a", "User1234!")
-    s2 = await _login_full(client, "t_user_a", "User1234!")
+    s1 = await _login_full(client, "t_user_a", "User12345678!")
+    s2 = await _login_full(client, "t_user_a", "User12345678!")
 
     # Узнаём session_id первой сессии через listing.
     listing = await client.get(
@@ -207,8 +207,8 @@ async def test_revoke_one_session_targets_specific(client, user_a):
 async def test_revoke_one_foreign_session_returns_404(client, user_a, user_b):
     """user_a пытается revoked'нуть session_id юзера b → 404 (без раскрытия
     «чужая vs не существует»)."""
-    a1 = await _login_full(client, "t_user_a", "User1234!")
-    b1 = await _login_full(client, "t_user_b", "User1234!")
+    a1 = await _login_full(client, "t_user_a", "User12345678!")
+    b1 = await _login_full(client, "t_user_b", "User12345678!")
 
     # Узнаём session_id юзера b через его собственный listing.
     b_list = await client.get(
@@ -235,8 +235,8 @@ async def test_revoke_one_current_session_emits_was_current_true(
     проходит успешно и пишет в audit `was_current=True`. Параллельная сессия
     остаётся живой — её refresh продолжает работать.
     """
-    s1 = await _login_full(client, "t_user_a", "User1234!")
-    s2 = await _login_full(client, "t_user_a", "User1234!")
+    s1 = await _login_full(client, "t_user_a", "User12345678!")
+    s2 = await _login_full(client, "t_user_a", "User12345678!")
 
     # Узнаём session_id, помеченный is_current=True для s2.
     listing = await client.get(

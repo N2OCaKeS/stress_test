@@ -189,6 +189,10 @@ async def emit(
             config_error=True,
         )
     headers = {**bearer_header(api_key), "X-Service-Identity": "server_worker"}
+    if request_id is not None:
+        # Прокидываем X-Request-ID в outbound — loging_service увидит тот же
+        # request_id, что и server_service-инициатор задачи (он же в payload).
+        headers["X-Request-ID"] = str(request_id)
     client = get_audit_client()
     try:
         response = await client.post(url, json=payload, headers=headers)

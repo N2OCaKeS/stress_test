@@ -233,7 +233,7 @@ async def test_login_unknown_user_timing_close_to_known_user(client, account_adm
     # Warm-up
     await client.post(
         "/api/auth/v1/login",
-        json={"username": "t_admin", "password": "Admin1234!"},
+        json={"username": "t_admin", "password": "Admin12345678!"},
     )
 
     start = time.perf_counter()
@@ -423,9 +423,9 @@ async def test_dept_transfer_deactivates_old_service_roles(db):
     await _grant_service(db, dept_a.id, svc.service_name)
     await _grant_service(db, dept_b.id, svc.service_name)
     admin = await _make_user(
-        db, "p2g_admin", "Admin1234!", platform_role="account_admin",
+        db, "p2g_admin", "Admin12345678!", platform_role="account_admin",
     )
-    user = await _make_user(db, "p2g_user", "User1234!", department_id=dept_a.id)
+    user = await _make_user(db, "p2g_user", "User12345678!", department_id=dept_a.id)
     await _assign_role(db, user.id, svc.service_name, "operator")
     await db.commit()
 
@@ -453,7 +453,7 @@ async def test_dept_transfer_emits_roles_purged_audit(
     svc = await _make_service(db, "p2g_audit_svc")
     await _grant_service(db, dept_a.id, svc.service_name)
     await _grant_service(db, dept_b.id, svc.service_name)
-    user = await _make_user(db, "p2g_audit_user", "User1234!", department_id=dept_a.id)
+    user = await _make_user(db, "p2g_audit_user", "User12345678!", department_id=dept_a.id)
     await _assign_role(db, user.id, svc.service_name, "operator")
     await db.commit()
 
@@ -483,7 +483,7 @@ async def test_dept_unchanged_does_not_purge_roles(
     dept_a = await _make_dept(db, "p2g_same_a")
     svc = await _make_service(db, "p2g_same_svc")
     await _grant_service(db, dept_a.id, svc.service_name)
-    user = await _make_user(db, "p2g_same_user", "User1234!", department_id=dept_a.id)
+    user = await _make_user(db, "p2g_same_user", "User12345678!", department_id=dept_a.id)
     await _assign_role(db, user.id, svc.service_name, "operator")
     await db.commit()
 
@@ -629,12 +629,13 @@ async def test_service_api_keys_empty_falls_back_to_legacy(monkeypatch, db):
         config_mod.get_settings.cache_clear()
 
 
-async def test_strict_service_api_keys_rejects_legacy_when_dict_set(monkeypatch, db):
-    """STRICT_SERVICE_API_KEYS=true + непустой SERVICE_API_KEYS:
-    legacy SERVICE_API_KEY больше не работает даже как корректный токен.
+async def test_per_service_keys_rejects_legacy_when_dict_set(monkeypatch, db):
+    """Непустой `SERVICE_API_KEYS` ⇒ legacy `SERVICE_API_KEY` fallback недостижим:
+    верхняя ветка в `dependencies/auth.py` возвращается раньше. Это
+    implicit'ный strict-режим (отдельного `STRICT_SERVICE_API_KEYS` toggle'а
+    больше нет — поведение зашито в порядок веток).
     """
     monkeypatch.setenv("SERVICE_API_KEYS", '{"loging_service": "key_l"}')
-    monkeypatch.setenv("STRICT_SERVICE_API_KEYS", "true")
     from src.core import config as config_mod
     config_mod.get_settings.cache_clear()
     try:

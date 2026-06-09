@@ -47,6 +47,38 @@ def _rate_limit_key(request: Request) -> str:
     return get_remote_address(request)
 
 
+def reader_rate_limit_key(request: Request) -> str:
+    """Key-функция для read-эндпоинтов с per-user bucket'ами.
+
+    За k8s ingress все reader'ы приходят с одного IP — общий per-IP
+    bucket позволил бы одному атакующему/багованному клиенту выжать
+    бюджет всех легитимных операторов. Ключуемся по identity, если
+    она уже верифицирована `require_reader` / `require_admin` и
+    положена в `request.state.auth_identity` (см.
+    `dependencies/auth.py::_fetch_identity`).
+
+    Стратегия ключа:
+      * identity есть → `usr:{sub}` (subject id из introspect — стабилен
+        между запросами одного и того же user/PAT/bot/oauth_client);
+      * identity нет (auth ещё не отработал, или 401 / 403 на этапе
+        dependency'ы) → fallback на client IP, чтобы анонимный flood
+        не получил bypass лимита.
+
+    Path-исключения (`/health`, `/ready`, `/token`) сюда не доходят —
+    они уже отбиты в `_rate_limit_key` через uuid-ключ. Здесь явная
+    проверка ради идемпотентности, если key_func переиспользуют на
+    другом router'е.
+    """
+    if request.url.path in _RATE_LIMIT_EXEMPT_PATHS:
+        return f"exempt:{uuid.uuid4().hex}"
+    identity = getattr(request.state, "auth_identity", None)
+    if identity:
+        sub = identity.get("sub") or identity.get("user_id")
+        if sub:
+            return f"usr:{sub}"
+    return f"ip:{get_remote_address(request)}"
+
+
 # `headers_enabled` по умолчанию off — `X-RateLimit-Remaining` утекает
 # атакующему live feedback его counter'а, и тот burst'ит ровно под
 # лимит. Включается через `RATE_LIMIT_HEADERS_ENABLED=true` для отладки.

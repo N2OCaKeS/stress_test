@@ -134,7 +134,7 @@ class TestBannedUserPasswordPath:
         captured = _capture_audit(monkeypatch)
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={"service": "registry.test"},
         )
         assert resp.status_code == 401, resp.text
@@ -164,7 +164,7 @@ class TestEmptyActionsScope:
         captured = _capture_audit(monkeypatch)
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": f"repository:{dept_a.name}/image:",
@@ -196,7 +196,7 @@ class TestMultiResourceScope:
         )
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={"service": "registry.test", "scope": scope},
         )
         assert resp.status_code == 200, resp.text
@@ -221,7 +221,7 @@ class TestParseScopeShortSegments:
         false-ветку в `_parse_scope`."""
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={"service": "registry.test", "scope": "repository:foo"},
         )
         assert resp.status_code == 200, resp.text
@@ -332,7 +332,7 @@ class TestScopeResourceNameWithColon:
         scope = f"repository:{dept_a.name}/img:v1:pull"
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={"service": "registry.test", "scope": scope},
         )
         assert resp.status_code == 200, resp.text

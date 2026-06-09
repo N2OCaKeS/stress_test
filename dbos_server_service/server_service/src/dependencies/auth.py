@@ -62,9 +62,11 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "CurrentIdentity",
+    "CurrentUserIdentity",
     "SERVICE_NAME",
     "get_current_identity",
     "require_internal_caller",
+    "require_user_context",
 ]
 
 _INTROSPECT_PATH = "/api/auth/v1/authorization/introspect"
@@ -263,6 +265,50 @@ async def get_current_identity(request: Request) -> IdentityContext:
 
 
 CurrentIdentity = Annotated[IdentityContext, Depends(get_current_identity)]
+
+
+# ── User-facing guard: отбивает OAuth m2m identity ──────────────────────────
+
+
+def require_user_context(
+    identity: Annotated[IdentityContext, Depends(get_current_identity)],
+) -> IdentityContext:
+    """Отбивает m2m identity (OAuth `client_credentials`) на user-facing endpoint'ах.
+
+    Симметрия с `auth_service.require_user_context` и `secret_service.require_user_context`:
+    OAuth-клиенту нет места в user-facing бизнес-эндпоинтах server_service —
+    servers/server_accounts/ipmi/inventory/etc оперируют пользовательскими
+    разрешениями по матрице `entity_permissions`, у `oauth_client` нет ни
+    `department_id`, ни мест в матрице (его user_id формата `cli_*` улетал бы
+    в audit-trail и FK-операции).
+
+    Без этого guard'а m2m-токен сегодня проходил `get_current_identity` (он
+    лишь проверяет active + banned + allowed_services) и упирался в матрицу
+    permissions на бизнес-слое — менее удобно для аудита (несколько слоёв
+    проходит, прежде чем 403), и в `audit_context.actor_id` уже зафиксирован
+    `cli_*` ID. Здесь режем с 403 `USER_CONTEXT_REQUIRED` сразу после
+    introspect'а.
+
+    `/internal/*` (worker→server_service), `/internal/secrets/*`
+    (worker→server_service ротация) и `ops` (s2s через shared-secret) этот
+    guard НЕ используют — там identity либо worker_bot (subject_type='bot'),
+    либо service-identity без user-introspect'а вообще.
+
+    Применяется через `Depends(require_user_context)` либо на уровне router'а
+    через `APIRouter(..., dependencies=[Depends(require_user_context)])`.
+    """
+    if identity.subject_type == "oauth_client":
+        raise AuthorizationError(
+            error_code="USER_CONTEXT_REQUIRED",
+            message=(
+                "This endpoint requires user context; "
+                "OAuth client_credentials tokens are not accepted"
+            ),
+        )
+    return identity
+
+
+CurrentUserIdentity = Annotated[IdentityContext, Depends(require_user_context)]
 
 
 # ── Service-to-service (ops endpoints) ──────────────────────────────────────

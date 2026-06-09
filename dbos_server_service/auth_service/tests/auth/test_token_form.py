@@ -16,7 +16,7 @@ class TestTokenForm:
     async def test_valid_credentials_return_access_token(self, client, account_admin):
         resp = await client.post(
             TOKEN_URL,
-            data={"username": "t_admin", "password": "Admin1234!"},
+            data={"username": "t_admin", "password": "Admin12345678!"},
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -47,7 +47,7 @@ class TestTokenForm:
         """OAuth2 form-flow требует form-data, JSON-тело не должно проходить."""
         resp = await client.post(
             TOKEN_URL,
-            json={"username": "t_admin", "password": "Admin1234!"},
+            json={"username": "t_admin", "password": "Admin12345678!"},
         )
         # FastAPI вернёт 422 на отсутствие username/password в form-полях
         # (JSON-body не парсится как form, поля «не найдены»).
@@ -67,7 +67,7 @@ class TestTokenForm:
         user = User(
             id=_new_id("usr_"),
             username="tf_banned",
-            password_hash=hash_password("Pass1234!"),
+            password_hash=hash_password("Pass12345678!"),
             status="banned",
             is_active=True,
         )
@@ -75,7 +75,7 @@ class TestTokenForm:
         await db.flush()
         resp = await client.post(
             TOKEN_URL,
-            data={"username": "tf_banned", "password": "Pass1234!"},
+            data={"username": "tf_banned", "password": "Pass12345678!"},
         )
         assert resp.status_code == 403
         assert resp.json()["error_code"] == "USER_BANNED"
@@ -85,7 +85,7 @@ class TestTokenForm:
         user = User(
             id=_new_id("usr_"),
             username="tf_lockout",
-            password_hash=hash_password("Correct1!"),
+            password_hash=hash_password("Correct12345678!"),
             status="active",
             is_active=True,
         )
@@ -98,7 +98,7 @@ class TestTokenForm:
             )
         resp = await client.post(
             TOKEN_URL,
-            data={"username": "tf_lockout", "password": "Correct1!"},
+            data={"username": "tf_lockout", "password": "Correct12345678!"},
         )
         assert resp.status_code == 429
         assert resp.json()["error_code"] == "ACCOUNT_TEMPORARILY_LOCKED"
@@ -111,7 +111,7 @@ class TestTokenForm:
             TOKEN_URL,
             data={
                 "username": "t_admin",
-                "password": "Admin1234!",
+                "password": "Admin12345678!",
                 "grant_type": "password",
             },
         )

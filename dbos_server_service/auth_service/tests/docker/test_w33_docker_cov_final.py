@@ -81,7 +81,7 @@ class TestPushDisabledNonLegacyScope:
         captured = _capture_audit(monkeypatch)
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": f"repository:{dept_a.name}/image:push",
@@ -113,7 +113,7 @@ class TestLegacyGuardAuditShape:
         captured = _capture_audit(monkeypatch)
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": "repository:legacy_image:pull",
@@ -154,7 +154,7 @@ class TestLegacyGuardAuditShape:
         captured = _capture_audit(monkeypatch)
         resp = await client.get(
             TOKEN_URL,
-            headers=_basic("t_user_a", "User1234!"),
+            headers=_basic("t_user_a", "User12345678!"),
             params={
                 "service": "registry.test",
                 "scope": "repository:legacy_disabled:pull",

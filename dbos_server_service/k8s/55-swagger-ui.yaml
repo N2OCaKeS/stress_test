@@ -26,6 +26,7 @@ spec:
       labels:
         app: dbos-swagger-ui
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsUser: 101
         runAsGroup: 101

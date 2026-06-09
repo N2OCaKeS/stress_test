@@ -27,7 +27,7 @@ from src.core.exceptions import (
     ServiceUnavailableError,
 )
 from src.core.limiter import endpoint_limiter, per_account_key
-from src.dependencies.auth import CurrentIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.dependencies.idempotency import read_idempotency_key
 from src.repositories import ipmi_controller as ipmi_repo
@@ -269,7 +269,7 @@ async def _dispatch_power(
     },
 )
 async def list_controllers(
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0, description="DEPRECATED — используйте cursor-пагинацию."),
@@ -334,7 +334,7 @@ list_router_legacy.add_api_route(
 async def create_controller(
     server_id: str,
     body: IpmiControllerCreate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> IpmiControllerResponse:
     """Create-эндпоинт. Доступ: `(ipmi_controller, *, create)`."""
@@ -368,7 +368,7 @@ async def create_controller(
 async def get_controller(
     request: Request,
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> IpmiControllerResponse:
     """Get-эндпоинт. Доступ: `(ipmi_controller, *, view)`; пароль — при `view_credentials`."""
@@ -395,7 +395,7 @@ async def get_controller(
 async def update_controller(
     server_id: str,
     body: IpmiControllerUpdate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> IpmiControllerResponse:
     """Update-эндпоинт. Доступ: `(ipmi_controller, *, update)`."""
@@ -419,7 +419,7 @@ async def update_controller(
 )
 async def delete_controller(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
     """Delete-эндпоинт. Доступ: `(ipmi_controller, *, delete)`. Аудит — CRITICAL."""
@@ -455,7 +455,7 @@ async def delete_controller(
 async def rotate_credentials(
     request: Request,
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     body: IpmiCredentialsRotateRequest | None = None,
 ) -> IpmiCredentialsRotateResponse:
     """Rotate-эндпоинт. Любой caller получает 410 GONE + CRITICAL-audit.
@@ -514,7 +514,7 @@ async def rotate_credentials(
 )
 async def view_credentials(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> IpmiCredentialsViewResponse:
     """
@@ -590,7 +590,7 @@ async def view_credentials(
 )
 async def power_status(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> IpmiPowerStatusCachedResponse:
     """
@@ -667,7 +667,7 @@ async def power_status(
 )
 async def power_on(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ServerTaskDispatchResponse:
@@ -705,7 +705,7 @@ async def power_on(
 )
 async def power_off(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ServerTaskDispatchResponse:
@@ -736,7 +736,7 @@ async def power_off(
 )
 async def power_reboot(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ServerTaskDispatchResponse:

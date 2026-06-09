@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.v1.endpoints.worker_dispatch import fanout_update_on_host
 from src.core.config import get_settings
 from src.core.limiter import endpoint_limiter, per_account_key
-from src.dependencies.auth import CurrentIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.models import ServerAccount
 from src.repositories import server_account as account_repo
@@ -80,7 +80,7 @@ def _to_response(obj: ServerAccount, password_b64: str | None = None) -> ServerA
 )
 async def create_account(
     body: ServerAccountCreate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountResponse:
     """Create-эндпоинт. Доступ: `(server_account, *, create)` (+ `grant_sudo` опц.)."""
@@ -108,7 +108,7 @@ async def create_account(
     },
 )
 async def list_accounts(
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     server_id: str = Query(..., description="ID сервера, чьи аккаунты выбрать."),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
@@ -167,7 +167,7 @@ async def list_accounts(
 async def get_account(
     request: Request,
     account_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountResponse:
     """Get-эндпоинт. Доступ: `view` или `view_password`; пароль — при `view_password`."""
@@ -202,7 +202,7 @@ _OS_MANAGED_FIELDS = {"has_sudo", "unix_groups", "shell"}
 async def update_account(
     account_id: str,
     body: ServerAccountUpdate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountResponse:
@@ -243,7 +243,7 @@ async def update_account(
 async def link_servers(
     account_id: str,
     body: ServerAccountServersUpdate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountResponse:
     """Линковка серверов. Доступ: `(server_account, *, update)`."""
@@ -269,7 +269,7 @@ async def link_servers(
 async def unlink_servers(
     account_id: str,
     body: ServerAccountServersUpdate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountResponse:
     """Отвязка серверов. Доступ: `(server_account, *, update)`."""
@@ -293,7 +293,7 @@ async def unlink_servers(
 )
 async def delete_account(
     account_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
     """Delete-эндпоинт. Доступ: `(server_account, *, delete)`."""
@@ -325,7 +325,7 @@ async def delete_account(
 async def rotate_password(
     request: Request,
     account_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     body: ServerAccountRotateRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountRotateResponse:

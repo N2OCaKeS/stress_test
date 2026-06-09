@@ -59,7 +59,7 @@ async def test_blocked_user_gets_invalid_credentials_not_user_blocked(
 
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test"},
     )
     assert resp.status_code == 401
@@ -81,7 +81,7 @@ async def test_banned_user_gets_invalid_credentials(
 
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test"},
     )
     assert resp.status_code == 401
@@ -178,7 +178,7 @@ async def test_multi_resource_scope_parsed_correctly(
     import jwt as _jwt
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={
             "service": "registry.test",
             "scope": "repository:app:pull repository:db:pull,push",
@@ -206,7 +206,7 @@ async def test_restricted_pull_not_listed_user_no_pull_action(
     )
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test", "scope": "repository:myapp:pull"},
     )
     # Аутентификация прошла (docker config есть), но pull не выдан → токен без pull
@@ -227,7 +227,7 @@ async def test_unknown_action_in_scope_returns_empty_access(
     await _enable_docker(client, admin_token, dept_a.id, push_user_ids=[user_a.id])
     resp = await client.get(
         TOKEN_URL,
-        headers=_basic("t_user_a", "User1234!"),
+        headers=_basic("t_user_a", "User12345678!"),
         params={"service": "registry.test", "scope": "repository:myapp:delete"},
     )
     assert resp.status_code == 200

@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.orm import Session
 
 from src.core.config import get_settings
-from src.core.limiter import limiter
+from src.core.limiter import limiter, reader_rate_limit_key
 from src.dependencies.auth import AdminIdentity, require_admin
 from src.dependencies.db import get_db
 from src.repositories import retention_policies as repo
@@ -167,6 +167,7 @@ def _snapshot_list(policies) -> list[dict]:
 # admin-JWT с правом крутить SELECT на active retention без потолка.
 @limiter.limit(
     lambda: get_settings().audit_query_rate_limit,
+    key_func=reader_rate_limit_key,
 )
 def get_policy(
     request: Request,

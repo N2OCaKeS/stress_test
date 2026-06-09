@@ -56,7 +56,7 @@ def _refresh_failures(captured: list[dict], reason: str) -> list[dict]:
 
 async def test_refresh_banned_user_emits_audit(client, db, account_admin, captured_audit):
     login = await client.post(
-        LOGIN_URL, json={"username": "t_admin", "password": "Admin1234!"}
+        LOGIN_URL, json={"username": "t_admin", "password": "Admin12345678!"}
     )
     rt = login.json()["refresh_token"]
 
@@ -76,7 +76,7 @@ async def test_refresh_banned_user_emits_audit(client, db, account_admin, captur
 
 async def test_refresh_blocked_user_emits_audit(client, db, account_admin, captured_audit):
     login = await client.post(
-        LOGIN_URL, json={"username": "t_admin", "password": "Admin1234!"}
+        LOGIN_URL, json={"username": "t_admin", "password": "Admin12345678!"}
     )
     rt = login.json()["refresh_token"]
 
@@ -98,7 +98,7 @@ async def test_refresh_expired_session_emits_audit(
 ):
     """Просроченная refresh-сессия → 401 REFRESH_TOKEN_EXPIRED + denied audit."""
     login = await client.post(
-        LOGIN_URL, json={"username": "t_admin", "password": "Admin1234!"}
+        LOGIN_URL, json={"username": "t_admin", "password": "Admin12345678!"}
     )
     rt = login.json()["refresh_token"]
 
@@ -140,7 +140,7 @@ async def test_refresh_missing_user_emits_audit(
     delete-user → refresh.
     """
     login = await client.post(
-        LOGIN_URL, json={"username": "t_admin", "password": "Admin1234!"}
+        LOGIN_URL, json={"username": "t_admin", "password": "Admin12345678!"}
     )
     rt = login.json()["refresh_token"]
 

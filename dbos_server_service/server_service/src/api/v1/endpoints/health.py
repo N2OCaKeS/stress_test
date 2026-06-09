@@ -91,12 +91,37 @@ async def ready() -> dict:
         await conn.execute(text("SELECT 1"))
     redis_status = await _ping_worker_redis()
     audit_status = await _ping_audit_liveness()
+
+    # Operational counters для оператора (best-effort, не валят ready).
+    counters: dict = {
+        "secrets_decrypt_failures": 0,
+        "lazy_reencrypt_failures": 0,   # TODO: counter ещё не заведён в metrics.py
+        "dispatch_outbox_pending_depth": 0,
+        "worker_dispatch_orphans_total": 0,
+        "bulk_endpoints_avg_ms": None,  # TODO: bulk handler не публикует таймеры
+    }
+    try:
+        counters["secrets_decrypt_failures"] = int(metrics.get_secrets_decrypt_failures_total())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        counters["dispatch_outbox_pending_depth"] = int(metrics.get_dispatch_outbox_pending_depth())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        counters["worker_dispatch_orphans_total"] = int(metrics.get_worker_dispatch_orphans_total())
+    except Exception:  # noqa: BLE001
+        pass
+
     return {
         "status": "ready",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "db": "ok",
         "worker_redis": redis_status,
         "audit": audit_status,
-        "dispatch_outbox_pending_depth": metrics.get_dispatch_outbox_pending_depth(),
-        "worker_dispatch_orphans_total": metrics.get_worker_dispatch_orphans_total(),
+        # Дублируем top-level старые поля под обратную совместимость существующих
+        # probe-парсеров; новые поля переехали в `counters`.
+        "dispatch_outbox_pending_depth": counters["dispatch_outbox_pending_depth"],
+        "worker_dispatch_orphans_total": counters["worker_dispatch_orphans_total"],
+        "counters": counters,
     }

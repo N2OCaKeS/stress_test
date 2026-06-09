@@ -26,15 +26,25 @@ logger = logging.getLogger(__name__)
 def _headers(target_department_id: str | None = None) -> dict[str, str]:
     """Собрать HTTP-заголовки для запроса к server_service.
 
-    Включает `Authorization: Bearer <worker_bot_token>` (наличие токена
-    гарантируется startup-валидатором в `src.core.config.Settings`: в
-    dev/staging/production пустой `WORKER_BOT_TOKEN` валит старт воркера,
-    в local/test conftest подставляет placeholder), плюс
-    `X-Target-Department-Id` если caller передал dept (для cross-tenant
-    cross-check'а в internal-эндпоинтах).
+    Включает:
+      * `Authorization: Bearer <worker_bot_token>` (наличие токена
+        гарантируется startup-валидатором в `src.core.config.Settings`: в
+        dev/staging/production пустой `WORKER_BOT_TOKEN` валит старт воркера,
+        в local/test conftest подставляет placeholder);
+      * `X-Service-Identity: server_worker` — defense-in-depth для
+        s2s-маркировки канала. Симметрично `audit_client.emit`
+        (`X-Service-Identity: server_worker` уже шлётся в loging_service)
+        и introspect-каналам соседних сервисов. server_service сегодня
+        этот header на `/internal/*` не enforce'ит, но иметь его в каждом
+        запросе worker'а позволяет (а) идентифицировать источник по audit
+        access-log'у server_service, (б) в будущем включить strict-режим
+        без изменения worker'ской стороны;
+      * `X-Target-Department-Id` если caller передал dept (для cross-tenant
+        cross-check'а в internal-эндпоинтах).
     """
     settings = get_settings()
     headers: dict[str, str] = bearer_header(settings.worker_bot_token)
+    headers["X-Service-Identity"] = "server_worker"
     if target_department_id is not None:
         headers["X-Target-Department-Id"] = target_department_id
     return headers

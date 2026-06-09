@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.limiter import endpoint_limiter
-from src.dependencies.auth import CurrentIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import CursorPaginatedResponse, OkResponse, PaginatedResponse
 from src.schemas.os_version import OsVersionCreate, OsVersionResponse, OsVersionUpdate
@@ -172,7 +172,7 @@ async def get_os_version_by_name(
 )
 async def create_os_version(
     body: OsVersionCreate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> OsVersionResponse:
     """Create OS-версии. Доступ: `(os_version, *, create)`."""
@@ -224,7 +224,7 @@ async def get_os_version(
 async def update_os_version(
     os_version_id: str,
     body: OsVersionUpdate,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> OsVersionResponse:
     """PATCH OS-версии. Доступ: `(os_version, *, update)`."""
@@ -248,7 +248,7 @@ async def update_os_version(
 )
 async def delete_os_version(
     os_version_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
     """Delete OS-версии. Доступ: `(os_version, *, delete)`."""

@@ -323,6 +323,10 @@ def query(
     service: str | None = None,
     severity: str | None = None,
     action: str | None = None,
+    actor_id: str | None = None,
+    target_id: str | None = None,
+    status: str | None = None,
+    request_id: str | None = None,
     from_time: datetime | None = None,
     to_time: datetime | None = None,
     limit: int = 100,
@@ -361,6 +365,21 @@ def query(
         filters.append(AuditEvent.severity == severity)
     if action is not None:
         filters.append(AuditEvent.action == action)
+    # actor_id / target_id / status / request_id — точное совпадение по уже
+    # существующим колонкам. Индексов под одиночные actor_id/target_id нет
+    # (см. model-комментарии: single-col индексы выпилены, фильтр редкий и
+    # обычно комбинируется с timestamp range). Для широкого журнала
+    # эти фильтры будут опираться на composite ix_audit_events_*_timestamp
+    # через AND timestamp-фильтр; точечные lookup без timestamp range —
+    # ответственность caller'а (UI должен дополнять временным окном).
+    if actor_id is not None:
+        filters.append(AuditEvent.actor_id == actor_id)
+    if target_id is not None:
+        filters.append(AuditEvent.target_id == target_id)
+    if status is not None:
+        filters.append(AuditEvent.status == status)
+    if request_id is not None:
+        filters.append(AuditEvent.request_id == request_id)
     if from_time is not None:
         filters.append(AuditEvent.timestamp >= from_time)
     if to_time is not None:

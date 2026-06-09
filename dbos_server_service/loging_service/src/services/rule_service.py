@@ -281,18 +281,135 @@ def action_matches_pattern(action: str, pattern: str) -> bool:
     return bool(re.fullmatch(regex, action))
 
 
-def _resolve_default_severity(action: str, status: str) -> str:
-    """Возвращает severity по умолчанию из встроенной таблицы.
+def _resolve_default_severity(
+    action: str,
+    status: str,
+    db: Session | None = None,
+) -> str:
+    """Возвращает severity по умолчанию.
 
-    Fallback для (action, status) пары, которой нет в `_DEFAULT_SEVERITY`:
-    `failure`/`denied`/`warning` → WARNING, всё остальное → INFO. Без
-    `"warning"` в первой ветке `status="warning"` (soft-mode guard'ы в
-    server_service::internal_service._check_target_department) свалился бы
-    в INFO — теряется сигнал, что операция прошла, но что-то пахнет.
+    Порядок lookup'а:
+      1. Hardcoded `_DEFAULT_SEVERITY[(action, status)]` — статус-зависимая
+         таблица (failure/denied отдельным severity'ем от success).
+      2. Каталог `service_events.default_severity` для *action* — каждый сервис
+         объявляет дефолт на регистрации (`register_events`), и каталог
+         обычно полнее хардкода (~60% action'ов в hardcoded dict'е нет).
+         Lookup закрыт через `_CatalogSeverityCache` (TTL=30s), чтобы ingest
+         не дёргал БД на каждое событие.
+      3. Heuristic: `failure`/`denied`/`warning` → WARNING, остальное → INFO.
+
+    *db* опционален: если caller (юнит-тест, миграция) не передал session,
+    catalog lookup пропускается. Production call-sites (`apply_rules`,
+    `record_admin_action`) пробрасывают сессию явно.
+
+    Без `"warning"` в heuristic-ветке `status="warning"` (soft-mode guard'ы)
+    свалился бы в INFO — теряется сигнал, что операция прошла, но что-то
+    пахнет.
     """
     if (action, status) in _DEFAULT_SEVERITY:
         return _DEFAULT_SEVERITY[(action, status)]
+    if db is not None:
+        catalog_severity = _catalog_cache.get(db, action)
+        if catalog_severity is not None:
+            return catalog_severity
     return "WARNING" if status in ("failure", "denied", "warning") else "INFO"
+
+
+class _CatalogSeverityCache:
+    """TTL-кеш `service_events.default_severity` per-action.
+
+    Hardcoded `_DEFAULT_SEVERITY` покрывает ~40% действий. Остальные сервисы
+    объявляют severity через `register_events()` — это валяется в БД, но
+    `_resolve_default_severity` раньше его не читал. Catalog lookup на каждом
+    ingest'е добавил бы DB-RTT в hot-path; TTL-кеш амортизирует.
+
+    Семантика:
+      * первый lookup на action → SELECT default_severity, кладёт в map;
+      * последующие в пределах TTL — без БД;
+      * `None`-результат тоже кешируется (чтобы повторные miss'ы не
+        пилили БД на каждом событии для unregistered-action'а);
+      * `invalidate()` — для тестов и для будущего `register_events`-hook'а.
+
+    Lock — `threading.Lock`, симметрично `_RuleCache`. Read-через-lock
+    оправдан тем, что эта функция уже сидит после rule-cache lookup'а,
+    который тоже за lock'ом — общая latency не меняется заметно.
+
+    Не сделано (намеренно):
+      * per-action expiry (точечный TTL) — overkill для ~10k action'ов;
+        глобальный TTL сбрасывает map целиком.
+      * cross-process инвалидация — между repликами кеши расходятся на
+        TTL-окно после изменения catalog'а; для severity-defaults
+        приемлемо (изменения редкие, не security-critical).
+    """
+
+    def __init__(self, ttl_seconds: float = 30.0) -> None:
+        # Sentinel для negative-result'а: храним явный объект, чтобы отличать
+        # «не было в кеше» от «было, но None». Без sentinel'а пришлось бы
+        # хранить `tuple[bool, str | None]`, что мусоривее.
+        self._missing = object()
+        self._map: dict[str, object] = {}
+        self._loaded_monotonic: float | None = None
+        self._ttl = ttl_seconds
+        self._lock = threading.Lock()
+
+    def _ttl_expired(self, mono_now: float) -> bool:
+        return (
+            self._loaded_monotonic is None
+            or (mono_now - self._loaded_monotonic) > self._ttl
+        )
+
+    def get(self, db: Session, action: str) -> str | None:
+        mono_now = time.monotonic()
+        with self._lock:
+            if self._ttl_expired(mono_now):
+                # TTL истёк — сбрасываем map. Не делаем preload всего каталога,
+                # потому что (а) preload N+1 пустых ingest'ов в холодный старт,
+                # (б) memory profile: ~10k action'ов × 16-32 байта overhead
+                # дешевле, чем потенциальные 100k unique action'ов с typo.
+                self._map.clear()
+                self._loaded_monotonic = mono_now
+            cached = self._map.get(action, self._missing)
+            if cached is not self._missing:
+                return cached  # type: ignore[return-value]
+            # Локальный импорт ради разрыва цикла: rule_service ↔ service_events
+            # repo сходились бы на import'е через models/schemas.
+            from src.repositories import service_events as se_repo
+
+            try:
+                severity = se_repo.get_default_severity(db, action)
+            except Exception:
+                # БД-выпадение — не валим ingest: возвращаем None, caller'у
+                # сработает heuristic-fallback. Логируем WARNING, кеш не
+                # обновляем (следующий вызов попробует ещё раз).
+                logger.warning(
+                    "_CatalogSeverityCache: get_default_severity(%r) failed; "
+                    "falling back to heuristic",
+                    action,
+                )
+                return None
+            self._map[action] = severity if severity is not None else self._missing
+            # Возвращаем normalized: пустая строка тоже воспринимается как
+            # missing (catalog seed может прислать `""` для action без
+            # default'а; treat-as-None убирает спецслучай у caller'а).
+            return severity if severity else None
+
+    def invalidate(self) -> None:
+        with self._lock:
+            self._map.clear()
+            self._loaded_monotonic = None
+
+
+_catalog_cache = _CatalogSeverityCache(ttl_seconds=30.0)
+
+
+def invalidate_catalog_severity_cache() -> None:
+    """Сбрасывает кеш `service_events.default_severity`.
+
+    Вызывается из `register_events` после upsert'а: иначе свежий
+    `default_severity` подхватился бы только через TTL (до 30s lag).
+    Без вызова поведение корректно, но lag заметен в тестах.
+    """
+    _catalog_cache.invalidate()
 
 
 class CacheState(enum.Enum):
@@ -580,7 +697,10 @@ def apply_rules(db: Session, payload: EventCreate) -> EventCreate | None:
     severity = payload.severity
     severity_dirty = False
     if severity is None:
-        severity = _resolve_default_severity(payload.action, payload.status)
+        # Передаём session — `_resolve_default_severity` сначала смотрит в
+        # hardcoded `_DEFAULT_SEVERITY`, потом в `service_events`-каталог
+        # (TTL-кешированно), и только потом fallback'ит на heuristic.
+        severity = _resolve_default_severity(payload.action, payload.status, db)
         severity_dirty = True
 
     # Cold-start семантика: если БД упала и кеш ещё не успел заполниться

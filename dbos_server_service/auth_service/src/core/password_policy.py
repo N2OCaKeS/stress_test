@@ -1,19 +1,25 @@
 """Единая парольная политика для пользовательских паролей auth_service.
 
-Минимум 8 символов, обязательно есть и буква, и цифра. Применяется к
+Минимум 12 символов, обязательно есть и буква, и цифра. Применяется к
 `UserCreate.password` и `ResetPasswordRequest.new_password` (одно и то же
 поле в семантическом смысле — secret юзера). Тот же контракт, что и
 `server_service/src/core/password_policy.py` для серверных секретов: лимит
 длины фиксированный, чтобы политика была одинаково читаемой во всех
 сервисах.
 
+Единое значение 12 синхронизировано с production-guard'ом для
+`INITIAL_ADMIN_PASSWORD` (`core/config.py::_validate_production_secrets`).
+Раньше user-facing валидатор требовал 8, prod-guard — 12; оператор мог
+выставить юзеру 10-символьный пароль, validator его принимал, а bootstrap
+admin отбивался — асимметрия порождала «у соседа работает, у меня нет».
+
 `validate_password` бросает `ValueError` — Pydantic превращает его в 422.
 """
 
-MIN_PASSWORD_LENGTH = 8
+MIN_PASSWORD_LENGTH = 12
 
 _POLICY_MESSAGE = (
-    "Password must be at least 8 characters long and contain "
+    "Password must be at least 12 characters long and contain "
     "both letters and digits"
 )
 

@@ -122,6 +122,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable
 
+from src.core.config import get_settings
 from src.core.constants import TaskStatus
 from src.db.session import AsyncSessionLocal
 from src.repositories import task as task_repo
@@ -134,6 +135,41 @@ from src.tasks._runner_state import (
 from src.utils.redaction import redact_error_message
 
 logger = logging.getLogger(__name__)
+
+
+# Process-local semaphore, ограничивающий число одновременно выполняющихся
+# impl-функций. taskiq поднимает несколько consumer'ов на один процесс
+# (`--workers=N`) без верхнего бара на сколько task'ов параллельно держим
+# в impl-стадии. Без этого лимита бурст из Redis может одновременно
+# подтянуть десятки задач: каждая открывает SSH/IPMI/HTTP-сессию,
+# httpx/asyncssh пулы и DB-pool захлёбываются.
+#
+# Лимит читается из `WORKER_HANDLER_CONCURRENCY` (дефолт 4). Семафор —
+# lazy module-level: первый `run_task` его создаёт, дальше переиспользует.
+# Привязка к текущему event-loop'у автоматическая (asyncio.Semaphore без
+# loop= ловит running loop при первом acquire).
+_HANDLER_SEMAPHORE: asyncio.Semaphore | None = None
+
+
+def _get_handler_semaphore() -> asyncio.Semaphore:
+    """Lazy-инициализация process-local concurrency semaphore'а.
+
+    Откладываем создание до первого `run_task` — settings уже инициализирован
+    к этому моменту, и сам семафор привяжется к taskiq event-loop'у. Если
+    setting в рантайме переписали через monkeypatch, semaphore не пересоздаётся —
+    тест должен ронять кэш через `_reset_handler_semaphore_for_tests`.
+    """
+    global _HANDLER_SEMAPHORE
+    if _HANDLER_SEMAPHORE is None:
+        limit = get_settings().worker_handler_concurrency
+        _HANDLER_SEMAPHORE = asyncio.Semaphore(limit)
+    return _HANDLER_SEMAPHORE
+
+
+def _reset_handler_semaphore_for_tests() -> None:
+    """Test helper: сбросить кэш семафора между тестами с разными лимитами."""
+    global _HANDLER_SEMAPHORE
+    _HANDLER_SEMAPHORE = None
 
 # Базовый back-off для retry. 10 секунд × 2^(attempt-1) с потолком 300s
 # (5 минут). Для max_attempts=3 фактические паузы: 10s, 20s.
@@ -266,7 +302,7 @@ async def run_task(
     impl: Callable[[dict], Awaitable[dict | None]],
     audit_safe_fields: set[str] | None = None,
 ) -> None:
-    """Общий task lifecycle.
+    """Общий task lifecycle (под `WORKER_HANDLER_CONCURRENCY` semaphore'ом).
 
       1. подгрузить Task row по id;
       2. mark_running (CAS), commit (session 1);
@@ -288,7 +324,34 @@ async def run_task(
     `cancelled` (повторный enqueue, race с другим worker'ом) — impl
     НЕ вызывается, пишется audit «duplicate_dispatch». Атомарно
     защищает от двойного запуска одной task'и.
+
+    Concurrency: вход охраняется process-local `_HANDLER_SEMAPHORE`
+    (см. `_get_handler_semaphore`), который читает `WORKER_HANDLER_CONCURRENCY`
+    из settings. Когда в Redis приходит бурст task'ов больше лимита, лишние
+    coroutine'ы ждут на acquire — task-row остаётся `queued`, mark_running
+    делается только перед фактическим стартом impl. Это закрывает дыру
+    «taskiq поднял 20 одновременных handler'ов → SSH/IPMI/HTTP пулы и
+    DB-pool захлёбываются».
     """
+    async with _get_handler_semaphore():
+        await _run_task_inner(
+            task_id,
+            audit_action=audit_action,
+            audit_target_type=audit_target_type,
+            impl=impl,
+            audit_safe_fields=audit_safe_fields,
+        )
+
+
+async def _run_task_inner(
+    task_id: str,
+    *,
+    audit_action: str,
+    audit_target_type: str | None,
+    impl: Callable[[dict], Awaitable[dict | None]],
+    audit_safe_fields: set[str] | None,
+) -> None:
+    """Implementation of run_task lifecycle. Вызывается только под semaphore'ом."""
     # ── session 1: task lookup + mark_running (CAS) ──────────────────────
     #
     # Отдельная сессия, потому что impl(payload) может выполняться

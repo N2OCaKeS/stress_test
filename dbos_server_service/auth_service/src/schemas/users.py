@@ -29,7 +29,7 @@ class UserCreate(BaseModel):
         pattern=r"^[A-Za-z0-9_\-\.]+$",
         description="Уникальный username (3..128 символов, латиница + цифры + `_-.`).",
     )
-    password: str = Field(min_length=8, description="Пароль в plaintext. Минимум 8 символов, буквы + цифры. Хэшируется Argon2id перед записью.")
+    password: str = Field(min_length=12, description="Пароль в plaintext. Минимум 12 символов, буквы + цифры. Хэшируется Argon2id перед записью.")
     email: EmailStr | None = Field(default=None, description="Email (опционально).")
     # У account_admin юзеров нет отдела; для всех остальных ролей department_id обязателен
     department_id: str | None = Field(
@@ -94,7 +94,7 @@ class AssignRolesRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     """Тело `POST /users/{user_id}/reset-password`."""
-    new_password: str = Field(min_length=8, description="Новый пароль (минимум 8 символов, буквы + цифры).")
+    new_password: str = Field(min_length=12, description="Новый пароль (минимум 12 символов, буквы + цифры).")
 
     @field_validator("new_password")
     @classmethod
@@ -115,8 +115,8 @@ class SelfChangePasswordRequest(BaseModel):
         description="Текущий пароль юзера. Проверяется через Argon2id verify.",
     )
     new_password: str = Field(
-        min_length=8,
-        description="Новый пароль (минимум 8 символов, буквы + цифры).",
+        min_length=12,
+        description="Новый пароль (минимум 12 символов, буквы + цифры).",
     )
 
     @field_validator("new_password")

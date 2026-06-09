@@ -169,7 +169,7 @@ class TestOauthClientRejectedOnUserEndpoints:
         resp = await client.post(
             USERS_URL,
             headers={"Authorization": f"Bearer {cc_token}"},
-            json={"username": "should_not_exist", "password": "Pass1234!",
+            json={"username": "should_not_exist", "password": "Pass12345678!",
                   "platform_role": "account_admin"},
         )
         assert resp.status_code == 403, resp.text
@@ -248,7 +248,7 @@ class TestUserJwtUnaffected:
         resp = await client.post(
             USERS_URL,
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"username": "sanity_user_after_fix", "password": "Pass1234!",
+            json={"username": "sanity_user_after_fix", "password": "Pass12345678!",
                   "platform_role": "account_admin"},
         )
         assert resp.status_code == 201, resp.text

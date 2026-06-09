@@ -97,6 +97,26 @@ def list_for_service(
     return rows, total
 
 
+def get_default_severity(db: Session, action: str) -> str | None:
+    """Lookup `default_severity` по *action* в catalog'е.
+
+    Returns severity-строку или None, если action не зарегистрирован, либо
+    зарегистрирован без default'а (NULL в колонке). `(service, action)`
+    уникальна, но lookup идёт только по action: `_resolve_default_severity`
+    знает action+status, не service-источник. На action, зарегистрированном
+    несколькими сервисами с разным severity, отдадим первый по сортировке
+    service — практически невероятный случай (action включает namespace
+    сервиса, `user.login` принадлежит auth_service эксклюзивно), но
+    детерминированно.
+    """
+    return db.execute(
+        select(ServiceEvent.default_severity)
+        .where(ServiceEvent.action == action)
+        .order_by(ServiceEvent.service)
+        .limit(1)
+    ).scalar_one_or_none()
+
+
 def count_for_service(db: Session, service: str) -> int:
     """Сколько событий зарегистрировано для *service* (один SELECT COUNT).
 

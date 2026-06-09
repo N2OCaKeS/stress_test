@@ -39,7 +39,7 @@ class TestTemporaryBan:
         assert resp.status_code == 200
 
         login = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
         )
         assert login.status_code in (401, 403)
 
@@ -68,7 +68,7 @@ class TestTemporaryBan:
         )
         await db.commit()
         login = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
         )
         assert login.status_code == 200, login.text
 
@@ -109,7 +109,7 @@ class TestTemporaryBan:
         await db.commit()
 
         login = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
         )
         assert login.status_code == 200, login.text
         body = login.json()
@@ -131,7 +131,7 @@ class TestTemporaryBan:
             json={"ban_type": "permanent", "reason": "forever"},
         )
         login = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
         )
         assert login.status_code == 403
         assert login.json()["error_code"] == "USER_BANNED"
@@ -275,7 +275,7 @@ class TestTemporaryBan:
 
         # Trigger auto-unban через login.
         login = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
         )
         assert login.status_code == 200
 
@@ -333,7 +333,7 @@ class TestTemporaryBan:
         captured.clear()
 
         login = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
         )
         assert login.status_code == 200
 
@@ -444,18 +444,18 @@ class TestResetPasswordEdge:
         first = await client.post(
             f"{USERS_URL}/{user_a.id}/reset-password",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"new_password": "Reset1234!"},
+            json={"new_password": "Reset12345678!"},
         )
         assert first.status_code == 200
         second = await client.post(
             f"{USERS_URL}/{user_a.id}/reset-password",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"new_password": "Reset1234!"},
+            json={"new_password": "Reset12345678!"},
         )
         assert second.status_code == 200
 
         login = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "Reset1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "Reset12345678!"},
         )
         assert login.status_code == 200
 
@@ -466,7 +466,7 @@ class TestResetPasswordEdge:
             json={"new_password": "FreshPass1234!"},
         )
         resp = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
         )
         assert resp.status_code == 401
 
@@ -477,7 +477,7 @@ class TestSessionsRevokedOnBan:
     async def test_ban_revokes_active_sessions(self, client, admin_token, user_a, user_a_token):
         """После ban — старый refresh_token больше не работает."""
         login = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
         )
         raw_refresh = login.json()["refresh_token"]
 
@@ -675,7 +675,7 @@ class TestAutoUnbanReactivatesPat:
         await db.commit()
 
         login = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
         )
         assert login.status_code == 200
 

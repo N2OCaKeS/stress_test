@@ -109,11 +109,11 @@ class TestHashOpaqueToken:
 
 class TestPasswordHashing:
     def test_round_trip(self):
-        h = hash_password("Strong1234!")
-        assert verify_password("Strong1234!", h) is True
+        h = hash_password("Strong123456789!")
+        assert verify_password("Strong123456789!", h) is True
 
     def test_wrong_password_rejected(self):
-        h = hash_password("Strong1234!")
+        h = hash_password("Strong123456789!")
         assert verify_password("Wrong0000!", h) is False
 
     def test_corrupted_hash_returns_false_not_exception(self):

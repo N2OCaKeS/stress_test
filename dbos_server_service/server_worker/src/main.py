@@ -386,6 +386,13 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                 if locked is None:
                     continue
 
+                # Snapshot worker_id ДО `mark_*` — `mark_pending_for_retry`
+                # ставит worker_id=NULL (задача между попытками «ничейная»),
+                # после UPDATE из ORM-объекта мы бы прочитали None и
+                # потеряли информацию «какой pod выполнил drain».
+                from src.tasks._runner_state import get_worker_id as _drain_wid
+                drain_worker_id = locked.worker_id or _drain_wid()
+
                 if (
                     locked.status == TaskStatus.QUEUED
                     and locked.scheduled_retry_at is not None
@@ -448,6 +455,10 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                 # ещё не прошёл (register_running_task вызван до commit'а),
                 # и `attempt=0` тут — это «нулевая попытка», а не «упало на
                 # первой» — без этого поля оператор не отличит две ситуации.
+                # `worker_id` (snapshot до mark_*) — фиксирует хост/реплику,
+                # где случился drain. Без него SIEM/оператор не могут связать
+                # `task.worker_shutdown` с конкретным pod'ом
+                # (terminationGracePeriodSeconds, OOM, rolling-update).
                 details_payload: dict = {
                     "task_id": tid,
                     "reason": "worker_shutdown",
@@ -455,6 +466,7 @@ async def _drain_running_tasks(state: TaskiqState) -> None:
                     "max_attempts": fresh.max_attempts,
                     "will_retry": will_retry,
                     "pre_drain_status": pre_drain_status,
+                    "worker_id": drain_worker_id,
                 }
                 if fresh.target_server_id:
                     details_payload["server_id"] = fresh.target_server_id

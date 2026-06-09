@@ -73,6 +73,21 @@ class Settings(BaseSettings):
             "WORKER_HANDLER_CONCURRENCY) — поднимать через env."
         ),
     )
+    worker_handler_concurrency: int = Field(
+        default=4,
+        ge=1,
+        le=64,
+        alias="WORKER_HANDLER_CONCURRENCY",
+        description=(
+            "Maximum number of concurrent in-flight task handlers per worker "
+            "process. Enforced by asyncio.Semaphore вокруг impl-вызова в "
+            "`_runner.run_task`. taskiq `--workers=N` поднимает N процессов "
+            "независимо; этот лимит — потолок ВНУТРИ процесса (по умолчанию 4). "
+            "Tune up для I/O-bound нагрузок (SSH/IPMI ожидают сеть); tune down "
+            "если DB_POOL_SIZE/audit/server_service пулов не хватает на бурст. "
+            "Hard cap 64 — за ним пулы httpx/redis всё равно начнут давиться."
+        ),
+    )
     db_max_overflow: int = Field(
         default=10,
         ge=0,
@@ -323,27 +338,37 @@ class Settings(BaseSettings):
         ),
     )
     # Сколько task'е разрешено быть `status='running'` прежде чем sweep
-    # считает её orphan-кандидатом. По умолчанию 30 мин — потолок для
-    # медленных задач (inventory.sync через SSH с большим dpkg-листингом).
-    # Уменьшить можно для smoke-тестов: тесты sweep'а используют
-    # monkeypatch на инстанс настроек.
+    # считает её orphan-кандидатом. Дефолт 180s — был 1800s, но это давало
+    # ~35 мин окно от crash'а до finalize'а; уменьшили чтобы pod-loss
+    # recovery укладывался в ~3 мин. Trade-off: handler, который штатно
+    # выполняется дольше threshold'а, попадёт в sweep-кандидаты — но
+    # heartbeat-фильтр (worker_id живой) такие легитимные case'ы пропускает.
+    # Override через SWEEP_ORPHAN_THRESHOLD_SECONDS для smoke-тестов либо
+    # если в стенде есть штатные многоминутные SSH ops без heartbeat.
     worker_orphan_threshold_seconds: float = Field(
-        default=1800.0,
+        default=180.0,
+        alias="SWEEP_ORPHAN_THRESHOLD_SECONDS",
         description=(
             "Min seconds a task must stay in 'running' status before the "
             "orphan sweep considers it. Sweep also requires the task's "
-            "worker_id NOT to be among recently-heartbeating workers."
+            "worker_id NOT to be among recently-heartbeating workers. "
+            "Default lowered from 1800s to 180s for faster pod-loss recovery."
         ),
     )
     # Сколько секунд heartbeat'а отсутствие worker_id считается «упал».
     # Должно быть заметно больше heartbeat-интервала (60s) — иначе
     # transient GC pause / DB hiccup сделает живой worker «мёртвым».
+    # Дефолт 60s — было 300s; вместе с orphan_threshold=180s даёт
+    # ~3-минутное recovery window (60s heartbeat-stale + ~2× sweep tick).
     worker_heartbeat_stale_seconds: float = Field(
-        default=300.0,
+        default=60.0,
+        alias="SWEEP_HEARTBEAT_TIMEOUT_SECONDS",
         description=(
             "After this many seconds since last_heartbeat_at, a worker_id "
             "is considered inactive; tasks owned by it past the orphan "
-            "threshold get marked failed by the sweep."
+            "threshold get marked failed by the sweep. Default lowered "
+            "from 300s to 60s — heartbeat tick is 60s, поэтому одна "
+            "пропущенная минута + jitter = inactive."
         ),
     )
     # Cleanup-порог для `worker_heartbeats`. Каждый pod-рестарт даёт новый

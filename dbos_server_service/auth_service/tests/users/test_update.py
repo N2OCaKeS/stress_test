@@ -187,7 +187,7 @@ class TestPatchStatusEmitsBanAudit:
     ):
         """PATCH со status="banned" должен отзывать refresh-сессии (как `ban_user`)."""
         login = await client.post(
-            LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+            LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
         )
         raw_refresh = login.json()["refresh_token"]
 
@@ -615,3 +615,108 @@ async def test_account_admin_can_still_transfer_user_cross_dept(
     resp = await _patch(client, admin_token, user_a.id, {"department_id": dept_b.id})
     assert resp.status_code == 200
     assert resp.json()["department_id"] == dept_b.id
+
+
+# ── PATCH status=blocked: активные сессии гасятся ────────────────────────────
+#
+# До фикса BLOCKED-ветка `update_user` не звала `session_repo.revoke_all_for_user`
+# — JWT юзера продолжал работать ~10 минут (access TTL), пока обновлённый
+# is_active не подхватился в introspect. Окно злоупотребления для скомпрометированного
+# аккаунта оставалось открытым. Фикс: при ACTIVE→BLOCKED и BANNED→BLOCKED
+# session_repo.revoke_all_for_user снимает refresh-сессии в той же транзакции;
+# `user.sessions_revoked_on_block` уезжает в audit-trail.
+
+
+class TestPatchStatusBlockedRevokesSessions:
+    async def test_active_to_blocked_revokes_active_sessions(
+        self, client, admin_token, user_a, db,
+    ):
+        """ACTIVE → BLOCKED через PATCH: refresh-сессии юзера деактивируются."""
+        # Поднимаем сессию через login → получаем refresh, который в БД.
+        login = await client.post(
+            LOGIN_URL,
+            json={"username": "t_user_a", "password": "User12345678!"},
+        )
+        assert login.status_code == 200, login.text
+
+        from src.repositories.sessions import SessionRepository
+        session_repo = SessionRepository(db)
+        active_before = await session_repo.list_active_for_user(user_a.id)
+        assert len(active_before) >= 1, "login должен был создать активную сессию"
+
+        resp = await _patch(client, admin_token, user_a.id, {"status": "blocked"})
+        assert resp.status_code == 200
+
+        active_after = await session_repo.list_active_for_user(user_a.id)
+        assert active_after == [], (
+            f"BLOCKED должен revoke'нуть все активные сессии, осталось: {active_after}"
+        )
+
+    async def test_active_to_blocked_emits_sessions_revoked_audit(
+        self, client, admin_token, user_a, capture_audit_payloads,
+    ):
+        """audit-trail содержит `user.sessions_revoked_on_block` при revoke'е."""
+        # Чтобы revoke'нуть, нужна хотя бы одна активная сессия.
+        login = await client.post(
+            LOGIN_URL,
+            json={"username": "t_user_a", "password": "User12345678!"},
+        )
+        assert login.status_code == 200
+
+        resp = await _patch(client, admin_token, user_a.id, {"status": "blocked"})
+        assert resp.status_code == 200
+
+        revoke_events = [
+            p for p in capture_audit_payloads
+            if p["action"] == "user.sessions_revoked_on_block"
+            and p.get("target_id") == user_a.id
+        ]
+        assert len(revoke_events) == 1, (
+            f"ожидался ровно 1 user.sessions_revoked_on_block, получили: {revoke_events}"
+        )
+        details = revoke_events[0]["details"]
+        assert details["sessions_revoked"] >= 1
+        assert details["source"] == "patch_user_status_blocked"
+
+    async def test_blocked_without_active_sessions_no_audit(
+        self, client, admin_token, user_a, capture_audit_payloads,
+    ):
+        """Если активных сессий не было — audit `user.sessions_revoked_on_block`
+        не эмитится (пустой revoke — нечего фиксировать в SIEM)."""
+        resp = await _patch(client, admin_token, user_a.id, {"status": "blocked"})
+        assert resp.status_code == 200
+
+        revoke_events = [
+            p for p in capture_audit_payloads
+            if p["action"] == "user.sessions_revoked_on_block"
+            and p.get("target_id") == user_a.id
+        ]
+        assert revoke_events == [], (
+            f"audit не должен эмититься без revoke'нутых сессий, got: {revoke_events}"
+        )
+
+    async def test_banned_to_blocked_revokes_sessions_too(
+        self, client, admin_token, user_a, db,
+    ):
+        """BANNED → BLOCKED: ban_user уже revoke'нул сессии, повторный revoke
+        идемпотентен — count=0, audit не эмитим. Просто проверяем что путь
+        не падает и сессий нет."""
+        # Сначала бан — он revoke'ит сессии.
+        login = await client.post(
+            LOGIN_URL,
+            json={"username": "t_user_a", "password": "User12345678!"},
+        )
+        assert login.status_code == 200
+
+        ban_resp = await _patch(client, admin_token, user_a.id, {"status": "banned"})
+        assert ban_resp.status_code == 200
+
+        from src.repositories.sessions import SessionRepository
+        session_repo = SessionRepository(db)
+        assert (await session_repo.list_active_for_user(user_a.id)) == []
+
+        # Теперь BANNED → BLOCKED.
+        resp = await _patch(client, admin_token, user_a.id, {"status": "blocked"})
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "blocked"
+        assert (await session_repo.list_active_for_user(user_a.id)) == []

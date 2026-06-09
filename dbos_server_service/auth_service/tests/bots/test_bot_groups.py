@@ -278,7 +278,7 @@ async def test_mixed_group_resolves_user_and_bot_independently(
 
     # User resolution: also inherits operator (plus their fixture reader role).
     from tests.conftest import _login
-    user_token = await _login(client, "t_user_a", "User1234!")
+    user_token = await _login(client, "t_user_a", "User12345678!")
     user_body = (await client.post(INTROSPECT_URL, json={"token": user_token})).json()
     assert user_body["active"] is True
     assert "operator" in user_body["service_roles"][service_x.service_name]

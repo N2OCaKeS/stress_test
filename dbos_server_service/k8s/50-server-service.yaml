@@ -57,6 +57,7 @@ spec:
         dbos.monitoring/source: "/api/server/v1/ready"
     spec:
       terminationGracePeriodSeconds: 45
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -149,6 +150,14 @@ spec:
             - "--port=8002"
             - "--workers=2"
             - "--proxy-headers"
+          startupProbe:
+            httpGet:
+              path: /api/server/v1/health
+              port: 8002
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /api/server/v1/ready

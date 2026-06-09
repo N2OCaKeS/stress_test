@@ -354,7 +354,7 @@ async def _login(client, username, password):
 
 @pytest_asyncio.fixture()
 async def account_admin(db):
-    return await _make_user(db, "t_admin", "Admin1234!", platform_role="account_admin")
+    return await _make_user(db, "t_admin", "Admin12345678!", platform_role="account_admin")
 
 
 @pytest_asyncio.fixture()
@@ -395,53 +395,53 @@ async def docker_registry_service_granted(db, dept_a_with_service):
 
 @pytest_asyncio.fixture()
 async def dept_admin_a(db, dept_a):
-    return await _make_user(db, "t_dept_admin_a", "Admin1234!",
+    return await _make_user(db, "t_dept_admin_a", "Admin12345678!",
                             department_id=dept_a.id, platform_role="department_admin")
 
 
 @pytest_asyncio.fixture()
 async def user_a(db, dept_a_with_service, service_x):
-    u = await _make_user(db, "t_user_a", "User1234!", department_id=dept_a_with_service.id)
+    u = await _make_user(db, "t_user_a", "User12345678!", department_id=dept_a_with_service.id)
     await _assign_role(db, u.id, service_x.service_name, "reader")
     return u
 
 
 @pytest_asyncio.fixture()
 async def dept_admin_b(db, dept_b):
-    return await _make_user(db, "t_dept_admin_b", "Admin1234!",
+    return await _make_user(db, "t_dept_admin_b", "Admin12345678!",
                             department_id=dept_b.id, platform_role="department_admin")
 
 
 @pytest_asyncio.fixture()
 async def user_b(db, dept_b):
-    return await _make_user(db, "t_user_b", "User1234!", department_id=dept_b.id)
+    return await _make_user(db, "t_user_b", "User12345678!", department_id=dept_b.id)
 
 
 # ── Фикстуры: токены ─────────────────────────────────────────────────────────
 
 @pytest_asyncio.fixture()
 async def admin_token(client, account_admin):
-    return await _login(client, "t_admin", "Admin1234!")
+    return await _login(client, "t_admin", "Admin12345678!")
 
 
 @pytest_asyncio.fixture()
 async def dept_admin_a_token(client, dept_admin_a):
-    return await _login(client, "t_dept_admin_a", "Admin1234!")
+    return await _login(client, "t_dept_admin_a", "Admin12345678!")
 
 
 @pytest_asyncio.fixture()
 async def user_a_token(client, user_a):
-    return await _login(client, "t_user_a", "User1234!")
+    return await _login(client, "t_user_a", "User12345678!")
 
 
 @pytest_asyncio.fixture()
 async def dept_admin_b_token(client, dept_admin_b):
-    return await _login(client, "t_dept_admin_b", "Admin1234!")
+    return await _login(client, "t_dept_admin_b", "Admin12345678!")
 
 
 @pytest_asyncio.fixture()
 async def user_b_token(client, user_b):
-    return await _login(client, "t_user_b", "User1234!")
+    return await _login(client, "t_user_b", "User12345678!")
 
 
 # ── Фикстуры: service-to-service auth ────────────────────────────────────────

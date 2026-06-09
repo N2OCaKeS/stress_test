@@ -48,7 +48,7 @@ async def two_depts_one_service(db):
     # dept_a имеет access к config_service, dept_b — нет
     await _grant_service(db, dept_a.id, svc.service_name)
     user = await _make_user(
-        db, "ret_user", "User1234!", department_id=dept_a.id,
+        db, "ret_user", "User12345678!", department_id=dept_a.id,
     )
     await _assign_role(db, user.id, svc.service_name, "admin")
     await db.commit()

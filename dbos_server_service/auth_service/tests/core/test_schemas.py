@@ -18,18 +18,18 @@ from src.schemas.users import BanRequest, ResetPasswordRequest, UserCreate, User
 
 class TestUserCreate:
     def test_minimal_valid(self):
-        m = UserCreate(username="alice123", password="Strong12", department_id="dep_a")
+        m = UserCreate(username="alice123", password="Strong123abcd", department_id="dep_a")
         assert m.username == "alice123"
         assert m.platform_role is None
 
     def test_username_min_length(self):
         with pytest.raises(ValidationError):
-            UserCreate(username="ab", password="Strong12", department_id="dep_a")
+            UserCreate(username="ab", password="Strong123abcd", department_id="dep_a")
 
     def test_username_max_length(self):
-        UserCreate(username="u" * 128, password="Strong12", department_id="dep_a")
+        UserCreate(username="u" * 128, password="Strong123abcd", department_id="dep_a")
         with pytest.raises(ValidationError):
-            UserCreate(username="u" * 129, password="Strong12", department_id="dep_a")
+            UserCreate(username="u" * 129, password="Strong123abcd", department_id="dep_a")
 
     def test_password_min_length(self):
         with pytest.raises(ValidationError):
@@ -43,20 +43,20 @@ class TestUserCreate:
         with pytest.raises(ValidationError):
             UserCreate(username="alice", password="12345678", department_id="dep_a")
         # 8+ символов, буквы и цифры — ok.
-        UserCreate(username="alice", password="Mix12345", department_id="dep_a")
+        UserCreate(username="alice", password="Mix123abcdef", department_id="dep_a")
 
     def test_email_validated(self):
         with pytest.raises(ValidationError):
-            UserCreate(username="alice", password="Strong12", department_id="dep_a",
+            UserCreate(username="alice", password="Strong123abcd", department_id="dep_a",
                        email="not-an-email")
-        m = UserCreate(username="alice", password="Strong12", department_id="dep_a",
+        m = UserCreate(username="alice", password="Strong123abcd", department_id="dep_a",
                        email="alice@example.com")
         assert m.email == "alice@example.com"
 
     def test_department_id_optional_in_schema(self):
         """Schema-level не требует department_id — это бизнес-валидация в user_service
         (для не-admin ролей)."""
-        m = UserCreate(username="root", password="Strong12")
+        m = UserCreate(username="root", password="Strong123abcd")
         assert m.department_id is None
 
 
@@ -117,8 +117,8 @@ class TestResetPasswordRequest:
             ResetPasswordRequest(new_password="onlyletters")
 
     def test_valid_letters_and_digits(self):
-        m = ResetPasswordRequest(new_password="Mix12345")
-        assert m.new_password == "Mix12345"
+        m = ResetPasswordRequest(new_password="Mix123abcdef")
+        assert m.new_password == "Mix123abcdef"
 
 
 # ── ServiceRoleCreate ────────────────────────────────────────────────────────

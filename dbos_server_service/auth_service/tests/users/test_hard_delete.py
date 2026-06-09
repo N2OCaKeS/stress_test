@@ -69,7 +69,7 @@ async def test_hard_delete_revokes_sessions(
     """После hard-delete у юзера не остаётся активных сессий."""
     # Создадим сессию через login.
     login = await client.post(
-        LOGIN_URL, json={"username": "t_user_a", "password": "User1234!"},
+        LOGIN_URL, json={"username": "t_user_a", "password": "User12345678!"},
     )
     assert login.status_code == 200
 
@@ -182,7 +182,7 @@ async def test_hard_delete_one_of_two_account_admins_allowed(
     second = User(
         id=user_id(),
         username="t_admin2",
-        password_hash=hash_password("Admin1234!"),
+        password_hash=hash_password("Admin12345678!"),
         platform_role=PlatformRole.ACCOUNT_ADMIN.value,
         department_id=None,
     )

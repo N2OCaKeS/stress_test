@@ -99,6 +99,7 @@ spec:
             target: auth-postgres
         spec:
           restartPolicy: OnFailure
+          automountServiceAccountToken: false
           securityContext:
             runAsNonRoot: true
             runAsUser: 999          # postgres image UID
@@ -164,6 +165,7 @@ spec:
             target: secret-postgres
         spec:
           restartPolicy: OnFailure
+          automountServiceAccountToken: false
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
@@ -230,6 +232,7 @@ spec:
             target: logging-postgres
         spec:
           restartPolicy: OnFailure
+          automountServiceAccountToken: false
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
@@ -295,6 +298,7 @@ spec:
             target: server-postgres
         spec:
           restartPolicy: OnFailure
+          automountServiceAccountToken: false
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
@@ -360,6 +364,7 @@ spec:
             target: worker-postgres
         spec:
           restartPolicy: OnFailure
+          automountServiceAccountToken: false
           securityContext:
             runAsNonRoot: true
             runAsUser: 999

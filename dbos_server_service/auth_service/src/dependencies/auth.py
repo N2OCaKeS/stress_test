@@ -569,9 +569,11 @@ def require_service_token(
 
     # ── Legacy shared secret ─────────────────────────────────────────────────
     # Сюда попадаем только при пустом `SERVICE_API_KEYS` — ветка выше уже
-    # вернулась при truthy словаре. Любая инверсия порядка веток должна
-    # пересматривать этот инвариант (`STRICT_SERVICE_API_KEYS` тогда снова
-    # обязан резать legacy-fallback при непустом словаре).
+    # вернулась при truthy словаре. Любая инверсия порядка веток ломает
+    # инвариант «непустой `SERVICE_API_KEYS` ⇒ legacy fallback недостижим»,
+    # на котором держится strict-режим. Если когда-нибудь захочется
+    # параметризовать поведение, верни `STRICT_SERVICE_API_KEYS` в config и
+    # включи здесь ветвление; пока — поведение implicit'но через порядок веток.
     if not secrets.compare_digest(credentials.credentials, settings.service_api_key):
         raise AuthenticationError(
             error_code="INVALID_SERVICE_TOKEN",

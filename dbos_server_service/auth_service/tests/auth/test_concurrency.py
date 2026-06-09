@@ -43,7 +43,7 @@ class TestRefreshReuse:
         атакующий пытается обменять — должно отозвать все сессии user'а."""
         login = await client.post(
             LOGIN_URL,
-            json={"username": "t_user_a", "password": "User1234!"},
+            json={"username": "t_user_a", "password": "User12345678!"},
         )
         old_refresh = login.json()["refresh_token"]
         # Первый обмен — легитимный
@@ -87,7 +87,7 @@ class TestRefreshReuse:
         )
 
         login = await client.post(LOGIN_URL,
-                                  json={"username": "t_user_a", "password": "User1234!"})
+                                  json={"username": "t_user_a", "password": "User12345678!"})
         raw = login.json()["refresh_token"]
         await client.post(REFRESH_URL, json={"refresh_token": raw})
         captured.clear()
@@ -262,7 +262,7 @@ class TestRefreshRotationRace:
         # Login → получаем валидный refresh token.
         login = await client.post(
             LOGIN_URL,
-            json={"username": "t_user_a", "password": "User1234!"},
+            json={"username": "t_user_a", "password": "User12345678!"},
         )
         assert login.status_code == 200
         raw_rt = login.json()["refresh_token"]
@@ -377,7 +377,7 @@ class TestRefreshRotationRace:
         # Login.
         login = await client.post(
             LOGIN_URL,
-            json={"username": "t_user_a", "password": "User1234!"},
+            json={"username": "t_user_a", "password": "User12345678!"},
         )
         raw_rt = login.json()["refresh_token"]
         captured.clear()
@@ -445,7 +445,7 @@ class TestRefreshRotationRace:
         одним токеном через `asyncio.gather`. См. `xfail.reason` выше."""
         login = await client.post(
             LOGIN_URL,
-            json={"username": "t_user_a", "password": "User1234!"},
+            json={"username": "t_user_a", "password": "User12345678!"},
         )
         raw_rt = login.json()["refresh_token"]
 
@@ -526,7 +526,7 @@ class TestDoubleBan:
 class TestDoubleLogout:
     async def test_logout_idempotent_for_revoked_session(self, client, user_a):
         login = await client.post(LOGIN_URL,
-                                  json={"username": "t_user_a", "password": "User1234!"})
+                                  json={"username": "t_user_a", "password": "User12345678!"})
         raw = login.json()["refresh_token"]
 
         first = await client.post(LOGOUT_URL, json={"refresh_token": raw})
@@ -543,7 +543,7 @@ class TestSessionsRevokedOnBan:
         """ban → все active sessions помечаются revoked."""
         for _ in range(3):
             await client.post(LOGIN_URL,
-                              json={"username": "t_user_a", "password": "User1234!"})
+                              json={"username": "t_user_a", "password": "User12345678!"})
 
         await client.post(
             f"{USERS_URL}/{user_a.id}/ban",

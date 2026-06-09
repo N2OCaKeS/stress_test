@@ -305,6 +305,30 @@ if [[ ! -s "$PLAIN_YAML" ]]; then
 fi
 
 # ── Шифрование ───────────────────────────────────────────────────────────────
+# Если passphrase не задана через env, но в кластере есть Secret
+# `dbos-backup-passphrase` (см. k8s/106-backup-passphrase.yaml.example),
+# подтягиваем passphrase из него. Это нужно для ad-hoc запусков с
+# оператор-хоста (CronJob уже пробрасывает BACKUP_PASSPHRASE через
+# valueFrom.secretKeyRef, для него этот блок no-op).
+PASSPHRASE="${BACKUP_PASSPHRASE:-}"
+PASSPHRASE_SECRET_NAME="${BACKUP_PASSPHRASE_SECRET_NAME:-dbos-backup-passphrase}"
+if [[ -z "$PASSPHRASE" ]]; then
+    if kubectl -n "$NS" get secret "$PASSPHRASE_SECRET_NAME" >/dev/null 2>&1; then
+        # data.BACKUP_PASSPHRASE — base64 в Secret'е; jq -r выдаёт пустую
+        # строку, если поля нет (а не падает).
+        PASSPHRASE="$(
+            kubectl -n "$NS" get secret "$PASSPHRASE_SECRET_NAME" -o json \
+                | jq -r '.data.BACKUP_PASSPHRASE // empty' \
+                | { b64=$(cat); [[ -n "$b64" ]] && echo "$b64" | base64 -d || true; }
+        )"
+        if [[ -n "$PASSPHRASE" ]]; then
+            log_info "Passphrase подтянута из Secret ${NS}/${PASSPHRASE_SECRET_NAME}."
+        else
+            log_warn "Secret ${NS}/${PASSPHRASE_SECRET_NAME} есть, но поле BACKUP_PASSPHRASE пустое."
+        fi
+    fi
+fi
+
 ENCRYPTOR=""
 if command -v age >/dev/null 2>&1 && [[ -n "${BACKUP_AGE_RECIPIENTS:-}" ]]; then
     ENCRYPTOR="age"
@@ -313,8 +337,6 @@ elif command -v gpg >/dev/null 2>&1; then
 elif command -v openssl >/dev/null 2>&1; then
     ENCRYPTOR="openssl"
 fi
-
-PASSPHRASE="${BACKUP_PASSPHRASE:-}"
 USE_AGE_RECIPIENTS="false"
 if [[ "$ENCRYPTOR" == "age" && -n "${BACKUP_AGE_RECIPIENTS:-}" ]]; then
     USE_AGE_RECIPIENTS="true"

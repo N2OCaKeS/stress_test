@@ -128,7 +128,8 @@ class TestHttpsOutboundRequiredInProd:
                 monkeypatch,
                 APP_ENV=env,
                 REDIS_URL="redis://:pw@redis:6379/0",
-                LOGGING_SERVICE_URL="http://loging_service:8000",
+                LOGGING_SERVICE_URL="http://loging.example.com:8000",  # external FQDN; short names = intra-cluster post-W1
+
             )
 
     @pytest.mark.parametrize("env", ["production", "staging"])
@@ -140,7 +141,8 @@ class TestHttpsOutboundRequiredInProd:
                 monkeypatch,
                 APP_ENV=env,
                 REDIS_URL="redis://:pw@redis:6379/0",
-                SERVER_SERVICE_URL="http://server_service:8000",
+                SERVER_SERVICE_URL="http://server.example.com:8000",
+
             )
 
     @pytest.mark.parametrize("env", ["production", "staging"])
@@ -152,7 +154,8 @@ class TestHttpsOutboundRequiredInProd:
                 monkeypatch,
                 APP_ENV=env,
                 REDIS_URL="redis://:pw@redis:6379/0",
-                AUTH_SERVICE_URL="http://auth_service:8000",
+                AUTH_SERVICE_URL="http://auth.example.com:8000",
+
             )
 
     @pytest.mark.parametrize("env", ["production", "staging"])

@@ -67,7 +67,7 @@ from src.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from src.dependencies.auth import CurrentIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.dependencies.idempotency import read_idempotency_key
 from src.repositories import ipmi_controller as ipmi_repo
@@ -967,7 +967,7 @@ async def fanout_update_on_host(
 )
 async def power_status_dispatch(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ServerPowerStatusDispatchResponse:
@@ -1023,7 +1023,7 @@ async def power_status_dispatch(
 )
 async def inventory_sync_dispatch(
     server_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> ServerTaskDispatchResponse:
@@ -1089,7 +1089,7 @@ async def server_prepare_dispatch(
     request: Request,
     server_id: str,
     body: ServerPrepareRequest,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerPrepareResponse:
     """Ставит `server.prepare` (бутстрап управления) в очередь worker'а.
@@ -1350,7 +1350,7 @@ async def server_prepare_dispatch(
 async def account_rotate_password_dispatch(
     request: Request,
     account_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     server_id: str | None = Query(
         default=None,
@@ -1707,7 +1707,7 @@ async def account_rotate_password_dispatch(
 )
 async def account_provision_dispatch(
     account_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
     server_id: str = Query(
@@ -1764,7 +1764,7 @@ async def account_provision_dispatch(
 )
 async def account_update_on_host_dispatch(
     account_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
     server_id: str = Query(
@@ -1816,7 +1816,7 @@ async def account_update_on_host_dispatch(
 )
 async def account_deprovision_dispatch(
     account_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
     server_id: str = Query(
@@ -1880,7 +1880,7 @@ async def account_deprovision_dispatch(
 async def ipmi_rotate_password_dispatch(
     request: Request,
     controller_id: str,
-    identity: CurrentIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerTaskDispatchResponse:
     """Ставит `ipmi.rotate_password` в очередь worker'а.

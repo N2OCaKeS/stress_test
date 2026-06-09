@@ -50,7 +50,7 @@ class TestLoginEnrichesAudit:
     ):
         r = await client.post(
             "/api/auth/v1/login",
-            json={"username": "t_admin", "password": "Admin1234!"},
+            json={"username": "t_admin", "password": "Admin12345678!"},
             headers={"User-Agent": "pytest-client/1.0"},
         )
         assert r.status_code == 200
@@ -110,7 +110,7 @@ class TestAuthenticatedRequestContext:
     ):
         login = await client.post("/api/auth/v1/login",
                                   json={"username": "t_admin",
-                                        "password": "Admin1234!"})
+                                        "password": "Admin12345678!"})
         token = login.json()["access_token"]
         # Очищаем events от login
         capture_audit_payloads.clear()
@@ -185,7 +185,7 @@ class TestAuthenticatedRequestContext:
             headers={"Authorization": f"Bearer {user_a_token}",
                      "User-Agent": "cli/3.1",
                      "X-Forwarded-For": "198.51.100.5, 10.0.0.1"},
-            json={"username": "nope", "password": "Pass1234!"},
+            json={"username": "nope", "password": "Pass12345678!"},
         )
         assert r.status_code == 403, r.text
         await asyncio.sleep(0)
@@ -213,7 +213,7 @@ class TestDetailsAlwaysFilled:
             headers={"Authorization": f"Bearer {admin_token}"},
             json={
                 "username": "audit_subject",
-                "password": "S3cretP@ss!",
+                "password": "S3cretP@ssword12!",
                 "department_id": dept_a.id,
             },
         )
@@ -227,7 +227,7 @@ class TestDetailsAlwaysFilled:
         assert details["department_id"] == dept_a.id
         # Пароль НЕ в открытом виде
         assert details["password"] == "<PASSWORD>"
-        assert details["password"] != "S3cretP@ss!"
+        assert details["password"] != "S3cretP@ssword12!"
 
     async def test_pat_create_masks_token_in_details(
         self, client, admin_token, capture_audit_payloads

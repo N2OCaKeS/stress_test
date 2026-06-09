@@ -26,14 +26,14 @@ _basic_auth = basic_auth_header
 _basic_hdr = basic_auth_header
 
 
-async def login(client, username: str = "t_admin", password: str = "Admin1234!") -> dict:
+async def login(client, username: str = "t_admin", password: str = "Admin12345678!") -> dict:
     """POST /login — возвращает JSON-ответ (access_token, refresh_token, identity)."""
     r = await client.post(LOGIN_URL, json={"username": username, "password": password})
     assert r.status_code == 200, f"login failed for {username}: {r.text}"
     return r.json()
 
 
-async def login_token(client, username: str = "t_admin", password: str = "Admin1234!") -> str:
+async def login_token(client, username: str = "t_admin", password: str = "Admin12345678!") -> str:
     """POST /login — возвращает только access_token."""
     data = await login(client, username, password)
     return data["access_token"]

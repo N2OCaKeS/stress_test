@@ -5,10 +5,10 @@
 # установкой Calico/Cilium). Без NP-aware CNI правила игнорируются —
 # проверяй `kubectl -n dbos describe networkpolicy` + e2e curl из соседнего pod'а.
 #
-# Egress намеренно не ограничиваем: server_worker должен ходить наружу к BMC
-# тестовых стендов (Redfish / ipmitool по разным подсетям), а server_service
-# ходит к docker-registry. Жёсткий egress-allowlist потребует caталога IP/CIDR,
-# которые в закрытой сети меняются — оставляем на operator'а.
+# Egress: default-deny + per-pod allow-list для DNS и соседних сервисов.
+# server_worker оставлен с egress allow-all на 0.0.0.0/0:443/623 для BMC —
+# Redfish/ipmitool ходят по подсетям, известным только operator'у. server_service
+# ходит к docker-registry: NP не закрывает (см. server-service-egress).
 
 # ────────────────────────────────────────────────────────────────────────────
 # Default deny ingress для всего namespace.
@@ -358,3 +358,306 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+
+---
+# ────────────────────────────────────────────────────────────────────────────
+# EGRESS секция: default-deny + allow-list per pod-group.
+# Поведение NP: если у pod'а есть хотя бы одно правило с Egress в policyTypes,
+# действуют allow-only. default-deny ниже включает Egress для всех pod'ов,
+# а каждая per-app политика разрешает свой allow-list.
+#
+# DNS: разрешён для всех (port 53 UDP/TCP в kube-system) — иначе resolvconf
+# в pod'е не сможет резолвить даже cluster-internal hostname'ы.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: dbos
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+
+---
+# Общий allow на DNS в kube-system для всего namespace. CoreDNS слушает на
+# port 53 UDP (primary) и TCP (fallback при response > 512 байт).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: dbos
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# auth-service: outbound в logging (audit), secret (admin proxy), redis
+# (rate-limit storage) и собственный auth-postgres.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: logging-service
+      ports:
+        - protocol: TCP
+          port: 8001
+    - to:
+        - podSelector:
+            matchLabels:
+              app: secret-service
+      ports:
+        - protocol: TCP
+          port: 8003
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+---
+# logging-service: outbound в auth (introspect) и собственный logging-postgres.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: logging-service-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: logging-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: logging-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - protocol: TCP
+          port: 8000
+
+---
+# server-service: outbound в auth (introspect), logging (audit), secret
+# (cascade-revoke), redis (dispatch broker), server-postgres + worker-postgres.
+# Также наружу — docker-registry (для image pull token verify); IP/CIDR
+# registry задаёт operator, политика оставлена с egress allow на 0.0.0.0/0:443/5000.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: server-service-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: server-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: server-postgres
+        - podSelector:
+            matchLabels:
+              app: worker-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - protocol: TCP
+          port: 8000
+    - to:
+        - podSelector:
+            matchLabels:
+              app: logging-service
+      ports:
+        - protocol: TCP
+          port: 8001
+    - to:
+        - podSelector:
+            matchLabels:
+              app: secret-service
+      ports:
+        - protocol: TCP
+          port: 8003
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # docker-registry token verify. Hostname/IP задаёт operator (см. ConfigMap
+    # DOCKER_REGISTRY_SERVICE) — конкретный CIDR закрытой сети operator должен
+    # подложить в отдельную NP с ipBlock'ом. Здесь оставлены типовые порты.
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 5000
+
+---
+# secret-service: outbound в auth (introspect), logging (audit), redis
+# (rate-limit storage), собственный secret-postgres.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secret-service-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: secret-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: secret-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - protocol: TCP
+          port: 8000
+    - to:
+        - podSelector:
+            matchLabels:
+              app: logging-service
+      ports:
+        - protocol: TCP
+          port: 8001
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+---
+# server-worker: outbound в auth (introspect), logging (audit), server_service
+# (/internal), redis (broker), собственный worker-postgres.
+# Плюс — BMC стендов: Redfish (443/TCP), ipmitool (623/UDP). CIDR подсетей BMC
+# задаёт operator; здесь allow на 0.0.0.0/0 для этих портов, потому что в
+# закрытой сети carрта подсетей меняется чаще, чем перевыкатывается манифест.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: server-worker-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: server-worker
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: worker-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - protocol: TCP
+          port: 8000
+    - to:
+        - podSelector:
+            matchLabels:
+              app: logging-service
+      ports:
+        - protocol: TCP
+          port: 8001
+    - to:
+        - podSelector:
+            matchLabels:
+              app: server-service
+      ports:
+        - protocol: TCP
+          port: 8002
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # BMC connectivity: Redfish (443/TCP) и ipmitool (623/UDP). Operator
+    # должен сузить ipBlock'ом в отдельной NP, когда CIDR стенда зафиксируется.
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: UDP
+          port: 623
+
+---
+# swagger-ui: статика, серверу нужны только DNS-резолвы (получены через
+# allow-dns-egress выше). Никаких backend-вызовов; spec.json mount'ятся в
+# pod через ConfigMap. Явный allow-list пустой — default-deny закрывает всё.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dbos-swagger-ui-egress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: dbos-swagger-ui
+  policyTypes:
+    - Egress
+  egress: []

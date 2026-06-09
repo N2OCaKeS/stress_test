@@ -67,6 +67,7 @@ spec:
       # буфер на mark_pending_for_retry и BMC-cleanup. Превышение — SIGKILL,
       # running task'и попадают в orphan-sweep следующим циклом.
       terminationGracePeriodSeconds: 60
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -142,10 +143,28 @@ spec:
             - "worker"
             - "src.main:broker"
             - "--workers=2"
-          # Worker — taskiq consumer без HTTP. Liveness даёт сам процесс
-          # taskiq: при падении exit-code != 0 → k3s рестартует контейнер.
-          # Readiness через scheduler/heartbeat — pod пишет в worker_heartbeats,
-          # orphan-sweep ловит зависшие в БД.
+          # Worker — taskiq consumer без HTTP. Liveness даём exec'ом через
+          # pgrep: ищем процесс taskiq (command-line). Если процесс умер, но
+          # контейнер ещё жив (например, deadlock основного потока taskiq) —
+          # kubelet прибьёт под и k3s сделает рестарт. failureThreshold=5 *
+          # period 30s = 2.5 min — даём worker'у пережить ipmitool-таймауты.
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "pgrep -f 'taskiq' >/dev/null"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pgrep -f 'taskiq' >/dev/null"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          # Readiness в полноценном смысле для taskiq-consumer без HTTP не
+          # выразима: scheduler пишет heartbeat в worker_heartbeats, oрphan-sweep
+          # ловит зависшие в БД (см. obsidian/infra/Observability.md).
           volumeMounts:
             - name: tmp
               mountPath: /tmp

@@ -356,11 +356,23 @@ if [[ "$IS_IP" -eq 1 ]]; then
     # (большинство контроллеров игнорируют такой rule). Поэтому:
     #   - в tls.hosts: оставляем IP — Traefik сматчит TLS SNI; клиенты,
     #     ходящие по IP без SNI, всё равно получат cert и проверят SAN=IP.
-    #   - строки `host: __INGRESS_HOST__` в правилах убираем целиком,
-    #     чтобы Ingress принимал любой Host header (включая Host: <ip>).
-    sed -e "/^[[:space:]]*-[[:space:]]*host:[[:space:]]*__INGRESS_HOST__[[:space:]]*$/d" \
-        -e "s|__INGRESS_HOST__|${DOMAIN}|g" \
-        "$INGRESS_TEMPLATE" > "$INGRESS_OUT"
+    #   - строки `- host: __INGRESS_HOST__` склеиваем со следующей `http:`
+    #     в один `- http:`, чтобы list-структура rules сохранилась и
+    #     Ingress принимал любой Host header (включая Host: <ip>). Простое
+    #     удаление host-строки делает http: безродным объектом и kubectl
+    #     валится с BadRequest на парсинг rules.
+    python3 -c '
+import sys, re
+src = open(sys.argv[1]).read().replace("__INGRESS_HOST__", sys.argv[2])
+# `    - host: <X>\n      http:` -> `    - http:` (сохраняем дашевый отступ).
+src = re.sub(
+    r"^([ \t]*)-[ \t]+host:[ \t]+\S+[ \t]*\n[ \t]+http:[ \t]*$",
+    lambda m: f"{m.group(1)}- http:",
+    src,
+    flags=re.MULTILINE,
+)
+sys.stdout.write(src)
+' "$INGRESS_TEMPLATE" "$DOMAIN" > "$INGRESS_OUT"
 else
     sed "s|__INGRESS_HOST__|${DOMAIN}|g" "$INGRESS_TEMPLATE" > "$INGRESS_OUT"
 fi

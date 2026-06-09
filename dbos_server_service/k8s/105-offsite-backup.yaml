@@ -1,0 +1,44 @@
+# ConfigMap для настройки offsite-копии backup'ов.
+#
+# Сетка DBOS — закрытая, поэтому «offsite» здесь = другой хост в той же сети,
+# который умеет принимать rsync-push через rsync daemon (rsync://) или ssh.
+#
+# Как заполнить:
+#   OFFSITE_RSYNC_DEST=""          → offsite disabled (sidecar просто
+#                                     печатает "offsite copy disabled" и exit 0).
+#   OFFSITE_RSYNC_DEST="backup-host.dbos.local::backup/dbos/"
+#                                  → rsync daemon на backup-host, модуль backup,
+#                                     путь /dbos/.
+#   OFFSITE_RSYNC_DEST="rsync@backup-host:/srv/backups/dbos/"
+#                                  → ssh-транспорт rsync. Тогда в pod надо
+#                                     прокинуть SSH identity (отдельный Secret,
+#                                     /root/.ssh/id_ed25519, отдельная задача).
+#
+# Какие CronJob'ы это потребляют:
+#   - 102-master-keys-backup.yaml   sidecar offsite-sync → весь /backup/master-keys/
+#   - 103-secret-full-backup.yaml   sidecar offsite-sync → /backup/secrets/ под /secrets/
+#
+# pg-backup CronJob'ы (100-postgres-backup.yaml) ещё НЕ имеют sidecar'а — для
+# них offsite реализуется через тот же ConfigMap, когда в 100-postgres-backup
+# добавится offsite-sync (next wave). Пока pg-dump'ы копируются вручную через
+# `rsync /backup/<deploy>/ backup-host::backup/dbos/<deploy>/` (см. runbook).
+#
+# Проверка:
+#   kubectl -n dbos create job --from=cronjob/master-keys-backup offsite-test-$(date +%s)
+#   kubectl -n dbos logs -c offsite-sync job/offsite-test-...
+#
+# Если OFFSITE_RSYNC_DEST не задан в кластере — этот файл всё равно безопасно
+# применять: при пустой строке sidecar просто отрапортует "disabled" и выйдет.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dbos-offsite-config
+  namespace: dbos
+  labels:
+    app: dbos-backup
+data:
+  # Пусто по умолчанию = offsite отключён. Оператор заполняет значение под
+  # конкретный кластер (через kubectl edit / kustomize patch / отдельный
+  # 105-offsite-backup.patch.yaml в своём env).
+  OFFSITE_RSYNC_DEST: ""

@@ -40,11 +40,12 @@ middleware — например, через TestClient без full app-stack). �
 introspect на каждый запрос, кэш не появляется.
 """
 
+import hmac
 import logging
-from typing import Annotated
+from typing import Annotated, Callable
 
 import httpx
-from fastapi import Depends, Request
+from fastapi import Depends, Header, Request
 
 from src.core.config import get_settings
 from src.core.constants import SERVICE_NAME
@@ -63,6 +64,7 @@ __all__ = [
     "CurrentIdentity",
     "SERVICE_NAME",
     "get_current_identity",
+    "require_internal_caller",
 ]
 
 _INTROSPECT_PATH = "/api/auth/v1/authorization/introspect"
@@ -261,3 +263,99 @@ async def get_current_identity(request: Request) -> IdentityContext:
 
 
 CurrentIdentity = Annotated[IdentityContext, Depends(get_current_identity)]
+
+
+# ── Service-to-service (ops endpoints) ──────────────────────────────────────
+
+
+def require_internal_caller(
+    *allowed_identities: str,
+) -> Callable[[Request, str | None], str]:
+    """Dependency factory под ops-эндпоинты с shared-secret авторизацией.
+
+    Возвращает FastAPI-зависимость, которая:
+
+    1. Читает `X-Service-Identity` header (без него → 401 SERVICE_IDENTITY_REQUIRED).
+    2. Проверяет, что identity входит в whitelist `allowed_identities` для роута
+       (вне списка → 403 SERVICE_IDENTITY_NOT_ALLOWED — не утекаем существование
+       чужих identity, но отдаём отдельный код, чтобы оператор отличал misconfig
+       от unknown identity).
+    3. Достаёт ожидаемый ключ из `settings.service_api_keys[identity]`. Если для
+       identity ключ не сконфигурирован — 401 INVALID_SERVICE_TOKEN (тот же код,
+       что и для несовпадения, чтобы по разнице 401 нельзя было перечислить, какие
+       identity у нас сконфигурированы).
+    4. Сравнивает `Authorization: Bearer <token>` constant-time'ом
+       (`hmac.compare_digest`). Несовпадение / отсутствие → 401 INVALID_SERVICE_TOKEN.
+
+    Возвращает identity (str) — endpoint может писать его в audit/details, не
+    дублируя парсинг.
+
+    Этот dependency НЕ ходит в auth_service introspect: rotation_runner и
+    подобные ops-runner'ы — отдельный s2s-канал, без user identity / department.
+    Они не входят в матрицу `entity_permissions`, поэтому защита через scope-
+    grant'ы (как `_require_worker_scope` в `secrets_migration.py`) тут не
+    применима — нужен именно shared-secret check.
+    """
+
+    if not allowed_identities:
+        raise ValueError(
+            "require_internal_caller: allowed_identities must be non-empty"
+        )
+    allowed = frozenset(allowed_identities)
+
+    async def _check(
+        request: Request,
+        x_service_identity: str | None = Header(
+            default=None,
+            alias="X-Service-Identity",
+            description=(
+                "Идентичность вызывающего ops-сервиса (например, `rotation_runner`)."
+                " Используется ops-эндпоинтами вместо user-introspect'а; вместе с"
+                " Authorization-bearer сверяется с `SERVICE_API_KEYS[<identity>]`."
+            ),
+        ),
+    ) -> str:
+        if not x_service_identity:
+            raise AuthenticationError(
+                error_code="SERVICE_IDENTITY_REQUIRED",
+                message="X-Service-Identity header is required for this endpoint",
+            )
+        identity = x_service_identity.strip()
+        if identity not in allowed:
+            raise AuthorizationError(
+                error_code="SERVICE_IDENTITY_NOT_ALLOWED",
+                message=(
+                    f"Service identity {identity!r} is not allowed to call this endpoint"
+                ),
+            )
+        token = _extract_bearer(request)
+        if not token:
+            raise AuthenticationError(
+                error_code="INVALID_SERVICE_TOKEN",
+                message="Missing or malformed bearer token for service identity",
+            )
+        expected = get_settings().service_api_keys.get(identity)
+        if not expected:
+            # Identity whitelist'ом разрешён, но ключ не сконфигурирован —
+            # это deployment misconfig. Не отдаём отдельный код, чтобы по
+            # разнице 401 нельзя было перечислить configured-identity.
+            raise AuthenticationError(
+                error_code="INVALID_SERVICE_TOKEN",
+                message="Service token is invalid",
+            )
+        if not hmac.compare_digest(token, expected):
+            raise AuthenticationError(
+                error_code="INVALID_SERVICE_TOKEN",
+                message="Service token is invalid",
+            )
+        # Пишем identity в audit_context как pseudo-actor — emit'ы внутри
+        # ops-handler'ов получат `actor_id=ops:<identity>` без отдельной
+        # ручной возни в каждом endpoint'е.
+        audit_context.update_context(
+            actor_id=f"ops:{identity}",
+            username=identity,
+            subject_type="service",
+        )
+        return identity
+
+    return _check

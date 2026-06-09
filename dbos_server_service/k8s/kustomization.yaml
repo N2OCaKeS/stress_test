@@ -24,6 +24,10 @@ resources:
   - 55-swagger-ui.yaml       # общий Swagger UI для трёх сервисов на /docs
   - 100-postgres-backup.yaml # CronJob pg_dump для auth/logging кластеров
   - 101-backup-pvc.yaml      # PV под бэкапы (общий на оба CronJob'а)
+  - 102-master-keys-backup.yaml  # CronJob daily backup master-ключей + CA
+  - 103-secret-full-backup.yaml  # CronJob weekly snapshot Secret'а dbos-secrets
+  - 104-pg-restore-drill.yaml    # CronJob monthly pg_restore drill по всем 5 БД
+  - 105-offsite-backup.yaml      # ConfigMap dbos-offsite-config (OFFSITE_RSYNC_DEST)
   - 120-rotation-rbac.yaml   # ServiceAccount + Role + RoleBinding для CronJob ротации
   - 121-rotation-cronjob.yaml # CronJob: автоматическая ротация раз в 6 мес (1 янв / 1 июл)
 
@@ -52,6 +56,7 @@ configMapGenerator:
       - ../scripts/k8s/backup_secret_full.sh
       - ../scripts/k8s/backup_master_keys.sh
       - ../scripts/k8s/restore_master_keys.sh
+      - ../scripts/k8s/pg_restore_drill.sh
       - ../scripts/k8s/smoke_test.sh
       - ../scripts/k8s/test_rotation_safety.sh
 

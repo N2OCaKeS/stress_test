@@ -65,6 +65,8 @@ SERVICE_EVENTS = [
     {"action": "secrets.reencrypt_failed", "description": "Reencrypt outbox row marked failed (decrypt/encrypt error reported by worker)", "default_severity": "WARNING"},
     {"action": "secrets.reencrypt_outbox_cleanup", "description": "Done outbox rows older than retention threshold removed", "default_severity": "INFO"},
     {"action": "secrets.migration.skipped", "description": "Outbox-row finalize_done попал на состояние, не требующее повторного апдейта (status_not_processing — закрыта другой ветвью; owner_vanished / owner_ciphertext_changed — owner-row пропал или ротировался параллельно). Идемпотентность сохранена, факт фиксируем для SIEM", "default_severity": "WARNING"},
+    # Ops-runner'ы (rotation_runner, …) — отдельный s2s-канал с shared-secret'ом.
+    {"action": "ops.migration_status_read", "description": "Rotation-runner прочитал /internal/migration_status (shared-secret канал); фиксируем кто и когда смотрел на legacy-residue перед drop'ом старого ключа", "default_severity": "INFO"},
     # Server accounts — CRUD (user-facing)
     {"action": "server_account.create", "description": "Server account created", "default_severity": "CRITICAL"},
     {"action": "server_account.view", "description": "Server account viewed", "default_severity": "INFO"},

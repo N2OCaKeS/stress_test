@@ -84,20 +84,18 @@ kubectl apply -f "$K8S_DIR/91-ca-issuer.yaml"
 echo "→ Ждём, пока bootstrap Issuer подпишет корневой CA-сертификат (timeout 120s)..."
 kubectl -n dbos wait --for=condition=Ready certificate/dbos-internal-ca --timeout=120s
 
-echo "→ Применяем 92-certificates.yaml..."
-kubectl apply -f "$K8S_DIR/92-certificates.yaml"
-
-echo "→ Ждём готовности leaf-сертификатов..."
-for c in auth-service-tls logging-service-tls server-service-tls; do
-    kubectl -n dbos wait --for=condition=Ready "certificate/$c" --timeout=120s
-done
+# Leaf-сертификаты per-service (auth/logging/server/secret) больше не выпускаются —
+# cluster-internal вызовы идут plain http через NetworkPolicy default-deny, edge
+# TLS обеспечивает Ingress через готовый `dbos-ingress-tls` от gen_secrets.sh.
+# Если 92-certificates.yaml вернётся (mTLS-режим) — apply раскомментировать.
+# kubectl apply -f "$K8S_DIR/92-certificates.yaml"
 
 echo ""
-echo "✓ cert-manager установлен, CA и leaf-сертификаты выпущены."
+echo "✓ cert-manager установлен, CA выпущен."
 echo ""
 echo "  Корневой CA: Secret dbos/dbos-ca-key-pair (ca.crt + tls.crt + tls.key)"
-echo "  Leaf TLS:"
-kubectl -n dbos get certificate
+echo "  CA-резерв:"
+kubectl -n dbos get certificate dbos-internal-ca
 echo ""
 echo "  Извлечь CA-сертификат для импорта на admin-машины:"
 echo "    kubectl -n dbos get secret dbos-ca-key-pair -o jsonpath='{.data.ca\\.crt}' | base64 -d > dbos-ca.crt"

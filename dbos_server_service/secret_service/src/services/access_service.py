@@ -19,11 +19,14 @@
      personal, dep_admin соответствующей стороны для department/cross.
   5. Admin overrides:
      - admin secret_service'а — read-only любую креду СВОЕГО dept'а
-       (cross-dept привилегий у этой роли нет);
-     - account_admin — только cross_dep transfer при удалённом owner_dep.
+       (cross-dept привилегий у этой роли нет).
+
+account_admin (платформенная роль) намеренно НЕ имеет доступа к содержимому
+секретов: не может читать, удалять, recover'ить и трансферить cred'ы — это
+зона ответственности dept-уровня (см. Memory: project-dbos-secrets-scope).
 
 Все ветки возвращают конкретный reason: `owner_match`, `acl_read`,
-`acl_write`, `dept_admin`, `service_admin`, `account_admin`, `blocked`,
+`acl_write`, `dept_admin`, `service_admin`, `blocked`,
 `dept_grant_missing`, `role_not_in_acl`, `acl_missing_can_read`,
 `acl_missing_can_write`, `scope_mismatch`, `not_owner_dept`. Любой
 другой текст в reason — это баг, имейте в виду.
@@ -291,13 +294,12 @@ async def check_access(
         # admin secret_service'а своего dept'а может читать blocked кред для аудита.
         if action == "read" and _is_service_admin_for(identity, cred):
             return True, "admin_override"
-        # Recover (manage_status) — admin secret_service'а своего dept'а,
-        # либо account_admin (cross_dep transfer при удалённом owner_dep).
+        # Recover (manage_status) — только admin secret_service'а своего dept'а.
+        # account_admin не пускаем: платформенный админ не имеет доступа к
+        # содержимому секретов.
         if action == "manage_status":
             if _is_service_admin_for(identity, cred):
                 return True, "service_admin"
-            if _is_account_admin(identity):
-                return True, "account_admin"
         # Все остальные операции на blocked → запрещены.
         return False, "blocked"
 
@@ -305,17 +307,6 @@ async def check_access(
     # своего dept'а в любом scope. Кладём ДО scope-проверки — это override,
     # а не fallback. Cross-dept привилегий у роли нет.
     if action == "read" and _is_service_admin_for(identity, cred):
-        return True, "admin_override"
-
-    # 5b. account_admin cross_dep transfer — только для cross_department.
-    # Transfer моделируем как write на cred (меняем owner_dept_id). Если
-    # owner_dept удалён, scope-check ниже не пройдёт (actor не в owner_dep'е,
-    # и DeptGrant'а у него нет). Поэтому ловим явно тут.
-    if (
-        _is_account_admin(identity)
-        and action == "write"
-        and cred.scope == "cross_department"
-    ):
         return True, "admin_override"
 
     # 2. Department service-access проверен выше (require_user_context).

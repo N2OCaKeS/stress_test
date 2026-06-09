@@ -12,9 +12,9 @@ metadata:
     # Edge-TLS-cert лежит готовым в Secret `dbos-ingress-tls`, его кладёт
     # scripts/k8s/gen_secrets.sh (self-signed, SAN под DNS/IP). cert-manager
     # сюда не подключаем: для IP-режима он leaf под host=IP не выпустит, а
-    # для DNS-режима overhead с двойным источником ничего не даёт. Внутренние
-    # service-to-service сертификаты (auth-service-tls / logging-service-tls /
-    # server-service-tls) всё равно остаются за cert-manager — см. 92-certificates.yaml.
+    # для DNS-режима overhead с двойным источником ничего не даёт.
+    # Cluster-internal вызовы между сервисами идут по plain http
+    # (NetworkPolicy default-deny закрывает namespace).
 spec:
   ingressClassName: traefik
   tls:

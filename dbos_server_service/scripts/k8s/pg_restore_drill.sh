@@ -30,6 +30,14 @@
 #   DBOS_DRILL_NAMESPACE — namespace для drill (default: dbos-drill)
 #   DBOS_DRILL_DELTA_PCT — допустимая дельта в процентах (default: 20)
 #   DBOS_DRILL_KEEP_NS   — 1 → не удалять namespace в конце (для разбора)
+#   DBOS_DRILL_DBS       — список БД через запятую для --non-interactive
+#                          (default: auth_db,logging_db,server_db,worker_db,secret_db)
+#
+# Флаги:
+#   --non-interactive    запустить drill по всем БД из DBOS_DRILL_DBS подряд,
+#                        не требует positional-аргумента. Подходит для CronJob:
+#                        результат — summary в stdout + exit 0 если все БД OK,
+#                        exit 1 если хоть одна FAIL.
 #
 # Требования:
 #   kubectl, jq
@@ -42,15 +50,79 @@ DELTA_PCT="${DBOS_DRILL_DELTA_PCT:-20}"
 KEEP_NS="${DBOS_DRILL_KEEP_NS:-0}"
 PVC_NAME="dbos-backup-pv"
 
-if [[ $# -lt 1 ]]; then
+NON_INTERACTIVE="false"
+DBS_ARG=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --non-interactive)
+            NON_INTERACTIVE="true"
+            shift
+            ;;
+        -h|--help)
+            sed -n '1,40p' "$0" >&2
+            exit 0
+            ;;
+        -*)
+            echo "Неизвестный флаг $1" >&2
+            exit 2
+            ;;
+        *)
+            if [[ -z "$DBS_ARG" ]]; then
+                DBS_ARG="$1"
+            else
+                echo "Лишний positional-аргумент: $1" >&2
+                exit 2
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ "$NON_INTERACTIVE" == "true" ]]; then
+    # CronJob-режим: гоняем последовательно по списку DBOS_DRILL_DBS и
+    # печатаем сводку. Сам скрипт вызывает себя per-DB через bash без --non-interactive.
+    DBS_LIST="${DBOS_DRILL_DBS:-auth_db,logging_db,server_db,worker_db,secret_db}"
+    IFS=',' read -r -a DBS_ARRAY <<< "$DBS_LIST"
+    OVERALL_RC=0
+    declare -a SUMMARY=()
+    for db_name in "${DBS_ARRAY[@]}"; do
+        echo ""
+        echo "════════════════════════════════════════════════════════════════"
+        echo " Drill: $db_name"
+        echo "════════════════════════════════════════════════════════════════"
+        if bash "$0" "$db_name"; then
+            SUMMARY+=("OK   $db_name")
+        else
+            SUMMARY+=("FAIL $db_name")
+            OVERALL_RC=1
+        fi
+    done
+    echo ""
+    echo "════════════════════════════════════════════════════════════════"
+    echo " Сводка pg_restore_drill (non-interactive)"
+    echo "════════════════════════════════════════════════════════════════"
+    for line in "${SUMMARY[@]}"; do
+        echo "  $line"
+    done
+    if [[ $OVERALL_RC -eq 0 ]]; then
+        echo " Итог: все БД OK"
+    else
+        echo " Итог: есть FAIL — см. выше"
+    fi
+    exit $OVERALL_RC
+fi
+
+if [[ -z "$DBS_ARG" ]]; then
     cat >&2 <<EOF
 Использование: $0 <db_name>
   где <db_name>: auth_db | logging_db | server_db | worker_db | secret_db
+  либо $0 --non-interactive    (все БД из DBOS_DRILL_DBS)
 EOF
     exit 2
 fi
 
-DB="$1"
+DB="$DBS_ARG"
 
 # Маппинг БД → (deploy для backup-папки, имя таблицы для sanity, имя ключа в Secret)
 case "$DB" in

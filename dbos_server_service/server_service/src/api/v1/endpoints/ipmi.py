@@ -26,7 +26,7 @@ from src.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from src.core.limiter import endpoint_limiter
+from src.core.limiter import endpoint_limiter, per_account_key
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.dependencies.idempotency import read_idempotency_key
@@ -351,15 +351,22 @@ async def create_controller(
         "`view_credentials`, поле `password_b64` несёт base64(plaintext); "
         "иначе оно `null`. Cross-dept сервер скрыт за 404 SERVER_NOT_FOUND. "
         "Сервер без контроллера → 404 NO_IPMI_CONTROLLER. Раскрытие пароля пишет "
-        "CRITICAL audit `ipmi_controller.credentials_revealed`."
+        "CRITICAL audit `ipmi_controller.credentials_revealed`.\n\n"
+        "Per-IP+server rate-limit `PASSWORD_REVEAL_RATE_LIMIT` (default 10/min) "
+        "поверх глобального — режет скрапинг plaintext-канала."
     ),
     responses={
         403: {"description": "Нет ни `view`, ни `view_credentials`."},
         404: {"description": "Сервер не найден / чужой dept, либо контроллер не зарегистрирован."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP+server reveal-rate-limit пробит."},
         500: {"description": "DECRYPT_FAILED — сломанный ciphertext (только при view_credentials)."},
     },
 )
+@endpoint_limiter.limit(
+    get_settings().password_reveal_rate_limit, key_func=per_account_key,
+)
 async def get_controller(
+    request: Request,
     server_id: str,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),

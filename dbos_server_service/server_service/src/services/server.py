@@ -94,6 +94,19 @@ async def load_storage(db: AsyncSession, server_id: str) -> list[ServerDisk]:
     return await disk_repo.list_all_for_server(db, server_id)
 
 
+async def load_storage_for_servers(
+    db: AsyncSession, server_ids: list[str],
+) -> dict[str, list[ServerDisk]]:
+    """Bulk-вариант `load_storage` для list-эндпоинтов.
+
+    Раньше `GET /servers` дёргал `load_storage` per row → N+1 (до 501 SELECT'ов
+    при limit=500). Здесь — один SELECT с `WHERE server_id IN (...)`, маппинг
+    `{server_id: [disks]}`. Cursor- и offset-страницы используют одинаково;
+    detail-вьюхи (`GET /servers/{id}`) остаются на старом single-вызове.
+    """
+    return await disk_repo.list_for_servers(db, server_ids)
+
+
 async def _sync_storage(
     db: AsyncSession, server_id: str, disks: list[DiskSpec],
 ) -> None:

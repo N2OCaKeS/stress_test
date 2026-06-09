@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.endpoints.worker_dispatch import fanout_update_on_host
 from src.core.config import get_settings
-from src.core.limiter import endpoint_limiter
+from src.core.limiter import endpoint_limiter, per_account_key
 from src.dependencies.auth import CurrentIdentity
 from src.dependencies.db import get_db
 from src.models import ServerAccount
@@ -149,15 +149,23 @@ async def list_accounts(
         "Карточка доступна по `view` или `view_password`. Если у вызывающего "
         "есть `view_password`, поле `password_b64` несёт base64(plaintext); "
         "иначе оно `null`. Сырого `password_encrypted` в ответе нет никогда. "
-        "Раскрытие пароля пишет CRITICAL audit `server_account.password_revealed`."
+        "Раскрытие пароля пишет CRITICAL audit `server_account.password_revealed`.\n\n"
+        "Per-IP+account rate-limit `PASSWORD_REVEAL_RATE_LIMIT` (default 10/min) "
+        "поверх глобального, чтобы plaintext-канал нельзя было скрапить даже "
+        "до триггера CRITICAL-аудита."
     ),
     responses={
         403: {"description": "Нет роли ни с `view`, ни с `view_password`."},
         404: {"description": "Аккаунт не найден или чужой dept (скрыто за 404)."},
+        429: {"description": "RATE_LIMIT_EXCEEDED — per-IP+account reveal-rate-limit пробит."},
         500: {"description": "DECRYPT_FAILED — сломанный ciphertext (только при view_password)."},
     },
 )
+@endpoint_limiter.limit(
+    get_settings().password_reveal_rate_limit, key_func=per_account_key,
+)
 async def get_account(
+    request: Request,
     account_id: str,
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),

@@ -2,10 +2,11 @@
 
 import re
 from functools import lru_cache
+from typing import Annotated
 from urllib.parse import urlparse
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 # Матчит DSN `redis://[user]:<password>@host:port/db`. Без password
@@ -96,6 +97,79 @@ class Settings(BaseSettings):
             "auth_service отобьёт вызов 401."
         ),
     )
+    service_api_keys: Annotated[dict[str, str], NoDecode] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices(
+            "SERVER_INBOUND_SERVICE_API_KEYS",
+            "SERVICE_API_KEYS",
+            "service_api_keys",
+        ),
+        description=(
+            "Inbound s2s bearer-ключи: `{identity: shared_secret}`. Используются "
+            "ops-эндпоинтами (`/internal/migration_status` для rotate-runner'а), "
+            "которые не ходят через auth_service introspect — вместо JWT/PAT/bot "
+            "там простой shared-secret под `X-Service-Identity: <identity>`. Каждый "
+            "caller получает свой ключ; sender выбирается по identity, ключ "
+            "проверяется constant-time'ом. "
+            "Формат env: либо JSON-объект "
+            "`SERVER_INBOUND_SERVICE_API_KEYS='{\"rotation_runner\":\"<secret>\"}'`, "
+            "либо comma-separated kv-list `rotation_runner=<secret>,other=<secret>`. "
+            "Пустой dict (default) отключает все ops-эндпоинты — любой вызов "
+            "получит 401 SERVICE_IDENTITY_REQUIRED / INVALID_SERVICE_TOKEN."
+        ),
+    )
+
+    @field_validator("service_api_keys", mode="before")
+    @classmethod
+    def _parse_service_api_keys(cls, v):
+        """Поддерживает kv-list (`a=1,b=2`) и JSON-объект в дополнение к нативному dict.
+
+        Pydantic-settings по умолчанию умеет только JSON через env: для удобства
+        оператора (одна строка в Secret без экранирования кавычек) принимаем
+        и привычный kv-list формат. Пустая строка / None → пустой dict.
+        """
+        if v is None:
+            return {}
+        if isinstance(v, dict):
+            return {str(k).strip(): str(val) for k, val in v.items() if str(k).strip()}
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return {}
+            if v.startswith("{"):
+                import json
+                try:
+                    parsed = json.loads(v)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"SERVER_INBOUND_SERVICE_API_KEYS: invalid JSON: {exc}"
+                    ) from exc
+                if not isinstance(parsed, dict):
+                    raise ValueError(
+                        "SERVER_INBOUND_SERVICE_API_KEYS: JSON must decode to an object"
+                    )
+                return {str(k).strip(): str(val) for k, val in parsed.items() if str(k).strip()}
+            # kv-list: `a=1,b=2`. Без `=` или с пустыми ключами / значениями —
+            # отбиваем явно, чтобы оператор не получил тихий пустой dict.
+            out: dict[str, str] = {}
+            for raw in v.split(","):
+                item = raw.strip()
+                if not item:
+                    continue
+                if "=" not in item:
+                    raise ValueError(
+                        f"SERVER_INBOUND_SERVICE_API_KEYS: item {item!r} missing '=' separator"
+                    )
+                key, _, value = item.partition("=")
+                key = key.strip()
+                value = value.strip()
+                if not key or not value:
+                    raise ValueError(
+                        f"SERVER_INBOUND_SERVICE_API_KEYS: empty key/value in {item!r}"
+                    )
+                out[key] = value
+            return out
+        return v
     server_encryption_key: str = Field(
         ...,
         min_length=32,
@@ -431,6 +505,21 @@ class Settings(BaseSettings):
             "секунду; глобальный 500/min слишком великодушен на случай bug'а "
             "в worker'е (два poller'а / loop без back-off'а) — отдельный лимит "
             "60/min задаёт жёсткий потолок."
+        ),
+    )
+    password_reveal_rate_limit: str = Field(
+        default="10/minute",
+        alias="PASSWORD_REVEAL_RATE_LIMIT",
+        description=(
+            "Per-IP+target rate-limit на reveal-эндпоинты, отдающие plaintext "
+            "password: GET /server-accounts/{id} (с view_password) и "
+            "GET /servers/{id}/ipmi (с view_credentials). Ключ — IP+target_id "
+            "(см. `limiter.per_account_key`), чтобы burst против одной цели "
+            "не разносился по нескольким account_id'ам с одного IP'шника. "
+            "Глобальный 500/min слишком великодушен для plaintext-канала — "
+            "10/min оставляет место под штатные UI-перерисовки карточки и "
+            "режет автоматический скрапер. Применяется поверх "
+            "`global_rate_limit`."
         ),
     )
     password_reveal_audit_window_seconds: int = Field(

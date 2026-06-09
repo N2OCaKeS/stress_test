@@ -84,8 +84,11 @@ async def list_servers(
             )
         except InvalidCursorError as exc:
             raise to_bad_request(exc) from exc
+        # Bulk-load дисков одним SELECT — раньше шёл per-row `load_storage`
+        # (до limit+1 SELECT'ов на /servers). См. server_disk_repo.list_for_servers.
+        storages = await svc.load_storage_for_servers(db, [i.id for i in items])
         cards = [
-            ServerResponse.from_server(i, await svc.load_storage(db, i.id))
+            ServerResponse.from_server(i, storages.get(i.id, []))
             for i in items
         ]
         return CursorPaginatedResponse[ServerResponse](
@@ -94,8 +97,9 @@ async def list_servers(
             has_more=has_more,
         )
     items, total = await svc.list_servers(db, identity, limit=limit, offset=offset)
+    storages = await svc.load_storage_for_servers(db, [i.id for i in items])
     cards = [
-        ServerResponse.from_server(i, await svc.load_storage(db, i.id))
+        ServerResponse.from_server(i, storages.get(i.id, []))
         for i in items
     ]
     return PaginatedResponse[ServerResponse](

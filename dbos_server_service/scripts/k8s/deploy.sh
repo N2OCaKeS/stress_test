@@ -13,7 +13,12 @@ if [[ ! -f "$K8S_DIR/20-secrets.yaml" ]] || [[ ! -f "$K8S_DIR/50-ingress.yaml" ]
 fi
 
 echo "→ Применяем манифесты..."
-kubectl apply -k "$K8S_DIR"
+# `kubectl apply -k` НЕ принимает `--load-restrictor`; флаг живёт только на
+# `kubectl kustomize` (build-step). configMapGenerator `rotation-scripts`
+# тянет `../scripts/k8s/*.sh`, что вне k8s/, и без флага kustomize отбивает
+# security'ом. Поэтому строим manifests через `kubectl kustomize` с разрешением
+# load-restrictor, а apply'им через pipe.
+kubectl kustomize "$K8S_DIR" --load-restrictor=LoadRestrictionsNone | kubectl apply -f -
 
 echo ""
 echo "→ Ждём готовности pods (timeout 5 мин)..."

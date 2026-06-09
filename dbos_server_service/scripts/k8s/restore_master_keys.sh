@@ -268,6 +268,21 @@ if [[ "$APPLY" == "true" ]]; then
     kubectl -n "$NS" patch secret "$SECRET" --type='merge' --patch-file "$STRING_DATA_JSON"
     echo ""
     echo "✓ Master-ключи восстановлены в Secret ${NS}/${SECRET}."
+
+    # ── CA Secret cert-manager'а ─────────────────────────────────────────────
+    # Если в архиве есть ca/<name>.yaml — отдельным kubectl apply -f. Полная
+    # замена Secret'а (не patch) корректна: CA-материал монолитный, частичный
+    # merge с уже существующим CA даст плохо предсказуемый результат.
+    CA_DIR_UNPACK="$UNPACK_DIR/ca"
+    if [[ -d "$CA_DIR_UNPACK" ]]; then
+        for ca_yaml in "$CA_DIR_UNPACK"/*.yaml; do
+            [[ -f "$ca_yaml" ]] || continue
+            ca_name="$(basename "$ca_yaml" .yaml)"
+            echo "→ Восстанавливаю CA Secret ${NS}/${ca_name} (kubectl apply -f)..."
+            kubectl -n "$NS" apply -f "$ca_yaml"
+            echo "✓ CA Secret ${NS}/${ca_name} применён."
+        done
+    fi
     echo ""
     echo "  Перезапусти сервисы, чтобы они перечитали Secret:"
     echo "    kubectl -n ${NS} rollout restart deploy/server-service deploy/server-worker"
@@ -279,6 +294,15 @@ else
         --patch-file "$STRING_DATA_JSON" \
         --dry-run=server -o yaml \
         | sed 's/^/  /'
+    CA_DIR_UNPACK="$UNPACK_DIR/ca"
+    if [[ -d "$CA_DIR_UNPACK" ]]; then
+        for ca_yaml in "$CA_DIR_UNPACK"/*.yaml; do
+            [[ -f "$ca_yaml" ]] || continue
+            ca_name="$(basename "$ca_yaml" .yaml)"
+            echo ""
+            echo "── CA Secret в архиве: ${ca_name} (будет применён через kubectl apply -f) ──"
+        done
+    fi
     echo ""
     echo "── Команда для реального применения ──"
     echo "  scripts/k8s/restore_master_keys.sh \"$ARCHIVE\" --apply"

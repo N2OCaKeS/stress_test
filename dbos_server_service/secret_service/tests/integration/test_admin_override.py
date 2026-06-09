@@ -1,11 +1,13 @@
-"""Admin override flows: admin secret_service'а своего dept'а + account_admin.
+"""Admin override flows: admin secret_service'а своего dept'а.
 
-README §«Service admin» / §«Account admin»:
+README §«Service admin»:
 * admin своего dept'а DELETE без reason → 422 ADMIN_OVERRIDE_REASON_REQUIRED.
 * admin своего dept'а DELETE с reason → 200 + CRITICAL `tokens.admin_override_delete`.
 * admin своего dept'а READ blocked cred → 200 (для аудита).
 * admin ЧУЖОГО dept'а → 404 CREDENTIAL_NOT_FOUND (cross-dept privileges нет).
-* account_admin transfer на blocked cross_dep cred → 200 + transfer_ownership.
+* account_admin transfer на blocked cross_dep cred → 403 CREDENTIAL_ACCESS_DENIED
+  (платформенный админ не имеет доступа к содержимому секретов; восстановление
+  владельца идёт через admin secret_service'а владеющего dept'а).
 """
 
 from __future__ import annotations
@@ -179,10 +181,13 @@ async def test_service_admin_cannot_delete_cred_in_other_dept(
     assert get_resp.status_code in (403, 404)
 
 
-async def test_account_admin_transfer_blocked_cross_dep_cred(
+async def test_account_admin_cannot_transfer_cross_dep_cred(
     client, identity_factory, mock_logging_service,
 ):
-    """account_admin делает transfer ownership cross_dep cred'е после блокировки."""
+    """account_admin к transfer не подпущен: платформенный админ не имеет
+    доступа к содержимому секретов. После delete owner_dep'а восстановление
+    идёт через admin secret_service'а другого dept'а (если он был recipient'ом)
+    либо через lifecycle/sweep."""
     owner_admin = identity_factory(
         user_id="usr_owner_admin",
         department_id="dep_owner_t",
@@ -213,7 +218,7 @@ async def test_account_admin_transfer_blocked_cross_dep_cred(
     )
     assert resp.status_code == 200
 
-    # account_admin делает transfer на другой dep.
+    # account_admin пробует transfer на другой dep — отбиваемся 403.
     account_admin = identity_factory(
         user_id="usr_account_admin",
         department_id=None,
@@ -226,9 +231,15 @@ async def test_account_admin_transfer_blocked_cross_dep_cred(
         headers=auth_header(account_admin),
         json={"new_owner_dept_id": "dep_new_owner", "reason": "owner dept dissolved"},
     )
-    assert transfer.status_code == 200, transfer.text
-    body = transfer.json()
-    assert body["owner_dept_id"] == "dep_new_owner"
-    assert body["status"] == "active"
+    assert transfer.status_code == 403, transfer.text
+    assert transfer.json()["error_code"] == "CREDENTIAL_ACCESS_DENIED"
 
-    assert mock_logging_service.find_one("tokens.transfer_ownership") is not None
+    # success-варианта transfer'а быть не должно; failure-вариант — должен
+    # (P0-7: на denied access audit обязан получить tokens.transfer_ownership/failure).
+    transfer_events = mock_logging_service.by_action("tokens.transfer_ownership")
+    assert all(e["status"] == "failure" for e in transfer_events), (
+        f"unexpected success transfer event: {transfer_events}"
+    )
+    assert any(e["status"] == "failure" for e in transfer_events), (
+        f"missing failure event for denied transfer: {transfer_events}"
+    )

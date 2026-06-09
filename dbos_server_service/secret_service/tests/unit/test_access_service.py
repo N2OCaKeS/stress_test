@@ -5,7 +5,8 @@
 * department — внутри owner_dep / снаружи;
 * cross_department — owner_dep / recipient_dep с DeptGrant / без него;
 * admin overrides — admin secret_service'а своего dept'а read-only /
-  cross-dept admin отбит / account_admin transfer;
+  cross-dept admin отбит; account_admin к содержимому секретов не
+  допускается (нет read/recover/transfer);
 * blocked cred — block all except admin override своего dept'а;
 * can_read vs can_write на разные action'ы.
 """
@@ -368,14 +369,18 @@ async def test_blocked_service_admin_can_recover(adb) -> None:
 
 
 @pytest.mark.asyncio
-async def test_blocked_account_admin_can_recover(adb) -> None:
+async def test_blocked_account_admin_cannot_recover(adb) -> None:
+    """account_admin к recover не пускается: платформенный админ не имеет
+    доступа к содержимому секретов. Recover'ить blocked-cred может только
+    admin secret_service'а владеющего dept'а."""
     cred = await _create_personal(adb, status="blocked")
     aa = _identity(
         user_id="usr_acc_admin0000000000000000001",
         platform_role="account_admin",
     )
     allowed, reason = await access_service.check_access(adb, aa, cred, "manage_status")
-    assert allowed and reason == "account_admin"
+    assert not allowed
+    assert reason == "blocked"
 
 
 # ── admin overrides on active creds ───────────────────────────────────────
@@ -462,7 +467,10 @@ async def test_service_admin_in_other_dept_cannot_read_blocked(adb) -> None:
 
 
 @pytest.mark.asyncio
-async def test_account_admin_cross_dep_transfer_allowed(adb) -> None:
+async def test_account_admin_cannot_write_cross_dep(adb) -> None:
+    """account_admin не имеет доступа к содержимому секретов: cross_dep
+    transfer/write возможен только для admin secret_service'а владеющего
+    dept'а; если owner_dep удалён, восстановление идёт через lifecycle."""
     cred = await _create_dept(adb, scope="cross_department", owner_dept_id="dep_dead0000000000000000000001")
     aa = _identity(
         user_id="usr_acc_admin0000000000000000003",
@@ -470,11 +478,12 @@ async def test_account_admin_cross_dep_transfer_allowed(adb) -> None:
         platform_role="account_admin",
     )
     allowed, reason = await access_service.check_access(adb, aa, cred, "write")
-    assert allowed and reason == "admin_override"
+    assert not allowed
+    assert reason == "scope_mismatch"
 
 
 @pytest.mark.asyncio
-async def test_account_admin_does_not_apply_to_department_scope(adb) -> None:
+async def test_account_admin_cannot_write_department_scope(adb) -> None:
     cred = await _create_dept(adb, scope="department", owner_dept_id="dep_dead0000000000000000000001")
     aa = _identity(
         user_id="usr_acc_admin0000000000000000004",

@@ -55,6 +55,47 @@ logger = logging.getLogger(__name__)
 _RECOVER_WINDOW_DAYS = 30
 
 
+def _emit_action_failure(
+    action: str,
+    *,
+    target_id: str | None,
+    target_type: str,
+    exc: Exception,
+    extra: dict | None = None,
+) -> None:
+    """Emit failure-вариант action'а в audit. Без re-raise: caller сам решает.
+
+    Compliance: SOC должен видеть deny/error для CRUD/transfer/recover/grant —
+    раньше эмит был только на success-ветке, и raise происходил ДО emit'а.
+    error_code конкретизирует причину (NAME_DUPLICATE, NOT_BLOCKED и т.п.),
+    error_class — тип исключения для разбора неклассифицированных ошибок.
+    """
+    details: dict = {
+        "error_class": type(exc).__name__,
+    }
+    error_code = getattr(exc, "error_code", None)
+    if error_code:
+        details["error_code"] = error_code
+    if extra:
+        details.update(extra)
+    try:
+        audit_service.emit(
+            action,
+            target_id=target_id,
+            target_type=target_type,
+            status="failure",
+            allowed=False,
+            details=details,
+        )
+    except Exception as emit_exc:  # noqa: BLE001
+        # audit-канал не должен сломать основной поток.
+        logger.warning(
+            "audit_emit_failed action=%s err=%s",
+            action,
+            type(emit_exc).__name__,
+        )
+
+
 def _new_cred_id() -> str:
     return f"cred_{_secrets.token_hex(16)}"
 
@@ -85,7 +126,7 @@ async def _lazy_reencrypt_if_needed(
     cred: Credential,
     result: secrets_service.DecryptResult,
 ) -> None:
-    """Перешифровать ciphertext активной версией ключа в той же транзакции.
+    """Перешифровать ciphertext активной версией ключа и закоммитить.
 
     Вызывается из read-path'а (`reveal`) когда `result.needs_reencrypt` поднят.
     Стратегия — idempotent CAS: новый blob ставится только если в БД ровно тот
@@ -93,6 +134,12 @@ async def _lazy_reencrypt_if_needed(
     строки увидит 0 rows affected — это норма, в чате остаётся одна актуальная
     версия. Любая ошибка ловится и логируется WARNING — read-path должен
     вернуться успешно даже при временной недоступности БД на запись.
+
+    Важно: CAS-UPDATE без commit'а раскатывается обратно на закрытии сессии
+    через `get_db` (rollback-on-close), поэтому строка никогда не мигрировала
+    бы и `--finalize` master-key никогда бы не сошёлся. Commit прямо здесь
+    после успешного swap. На race (0 rows) тоже committ'им — это no-op write,
+    но без него транзакция остаётся в open-состоянии; на exception — rollback.
     """
     old_blob = cred.secret_encrypted
     try:
@@ -107,6 +154,9 @@ async def _lazy_reencrypt_if_needed(
         # Lazy re-encrypt — best-effort. Падать ради миграции мы не имеем
         # права: read должен отдать plaintext caller'у. Следующий reveal
         # либо повторит попытку, либо обнаружит, что строка уже мигрирована.
+        # Сессию не rollback'им сами: caller's `get_db` ловит выход из
+        # контекст-менеджера и закроет сессию там (любое 0-row write
+        # автоматически откатится при close без commit'а).
         logger.warning(
             "lazy_reencrypt_failed cred_id=%s source_v=%s err=%s",
             cred.id,
@@ -114,6 +164,20 @@ async def _lazy_reencrypt_if_needed(
             type(exc).__name__,
         )
         return
+
+    try:
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        # Commit упал — read должен пройти, миграция повторится на
+        # следующем reveal'е. Откат сделает caller's close.
+        logger.warning(
+            "lazy_reencrypt_commit_failed cred_id=%s source_v=%s err=%s",
+            cred.id,
+            result.source_version,
+            type(exc).__name__,
+        )
+        return
+
     if not swapped:
         # Конкурент опередил (другой reveal / PATCH). Дублируем как INFO —
         # это ожидаемая race, не баг.
@@ -214,78 +278,93 @@ _is_guest_only = is_guest_only
 async def create(
     db: AsyncSession, identity: Identity, payload: CredentialCreate
 ) -> Credential:
-    """Создать креду. Personal → owner = identity, остальные → owner_dept_id из body."""
-    # Resolve owner per scope.
-    owner_user_id: str | None = None
-    owner_dept_id: str | None = None
-    if payload.scope == "personal":
-        if identity.actor_type != "user":
-            raise AuthorizationError(
-                error_code="CREDENTIAL_ACCESS_DENIED",
-                message="Bots cannot own personal credentials",
-            )
-        owner_user_id = identity.user_id
-    else:
-        owner_dept_id = payload.owner_dept_id
-        # На свой dep заводит обычный operator+ (auth+role-каталог уже отсеяли
-        # guest'ов на endpoint-level). На чужой dep — только account_admin:
-        # у `admin` secret_service'а cross-dept привилегий нет, он живёт
-        # per-(dept, service).
-        if identity.department_id != owner_dept_id:
-            if not _is_account_admin(identity):
+    """Создать креду. Personal → owner = identity, остальные → owner_dept_id из body.
+
+    Любая ошибка на пути (denied/conflict/integrity) эмитит
+    `tokens.create / failure` ДО raise — SOC должен видеть провалившиеся
+    попытки создания.
+    """
+    cred_id = _new_cred_id()
+    try:
+        # Resolve owner per scope.
+        owner_user_id: str | None = None
+        owner_dept_id: str | None = None
+        if payload.scope == "personal":
+            if identity.actor_type != "user":
                 raise AuthorizationError(
                     error_code="CREDENTIAL_ACCESS_DENIED",
-                    message="Cannot create credential for another department",
+                    message="Bots cannot own personal credentials",
                 )
+            owner_user_id = identity.user_id
+        else:
+            owner_dept_id = payload.owner_dept_id
+            # На свой dep заводит обычный operator+ (auth+role-каталог уже отсеяли
+            # guest'ов на endpoint-level). На чужой dep — только account_admin:
+            # у `admin` secret_service'а cross-dept привилегий нет, он живёт
+            # per-(dept, service).
+            if identity.department_id != owner_dept_id:
+                if not _is_account_admin(identity):
+                    raise AuthorizationError(
+                        error_code="CREDENTIAL_ACCESS_DENIED",
+                        message="Cannot create credential for another department",
+                    )
 
-    # Friendly UNIQUE pre-check (БД-CHECK всё равно ловит race).
-    existing = await repo.find_active_by_owner_service_name(
-        db,
-        owner_user_id=owner_user_id,
-        owner_dept_id=owner_dept_id,
-        service=payload.service,
-        name=payload.name,
-    )
-    if existing is not None:
-        raise ConflictError(
-            error_code="NAME_DUPLICATE",
-            message=f"Credential with name={payload.name!r} already exists for this owner/service",
-        )
-
-    cred_id = _new_cred_id()
-    envelope = _to_envelope(payload.secret, cred_id)
-    # Denormalize owner's dept на personal-кред, чтобы access-check мог
-    # отбивать ACL'и из чужих dep'ов без обратного запроса в auth_service.
-    owner_user_dept_id: str | None = (
-        identity.department_id if payload.scope == "personal" else None
-    )
-    try:
-        cred = await repo.create(
+        # Friendly UNIQUE pre-check (БД-CHECK всё равно ловит race).
+        existing = await repo.find_active_by_owner_service_name(
             db,
-            id=cred_id,
-            name=payload.name,
-            service=payload.service,
-            scope=payload.scope,
             owner_user_id=owner_user_id,
             owner_dept_id=owner_dept_id,
-            owner_user_dept_id=owner_user_dept_id,
-            login=payload.login,
-            secret_encrypted=envelope,
-            status="active",
-            created_by=identity.user_id,
-            visible_to_dept=payload.visible_to_dept,
-            valid_from=payload.valid_from,
-            valid_to=payload.valid_to,
+            service=payload.service,
+            name=payload.name,
         )
-        await db.commit()
-        await db.refresh(cred)
-    except IntegrityError as exc:
-        await db.rollback()
-        # Race с другим INSERT — UNIQUE constraint поймал.
-        raise ConflictError(
-            error_code="NAME_DUPLICATE",
-            message="Credential name conflict (race)",
-        ) from exc
+        if existing is not None:
+            raise ConflictError(
+                error_code="NAME_DUPLICATE",
+                message=f"Credential with name={payload.name!r} already exists for this owner/service",
+            )
+
+        envelope = _to_envelope(payload.secret, cred_id)
+        # Denormalize owner's dept на personal-кред, чтобы access-check мог
+        # отбивать ACL'и из чужих dep'ов без обратного запроса в auth_service.
+        owner_user_dept_id: str | None = (
+            identity.department_id if payload.scope == "personal" else None
+        )
+        try:
+            cred = await repo.create(
+                db,
+                id=cred_id,
+                name=payload.name,
+                service=payload.service,
+                scope=payload.scope,
+                owner_user_id=owner_user_id,
+                owner_dept_id=owner_dept_id,
+                owner_user_dept_id=owner_user_dept_id,
+                login=payload.login,
+                secret_encrypted=envelope,
+                status="active",
+                created_by=identity.user_id,
+                visible_to_dept=payload.visible_to_dept,
+                valid_from=payload.valid_from,
+                valid_to=payload.valid_to,
+            )
+            await db.commit()
+            await db.refresh(cred)
+        except IntegrityError as exc:
+            await db.rollback()
+            # Race с другим INSERT — UNIQUE constraint поймал.
+            raise ConflictError(
+                error_code="NAME_DUPLICATE",
+                message="Credential name conflict (race)",
+            ) from exc
+    except Exception as exc:
+        _emit_action_failure(
+            "tokens.create",
+            target_id=cred_id,
+            target_type="credential",
+            exc=exc,
+            extra={"scope": payload.scope, "service": payload.service, "name": payload.name},
+        )
+        raise
 
     audit_service.emit(
         "tokens.create",
@@ -623,40 +702,58 @@ async def update(
     cred_id: str,
     payload: CredentialUpdate,
 ) -> Credential:
-    """PATCH name/login/secret. Secret меняется → re-encrypt."""
-    cred = await load_for_action(db, identity, cred_id, "write")
+    """PATCH name/login/secret. Secret меняется → re-encrypt.
 
-    fields: dict = {}
-    if payload.name is not None:
-        fields["name"] = payload.name
-    if payload.login is not None:
-        fields["login"] = payload.login
-    if payload.secret is not None:
-        fields["secret_encrypted"] = _to_envelope(payload.secret, cred.id)
-    if payload.valid_from is not None:
-        fields["valid_from"] = payload.valid_from
-    if payload.valid_to is not None:
-        fields["valid_to"] = payload.valid_to
-
-    if not fields:
-        return cred
-
+    На любой ошибке (access denied / not found / conflict / integrity) эмитим
+    `tokens.update / failure` ДО raise. `load_for_action` сам пишет
+    `tokens.access_denied`; здесь добавляем явный update-failure event, чтобы
+    SOC видел действие в правильной категории.
+    """
+    fields_keys: list[str] = []
     try:
-        cred = await repo.update(db, cred, **fields)
-        await db.commit()
-        await db.refresh(cred)
-    except IntegrityError as exc:
-        await db.rollback()
-        raise ConflictError(
-            error_code="NAME_DUPLICATE",
-            message="Credential name conflict",
-        ) from exc
+        cred = await load_for_action(db, identity, cred_id, "write")
+
+        fields: dict = {}
+        if payload.name is not None:
+            fields["name"] = payload.name
+        if payload.login is not None:
+            fields["login"] = payload.login
+        if payload.secret is not None:
+            fields["secret_encrypted"] = _to_envelope(payload.secret, cred.id)
+        if payload.valid_from is not None:
+            fields["valid_from"] = payload.valid_from
+        if payload.valid_to is not None:
+            fields["valid_to"] = payload.valid_to
+
+        if not fields:
+            return cred
+
+        fields_keys = sorted(fields.keys())
+        try:
+            cred = await repo.update(db, cred, **fields)
+            await db.commit()
+            await db.refresh(cred)
+        except IntegrityError as exc:
+            await db.rollback()
+            raise ConflictError(
+                error_code="NAME_DUPLICATE",
+                message="Credential name conflict",
+            ) from exc
+    except Exception as exc:
+        _emit_action_failure(
+            "tokens.update",
+            target_id=cred_id,
+            target_type="credential",
+            exc=exc,
+            extra={"fields": fields_keys} if fields_keys else None,
+        )
+        raise
 
     audit_service.emit(
         "tokens.update",
         target_id=cred.id,
         target_type="credential",
-        details={"fields": sorted(fields.keys())},
+        details={"fields": fields_keys},
     )
     return cred
 
@@ -667,58 +764,82 @@ async def delete(
     cred_id: str,
     payload: AdminDeleteRequest | None,
 ) -> None:
-    """DELETE кред. Admin override (admin своего dept'а / account_admin не-owner) требует reason."""
-    cred = await repo.get_by_id(db, cred_id)
-    if cred is None:
-        raise NotFoundError(
-            error_code="CREDENTIAL_NOT_FOUND",
-            message="Credential not found",
-        )
+    """DELETE кред. Admin override (admin своего dept'а не-owner) требует reason.
 
-    # Проверка: владелец / dep_admin owner_dep / service-admin своего dept'а / account_admin.
-    is_owner = (
-        cred.scope == "personal"
-        and identity.actor_type == "user"
-        and cred.owner_user_id == identity.user_id
-    )
+    account_admin к delete не подпущен: платформенный админ не имеет права
+    удалять секреты — это зона dept-уровня (см. Memory: project-dbos-secrets-scope).
+
+    На failure-пути эмитим `tokens.delete / failure` (или
+    `tokens.admin_override_delete / failure`, если ветка override уже
+    определена) ДО raise. `tokens.access_denied` остаётся как было —
+    это отдельный compliance-канал.
+    """
     is_admin_override = False
-    if not is_owner:
-        # Попробуем разрешить как dep_admin owner_dep / service-admin своего dept'а.
-        allowed, reason = await access_service.check_access(
-            db, identity, cred, "delete"
-        )
-        if allowed:
-            pass  # legitimate owner-side delete (dep_admin/admin внутри scope)
-        elif _is_service_admin_for(identity, cred) or _is_account_admin(identity):
-            is_admin_override = True
-        else:
-            audit_service.emit(
-                "tokens.access_denied",
-                target_id=cred.id,
-                target_type="credential",
-                status="failure",
-                allowed=False,
-                details={"action": "delete", "reason": reason},
-            )
-            raise AuthorizationError(
-                error_code="CREDENTIAL_ACCESS_DENIED",
-                message="Access denied for delete",
-                details={"reason": reason},
+    try:
+        cred = await repo.get_by_id(db, cred_id)
+        if cred is None:
+            raise NotFoundError(
+                error_code="CREDENTIAL_NOT_FOUND",
+                message="Credential not found",
             )
 
-    if is_admin_override and (payload is None or not payload.reason):
-        raise DomainValidationError(
-            error_code="ADMIN_OVERRIDE_REASON_REQUIRED",
-            message="Admin override delete requires `reason` in body",
+        # Проверка: владелец / dep_admin owner_dep / service-admin своего dept'а.
+        # account_admin плоско отрезан: платформенный админ не имеет права
+        # удалять чужие cred'ы и не должен видеть plaintext — управление
+        # секретами per-dept (см. Memory: project-dbos-secrets-scope). Если
+        # owner_dep удалён, восстановление идёт через lifecycle_service, не через
+        # admin-override.
+        is_owner = (
+            cred.scope == "personal"
+            and identity.actor_type == "user"
+            and cred.owner_user_id == identity.user_id
         )
+        if not is_owner:
+            # Попробуем разрешить как dep_admin owner_dep / service-admin своего dept'а.
+            allowed, reason = await access_service.check_access(
+                db, identity, cred, "delete"
+            )
+            if allowed:
+                pass  # legitimate owner-side delete (dep_admin/admin внутри scope)
+            elif _is_service_admin_for(identity, cred):
+                is_admin_override = True
+            else:
+                audit_service.emit(
+                    "tokens.access_denied",
+                    target_id=cred.id,
+                    target_type="credential",
+                    status="failure",
+                    allowed=False,
+                    details={"action": "delete", "reason": reason},
+                )
+                raise AuthorizationError(
+                    error_code="CREDENTIAL_ACCESS_DENIED",
+                    message="Access denied for delete",
+                    details={"reason": reason},
+                )
 
-    cred_id_snapshot = cred.id
-    cred_scope = cred.scope
-    cred_service = cred.service
-    cred_name = cred.name
+        if is_admin_override and (payload is None or not payload.reason):
+            raise DomainValidationError(
+                error_code="ADMIN_OVERRIDE_REASON_REQUIRED",
+                message="Admin override delete requires `reason` in body",
+            )
 
-    await repo.delete(db, cred)
-    await db.commit()
+        cred_id_snapshot = cred.id
+        cred_scope = cred.scope
+        cred_service = cred.service
+        cred_name = cred.name
+
+        await repo.delete(db, cred)
+        await db.commit()
+    except Exception as exc:
+        action = "tokens.admin_override_delete" if is_admin_override else "tokens.delete"
+        _emit_action_failure(
+            action,
+            target_id=cred_id,
+            target_type="credential",
+            exc=exc,
+        )
+        raise
 
     if is_admin_override:
         audit_service.emit(
@@ -803,11 +924,11 @@ async def transfer(
 ) -> Credential:
     """Transfer ownership. Только для blocked-кред.
 
-    Допустимо для:
-      * admin secret_service'а — только над cred'ой своего dept'а
-        (per-(dept, service) роль, cross-dept привилегий не даёт);
-      * account_admin — cross_dep transfer при удалённом owner_dep
-        (даже когда `cred.owner_dept_id` уже сменился на NULL).
+    Допустимо ТОЛЬКО для admin secret_service'а владеющего dept'а — роль
+    per-(dept, service), cross-dept привилегий не даёт. account_admin
+    транслировать не может: платформенный админ не имеет доступа к
+    содержимому секретов; владельца восстанавливает dept-уровень или
+    lifecycle_service по факту delete_user/delete_dept.
 
     FOR UPDATE на cred: два параллельных transfer'а на одну креду читают одну
     и ту же blocked-строку и оба пишут разный owner — без локa последний
@@ -816,60 +937,69 @@ async def transfer(
     IntegrityError на partial UNIQUE — переводим в 409 NAME_DUPLICATE; иначе
     aborted-state соединения роняет endpoint 500'кой.
     """
-    cred = await repo.get_by_id_for_update(db, cred_id)
-    if cred is None:
-        raise NotFoundError(
-            error_code="CREDENTIAL_NOT_FOUND",
-            message="Credential not found",
-        )
-
-    if not (_is_service_admin_for(identity, cred) or _is_account_admin(identity)):
-        raise AuthorizationError(
-            error_code="CREDENTIAL_ACCESS_DENIED",
-            message="Only secret_service admin of the owning department or account_admin can transfer ownership",
-        )
-
-    if cred.status != "blocked":
-        raise DomainValidationError(
-            error_code="CREDENTIAL_NOT_BLOCKED",
-            message="Transfer is only allowed for blocked credentials",
-        )
-
-    old_owner_user_id = cred.owner_user_id
-    old_owner_dept_id = cred.owner_dept_id
-
-    # Совместимость нового владельца со scope:
-    if cred.scope == "personal":
-        if not payload.new_owner_user_id:
-            raise DomainValidationError(
-                error_code="INVALID_TRANSFER_TARGET",
-                message="personal cred requires new_owner_user_id",
-            )
-        cred.owner_user_id = payload.new_owner_user_id
-        cred.owner_dept_id = None
-    else:
-        if not payload.new_owner_dept_id:
-            raise DomainValidationError(
-                error_code="INVALID_TRANSFER_TARGET",
-                message=f"{cred.scope} cred requires new_owner_dept_id",
-            )
-        cred.owner_dept_id = payload.new_owner_dept_id
-        cred.owner_user_id = None
-
-    # Снимаем блокировку и комитим.
-    cred.status = "active"
-    cred.blocked_at = None
-    cred.blocked_reason = None
     try:
-        await db.flush()
-        await db.commit()
-        await db.refresh(cred)
-    except IntegrityError as exc:
-        await db.rollback()
-        raise ConflictError(
-            error_code="NAME_DUPLICATE",
-            message="Credential name conflict on transfer (race or duplicate target)",
-        ) from exc
+        cred = await repo.get_by_id_for_update(db, cred_id)
+        if cred is None:
+            raise NotFoundError(
+                error_code="CREDENTIAL_NOT_FOUND",
+                message="Credential not found",
+            )
+
+        if not _is_service_admin_for(identity, cred):
+            raise AuthorizationError(
+                error_code="CREDENTIAL_ACCESS_DENIED",
+                message="Only secret_service admin of the owning department can transfer ownership",
+            )
+
+        if cred.status != "blocked":
+            raise DomainValidationError(
+                error_code="CREDENTIAL_NOT_BLOCKED",
+                message="Transfer is only allowed for blocked credentials",
+            )
+
+        old_owner_user_id = cred.owner_user_id
+        old_owner_dept_id = cred.owner_dept_id
+
+        # Совместимость нового владельца со scope:
+        if cred.scope == "personal":
+            if not payload.new_owner_user_id:
+                raise DomainValidationError(
+                    error_code="INVALID_TRANSFER_TARGET",
+                    message="personal cred requires new_owner_user_id",
+                )
+            cred.owner_user_id = payload.new_owner_user_id
+            cred.owner_dept_id = None
+        else:
+            if not payload.new_owner_dept_id:
+                raise DomainValidationError(
+                    error_code="INVALID_TRANSFER_TARGET",
+                    message=f"{cred.scope} cred requires new_owner_dept_id",
+                )
+            cred.owner_dept_id = payload.new_owner_dept_id
+            cred.owner_user_id = None
+
+        # Снимаем блокировку и комитим.
+        cred.status = "active"
+        cred.blocked_at = None
+        cred.blocked_reason = None
+        try:
+            await db.flush()
+            await db.commit()
+            await db.refresh(cred)
+        except IntegrityError as exc:
+            await db.rollback()
+            raise ConflictError(
+                error_code="NAME_DUPLICATE",
+                message="Credential name conflict on transfer (race or duplicate target)",
+            ) from exc
+    except Exception as exc:
+        _emit_action_failure(
+            "tokens.transfer_ownership",
+            target_id=cred_id,
+            target_type="credential",
+            exc=exc,
+        )
+        raise
 
     audit_service.emit(
         "tokens.transfer_ownership",
@@ -892,50 +1022,60 @@ async def recover(
 ) -> Credential:
     """Recover blocked-кред. Окно — 30 дней с момента блокировки.
 
-    Допустимо для admin secret_service'а своего dept'а либо для account_admin
-    (cross-dept привилегий у service-роли admin нет — он работает только над
-    cred'ами своего dept'а).
+    Допустимо ТОЛЬКО для admin secret_service'а владеющего dept'а
+    (per-(dept, service) роль, cross-dept привилегий не даёт).
+    account_admin к recover не подпущен — платформенному админу не положен
+    доступ к содержимому секретов.
 
     FOR UPDATE + try/except IntegrityError — симметрия с transfer; параллельный
     recover/transfer на одну креду не должен ронять 500.
     """
-    cred = await repo.get_by_id_for_update(db, cred_id)
-    if cred is None:
-        raise NotFoundError(
-            error_code="CREDENTIAL_NOT_FOUND",
-            message="Credential not found",
-        )
-    if not (_is_service_admin_for(identity, cred) or _is_account_admin(identity)):
-        raise AuthorizationError(
-            error_code="CREDENTIAL_ACCESS_DENIED",
-            message="Only secret_service admin of the owning department or account_admin can recover credential",
-        )
-    if cred.status != "blocked":
-        raise DomainValidationError(
-            error_code="CREDENTIAL_NOT_BLOCKED",
-            message="Only blocked credentials can be recovered",
-        )
-    if cred.blocked_at is not None:
-        # Если blocked_at без TZ — относимся как к UTC (db: timestamptz).
-        blocked_at = cred.blocked_at
-        if blocked_at.tzinfo is None:
-            blocked_at = blocked_at.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) - blocked_at > timedelta(days=_RECOVER_WINDOW_DAYS):
-            raise DomainValidationError(
-                error_code="RECOVER_WINDOW_EXPIRED",
-                message=f"Recover window of {_RECOVER_WINDOW_DAYS} days has expired",
-            )
-
     try:
-        cred = await repo.mark_active(db, cred)
-        await db.commit()
-        await db.refresh(cred)
-    except IntegrityError as exc:
-        await db.rollback()
-        raise ConflictError(
-            error_code="NAME_DUPLICATE",
-            message="Credential name conflict on recover (active duplicate exists)",
-        ) from exc
+        cred = await repo.get_by_id_for_update(db, cred_id)
+        if cred is None:
+            raise NotFoundError(
+                error_code="CREDENTIAL_NOT_FOUND",
+                message="Credential not found",
+            )
+        if not _is_service_admin_for(identity, cred):
+            raise AuthorizationError(
+                error_code="CREDENTIAL_ACCESS_DENIED",
+                message="Only secret_service admin of the owning department can recover credential",
+            )
+        if cred.status != "blocked":
+            raise DomainValidationError(
+                error_code="CREDENTIAL_NOT_BLOCKED",
+                message="Only blocked credentials can be recovered",
+            )
+        if cred.blocked_at is not None:
+            # Если blocked_at без TZ — относимся как к UTC (db: timestamptz).
+            blocked_at = cred.blocked_at
+            if blocked_at.tzinfo is None:
+                blocked_at = blocked_at.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - blocked_at > timedelta(days=_RECOVER_WINDOW_DAYS):
+                raise DomainValidationError(
+                    error_code="RECOVER_WINDOW_EXPIRED",
+                    message=f"Recover window of {_RECOVER_WINDOW_DAYS} days has expired",
+                )
+
+        try:
+            cred = await repo.mark_active(db, cred)
+            await db.commit()
+            await db.refresh(cred)
+        except IntegrityError as exc:
+            await db.rollback()
+            raise ConflictError(
+                error_code="NAME_DUPLICATE",
+                message="Credential name conflict on recover (active duplicate exists)",
+            ) from exc
+    except Exception as exc:
+        _emit_action_failure(
+            "tokens.recover",
+            target_id=cred_id,
+            target_type="credential",
+            exc=exc,
+        )
+        raise
 
     audit_service.emit(
         "tokens.recover",

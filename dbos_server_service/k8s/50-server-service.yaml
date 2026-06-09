@@ -9,18 +9,21 @@ data:
   APP_PORT: "8002"
   APP_LOG_LEVEL: INFO
   # Cluster-internal URLs соседних сервисов.
-  # https требует TLS-термирования в кластере — см. README про cluster-internal TLS.
-  AUTH_SERVICE_URL: https://auth-service:8000
-  LOGGING_SERVICE_URL: https://logging-service:8001
-  # Проверка TLS-сертификата при introspect к auth_service. При https
-  # внутри кластера держи "true", если auth-service отдаёт доверенный
-  # (mesh/CA) сертификат; временно "false" допустимо только для self-signed.
-  INTROSPECT_TLS_VERIFY: "true"
+  # Plain http внутри cluster'а: сервисы стартуют uvicorn'ом без --ssl-*,
+  # TLS-терминация только на Ingress. Изоляция — NetworkPolicy.
+  AUTH_SERVICE_URL: http://auth-service:8000
+  LOGGING_SERVICE_URL: http://logging-service:8001
+  # introspect идёт по plain http — verify не применим.
+  INTROSPECT_TLS_VERIFY: "false"
   # Internal endpoints (worker → server_service): требовать
   # `X-Target-Department-Id` от caller'а. В проде ОБЯЗАТЕЛЬНО true.
   INTERNAL_REQUIRE_DEPT_HEADER: "true"
   # slowapi: глобальный per-IP rate-limit. Health/ready исключены.
   SLOWAPI_RATE_LIMIT: "500/minute"
+  # DB connection pool: per-pod 5 + overflow 10 = max 15 conn × replicas=2 = 30,
+  # с запасом помещается в PG max_connections=100.
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "10"
 
 ---
 apiVersion: apps/v1

@@ -6,11 +6,16 @@ metadata:
 data:
   APP_ENV: production
   WORKER_LOG_LEVEL: INFO
-  # Cluster-internal URLs соседних сервисов.
-  # https требует TLS-термирования в кластере — см. README про cluster-internal TLS.
-  AUTH_SERVICE_URL: https://auth-service:8000
-  LOGGING_SERVICE_URL: https://logging-service:8001
-  SERVER_SERVICE_URL: https://server-service:8002
+  # Cluster-internal URLs соседних сервисов. Plain http: сервисы стартуют
+  # uvicorn'ом без --ssl-*, TLS-терминация только на Ingress. Изоляция —
+  # NetworkPolicy.
+  AUTH_SERVICE_URL: http://auth-service:8000
+  LOGGING_SERVICE_URL: http://logging-service:8001
+  SERVER_SERVICE_URL: http://server-service:8002
+  # DB connection pool: per-pod 5 + overflow 10 = max 15 conn × replicas=2 = 30,
+  # с запасом помещается в PG max_connections=100.
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "10"
   # Slot iDRAC root-account для rotate-password. Dell = 2, HPE = 1, SMC = 3.
   IPMI_USER_ID: "2"
   # iDRAC ходит с self-signed cert'ом. Включай "true" только если все BMC

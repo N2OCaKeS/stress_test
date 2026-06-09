@@ -1,0 +1,149 @@
+# CronJob ежедневного backup'а master-ключей и CA Secret'а в /backup/master-keys/.
+#
+# Runbook Backup-DR.md обещает "master keys backup ежедневно" — реализуется
+# именно этим CronJob'ом. Запускается после ночного окна pg-backup'ов
+# (auth 02:00 / logging 02:15 / secret 02:30 / server 02:45 / worker 03:00 MSK)
+# в 04:00 UTC = 07:00 MSK — pg-pod'ы уже свободны, диск backup-PV ещё не нагружен.
+#
+# Что попадает в архив (см. scripts/k8s/backup_master_keys.sh):
+#   - все master-ключи (SERVER_/SECRET_/REDIS_STASH_ENCRYPTION_KEY + legacy)
+#   - HKDF_SALT_HEX, AUTH_SECRET_KEY, INITIAL_ADMIN_*
+#   - DOCKER_RSA_PRIVATE_KEY (если есть)
+#   - dbos-ca-key-pair Secret целиком (для cert-manager Issuer)
+#
+# Шифрование:
+#   - BACKUP_PASSPHRASE из Secret'а dbos-backup-passphrase (если есть);
+#   - fallback gpg → openssl;
+#   - Secret оператор подкладывает руками: kubectl -n dbos create secret generic
+#     dbos-backup-passphrase --from-literal=BACKUP_PASSPHRASE='...'
+#   - если Secret'а нет — скрипт упадёт (что и нужно: без passphrase = unsafe
+#     plaintext архив с master-ключами на диске).
+#
+# offsite-копия: sidecar-container offsite-sync делает rsync архива на
+# OFFSITE_RSYNC_DEST если задано (см. ConfigMap dbos-offsite-config).
+#
+# concurrencyPolicy: Forbid — параллельный backup того же контента не нужен,
+# рискует race'нуться с rotation CronJob'ом который Secret патчит.
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: master-keys-backup
+  namespace: dbos
+  labels:
+    app: master-keys-backup
+spec:
+  schedule: "0 4 * * *"           # 04:00 UTC = 07:00 MSK ежедневно
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: master-keys-backup
+        spec:
+          serviceAccountName: rotation-runner
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: dbos/tools:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash"]
+              args:
+                - "-c"
+                - |
+                  set -euo pipefail
+                  echo "→ master-keys backup $(date -u +%FT%TZ)"
+                  mkdir -p /backup/master-keys
+                  chmod 700 /backup/master-keys
+                  bash /scripts/backup_master_keys.sh
+                  echo "✓ backup_master_keys.sh завершён"
+                  # Триггерим offsite через файл-маркер — sidecar в том же pod'е
+                  # отслеживает и пушит. На отдельном pod'е сложнее (нужен ещё
+                  # один CronJob с тайм-shift); в одном поде проще и быстрее.
+                  : > /backup/master-keys/.ready
+              env:
+                - name: NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: DBOS_NAMESPACE
+                  value: "dbos"
+                - name: DBOS_SECRET_NAME
+                  value: "dbos-secrets"
+                - name: DBOS_CA_SECRET_NAME
+                  value: "dbos-ca-key-pair"
+                - name: BACKUP_TARGET_DIR
+                  value: "/backup/master-keys"
+                - name: BACKUP_PASSPHRASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: dbos-backup-passphrase
+                      key: BACKUP_PASSPHRASE
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests: { cpu: "100m", memory: "128Mi" }
+                limits:   { cpu: "500m", memory: "512Mi" }
+            - name: offsite-sync
+              image: dbos/tools:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash"]
+              args:
+                - "-c"
+                - |
+                  set -euo pipefail
+                  # Ждём маркера .ready от основного контейнера (max 25 минут —
+                  # больше activeDeadlineSeconds Job всё равно не даст).
+                  for i in $(seq 1 150); do
+                    if [[ -f /backup/master-keys/.ready ]]; then
+                      break
+                    fi
+                    sleep 10
+                  done
+                  if [[ ! -f /backup/master-keys/.ready ]]; then
+                    echo "offsite-sync: маркер .ready не появился, основной backup не закончился — выхожу без ошибки"
+                    exit 0
+                  fi
+                  rm -f /backup/master-keys/.ready
+                  if [[ -z "${OFFSITE_RSYNC_DEST:-}" ]]; then
+                    echo "offsite copy disabled (no OFFSITE_RSYNC_DEST set)"
+                    exit 0
+                  fi
+                  echo "→ rsync /backup/master-keys → $OFFSITE_RSYNC_DEST"
+                  rsync -av --delete /backup/master-keys/ "$OFFSITE_RSYNC_DEST"
+                  echo "✓ offsite copy готов"
+              env:
+                - name: OFFSITE_RSYNC_DEST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: dbos-offsite-config
+                      key: OFFSITE_RSYNC_DEST
+                      optional: true
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+                  readOnly: true
+              resources:
+                requests: { cpu: "50m", memory: "64Mi" }
+                limits:   { cpu: "500m", memory: "256Mi" }
+          volumes:
+            - name: scripts
+              configMap:
+                name: rotation-scripts
+                defaultMode: 0o555
+            - name: backup
+              persistentVolumeClaim:
+                claimName: dbos-backup-pv

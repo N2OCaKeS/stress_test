@@ -11,6 +11,9 @@
 #       (без них после restore некому залогиниться, recovery-скрипт seed'а
 #        admin'а сравнивает hash именно с этим паролем).
 #   - DOCKER_RSA_PRIVATE_KEY (если есть; нужен для registry token-flow)
+#   - dbos-ca-key-pair — отдельный Secret cert-manager'а с приватником CA. Без него
+#     cert-manager не сможет ре-выпускать сертификаты сервисам после DR, придётся
+#     поднимать новый CA и перевыдавать клиентам — поэтому забираем сразу.
 #
 # Шифрование (в порядке предпочтения):
 #   1. age  — если установлен, requires recipients or passphrase.
@@ -234,9 +237,37 @@ for k in "${LEGACY_KEYS[@]}"; do
     write_key "$k" || true
 done
 
+# ── CA Secret cert-manager'а ─────────────────────────────────────────────────
+# dbos-ca-key-pair — Issuer'у нужен CA-приватник, а это отдельный k8s Secret
+# (не поле в dbos-secrets). Кладём целиком YAML-ом в подкаталог ca/, restore
+# подкатит обратно `kubectl apply -f`. Если Secret'а нет (свежий кластер,
+# CA ещё не выпущен) — пропускаем без ошибки.
+CA_SECRET_NAME="${DBOS_CA_SECRET_NAME:-dbos-ca-key-pair}"
+CA_DIR="$WORK_DIR/ca"
+mkdir -p "$CA_DIR"
+chmod 700 "$CA_DIR"
+
+if kubectl -n "$NS" get secret "$CA_SECRET_NAME" >/dev/null 2>&1; then
+    CA_YAML="$CA_DIR/${CA_SECRET_NAME}.yaml"
+    kubectl -n "$NS" get secret "$CA_SECRET_NAME" -o yaml \
+        | sed -E \
+            -e '/^  resourceVersion:/d' \
+            -e '/^  uid:/d' \
+            -e '/^  creationTimestamp:/d' \
+            -e '/^  managedFields:/,/^  [a-z]/{/^  [a-z]/!d;}' \
+        > "$CA_YAML"
+    chmod 600 "$CA_YAML"
+    CA_SIZE=$(stat -c '%s' "$CA_YAML" 2>/dev/null || wc -c < "$CA_YAML")
+    echo "  - ca/${CA_SECRET_NAME}.yaml (${CA_SIZE} bytes)" >> "$MANIFEST"
+else
+    echo "  - ca/${CA_SECRET_NAME}.yaml: SKIPPED (Secret не найден в $NS)" >> "$MANIFEST"
+fi
+
 # ── tar.gz ───────────────────────────────────────────────────────────────────
 TAR_PATH="$WORK_DIR/$ARCHIVE_BASENAME"
-( cd "$WORK_DIR" && tar -czf "$TAR_PATH" -C "$WORK_DIR" MANIFEST.txt keys )
+# В архив кладём MANIFEST.txt + keys/ + ca/ (если каталог ca/ пустой — tar его
+# всё равно сохранит, при restore просто будет пустым).
+( cd "$WORK_DIR" && tar -czf "$TAR_PATH" -C "$WORK_DIR" MANIFEST.txt keys ca )
 chmod 600 "$TAR_PATH"
 
 TAR_SHA256_PLAIN="$(sha256sum "$TAR_PATH" | awk '{print $1}')"

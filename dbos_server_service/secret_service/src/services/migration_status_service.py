@@ -18,12 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.schemas.internal import MigrationStatus
 
 
-# Postgres regexp_match возвращает text[] — берём первую группу и кастим к int
-# одной expression'ой, чтобы caller'у не пришлось парсить строку.
+# Postgres regexp_match возвращает text[] — берём первую группу и кастим к bigint
+# одной expression'ой, чтобы caller'у не пришлось парсить строку. bigint, а не
+# int: ::int (INTEGER, max 2^31-1) переполнится на ciphertext с версией
+# v9999999999$ или выше; bigint держит до 2^63-1. Регулярка ловит любое
+# количество цифр, поэтому ограничения сверху на размер версии нет.
 _VERSION_HISTOGRAM_SQL = text(
     """
     SELECT
-        (regexp_match(secret_encrypted, '^v(\\d+)\\$'))[1]::int AS version,
+        (regexp_match(secret_encrypted, '^v(\\d+)\\$'))[1]::bigint AS version,
         count(*) AS rows
     FROM credentials
     GROUP BY 1

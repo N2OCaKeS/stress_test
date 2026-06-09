@@ -72,7 +72,7 @@ spec:
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: AUTH_SECRET_KEY }
             - name: LOGGING_SERVICE_URL
-              value: https://logging-service:8001
+              value: http://logging-service:8001
             - name: LOGGING_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEY_AUTH }
@@ -161,7 +161,7 @@ spec:
             - name: DATABASE_URL
               value: "postgresql+psycopg://$(LOGGING_DB_USER):$(LOGGING_DB_PASSWORD)@logging-postgres:5432/logging_db"
             - name: AUTH_SERVICE_URL
-              value: https://auth-service:8000
+              value: http://auth-service:8000
             - name: SERVICE_API_KEYS
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: LOGGING_SERVICE_API_KEYS_JSON }
@@ -243,9 +243,9 @@ spec:
             - name: SERVER_WORKER_REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
             - name: AUTH_SERVICE_URL
-              value: https://auth-service:8000
+              value: http://auth-service:8000
             - name: LOGGING_SERVICE_URL
-              value: https://logging-service:8001
+              value: http://logging-service:8001
             - name: SERVER_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SERVER_ENCRYPTION_KEY }
@@ -337,11 +337,11 @@ spec:
             - name: REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
             - name: AUTH_SERVICE_URL
-              value: https://auth-service:8000
+              value: http://auth-service:8000
             - name: LOGGING_SERVICE_URL
-              value: https://logging-service:8001
+              value: http://logging-service:8001
             - name: SERVER_SERVICE_URL
-              value: https://server-service:8002
+              value: http://server-service:8002
             - name: WORKER_BOT_TOKEN
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: WORKER_BOT_TOKEN }
@@ -412,9 +412,9 @@ spec:
             - name: DATABASE_URL
               value: "postgresql+psycopg://$(SECRET_DB_USER):$(SECRET_DB_PASSWORD)@secret-postgres:5432/secret_db"
             - name: AUTH_SERVICE_URL
-              value: https://auth-service:8000
+              value: http://auth-service:8000
             - name: LOGGING_SERVICE_URL
-              value: https://logging-service:8001
+              value: http://logging-service:8001
             - name: SECRET_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SECRET_ENCRYPTION_KEY }

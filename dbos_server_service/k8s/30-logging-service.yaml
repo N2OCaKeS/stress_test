@@ -10,9 +10,16 @@ data:
   APP_PORT: "8001"
   APP_LOG_LEVEL: INFO
   # URL auth_service внутри namespace — для проверки Bearer JWT.
-  # https внутри кластера требует TLS-термирования (mesh-mTLS / sidecar /
-  # TLS на самих сервисах) — см. README, раздел про cluster-internal TLS.
-  AUTH_SERVICE_URL: https://auth-service:8000
+  # Plain http внутри cluster'а: сервисы стартуют uvicorn'ом без --ssl-*,
+  # TLS-терминация только на Ingress. Изоляция — NetworkPolicy.
+  AUTH_SERVICE_URL: http://auth-service:8000
+  # DB connection pool: per-pod 5 + overflow 10 = max 15 conn × replicas=2 = 30,
+  # с запасом помещается в PG max_connections=100.
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "10"
+  # Override default 100/min — login-шторм аудит-эмитов из auth_service
+  # упирается в бюджет и роняет события. 1000/min даёт запас.
+  INGEST_RATE_LIMIT: "1000/minute"
 
 ---
 apiVersion: apps/v1

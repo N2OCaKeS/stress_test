@@ -9,6 +9,7 @@ from src.api.v1.endpoints.ipmi import router as ipmi_router
 from src.api.v1.endpoints.installed_packages import router as installed_packages_router
 from src.api.v1.endpoints.internal import router as internal_router
 from src.api.v1.endpoints.inventory import users_router as users_inventory_router
+from src.api.v1.endpoints.ops import router as ops_router
 from src.api.v1.endpoints.os_versions import router as os_versions_router
 from src.api.v1.endpoints.permissions import router as permissions_router
 from src.api.v1.endpoints.secrets_migration import router as secrets_migration_router
@@ -49,3 +50,6 @@ router.include_router(worker_dispatch_ipmi_router, tags=["ipmi-controllers"])
 # Internal — без tags, include_in_schema=False (скрыт из публичного OpenAPI).
 router.include_router(internal_router)
 router.include_router(secrets_migration_router)
+# Ops — отдельный s2s-канал под shared-secret (X-Service-Identity), для
+# rotation_runner и подобных. Тоже скрыт из OpenAPI.
+router.include_router(ops_router)

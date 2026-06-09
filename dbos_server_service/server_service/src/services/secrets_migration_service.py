@@ -35,7 +35,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import BigInteger, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,43 +75,56 @@ def _parse_version(token: str | None) -> int | None:
         return None
 
 
-async def _count_by_version(db: AsyncSession) -> dict[int, int]:
-    """Посчитать `password_encrypted` по wire-версиям из обеих таблиц.
+def _version_count_stmt(column):
+    """SQL `GROUP BY substring(col,'^v(\\d+)\\$')` под одну ciphertext-колонку.
 
-    Делается в Python после SELECT'а: на ~десятках тысяч строк это дешевле
-    и проще, чем плодить две вариации regexp-агрегатов под Postgres. Если
-    БД вырастет до миллионов — переписать в чистый SQL через
-    `substring(col from '^v([0-9]+)\\$')::int` + `GROUP BY`.
+    `substring(col from '^v([0-9]+)\\$')` извлекает версию из wire-префикса
+    `v<N>$...`. Malformed-токены (без префикса) попадают в NULL — отбрасываем
+    через `WHERE prefix IS NOT NULL`, чтобы dict[int, int] был bounded и
+    `::bigint`-каст не подвисал на null'ах.
+
+    `::bigint` (не `::int`): в secret_service отдельный migration_status уже
+    бил overflow на `::int` для крупных таблиц (>2.1B row'ов в счётчике после
+    bump'а), здесь сразу 64-бит.
     """
-    by_version: dict[int, int] = {}
-
-    for column in (ServerAccount.password_encrypted, IpmiController.password_encrypted):
-        stmt = select(column).where(column.is_not(None))
-        rows = (await db.execute(stmt)).scalars()
-        for token in rows:
-            v = _parse_version(token)
-            if v is None:
-                continue
-            by_version[v] = by_version.get(v, 0) + 1
-    return by_version
+    version_expr = func.substring(column, r"^v([0-9]+)\$")
+    return (
+        select(
+            version_expr.cast(BigInteger).label("version"),
+            func.count().label("cnt"),
+        )
+        .where(column.is_not(None))
+        .where(version_expr.is_not(None))
+        .group_by(version_expr)
+    )
 
 
 async def _count_by_version_for_column(db: AsyncSession, column) -> dict[int, int]:
-    """То же, что :func:`_count_by_version`, но по одной колонке.
+    """`{N: count}` по wire-префиксам для одной колонки — чистый SQL.
 
-    Используется для per-table разбивки в migration_status: оператор хочет
-    видеть, какая именно колонка тащит legacy-токены, чтобы прицеливаться
-    seed_outbox / drop старого ключа.
+    Раньше тянул все ciphertext'ы в Python и парсил regex'ом per-row; на
+    миллионных таблицах это выедало память и RTT'ы pool'а. Теперь —
+    `substring(col,'^v(\\d+)\\$')::bigint + GROUP BY` целиком на стороне БД.
     """
     by_version: dict[int, int] = {}
-    stmt = select(column).where(column.is_not(None))
-    rows = (await db.execute(stmt)).scalars()
-    for token in rows:
-        v = _parse_version(token)
-        if v is None:
+    rows = (await db.execute(_version_count_stmt(column))).all()
+    for row in rows:
+        version = row[0]
+        cnt = row[1]
+        if version is None:
             continue
-        by_version[v] = by_version.get(v, 0) + 1
+        by_version[int(version)] = int(cnt)
     return by_version
+
+
+async def _count_by_version(db: AsyncSession) -> dict[int, int]:
+    """Объединить per-column счётчики по обеим owner-таблицам."""
+    combined: dict[int, int] = {}
+    for column in (ServerAccount.password_encrypted, IpmiController.password_encrypted):
+        per_column = await _count_by_version_for_column(db, column)
+        for v, c in per_column.items():
+            combined[v] = combined.get(v, 0) + c
+    return combined
 
 
 async def _column_breakdown(

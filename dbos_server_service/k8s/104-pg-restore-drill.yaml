@@ -1,0 +1,182 @@
+# CronJob ежемесячного pg_restore drill.
+#
+# Запускает scripts/k8s/pg_restore_drill.sh --non-interactive по всем 5 БД
+# (см. DBOS_DRILL_DBS env). Для каждой БД скрипт:
+#   1. создаёт namespace dbos-drill
+#   2. поднимает временный postgres:16 pod, монтирует hostPath backup-PV ro
+#   3. pg_restore последнего daily-XX.dump в drill_<db>
+#   4. сравнивает COUNT(*) main_table prod vs drill (delta ≤ 20%)
+#   5. удаляет dbos-drill
+#
+# Если хотя бы одна БД упадёт — Job выйдет с rc=1 и попадёт в failedJobs.
+# Алёрт строится поверх `kubectl get jobs -l app=pg-restore-drill --field-selector
+# status.successful!=1`.
+#
+# Schedule: 1-го числа каждого месяца в 06:00 UTC = 09:00 MSK. Через 2 часа
+# после master-keys backup (04:00) и часом после secret-full когда совпадает с
+# воскресеньем — никаких параллельных backup-jobs в этот момент идти не должно.
+#
+# RBAC: drill создаёт/удаляет namespace, поэтому ему нужен ClusterRole на
+# namespaces create/delete + on pods/secrets get/list/exec в обоих ns. См.
+# pg-restore-drill-* объекты ниже.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pg-restore-drill
+  namespace: dbos
+  labels:
+    app: pg-restore-drill
+
+---
+# ClusterRole — нужен на cluster-scope для namespaces + nodes + persistentvolumes
+# (PV нужен скрипту для определения hostPath через .spec.hostPath.path) +
+# управление ресурсами внутри эфемерного drill-namespace (pods get/list/create/
+# delete/exec, чтобы скрипт мог поднять drill-postgres pod и сделать exec).
+# Risk-mitigation: drill-namespace эфемерен и не пересекается с prod; RBAC на
+# prod-ns (dbos) даётся отдельным Role-объектом ниже и узко.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pg-restore-drill
+  labels:
+    app: pg-restore-drill
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list"]
+  # Управление эфемерным drill-namespace.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "create", "delete", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pg-restore-drill
+  labels:
+    app: pg-restore-drill
+subjects:
+  - kind: ServiceAccount
+    name: pg-restore-drill
+    namespace: dbos
+roleRef:
+  kind: ClusterRole
+  name: pg-restore-drill
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# В prod-ns dbos нужен readonly на secrets/pods + exec в pg-pod (только SELECT
+# COUNT(*), guard'ы read-only в коде скрипта).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pg-restore-drill-prod
+  namespace: dbos
+  labels:
+    app: pg-restore-drill
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "pods", "persistentvolumeclaims"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pg-restore-drill-prod
+  namespace: dbos
+  labels:
+    app: pg-restore-drill
+subjects:
+  - kind: ServiceAccount
+    name: pg-restore-drill
+    namespace: dbos
+roleRef:
+  kind: Role
+  name: pg-restore-drill-prod
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# CronJob.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-restore-drill
+  namespace: dbos
+  labels:
+    app: pg-restore-drill
+spec:
+  schedule: "0 6 1 * *"           # 1-е число каждого месяца 06:00 UTC = 09:00 MSK
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 6
+  failedJobsHistoryLimit: 6
+  jobTemplate:
+    spec:
+      backoffLimit: 0             # один промах = один отчёт, не retry'ить
+      ttlSecondsAfterFinished: 2592000   # 30 дней — чтобы Job дожил до следующего запуска
+      activeDeadlineSeconds: 3600        # 1 час — 5 БД × ~5 мин drill каждой + cleanup
+      template:
+        metadata:
+          labels:
+            app: pg-restore-drill
+        spec:
+          serviceAccountName: pg-restore-drill
+          restartPolicy: OnFailure
+          containers:
+            - name: drill
+              image: dbos/tools:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash"]
+              args:
+                - "-c"
+                - |
+                  set -euo pipefail
+                  echo "→ pg_restore drill $(date -u +%FT%TZ)"
+                  echo "  DBS=${DBOS_DRILL_DBS:-default-5}"
+                  bash /scripts/pg_restore_drill.sh --non-interactive
+              env:
+                - name: DBOS_NAMESPACE
+                  value: "dbos"
+                - name: DBOS_DRILL_NAMESPACE
+                  value: "dbos-drill"
+                - name: DBOS_DRILL_DELTA_PCT
+                  value: "20"
+                - name: DBOS_DRILL_DBS
+                  value: "auth_db,logging_db,server_db,worker_db,secret_db"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests: { cpu: "100m", memory: "128Mi" }
+                limits:   { cpu: "500m", memory: "512Mi" }
+          volumes:
+            - name: scripts
+              configMap:
+                name: rotation-scripts
+                defaultMode: 0o555

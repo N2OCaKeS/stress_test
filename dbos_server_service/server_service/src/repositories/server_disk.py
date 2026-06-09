@@ -36,6 +36,30 @@ async def list_all_for_server(db: AsyncSession, server_id: str) -> list[ServerDi
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_for_servers(
+    db: AsyncSession, server_ids: list[str],
+) -> dict[str, list[ServerDisk]]:
+    """Bulk-загрузка дисков для набора серверов одним SELECT ... WHERE IN (...).
+
+    Используется `list_servers` / `list_servers_cursor`, чтобы не упираться в
+    N+1 (`list_all_for_server` per row → до 501 SELECT'ов при limit=500).
+    Порядок внутри списка — тот же `device_name ASC`, что и в `list_all_for_server`,
+    чтобы `storage` в карточке выглядел одинаково при list-и-detail вызовах.
+    """
+    if not server_ids:
+        return {}
+    stmt = (
+        select(ServerDisk)
+        .where(ServerDisk.server_id.in_(server_ids))
+        .order_by(ServerDisk.server_id.asc(), ServerDisk.device_name.asc())
+    )
+    rows = list((await db.execute(stmt)).scalars())
+    grouped: dict[str, list[ServerDisk]] = {sid: [] for sid in server_ids}
+    for disk in rows:
+        grouped.setdefault(disk.server_id, []).append(disk)
+    return grouped
+
+
 async def create(db: AsyncSession, data: dict) -> ServerDisk:
     """INSERT новой строки. commit — на caller'е."""
     obj = ServerDisk(**data)

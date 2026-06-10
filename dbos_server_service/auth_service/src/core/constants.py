@@ -69,10 +69,19 @@ BOT_TOKEN_PREFIX = "dbos_bot_"
 # первых символа secret'а).
 TOKEN_PREFIX_LEN = 12
 
-# Дефолтный TTL для bot-токенов — 6 месяцев (180 дней). Если caller не
-# передал `expires_at`, бот-токен живёт ровно столько с момента выдачи. После
-# истечения dept_admin перевыпускает токен через `POST /bots/{id}/tokens`.
-BOT_TOKEN_TTL_SECONDS = 6 * 30 * 24 * 3600  # 15_552_000
+# Максимальный TTL для любых выдаваемых токенов (PAT и bot-token) — 6 месяцев
+# (180 дней). Используется и как дефолт для bot-токена, когда caller не передал
+# `expires_at`, и как верхняя граница валидации `expires_at` на обоих эндпоинтах.
+# Поменять — в одном месте.
+MAX_TOKEN_TTL_DAYS = 180
+MAX_TOKEN_TTL_SECONDS = MAX_TOKEN_TTL_DAYS * 24 * 3600  # 15_552_000
+
+# Алиас для обратной совместимости. Раньше использовался как дефолт, когда
+# caller не передавал `expires_at`; теперь `expires_at` обязателен для bot-
+# токенов, и константа служит только как «верхняя граница TTL» под старым
+# именем (есть тест на конкретное значение). Новый код использует
+# `MAX_TOKEN_TTL_SECONDS`.
+BOT_TOKEN_TTL_SECONDS = MAX_TOKEN_TTL_SECONDS
 
 
 # ── Service identity allow-list (mTLS-partial) ───────────────────────────────

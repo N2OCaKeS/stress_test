@@ -4,7 +4,7 @@ from datetime import timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import BOT_TOKEN_TTL_SECONDS, PlatformRole
+from src.core.constants import MAX_TOKEN_TTL_SECONDS, PlatformRole
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -317,9 +317,10 @@ async def create_bot_token(
 ) -> BotTokenCreateResponse:
     """Создать новый bot-токен. Raw возвращается один раз — больше нигде не покажем.
 
-    Уникальность `name` держим только в рамках **активных** токенов бота:
-    после revoke имя освобождается, dept_admin может пересоздать токен
-    с прежним name (штатный flow ротации раз в полгода).
+    Инвариант: у бота 0 или 1 active token. Любые существующие активные
+    токены auto-revoke'аются перед выдачей нового — issue таким образом
+    превращается в неявный rotate. Per-token revoke (`revoke_bot_token`)
+    остаётся для случая «токен утёк, отзови без замены».
     """
     bot_repo = BotRepository(db)
     token_repo = BotTokenRepository(db)
@@ -339,27 +340,45 @@ async def create_bot_token(
         extra_details={"token_name": name},
     )
 
+    # Auto-revoke всех существующих active токенов бота. Поддерживает инвариант
+    # «0 или 1 active», даже если legacy-данные содержат несколько активных
+    # (например после миграции из старой схемы). Имя для нового токена после
+    # этого свободно — `exists_name` ниже не сработает.
+    superseded_ids: list[str] = []
+    for existing in await token_repo.list_active_for_bot(bot_id):
+        await token_repo.revoke(existing)
+        superseded_ids.append(existing.id)
+
     if await token_repo.exists_name(bot_id, name):
         raise ConflictError(error_code="TOKEN_NAME_ALREADY_EXISTS", message=f"Token '{name}' already exists")
 
-    # Bot-токены живут 6 месяцев по умолчанию. Если caller передал явный
-    # expires_at — уважаем его (валидируем aware/naive и future-ness),
-    # иначе ставим now + 6mo. Бессрочные bot-токены запрещены: их сложно
-    # ротировать, dept_admin'у проще перевыпустить раз в полгода.
+    # Bot-токены живут максимум 6 месяцев. Caller обязан передать `expires_at`
+    # (UI всегда подставляет дату из формы) — отсутствие срока теперь жёсткий
+    # 422 INVALID_EXPIRATION, а не silent-fallback на now + 6mo. Это
+    # синхронизирует поведение с PAT и убирает «легаси» бессрочных токенов.
     if expires_at is None:
-        effective_expires_at = utcnow() + timedelta(seconds=BOT_TOKEN_TTL_SECONDS)
-    else:
-        exp_dt = (
-            expires_at if expires_at.tzinfo is not None
-            else expires_at.replace(tzinfo=timezone.utc)
+        raise DomainValidationError(
+            error_code="INVALID_EXPIRATION",
+            message="Срок действия обязателен и не должен превышать 6 месяцев",
         )
-        if exp_dt <= utcnow():
-            raise DomainValidationError(
-                error_code="INVALID_TOKEN_EXPIRY",
-                message="expires_at must be in the future",
-                details={"expires_at": exp_dt.isoformat()},
-            )
-        effective_expires_at = exp_dt
+    exp_dt = (
+        expires_at if expires_at.tzinfo is not None
+        else expires_at.replace(tzinfo=timezone.utc)
+    )
+    if exp_dt <= utcnow():
+        raise DomainValidationError(
+            error_code="INVALID_TOKEN_EXPIRY",
+            message="expires_at must be in the future",
+            details={"expires_at": exp_dt.isoformat()},
+        )
+    max_allowed = utcnow() + timedelta(seconds=MAX_TOKEN_TTL_SECONDS)
+    if exp_dt > max_allowed:
+        raise DomainValidationError(
+            error_code="INVALID_EXPIRATION",
+            message="Срок действия обязателен и не должен превышать 6 месяцев",
+            details={"expires_at": exp_dt.isoformat(), "max_allowed": max_allowed.isoformat()},
+        )
+    effective_expires_at = exp_dt
 
     raw, prefix, token_hash = generate_bot_token()
     token = await token_repo.create(
@@ -370,6 +389,18 @@ async def create_bot_token(
         expires_at=effective_expires_at,
     )
     await db.commit()
+    # Эмитим auto-revoke событие для каждого вытесненного токена ДО bot.token_create,
+    # чтобы SIEM видел причинно-следственный порядок (revoke → create).
+    for superseded_id in superseded_ids:
+        audit_service.emit(
+            "bot.token_revoke", actor_id, target_id=superseded_id, target_type="bot_token",
+            request_id=request_id,
+            details={
+                "bot_id": bot_id,
+                "bot_name": bot.name,
+                "reason": "superseded_by_issue",
+            },
+        )
     # Plaintext bot-токен в audit не кладём: SOC получает событие создания с
     # token_id/token_prefix, а raw отдаём только caller'у через response.
     audit_service.emit(
@@ -381,6 +412,7 @@ async def create_bot_token(
             "token_name": name,
             "token_prefix": prefix,
             "expires_at": effective_expires_at.isoformat(),
+            "superseded_token_ids": superseded_ids,
         },
         request_id=request_id,
     )

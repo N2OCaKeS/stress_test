@@ -6,6 +6,8 @@ from sqlalchemy import update
 
 from src.core.security import create_access_token, hash_opaque_token
 from src.models import PersonalAccessToken
+from datetime import timedelta
+from src.utils.time import utcnow
 
 INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
 ACCESS_URL = "/api/auth/v1/authorization/service-access"
@@ -83,7 +85,7 @@ async def test_expired_jwt_is_inactive(client, user_a):
 
 async def test_pat_is_active(client, user_a_token):
     raw = (await client.post(TOKENS_URL, headers={"Authorization": f"Bearer {user_a_token}"},
-                              json={"name": "intr_pat", "allowed_services": ["service_x"]})).json()["token"]
+                              json={"name": "intr_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()})).json()["token"]
     resp = await client.post(INTROSPECT_URL, json={"token": raw})
     assert resp.json()["active"] is True
     assert resp.json()["subject_type"] == "user"
@@ -91,7 +93,7 @@ async def test_pat_is_active(client, user_a_token):
 
 async def test_pat_returns_username_and_platform_role(client, user_a, user_a_token):
     raw = (await client.post(TOKENS_URL, headers={"Authorization": f"Bearer {user_a_token}"},
-                              json={"name": "intr_pat_with_fields", "allowed_services": ["service_x"]})).json()["token"]
+                              json={"name": "intr_pat_with_fields", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()})).json()["token"]
     body = (await client.post(INTROSPECT_URL, json={"token": raw})).json()
     assert body["username"] == user_a.username
     assert body["platform_role"] is None
@@ -101,7 +103,7 @@ async def test_pat_returns_username_and_platform_role(client, user_a, user_a_tok
 async def test_expired_pat_is_inactive(client, user_a_token, db):
     """PAT с expires_at в прошлом → active=false."""
     raw = (await client.post(TOKENS_URL, headers={"Authorization": f"Bearer {user_a_token}"},
-                              json={"name": "expired_pat", "allowed_services": ["service_x"]})).json()["token"]
+                              json={"name": "expired_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()})).json()["token"]
 
     await db.execute(
         update(PersonalAccessToken)
@@ -181,7 +183,7 @@ async def test_introspect_bot_token_forwards_caller_ip_to_tracker(
     raw = (await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "cip_tok"},
+        json={"name": "cip_tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()["token"]
 
     resp = await client.post(
@@ -270,7 +272,7 @@ async def test_service_access_not_in_token_emits_failure_status(
     raw = (await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "tok"},
+        json={"name": "tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()["token"]
 
     captured.clear()

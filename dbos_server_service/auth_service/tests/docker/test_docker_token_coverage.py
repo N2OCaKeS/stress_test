@@ -11,6 +11,8 @@ import pytest_asyncio
 from src.models.department_docker_registry import DepartmentDockerRegistry
 from src.utils.ids import _new_id
 from tests._helpers.http import _basic  # noqa: F401 — общий helper
+from datetime import timedelta
+from src.utils.time import utcnow
 
 TOKEN_URL = "/api/auth/v1/docker/token"
 CONFIG_URL = "/api/auth/v1/docker/registry/{dept_id}"
@@ -283,7 +285,7 @@ class TestPatInactiveUser:
         pat_raw = (await client.post(
             "/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "inactive_user_pat", "allowed_services": ["service_x"]},
+            json={"name": "inactive_user_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )).json()["token"]
 
         # Деактивируем юзера напрямую в БД.
@@ -320,7 +322,7 @@ class TestPatLockoutSideChannel:
         pat_raw = (await client.post(
             "/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "locked_user_pat", "allowed_services": ["service_x"]},
+            json={"name": "locked_user_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )).json()["token"]
 
         # Ставим locked_until в будущем — имитируем password-lockout.

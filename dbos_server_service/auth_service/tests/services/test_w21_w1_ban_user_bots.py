@@ -17,6 +17,8 @@ Owner-decision (2026-06-01): `ban_user` НЕ должен автоматичес
 
 from src.repositories.bot_tokens import BotTokenRepository
 from src.repositories.bots import BotRepository
+from datetime import timedelta
+from src.utils.time import utcnow
 
 BAN_URL = "/api/auth/v1/users/{user_id}/ban"
 BOTS_URL = "/api/auth/v1/bots"
@@ -180,7 +182,7 @@ async def test_manual_bot_token_revoke_still_works_after_owner_ban(
     tok_resp = await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "manual_revoke_tok"},
+        json={"name": "manual_revoke_tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert tok_resp.status_code == 201, tok_resp.text
     tok_data = tok_resp.json()

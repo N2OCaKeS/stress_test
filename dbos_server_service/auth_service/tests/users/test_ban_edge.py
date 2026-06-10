@@ -16,6 +16,8 @@ import pytest
 from sqlalchemy import update
 
 from src.models import Ban, User
+from datetime import timedelta
+from src.utils.time import utcnow
 
 USERS_URL = "/api/auth/v1/users"
 LOGIN_URL = "/api/auth/v1/login"
@@ -365,7 +367,7 @@ class TestUnbanAndPAT:
         raw = (await client.post(
             "/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "unban_pat_cycle", "allowed_services": ["service_x"]},
+            json={"name": "unban_pat_cycle", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )).json()["token"]
 
         await client.post(
@@ -653,7 +655,7 @@ class TestAutoUnbanReactivatesPat:
         raw = (await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "auto_unban_pat", "allowed_services": ["service_x"]},
+            json={"name": "auto_unban_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )).json()["token"]
 
         future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()

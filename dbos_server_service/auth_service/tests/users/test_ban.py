@@ -4,6 +4,8 @@ import pytest
 
 from src.core.constants import UserStatus
 from src.models import User
+from datetime import timedelta
+from src.utils.time import utcnow
 
 BAN_URL = "/api/auth/v1/users/{user_id}/ban"
 UNBAN_URL = "/api/auth/v1/users/{user_id}/unban"
@@ -129,7 +131,7 @@ async def test_pat_introspect_reports_is_banned_false_after_unban(
     raw = (await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "unban_intr_pat", "allowed_services": ["service_x"]},
+        json={"name": "unban_intr_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()["token"]
 
     await _ban(client, admin_token, user_a.id)
@@ -165,7 +167,7 @@ async def test_ban_revokes_active_pat(
     raw = (await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "ban_revoke_pat", "allowed_services": ["service_x"]},
+        json={"name": "ban_revoke_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()["token"]
 
     # PAT валиден ДО ban'а — sanity-чек, чтобы исключить ложноположительный

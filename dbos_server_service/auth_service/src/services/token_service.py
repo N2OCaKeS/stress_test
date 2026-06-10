@@ -1,10 +1,11 @@
 """Personal Access Tokens (PAT): создание, листинг, revoke."""
 
-from datetime import timezone
+from datetime import timedelta, timezone
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.constants import MAX_TOKEN_TTL_SECONDS
 from src.core.exceptions import AuthorizationError, ConflictError, DomainValidationError, NotFoundError
 from src.core.security import generate_pat
 from src.repositories.departments import DepartmentRepository
@@ -13,6 +14,13 @@ from src.repositories.users import UserRepository
 from src.schemas.tokens import PATCreateResponse, PATListItem
 from src.services import audit_service
 from src.utils.time import utcnow
+
+# Общее сообщение для всех нарушений 6-месячного потолка TTL — единый текст
+# на бэке/фронте и для PAT, и для bot-token. Сам error_code (INVALID_EXPIRATION)
+# UI ловит отдельно, сообщение показывает пользователю как есть.
+_INVALID_EXPIRATION_MSG = (
+    "Срок действия обязателен и не должен превышать 6 месяцев"
+)
 
 
 async def create_pat(
@@ -39,18 +47,32 @@ async def create_pat(
     dept_repo = DepartmentRepository(db)
     user_repo = UserRepository(db)
 
-    exp_dt = None
-    if expires_at is not None:
-        exp_dt = (
-            expires_at if expires_at.tzinfo is not None
-            else expires_at.replace(tzinfo=timezone.utc)
+    # Срок действия PAT обязателен и ограничен 6 месяцами. Бессрочные токены
+    # запрещены: ротация раз в полгода — компромисс между UX (не каждый день)
+    # и compromise window. expires_at=None → 422 INVALID_EXPIRATION. Выше
+    # потолка — тот же error_code, одно сообщение для UI.
+    if expires_at is None:
+        raise DomainValidationError(
+            error_code="INVALID_EXPIRATION",
+            message=_INVALID_EXPIRATION_MSG,
         )
-        if exp_dt <= utcnow():
-            raise DomainValidationError(
-                error_code="INVALID_TOKEN_EXPIRY",
-                message="expires_at must be in the future",
-                details={"expires_at": exp_dt.isoformat()},
-            )
+    exp_dt = (
+        expires_at if expires_at.tzinfo is not None
+        else expires_at.replace(tzinfo=timezone.utc)
+    )
+    if exp_dt <= utcnow():
+        raise DomainValidationError(
+            error_code="INVALID_TOKEN_EXPIRY",
+            message="expires_at must be in the future",
+            details={"expires_at": exp_dt.isoformat()},
+        )
+    max_allowed = utcnow() + timedelta(seconds=MAX_TOKEN_TTL_SECONDS)
+    if exp_dt > max_allowed:
+        raise DomainValidationError(
+            error_code="INVALID_EXPIRATION",
+            message=_INVALID_EXPIRATION_MSG,
+            details={"expires_at": exp_dt.isoformat(), "max_allowed": max_allowed.isoformat()},
+        )
 
     if allowed_services:
         actor = await user_repo.get_by_id(actor_id)

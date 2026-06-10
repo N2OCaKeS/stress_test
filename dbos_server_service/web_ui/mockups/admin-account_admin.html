@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · bob (account_admin) · администрирование</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30;
+    --border: #3e3e42; --text: #cccccc; --text-dim: #969696;
+    --accent: #0e639c; --accent-fg: #ffffff;
+    --danger: #f48771; --warn: #cca700; --ok: #4ec9b0;
+    --hover: #2a2d2e; --selected: #094771;
+  }
+  html[data-theme="vscode-light"] {
+    --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb;
+    --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c;
+    --accent: #007acc; --accent-fg: #ffffff;
+    --danger: #cd3131; --warn: #b89500; --ok: #178178;
+    --hover: #e8e8e8; --selected: #c8e6ff;
+  }
+  html[data-theme="dark-orange"] {
+    --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118;
+    --border: #45382c; --text: #e8d9c5; --text-dim: #998571;
+    --accent: #f28a26; --accent-fg: #1a1410;
+    --danger: #ef6f55; --warn: #d8a200; --ok: #69b378;
+    --hover: #2f2419; --selected: #5a3a16;
+  }
+  html[data-theme="blue"] {
+    --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b;
+    --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8;
+    --accent: #4fb8ff; --accent-fg: #0a1929;
+    --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7;
+    --hover: #18406b; --selected: #1d5a98;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .surface { background: var(--bg-soft); }
+  .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-warn { color: var(--warn); }
+  .text-ok { color: var(--ok); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hover-bg:hover { background: var(--hover); }
+  .chip { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+  .chip:hover { background: var(--hover); }
+  .chip.active { background: var(--selected); }
+  .card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+  .card h3 { font-weight: 600; }
+  .stat-big { font-size: 28px; font-weight: 700; line-height: 1; }
+  .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin-bottom: 6px; }
+  .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); }
+  .badge-ok { color: var(--ok); border-color: var(--ok); }
+  .badge-warn { color: var(--warn); border-color: var(--warn); }
+  .badge-danger { color: var(--danger); border-color: var(--danger); }
+  .row-line { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+  .row-line:last-child { border-bottom: none; }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; }
+  .kv .k { color: var(--text-dim); }
+  .health-led { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .led-ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .led-warn { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+  .led-danger { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+  .bar { background: var(--bg-soft-2); height: 6px; border-radius: 3px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); }
+  .bar.ok > span { background: var(--ok); }
+  .bar.warn > span { background: var(--warn); }
+  .bar.danger > span { background: var(--danger); }
+  .pod { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 4px; background: var(--bg-soft-2); font-size: 11px; }
+  table.mini { width: 100%; font-size: 12px; border-collapse: collapse; }
+  table.mini th { text-align: left; color: var(--text-dim); font-weight: 500; padding: 4px 6px; border-bottom: 1px solid var(--border); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+  table.mini td { padding: 6px; border-bottom: 1px dashed var(--border); }
+  table.mini tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+<!-- Top bar -->
+<header class="surface border-b border-token h-12 px-3 flex items-center gap-3 shrink-0">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8">
+    <i data-lucide="grid-3x3" class="w-4 h-4 text-accent"></i>
+    DBOS
+  </a>
+  <span class="text-xs text-dim">/ Администрирование</span>
+
+  <div class="ml-auto flex items-center gap-2">
+    <div class="surface-2 border border-token rounded px-2 py-1 flex items-center gap-2 text-sm">
+      <div class="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-xs font-semibold">BO</div>
+      <div>
+        <div class="leading-tight">bob</div>
+        <div class="text-[10px] text-dim leading-tight">account_admin · платформа</div>
+      </div>
+    </div>
+
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm">
+      <option value="vscode-dark">VS Code Dark</option>
+      <option value="vscode-light">VS Code Light</option>
+      <option value="dark-orange">Dark Orange</option>
+      <option value="blue">Blue</option>
+    </select>
+
+    <a href="index.html" class="btn">
+      <i data-lucide="log-out" class="w-4 h-4 inline-block align-text-bottom"></i>
+      Logout
+    </a>
+  </div>
+</header>
+
+<div class="flex-1 flex min-h-0">
+
+  <!-- Left -->
+  <aside class="w-[220px] shrink-0 border-r border-token surface flex flex-col">
+    <nav class="p-2 flex flex-col gap-0.5">
+      <a href="home-account_admin.html" class="chip">
+        <i data-lucide="home" class="w-5 h-5"></i>
+        <div class="flex-1 text-sm">Главная</div>
+      </a>
+    </nav>
+
+    <div class="px-3 pt-4 pb-1 text-[11px] text-dim uppercase tracking-wider">Сервисы</div>
+    <nav class="px-2 flex flex-col gap-0.5">
+      <a href="users-account_admin.html" class="chip">
+        <i data-lucide="users" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Users</div>
+          <div class="text-[11px] text-dim">47 на платформе</div>
+        </div>
+      </a>
+      <a href="departments-account_admin.html" class="chip">
+        <i data-lucide="building-2" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Departments</div>
+          <div class="text-[11px] text-dim">3 депа</div>
+        </div>
+      </a>
+      <a href="server-account_admin.html" class="chip">
+        <i data-lucide="server" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Servers</div>
+          <div class="text-[11px] text-dim">90 на платформе</div>
+        </div>
+      </a>
+      <a href="workers-account_admin.html" class="chip">
+        <i data-lucide="cog" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Workers</div>
+          <div class="text-[11px] text-dim">кластер</div>
+        </div>
+      </a>
+      <a href="secret-account_admin.html" class="chip">
+        <i data-lucide="lock-keyhole" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Secrets</div>
+          <div class="text-[11px] text-dim">134 credential'а</div>
+        </div>
+      </a>
+    </nav>
+
+    <div class="mt-auto p-2 border-t border-token">
+      <div class="chip active">
+        <i data-lucide="crown" class="w-5 h-5 text-warn"></i>
+        <div class="flex-1">
+          <div class="text-sm">Администрирование</div>
+          <div class="text-[11px] text-dim">платформа целиком</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 overflow-y-auto">
+    <div class="max-w-6xl mx-auto px-8 py-8">
+
+      <section class="mb-6">
+        <div class="text-3xl font-bold mb-1">Администрирование платформы</div>
+        <div class="text-dim">Scope: <b>Платформа целиком</b> · здоровье кластера, ротации, бэкапы, миграция, TLS, аудит</div>
+      </section>
+
+      <!-- TOP ROW: 3 cards -->
+      <section class="grid gap-4 md:grid-cols-3 mb-4">
+
+        <!-- Cluster health -->
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2"><i data-lucide="activity" class="w-4 h-4 text-ok"></i> Cluster health</h3>
+            <span class="badge badge-ok">healthy</span>
+          </div>
+          <div class="flex items-center gap-3 mb-3">
+            <span class="health-led led-ok"></span>
+            <div class="text-2xl font-bold text-ok">All green</div>
+          </div>
+          <div class="space-y-2">
+            <div class="row-line">
+              <div class="flex items-center gap-2"><i data-lucide="lock-keyhole" class="w-3.5 h-3.5 text-dim"></i> auth_service</div>
+              <div class="flex items-center gap-2"><span class="pod"><span class="health-led led-ok"></span> 2/2</span></div>
+            </div>
+            <div class="row-line">
+              <div class="flex items-center gap-2"><i data-lucide="server" class="w-3.5 h-3.5 text-dim"></i> server_service</div>
+              <div class="flex items-center gap-2"><span class="pod"><span class="health-led led-ok"></span> 3/3</span></div>
+            </div>
+            <div class="row-line">
+              <div class="flex items-center gap-2"><i data-lucide="key-round" class="w-3.5 h-3.5 text-dim"></i> secret_service</div>
+              <div class="flex items-center gap-2"><span class="pod"><span class="health-led led-ok"></span> 2/2</span></div>
+            </div>
+            <div class="row-line">
+              <div class="flex items-center gap-2"><i data-lucide="file-text" class="w-3.5 h-3.5 text-dim"></i> loging_service</div>
+              <div class="flex items-center gap-2"><span class="pod"><span class="health-led led-ok"></span> 2/2</span></div>
+            </div>
+            <div class="row-line">
+              <div class="flex items-center gap-2"><i data-lucide="cog" class="w-3.5 h-3.5 text-dim"></i> server_worker</div>
+              <div class="flex items-center gap-2"><span class="pod"><span class="health-led led-ok"></span> 4/4</span></div>
+            </div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-token grid grid-cols-3 gap-2 text-center text-xs">
+            <div><div class="text-dim">CPU avg</div><div class="text-base font-semibold">27%</div></div>
+            <div><div class="text-dim">Mem avg</div><div class="text-base font-semibold">41%</div></div>
+            <div><div class="text-dim">Uptime</div><div class="text-base font-semibold">17д</div></div>
+          </div>
+          <div class="text-[11px] text-dim mt-3">Последний рестарт: <span class="mono">server_worker</span> · 17 дней назад</div>
+        </div>
+
+        <!-- Rotation schedule -->
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2"><i data-lucide="rotate-cw" class="w-4 h-4 text-accent"></i> Rotation schedule</h3>
+            <span class="text-xs text-dim">6 видов</span>
+          </div>
+          <div class="space-y-2">
+            <div class="row-line">
+              <div>
+                <div class="mono text-xs">server-master</div>
+                <div class="text-[11px] text-dim">next: 12.06 02:00 · ok: 05.06</div>
+              </div>
+              <button class="btn">Trigger</button>
+            </div>
+            <div class="row-line">
+              <div>
+                <div class="mono text-xs">secret-master</div>
+                <div class="text-[11px] text-dim">next: 12.06 03:00 · ok: 05.06</div>
+              </div>
+              <button class="btn">Trigger</button>
+            </div>
+            <div class="row-line">
+              <div>
+                <div class="mono text-xs">redis-stash-master</div>
+                <div class="text-[11px] text-dim">next: 12.06 04:00 · ok: 05.06</div>
+              </div>
+              <button class="btn">Trigger</button>
+            </div>
+            <div class="row-line">
+              <div>
+                <div class="mono text-xs">db-passwords</div>
+                <div class="text-[11px] text-dim">next: 15.06 · ok: 15.05</div>
+              </div>
+              <button class="btn">Trigger</button>
+            </div>
+            <div class="row-line">
+              <div>
+                <div class="mono text-xs">redis-password</div>
+                <div class="text-[11px] text-dim">next: 15.06 · ok: 15.05</div>
+              </div>
+              <button class="btn">Trigger</button>
+            </div>
+            <div class="row-line">
+              <div>
+                <div class="mono text-xs">s2s-keys</div>
+                <div class="text-[11px] text-dim">next: 18.06 · ok: 18.05</div>
+              </div>
+              <button class="btn">Trigger</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Backups -->
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2"><i data-lucide="archive" class="w-4 h-4 text-accent"></i> Backups</h3>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="text-dim">Offsite</span>
+              <span class="badge badge-ok">on</span>
+            </div>
+          </div>
+          <div class="space-y-2">
+            <div class="row-line">
+              <div>
+                <div>pg-backup</div>
+                <div class="text-[11px] text-dim">daily · 2h ago · 412 MB</div>
+              </div>
+              <span class="badge badge-ok">ok</span>
+            </div>
+            <div class="row-line">
+              <div>
+                <div>master-keys-backup</div>
+                <div class="text-[11px] text-dim">daily · 2h ago · 64 KB</div>
+              </div>
+              <span class="badge badge-ok">ok</span>
+            </div>
+            <div class="row-line">
+              <div>
+                <div>secret-full-backup</div>
+                <div class="text-[11px] text-dim">weekly · 4д назад · 18 MB</div>
+              </div>
+              <span class="badge badge-ok">ok</span>
+            </div>
+            <div class="row-line">
+              <div>
+                <div>pg-restore-drill</div>
+                <div class="text-[11px] text-dim">monthly · 11д назад · pass</div>
+              </div>
+              <span class="badge badge-ok">pass</span>
+            </div>
+          </div>
+          <button class="btn mt-3 w-full"><i data-lucide="cloud-upload" class="w-3.5 h-3.5 inline-block align-text-bottom"></i> Запустить manual backup</button>
+        </div>
+
+      </section>
+
+      <!-- BOTTOM ROW: 3 cards -->
+      <section class="grid gap-4 md:grid-cols-3">
+
+        <!-- Migration status -->
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2"><i data-lucide="database" class="w-4 h-4 text-accent"></i> Migration status</h3>
+            <span class="badge">auto · 6мес</span>
+          </div>
+          <div class="mb-3">
+            <div class="flex items-center justify-between text-xs mb-1">
+              <span>server_service · lazy + outbox</span>
+              <span class="text-ok font-semibold">78%</span>
+            </div>
+            <div class="bar ok"><span style="width: 78%"></span></div>
+            <div class="text-[11px] text-dim mt-1">legacy version: <span class="mono">v3</span> · 312 rows</div>
+          </div>
+          <div class="mb-3">
+            <div class="flex items-center justify-between text-xs mb-1">
+              <span>secret_service · lazy + outbox</span>
+              <span class="text-warn font-semibold">52%</span>
+            </div>
+            <div class="bar warn"><span style="width: 52%"></span></div>
+            <div class="text-[11px] text-dim mt-1">legacy version: <span class="mono">v2</span> · 1 047 rows</div>
+          </div>
+          <div class="text-[11px] text-dim mt-3 pt-3 border-t border-token">
+            Auto-finalize: <b>через 6 месяцев</b> · принудительное дошифрование оставшегося legacy
+          </div>
+        </div>
+
+        <!-- TLS -->
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4 text-ok"></i> TLS</h3>
+            <span class="badge badge-ok">valid</span>
+          </div>
+          <div class="space-y-3">
+            <div>
+              <div class="text-xs text-dim">dbos-ingress-tls</div>
+              <div class="text-base font-semibold">истекает через <span class="text-ok">87 дней</span></div>
+              <div class="text-[11px] text-dim mono">CN: dbos.astralinux.ru · SAN: *.dbos.astralinux.ru</div>
+            </div>
+            <div>
+              <div class="text-xs text-dim">Internal CA</div>
+              <div class="text-base font-semibold">истекает через <span class="text-ok">412 дней</span></div>
+              <div class="text-[11px] text-dim mono">CN: DBOS Internal CA · экспирация: 2027-07-26</div>
+            </div>
+          </div>
+          <button class="btn btn-primary mt-3 w-full"><i data-lucide="refresh-cw" class="w-3.5 h-3.5 inline-block align-text-bottom"></i> Renew TLS only</button>
+          <div class="text-[11px] text-dim mono mt-2">make k8s-tls-renew</div>
+        </div>
+
+        <!-- Audit overview -->
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2"><i data-lucide="file-text" class="w-4 h-4 text-accent"></i> Audit overview</h3>
+            <a href="logs-account_admin.html" class="text-xs text-accent">open <i data-lucide="chevron-right" class="w-3 h-3 inline-block"></i></a>
+          </div>
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <div class="stat-label">events / 24h</div>
+              <div class="stat-big">12 487</div>
+            </div>
+            <div>
+              <div class="stat-label">CRITICAL / week</div>
+              <div class="stat-big text-danger">14</div>
+            </div>
+          </div>
+          <div class="kv mt-3 pt-3 border-t border-token">
+            <div class="k">top action</div>
+            <div class="mono">credential.read</div>
+            <div class="k">count</div>
+            <div>4 192</div>
+            <div class="k">top actor</div>
+            <div class="mono">worker_bot</div>
+            <div class="k">count</div>
+            <div>2 871</div>
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("dbos-theme", e.target.value);
+  });
+  if (window.lucide) lucide.createIcons();
+</script>
+</body>
+</html>

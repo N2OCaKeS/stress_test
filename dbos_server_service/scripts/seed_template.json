@@ -1,0 +1,100 @@
+{
+  "_meta": {
+    "description": "JSON-шаблон для seed_from_json.py — наполнение auth_service данными. Пустые массивы можно опустить. Используй emaily на доменах вроде *.dev / реальные домены — pydantic отвергает .local.",
+    "auth_url": "http://127.0.0.1:8000",
+    "admin_username": "admin",
+    "admin_password": "1234",
+    "_notes": {
+      "services_catalog": "auth_service / loging_service / server_service / server_worker (текущий dev catalog). secret_service пока не зарегистрирован.",
+      "platform_roles": "account_admin / department_admin / loging_admin / loging_reader. account_admin/loging_* — без department_id. department_admin — с department_id.",
+      "role_assignments": "Боты получают доступ к сервисам через bot.allowed_services, не через service-роль. В role_assignments только user_ids."
+    }
+  },
+
+  "departments": [
+    {
+      "name": "dep_a",
+      "display_name": "Отдел А — Демонстрационный"
+    }
+  ],
+
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@dep-a.dev",
+      "department_name": "dep_a",
+      "platform_role": "department_admin",
+      "password": "DepAdmin2026Secure"
+    },
+    {
+      "username": "bob_user",
+      "email": "bob@dep-a.dev",
+      "department_name": "dep_a",
+      "platform_role": null,
+      "password": "RegularUser2026Sec"
+    },
+    {
+      "username": "global_audit",
+      "email": "audit@dbos.dev",
+      "department_name": null,
+      "platform_role": "loging_reader",
+      "password": "ReadOnlyAudit2026"
+    }
+  ],
+
+  "groups": [
+    {
+      "name": "dep_a_ops",
+      "display_name": "Отдел А · Operations",
+      "department_name": "dep_a",
+      "description": "Operations team — доступ к серверам отдела",
+      "members": ["alice", "bob_user"]
+    }
+  ],
+
+  "bots": [
+    {
+      "name": "dep-a-ci-bot",
+      "department_name": "dep_a",
+      "description": "Service account для CI/CD pipeline отдела dep_a",
+      "allowed_services": ["server_service"]
+    }
+  ],
+
+  "department_services": [
+    { "department_name": "dep_a", "service_name": "server_service" },
+    { "department_name": "dep_a", "service_name": "loging_service" }
+  ],
+
+  "service_roles": [
+    {
+      "department_name": "dep_a",
+      "service_name": "server_service",
+      "role_name": "reader",
+      "display_name": "Reader",
+      "description": "Только просмотр серверов отдела"
+    },
+    {
+      "department_name": "dep_a",
+      "service_name": "server_service",
+      "role_name": "operator",
+      "display_name": "Operator",
+      "description": "Развёртывание + power-операции"
+    }
+  ],
+
+  "role_assignments": [
+    {
+      "department_name": "dep_a",
+      "service_name": "server_service",
+      "role_name": "operator",
+      "usernames": ["alice"]
+    },
+    {
+      "department_name": "dep_a",
+      "service_name": "server_service",
+      "role_name": "reader",
+      "usernames": ["bob_user"]
+    }
+  ]
+}

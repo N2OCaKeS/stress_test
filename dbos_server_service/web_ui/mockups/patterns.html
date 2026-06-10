@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · UI-паттерны (демо)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30;
+    --border: #3e3e42; --text: #cccccc; --text-dim: #969696;
+    --accent: #0e639c; --accent-fg: #ffffff;
+    --danger: #f48771; --warn: #cca700; --ok: #4ec9b0;
+    --hover: #2a2d2e; --selected: #094771;
+  }
+  html[data-theme="vscode-light"] {
+    --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb;
+    --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c;
+    --accent: #007acc; --accent-fg: #ffffff;
+    --danger: #cd3131; --warn: #b89500; --ok: #178178;
+    --hover: #e8e8e8; --selected: #c8e6ff;
+  }
+  html[data-theme="dark-orange"] {
+    --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118;
+    --border: #45382c; --text: #e8d9c5; --text-dim: #998571;
+    --accent: #f28a26; --accent-fg: #1a1410;
+    --danger: #ef6f55; --warn: #d8a200; --ok: #69b378;
+    --hover: #2f2419; --selected: #5a3a16;
+  }
+  html[data-theme="blue"] {
+    --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b;
+    --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8;
+    --accent: #4fb8ff; --accent-fg: #0a1929;
+    --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7;
+    --hover: #18406b; --selected: #1d5a98;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .surface { background: var(--bg-soft); }
+  .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-warn { color: var(--warn); }
+  .text-ok { color: var(--ok); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hover-bg:hover { background: var(--hover); }
+
+  button { font-family: inherit; cursor: pointer; }
+  .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 13px; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-danger { color: var(--danger); border-color: var(--danger); }
+  .btn-danger-solid { background: var(--danger); color: var(--accent-fg); border-color: var(--danger); }
+  .btn-danger-solid:hover { filter: brightness(1.1); }
+
+  /* Toast */
+  .toast {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 14px; border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-soft);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    min-width: 280px;
+  }
+  .toast.toast-success { border-left: 3px solid var(--ok); }
+  .toast.toast-warn    { border-left: 3px solid var(--warn); }
+  .toast.toast-error   { border-left: 3px solid var(--danger); }
+  .toast.toast-info    { border-left: 3px solid var(--accent); }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 50; padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-width: 520px; width: 100%;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column;
+    max-height: 90vh;
+  }
+  .modal-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .modal-body { padding: 18px; overflow-y: auto; }
+  .modal-footer {
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 8px; justify-content: flex-end;
+  }
+  .field-label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .field-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+  }
+  .field-input:focus { border-color: var(--accent); }
+
+  /* Empty / Loading helpers */
+  .empty-card {
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 32px 20px;
+    text-align: center;
+    background: var(--bg-soft);
+  }
+  .empty-card.danger { border-color: var(--danger); background: rgba(244,135,113,0.05); }
+
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+    display: inline-block;
+  }
+  .spinner.big { width: 36px; height: 36px; border-width: 3px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg-soft-2) 0%, var(--hover) 50%, var(--bg-soft-2) 100%);
+    background-size: 200% 100%;
+    border-radius: 4px;
+    animation: shimmer 1.4s linear infinite;
+  }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  .alert-block { background: rgba(244,135,113,0.08); border: 1px solid var(--danger); border-radius: 4px; padding: 10px 12px; }
+
+  section.demo-section { padding: 28px 32px; border-bottom: 1px solid var(--border); }
+  section.demo-section:last-child { border-bottom: none; }
+  .section-title { font-size: 18px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .section-sub { font-size: 12px; color: var(--text-dim); margin-bottom: 16px; }
+  .demo-card {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+  }
+</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- ── Top bar ───────────────────────────────────────────────────────── -->
+<header class="surface border-b border-token h-12 px-3 flex items-center gap-3 shrink-0">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8">
+    <i data-lucide="grid-3x3" class="w-4 h-4 text-accent"></i>
+    DBOS
+  </a>
+  <span class="text-xs text-dim">/ ui-паттерны (демо)</span>
+
+  <div class="ml-auto flex items-center gap-2">
+    <span class="text-xs text-dim mr-1">Темы:</span>
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm">
+      <option value="vscode-dark">VS Code Dark</option>
+      <option value="vscode-light">VS Code Light</option>
+      <option value="dark-orange">Dark Orange</option>
+      <option value="blue">Blue</option>
+    </select>
+    <a href="index.html" class="btn">
+      <i data-lucide="arrow-left" class="w-4 h-4 inline-block align-text-bottom"></i>
+      На главную
+    </a>
+  </div>
+</header>
+
+<main class="flex-1 overflow-y-auto">
+
+  <div class="px-8 py-6 border-b border-token surface">
+    <h1 class="text-2xl font-bold mb-1">UI-паттерны</h1>
+    <p class="text-sm text-dim">
+      Демо-страница «общих кусков» интерфейса: тосты, модалки, empty / loading / confirm.
+      Работает во всех 4-х темах. Используй как справочник для других страниц.
+    </p>
+  </div>
+
+  <!-- ── Toast notifications ─────────────────────────────────────────── -->
+  <section class="demo-section">
+    <div class="section-title">
+      <i data-lucide="bell" class="w-5 h-5 text-accent"></i>
+      Toast notifications
+    </div>
+    <div class="section-sub">4 варианта: success / warning / error / info. Появляются в правом нижнем углу, автоматически прячутся через 5s.</div>
+
+    <div class="grid gap-3 md:grid-cols-2 max-w-3xl">
+
+      <div class="toast toast-success">
+        <i data-lucide="check-circle" class="w-5 h-5 text-ok shrink-0 mt-0.5"></i>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium">Credential обновлён</div>
+          <div class="text-xs text-dim mt-0.5">cred_8f2a · last_rotated_at записан в audit</div>
+        </div>
+        <button class="text-dim hover-bg rounded p-1" aria-label="dismiss">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="toast toast-warn">
+        <i data-lucide="alert-triangle" class="w-5 h-5 text-warn shrink-0 mt-0.5"></i>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium">Drift зафиксирован</div>
+          <div class="text-xs text-dim mt-0.5">srv-node-17 · уровень доступа изменён вручную, БД не обновлена</div>
+        </div>
+        <button class="text-dim hover-bg rounded p-1" aria-label="dismiss">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="toast toast-error">
+        <i data-lucide="x-octagon" class="w-5 h-5 text-danger shrink-0 mt-0.5"></i>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium">Rotate failed</div>
+          <div class="text-xs text-dim mt-0.5">cred_a791 · BMC unreachable (ipmitool timeout 30s)</div>
+        </div>
+        <button class="text-dim hover-bg rounded p-1" aria-label="dismiss">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="toast toast-info">
+        <i data-lucide="info" class="w-5 h-5 text-accent shrink-0 mt-0.5"></i>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium">Worker подключился</div>
+          <div class="text-xs text-dim mt-0.5">wrk-04 на host build-04 · heartbeat активен</div>
+        </div>
+        <button class="text-dim hover-bg rounded p-1" aria-label="dismiss">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Modal dialogs ──────────────────────────────────────────────── -->
+  <section class="demo-section">
+    <div class="section-title">
+      <i data-lucide="layout-template" class="w-5 h-5 text-accent"></i>
+      Modal dialogs
+    </div>
+    <div class="section-sub">Клик по кнопке открывает мок-модалку. Без логики — только видимая верстка.</div>
+
+    <div class="flex flex-wrap gap-3">
+      <button class="btn btn-primary flex items-center gap-1" data-open-modal="modal-create">
+        <i data-lucide="plus" class="w-4 h-4"></i> Create credential
+      </button>
+      <button class="btn btn-danger flex items-center gap-1" data-open-modal="modal-delete">
+        <i data-lucide="user-minus" class="w-4 h-4"></i> Delete user (confirm)
+      </button>
+      <button class="btn flex items-center gap-1" data-open-modal="modal-rotate">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i> Rotate now
+      </button>
+    </div>
+  </section>
+
+  <!-- ── Empty states ───────────────────────────────────────────────── -->
+  <section class="demo-section">
+    <div class="section-title">
+      <i data-lucide="inbox" class="w-5 h-5 text-accent"></i>
+      Empty states
+    </div>
+    <div class="section-sub">3 варианта: «можно создать», «просто пусто», «сервис недоступен».</div>
+
+    <div class="grid gap-4 md:grid-cols-3">
+
+      <div class="empty-card">
+        <i data-lucide="lock-keyhole" class="w-10 h-10 mx-auto text-dim mb-3"></i>
+        <div class="text-sm font-medium mb-1">Credential'ов нет</div>
+        <div class="text-xs text-dim mb-4">В этом депе пока ничего не создано.</div>
+        <button class="btn btn-primary inline-flex items-center gap-1">
+          <i data-lucide="plus" class="w-4 h-4"></i> Создать
+        </button>
+      </div>
+
+      <div class="empty-card">
+        <i data-lucide="file-text" class="w-10 h-10 mx-auto text-dim mb-3"></i>
+        <div class="text-sm font-medium mb-1">Audit-событий нет</div>
+        <div class="text-xs text-dim">Под текущие фильтры (дата + тип + actor) ничего не нашлось.<br>Попробуй расширить диапазон.</div>
+      </div>
+
+      <div class="empty-card danger">
+        <i data-lucide="cloud-off" class="w-10 h-10 mx-auto text-danger mb-3"></i>
+        <div class="text-sm font-medium mb-1 text-danger">Сервис недоступен</div>
+        <div class="text-xs text-dim mb-4">server_service не отвечает уже 42 секунды. Скорее всего, рестарт.</div>
+        <button class="btn btn-danger inline-flex items-center gap-1">
+          <i data-lucide="rotate-cw" class="w-4 h-4"></i> Retry
+        </button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Loading states ─────────────────────────────────────────────── -->
+  <section class="demo-section">
+    <div class="section-title">
+      <i data-lucide="loader" class="w-5 h-5 text-accent"></i>
+      Loading states
+    </div>
+    <div class="section-sub">3 варианта: spinner в карточке, skeleton-список, inline-spinner в кнопке.</div>
+
+    <div class="grid gap-4 md:grid-cols-3">
+
+      <!-- big spinner -->
+      <div class="demo-card flex flex-col items-center justify-center" style="min-height: 180px;">
+        <span class="spinner big mb-3"></span>
+        <div class="text-sm font-medium">Загружаем credentials...</div>
+        <div class="text-xs text-dim mt-1">это занимает обычно 1-2 секунды</div>
+      </div>
+
+      <!-- skeleton list -->
+      <div class="demo-card">
+        <div class="text-xs text-dim mb-3 uppercase tracking-wider">Servers (loading)</div>
+        <div class="flex flex-col gap-3">
+          <div class="flex items-center gap-3">
+            <div class="skeleton" style="width: 32px; height: 32px; border-radius: 6px;"></div>
+            <div class="flex-1">
+              <div class="skeleton" style="height: 12px; width: 70%; margin-bottom: 6px;"></div>
+              <div class="skeleton" style="height: 10px; width: 40%;"></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="skeleton" style="width: 32px; height: 32px; border-radius: 6px;"></div>
+            <div class="flex-1">
+              <div class="skeleton" style="height: 12px; width: 60%; margin-bottom: 6px;"></div>
+              <div class="skeleton" style="height: 10px; width: 35%;"></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="skeleton" style="width: 32px; height: 32px; border-radius: 6px;"></div>
+            <div class="flex-1">
+              <div class="skeleton" style="height: 12px; width: 80%; margin-bottom: 6px;"></div>
+              <div class="skeleton" style="height: 10px; width: 50%;"></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="skeleton" style="width: 32px; height: 32px; border-radius: 6px;"></div>
+            <div class="flex-1">
+              <div class="skeleton" style="height: 12px; width: 65%; margin-bottom: 6px;"></div>
+              <div class="skeleton" style="height: 10px; width: 30%;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- inline spinner in button -->
+      <div class="demo-card flex flex-col gap-3 items-start">
+        <div class="text-xs text-dim uppercase tracking-wider">Inline button spinner</div>
+        <button class="btn btn-primary flex items-center gap-2" disabled style="opacity: 0.85;">
+          <span class="spinner" style="width: 14px; height: 14px; border-width: 2px;"></span>
+          Saving...
+        </button>
+        <button class="btn flex items-center gap-2" disabled style="opacity: 0.85;">
+          <span class="spinner" style="width: 14px; height: 14px; border-width: 2px;"></span>
+          Проверяю BMC...
+        </button>
+        <button class="btn btn-danger flex items-center gap-2" disabled style="opacity: 0.85;">
+          <span class="spinner" style="width: 14px; height: 14px; border-width: 2px;"></span>
+          Discarding...
+        </button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Confirmation patterns ──────────────────────────────────────── -->
+  <section class="demo-section">
+    <div class="section-title">
+      <i data-lucide="shield-alert" class="w-5 h-5 text-danger"></i>
+      Confirmation patterns (destructive)
+    </div>
+    <div class="section-sub">kubectl-style: чтобы подтвердить опасное действие — введи имя ресурса буква-в-букву.</div>
+
+    <div class="demo-card max-w-xl">
+      <div class="flex items-start gap-3 mb-4">
+        <i data-lucide="alert-triangle" class="w-6 h-6 text-danger shrink-0"></i>
+        <div>
+          <div class="text-base font-semibold text-danger mb-1">Удалить департамент «ДТКК»?</div>
+          <div class="text-xs text-dim">
+            Действие <b>необратимое</b>. Будут удалены:
+            <ul class="list-disc list-inside mt-2 space-y-0.5">
+              <li>12 пользователей (или перемещены на default dept — на выбор)</li>
+              <li>32 сервера (или перемещены)</li>
+              <li>48 credential'ов (безвозвратно)</li>
+              <li>Все 3 бота этого депа (токены инвалидируются)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert-block mb-4 text-xs">
+        <b class="text-danger">Внимание:</b> credential'ы удаляются <b>безвозвратно</b>. Если на серверах
+        стоят пароли, выданные этим деп'ом — после удаления вы потеряете к ним доступ.
+      </div>
+
+      <label class="field-label">
+        Чтобы подтвердить, введи имя депа дословно: <span class="mono text-danger">ДТКК</span>
+      </label>
+      <input class="field-input mono mb-4" placeholder="ДТКК" />
+
+      <div class="flex items-center gap-2 justify-end">
+        <button class="btn">Отмена</button>
+        <button class="btn btn-danger-solid flex items-center gap-1" disabled style="opacity: 0.5;">
+          <i data-lucide="trash-2" class="w-4 h-4"></i> Удалить депaртамент
+        </button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── Modals ─────────────────────────────────────────────────────────── -->
+
+<div class="modal-overlay" id="modal-create">
+  <div class="modal">
+    <div class="modal-header">
+      <i data-lucide="plus-circle" class="w-5 h-5 text-accent"></i>
+      <div class="text-base font-semibold">Create credential</div>
+      <button class="ml-auto text-dim hover-bg rounded p-1" data-close-modal aria-label="close">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="grid gap-3">
+        <div>
+          <label class="field-label">Имя credential'а</label>
+          <input class="field-input mono" placeholder="ipmi-srv-node-17" />
+        </div>
+        <div>
+          <label class="field-label">Тип</label>
+          <select class="field-input">
+            <option>ipmi</option>
+            <option>ssh-password</option>
+            <option>ssh-key</option>
+            <option>db-postgres</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Сервер</label>
+          <input class="field-input mono" placeholder="srv-node-17" />
+        </div>
+        <div>
+          <label class="field-label">Пароль / ключ</label>
+          <input class="field-input mono" type="password" value="********" />
+        </div>
+        <div>
+          <label class="field-label">Срок ротации</label>
+          <select class="field-input">
+            <option>30 дней</option>
+            <option>90 дней</option>
+            <option>180 дней</option>
+            <option>не ротировать</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" data-close-modal>Отмена</button>
+      <button class="btn btn-primary flex items-center gap-1">
+        <i data-lucide="check" class="w-4 h-4"></i> Создать
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-delete">
+  <div class="modal">
+    <div class="modal-header">
+      <i data-lucide="alert-triangle" class="w-5 h-5 text-danger"></i>
+      <div class="text-base font-semibold">Удалить пользователя alice?</div>
+      <button class="ml-auto text-dim hover-bg rounded p-1" data-close-modal aria-label="close">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="text-sm mb-3">
+        Пользователь <b class="mono">alice@dbos.local</b> будет деактивирован. Это:
+      </p>
+      <ul class="list-disc list-inside text-sm text-dim space-y-1 mb-4">
+        <li>отзовёт все активные сессии (3 шт)</li>
+        <li>не удалит credentials, созданные ей (она была <span class="mono">created_by</span>)</li>
+        <li>не отзовёт ботов, выпущенных от её имени</li>
+        <li>запись в audit будет сохранена 90 дней по retention-политике</li>
+      </ul>
+      <div class="alert-block text-xs">
+        Восстановить можно в течение 30 дней через <span class="mono">cli users restore alice</span>.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" data-close-modal>Отмена</button>
+      <button class="btn btn-danger-solid flex items-center gap-1">
+        <i data-lucide="user-minus" class="w-4 h-4"></i> Деактивировать
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-rotate">
+  <div class="modal">
+    <div class="modal-header">
+      <i data-lucide="refresh-cw" class="w-5 h-5 text-accent"></i>
+      <div class="text-base font-semibold">Rotate credential cred_8f2a</div>
+      <button class="ml-auto text-dim hover-bg rounded p-1" data-close-modal aria-label="close">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="text-sm mb-3">
+        Будет сгенерирован <b>новый пароль</b> и применён на сервере <b class="mono">srv-node-17</b>.
+      </p>
+      <div class="grid gap-3">
+        <div>
+          <label class="field-label">Генерация</label>
+          <select class="field-input">
+            <option>random 32 символа</option>
+            <option>random 24 символа</option>
+            <option>задать вручную</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Применить на BMC</label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked /> сразу применить и проверить через login probe
+          </label>
+        </div>
+        <div>
+          <label class="field-label">Сохранить старый как «previous»</label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked /> на 24 часа, для rollback
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" data-close-modal>Отмена</button>
+      <button class="btn btn-primary flex items-center gap-1">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i> Rotate now
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("dbos-theme", e.target.value);
+  });
+
+  if (window.lucide) lucide.createIcons();
+
+  // Modal open/close
+  document.querySelectorAll("[data-open-modal]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-open-modal");
+      document.getElementById(id)?.classList.add("open");
+    });
+  });
+  document.querySelectorAll(".modal-overlay").forEach(overlay => {
+    overlay.addEventListener("click", e => {
+      if (e.target === overlay) overlay.classList.remove("open");
+    });
+    overlay.querySelectorAll("[data-close-modal]").forEach(btn => {
+      btn.addEventListener("click", () => overlay.classList.remove("open"));
+    });
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      document.querySelectorAll(".modal-overlay.open").forEach(o => o.classList.remove("open"));
+    }
+  });
+</script>
+</body>
+</html>

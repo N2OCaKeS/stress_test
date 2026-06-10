@@ -136,7 +136,7 @@ services:
       # auth_service.SERVICE_API_KEY.
       SERVICE_API_KEY: dev-introspect-api-key
       SERVER_ENCRYPTION_KEY: dev-server-encryption-key-do-not-use-in-prod
-      SERVER_ENCRYPTION_KEY_VERSION: "1"
+      SERVER_ENCRYPTION_KEY_VERSION: "2"
       # Общий с server_worker'ом ключ для envelope-шифрования Redis-stash'а
       # кред (provision/prepare dispatch). Должен совпадать байт-в-байт с
       # REDIS_STASH_ENCRYPTION_KEY у server_worker'а ниже.

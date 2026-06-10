@@ -1,11 +1,22 @@
 """Тесты: /api/auth/v1/tokens — личные токены доступа (PAT)."""
 
+from datetime import timedelta
+
+from src.utils.time import utcnow
+
 URL = "/api/auth/v1/tokens"
 INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
 
 
 async def _create_pat(client, token, name="my_pat", scopes=None):
-    body = {"name": name, "allowed_services": scopes or ["service_x"]}
+    # expires_at теперь обязателен (max 6 месяцев) — даём 30 дней,
+    # чтобы не плодить устаревшие токены в тестах.
+    exp = (utcnow() + timedelta(days=30)).isoformat()
+    body = {
+        "name": name,
+        "allowed_services": scopes or ["service_x"],
+        "expires_at": exp,
+    }
     return await client.post(URL, headers={"Authorization": f"Bearer {token}"}, json=body)
 
 

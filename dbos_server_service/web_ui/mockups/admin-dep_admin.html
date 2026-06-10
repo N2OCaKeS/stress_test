@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · alice (dep_admin) · администрирование депа</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30;
+    --border: #3e3e42; --text: #cccccc; --text-dim: #969696;
+    --accent: #0e639c; --accent-fg: #ffffff;
+    --danger: #f48771; --warn: #cca700; --ok: #4ec9b0;
+    --hover: #2a2d2e; --selected: #094771;
+  }
+  html[data-theme="vscode-light"] {
+    --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb;
+    --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c;
+    --accent: #007acc; --accent-fg: #ffffff;
+    --danger: #cd3131; --warn: #b89500; --ok: #178178;
+    --hover: #e8e8e8; --selected: #c8e6ff;
+  }
+  html[data-theme="dark-orange"] {
+    --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118;
+    --border: #45382c; --text: #e8d9c5; --text-dim: #998571;
+    --accent: #f28a26; --accent-fg: #1a1410;
+    --danger: #ef6f55; --warn: #d8a200; --ok: #69b378;
+    --hover: #2f2419; --selected: #5a3a16;
+  }
+  html[data-theme="blue"] {
+    --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b;
+    --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8;
+    --accent: #4fb8ff; --accent-fg: #0a1929;
+    --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7;
+    --hover: #18406b; --selected: #1d5a98;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .surface { background: var(--bg-soft); }
+  .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-warn { color: var(--warn); }
+  .text-ok { color: var(--ok); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hover-bg:hover { background: var(--hover); }
+  .chip { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+  .chip:hover { background: var(--hover); }
+  .chip.active { background: var(--selected); }
+  .subchip { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 36px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+  .subchip:hover { background: var(--hover); }
+  .subchip.active { background: var(--selected); color: var(--accent); }
+  .card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+  .card h3 { font-weight: 600; }
+  .stat-big { font-size: 28px; font-weight: 700; line-height: 1; }
+  .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin-bottom: 6px; }
+  .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); }
+  .badge-ok { color: var(--ok); border-color: var(--ok); }
+  .badge-warn { color: var(--warn); border-color: var(--warn); }
+  .badge-danger { color: var(--danger); border-color: var(--danger); }
+  .row-line { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+  .row-line:last-child { border-bottom: none; }
+  .activity-row { display: grid; grid-template-columns: 60px 1fr 90px; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--border); align-items: center; }
+  .activity-row:last-child { border-bottom: none; }
+  .member-pill { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-soft-2); border: 1px solid var(--border); border-radius: 999px; font-size: 12px; }
+  .member-pill .av { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; }
+</style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+<!-- Top bar -->
+<header class="surface border-b border-token h-12 px-3 flex items-center gap-3 shrink-0">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8">
+    <i data-lucide="grid-3x3" class="w-4 h-4 text-accent"></i>
+    DBOS
+  </a>
+  <span class="text-xs text-dim">/ Администрирование</span>
+
+  <div class="ml-auto flex items-center gap-2">
+    <div class="surface-2 border border-token rounded px-2 py-1 flex items-center gap-2 text-sm">
+      <div class="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-xs font-semibold">AL</div>
+      <div>
+        <div class="leading-tight">alice</div>
+        <div class="text-[10px] text-dim leading-tight">dep_admin · Ядро DBOS</div>
+      </div>
+    </div>
+
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm">
+      <option value="vscode-dark">VS Code Dark</option>
+      <option value="vscode-light">VS Code Light</option>
+      <option value="dark-orange">Dark Orange</option>
+      <option value="blue">Blue</option>
+    </select>
+
+    <a href="index.html" class="btn">
+      <i data-lucide="log-out" class="w-4 h-4 inline-block align-text-bottom"></i>
+      Logout
+    </a>
+  </div>
+</header>
+
+<div class="flex-1 flex min-h-0">
+
+  <!-- Left -->
+  <aside class="w-[220px] shrink-0 border-r border-token surface flex flex-col">
+    <nav class="p-2 flex flex-col gap-0.5">
+      <a href="home-dep_admin.html" class="chip">
+        <i data-lucide="home" class="w-5 h-5"></i>
+        <div class="flex-1 text-sm">Главная</div>
+      </a>
+    </nav>
+
+    <div class="px-3 pt-4 pb-1 text-[11px] text-dim uppercase tracking-wider">Сервисы</div>
+    <nav class="px-2 flex flex-col gap-0.5">
+      <a href="users-dep_admin.html" class="chip">
+        <i data-lucide="users" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Users</div>
+          <div class="text-[11px] text-dim">8 в депе</div>
+        </div>
+      </a>
+      <a href="server-dep_admin.html" class="chip">
+        <i data-lucide="server" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Servers</div>
+          <div class="text-[11px] text-dim">30 в депе</div>
+        </div>
+      </a>
+      <a href="secret-dep_admin.html" class="chip">
+        <i data-lucide="lock-keyhole" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Secrets</div>
+          <div class="text-[11px] text-dim">12 доступных</div>
+        </div>
+      </a>
+      <a href="tasks-dep_admin.html" class="chip">
+        <i data-lucide="cog" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Workers</div>
+          <div class="text-[11px] text-dim">tasks · dept</div>
+        </div>
+      </a>
+      <div class="flex flex-col">
+        <a href="tasks-dep_admin.html" class="subchip">
+          <i data-lucide="list-checks" class="w-3.5 h-3.5"></i>
+          <span>Tasks <span class="text-dim">· 20</span></span>
+        </a>
+        <a href="dlq-dep_admin.html" class="subchip">
+          <i data-lucide="skull" class="w-3.5 h-3.5"></i>
+          <span>DLQ <span class="text-dim">· 3</span></span>
+        </a>
+      </div>
+    </nav>
+
+    <div class="mt-auto p-2 border-t border-token">
+      <div class="chip active">
+        <i data-lucide="shield-check" class="w-5 h-5 text-warn"></i>
+        <div class="flex-1">
+          <div class="text-sm">Администрирование</div>
+          <div class="text-[11px] text-dim">в рамках депа</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 overflow-y-auto">
+    <div class="max-w-6xl mx-auto px-8 py-8">
+
+      <section class="mb-6">
+        <div class="text-3xl font-bold mb-1">Администрирование депа</div>
+        <div class="text-dim">Scope: <b>Department «Ядро DBOS»</b> · только эта зона ответственности</div>
+      </section>
+
+      <!-- Top row: dept stats (3 cards) + service grants -->
+      <section class="grid gap-4 md:grid-cols-3 mb-4">
+        <div class="card">
+          <div class="stat-label">Пользователи</div>
+          <div class="stat-big">8</div>
+          <div class="text-xs text-dim mt-2">2 admin · 5 user · 1 disabled</div>
+        </div>
+        <div class="card">
+          <div class="stat-label">Серверы</div>
+          <div class="stat-big text-ok">30</div>
+          <div class="text-xs text-dim mt-2">28 up · 2 в обслуживании</div>
+        </div>
+        <div class="card">
+          <div class="stat-label">Credentials</div>
+          <div class="stat-big">12</div>
+          <div class="text-xs text-dim mt-2">1 истекает на этой неделе</div>
+        </div>
+      </section>
+
+      <!-- Middle row: pending + recent activity -->
+      <section class="grid gap-4 md:grid-cols-2 mb-4">
+
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2"><i data-lucide="alert-triangle" class="w-4 h-4 text-warn"></i> Требует внимания</h3>
+            <span class="text-xs text-dim">4 пункта</span>
+          </div>
+          <div class="space-y-2 text-sm">
+            <div class="flex items-start gap-3 p-2 surface-2 rounded">
+              <i data-lucide="alert-triangle" class="w-4 h-4 text-warn shrink-0 mt-0.5"></i>
+              <div class="flex-1 min-w-0">
+                <div>Истекает credential <span class="mono">grafana-admin</span></div>
+                <div class="text-xs text-dim">через 3 дня · продлить</div>
+              </div>
+              <button class="btn">Продлить</button>
+            </div>
+            <div class="flex items-start gap-3 p-2 surface-2 rounded">
+              <i data-lucide="alert-circle" class="w-4 h-4 text-danger shrink-0 mt-0.5"></i>
+              <div class="flex-1 min-w-0">
+                <div>Server <span class="mono">srv-node-17</span> — IPMI unreachable</div>
+                <div class="text-xs text-dim">с 14:22 · 2 ретрая</div>
+              </div>
+              <button class="btn">Recheck</button>
+            </div>
+            <div class="flex items-start gap-3 p-2 surface-2 rounded">
+              <i data-lucide="shield-alert" class="w-4 h-4 text-warn shrink-0 mt-0.5"></i>
+              <div class="flex-1 min-w-0">
+                <div>User <span class="mono">charlie</span> заблокирован</div>
+                <div class="text-xs text-dim">5 failed login · ручной разбор</div>
+              </div>
+              <button class="btn">Разбор</button>
+            </div>
+            <div class="flex items-start gap-3 p-2 surface-2 rounded">
+              <i data-lucide="clock" class="w-4 h-4 text-dim shrink-0 mt-0.5"></i>
+              <div class="flex-1 min-w-0">
+                <div>Запрос на доступ к <span class="mono">prod-postgres-master</span></div>
+                <div class="text-xs text-dim">от dave</div>
+              </div>
+              <button class="btn btn-primary">Approve</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2"><i data-lucide="file-text" class="w-4 h-4 text-accent"></i> Активность в депе</h3>
+            <a href="logs-dep_admin.html" class="text-xs text-accent">Полный лог →</a>
+          </div>
+          <div class="text-sm">
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">15:42</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>bob</b> <span class="text-dim">создал user</span> <span class="mono">eve</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_7e9f...</div>
+              </div>
+              <span class="badge badge-ok">success</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">14:18</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>alice</b> <span class="text-dim">revealed</span> <span class="mono">prod-postgres-master</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_4ab1...</div>
+              </div>
+              <span class="badge badge-ok">success</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">12:55</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>worker_bot</b> <span class="text-dim">завершил task</span> <span class="mono">tsk_fa12</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_aa10...</div>
+              </div>
+              <span class="badge badge-ok">success</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">11:32</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>charlie</b> <span class="text-dim">failed login</span> ×5</div>
+                <div class="text-[11px] text-dim mono truncate">req_22c8...</div>
+              </div>
+              <span class="badge badge-warn">429</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">10:01</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>alice</b> <span class="text-dim">обновил role ACL</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_001f...</div>
+              </div>
+              <span class="badge badge-ok">success</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">09:48</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>bot_ci</b> <span class="text-dim">обновил server</span> <span class="mono">srv-node-04</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_8800...</div>
+              </div>
+              <span class="badge badge-ok">success</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">09:12</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>dave</b> <span class="text-dim">запросил доступ</span> <span class="mono">prod-postgres-master</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_dd0a...</div>
+              </div>
+              <span class="badge badge-warn">pending</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">08:30</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>alice</b> <span class="text-dim">создал credential</span> <span class="mono">redis-staging</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_5fb1...</div>
+              </div>
+              <span class="badge badge-ok">success</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">07:22</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>worker_bot</b> <span class="text-dim">rotate</span> <span class="mono">grafana-admin</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_3c41...</div>
+              </div>
+              <span class="badge badge-ok">success</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">06:00</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>cron</b> <span class="text-dim">backup</span> dep-snapshot</div>
+                <div class="text-[11px] text-dim mono truncate">job_aut...</div>
+              </div>
+              <span class="badge badge-ok">done</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Bottom row: service grants + members -->
+      <section class="grid gap-4 md:grid-cols-2">
+
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4 text-accent"></i> Service grants</h3>
+            <span class="text-xs text-dim">выданные сервисы</span>
+          </div>
+          <div class="space-y-2">
+            <div class="row-line">
+              <div class="flex items-center gap-2">
+                <i data-lucide="server" class="w-4 h-4 text-dim"></i>
+                <span>server_service</span>
+              </div>
+              <span class="badge badge-ok">admin</span>
+            </div>
+            <div class="row-line">
+              <div class="flex items-center gap-2">
+                <i data-lucide="key-round" class="w-4 h-4 text-dim"></i>
+                <span>secret_service</span>
+              </div>
+              <span class="badge badge-ok">admin</span>
+            </div>
+            <div class="row-line">
+              <div class="flex items-center gap-2">
+                <i data-lucide="file-text" class="w-4 h-4 text-dim"></i>
+                <span>loging_service</span>
+              </div>
+              <span class="badge">reader</span>
+            </div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-token text-[11px] text-dim">
+            Депу выдан полный доступ к server + secret; в audit-канал — только чтение.
+            Расширение прав — запрос account_admin'у.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="flex items-center gap-2"><i data-lucide="users" class="w-4 h-4 text-accent"></i> Members</h3>
+            <a href="users-dep_admin.html" class="text-xs text-accent">все 8 →</a>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <div class="member-pill"><div class="av">AL</div> alice <span class="text-dim text-[10px]">admin</span></div>
+            <div class="member-pill"><div class="av">BO</div> bob <span class="text-dim text-[10px]">admin</span></div>
+            <div class="member-pill"><div class="av">CH</div> charlie <span class="text-dim text-[10px]">user</span></div>
+            <div class="member-pill"><div class="av">DA</div> dave <span class="text-dim text-[10px]">user</span></div>
+            <div class="member-pill"><div class="av">EV</div> eve <span class="text-dim text-[10px]">user</span></div>
+            <div class="member-pill"><div class="av">FR</div> frank <span class="text-dim text-[10px]">user</span></div>
+            <div class="member-pill"><div class="av">GR</div> grace <span class="text-dim text-[10px]">user</span></div>
+            <div class="member-pill"><div class="av">HE</div> heidi <span class="text-dim text-[10px] text-warn">disabled</span></div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-token text-[11px] text-dim">
+            Прав на ротации, бэкапы и миграцию у dep_admin нет — это account-level.
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("dbos-theme", e.target.value);
+  });
+  if (window.lucide) lucide.createIcons();
+</script>
+</body>
+</html>

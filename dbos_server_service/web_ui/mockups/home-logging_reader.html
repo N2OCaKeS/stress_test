@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · dave (loging_reader) · главная</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30;
+    --border: #3e3e42; --text: #cccccc; --text-dim: #969696;
+    --accent: #0e639c; --accent-fg: #ffffff;
+    --danger: #f48771; --warn: #cca700; --ok: #4ec9b0;
+    --hover: #2a2d2e; --selected: #094771;
+  }
+  html[data-theme="vscode-light"] {
+    --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb;
+    --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c;
+    --accent: #007acc; --accent-fg: #ffffff;
+    --danger: #cd3131; --warn: #b89500; --ok: #178178;
+    --hover: #e8e8e8; --selected: #c8e6ff;
+  }
+  html[data-theme="dark-orange"] {
+    --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118;
+    --border: #45382c; --text: #e8d9c5; --text-dim: #998571;
+    --accent: #f28a26; --accent-fg: #1a1410;
+    --danger: #ef6f55; --warn: #d8a200; --ok: #69b378;
+    --hover: #2f2419; --selected: #5a3a16;
+  }
+  html[data-theme="blue"] {
+    --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b;
+    --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8;
+    --accent: #4fb8ff; --accent-fg: #0a1929;
+    --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7;
+    --hover: #18406b; --selected: #1d5a98;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .surface { background: var(--bg-soft); }
+  .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-warn { color: var(--warn); }
+  .text-ok { color: var(--ok); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hover-bg:hover { background: var(--hover); }
+  .chip { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+  .chip:hover { background: var(--hover); }
+  .chip.active { background: var(--selected); }
+  .card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+  .stat-big { font-size: 28px; font-weight: 700; line-height: 1; }
+  .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin-bottom: 6px; }
+  .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); }
+  .badge-ok { color: var(--ok); border-color: var(--ok); }
+  .badge-warn { color: var(--warn); border-color: var(--warn); }
+  .badge-danger { color: var(--danger); border-color: var(--danger); }
+  .activity-row { display: grid; grid-template-columns: 60px 1fr 90px; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--border); align-items: center; }
+  .activity-row:last-child { border-bottom: none; }
+  .quick-tile {
+    background: var(--bg-soft-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    cursor: pointer;
+    transition: transform .12s ease, border-color .12s ease;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .quick-tile:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .quick-tile.disabled { cursor: not-allowed; opacity: 0.5; }
+  .quick-tile.disabled:hover { transform: none; border-color: var(--border); }
+</style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+<!-- Top bar -->
+<header class="surface border-b border-token h-12 px-3 flex items-center gap-3 shrink-0">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8">
+    <i data-lucide="grid-3x3" class="w-4 h-4 text-accent"></i>
+    DBOS
+  </a>
+  <span class="text-xs text-dim">/ Главная</span>
+
+  <div class="ml-auto flex items-center gap-2">
+    <div class="surface-2 border border-token rounded px-2 py-1 flex items-center gap-2 text-sm">
+      <div class="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-xs font-semibold">DA</div>
+      <div>
+        <div class="leading-tight">dave</div>
+        <div class="text-[10px] text-dim leading-tight">loging_reader · read-only</div>
+      </div>
+    </div>
+
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm">
+      <option value="vscode-dark">VS Code Dark</option>
+      <option value="vscode-light">VS Code Light</option>
+      <option value="dark-orange">Dark Orange</option>
+      <option value="blue">Blue</option>
+    </select>
+
+    <a href="index.html" class="btn">
+      <i data-lucide="log-out" class="w-4 h-4 inline-block align-text-bottom"></i>
+      Logout
+    </a>
+  </div>
+</header>
+
+<div class="flex-1 flex min-h-0">
+
+  <!-- Left -->
+  <aside class="w-[220px] shrink-0 border-r border-token surface flex flex-col">
+    <nav class="p-2 flex flex-col gap-0.5">
+      <div class="chip active">
+        <i data-lucide="home" class="w-5 h-5 text-accent"></i>
+        <div class="flex-1 text-sm">Главная</div>
+      </div>
+    </nav>
+
+    <div class="px-3 pt-4 pb-1 text-[11px] text-dim uppercase tracking-wider">Сервисы</div>
+    <nav class="px-2 flex flex-col gap-0.5">
+      <a href="logs-logging_reader.html" class="chip">
+        <i data-lucide="eye" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Logs</div>
+          <div class="text-[11px] text-dim">read-only</div>
+        </div>
+      </a>
+    </nav>
+
+    <div class="mt-auto p-2 border-t border-token">
+      <div class="chip" style="opacity:.5; cursor:not-allowed;">
+        <i data-lucide="lock" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Администрирование</div>
+          <div class="text-[11px] text-dim">недоступно</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 overflow-y-auto">
+    <div class="max-w-6xl mx-auto px-8 py-8">
+
+      <section class="mb-8">
+        <div class="text-3xl font-bold mb-1">Привет, dave 👋</div>
+        <div class="text-dim">Read-only доступ к audit-каналу. Просмотр и поиск, без правил и retention.</div>
+      </section>
+
+      <section class="mb-8">
+        <h2 class="text-sm uppercase tracking-wider text-dim mb-3">Быстрые действия</h2>
+        <div class="grid gap-3 md:grid-cols-4">
+          <a href="logs-logging_reader.html" class="quick-tile">
+            <div class="flex items-center gap-2">
+              <i data-lucide="eye" class="w-5 h-5 text-accent"></i>
+              <span class="text-sm font-medium">Открыть фид</span>
+            </div>
+            <div class="text-xs text-dim">Поток событий read-only</div>
+          </a>
+          <div class="quick-tile disabled">
+            <div class="flex items-center gap-2">
+              <i data-lucide="lock" class="w-5 h-5 text-dim"></i>
+              <span class="text-sm font-medium">Правила severity</span>
+            </div>
+            <div class="text-xs text-dim">Только loging_admin</div>
+          </div>
+          <div class="quick-tile disabled">
+            <div class="flex items-center gap-2">
+              <i data-lucide="lock" class="w-5 h-5 text-dim"></i>
+              <span class="text-sm font-medium">Retention</span>
+            </div>
+            <div class="text-xs text-dim">Только loging_admin</div>
+          </div>
+          <div class="quick-tile disabled">
+            <div class="flex items-center gap-2">
+              <i data-lucide="lock" class="w-5 h-5 text-dim"></i>
+              <span class="text-sm font-medium">Экспорт</span>
+            </div>
+            <div class="text-xs text-dim">Только loging_admin</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mb-8 grid gap-4 md:grid-cols-2">
+        <div class="card">
+          <div class="stat-label">Events 24ч</div>
+          <div class="stat-big">8 472</div>
+          <div class="text-xs text-dim mt-2">по всей платформе</div>
+        </div>
+        <div class="card">
+          <div class="stat-label">Last critical</div>
+          <div class="stat-big text-danger">16:04</div>
+          <div class="text-xs text-dim mt-2"><span class="mono">auth-service</span> · brute-force-detect</div>
+        </div>
+      </section>
+
+      <section class="grid gap-4 md:grid-cols-2">
+
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold">Что доступно</h3>
+            <span class="badge">read-only</span>
+          </div>
+          <div class="space-y-2 text-sm">
+            <div class="flex items-start gap-3 p-2 surface-2 rounded">
+              <i data-lucide="eye" class="w-4 h-4 text-ok shrink-0 mt-0.5"></i>
+              <div class="flex-1 min-w-0">
+                <div>Просмотр live-фида</div>
+                <div class="text-xs text-dim">все события платформы</div>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-2 surface-2 rounded">
+              <i data-lucide="search" class="w-4 h-4 text-ok shrink-0 mt-0.5"></i>
+              <div class="flex-1 min-w-0">
+                <div>Поиск по полям event'а</div>
+                <div class="text-xs text-dim">request_id · actor · severity · сервис</div>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-2 surface-2 rounded">
+              <i data-lucide="filter" class="w-4 h-4 text-ok shrink-0 mt-0.5"></i>
+              <div class="flex-1 min-w-0">
+                <div>Локальные фильтры</div>
+                <div class="text-xs text-dim">не сохраняются в платформу</div>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-2 surface-2 rounded">
+              <i data-lucide="lock" class="w-4 h-4 text-dim shrink-0 mt-0.5"></i>
+              <div class="flex-1 min-w-0">
+                <div>Без правил, retention, экспорта</div>
+                <div class="text-xs text-dim">нужна роль loging_admin</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold">Последние 10 событий</h3>
+            <a href="logs-logging_reader.html" class="text-xs text-accent">Открыть фид →</a>
+          </div>
+          <div class="text-sm">
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">16:07</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>auth-service</b> <span class="text-dim">login</span> <span class="mono">alice</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_a781...</div>
+              </div>
+              <span class="badge badge-ok">INFO</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">16:06</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>secret-service</b> <span class="text-dim">reveal</span> <span class="mono">grafana-admin</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_b912...</div>
+              </div>
+              <span class="badge badge-ok">INFO</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">16:05</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>auth-service</b> <span class="text-dim">failed-login</span> <span class="mono">charlie</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_22c8...</div>
+              </div>
+              <span class="badge badge-warn">WARN</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">16:04</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>auth-service</b> <span class="text-dim">brute-force-detect</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_22c9...</div>
+              </div>
+              <span class="badge badge-danger">CRIT</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">16:02</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>server-worker</b> <span class="text-dim">ipmi-probe</span> <span class="mono">srv-node-17</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_kx32...</div>
+              </div>
+              <span class="badge badge-warn">WARN</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">16:01</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>server-service</b> <span class="text-dim">power-on</span> <span class="mono">srv-node-19</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_ka13...</div>
+              </div>
+              <span class="badge badge-ok">INFO</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">15:59</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>secret-service</b> <span class="text-dim">rotate</span> <span class="mono">vault-token-ci</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_4ab1...</div>
+              </div>
+              <span class="badge badge-ok">INFO</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">15:57</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>auth-service</b> <span class="text-dim">acl-update</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_001f...</div>
+              </div>
+              <span class="badge badge-ok">INFO</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">15:55</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>config-service</b> <span class="text-dim">cert renew</span> <span class="mono">edge-ca</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_9b7c...</div>
+              </div>
+              <span class="badge badge-ok">INFO</span>
+            </div>
+            <div class="activity-row">
+              <span class="text-xs text-dim mono">15:54</span>
+              <div class="min-w-0">
+                <div class="truncate"><b>auth-service</b> <span class="text-dim">user banned</span> <span class="mono">charlie</span></div>
+                <div class="text-[11px] text-dim mono truncate">req_22d0...</div>
+              </div>
+              <span class="badge badge-danger">CRIT</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <section class="mt-8 card flex items-center gap-3 text-sm">
+        <i data-lucide="lightbulb" class="w-5 h-5 text-warn shrink-0"></i>
+        <div>
+          <b>Совет:</b> request_id из RC-тикета можно вставить в поиск — увидишь полный путь запроса через все сервисы.
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("dbos-theme", e.target.value);
+  });
+  if (window.lucide) lucide.createIcons();
+</script>
+</body>
+</html>

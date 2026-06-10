@@ -28,6 +28,8 @@ service-access) — отдельная плоскость, их guard не за�
 import jwt
 
 from src.core.config import get_settings
+from datetime import timedelta
+from src.utils.time import utcnow
 
 CLIENTS_URL = "/api/auth/v1/oauth2/clients"
 TOKEN_URL = "/api/auth/v1/oauth2/token"
@@ -194,7 +196,7 @@ class TestOauthClientRejectedOnUserEndpoints:
         resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {cc_token}"},
-            json={"name": "attacker_pat", "allowed_services": ["service_x"]},
+            json={"name": "attacker_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert resp.status_code == 403, resp.text
         assert resp.json()["error_code"] == "USER_CONTEXT_REQUIRED"
@@ -257,6 +259,6 @@ class TestUserJwtUnaffected:
         resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "sanity_pat_after_fix", "allowed_services": ["service_x"]},
+            json={"name": "sanity_pat_after_fix", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert resp.status_code == 201, resp.text

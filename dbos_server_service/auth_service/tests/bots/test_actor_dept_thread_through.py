@@ -9,6 +9,8 @@
 """
 
 import pytest
+from datetime import timedelta
+from src.utils.time import utcnow
 
 BOTS_URL = "/api/auth/v1/bots"
 
@@ -218,7 +220,7 @@ class TestDeptAdminBotTokenThreadThrough:
         tok = await client.post(
             f"{BOTS_URL}/{bot_id}/tokens",
             headers={"Authorization": f"Bearer {dept_admin_a_token}"},
-            json={"name": "ci_token"},
+            json={"name": "ci_token", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert tok.status_code == 201, tok.text
         assert tok.json()["name"] == "ci_token"
@@ -242,6 +244,6 @@ class TestDeptAdminBotTokenThreadThrough:
         tok = await client.post(
             f"{BOTS_URL}/{bot_id}/tokens",
             headers={"Authorization": f"Bearer {dept_admin_a_token}"},
-            json={"name": "cross_dept_token"},
+            json={"name": "cross_dept_token", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert tok.status_code == 403

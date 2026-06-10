@@ -12,6 +12,8 @@ import pytest
 
 from src.services import audit_service as audit_mod
 from tests._helpers.http import _basic  # noqa: F401 — общий helper
+from datetime import timedelta
+from src.utils.time import utcnow
 
 TOKEN_URL = "/api/auth/v1/docker/token"
 CONFIG_URL = "/api/auth/v1/docker/registry/{dept_id}"
@@ -48,7 +50,7 @@ async def _make_bot(client, admin_token, dept_id, name):
     tok_resp = (await client.post(
         f"{BOTS_URL}/{bot_resp['bot_id']}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "tok"},
+        json={"name": "tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()
     return bot_resp["bot_id"], tok_resp["token"]
 

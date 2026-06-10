@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · loging_service · carol (loging_admin)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30;
+    --border: #3e3e42; --text: #cccccc; --text-dim: #969696;
+    --accent: #0e639c; --accent-fg: #ffffff;
+    --danger: #f48771; --warn: #cca700; --ok: #4ec9b0;
+    --hover: #2a2d2e; --selected: #094771;
+    --crit-bg: #b91c1c; --crit-fg: #ffffff;
+    --err-bg: #c2410c; --err-fg: #ffffff;
+    --warn-bg: #a16207; --warn-fg: #ffffff;
+    --info-bg: #1d4ed8; --info-fg: #ffffff;
+  }
+  html[data-theme="vscode-light"] {
+    --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb;
+    --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c;
+    --accent: #007acc; --accent-fg: #ffffff;
+    --danger: #cd3131; --warn: #b89500; --ok: #178178;
+    --hover: #e8e8e8; --selected: #c8e6ff;
+    --crit-bg: #b91c1c; --crit-fg: #ffffff;
+    --err-bg: #c2410c; --err-fg: #ffffff;
+    --warn-bg: #a16207; --warn-fg: #ffffff;
+    --info-bg: #1d4ed8; --info-fg: #ffffff;
+  }
+  html[data-theme="dark-orange"] {
+    --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118;
+    --border: #45382c; --text: #e8d9c5; --text-dim: #998571;
+    --accent: #f28a26; --accent-fg: #1a1410;
+    --danger: #ef6f55; --warn: #d8a200; --ok: #69b378;
+    --hover: #2f2419; --selected: #5a3a16;
+    --crit-bg: #b91c1c; --crit-fg: #ffffff;
+    --err-bg: #c2410c; --err-fg: #ffffff;
+    --warn-bg: #a16207; --warn-fg: #ffffff;
+    --info-bg: #1d4ed8; --info-fg: #ffffff;
+  }
+  html[data-theme="blue"] {
+    --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b;
+    --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8;
+    --accent: #4fb8ff; --accent-fg: #0a1929;
+    --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7;
+    --hover: #18406b; --selected: #1d5a98;
+    --crit-bg: #b91c1c; --crit-fg: #ffffff;
+    --err-bg: #c2410c; --err-fg: #ffffff;
+    --warn-bg: #a16207; --warn-fg: #ffffff;
+    --info-bg: #1d4ed8; --info-fg: #ffffff;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .surface { background: var(--bg-soft); }
+  .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-warn { color: var(--warn); }
+  .text-ok { color: var(--ok); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hover-bg:hover { background: var(--hover); }
+  .selected-bg { background: var(--selected); }
+  .chip { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+  .chip:hover { background: var(--hover); }
+  .chip.active { background: var(--selected); }
+  .group-header { padding: 6px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); }
+  .badge-ok { color: var(--ok); border-color: var(--ok); }
+  .badge-warn { color: var(--warn); border-color: var(--warn); }
+  .badge-danger { color: var(--danger); border-color: var(--danger); }
+  .sev { font-size: 10px; padding: 2px 7px; border-radius: 3px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; display: inline-block; }
+  .sev-CRITICAL { background: var(--crit-bg); color: var(--crit-fg); }
+  .sev-ERROR { background: var(--err-bg); color: var(--err-fg); }
+  .sev-WARNING { background: var(--warn-bg); color: var(--warn-fg); }
+  .sev-INFO { background: var(--info-bg); color: var(--info-fg); }
+  .stat-row { display: grid; grid-template-columns: 140px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+  .stat-row:last-child { border-bottom: none; }
+  button { font-family: inherit; cursor: pointer; }
+  .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 13px; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-danger { color: var(--danger); border-color: var(--danger); }
+  .facet-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px; cursor: pointer; user-select: none; }
+  .facet-header:hover { background: var(--hover); border-radius: 4px; }
+  .facet-body { padding: 4px 6px 8px 6px; display: flex; flex-direction: column; gap: 2px; }
+  .facet-item { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 4px; border-radius: 3px; cursor: pointer; }
+  .facet-item:hover { background: var(--hover); }
+  .facet-item .count { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+  .ev-row {
+    display: grid;
+    grid-template-columns: 64px 1fr 80px;
+    gap: 6px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    align-items: center;
+    font-size: 12px;
+  }
+  .ev-row:hover { background: var(--hover); }
+  .ev-row.active { background: var(--selected); }
+  .ev-time { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: var(--text-dim); }
+  .ev-action { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11.5px; }
+  .ev-meta { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; }
+  .json-block { background: var(--bg-soft-2); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; overflow-x: auto; font-size: 12px; line-height: 1.5; }
+  .json-key { color: var(--accent); }
+  .json-str { color: var(--ok); }
+  .json-num { color: var(--warn); }
+  .json-null { color: var(--text-dim); }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 1.4s ease-in-out infinite; display: inline-block; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .related-tbl th, .related-tbl td { padding: 5px 8px; font-size: 11.5px; text-align: left; }
+  .related-tbl thead { color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .related-tbl tbody tr { border-top: 1px solid var(--border); }
+</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- ── Top bar ───────────────────────────────────────────────────────── -->
+<header class="surface border-b border-token h-12 px-3 flex items-center gap-3">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8">
+    <i data-lucide="grid-3x3" class="w-4 h-4"></i>
+    DBOS
+  </a>
+  <span class="text-xs text-dim">/ loging_service / events</span>
+
+  <div class="ml-auto flex items-center gap-2">
+    <div class="surface-2 border border-token rounded px-2 py-1 flex items-center gap-2 text-sm">
+      <div class="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-[10px] font-semibold">CA</div>
+      <div>
+        <div class="leading-tight">carol</div>
+        <div class="text-[10px] text-dim leading-tight">loging_admin · audit-канал</div>
+      </div>
+    </div>
+
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm">
+      <option value="vscode-dark">VS Code Dark</option>
+      <option value="vscode-light">VS Code Light</option>
+      <option value="dark-orange">Dark Orange</option>
+      <option value="blue">Blue</option>
+    </select>
+
+    <button class="btn">
+      <i data-lucide="log-out" class="w-4 h-4 inline-block align-text-bottom"></i>
+      Logout
+    </button>
+  </div>
+</header>
+
+<!-- ── 3-pane shell ─────────────────────────────────────────────────── -->
+<div class="flex-1 flex min-h-0">
+
+  <!-- Left: home + Logs + Admin -->
+  <aside class="w-[220px] shrink-0 border-r border-token surface flex flex-col">
+    <div class="px-3 py-3 text-xs text-dim uppercase tracking-wider">Навигация</div>
+    <nav class="px-2 flex flex-col gap-0.5">
+      <a href="home-logging_admin.html" class="chip">
+        <i data-lucide="home" class="w-5 h-5 text-dim"></i>
+        <div class="flex-1">
+          <div class="text-sm">Главная</div>
+          <div class="text-[11px] text-dim">сводка по audit</div>
+        </div>
+      </a>
+      <div class="chip active">
+        <i data-lucide="file-text" class="w-5 h-5 text-accent"></i>
+        <div class="flex-1">
+          <div class="text-sm">Logs</div>
+          <div class="text-[11px] text-dim">все события</div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="mt-auto p-2 border-t border-token">
+      <div class="chip">
+        <i data-lucide="shield-check" class="w-5 h-5 text-warn"></i>
+        <div class="flex-1">
+          <div class="text-sm">Администрирование</div>
+          <div class="text-[11px] text-dim">только audit-канал</div>
+        </div>
+      </div>
+      <div class="text-[10px] text-dim px-3 pt-2">retention · rulesets · known-events</div>
+    </div>
+  </aside>
+
+  <!-- Middle: facets + events list -->
+  <section class="w-[400px] shrink-0 border-r border-token surface flex flex-col">
+    <!-- Filter header -->
+    <div class="border-b border-token px-3 py-2 flex flex-col gap-2">
+      <div class="flex items-center gap-2">
+        <i data-lucide="search" class="w-4 h-4 text-dim"></i>
+        <input class="bg-transparent outline-none flex-1 text-sm" placeholder="Поиск по action / actor / target..."/>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <i data-lucide="clock" class="w-3.5 h-3.5 text-dim"></i>
+        <select class="surface-2 border border-token rounded px-2 py-0.5 text-xs">
+          <option>last 1h</option>
+          <option selected>last 24h</option>
+          <option>last 7d</option>
+          <option>custom...</option>
+        </select>
+        <button id="live-toggle" class="btn ml-auto flex items-center gap-1.5 text-xs py-0.5 px-2">
+          <span class="live-dot" id="live-dot"></span>
+          <span id="live-label">Live</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Facets accordions -->
+    <div class="border-b border-token px-2 py-2 flex flex-col gap-1 text-xs">
+      <div>
+        <div class="facet-header">
+          <div class="flex items-center gap-2"><i data-lucide="filter" class="w-3.5 h-3.5"></i><b>Severity</b></div>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+        </div>
+        <div class="facet-body">
+          <label class="facet-item"><input type="checkbox" checked> <span class="sev sev-CRITICAL">CRITICAL</span> <span class="count">5</span></label>
+          <label class="facet-item"><input type="checkbox" checked> <span class="sev sev-ERROR">ERROR</span> <span class="count">8</span></label>
+          <label class="facet-item"><input type="checkbox" checked> <span class="sev sev-WARNING">WARNING</span> <span class="count">10</span></label>
+          <label class="facet-item"><input type="checkbox" checked> <span class="sev sev-INFO">INFO</span> <span class="count">7</span></label>
+        </div>
+      </div>
+      <div>
+        <div class="facet-header">
+          <div class="flex items-center gap-2"><i data-lucide="filter" class="w-3.5 h-3.5"></i><b>Action</b> <span class="text-dim">(top 8)</span></div>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+        </div>
+        <div class="facet-body">
+          <label class="facet-item"><input type="checkbox"> <span class="mono">credential.read</span> <span class="count">412</span></label>
+          <label class="facet-item"><input type="checkbox"> <span class="mono">user.login_success</span> <span class="count">203</span></label>
+          <label class="facet-item"><input type="checkbox"> <span class="mono">task.completed</span> <span class="count">187</span></label>
+          <label class="facet-item"><input type="checkbox"> <span class="mono">server.power_action</span> <span class="count">98</span></label>
+          <label class="facet-item"><input type="checkbox"> <span class="mono">user.login_failed</span> <span class="count">42</span></label>
+          <label class="facet-item"><input type="checkbox"> <span class="mono">task.failed</span> <span class="count">31</span></label>
+          <label class="facet-item"><input type="checkbox"> <span class="mono">credential.create</span> <span class="count">14</span></label>
+          <label class="facet-item"><input type="checkbox"> <span class="mono">secret.master_key_rotated</span> <span class="count">2</span></label>
+        </div>
+      </div>
+      <div>
+        <div class="facet-header">
+          <div class="flex items-center gap-2"><i data-lucide="user" class="w-3.5 h-3.5"></i><b>Actor</b> <span class="text-dim">(top 5)</span></div>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+        </div>
+        <div class="facet-body">
+          <label class="facet-item"><input type="checkbox"> alice <span class="count">154</span></label>
+          <label class="facet-item"><input type="checkbox"> bob <span class="count">98</span></label>
+          <label class="facet-item"><input type="checkbox"> ci_runner <span class="count">82</span></label>
+          <label class="facet-item"><input type="checkbox"> carol <span class="count">41</span></label>
+          <label class="facet-item"><input type="checkbox"> bootstrap <span class="count">18</span></label>
+        </div>
+      </div>
+      <div>
+        <div class="facet-header">
+          <div class="flex items-center gap-2"><i data-lucide="filter" class="w-3.5 h-3.5"></i><b>Target type</b></div>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+        </div>
+        <div class="facet-body">
+          <label class="facet-item"><input type="checkbox"> user <span class="count">245</span></label>
+          <label class="facet-item"><input type="checkbox"> credential <span class="count">426</span></label>
+          <label class="facet-item"><input type="checkbox"> server <span class="count">98</span></label>
+          <label class="facet-item"><input type="checkbox"> dept <span class="count">12</span></label>
+          <label class="facet-item"><input type="checkbox"> task <span class="count">218</span></label>
+        </div>
+      </div>
+      <div>
+        <div class="facet-header">
+          <div class="flex items-center gap-2"><i data-lucide="filter" class="w-3.5 h-3.5"></i><b>Status</b></div>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+        </div>
+        <div class="facet-body">
+          <label class="facet-item"><input type="checkbox"> success <span class="count">927</span></label>
+          <label class="facet-item"><input type="checkbox"> failure <span class="count">72</span></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Events list (virtual-scroll feel) -->
+    <div class="flex-1 overflow-y-auto">
+      <div class="ev-row"><div class="ev-time">15:42:11</div><div><div class="ev-action">credential.read</div><div class="ev-meta">alice → alice-personal-vault</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row active"><div class="ev-time">15:41:55</div><div><div class="ev-action">secret.master_key_rotated</div><div class="ev-meta">carol → master_key_v3</div></div><span class="sev sev-CRITICAL">CRIT</span></div>
+      <div class="ev-row"><div class="ev-time">15:40:32</div><div><div class="ev-action">user.login_failed</div><div class="ev-meta">unknown@10.20.30.4 · 3rd attempt</div></div><span class="sev sev-WARNING">WARN</span></div>
+      <div class="ev-row"><div class="ev-time">15:38:01</div><div><div class="ev-action">server.power_action</div><div class="ev-meta">ci_runner → srv-rack-A-07 · cycle</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">15:37:18</div><div><div class="ev-action">task.failed</div><div class="ev-meta">worker-2 → task_8a1c · timeout</div></div><span class="sev sev-ERROR">ERR</span></div>
+      <div class="ev-row"><div class="ev-time">15:36:44</div><div><div class="ev-action">credential.revoke</div><div class="ev-meta">alice → vault-bootstrap-root</div></div><span class="sev sev-WARNING">WARN</span></div>
+      <div class="ev-row"><div class="ev-time">15:35:12</div><div><div class="ev-action">server.ipmi_unreachable</div><div class="ev-meta">monitor → srv-rack-B-12</div></div><span class="sev sev-ERROR">ERR</span></div>
+      <div class="ev-row"><div class="ev-time">15:33:09</div><div><div class="ev-action">user.password_change</div><div class="ev-meta">dave → self</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">15:30:55</div><div><div class="ev-action">credential.read</div><div class="ev-meta">bob → prod-postgres-master</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">15:28:41</div><div><div class="ev-action">task.completed</div><div class="ev-meta">ci_runner → task_7f23</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">15:25:02</div><div><div class="ev-action">role_acl_updated</div><div class="ev-meta">alice → dept:Ядро DBOS</div></div><span class="sev sev-WARNING">WARN</span></div>
+      <div class="ev-row"><div class="ev-time">15:22:19</div><div><div class="ev-action">user.sessions_revoked_on_block</div><div class="ev-meta">alice → eve · 4 sessions</div></div><span class="sev sev-CRITICAL">CRIT</span></div>
+      <div class="ev-row"><div class="ev-time">15:18:46</div><div><div class="ev-action">credential.transfer</div><div class="ev-meta">alice → bob · github-deploy-token</div></div><span class="sev sev-WARNING">WARN</span></div>
+      <div class="ev-row"><div class="ev-time">15:14:33</div><div><div class="ev-action">user.login_failed</div><div class="ev-meta">eve@10.20.30.4 · blocked</div></div><span class="sev sev-ERROR">ERR</span></div>
+      <div class="ev-row"><div class="ev-time">15:11:08</div><div><div class="ev-action">task.started</div><div class="ev-meta">ci_runner → task_7f23</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">15:07:51</div><div><div class="ev-action">task.retry</div><div class="ev-meta">worker-1 → task_8a1c · attempt 2/3</div></div><span class="sev sev-WARNING">WARN</span></div>
+      <div class="ev-row"><div class="ev-time">15:02:14</div><div><div class="ev-action">service.rotation_started</div><div class="ev-meta">secret_service → master_key</div></div><span class="sev sev-CRITICAL">CRIT</span></div>
+      <div class="ev-row"><div class="ev-time">14:58:39</div><div><div class="ev-action">credential.create</div><div class="ev-meta">bob → bmc-rack-C-ipmi</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">14:54:17</div><div><div class="ev-action">dep_grant_added</div><div class="ev-meta">alice → grant:ДТКК.read</div></div><span class="sev sev-WARNING">WARN</span></div>
+      <div class="ev-row"><div class="ev-time">14:50:02</div><div><div class="ev-action">credential.read</div><div class="ev-meta">ci_runner → github-deploy-token</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">14:46:25</div><div><div class="ev-action">user.login_success</div><div class="ev-meta">dave@10.20.30.5 · web</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">14:42:48</div><div><div class="ev-action">server.account_create</div><div class="ev-meta">bob → srv-rack-A-08 · admin</div></div><span class="sev sev-WARNING">WARN</span></div>
+      <div class="ev-row"><div class="ev-time">14:39:11</div><div><div class="ev-action">task.failed</div><div class="ev-meta">worker-3 → task_4c2b · 500</div></div><span class="sev sev-ERROR">ERR</span></div>
+      <div class="ev-row"><div class="ev-time">14:36:01</div><div><div class="ev-action">credential.read</div><div class="ev-meta">alice → grafana-admin · 429 rate-limit</div></div><span class="sev sev-WARNING">WARN</span></div>
+      <div class="ev-row"><div class="ev-time">14:30:48</div><div><div class="ev-action">user.login_failed</div><div class="ev-meta">unknown@198.51.100.7 · invalid_creds</div></div><span class="sev sev-ERROR">ERR</span></div>
+      <div class="ev-row"><div class="ev-time">14:24:33</div><div><div class="ev-action">service.started</div><div class="ev-meta">server_worker boot · v1.4.2</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">14:18:11</div><div><div class="ev-action">credential.read</div><div class="ev-meta">bob → bmc-rack-A-ipmi</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">14:11:55</div><div><div class="ev-action">server.power_action</div><div class="ev-meta">bob → srv-rack-A-09 · off</div></div><span class="sev sev-WARNING">WARN</span></div>
+      <div class="ev-row"><div class="ev-time">14:05:22</div><div><div class="ev-action">task.completed</div><div class="ev-meta">ci_runner → task_3a91</div></div><span class="sev sev-INFO">INFO</span></div>
+      <div class="ev-row"><div class="ev-time">14:01:09</div><div><div class="ev-action">user.login_failed</div><div class="ev-meta">eve@10.20.30.4 · invalid_creds</div></div><span class="sev sev-ERROR">ERR</span></div>
+    </div>
+  </section>
+
+  <!-- Right: workzone - selected event detail -->
+  <section class="flex-1 overflow-y-auto flex flex-col min-w-0">
+    <!-- Header of selected event -->
+    <div class="border-b border-token p-5 flex items-start gap-4">
+      <div class="w-12 h-12 rounded flex items-center justify-center" style="background: var(--crit-bg); color: var(--crit-fg);">
+        <i data-lucide="flame" class="w-6 h-6"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-3">
+          <h1 class="text-xl font-semibold truncate mono">secret.master_key_rotated</h1>
+          <span class="sev sev-CRITICAL">CRITICAL</span>
+        </div>
+        <div class="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
+          <span class="mono">req_a8f9c12b4e6d4711</span>
+          <span>·</span>
+          <span class="mono">2026-06-10 15:41:55.328 UTC</span>
+          <span>·</span>
+          <span>2 минуты назад</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button class="btn"><i data-lucide="bell" class="w-4 h-4 inline-block"></i> Add to ruleset</button>
+        <button class="btn"><i data-lucide="shield-check" class="w-4 h-4 inline-block"></i> Mark as known</button>
+        <button class="btn btn-primary"><i data-lucide="download" class="w-4 h-4 inline-block"></i> Export JSON</button>
+      </div>
+    </div>
+
+    <div class="p-5 grid grid-cols-2 gap-5">
+      <!-- Actor card -->
+      <div class="surface border border-token rounded-lg p-4">
+        <div class="flex items-center gap-2 mb-3">
+          <i data-lucide="user" class="w-4 h-4 text-accent"></i>
+          <div class="text-xs uppercase tracking-wider text-dim">Actor</div>
+        </div>
+        <div class="text-sm">
+          <div class="stat-row"><span class="text-dim">Username</span><span>carol</span></div>
+          <div class="stat-row"><span class="text-dim">ID</span><span class="mono text-xs">usr_c4a2b1e9f8d34721</span></div>
+          <div class="stat-row"><span class="text-dim">IP</span><span class="mono">10.177.103.42</span></div>
+          <div class="stat-row"><span class="text-dim">User-Agent</span><span class="text-xs">DBOS-CLI/1.4.2 · Linux</span></div>
+          <div class="stat-row"><span class="text-dim">Identity type</span><span><span class="badge">user</span></span></div>
+        </div>
+      </div>
+
+      <!-- Target card -->
+      <div class="surface border border-token rounded-lg p-4">
+        <div class="flex items-center gap-2 mb-3">
+          <i data-lucide="lock-keyhole" class="w-4 h-4 text-warn"></i>
+          <div class="text-xs uppercase tracking-wider text-dim">Target</div>
+        </div>
+        <div class="text-sm">
+          <div class="stat-row"><span class="text-dim">Type</span><span><span class="badge">master_key</span></span></div>
+          <div class="stat-row"><span class="text-dim">ID</span><span class="mono text-xs">mkey_v3_b1aef02c</span></div>
+          <div class="stat-row"><span class="text-dim">Name</span><span>master_key (current)</span></div>
+          <div class="stat-row"><span class="text-dim">Department</span><span>ДТКК</span></div>
+          <div class="stat-row"><span class="text-dim">Previous version</span><span class="mono text-xs">mkey_v2_47ab819f</span></div>
+        </div>
+      </div>
+
+      <!-- Details JSON -->
+      <div class="surface border border-token rounded-lg p-4 col-span-2">
+        <div class="flex items-center gap-2 mb-3">
+          <i data-lucide="filter" class="w-4 h-4 text-dim"></i>
+          <div class="text-xs uppercase tracking-wider text-dim">Details JSON</div>
+        </div>
+        <pre class="json-block mono">{
+  <span class="json-key">"event_id"</span>: <span class="json-str">"evt_98a2c41eb7f04812"</span>,
+  <span class="json-key">"action"</span>: <span class="json-str">"secret.master_key_rotated"</span>,
+  <span class="json-key">"severity"</span>: <span class="json-str">"CRITICAL"</span>,
+  <span class="json-key">"status"</span>: <span class="json-str">"success"</span>,
+  <span class="json-key">"new_key_version"</span>: <span class="json-num">3</span>,
+  <span class="json-key">"prev_key_version"</span>: <span class="json-num">2</span>,
+  <span class="json-key">"reencrypted_credentials"</span>: <span class="json-num">412</span>,
+  <span class="json-key">"duration_ms"</span>: <span class="json-num">8417</span>,
+  <span class="json-key">"reason"</span>: <span class="json-str">"scheduled_rotation_180d"</span>,
+  <span class="json-key">"approval_request_id"</span>: <span class="json-str">"appr_3f1a82c9"</span>
+}</pre>
+      </div>
+
+      <!-- Service card -->
+      <div class="surface border border-token rounded-lg p-4">
+        <div class="flex items-center gap-2 mb-3">
+          <i data-lucide="cog" class="w-4 h-4 text-dim"></i>
+          <div class="text-xs uppercase tracking-wider text-dim">Service</div>
+        </div>
+        <div class="text-sm">
+          <div class="stat-row"><span class="text-dim">Emitter</span><span><span class="badge badge-warn">secret_service</span></span></div>
+          <div class="stat-row"><span class="text-dim">X-Service-Identity</span><span class="mono text-xs">secret_service@dbos-srv-01</span></div>
+          <div class="stat-row"><span class="text-dim">X-Request-ID</span><span class="mono text-xs">req_a8f9c12b4e6d4711</span></div>
+          <div class="stat-row"><span class="text-dim">Version</span><span class="mono">1.5.2</span></div>
+          <div class="stat-row"><span class="text-dim">Trace</span><span class="mono text-xs text-accent">trace_8c1f0a92</span></div>
+        </div>
+      </div>
+
+      <!-- Related events -->
+      <div class="surface border border-token rounded-lg p-4">
+        <div class="flex items-center gap-2 mb-3">
+          <i data-lucide="share-2" class="w-4 h-4 text-dim"></i>
+          <div class="text-xs uppercase tracking-wider text-dim">Related events</div>
+          <span class="text-[10px] text-dim ml-auto">по request_id</span>
+        </div>
+        <table class="w-full related-tbl">
+          <thead><tr><th>Time</th><th>Action</th><th>Sev</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">15:41:54.211</td><td class="mono">approval.granted</td><td><span class="sev sev-INFO">INFO</span></td></tr>
+            <tr><td class="mono">15:41:55.012</td><td class="mono">service.rotation_started</td><td><span class="sev sev-CRITICAL">CRIT</span></td></tr>
+            <tr><td class="mono">15:41:55.328</td><td class="mono">secret.master_key_rotated</td><td><span class="sev sev-CRITICAL">CRIT</span></td></tr>
+            <tr><td class="mono">15:42:03.745</td><td class="mono">credential.reencrypted_bulk</td><td><span class="sev sev-INFO">INFO</span></td></tr>
+            <tr><td class="mono">15:42:11.108</td><td class="mono">service.rotation_completed</td><td><span class="sev sev-INFO">INFO</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // Theme
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("dbos-theme", e.target.value);
+  });
+
+  // Lucide
+  if (window.lucide) lucide.createIcons();
+
+  // Live toggle
+  let live = true;
+  const liveBtn = document.getElementById("live-toggle");
+  const liveLabel = document.getElementById("live-label");
+  const liveDot = document.getElementById("live-dot");
+  liveBtn.addEventListener("click", () => {
+    live = !live;
+    if (live) {
+      liveLabel.textContent = "Live";
+      liveDot.style.display = "inline-block";
+    } else {
+      liveLabel.textContent = "Paused";
+      liveDot.style.display = "none";
+    }
+  });
+</script>
+</body>
+</html>

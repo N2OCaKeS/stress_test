@@ -234,6 +234,129 @@ async def revoke_one_my_session(
     return RevokeSessionsResponse(revoked_count=revoked)
 
 
+# ── Admin session management (cross-user) ─────────────────────────────────
+# Зеркало /me/sessions/* для админов. account_admin — любой юзер, dep_admin
+# — только в своём отделе. Аудит идёт отдельной серией событий
+# (`user.sessions_admin_*`) — чтобы SIEM мог отделять admin-инициированные
+# revoke'ы от self-инициированных.
+
+
+@router.get(
+    "/{user_id}/sessions",
+    response_model=SessionsListResponse,
+    summary="Активные сессии юзера (admin view)",
+    description=(
+        "Список активных refresh-сессий target-юзера. account_admin видит "
+        "любого; department_admin — только юзеров своего отдела. "
+        "`is_current` всегда False — admin вызывает не из target-сессии."
+    ),
+    responses={
+        403: {"description": "DEPARTMENT_ACCESS_DENIED — DA cross-department."},
+        404: {"description": "USER_NOT_FOUND — юзера нет."},
+    },
+)
+async def admin_list_user_sessions(
+    user_id: str,
+    request: Request,
+    identity: AnyAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> SessionsListResponse:
+    """Admin-list сессий чужого юзера.
+
+    Доступ:
+        * account_admin — любой;
+        * department_admin — только если `target.department_id ==
+          actor.department_id` (через `_dept_guard.assert_dept_admin_target_dept`).
+
+    Audit:
+        `user.sessions_admin_listed` (INFO).
+    """
+    return await user_service.admin_list_sessions(
+        db=db,
+        actor_id=identity.user_id,
+        actor_role=identity.platform_role,
+        target_user_id=user_id,
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+
+@router.post(
+    "/{user_id}/sessions/revoke",
+    response_model=RevokeSessionsResponse,
+    summary="Logout-all для любого юзера (admin)",
+    description=(
+        "Снести все активные refresh-сессии target-юзера. PAT и bot-токены "
+        "не трогаются. account_admin — любой; department_admin — только "
+        "в своём отделе."
+    ),
+    responses={
+        403: {"description": "DEPARTMENT_ACCESS_DENIED — DA cross-department."},
+        404: {"description": "USER_NOT_FOUND — юзера нет."},
+    },
+)
+async def admin_revoke_user_sessions(
+    user_id: str,
+    request: Request,
+    identity: AnyAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> RevokeSessionsResponse:
+    """Admin-revoke всех сессий чужого юзера.
+
+    Доступ:
+        account_admin (cross-dept) или department_admin (свой отдел).
+
+    Body отсутствует: `except_current` для admin-revoke бессмысленен —
+    у actor'а своя сессия, не target'а.
+
+    Audit:
+        `user.sessions_admin_revoked_all` (CRITICAL).
+    """
+    revoked = await user_service.admin_revoke_all_sessions(
+        db=db,
+        actor_id=identity.user_id,
+        actor_role=identity.platform_role,
+        target_user_id=user_id,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return RevokeSessionsResponse(revoked_count=revoked)
+
+
+@router.delete(
+    "/{user_id}/sessions/{session_id}",
+    response_model=RevokeSessionsResponse,
+    summary="Revoke одной сессии чужого юзера (admin)",
+    description="Целевой revoke одной сессии. session_id должна принадлежать user_id, иначе 404.",
+    responses={
+        403: {"description": "DEPARTMENT_ACCESS_DENIED — DA cross-department."},
+        404: {"description": "USER_NOT_FOUND или SESSION_NOT_FOUND."},
+    },
+)
+async def admin_revoke_user_session_by_id(
+    user_id: str,
+    session_id: str,
+    request: Request,
+    identity: AnyAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> RevokeSessionsResponse:
+    """Admin-revoke одной сессии.
+
+    Доступ: те же правила, что и list/revoke-all. 404
+    `SESSION_NOT_FOUND` — сессия не принадлежит указанному `user_id` или
+    уже revoked (намеренно не различаем, чтобы не было session-id oracle).
+
+    Audit: `user.session_admin_revoked_one` (WARNING).
+    """
+    revoked = await user_service.admin_revoke_one_session(
+        db=db,
+        actor_id=identity.user_id,
+        actor_role=identity.platform_role,
+        target_user_id=user_id,
+        session_id=session_id,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return RevokeSessionsResponse(revoked_count=revoked)
+
+
 @router.get(
     "",
     response_model=list[UserResponse],
@@ -401,6 +524,41 @@ async def create_user(
         email=body.email,
         platform_role=body.platform_role,
         initial_roles=body.initial_roles,
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+
+@router.get(
+    "/{user_id}",
+    response_model=UserResponse,
+    summary="Получить юзера по id",
+    description="Single-user read для admin UI. List+filter на клиенте — overkill, см. внизу.",
+)
+async def get_user(
+    user_id: str,
+    request: Request,
+    identity: AnyAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
+    """Получить юзера по user_id.
+
+    Что делает:
+        Возвращает того же `UserResponse` shape, что и `GET /users`
+        (с display_name отдела). Для UI-карточки юзера в админке —
+        чтобы не таскать весь list+filter ради одного row'а.
+
+    Доступ:
+        Любой админ (`AnyAdmin`). department_admin'у НЕ ограничивается
+        scope на этом endpoint'е: список через `GET /users` он и так не
+        видит вне своего отдела, а карточка по id — read-only детали и
+        не открывает векторов привилегий.
+
+    Возможные ошибки:
+        * `USER_NOT_FOUND` (404).
+    """
+    return await user_service.get_user(
+        db=db,
+        user_id=user_id,
         request_id=getattr(request.state, "request_id", None),
     )
 

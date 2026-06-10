@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · loging_service · retention · logging_admin (carol)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root { --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30; --border: #3e3e42; --text: #cccccc; --text-dim: #969696; --accent: #0e639c; --accent-fg: #ffffff; --danger: #f48771; --warn: #cca700; --ok: #4ec9b0; --hover: #2a2d2e; --selected: #094771; }
+  html[data-theme="vscode-light"] { --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb; --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c; --accent: #007acc; --accent-fg: #ffffff; --danger: #cd3131; --warn: #b89500; --ok: #178178; --hover: #e8e8e8; --selected: #c8e6ff; }
+  html[data-theme="dark-orange"] { --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118; --border: #45382c; --text: #e8d9c5; --text-dim: #998571; --accent: #f28a26; --accent-fg: #1a1410; --danger: #ef6f55; --warn: #d8a200; --ok: #69b378; --hover: #2f2419; --selected: #5a3a16; }
+  html[data-theme="blue"] { --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b; --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8; --accent: #4fb8ff; --accent-fg: #0a1929; --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7; --hover: #18406b; --selected: #1d5a98; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .surface { background: var(--bg-soft); } .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); } .text-accent { color: var(--accent); } .text-danger { color: var(--danger); } .text-warn { color: var(--warn); } .text-ok { color: var(--ok); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hover-bg:hover { background: var(--hover); }
+  .chip { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+  .chip:hover { background: var(--hover); } .chip.active { background: var(--selected); }
+  .subchip { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 36px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+  .subchip:hover { background: var(--hover); } .subchip.active { background: var(--selected); color: var(--accent); }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); }
+  .badge-ok { color: var(--ok); border-color: var(--ok); } .badge-warn { color: var(--warn); border-color: var(--warn); } .badge-danger { color: var(--danger); border-color: var(--danger); } .badge-accent { color: var(--accent); border-color: var(--accent); }
+  .stat-row { display: grid; grid-template-columns: 200px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+  .stat-row:last-child { border-bottom: none; }
+  button { font-family: inherit; cursor: pointer; }
+  .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 13px; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); } .btn-primary:hover { filter: brightness(1.1); }
+  .btn-danger { color: var(--danger); border-color: var(--danger); }
+  .card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+  .stat-big { font-size: 28px; font-weight: 600; line-height: 1.1; }
+  .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin-bottom: 6px; }
+</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<header class="surface border-b border-token h-12 px-3 flex items-center gap-3 shrink-0">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8"><i data-lucide="grid-3x3" class="w-4 h-4 text-accent"></i> DBOS</a>
+  <span class="text-xs text-dim">/ loging_service / retention</span>
+  <div class="ml-auto flex items-center gap-2">
+    <div class="surface-2 border border-token rounded px-2 py-1 flex items-center gap-2 text-sm">
+      <div class="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-xs font-semibold">CA</div>
+      <div><div class="leading-tight">carol</div><div class="text-[10px] text-dim leading-tight">loging_admin · audit-канал</div></div>
+    </div>
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm"><option value="vscode-dark">VS Code Dark</option><option value="vscode-light">VS Code Light</option><option value="dark-orange">Dark Orange</option><option value="blue">Blue</option></select>
+    <a href="index.html" class="btn"><i data-lucide="log-out" class="w-4 h-4 inline-block align-text-bottom"></i> Logout</a>
+  </div>
+</header>
+
+<div class="flex-1 flex min-h-0">
+
+  <aside class="w-[220px] shrink-0 border-r border-token surface flex flex-col">
+    <nav class="p-2 flex flex-col gap-0.5">
+      <a href="home-logging_admin.html" class="chip"><i data-lucide="home" class="w-5 h-5"></i><div class="flex-1 text-sm">Главная</div></a>
+    </nav>
+    <div class="px-3 pt-4 pb-1 text-[11px] text-dim uppercase tracking-wider">Сервисы</div>
+    <nav class="px-2 flex flex-col gap-0.5">
+      <div class="chip active">
+        <i data-lucide="file-text" class="w-5 h-5 text-accent"></i>
+        <div class="flex-1"><div class="text-sm">Logs</div><div class="text-[11px] text-dim">read + rules + retention</div></div>
+      </div>
+      <div class="flex flex-col">
+        <a href="log-logging_admin.html" class="subchip"><i data-lucide="activity" class="w-3.5 h-3.5"></i><span>Events</span></a>
+        <a href="rules-logging_admin.html" class="subchip"><i data-lucide="filter" class="w-3.5 h-3.5"></i><span>Rules <span class="text-dim">· 24</span></span></a>
+        <a href="retention-logging_admin.html" class="subchip active"><i data-lucide="archive" class="w-3.5 h-3.5"></i><span>Retention</span></a>
+      </div>
+    </nav>
+    <div class="mt-auto p-2 border-t border-token">
+      <a href="admin-logging_admin.html" class="chip"><i data-lucide="shield-check" class="w-5 h-5 text-warn"></i><div class="flex-1"><div class="text-sm">Администрирование</div><div class="text-[11px] text-dim">правила + retention</div></div></a>
+    </div>
+  </aside>
+
+  <main class="flex-1 overflow-y-auto">
+    <div class="max-w-6xl mx-auto px-8 py-8">
+
+      <section class="mb-6">
+        <div class="text-2xl font-bold mb-1 flex items-center gap-2"><i data-lucide="archive" class="w-6 h-6 text-accent"></i> Retention policy</div>
+        <div class="text-dim text-sm">Управление сроком хранения audit-событий. Каждый sweep сам пишется в audit-канал.</div>
+      </section>
+
+      <section class="grid gap-4 md:grid-cols-2 mb-6">
+        <div class="card">
+          <div class="stat-label flex items-center gap-2"><i data-lucide="archive" class="w-3 h-3"></i> Текущий policy</div>
+          <div class="stat-big">default 90 days</div>
+          <div class="text-xs text-dim mt-3 mb-2">custom rules:</div>
+          <div class="text-sm flex flex-col gap-2">
+            <div class="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between">
+              <span><span class="badge badge-danger">CRITICAL</span> любого сервиса</span>
+              <span class="mono">→ 365 days</span>
+            </div>
+            <div class="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between">
+              <span><span class="badge">INFO</span> в worker / healthcheck</span>
+              <span class="mono">→ 30 days</span>
+            </div>
+            <div class="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between">
+              <span><span class="badge">DEBUG</span> любого сервиса</span>
+              <span class="mono">→ 7 days</span>
+            </div>
+          </div>
+          <div class="mt-4 flex gap-2">
+            <button class="btn"><i data-lucide="edit-3" class="w-4 h-4 inline-block"></i> Edit policy</button>
+            <button class="btn"><i data-lucide="filter" class="w-4 h-4 inline-block"></i> Add rule</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="stat-label flex items-center gap-2"><i data-lucide="clock" class="w-3 h-3"></i> Last sweep</div>
+          <div class="stat-big">03:17</div>
+          <div class="text-xs text-dim mt-2">2026-06-10 · ok</div>
+          <div class="text-sm mt-3">
+            <div class="stat-row"><span class="text-dim">rows_removed</span><span class="mono">14 312</span></div>
+            <div class="stat-row"><span class="text-dim">duration</span><span class="mono">1m 42s</span></div>
+            <div class="stat-row"><span class="text-dim">disk_freed</span><span class="mono">94 MB</span></div>
+            <div class="stat-row"><span class="text-dim">audit_event_id</span><span class="mono text-xs">evt_8a3f2d1c</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="stat-label flex items-center gap-2"><i data-lucide="play" class="w-3 h-3"></i> Next sweep</div>
+          <div class="stat-big">завтра · 03:00 UTC</div>
+          <div class="text-xs text-dim mt-2">schedule: daily 03:00 UTC · runner <span class="mono">dbos_bot_audit_export</span></div>
+          <div class="text-sm mt-3">
+            <div class="stat-row"><span class="text-dim">est. rows</span><span class="mono">~12 800</span></div>
+            <div class="stat-row"><span class="text-dim">cron</span><span class="mono">0 3 * * *</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="stat-label flex items-center gap-2"><i data-lucide="archive" class="w-3 h-3"></i> Size</div>
+          <div class="stat-big">3.42 GB</div>
+          <div class="text-xs text-dim mt-2">events table · 8 472 строки за 24ч</div>
+          <div class="text-sm mt-3">
+            <div class="stat-row"><span class="text-dim">total rows</span><span class="mono">2 184 119</span></div>
+            <div class="stat-row"><span class="text-dim">oldest event</span><span class="mono">2026-03-10</span></div>
+            <div class="stat-row"><span class="text-dim">disk usage</span><span><span class="mono">3.42 GB</span> / 50 GB</span></div>
+            <div class="stat-row"><span class="text-dim">growth</span><span><span class="text-ok">+38 MB / day</span></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid gap-4 md:grid-cols-2 mb-6">
+        <div class="card">
+          <div class="stat-label flex items-center gap-2"><i data-lucide="git-branch" class="w-3 h-3"></i> Partition plan</div>
+          <div class="text-sm mt-1">monthly partitions <span class="badge badge-warn">deferred</span></div>
+          <div class="text-xs text-dim mt-2">
+            При росте &gt;10 GB / месяц планируется разбить таблицу events на helpers по месяцу для ускорения sweep.
+            Сейчас sweep укладывается в 2 минуты — переключение не нужно.
+          </div>
+          <a href="https://confluence.local/dbos/runbook/log-partition" class="btn mt-3 inline-flex items-center gap-2 text-xs">
+            <i data-lucide="external-link" class="w-3 h-3"></i> runbook: log-partition
+          </a>
+        </div>
+
+        <div class="card">
+          <div class="stat-label flex items-center gap-2"><i data-lucide="play" class="w-3 h-3"></i> Manual sweep</div>
+          <div class="text-sm mt-1">Запустить вне расписания</div>
+          <div class="text-xs text-dim mt-2">
+            Сразу применит текущий policy. Удалённые строки попадут в audit-канал.
+            Требуется явное подтверждение и причина (audit reason).
+          </div>
+          <div class="mt-3 flex flex-col gap-2">
+            <input class="surface-2 border border-token rounded px-3 py-2 text-sm" placeholder="audit reason: 'before quarterly export'" />
+            <button class="btn btn-primary flex items-center justify-center gap-2"><i data-lucide="play" class="w-4 h-4"></i> Run sweep сейчас</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="card">
+          <div class="stat-label flex items-center gap-2 mb-3"><i data-lucide="file-text" class="w-3 h-3"></i> Audit — retention events (last 10)</div>
+          <table class="w-full text-sm">
+            <thead class="text-left text-dim text-xs uppercase">
+              <tr><th class="pb-2 pr-3">time</th><th class="pb-2 pr-3">action</th><th class="pb-2 pr-3">actor</th><th class="pb-2 pr-3">detail</th><th class="pb-2">status</th></tr>
+            </thead>
+            <tbody>
+              <tr class="border-t border-token"><td class="py-2 text-dim text-xs">сегодня 03:17</td><td class="mono">sweep_completed</td><td class="mono">dbos_bot_audit_export</td><td class="text-xs text-dim">removed 14 312 rows · freed 94 MB</td><td><span class="badge badge-ok">ok</span></td></tr>
+              <tr class="border-t border-token"><td class="py-2 text-dim text-xs">сегодня 03:15</td><td class="mono">sweep_started</td><td class="mono">dbos_bot_audit_export</td><td class="text-xs text-dim">scheduled · cron 0 3 * * *</td><td><span class="badge">info</span></td></tr>
+              <tr class="border-t border-token"><td class="py-2 text-dim text-xs">2 дн назад</td><td class="mono">rule_updated</td><td class="mono">carol</td><td class="text-xs text-dim">CRITICAL → 365 days (было 180)</td><td><span class="badge badge-warn">change</span></td></tr>
+              <tr class="border-t border-token"><td class="py-2 text-dim text-xs">2 дн назад 03:18</td><td class="mono">sweep_completed</td><td class="mono">dbos_bot_audit_export</td><td class="text-xs text-dim">removed 13 891 rows · freed 88 MB</td><td><span class="badge badge-ok">ok</span></td></tr>
+              <tr class="border-t border-token"><td class="py-2 text-dim text-xs">5 дн назад</td><td class="mono">manual_sweep</td><td class="mono">carol</td><td class="text-xs text-dim">reason: "before quarterly export"</td><td><span class="badge badge-ok">ok</span></td></tr>
+              <tr class="border-t border-token"><td class="py-2 text-dim text-xs">9 дн назад</td><td class="mono">rule_added</td><td class="mono">carol</td><td class="text-xs text-dim">INFO worker/healthcheck → 30 days</td><td><span class="badge badge-accent">new</span></td></tr>
+              <tr class="border-t border-token"><td class="py-2 text-dim text-xs">14 дн назад</td><td class="mono">sweep_failed</td><td class="mono">dbos_bot_audit_export</td><td class="text-xs text-dim">lock timeout · retried 03:35 → ok</td><td><span class="badge badge-warn">warn</span></td></tr>
+              <tr class="border-t border-token"><td class="py-2 text-dim text-xs">21 дн назад</td><td class="mono">rule_removed</td><td class="mono">carol</td><td class="text-xs text-dim">"TRACE → 1 day" удалено (нет источников)</td><td><span class="badge">change</span></td></tr>
+              <tr class="border-t border-token"><td class="py-2 text-dim text-xs">28 дн назад</td><td class="mono">policy_changed</td><td class="mono">carol</td><td class="text-xs text-dim">default 60 → 90 days</td><td><span class="badge badge-warn">change</span></td></tr>
+              <tr class="border-t border-token"><td class="py-2 text-dim text-xs">42 дн назад</td><td class="mono">partition_plan_deferred</td><td class="mono">carol</td><td class="text-xs text-dim">decision: hold (sweep укладывается в SLA)</td><td><span class="badge">decision</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => { document.documentElement.setAttribute("data-theme", e.target.value); localStorage.setItem("dbos-theme", e.target.value); });
+  if (window.lucide) lucide.createIcons();
+</script>
+</body>
+</html>

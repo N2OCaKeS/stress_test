@@ -7,8 +7,6 @@
 
 from datetime import timedelta
 
-import pytest
-
 from src.core.constants import BOT_TOKEN_TTL_SECONDS
 from src.utils.time import utcnow
 
@@ -22,10 +20,15 @@ def test_constant_value_is_six_months():
     assert BOT_TOKEN_TTL_SECONDS == 6 * 30 * 24 * 3600
 
 
-async def test_create_bot_token_without_expires_at_defaults_to_six_months(
+async def test_create_bot_token_without_expires_at_rejected(
     client, admin_token, dept_a_with_service, service_x,
 ):
-    """`POST /bots/{id}/tokens` без `expires_at` → expires_at = now + 6 мес."""
+    """`POST /bots/{id}/tokens` без `expires_at` → 422 INVALID_EXPIRATION.
+
+    Раньше пустой `expires_at` молча подменялся на now + 6mo. Теперь caller
+    обязан явно указать срок (UI всегда подставляет дату из формы), чтобы
+    поведение совпало с PAT и убрать «легаси» бессрочных токенов.
+    """
     create = await client.post(
         BOTS_URL,
         headers={"Authorization": f"Bearer {admin_token}"},
@@ -38,29 +41,42 @@ async def test_create_bot_token_without_expires_at_defaults_to_six_months(
     assert create.status_code == 201
     bot_id = create.json()["bot_id"]
 
-    issued_before = utcnow()
     resp = await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={"name": "default_ttl_token"},
     )
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["expires_at"] is not None, (
-        "bot-токен без явного expires_at должен получить дефолтный TTL, "
-        "а не остаться бессрочным"
-    )
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "INVALID_EXPIRATION"
 
-    from datetime import datetime
-    exp = datetime.fromisoformat(body["expires_at"].replace("Z", "+00:00"))
-    expected = issued_before + timedelta(seconds=BOT_TOKEN_TTL_SECONDS)
-    # допускаем небольшой дрейф между фиксацией issued_before и фактическим
-    # `utcnow()` внутри сервиса (миграции/connection pool tickling).
-    delta = abs((exp - expected).total_seconds())
-    assert delta < 60, (
-        f"expires_at ({exp}) должен отстоять от now ({issued_before}) "
-        f"примерно на {BOT_TOKEN_TTL_SECONDS}s, drift={delta:.1f}s"
+
+async def test_create_bot_token_above_six_months_rejected(
+    client, admin_token, dept_a_with_service, service_x,
+):
+    """`expires_at` > now + 6mo → 422 INVALID_EXPIRATION."""
+    create = await client.post(
+        BOTS_URL,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "name": "ttl_too_long_bot",
+            "department_id": dept_a_with_service.id,
+            "allowed_services": [service_x.service_name],
+        },
     )
+    assert create.status_code == 201
+    bot_id = create.json()["bot_id"]
+
+    too_far = utcnow() + timedelta(days=200)
+    resp = await client.post(
+        f"{BOTS_URL}/{bot_id}/tokens",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "name": "too_long_token",
+            "expires_at": too_far.isoformat(),
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error_code"] == "INVALID_EXPIRATION"
 
 
 async def test_create_bot_token_respects_explicit_expires_at(

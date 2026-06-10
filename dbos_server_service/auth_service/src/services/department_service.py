@@ -59,6 +59,26 @@ async def list_departments(
     return result
 
 
+async def list_department_services(
+    db: AsyncSession,
+    department_id: str,
+) -> list[str]:
+    """Список service_name'ов с активным grant'ом для отдела.
+
+    UI зовёт это чтобы отрисовать «гранты, выданные отделу» без
+    fan-out через listServices + per-service introspect.
+    """
+    repo = DepartmentRepository(db)
+    dept = await repo.get_by_id(department_id)
+    if dept is None:
+        raise DomainValidationError(
+            error_code="DEPARTMENT_NOT_FOUND",
+            http_status=404,
+            message=f"Department {department_id} not found",
+        )
+    return await repo.list_active_services(department_id)
+
+
 async def grant_service_access(
     db: AsyncSession,
     actor_id: str,

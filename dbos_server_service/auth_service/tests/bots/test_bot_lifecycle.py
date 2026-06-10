@@ -11,6 +11,8 @@
 """
 
 import pytest
+from datetime import timedelta
+from src.utils.time import utcnow
 
 BOTS_URL = "/api/auth/v1/bots"
 INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
@@ -71,7 +73,7 @@ async def test_bot_full_lifecycle(client, admin_token, dept_a_with_service, serv
     tok = await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "primary"},
+        json={"name": "primary", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert tok.status_code == 201
     bot_token = tok.json()["token"]
@@ -127,7 +129,7 @@ async def test_bot_department_binding_is_propagated(
     raw = (await client.post(
         f"{BOTS_URL}/{bot['bot_id']}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "t"},
+        json={"name": "t", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()["token"]
 
     intr = (await client.post(INTROSPECT_URL, json={"token": raw})).json()
@@ -155,7 +157,7 @@ async def test_bot_loses_service_after_dept_revoke(
     raw = (await client.post(
         f"{BOTS_URL}/{bot['bot_id']}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "before"},
+        json={"name": "before", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()["token"]
     assert (await client.post(INTROSPECT_URL, json={"token": raw})).json()["allowed_services"] == [
         service_x.service_name
@@ -194,7 +196,7 @@ async def test_introspect_emits_audit_with_actor_type_bot(
     raw = (await client.post(
         f"{BOTS_URL}/{bot['bot_id']}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "audit_tok"},
+        json={"name": "audit_tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()["token"]
 
     captured_audit.clear()  # отбросить события setup-фазы

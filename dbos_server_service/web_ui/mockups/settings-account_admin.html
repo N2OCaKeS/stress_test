@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · bob · личные настройки</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30;
+    --border: #3e3e42; --text: #cccccc; --text-dim: #969696;
+    --accent: #0e639c; --accent-fg: #ffffff;
+    --danger: #f48771; --warn: #cca700; --ok: #4ec9b0;
+    --hover: #2a2d2e; --selected: #094771;
+  }
+  html[data-theme="vscode-light"] {
+    --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb;
+    --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c;
+    --accent: #007acc; --accent-fg: #ffffff;
+    --danger: #cd3131; --warn: #b89500; --ok: #178178;
+    --hover: #e8e8e8; --selected: #c8e6ff;
+  }
+  html[data-theme="dark-orange"] {
+    --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118;
+    --border: #45382c; --text: #e8d9c5; --text-dim: #998571;
+    --accent: #f28a26; --accent-fg: #1a1410;
+    --danger: #ef6f55; --warn: #d8a200; --ok: #69b378;
+    --hover: #2f2419; --selected: #5a3a16;
+  }
+  html[data-theme="blue"] {
+    --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b;
+    --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8;
+    --accent: #4fb8ff; --accent-fg: #0a1929;
+    --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7;
+    --hover: #18406b; --selected: #1d5a98;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .surface { background: var(--bg-soft); }
+  .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-warn { color: var(--warn); }
+  .text-ok { color: var(--ok); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hover-bg:hover { background: var(--hover); }
+  .chip { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; text-decoration: none; color: inherit; }
+  .chip:hover { background: var(--hover); }
+  .chip.active { background: var(--selected); }
+  .card { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+  .card-title { font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .btn-danger { color: var(--danger); border-color: var(--danger); }
+  .btn-sm { padding: 4px 8px; font-size: 12px; }
+  .input {
+    width: 100%;
+    background: var(--bg-soft-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+  }
+  .input:focus { border-color: var(--accent); }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); }
+  .badge-ok { color: var(--ok); border-color: var(--ok); }
+  .badge-warn { color: var(--warn); border-color: var(--warn); }
+  .badge-danger { color: var(--danger); border-color: var(--danger); }
+  .row-line { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+  .row-line:last-child { border-bottom: none; }
+  .radio-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .radio-row.checked { border-color: var(--accent); background: var(--bg-soft-2); }
+  .theme-swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--border); }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+  .pat-row { display: grid; grid-template-columns: 1fr 130px 90px; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--border); align-items: center; }
+  .pat-row:last-child { border-bottom: none; }
+</style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+<!-- Top bar -->
+<header class="surface border-b border-token h-12 px-3 flex items-center gap-3 shrink-0">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8">
+    <i data-lucide="grid-3x3" class="w-4 h-4 text-accent"></i>
+    DBOS
+  </a>
+  <span class="text-xs text-dim">/ Главная / Личные настройки</span>
+
+  <div class="ml-auto flex items-center gap-2">
+    <div class="surface-2 border border-token rounded px-2 py-1 flex items-center gap-2 text-sm">
+      <div class="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-xs font-semibold">BO</div>
+      <div>
+        <div class="leading-tight">bob</div>
+        <div class="text-[10px] text-dim leading-tight">account_admin · платформа</div>
+      </div>
+    </div>
+
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm">
+      <option value="vscode-dark">VS Code Dark</option>
+      <option value="vscode-light">VS Code Light</option>
+      <option value="dark-orange">Dark Orange</option>
+      <option value="blue">Blue</option>
+    </select>
+
+    <a href="login.html" class="btn">
+      <i data-lucide="log-out" class="w-4 h-4 inline-block align-text-bottom"></i>
+      Logout
+    </a>
+  </div>
+</header>
+
+<div class="flex-1 flex min-h-0">
+
+  <!-- Left -->
+  <aside class="w-[220px] shrink-0 border-r border-token surface flex flex-col">
+    <nav class="p-2 flex flex-col gap-0.5">
+      <a href="home-account_admin.html" class="chip active">
+        <i data-lucide="home" class="w-5 h-5 text-accent"></i>
+        <div class="flex-1 text-sm">Главная</div>
+      </a>
+    </nav>
+
+    <div class="px-3 pt-4 pb-1 text-[11px] text-dim uppercase tracking-wider">Сервисы</div>
+    <nav class="px-2 flex flex-col gap-0.5">
+      <a href="users-account_admin.html" class="chip">
+        <i data-lucide="users" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Users</div>
+          <div class="text-[11px] text-dim">47 на платформе</div>
+        </div>
+      </a>
+      <a href="departments-account_admin.html" class="chip">
+        <i data-lucide="building-2" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Departments</div>
+          <div class="text-[11px] text-dim">3 депа</div>
+        </div>
+      </a>
+      <a href="server-account_admin.html" class="chip">
+        <i data-lucide="server" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Servers</div>
+          <div class="text-[11px] text-dim">90 на платформе</div>
+        </div>
+      </a>
+      <a href="worker-account_admin.html" class="chip">
+        <i data-lucide="cog" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Workers</div>
+          <div class="text-[11px] text-dim">кластер</div>
+        </div>
+      </a>
+      <a href="secret-account_admin.html" class="chip">
+        <i data-lucide="lock-keyhole" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Secrets</div>
+          <div class="text-[11px] text-dim">134 credential'а</div>
+        </div>
+      </a>
+    </nav>
+
+    <div class="mt-auto p-2 border-t border-token">
+      <a href="admin-account_admin.html" class="chip">
+        <i data-lucide="crown" class="w-5 h-5 text-warn"></i>
+        <div class="flex-1">
+          <div class="text-sm">Администрирование</div>
+          <div class="text-[11px] text-dim">платформа целиком</div>
+        </div>
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 overflow-y-auto">
+    <div class="max-w-6xl mx-auto px-8 py-8">
+
+      <section class="mb-6 flex items-end justify-between">
+        <div>
+          <div class="text-3xl font-bold mb-1">Личные настройки</div>
+          <div class="text-dim text-sm">bob · account_admin · платформа</div>
+        </div>
+        <button class="btn btn-primary flex items-center gap-2">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          Сохранить
+        </button>
+      </section>
+
+      <div class="grid gap-4 md:grid-cols-2">
+
+        <!-- Profile -->
+        <div class="card">
+          <div class="card-title"><i data-lucide="user" class="w-4 h-4 text-accent"></i> Профиль</div>
+          <div class="flex items-center gap-4 mb-4">
+            <div class="w-16 h-16 rounded-full bg-accent flex items-center justify-center text-2xl font-bold">BO</div>
+            <div class="flex flex-col gap-1">
+              <button class="btn btn-sm">Загрузить аватар</button>
+              <button class="btn btn-sm btn-danger">Сбросить</button>
+            </div>
+          </div>
+          <label class="block text-xs text-dim mb-1">Display name</label>
+          <input class="input mb-3" value="Боб Админов">
+          <label class="block text-xs text-dim mb-1">Email</label>
+          <div class="flex gap-2">
+            <input class="input" value="bob@dbos.local">
+            <button class="btn flex items-center gap-1">
+              <i data-lucide="mail" class="w-4 h-4"></i>
+              Сменить
+            </button>
+          </div>
+          <div class="text-xs text-dim mt-2">смена email требует подтверждения dep_admin</div>
+        </div>
+
+        <!-- Preferences -->
+        <div class="card">
+          <div class="card-title"><i data-lucide="bell" class="w-4 h-4 text-accent"></i> Предпочтения</div>
+
+          <div class="text-xs text-dim mb-2">Theme</div>
+          <div class="grid grid-cols-2 gap-2 mb-4">
+            <label class="radio-row checked">
+              <input type="radio" name="theme" checked>
+              <span class="theme-swatch" style="background:#1e1e1e;border-color:#3e3e42;"></span>
+              VS Code Dark
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="theme">
+              <span class="theme-swatch" style="background:#ffffff;border-color:#d4d4d4;"></span>
+              VS Code Light
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="theme">
+              <span class="theme-swatch" style="background:#1a1410;border-color:#45382c;"></span>
+              Dark Orange
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="theme">
+              <span class="theme-swatch" style="background:#0a1929;border-color:#244a72;"></span>
+              Blue
+            </label>
+          </div>
+
+          <div class="text-xs text-dim mb-2">Density</div>
+          <div class="grid grid-cols-3 gap-2 mb-4">
+            <label class="radio-row"><input type="radio" name="density"> compact</label>
+            <label class="radio-row checked"><input type="radio" name="density" checked> comfortable</label>
+            <label class="radio-row"><input type="radio" name="density"> spacious</label>
+          </div>
+
+          <div class="text-xs text-dim mb-2">Email notifications</div>
+          <label class="checkbox-row"><input type="checkbox" checked> Pending rotations &gt; 1 deadline</label>
+          <label class="checkbox-row"><input type="checkbox" checked> Critical audit events</label>
+          <label class="checkbox-row"><input type="checkbox"> Weekly platform digest</label>
+        </div>
+
+        <!-- Security -->
+        <div class="card md:col-span-2">
+          <div class="card-title"><i data-lucide="shield-check" class="w-4 h-4 text-accent"></i> Безопасность</div>
+
+          <div class="grid gap-5 md:grid-cols-3">
+            <!-- Change password -->
+            <div>
+              <div class="text-xs uppercase tracking-wider text-dim mb-2">Изменить пароль</div>
+              <input type="password" class="input mb-2" placeholder="Текущий пароль">
+              <input type="password" class="input mb-2" placeholder="Новый пароль">
+              <input type="password" class="input mb-2" placeholder="Повторите новый пароль">
+              <button class="btn btn-primary btn-sm w-full">Применить</button>
+              <div class="text-[11px] text-dim mt-2">мин. 12 символов, без повтора последних 5</div>
+            </div>
+
+            <!-- Active sessions -->
+            <div>
+              <div class="text-xs uppercase tracking-wider text-dim mb-2">Активные сессии</div>
+              <div class="text-sm">
+                <div class="row-line">
+                  <div>
+                    <div>Chrome · Linux</div>
+                    <div class="text-[11px] text-dim mono">10.177.103.4 · текущая</div>
+                  </div>
+                  <span class="badge badge-ok">now</span>
+                </div>
+                <div class="row-line">
+                  <div>
+                    <div>Firefox · Linux</div>
+                    <div class="text-[11px] text-dim mono">10.177.103.4 · 2ч</div>
+                  </div>
+                  <button class="btn btn-sm">Завершить</button>
+                </div>
+                <div class="row-line">
+                  <div>
+                    <div>CLI · v1.8.5</div>
+                    <div class="text-[11px] text-dim mono">10.177.103.102 · 5ч</div>
+                  </div>
+                  <button class="btn btn-sm">Завершить</button>
+                </div>
+                <div class="row-line">
+                  <div>
+                    <div>SDK · python</div>
+                    <div class="text-[11px] text-dim mono">10.177.103.211 · 1д</div>
+                  </div>
+                  <button class="btn btn-sm">Завершить</button>
+                </div>
+                <div class="row-line">
+                  <div>
+                    <div>Chrome · macOS</div>
+                    <div class="text-[11px] text-dim mono">192.168.0.14 · 3д</div>
+                  </div>
+                  <button class="btn btn-sm">Завершить</button>
+                </div>
+              </div>
+              <button class="btn btn-danger btn-sm mt-2 w-full">Завершить все, кроме текущей</button>
+            </div>
+
+            <!-- 2FA -->
+            <div>
+              <div class="text-xs uppercase tracking-wider text-dim mb-2">Двухфакторка</div>
+              <div class="surface-2 border border-token rounded p-3 mb-3">
+                <div class="flex items-center gap-2 mb-1">
+                  <i data-lucide="alert-circle" class="w-4 h-4 text-warn"></i>
+                  <span class="font-medium text-sm">Не настроена</span>
+                </div>
+                <div class="text-xs text-dim">для account_admin рекомендуется обязательно</div>
+              </div>
+              <button class="btn btn-primary btn-sm w-full mb-2">Настроить TOTP</button>
+              <button class="btn btn-sm w-full">Recovery-коды</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PAT tokens -->
+        <div class="card">
+          <div class="card-title">
+            <i data-lucide="key-round" class="w-4 h-4 text-accent"></i> PAT-токены
+            <button class="btn btn-sm ml-auto">Создать</button>
+          </div>
+          <div>
+            <div class="pat-row">
+              <div>
+                <div class="text-sm font-medium">ci-deploy</div>
+                <div class="text-[11px] text-dim mono">tok_8c2a***...***f91 · scopes: <span class="text-accent">read,write</span></div>
+                <div class="text-[11px] text-dim">создан 2026-04-12 · истекает 2026-10-12</div>
+              </div>
+              <span class="badge badge-ok">active</span>
+              <div class="flex flex-col gap-1">
+                <button class="btn btn-sm">Rotate</button>
+                <button class="btn btn-sm btn-danger">Revoke</button>
+              </div>
+            </div>
+            <div class="pat-row">
+              <div>
+                <div class="text-sm font-medium">local-cli</div>
+                <div class="text-[11px] text-dim mono">tok_3b6d***...***5a3f · scopes: <span class="text-accent">read</span></div>
+                <div class="text-[11px] text-dim">создан 2026-05-22 · истекает 2026-11-22</div>
+              </div>
+              <span class="badge badge-warn">59d</span>
+              <div class="flex flex-col gap-1">
+                <button class="btn btn-sm">Rotate</button>
+                <button class="btn btn-sm btn-danger">Revoke</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- API keys (account_admin only) -->
+        <div class="card">
+          <div class="card-title">
+            <i data-lucide="lock" class="w-4 h-4 text-warn"></i> API ключи
+            <span class="badge badge-warn ml-2">account_admin only</span>
+          </div>
+          <div class="text-xs text-dim mb-3">
+            Внутренний ключ для service-to-service вызовов. Видят только account_admin.
+          </div>
+
+          <div class="surface-2 border border-token rounded p-3 mb-2">
+            <div class="text-[11px] uppercase tracking-wider text-dim mb-1">SECRET_INTERNAL_API_KEY</div>
+            <div class="flex items-center gap-2">
+              <code class="mono text-sm flex-1 truncate">sk_int_••••••••••••••••••••••3f91</code>
+              <button class="btn btn-sm" title="Показать">
+                <i data-lucide="eye" class="w-4 h-4"></i>
+              </button>
+              <button class="btn btn-sm" title="Скопировать">
+                <i data-lucide="check" class="w-4 h-4"></i>
+              </button>
+            </div>
+            <div class="text-[11px] text-dim mt-2">ротация: <span class="mono">2026-05-01</span> · следующая через 24д</div>
+          </div>
+          <a href="wizard-rotation.html" class="btn btn-sm w-full text-center flex items-center justify-center gap-2">
+            <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+            Запустить ротацию мастер-ключа
+          </a>
+        </div>
+
+      </div>
+
+      <div class="mt-8 flex items-center justify-end gap-2">
+        <button class="btn">Отменить</button>
+        <button class="btn btn-primary flex items-center gap-2">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          Сохранить
+        </button>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("dbos-theme", e.target.value);
+  });
+  if (window.lucide) lucide.createIcons();
+</script>
+</body>
+</html>

@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · server_worker · tasks · dep_admin (alice)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30;
+    --border: #3e3e42; --text: #cccccc; --text-dim: #969696;
+    --accent: #0e639c; --accent-fg: #ffffff;
+    --danger: #f48771; --warn: #cca700; --ok: #4ec9b0;
+    --hover: #2a2d2e; --selected: #094771;
+  }
+  html[data-theme="vscode-light"] {
+    --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb;
+    --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c;
+    --accent: #007acc; --accent-fg: #ffffff;
+    --danger: #cd3131; --warn: #b89500; --ok: #178178;
+    --hover: #e8e8e8; --selected: #c8e6ff;
+  }
+  html[data-theme="dark-orange"] {
+    --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118;
+    --border: #45382c; --text: #e8d9c5; --text-dim: #998571;
+    --accent: #f28a26; --accent-fg: #1a1410;
+    --danger: #ef6f55; --warn: #d8a200; --ok: #69b378;
+    --hover: #2f2419; --selected: #5a3a16;
+  }
+  html[data-theme="blue"] {
+    --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b;
+    --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8;
+    --accent: #4fb8ff; --accent-fg: #0a1929;
+    --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7;
+    --hover: #18406b; --selected: #1d5a98;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .surface { background: var(--bg-soft); }
+  .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-warn { color: var(--warn); }
+  .text-ok { color: var(--ok); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hover-bg:hover { background: var(--hover); }
+  .selected-bg { background: var(--selected); }
+  .chip { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+  .chip:hover { background: var(--hover); }
+  .chip.active { background: var(--selected); }
+  .subchip { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 36px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+  .subchip:hover { background: var(--hover); }
+  .subchip.active { background: var(--selected); color: var(--accent); }
+  .group-header { padding: 6px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+  .cred-row { padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+  .cred-row:hover { background: var(--hover); }
+  .cred-row.active { background: var(--selected); }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); }
+  .badge-ok { color: var(--ok); border-color: var(--ok); }
+  .badge-warn { color: var(--warn); border-color: var(--warn); }
+  .badge-danger { color: var(--danger); border-color: var(--danger); }
+  .stat-row { display: grid; grid-template-columns: 140px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+  .stat-row:last-child { border-bottom: none; }
+  button { font-family: inherit; cursor: pointer; }
+  .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 13px; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-danger { color: var(--danger); border-color: var(--danger); }
+  .alert-block { background: rgba(244,135,113,0.08); border: 1px solid var(--danger); border-radius: 4px; padding: 10px 12px; }
+  .timeline-step { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); align-items: center; }
+  .timeline-step:last-child { border-bottom: none; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); margin-left: 5px; }
+  .dot.ok { background: var(--ok); }
+  .dot.danger { background: var(--danger); }
+  .dot.warn { background: var(--warn); }
+  .dot.accent { background: var(--accent); }
+</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<header class="surface border-b border-token h-12 px-3 flex items-center gap-3 shrink-0">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8">
+    <i data-lucide="grid-3x3" class="w-4 h-4 text-accent"></i> DBOS
+  </a>
+  <span class="text-xs text-dim">/ server_worker / tasks</span>
+  <div class="ml-auto flex items-center gap-2">
+    <div class="surface-2 border border-token rounded px-2 py-1 flex items-center gap-2 text-sm">
+      <div class="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-xs font-semibold">AL</div>
+      <div>
+        <div class="leading-tight">alice</div>
+        <div class="text-[10px] text-dim leading-tight">dep_admin · Ядро DBOS</div>
+      </div>
+    </div>
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm">
+      <option value="vscode-dark">VS Code Dark</option>
+      <option value="vscode-light">VS Code Light</option>
+      <option value="dark-orange">Dark Orange</option>
+      <option value="blue">Blue</option>
+    </select>
+    <a href="index.html" class="btn"><i data-lucide="log-out" class="w-4 h-4 inline-block align-text-bottom"></i> Logout</a>
+  </div>
+</header>
+
+<div class="flex-1 flex min-h-0">
+
+  <!-- Left -->
+  <aside class="w-[220px] shrink-0 border-r border-token surface flex flex-col">
+    <nav class="p-2 flex flex-col gap-0.5">
+      <a href="home-dep_admin.html" class="chip">
+        <i data-lucide="home" class="w-5 h-5"></i>
+        <div class="flex-1 text-sm">Главная</div>
+      </a>
+    </nav>
+
+    <div class="px-3 pt-4 pb-1 text-[11px] text-dim uppercase tracking-wider">Сервисы</div>
+    <nav class="px-2 flex flex-col gap-0.5">
+      <a href="users-dep_admin.html" class="chip">
+        <i data-lucide="users" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Users</div>
+          <div class="text-[11px] text-dim">8 в депе</div>
+        </div>
+      </a>
+      <a href="server-dep_admin.html" class="chip">
+        <i data-lucide="server" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Servers</div>
+          <div class="text-[11px] text-dim">30 в депе</div>
+        </div>
+      </a>
+      <a href="secret-dep_admin.html" class="chip">
+        <i data-lucide="lock-keyhole" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Secrets</div>
+          <div class="text-[11px] text-dim">12 доступных</div>
+        </div>
+      </a>
+      <div class="chip active">
+        <i data-lucide="cog" class="w-5 h-5 text-accent"></i>
+        <div class="flex-1">
+          <div class="text-sm">Workers</div>
+          <div class="text-[11px] text-dim">tasks · dept</div>
+        </div>
+      </div>
+      <div class="flex flex-col">
+        <div class="subchip active">
+          <i data-lucide="list-checks" class="w-3.5 h-3.5"></i>
+          <span>Tasks <span class="text-dim">· 20</span></span>
+        </div>
+        <a href="dlq-dep_admin.html" class="subchip">
+          <i data-lucide="skull" class="w-3.5 h-3.5"></i>
+          <span>DLQ <span class="text-dim">· 3</span></span>
+        </a>
+      </div>
+    </nav>
+
+    <div class="mt-auto p-2 border-t border-token">
+      <a href="admin-dep_admin.html" class="chip">
+        <i data-lucide="shield-check" class="w-5 h-5 text-warn"></i>
+        <div class="flex-1">
+          <div class="text-sm">Администрирование</div>
+          <div class="text-[11px] text-dim">в рамках депа</div>
+        </div>
+      </a>
+    </div>
+  </aside>
+
+  <!-- Middle: tasks grouped by scope -->
+  <section class="w-[380px] shrink-0 border-r border-token surface flex flex-col">
+    <div class="border-b border-token px-3 py-2">
+      <div class="flex items-center gap-2">
+        <i data-lucide="search" class="w-4 h-4 text-dim"></i>
+        <input class="bg-transparent outline-none flex-1 text-sm" placeholder="Поиск по 20 task'ам..."/>
+      </div>
+      <div class="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
+        <span>Группировка:</span>
+        <select class="surface-2 border border-token rounded px-2 py-0.5">
+          <option>scope (my / my_dep / cross_dep)</option>
+          <option>by status</option>
+          <option>by type</option>
+        </select>
+        <span class="ml-auto">20 / 20</span>
+      </div>
+      <div class="mt-2 flex items-center gap-1.5 text-xs flex-wrap">
+        <select class="surface-2 border border-token rounded px-2 py-0.5 text-dim">
+          <option>status: all</option>
+          <option>running</option>
+          <option>queued</option>
+          <option>succeeded</option>
+          <option>failed</option>
+          <option>retrying</option>
+        </select>
+        <select class="surface-2 border border-token rounded px-2 py-0.5 text-dim">
+          <option>type: all</option>
+          <option>power</option>
+          <option>ssh</option>
+          <option>package</option>
+          <option>db</option>
+          <option>disk</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto py-2">
+
+      <!-- Group: my -->
+      <div class="group-header flex items-center gap-2">
+        <i data-lucide="user" class="w-3 h-3"></i>
+        my · 4
+      </div>
+      <div class="px-2 flex flex-col gap-0.5">
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-ok"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_aa12...disk_snapshot <span class="text-dim">→ srv-node-01</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:42:08</span><span>·</span><span>2.1s</span><span>·</span><span>try 1/3</span></div>
+            </div>
+            <span class="badge badge-ok">OK</span>
+          </div>
+        </div>
+        <div class="cred-row active">
+          <div class="flex items-center gap-2">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-ok"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_aa12_disk_snapshot <span class="text-dim">→ srv-node-05</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:38:11</span><span>·</span><span>3.2s</span><span>·</span><span>try 1/3</span></div>
+            </div>
+            <span class="badge badge-ok">OK</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="terminal" class="w-4 h-4 text-ok"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_bb23...ssh_exec <span class="text-dim">→ srv-node-12</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:30:22</span><span>·</span><span>0.9s</span><span>·</span><span>try 1/3</span></div>
+            </div>
+            <span class="badge badge-ok">OK</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="zap" class="w-4 h-4 text-warn"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_cc34...power_status <span class="text-dim">→ srv-node-17</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>start 15:27:42</span><span>·</span><span><i data-lucide="heart-pulse" class="w-3 h-3 inline"></i> 4с</span><span>·</span><span>try 1/3</span></div>
+            </div>
+            <span class="badge badge-warn">RUN</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Group: my_dep · Ядро DBOS -->
+      <div class="group-header flex items-center gap-2 mt-3">
+        <i data-lucide="building-2" class="w-3 h-3"></i>
+        my_dep · Ядро DBOS · 14
+      </div>
+      <div class="px-2 flex flex-col gap-0.5">
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="terminal" class="w-4 h-4 text-accent"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_dd45...ssh_uptime <span class="text-dim">→ srv-jira-db-01</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:41:48</span><span>·</span><span><i data-lucide="heart-pulse" class="w-3 h-3 inline"></i> 1с</span><span>·</span><span>by bob</span></div>
+            </div>
+            <span class="badge badge-warn">RUN</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="database" class="w-4 h-4 text-accent"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_ee56...pg_query <span class="text-dim">→ srv-db-master-01</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:40:22</span><span>·</span><span><i data-lucide="heart-pulse" class="w-3 h-3 inline"></i> 4с</span><span>·</span><span>by dave</span></div>
+            </div>
+            <span class="badge badge-warn">RUN</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-accent"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_ff67...disk_smart <span class="text-dim">→ srv-node-12</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:38:01</span><span>·</span><span><i data-lucide="heart-pulse" class="w-3 h-3 inline"></i> 3с</span><span>·</span><span>by ci_bot</span></div>
+            </div>
+            <span class="badge badge-warn">RUN</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="zap" class="w-4 h-4 text-dim"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_0078...power_cycle <span class="text-dim">→ srv-node-04-old</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>queued 15:43:02</span><span>·</span><span>by bob</span></div>
+            </div>
+            <span class="badge">Q</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="box" class="w-4 h-4 text-dim"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_1189...apt_update <span class="text-dim">→ srv-build-02</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>queued 15:42:51</span><span>·</span><span>by grace</span></div>
+            </div>
+            <span class="badge">Q</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="zap" class="w-4 h-4 text-ok"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_229a...power_status <span class="text-dim">→ srv-node-02</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:35:05</span><span>·</span><span>0.4s</span><span>·</span><span>by henry</span></div>
+            </div>
+            <span class="badge badge-ok">OK</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="box" class="w-4 h-4 text-ok"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_33ab...apt_install <span class="text-dim">→ srv-build-01</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:30:42</span><span>·</span><span>22s</span><span>·</span><span>by ci_bot</span></div>
+            </div>
+            <span class="badge badge-ok">OK</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="database" class="w-4 h-4 text-ok"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_44bc...pg_vacuum <span class="text-dim">→ srv-db-replica-01</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:27:18</span><span>·</span><span>1m 4s</span><span>·</span><span>by cron</span></div>
+            </div>
+            <span class="badge badge-ok">OK</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-ok"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_55cd...disk_smart <span class="text-dim">→ srv-edge-02</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:22:01</span><span>·</span><span>2.1s</span><span>·</span><span>by audit_bot</span></div>
+            </div>
+            <span class="badge badge-ok">OK</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="box" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_66de...install_kernel <span class="text-dim">→ srv-node-17</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:12:08</span><span>·</span><span>—</span><span>·</span><span>try 2/3</span></div>
+            </div>
+            <span class="badge badge-danger">FAIL</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="terminal" class="w-4 h-4 text-warn"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_77ef...ssh_exec <span class="text-dim">→ srv-edge-03</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>backoff 15s</span><span>·</span><span>try 2/3</span></div>
+            </div>
+            <span class="badge badge-warn">RTY</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="terminal" class="w-4 h-4 text-ok"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_88f0...ssh_uptime <span class="text-dim">→ srv-conf-01</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>15:01:09</span><span>·</span><span>0.9s</span><span>·</span><span>by monitor_bot</span></div>
+            </div>
+            <span class="badge badge-ok">OK</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="database" class="w-4 h-4 text-ok"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_9901...pg_dump <span class="text-dim">→ srv-conf-db-01</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>14:55:18</span><span>·</span><span>14s</span><span>·</span><span>by cron</span></div>
+            </div>
+            <span class="badge badge-ok">OK</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="zap" class="w-4 h-4 text-ok"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_aa12...power_off <span class="text-dim">→ srv-node-04-old</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>14:50:01</span><span>·</span><span>1.8s</span><span>·</span><span>by bob</span></div>
+            </div>
+            <span class="badge badge-ok">OK</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Group: cross_dep -->
+      <div class="group-header flex items-center gap-2 mt-3">
+        <i data-lucide="building-2" class="w-3 h-3"></i>
+        cross_dep · 2
+      </div>
+      <div class="px-2 flex flex-col gap-0.5">
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-dim"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_bb23...disk_smart <span class="text-dim">→ srv-jira-db-01</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>summary only</span><span>·</span><span>by audit_bot</span></div>
+            </div>
+            <span class="badge">summ</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="database" class="w-4 h-4 text-dim"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">tsk_cc34...pg_query <span class="text-dim">→ srv-edge-dtkk-04</span></div>
+              <div class="text-[11px] text-dim flex items-center gap-2"><span>summary only</span><span>·</span><span>cross-dept rule</span></div>
+            </div>
+            <span class="badge">summ</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="border-t border-token p-2 flex gap-2">
+      <button class="btn flex-1 flex items-center justify-center gap-2">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i> Re-run selected
+      </button>
+      <button class="btn btn-danger flex-1 flex items-center justify-center gap-2">
+        <i data-lucide="x-circle" class="w-4 h-4"></i> Cancel selected
+      </button>
+    </div>
+  </section>
+
+  <!-- Right: workzone — выбран tsk_aa12_disk_snapshot SUCCEEDED -->
+  <section class="flex-1 overflow-y-auto flex flex-col min-w-0">
+    <div class="border-b border-token p-5 flex items-start gap-4">
+      <div class="w-12 h-12 rounded bg-accent flex items-center justify-center">
+        <i data-lucide="hard-drive" class="w-7 h-7"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-3 flex-wrap">
+          <h1 class="text-xl font-semibold truncate mono">tsk_aa12_disk_snapshot</h1>
+          <span class="badge badge-ok">SUCCEEDED</span>
+          <span class="text-xs text-dim">try <b>1 / 3</b></span>
+        </div>
+        <div class="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
+          <span><i data-lucide="server" class="w-3 h-3 inline"></i> target: <a href="server-dep_admin.html" class="text-accent mono">srv-node-05</a></span>
+          <span>·</span>
+          <span><i data-lucide="bot" class="w-3 h-3 inline"></i> worker: <b class="mono">wrk-01</b></span>
+          <span>·</span>
+          <span>dept: <b>Ядро DBOS</b></span>
+          <span>·</span>
+          <span>actor: <b>alice</b> (вы)</span>
+          <span>·</span>
+          <span>started: <b>15:38:11</b></span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button class="btn btn-primary flex items-center gap-1"><i data-lucide="refresh-cw" class="w-4 h-4"></i> Re-run</button>
+        <button class="btn flex items-center gap-1"><i data-lucide="eye" class="w-4 h-4"></i> View full log</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-token px-5 flex gap-1">
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px" style="border-color: var(--accent); color: var(--accent);">Overview</button>
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg">Execution log</button>
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg">Heartbeats</button>
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg">Audit</button>
+    </div>
+
+    <div class="p-5 grid grid-cols-2 gap-5">
+
+      <!-- Parameters -->
+      <div class="surface border border-token rounded-lg p-4">
+        <div class="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
+          <i data-lucide="cog" class="w-4 h-4"></i> Parameters
+        </div>
+        <pre class="mono text-xs surface-2 border border-token rounded p-3 overflow-x-auto leading-relaxed">{
+  "type": "disk.snapshot",
+  "device": "/dev/sda",
+  "label": "pre-kernel-update",
+  "freeze_fs": true,
+  "timeout_s": 120,
+  "retry_policy": {
+    "max": 3,
+    "backoff": "exponential",
+    "base_s": 15
+  },
+  "requested_by": "alice",
+  "request_id": "req_aa12_disk_snap"
+}</pre>
+      </div>
+
+      <!-- Target -->
+      <div class="surface border border-token rounded-lg p-4">
+        <div class="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
+          <i data-lucide="server" class="w-4 h-4"></i> Target (1)
+        </div>
+        <table class="w-full text-sm">
+          <thead class="text-left text-dim text-xs uppercase">
+            <tr><th class="pb-2 pr-3">Сервер</th><th class="pb-2 pr-3">dept</th><th class="pb-2">Статус</th></tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-token">
+              <td class="py-2 mono"><a href="server-dep_admin.html" class="text-accent">srv-node-05</a></td>
+              <td>Ядро DBOS</td>
+              <td><span class="badge badge-ok">SUCCEEDED</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="mt-3 text-xs text-dim">
+          Snapshot создан перед плановой выкаткой kernel update — fall-back при сбое.
+        </div>
+      </div>
+
+      <!-- Result -->
+      <div class="col-span-2">
+        <div class="text-xs uppercase tracking-wider text-dim mb-2 flex items-center gap-2">
+          <i data-lucide="check-circle" class="w-4 h-4 text-ok"></i> Result
+        </div>
+        <pre class="mono text-xs surface-2 border border-token rounded p-3 overflow-x-auto leading-relaxed">snapshot_id: snap-2026-06-10-1538-srv-node-05-sda
+size_bytes: 47 482 393 856  (44.2 GiB)
+device: /dev/sda
+created_at: 2026-06-10T15:38:14Z
+fs_frozen: true
+duration_s: 3.2
+checksum_sha256: 8a9c3f2e1d4b...</pre>
+      </div>
+
+      <!-- Timeline -->
+      <div class="surface border border-token rounded-lg p-4 col-span-2">
+        <div class="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
+          <i data-lucide="clock" class="w-4 h-4"></i> Timeline
+        </div>
+        <div class="text-sm">
+          <div class="timeline-step"><span class="dot ok"></span><span>queued</span><span class="text-xs text-dim mono">15:38:11</span></div>
+          <div class="timeline-step"><span class="dot ok"></span><span>dispatched → worker <b class="mono">wrk-01</b></span><span class="text-xs text-dim mono">15:38:11</span></div>
+          <div class="timeline-step"><span class="dot ok"></span><span>fs_freeze: <span class="mono">/</span></span><span class="text-xs text-dim mono">15:38:12</span></div>
+          <div class="timeline-step"><span class="dot accent"></span><span><i data-lucide="heart-pulse" class="w-3 h-3 inline text-accent"></i> heartbeat — running</span><span class="text-xs text-dim mono">15:38:13</span></div>
+          <div class="timeline-step"><span class="dot ok"></span><span>snapshot created: <span class="mono">snap-2026-06-10-1538-srv-node-05-sda</span></span><span class="text-xs text-dim mono">15:38:14</span></div>
+          <div class="timeline-step"><span class="dot ok"></span><span>fs_unfreeze: <span class="mono">/</span></span><span class="text-xs text-dim mono">15:38:14</span></div>
+          <div class="timeline-step"><span class="dot ok"></span><span class="text-ok">succeeded (3.2s)</span><span class="text-xs text-dim mono">15:38:14</span></div>
+        </div>
+      </div>
+
+      <!-- Related tasks -->
+      <div class="surface border border-token rounded-lg p-4 col-span-2">
+        <div class="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i> Related tasks
+        </div>
+        <table class="w-full text-sm">
+          <thead class="text-left text-dim text-xs uppercase">
+            <tr><th class="pb-2 pr-3">Роль</th><th class="pb-2 pr-3">Task ID</th><th class="pb-2 pr-3">Тип</th><th class="pb-2 pr-3">Статус</th><th class="pb-2">Время</th></tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-token">
+              <td class="py-2 text-dim">predecessor</td>
+              <td class="mono"><a href="#" class="text-accent">tsk_9988_apt_update</a></td>
+              <td>package.update</td>
+              <td><span class="badge badge-ok">OK</span></td>
+              <td class="text-dim text-xs mono">15:36:55</td>
+            </tr>
+            <tr class="border-t border-token" style="background: var(--selected);">
+              <td class="py-2 text-dim">current</td>
+              <td class="mono">tsk_aa12_disk_snapshot</td>
+              <td>disk.snapshot</td>
+              <td><span class="badge badge-ok">OK</span></td>
+              <td class="text-dim text-xs mono">15:38:11</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2 text-dim">successor</td>
+              <td class="mono"><a href="#" class="text-accent">tsk_66de_install_kernel</a></td>
+              <td>package.install</td>
+              <td><span class="badge badge-danger">FAILED</span></td>
+              <td class="text-dim text-xs mono">15:12:08</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="mt-3 text-xs text-dim">
+          Snapshot всё ещё валидный — можно откатить srv-node-17 на него вместо ручной починки apt.
+        </div>
+      </div>
+
+    </div>
+  </section>
+</div>
+
+<script>
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("dbos-theme", e.target.value);
+  });
+
+  if (window.lucide) lucide.createIcons();
+
+  document.querySelectorAll(".cred-row").forEach(r => {
+    r.addEventListener("click", () => {
+      document.querySelectorAll(".cred-row").forEach(x => x.classList.remove("active"));
+      r.classList.add("active");
+    });
+  });
+</script>
+</body>
+</html>

@@ -56,15 +56,40 @@ async def test_create_pat_aware_expires_at_passes_through(
     assert resp.expires_at == aware_future
 
 
-async def test_create_pat_no_expires_at_stays_none(
+async def test_create_pat_no_expires_at_rejected(
     db, user_a, service_x,
 ):
-    """expires_at=None — токен бессрочный (PAT-семантика отличается от bot)."""
-    resp: PATCreateResponse = await token_service.create_pat(
-        db,
-        actor_id=user_a.id,
-        name="no_exp_pat",
-        allowed_services=[service_x.service_name],
-        expires_at=None,
-    )
-    assert resp.expires_at is None
+    """expires_at=None → 422 INVALID_EXPIRATION (бессрочные PAT запрещены)."""
+    import pytest
+
+    from src.core.exceptions import DomainValidationError
+
+    with pytest.raises(DomainValidationError) as exc_info:
+        await token_service.create_pat(
+            db,
+            actor_id=user_a.id,
+            name="no_exp_pat",
+            allowed_services=[service_x.service_name],
+            expires_at=None,
+        )
+    assert exc_info.value.error_code == "INVALID_EXPIRATION"
+
+
+async def test_create_pat_above_six_months_rejected(
+    db, user_a, service_x,
+):
+    """expires_at > now + 6mo → 422 INVALID_EXPIRATION."""
+    import pytest
+
+    from src.core.exceptions import DomainValidationError
+
+    too_far = datetime.now(timezone.utc) + timedelta(days=200)
+    with pytest.raises(DomainValidationError) as exc_info:
+        await token_service.create_pat(
+            db,
+            actor_id=user_a.id,
+            name="too_long_pat",
+            allowed_services=[service_x.service_name],
+            expires_at=too_far,
+        )
+    assert exc_info.value.error_code == "INVALID_EXPIRATION"

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AccountAdmin
+from src.dependencies.auth import AccountAdmin, AnyAdmin
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
 from src.schemas.departments import (
@@ -68,6 +68,31 @@ async def create_department(
         name=body.name,
         display_name=body.display_name,
         request_id=getattr(request.state, "request_id", None),
+    )
+
+
+@router.get(
+    "/{department_id}/services",
+    response_model=list[str],
+    summary="Список сервисов с активным grant'ом для отдела",
+    description="Возвращает service_name'ы с активным DepartmentServiceAccess.",
+)
+async def list_department_services(
+    department_id: str,
+    request: Request,
+    identity: AnyAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> list[str]:
+    """Список service_name с активным grant'ом для отдела.
+
+    Доступ: любой админ (`AnyAdmin`). dep_admin'у scope не ограничивается
+    на этом endpoint'е — read-only листинг своего же отдела безопасен.
+
+    Возможные ошибки:
+        * `DEPARTMENT_NOT_FOUND` (404).
+    """
+    return await department_service.list_department_services(
+        db=db, department_id=department_id
     )
 
 

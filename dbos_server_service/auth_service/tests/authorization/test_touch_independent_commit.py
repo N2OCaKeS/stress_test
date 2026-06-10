@@ -14,6 +14,8 @@ from sqlalchemy import select
 
 from src.models import BotToken, PersonalAccessToken
 from src.core.security import hash_opaque_token
+from datetime import timedelta
+from src.utils.time import utcnow
 
 
 INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
@@ -27,7 +29,7 @@ async def test_pat_touch_persists_when_downstream_collect_fails(
     create = await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "touch_pat", "allowed_services": ["service_x"]},
+        json={"name": "touch_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert create.status_code == 201, create.text
     raw = create.json()["token"]
@@ -81,7 +83,7 @@ async def test_bot_token_touch_persists_when_track_bot_ip_fails(
     tok = await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "touch_bot_tok"},
+        json={"name": "touch_bot_tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert tok.status_code == 201, tok.text
     raw = tok.json()["token"]

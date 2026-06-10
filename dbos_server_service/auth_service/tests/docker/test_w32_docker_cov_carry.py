@@ -21,6 +21,8 @@ from src.models.bot_token import BotToken
 from src.models.department_docker_registry import DepartmentDockerRegistry
 from src.utils.ids import _new_id
 from tests._helpers.http import _basic  # noqa: F401 — общий helper
+from datetime import timedelta
+from src.utils.time import utcnow
 
 TOKEN_URL = "/api/auth/v1/docker/token"
 BOTS_URL = "/api/auth/v1/bots"
@@ -83,7 +85,7 @@ class TestBotTokenExpired:
         tok_resp = await client.post(
             f"{BOTS_URL}/{bot_id}/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": "exp_tok"},
+            json={"name": "exp_tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert tok_resp.status_code == 201, tok_resp.text
         raw = tok_resp.json()["token"]
@@ -283,7 +285,7 @@ class TestInactiveBotNoLockoutIncrement:
         tok_resp = await client.post(
             f"{BOTS_URL}/{bot_id}/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": "inactive_tok"},
+            json={"name": "inactive_tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         raw = tok_resp.json()["token"]
 

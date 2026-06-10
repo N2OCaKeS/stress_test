@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · server_worker · DLQ · account_admin (bob)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30;
+    --border: #3e3e42; --text: #cccccc; --text-dim: #969696;
+    --accent: #0e639c; --accent-fg: #ffffff;
+    --danger: #f48771; --warn: #cca700; --ok: #4ec9b0;
+    --hover: #2a2d2e; --selected: #094771;
+  }
+  html[data-theme="vscode-light"] {
+    --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb;
+    --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c;
+    --accent: #007acc; --accent-fg: #ffffff;
+    --danger: #cd3131; --warn: #b89500; --ok: #178178;
+    --hover: #e8e8e8; --selected: #c8e6ff;
+  }
+  html[data-theme="dark-orange"] {
+    --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118;
+    --border: #45382c; --text: #e8d9c5; --text-dim: #998571;
+    --accent: #f28a26; --accent-fg: #1a1410;
+    --danger: #ef6f55; --warn: #d8a200; --ok: #69b378;
+    --hover: #2f2419; --selected: #5a3a16;
+  }
+  html[data-theme="blue"] {
+    --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b;
+    --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8;
+    --accent: #4fb8ff; --accent-fg: #0a1929;
+    --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7;
+    --hover: #18406b; --selected: #1d5a98;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .surface { background: var(--bg-soft); }
+  .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-warn { color: var(--warn); }
+  .text-ok { color: var(--ok); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hover-bg:hover { background: var(--hover); }
+  .selected-bg { background: var(--selected); }
+  .chip { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+  .chip:hover { background: var(--hover); }
+  .chip.active { background: var(--selected); }
+  .chip-sub { display: flex; align-items: center; gap: 10px; padding: 6px 10px 6px 28px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .chip-sub:hover { background: var(--hover); }
+  .chip-sub.active { background: var(--selected); }
+  .group-header { padding: 6px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+  .cred-row { padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+  .cred-row:hover { background: var(--hover); }
+  .cred-row.active { background: var(--selected); }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); }
+  .badge-ok { color: var(--ok); border-color: var(--ok); }
+  .badge-warn { color: var(--warn); border-color: var(--warn); }
+  .badge-danger { color: var(--danger); border-color: var(--danger); }
+  .stat-row { display: grid; grid-template-columns: 140px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+  .stat-row:last-child { border-bottom: none; }
+  button { font-family: inherit; cursor: pointer; }
+  .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 13px; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-danger { color: var(--danger); border-color: var(--danger); }
+  .alert-block { background: rgba(244,135,113,0.08); border: 1px solid var(--danger); border-radius: 4px; padding: 10px 12px; }
+  .info-block { background: rgba(14,99,156,0.08); border: 1px solid var(--accent); border-radius: 4px; padding: 8px 10px; font-size: 12px; }
+</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- ── Top bar ───────────────────────────────────────────────────────── -->
+<header class="surface border-b border-token h-12 px-3 flex items-center gap-3 shrink-0">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8">
+    <i data-lucide="grid-3x3" class="w-4 h-4 text-accent"></i>
+    DBOS
+  </a>
+  <span class="text-xs text-dim">/ server_worker / dlq</span>
+
+  <div class="ml-auto flex items-center gap-2">
+    <div class="surface-2 border border-token rounded px-2 py-1 flex items-center gap-2 text-sm">
+      <div class="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-xs font-semibold">BO</div>
+      <div>
+        <div class="leading-tight">bob</div>
+        <div class="text-[10px] text-dim leading-tight">account_admin · платформа</div>
+      </div>
+    </div>
+
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm">
+      <option value="vscode-dark">VS Code Dark</option>
+      <option value="vscode-light">VS Code Light</option>
+      <option value="dark-orange">Dark Orange</option>
+      <option value="blue">Blue</option>
+    </select>
+
+    <a href="index.html" class="btn">
+      <i data-lucide="log-out" class="w-4 h-4 inline-block align-text-bottom"></i>
+      Logout
+    </a>
+  </div>
+</header>
+
+<!-- ── 3-pane shell ─────────────────────────────────────────────────── -->
+<div class="flex-1 flex min-h-0">
+
+  <!-- Left -->
+  <aside class="w-[220px] shrink-0 border-r border-token surface flex flex-col">
+    <nav class="p-2 flex flex-col gap-0.5">
+      <a href="home-account_admin.html" class="chip">
+        <i data-lucide="home" class="w-5 h-5"></i>
+        <div class="flex-1 text-sm">Главная</div>
+      </a>
+    </nav>
+
+    <div class="px-3 pt-4 pb-1 text-[11px] text-dim uppercase tracking-wider">Сервисы</div>
+    <nav class="px-2 flex flex-col gap-0.5">
+      <a href="users-account_admin.html" class="chip">
+        <i data-lucide="users" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Users</div>
+          <div class="text-[11px] text-dim">47 на платформе</div>
+        </div>
+      </a>
+      <a href="departments-account_admin.html" class="chip">
+        <i data-lucide="building-2" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Departments</div>
+          <div class="text-[11px] text-dim">3 депа</div>
+        </div>
+      </a>
+      <a href="server-account_admin.html" class="chip">
+        <i data-lucide="server" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Servers</div>
+          <div class="text-[11px] text-dim">90 на платформе</div>
+        </div>
+      </a>
+      <div class="chip active">
+        <i data-lucide="cog" class="w-5 h-5 text-accent"></i>
+        <div class="flex-1">
+          <div class="text-sm">Workers</div>
+          <div class="text-[11px] text-dim">кластер</div>
+        </div>
+      </div>
+      <a href="worker-account_admin.html" class="chip-sub">
+        <i data-lucide="list-checks" class="w-4 h-4"></i>
+        <span class="flex-1">Tasks</span>
+        <span class="text-[10px] text-dim">50</span>
+      </a>
+      <div class="chip-sub active">
+        <i data-lucide="skull" class="w-4 h-4 text-danger"></i>
+        <span class="flex-1">DLQ</span>
+        <span class="badge badge-danger">12</span>
+      </div>
+      <a href="#" class="chip-sub">
+        <i data-lucide="calendar-clock" class="w-4 h-4"></i>
+        <span class="flex-1">Schedules</span>
+        <span class="text-[10px] text-dim">8</span>
+      </a>
+      <a href="secret-account_admin.html" class="chip">
+        <i data-lucide="lock-keyhole" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Secrets</div>
+          <div class="text-[11px] text-dim">134 credential'а</div>
+        </div>
+      </a>
+    </nav>
+
+    <div class="mt-auto p-2 border-t border-token">
+      <a href="admin-account_admin.html" class="chip">
+        <i data-lucide="shield-check" class="w-5 h-5 text-warn"></i>
+        <div class="flex-1">
+          <div class="text-sm">Администрирование</div>
+          <div class="text-[11px] text-dim">платформа целиком</div>
+        </div>
+      </a>
+    </div>
+  </aside>
+
+  <!-- Middle: DLQ entries grouped by dept -->
+  <section class="w-[380px] shrink-0 border-r border-token surface flex flex-col">
+    <div class="border-b border-token px-3 py-2">
+      <div class="flex items-center gap-2">
+        <i data-lucide="search" class="w-4 h-4 text-dim"></i>
+        <input class="bg-transparent outline-none flex-1 text-sm" placeholder="Поиск по 12 записям DLQ..."/>
+      </div>
+      <div class="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
+        <span>Группировка:</span>
+        <select class="surface-2 border border-token rounded px-2 py-0.5">
+          <option>by dept</option>
+          <option>by error type</option>
+          <option>by task type</option>
+        </select>
+        <span class="ml-auto">12 / 12</span>
+      </div>
+      <div class="mt-2 flex items-center gap-1.5 text-xs flex-wrap">
+        <select class="surface-2 border border-token rounded px-2 py-0.5 text-dim">
+          <option>type: all</option>
+          <option>package</option>
+          <option>ssh</option>
+          <option>power</option>
+          <option>db</option>
+          <option>disk</option>
+        </select>
+        <span class="text-[10px] text-dim ml-auto flex items-center gap-1">
+          <i data-lucide="hourglass" class="w-3 h-3"></i>
+          retention: <b>14 дней</b>
+        </span>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto py-2">
+
+      <!-- Ядро DBOS -->
+      <div class="group-header flex items-center gap-2">
+        <i data-lucide="building-2" class="w-3 h-3"></i>
+        ЯДРО DBOS · 5
+      </div>
+      <div class="px-2 flex flex-col gap-0.5">
+        <div class="cred-row active">
+          <div class="flex items-center gap-2">
+            <i data-lucide="box" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_a791_install_kernel_update</div>
+              <div class="text-[11px] text-dim truncate">PackageInstallError: unmet deps</div>
+              <div class="text-[10px] text-dim mt-0.5">3 дн назад · 5/5</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="terminal" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_b8c2_ssh_exec</div>
+              <div class="text-[11px] text-dim truncate">SSHConnectError: timeout</div>
+              <div class="text-[10px] text-dim mt-0.5">2 дн назад · 3/3</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="zap" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_c9d3_power_cycle</div>
+              <div class="text-[11px] text-dim truncate">IPMIFatalError: bmc unreachable</div>
+              <div class="text-[10px] text-dim mt-0.5">5 дн назад · 3/3</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="database" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_d0e4_pg_dump</div>
+              <div class="text-[11px] text-dim truncate">DiskFullError</div>
+              <div class="text-[10px] text-dim mt-0.5">1 дн назад · 3/3</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_e1f5_disk_resize</div>
+              <div class="text-[11px] text-dim truncate">LVMFatalError: pv lost</div>
+              <div class="text-[10px] text-dim mt-0.5">7 дн назад · 4/5</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ДТКК -->
+      <div class="group-header flex items-center gap-2 mt-3">
+        <i data-lucide="building-2" class="w-3 h-3"></i>
+        ДТКК · 4
+      </div>
+      <div class="px-2 flex flex-col gap-0.5">
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="box" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_f206_apt_install</div>
+              <div class="text-[11px] text-dim truncate">PackageInstallError: 404</div>
+              <div class="text-[10px] text-dim mt-0.5">4 дн назад · 5/5</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="terminal" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_0317_ssh_uptime</div>
+              <div class="text-[11px] text-dim truncate">SSHAuthError: key revoked</div>
+              <div class="text-[10px] text-dim mt-0.5">6 дн назад · 3/3</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="zap" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_1428_power_off</div>
+              <div class="text-[11px] text-dim truncate">IPMICredentialsError</div>
+              <div class="text-[10px] text-dim mt-0.5">8 дн назад · 3/3</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_2539_disk_smart</div>
+              <div class="text-[11px] text-dim truncate">SMARTAbortedError</div>
+              <div class="text-[10px] text-dim mt-0.5">10 дн назад · 3/3</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Инфра -->
+      <div class="group-header flex items-center gap-2 mt-3">
+        <i data-lucide="building-2" class="w-3 h-3"></i>
+        ИНФРА · 3
+      </div>
+      <div class="px-2 flex flex-col gap-0.5">
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="terminal" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_364a_ssh_exec</div>
+              <div class="text-[11px] text-dim truncate">SSHFatalError: host gone</div>
+              <div class="text-[10px] text-dim mt-0.5">2 дн назад · 3/3</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="database" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_475b_pg_query</div>
+              <div class="text-[11px] text-dim truncate">PgFatalError: role missing</div>
+              <div class="text-[10px] text-dim mt-0.5">9 дн назад · 3/3</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+        <div class="cred-row">
+          <div class="flex items-center gap-2">
+            <i data-lucide="box" class="w-4 h-4 text-danger"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm truncate mono">dlq_586c_apt_upgrade</div>
+              <div class="text-[11px] text-dim truncate">PackageInstallError: locked</div>
+              <div class="text-[10px] text-dim mt-0.5">11 дн назад · 5/5</div>
+            </div>
+            <span class="badge badge-danger">DLQ</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="border-t border-token p-2 flex gap-2">
+      <button class="btn flex-1 flex items-center justify-center gap-2">
+        <i data-lucide="refresh-cw" class="w-4 h-4"></i> Re-queue selected
+      </button>
+      <button class="btn btn-danger flex-1 flex items-center justify-center gap-2">
+        <i data-lucide="trash-2" class="w-4 h-4"></i> Discard selected
+      </button>
+    </div>
+  </section>
+
+  <!-- Right: workzone -->
+  <section class="flex-1 overflow-y-auto flex flex-col min-w-0">
+
+    <!-- Header -->
+    <div class="border-b border-token p-5 flex items-start gap-4">
+      <div class="w-12 h-12 rounded bg-accent flex items-center justify-center">
+        <i data-lucide="skull" class="w-7 h-7"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-3 flex-wrap">
+          <h1 class="text-xl font-semibold truncate mono">dlq_a791_install_kernel_update</h1>
+          <span class="badge badge-danger">DEAD-LETTER</span>
+          <span class="text-xs text-dim">retries <b>5 / 5</b></span>
+        </div>
+        <div class="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
+          <span><i data-lucide="clock" class="w-3 h-3 inline"></i> в DLQ: <b>3 дня назад</b> (2026-06-07 14:08:12)</span>
+          <span>·</span>
+          <span><i data-lucide="link" class="w-3 h-3 inline"></i> original: <a href="#" class="text-accent mono">tsk_8f2a91c45e</a></span>
+          <span>·</span>
+          <span>dept: <b>Ядро DBOS</b></span>
+          <span>·</span>
+          <span>actor: <b>bob</b></span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button class="btn btn-primary flex items-center gap-1" title="Будет добавлено в обычную очередь как новая task">
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i> Re-queue
+        </button>
+        <button class="btn btn-danger flex items-center gap-1">
+          <i data-lucide="trash-2" class="w-4 h-4"></i> Discard
+        </button>
+        <button class="btn flex items-center gap-1">
+          <i data-lucide="download" class="w-4 h-4"></i> Export for analysis
+        </button>
+      </div>
+    </div>
+
+    <!-- Re-queue note banner -->
+    <div class="px-5 pt-4">
+      <div class="info-block flex items-start gap-2">
+        <i data-lucide="info" class="w-4 h-4 text-accent shrink-0 mt-0.5"></i>
+        <div>
+          <b>Re-queue</b> создаёт <span class="mono">новую task</span> с теми же параметрами и добавляет её в обычную очередь
+          (не воскрешает оригинальный <span class="mono">tsk_8f2a91c45e</span>). DLQ-запись при этом удаляется.
+          Если хочешь сохранить запись — сначала <b>Export for analysis</b>, потом Re-queue.
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-token px-5 flex gap-1 mt-3">
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px" style="border-color: var(--accent); color: var(--accent);">Overview</button>
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg">Original task</button>
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg">Error history</button>
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg">Audit</button>
+    </div>
+
+    <div class="p-5 grid grid-cols-2 gap-5">
+
+      <!-- Original task -->
+      <div class="surface border border-token rounded-lg p-4">
+        <div class="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
+          <i data-lucide="link" class="w-4 h-4"></i> Original task
+        </div>
+        <div class="text-sm">
+          <div class="stat-row">
+            <span class="text-dim">Task ID</span>
+            <a href="#" class="text-accent mono">tsk_8f2a91c45e_install_kernel_update</a>
+          </div>
+          <div class="stat-row">
+            <span class="text-dim">Type</span>
+            <span class="mono">package.install</span>
+          </div>
+          <div class="stat-row">
+            <span class="text-dim">Target server</span>
+            <span class="mono">srv-node-17</span>
+          </div>
+          <div class="stat-row">
+            <span class="text-dim">Args</span>
+            <span class="mono text-xs">package=linux-image-astra-5.15.0-86 · reboot=true</span>
+          </div>
+          <div class="stat-row">
+            <span class="text-dim">Requested by</span>
+            <span>bob</span>
+          </div>
+          <div class="stat-row">
+            <span class="text-dim">Created at</span>
+            <span class="mono text-xs">2026-06-07 15:12:08</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Why DLQ -->
+      <div class="surface border border-token rounded-lg p-4">
+        <div class="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
+          <i data-lucide="help-circle" class="w-4 h-4 text-warn"></i> Why DLQ
+        </div>
+        <div class="text-sm space-y-2">
+          <div class="flex items-start gap-2">
+            <i data-lucide="x-octagon" class="w-4 h-4 text-danger shrink-0 mt-0.5"></i>
+            <div>
+              <b>max retries reached</b> — task сделала <b>5 попыток</b> с экспоненциальным backoff (15s → 30s → 60s → 120s → 240s),
+              каждая упала с одной и той же ошибкой.
+            </div>
+          </div>
+          <div class="flex items-start gap-2">
+            <i data-lucide="alert-triangle" class="w-4 h-4 text-warn shrink-0 mt-0.5"></i>
+            <div>
+              Worker классифицировал ошибку как <span class="mono">retryable</span> (apt вернул exit 100),
+              но реальная причина — <b>broken deps</b>: исправляется только вручную.
+            </div>
+          </div>
+          <div class="flex items-start gap-2">
+            <i data-lucide="info" class="w-4 h-4 text-accent shrink-0 mt-0.5"></i>
+            <div>
+              <b>Рекомендация:</b> починить репозиторий (добавить <span class="mono">linux-headers-astra</span> ровно той же версии),
+              затем Re-queue. Без фикса task снова попадёт сюда.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Last error -->
+      <div class="col-span-2">
+        <div class="text-xs uppercase tracking-wider text-dim mb-2 flex items-center gap-2">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-danger"></i> Last error (try 5/5)
+        </div>
+        <div class="alert-block mono text-xs whitespace-pre overflow-x-auto">apt-get: error: package linux-image-astra-5.15.0-86 has unmet dependencies:
+  Depends: linux-headers-astra-5.15.0-86 (= 5.15.0-86.94) but it is not installable
+
+Worker traceback (wrk-02):
+  File "/opt/dbos/worker/runner.py", line 142, in execute
+    rc = await self._run_apt(["install", "-y", pkg])
+  File "/opt/dbos/worker/runner.py", line 218, in _run_apt
+    raise PackageInstallError(stderr.decode().strip(), rc=rc)
+dbos_worker.exceptions.PackageInstallError: apt-get exit code 100 — see stderr
+
+ssh stderr tail:
+  E: Unable to correct problems, you have held broken packages.
+  E: Sub-process /usr/bin/dpkg returned an error code (100)</div>
+      </div>
+
+      <!-- Retry history -->
+      <div class="surface border border-token rounded-lg p-4 col-span-2">
+        <div class="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
+          <i data-lucide="rotate-cw" class="w-4 h-4"></i> Retry history (5)
+        </div>
+        <table class="w-full text-sm">
+          <thead class="text-left text-dim text-xs uppercase">
+            <tr>
+              <th class="pb-2 pr-3">attempt</th>
+              <th class="pb-2 pr-3">time</th>
+              <th class="pb-2 pr-3">backoff</th>
+              <th class="pb-2 pr-3">error code</th>
+              <th class="pb-2 pr-3">worker</th>
+              <th class="pb-2">stderr tail</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-token">
+              <td class="py-2 mono">1/5</td>
+              <td class="text-dim text-xs mono">15:12:08</td>
+              <td class="text-dim text-xs">—</td>
+              <td class="mono"><span class="badge badge-danger">apt:100</span></td>
+              <td class="mono">wrk-02</td>
+              <td class="text-dim text-xs truncate">held broken packages</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2 mono">2/5</td>
+              <td class="text-dim text-xs mono">15:12:35</td>
+              <td class="text-dim text-xs">15s</td>
+              <td class="mono"><span class="badge badge-danger">apt:100</span></td>
+              <td class="mono">wrk-02</td>
+              <td class="text-dim text-xs truncate">held broken packages</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2 mono">3/5</td>
+              <td class="text-dim text-xs mono">15:13:18</td>
+              <td class="text-dim text-xs">30s</td>
+              <td class="mono"><span class="badge badge-danger">apt:100</span></td>
+              <td class="mono">wrk-01</td>
+              <td class="text-dim text-xs truncate">held broken packages</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2 mono">4/5</td>
+              <td class="text-dim text-xs mono">15:14:50</td>
+              <td class="text-dim text-xs">60s</td>
+              <td class="mono"><span class="badge badge-danger">apt:100</span></td>
+              <td class="mono">wrk-03</td>
+              <td class="text-dim text-xs truncate">held broken packages</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2 mono">5/5</td>
+              <td class="text-dim text-xs mono">15:18:02</td>
+              <td class="text-dim text-xs">120s</td>
+              <td class="mono"><span class="badge badge-danger">apt:100</span></td>
+              <td class="mono">wrk-02</td>
+              <td class="text-dim text-xs truncate">held broken packages</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="mt-3 text-xs text-dim">
+          После 5-й попытки worker отправил task в DLQ (политика retry: <span class="mono">max=5, backoff=exponential, base=15s</span>).
+        </div>
+      </div>
+
+      <!-- Related similar errors -->
+      <div class="surface border border-token rounded-lg p-4 col-span-2">
+        <div class="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
+          <i data-lucide="git-compare" class="w-4 h-4"></i> Related (5 ближайших similar errors)
+        </div>
+        <table class="w-full text-sm">
+          <thead class="text-left text-dim text-xs uppercase">
+            <tr>
+              <th class="pb-2 pr-3">DLQ ID</th>
+              <th class="pb-2 pr-3">Task type</th>
+              <th class="pb-2 pr-3">Server</th>
+              <th class="pb-2 pr-3">dept</th>
+              <th class="pb-2 pr-3">Error</th>
+              <th class="pb-2">When</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-token">
+              <td class="py-2 mono"><a href="#" class="text-accent">dlq_f206</a></td>
+              <td>package.install</td>
+              <td class="mono">srv-edge-dtkk-04</td>
+              <td>ДТКК</td>
+              <td><span class="badge badge-danger">apt:100</span></td>
+              <td class="text-dim text-xs mono">4 дн назад</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2 mono"><a href="#" class="text-accent">dlq_586c</a></td>
+              <td>package.upgrade</td>
+              <td class="mono">srv-build-02</td>
+              <td>Инфра</td>
+              <td><span class="badge badge-danger">apt:100</span></td>
+              <td class="text-dim text-xs mono">11 дн назад</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2 mono"><a href="#" class="text-accent">dlq_704d</a></td>
+              <td>package.install</td>
+              <td class="mono">srv-node-22</td>
+              <td>Ядро DBOS</td>
+              <td><span class="badge badge-danger">apt:100</span></td>
+              <td class="text-dim text-xs mono">14 дн назад (вытесн.)</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2 mono"><a href="#" class="text-accent">dlq_815e</a></td>
+              <td>package.install</td>
+              <td class="mono">srv-node-08</td>
+              <td>Ядро DBOS</td>
+              <td><span class="badge badge-warn">apt:dep</span></td>
+              <td class="text-dim text-xs mono">17 дн назад (вытесн.)</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2 mono"><a href="#" class="text-accent">dlq_926f</a></td>
+              <td>package.install</td>
+              <td class="mono">srv-node-11</td>
+              <td>Ядро DBOS</td>
+              <td><span class="badge badge-danger">apt:100</span></td>
+              <td class="text-dim text-xs mono">21 дн назад (вытесн.)</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="mt-3 text-xs text-dim">
+          Похоже на <b>системную проблему репозитория</b>: 5 разных серверов в 3-х деп'ах падают с одной ошибкой.
+          Стоит проверить состояние APT-зеркала <span class="mono">repo.dbos.local</span>.
+        </div>
+      </div>
+
+    </div>
+  </section>
+</div>
+
+<script>
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("dbos-theme", e.target.value);
+  });
+
+  if (window.lucide) lucide.createIcons();
+
+  document.querySelectorAll(".cred-row").forEach(r => {
+    r.addEventListener("click", () => {
+      document.querySelectorAll(".cred-row").forEach(x => x.classList.remove("active"));
+      r.classList.add("active");
+    });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+import { useState } from "react";
+import { ScanSearch } from "lucide-react";
+import { ApiError } from "@/api/client";
+import { introspect, type IntrospectResponse } from "@/api/auth/authorization";
+import { useToast } from "@/contexts/ToastContext";
+
+export function SecurityIntrospect() {
+  const [token, setToken] = useState("");
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<IntrospectResponse | null>(null);
+  const toast = useToast();
+
+  const submit = async () => {
+    if (!token.trim()) {
+      toast.warn("Введите токен");
+      return;
+    }
+    setPending(true);
+    setResult(null);
+    try {
+      const r = await introspect({ token: token.trim() });
+      setResult(r);
+    } catch (e) {
+      if (e instanceof ApiError) toast.error(e.message);
+      else toast.error("Ошибка introspect");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="card">
+        <h3 className="font-semibold flex items-center gap-2 mb-3">
+          <ScanSearch className="w-4 h-4 text-accent" /> POST /authorization/introspect
+        </h3>
+        <div className="text-xs text-dim mb-3">
+          Принимает JWT, PAT (`dbos_pat_…`) или bot-токен (`dbos_bot_…`).
+          Возвращает identity и effective `allowed_services` / `service_roles`,
+          вычисленные из БД (а не из JWT payload).
+        </div>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">token</span>
+          <textarea
+            className="input mono"
+            rows={4}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="eyJhbGciOiJI… / dbos_pat_… / dbos_bot_…"
+          />
+        </label>
+        <div className="mt-3">
+          <button className="btn btn-primary" onClick={submit} disabled={pending}>
+            Introspect
+          </button>
+        </div>
+      </div>
+
+      {result && (
+        <div className="card">
+          <h3 className="font-semibold mb-3">Результат</h3>
+          <div className="flex items-center gap-2 mb-3">
+            <span
+              className={`badge ${result.active ? "active" : ""}`}
+              style={{
+                background: result.active ? "var(--ok-bg)" : "var(--err-bg)",
+              }}
+            >
+              active: {String(result.active)}
+            </span>
+            {result.subject_type && (
+              <span className="badge">{result.subject_type}</span>
+            )}
+            {result.is_banned && <span className="badge danger">banned</span>}
+            {result.must_change_password && (
+              <span className="badge warn">must_change_password</span>
+            )}
+          </div>
+          <pre className="mono text-xs whitespace-pre-wrap break-all border border-token p-2 rounded">
+            {JSON.stringify(result, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}

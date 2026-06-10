@@ -50,6 +50,43 @@ def _to_response(user, dept_name: str | None) -> UserResponse:
     )
 
 
+async def get_user(
+    db: AsyncSession,
+    user_id: str,
+    request_id: str | None = None,
+) -> UserResponse:
+    """Получить юзера по id.
+
+    Что делает:
+        Простой read через UserRepository + Department для display_name.
+
+    Доступ:
+        Любой админ (`AnyAdmin`) — gate проверяется в эндпоинте. На уровне
+        сервиса access не проверяется: UI/server_service зовут по id, gate
+        отделяет admin'ов от обычных юзеров. Если потребуется dep-scope
+        (department_admin видит только своих) — добавится в эндпоинте.
+
+    Возможные ошибки:
+        * `USER_NOT_FOUND` (404) — нет такого id.
+    """
+    user_repo = UserRepository(db)
+    dept_repo = DepartmentRepository(db)
+    user = await user_repo.get_by_id(user_id)
+    if user is None:
+        raise DomainValidationError(
+            error_code="USER_NOT_FOUND",
+            http_status=404,
+            message=f"User {user_id} not found",
+        )
+    dept = (
+        await dept_repo.get_by_id(user.department_id)
+        if user.department_id
+        else None
+    )
+    dept_name = dept.display_name if dept else None
+    return _to_response(user, dept_name)
+
+
 async def list_users(
     db: AsyncSession,
     actor_id: str,
@@ -1010,6 +1047,16 @@ async def ban_user(
     session_repo = SessionRepository(db)
     token_repo = TokenRepository(db)
 
+    if actor_id == user_id:
+        # Self-ban был бы лёгким способом случайно выпилить себя
+        # (и неотозвливаемо для не-account-admin'а — некому unban'ить).
+        # Симметрично проверке self-delete ниже по файлу.
+        raise DomainValidationError(
+            error_code="CANNOT_BAN_SELF",
+            http_status=422,
+            message="You cannot ban yourself",
+        )
+
     user = await user_repo.get_by_id(user_id)
     if user is None:
         raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
@@ -1212,6 +1259,13 @@ async def hard_delete_user(
     user_repo = UserRepository(db)
     session_repo = SessionRepository(db)
     token_repo = TokenRepository(db)
+
+    if actor_id == user_id:
+        raise DomainValidationError(
+            error_code="CANNOT_DELETE_SELF",
+            http_status=422,
+            message="You cannot hard-delete yourself",
+        )
 
     user = await user_repo.get_for_update(user_id)
     if user is None:
@@ -1734,6 +1788,162 @@ async def revoke_one_session(
             "session_id": session_id,
             "was_current": current_session_id is not None and session_id == current_session_id,
         },
+        request_id=request_id,
+    )
+    return 1
+
+
+# ── Admin session management ──────────────────────────────────────────────
+# Зеркала self-функций выше, но с RBAC-guard'ом и аудитом отдельной серии
+# (`user.sessions_admin_*`), чтобы SIEM мог различать «юзер сам разлогинился»
+# и «admin разлогинил юзера». DA ограничен своим отделом, account_admin —
+# cross-dept by design (симметрично list_users / get_user_permissions).
+
+
+async def _resolve_target_for_admin_session_op(
+    db: AsyncSession,
+    *,
+    actor_id: str,
+    actor_role: PlatformRole | None,
+    target_user_id: str,
+):
+    """Достать target-юзера и прогнать через RBAC-guard.
+
+    Возвращает row юзера. Бросает 404 USER_NOT_FOUND (для account_admin и
+    self) или 403 DEPARTMENT_ACCESS_DENIED (DA cross-dept). DA cross-dept
+    тоже отдаёт 404, чтобы не было ID-enum oracle между отделами —
+    симметрично `get_user_permissions`.
+    """
+    user_repo = UserRepository(db)
+    target = await user_repo.get_by_id(target_user_id)
+    is_account_admin = actor_role == PlatformRole.ACCOUNT_ADMIN
+    is_dept_admin = actor_role == PlatformRole.DEPARTMENT_ADMIN
+
+    if target is None:
+        raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
+
+    if is_dept_admin and actor_id != target_user_id:
+        # DA вне своего отдела видит 404, account_admin — cross-dept по умолчанию.
+        await assert_dept_admin_target_dept(
+            user_repo,
+            actor_id,
+            target.department_id,
+            error_code="DEPARTMENT_ACCESS_DENIED",
+            message="department_admin can only manage sessions of users in their own department",
+        )
+    elif not is_account_admin and not is_dept_admin:
+        # Сюда не должны попадать — AnyAdmin guard в endpoint'е отбивает
+        # не-админов раньше. Defensive.
+        raise AuthorizationError(
+            error_code="PERMISSION_DENIED",
+            message="Only admins can manage sessions of other users",
+        )
+    return target
+
+
+async def admin_list_sessions(
+    db: AsyncSession,
+    *,
+    actor_id: str,
+    actor_role: PlatformRole | None,
+    target_user_id: str,
+    request_id: str | None = None,
+) -> SessionsListResponse:
+    """Список активных сессий любого юзера (admin view).
+
+    RBAC: account_admin — любой; dep_admin — только в своём отделе (иначе 403
+    DEPARTMENT_ACCESS_DENIED через `_dept_guard`). 404 USER_NOT_FOUND если
+    юзер не найден.
+
+    Audit: `user.sessions_admin_listed` (INFO) с count.
+    """
+    await _resolve_target_for_admin_session_op(
+        db, actor_id=actor_id, actor_role=actor_role, target_user_id=target_user_id
+    )
+    session_repo = SessionRepository(db)
+    sessions = await session_repo.list_active_for_user(target_user_id)
+    items = [_session_to_entry(s, current_session_id=None) for s in sessions]
+    audit_service.emit(
+        "user.sessions_admin_listed",
+        actor_id,
+        target_id=target_user_id,
+        target_type="user",
+        status="success",
+        details={"count": len(items)},
+        request_id=request_id,
+    )
+    return SessionsListResponse(items=items, total=len(items))
+
+
+async def admin_revoke_all_sessions(
+    db: AsyncSession,
+    *,
+    actor_id: str,
+    actor_role: PlatformRole | None,
+    target_user_id: str,
+    request_id: str | None = None,
+) -> int:
+    """Admin-инициированный logout-all для любого юзера.
+
+    Сносит все активные refresh-сессии target-юзера. PAT/bot-токены не
+    трогаются — это отдельные identities (см. `revoke_sessions`).
+    Identity-cache инвалидируется.
+
+    Audit: `user.sessions_admin_revoked_all` (CRITICAL) с revoked_count.
+    """
+    await _resolve_target_for_admin_session_op(
+        db, actor_id=actor_id, actor_role=actor_role, target_user_id=target_user_id
+    )
+    session_repo = SessionRepository(db)
+    revoked = await session_repo.revoke_all_for_user(target_user_id)
+    await db.commit()
+    _invalidate_identity_cache(target_user_id)
+    audit_service.emit(
+        "user.sessions_admin_revoked_all",
+        actor_id,
+        target_id=target_user_id,
+        target_type="user",
+        details={"revoked_count": revoked},
+        request_id=request_id,
+    )
+    return revoked
+
+
+async def admin_revoke_one_session(
+    db: AsyncSession,
+    *,
+    actor_id: str,
+    actor_role: PlatformRole | None,
+    target_user_id: str,
+    session_id: str,
+    request_id: str | None = None,
+) -> int:
+    """Admin-инициированный revoke одной сессии чужого юзера.
+
+    404 SESSION_NOT_FOUND — сессия не принадлежит target_user_id, неактивна
+    или не существует (защита от session-id-oracle между юзерами).
+
+    Audit: `user.session_admin_revoked_one` (WARNING).
+    """
+    await _resolve_target_for_admin_session_op(
+        db, actor_id=actor_id, actor_role=actor_role, target_user_id=target_user_id
+    )
+    session_repo = SessionRepository(db)
+    sess = await session_repo.get_by_id(session_id)
+    if sess is None or sess.user_id != target_user_id or not sess.is_active:
+        raise NotFoundError(
+            error_code="SESSION_NOT_FOUND",
+            message="Session not found or already revoked",
+        )
+    await session_repo.revoke(sess)
+    await db.commit()
+    _invalidate_identity_cache(target_user_id)
+    audit_service.emit(
+        "user.session_admin_revoked_one",
+        actor_id,
+        target_id=target_user_id,
+        target_type="user",
+        details={"session_id": session_id},
         request_id=request_id,
     )
     return 1

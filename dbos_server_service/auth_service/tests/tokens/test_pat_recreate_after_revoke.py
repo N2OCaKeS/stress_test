@@ -6,14 +6,19 @@ unique `(user_id, name) WHERE revoked_at IS NULL` — историческое �
 штатный flow ротации (revoke old → mint new same-name).
 """
 
+from datetime import timedelta
+
+from src.utils.time import utcnow
+
 PAT_URL = "/api/auth/v1/tokens"
 
 
 async def _create(client, token, name):
+    exp = (utcnow() + timedelta(days=30)).isoformat()
     return await client.post(
         PAT_URL,
         headers={"Authorization": f"Bearer {token}"},
-        json={"name": name, "allowed_services": ["service_x"]},
+        json={"name": name, "allowed_services": ["service_x"], "expires_at": exp},
     )
 
 

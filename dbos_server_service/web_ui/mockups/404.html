@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · 404</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30;
+    --border: #3e3e42; --text: #cccccc; --text-dim: #969696;
+    --accent: #0e639c; --accent-fg: #ffffff;
+    --danger: #f48771; --warn: #cca700; --ok: #4ec9b0;
+    --hover: #2a2d2e; --selected: #094771;
+  }
+  html[data-theme="vscode-light"] {
+    --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb;
+    --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c;
+    --accent: #007acc; --accent-fg: #ffffff;
+    --danger: #cd3131; --warn: #b89500; --ok: #178178;
+    --hover: #e8e8e8; --selected: #c8e6ff;
+  }
+  html[data-theme="dark-orange"] {
+    --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118;
+    --border: #45382c; --text: #e8d9c5; --text-dim: #998571;
+    --accent: #f28a26; --accent-fg: #1a1410;
+    --danger: #ef6f55; --warn: #d8a200; --ok: #69b378;
+    --hover: #2f2419; --selected: #5a3a16;
+  }
+  html[data-theme="blue"] {
+    --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b;
+    --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8;
+    --accent: #4fb8ff; --accent-fg: #0a1929;
+    --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7;
+    --hover: #18406b; --selected: #1d5a98;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .surface { background: var(--bg-soft); }
+  .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-warn { color: var(--warn); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .btn { padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 14px; cursor: pointer; font-family: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .error-card {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 40px 32px;
+    width: 100%;
+    max-width: 540px;
+    text-align: center;
+  }
+  .gradient-bg {
+    background:
+      radial-gradient(ellipse 60% 50% at 80% 10%, rgba(14, 99, 156, 0.12) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 60% at 10% 90%, rgba(244, 135, 113, 0.08) 0%, transparent 60%);
+  }
+  html[data-theme="dark-orange"] .gradient-bg {
+    background:
+      radial-gradient(ellipse 60% 50% at 80% 10%, rgba(242, 138, 38, 0.16) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 60% at 10% 90%, rgba(239, 111, 85, 0.10) 0%, transparent 60%);
+  }
+  html[data-theme="blue"] .gradient-bg {
+    background:
+      radial-gradient(ellipse 60% 50% at 80% 10%, rgba(79, 184, 255, 0.18) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 60% at 10% 90%, rgba(255, 120, 120, 0.10) 0%, transparent 60%);
+  }
+</style>
+</head>
+<body class="gradient-bg">
+
+<header class="surface border-b border-token h-12 px-4 flex items-center gap-3 shrink-0">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2">
+    <i data-lucide="grid-3x3" class="w-4 h-4 text-accent"></i>
+    DBOS Server Manager
+  </a>
+  <span class="text-xs text-dim ml-2">404</span>
+
+  <div class="ml-auto flex items-center gap-2">
+    <label class="text-xs text-dim">Тема:</label>
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm">
+      <option value="vscode-dark">VS Code Dark</option>
+      <option value="vscode-light">VS Code Light</option>
+      <option value="dark-orange">Dark Orange</option>
+      <option value="blue">Blue</option>
+    </select>
+  </div>
+</header>
+
+<main class="flex-1 flex items-center justify-center p-8">
+  <div class="error-card">
+    <div class="flex justify-center mb-5">
+      <i data-lucide="frown" class="text-warn" style="width:96px;height:96px;"></i>
+    </div>
+    <h1 class="text-2xl font-bold mb-2">404 · Страница не найдена</h1>
+    <p class="text-dim text-sm mb-6">Ресурс не существует или у вас нет к нему доступа.</p>
+
+    <div class="flex items-center justify-center gap-3 mb-7">
+      <a href="home-account_admin.html" class="btn btn-primary">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i>
+        На главную
+      </a>
+      <a href="login.html" class="btn">
+        <i data-lucide="x" class="w-4 h-4"></i>
+        Logout
+      </a>
+    </div>
+
+    <div class="surface-2 border border-token rounded-lg p-4 text-left">
+      <div class="text-[11px] uppercase tracking-wider text-dim mb-2">Request ID</div>
+      <div class="mono text-sm text-accent break-all mb-3">req_8c2a4f91-3b6d-4e2a-9f1c-7d8e0b2c5a3f</div>
+      <div class="text-xs text-dim flex items-start gap-2">
+        <i data-lucide="alert-circle" class="w-4 h-4 shrink-0 mt-0.5"></i>
+        <div>
+          Если думаете, что это ошибка — отправьте <span class="mono">request_id</span> админу
+          (или в канал <span class="mono">#dbos-support</span>).
+          Время: <span class="mono">2026-06-10 14:32:07 MSK</span>.
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="border-t border-token surface px-6 py-3 flex items-center justify-between text-xs text-dim">
+  <div>DBOS Server Manager · <span class="mono">v1.8.5.46</span></div>
+  <a href="index.html" class="hover:underline">demo · persona-picker</a>
+</footer>
+
+<script>
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("dbos-theme", e.target.value);
+  });
+  if (window.lucide) lucide.createIcons();
+</script>
+</body>
+</html>

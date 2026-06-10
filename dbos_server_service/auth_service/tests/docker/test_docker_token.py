@@ -125,6 +125,8 @@ async def test_push_allowed_for_listed_user(client, admin_token, user_a, dept_a)
 
 
 import jwt as _jwt
+from datetime import timedelta
+from src.utils.time import utcnow
 
 
 def _decode_access(token: str) -> list[dict]:
@@ -186,7 +188,7 @@ async def test_pat_as_docker_password(client, admin_token, user_a_token, user_a,
     # PAT_SCOPE_DENIES_DOCKER (см. test_pat_without_docker_scope_denied).
     pat = (await client.post(TOKENS_URL,
                       headers={"Authorization": f"Bearer {user_a_token}"},
-                      json={"name": "docker_pat", "allowed_services": ["docker_registry"]})).json()["token"]
+                      json={"name": "docker_pat", "allowed_services": ["docker_registry"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()})).json()["token"]
     resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", pat),
                       params={"service": "registry.test"})
     assert resp.status_code == 200
@@ -196,7 +198,7 @@ async def test_revoked_pat_denied_for_docker(client, admin_token, user_a_token, 
     await _enable_docker(client, admin_token, dept_a.id)
     pat_data = (await client.post(TOKENS_URL,
                            headers={"Authorization": f"Bearer {user_a_token}"},
-                           json={"name": "docker_pat_rev", "allowed_services": ["docker_registry"]})).json()
+                           json={"name": "docker_pat_rev", "allowed_services": ["docker_registry"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()})).json()
     await client.delete(f"{TOKENS_URL}/{pat_data['token_id']}",
                   headers={"Authorization": f"Bearer {user_a_token}"})
     resp = await client.get(TOKEN_URL, headers=_basic("t_user_a", pat_data["token"]),
@@ -251,7 +253,7 @@ async def test_pat_without_docker_scope_denied(
     pat = (await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "no_docker_pat", "allowed_services": [service_x.service_name]},
+        json={"name": "no_docker_pat", "allowed_services": [service_x.service_name], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()["token"]
 
     resp = await client.get(
@@ -281,7 +283,7 @@ async def test_bot_without_docker_scope_denied(
     bot_token = (await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "no_docker_tok"},
+        json={"name": "no_docker_tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()["token"]
 
     resp = await client.get(

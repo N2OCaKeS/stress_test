@@ -1,6 +1,8 @@
 """Тесты: PATCH /api/auth/v1/users/{user_id} — обновление пользователя."""
 
 from src.core.constants import UserStatus
+from datetime import timedelta
+from src.utils.time import utcnow
 
 URL = "/api/auth/v1/users/{user_id}"
 TOKENS_URL = "/api/auth/v1/tokens"
@@ -130,7 +132,7 @@ async def test_patch_status_banned_revokes_pat(
     raw = (await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "patch_ban_intr_pat", "allowed_services": ["service_x"]},
+        json={"name": "patch_ban_intr_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )).json()["token"]
 
     # Sanity: PAT валиден до бана.

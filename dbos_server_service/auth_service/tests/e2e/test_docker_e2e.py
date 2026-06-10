@@ -17,6 +17,8 @@ import pytest
 import requests
 
 from tests._helpers.http import _basic  # noqa: F401 — общий helper
+from datetime import timedelta
+from src.utils.time import utcnow
 
 pytestmark = pytest.mark.e2e
 
@@ -255,7 +257,7 @@ class TestPATAuth:
         pat_resp = requests.post(
             f"{auth_base}/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {e2e_user_token}"},
-            json={"name": "e2e_docker_pat", "allowed_services": [e2e_service]},
+            json={"name": "e2e_docker_pat", "allowed_services": [e2e_service], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert pat_resp.status_code == 201
         pat = pat_resp.json()["token"]
@@ -273,7 +275,7 @@ class TestPATAuth:
         pat_data = requests.post(
             f"{auth_base}/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {e2e_user_token}"},
-            json={"name": "e2e_docker_pat_rev", "allowed_services": [e2e_service]},
+            json={"name": "e2e_docker_pat_rev", "allowed_services": [e2e_service], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         ).json()
         requests.delete(
             f"{auth_base}/api/auth/v1/tokens/{pat_data['token_id']}",

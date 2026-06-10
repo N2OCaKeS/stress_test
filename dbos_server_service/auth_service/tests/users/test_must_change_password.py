@@ -15,6 +15,8 @@
 import pytest
 
 from src.dependencies.auth import (
+from datetime import timedelta
+from src.utils.time import utcnow
     _IDENTITY_CACHE_TTL_SECONDS as _ORIG_TTL,
     _identity_cache_clear,
 )
@@ -69,7 +71,7 @@ async def test_must_change_blocks_post_tokens(client, db, user_a):
     resp = await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {token}"},
-        json={"name": "pat_blocked", "allowed_services": ["service_x"]},
+        json={"name": "pat_blocked", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert resp.status_code == 403
     assert resp.json()["error_code"] == "PASSWORD_CHANGE_REQUIRED"
@@ -245,7 +247,7 @@ async def test_must_change_blocks_pat_request(client, db, user_a):
     pat_resp = await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "pat_must_change", "allowed_services": ["service_x"]},
+        json={"name": "pat_must_change", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert pat_resp.status_code == 201, pat_resp.text
     raw_pat = pat_resp.json()["token"]
@@ -267,7 +269,7 @@ async def test_must_change_allows_pat_on_whitelisted_endpoint(client, db, user_a
     pat_resp = await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "pat_health_pass", "allowed_services": ["service_x"]},
+        json={"name": "pat_health_pass", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert pat_resp.status_code == 201, pat_resp.text
     raw_pat = pat_resp.json()["token"]

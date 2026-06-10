@@ -1,6 +1,8 @@
 """Тесты: POST /api/auth/v1/users/me/password — self-reset пароля с old_password-confirm."""
 
 from src.core.config import get_settings
+from datetime import timedelta
+from src.utils.time import utcnow
 
 URL = "/api/auth/v1/users/me/password"
 LOGIN_URL = "/api/auth/v1/login"
@@ -131,7 +133,7 @@ async def test_self_reset_revokes_own_pat(client, user_a_token):
     pat_resp = await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "self_reset_pat", "allowed_services": ["service_x"]},
+        json={"name": "self_reset_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert pat_resp.status_code == 201
     pat_token = pat_resp.json()["token"]
@@ -168,7 +170,7 @@ async def test_self_reset_does_not_touch_other_users_pats(
     pat_b_resp = await client.post(
         TOKENS_URL,
         headers={"Authorization": f"Bearer {user_b_token}"},
-        json={"name": "user_b_pat", "allowed_services": ["service_x"]},
+        json={"name": "user_b_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert pat_b_resp.status_code == 201, pat_b_resp.text
     pat_b_token = pat_b_resp.json()["token"]
@@ -207,7 +209,7 @@ async def test_self_reset_preserves_department_bots(
     bot_token_resp = await client.post(
         f"/api/auth/v1/bots/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {dept_admin_a_token}"},
-        json={"name": "ci"},
+        json={"name": "ci", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert bot_token_resp.status_code == 201, bot_token_resp.text
     bot_token = bot_token_resp.json()["token"]

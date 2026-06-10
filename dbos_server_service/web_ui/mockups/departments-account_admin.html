@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="vscode-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBOS · auth_service · departments · account_admin (bob)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg-soft: #252526; --bg-soft-2: #2d2d30;
+    --border: #3e3e42; --text: #cccccc; --text-dim: #969696;
+    --accent: #0e639c; --accent-fg: #ffffff;
+    --danger: #f48771; --warn: #cca700; --ok: #4ec9b0;
+    --hover: #2a2d2e; --selected: #094771;
+  }
+  html[data-theme="vscode-light"] {
+    --bg: #ffffff; --bg-soft: #f3f3f3; --bg-soft-2: #ebebeb;
+    --border: #d4d4d4; --text: #1f1f1f; --text-dim: #6c6c6c;
+    --accent: #007acc; --accent-fg: #ffffff;
+    --danger: #cd3131; --warn: #b89500; --ok: #178178;
+    --hover: #e8e8e8; --selected: #c8e6ff;
+  }
+  html[data-theme="dark-orange"] {
+    --bg: #1a1410; --bg-soft: #221a13; --bg-soft-2: #2b2118;
+    --border: #45382c; --text: #e8d9c5; --text-dim: #998571;
+    --accent: #f28a26; --accent-fg: #1a1410;
+    --danger: #ef6f55; --warn: #d8a200; --ok: #69b378;
+    --hover: #2f2419; --selected: #5a3a16;
+  }
+  html[data-theme="blue"] {
+    --bg: #0a1929; --bg-soft: #102a43; --bg-soft-2: #1b3a5b;
+    --border: #244a72; --text: #d6e4ff; --text-dim: #7ea0c8;
+    --accent: #4fb8ff; --accent-fg: #0a1929;
+    --danger: #ff7878; --warn: #ffd166; --ok: #5fd1c7;
+    --hover: #18406b; --selected: #1d5a98;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .surface { background: var(--bg-soft); }
+  .surface-2 { background: var(--bg-soft-2); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .text-danger { color: var(--danger); }
+  .text-warn { color: var(--warn); }
+  .text-ok { color: var(--ok); }
+  .bg-accent { background: var(--accent); color: var(--accent-fg); }
+  .border-token { border-color: var(--border); }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hover-bg:hover { background: var(--hover); }
+  .selected-bg { background: var(--selected); }
+  .chip { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+  .chip:hover { background: var(--hover); }
+  .chip.active { background: var(--selected); }
+  .group-header { padding: 6px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+  .cred-row { padding: 10px 12px; border-radius: 4px; cursor: pointer; }
+  .cred-row:hover { background: var(--hover); }
+  .cred-row.active { background: var(--selected); }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); }
+  .badge-ok { color: var(--ok); border-color: var(--ok); }
+  .badge-warn { color: var(--warn); border-color: var(--warn); }
+  .badge-danger { color: var(--danger); border-color: var(--danger); }
+  .stat-row { display: grid; grid-template-columns: 140px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+  .stat-row:last-child { border-bottom: none; }
+  button { font-family: inherit; cursor: pointer; }
+  .btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-soft-2); color: var(--text); font-size: 13px; }
+  .btn:hover { background: var(--hover); }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-danger { color: var(--danger); border-color: var(--danger); }
+  .stat-tile { background: var(--bg-soft-2); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+  .stat-tile .num { font-size: 26px; font-weight: 600; line-height: 1.1; }
+  .grant-pill { font-size: 10px; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); }
+  .grant-pill.granted { color: var(--ok); border-color: var(--ok); background: rgba(78,201,176,0.07); }
+  .grant-pill.partial { color: var(--warn); border-color: var(--warn); background: rgba(204,167,0,0.07); }
+  .grant-pill.none { color: var(--text-dim); }
+</style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- ── Top bar ───────────────────────────────────────────────────────── -->
+<header class="surface border-b border-token h-12 px-3 flex items-center gap-3 shrink-0">
+  <a href="index.html" class="text-sm font-semibold flex items-center gap-2 px-2 hover-bg rounded h-8">
+    <i data-lucide="grid-3x3" class="w-4 h-4 text-accent"></i>
+    DBOS
+  </a>
+  <span class="text-xs text-dim">/ auth_service / departments</span>
+
+  <div class="ml-auto flex items-center gap-2">
+    <div class="surface-2 border border-token rounded px-2 py-1 flex items-center gap-2 text-sm">
+      <div class="w-6 h-6 rounded-full bg-accent flex items-center justify-center text-xs font-semibold">BO</div>
+      <div>
+        <div class="leading-tight">bob</div>
+        <div class="text-[10px] text-dim leading-tight">account_admin · платформа</div>
+      </div>
+    </div>
+
+    <select id="theme-select" class="surface-2 border border-token rounded px-2 py-1 text-sm">
+      <option value="vscode-dark">VS Code Dark</option>
+      <option value="vscode-light">VS Code Light</option>
+      <option value="dark-orange">Dark Orange</option>
+      <option value="blue">Blue</option>
+    </select>
+
+    <a href="index.html" class="btn">
+      <i data-lucide="log-out" class="w-4 h-4 inline-block align-text-bottom"></i>
+      Logout
+    </a>
+  </div>
+</header>
+
+<!-- ── 3-pane shell ─────────────────────────────────────────────────── -->
+<div class="flex-1 flex min-h-0">
+
+  <!-- Left -->
+  <aside class="w-[220px] shrink-0 border-r border-token surface flex flex-col">
+    <nav class="p-2 flex flex-col gap-0.5">
+      <a href="home-account_admin.html" class="chip">
+        <i data-lucide="home" class="w-5 h-5"></i>
+        <div class="flex-1 text-sm">Главная</div>
+      </a>
+    </nav>
+
+    <div class="px-3 pt-4 pb-1 text-[11px] text-dim uppercase tracking-wider">Сервисы</div>
+    <nav class="px-2 flex flex-col gap-0.5">
+      <a href="users-account_admin.html" class="chip">
+        <i data-lucide="users" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Users</div>
+          <div class="text-[11px] text-dim">47 на платформе</div>
+        </div>
+      </a>
+      <div class="chip active">
+        <i data-lucide="building-2" class="w-5 h-5 text-accent"></i>
+        <div class="flex-1">
+          <div class="text-sm">Departments</div>
+          <div class="text-[11px] text-dim">3 депа + гость</div>
+        </div>
+      </div>
+      <a href="server-account_admin.html" class="chip">
+        <i data-lucide="server" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Servers</div>
+          <div class="text-[11px] text-dim">90 на платформе</div>
+        </div>
+      </a>
+      <a href="worker-account_admin.html" class="chip">
+        <i data-lucide="cog" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Workers</div>
+          <div class="text-[11px] text-dim">кластер</div>
+        </div>
+      </a>
+      <a href="secret-account_admin.html" class="chip">
+        <i data-lucide="lock-keyhole" class="w-5 h-5"></i>
+        <div class="flex-1">
+          <div class="text-sm">Secrets</div>
+          <div class="text-[11px] text-dim">134 credential'а</div>
+        </div>
+      </a>
+    </nav>
+
+    <div class="mt-auto p-2 border-t border-token">
+      <a href="admin-account_admin.html" class="chip">
+        <i data-lucide="shield-check" class="w-5 h-5 text-warn"></i>
+        <div class="flex-1">
+          <div class="text-sm">Администрирование</div>
+          <div class="text-[11px] text-dim">платформа целиком</div>
+        </div>
+      </a>
+    </div>
+  </aside>
+
+  <!-- Middle: departments list -->
+  <section class="w-[340px] shrink-0 border-r border-token surface flex flex-col">
+    <div class="border-b border-token px-3 py-2">
+      <div class="flex items-center gap-2">
+        <i data-lucide="search" class="w-4 h-4 text-dim"></i>
+        <input class="bg-transparent outline-none flex-1 text-sm" placeholder="Поиск по department'ам..."/>
+      </div>
+      <div class="mt-2 flex items-center gap-2 text-xs text-dim">
+        <span>Группировка:</span>
+        <select class="surface-2 border border-token rounded px-2 py-0.5">
+          <option>by status</option>
+          <option>by created</option>
+        </select>
+        <span class="ml-auto">5 / 5</span>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto py-2">
+
+      <!-- Group: ACTIVE -->
+      <div class="group-header flex items-center gap-2">
+        <i data-lucide="check-circle" class="w-3 h-3 text-ok"></i>
+        ACTIVE · 3
+      </div>
+      <div class="px-2 flex flex-col gap-0.5">
+        <div class="cred-row active">
+          <div class="flex items-start gap-2">
+            <i data-lucide="building-2" class="w-5 h-5 text-accent mt-0.5"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium">Ядро DBOS</div>
+              <div class="text-[11px] text-dim mt-0.5">платформа: ОС, ядро, БД</div>
+              <div class="text-[11px] text-dim mt-1 flex items-center gap-3">
+                <span><i data-lucide="users" class="w-3 h-3 inline"></i> 12</span>
+                <span><i data-lucide="server" class="w-3 h-3 inline"></i> 30</span>
+                <span><i data-lucide="lock-keyhole" class="w-3 h-3 inline"></i> 12</span>
+              </div>
+              <a href="admin-account_admin.html" class="text-[11px] text-accent mt-1 inline-block">→ admin panel</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="cred-row">
+          <div class="flex items-start gap-2">
+            <i data-lucide="building-2" class="w-5 h-5 text-dim mt-0.5"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium">ДТКК</div>
+              <div class="text-[11px] text-dim mt-0.5">тулзы: jira / wiki / build</div>
+              <div class="text-[11px] text-dim mt-1 flex items-center gap-3">
+                <span><i data-lucide="users" class="w-3 h-3 inline"></i> 15</span>
+                <span><i data-lucide="server" class="w-3 h-3 inline"></i> 25</span>
+                <span><i data-lucide="lock-keyhole" class="w-3 h-3 inline"></i> 18</span>
+              </div>
+              <a href="admin-account_admin.html" class="text-[11px] text-accent mt-1 inline-block">→ admin panel</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="cred-row">
+          <div class="flex items-start gap-2">
+            <i data-lucide="building-2" class="w-5 h-5 text-dim mt-0.5"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium">Инфра</div>
+              <div class="text-[11px] text-dim mt-0.5">сеть, мониторинг, edge</div>
+              <div class="text-[11px] text-dim mt-1 flex items-center gap-3">
+                <span><i data-lucide="users" class="w-3 h-3 inline"></i> 8</span>
+                <span><i data-lucide="server" class="w-3 h-3 inline"></i> 20</span>
+                <span><i data-lucide="lock-keyhole" class="w-3 h-3 inline"></i> 9</span>
+              </div>
+              <a href="admin-account_admin.html" class="text-[11px] text-accent mt-1 inline-block">→ admin panel</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Group: GUEST -->
+      <div class="group-header flex items-center gap-2 mt-3">
+        <i data-lucide="eye" class="w-3 h-3"></i>
+        GUEST · 1
+      </div>
+      <div class="px-2 flex flex-col gap-0.5">
+        <div class="cred-row">
+          <div class="flex items-start gap-2">
+            <i data-lucide="building-2" class="w-5 h-5 text-dim mt-0.5"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium">Гость</div>
+              <div class="text-[11px] text-dim mt-0.5">внешние подрядчики, read-only</div>
+              <div class="text-[11px] text-dim mt-1 flex items-center gap-3">
+                <span><i data-lucide="users" class="w-3 h-3 inline"></i> 7</span>
+                <span><i data-lucide="server" class="w-3 h-3 inline"></i> 0</span>
+                <span><i data-lucide="lock-keyhole" class="w-3 h-3 inline"></i> 0</span>
+              </div>
+              <a href="admin-account_admin.html" class="text-[11px] text-accent mt-1 inline-block">→ admin panel</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Group: SPECIAL -->
+      <div class="group-header flex items-center gap-2 mt-3">
+        <i data-lucide="shield-check" class="w-3 h-3 text-warn"></i>
+        SPECIAL · 1
+      </div>
+      <div class="px-2 flex flex-col gap-0.5">
+        <div class="cred-row">
+          <div class="flex items-start gap-2">
+            <i data-lucide="shield-check" class="w-5 h-5 text-warn mt-0.5"></i>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium">Платформенные</div>
+              <div class="text-[11px] text-dim mt-0.5">учётки без департамента (account_admin, secret_admin, logging_admin)</div>
+              <div class="text-[11px] text-dim mt-1 flex items-center gap-3">
+                <span><i data-lucide="users" class="w-3 h-3 inline"></i> 5</span>
+                <span><i data-lucide="server" class="w-3 h-3 inline"></i> —</span>
+                <span><i data-lucide="lock-keyhole" class="w-3 h-3 inline"></i> —</span>
+              </div>
+              <a href="admin-account_admin.html" class="text-[11px] text-accent mt-1 inline-block">→ admin panel</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="border-t border-token p-3">
+      <button class="btn btn-primary w-full flex items-center justify-center gap-2">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+        Создать department
+      </button>
+    </div>
+  </section>
+
+  <!-- Right: workzone — Ядро DBOS selected -->
+  <section class="flex-1 overflow-y-auto flex flex-col min-w-0">
+
+    <!-- Header -->
+    <div class="border-b border-token p-5 flex items-start gap-4">
+      <div class="w-14 h-14 rounded bg-accent flex items-center justify-center">
+        <i data-lucide="building-2" class="w-9 h-9"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-3 flex-wrap">
+          <h1 class="text-xl font-semibold truncate">Ядро DBOS</h1>
+          <span class="badge badge-ok">ACTIVE</span>
+          <span class="text-xs text-dim mono">dept_kernel_dbos</span>
+        </div>
+        <div class="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
+          <span><i data-lucide="users" class="w-3 h-3 inline"></i> <b>12</b> users</span>
+          <span>·</span>
+          <span><i data-lucide="server" class="w-3 h-3 inline"></i> <b>30</b> servers</span>
+          <span>·</span>
+          <span><i data-lucide="lock-keyhole" class="w-3 h-3 inline"></i> <b>12</b> credentials</span>
+          <span>·</span>
+          <span>dep_admin: <a href="users-account_admin.html" class="text-accent">alice</a></span>
+          <span>·</span>
+          <span>created: <b>2024-11-15</b></span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button class="btn flex items-center gap-1"><i data-lucide="edit-3" class="w-4 h-4"></i> Edit</button>
+        <button class="btn btn-danger flex items-center gap-1"><i data-lucide="archive" class="w-4 h-4"></i> Archive</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-token px-5 flex gap-1">
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px" style="border-color: var(--accent); color: var(--accent);">Overview</button>
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg">Members</button>
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg">Service grants</button>
+      <button class="px-3 py-2 text-sm border-b-2 -mb-px border-transparent text-dim hover-bg">Audit</button>
+    </div>
+
+    <div class="p-5 grid grid-cols-2 gap-5">
+
+      <!-- Stats -->
+      <div class="surface border border-token rounded-lg p-4 col-span-2">
+        <div class="text-xs uppercase tracking-wider text-dim mb-3">Stats</div>
+        <div class="grid grid-cols-4 gap-3">
+          <div class="stat-tile">
+            <div class="text-xs text-dim flex items-center gap-1.5"><i data-lucide="users" class="w-3.5 h-3.5"></i> Users</div>
+            <div class="num mt-1">12</div>
+            <div class="text-[11px] text-dim mt-1">из них 1 dep_admin, 2 dep_user_admin</div>
+          </div>
+          <div class="stat-tile">
+            <div class="text-xs text-dim flex items-center gap-1.5"><i data-lucide="server" class="w-3.5 h-3.5"></i> Servers</div>
+            <div class="num mt-1">30</div>
+            <div class="text-[11px] text-dim mt-1">27 up · 2 down · 1 maint</div>
+          </div>
+          <div class="stat-tile">
+            <div class="text-xs text-dim flex items-center gap-1.5"><i data-lucide="lock-keyhole" class="w-3.5 h-3.5"></i> Credentials</div>
+            <div class="num mt-1">12</div>
+            <div class="text-[11px] text-dim mt-1">root / ansible / monitor / pg</div>
+          </div>
+          <div class="stat-tile">
+            <div class="text-xs text-dim flex items-center gap-1.5"><i data-lucide="cog" class="w-3.5 h-3.5"></i> Tasks (24ч)</div>
+            <div class="num mt-1">147</div>
+            <div class="text-[11px] text-dim mt-1">142 ok · 4 fail · 1 running</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Service grants matrix -->
+      <div class="surface border border-token rounded-lg p-4 col-span-2">
+        <div class="text-xs uppercase tracking-wider text-dim mb-3 flex items-center gap-2">
+          <i data-lucide="shield-check" class="w-4 h-4"></i> Service-grants matrix
+        </div>
+        <table class="w-full text-sm">
+          <thead class="text-left text-dim text-xs uppercase">
+            <tr>
+              <th class="pb-2 pr-3">Сервис</th>
+              <th class="pb-2 pr-3 text-center">read</th>
+              <th class="pb-2 pr-3 text-center">write</th>
+              <th class="pb-2 pr-3 text-center">admin</th>
+              <th class="pb-2">Заметки</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-token">
+              <td class="py-2"><i data-lucide="shield-check" class="w-3.5 h-3.5 inline"></i> auth_service</td>
+              <td class="text-center"><span class="grant-pill granted">granted</span></td>
+              <td class="text-center"><span class="grant-pill granted">granted</span></td>
+              <td class="text-center"><span class="grant-pill none">—</span></td>
+              <td class="text-xs text-dim">dep_admin может назначать роли внутри depta</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2"><i data-lucide="server" class="w-3.5 h-3.5 inline"></i> server_service</td>
+              <td class="text-center"><span class="grant-pill granted">granted</span></td>
+              <td class="text-center"><span class="grant-pill granted">granted</span></td>
+              <td class="text-center"><span class="grant-pill partial">scoped</span></td>
+              <td class="text-xs text-dim">только серверы депа</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2"><i data-lucide="cog" class="w-3.5 h-3.5 inline"></i> server_worker</td>
+              <td class="text-center"><span class="grant-pill granted">granted</span></td>
+              <td class="text-center"><span class="grant-pill granted">granted</span></td>
+              <td class="text-center"><span class="grant-pill none">—</span></td>
+              <td class="text-xs text-dim">re-run / cancel — только свои tasks</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2"><i data-lucide="lock-keyhole" class="w-3.5 h-3.5 inline"></i> secret_service</td>
+              <td class="text-center"><span class="grant-pill granted">granted</span></td>
+              <td class="text-center"><span class="grant-pill granted">granted</span></td>
+              <td class="text-center"><span class="grant-pill partial">scoped</span></td>
+              <td class="text-xs text-dim">creds депа; cross-dep — через secret_admin</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2"><i data-lucide="file-text" class="w-3.5 h-3.5 inline"></i> logging_service</td>
+              <td class="text-center"><span class="grant-pill granted">granted</span></td>
+              <td class="text-center"><span class="grant-pill none">—</span></td>
+              <td class="text-center"><span class="grant-pill none">—</span></td>
+              <td class="text-xs text-dim">read-only; запись — system-only</td>
+            </tr>
+            <tr class="border-t border-token">
+              <td class="py-2"><i data-lucide="bot" class="w-3.5 h-3.5 inline"></i> config_service</td>
+              <td class="text-center"><span class="grant-pill granted">granted</span></td>
+              <td class="text-center"><span class="grant-pill partial">scoped</span></td>
+              <td class="text-center"><span class="grant-pill none">—</span></td>
+              <td class="text-xs text-dim">токены сервисов депа</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Members preview -->
+      <div class="surface border border-token rounded-lg p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs uppercase tracking-wider text-dim flex items-center gap-2">
+            <i data-lucide="users" class="w-4 h-4"></i> Members (5 из 12)
+          </div>
+          <a href="users-account_admin.html" class="text-xs text-accent">Все →</a>
+        </div>
+        <table class="w-full text-sm">
+          <thead class="text-left text-dim text-xs uppercase">
+            <tr><th class="pb-2 pr-3">User</th><th class="pb-2 pr-3">Роль</th><th class="pb-2">Last seen</th></tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-token"><td class="py-2"><a href="users-account_admin.html" class="text-accent">alice</a></td><td><span class="badge badge-warn">dep_admin</span></td><td class="text-dim text-xs">2 мин</td></tr>
+            <tr class="border-t border-token"><td class="py-2"><a href="users-account_admin.html" class="text-accent">carol</a></td><td><span class="badge">dep_user_admin</span></td><td class="text-dim text-xs">15 мин</td></tr>
+            <tr class="border-t border-token"><td class="py-2"><a href="users-account_admin.html" class="text-accent">dave</a></td><td><span class="badge">dep_user_admin</span></td><td class="text-dim text-xs">1 ч</td></tr>
+            <tr class="border-t border-token"><td class="py-2"><a href="users-account_admin.html" class="text-accent">eve</a></td><td><span class="badge">dep_user</span></td><td class="text-dim text-xs">3 ч</td></tr>
+            <tr class="border-t border-token"><td class="py-2"><a href="users-account_admin.html" class="text-accent">frank</a></td><td><span class="badge">dep_user</span></td><td class="text-dim text-xs">1 дн</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Recent activity -->
+      <div class="surface border border-token rounded-lg p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs uppercase tracking-wider text-dim flex items-center gap-2">
+            <i data-lucide="file-text" class="w-4 h-4"></i> Recent activity
+          </div>
+          <span class="text-xs text-dim">audit недоступен</span>
+        </div>
+        <table class="w-full text-sm">
+          <thead class="text-left text-dim text-xs uppercase">
+            <tr><th class="pb-2 pr-3">Время</th><th class="pb-2 pr-3">Actor</th><th class="pb-2">Событие</th></tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-token"><td class="py-2 mono text-xs">15:42</td><td class="text-xs">alice</td><td class="text-xs">user.role_grant — eve → dep_user</td></tr>
+            <tr class="border-t border-token"><td class="py-2 mono text-xs">14:18</td><td class="text-xs">bob</td><td class="text-xs">dept.update — описание изменено</td></tr>
+            <tr class="border-t border-token"><td class="py-2 mono text-xs">12:55</td><td class="text-xs">alice</td><td class="text-xs">server.move — srv-node-12 in</td></tr>
+            <tr class="border-t border-token"><td class="py-2 mono text-xs">2 дн</td><td class="text-xs">bob</td><td class="text-xs">dept.create — Ядро DBOS</td></tr>
+            <tr class="border-t border-token"><td class="py-2 mono text-xs">7 дн</td><td class="text-xs">system</td><td class="text-xs">grants.review — passed</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </section>
+</div>
+
+<script>
+  const stored = localStorage.getItem("dbos-theme");
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
+  const sel = document.getElementById("theme-select");
+  sel.value = document.documentElement.dataset.theme || "vscode-dark";
+  sel.addEventListener("change", e => {
+    document.documentElement.setAttribute("data-theme", e.target.value);
+    localStorage.setItem("dbos-theme", e.target.value);
+  });
+
+  if (window.lucide) lucide.createIcons();
+
+  document.querySelectorAll(".cred-row").forEach(r => {
+    r.addEventListener("click", () => {
+      document.querySelectorAll(".cred-row").forEach(x => x.classList.remove("active"));
+      r.classList.add("active");
+    });
+  });
+</script>
+</body>
+</html>

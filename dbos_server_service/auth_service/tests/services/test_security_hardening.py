@@ -14,6 +14,8 @@ import pytest_asyncio
 
 from src.core.exceptions import AppException, AuthorizationError
 from tests.conftest import (
+from datetime import timedelta
+from src.utils.time import utcnow
     _assign_role,
     _grant_service,
     _make_dept,
@@ -265,7 +267,7 @@ async def test_pat_create_scope_outside_dept_returns_422(client, user_a_token, d
     resp = await client.post(
         "/api/auth/v1/tokens",
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"name": "bad_scope", "allowed_services": ["other_service_no_access"]},
+        json={"name": "bad_scope", "allowed_services": ["other_service_no_access"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     assert resp.status_code == 422
     body = resp.json()

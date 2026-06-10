@@ -17,6 +17,8 @@ from sqlalchemy import select
 
 from src.core.constants import UserStatus
 from src.models import PersonalAccessToken
+from datetime import timedelta
+from src.utils.time import utcnow
 
 PATCH_URL = "/api/auth/v1/users/{user_id}"
 BAN_URL = "/api/auth/v1/users/{user_id}/ban"
@@ -296,7 +298,7 @@ class TestUnbanReactivatesPAT:
         pat_resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "p2d_pat", "allowed_services": ["service_x"]},
+            json={"name": "p2d_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert pat_resp.status_code == 201, pat_resp.text
         raw = pat_resp.json()["token"]
@@ -336,7 +338,7 @@ class TestUnbanReactivatesPAT:
         pat_resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "p2d_user_revoked", "allowed_services": ["service_x"]},
+            json={"name": "p2d_user_revoked", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         pat_id = pat_resp.json()["token_id"]
         raw = pat_resp.json()["token"]
@@ -444,7 +446,7 @@ class TestIntrospectSymmetryAtBanned:
         raw = (await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "p2e_pat", "allowed_services": ["service_x"]},
+            json={"name": "p2e_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )).json()["token"]
 
         # Sanity до ban'а — PAT active.
@@ -479,7 +481,7 @@ class TestIntrospectSymmetryAtBanned:
         pat_resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "p2e_defence_pat", "allowed_services": ["service_x"]},
+            json={"name": "p2e_defence_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         raw = pat_resp.json()["token"]
 

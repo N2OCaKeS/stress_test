@@ -19,6 +19,8 @@ from datetime import timedelta
 import jwt
 
 from src.core.security import create_access_token
+from datetime import timedelta
+from src.utils.time import utcnow
 
 INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
 ACCESS_URL = "/api/auth/v1/authorization/service-access"
@@ -72,7 +74,7 @@ class TestOrphanPat:
         tok = await client.post(
             "/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "orphan_pat", "allowed_services": ["service_x"]},
+            json={"name": "orphan_pat", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         raw = tok.json()["token"]
 
@@ -562,7 +564,7 @@ class TestPatTouchOrdering:
         tok = await client.post(
             "/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {user_a_token}"},
-            json={"name": "touch_order_pat", "allowed_services": [service_x.service_name]},
+            json={"name": "touch_order_pat", "allowed_services": [service_x.service_name], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert tok.status_code == 201, tok.text
         raw = tok.json()["token"]
@@ -620,7 +622,7 @@ class TestBotTouchOrdering:
         tok_resp = await client.post(
             f"{BOTS_URL}/{bot_id}/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": "touch_order_tok"},
+            json={"name": "touch_order_tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert tok_resp.status_code == 201, tok_resp.text
         raw = tok_resp.json()["token"]

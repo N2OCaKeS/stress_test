@@ -20,6 +20,8 @@ in-process — нет (асимметрия).
 import pytest_asyncio
 
 from tests.conftest import _assign_role, _grant_service, _login, _make_service, _make_user
+from datetime import timedelta
+from src.utils.time import utcnow
 
 CLIENTS_URL = "/api/auth/v1/oauth2/clients"
 AUTHORIZE_URL = "/api/auth/v1/oauth2/authorize"
@@ -157,7 +159,7 @@ class TestPatCreateScopeGuard:
         pat_resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {access}"},
-            json={"name": "scoped_pat", "allowed_services": ["svc_a"]},
+            json={"name": "scoped_pat", "allowed_services": ["svc_a"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert pat_resp.status_code == 403, pat_resp.text
         assert pat_resp.json()["error_code"] == "OAUTH_SCOPE_INSUFFICIENT"
@@ -178,7 +180,7 @@ class TestPatCreateScopeGuard:
         pat_resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {access}"},
-            json={"name": "ok_pat", "allowed_services": ["svc_a"]},
+            json={"name": "ok_pat", "allowed_services": ["svc_a"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert pat_resp.status_code == 201, pat_resp.text
 
@@ -187,7 +189,7 @@ class TestPatCreateScopeGuard:
         pat_resp = await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {user_multi_token}"},
-            json={"name": "login_pat", "allowed_services": ["svc_a"]},
+            json={"name": "login_pat", "allowed_services": ["svc_a"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert pat_resp.status_code == 201, pat_resp.text
 

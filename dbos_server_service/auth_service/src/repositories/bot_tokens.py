@@ -31,6 +31,21 @@ class BotTokenRepository:
         )
         return list(result)
 
+    async def list_active_for_bot(self, bot_id: str) -> list[BotToken]:
+        """Активные (не revoked) токены бота. Используется для инварианта
+        «у бота 0 или 1 active token»: перед issue новый токен auto-revoke'ает
+        всё, что вернёт этот метод.
+        """
+        result = await self._db.scalars(
+            select(BotToken)
+            .where(
+                BotToken.bot_id == bot_id,
+                BotToken.revoked_at.is_(None),
+            )
+            .order_by(BotToken.created_at.desc())
+        )
+        return list(result)
+
     async def exists_name(self, bot_id: str, name: str) -> bool:
         """True если у бота есть **активный** (не revoked) токен с этим именем.
 

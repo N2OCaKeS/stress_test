@@ -1,6 +1,8 @@
 """Edge cases для token_service.create_pat:
 - expires_at без tzinfo (naive datetime) — должна трактоваться как UTC
 - expires_at точно равен now → INVALID_TOKEN_EXPIRY
+- expires_at=None → INVALID_EXPIRATION (бессрочные PAT запрещены)
+- expires_at > now + 6mo → INVALID_EXPIRATION
 - account_admin без dept — dept-чек пропускается, scope любой
 - actor без department_id — dept-чек пропускается
 - allowed_services пустой список — не проверяем dept (нет forbidden)
@@ -12,6 +14,12 @@ import pytest
 
 from src.core.exceptions import ConflictError, DomainValidationError
 from src.services import token_service
+from src.utils.time import utcnow
+
+
+def _exp30():
+    """Дефолтный future expires_at (30 дней) — внутри 6-месячного потолка."""
+    return utcnow() + timedelta(days=30)
 
 
 # ── expires_at edge cases ────────────────────────────────────────────────────
@@ -56,12 +64,22 @@ class TestCreatePATExpiry:
         )
         assert pat.expires_at is not None
 
-    async def test_no_expires_at_creates_non_expiring_token(self, db, user_a):
-        """expires_at=None → PAT без срока действия."""
-        pat = await token_service.create_pat(
-            db, user_a.id, "no_expiry_pat", [],
-        )
-        assert pat.expires_at is None
+    async def test_no_expires_at_rejected(self, db, user_a):
+        """expires_at=None → DomainValidationError INVALID_EXPIRATION (бессрочные PAT запрещены)."""
+        with pytest.raises(DomainValidationError) as exc:
+            await token_service.create_pat(
+                db, user_a.id, "no_expiry_pat", [],
+            )
+        assert exc.value.error_code == "INVALID_EXPIRATION"
+
+    async def test_expires_at_above_six_months_rejected(self, db, user_a):
+        """expires_at > now + 6mo → DomainValidationError INVALID_EXPIRATION."""
+        too_far = utcnow() + timedelta(days=200)
+        with pytest.raises(DomainValidationError) as exc:
+            await token_service.create_pat(
+                db, user_a.id, "too_long_pat", [], expires_at=too_far,
+            )
+        assert exc.value.error_code == "INVALID_EXPIRATION"
 
 
 # ── Scope validation: account_admin пропускает dept-check ───────────────────
@@ -72,6 +90,7 @@ class TestCreatePATScope:
         pat = await token_service.create_pat(
             db, account_admin.id, "admin_any_scope",
             allowed_services=["exotic_service_that_doesnt_exist"],
+            expires_at=_exp30(),
         )
         assert pat.token.startswith("dbos_pat_")
 
@@ -80,6 +99,7 @@ class TestCreatePATScope:
         pat = await token_service.create_pat(
             db, db_user_no_dept.id, "no_dept_scope",
             allowed_services=["any_service"],
+            expires_at=_exp30(),
         )
         assert pat.token.startswith("dbos_pat_")
 
@@ -87,6 +107,7 @@ class TestCreatePATScope:
         """Пустой allowed_services — блок if allowed_services не входит, нет db-queries на dept."""
         pat = await token_service.create_pat(
             db, user_a.id, "empty_scope_pat", allowed_services=[],
+            expires_at=_exp30(),
         )
         assert pat.token.startswith("dbos_pat_")
 
@@ -98,6 +119,7 @@ class TestCreatePATScope:
             await token_service.create_pat(
                 db, user_a.id, "bad_scope_direct",
                 allowed_services=["other_svc_not_in_dept"],
+                expires_at=_exp30(),
             )
         assert exc.value.error_code == "SERVICE_NOT_ALLOWED_FOR_DEPARTMENT"
         assert "other_svc_not_in_dept" in exc.value.details["forbidden_services"]
@@ -110,6 +132,7 @@ class TestCreatePATScope:
             await token_service.create_pat(
                 db, user_a.id, "partial_bad_scope",
                 allowed_services=[service_x.service_name, "ghost_service"],
+                expires_at=_exp30(),
             )
         forbidden = exc.value.details["forbidden_services"]
         assert "ghost_service" in forbidden
@@ -123,6 +146,7 @@ class TestCreatePATScope:
             await token_service.create_pat(
                 db, user_a.id, "available_hint_pat",
                 allowed_services=["ghost_service"],
+                expires_at=_exp30(),
             )
         details = exc.value.details
         assert "available_services" in details
@@ -136,15 +160,15 @@ class TestCreatePATScope:
 
 class TestCreatePATDuplicate:
     async def test_duplicate_name_raises_conflict(self, db, user_a):
-        await token_service.create_pat(db, user_a.id, "dup_direct", [])
+        await token_service.create_pat(db, user_a.id, "dup_direct", [], expires_at=_exp30())
         with pytest.raises(ConflictError) as exc:
-            await token_service.create_pat(db, user_a.id, "dup_direct", [])
+            await token_service.create_pat(db, user_a.id, "dup_direct", [], expires_at=_exp30())
         assert exc.value.error_code == "TOKEN_NAME_ALREADY_EXISTS"
 
     async def test_same_name_for_different_users_is_ok(self, db, user_a, user_b):
         """Имена PAT уникальны per-user — одинаковое имя у разных юзеров допустимо."""
-        await token_service.create_pat(db, user_a.id, "shared_name", [])
-        pat_b = await token_service.create_pat(db, user_b.id, "shared_name", [])
+        await token_service.create_pat(db, user_a.id, "shared_name", [], expires_at=_exp30())
+        pat_b = await token_service.create_pat(db, user_b.id, "shared_name", [], expires_at=_exp30())
         assert pat_b.token.startswith("dbos_pat_")
 
 

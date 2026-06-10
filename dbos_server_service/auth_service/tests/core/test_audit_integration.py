@@ -5,6 +5,8 @@
 """
 
 import pytest
+from datetime import timedelta
+from src.utils.time import utcnow
 
 
 
@@ -236,7 +238,7 @@ class TestDetailsAlwaysFilled:
         r = await client.post(
             "/api/auth/v1/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": "my-cli-token", "allowed_services": ["service_x"]},
+            json={"name": "my-cli-token", "allowed_services": ["service_x"], "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert r.status_code == 201
 
@@ -268,7 +270,7 @@ class TestDetailsAlwaysFilled:
         tok_resp = await client.post(
             f"/api/auth/v1/bots/{bot_id}/tokens",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"name": "audit_bot_tok"},
+            json={"name": "audit_bot_tok", "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
         )
         assert tok_resp.status_code == 201
         raw_token = tok_resp.json()["token"]

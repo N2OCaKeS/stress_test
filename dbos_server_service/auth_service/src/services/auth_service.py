@@ -283,6 +283,7 @@ def _build_identity(
         groups={} if is_account_admin else (groups or {}),
         is_banned=user.status == UserStatus.BANNED,
         platform_role=user.platform_role,
+        must_change_password=bool(user.must_change_password),
         oauth_scopes=oauth_scopes,
     )
 

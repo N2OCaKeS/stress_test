@@ -13,13 +13,19 @@ class PATCreate(BaseModel):
     Если задан `ttl_seconds`, он конвертируется в `expires_at = now + ttl`
     ещё до доменной валидации, чтобы дальше код работал только с
     абсолютной датой. Оба сразу — 422.
+
+    Бессрочные PAT запрещены: ровно один из (`expires_at`, `ttl_seconds`)
+    должен быть задан, и итоговый срок — не больше 6 месяцев от текущего
+    момента. Эта верхняя граница валидируется в `token_service.create_pat`
+    как доменная (`INVALID_EXPIRATION`), а не как pydantic-422, чтобы
+    клиент видел стабильный `error_code` и человекочитаемое сообщение.
     """
     name: str = Field(min_length=1, max_length=256, description="Имя токена (для метаданных, не secret).")
-    expires_at: datetime | None = Field(default=None, description="TTL токена. None = бессрочно.")
+    expires_at: datetime | None = Field(default=None, description="Срок действия токена (max 6 месяцев).")
     ttl_seconds: int | None = Field(
         default=None,
         ge=1,
-        description="Альтернатива expires_at: offset в секундах от текущего момента.",
+        description="Альтернатива expires_at: offset в секундах от текущего момента (max 6 месяцев).",
     )
     allowed_services: list[str] = Field(
         min_length=1,

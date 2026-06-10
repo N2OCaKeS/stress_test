@@ -20,16 +20,20 @@ from config.conf import (
 SUBSYSTEM_DATES = {
     'kernel': {'crit': KERNEL_CRITERIONS,
                'power': 0.998,
-               'handle': ['/', '1']},
+               'handle': ['/', '1'],
+               'weight': 0.40},
     'processes_ipc': {'crit': PROCESSES_IPC_CRITERIONS,
                       'power': 0.947,
-                      'handle': ['*', '100']},
+                      'handle': ['*', '100'],
+                      'weight': 0.25},
     'filesystem': {'crit': FILESYSTEM_CRITERIONS,
                    'power': 0.974,
-                   'handle': ['/', '100000']},
+                   'handle': ['/', '100000'],
+                   'weight': 0.30},
     'scripts': {'crit': SCRIPTS_CRITERIONS,
                 'power': 0.916,
-                'handle': ['*', '100']}
+                'handle': ['*', '100'],
+                'weight': 0.05}
 }
 
 results_dict = {
@@ -165,15 +169,22 @@ class IndexCalculator:
         subsystem_dates = self.start_subsystem_calc()
         system_info = system.get_system_info()
 
-        # Среднее геометрическое всех подсистем
-        subsystem = 1
-        for idx in subsystem_dates.values():
-            subsystem *= idx['total_rating']
+        # Взвешенное среднее геометрическое
+        weighted_geo_mean = 1
+        total_weight = 0
+        
+        for subsystem, values in SUBSYSTEM_DATES.items():
+            rating = subsystem_dates[subsystem]['total_rating']
+            weighted_geo_mean *= rating ** values['weight']
+            total_weight += values['weight']
+        
+        if total_weight != 1.0:
+            weighted_geo_mean = weighted_geo_mean ** (1 / total_weight)
+        
+        geo_mean = weighted_geo_mean 
 
-        geo_mean = subsystem ** (1/len(subsystem_dates.values()))
-
-
-        log.info(TOTAL_TEMPLATE_COLOR.format(test="ТЕСТ", 
+        log.info(TOTAL_TEMPLATE_COLOR.format(test="TEST",
+                                             source="BENCH", 
                                              guideline="GUIDELINE", 
                                              result="RESULT",
                                              ratio="RATIO",

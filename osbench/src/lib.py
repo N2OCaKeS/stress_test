@@ -141,11 +141,52 @@ class system:
 
     @staticmethod
     def get_system_info():
+        def _get_kernel():
+            try:
+                kernel, success = system.command("dpkg -s linux-image-`uname -r` | grep Version: | awk '{print $2}'", returncode=True)
+                if success and kernel:
+                    return kernel.strip()
+            except:
+                return None
+
+        def _get_os_name():
+            try:
+                with open("/etc/astra/build_version", "r") as f:  
+                    os_name = "Astra Linux" 
+                    os_version = f"{f.read().strip()}"
+                return os_name, os_version
+            except:
+                return None, None
+
+        def _get_linux_cpu_model():
+            try:
+                with open('/proc/cpuinfo', 'r') as f:
+                    for line in f:
+                        if 'model name' in line:
+                            cpu_model = line.split(':')[1].strip()
+                            break
+            except:
+                cpu_model = "Unknown"
+            return cpu_model
+        
+        cpu_model = platform.processor()
+        if cpu_model == "Unknown" or not cpu_model:
+            cpu_model = _get_linux_cpu_model()
+
+        os_name, os_version = _get_os_name()
+        if not os_name or not os_version:
+            os_name = platform.system()
+            os_version = platform.release()
+
+        os_kernel = _get_kernel()
+        if not os_kernel:
+            os_kernel = platform.version()
+        
         return {
-            'os_name': platform.system(),
-            'os_version': platform.release(),
-            'kernel_version': platform.version(),
-            'cpu_model': platform.processor() or "Unknown",
+            'os_name': os_name,
+            'os_version': os_version,
+            'kernel_version': os_kernel,
+            'cpu_model': cpu_model,
             'cpu_cores': psutil.cpu_count(logical=False),
             'cpu_threads': psutil.cpu_count(logical=True),
             'ram_total': f"{psutil.virtual_memory().total / (1024**3):.1f} GB",

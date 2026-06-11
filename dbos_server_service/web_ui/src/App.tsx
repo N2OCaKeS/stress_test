@@ -172,7 +172,7 @@ export function App() {
             <Route
               path="/admin"
               element={
-                <RouteGuard service="config" requireAdmin>
+                <RouteGuard requireAdmin>
                   <Admin />
                 </RouteGuard>
               }
@@ -180,7 +180,7 @@ export function App() {
             <Route
               path="/admin/:itemId"
               element={
-                <RouteGuard service="config" requireAdmin>
+                <RouteGuard requireAdmin>
                   <Admin />
                 </RouteGuard>
               }

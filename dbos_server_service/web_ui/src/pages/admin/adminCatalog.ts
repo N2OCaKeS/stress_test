@@ -1,4 +1,5 @@
 import { createElement, type ComponentType } from "react";
+import { Navigate } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -44,7 +45,6 @@ import { ServicesCatalog } from "./services/ServicesCatalog";
 import { ServicesBots } from "./services/ServicesBots";
 import { ServicesGroups } from "./services/ServicesGroups";
 import { ServicesPlatformRoles } from "./services/ServicesPlatformRoles";
-import { ServicesServerInventory } from "./services/ServicesServerInventory";
 import { ServicesServerGroups } from "./services/ServicesServerGroups";
 import { ServicesServerPermissions } from "./services/ServicesServerPermissions";
 import { ServicesSecretSecrets } from "./services/ServicesSecretSecrets";
@@ -236,7 +236,9 @@ const STATIC_ITEMS: AdminItem[] = [
     visibleFor: (p) => isAccountAdmin(p),
   },
 
-  // Services block — server (service-specific pages; roles are dynamic)
+  // Services block — server (service-specific pages; roles are dynamic).
+  // Инвентарь живёт на /servers (новая страница Server.tsx); из админ-каталога
+  // делаем редирект, чтобы единственная точка входа была одна.
   {
     id: "services.server.inventory",
     label: "Серверы",
@@ -244,7 +246,7 @@ const STATIC_ITEMS: AdminItem[] = [
     icon: ServerIcon,
     block: "services",
     group: "server",
-    content: ServicesServerInventory,
+    content: () => createElement(Navigate, { to: "/servers", replace: true }),
     visibleFor: (p) =>
       isAccountAdmin(p) ||
       isDepAdmin(p) ||

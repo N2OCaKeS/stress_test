@@ -23,6 +23,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import type { ServiceName } from "@/types/persona";
 import { useDeptLabelOpt } from "@/lib/labels";
 import { ThemeSwitcher } from "./ThemeSwitcher";
+import { AdminOnlyPanel } from "./AdminOnlyPanel";
 
 interface ServiceChip {
   service: ServiceName;
@@ -72,20 +73,28 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   const auth = useAuthOptional();
   const location = useLocation();
 
+  // account_admin живёт целиком в админ-каталоге — для него превращаем левую
+  // панель в развёрнутый навигатор по /admin без «Главной» и сервис-чипов.
+  if (persona.platform_role === "account_admin") {
+    return (
+      <AdminOnlyPanel
+        width={width}
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+      />
+    );
+  }
+
   const onLogout = async (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (auth) await auth.logout();
   };
 
   // Users management lives under /admin/services.users — no separate chip.
-  // Audit log is for logging admins/readers only; account_admin focuses on
-  // platform-level admin and accesses audit through the dedicated logging-*
-  // personas if needed. Config is hidden too — the dedicated "Администрирование"
-  // entry at the bottom already opens /admin.
-  const isAccountAdmin = persona.platform_role === "account_admin";
+  // Config тоже скрыт — кнопка «Администрирование» внизу уже ведёт на /admin.
+  // account_admin сюда не доходит: для него выше рендерится AdminOnlyPanel.
   const chips: ServiceChip[] = persona.accessible_services
     .filter((s) => s !== "auth" && s !== "config")
-    .filter((s) => !(s === "logging" && isAccountAdmin))
     .map((s) => SERVICE_CATALOG[s])
     .filter(Boolean);
 

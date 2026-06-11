@@ -41,7 +41,7 @@ export interface ListUsersParams {
 const BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
 
-async function listWithTotal<T>(
+export async function listWithTotal<T>(
   path: string,
   query: Record<string, string | number | boolean | null | undefined>,
 ): Promise<PaginatedList<T>> {

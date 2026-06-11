@@ -8,11 +8,16 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { listDepartments } from "@/api/auth/departments";
-import { listBots } from "@/api/auth/bots";
+import { listBotsWithTotal } from "@/api/auth/bots";
 import { useQuery, useMockMode } from "@/api/auth/useQuery";
 import { useLabelMaps } from "@/lib/labels";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import type { Bot as BotItem, Department } from "@/api/auth/types";
 import { BotDetailFullPanel } from "./_botDetailPanel";
+
+// auth_service режет страницу до 200 (MAX_LIMIT). Тянем ровно столько и честно
+// сигналим баннером, если ботов больше.
+const BOTS_PAGE = 200;
 
 /**
  * Cluster-wide bots view for account_admin: фактический список ботов из
@@ -49,15 +54,17 @@ export function BotsAccountAdmin() {
     [],
     { enabled: !mockMode },
   );
-  const botsQ = useQuery<BotItem[]>(
-    () => listBots({ limit: 500 }),
+  const botsQ = useQuery(
+    () => listBotsWithTotal({ limit: BOTS_PAGE }),
     [refreshTick],
     { enabled: !mockMode },
   );
   const { depts: deptLabels } = useLabelMaps();
 
+  const botItems = useMemo(() => botsQ.data?.items ?? [], [botsQ.data]);
+
   const groups: BotGroup[] = useMemo(() => {
-    const bots = botsQ.data ?? [];
+    const bots = botItems;
     const depts = deptsQ.data ?? [];
     const byDept = new Map<string, BotItem[]>();
     for (const b of bots) {
@@ -88,28 +95,29 @@ export function BotsAccountAdmin() {
       }
     }
     return list;
-  }, [botsQ.data, deptsQ.data, deptLabels]);
+  }, [botItems, deptsQ.data, deptLabels]);
 
-  const totalBots = (botsQ.data ?? []).length;
+  // Показано против total с бэка (X-Total-Count): шапка и баннер усечения.
+  const shownBots = botItems.length;
+  const totalBots = botsQ.data?.total ?? shownBots;
 
   // Selected bot state — поднимаем сюда, чтобы можно было кликать в списке
   // и видеть детали выбранного бота справа.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = useMemo(() => {
-    const all = botsQ.data ?? [];
+    const all = botItems;
     if (selectedId) {
       const found = all.find((b) => b.id === selectedId);
       if (found) return found;
     }
     return all.find((b) => b.status === "active") ?? all[0];
-  }, [botsQ.data, selectedId]);
+  }, [botItems, selectedId]);
 
   // Если бот пропал из списка (revoked from list refresh) — сбрасываем selectedId.
   useEffect(() => {
     if (!selectedId) return;
-    const all = botsQ.data ?? [];
-    if (!all.some((b) => b.id === selectedId)) setSelectedId(null);
-  }, [botsQ.data, selectedId]);
+    if (!botItems.some((b) => b.id === selectedId)) setSelectedId(null);
+  }, [botItems, selectedId]);
 
   const loading = deptsQ.loading || botsQ.loading;
   const error = deptsQ.error ?? botsQ.error;
@@ -137,8 +145,17 @@ export function BotsAccountAdmin() {
               <option>active</option>
               <option>disabled</option>
             </select>
-            <span className="ml-auto">{totalBots} шт</span>
+            <span className="ml-auto">
+              {totalBots > shownBots ? `${shownBots} из ${totalBots}` : totalBots} шт
+            </span>
           </div>
+          {!loading && !error && (
+            <TruncationNotice
+              shown={shownBots}
+              total={totalBots}
+              className="mt-2"
+            />
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto py-2">

@@ -228,6 +228,45 @@ async def list_links_for_server(
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_accounts_only_on_server(
+    db: AsyncSession, server_id: str
+) -> list[ServerAccount]:
+    """Аккаунты, чья единственная связка — этот сервер.
+
+    Удаление сервера каскадит join-строки (`ondelete=CASCADE`), но сам аккаунт
+    остаётся. Если других серверов у аккаунта нет, он становится orphan'ом:
+    висит с зашифрованным паролем и недостижим (листинг требует server_id).
+    Тот же конечный стейт unlink-путь запрещает (ACCOUNT_NO_SERVERS), поэтому
+    `delete_server` должен снести именно эти аккаунты сам.
+
+    Считаем суммарное число связок по каждому привязанному к серверу аккаунту
+    и оставляем те, у кого total == 1 (т.е. ровно этот сервер). Аккаунты,
+    привязанные ещё к каким-то серверам, переживают delete — у них просто
+    уходит одна связка каскадом.
+    """
+    link_counts = (
+        select(
+            ServerAccountServer.account_id.label("account_id"),
+            func.count(ServerAccountServer.id).label("link_count"),
+        )
+        .where(
+            ServerAccountServer.account_id.in_(
+                select(ServerAccountServer.account_id).where(
+                    ServerAccountServer.server_id == server_id
+                )
+            )
+        )
+        .group_by(ServerAccountServer.account_id)
+        .having(func.count(ServerAccountServer.id) == 1)
+        .subquery()
+    )
+    stmt = (
+        select(ServerAccount)
+        .join(link_counts, link_counts.c.account_id == ServerAccount.id)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def get_account_on_server_by_login(
     db: AsyncSession, server_id: str, login: str
 ) -> ServerAccount | None:

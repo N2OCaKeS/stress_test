@@ -249,18 +249,16 @@ function ProfileCard({
         <StatRow
           k="status"
           v={
-            <span
-              className={`badge badge-${
-                user?.status === "ACTIVE" ? "ok" : user?.status === "BLOCKED" ? "warn" : "danger"
-              }`}
-            >
-              {user?.status ?? (user?.is_active ? "ACTIVE" : "—")}
+            // `/me` отдаёт только is_banned — поля status/is_active в
+            // IdentityContext нет, поэтому состояние выводим из бан-флага.
+            <span className={`badge badge-${user?.is_banned ? "danger" : "ok"}`}>
+              {user?.is_banned ? "banned" : "active"}
             </span>
           }
         />
         <StatRow
           k="is_active"
-          v={user?.is_active ? <span className="text-ok">да</span> : <span className="text-warn">нет</span>}
+          v={!user?.is_banned ? <span className="text-ok">да</span> : <span className="text-warn">нет</span>}
         />
       </div>
 

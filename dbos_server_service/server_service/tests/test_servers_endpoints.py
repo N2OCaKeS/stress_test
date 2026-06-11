@@ -374,6 +374,71 @@ class TestDeleteServer:
         resp = await client.delete(f"{BASE}/srv_ghost", headers=_hdr(admin_token))
         assert_error(resp, 404, "SERVER_NOT_FOUND")
 
+    async def test_delete_removes_account_only_on_this_server(
+        self, client, admin_role_token_a, make_server, make_account, db,
+    ):
+        """Аккаунт, привязанный только к удаляемому серверу, не остаётся orphan'ом.
+
+        Конечный стейт «аккаунт без серверов» unlink-путь запрещает
+        (ACCOUNT_NO_SERVERS), поэтому delete_server обязан снести такой аккаунт.
+        """
+        from sqlalchemy import select
+
+        from src.models import ServerAccount, ServerAccountServer
+
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="root")
+        acc_id = acc.id
+
+        resp = await client.delete(f"{BASE}/{srv.id}", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200
+
+        db.expire_all()
+        account_row = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc_id)
+        )).scalar_one_or_none()
+        assert account_row is None, "осиротевший аккаунт должен быть удалён, не висеть с паролем"
+        links = (await db.execute(
+            select(ServerAccountServer.id).where(
+                ServerAccountServer.account_id == acc_id
+            )
+        )).scalars().all()
+        assert links == []
+
+    async def test_delete_keeps_account_linked_to_another_server(
+        self, client, admin_role_token_a, make_server, make_account, db,
+    ):
+        """Аккаунт, привязанный к двум серверам, переживает delete одного из них.
+
+        У него лишь снимается связка на удалённый сервер; сам аккаунт и связка
+        на оставшийся сервер живут дальше.
+        """
+        from sqlalchemy import select
+
+        from src.models import ServerAccount, ServerAccountServer
+
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        acc = await make_account(server_ids=[srv1.id, srv2.id], login="root")
+        acc_id = acc.id
+        srv1_id = srv1.id
+        srv2_id = srv2.id
+
+        resp = await client.delete(f"{BASE}/{srv1_id}", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200
+
+        db.expire_all()
+        account_row = (await db.execute(
+            select(ServerAccount).where(ServerAccount.id == acc_id)
+        )).scalar_one_or_none()
+        assert account_row is not None, "аккаунт ещё на втором сервере — должен жить"
+        link_server_ids = set((await db.execute(
+            select(ServerAccountServer.server_id).where(
+                ServerAccountServer.account_id == acc_id
+            )
+        )).scalars().all())
+        assert link_server_ids == {srv2_id}
+
 
 # ── Banned user / inactive token ─────────────────────────────────────────────
 

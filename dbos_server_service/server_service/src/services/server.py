@@ -17,6 +17,7 @@ from src.core.exceptions import (
 from src.models import IpmiController, Server, ServerDisk
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import server as repo
+from src.repositories import server_account as account_repo
 from src.repositories import server_disk as disk_repo
 from src.schemas.disk import DiskSpec
 from src.schemas.identity import IdentityContext
@@ -560,9 +561,19 @@ async def delete_server(
     identity: IdentityContext,
     server_id: str,
 ) -> None:
-    """Hard-delete сервера + каскад дочерних записей (accounts/ipmi/disks/packages).
+    """Hard-delete сервера + каскад дочерних записей (ipmi/disks/packages/связки).
+
+    Join-строки `server_account_servers` уходят каскадом (ondelete=CASCADE), но
+    сами строки `server_accounts` — нет. Аккаунт, привязанный только к этому
+    серверу, иначе остался бы orphan'ом: висит с зашифрованным паролем и
+    недостижим (листинг требует server_id). Тот же конечный стейт (аккаунт без
+    серверов) unlink-путь запрещает через ACCOUNT_NO_SERVERS, поэтому здесь мы
+    такие аккаунты удаляем явно — консистентно с инвариантом «аккаунт без
+    серверов не существует». Аккаунты, привязанные ещё к другим серверам,
+    переживают delete: у них уходит одна связка каскадом.
 
     Audit `server.delete` с CRITICAL severity — это deliberately destructive.
+    Снос каждого осиротевшего аккаунта пишется отдельным `server_account.delete`.
     """
     with emit_denied_on_authz_error(
         "server.delete",
@@ -598,6 +609,16 @@ async def delete_server(
         raise
     department_id = obj.department_id
     hostname = obj.hostname
+
+    # Снимаем «снимок» аккаунтов, для которых этот сервер — последний, ДО
+    # delete'а: после каскада join-строк такой запрос их уже не вернёт.
+    orphaned_accounts = await account_repo.list_accounts_only_on_server(db, server_id)
+    orphan_meta = [
+        {"id": a.id, "login": a.login, "department_id": a.department_id}
+        for a in orphaned_accounts
+    ]
+    for acc in orphaned_accounts:
+        await account_repo.delete(db, acc)
     await repo.delete(db, obj)
     await db.commit()
     audit_service.emit(
@@ -606,8 +627,26 @@ async def delete_server(
         target_type="server",
         status="success",
         allowed=True,
-        details={"hostname": hostname, "department_id": department_id},
+        details={
+            "hostname": hostname,
+            "department_id": department_id,
+            "orphaned_accounts_deleted": [m["id"] for m in orphan_meta],
+        },
     )
+    for meta in orphan_meta:
+        audit_service.emit(
+            "server_account.delete",
+            target_id=meta["id"],
+            target_type="server_account",
+            status="success",
+            allowed=True,
+            details={
+                "reason": "server_deleted",
+                "server_id": server_id,
+                "login": meta["login"],
+                "department_id": meta["department_id"],
+            },
+        )
 
 
 async def acquire_server(

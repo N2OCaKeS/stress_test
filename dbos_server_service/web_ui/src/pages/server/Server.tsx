@@ -18,6 +18,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
@@ -97,6 +98,9 @@ export function Server() {
     persona.service_roles.server === "operator";
 
   const items = listQ.data?.items ?? [];
+  // `total` — серверная истина (до клиентского поиска): если она больше, чем
+  // влезло в страницу (limit:200), показываем баннер усечения.
+  const serverTotal = listQ.data?.total ?? items.length;
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     const matched = term
@@ -270,6 +274,13 @@ export function Server() {
             onSelect={selectId}
           />
         ))}
+        {!listQ.loading && !listQ.error && (
+          <TruncationNotice
+            shown={items.length}
+            total={serverTotal}
+            className="mx-3 mt-2"
+          />
+        )}
       </div>
 
       {canManage && (

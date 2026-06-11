@@ -8,13 +8,18 @@ import {
   Loader2,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
-import { listBots } from "@/api/auth/bots";
+import { listBotsWithTotal } from "@/api/auth/bots";
 import { useQuery, useMockMode } from "@/api/auth/useQuery";
 import { usePersona } from "@/contexts/PersonaContext";
 import { personaDeptId } from "@/lib/rbac";
 import { useDeptLabel } from "@/lib/labels";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import type { Bot as BotItem } from "@/api/auth/types";
 import { BotDetailFullPanel } from "./_botDetailPanel";
+
+// auth_service режет страницу до 200 (MAX_LIMIT). Тянем кап и сигналим
+// баннером, если ботов в отделе больше.
+const BOTS_PAGE = 200;
 
 /**
  * Department-scoped bots view for dep_admin: показывает ботов только своего
@@ -44,13 +49,17 @@ export function BotsDepAdmin() {
   const myUsername = persona.username;
 
   const [refreshTick, setRefreshTick] = useState(0);
-  const botsQ = useQuery<BotItem[]>(
-    () => (myDept ? listBots({ limit: 500, department_id: myDept }) : Promise.resolve([])),
+  const botsQ = useQuery(
+    () =>
+      myDept
+        ? listBotsWithTotal({ limit: BOTS_PAGE, department_id: myDept })
+        : Promise.resolve({ items: [] as BotItem[], total: 0 }),
     [myDept, refreshTick],
     { enabled: !mockMode && !!myDept },
   );
 
-  const allBots = botsQ.data ?? [];
+  const allBots = useMemo(() => botsQ.data?.items ?? [], [botsQ.data]);
+  const depTotal = botsQ.data?.total ?? allBots.length;
   const myBots = useMemo(
     () => allBots.filter((b) => b.created_by === myUsername),
     [allBots, myUsername],
@@ -90,9 +99,19 @@ export function BotsDepAdmin() {
               <option>disabled</option>
             </select>
             <span className="ml-auto">
-              {depBots.length} шт · {myDeptLabel}
+              {depTotal > depBots.length
+                ? `${depBots.length} из ${depTotal}`
+                : depBots.length}{" "}
+              шт · {myDeptLabel}
             </span>
           </div>
+          {!botsQ.loading && !botsQ.error && (
+            <TruncationNotice
+              shown={depBots.length}
+              total={depTotal}
+              className="mt-2"
+            />
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto py-2">

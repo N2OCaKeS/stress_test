@@ -21,6 +21,7 @@ import {
   apiPatch,
   apiPost,
 } from "@/api/client";
+import { listWithTotal, type PaginatedList } from "@/api/auth/users";
 import type {
   Group,
   GroupCreateRequest,
@@ -72,6 +73,21 @@ export function listGroups(params: PaginationParams = {}): Promise<Group[]> {
       limit: params.limit ?? null,
       offset: params.offset ?? null,
     },
+  });
+}
+
+/**
+ * Как `listGroups`, но дополнительно вытаскивает `X-Total-Count` — backend его
+ * отдаёт, а голый `list[...]`-ответ его теряет. Нужен страницам, которым важно
+ * показать «N из M» и честно сигналить про усечение выдачи (бэкенд режет
+ * `limit` до 200).
+ */
+export function listGroupsWithTotal(
+  params: PaginationParams = {},
+): Promise<PaginatedList<Group>> {
+  return listWithTotal<Group>("/auth/v1/groups", {
+    limit: params.limit ?? null,
+    offset: params.offset ?? null,
   });
 }
 

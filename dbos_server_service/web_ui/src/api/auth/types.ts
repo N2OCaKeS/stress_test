@@ -49,7 +49,9 @@ export type PlatformRole =
 
 export type ActorType = "user" | "bot" | "oauth_client" | "pat";
 
-export type UserStatus = "ACTIVE" | "BANNED" | "BLOCKED";
+// auth_service сериализует status в нижнем регистре и принимает в PATCH
+// только нижний регистр (StrEnum active/blocked/banned) — иначе 422.
+export type UserStatus = "active" | "banned" | "blocked";
 
 /** Subset of services known to the platform. */
 export type ServiceName =
@@ -68,7 +70,13 @@ export type ServiceName =
  * fields land non-breaking; unknown ones survive as part of the parent object.
  */
 export interface IdentityContext {
-  actor_type: ActorType;
+  /**
+   * Тип субъекта. `/me` отдаёт его как `subject_type`; `actor_type`
+   * оставлен опциональным алиасом на случай, если другой flow вернёт
+   * его под старым именем. UI напрямую ни то, ни другое не читает.
+   */
+  subject_type?: ActorType;
+  actor_type?: ActorType;
   user_id?: string | null;
   username?: string | null;
   display_name?: string | null;

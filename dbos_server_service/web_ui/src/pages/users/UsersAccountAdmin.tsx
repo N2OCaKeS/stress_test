@@ -160,8 +160,10 @@ const GROUPS_MOCK: UserGroup[] = [
 ];
 
 function apiToRow(u: ApiUser): UserRow {
+  // auth_service отдаёт status в нижнем регистре (active/blocked/banned).
+  const status = u.status?.toLowerCase?.() ?? "";
   const statusKind: RowKind =
-    u.status === "ACTIVE" ? "ok" : u.status === "BLOCKED" ? "warn" : "danger";
+    status === "active" ? "ok" : status === "blocked" ? "warn" : "danger";
   return {
     name: u.username,
     role: u.platform_role

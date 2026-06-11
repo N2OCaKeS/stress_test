@@ -463,6 +463,16 @@ textarea.input { min-height: 88px; font-family: "JetBrains Mono Variable", "JetB
   gap: 10px;
   align-items: flex-start;
 }
+.alert-warn {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
 .brand-logo {
   width: 64px;
   height: 64px;

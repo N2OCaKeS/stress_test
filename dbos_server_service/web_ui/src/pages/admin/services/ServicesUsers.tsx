@@ -63,7 +63,8 @@ function adaptApi(u: ApiUser): UiUser {
     dept_name: u.department_name ?? null,
     platform_role: u.platform_role,
     status: u.status?.toLowerCase?.() ?? String(u.status ?? "active"),
-    is_banned: u.is_banned,
+    // UserResponse не несёт is_banned — выводим из status (banned).
+    is_banned: u.is_banned ?? u.status?.toLowerCase?.() === "banned",
     must_change_password: u.must_change_password,
     created_at: u.created_at,
     last_login: u.updated_at ?? u.created_at,
@@ -578,8 +579,8 @@ function UserForm({
           body.department_id = dept || null;
         if (platformRole !== (initial.platform_role ?? ""))
           body.platform_role = (platformRole || null) as PlatformRole;
-        const newStatus = status.toUpperCase() as UserStatus;
-        if (newStatus !== (initial.status ?? "").toUpperCase())
+        const newStatus = status.toLowerCase() as UserStatus;
+        if (newStatus !== (initial.status ?? "").toLowerCase())
           body.status = newStatus;
         await updateUser(initial.id, body);
       }
@@ -702,9 +703,9 @@ function UserForm({
               value={status}
               onChange={(e) => setStatus(e.target.value)}
             >
-              <option value="ACTIVE">ACTIVE</option>
-              <option value="BLOCKED">BLOCKED</option>
-              <option value="BANNED">BANNED</option>
+              <option value="active">active</option>
+              <option value="blocked">blocked</option>
+              <option value="banned">banned</option>
             </select>
           </FormRow>
         )}

@@ -35,6 +35,7 @@ import type {
   ServiceName,
 } from "@/api/auth/types";
 import type { PaginationParams } from "@/api/auth/groups";
+import { listWithTotal, type PaginatedList } from "@/api/auth/users";
 
 // auth_service возвращает `bot_id`, UI ждёт `id`. Нормализуем единожды.
 interface BackendBot extends Omit<Bot, "id"> {
@@ -57,6 +58,22 @@ export async function listBots(
     },
   });
   return raw.map(normalizeBot);
+}
+
+/**
+ * Как `listBots`, но протаскивает `X-Total-Count` (голый `list[...]`-ответ его
+ * теряет). Нужен страницам, которым важно честно показать «N из M» и не молчать
+ * про усечение — backend режет `limit` до 200.
+ */
+export async function listBotsWithTotal(
+  params: PaginationParams & { department_id?: string | null } = {},
+): Promise<PaginatedList<Bot>> {
+  const res = await listWithTotal<BackendBot>("/auth/v1/bots", {
+    limit: params.limit ?? null,
+    offset: params.offset ?? null,
+    department_id: params.department_id ?? null,
+  });
+  return { items: res.items.map(normalizeBot), total: res.total };
 }
 
 export async function getBot(botId: string): Promise<Bot> {

@@ -160,7 +160,7 @@ export function UserBackendView({
       department_id: null,
       department_name: null,
       platform_role: null as unknown as ApiUser["platform_role"],
-      status: "ACTIVE",
+      status: "active",
       is_active: true,
       is_banned: false,
       created_at: "",
@@ -179,7 +179,12 @@ export function UserBackendView({
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-semibold truncate">{u.username}</h3>
                 <span
-                  className={`badge badge-${u.status === "ACTIVE" ? "ok" : u.status === "BLOCKED" ? "warn" : "danger"}`}
+                  className={`badge badge-${
+                    (() => {
+                      const s = u.status?.toLowerCase?.() ?? "";
+                      return s === "active" ? "ok" : s === "blocked" ? "warn" : "danger";
+                    })()
+                  }`}
                 >
                   {u.status?.toLowerCase?.() ?? u.status}
                 </span>
@@ -223,7 +228,7 @@ export function UserBackendView({
             >
               <KeyRound className="w-4 h-4" /> Reset password
             </button>
-            {u.status === "ACTIVE" || u.status?.toLowerCase?.() === "active" ? (
+            {u.status?.toLowerCase?.() === "active" ? (
               <button
                 className="btn btn-danger flex items-center gap-1"
                 disabled={!caps.disable || busy !== null}
@@ -395,7 +400,12 @@ function ProfileTab({
             k="status"
             v={
               <span
-                className={`badge badge-${user.status === "ACTIVE" ? "ok" : user.status === "BLOCKED" ? "warn" : "danger"}`}
+                className={`badge badge-${
+                  (() => {
+                    const s = user.status?.toLowerCase?.() ?? "";
+                    return s === "active" ? "ok" : s === "blocked" ? "warn" : "danger";
+                  })()
+                }`}
               >
                 {user.status}
               </span>

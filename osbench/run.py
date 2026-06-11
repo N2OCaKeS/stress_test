@@ -9,7 +9,7 @@ from src.osb_logger import log
 from src.lib import system
 from config.conf import VENV_PATH
 
-
+log.setup(console=False)
 
 parser = argparse.ArgumentParser()
 group = parser.add_mutually_exclusive_group(required=True)

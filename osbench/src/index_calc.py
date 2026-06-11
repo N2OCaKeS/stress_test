@@ -12,7 +12,8 @@ from config.conf import (
     PROCESSES_IPC_CRITERIONS,
     FILESYSTEM_CRITERIONS,
     SCRIPTS_CRITERIONS,
-    TOTAL_TEMPLATE_COLOR
+    TOTAL_TEMPLATE_COLOR,
+    OSBENCH_LOGO
 )
 
 
@@ -183,6 +184,7 @@ class IndexCalculator:
         
         geo_mean = weighted_geo_mean 
 
+        log.info(OSBENCH_LOGO)
         log.info(TOTAL_TEMPLATE_COLOR.format(test="TEST",
                                              source="BENCH", 
                                              guideline="GUIDELINE", 

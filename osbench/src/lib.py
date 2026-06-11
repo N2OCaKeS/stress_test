@@ -98,7 +98,7 @@ class system:
         """
         Построчный вывод в терминал/лог
         """
-        log.debug(f"Выполняется команда: {command}")
+        log.info(f"Выполняется команда: {command}")
 
         output_lines = []
         error_lines = []
@@ -107,7 +107,7 @@ class system:
                                    stderr=subprocess.PIPE, text=True, bufsize=1, universal_newlines=True)
         
         for line in process.stdout:
-            log.info(line.rstrip('\n'))  
+            log.debug(line.rstrip('\n'))  
             output_lines.append(line.rstrip('\n'))
         for line in process.stderr:  
             log.error(line.rstrip('\n'))
@@ -121,7 +121,7 @@ class system:
             log.warning(f"Команда прервана пользователем: {command}")
             raise
 
-        log.debug(f"Команда '{command}' завершена с кодом: {process.returncode}")
+        log.info(f"Команда '{command}' завершена с кодом: {process.returncode}")
 
         output = '\n'.join(output_lines)
         errors = '\n'.join(error_lines)
@@ -143,9 +143,11 @@ class system:
     def get_system_info():
         def _get_kernel():
             try:
-                kernel, success = system.command("dpkg -s linux-image-`uname -r` | grep Version: | awk '{print $2}'", returncode=True)
-                if success and kernel:
-                    return kernel.strip()
+                code = system.command("dpkg -s linux-image-`uname -r` | grep Version: | awk '{print $2}'", returncode=True)
+                if code == 0:
+                    kernel = system.command("dpkg -s linux-image-`uname -r` | grep Version: | awk '{print $2}'")
+                    if kernel:
+                        return kernel.strip()
             except:
                 return None
 

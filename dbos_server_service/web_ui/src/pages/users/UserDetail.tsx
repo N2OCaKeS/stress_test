@@ -45,6 +45,7 @@ import {
   getUserGroups,
   getUserPermissions,
   listUserSessions,
+  normalizeUserStatus,
   resetUserPassword,
   revokeUserAllSessions,
   revokeUserSessionById,
@@ -54,9 +55,10 @@ import {
 } from "@/api/auth/users";
 import {
   addUserToGroup,
-  listGroups,
+  listGroupsWithTotal,
   removeUserFromGroup,
 } from "@/api/auth/groups";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { listServices } from "@/api/auth/services";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
@@ -147,7 +149,7 @@ export function UserDetail() {
         email: u.email ?? "",
         dept_id: u.department_id,
         platform_role: u.platform_role ?? null,
-        status: (u.status?.toLowerCase?.() ?? "active") as
+        status: normalizeUserStatus(u.status) as
           | "active"
           | "blocked"
           | "pending",
@@ -1533,14 +1535,17 @@ function AddUserToGroupModal({
   onAdded,
   onError,
 }: AddUserToGroupModalProps) {
-  const groupsQ = useQuery<ApiGroup[]>(() => listGroups({ limit: 200 }), []);
+  const groupsQ = useQuery<{ items: ApiGroup[]; total: number }>(
+    () => listGroupsWithTotal({ limit: 200 }),
+    [],
+  );
   const { depts: deptMap } = useLabelMaps();
   const [selected, setSelected] = useState<string>("");
   const [filter, setFilter] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
   const candidates = useMemo(() => {
-    const all = groupsQ.data ?? [];
+    const all = groupsQ.data?.items ?? [];
     const f = filter.trim().toLowerCase();
     return all
       .filter((g) => !currentGroupIds.has(g.id))
@@ -1625,6 +1630,11 @@ function AddUserToGroupModal({
             ))}
           </div>
         )}
+        <TruncationNotice
+          className="mt-2"
+          shown={groupsQ.data?.items.length ?? 0}
+          total={groupsQ.data?.total ?? null}
+        />
         <div className="flex items-center gap-2 mt-4">
           <button className="btn ml-auto" onClick={onClose}>
             Отмена

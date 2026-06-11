@@ -19,7 +19,9 @@ import { InlineEditor, FormRow, useInlineState } from "./_inline";
 import { UserBackendView } from "./_servicesUsersView";
 import {
   createUser,
+  isUserBanned,
   listUsers,
+  normalizeUserStatus,
   updateUser,
 } from "@/api/auth/users";
 import { listDepartments } from "@/api/auth/departments";
@@ -62,9 +64,9 @@ function adaptApi(u: ApiUser): UiUser {
     dept_id: u.department_id,
     dept_name: u.department_name ?? null,
     platform_role: u.platform_role,
-    status: u.status?.toLowerCase?.() ?? String(u.status ?? "active"),
+    status: normalizeUserStatus(u.status),
     // UserResponse не несёт is_banned — выводим из status (banned).
-    is_banned: u.is_banned ?? u.status?.toLowerCase?.() === "banned",
+    is_banned: isUserBanned(u),
     must_change_password: u.must_change_password,
     created_at: u.created_at,
     last_login: u.updated_at ?? u.created_at,
@@ -579,8 +581,8 @@ function UserForm({
           body.department_id = dept || null;
         if (platformRole !== (initial.platform_role ?? ""))
           body.platform_role = (platformRole || null) as PlatformRole;
-        const newStatus = status.toLowerCase() as UserStatus;
-        if (newStatus !== (initial.status ?? "").toLowerCase())
+        const newStatus = normalizeUserStatus(status);
+        if (newStatus !== normalizeUserStatus(initial.status))
           body.status = newStatus;
         await updateUser(initial.id, body);
       }

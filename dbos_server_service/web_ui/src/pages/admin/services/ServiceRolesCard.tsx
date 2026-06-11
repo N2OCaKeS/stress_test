@@ -44,7 +44,11 @@ import {
   bulkRevokeServiceRole,
 } from "@/api/auth/service_roles";
 import { listUsers } from "@/api/auth/users";
-import { listGroups, listGroupMembers } from "@/api/auth/groups";
+import {
+  listGroupsWithTotal,
+  listGroupMembers,
+} from "@/api/auth/groups";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import type {
   Department,
   Group,
@@ -527,7 +531,10 @@ function BulkAssignSection({
     () => listUsers({ limit: 200 }),
     [],
   );
-  const groupsQ = useQuery<Group[]>(() => listGroups({ limit: 200 }), []);
+  const groupsQ = useQuery<{ items: Group[]; total: number }>(
+    () => listGroupsWithTotal({ limit: 200 }),
+    [],
+  );
 
   // Department filter: backend rejects users from a different dept;
   // platform-wide users (department_id === null) are excluded by default —
@@ -541,7 +548,7 @@ function BulkAssignSection({
   );
   const groupsInDept = useMemo<Group[]>(
     () =>
-      (groupsQ.data ?? []).filter((g) => g.department_id === roleDeptId),
+      (groupsQ.data?.items ?? []).filter((g) => g.department_id === roleDeptId),
     [groupsQ.data, roleDeptId],
   );
 
@@ -661,6 +668,8 @@ function BulkAssignSection({
         onChange={setSelectedUserIds}
         placeholder="Поиск по username / email / id…"
         emptyHint={`Нет пользователей в этом отделе (${roleDeptId}).`}
+        sourceShown={usersQ.data?.items.length ?? 0}
+        sourceTotal={usersQ.data?.total ?? null}
       />
 
       <SearchableMultiSelect<Group>
@@ -685,6 +694,8 @@ function BulkAssignSection({
         onChange={setSelectedGroupIds}
         placeholder="Поиск по имени группы…"
         emptyHint={`Нет групп в этом отделе (${roleDeptId}).`}
+        sourceShown={groupsQ.data?.items.length ?? 0}
+        sourceTotal={groupsQ.data?.total ?? null}
       />
 
       <div className="text-[11px] text-dim">
@@ -759,6 +770,8 @@ function SearchableMultiSelect<T>({
   onChange,
   placeholder,
   emptyHint,
+  sourceShown,
+  sourceTotal,
 }: {
   label: string;
   icon: LucideIcon;
@@ -773,6 +786,14 @@ function SearchableMultiSelect<T>({
   onChange: (next: Set<string>) => void;
   placeholder: string;
   emptyHint: string;
+  /**
+   * Сколько строк реально прилетело в исходной (до dept-фильтра) выдаче и
+   * сколько их всего на бэкенде. Источник тянется с капом limit=200, поэтому
+   * при `shown < total` часть юзеров/групп отдела может не попасть в picker —
+   * показываем честный баннер вместо тихого усечения.
+   */
+  sourceShown?: number;
+  sourceTotal?: number | null;
 }) {
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useState(false);
@@ -916,6 +937,11 @@ function SearchableMultiSelect<T>({
           </div>
         )}
       </div>
+
+      <TruncationNotice
+        shown={sourceShown ?? items.length}
+        total={sourceTotal ?? null}
+      />
     </div>
   );
 }

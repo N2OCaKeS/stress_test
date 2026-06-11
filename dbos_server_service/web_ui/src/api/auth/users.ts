@@ -20,6 +20,7 @@ import type {
   UserPatchRequest,
   UserPermissionsResponse,
   UserResetPasswordRequest,
+  UserStatus,
 } from "@/api/auth/types";
 
 export interface PaginatedList<T> {
@@ -85,6 +86,47 @@ interface BackendUser extends Omit<User, "id"> {
 
 function normalizeUser(u: BackendUser): User {
   return { ...u, id: u.id ?? u.user_id ?? "" } as User;
+}
+
+// auth_service сериализует status как нижний регистр StrEnum
+// (active/blocked/banned). Раньше страницы латали это по месту: где-то
+// `?.toLowerCase()`, где-то dual-check с обоими регистрами. Единая точка
+// нормализации убирает дубль и даёт стабильный union для бейджей.
+const KNOWN_STATUSES: readonly UserStatus[] = ["active", "blocked", "banned"];
+
+/**
+ * Приводит сырой `status` (любой регистр, unknown-строка, null) к каноничному
+ * lowercase-union. Неизвестное значение фоллбэкается на `active` — это
+ * безопасный дефолт для бейджей и не превращает живого юзера в `danger`.
+ */
+export function normalizeUserStatus(
+  raw: string | null | undefined,
+): UserStatus {
+  const s = raw?.toLowerCase?.() ?? "";
+  return (KNOWN_STATUSES as readonly string[]).includes(s)
+    ? (s as UserStatus)
+    : "active";
+}
+
+/** True, если юзер забанен — по нормализованному статусу или явному флагу. */
+export function isUserBanned(u: {
+  status?: string | null;
+  is_banned?: boolean | null;
+}): boolean {
+  return u.is_banned ?? normalizeUserStatus(u.status) === "banned";
+}
+
+/**
+ * Класс бейджа (`ok`/`warn`/`danger`) для статуса юзера. Один источник
+ * правды для всех мест, которые раньше повторяли тернарник по месту.
+ */
+export function userStatusBadgeKind(
+  raw: string | null | undefined,
+): "ok" | "warn" | "danger" {
+  const s = normalizeUserStatus(raw);
+  if (s === "active") return "ok";
+  if (s === "blocked") return "warn";
+  return "danger";
 }
 
 export async function listUsers(

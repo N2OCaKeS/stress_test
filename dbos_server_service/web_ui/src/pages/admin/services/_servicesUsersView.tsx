@@ -43,14 +43,21 @@ import {
   getUserGroups,
   getUserPermissions,
   listUserSessions,
+  normalizeUserStatus,
   resetUserPassword,
+  userStatusBadgeKind,
   revokeUserAllSessions,
   revokeUserSessionById,
   unbanUser,
   unlockUser,
   assignUserRoles,
 } from "@/api/auth/users";
-import { addUserToGroup, removeUserFromGroup, listGroups } from "@/api/auth/groups";
+import {
+  addUserToGroup,
+  removeUserFromGroup,
+  listGroupsWithTotal,
+} from "@/api/auth/groups";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
@@ -178,15 +185,8 @@ export function UserBackendView({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-semibold truncate">{u.username}</h3>
-                <span
-                  className={`badge badge-${
-                    (() => {
-                      const s = u.status?.toLowerCase?.() ?? "";
-                      return s === "active" ? "ok" : s === "blocked" ? "warn" : "danger";
-                    })()
-                  }`}
-                >
-                  {u.status?.toLowerCase?.() ?? u.status}
+                <span className={`badge badge-${userStatusBadgeKind(u.status)}`}>
+                  {normalizeUserStatus(u.status)}
                 </span>
                 {u.is_banned && <span className="badge badge-danger">banned</span>}
                 {u.platform_role && (
@@ -228,7 +228,7 @@ export function UserBackendView({
             >
               <KeyRound className="w-4 h-4" /> Reset password
             </button>
-            {u.status?.toLowerCase?.() === "active" ? (
+            {normalizeUserStatus(u.status) === "active" ? (
               <button
                 className="btn btn-danger flex items-center gap-1"
                 disabled={!caps.disable || busy !== null}
@@ -399,15 +399,8 @@ function ProfileTab({
           <StatRow
             k="status"
             v={
-              <span
-                className={`badge badge-${
-                  (() => {
-                    const s = user.status?.toLowerCase?.() ?? "";
-                    return s === "active" ? "ok" : s === "blocked" ? "warn" : "danger";
-                  })()
-                }`}
-              >
-                {user.status}
+              <span className={`badge badge-${userStatusBadgeKind(user.status)}`}>
+                {normalizeUserStatus(user.status)}
               </span>
             }
           />
@@ -887,15 +880,17 @@ function AddToGroupModal({
   run: (label: string, fn: () => Promise<unknown>) => Promise<void>;
   busy: string | null;
 }) {
-  const allQ = useQuery<Group[]>(
-    () => listGroups({ limit: 200 }),
+  const allQ = useQuery<{ items: Group[]; total: number }>(
+    () => listGroupsWithTotal({ limit: 200 }),
     [],
     { enabled: !mockMode },
   );
   const { depts: deptMap } = useLabelMaps();
   const [pickId, setPickId] = useState<string>("");
 
-  const candidates = (allQ.data ?? []).filter((g) => !alreadyIn.has(g.id));
+  const candidates = (allQ.data?.items ?? []).filter(
+    (g) => !alreadyIn.has(g.id),
+  );
   // Подсказка: соответствие dept'у юзера сверху списка.
   const sorted = [...candidates].sort((a, b) => {
     if (a.department_id === deptId && b.department_id !== deptId) return -1;
@@ -935,6 +930,11 @@ function AddToGroupModal({
           })}
         </select>
       )}
+      <TruncationNotice
+        className="mt-2"
+        shown={allQ.data?.items.length ?? 0}
+        total={allQ.data?.total ?? null}
+      />
       <div className="mt-4 flex justify-end gap-2">
         <button className="btn" onClick={onClose} disabled={busy !== null}>
           Отмена

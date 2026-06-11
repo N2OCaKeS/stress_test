@@ -410,10 +410,17 @@ function PermissionCellModal({
               <span className="badge badge-accent flex items-center gap-1">
                 <Check className="w-3 h-3" /> allow
               </span>
-              <span className="text-dim text-xs mono">
-                {current.department_id
-                  ? `dept · ${current.department_id}`
-                  : "system-wide"}
+              <span className="text-dim text-xs">
+                {current.department_id ? (
+                  <>
+                    dept ·{" "}
+                    {depts.find((d) => d.id === current.department_id)?.name ??
+                      current.department_id}{" "}
+                    <span className="mono">({current.department_id})</span>
+                  </>
+                ) : (
+                  "system-wide"
+                )}
               </span>
             </div>
           ) : (

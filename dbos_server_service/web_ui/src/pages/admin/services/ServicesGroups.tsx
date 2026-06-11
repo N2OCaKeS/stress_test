@@ -32,6 +32,7 @@ import type {
   ServiceRole,
 } from "@/api/auth/types";
 import { useServiceLabel } from "@/lib/labels";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 
 /**
  * Управление группами `auth_service`: профиль, участники (юзеры + боты),
@@ -653,7 +654,10 @@ function MembersCard({
   );
   const botsQ = useQuery(
     () =>
-      botsApi.listBots({ department_id: group.department_id, limit: 200 }),
+      botsApi.listBotsWithTotal({
+        department_id: group.department_id,
+        limit: 200,
+      }),
     [group.department_id],
     { enabled: canEdit && addKind === "bot" },
   );
@@ -670,7 +674,7 @@ function MembersCard({
   const candidateUsers = (usersQ.data?.items ?? []).filter(
     (u) => !memberUserIds.has(u.id),
   );
-  const candidateBots = (botsQ.data ?? []).filter(
+  const candidateBots = (botsQ.data?.items ?? []).filter(
     (b) => !memberBotIds.has(b.id),
   );
 
@@ -816,6 +820,19 @@ function MembersCard({
           >
             <Plus className="w-4 h-4" /> Добавить
           </button>
+          <TruncationNotice
+            className="w-full"
+            shown={
+              addKind === "user"
+                ? (usersQ.data?.items.length ?? 0)
+                : (botsQ.data?.items.length ?? 0)
+            }
+            total={
+              addKind === "user"
+                ? (usersQ.data?.total ?? null)
+                : (botsQ.data?.total ?? null)
+            }
+          />
         </div>
       )}
     </div>

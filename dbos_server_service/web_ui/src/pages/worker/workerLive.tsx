@@ -40,15 +40,17 @@ export function isCancelable(status: TaskStatus): boolean {
 }
 
 /**
- * Право нажать Cancel в server-зоне. Backend всё равно перепроверит
- * `(task, cancel)` — клиентский gate только прячет заведомо отбойную кнопку.
- * Системные task'и (heartbeat/sweep) UI вообще не показывает обычным ролям,
- * поэтому здесь достаточно admin/operator/dep_admin.
+ * Право нажать Cancel в server-зоне. Backend перепроверит `(task, cancel)` —
+ * клиентский gate только прячет заведомо отбойную кнопку. Грант `(task,
+ * cancel)` по дефолту выдан ровно роли `admin` (см. миграцию seed_task_cancel_grant:
+ * «отмена чужой task'и — операция уровня admin'а»). operator/reader его не
+ * получают, поэтому кнопку им не показываем — иначе клик гарантированно
+ * упрётся в 403. dep_admin своего отдела ходит как server.admin, поэтому
+ * допускается.
  */
 export function canCancelTask(persona: Persona): boolean {
   if (persona.platform_role === "dep_admin") return true;
-  const role = persona.service_roles.server;
-  return role === "admin" || role === "operator";
+  return persona.service_roles.server === "admin";
 }
 
 const STATUS_BADGE: Record<string, string> = {

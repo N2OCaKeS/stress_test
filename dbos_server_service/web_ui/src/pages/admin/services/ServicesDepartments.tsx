@@ -38,6 +38,7 @@ import { listServices } from "@/api/auth/services";
 import { listUsers } from "@/api/auth/users";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import type { Department, Service } from "@/api/auth/types";
 
 type UiDept = {
@@ -105,6 +106,12 @@ export function ServicesDepartments() {
             {deptsQ.error && (
               <div className="alert-danger text-[11px]">{deptsQ.error.message}</div>
             )}
+            {/* Счётчик юзеров считается по странице юзеров с капом 200; если
+                всего больше — бейджи могут недосчитывать. Честно сигналим. */}
+            <TruncationNotice
+              shown={usersQ.data?.items.length ?? 0}
+              total={usersQ.data?.total ?? null}
+            />
           </div>
         ) : null
       }

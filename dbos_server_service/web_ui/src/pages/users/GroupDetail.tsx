@@ -40,6 +40,7 @@ import * as groupsApi from "@/api/auth/groups";
 import * as usersApi from "@/api/auth/users";
 import { ApiError } from "@/api/client";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import type { Group, User } from "@/api/auth/types";
 
 export function GroupDetail() {
@@ -1113,6 +1114,11 @@ function MemberPicker({
           </div>
         )}
       </div>
+
+      <TruncationNotice
+        shown={usersQ.data?.items.length ?? 0}
+        total={usersQ.data?.total ?? null}
+      />
 
       <div>
         <button

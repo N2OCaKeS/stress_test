@@ -31,12 +31,15 @@ import {
   disableUser,
   listUsers,
   listUserSessions,
+  normalizeUserStatus,
   resetUserPassword,
   revokeUserSessionById,
   revokeUserSessions,
+  userStatusBadgeKind,
 } from "@/api/auth/users";
-import { listBots } from "@/api/auth/bots";
-import { listGroups } from "@/api/auth/groups";
+import { listBotsWithTotal } from "@/api/auth/bots";
+import { listGroupsWithTotal } from "@/api/auth/groups";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { listDepartments } from "@/api/auth/departments";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { useDeptLabel, useLabelsInvalidate } from "@/lib/labels";
@@ -160,10 +163,7 @@ const GROUPS_MOCK: UserGroup[] = [
 ];
 
 function apiToRow(u: ApiUser): UserRow {
-  // auth_service отдаёт status в нижнем регистре (active/blocked/banned).
-  const status = u.status?.toLowerCase?.() ?? "";
-  const statusKind: RowKind =
-    status === "active" ? "ok" : status === "blocked" ? "warn" : "danger";
+  const statusKind: RowKind = userStatusBadgeKind(u.status);
   return {
     name: u.username,
     role: u.platform_role
@@ -174,7 +174,7 @@ function apiToRow(u: ApiUser): UserRow {
       : undefined,
     dept: u.department_name ?? u.department_id ?? "—",
     lastSeen: formatMskDate(u.updated_at ?? u.created_at),
-    status: { label: u.status.toLowerCase(), kind: statusKind },
+    status: { label: normalizeUserStatus(u.status), kind: statusKind },
     isCog: !!u.platform_role,
   };
 }
@@ -220,13 +220,13 @@ export function UsersAccountAdmin() {
   // Список групп нужен и для счётчика на вкладке Groups, и для рендера самой
   // вкладки в live-режиме. В mock-режиме не дёргаем.
   const apiGroupsQ = useQuery(
-    () => listGroups({ limit: 200 }),
+    () => listGroupsWithTotal({ limit: 200 }),
     [],
     { enabled: !mockMode },
   );
   // Аналогично для ботов.
   const apiBotsQ = useQuery(
-    () => listBots({ limit: 200 }),
+    () => listBotsWithTotal({ limit: 200 }),
     [],
     { enabled: !mockMode },
   );
@@ -245,7 +245,7 @@ export function UsersAccountAdmin() {
         platform_role: (m.platform_role ?? null) as PlatformRole,
         dept_id: m.dept_id,
         dept_name: null as string | null,
-        status: "ACTIVE",
+        status: "active",
         created_at: null as string | null,
         updated_at: null as string | null,
         created_by: null as string | null,
@@ -286,7 +286,9 @@ export function UsersAccountAdmin() {
   // (apiBotsQ) по created_by. Отдельного запроса больше не делаем.
   const botsCreatedByTarget = useMemo(() => {
     if (!targetUser) return [];
-    return (apiBotsQ.data ?? []).filter((b) => b.created_by === targetUser.id);
+    return (apiBotsQ.data?.items ?? []).filter(
+      (b) => b.created_by === targetUser.id,
+    );
   }, [apiBotsQ.data, targetUser]);
 
   // For Groups/Bots the "Создать" button is gated on the persona's own dept
@@ -407,8 +409,12 @@ export function UsersAccountAdmin() {
   const usersCount = mockMode
     ? USERS.length
     : apiUsersQ.data?.total ?? apiUsersQ.data?.items.length ?? 0;
-  const groupsCount = mockMode ? GROUPS.length : (apiGroupsQ.data ?? []).length;
-  const botsCount = mockMode ? BOTS.length : (apiBotsQ.data ?? []).length;
+  const groupsCount = mockMode
+    ? GROUPS.length
+    : (apiGroupsQ.data?.total ?? apiGroupsQ.data?.items.length ?? 0);
+  const botsCount = mockMode
+    ? BOTS.length
+    : (apiBotsQ.data?.total ?? apiBotsQ.data?.items.length ?? 0);
 
   return (
     <Shell breadcrumb="auth_service / users">
@@ -510,6 +516,13 @@ export function UsersAccountAdmin() {
               </div>
             </div>
           ))}
+          {tab === "users" && !mockMode && (
+            <TruncationNotice
+              className="mx-3 mt-2"
+              shown={apiUsersQ.data?.items.length ?? 0}
+              total={apiUsersQ.data?.total ?? null}
+            />
+          )}
 
           {tab === "groups" && (
             <div className="px-2 flex flex-col gap-0.5">
@@ -539,13 +552,20 @@ export function UsersAccountAdmin() {
                   ? <div className="spinner mx-3" aria-label="Loading" />
                   : apiGroupsQ.error
                     ? <div className="alert-danger text-[11px] mx-3">{apiGroupsQ.error.message}</div>
-                    : (apiGroupsQ.data ?? []).length === 0
+                    : (apiGroupsQ.data?.items ?? []).length === 0
                       ? <div className="empty-card text-xs mx-3">Групп нет</div>
-                      : (apiGroupsQ.data ?? []).map((g) => (
+                      : (apiGroupsQ.data?.items ?? []).map((g) => (
                           <Link key={g.id} to={`/users/group/${g.id}`} className="cred-row">
                             <GroupAsideRow group={g} />
                           </Link>
                         ))}
+              {!mockMode && (
+                <TruncationNotice
+                  className="mx-1 mt-1"
+                  shown={apiGroupsQ.data?.items.length ?? 0}
+                  total={apiGroupsQ.data?.total ?? null}
+                />
+              )}
             </div>
           )}
 
@@ -573,13 +593,20 @@ export function UsersAccountAdmin() {
                   ? <div className="spinner mx-3" aria-label="Loading" />
                   : apiBotsQ.error
                     ? <div className="alert-danger text-[11px] mx-3">{apiBotsQ.error.message}</div>
-                    : (apiBotsQ.data ?? []).length === 0
+                    : (apiBotsQ.data?.items ?? []).length === 0
                       ? <div className="empty-card text-xs mx-3">Ботов нет</div>
-                      : (apiBotsQ.data ?? []).map((b) => (
+                      : (apiBotsQ.data?.items ?? []).map((b) => (
                           <Link key={b.id} to={`/users/bot/${b.id}`} className="cred-row">
                             <BotAsideRow bot={b} />
                           </Link>
                         ))}
+              {!mockMode && (
+                <TruncationNotice
+                  className="mx-1 mt-1"
+                  shown={apiBotsQ.data?.items.length ?? 0}
+                  total={apiBotsQ.data?.total ?? null}
+                />
+              )}
             </div>
           )}
         </div>
@@ -641,10 +668,8 @@ export function UsersAccountAdmin() {
                 {targetUser?.username ?? "—"}
               </h1>
               {targetUser && (
-                <span
-                  className={`badge badge-${targetUser.status === "ACTIVE" || targetUser.status === "active" ? "ok" : targetUser.status === "BLOCKED" || targetUser.status === "blocked" ? "warn" : "danger"}`}
-                >
-                  {String(targetUser.status).toLowerCase()}
+                <span className={`badge badge-${userStatusBadgeKind(targetUser.status)}`}>
+                  {normalizeUserStatus(targetUser.status)}
                 </span>
               )}
               {targetUser?.platform_role && (
@@ -761,10 +786,8 @@ export function UsersAccountAdmin() {
                     <StatRow
                       k="status"
                       v={
-                        <span
-                          className={`badge badge-${String(targetUser.status).toLowerCase() === "active" ? "ok" : String(targetUser.status).toLowerCase() === "blocked" ? "warn" : "danger"}`}
-                        >
-                          {String(targetUser.status).toLowerCase()}
+                        <span className={`badge badge-${userStatusBadgeKind(targetUser.status)}`}>
+                          {normalizeUserStatus(targetUser.status)}
                         </span>
                       }
                     />

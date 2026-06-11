@@ -27,13 +27,16 @@ import {
   disableUser,
   listUsersByDepartment,
   listUserSessions,
+  normalizeUserStatus,
   resetUserPassword,
   revokeUserSessionById,
   revokeUserSessions,
+  userStatusBadgeKind,
 } from "@/api/auth/users";
-import { listBots } from "@/api/auth/bots";
-import { listGroups } from "@/api/auth/groups";
+import { listBotsWithTotal } from "@/api/auth/bots";
+import { listGroupsWithTotal } from "@/api/auth/groups";
 import { listDepartments } from "@/api/auth/departments";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
@@ -110,12 +113,6 @@ const WORKZONE_TABS: { id: WorkzoneTab; label: string }[] = [
   { id: "audit", label: "Audit" },
 ];
 
-function statusKindOf(status: string): "ok" | "warn" | "danger" {
-  const s = status.toLowerCase();
-  if (s === "active") return "ok";
-  if (s === "blocked") return "warn";
-  return "danger";
-}
 
 export function UsersDepAdmin() {
   const mockMode = useMockMode();
@@ -151,22 +148,22 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
 
   const deptsQ = useQuery<Department[]>(() => listDepartments(), []);
   const groupsQ = useQuery(
-    () => listGroups({ limit: 200 }),
+    () => listGroupsWithTotal({ limit: 200 }),
     [],
     { enabled: tab === "groups" },
   );
-  const botsQ = useQuery(() => listBots({ limit: 200 }), []);
+  const botsQ = useQuery(() => listBotsWithTotal({ limit: 200 }), []);
 
   const users = usersQ.data?.items ?? [];
 
   // Группы депа — фильтруем общий список по своему отделу.
   const deptGroups = useMemo(
-    () => (groupsQ.data ?? []).filter((g) => g.department_id === myDept),
+    () => (groupsQ.data?.items ?? []).filter((g) => g.department_id === myDept),
     [groupsQ.data, myDept],
   );
   // Боты депа — фильтруем по department_id.
   const deptBots = useMemo(
-    () => (botsQ.data ?? []).filter((b) => b.department_id === myDept),
+    () => (botsQ.data?.items ?? []).filter((b) => b.department_id === myDept),
     [botsQ.data, myDept],
   );
 
@@ -226,7 +223,9 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
 
   const botsCreatedByTarget = useMemo(() => {
     if (!targetUser) return [];
-    return (botsQ.data ?? []).filter((b) => b.created_by === targetUser.id);
+    return (botsQ.data?.items ?? []).filter(
+      (b) => b.created_by === targetUser.id,
+    );
   }, [botsQ.data, targetUser]);
 
   // Create-user форма должна работать только в рамках своего отдела — передаём
@@ -351,6 +350,11 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                     />
                   ))
                 )}
+                <TruncationNotice
+                  className="mx-1 mt-1"
+                  shown={users.length}
+                  total={usersQ.data?.total ?? null}
+                />
               </div>
 
               <div className="group-header flex items-center gap-2 mt-3">
@@ -380,6 +384,11 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                   </Link>
                 ))
               )}
+              <TruncationNotice
+                className="mx-1 mt-1"
+                shown={groupsQ.data?.items.length ?? 0}
+                total={groupsQ.data?.total ?? null}
+              />
             </div>
           )}
 
@@ -401,6 +410,11 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                   </Link>
                 ))
               )}
+              <TruncationNotice
+                className="mx-1 mt-1"
+                shown={botsQ.data?.items.length ?? 0}
+                total={botsQ.data?.total ?? null}
+              />
             </div>
           )}
         </div>
@@ -461,8 +475,8 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                 {targetUser?.username ?? "—"}
               </h1>
               {targetUser && (
-                <span className={`badge badge-${statusKindOf(String(targetUser.status))}`}>
-                  {String(targetUser.status).toLowerCase()}
+                <span className={`badge badge-${userStatusBadgeKind(targetUser.status)}`}>
+                  {normalizeUserStatus(targetUser.status)}
                 </span>
               )}
               {targetUser?.platform_role && (
@@ -561,8 +575,8 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                     <StatRow
                       k="status"
                       v={
-                        <span className={`badge badge-${statusKindOf(String(targetUser.status))}`}>
-                          {String(targetUser.status).toLowerCase()}
+                        <span className={`badge badge-${userStatusBadgeKind(targetUser.status)}`}>
+                          {normalizeUserStatus(targetUser.status)}
                         </span>
                       }
                     />
@@ -837,7 +851,7 @@ function UserRowItem({
   onClick: () => void;
   isSelf?: boolean;
 }) {
-  const status = String(user.status).toLowerCase();
+  const status = normalizeUserStatus(user.status);
   return (
     <button
       onClick={onClick}
@@ -859,7 +873,7 @@ function UserRowItem({
             <span className="mono truncate max-w-[160px]">{user.id}</span>
           </div>
         </div>
-        <span className={`badge badge-${statusKindOf(status)}`}>{status}</span>
+        <span className={`badge badge-${userStatusBadgeKind(status)}`}>{status}</span>
       </div>
     </button>
   );

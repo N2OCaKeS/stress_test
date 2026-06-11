@@ -15,6 +15,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { BOTS } from "@/mocks/permissions";
 import { DEPTS } from "@/mocks/auth";
 import { InlineEditor, FormRow, StatRow, useInlineState } from "./_inline";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as botsApi from "@/api/auth/bots";
 import { listDepartments } from "@/api/auth/departments";
@@ -60,11 +61,12 @@ function ServicesBotsLive() {
 
   const [refreshTick, setRefreshTick] = useState(0);
   const list = useQuery(
-    () => botsApi.listBots({ limit: 200 }),
+    () => botsApi.listBotsWithTotal({ limit: 200 }),
     [refreshTick],
   );
 
-  const items = list.data ?? [];
+  const items = list.data?.items ?? [];
+  const total = list.data?.total ?? items.length;
 
   if (list.loading) {
     return (
@@ -97,11 +99,14 @@ function ServicesBotsLive() {
     <InlineEditor
       title="Боты · auth_service"
       icon={Bot}
-      hint={`live · ${items.length} ботов`}
+      hint={`live · ${total} ботов`}
       items={items}
       getId={(b) => b.id}
       canEdit={canCreate}
       readonlyNote={!canCreate ? "Просмотр без права изменения" : undefined}
+      listHeader={
+        <TruncationNotice shown={items.length} total={total} />
+      }
       renderRow={({ item, active, onSelect }) => (
         <button
           className={`cred-row text-left ${active ? "active" : ""}`}

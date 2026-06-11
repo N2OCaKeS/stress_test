@@ -46,6 +46,7 @@ import { ServicesGroups } from "./services/ServicesGroups";
 import { ServicesPlatformRoles } from "./services/ServicesPlatformRoles";
 import { ServicesServerInventory } from "./services/ServicesServerInventory";
 import { ServicesServerGroups } from "./services/ServicesServerGroups";
+import { ServicesServerPermissions } from "./services/ServicesServerPermissions";
 import { ServicesSecretSecrets } from "./services/ServicesSecretSecrets";
 import { ServicesSecretPolicies } from "./services/ServicesSecretPolicies";
 import { ServicesSecretTemplates } from "./services/ServicesSecretTemplates";
@@ -257,6 +258,16 @@ const STATIC_ITEMS: AdminItem[] = [
     group: "server",
     content: ServicesServerGroups,
     visibleFor: (p) => isAccountAdmin(p) || hasServerServiceAdmin(p),
+  },
+  {
+    id: "services.server.permissions",
+    label: "Матрица разрешений",
+    hint: "RBAC server_service",
+    icon: ShieldCheck,
+    block: "services",
+    group: "server",
+    content: ServicesServerPermissions,
+    visibleFor: (p) => isAccountAdmin(p),
   },
 
   // Services block — secret (service-specific pages; roles are dynamic)

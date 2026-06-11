@@ -26,8 +26,7 @@ import type { ApiErrorPayload, RefreshResponse } from "@/api/auth/types";
 import {
   clearTokens,
   getAccessToken,
-  getRefreshToken,
-  setTokens,
+  setAccessToken,
 } from "@/api/tokenStore";
 
 const BASE_URL: string =
@@ -191,25 +190,28 @@ function parseRetryAfter(
 /**
  * In-flight refresh promise. If two concurrent requests both 401, only one
  * refresh call should hit the backend; the other awaits the same promise.
+ *
+ * Refresh-токен живёт в HttpOnly cookie `dbos_refresh` — JS его не видит,
+ * браузер сам отдаст его на POST /auth/v1/refresh. Если cookie отсутствует
+ * или истекла, бэк ответит 422/401 — мы интерпретируем это как «refresh
+ * не получился» и инициируем sign-out.
  */
 let refreshInFlight: Promise<boolean> | null = null;
 
 async function performRefresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
-  const refresh = getRefreshToken();
-  if (!refresh) return false;
 
   refreshInFlight = (async () => {
     try {
       const res = await request<RefreshResponse>({
         path: "/auth/v1/refresh",
         method: "POST",
-        body: { refresh_token: refresh },
+        body: {},
         auth: false,
         skipAuthRetry: true,
         skipSignOut: true,
       });
-      setTokens(res.access_token, res.refresh_token);
+      setAccessToken(res.access_token);
       return true;
     } catch {
       return false;
@@ -254,13 +256,11 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
     credentials: "same-origin",
   });
 
-  // 401 with auth attached → attempt single refresh + retry.
-  if (
-    res.status === 401 &&
-    useAuth &&
-    !opts.skipAuthRetry &&
-    getRefreshToken()
-  ) {
+  // 401 with auth attached → attempt single refresh + retry. Refresh-токен
+  // в HttpOnly cookie — браузер его прикрепит автоматически. Если cookie
+  // нет / истёк, /refresh ответит 4xx, performRefresh вернёт false, мы
+  // дёрнем signOut.
+  if (res.status === 401 && useAuth && !opts.skipAuthRetry) {
     const ok = await performRefresh();
     if (ok) {
       return request<T>({ ...opts, skipAuthRetry: true });

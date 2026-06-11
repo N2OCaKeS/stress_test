@@ -132,6 +132,7 @@ class TestCreatePATActorVanished:
                 actor_id="usr_ghost",
                 name="ghost_pat",
                 allowed_services=["any_service"],
+                expires_at=datetime.now(timezone.utc) + timedelta(days=30),
             )
         assert ei.value.error_code == "ACTOR_VANISHED"
 
@@ -155,6 +156,7 @@ class TestCreatePATActorVanished:
         pat = await token_service.create_pat(
             db, actor_id=user_a.id, name="empty_scope_no_actor_lookup",
             allowed_services=[],
+            expires_at=datetime.now(timezone.utc) + timedelta(days=30),
         )
         assert pat.token.startswith("dbos_pat_")
         assert calls == [], (

@@ -595,7 +595,12 @@ async def update_user(
         actor_id=identity.user_id,
         actor_role=identity.platform_role,
         user_id=user_id,
-        updates=body.model_dump(exclude_none=True),
+        # exclude_unset (а не exclude_none) — иначе фронтенд не может
+        # очистить nullable-поля (department_id / platform_role / email):
+        # отсутствующий ключ и явный null приходили бы одинаково и оба
+        # терялись на стадии «drop None». exclude_unset оставляет именно
+        # те ключи, которые клиент написал в JSON, включая null'ы.
+        updates=body.model_dump(exclude_unset=True),
         request_id=getattr(request.state, "request_id", None),
     )
 

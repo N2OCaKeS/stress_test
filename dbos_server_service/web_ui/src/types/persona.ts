@@ -30,7 +30,8 @@ export type PersonaId = string;
 
 /**
  * Synthetic dept identifier. Stable, ASCII, used in URLs, filters, scope refs.
- * Human-readable name is rendered through `deptDisplayName(dept_id)`.
+ * Human-readable name is rendered through `useDeptLabel(dept_id)` из
+ * `@/lib/labels` (читает LabelsProvider, backed by listDepartments).
  */
 export type DeptId = "core" | "dtkk" | "infra" | "ops";
 

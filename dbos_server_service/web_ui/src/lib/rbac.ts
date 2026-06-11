@@ -1,20 +1,14 @@
 import type { Persona } from "@/types/persona";
 
 /**
- * Display labels for synthetic dept ids. Used everywhere a dept needs
- * to be rendered for humans; id stays synthetic in URLs, filters and
- * scope refs.
+ * Returns the dept id as-is (or a platform-wide marker for empty id).
+ * Human-readable dept name живёт в LabelsProvider; используйте `useDeptLabel`
+ * там, где доступен React-контекст. Эта функция нужна только для мест,
+ * где hook позвать нельзя.
  */
-export const DEPT_DISPLAY_NAMES: Record<string, string> = {
-  core: "Ядро DBOS",
-  dtkk: "ДТКК",
-  infra: "Инфра",
-  ops: "Operations",
-};
-
 export function deptDisplayName(deptId?: string | null): string {
   if (!deptId) return "— (платформенный)";
-  return DEPT_DISPLAY_NAMES[deptId] ?? deptId;
+  return deptId;
 }
 
 export function personaDeptId(persona: Persona): string | null {

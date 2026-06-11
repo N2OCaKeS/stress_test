@@ -5,24 +5,26 @@ import {
   UserCog,
   ChevronDown,
   ChevronRight,
-  ShieldOff,
-  ShieldCheck,
+  Copy,
+  RefreshCw,
 } from "lucide-react";
+import {
+  generateInitialPassword,
+  isValidEmail,
+  validatePassword,
+} from "@/lib/passwordPolicy";
 import { usePersona } from "@/contexts/PersonaContext";
 import { DEPTS as MOCK_DEPTS, USERS as MOCK_USERS, type MockUser } from "@/mocks/auth";
 import { InlineEditor, FormRow, useInlineState } from "./_inline";
 import { UserBackendView } from "./_servicesUsersView";
 import {
-  banUser,
   createUser,
   listUsers,
-  unbanUser,
   updateUser,
 } from "@/api/auth/users";
 import { listDepartments } from "@/api/auth/departments";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError } from "@/api/client";
-import { userMutationCaps } from "@/lib/rbac";
 import type {
   Department,
   PlatformRole,
@@ -141,8 +143,6 @@ export function ServicesUsers() {
   const [sortKey, setSortKey] = useState<SortKey>("username_asc");
   const [groupBy, setGroupBy] = useState<GroupKey>("none");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [banBusy, setBanBusy] = useState<string | null>(null);
-  const [banErr, setBanErr] = useState<string | null>(null);
 
   // Departments — used by forms and labels.
   const deptsQ = useQuery<Department[]>(
@@ -250,32 +250,6 @@ export function ServicesUsers() {
     usersQ.refetch();
   };
 
-  async function handleBanToggle(u: UiUser) {
-    if (mockMode) {
-      setBanErr("mock-режим: ban не отправляется");
-      return;
-    }
-    setBanBusy(u.id);
-    setBanErr(null);
-    try {
-      if (u.is_banned || u.status === "banned") {
-        await unbanUser(u.id);
-      } else {
-        const reason = window.prompt(`Причина бана для ${u.username}:`);
-        if (!reason) {
-          setBanBusy(null);
-          return;
-        }
-        await banUser(u.id, { ban_type: "permanent", reason });
-      }
-      refetchAll();
-    } catch (e) {
-      setBanErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
-    } finally {
-      setBanBusy(null);
-    }
-  }
-
   function toggleGroup(k: string) {
     setCollapsed((cur) => ({ ...cur, [k]: !cur[k] }));
   }
@@ -365,9 +339,6 @@ export function ServicesUsers() {
               </div>
             </div>
           )}
-          {banErr && (
-            <div className="alert-danger text-[11px]">{banErr}</div>
-          )}
           {!mockMode && usersQ.loading && (
             <div className="spinner" aria-label="Loading" />
           )}
@@ -380,8 +351,6 @@ export function ServicesUsers() {
       }
       renderRow={({ item, active, onSelect }) => {
         const groupHeaderKey = firstInGroup.get(item.id);
-        const itemCaps = userMutationCaps(persona, item.dept_id);
-        const isBanned = item.is_banned || item.status === "banned";
         const isGroupCollapsed =
           groupHeaderKey !== undefined && collapsed[groupHeaderKey];
         return (
@@ -440,24 +409,9 @@ export function ServicesUsers() {
                 >
                   {item.status}
                 </span>
-                {itemCaps.disable && (
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${isBanned ? "" : "btn-danger"}`}
-                    title={isBanned ? "Unban" : "Ban"}
-                    disabled={banBusy === item.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleBanToggle(item);
-                    }}
-                  >
-                    {isBanned ? (
-                      <ShieldCheck className="w-3 h-3" />
-                    ) : (
-                      <ShieldOff className="w-3 h-3" />
-                    )}
-                  </button>
-                )}
+                {/* per-row Ban/Unban убран — банить и удалять только из
+                    workzone справа после двойного подтверждения, чтобы не
+                    отстреливать юзеров случайным кликом в списке. */}
               </div>
             </div>
             )}
@@ -552,7 +506,9 @@ function UserForm({
   mode: "new" | "edit";
 }) {
   const [username, setUsername] = useState(initial?.username ?? "");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(() =>
+    mode === "new" ? generateInitialPassword() : "",
+  );
   const [email, setEmail] = useState(initial?.email ?? "");
   const [dept, setDept] = useState(initial?.dept_id ?? "");
   const [platformRole, setPlatformRole] = useState<string>(
@@ -563,6 +519,32 @@ function UserForm({
   );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [copyHint, setCopyHint] = useState(false);
+
+  // Когда выбран отдел, доступна только department_admin. Платформенные роли
+  // (account_admin / loging_admin / loging_reader) требуют отсутствия dept,
+  // и backend это валидирует на уровне сервиса.
+  const availableRoles = useMemo(() => {
+    if (dept) return [{ value: "department_admin", label: "department_admin" }];
+    return [
+      { value: "account_admin", label: "account_admin" },
+      { value: "loging_admin", label: "loging_admin" },
+    ];
+  }, [dept]);
+
+  if (platformRole && !availableRoles.some((r) => r.value === platformRole)) {
+    setPlatformRole("");
+  }
+
+  const passwordError = mode === "new" ? validatePassword(password) : null;
+  const emailError =
+    email && !isValidEmail(email) ? "Неверный формат email" : null;
+
+  function copyPassword() {
+    navigator.clipboard?.writeText(password).catch(() => {});
+    setCopyHint(true);
+    setTimeout(() => setCopyHint(false), 1500);
+  }
 
   async function submit() {
     if (mockMode) {
@@ -624,18 +606,55 @@ function UserForm({
         <FormRow label="email">
           <input
             className="input"
+            type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            placeholder="user@example.com"
           />
+          {emailError && (
+            <div className="text-[11px] text-danger mt-1">{emailError}</div>
+          )}
         </FormRow>
         {mode === "new" && (
-          <FormRow label="password" hint="min 4 chars; юзер сменит при первом логине">
-            <input
-              className="input"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+          <FormRow
+            label="пароль (виден, юзер сменит при первом входе)"
+            hint="минимум 12 символов, буквы и цифры"
+          >
+            <div className="flex gap-2 items-center">
+              <input
+                className="input mono flex-1"
+                type="text"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn"
+                title="Сгенерировать новый"
+                onClick={() => setPassword(generateInitialPassword())}
+                disabled={busy}
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                className="btn"
+                title="Скопировать"
+                onClick={copyPassword}
+                disabled={busy}
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="text-[11px] mt-1">
+              {copyHint ? (
+                <span className="text-ok">Скопировано</span>
+              ) : passwordError ? (
+                <span className="text-danger">{passwordError}</span>
+              ) : (
+                <span className="text-dim">Пароль соответствует политике</span>
+              )}
+            </div>
           </FormRow>
         )}
         <FormRow label="dept">
@@ -654,18 +673,23 @@ function UserForm({
         </FormRow>
         <FormRow
           label="platform_role"
-          hint="оставить пустым для обычного user"
+          hint={
+            dept
+              ? "С отделом доступна только department_admin"
+              : "Платформенные роли — без отдела"
+          }
         >
           <select
             className="input"
             value={platformRole}
             onChange={(e) => setPlatformRole(e.target.value)}
           >
-            <option value="">—</option>
-            <option value="account_admin">account_admin</option>
-            <option value="department_admin">department_admin</option>
-            <option value="loging_admin">loging_admin</option>
-            <option value="loging_reader">loging_reader</option>
+            <option value="">— (обычный user)</option>
+            {availableRoles.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
           </select>
         </FormRow>
         {mode === "edit" && (
@@ -691,7 +715,12 @@ function UserForm({
           <button
             className="btn btn-primary"
             onClick={submit}
-            disabled={busy || (mode === "new" && (!username || !password))}
+            disabled={
+              busy ||
+              !!emailError ||
+              (mode === "new" &&
+                (!username || !password || !!passwordError))
+            }
           >
             {busy ? "..." : mode === "new" ? "Создать" : "Сохранить"}
           </button>

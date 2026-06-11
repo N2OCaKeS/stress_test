@@ -3,6 +3,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider, USE_MOCK_AUTH } from "@/contexts/AuthContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
 import { ToastProvider } from "@/contexts/ToastContext";
+import { LabelsProvider } from "@/lib/labels";
 import { PersonaSelector } from "@/pages/auth/PersonaSelector";
 import { Home } from "@/pages/home/Home";
 import { Server } from "@/pages/server/Server";
@@ -32,6 +33,7 @@ export function App() {
         <AuthProvider>
           <PersonaProvider>
             <ToastProvider>
+              <LabelsProvider>
               <Routes>
             <Route
               path="/"
@@ -196,6 +198,7 @@ export function App() {
             <Route path="/404" element={<NotFound />} />
             <Route path="*" element={<Navigate to="/404" replace />} />
               </Routes>
+              </LabelsProvider>
             </ToastProvider>
           </PersonaProvider>
         </AuthProvider>

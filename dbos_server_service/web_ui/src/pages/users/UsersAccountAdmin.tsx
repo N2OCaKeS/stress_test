@@ -36,13 +36,21 @@ import {
   revokeUserSessions,
 } from "@/api/auth/users";
 import { listBots } from "@/api/auth/bots";
+import { listGroups } from "@/api/auth/groups";
 import { listDepartments } from "@/api/auth/departments";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
+import { useDeptLabel } from "@/lib/labels";
 import { ApiError } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
 import { userMutationCaps, groupMutationCaps, botMutationCaps, personaDeptId } from "@/lib/rbac";
-import type { Department, User as ApiUser, PlatformRole } from "@/api/auth/types";
+import type {
+  Bot as ApiBot,
+  Department,
+  Group as ApiGroup,
+  PlatformRole,
+  User as ApiUser,
+} from "@/api/auth/types";
 import {
   CreateBotForm,
   CreateGroupForm,
@@ -205,6 +213,19 @@ export function UsersAccountAdmin() {
     [],
     { enabled: !mockMode },
   );
+  // Список групп нужен и для счётчика на вкладке Groups, и для рендера самой
+  // вкладки в live-режиме. В mock-режиме не дёргаем.
+  const apiGroupsQ = useQuery(
+    () => listGroups({ limit: 200 }),
+    [],
+    { enabled: !mockMode },
+  );
+  // Аналогично для ботов.
+  const apiBotsQ = useQuery(
+    () => listBots({ limit: 200 }),
+    [],
+    { enabled: !mockMode },
+  );
 
   // The workzone shows carol as a representative target. In live mode we look
   // her up in the API result; in mock mode we fall back to the static USERS
@@ -257,16 +278,12 @@ export function UsersAccountAdmin() {
     { enabled: !mockMode && !!targetUser && workzoneTab === "sessions" },
   );
 
-  // Bots created by the target user (filter listBots by created_by).
-  const botsQ = useQuery(
-    () => listBots({ limit: 200 }),
-    [targetUser?.id, workzoneTab],
-    { enabled: !mockMode && !!targetUser && workzoneTab === "bots" },
-  );
+  // Боты, созданные target-пользователем — фильтруем общий список ботов
+  // (apiBotsQ) по created_by. Отдельного запроса больше не делаем.
   const botsCreatedByTarget = useMemo(() => {
     if (!targetUser) return [];
-    return (botsQ.data ?? []).filter((b) => b.created_by === targetUser.id);
-  }, [botsQ.data, targetUser]);
+    return (apiBotsQ.data ?? []).filter((b) => b.created_by === targetUser.id);
+  }, [apiBotsQ.data, targetUser]);
 
   // For Groups/Bots the "Создать" button is gated on the persona's own dept
   // scope (account_admin == any dept; dep_admin == own dept only).
@@ -387,6 +404,8 @@ export function UsersAccountAdmin() {
   const usersCount = mockMode
     ? USERS.length
     : apiUsersQ.data?.total ?? apiUsersQ.data?.items.length ?? 0;
+  const groupsCount = mockMode ? GROUPS.length : (apiGroupsQ.data ?? []).length;
+  const botsCount = mockMode ? BOTS.length : (apiBotsQ.data ?? []).length;
 
   return (
     <Shell breadcrumb="auth_service / users">
@@ -394,8 +413,8 @@ export function UsersAccountAdmin() {
         <div className="border-b border-token px-3 py-2 flex flex-col gap-2">
           <div className="flex gap-1">
             <TabBtn icon={<User className="w-3 h-3" />} active={tab === "users"} onClick={() => setTab("users")}>Users · {usersCount}</TabBtn>
-            <TabBtn icon={<UsersRound className="w-3 h-3" />} active={tab === "groups"} onClick={() => setTab("groups")}>Groups · {GROUPS.length}</TabBtn>
-            <TabBtn icon={<Bot className="w-3 h-3" />} active={tab === "bots"} onClick={() => setTab("bots")}>Bots · {BOTS.length}</TabBtn>
+            <TabBtn icon={<UsersRound className="w-3 h-3" />} active={tab === "groups"} onClick={() => setTab("groups")}>Groups · {groupsCount}</TabBtn>
+            <TabBtn icon={<Bot className="w-3 h-3" />} active={tab === "bots"} onClick={() => setTab("bots")}>Bots · {botsCount}</TabBtn>
           </div>
           <div className="flex items-center gap-2">
             <Search className="w-4 h-4 text-dim" />
@@ -433,7 +452,17 @@ export function UsersAccountAdmin() {
               </div>
               <div className="px-2 flex flex-col gap-0.5">
                 {g.rows.map((row) => {
-                  const real = USERS.find((u) => u.username === row.name);
+                  // В live-режиме apiUsersQ уже знает реальные id; в mock-моде
+                  // фолбэк на статический USERS для перехода в карточку.
+                  const apiUser = !mockMode
+                    ? (apiUsersQ.data?.items ?? []).find(
+                        (u) => u.username === row.name,
+                      )
+                    : null;
+                  const mockUser = mockMode
+                    ? USERS.find((u) => u.username === row.name)
+                    : null;
+                  const real = apiUser ?? mockUser;
                   const linkTo = real ? `/users/${real.id}` : `/users/${row.name}`;
                   return (
                     <Link
@@ -482,48 +511,72 @@ export function UsersAccountAdmin() {
           {tab === "groups" && (
             <div className="px-2 flex flex-col gap-0.5">
               <div className="group-header flex items-center gap-2">
-                <UsersRound className="w-3 h-3" /> Все группы · {GROUPS.length}
+                <UsersRound className="w-3 h-3" /> Все группы · {groupsCount}
               </div>
-              {GROUPS.map((g) => (
-                <Link key={g.id} to={`/users/group/${g.id}`} className="cred-row">
-                  <div className="flex items-center gap-2">
-                    <UsersRound className="w-4 h-4 text-accent" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm truncate flex items-center gap-2">
-                        <span>{g.name}</span>
-                        {g.cross_dept ? (
-                          <span className="badge badge-warn">cross</span>
-                        ) : (
-                          <span className="badge">{g.owner_dept}</span>
-                        )}
+              {mockMode
+                ? GROUPS.map((g) => (
+                    <Link key={g.id} to={`/users/group/${g.id}`} className="cred-row">
+                      <div className="flex items-center gap-2">
+                        <UsersRound className="w-4 h-4 text-accent" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm truncate flex items-center gap-2">
+                            <span>{g.name}</span>
+                            {g.cross_dept ? (
+                              <span className="badge badge-warn">cross</span>
+                            ) : (
+                              <span className="badge">{g.owner_dept}</span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-dim truncate">{g.description}</div>
+                        </div>
                       </div>
-                      <div className="text-[11px] text-dim truncate">{g.description}</div>
-                    </div>
-                  </div>
-                </Link>
-              ))}
+                    </Link>
+                  ))
+                : apiGroupsQ.loading
+                  ? <div className="spinner mx-3" aria-label="Loading" />
+                  : apiGroupsQ.error
+                    ? <div className="alert-danger text-[11px] mx-3">{apiGroupsQ.error.message}</div>
+                    : (apiGroupsQ.data ?? []).length === 0
+                      ? <div className="empty-card text-xs mx-3">Групп нет</div>
+                      : (apiGroupsQ.data ?? []).map((g) => (
+                          <Link key={g.id} to={`/users/group/${g.id}`} className="cred-row">
+                            <GroupAsideRow group={g} />
+                          </Link>
+                        ))}
             </div>
           )}
 
           {tab === "bots" && (
             <div className="px-2 flex flex-col gap-0.5">
               <div className="group-header flex items-center gap-2">
-                <Bot className="w-3 h-3" /> Все боты · {BOTS.length}
+                <Bot className="w-3 h-3" /> Все боты · {botsCount}
               </div>
-              {BOTS.map((b) => (
-                <Link key={b.id} to={`/users/bot/${b.id}`} className="cred-row">
-                  <div className="flex items-center gap-2">
-                    <Bot className="w-4 h-4 text-dim" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm truncate mono">{b.name}</div>
-                      <div className="text-[11px] text-dim">{b.owner_dept} · {b.last_used.slice(0, 10)}</div>
-                    </div>
-                    <span className={`badge badge-${b.token_status === "active" ? "ok" : b.token_status === "rotated" ? "warn" : "danger"}`}>
-                      {b.token_status}
-                    </span>
-                  </div>
-                </Link>
-              ))}
+              {mockMode
+                ? BOTS.map((b) => (
+                    <Link key={b.id} to={`/users/bot/${b.id}`} className="cred-row">
+                      <div className="flex items-center gap-2">
+                        <Bot className="w-4 h-4 text-dim" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm truncate mono">{b.name}</div>
+                          <div className="text-[11px] text-dim">{b.owner_dept} · {b.last_used.slice(0, 10)}</div>
+                        </div>
+                        <span className={`badge badge-${b.token_status === "active" ? "ok" : b.token_status === "rotated" ? "warn" : "danger"}`}>
+                          {b.token_status}
+                        </span>
+                      </div>
+                    </Link>
+                  ))
+                : apiBotsQ.loading
+                  ? <div className="spinner mx-3" aria-label="Loading" />
+                  : apiBotsQ.error
+                    ? <div className="alert-danger text-[11px] mx-3">{apiBotsQ.error.message}</div>
+                    : (apiBotsQ.data ?? []).length === 0
+                      ? <div className="empty-card text-xs mx-3">Ботов нет</div>
+                      : (apiBotsQ.data ?? []).map((b) => (
+                          <Link key={b.id} to={`/users/bot/${b.id}`} className="cred-row">
+                            <BotAsideRow bot={b} />
+                          </Link>
+                        ))}
             </div>
           )}
         </div>
@@ -920,10 +973,10 @@ export function UsersAccountAdmin() {
                 <div className="text-sm text-dim italic">
                   mock: список ботов будет подтянут из API в live-mode.
                 </div>
-              ) : botsQ.loading ? (
+              ) : apiBotsQ.loading ? (
                 <div className="spinner" aria-label="Loading" />
-              ) : botsQ.error ? (
-                <div className="alert-danger text-[11px]">{botsQ.error.message}</div>
+              ) : apiBotsQ.error ? (
+                <div className="alert-danger text-[11px]">{apiBotsQ.error.message}</div>
               ) : botsCreatedByTarget.length === 0 ? (
                 <div className="empty-card text-xs">
                   Этот пользователь не создавал ботов.
@@ -946,7 +999,9 @@ export function UsersAccountAdmin() {
                             {b.name}
                           </Link>
                         </td>
-                        <td className="text-dim text-xs">{b.department_id}</td>
+                        <td className="text-dim text-xs">
+                          <BotDeptCell deptId={b.department_id} />
+                        </td>
                         <td>
                           <span
                             className={`badge badge-${b.status === "active" ? "ok" : "warn"}`}
@@ -1094,5 +1149,48 @@ function TabBtn({
       {icon}
       {children}
     </button>
+  );
+}
+
+function BotDeptCell({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <span>{label}</span>;
+}
+
+function GroupAsideRow({ group }: { group: ApiGroup }) {
+  const dept = useDeptLabel(group.department_id);
+  return (
+    <div className="flex items-center gap-2">
+      <UsersRound className="w-4 h-4 text-accent" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm truncate flex items-center gap-2">
+          <span>{group.display_name || group.name}</span>
+          <span className="badge">{dept}</span>
+        </div>
+        <div className="text-[11px] text-dim truncate">
+          {group.description ?? group.name}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BotAsideRow({ bot }: { bot: ApiBot }) {
+  const dept = useDeptLabel(bot.department_id);
+  return (
+    <div className="flex items-center gap-2">
+      <Bot className="w-4 h-4 text-dim" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm truncate mono">{bot.name}</div>
+        <div className="text-[11px] text-dim">
+          {dept} · {bot.created_at.slice(0, 10)}
+        </div>
+      </div>
+      <span
+        className={`badge badge-${bot.status === "active" ? "ok" : "warn"}`}
+      >
+        {bot.status}
+      </span>
+    </div>
   );
 }

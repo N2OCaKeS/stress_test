@@ -208,7 +208,6 @@ const STATIC_ITEMS: AdminItem[] = [
   {
     id: "services.groups",
     label: "Группы",
-    hint: "auth_service",
     icon: UsersRound,
     block: "services",
     group: "auth",

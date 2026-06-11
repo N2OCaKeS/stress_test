@@ -31,6 +31,7 @@ import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError } from "@/api/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
+import { useDeptLabel, useServiceLabel } from "@/lib/labels";
 import type {
   Group,
   PATCreateResponse,
@@ -67,7 +68,10 @@ export function MyAccount() {
           </div>
           <div className="text-dim text-sm">
             {user?.platform_role ?? "user"} ·{" "}
-            {user?.department_name ?? user?.department_id ?? "платформа"}
+            <HeaderDeptLabel
+              deptName={user?.department_name}
+              deptId={user?.department_id}
+            />
           </div>
         </div>
 
@@ -156,7 +160,15 @@ function ProfileCard({
         <StatRow k="username" v={<span className="mono">{user?.username ?? "—"}</span>} />
         <StatRow k="email" v={<span className="mono">{user?.email ?? "—"}</span>} />
         <StatRow k="user_id" v={<span className="mono">{user?.user_id ?? "—"}</span>} />
-        <StatRow k="department" v={<span>{user?.department_name ?? user?.department_id ?? "платформа"}</span>} />
+        <StatRow
+          k="department"
+          v={
+            <HeaderDeptLabel
+              deptName={user?.department_name}
+              deptId={user?.department_id}
+            />
+          }
+        />
         <StatRow k="platform_role" v={<span className="mono">{user?.platform_role ?? "—"}</span>} />
         <StatRow
           k="status"
@@ -200,7 +212,9 @@ function ProfileCard({
             <tbody>
               {Object.entries(roles).map(([svc, rs]) => (
                 <tr key={svc} className="border-t border-token">
-                  <td className="py-1 pr-3 mono text-xs">{svc}</td>
+                  <td className="py-1 pr-3 text-xs">
+                    <ServiceInline name={svc} />
+                  </td>
                   <td className="py-1 text-xs">
                     {(rs ?? []).length === 0 ? (
                       <span className="text-dim italic">—</span>
@@ -877,7 +891,9 @@ function GroupsCard({ mockMode }: { mockMode: boolean }) {
                   <div className="font-medium">{g.display_name ?? g.name}</div>
                   <div className="text-[11px] text-dim mono">{g.name}</div>
                 </td>
-                <td className="text-xs mono">{g.department_id}</td>
+                <td className="text-xs">
+                  <DeptCell deptId={g.department_id} />
+                </td>
                 <td className="text-xs text-dim">{g.description ?? "—"}</td>
                 <td className="text-xs text-dim mono">{fmtTs(g.created_at)}</td>
               </tr>
@@ -1000,7 +1016,9 @@ function PermissionsView({ data }: { data: UserPermissionsResponse }) {
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i} className="border-t border-token">
-                  <td className="py-2 pr-3 mono text-xs">{r.service}</td>
+                  <td className="py-2 pr-3 text-xs">
+                    <ServiceInline name={String(r.service)} />
+                  </td>
                   <td className="py-2 pr-3">{r.role}</td>
                   <td className="py-2 pr-3 text-xs text-dim">{r.source}</td>
                   <td className="py-2 pr-3 text-xs text-dim mono">
@@ -1032,11 +1050,15 @@ function PermissionsView({ data }: { data: UserPermissionsResponse }) {
                     <div className="font-medium">{g.display_name ?? g.group_name}</div>
                     <div className="text-[11px] text-dim mono">{g.group_name}</div>
                   </td>
-                  <td className="text-xs mono">{g.department_id}</td>
                   <td className="text-xs">
-                    {g.service_accesses.length === 0
-                      ? <span className="text-dim italic">—</span>
-                      : g.service_accesses.map((a) => a.service_name).join(", ")}
+                    <DeptCell deptId={g.department_id} />
+                  </td>
+                  <td className="text-xs">
+                    {g.service_accesses.length === 0 ? (
+                      <span className="text-dim italic">—</span>
+                    ) : (
+                      <ServiceList names={g.service_accesses.map((a) => a.service_name)} />
+                    )}
                   </td>
                   <td className="text-xs text-dim mono">{fmtTs(g.joined_at)}</td>
                 </tr>
@@ -1052,6 +1074,42 @@ function PermissionsView({ data }: { data: UserPermissionsResponse }) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function HeaderDeptLabel({
+  deptName,
+  deptId,
+}: {
+  deptName?: string | null;
+  deptId?: string | null;
+}) {
+  const fromMap = useDeptLabel(deptId);
+  if (deptName) return <span>{deptName}</span>;
+  if (!deptId) return <span>платформа</span>;
+  return <span>{fromMap}</span>;
+}
+
+function DeptCell({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <span>{label}</span>;
+}
+
+function ServiceInline({ name }: { name: string }) {
+  const label = useServiceLabel(name);
+  return <span>{label}</span>;
+}
+
+function ServiceList({ names }: { names: string[] }) {
+  return (
+    <span>
+      {names.map((n, i) => (
+        <span key={n}>
+          {i > 0 && ", "}
+          <ServiceInline name={n} />
+        </span>
+      ))}
+    </span>
+  );
+}
 
 function StatRow({ k, v }: { k: string; v: React.ReactNode }) {
   return (

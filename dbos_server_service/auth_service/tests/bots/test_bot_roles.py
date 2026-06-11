@@ -1,5 +1,9 @@
 """Тесты: /api/auth/v1/bots/{bot_id}/roles — выдача service-ролей ботам."""
 
+from datetime import timedelta
+
+from src.utils.time import utcnow
+
 BOTS_URL = "/api/auth/v1/bots"
 INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
 
@@ -17,7 +21,7 @@ async def _issue_bot_token(client, token, bot_id, name="rb_tok"):
     resp = await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {token}"},
-        json={"name": name},
+        json={"name": name, "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     return resp.json()["token"]
 

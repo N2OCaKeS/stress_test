@@ -4,6 +4,10 @@
 Группа даёт роли, но не расширяет список сервисов бота.
 """
 
+from datetime import timedelta
+
+from src.utils.time import utcnow
+
 GROUPS_URL = "/api/auth/v1/groups"
 BOTS_URL = "/api/auth/v1/bots"
 INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
@@ -29,7 +33,7 @@ async def _issue_bot_token(client, token, bot_id, name="bg_tok"):
     resp = await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {token}"},
-        json={"name": name},
+        json={"name": name, "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     return resp.json()["token"]
 

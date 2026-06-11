@@ -14,6 +14,7 @@ import {
 import { Link } from "react-router-dom";
 import { usePersona } from "@/contexts/PersonaContext";
 import { isPlatformWideAdmin, isDepAdmin, personaDeptId } from "@/lib/rbac";
+import { useLabelsInvalidate } from "@/lib/labels";
 import { DEPTS as MOCK_DEPTS, USERS as MOCK_USERS } from "@/mocks/auth";
 import {
   InlineEditor,
@@ -49,6 +50,7 @@ type UiDept = {
 export function ServicesDepartments() {
   const { persona } = usePersona();
   const mockMode = useMockMode();
+  const invalidateLabels = useLabelsInvalidate();
   // account_admin — full CRUD; dep_admin — CRUD внутри собственного отдела
   // (фактически только delete/edit того, что уже принадлежит ему; create
   // отдела backend всё равно отдаёт только account_admin).
@@ -142,13 +144,14 @@ export function ServicesDepartments() {
             />
           );
         return (
-          <DeptView
+          <DeptDetail
             dept={d}
             mockMode={mockMode}
             canEdit={detailCanEdit}
             onChanged={() => {
               deptsQ.refetch();
               usersQ.refetch();
+              void invalidateLabels("depts");
             }}
           />
         );
@@ -160,6 +163,7 @@ export function ServicesDepartments() {
                 mockMode={mockMode}
                 onDone={() => {
                   deptsQ.refetch();
+                  void invalidateLabels("depts");
                   onClose();
                 }}
                 mode="new"
@@ -171,7 +175,14 @@ export function ServicesDepartments() {
   );
 }
 
-function DeptView({
+/**
+ * Обёртка вокруг `DeptView`, которая держит общий `listDepartmentServices`
+ * query для текущего отдела. И секция «Сервисы отдела», и «Роли сервисов в
+ * этом отделе» используют один и тот же массив гранатов; после grant/revoke
+ * сверху одного вызова `refetch()` хватает, чтобы обе секции синхронно
+ * обновились без перезагрузки страницы.
+ */
+function DeptDetail({
   dept,
   mockMode,
   canEdit,
@@ -182,18 +193,59 @@ function DeptView({
   canEdit: boolean;
   onChanged: () => void;
 }) {
+  const grantedQ = useQuery<string[]>(
+    () => listDepartmentServices(dept.id),
+    [dept.id],
+    { enabled: !mockMode },
+  );
+  return (
+    <DeptView
+      dept={dept}
+      mockMode={mockMode}
+      canEdit={canEdit}
+      onChanged={onChanged}
+      granted={grantedQ.data ?? []}
+      grantedLoading={grantedQ.loading}
+      grantedError={grantedQ.error}
+      refetchGranted={grantedQ.refetch}
+    />
+  );
+}
+
+function DeptView({
+  dept,
+  mockMode,
+  canEdit,
+  onChanged,
+  granted,
+  grantedLoading,
+  grantedError,
+  refetchGranted,
+}: {
+  dept: UiDept;
+  mockMode: boolean;
+  canEdit: boolean;
+  onChanged: () => void;
+  granted: string[];
+  grantedLoading: boolean;
+  grantedError: Error | null;
+  refetchGranted: () => void;
+}) {
   const { close } = useInlineState();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const users = mockMode
     ? MOCK_USERS.filter((u) => u.dept_id === dept.id).length
     : dept.user_count ?? 0;
+  const hasUsers = users > 0;
+  const deleteDisabled = busy || hasUsers;
 
   async function onDelete() {
     if (mockMode) {
       close();
       return;
     }
+    if (hasUsers) return;
     const reason = window.prompt(
       "Hard-delete отдела. Укажи причину (Q3 reorg / closed / ...):",
     );
@@ -217,6 +269,12 @@ function DeptView({
     }
   }
 
+  // Backend бросает 422 USERS_REMAIN_IN_DEPT, если в отделе остались юзеры.
+  // Распознаём и подсвечиваем понятным сообщением + ссылкой на список юзеров.
+  const usersRemainErr =
+    err && err.startsWith("USERS_REMAIN_IN_DEPT") ? err : null;
+  const genericErr = err && !usersRemainErr ? err : null;
+
   return (
     <div className="card max-w-2xl">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -231,7 +289,12 @@ function DeptView({
                 display_name можно только через delete+create. */}
             <button
               className="btn btn-danger flex items-center gap-1"
-              disabled={busy}
+              disabled={deleteDisabled}
+              title={
+                hasUsers
+                  ? `В отделе ещё ${users} юзер(ов) — сначала перевести их в другой отдел`
+                  : undefined
+              }
               onClick={onDelete}
             >
               <Trash2 className="w-4 h-4" /> Delete
@@ -242,10 +305,47 @@ function DeptView({
       <StatRow k="dept_id" v={<span className="mono">{dept.id}</span>} />
       <StatRow k="name" v={dept.name} />
       <StatRow k="display_name" v={dept.display_name} />
-      <StatRow k="users" v={<span className="mono">{users}</span>} />
-      {err && <div className="alert-danger mt-3">{err}</div>}
-      {!mockMode && canEdit && <DeptServicesSection deptId={dept.id} />}
-      {!mockMode && <DeptRolesNav deptId={dept.id} />}
+      <StatRow
+        k="users"
+        v={
+          <span className={`mono ${hasUsers ? "text-warn" : ""}`}>{users}</span>
+        }
+      />
+      {usersRemainErr && (
+        <div className="alert-danger mt-3 flex flex-col gap-1">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              В отделе остались активные юзеры ({users}). Сначала переведи их в
+              другой отдел или удали.
+            </div>
+          </div>
+          <Link
+            to={`/admin/services.users?dept_id=${encodeURIComponent(dept.id)}`}
+            className="btn btn-ghost text-xs self-start flex items-center gap-1"
+          >
+            <ExternalLink className="w-3 h-3" /> Перейти к юзерам отдела
+          </Link>
+        </div>
+      )}
+      {genericErr && <div className="alert-danger mt-3">{genericErr}</div>}
+      {!mockMode && canEdit && (
+        <DeptServicesSection
+          deptId={dept.id}
+          granted={granted}
+          grantedLoading={grantedLoading}
+          grantedError={grantedError}
+          refetchGranted={refetchGranted}
+        />
+      )}
+      {!mockMode && (
+        <DeptRolesNav
+          deptId={dept.id}
+          granted={granted}
+          grantedLoading={grantedLoading}
+          grantedError={grantedError}
+        />
+      )}
       <div className="mt-3 pt-3 border-t border-token text-[11px] text-dim flex items-center gap-1">
         <AlertTriangle className="w-3 h-3 text-warn" />
         Удаление возможно только при users = 0 (422 USERS_REMAIN_IN_DEPT).
@@ -255,16 +355,28 @@ function DeptView({
   );
 }
 
-// auth_service выдаёт только POST/DELETE для dept↔service связки — GET-листинга
-// нет, поэтому секция хранит «локально известный» статус: сервисы, которые
-// админ привязал или отвязал в этой сессии. Источник «доступных» — общий
-// `/services` каталог.
-function DeptServicesSection({ deptId }: { deptId: string }) {
+// Источник истины по привязкам — `GET /departments/{id}/services` (поднимается
+// в `DeptDetail` и передаётся сюда через props). После grant/revoke зовём
+// `refetchGranted`, который синхронно обновит и эту секцию, и `DeptRolesNav`.
+function DeptServicesSection({
+  deptId,
+  granted,
+  grantedLoading,
+  grantedError,
+  refetchGranted,
+}: {
+  deptId: string;
+  granted: string[];
+  grantedLoading: boolean;
+  grantedError: Error | null;
+  refetchGranted: () => void;
+}) {
   const servicesQ = useQuery<Service[]>(() => listServices(), []);
-  const [bound, setBound] = useState<Record<string, boolean | undefined>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState<string | null>(null);
   const [picker, setPicker] = useState<string>("");
+
+  const grantedSet = useMemo(() => new Set(granted), [granted]);
 
   async function grant(serviceName: string) {
     if (busy[serviceName]) return;
@@ -272,7 +384,7 @@ function DeptServicesSection({ deptId }: { deptId: string }) {
     setErr(null);
     try {
       await grantServiceAccess(deptId, serviceName);
-      setBound((m) => ({ ...m, [serviceName]: true }));
+      refetchGranted();
       setPicker("");
     } catch (e) {
       setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
@@ -288,7 +400,7 @@ function DeptServicesSection({ deptId }: { deptId: string }) {
     setErr(null);
     try {
       await revokeServiceAccess(deptId, serviceName);
-      setBound((m) => ({ ...m, [serviceName]: false }));
+      refetchGranted();
     } catch (e) {
       setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
     } finally {
@@ -297,28 +409,27 @@ function DeptServicesSection({ deptId }: { deptId: string }) {
   }
 
   const services = servicesQ.data ?? [];
-  const known = services.filter((s) => bound[s.service_name] !== undefined);
-  const available = services.filter((s) => bound[s.service_name] === undefined);
+  const grantedServices = services.filter((s) => grantedSet.has(s.service_name));
+  const available = services.filter((s) => !grantedSet.has(s.service_name));
 
   return (
     <div className="mt-4 pt-3 border-t border-token">
       <div className="text-sm font-semibold mb-2 flex items-center gap-2">
         Сервисы отдела
-        {servicesQ.loading && <Loader2 className="w-3 h-3 animate-spin" />}
-      </div>
-      <div className="text-[11px] text-dim mb-2">
-        auth_service не отдаёт текущий список привязок — показаны только сервисы,
-        с которыми взаимодействовали в этой сессии. После grant/revoke статус
-        отражается локально.
+        {(servicesQ.loading || grantedLoading) && (
+          <Loader2 className="w-3 h-3 animate-spin" />
+        )}
       </div>
       {servicesQ.error && (
         <div className="alert-danger text-[11px] mb-2">{servicesQ.error.message}</div>
       )}
+      {grantedError && (
+        <div className="alert-danger text-[11px] mb-2">{grantedError.message}</div>
+      )}
       {err && <div className="alert-danger text-[11px] mb-2">{err}</div>}
-      {known.length > 0 && (
+      {grantedServices.length > 0 && (
         <div className="flex flex-col gap-1 mb-2">
-          {known.map((s) => {
-            const isBound = bound[s.service_name];
+          {grantedServices.map((s) => {
             const isLoging = s.service_name === "loging_service";
             return (
               <div
@@ -328,39 +439,24 @@ function DeptServicesSection({ deptId }: { deptId: string }) {
                 <div className="flex items-center justify-between gap-2 text-sm">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="mono truncate">{s.service_name}</span>
-                    <span className="badge">{isBound ? "granted" : "revoked"}</span>
+                    <span className="badge">granted</span>
                   </div>
                   <div className="flex gap-1">
-                    {isBound ? (
-                      <button
-                        className="btn btn-ghost text-xs flex items-center gap-1"
-                        onClick={() => revoke(s.service_name)}
-                        disabled={busy[s.service_name]}
-                      >
-                        {busy[s.service_name] ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <X className="w-3 h-3" />
-                        )}
-                        revoke
-                      </button>
-                    ) : (
-                      <button
-                        className="btn btn-ghost text-xs flex items-center gap-1"
-                        onClick={() => grant(s.service_name)}
-                        disabled={busy[s.service_name]}
-                      >
-                        {busy[s.service_name] ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <Plus className="w-3 h-3" />
-                        )}
-                        grant
-                      </button>
-                    )}
+                    <button
+                      className="btn btn-ghost text-xs flex items-center gap-1"
+                      onClick={() => revoke(s.service_name)}
+                      disabled={busy[s.service_name]}
+                    >
+                      {busy[s.service_name] ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <X className="w-3 h-3" />
+                      )}
+                      revoke
+                    </button>
                   </div>
                 </div>
-                {isLoging && isBound && (
+                {isLoging && (
                   <div className="text-[11px] text-warn flex items-start gap-1 pl-1">
                     <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
                     <span>
@@ -376,6 +472,11 @@ function DeptServicesSection({ deptId }: { deptId: string }) {
               </div>
             );
           })}
+        </div>
+      )}
+      {grantedServices.length === 0 && !grantedLoading && (
+        <div className="text-[11px] text-dim italic mb-2">
+          Ни одного сервиса не привязано. Выбери ниже и нажми Grant.
         </div>
       )}
       <div className="flex items-end gap-2">
@@ -505,7 +606,17 @@ function serviceToAdminItem(serviceName: string): string | undefined {
  * на странице сервиса. dept-id попадает в URL как `?dept_id=<id>` — у
  * целевого экрана это hint, не жёсткий фильтр.
  */
-function DeptRolesNav({ deptId }: { deptId: string }) {
+function DeptRolesNav({
+  deptId,
+  granted,
+  grantedLoading,
+  grantedError,
+}: {
+  deptId: string;
+  granted: string[];
+  grantedLoading: boolean;
+  grantedError: Error | null;
+}) {
   const { persona } = usePersona();
   const platformAdmin = isPlatformWideAdmin(persona);
   const depAdmin = isDepAdmin(persona);
@@ -518,14 +629,7 @@ function DeptRolesNav({ deptId }: { deptId: string }) {
   // Without the filter, dep_admin sees the full platform catalog and can try
   // creating roles for services the dept can't even use (backend would
   // accept the role row but it'd be wasted).
-  const grantedQ = useQuery<string[]>(
-    () => listDepartmentServices(deptId),
-    [deptId],
-  );
-  const grantedSet = useMemo(
-    () => new Set(grantedQ.data ?? []),
-    [grantedQ.data],
-  );
+  const grantedSet = useMemo(() => new Set(granted), [granted]);
   const services = (servicesQ.data ?? []).filter((s) =>
     grantedSet.has(s.service_name),
   );
@@ -545,15 +649,15 @@ function DeptRolesNav({ deptId }: { deptId: string }) {
         Показаны только сервисы с активным grant'ом. Чтобы добавить новый
         сервис — выдай grant в «Сервисы отдела» выше.
       </div>
-      {(servicesQ.loading || grantedQ.loading) && (
+      {(servicesQ.loading || grantedLoading) && (
         <Loader2 className="w-3 h-3 animate-spin text-dim" aria-label="Loading" />
       )}
-      {(servicesQ.error || grantedQ.error) && (
+      {(servicesQ.error || grantedError) && (
         <div className="alert-danger text-[11px] mb-2">
-          {(servicesQ.error ?? grantedQ.error)!.message}
+          {(servicesQ.error ?? grantedError)!.message}
         </div>
       )}
-      {services.length === 0 && !servicesQ.loading && !grantedQ.loading && (
+      {services.length === 0 && !servicesQ.loading && !grantedLoading && (
         <div className="text-[11px] text-dim italic">
           Ни одного гранта нет — добавь сервис в секцию выше.
         </div>

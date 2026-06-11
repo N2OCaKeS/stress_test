@@ -12,10 +12,11 @@ import time
 import pytest
 import pytest_asyncio
 
-from src.core.exceptions import AppException, AuthorizationError
-from tests.conftest import (
 from datetime import timedelta
+
+from src.core.exceptions import AppException, AuthorizationError
 from src.utils.time import utcnow
+from tests.conftest import (
     _assign_role,
     _grant_service,
     _make_dept,
@@ -311,13 +312,17 @@ async def test_pat_create_valid_scope_and_future_expiry_ok(
 
 
 async def test_security_headers_present(client):
-    """X-Frame-Options, X-Content-Type-Options, Referrer-Policy, CSP — на каждом ответе."""
+    """X-Frame-Options, X-Content-Type-Options, Referrer-Policy, CSP, Permissions-Policy — на каждом ответе."""
     resp = await client.get("/api/auth/v1/health")
     assert resp.headers.get("X-Frame-Options") == "DENY"
     assert resp.headers.get("X-Content-Type-Options") == "nosniff"
     assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
     csp = resp.headers.get("Content-Security-Policy", "")
     assert "frame-ancestors 'none'" in csp
+    assert "default-src 'none'" in csp
+    pp = resp.headers.get("Permissions-Policy", "")
+    for sensor in ("geolocation=()", "microphone=()", "camera=()"):
+        assert sensor in pp
 
 
 async def test_hsts_header_off_by_default(client):

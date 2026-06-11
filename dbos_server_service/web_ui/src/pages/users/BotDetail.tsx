@@ -35,20 +35,44 @@ import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as botsApi from "@/api/auth/bots";
 import { ApiError } from "@/api/client";
 import type { BotTokenCreateResponse } from "@/api/auth/types";
+import { useDeptLabel, useServiceLabel } from "@/lib/labels";
 
 export function BotDetail() {
   const { id } = useParams<{ id: string }>();
   const { persona } = usePersona();
-  const bot = BOTS.find((b) => b.id === id || b.name === id);
-  const caps = botMutationCaps(persona, bot?.owner_dept ?? null);
+  const mockMode = useMockMode();
+  // В live-режиме определяем бота через listBots; в mock — через статичный BOTS.
+  // У auth_service нет GET /bots/{id}, поэтому здесь общий список с фильтром.
+  const liveBotsQ = useQuery(
+    () => botsApi.listBots({ limit: 200 }),
+    [id],
+    { enabled: !mockMode },
+  );
+  const mockBot = useMemo(
+    () => (mockMode ? BOTS.find((b) => b.id === id || b.name === id) : undefined),
+    [mockMode, id],
+  );
+  const liveBot = useMemo(
+    () => (!mockMode ? (liveBotsQ.data ?? []).find((b) => b.id === id) : undefined),
+    [mockMode, liveBotsQ.data, id],
+  );
+  const bot = mockBot;
+  const ownerDept = mockMode ? bot?.owner_dept ?? null : liveBot?.department_id ?? null;
+  const caps = botMutationCaps(persona, ownerDept);
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [diffMutation, setDiffMutation] = useState<Mutation | null>(null);
 
-  const botId = bot?.id ?? "";
-  const ba = botId ? BOT_ASSIGNMENTS[botId] : undefined;
-  const effective = useMemo(() => (botId ? computeEffectiveBot(botId) : []), [botId]);
-  const drift = useMemo(() => (botId ? computeBotDrift(botId) : { added: [], removed: [] }), [botId]);
+  const botId = mockMode ? bot?.id ?? "" : liveBot?.id ?? id ?? "";
+  const ba = mockMode && botId ? BOT_ASSIGNMENTS[botId] : undefined;
+  const effective = useMemo(
+    () => (mockMode && botId ? computeEffectiveBot(botId) : []),
+    [mockMode, botId],
+  );
+  const drift = useMemo(
+    () => (mockMode && botId ? computeBotDrift(botId) : { added: [], removed: [] }),
+    [mockMode, botId],
+  );
 
   const removeRoleDiff = useMemo(() => {
     if (!ba || ba.roles.length === 0 || !botId) return null;
@@ -74,7 +98,9 @@ export function BotDetail() {
     });
   };
 
-  if (!bot) {
+  // В live-режиме мы ещё можем загружаться или просто не найти бота — но
+  // не валимся «not found», пока listBots в полёте.
+  if (mockMode && !bot) {
     return (
       <Shell breadcrumb="auth_service / users / bot">
         <section className="flex-1 overflow-y-auto p-8">
@@ -91,13 +117,19 @@ export function BotDetail() {
     );
   }
 
-  const dept = DEPTS.find((d) => d.id === bot.owner_dept);
-  const grants = DIRECT_GRANTS.filter((g) => g.subject_kind === "bot" && g.subject_id === bot.id);
-  const createdByUser = userById(bot.created_by);
-  const createdByLabel = createdByUser ? createdByUser.username : `${bot.created_by} (удалён)`;
+  const dept = mockMode && bot ? DEPTS.find((d) => d.id === bot.owner_dept) : null;
+  const grants = mockMode && bot
+    ? DIRECT_GRANTS.filter((g) => g.subject_kind === "bot" && g.subject_id === bot.id)
+    : [];
+  const createdByUser = mockMode && bot ? userById(bot.created_by) : null;
+  const createdByLabel = mockMode && bot
+    ? (createdByUser ? createdByUser.username : `${bot.created_by} (удалён)`)
+    : "";
 
+  const headerName = mockMode ? bot!.name : (liveBot?.name ?? id ?? "—");
+  const headerId = mockMode ? bot!.id : (liveBot?.id ?? id ?? "");
   return (
-    <Shell breadcrumb={`auth_service / users / bot / ${bot.name}`}>
+    <Shell breadcrumb={`auth_service / users / bot / ${headerName}`}>
       <section className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* HEADER */}
         <div className="border-b border-token p-5 flex items-start gap-4 shrink-0">
@@ -109,22 +141,41 @@ export function BotDetail() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-semibold truncate mono">{bot.name}</h1>
-              <span className={`badge badge-${bot.token_status === "active" ? "ok" : bot.token_status === "rotated" ? "warn" : "danger"}`}>
-                token: {bot.token_status}
-              </span>
-              <span className="badge">dept · {dept?.name ?? bot.owner_dept}</span>
+              <h1 className="text-xl font-semibold truncate mono">{headerName}</h1>
+              {mockMode ? (
+                <span className={`badge badge-${bot!.token_status === "active" ? "ok" : bot!.token_status === "rotated" ? "warn" : "danger"}`}>
+                  token: {bot!.token_status}
+                </span>
+              ) : liveBot ? (
+                <span className={`badge badge-${liveBot.status === "active" ? "ok" : "warn"}`}>
+                  {liveBot.status}
+                </span>
+              ) : null}
+              {mockMode ? (
+                <span className="badge">dept · {dept?.name ?? bot!.owner_dept}</span>
+              ) : liveBot ? (
+                <BotHeaderDept deptId={liveBot.department_id} />
+              ) : null}
             </div>
             <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">
-              <span className="mono">{bot.id}</span>
-              <span>·</span>
-              <span>создан {createdByUser ? (
-                <Link to={`/users/${createdByUser.id}`} className="mono hover-bg">{createdByLabel}</Link>
-              ) : (
-                <span className="mono text-dim">{createdByLabel}</span>
-              )} · {bot.created_at.slice(0, 10)}</span>
-              <span>·</span>
-              <span>last used <span className="mono">{bot.last_used.replace("T", " ").slice(0, 16)}</span></span>
+              <span className="mono">{headerId}</span>
+              {mockMode ? (
+                <>
+                  <span>·</span>
+                  <span>создан {createdByUser ? (
+                    <Link to={`/users/${createdByUser.id}`} className="mono hover-bg">{createdByLabel}</Link>
+                  ) : (
+                    <span className="mono text-dim">{createdByLabel}</span>
+                  )} · {bot!.created_at.slice(0, 10)}</span>
+                  <span>·</span>
+                  <span>last used <span className="mono">{bot!.last_used.replace("T", " ").slice(0, 16)}</span></span>
+                </>
+              ) : liveBot ? (
+                <>
+                  <span>·</span>
+                  <span>создан {liveBot.created_at.slice(0, 10)}</span>
+                </>
+              ) : null}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -137,7 +188,19 @@ export function BotDetail() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 grid grid-cols-2 gap-5 auto-rows-min">
-          <BotLiveData botId={bot.id} caps={caps} />
+          {!mockMode && liveBotsQ.loading && (
+            <div className="col-span-2"><div className="spinner" aria-label="Loading" /></div>
+          )}
+          {!mockMode && liveBotsQ.error && (
+            <div className="col-span-2 alert-danger">{liveBotsQ.error.message}</div>
+          )}
+          {!mockMode && !liveBotsQ.loading && !liveBotsQ.error && !liveBot && (
+            <div className="col-span-2 empty-card danger">
+              Bot <span className="mono">{id}</span> не найден в auth_service.
+            </div>
+          )}
+          <BotLiveData botId={headerId} caps={caps} />
+          {mockMode && bot && <>
           {/* Identification */}
           <Section icon={<BotIcon className="w-4 h-4" />} title="Идентификация" className="col-span-2">
             <div className="grid grid-cols-2 gap-x-6 text-sm">
@@ -330,6 +393,7 @@ export function BotDetail() {
               </div>
             )}
           </Section>
+          </>}
 
         </div>
       </section>
@@ -564,8 +628,8 @@ function BotLiveData({
                 </span>
               </div>
               <div>
-                <div className="text-xs text-dim">department_id</div>
-                <div className="mono">{live.department_id}</div>
+                <div className="text-xs text-dim">department</div>
+                <BotLiveDept deptId={live.department_id} />
               </div>
               <div>
                 <div className="text-xs text-dim">allowed_services</div>
@@ -864,7 +928,9 @@ function BotLiveData({
                       key={r.service_name}
                       className="border-t border-token"
                     >
-                      <td className="py-2 mono text-xs">{r.service_name}</td>
+                      <td className="py-2 text-xs">
+                        <ServiceInline name={r.service_name} />
+                      </td>
                       <td className="text-xs">{r.roles.join(", ")}</td>
                       <td>
                         <button
@@ -998,4 +1064,20 @@ function BotGrantedBy({ id }: { id: string }) {
       {u.username}
     </Link>
   );
+}
+
+
+function BotLiveDept({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <div>{label}</div>;
+}
+
+function BotHeaderDept({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <span className="badge">dept · {label}</span>;
+}
+
+function ServiceInline({ name }: { name: string }) {
+  const label = useServiceLabel(name);
+  return <span>{label}</span>;
 }

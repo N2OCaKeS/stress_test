@@ -380,7 +380,11 @@ class TestUnbanReactivatesPAT:
             await client.post(
                 TOKENS_URL,
                 headers={"Authorization": f"Bearer {user_a_token}"},
-                json={"name": f"p2d_audit_pat_{i}", "allowed_services": ["service_x"]},
+                json={
+                    "name": f"p2d_audit_pat_{i}",
+                    "allowed_services": ["service_x"],
+                    "expires_at": (utcnow() + timedelta(days=30)).isoformat(),
+                },
             )
 
         # Ban (revoke'ит оба).

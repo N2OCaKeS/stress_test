@@ -34,30 +34,53 @@ import {
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as groupsApi from "@/api/auth/groups";
 import { ApiError } from "@/api/client";
+import { useDeptLabel, useServiceLabel } from "@/lib/labels";
 
 export function GroupDetail() {
   const { id } = useParams<{ id: string }>();
   const { persona } = usePersona();
-  const group = GROUPS.find((g) => g.id === id);
-  const caps = groupMutationCaps(persona, group?.owner_dept ?? null);
+  const mockMode = useMockMode();
+  // В mock-режиме используем mock GROUPS / GROUP_MEMBERS / permissionGraph.
+  // В live-режиме всё через GroupLiveData; здесь определяем владельца отдела
+  // для caps через getGroup.
+  const mockGroup = useMemo(
+    () => (mockMode ? GROUPS.find((g) => g.id === id) : undefined),
+    [mockMode, id],
+  );
+  const liveGroupQ = useQuery(
+    () => groupsApi.getGroup(id ?? ""),
+    [id],
+    { enabled: !mockMode && !!id },
+  );
+  const group = mockGroup;
+  const ownerDept = mockMode
+    ? mockGroup?.owner_dept ?? null
+    : liveGroupQ.data?.department_id ?? null;
+  const caps = groupMutationCaps(persona, ownerDept);
 
   const [diffOn, setDiffOn] = useState(false);
 
-  const groupId = group?.id ?? "";
-  const memberRefs = GROUP_MEMBERS[groupId] ?? [];
-  const members = memberRefs
-    .map((uid) => USERS.find((u) => u.id === uid))
-    .filter(Boolean) as typeof USERS;
-  const orphanMembers = memberRefs.filter(
-    (uid) => !USERS.some((u) => u.id === uid),
+  const groupId = mockMode ? (mockGroup?.id ?? "") : (liveGroupQ.data?.id ?? id ?? "");
+  const memberRefs = mockMode ? (GROUP_MEMBERS[groupId] ?? []) : [];
+  const members = mockMode
+    ? (memberRefs
+        .map((uid) => USERS.find((u) => u.id === uid))
+        .filter(Boolean) as typeof USERS)
+    : [];
+  const orphanMembers = mockMode
+    ? memberRefs.filter((uid) => !USERS.some((u) => u.id === uid))
+    : [];
+
+  const groupRoles = mockMode ? (GROUP_ASSIGNMENTS[groupId] ?? []) : [];
+  const effective = useMemo(
+    () => (mockMode && groupId ? computeEffectiveGroup(groupId) : []),
+    [mockMode, groupId],
   );
 
-  const groupRoles = GROUP_ASSIGNMENTS[groupId] ?? [];
-  const effective = useMemo(() => groupId ? computeEffectiveGroup(groupId) : [], [groupId]);
-
-  // For each member: how much this group contributes
+  // For each member: how much this group contributes (mock-only — permission
+  // graph живёт только в моках).
   const memberContrib = useMemo(() => {
-    if (!groupId) return [];
+    if (!mockMode || !groupId) return [];
     return members.map((m) => {
       const before = computeEffectiveUser(m.id);
       const after = computeEffectiveUser(
@@ -68,10 +91,10 @@ export function GroupDetail() {
       const lostByThisGroup = diff.filter((d) => d.change === "removed").length;
       return { user: m, lostByThisGroup, total: before.length };
     });
-  }, [members, groupId]);
+  }, [mockMode, members, groupId]);
 
   const groupDeleteDiff = useMemo(() => {
-    if (!diffOn || !groupId) return null;
+    if (!mockMode || !diffOn || !groupId) return null;
     return members.map((m) => {
       const before = computeEffectiveUser(m.id);
       const after = computeEffectiveUser(
@@ -80,9 +103,9 @@ export function GroupDetail() {
       );
       return { user: m, diff: computeDiff(before, after).filter((d) => d.change === "removed") };
     });
-  }, [diffOn, members, groupId]);
+  }, [mockMode, diffOn, members, groupId]);
 
-  if (!group) {
+  if (mockMode && !group) {
     return (
       <Shell breadcrumb="auth_service / users / group">
         <section className="flex-1 overflow-y-auto p-8">
@@ -99,8 +122,10 @@ export function GroupDetail() {
     );
   }
 
+  const headerName = mockMode ? group!.name : (liveGroupQ.data?.display_name || liveGroupQ.data?.name || id || "—");
+  const headerDescription = mockMode ? group!.description : (liveGroupQ.data?.description ?? "");
   return (
-    <Shell breadcrumb={`auth_service / users / group / ${group.name}`}>
+    <Shell breadcrumb={`auth_service / users / group / ${headerName}`}>
       <section className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* HEADER */}
         <div className="border-b border-token p-5 flex items-start gap-4 shrink-0">
@@ -112,15 +137,21 @@ export function GroupDetail() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-semibold truncate">{group.name}</h1>
-              {group.cross_dept ? (
-                <span className="badge badge-warn">cross-dept</span>
-              ) : (
-                <span className="badge">dept · {group.owner_dept}</span>
+              <h1 className="text-xl font-semibold truncate">{headerName}</h1>
+              {mockMode ? (
+                group!.cross_dept ? (
+                  <span className="badge badge-warn">cross-dept</span>
+                ) : (
+                  <span className="badge">dept · {group!.owner_dept}</span>
+                )
+              ) : liveGroupQ.data ? (
+                <GroupHeaderDept deptId={liveGroupQ.data.department_id} />
+              ) : null}
+              {mockMode && (
+                <span className="badge">{members.length} участников</span>
               )}
-              <span className="badge">{members.length} участников</span>
             </div>
-            <div className="text-sm text-dim mt-1">{group.description}</div>
+            <div className="text-sm text-dim mt-1">{headerDescription}</div>
           </div>
           <div className="flex items-center gap-2">
             {!caps.edit && !caps.delete && !caps.manageMembers && (
@@ -132,7 +163,8 @@ export function GroupDetail() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 grid grid-cols-2 gap-5 auto-rows-min">
-          <GroupLiveData groupId={group.id} caps={caps} />
+          <GroupLiveData groupId={groupId} caps={caps} />
+          {mockMode && group && <>
           {/* Members */}
           <Section icon={<UsersRound className="w-4 h-4" />} title={`Members · ${members.length}`}>
             {members.length === 0 && orphanMembers.length === 0 ? (
@@ -355,6 +387,7 @@ export function GroupDetail() {
               </div>
             )}
           </Section>
+          </>}
         </div>
       </section>
     </Shell>
@@ -494,8 +527,8 @@ function GroupLiveData({
                 <div>{detail.data.display_name ?? "—"}</div>
               </div>
               <div>
-                <div className="text-xs text-dim">department_id</div>
-                <div className="mono">{detail.data.department_id}</div>
+                <div className="text-xs text-dim">department</div>
+                <GroupDeptLine deptId={detail.data.department_id} />
               </div>
               <div>
                 <div className="text-xs text-dim">description</div>
@@ -668,7 +701,9 @@ function GroupLiveData({
                     key={s.service_name}
                     className="row-line flex items-center justify-between"
                   >
-                    <span className="mono">{s.service_name}</span>
+                    <span>
+                      <ServiceInline name={s.service_name} />
+                    </span>
                     <button
                       className="btn btn-sm btn-danger"
                       disabled={!caps.edit || pending}
@@ -728,7 +763,9 @@ function GroupLiveData({
                 <tbody>
                   {(roles.data ?? []).map((r) => (
                     <tr key={r.service_name} className="border-t border-token">
-                      <td className="py-2 mono text-xs">{r.service_name}</td>
+                      <td className="py-2 text-xs">
+                        <ServiceInline name={r.service_name} />
+                      </td>
                       <td className="text-xs">{r.roles.join(", ")}</td>
                       <td>
                         <button
@@ -820,4 +857,19 @@ function Section({ icon, title, children, className = "" }: { icon: React.ReactN
       <div className="flex-1 min-h-0">{children}</div>
     </div>
   );
+}
+
+function GroupDeptLine({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <div>{label}</div>;
+}
+
+function GroupHeaderDept({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <span className="badge">dept · {label}</span>;
+}
+
+function ServiceInline({ name }: { name: string }) {
+  const label = useServiceLabel(name);
+  return <span>{label}</span>;
 }

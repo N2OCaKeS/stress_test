@@ -15,7 +15,6 @@ import {
 import * as authApi from "@/api/auth/auth";
 import {
   clearTokens,
-  getRefreshToken,
   setTokens,
   subscribe as subscribeTokens,
 } from "@/api/tokenStore";
@@ -104,17 +103,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Bootstrap: if a refresh token exists, try to recover the session by
-  // calling /me. If /me 401s, ApiClient will refresh transparently.
+  // Bootstrap: refresh-токен лежит в HttpOnly cookie (JS его не видит), так
+  // что guard'ом «есть ли refresh» не воспользоваться. Просто пробуем /me —
+  // если в памяти ещё нет access (типовой случай после hard reload), ApiClient
+  // сделает /refresh за нас. Cookie прицепится автоматически благодаря path
+  // scope. Если cookie тоже нет / истекла — /refresh ответит 4xx и сработает
+  // signOut handler, который мы зарегистрировали выше.
   useEffect(() => {
     let cancelled = false;
     async function bootstrap() {
       if (USE_MOCK_AUTH) {
-        if (!cancelled) setIsLoading(false);
-        return;
-      }
-      const refreshToken = getRefreshToken();
-      if (!refreshToken) {
         if (!cancelled) setIsLoading(false);
         return;
       }
@@ -146,9 +144,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (req: LoginRequest) => {
     setLastError(null);
+    setForcePwdModal(false);
     if (USE_MOCK_AUTH) {
-      // In mock mode the persona picker drives login; this should not be
-      // called. Resolve to a noop for safety.
       return;
     }
     try {
@@ -162,10 +159,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    const refreshToken = getRefreshToken();
-    if (!USE_MOCK_AUTH && refreshToken) {
+    if (!USE_MOCK_AUTH) {
       try {
-        await authApi.logout(refreshToken);
+        // Refresh-токен уедет cookie'ой — браузер прикрепит её к запросу.
+        await authApi.logout();
       } catch {
         // even if server-side logout fails, drop local session
       }

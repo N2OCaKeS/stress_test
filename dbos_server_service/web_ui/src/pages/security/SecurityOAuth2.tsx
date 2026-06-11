@@ -14,6 +14,7 @@ import type {
   OAuth2ClientCreatedResponse,
 } from "@/api/auth/types";
 import { useToast } from "@/contexts/ToastContext";
+import { useDeptLabel } from "@/lib/labels";
 
 const KNOWN_GRANTS = ["authorization_code", "client_credentials"];
 
@@ -153,8 +154,8 @@ function ClientRow({
         </div>
         <div className="text-[11px] text-dim mono truncate">{c.client_id}</div>
         <div className="text-[11px] text-dim truncate">
-          dept: {c.department_id} · grants: {c.grant_types.join(", ")} · uris:{" "}
-          {c.redirect_uris.length}
+          dept: <OAuth2DeptLabel deptId={c.department_id} /> · grants:{" "}
+          {c.grant_types.join(", ")} · uris: {c.redirect_uris.length}
         </div>
       </div>
       <button
@@ -541,4 +542,9 @@ function TokenTester() {
       )}
     </div>
   );
+}
+
+function OAuth2DeptLabel({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <span>{label}</span>;
 }

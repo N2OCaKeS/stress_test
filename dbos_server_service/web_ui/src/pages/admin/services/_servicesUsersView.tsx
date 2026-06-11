@@ -62,6 +62,7 @@ import type {
   UserPermissionsResponse,
 } from "@/api/auth/types";
 import { StatRow } from "./_inline";
+import { useDeptLabel, useLabelMaps, useServiceLabel } from "@/lib/labels";
 
 interface Props {
   userId: string;
@@ -377,20 +378,7 @@ function ProfileTab({
           <StatRow k="ID" v={<span className="mono">{user.id}</span>} />
           <StatRow
             k="dept"
-            v={
-              user.department_name ? (
-                <span>
-                  {user.department_name}{" "}
-                  <span className="text-dim mono text-xs">
-                    ({user.department_id})
-                  </span>
-                </span>
-              ) : user.department_id ? (
-                <span className="mono">{user.department_id}</span>
-              ) : (
-                "— (платформенный)"
-              )
-            }
+            v={<UserDeptLabel name={user.department_name} id={user.department_id} />}
           />
           <StatRow k="platform_role" v={user.platform_role ?? "—"} />
           <div className="text-[11px] text-dim mt-1">
@@ -540,7 +528,9 @@ function RolesTab({
               const groupOnly = eff.filter((r) => !direct.includes(r));
               return (
                 <tr key={svc} className="border-t border-token align-top">
-                  <td className="py-2 pr-3 mono text-xs">{svc}</td>
+                  <td className="py-2 pr-3 text-xs">
+                    <ServiceInline name={String(svc)} />
+                  </td>
                   <td className="py-2 pr-3">
                     <div className="flex flex-wrap gap-1">
                       {eff.length === 0 ? (
@@ -823,8 +813,8 @@ function GroupsTab({
               <tr key={g.id} className="border-t border-token">
                 <td className="py-2 pr-3 mono text-xs">{g.name}</td>
                 <td className="py-2 pr-3">{g.display_name ?? "—"}</td>
-                <td className="py-2 pr-3 text-xs text-dim mono">
-                  {g.department_id}
+                <td className="py-2 pr-3 text-xs text-dim">
+                  <DeptInline deptId={g.department_id} />
                 </td>
                 <td className="py-2 text-right">
                   <button
@@ -889,6 +879,7 @@ function AddToGroupModal({
     [],
     { enabled: !mockMode },
   );
+  const { depts: deptMap } = useLabelMaps();
   const [pickId, setPickId] = useState<string>("");
 
   const candidates = (allQ.data ?? []).filter((g) => !alreadyIn.has(g.id));
@@ -920,12 +911,15 @@ function AddToGroupModal({
           onChange={(e) => setPickId(e.target.value)}
         >
           <option value="">— выбрать группу —</option>
-          {sorted.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name} ({g.department_id})
-              {g.department_id === deptId ? " · own dept" : ""}
-            </option>
-          ))}
+          {sorted.map((g) => {
+            const deptLabel = deptMap.get(g.department_id) ?? g.department_id;
+            return (
+              <option key={g.id} value={g.id}>
+                {g.name} ({deptLabel})
+                {g.department_id === deptId ? " · own dept" : ""}
+              </option>
+            );
+          })}
         </select>
       )}
       <div className="mt-4 flex justify-end gap-2">
@@ -1123,6 +1117,12 @@ function DangerTab({
             disabled={!caps.disable || busy !== null}
             title={caps.disable ? undefined : caps.reason}
             onClick={() => {
+              if (
+                !window.confirm(
+                  `Забанить пользователя ${user.username}? Действие необратимо; для отмены нужен Unban.`,
+                )
+              )
+                return;
               const reason = window.prompt("Причина бана:");
               if (!reason) return;
               run("ban", () =>
@@ -1130,16 +1130,22 @@ function DangerTab({
               );
             }}
           >
-            <ShieldOff className="w-4 h-4" /> Ban (permanent)
+            <ShieldOff className="w-4 h-4" /> Забанить
           </button>
         ) : (
           <button
             className="btn flex items-center gap-1"
             disabled={!caps.disable || busy !== null}
             title={caps.disable ? undefined : caps.reason}
-            onClick={() => run("unban", () => unbanUser(user.id))}
+            onClick={() => {
+              if (
+                !window.confirm(`Разбанить пользователя ${user.username}?`)
+              )
+                return;
+              run("unban", () => unbanUser(user.id));
+            }}
           >
-            <ShieldCheck className="w-4 h-4" /> Unban
+            <ShieldCheck className="w-4 h-4" /> Разбанить
           </button>
         )}
         <button
@@ -1147,15 +1153,20 @@ function DangerTab({
           disabled={!caps.delete || busy !== null}
           title={caps.delete ? undefined : caps.reason}
           onClick={() => {
+            if (
+              !window.confirm(
+                `Удалить пользователя ${user.username} полностью? Действие необратимо: исчезнут сессии, PAT-токены, привязки к группам.`,
+              )
+            )
+              return;
             const reason = window.prompt(
-              "Hard-delete: укажи причину (Q3 reorg / left / ...):",
+              "Причина удаления (Q3 reorg / left / ...):",
             );
             if (!reason) return;
-            if (!window.confirm(`Снести ${user.username} целиком?`)) return;
             run("delete", () => deleteUser(user.id, { reason }));
           }}
         >
-          <Trash2 className="w-4 h-4" /> Delete user
+          <Trash2 className="w-4 h-4" /> Удалить пользователя
         </button>
         <span className="text-xs text-dim flex items-center gap-1 ml-auto">
           <AlertTriangle className="w-3 h-3 text-warn" />
@@ -1209,4 +1220,27 @@ function ModalShell({
 function fmtTs(s: string | null | undefined): string {
   if (!s) return "—";
   return s.replace("T", " ").slice(0, 16);
+}
+
+function DeptInline({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <span>{label}</span>;
+}
+
+function UserDeptLabel({
+  name,
+  id,
+}: {
+  name?: string | null;
+  id?: string | null;
+}) {
+  const fromMap = useDeptLabel(id);
+  if (name) return <span>{name}</span>;
+  if (!id) return <>— (платформенный)</>;
+  return <span>{fromMap}</span>;
+}
+
+function ServiceInline({ name }: { name: string }) {
+  const label = useServiceLabel(name);
+  return <span>{label}</span>;
 }

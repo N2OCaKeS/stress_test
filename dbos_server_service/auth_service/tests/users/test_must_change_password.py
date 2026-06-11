@@ -14,12 +14,13 @@
 
 import pytest
 
-from src.dependencies.auth import (
 from datetime import timedelta
-from src.utils.time import utcnow
+
+from src.dependencies.auth import (
     _IDENTITY_CACHE_TTL_SECONDS as _ORIG_TTL,
     _identity_cache_clear,
 )
+from src.utils.time import utcnow
 
 LOGIN_URL = "/api/auth/v1/login"
 ME_URL = "/api/auth/v1/me"

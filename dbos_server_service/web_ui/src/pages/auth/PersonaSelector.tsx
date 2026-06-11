@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { ThemeSwitcher } from "@/components/shell/ThemeSwitcher";
-import { deptDisplayName } from "@/lib/rbac";
+import { useDeptLabel } from "@/lib/labels";
 import type { Persona } from "@/types/persona";
 
 const SERVICE_CHIPS: Record<
@@ -50,6 +50,7 @@ function PersonaTile({
     ? ROLE_ICONS[persona.platform_role]
     : null;
   const serviceRoleEntries = Object.entries(persona.service_roles);
+  const deptLabel = useDeptLabel(persona.dept_id);
 
   return (
     <button
@@ -82,7 +83,7 @@ function PersonaTile({
             {persona.dept_id && (
               <span className="role-badge">
                 <Building2 className="w-3 h-3" />
-                {deptDisplayName(persona.dept_id)}
+                {deptLabel}
               </span>
             )}
           </div>

@@ -1,9 +1,16 @@
 """Тесты: /api/auth/v1/bots — сервисные боты и их токены."""
 
+from datetime import timedelta
+
+from src.utils.time import utcnow
 from tests._helpers.http import _create_bot  # noqa: F401 — общий helper
 
 BOTS_URL = "/api/auth/v1/bots"
 INTROSPECT_URL = "/api/auth/v1/authorization/introspect"
+
+
+def _exp(days: int = 30) -> str:
+    return (utcnow() + timedelta(days=days)).isoformat()
 
 
 # ── Create ────────────────────────────────────────────────────────────────────
@@ -89,26 +96,17 @@ async def test_create_bot_token(client, admin_token, dept_a):
     bot_id = (await _create_bot(client, admin_token, dept_a.id, name="tok_bot")).json()["bot_id"]
     resp = await client.post(f"{BOTS_URL}/{bot_id}/tokens",
                               headers={"Authorization": f"Bearer {admin_token}"},
-                              json={"name": "ci_token"})
+                              json={"name": "ci_token", "expires_at": _exp()})
     assert resp.status_code == 201
     body = resp.json()
     assert body["token"].startswith("dbos_bot_")
-
-
-async def test_duplicate_bot_token_name_returns_409(client, admin_token, dept_a):
-    bot_id = (await _create_bot(client, admin_token, dept_a.id, name="dup_tok_bot")).json()["bot_id"]
-    await client.post(f"{BOTS_URL}/{bot_id}/tokens",
-                      headers={"Authorization": f"Bearer {admin_token}"}, json={"name": "same"})
-    resp = await client.post(f"{BOTS_URL}/{bot_id}/tokens",
-                              headers={"Authorization": f"Bearer {admin_token}"}, json={"name": "same"})
-    assert resp.status_code == 409
 
 
 async def test_bot_token_works_in_introspect(client, admin_token, dept_a):
     bot_id = (await _create_bot(client, admin_token, dept_a.id, name="intr_bot")).json()["bot_id"]
     raw_token = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
                                     headers={"Authorization": f"Bearer {admin_token}"},
-                                    json={"name": "intr_tok"})).json()["token"]
+                                    json={"name": "intr_tok", "expires_at": _exp()})).json()["token"]
     resp = await client.post(INTROSPECT_URL, json={"token": raw_token})
     assert resp.json()["active"] is True
     assert resp.json()["subject_type"] == "bot"
@@ -118,7 +116,7 @@ async def test_revoked_bot_token_inactive_in_introspect(client, admin_token, dep
     bot_id = (await _create_bot(client, admin_token, dept_a.id, name="rev_bot")).json()["bot_id"]
     tok_data = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
                                    headers={"Authorization": f"Bearer {admin_token}"},
-                                   json={"name": "rev_tok"})).json()
+                                   json={"name": "rev_tok", "expires_at": _exp()})).json()
     await client.delete(f"{BOTS_URL}/{bot_id}/tokens/{tok_data['token_id']}",
                         headers={"Authorization": f"Bearer {admin_token}"})
     resp = await client.post(INTROSPECT_URL, json={"token": tok_data["token"]})
@@ -161,7 +159,7 @@ async def test_list_bot_tokens_excludes_raw_secret(client, admin_token, dept_a):
     bot_id = (await _create_bot(client, admin_token, dept_a.id, name="list_tok_bot")).json()["bot_id"]
     raw = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
                               headers={"Authorization": f"Bearer {admin_token}"},
-                              json={"name": "ls_tok"})).json()["token"]
+                              json={"name": "ls_tok", "expires_at": _exp()})).json()["token"]
     resp = await client.get(f"{BOTS_URL}/{bot_id}/tokens",
                             headers={"Authorization": f"Bearer {admin_token}"})
     assert resp.status_code == 200
@@ -180,7 +178,7 @@ async def test_revoke_bot_token_returns_200(client, admin_token, dept_a):
     bot_id = (await _create_bot(client, admin_token, dept_a.id, name="rev200_bot")).json()["bot_id"]
     tok_id = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
                                  headers={"Authorization": f"Bearer {admin_token}"},
-                                 json={"name": "to_kill"})).json()["token_id"]
+                                 json={"name": "to_kill", "expires_at": _exp()})).json()["token_id"]
     resp = await client.delete(f"{BOTS_URL}/{bot_id}/tokens/{tok_id}",
                                headers={"Authorization": f"Bearer {admin_token}"})
     assert resp.status_code == 200
@@ -190,7 +188,7 @@ async def test_double_revoke_bot_token_returns_409(client, admin_token, dept_a):
     bot_id = (await _create_bot(client, admin_token, dept_a.id, name="rev409_bot")).json()["bot_id"]
     tok_id = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
                                  headers={"Authorization": f"Bearer {admin_token}"},
-                                 json={"name": "dbl_kill"})).json()["token_id"]
+                                 json={"name": "dbl_kill", "expires_at": _exp()})).json()["token_id"]
     await client.delete(f"{BOTS_URL}/{bot_id}/tokens/{tok_id}",
                         headers={"Authorization": f"Bearer {admin_token}"})
     resp = await client.delete(f"{BOTS_URL}/{bot_id}/tokens/{tok_id}",
@@ -207,7 +205,7 @@ async def test_bot_token_scope_limited_by_dept_access(client, admin_token, dept_
                                  services=[service_x.service_name])).json()["bot_id"]
     raw_token = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
                                     headers={"Authorization": f"Bearer {admin_token}"},
-                                    json={"name": "scope_tok"})).json()["token"]
+                                    json={"name": "scope_tok", "expires_at": _exp()})).json()["token"]
     await client.delete(f"/api/auth/v1/departments/{dept_a_with_service.id}/services/{service_x.service_name}",
                         headers={"Authorization": f"Bearer {admin_token}"})
     resp = await client.post(INTROSPECT_URL, json={"token": raw_token})

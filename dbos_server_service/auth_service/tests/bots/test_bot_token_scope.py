@@ -11,6 +11,10 @@ dept_admin одного отдела мог выписать / посмотре�
 - dept_admin → cross-dept бот → 403 BOT_ROLE_MGMT_FORBIDDEN.
 """
 
+from datetime import timedelta
+
+from src.utils.time import utcnow
+
 BOTS_URL = "/api/auth/v1/bots"
 
 
@@ -27,7 +31,7 @@ async def _issue_token(client, token, bot_id, name="scope_tok"):
     resp = await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {token}"},
-        json={"name": name},
+        json={"name": name, "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
     return resp
 

@@ -3,12 +3,14 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
+from src.core.exceptions import DomainValidationError
 from src.db.session import AsyncSessionLocal
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
@@ -18,6 +20,36 @@ from src.services import auth_service
 from src.services.audit_context import extract_client_ip
 
 router = APIRouter()
+
+# Имя cookie с refresh-токеном. Path сужен до auth-эндпоинтов: на остальные
+# ручки cookie не уезжает, лишний трафик не палит токен в proxy/cdn-логах.
+REFRESH_COOKIE_NAME = "dbos_refresh"
+REFRESH_COOKIE_PATH = "/api/auth/v1"
+
+
+def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    """Поставить HttpOnly Secure cookie с refresh-токеном.
+
+    `secure` выключаем только в `app_env=local` — vite dev-сервер шлёт
+    запросы по http://localhost, иначе браузер просто отбросит cookie.
+    На прод/test/development `secure=True` обязателен.
+    """
+    settings = get_settings()
+    ttl_seconds = settings.refresh_token_ttl_days * 24 * 60 * 60
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        secure=settings.app_env != "local",
+        samesite="strict",
+        path=REFRESH_COOKIE_PATH,
+        max_age=ttl_seconds,
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    """Снять refresh cookie. Path должен совпадать с тем, под которым ставился."""
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, path=REFRESH_COOKIE_PATH)
 
 _readiness_logger = logging.getLogger(__name__)
 
@@ -174,6 +206,7 @@ async def token_form(
 async def login(
     body: LoginRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     """Логин по паре username/password.
@@ -195,7 +228,7 @@ async def login(
         * `POST /logout` — отозвать refresh.
         * `GET /me` — получить identity по access.
     """
-    return await auth_service.login(
+    result = await auth_service.login(
         db=db,
         username=body.username,
         password=body.password,
@@ -206,6 +239,8 @@ async def login(
         user_agent=request.headers.get("User-Agent"),
         request_id=getattr(request.state, "request_id", None),
     )
+    _set_refresh_cookie(response, result.refresh_token)
+    return result
 
 
 @router.post(
@@ -221,6 +256,7 @@ async def login(
 async def refresh(
     body: RefreshRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> RefreshResponse:
     """Обновить access через refresh.
@@ -242,13 +278,24 @@ async def refresh(
         * `REFRESH_TOKEN_RACE` (401) — параллельный /refresh уже ротировал
           сессию (CAS-miss). Benign-race, повтор с новым refresh решает.
     """
-    return await auth_service.refresh(
+    # Body имеет приоритет над cookie — старые клиенты, которые ещё шлют
+    # refresh в теле, продолжают работать. Новый UI пустой body шлёт намеренно,
+    # cookie приедет на /api/auth/v1 благодаря path scope.
+    raw_refresh = body.refresh_token or request.cookies.get(REFRESH_COOKIE_NAME)
+    if not raw_refresh:
+        raise DomainValidationError(
+            error_code="MISSING_REFRESH_TOKEN",
+            message="refresh_token не передан ни в body, ни в cookie",
+        )
+    result = await auth_service.refresh(
         db=db,
-        raw_refresh_token=body.refresh_token,
+        raw_refresh_token=raw_refresh,
         request_id=getattr(request.state, "request_id", None),
         ip_address=extract_client_ip(request),
         user_agent=request.headers.get("User-Agent"),
     )
+    _set_refresh_cookie(response, result.refresh_token)
+    return result
 
 
 @router.post(
@@ -260,6 +307,7 @@ async def refresh(
 async def logout(
     body: LogoutRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
     """Logout — отозвать refresh.
@@ -271,11 +319,20 @@ async def logout(
     Доступ:
         Публичный. Параметр — сам refresh, для несуществующего тихо ok.
     """
+    raw_refresh = body.refresh_token or request.cookies.get(REFRESH_COOKIE_NAME)
+    if not raw_refresh:
+        raise DomainValidationError(
+            error_code="MISSING_REFRESH_TOKEN",
+            message="refresh_token не передан ни в body, ни в cookie",
+        )
     await auth_service.logout(
         db=db,
-        raw_refresh_token=body.refresh_token,
+        raw_refresh_token=raw_refresh,
         request_id=getattr(request.state, "request_id", None),
     )
+    # Чистим cookie независимо от того, был ли refresh валидным — logout
+    # идемпотентен (см. tests/auth/test_logout.py).
+    _clear_refresh_cookie(response)
     return OkResponse()
 
 

@@ -13,69 +13,69 @@
 
   "departments": [
     {
-      "name": "dep_a",
-      "display_name": "Отдел А — Демонстрационный"
+      "name": "LoadTest",
+      "display_name": "Нагрузочное тестирование"
     }
   ],
 
   "users": [
     {
-      "username": "alice",
-      "email": "alice@dep-a.dev",
-      "department_name": "dep_a",
+      "username": "mfilippenko",
+      "email": "mfilippenko@astralinux.ru",
+      "department_name": "LoadTest",
+      "platform_role": "loging_reader",
+      "password": "1234"
+    },
+    {
+      "username": "dtimonin",
+      "email": "dtimonin@astralinux.ru",
+      "department_name": "LoadTest",
       "platform_role": "department_admin",
-      "password": "DepAdmin2026Secure"
+      "password": "1234"
     },
     {
-      "username": "bob_user",
-      "email": "bob@dep-a.dev",
-      "department_name": "dep_a",
-      "platform_role": null,
-      "password": "RegularUser2026Sec"
-    },
-    {
-      "username": "global_audit",
-      "email": "audit@dbos.dev",
+      "username": "ivelikanov",
+      "email": "ivelikanov@astralinux.ru",
       "department_name": null,
       "platform_role": "loging_reader",
-      "password": "ReadOnlyAudit2026"
+      "password": "1234"
     }
   ],
 
   "groups": [
     {
-      "name": "dep_a_ops",
-      "display_name": "Отдел А · Operations",
-      "department_name": "dep_a",
-      "description": "Operations team — доступ к серверам отдела",
-      "members": ["alice", "bob_user"]
+      "name": "loadtest",
+      "display_name": "Нагрузочное тестирование",
+      "department_name": "LoadTest",
+      "description": "Доступ к серверам и секретам отдела",
+      "members": ["mfilippenko", "ivelikanov", "dtimonin"]
     }
   ],
 
   "bots": [
     {
-      "name": "dep-a-ci-bot",
-      "department_name": "dep_a",
-      "description": "Service account для CI/CD pipeline отдела dep_a",
-      "allowed_services": ["server_service"]
+      "name": "allta_bot",
+      "department_name": "LoadTest",
+      "description": "Service account для CI/CD pipeline отдела LoadTest",
+      "allowed_services": ["server_service", "secret_service"]
     }
   ],
 
   "department_services": [
-    { "department_name": "dep_a", "service_name": "server_service" },
-    { "department_name": "dep_a", "service_name": "loging_service" }
+    { "department_name": "LoadTest", "service_name": "server_service" },
+    { "department_name": "LoadTest", "service_name": "secret_service" }
   ],
 
   "service_roles": [
     {
-      "department_name": "dep_a",
+      "department_name": "LoadTest",
       "service_name": "server_service",
       "role_name": "reader",
       "display_name": "Reader",
       "description": "Только просмотр серверов отдела"
     },
     {
-      "department_name": "dep_a",
+      "department_name": "LoadTest",
       "service_name": "server_service",
       "role_name": "operator",
       "display_name": "Operator",
@@ -85,16 +85,16 @@
 
   "role_assignments": [
     {
-      "department_name": "dep_a",
+      "department_name": "LoadTest",
       "service_name": "server_service",
       "role_name": "operator",
-      "usernames": ["alice"]
+      "usernames": ["mfilippenko", "dtimonin", "ivelikanov"]
     },
     {
-      "department_name": "dep_a",
+      "department_name": "LoadTest",
       "service_name": "server_service",
       "role_name": "reader",
-      "usernames": ["bob_user"]
+      "usernames": []
     }
   ]
 }

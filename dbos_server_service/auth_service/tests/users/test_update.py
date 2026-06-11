@@ -738,7 +738,11 @@ class TestPatchStatusBlockedRevokesPATs:
         return await client.post(
             TOKENS_URL,
             headers={"Authorization": f"Bearer {token}"},
-            json={"name": name, "allowed_services": ["service_x"]},
+            json={
+                "name": name,
+                "allowed_services": ["service_x"],
+                "expires_at": (utcnow() + timedelta(days=30)).isoformat(),
+            },
         )
 
     async def test_active_to_blocked_revokes_pats(

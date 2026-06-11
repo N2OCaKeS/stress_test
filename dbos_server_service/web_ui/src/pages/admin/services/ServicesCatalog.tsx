@@ -18,6 +18,7 @@ import {
   StatRow,
   useInlineState,
 } from "./_inline";
+import { useLabelsInvalidate } from "@/lib/labels";
 import { ServiceRolesInline } from "./_serviceRolesInline";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError } from "@/api/client";
@@ -49,6 +50,7 @@ export function ServicesCatalog() {
   const { persona } = usePersona();
   const mockMode = useMockMode();
   const canEdit = isPlatformWideAdmin(persona);
+  const invalidateLabels = useLabelsInvalidate();
 
   const servicesQ = useQuery<Service[]>(
     () => listServices(),
@@ -130,6 +132,7 @@ export function ServicesCatalog() {
           mockMode={mockMode}
           onChanged={() => {
             servicesQ.refetch();
+            void invalidateLabels("services");
             onClose();
           }}
         />
@@ -141,6 +144,7 @@ export function ServicesCatalog() {
                 mockMode={mockMode}
                 onDone={() => {
                   servicesQ.refetch();
+                  void invalidateLabels("services");
                   onClose();
                 }}
               />

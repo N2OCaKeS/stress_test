@@ -100,8 +100,16 @@ class LoginResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    """Тело `POST /refresh` — обмен refresh на новую пару."""
-    refresh_token: str = Field(description="Текущий refresh. После ротации станет невалидным.")
+    """Тело `POST /refresh` — обмен refresh на новую пару.
+
+    `refresh_token` опционален: если не передан в body, endpoint берёт его
+    из HttpOnly cookie `dbos_refresh`. Body имеет приоритет (для старых
+    клиентов и для случаев, когда cookie не подключилась).
+    """
+    refresh_token: str | None = Field(
+        default=None,
+        description="Текущий refresh. Если пусто — берётся из cookie `dbos_refresh`.",
+    )
 
 
 class RefreshResponse(BaseModel):
@@ -113,5 +121,12 @@ class RefreshResponse(BaseModel):
 
 
 class LogoutRequest(BaseModel):
-    """Тело `POST /logout` — инвалидация refresh."""
-    refresh_token: str = Field(description="Refresh, который надо отозвать")
+    """Тело `POST /logout` — инвалидация refresh.
+
+    `refresh_token` опционален: при отсутствии в body endpoint достаёт его
+    из HttpOnly cookie `dbos_refresh`. Если оба пусты — 422.
+    """
+    refresh_token: str | None = Field(
+        default=None,
+        description="Refresh, который надо отозвать. Если пусто — берётся из cookie `dbos_refresh`.",
+    )

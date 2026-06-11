@@ -596,6 +596,10 @@ class TestSecurityHeaders:
         assert r.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
         csp = r.headers.get("Content-Security-Policy", "")
         assert "frame-ancestors 'none'" in csp
+        assert "default-src 'none'" in csp
+        pp = r.headers.get("Permissions-Policy", "")
+        for sensor in ("geolocation=()", "microphone=()", "camera=()"):
+            assert sensor in pp
 
     def test_headers_present_on_error_response(self, client):
         # 401 от require_admin — заголовки должны быть и здесь (outermost слой).

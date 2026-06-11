@@ -7,6 +7,7 @@ import {
 } from "@/api/auth/authorization";
 import type { ServiceName } from "@/api/auth/types";
 import { useToast } from "@/contexts/ToastContext";
+import { useDeptLabel } from "@/lib/labels";
 
 const KNOWN_SERVICES: ServiceName[] = [
   "auth_service",
@@ -98,7 +99,7 @@ export function SecurityServiceAccess() {
               allowed: {String(result.allowed)}
             </span>
             {result.department_id && (
-              <span className="badge">dept: {result.department_id}</span>
+              <ResultDeptBadge deptId={result.department_id} />
             )}
           </div>
           {result.service_roles && (
@@ -116,4 +117,9 @@ export function SecurityServiceAccess() {
       )}
     </div>
   );
+}
+
+function ResultDeptBadge({ deptId }: { deptId: string }) {
+  const label = useDeptLabel(deptId);
+  return <span className="badge">dept: {label}</span>;
 }

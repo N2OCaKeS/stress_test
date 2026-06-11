@@ -326,7 +326,7 @@ class TestPatLockoutSideChannel:
         )).json()["token"]
 
         # Ставим locked_until в будущем — имитируем password-lockout.
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timezone
 
         from sqlalchemy import update
 

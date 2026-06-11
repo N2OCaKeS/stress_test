@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bot,
   Edit3,
@@ -17,6 +17,8 @@ import { DEPTS } from "@/mocks/auth";
 import { InlineEditor, FormRow, StatRow, useInlineState } from "./_inline";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as botsApi from "@/api/auth/bots";
+import { listDepartments } from "@/api/auth/departments";
+import type { Department } from "@/api/auth/types";
 import { ApiError } from "@/api/client";
 import type {
   Bot as BotResource,
@@ -30,6 +32,7 @@ import {
   isPlatformWideAdmin,
   isSecretAdmin,
 } from "@/lib/rbac";
+import { useDeptLabel, useServiceLabel } from "@/lib/labels";
 
 export function ServicesBots() {
   const mock = useMockMode();
@@ -108,7 +111,7 @@ function ServicesBotsLive() {
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate mono">{item.name}</div>
               <div className="text-[11px] text-dim truncate">
-                {item.department_id}
+                <RowDeptLabel deptId={item.department_id} />
               </div>
             </div>
             <span
@@ -229,10 +232,8 @@ function BotLiveView({
     }
   };
 
-  const deptName = useMemo(
-    () => DEPTS.find((d) => d.id === bot.department_id)?.name ?? null,
-    [bot.department_id],
-  );
+  const liveDeptLabel = useDeptLabel(bot.department_id ?? null);
+  const deptName = liveDeptLabel || null;
 
   // Activity timestamps surfaced from the token sub-resource: backend does not
   // expose them on the bot itself, but the latest issue/revoke timestamps
@@ -340,12 +341,7 @@ function BotLiveView({
         <StatRow k="description" v={bot.description ?? "—"} />
         <StatRow
           k="department"
-          v={
-            <span>
-              <span className="mono">{bot.department_id}</span>
-              {deptName && <span className="text-dim"> · {deptName}</span>}
-            </span>
-          }
+          v={<BotDeptLabel mockDeptName={deptName} deptId={bot.department_id} />}
         />
         <StatRow
           k="status"
@@ -674,7 +670,9 @@ function BotLiveView({
                   key={r.service_name}
                   className="border-t border-token align-top"
                 >
-                  <td className="py-2 mono text-xs">{r.service_name}</td>
+                  <td className="py-2 text-xs">
+                    <ServiceInline name={r.service_name} />
+                  </td>
                   <td className="text-xs">
                     <div className="flex flex-wrap gap-1">
                       {r.roles.map((role) => (
@@ -823,8 +821,13 @@ function RoleAssignRow({
 }
 
 function BotCreateForm({ onDone }: { onDone: () => void }) {
+  const deptsQ = useQuery<Department[]>(() => listDepartments(), []);
+  const depts = deptsQ.data ?? [];
   const [name, setName] = useState("");
-  const [dept, setDept] = useState(DEPTS[0]?.id ?? "");
+  const [dept, setDept] = useState("");
+  useEffect(() => {
+    if (!dept && depts.length > 0) setDept(depts[0].id);
+  }, [dept, depts]);
   const [services, setServices] = useState("");
   const [description, setDescription] = useState("");
   const tokenExpBounds = useMemo(() => tokenExpiresBounds(), []);
@@ -918,10 +921,15 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
               className="input"
               value={dept}
               onChange={(e) => setDept(e.target.value)}
+              disabled={deptsQ.loading || depts.length === 0}
             >
-              {DEPTS.map((d) => (
+              {deptsQ.loading && <option>загрузка…</option>}
+              {!deptsQ.loading && depts.length === 0 && (
+                <option value="">нет отделов</option>
+              )}
+              {depts.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.name}
+                  {d.display_name ?? d.name}
                 </option>
               ))}
             </select>
@@ -1277,4 +1285,26 @@ function tokenExpiresBounds(): { min: string; max: string; default: string } {
   const def = new Date(today);
   def.setDate(def.getDate() + 90);
   return { min: fmt(min), max: fmt(max), default: fmt(def) };
+}
+
+function RowDeptLabel({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <span>{label}</span>;
+}
+
+function BotDeptLabel({
+  mockDeptName,
+  deptId,
+}: {
+  mockDeptName: string | null;
+  deptId: string | null | undefined;
+}) {
+  const apiLabel = useDeptLabel(deptId);
+  if (mockDeptName) return <span>{mockDeptName}</span>;
+  return <span>{apiLabel}</span>;
+}
+
+function ServiceInline({ name }: { name: string }) {
+  const label = useServiceLabel(name);
+  return <span>{label}</span>;
 }

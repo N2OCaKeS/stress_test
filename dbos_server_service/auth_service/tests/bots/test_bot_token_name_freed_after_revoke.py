@@ -8,6 +8,10 @@ exists_name(bot_id, name) фильтрует по `revoked_at IS NULL` + БД-у
 Аналог `test_pat_recreate_after_revoke.py` для bot-токенов.
 """
 
+from datetime import timedelta
+
+from src.utils.time import utcnow
+
 BOTS_URL = "/api/auth/v1/bots"
 
 
@@ -25,7 +29,7 @@ async def _mint_token(client, admin_token, bot_id, name):
     return await client.post(
         f"{BOTS_URL}/{bot_id}/tokens",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": name},
+        json={"name": name, "expires_at": (utcnow() + timedelta(days=30)).isoformat()},
     )
 
 
@@ -66,18 +70,6 @@ async def test_multiple_revoked_tokens_same_name_allowed(client, admin_token, de
         assert mint.status_code == 201, f"cycle {cycle}: {mint.text}"
         rev = await _revoke_token(client, admin_token, bot_id, mint.json()["token_id"])
         assert rev.status_code == 200, f"cycle {cycle} revoke: {rev.text}"
-
-
-async def test_active_bot_token_name_conflict_still_409(client, admin_token, dept_a):
-    """Пока первый токен активен — повторное имя → 409 TOKEN_NAME_ALREADY_EXISTS."""
-    bot_id = await _make_bot(client, admin_token, dept_a.id, name="rn_conflict_bot")
-
-    first = await _mint_token(client, admin_token, bot_id, "still_active")
-    assert first.status_code == 201, first.text
-
-    second = await _mint_token(client, admin_token, bot_id, "still_active")
-    assert second.status_code == 409
-    assert second.json()["error_code"] == "TOKEN_NAME_ALREADY_EXISTS"
 
 
 async def test_bot_token_revoke_then_different_name_also_works(client, admin_token, dept_a):

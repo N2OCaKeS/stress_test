@@ -36,6 +36,7 @@ import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
+import { useDeptLabel } from "@/lib/labels";
 import { userMutationCaps, groupMutationCaps, botMutationCaps, personaDeptId } from "@/lib/rbac";
 import type { Department } from "@/api/auth/types";
 import {
@@ -664,7 +665,9 @@ export function UsersDepAdmin() {
                             {b.name}
                           </Link>
                         </td>
-                        <td className="text-dim text-xs">{b.department_id}</td>
+                        <td className="text-dim text-xs">
+                          <BotDeptCell deptId={b.department_id} />
+                        </td>
                         <td>
                           <span
                             className={`badge badge-${b.status === "active" ? "ok" : "warn"}`}
@@ -846,4 +849,9 @@ function StatRow({ k, v }: { k: string; v: React.ReactNode }) {
       <span>{v}</span>
     </div>
   );
+}
+
+function BotDeptCell({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <span>{label}</span>;
 }

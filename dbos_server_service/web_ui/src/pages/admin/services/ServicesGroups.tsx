@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   UsersRound,
   Edit3,
@@ -11,6 +11,7 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
+import { useLabelsInvalidate } from "@/lib/labels";
 import { InlineEditor, FormRow, StatRow, useInlineState } from "./_inline";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as groupsApi from "@/api/auth/groups";
@@ -27,6 +28,7 @@ import type {
   ServiceName,
   ServiceRole,
 } from "@/api/auth/types";
+import { useServiceLabel } from "@/lib/labels";
 
 /**
  * Управление группами `auth_service`: профиль, участники (юзеры + боты),
@@ -59,14 +61,18 @@ function ServicesGroupsLive() {
   const canCreate = isAccountAdmin || isDepAdmin;
 
   const [refreshTick, setRefreshTick] = useState(0);
-  const bump = useCallback(() => setRefreshTick((t) => t + 1), []);
+  const invalidateLabels = useLabelsInvalidate();
+  const bump = useCallback(() => {
+    setRefreshTick((t) => t + 1);
+    void invalidateLabels("groups");
+  }, [invalidateLabels]);
 
   // dep_admin видит только свой отдел; account_admin — все группы.
   const listFn = useMemo(() => {
-    if (isAccountAdmin) return () => groupsApi.listGroups({ limit: 500 });
+    if (isAccountAdmin) return () => groupsApi.listGroups({ limit: 200 });
     if (isDepAdmin && persona.dept_id) {
       const deptId = persona.dept_id;
-      return () => groupsApi.listGroupsByDepartment(deptId, { limit: 500 });
+      return () => groupsApi.listGroupsByDepartment(deptId, { limit: 200 });
     }
     // На случай logging_admin / нестандартной роли — пусто, кнопка «Создать» скрыта.
     return () => Promise.resolve<Group[]>([]);
@@ -296,10 +302,7 @@ function GroupDetailView({
           k="department"
           v={
             <span>
-              <span className="mono">{group.department_id}</span>
-              {dept && (
-                <span className="text-dim"> · {dept.display_name}</span>
-              )}
+              {dept ? dept.display_name || dept.name : group.department_id}
             </span>
           }
         />
@@ -409,13 +412,13 @@ function MembersCard({
   // Список юзеров/ботов для выбора. Фильтруем по dept — только из того же
   // отдела, что и группа (правило backend: members обязаны принадлежать dept).
   const usersQ = useQuery(
-    () => usersApi.listUsersByDepartment(group.department_id, { limit: 500 }),
+    () => usersApi.listUsersByDepartment(group.department_id, { limit: 200 }),
     [group.department_id],
     { enabled: canEdit && addKind === "user" },
   );
   const botsQ = useQuery(
     () =>
-      botsApi.listBots({ department_id: group.department_id, limit: 500 }),
+      botsApi.listBots({ department_id: group.department_id, limit: 200 }),
     [group.department_id],
     { enabled: canEdit && addKind === "bot" },
   );
@@ -651,7 +654,9 @@ function ServicesCard({
           <tbody>
             {granted.map((s) => (
               <tr key={s.service_name} className="border-t border-token">
-                <td className="py-2 mono text-xs">{s.service_name}</td>
+                <td className="py-2 text-xs">
+                  <ServiceInline name={s.service_name} />
+                </td>
                 <td className="text-xs text-dim mono">
                   {s.granted_at ? s.granted_at.slice(0, 10) : "—"}
                 </td>
@@ -773,7 +778,9 @@ function RolesCard({
                 key={r.service_name}
                 className="border-t border-token align-top"
               >
-                <td className="py-2 mono text-xs">{r.service_name}</td>
+                <td className="py-2 text-xs">
+                  <ServiceInline name={r.service_name} />
+                </td>
                 <td className="text-xs">
                   <div className="flex flex-wrap gap-1">
                     {r.roles.length === 0 ? (
@@ -964,11 +971,20 @@ function GroupCreateForm({
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
-  const [deptId, setDeptId] = useState(
-    lockDept ? personaDeptId ?? "" : depts[0]?.id ?? "",
-  );
+  const [deptId, setDeptId] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  // Synchronise dept default once depts have loaded — useState initial fires
+  // once on mount, before depts arrive, so without this `deptId` stays "".
+  useEffect(() => {
+    if (deptId) return;
+    if (lockDept && personaDeptId) {
+      setDeptId(personaDeptId);
+    } else if (depts.length > 0) {
+      setDeptId(depts[0].id);
+    }
+  }, [deptId, depts, lockDept, personaDeptId]);
 
   const submit = async () => {
     setErr(null);
@@ -982,8 +998,13 @@ function GroupCreateForm({
       });
       onDone();
     } catch (e) {
-      if (e instanceof ApiError) setErr(`${e.errorCode}: ${e.message}`);
-      else if (e instanceof Error) setErr(e.message);
+      if (e instanceof ApiError) {
+        const errs = (e.details as { errors?: { loc?: unknown[]; msg?: string }[] } | undefined)?.errors;
+        const extra = errs?.length
+          ? " · " + errs.map((x) => `${(x.loc ?? []).join(".")}: ${x.msg}`).join("; ")
+          : "";
+        setErr(`${e.errorCode}: ${e.message}${extra}`);
+      } else if (e instanceof Error) setErr(e.message);
       else setErr(String(e));
     } finally {
       setPending(false);
@@ -1172,4 +1193,9 @@ function DeleteGroupButton({
       </button>
     </div>
   );
+}
+
+function ServiceInline({ name }: { name: string }) {
+  const label = useServiceLabel(name);
+  return <span>{label}</span>;
 }

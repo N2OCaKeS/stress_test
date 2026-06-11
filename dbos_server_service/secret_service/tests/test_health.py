@@ -38,6 +38,15 @@ async def test_security_headers_present(client):
     response = await client.get("/api/secret/v1/health")
     assert response.headers.get("X-Frame-Options") == "DENY"
     assert response.headers.get("X-Content-Type-Options") == "nosniff"
+    assert (
+        response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+    )
+    csp = response.headers.get("Content-Security-Policy", "")
+    assert "frame-ancestors 'none'" in csp
+    assert "default-src 'none'" in csp
+    pp = response.headers.get("Permissions-Policy", "")
+    for sensor in ("geolocation=()", "microphone=()", "camera=()"):
+        assert sensor in pp
     assert "X-Request-ID" in response.headers
 
 

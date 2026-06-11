@@ -215,7 +215,8 @@ async def test_bot_token_as_docker_password(client, admin_token, dept_a):
                                "allowed_services": []})).json()["bot_id"]
     bot_token = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
                             headers={"Authorization": f"Bearer {admin_token}"},
-                            json={"name": "dock_tok"})).json()["token"]
+                            json={"name": "dock_tok",
+                                  "expires_at": (utcnow() + timedelta(days=30)).isoformat()})).json()["token"]
     resp = await client.get(TOKEN_URL, headers=_basic("dock_bot", bot_token),
                       params={"service": "registry.test"})
     assert resp.status_code == 200
@@ -228,7 +229,8 @@ async def test_revoked_bot_token_denied_for_docker(client, admin_token, dept_a):
                                "allowed_services": []})).json()["bot_id"]
     tok_data = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
                            headers={"Authorization": f"Bearer {admin_token}"},
-                           json={"name": "dock_rev_tok"})).json()
+                           json={"name": "dock_rev_tok",
+                                 "expires_at": (utcnow() + timedelta(days=30)).isoformat()})).json()
     await client.delete(f"{BOTS_URL}/{bot_id}/tokens/{tok_data['token_id']}",
                   headers={"Authorization": f"Bearer {admin_token}"})
     resp = await client.get(TOKEN_URL, headers=_basic("dock_bot_rev", tok_data["token"]),

@@ -140,17 +140,25 @@ async def test_regular_user_cannot_hard_delete(
 
 
 async def test_hard_delete_last_account_admin_blocked(
-    client, admin_token, account_admin, db, notify_calls,
+    account_admin, db, notify_calls,
 ):
-    """Нельзя снести единственного account_admin'а — иначе платформа без admin'а."""
-    # Session-level seeding в conftest._seed_e2e_admin создаёт e2e_admin
-    # (account_admin) вне SAVEPOINT'а, поэтому в БД на момент теста сидят оба
-    # активных админа: e2e_admin + t_admin. Чтобы получить «единственный
-    # account_admin» сценарий — деактивируем e2e_admin в рамках SAVEPOINT'а
-    # (откатится после teardown'а, не загрязняет последующие тесты).
-    from src.core.constants import PlatformRole
-    from src.models import User
+    """Нельзя снести единственного account_admin'а — иначе платформа без admin'а.
 
+    Через HTTP-путь LAST_ACCOUNT_ADMIN недостижим: endpoint требует actor =
+    account_admin, и `if actor_id == user_id → CANNOT_DELETE_SELF` срабатывает
+    раньше. Поэтому защита проверяется на service-уровне: actor (другой
+    активный admin) сносит target, и guard видит, что target — последний
+    активный admin'ом будет 0 после снесения (мы делаем actor неактивным).
+    """
+    from src.core.constants import PlatformRole
+    from src.core.exceptions import DomainValidationError
+    from src.core.security import hash_password
+    from src.models import User
+    from src.services import user_service
+    from src.utils.ids import user_id
+
+    # Сценарий: t_admin (account_admin) — единственный активный account_admin.
+    # Все остальные ACCOUNT_ADMIN (например seeded e2e_admin) деактивируем.
     e2e_admins = list(
         (await db.scalars(
             select(User).where(
@@ -161,12 +169,31 @@ async def test_hard_delete_last_account_admin_blocked(
     )
     for u in e2e_admins:
         u.is_active = False
+
+    # Actor — другой account_admin, но неактивный (active=False), чтобы
+    # `count_active_account_admins` = 1, и target оказался последним. Actor'у
+    # достаточно прав на уровне service-вызова, RBAC проверяет endpoint.
+    actor = User(
+        id=user_id(),
+        username="t_admin_actor",
+        password_hash=hash_password("Admin12345678!"),
+        platform_role=PlatformRole.ACCOUNT_ADMIN.value,
+        department_id=None,
+        is_active=False,
+    )
+    db.add(actor)
     await db.flush()
     await db.commit()
 
-    resp = await _hard_delete(client, admin_token, account_admin.id)
-    assert resp.status_code == 422
-    assert resp.json()["error_code"] == "LAST_ACCOUNT_ADMIN"
+    with pytest.raises(DomainValidationError) as ei:
+        await user_service.hard_delete_user(
+            db=db,
+            actor_id=actor.id,
+            actor_username=actor.username,
+            user_id=account_admin.id,
+            reason="cleanup",
+        )
+    assert ei.value.error_code == "LAST_ACCOUNT_ADMIN"
     # secret_service notify НЕ должен звучать на guard-rejection.
     assert notify_calls == []
 

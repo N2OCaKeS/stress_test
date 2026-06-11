@@ -20,6 +20,9 @@ _ALWAYS_ON = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+    "Permissions-Policy": (
+        "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+    ),
 }
 
 

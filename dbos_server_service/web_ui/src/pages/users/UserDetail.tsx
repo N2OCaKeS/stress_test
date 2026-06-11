@@ -61,6 +61,7 @@ import { listServices } from "@/api/auth/services";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError } from "@/api/client";
+import { useDeptLabel, useLabelMaps, useServiceLabel } from "@/lib/labels";
 import type {
   Group as ApiGroup,
   Service as ApiService,
@@ -129,12 +130,14 @@ export function UserDetail() {
     { enabled: !mockMode && !!id },
   );
 
-  // For UI: prefer mock when present (so the rich permission-graph mocks keep
-  // working) else synthesise a thin shape from the API user.
+  // В mock-режиме источник — статичный USERS; в live-режиме — apiUserQ.
+  // В mock-моде с разрешения id-by-username для удобства, в live этого делать
+  // не надо (apiUserQ ходит по id из роута).
   const user = useMemo(() => {
     if (!id) return undefined;
-    const mock = userById(id) ?? USERS.find((u) => u.username === id);
-    if (mock) return mock;
+    if (mockMode) {
+      return userById(id) ?? USERS.find((u) => u.username === id);
+    }
     if (apiUserQ.data) {
       const u = apiUserQ.data;
       return {
@@ -154,7 +157,7 @@ export function UserDetail() {
       };
     }
     return undefined;
-  }, [id, apiUserQ.data]);
+  }, [id, mockMode, apiUserQ.data]);
 
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [actionInfo, setActionInfo] = useState<string | null>(null);
@@ -232,11 +235,19 @@ export function UserDetail() {
     );
   }
 
-  const dept = user.dept_id ? DEPTS.find((d) => d.id === user.dept_id) : null;
-  const assignments = USER_ASSIGNMENTS[user.id];
-  const groups = (user.groups ?? assignments?.groups ?? []).map((gid) =>
-    GROUPS.find((g) => g.id === gid),
-  ).filter(Boolean) as typeof GROUPS;
+  // В mock-режиме оставляем богатые mock-данные (dept по id, permission-graph
+  // assignments, ссылки на mock-группы). В live-режиме шапка/dept ходят через
+  // useDeptLabel, а Platform roles / Direct grants / Effective / Audit /
+  // permission-graph секции скрываются (для них пока нет endpoint'ов).
+  const dept = mockMode && user.dept_id
+    ? DEPTS.find((d) => d.id === user.dept_id)
+    : null;
+  const assignments = mockMode ? USER_ASSIGNMENTS[user.id] : undefined;
+  const groups = mockMode
+    ? ((user.groups ?? assignments?.groups ?? []).map((gid) =>
+        GROUPS.find((g) => g.id === gid),
+      ).filter(Boolean) as typeof GROUPS)
+    : [];
 
   const toggleExpand = (key: string) => {
     setExpanded((prev) => {
@@ -279,7 +290,7 @@ export function UserDetail() {
               <span>·</span>
               <span className="mono">{user.id}</span>
               <span>·</span>
-              <span>dept: <b>{dept?.name ?? "— (платформенный)"}</b></span>
+              <span>dept: <b>{mockMode ? (dept?.name ?? "— (платформенный)") : (user.dept_id ? <HeaderDeptName deptId={user.dept_id} /> : "— (платформенный)")}</b></span>
               <span>·</span>
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" /> {user.last_login}
@@ -388,7 +399,18 @@ export function UserDetail() {
         />
 
         {/* BODY — scroll only inside selected tab */}
-        {tab === "matrix" && <UserAccessMatrices userId={user.id} />}
+        {tab === "matrix" && (
+          mockMode ? (
+            <UserAccessMatrices userId={user.id} />
+          ) : (
+            <div className="flex-1 overflow-y-auto p-5">
+              <div className="empty-card">
+                Скоро. Матрицы доступа (user/bot × resource, role × service)
+                требуют сводных endpoint'ов в auth_service — пока не реализованы.
+              </div>
+            </div>
+          )
+        )}
         {tab === "sessions" && (
           <UserSessionsTab
             userId={user.id}
@@ -406,7 +428,7 @@ export function UserDetail() {
                 <StatRow k="login" v={<span className="mono">{user.username}</span>} />
                 <StatRow k="email" v={<span className="mono">{user.email}</span>} />
                 <StatRow k="ID" v={<span className="mono">{user.id}</span>} />
-                <StatRow k="dept" v={<span>{dept?.name ?? "— (платформенный)"}</span>} />
+                <StatRow k="dept" v={mockMode ? <span>{dept?.name ?? "— (платформенный)"}</span> : (user.dept_id ? <HeaderDeptName deptId={user.dept_id} /> : <span>— (платформенный)</span>)} />
               </div>
               <div>
                 <StatRow k="status" v={<span className={`badge badge-${user.status === "active" ? "ok" : user.status === "blocked" ? "warn" : "danger"}`}>{user.status}</span>} />
@@ -472,34 +494,46 @@ export function UserDetail() {
 
           {/* 2b. Platform roles */}
           <Section icon={<ShieldCheck className="w-4 h-4" />} title="Платформенные роли">
-            {(() => {
-              const platformAssigns = (assignments?.roles ?? []).filter((ra) => {
-                const r = ROLES.find((x) => x.id === ra.role_id);
-                return r && r.service === "platform";
-              });
-              if (platformAssigns.length === 0) {
-                return <div className="text-sm text-dim italic">Платформенные роли не выданы.</div>;
-              }
-              return (
-                <div className="flex flex-col gap-2">
-                  {platformAssigns.map((ra) => {
-                    const role = ROLES.find((r) => r.id === ra.role_id)!;
-                    return (
-                      <div key={ra.role_id} className="row-line">
-                        <div className="flex flex-col">
-                          <span className="badge badge-accent w-fit">{role.name}</span>
-                          <span className="text-xs text-dim mt-1">{role.description}</span>
+            {mockMode ? (
+              (() => {
+                const platformAssigns = (assignments?.roles ?? []).filter((ra) => {
+                  const r = ROLES.find((x) => x.id === ra.role_id);
+                  return r && r.service === "platform";
+                });
+                if (platformAssigns.length === 0) {
+                  return <div className="text-sm text-dim italic">Платформенные роли не выданы.</div>;
+                }
+                return (
+                  <div className="flex flex-col gap-2">
+                    {platformAssigns.map((ra) => {
+                      const role = ROLES.find((r) => r.id === ra.role_id)!;
+                      return (
+                        <div key={ra.role_id} className="row-line">
+                          <div className="flex flex-col">
+                            <span className="badge badge-accent w-fit">{role.name}</span>
+                            <span className="text-xs text-dim mt-1">{role.description}</span>
+                          </div>
+                          <div className="text-xs text-dim text-right">
+                            <div>granted by <GrantedBy id={ra.granted_by} /></div>
+                            <div>{ra.granted_at.slice(0, 10)}</div>
+                          </div>
                         </div>
-                        <div className="text-xs text-dim text-right">
-                          <div>granted by <GrantedBy id={ra.granted_by} /></div>
-                          <div>{ra.granted_at.slice(0, 10)}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
+                      );
+                    })}
+                  </div>
+                );
+              })()
+            ) : user.platform_role ? (
+              <div className="flex flex-col gap-1">
+                <span className="badge badge-accent w-fit">{user.platform_role}</span>
+                <span className="text-xs text-dim">
+                  Платформенная роль из /me/permissions. Подробной истории grant'а
+                  пока нет (нужен endpoint в auth_service).
+                </span>
+              </div>
+            ) : (
+              <div className="text-sm text-dim italic">Платформенные роли не выданы.</div>
+            )}
           </Section>
 
           {/* 2c. Service roles */}
@@ -603,7 +637,13 @@ export function UserDetail() {
 
           {/* 2d. Direct grants */}
           <Section icon={<KeyRound className="w-4 h-4" />} title="Прямые grants" className="col-span-2">
-            {(() => {
+            {!mockMode ? (
+              <div className="text-sm text-dim italic">
+                Не реализовано — auth_service не выдаёт direct grants на
+                user-уровне (есть только роли и группы). Нужен отдельный
+                endpoint GET /users/{"{id}"}/grants.
+              </div>
+            ) : (() => {
               const grants = DIRECT_GRANTS.filter((g) => g.subject_kind === "user" && g.subject_id === user.id);
               if (grants.length === 0) {
                 return <div className="text-sm text-dim italic">Direct grants отсутствуют.</div>;
@@ -1117,6 +1157,33 @@ function StatRow({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
+function DeptBadge({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <span className="badge">dept · {label}</span>;
+}
+
+function HeaderDeptName({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <>{label}</>;
+}
+
+function ModalDeptLabel({ deptId }: { deptId: string | null | undefined }) {
+  const label = useDeptLabel(deptId);
+  return <span>{label}</span>;
+}
+
+function ServiceCell({ name }: { name: string }) {
+  const label = useServiceLabel(name);
+  return (
+    <span>
+      <span>{label}</span>
+      {label !== name && (
+        <span className="mono text-[10px] text-dim ml-1">{name}</span>
+      )}
+    </span>
+  );
+}
+
 // Render granted_by id as a clickable username when the user exists, or
 // a dimmed "<id> (удалён)" fallback when the actor has been deleted.
 function GrantedBy({ id }: { id: string }) {
@@ -1414,7 +1481,7 @@ function UserGroupsLiveSection({
               >
                 {g.name}
               </Link>
-              <span className="badge">dept · {g.department_id}</span>
+              <DeptBadge deptId={g.department_id} />
               <span
                 className="text-xs text-dim truncate max-w-[220px]"
                 title={g.description ?? ""}
@@ -1457,7 +1524,8 @@ function AddUserToGroupModal({
   onAdded,
   onError,
 }: AddUserToGroupModalProps) {
-  const groupsQ = useQuery<ApiGroup[]>(() => listGroups({ limit: 500 }), []);
+  const groupsQ = useQuery<ApiGroup[]>(() => listGroups({ limit: 200 }), []);
+  const { depts: deptMap } = useLabelMaps();
   const [selected, setSelected] = useState<string>("");
   const [filter, setFilter] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
@@ -1467,14 +1535,16 @@ function AddUserToGroupModal({
     const f = filter.trim().toLowerCase();
     return all
       .filter((g) => !currentGroupIds.has(g.id))
-      .filter((g) =>
-        !f
-          ? true
-          : g.name.toLowerCase().includes(f) ||
-            (g.display_name ?? "").toLowerCase().includes(f) ||
-            g.department_id.toLowerCase().includes(f),
-      );
-  }, [groupsQ.data, currentGroupIds, filter]);
+      .filter((g) => {
+        if (!f) return true;
+        const deptLabel = (deptMap.get(g.department_id) ?? g.department_id).toLowerCase();
+        return (
+          g.name.toLowerCase().includes(f) ||
+          (g.display_name ?? "").toLowerCase().includes(f) ||
+          deptLabel.includes(f)
+        );
+      });
+  }, [groupsQ.data, currentGroupIds, filter, deptMap]);
 
   async function submit() {
     if (!selected) return;
@@ -1542,7 +1612,7 @@ function AddUserToGroupModal({
                     )}
                   </div>
                   <div className="text-xs text-dim flex gap-2 mt-0.5">
-                    <span className="mono">{g.department_id}</span>
+                    <ModalDeptLabel deptId={g.department_id} />
                     {g.description && (
                       <span className="truncate">· {g.description}</span>
                     )}
@@ -1609,7 +1679,9 @@ function UserServiceRolesLiveTable({
       <tbody>
         {entries.map(([svc, list]) => (
           <tr key={svc} className="border-t border-token">
-            <td className="py-2 mono">{svc}</td>
+            <td className="py-2">
+              <ServiceCell name={svc} />
+            </td>
             <td>
               <div className="flex flex-wrap gap-1">
                 {list.map((r) => (

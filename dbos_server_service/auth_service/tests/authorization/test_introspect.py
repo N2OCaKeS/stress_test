@@ -125,7 +125,8 @@ async def test_bot_token_is_active(client, admin_token, dept_a):
                                        "allowed_services": []})).json()["bot_id"]
     raw = (await client.post(f"{BOTS_URL}/{bot_id}/tokens",
                               headers={"Authorization": f"Bearer {admin_token}"},
-                              json={"name": "it"})).json()["token"]
+                              json={"name": "it",
+                                    "expires_at": (utcnow() + timedelta(days=30)).isoformat()})).json()["token"]
     resp = await client.post(INTROSPECT_URL, json={"token": raw})
     assert resp.json()["active"] is True
     assert resp.json()["subject_type"] == "bot"

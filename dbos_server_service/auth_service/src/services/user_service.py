@@ -382,7 +382,16 @@ async def update_user(
         )
 
     allowed_fields = {"email", "department_id", "status", "platform_role"}
-    filtered = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+    # status — не nullable в БД; для остальных явный null = «очистить поле»
+    # (например, снять platform_role у юзера или перевести в платформенные
+    # без отдела). exclude_unset на endpoint'е оставляет именно те ключи,
+    # которые пришли в JSON, включая null.
+    nullable_fields = {"email", "department_id", "platform_role"}
+    filtered = {
+        k: v
+        for k, v in updates.items()
+        if k in allowed_fields and (v is not None or k in nullable_fields)
+    }
     if actor_role == PlatformRole.DEPARTMENT_ADMIN:
         filtered.pop("platform_role", None)
 

@@ -79,11 +79,9 @@ export function PersonaProvider({ children }: { children: ReactNode }) {
   const setPersona = useCallback((id: PersonaId) => {
     if (!USE_MOCK_AUTH) return;
     setMockId(id);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, id);
-    } catch {
-      // ignore
-    }
+    // Не пишем выбор в localStorage: persona-picker — dev-инструмент,
+    // в проде disabled. Перезагрузка вкладки = снова дефолт. Тесты
+    // могут предзаполнить localStorage напрямую (см. HomeVariants.test).
   }, []);
 
   const persona = useMemo<Persona>(() => {

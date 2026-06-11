@@ -15,11 +15,13 @@ import {
   Trash,
   LogOut,
   UserCog,
+  PanelLeftClose,
+  PanelLeftOpen,
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import type { ServiceName } from "@/types/persona";
-import { DEPT_DISPLAY_NAMES } from "@/lib/rbac";
+import { useDeptLabelOpt } from "@/lib/labels";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 
 interface ServiceChip {
@@ -59,7 +61,13 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
   config: { service: "config", to: "/admin", icon: Cog, label: "Config" },
 };
 
-export function LeftPanel() {
+interface LeftPanelProps {
+  width: number;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+}
+
+export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProps) {
   const { persona } = usePersona();
   const auth = useAuthOptional();
   const location = useLocation();
@@ -85,46 +93,64 @@ export function LeftPanel() {
     location.pathname === to ||
     (to !== "/home" && location.pathname.startsWith(to + "/"));
 
-  const deptLabel = persona.dept_id ? DEPT_DISPLAY_NAMES[persona.dept_id] ?? persona.dept_id : null;
+  const deptLabel = useDeptLabelOpt(persona.dept_id);
   const roleLine = persona.platform_role
     ? persona.platform_role + (deptLabel ? ` · ${deptLabel}` : "")
     : Object.keys(persona.service_roles).join(", ") +
       (deptLabel ? ` · ${deptLabel}` : "");
 
+  const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
+
   return (
-    <aside className="flex flex-col h-full overflow-hidden w-[220px] shrink-0 border-r border-token surface">
+    <aside
+      className="flex flex-col h-full overflow-hidden shrink-0 border-r border-token surface"
+      style={{ width }}
+    >
       <nav className="p-2 flex flex-col gap-0.5 shrink-0">
-        <Link to="/home" className={`chip ${isActive("/home") ? "active" : ""}`}>
-          <Home className="w-5 h-5 text-accent" />
-          <div className="flex-1 text-sm">Главная</div>
+        <Link
+          to="/home"
+          title={collapsed ? "Главная" : undefined}
+          className={`chip ${isActive("/home") ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
+        >
+          <Home className="w-5 h-5 text-accent shrink-0" />
+          {!collapsed && <div className="flex-1 text-sm">Главная</div>}
         </Link>
       </nav>
 
-      <div className="px-3 pt-4 pb-1 text-[11px] text-dim uppercase tracking-wider shrink-0">
-        Сервисы
-      </div>
+      {!collapsed && (
+        <div className="px-3 pt-4 pb-1 text-[11px] text-dim uppercase tracking-wider shrink-0">
+          Сервисы
+        </div>
+      )}
       <nav className="flex-1 min-h-0 overflow-y-auto px-2 flex flex-col gap-0.5">
         {chips.map((chip) => (
           <div key={chip.service} className="flex flex-col">
-            <Link to={chip.to} className={`chip ${isActive(chip.to) ? "active" : ""}`}>
-              <chip.icon className="w-5 h-5" />
-              <div className="flex-1">
-                <div className="text-sm">{chip.label}</div>
-                {chip.hint && (
-                  <div className="text-[11px] text-dim">{chip.hint}</div>
-                )}
-              </div>
+            <Link
+              to={chip.to}
+              title={collapsed ? chip.label : undefined}
+              className={`chip ${isActive(chip.to) ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
+            >
+              <chip.icon className="w-5 h-5 shrink-0" />
+              {!collapsed && (
+                <div className="flex-1">
+                  <div className="text-sm">{chip.label}</div>
+                  {chip.hint && (
+                    <div className="text-[11px] text-dim">{chip.hint}</div>
+                  )}
+                </div>
+              )}
             </Link>
-            {chip.subItems?.map((s) => (
-              <Link
-                key={s.to}
-                to={s.to}
-                className={`subchip ${isActive(s.to) ? "active" : ""}`}
-              >
-                <s.icon className="w-3.5 h-3.5" />
-                <span>{s.label}</span>
-              </Link>
-            ))}
+            {!collapsed &&
+              chip.subItems?.map((s) => (
+                <Link
+                  key={s.to}
+                  to={s.to}
+                  className={`subchip ${isActive(s.to) ? "active" : ""}`}
+                >
+                  <s.icon className="w-3.5 h-3.5" />
+                  <span>{s.label}</span>
+                </Link>
+              ))}
           </div>
         ))}
       </nav>
@@ -132,14 +158,20 @@ export function LeftPanel() {
       <div className="mt-auto shrink-0 flex flex-col">
         {persona.has_admin && (
           <div className="p-2 border-t border-token flex flex-col gap-0.5">
-            <Link to="/admin" className={`chip ${isActive("/admin") ? "active" : ""}`}>
-              <ShieldCheck className="w-5 h-5 text-warn" />
-              <div className="flex-1">
-                <div className="text-sm">Администрирование</div>
-                <div className="text-[11px] text-dim">
-                  {persona.dept_id ? "в рамках депа" : "глобально"}
+            <Link
+              to="/admin"
+              title={collapsed ? "Администрирование" : undefined}
+              className={`chip ${isActive("/admin") ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
+            >
+              <ShieldCheck className="w-5 h-5 text-warn shrink-0" />
+              {!collapsed && (
+                <div className="flex-1">
+                  <div className="text-sm">Администрирование</div>
+                  <div className="text-[11px] text-dim">
+                    {persona.dept_id ? "в рамках депа" : "глобально"}
+                  </div>
                 </div>
-              </div>
+              )}
             </Link>
           </div>
         )}
@@ -147,33 +179,61 @@ export function LeftPanel() {
         <div className="p-2 border-t border-token flex flex-col gap-2">
           <Link
             to="/me"
-            title="Личный кабинет"
+            title={collapsed ? `${persona.username} — личный кабинет` : "Личный кабинет"}
             className={`surface-2 border border-token rounded px-2 py-1.5 flex items-center gap-2 text-sm hover-bg transition-colors ${
               isActive("/me") ? "active" : ""
-            }`}
+            } ${collapsed ? "justify-center" : ""}`}
           >
             <div className="w-7 h-7 rounded-full bg-accent flex items-center justify-center text-xs font-semibold shrink-0">
               {persona.initials}
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="leading-tight truncate">{persona.username}</div>
-              <div className="text-[10px] text-dim leading-tight truncate" title={roleLine}>
-                {roleLine}
-              </div>
-            </div>
-            <UserCog className="w-4 h-4 text-dim shrink-0" aria-hidden="true" />
+            {!collapsed && (
+              <>
+                <div className="min-w-0 flex-1">
+                  <div className="leading-tight truncate">{persona.username}</div>
+                  <div className="text-[10px] text-dim leading-tight truncate" title={roleLine}>
+                    {roleLine}
+                  </div>
+                </div>
+                <UserCog className="w-4 h-4 text-dim shrink-0" aria-hidden="true" />
+              </>
+            )}
           </Link>
 
-          <ThemeSwitcher />
+          {!collapsed && <ThemeSwitcher />}
 
-          <button
-            type="button"
-            onClick={onLogout}
-            className="btn flex items-center justify-center gap-1.5"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </button>
+          <div className={`flex items-center gap-2 ${collapsed ? "flex-col" : ""}`}>
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              title={collapsed ? "Развернуть панель" : "Свернуть панель"}
+              aria-label={collapsed ? "Expand left panel" : "Collapse left panel"}
+              className="btn flex items-center justify-center gap-1.5 shrink-0"
+            >
+              <ToggleIcon className="w-4 h-4" />
+            </button>
+            {!collapsed && (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="btn flex-1 flex items-center justify-center gap-1.5"
+              >
+                <LogOut className="w-4 h-4" />
+                Logout
+              </button>
+            )}
+            {collapsed && (
+              <button
+                type="button"
+                onClick={onLogout}
+                title="Logout"
+                aria-label="Logout"
+                className="btn flex items-center justify-center gap-1.5"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </aside>

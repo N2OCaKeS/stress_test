@@ -185,18 +185,18 @@ class UnixBenchParser:
         """
         Вывод краткой сводки результатов по всем параллельным копиям
         """
-        log.info("="*60)
-        log.info("КРАТКАЯ СВОДКА РЕЗУЛЬТАТОВ")
-        log.info("="*60)
+        log.debug("="*60)
+        log.debug("КРАТКАЯ СВОДКА РЕЗУЛЬТАТОВ")
+        log.debug("="*60)
         
         for copies, data in sorted(self._results_by_copies.items(), key=lambda x: int(x[0])):
-            log.info(f"--- {copies} параллельных копий ---")
-            log.info(f"Общий индекс производительности: {data['overall_score']:.2f}")
-            log.info("Результаты тестов:")
+            log.debug(f"--- {copies} параллельных копий ---")
+            log.debug(f"Общий индекс производительности: {data['overall_score']:.2f}")
+            log.debug("Результаты тестов:")
             
             for test_name, test_data in data['tests'].items():
                 if test_data['value'] > 0:
-                    log.info(f"  {test_name:20}: {test_data['value']:>12.2f} {test_data['measure']}")
+                    log.debug(f"  {test_name:20}: {test_data['value']:>12.2f} {test_data['measure']}")
 
 
 
@@ -246,15 +246,15 @@ class UnixBench(Test, UnixBenchParser):
         log.debug(f"code = {code}, type = {type(code)}")
 
         if code:
-            log.info(result)
-            log.info("UnixBench: - тестирование завершено успешно")
-            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {code}{Colors.RESET}")
+            log.debug(result)
+            log.debug("UnixBench: - тестирование завершено успешно")
+            log.info(f"{Colors.GREEN}Все тесты успешно пройдены: {code}{Colors.RESET}")
             self.test_success = True
             return result, True
         else:
             log.error(result)
             log.error("UnixBench: - тестирование провалено")
-            log.debug(f"{Colors.RED}Статусы: {code}{Colors.RESET}")
+            log.error(f"{Colors.RED}Статусы: {code}{Colors.RESET}")
             self.test_success = False
             return result, False
 
@@ -295,7 +295,7 @@ class UnixBench(Test, UnixBenchParser):
             json_path = f"{RESULTS_MAIN_DIR}/{RESULT_UB_NAME}"
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(results_dict, f, indent=4, ensure_ascii=False)
-            log.info(f"Результаты сохранены в {json_path}")
+            log.debug(f"Результаты сохранены в {json_path}")
                         
             return results_dict
         else:

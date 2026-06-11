@@ -2,43 +2,43 @@
     "kernel": {
         "syscall": {
             "4": {
-                "value": 659228.3,
+                "value": 656953.7,
                 "unit": "lps"
             },
             "8": {
-                "value": 682295.7,
+                "value": 701663.3,
                 "unit": "lps"
             },
             "16": {
-                "value": 707531.0,
+                "value": 701376.7,
                 "unit": "lps"
             }
         },
         "lat_syscall null": {
             "1": {
-                "value": 0.3006,
+                "value": 0.3002,
                 "unit": "microseconds"
             },
             "2": {
-                "value": 0.3016,
+                "value": 0.3001,
                 "unit": "microseconds"
             },
             "3": {
-                "value": 0.3,
+                "value": 0.3004,
                 "unit": "microseconds"
             }
         },
         "lat_syscall read": {
             "1": {
-                "value": 0.4295,
+                "value": 0.4285,
                 "unit": "microseconds"
             },
             "2": {
-                "value": 0.4303,
+                "value": 0.4298,
                 "unit": "microseconds"
             },
             "3": {
-                "value": 0.4305,
+                "value": 0.4331,
                 "unit": "microseconds"
             }
         },
@@ -48,11 +48,11 @@
                 "unit": "microseconds"
             },
             "2": {
-                "value": 0.3924,
+                "value": 0.3915,
                 "unit": "microseconds"
             },
             "3": {
-                "value": 0.3865,
+                "value": 0.392,
                 "unit": "microseconds"
             }
         },
@@ -72,43 +72,43 @@
         },
         "lat_sig install": {
             "1": {
-                "value": 0.3692,
+                "value": 0.3778,
                 "unit": "microseconds"
             },
             "2": {
-                "value": 0.3688,
+                "value": 0.369,
                 "unit": "microseconds"
             },
             "3": {
-                "value": 0.3679,
+                "value": 0.3695,
                 "unit": "microseconds"
             }
         },
         "lat_sig catch": {
             "1": {
-                "value": 1.6265,
+                "value": 1.6108,
                 "unit": "microseconds"
             },
             "2": {
-                "value": 1.6223,
+                "value": 1.6098,
                 "unit": "microseconds"
             },
             "3": {
-                "value": 1.6279,
+                "value": 1.6058,
                 "unit": "microseconds"
             }
         },
         "sched pipe": {
             "4": {
-                "value": 15.059,
+                "value": 18.805,
                 "unit": "seconds"
             },
             "8": {
-                "value": 18.482,
+                "value": 16.752,
                 "unit": "seconds"
             },
             "16": {
-                "value": 18.516,
+                "value": 17.245,
                 "unit": "seconds"
             }
         },
@@ -118,81 +118,81 @@
                 "unit": "seconds"
             },
             "8": {
-                "value": 0.054,
+                "value": 0.05,
                 "unit": "seconds"
             },
             "16": {
-                "value": 0.051,
+                "value": 0.053,
                 "unit": "seconds"
             }
         },
         "futex hash": {
             "4": {
-                "value": 1932288.0,
+                "value": 1934540.0,
                 "unit": "ops/sec"
             },
             "8": {
-                "value": 1875046.0,
+                "value": 1864601.0,
                 "unit": "ops/sec"
             },
             "16": {
-                "value": 1738444.0,
+                "value": 1729024.0,
                 "unit": "ops/sec"
             }
         },
         "futex wake": {
             "4": {
-                "value": 84.0,
+                "value": 81.0,
                 "unit": "milliseconds"
             },
             "8": {
-                "value": 90.0,
+                "value": 60.0,
                 "unit": "milliseconds"
             },
             "16": {
-                "value": 19.0,
+                "value": 70.0,
                 "unit": "milliseconds"
             }
         },
         "futex requeue": {
             "4": {
-                "value": 92.0,
+                "value": 78.0,
                 "unit": "milliseconds"
             },
             "8": {
-                "value": 74.0,
+                "value": 39.0,
                 "unit": "milliseconds"
             },
             "16": {
-                "value": 67.0,
+                "value": 60.0,
                 "unit": "milliseconds"
             }
         },
         "epoll wait": {
             "4": {
-                "value": 127246.0,
+                "value": 139888.0,
                 "unit": "operations/sec"
             },
             "8": {
-                "value": 85165.0,
+                "value": 70161.0,
                 "unit": "operations/sec"
             },
             "16": {
-                "value": 26935.0,
+                "value": 26238.0,
                 "unit": "operations/sec"
             }
         },
         "epoll ctl": {
             "4": {
-                "value": 914240.0,
+                "value": 833856.0,
                 "unit": "operations/sec"
             },
             "8": {
-                "value": 419376.0,
+                "value": 429304.0,
                 "unit": "operations/sec"
             },
             "16": {
-                "value": 116955.0,
+                "value": 120000.0,
                 "unit": "operations/sec"
             }
         }
@@ -200,113 +200,113 @@
     "processes_ipc": {
         "execl": {
             "4": {
-                "value": 8534.5,
+                "value": 8722.4,
                 "unit": "lps"
             },
             "8": {
-                "value": 15316.3,
+                "value": 15433.2,
                 "unit": "lps"
             },
             "16": {
-                "value": 25284.8,
+                "value": 24870.4,
                 "unit": "lps"
             }
         },
         "pipe": {
             "4": {
-                "value": 3596610.0,
+                "value": 3586777.9,
                 "unit": "lps"
             },
             "8": {
-                "value": 6773926.1,
+                "value": 6765321.4,
                 "unit": "lps"
             },
             "16": {
-                "value": 13229133.3,
+                "value": 13202139.8,
                 "unit": "lps"
             }
         },
         "context1": {
             "4": {
-                "value": 282133.5,
+                "value": 294023.0,
                 "unit": "lps"
             },
             "8": {
-                "value": 655748.3,
+                "value": 674520.0,
                 "unit": "lps"
             },
             "16": {
-                "value": 1427594.1,
+                "value": 1417227.4,
                 "unit": "lps"
             }
         },
         "spawn": {
             "4": {
-                "value": 17231.0,
+                "value": 17586.5,
                 "unit": "lps"
             },
             "8": {
-                "value": 32995.9,
+                "value": 33832.9,
                 "unit": "lps"
             },
             "16": {
-                "value": 59624.3,
+                "value": 59832.1,
                 "unit": "lps"
             }
         },
         "lat_pipe": {
             "1": {
-                "value": 14.5093,
+                "value": 19.8492,
                 "unit": "microseconds"
             },
             "2": {
-                "value": 16.7298,
+                "value": 19.7925,
                 "unit": "microseconds"
             },
             "3": {
-                "value": 15.9548,
+                "value": 19.9551,
                 "unit": "microseconds"
             }
         },
         "bw_pipe": {
             "1": {
-                "value": 2705.38,
+                "value": 2713.01,
                 "unit": "MB/s"
             },
             "2": {
-                "value": 2725.44,
+                "value": 2695.03,
                 "unit": "MB/s"
             },
             "3": {
-                "value": 2647.66,
+                "value": 2627.82,
                 "unit": "MB/s"
             }
         },
         "lat_proc fork": {
             "1": {
-                "value": 319.709,
+                "value": 362.143,
                 "unit": "microseconds"
             },
             "2": {
-                "value": 395.9337,
+                "value": 310.1854,
                 "unit": "microseconds"
             },
             "3": {
-                "value": 361.6218,
+                "value": 378.0357,
                 "unit": "microseconds"
             }
         },
         "lat_proc exec": {
             "1": {
-                "value": 434.5657,
+                "value": 410.1612,
                 "unit": "microseconds"
             },
             "2": {
-                "value": 347.6565,
+                "value": 327.0493,
                 "unit": "microseconds"
             },
             "3": {
-                "value": 370.0511,
+                "value": 354.2985,
                 "unit": "microseconds"
             }
         }
@@ -314,211 +314,211 @@
     "filesystem": {
         "fstime": {
             "4": {
-                "value": 2544859.0,
+                "value": 2533863.1,
                 "unit": "KBps"
             },
             "8": {
-                "value": 4509756.6,
+                "value": 4508763.9,
                 "unit": "KBps"
             },
             "16": {
-                "value": 8202052.5,
+                "value": 8196247.1,
                 "unit": "KBps"
             }
         },
         "fsbuffer": {
             "4": {
-                "value": 666129.2,
+                "value": 664817.0,
                 "unit": "KBps"
             },
             "8": {
-                "value": 1281914.2,
+                "value": 1276228.7,
                 "unit": "KBps"
             },
             "16": {
-                "value": 2492843.4,
+                "value": 2490125.5,
                 "unit": "KBps"
             }
         },
         "fsdisk": {
             "4": {
-                "value": 6254246.0,
+                "value": 6241630.9,
                 "unit": "KBps"
             },
             "8": {
-                "value": 11554810.0,
+                "value": 11319153.0,
                 "unit": "KBps"
             },
             "16": {
-                "value": 20831328.2,
+                "value": 20739527.3,
                 "unit": "KBps"
             }
         },
         "lat_fs 0K": {
             "1": {
-                "value": 39840,
+                "value": 39368,
                 "unit": "operations/sec"
             },
             "2": {
-                "value": 39673,
+                "value": 39279,
                 "unit": "operations/sec"
             },
             "3": {
-                "value": 39410,
+                "value": 39075,
                 "unit": "operations/sec"
             }
         },
         "lat_fs 10K": {
             "1": {
-                "value": 39374,
+                "value": 39208,
                 "unit": "operations/sec"
             },
             "2": {
-                "value": 39548,
+                "value": 38917,
                 "unit": "operations/sec"
             },
             "3": {
-                "value": 39451,
+                "value": 39316,
                 "unit": "operations/sec"
             }
         },
         "bw_file_rd": {
             "1": {
-                "value": 5558.57,
+                "value": 5591.93,
                 "unit": "MB/s"
             },
             "2": {
-                "value": 5548.18,
+                "value": 5581.97,
                 "unit": "MB/s"
             },
             "3": {
-                "value": 5559.91,
+                "value": 5566.96,
                 "unit": "MB/s"
             }
         },
         "speed": {
             "240000": {
-                "value": 42256.1,
+                "value": 42049.7,
                 "unit": "ops/sec"
             },
             "480000": {
-                "value": 31535.5,
+                "value": 31675.6,
                 "unit": "ops/sec"
             },
             "720000": {
-                "value": 31496.0,
+                "value": 30572.0,
                 "unit": "ops/sec"
             },
             "960000": {
-                "value": 31372.0,
+                "value": 30851.5,
                 "unit": "ops/sec"
             },
             "1200000": {
-                "value": 31383.7,
+                "value": 30745.7,
                 "unit": "ops/sec"
             },
             "1440000": {
-                "value": 30232.0,
+                "value": 30813.7,
                 "unit": "ops/sec"
             },
             "1680000": {
-                "value": 30835.6,
+                "value": 31059.5,
                 "unit": "ops/sec"
             },
             "1920000": {
-                "value": 30875.4,
+                "value": 31725.3,
                 "unit": "ops/sec"
             },
             "2160000": {
-                "value": 30931.6,
+                "value": 30775.3,
                 "unit": "ops/sec"
             },
             "2400000": {
-                "value": 31122.8,
+                "value": 31075.9,
                 "unit": "ops/sec"
             }
         },
         "app_overhead": {
             "240000": {
-                "value": 7400114,
+                "value": 7466791,
                 "unit": "microseconds"
             },
             "480000": {
-                "value": 15773589,
+                "value": 16021573,
                 "unit": "microseconds"
             },
             "720000": {
-                "value": 23797870,
+                "value": 24085284,
                 "unit": "microseconds"
             },
             "960000": {
-                "value": 32013573,
+                "value": 32885855,
                 "unit": "microseconds"
             },
             "1200000": {
-                "value": 39835800,
+                "value": 40110183,
                 "unit": "microseconds"
             },
             "1440000": {
-                "value": 49509707,
+                "value": 49691967,
                 "unit": "microseconds"
             },
             "1680000": {
-                "value": 57056940,
+                "value": 56243768,
                 "unit": "microseconds"
             },
             "1920000": {
-                "value": 64984323,
+                "value": 63233020,
                 "unit": "microseconds"
             },
             "2160000": {
-                "value": 72318627,
+                "value": 75132347,
                 "unit": "microseconds"
             },
             "2400000": {
-                "value": 79549089,
+                "value": 81122029,
                 "unit": "microseconds"
             }
         },
         "create_avg": {
             "240000": {
-                "value": 108,
+                "value": 109,
                 "unit": "microseconds"
             },
             "480000": {
-                "value": 137,
+                "value": 134,
                 "unit": "microseconds"
             },
             "720000": {
-                "value": 139,
+                "value": 144,
                 "unit": "microseconds"
             },
             "960000": {
-                "value": 141,
+                "value": 146,
                 "unit": "microseconds"
             },
             "1200000": {
-                "value": 141,
+                "value": 145,
                 "unit": "microseconds"
             },
             "1440000": {
-                "value": 149,
+                "value": 148,
                 "unit": "microseconds"
             },
             "1680000": {
-                "value": 146,
+                "value": 145,
                 "unit": "microseconds"
             },
             "1920000": {
-                "value": 147,
+                "value": 140,
                 "unit": "microseconds"
             },
             "2160000": {
-                "value": 146,
+                "value": 148,
                 "unit": "microseconds"
             },
             "2400000": {
-                "value": 144,
+                "value": 145,
                 "unit": "microseconds"
             }
         },
@@ -536,7 +536,7 @@
                 "unit": "microseconds"
             },
             "960000": {
-                "value": 9,
+                "value": 10,
                 "unit": "microseconds"
             },
             "1200000": {
@@ -544,15 +544,15 @@
                 "unit": "microseconds"
             },
             "1440000": {
-                "value": 11,
+                "value": 12,
                 "unit": "microseconds"
             },
             "1680000": {
-                "value": 12,
+                "value": 11,
                 "unit": "microseconds"
             },
             "1920000": {
-                "value": 12,
+                "value": 11,
                 "unit": "microseconds"
             },
             "2160000": {
@@ -566,39 +566,39 @@
         },
         "fsync_avg": {
             "240000": {
-                "value": 420,
+                "value": 423,
                 "unit": "microseconds"
             },
             "480000": {
-                "value": 579,
-                "unit": "microseconds"
-            },
-            "720000": {
-                "value": 576,
-                "unit": "microseconds"
-            },
-            "960000": {
-                "value": 576,
-                "unit": "microseconds"
-            },
-            "1200000": {
-                "value": 574,
-                "unit": "microseconds"
-            },
-            "1440000": {
-                "value": 593,
-                "unit": "microseconds"
-            },
-            "1680000": {
-                "value": 580,
-                "unit": "microseconds"
-            },
-            "1920000": {
                 "value": 578,
                 "unit": "microseconds"
             },
+            "720000": {
+                "value": 594,
+                "unit": "microseconds"
+            },
+            "960000": {
+                "value": 582,
+                "unit": "microseconds"
+            },
+            "1200000": {
+                "value": 588,
+                "unit": "microseconds"
+            },
+            "1440000": {
+                "value": 578,
+                "unit": "microseconds"
+            },
+            "1680000": {
+                "value": 577,
+                "unit": "microseconds"
+            },
+            "1920000": {
+                "value": 567,
+                "unit": "microseconds"
+            },
             "2160000": {
-                "value": 579,
+                "value": 578,
                 "unit": "microseconds"
             },
             "2400000": {
@@ -662,11 +662,11 @@
                 "unit": "microseconds"
             },
             "960000": {
-                "value": 3,
+                "value": 4,
                 "unit": "microseconds"
             },
             "1200000": {
-                "value": 4,
+                "value": 3,
                 "unit": "microseconds"
             },
             "1440000": {
@@ -678,7 +678,7 @@
                 "unit": "microseconds"
             },
             "1920000": {
-                "value": 4,
+                "value": 3,
                 "unit": "microseconds"
             },
             "2160000": {
@@ -692,43 +692,43 @@
         },
         "unlink_avg": {
             "240000": {
-                "value": 322,
+                "value": 343,
                 "unit": "microseconds"
             },
             "480000": {
-                "value": 281,
+                "value": 270,
                 "unit": "microseconds"
             },
             "720000": {
-                "value": 271,
+                "value": 230,
                 "unit": "microseconds"
             },
             "960000": {
-                "value": 310,
+                "value": 288,
                 "unit": "microseconds"
             },
             "1200000": {
-                "value": 307,
+                "value": 269,
                 "unit": "microseconds"
             },
             "1440000": {
-                "value": 291,
+                "value": 341,
                 "unit": "microseconds"
             },
             "1680000": {
-                "value": 308,
+                "value": 309,
                 "unit": "microseconds"
             },
             "1920000": {
-                "value": 300,
-                "unit": "microseconds"
-            },
-            "2160000": {
                 "value": 330,
                 "unit": "microseconds"
             },
+            "2160000": {
+                "value": 344,
+                "unit": "microseconds"
+            },
             "2400000": {
-                "value": 331,
+                "value": 311,
                 "unit": "microseconds"
             }
         }
@@ -736,29 +736,29 @@
     "scripts": {
         "shell1": {
             "4": {
-                "value": 24221.7,
+                "value": 24446.9,
                 "unit": "lpm"
             },
             "8": {
-                "value": 46643.8,
+                "value": 47015.5,
                 "unit": "lpm"
             },
             "16": {
-                "value": 74953.6,
+                "value": 75088.4,
                 "unit": "lpm"
             }
         },
         "shell8": {
             "4": {
-                "value": 11453.2,
+                "value": 11439.3,
                 "unit": "lpm"
             },
             "8": {
-                "value": 13051.7,
+                "value": 12955.5,
                 "unit": "lpm"
             },
             "16": {
-                "value": 12866.8,
+                "value": 12823.3,
                 "unit": "lpm"
             }
         }

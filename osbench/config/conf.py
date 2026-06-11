@@ -104,9 +104,9 @@ RESULT_PERF_BENCH_NAME = "perf_bench_results.json"
 # Index Criterions                                                              #
 #################################################################################
 KERNEL_CRITERIONS = {
-    # ========== СИСТЕМНЫЕ ВЫЗОВЫ (27%) ==========
+    # ========== СИСТЕМНЫЕ ВЫЗОВЫ (28%) ==========
     'syscall': {                              # базовые системные вызовы
-        'weight': 0.14, 
+        'weight': 0.15, 
         'negative': False,
         'bounds': (0.0, 7000000),
         'reference': 690000.0
@@ -131,7 +131,7 @@ KERNEL_CRITERIONS = {
         'reference': 0.390
         },    
     
-    # ========== ПЛАНИРОВЩИК (23%) ==========
+    # ========== ПЛАНИРОВЩИК (25%) ==========
     'lat_ctx -s 0 2 4 8 16 24 32 64 128': {   # переключение контекста
         'weight': 0.07, 
         'negative': True,
@@ -139,19 +139,19 @@ KERNEL_CRITERIONS = {
         'reference': 128.0
     },
     'sched pipe': {                           # pipe через планировщик
-        'weight': 0.08, 
+        'weight': 0.09, 
         'negative': True,
         'bounds': (0.0, 1500),
         'reference': 18.0
     },
     'sched messaging': {                      # IPC через планировщик
-        'weight': 0.08, 
+        'weight': 0.09, 
         'negative': True,
         'bounds': (0.0, 100),
         'reference': 0.050
     },
     
-    # ========== СИНХРОНИЗАЦИЯ (22%) ==========           
+    # ========== СИНХРОНИЗАЦИЯ (19%) ==========           
     'futex hash': {                           # хэш-таблица с futex
         'weight': 0.08, 
         'negative': False,
@@ -165,7 +165,7 @@ KERNEL_CRITERIONS = {
         'reference': 65.0
         },           
     'futex requeue': {                        # перемещение очереди futex
-        'weight': 0.07, 
+        'weight': 0.04, 
         'negative': True,
         'bounds': (0.0, 1500),
         'reference': 70.0
@@ -182,7 +182,7 @@ KERNEL_CRITERIONS = {
         'weight': 0.07, 
         'negative': False,
         'bounds': (0.0, 10000000),
-        'reference': 400000.0
+        'reference': 375000.0
         },         
     
     # ========== СИГНАЛЫ (10%) ==========
@@ -244,7 +244,7 @@ PROCESSES_IPC_CRITERIONS = {
         'weight': 0.11,
         'negative': True,
         'bounds': (0.0, 500),
-        'reference': 15.0                  
+        'reference': 18.0                  
     },
     'bw_pipe': {                              # пропускная способность pipe
         'weight': 0.18,
@@ -410,9 +410,20 @@ TOTAL_TEMPLATE = """
 """
 
 TOTAL_TEMPLATE_COLOR = """
-┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  ИНФОРМАЦИЯ О СИСТЕМЕ                                                                                 │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+
+╔═══════════════════════════════════════════════════════════════╗
+║   ██████╗ ███████╗██████╗ ███████╗███╗   ██╗ ██████╗██╗  ██╗  ║
+║  ██╔═══██╗██╔════╝██╔══██╗██╔════╝████╗  ██║██╔════╝██║  ██║  ║
+║  ██║   ██║███████╗██████╔╝█████╗  ██╔██╗ ██║██║     ███████║  ║
+║  ██║   ██║╚════██║██╔══██╗██╔══╝  ██║╚██╗██║██║     ██╔══██║  ║
+║  ╚██████╔╝███████║██████╔╝███████╗██║ ╚████║╚██████╗██║  ██║  ║
+║   ╚═════╝ ╚══════╝╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝  ║
+║                OS Performance Testing Suite                   ║
+╚═══════════════════════════════════════════════════════════════╝
+
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  ИНФОРМАЦИЯ О СИСТЕМЕ                                                                  │
+├────────────────────────────────────────────────────────────────────────────────────────┤
 │  \033[1;37mОС:\033[0m          {os_name} {os_version}
 │  \033[1;37mЯдро:\033[0m        {kernel_version}
 │  \033[1;37mПроцессор:\033[0m   {cpu_model}
@@ -420,93 +431,93 @@ TOTAL_TEMPLATE_COLOR = """
 │  \033[1;37mОЗУ:\033[0m         {ram_total}
 │  \033[1;37mДата теста:\033[0m  {test_date}
 │  \033[1;37mХост:\033[0m        {hostname}
-└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  Ядро и системные вызовы                                                                              │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│\033[1;33m  {test:<25} {source:>1} {guideline:>22} {result:>13} {ratio:>12}                   \033[0m │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  syscall                 UnixBench         {syscall_guideline:>12.1f}    {syscall_result:>10.1f}    {syscall_ratio:>9.3f}
-│  lat_syscall null         LMbench          {lat_syscall_null_guideline:>12.4f}    {lat_syscall_null_result:>10.4f}    {lat_syscall_null_ratio:>9.3f}
-│  lat_syscall read         LMbench          {lat_syscall_read_guideline:>12.4f}    {lat_syscall_read_result:>10.4f}    {lat_syscall_read_ratio:>9.3f}
-│  lat_syscall write        LMbench          {lat_syscall_write_guideline:>12.4f}    {lat_syscall_write_result:>10.4f}    {lat_syscall_write_ratio:>9.3f}
-│  lat_ctx                  LMbench          {lat_ctx_guideline:>12.1f}    {lat_ctx_result:>10.1f}    {lat_ctx_ratio:>9.3f}
-│  sched pipe              Perf Bench        {sched_pipe_guideline:>12.1f}    {sched_pipe_result:>10.3f}    {sched_pipe_ratio:>9.3f}
-│  sched messaging         Perf Bench        {sched_messaging_guideline:>12.3f}    {sched_messaging_result:>10.3f}    {sched_messaging_ratio:>9.3f}
-│  futex hash              Perf Bench        {futex_hash_guideline:>12.0f}    {futex_hash_result:>10.0f}    {futex_hash_ratio:>9.3f}
-│  futex wake              Perf Bench        {futex_wake_guideline:>12.1f}    {futex_wake_result:>10.1f}    {futex_wake_ratio:>9.3f}
-│  futex requeue           Perf Bench        {futex_requeue_guideline:>12.1f}    {futex_requeue_result:>10.1f}    {futex_requeue_ratio:>9.3f}
-│  epoll wait              Perf Bench        {epoll_wait_guideline:>12.0f}    {epoll_wait_result:>10.0f}    {epoll_wait_ratio:>9.3f}
-│  epoll ctl               Perf Bench        {epoll_ctl_guideline:>12.0f}    {epoll_ctl_result:>10.0f}    {epoll_ctl_ratio:>9.3f}
-│  lat_sig install          LMbench          {lat_sig_install_guideline:>12.4f}    {lat_sig_install_result:>10.4f}    {lat_sig_install_ratio:>9.3f}
-│  lat_sig catch            LMbench          {lat_sig_catch_guideline:>12.4f}    {lat_sig_catch_result:>10.4f}    {lat_sig_catch_ratio:>9.3f}
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  INDEX:\033[1;32m                                                                 {kernel:>10.1f}\033[0m                    │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  Ядро и системные вызовы                                                               │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│\033[1;33m  {test:<25} {source:>1} {guideline:>22} {result:>13} {ratio:>12} \033[0m    │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  syscall                 UnixBench         {syscall_guideline:>12.1f}    {syscall_result:>10.1f}    {syscall_ratio:>9.3f}  
+│  lat_syscall null         LMbench          {lat_syscall_null_guideline:>12.4f}    {lat_syscall_null_result:>10.4f}    {lat_syscall_null_ratio:>9.3f}  
+│  lat_syscall read         LMbench          {lat_syscall_read_guideline:>12.4f}    {lat_syscall_read_result:>10.4f}    {lat_syscall_read_ratio:>9.3f}  
+│  lat_syscall write        LMbench          {lat_syscall_write_guideline:>12.4f}    {lat_syscall_write_result:>10.4f}    {lat_syscall_write_ratio:>9.3f}  
+│  lat_ctx                  LMbench          {lat_ctx_guideline:>12.1f}    {lat_ctx_result:>10.1f}    {lat_ctx_ratio:>9.3f}  
+│  sched pipe              Perf Bench        {sched_pipe_guideline:>12.1f}    {sched_pipe_result:>10.3f}    {sched_pipe_ratio:>9.3f}  
+│  sched messaging         Perf Bench        {sched_messaging_guideline:>12.3f}    {sched_messaging_result:>10.3f}    {sched_messaging_ratio:>9.3f}  
+│  futex hash              Perf Bench        {futex_hash_guideline:>12.0f}    {futex_hash_result:>10.0f}    {futex_hash_ratio:>9.3f}  
+│  futex wake              Perf Bench        {futex_wake_guideline:>12.1f}    {futex_wake_result:>10.1f}    {futex_wake_ratio:>9.3f}  
+│  futex requeue           Perf Bench        {futex_requeue_guideline:>12.1f}    {futex_requeue_result:>10.1f}    {futex_requeue_ratio:>9.3f}  
+│  epoll wait              Perf Bench        {epoll_wait_guideline:>12.0f}    {epoll_wait_result:>10.0f}    {epoll_wait_ratio:>9.3f}  
+│  epoll ctl               Perf Bench        {epoll_ctl_guideline:>12.0f}    {epoll_ctl_result:>10.0f}    {epoll_ctl_ratio:>9.3f}  
+│  lat_sig install          LMbench          {lat_sig_install_guideline:>12.4f}    {lat_sig_install_result:>10.4f}    {lat_sig_install_ratio:>9.3f}  
+│  lat_sig catch            LMbench          {lat_sig_catch_guideline:>12.4f}    {lat_sig_catch_result:>10.4f}    {lat_sig_catch_ratio:>9.3f}  
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  INDEX:\033[1;32m                                                                 {kernel:>10.1f}\033[0m  
+└────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  Процессы и межпроцессное взаимодействие                                                              │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│\033[1;33m  {test:<25} {source:>1} {guideline:>22} {result:>13} {ratio:>12}                  \033[0m  │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  spawn                   UnixBench         {spawn_guideline:>12.1f}    {spawn_result:>10.1f}    {spawn_ratio:>9.3f}
-│  execl                   UnixBench         {execl_guideline:>12.1f}    {execl_result:>10.1f}    {execl_ratio:>9.3f}
-│  lat_proc fork            LMbench          {lat_proc_fork_guideline:>12.4f}    {lat_proc_fork_result:>10.4f}    {lat_proc_fork_ratio:>9.3f}
-│  lat_proc exec            LMbench          {lat_proc_exec_guideline:>12.4f}    {lat_proc_exec_result:>10.4f}    {lat_proc_exec_ratio:>9.3f}
-│  pipe                    UnixBench         {pipe_guideline:>12.0f}    {pipe_result:>10.0f}    {pipe_ratio:>9.3f}
-│  context1                UnixBench         {context1_guideline:>12.1f}    {context1_result:>10.1f}    {context1_ratio:>9.3f}
-│  lat_pipe                 LMbench          {lat_pipe_guideline:>12.4f}    {lat_pipe_result:>10.4f}    {lat_pipe_ratio:>9.3f}
-│  bw_pipe                  LMbench          {bw_pipe_guideline:>12.2f}    {bw_pipe_result:>10.2f}    {bw_pipe_ratio:>9.3f}
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  INDEX:    \033[1;32m                                                             {processes_ipc:>10.1f}\033[0m                    │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  Процессы и межпроцессное взаимодействие                                               │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│\033[1;33m  {test:<25} {source:>1} {guideline:>22} {result:>13} {ratio:>12} \033[0m    │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  spawn                   UnixBench         {spawn_guideline:>12.1f}    {spawn_result:>10.1f}    {spawn_ratio:>9.3f}  
+│  execl                   UnixBench         {execl_guideline:>12.1f}    {execl_result:>10.1f}    {execl_ratio:>9.3f}  
+│  lat_proc fork            LMbench          {lat_proc_fork_guideline:>12.4f}    {lat_proc_fork_result:>10.4f}    {lat_proc_fork_ratio:>9.3f}  
+│  lat_proc exec            LMbench          {lat_proc_exec_guideline:>12.4f}    {lat_proc_exec_result:>10.4f}    {lat_proc_exec_ratio:>9.3f}  
+│  pipe                    UnixBench         {pipe_guideline:>12.0f}    {pipe_result:>10.0f}    {pipe_ratio:>9.3f}  
+│  context1                UnixBench         {context1_guideline:>12.1f}    {context1_result:>10.1f}    {context1_ratio:>9.3f}  
+│  lat_pipe                 LMbench          {lat_pipe_guideline:>12.4f}    {lat_pipe_result:>10.4f}    {lat_pipe_ratio:>9.3f}  
+│  bw_pipe                  LMbench          {bw_pipe_guideline:>12.2f}    {bw_pipe_result:>10.2f}    {bw_pipe_ratio:>9.3f}  
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  INDEX:    \033[1;32m                                                             {processes_ipc:>10.1f}\033[0m  
+└────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  Файловая система                                                                                     │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ \033[1;33m {test:<25} {source:>1} {guideline:>22} {result:>13} {ratio:>12}                 \033[0m   │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  bw_file_rd               LMbench          {bw_file_rd_guideline:>12.2f}    {bw_file_rd_result:>10.2f}    {bw_file_rd_ratio:>9.3f}
-│  fstime                  UnixBench         {fstime_guideline:>12.0f}    {fstime_result:>10.0f}    {fstime_ratio:>9.3f}
-│  fsbuffer                UnixBench         {fsbuffer_guideline:>12.0f}    {fsbuffer_result:>10.0f}    {fsbuffer_ratio:>9.3f}
-│  fsdisk                  UnixBench         {fsdisk_guideline:>12.0f}    {fsdisk_result:>10.0f}    {fsdisk_ratio:>9.3f}
-│  lat_fs 0K                LMbench          {lat_fs_0K_guideline:>12.0f}    {lat_fs_0K_result:>10.0f}    {lat_fs_0K_ratio:>9.3f}
-│  lat_fs 10K               LMbench          {lat_fs_10K_guideline:>12.0f}    {lat_fs_10K_result:>10.0f}    {lat_fs_10K_ratio:>9.3f}
-│  speed                    fs_mark          {speed_guideline:>12.1f}    {speed_result:>10.1f}    {speed_ratio:>9.3f}
-│  app_overhead             fs_mark          {app_overhead_guideline:>12.0f}    {app_overhead_result:>10.0f}    {app_overhead_ratio:>9.3f}
-│  create_avg               fs_mark          {create_avg_guideline:>12.1f}    {create_avg_result:>10.1f}    {create_avg_ratio:>9.3f}
-│  write_avg                fs_mark          {write_avg_guideline:>12.1f}    {write_avg_result:>10.1f}    {write_avg_ratio:>9.3f}
-│  fsync_avg                fs_mark          {fsync_avg_guideline:>12.1f}    {fsync_avg_result:>10.1f}    {fsync_avg_ratio:>9.3f}
-│  close_avg                fs_mark          {close_avg_guideline:>12.1f}    {close_avg_result:>10.1f}    {close_avg_ratio:>9.3f}
-│  unlink_avg               fs_mark          {unlink_avg_guideline:>12.1f}    {unlink_avg_result:>10.1f}    {unlink_avg_ratio:>9.3f}
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  INDEX:        \033[1;32m                                                         {filesystem:>10.1f}\033[0m                    │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  Файловая система                                                                      │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ \033[1;33m {test:<25} {source:>1} {guideline:>22} {result:>13} {ratio:>12}  \033[0m   │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  bw_file_rd               LMbench          {bw_file_rd_guideline:>12.2f}    {bw_file_rd_result:>10.2f}    {bw_file_rd_ratio:>9.3f}  
+│  fstime                  UnixBench         {fstime_guideline:>12.0f}    {fstime_result:>10.0f}    {fstime_ratio:>9.3f}  
+│  fsbuffer                UnixBench         {fsbuffer_guideline:>12.0f}    {fsbuffer_result:>10.0f}    {fsbuffer_ratio:>9.3f}  
+│  fsdisk                  UnixBench         {fsdisk_guideline:>12.0f}    {fsdisk_result:>10.0f}    {fsdisk_ratio:>9.3f}  
+│  lat_fs 0K                LMbench          {lat_fs_0K_guideline:>12.0f}    {lat_fs_0K_result:>10.0f}    {lat_fs_0K_ratio:>9.3f}  
+│  lat_fs 10K               LMbench          {lat_fs_10K_guideline:>12.0f}    {lat_fs_10K_result:>10.0f}    {lat_fs_10K_ratio:>9.3f}  
+│  speed                    fs_mark          {speed_guideline:>12.1f}    {speed_result:>10.1f}    {speed_ratio:>9.3f}  
+│  app_overhead             fs_mark          {app_overhead_guideline:>12.0f}    {app_overhead_result:>10.0f}    {app_overhead_ratio:>9.3f}  
+│  create_avg               fs_mark          {create_avg_guideline:>12.1f}    {create_avg_result:>10.1f}    {create_avg_ratio:>9.3f}  
+│  write_avg                fs_mark          {write_avg_guideline:>12.1f}    {write_avg_result:>10.1f}    {write_avg_ratio:>9.3f}  
+│  fsync_avg                fs_mark          {fsync_avg_guideline:>12.1f}    {fsync_avg_result:>10.1f}    {fsync_avg_ratio:>9.3f}  
+│  close_avg                fs_mark          {close_avg_guideline:>12.1f}    {close_avg_result:>10.1f}    {close_avg_ratio:>9.3f}  
+│  unlink_avg               fs_mark          {unlink_avg_guideline:>12.1f}    {unlink_avg_result:>10.1f}    {unlink_avg_ratio:>9.3f}  
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  INDEX:        \033[1;32m                                                         {filesystem:>10.1f}\033[0m  
+└────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  Реалистичная нагрузка                                                                                │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ \033[1;33m {test:<25} {source:>1} {guideline:>22} {result:>13} {ratio:>12}                  \033[0m  │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  shell1                  UnixBench         {shell1_guideline:>12.1f}    {shell1_result:>10.1f}    {shell1_ratio:>9.3f}
-│  shell8                  UnixBench         {shell8_guideline:>12.1f}    {shell8_result:>10.1f}    {shell8_ratio:>9.3f}
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  INDEX:      \033[1;32m                                                           {scripts:>10.1f}\033[0m                    │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  Реалистичная нагрузка                                                                 │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ \033[1;33m {test:<25} {source:>1} {guideline:>22} {result:>13} {ratio:>12}  \033[0m   │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  shell1                  UnixBench         {shell1_guideline:>12.1f}    {shell1_result:>10.1f}    {shell1_ratio:>9.3f}  
+│  shell8                  UnixBench         {shell8_guideline:>12.1f}    {shell8_result:>10.1f}    {shell8_ratio:>9.3f}  
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  INDEX:      \033[1;32m                                                           {scripts:>10.1f}\033[0m  
+└────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│\033[1;33m  ОЦЕНКА ПО ПОДСИСТЕМАМ                                                               \033[0m                 │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  Ядро и системные вызовы                                      \033[1;32m{kernel:>10.1f}\033[0m
-│  Процессы и IPC                                               \033[1;32m{processes_ipc:>10.1f}\033[0m
-│  Файловая система                                             \033[1;32m{filesystem:>10.1f}\033[0m
-│  Реалистичная нагрузка                                        \033[1;32m{scripts:>10.1f}\033[0m
-└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│\033[1;33m  ОЦЕНКА ПО ПОДСИСТЕМАМ                                                             \033[0m    │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  Ядро и системные вызовы                                      \033[1;32m{kernel:>10.1f}\033[0m            
+│  Процессы и IPC                                               \033[1;32m{processes_ipc:>10.1f}\033[0m            
+│  Файловая система                                             \033[1;32m{filesystem:>10.1f}\033[0m            
+│  Реалистичная нагрузка                                        \033[1;32m{scripts:>10.1f}\033[0m            
+└────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌───────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│\033[1;36m  ИТОГОВЫЙ ИНДЕКС                                                                 \033[0m                     │
-├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  Общий рейтинг в баллах                                       \033[1;35m{total:>10.1f}\033[0m                              │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│\033[1;36m  ИТОГОВЫЙ ИНДЕКС                                                                 \033[0m      │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  Общий рейтинг в баллах                                       \033[1;35m{total:>10.1f}\033[0m            
+└────────────────────────────────────────────────────────────────────────────────────────┘
 """

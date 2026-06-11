@@ -243,13 +243,13 @@ class FSMark(Test, FsMarkParser):
         log.debug(f"Codes status: {status}")
 
         if all(code for code in status):
-            log.info("fs_mark: - тестирование завершено успешно")
-            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {status}{Colors.RESET}")
+            log.debug("fs_mark: - тестирование завершено успешно")
+            log.info(f"{Colors.GREEN}Все тесты успешно пройдены: {status}{Colors.RESET}")
             self.test_success = True
             return True, True
         else:
             log.critical("fs_mark: - тестирование провалено")
-            log.debug(f"{Colors.RED}Статусы: {status}{Colors.RESET}")
+            log.error(f"{Colors.RED}Статусы: {status}{Colors.RESET}")
             self.test_success = False
             return True, False
 
@@ -275,7 +275,7 @@ class FSMark(Test, FsMarkParser):
             json_path = f"{RESULTS_MAIN_DIR}/{RESULT_FSMARK_NAME}"
             results.to_json(json_path, indent=4, force_ascii=False)
             
-            log.info(f"fs_mark: - Результаты сохранены в {json_path}")
+            log.debug(f"fs_mark: - Результаты сохранены в {json_path}")
             return True, True
         else:
             log.error("fs_mark: - Не удалось получить результаты")

@@ -143,6 +143,29 @@ class OSBLogger:
             self.setup()
         return self.logger
     
+    def enable_console(self, enabled: bool):
+        """
+        Включить/выключить вывод в консоль
+        """
+        if not self._setup:
+            self.setup()
+        
+        # Удаляем все консольные обработчики
+        self.logger.handlers = [h for h in self.logger.handlers 
+                                if not isinstance(h, logging.StreamHandler)]
+        
+        if enabled:
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setFormatter(ColoredFormatter(
+                '%(asctime)s - %(levelname)s: - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            ))
+            self.logger.addHandler(console_handler)
+    
+    @classmethod
+    def set_console(cls, enabled: bool):
+        cls().enable_console(enabled)
+        
     @classmethod
     def debug(cls, msg: str):
         cls()._get_logger().debug(msg)

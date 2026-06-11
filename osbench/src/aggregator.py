@@ -71,7 +71,7 @@ class BenchmarkAggregator:
             if path.exists(filepath):
                 with open(filepath, 'r') as f:
                     self.data[key] = json.load(f)
-                log.info(f"Загружен {filename}")
+                log.debug(f"Загружен {filename}")
             else:
                 log.warning(f"Файл не найден: {filename}")
     
@@ -269,62 +269,62 @@ class BenchmarkAggregator:
         """Выводит сводку результатов по подсистемам"""
         table_data = self.build_subsystem_table()
         
-        log.info("\n" + "="*80)
-        log.info("СВОДКА РЕЗУЛЬТАТОВ ПО ПОДСИСТЕМАМ")
-        log.info("="*80)
+        log.debug("\n" + "="*80)
+        log.debug("СВОДКА РЕЗУЛЬТАТОВ ПО ПОДСИСТЕМАМ")
+        log.debug("="*80)
         
         for subsystem_info in table_data:
             subsystem = subsystem_info['subsystem']
             results = subsystem_info['results']
             
-            log.info(f"\n{'='*80}")
-            log.info(f"ПОДСИСТЕМА: {subsystem.upper()}")
-            log.info(f"{'='*80}")
+            log.debug(f"\n{'='*80}")
+            log.debug(f"ПОДСИСТЕМА: {subsystem.upper()}")
+            log.debug(f"{'='*80}")
             
             if not results:
-                log.info("  Нет данных")
+                log.debug("  Нет данных")
                 continue
             
             for test_name, test_data in results.items():
                 # Проверяем, UnixBench это или другой тест
                 if test_name in self.SUBSYSTEM_MAPPING[subsystem].get('unixbench', []):
                     # UnixBench - выводим для каждого количества копий
-                    log.info(f"\n  {test_name}:")
+                    log.debug(f"\n  {test_name}:")
                     for copies, copies_data in test_data.items():
                         value = copies_data['value']
                         unit = copies_data['unit']
                         if value > 1000:
-                            log.info(f"    {copies} копий: {value:>15,.2f} {unit}")
+                            log.debug(f"    {copies} копий: {value:>15,.2f} {unit}")
                         else:
-                            log.info(f"    {copies} копий: {value:>15.4f} {unit}")
+                            log.debug(f"    {copies} копий: {value:>15.4f} {unit}")
                 elif isinstance(test_data, dict) and all(k.isdigit() for k in test_data.keys()):
                     # LMbench или Perf 
-                    log.info(f"\n  {test_name}:")
+                    log.debug(f"\n  {test_name}:")
                     for copies, copies_data in test_data.items():
                         value = copies_data['value']
                         unit = copies_data['unit']
                         if value > 1000:
-                            log.info(f"    {copies} копий: {value:>15,.2f} {unit}")
+                            log.debug(f"    {copies} копий: {value:>15,.2f} {unit}")
                         else:
-                            log.info(f"    {copies} копий: {value:>15.4f} {unit}")
+                            log.debug(f"    {copies} копий: {value:>15.4f} {unit}")
                 elif isinstance(test_data, dict) and all(isinstance(v, dict) and 'value' in v for v in test_data.values()):
                     # fs_mark - группировка по файлам
-                    log.info(f"\n  {test_name}:")
+                    log.debug(f"\n  {test_name}:")
                     for metric_name, metric_data in test_data.items():
                         value = metric_data['value']
                         unit = metric_data['unit']
                         if value > 1000:
-                            log.info(f"    {metric_name:20}: {value:>15,.2f} {unit}")
+                            log.debug(f"    {metric_name:20}: {value:>15,.2f} {unit}")
                         else:
-                            log.info(f"    {metric_name:20}: {value:>15.4f} {unit}")
+                            log.debug(f"    {metric_name:20}: {value:>15.4f} {unit}")
                 else:
                     # Другие тесты
                     value = test_data['value']
                     unit = test_data['unit']
                     if value > 1000:
-                        log.info(f"  {test_name:40}: {value:>15,.2f} {unit}")
+                        log.debug(f"  {test_name:40}: {value:>15,.2f} {unit}")
                     else:
-                        log.info(f"  {test_name:40}: {value:>15.4f} {unit}")
+                        log.debug(f"  {test_name:40}: {value:>15.4f} {unit}")
         
         # Создаем DataFrame для анализа
         df = self.create_dataframe()
@@ -348,6 +348,6 @@ class BenchmarkAggregator:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(output_data, f, indent=4, ensure_ascii=False)
         
-        log.info(f"Результаты экспортированы в {output_path}")
+        log.debug(f"Результаты экспортированы в {output_path}")
 
         

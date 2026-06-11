@@ -85,9 +85,9 @@ class PerfBench(Test):
             f.write(f"{'='*60}\n\n")
         
         for concur in CONCURRENCY:
-            log.info(f"Запуск Perf Bench с {concur} параллельными потоками")
+            log.debug(f"Запуск Perf Bench с {concur} параллельными потоками")
             for display_name, test_args in tests:
-                log.info(f"Running: {display_name} (concurrency={concur})...")
+                log.debug(f"Running: {display_name} (concurrency={concur})...")
                 
                 output, code = self.run_perf_test(test_args, concur)
                 key = f"{display_name}_{concur}"
@@ -107,14 +107,14 @@ class PerfBench(Test):
                                 status=code)
         
         if all(code for code in status_code_dict.values()):
-            log.info("Perf Bench: тестирование завершено успешно")
-            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {status_code_dict}{Colors.RESET}")
+            log.debug("Perf Bench: тестирование завершено успешно")
+            log.info(f"{Colors.GREEN}Все тесты успешно пройдены: {status_code_dict}{Colors.RESET}")
             self.test_success = True
             return True, True
         else:
             failed_tests = [name for name, code in status_code_dict.items() if not code]
             log.critical(f"Perf Bench: тестирование провалено. Проваленные тесты: {failed_tests}")
-            log.debug(f"{Colors.RED}Статусы: {status_code_dict}{Colors.RESET}")
+            log.error(f"{Colors.RED}Статусы: {status_code_dict}{Colors.RESET}")
             self.test_success = False
             return True, False
 
@@ -127,7 +127,7 @@ class PerfBench(Test):
             log.critical(f"{Colors.RED}Perf Bench: тесты не были успешно завершены, сбор результатов пропущен{Colors.RESET}")
             return True, False
         
-        log.info("Сохранение результатов Perf Bench")
+        log.debug("Сохранение результатов Perf Bench")
         
         # Проверяем существование файла с результатами
         if not Path(self.results_file).exists():
@@ -168,8 +168,8 @@ class PerfBench(Test):
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(results_by_concurrency, f, indent=4, ensure_ascii=False)
             
-            log.info(f"Perf Bench: результаты сохранены в {json_path}")
-            log.info(f"Собрано результатов для {len(results_by_concurrency)} уровней concurrency")
+            log.debug(f"Perf Bench: результаты сохранены в {json_path}")
+            log.debug(f"Собрано результатов для {len(results_by_concurrency)} уровней concurrency")
             
             return True, True
             

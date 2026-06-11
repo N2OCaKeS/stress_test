@@ -180,7 +180,6 @@ class IndexCalculator:
         
         geo_mean = weighted_geo_mean  
 
-        print(OSBENCH_LOGO)
         print(TOTAL_TEMPLATE_COLOR.format(test="TEST", 
                                           source="BENCH",
                                           guideline="GUIDELINE", 
@@ -207,7 +206,7 @@ ic.total_index_calculator()
 
 
 # TODO
-# Привести guideline к новым результатам
-# отладить дебаг режим leave command
+# Повысить уровень общего лога до INFO и всю отладку убрать в debug
+# прогнать результаты
 
 

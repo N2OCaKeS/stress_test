@@ -94,7 +94,7 @@ class system:
             
 
     @staticmethod
-    def leave_command(command: str, returncode=None) -> Tuple[str, bool]:
+    def leave_command(command: str, returncode=None, console=True) -> Tuple[str, bool]:
         """
         Построчный вывод в терминал/лог
         """
@@ -106,8 +106,11 @@ class system:
         process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, text=True, bufsize=1, universal_newlines=True)
         
+        if not console:
+            log.set_console(False)
+
         for line in process.stdout:
-            log.debug(line.rstrip('\n'))  
+            log.info(line.rstrip('\n'))  
             output_lines.append(line.rstrip('\n'))
         for line in process.stderr:  
             log.error(line.rstrip('\n'))
@@ -120,8 +123,12 @@ class system:
             process.wait()
             log.warning(f"Команда прервана пользователем: {command}")
             raise
-
-        log.info(f"Команда '{command}' завершена с кодом: {process.returncode}")
+        
+        if not console:
+            log.set_console(True)
+        if process.returncode == 0:
+            log.info(f"Команда '{command}' завершена с кодом: {process.returncode}")
+        else: log.error(f"Команда '{command}' завершена с кодом: {process.returncode}")
 
         output = '\n'.join(output_lines)
         errors = '\n'.join(error_lines)

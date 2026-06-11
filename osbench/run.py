@@ -4,12 +4,12 @@ import argparse
 import subprocess
 
 from os import path
+from datetime import datetime
 
 from src.osb_logger import log
 from src.lib import system
-from config.conf import VENV_PATH
+from config.conf import VENV_PATH, OSBENCH_LOGO
 
-log.setup(console=False)
 
 parser = argparse.ArgumentParser()
 group = parser.add_mutually_exclusive_group(required=True)
@@ -37,13 +37,14 @@ if args.COLORS:
     log.warning("Предупреждение - жёлтый")
     log.error("Ошибка - красный")
     log.critical("Критическая ошибка - ярко-красный")
+    log.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 if args.PREP:
     log.info("Настройка окружения\n")
-    system.leave_command(f'sudo bash scripts/prepare.sh', returncode=True)
+    system.leave_command(f'sudo bash scripts/prepare.sh', returncode=True, console=False)
     log.info("\nНастройка бенчмарков\n")
-    system.leave_command(f'sudo bash scripts/install_bench.sh', returncode=True)
+    system.leave_command(f'sudo bash scripts/install_bench.sh', returncode=True, console=False)
 elif args.RUN:
-    log.info("\nНачало тестирования\n")
+    log.info(f"\n{OSBENCH_LOGO}\n")
     subprocess.run(f'sudo {VENV_PATH} src/osbench.py', shell=True)
 

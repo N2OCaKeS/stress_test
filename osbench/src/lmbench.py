@@ -71,7 +71,7 @@ class LMBench(Test):
         status_code_dict = {}
         iterations = ITERATIONS_COUNT
         
-        log.info(f"Создание тестового файла: {self.test_file}")
+        log.debug(f"Создание тестового файла: {self.test_file}")
         system.leave_command(f"dd if=/dev/zero of={self.test_file} bs=1M count=100", returncode=True)
 
         tests = [
@@ -108,10 +108,10 @@ class LMBench(Test):
             f.write(f"{'='*60}\n\n")
 
         for iteration in range(1, iterations + 1):
-            log.info(f"Запуск итерации {iteration}/{iterations}")
+            log.debug(f"Запуск итерации {iteration}/{iterations}")
             
             for test_name, args in tests:
-                log.info(f"Running {test_name} {args} (iter {iteration})...")
+                log.debug(f"Running {test_name} {args} (iter {iteration})...")
                 output, code = self.run_test(test_name, args)
                 key = f"{test_name}_{args}_{iteration}"
                 status_code_dict[key] = code
@@ -130,14 +130,14 @@ class LMBench(Test):
                                 status=code)
 
         if all(code for code in status_code_dict.values()):
-            log.info("LMbench: - тестирование завершено успешно")
-            log.debug(f"{Colors.GREEN}Все тесты успешно пройдены: {status_code_dict}{Colors.RESET}")
+            log.debug("LMbench: - тестирование завершено успешно")
+            log.info(f"{Colors.GREEN}Все тесты успешно пройдены: {status_code_dict}{Colors.RESET}")
             self.test_success = True
             return True, True
         else:
             failed_tests = [name for name, code in status_code_dict.items() if not code]
             log.critical(f"LMbench: - тестирование провалено. Проваленные тесты: {failed_tests}")
-            log.debug(f"{Colors.RED}Статусы: {status_code_dict}{Colors.RESET}")
+            log.error(f"{Colors.RED}Статусы: {status_code_dict}{Colors.RESET}")
             self.test_success = False
             return True, False
 
@@ -151,7 +151,7 @@ class LMBench(Test):
             log.critical(f"{Colors.RED}LMbench: тесты не были успешно завершены, сбор результатов пропущен{Colors.RESET}")
             return True, False
         
-        log.info("Сохранение результатов LMbench")
+        log.debug("Сохранение результатов LMbench")
         
         if not Path(self.results_file).exists():
             log.error(f"Файл с результатами не найден: {self.results_file}")
@@ -178,7 +178,7 @@ class LMBench(Test):
                     if 'bw_file_rd' in clean_test_name:
                         clean_test_name = 'bw_file_rd'
                 else:
-                    log.warning(f"Не удалось определить iteration для теста: {test_block_name}")
+                    log.debug(f"Не удалось определить iteration для теста: {test_block_name}")
                     continue
                 
                 parsed_value = self._parse_test_value(clean_test_name, result_text)
@@ -192,8 +192,8 @@ class LMBench(Test):
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(results_by_iteration, f, indent=4, ensure_ascii=False)
             
-            log.info(f"LMbench: результаты сохранены в {json_path}")
-            log.info(f"Собрано результатов для {len(results_by_iteration)} итераций")
+            log.debug(f"LMbench: результаты сохранены в {json_path}")
+            log.debug(f"Собрано результатов для {len(results_by_iteration)} итераций")
             
             return True, True
             

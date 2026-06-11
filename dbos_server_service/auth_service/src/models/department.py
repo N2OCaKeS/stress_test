@@ -27,16 +27,29 @@ class Department(Base):
 
     users: Mapped[list["User"]] = relationship("User", back_populates="department")  # noqa: F821
     service_access: Mapped[list["DepartmentServiceAccess"]] = relationship(  # noqa: F821
-        "DepartmentServiceAccess", back_populates="department"
+        "DepartmentServiceAccess",
+        back_populates="department",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     role_definitions: Mapped[list["ServiceRoleDefinition"]] = relationship(  # noqa: F821
-        "ServiceRoleDefinition", back_populates="department", cascade="all, delete-orphan"
+        "ServiceRoleDefinition",
+        back_populates="department",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     user_groups: Mapped[list["UserGroup"]] = relationship(  # noqa: F821
-        "UserGroup", back_populates="department", cascade="all, delete-orphan"
+        "UserGroup",
+        back_populates="department",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     bots: Mapped[list["BotAccount"]] = relationship("BotAccount", back_populates="department")  # noqa: F821
     oauth_clients: Mapped[list["OAuthClient"]] = relationship("OAuthClient", back_populates="department")  # noqa: F821
     docker_registry: Mapped["DepartmentDockerRegistry | None"] = relationship(  # noqa: F821
-        "DepartmentDockerRegistry", back_populates="department", uselist=False
+        "DepartmentDockerRegistry",
+        back_populates="department",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )

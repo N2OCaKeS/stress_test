@@ -1222,6 +1222,8 @@ async def ban_user(
     expires_at=None,
     request_id: str | None = None,
     commit: bool = True,
+    actor_role: str | None = None,
+    actor_dept_id: str | None = None,
 ) -> dict | None:
     """Забанить юзера.
 
@@ -1230,6 +1232,17 @@ async def ban_user(
     из `update_user`) — commit и audit-emit на caller'е: возвращаем dict с
     pending audit'ом, чтобы один финальный commit покрыл и ban-side-effects,
     и остальные поля PATCH'а.
+
+    Доступ:
+        * account_admin — любой target;
+        * department_admin — только юзер своего отдела (иначе 403
+          DEPT_MISMATCH). Платформенного юзера (account_admin / loging_*)
+          DA забанить не может — у того нет department_id, проверка по
+          совпадению отделов отбивает его автоматически.
+
+    Dept-scope проверяется только когда передан `actor_role` (endpoint-путь).
+    Делегация из `update_user` идёт без него: там ban/unban через `status`
+    уже отдельно гейтятся `STATUS_CHANGE_REQUIRES_ACCOUNT_ADMIN`.
     """
     user_repo = UserRepository(db)
     ban_repo = BanRepository(db)
@@ -1249,6 +1262,13 @@ async def ban_user(
     user = await user_repo.get_by_id(user_id)
     if user is None:
         raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
+
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN:
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, user.department_id,
+            error_code="DEPT_MISMATCH",
+            message="department_admin can only ban users in own department",
+        )
 
     existing_ban = await ban_repo.get_active_ban(user_id)
     if existing_ban:
@@ -1328,8 +1348,12 @@ async def unban_user(
     user_id: str,
     request_id: str | None = None,
     commit: bool = True,
+    actor_role: str | None = None,
+    actor_dept_id: str | None = None,
 ) -> dict | None:
-    """Снять бан. Симметрично `ban_user` — см. его docstring про `commit=False`.
+    """Снять бан. Симметрично `ban_user` — см. его docstring про `commit=False`
+    и dept-scope (account_admin — любой target; department_admin — только
+    свой отдел, иначе 403 DEPT_MISMATCH).
 
     Реактивирует только ban-revoked PAT'ы текущего ban'а
     (`revoked_reason="ban"` + `revoked_at >= ban.banned_at`). Старые ban'ы
@@ -1342,6 +1366,13 @@ async def unban_user(
     user = await user_repo.get_by_id(user_id)
     if user is None:
         raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
+
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN:
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, user.department_id,
+            error_code="DEPT_MISMATCH",
+            message="department_admin can only unban users in own department",
+        )
 
     ban = await ban_repo.get_active_ban(user_id)
     if ban is None:

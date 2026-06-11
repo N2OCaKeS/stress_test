@@ -754,7 +754,7 @@ async def ban_user(
     user_id: str,
     body: BanRequest,
     request: Request,
-    identity: AccountAdmin,
+    identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
     """Забанить юзера.
@@ -765,10 +765,14 @@ async def ban_user(
         `temporary` обязательно требует `expires_at` в будущем.
 
     Доступ:
-        Только account_admin.
+        * account_admin — любой target;
+        * department_admin — только юзер своего отдела (иначе 403
+          DEPT_MISMATCH); платформенного юзера DA забанить не может.
 
     Возможные ошибки:
         * `USER_NOT_FOUND` (404).
+        * `CANNOT_BAN_SELF` (422) — забанить себя нельзя.
+        * `DEPT_MISMATCH` (403) — DA по чужому/платформенному юзеру.
         * 422 — `expires_at` в прошлом, permanent с `expires_at`, temporary
           без `expires_at`.
     """
@@ -780,6 +784,8 @@ async def ban_user(
         reason=body.reason,
         expires_at=body.expires_at,
         request_id=getattr(request.state, "request_id", None),
+        actor_role=identity.platform_role,
+        actor_dept_id=identity.department_id,
     )
     return OkResponse()
 
@@ -984,16 +990,19 @@ async def hard_delete_user(
 async def unban_user(
     user_id: str,
     request: Request,
-    identity: AccountAdmin,
+    identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
     """Снять бан.
 
     Доступ:
-        Только account_admin (симметрично ban-у).
+        * account_admin — любой target;
+        * department_admin — только юзер своего отдела (иначе 403
+          DEPT_MISMATCH). Симметрично ban-у.
 
     Возможные ошибки:
         * `USER_NOT_FOUND` (404).
+        * `DEPT_MISMATCH` (403) — DA по чужому/платформенному юзеру.
         * `BAN_NOT_FOUND` (404) — у юзера нет активного бана.
     """
     await user_service.unban_user(
@@ -1001,5 +1010,7 @@ async def unban_user(
         actor_id=identity.user_id,
         user_id=user_id,
         request_id=getattr(request.state, "request_id", None),
+        actor_role=identity.platform_role,
+        actor_dept_id=identity.department_id,
     )
     return OkResponse()

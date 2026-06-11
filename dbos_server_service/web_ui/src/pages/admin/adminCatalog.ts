@@ -194,8 +194,7 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "auth",
     content: ServicesDepartments,
-    visibleFor: (p) =>
-      isAccountAdmin(p) || isDepAdmin(p),
+    visibleFor: (p) => isAccountAdmin(p),
   },
   {
     id: "services.bots",
@@ -247,10 +246,9 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "server",
     content: () => createElement(Navigate, { to: "/servers", replace: true }),
-    visibleFor: (p) =>
-      isAccountAdmin(p) ||
-      isDepAdmin(p) ||
-      hasServerServiceAdmin(p),
+    // backend `server_service` блокирует platform-admins (account_admin /
+    // loging_admin) — это business-data сервиса. Прячем от них пункт.
+    visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
   },
   {
     id: "services.server.groups",
@@ -259,7 +257,7 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "server",
     content: ServicesServerGroups,
-    visibleFor: (p) => isAccountAdmin(p) || hasServerServiceAdmin(p),
+    visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
   },
   {
     id: "services.server.permissions",
@@ -269,7 +267,7 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "server",
     content: ServicesServerPermissions,
-    visibleFor: (p) => isAccountAdmin(p),
+    visibleFor: (p) => hasServerServiceAdmin(p),
   },
 
   // Services block — secret (service-specific pages; roles are dynamic)

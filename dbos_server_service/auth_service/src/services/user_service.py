@@ -2,6 +2,7 @@
 
 from datetime import timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
@@ -1074,8 +1075,25 @@ async def patch_me(
     if user is None:
         raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
 
-    await user_repo.update(user, **filtered)
-    await db.commit()
+    try:
+        await user_repo.update(user, **filtered)
+        await db.commit()
+    except IntegrityError as exc:
+        # users.email — UNIQUE. Голый IntegrityError тут улетал в 500 через
+        # глобальный handler — UI это видит как «что-то пошло не так».
+        # Разворачиваем в 409 EMAIL_ALREADY_TAKEN с явным error_code, чтобы
+        # форма профиля могла подсветить поле email. UniqueViolation
+        # стреляет в `repo.update` (через `flush`), не на commit'е, поэтому
+        # try-блок накрывает оба вызова.
+        await db.rollback()
+        details_text = str(exc.orig).lower() if exc.orig is not None else str(exc).lower()
+        if "email" in details_text and ("unique" in details_text or "duplicate" in details_text):
+            raise ConflictError(
+                error_code="EMAIL_ALREADY_TAKEN",
+                message="Email already in use",
+                details={"email": filtered.get("email")},
+            ) from exc
+        raise
 
     # Audit `me.updated` (INFO). email маскируем — PII не должна светиться
     # loging_reader'у в открытом виде. display_name — публичный заголовок

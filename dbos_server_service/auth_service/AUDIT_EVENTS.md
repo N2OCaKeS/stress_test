@@ -61,6 +61,8 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `user.create` | INFO | `user_service.create_user` | user | `department_id`, `platform_role`, наличие `initial_roles`. `email` маскируется (`j***@corp.local`) — полный адрес считается PII и в audit-трассу не уходит. |
 | `user.list` | INFO | `user_service.list_users` / `list_users_by_department` | — | `count`, `scope` (`all` / `department`), `department_id` для per-dept. |
 | `user.update` | INFO | `user_service.update_user` | user | Diff обновлённых полей (без password). Если `email` входит в diff — значение в `changes.email` маскируется (`j***@corp.local`), `fields_changed` остаётся неизменённым. |
+| `me.updated` | INFO | `user_service.patch_me` (`PATCH /me`) | user (== actor) | Self-service апдейт собственного профиля: `changes` (email маскируется), `fields_changed`, `username`. |
+| `user.force_password_change` | WARNING | `user_service.force_password_change` (`POST /users/{id}/force-password-change`) | user | Админ выставил `must_change_password=True` без замены пароля. `target_username`, `actor_role`, `actor_dept_id`, `was_already_set`. Сессии и PAT остаются — middleware отрежет их по флагу на следующем запросе. |
 | `user.roles_assign` | INFO | `user_service.assign_roles` | user | `service_name`, `roles` (новый набор). |
 | `user.password_reset` | CRITICAL | `user_service.reset_password` | user | Без plaintext пароля. `actor_role` — имя платформенной роли actor'а (`account_admin` / `department_admin` / …), либо `"self"` если admin-ручкой сброшен собственный пароль (`actor_id == target_id`), либо `"unknown"` если роль не удалось зарезолвить. |
 | `user.self_password_reset` | CRITICAL | `user_service.change_own_password` (`POST /users/me/password`) | user (== actor) | `caller_is_admin` (true для платформенных админ-ролей), `sessions_revoked=true`, `tokens_revoked=true`, `pat_revoked_count` (сколько PAT'ов отозвано с `reason="admin_reset"` — закрывает perm-takeover через PAT, выписанный до смены пароля), `actor_role="self"`, `must_change_password_was_forced` (true — юзер закрывал force-flag первой сменой; false — обычный self-reset). Failure-вариант (`status="failure"`, `details.reason="invalid_old_password"`) эмитится при неверном `old_password` — для SIEM-сигнала о возможном угоне access-токена. |
@@ -75,6 +77,11 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `user.sessions_listed` | INFO | `GET /users/me/sessions` | user (== actor) | `count` активных сессий. |
 | `user.sessions_revoked_all` | CRITICAL | `POST /users/me/sessions/revoke` | user (== actor) | `revoked_count`, `except_session_id`, `except_current`. PAT и bot-токены не трогаются. |
 | `user.session_revoked_one` | WARNING | `DELETE /users/me/sessions/{id}` | user (== actor) | `session_id`, `was_current`. |
+| `user.sessions_admin_listed` | INFO | `GET /users/{id}/sessions` | user | Админ посмотрел активные сессии другого юзера. |
+| `user.sessions_admin_revoked_all` | CRITICAL | `POST /users/{id}/sessions/revoke` | user | Админ массово отозвал сессии другого юзера. `revoked_count`. |
+| `user.session_admin_revoked_one` | WARNING | `DELETE /users/{id}/sessions/{sid}` | user | Админ отозвал одну сессию другого юзера. `session_id`. |
+| `user.sessions_revoked_on_block` | WARNING | `user_service.update_user` (`PATCH /users/{id}/status` → BLOCKED) | user | Side-effect перевода юзера в BLOCKED — сессии отозваны. `revoked_count`. |
+| `user.pat_revoked_on_block` | WARNING | `user_service.update_user` (`PATCH /users/{id}/status` → BLOCKED) | user | Side-effect перевода в BLOCKED — PAT'ы отозваны. `pat_revoked_count`. |
 | `user.hard_deleted` | CRITICAL | `user_service.hard_delete_user` (`DELETE /users/{id}`) | user | `target_username`, `target_department_id`, `reason` (обязательный человекочитаемый), `sessions_revoked`, `pat_revoked_count`. После commit'а инициирует best-effort callback в `secret_service.notify_user_deleted` — secret_service блокирует personal credentials удалённого юзера. Боты юзера НЕ трогаются (dept-owned entity). |
 
 ## Departments
@@ -82,6 +89,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | Action | Default severity | Emitter | Target | Key details |
 |------|------|------|------|------|
 | `department.create` | CRITICAL | `department_service.create_department` | department | `name`. |
+| `department.updated` | INFO | `department_service.update_department` (`PATCH /departments/{id}`) | department | Diff обновлённых полей. |
 | `department.list` | INFO | `GET /departments` | — | Только account_admin. |
 | `department.service_grant` | CRITICAL | `department_service.grant_service_access` | department | `service_name`. |
 | `department.service_revoke` | CRITICAL | `department_service.revoke_service_access` | department | `service_name`. |
@@ -186,6 +194,12 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `docker.token_issued` | INFO | `docker_registry_service.issue_token` | `scope`, `actions` (`pull`/`push`). На failure эмитится `status="failure"` с `reason`/`subject_type` в `details`; `reason in {account_locked, invalid_credentials, scope_denies_docker}` (последний — PAT/bot с непустым `allowed_services` без `docker_registry` → 403 `PAT_SCOPE_DENIES_DOCKER` / `BOT_SCOPE_DENIES_DOCKER`; `subject_type in {pat, bot_token}`). |
 | `docker.push_denied` | WARNING | `docker_registry_service.issue_token` | `reason` (`PUSH_DEPT_MISMATCH` / `PUSH_PERMISSION_DENIED` / `REGISTRY_NOT_FOUND` / `REGISTRY_DISABLED`), `registry_name`, `scope`. |
 | `docker.pull_denied` | INFO | `docker_registry_service.issue_token` | `reason` (`PULL_PERMISSION_DENIED` / `REGISTRY_NOT_FOUND` / `REGISTRY_DISABLED`), `registry_name`, `scope`. |
+
+## Secret lifecycle callbacks
+
+| Action | Default severity | Emitter | Key details |
+|------|------|------|------|
+| `secret_lifecycle.notify_failed` | WARNING | `secret_service_client.notify_*` | Best-effort callback в secret_service (на user/dept hard-delete) не дошёл. `endpoint`, `status_code` или `error`, `target_id`. |
 
 ---
 

@@ -87,18 +87,20 @@ async def test_4xx_emits_http_client_error():
     assert calls[0]["details"]["status_code"] == 400
 
 
-async def test_401_emits_http_unauthorized():
+async def test_401_emits_http_access_denied():
     calls: list = []
     resp = await _call("/api/secret/v1/unauth", calls)
     assert resp.status_code == 401
-    assert calls and calls[0]["action"] == "http.unauthorized"
+    assert calls and calls[0]["action"] == "http.access_denied"
+    assert calls[0]["status"] == "denied"
 
 
-async def test_403_emits_http_unauthorized():
+async def test_403_emits_http_access_denied():
     calls: list = []
     resp = await _call("/api/secret/v1/forbid", calls)
     assert resp.status_code == 403
-    assert calls and calls[0]["action"] == "http.unauthorized"
+    assert calls and calls[0]["action"] == "http.access_denied"
+    assert calls[0]["status"] == "denied"
 
 
 async def test_5xx_emits_http_server_error():

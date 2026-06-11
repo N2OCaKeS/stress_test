@@ -105,7 +105,7 @@ def test_failure_axis_for_main_actions():
 
 def test_http_events_present():
     actions = {e["action"] for e in SERVICE_EVENTS}
-    assert {"http.client_error", "http.server_error", "http.unauthorized"} <= actions
+    assert {"http.client_error", "http.server_error", "http.access_denied"} <= actions
 
 
 def test_default_severity_lookup_returns_none_for_unknown():

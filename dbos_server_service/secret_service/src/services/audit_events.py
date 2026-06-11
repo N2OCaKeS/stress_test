@@ -25,9 +25,9 @@ SERVICE_EVENTS = [
     # Lifecycle
     {"action": "service.started", "description": "Service started up", "default_severity": "INFO"},
     # HTTP middleware
-    {"action": "http.client_error", "description": "HTTP 4xx response (except 401/403)", "default_severity": "INFO"},
-    {"action": "http.server_error", "description": "HTTP 5xx response", "default_severity": "ERROR"},
-    {"action": "http.unauthorized", "description": "HTTP 401/403 response", "default_severity": "WARNING"},
+    {"action": "http.access_denied", "description": "HTTP 401/403 response", "default_severity": "CRITICAL"},
+    {"action": "http.client_error", "description": "HTTP 4xx response (except 401/403)", "default_severity": "WARNING"},
+    {"action": "http.server_error", "description": "HTTP 5xx response", "default_severity": "CRITICAL"},
     # Tokens / credentials — CRUD
     {"action": "tokens.create", "description": "Credential created", "default_severity": "INFO"},
     {"action": "tokens.update", "description": "Credential updated (name/login/secret)", "default_severity": "INFO"},
@@ -65,9 +65,9 @@ SERVICE_EVENTS = [
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     # Success ветка зеркалит SERVICE_EVENTS.default_severity
     ("service.started", "success"): "INFO",
-    ("http.client_error", "failure"): "INFO",
-    ("http.server_error", "failure"): "ERROR",
-    ("http.unauthorized", "failure"): "WARNING",
+    ("http.access_denied", "failure"): "CRITICAL",
+    ("http.client_error", "failure"): "WARNING",
+    ("http.server_error", "failure"): "CRITICAL",
     ("tokens.create", "success"): "INFO",
     ("tokens.update", "success"): "INFO",
     ("tokens.delete", "success"): "WARNING",

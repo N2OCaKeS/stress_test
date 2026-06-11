@@ -125,8 +125,8 @@ async def get_bot(
     """
     return await bot_service.get_bot(
         db=db,
+        actor_id=identity.user_id,
         actor_role=identity.platform_role,
-        actor_dept_id=identity.department_id,
         bot_id=bot_id,
     )
 

@@ -322,10 +322,12 @@ async def logout(
     """
     raw_refresh = body.refresh_token or request.cookies.get(REFRESH_COOKIE_NAME)
     if not raw_refresh:
-        raise DomainValidationError(
-            error_code="MISSING_REFRESH_TOKEN",
-            message="refresh_token не передан ни в body, ни в cookie",
-        )
+        # Нет refresh ни в body, ни в cookie — юзер уже фактически разлогинен
+        # (например, повторный POST /logout после успешного первого, или
+        # logout без cookie от свежей вкладки). Возвращаем OK и просто
+        # чистим cookie, чтобы клиент не упирался в 422 на повторе.
+        _clear_refresh_cookie(response)
+        return OkResponse()
     await auth_service.logout(
         db=db,
         raw_refresh_token=raw_refresh,

@@ -124,6 +124,21 @@ async def test_patch_me_banned_user_blocked(client, db, user_a, user_a_token):
     assert resp.json()["error_code"] == "USER_BANNED_OR_INACTIVE"
 
 
+async def test_patch_me_duplicate_email_returns_409(client, db, user_a, user_b, user_a_token):
+    """Email уже занят другим юзером → 409 EMAIL_ALREADY_TAKEN, не 500."""
+    user_b.email = "dup@example.com"
+    await db.commit()
+
+    resp = await client.patch(
+        URL,
+        headers={"Authorization": f"Bearer {user_a_token}"},
+        json={"email": "dup@example.com"},
+    )
+    assert resp.status_code == 409, resp.text
+    body = resp.json()
+    assert body["error_code"] == "EMAIL_ALREADY_TAKEN"
+
+
 async def test_patch_me_emits_audit(client, user_a_token, capture_audit_payloads):
     """`me.updated` действие эмитится при успешной правке."""
     resp = await client.patch(

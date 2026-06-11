@@ -718,7 +718,12 @@ function BotLiveData({
           {/* Token — инвариант: у бота 0 или 1 active. */}
           {(() => {
             const allTokens = tokens.data ?? [];
-            const active = allTokens.filter((t) => !t.revoked_at);
+            const now = Date.now();
+            const active = allTokens.filter(
+              (t) =>
+                !t.revoked_at &&
+                (!t.expires_at || new Date(t.expires_at).getTime() > now),
+            );
             return (
               <div>
                 <div className="text-xs uppercase text-dim mb-2">

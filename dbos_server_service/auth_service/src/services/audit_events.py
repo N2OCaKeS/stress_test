@@ -66,6 +66,7 @@ SERVICE_EVENTS = [
     {"action": "user.hard_deleted", "description": "User row hard-deleted (cascade revoke + secret_service notify)", "default_severity": "CRITICAL"},
     # Departments
     {"action": "department.create", "description": "New department created", "default_severity": "CRITICAL"},
+    {"action": "department.updated", "description": "Department metadata updated (PATCH /departments/{id})", "default_severity": "INFO"},
     {"action": "department.list", "description": "Department list retrieved", "default_severity": "INFO"},
     {"action": "department.service_grant", "description": "Service access granted to department", "default_severity": "CRITICAL"},
     {"action": "department.service_revoke", "description": "Service access revoked from department", "default_severity": "CRITICAL"},

@@ -1,8 +1,8 @@
 """Inner-most middleware: на 4xx/5xx ответе пишет http.* audit-event.
 
-401/403 → `http.unauthorized` (WARNING).
-Прочие 4xx (кроме 501) → `http.client_error` (INFO).
-5xx → `http.server_error` (ERROR).
+401/403 → `http.access_denied` (denied / CRITICAL).
+Прочие 4xx (кроме 501) → `http.client_error` (failure / WARNING).
+5xx → `http.server_error` (failure / CRITICAL).
 501 и health-paths пропускаются ранним return'ом — 501 — заглушка endpoint'а,
 не действие пользователя; health/ready режется ещё outermost'ом, но дублирующий
 guard здесь — defense-in-depth.
@@ -40,7 +40,7 @@ class AuditAccessMiddleware(BaseHTTPMiddleware):
         details = {"method": request.method, "path": path, "status_code": status_code}
 
         if status_code in (401, 403):
-            action, emit_status = "http.unauthorized", "failure"
+            action, emit_status = "http.access_denied", "denied"
         elif status_code < 500:
             action, emit_status = "http.client_error", "failure"
         else:

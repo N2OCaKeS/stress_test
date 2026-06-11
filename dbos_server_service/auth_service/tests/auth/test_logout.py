@@ -44,9 +44,12 @@ async def test_logout_does_not_affect_other_sessions(client, account_admin):
     assert r.status_code == 200
 
 
-async def test_logout_missing_token_returns_422(client, account_admin):
+async def test_logout_missing_token_is_idempotent(client, account_admin):
+    """Без body и без cookie — юзер уже фактически разлогинен, возвращаем OK."""
+    client.cookies.clear()
     resp = await client.post(URL, json={})
-    assert resp.status_code == 422
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
 
 
 async def test_logout_banned_user_active_session_returns_200(client, db):

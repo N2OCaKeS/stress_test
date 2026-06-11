@@ -22,9 +22,9 @@
 
 | Action | Status | Severity | Описание / payload |
 |---|---|---|---|
-| `http.client_error` | failure | INFO | 4xx ответ (кроме 401/403). `details = { method, path, status_code, request_id }`. |
-| `http.unauthorized` | failure | WARNING | 401 или 403. `details = { method, path, status_code, error_code, request_id }`. |
-| `http.server_error` | failure | ERROR | 5xx ответ. `details = { method, path, status_code, request_id }`. |
+| `http.client_error` | failure | WARNING | 4xx ответ (кроме 401/403). `details = { method, path, status_code, request_id }`. |
+| `http.access_denied` | denied | CRITICAL | 401 или 403. `details = { method, path, status_code, error_code, request_id }`. Action и status выровнены с auth/server/loging — SIEM-запросы по `http.access_denied` ловят 401/403 и здесь. |
+| `http.server_error` | failure | CRITICAL | 5xx ответ. `details = { method, path, status_code, request_id }`. |
 
 ## Credentials — CRUD
 

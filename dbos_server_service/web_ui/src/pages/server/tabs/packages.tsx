@@ -3,24 +3,50 @@
  *
  * Probe запускает live SSH-задачу через worker. Ответ endpoint'а — только
  * `{task_id, status}` (HTTP 202), сам список пакетов уезжает в `task.result`
- * и опрашивается отдельным запросом. Wrapper'а для `GET /tasks/{id}` в
- * `@/api/server/*` пока нет, поэтому здесь показываем ack от dispatch'а и
- * напоминаем, где смотреть результат. Когда `getTask` подъедет — табличка
- * `name / version / arch` рендерится тут же, скелет уже стоит.
+ * и опрашивается отдельным запросом (`GET /tasks/{id}`). После dispatch'а
+ * поллим task-row каждые ~3с до терминального статуса, дотягиваем
+ * `result.packages` и рендерим таблицу `name / version / arch`.
  *
  * RBAC: probe доступен `server.operator`+ и dep_admin'у своего dept'а.
  * account_admin / logging_admin закрыты от server_service целиком — страница
  * /server для них не рендерится. Backend перепроверит ещё раз — клиентский
  * gate только прячет заведомо лишнюю кнопку.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Package, RefreshCw, AlertCircle } from "lucide-react";
-import { installedPackagesProbe } from "@/api/server/misc";
+import { installedPackagesProbe, getTask } from "@/api/server/misc";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
 import { isDepAdmin } from "@/lib/rbac";
-import type { Server } from "@/api/server/types";
+import type { Server, TaskRead } from "@/api/server/types";
+
+const PACKAGES_POLL_MS = 3_000;
+
+function isTerminal(status: string): boolean {
+  return (
+    status === "succeeded" || status === "failed" || status === "cancelled"
+  );
+}
+
+/** Достаёт `packages` из произвольного `task.result` (best-effort). */
+function extractPackages(result: TaskRead["result"]): PackageRow[] {
+  if (!result || typeof result !== "object") return [];
+  const raw = (result as Record<string, unknown>).packages;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((p): PackageRow | null => {
+      if (!p || typeof p !== "object") return null;
+      const obj = p as Record<string, unknown>;
+      if (typeof obj.name !== "string") return null;
+      return {
+        name: obj.name,
+        version: typeof obj.version === "string" ? obj.version : "",
+        arch: typeof obj.arch === "string" ? obj.arch : null,
+      };
+    })
+    .filter((p): p is PackageRow => p !== null);
+}
 
 interface Props {
   serverId: string;
@@ -57,31 +83,71 @@ export function PackagesTab({ serverId, server }: Props) {
   const [lastTaskId, setLastTaskId] = useState<string | null>(null);
   const [lastStatus, setLastStatus] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  // Список здесь пока не заполняется — нужен `GET /tasks/{id}` wrapper.
-  // Скелет под `{packages: [{name, version, arch?}]}` оставлен, чтобы дорисовать
-  // одной строкой, когда роут появится.
-  const [packages] = useState<PackageRow[]>([]);
+  const [packages, setPackages] = useState<PackageRow[]>([]);
+  const [polling, setPolling] = useState(false);
+
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
 
   const allowed = canProbe(persona, server);
+
+  // Поллинг task-row до терминального статуса: тянем result.packages.
+  useEffect(() => {
+    if (!lastTaskId || !polling) return;
+    let stopped = false;
+    const tick = () => {
+      getTask(lastTaskId)
+        .then((t) => {
+          if (stopped || !aliveRef.current) return;
+          setLastStatus(t.status);
+          if (isTerminal(t.status)) {
+            setPolling(false);
+            setPackages(extractPackages(t.result));
+            if (t.status === "failed") {
+              setErr(t.last_error ?? "Probe завершился ошибкой");
+            }
+          }
+        })
+        .catch((e: unknown) => {
+          if (stopped || !aliveRef.current) return;
+          setPolling(false);
+          setErr(apiErrMsg(e, "Не удалось прочитать результат задачи"));
+        });
+    };
+    tick();
+    const id = window.setInterval(tick, PACKAGES_POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [lastTaskId, polling]);
 
   async function handleProbe() {
     if (pending || !allowed) return;
     setPending(true);
     setErr(null);
+    setPackages([]);
     try {
       const res = await installedPackagesProbe(
         serverId,
         pattern.trim() ? { pattern: pattern.trim() } : undefined,
       );
+      if (!aliveRef.current) return;
       setLastTaskId(res.task_id);
       setLastStatus(res.status);
+      setPolling(true);
       toast.success(`Probe запущен (task ${res.task_id})`);
     } catch (e) {
       const msg = apiErrMsg(e, "Probe не запустился");
-      setErr(msg);
+      if (aliveRef.current) setErr(msg);
       toast.error(msg);
     } finally {
-      setPending(false);
+      if (aliveRef.current) setPending(false);
     }
   }
 
@@ -148,22 +214,37 @@ export function PackagesTab({ serverId, server }: Props) {
 
       {lastTaskId && (
         <div className="surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1">
-          <div>
+          <div className="flex items-center gap-2 flex-wrap">
             Последний probe:{" "}
             <span className="mono">{lastTaskId}</span>
             {lastStatus && (
               <>
                 {" · "}статус{" "}
-                <span className="badge badge-warn">{lastStatus}</span>
+                <span
+                  className={`badge ${
+                    lastStatus === "succeeded"
+                      ? "badge-ok"
+                      : lastStatus === "failed"
+                        ? "badge-danger"
+                        : "badge-warn"
+                  }`}
+                >
+                  {lastStatus}
+                </span>
               </>
             )}
+            {polling && (
+              <span className="flex items-center gap-1 text-dim">
+                <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
+              </span>
+            )}
           </div>
-          <div className="text-dim">
-            Результат (`{`{packages: [{name, version, arch?}, ...]}`}`)
-            читается из <span className="mono">task.result</span> — отдельным
-            запросом к task-роуту. UI-просмотр результата подъедет после
-            появления `GET /tasks/{`{id}`}` wrapper'а.
-          </div>
+          {!polling && lastStatus === "succeeded" && (
+            <div className="text-dim">
+              Найдено пакетов: <b>{packages.length}</b> (из{" "}
+              <span className="mono">task.result</span>).
+            </div>
+          )}
         </div>
       )}
 

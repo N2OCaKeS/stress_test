@@ -108,10 +108,11 @@ class EntityType(StrEnum):
     # service-ролями (создание/удаление имён ролей) живёт только в auth_service —
     # server_service сюда не лезет, мы только наполняем матрицу actions для них.
     PERMISSION = "permission"
-    # Worker-таска: единственное доступное действие — `cancel`. Сами task-row'ы
+    # Worker-таска: доступны `view` (list/detail) и `cancel`. Сами task-row'ы
     # живут в dev_server_worker.tasks; server_service ходит туда через cross-DB
-    # engine из `worker_client`, как и при dispatch'е. CRUD/view над таблицей
-    # tasks не предусмотрен — read идёт через server_worker напрямую.
+    # engine из `worker_client` — и для чтения (list/get), и при dispatch'е.
+    # Полноценного CRUD нет: server_service задачи только читает и отменяет,
+    # пишет их таблицу сам worker.
     TASK = "task"
 
 
@@ -208,9 +209,10 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     EntityType.PERMISSION: frozenset({
         Action.VIEW, Action.PERMISSION_GRANT, Action.PERMISSION_REVOKE,
     }),
-    # Worker-таска — только cancel. Подбирать tasks или просматривать историю
-    # через матрицу нельзя; для этого нужен прямой read из server_worker.
+    # Worker-таска — view (list/detail истории) и cancel. view сидится
+    # reader/operator/admin'у, cancel — только admin'у (см. seed-миграции).
     EntityType.TASK: frozenset({
+        Action.VIEW,
         Action.CANCEL,
     }),
 }

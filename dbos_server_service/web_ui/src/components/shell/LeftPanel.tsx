@@ -20,6 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
+import { hasServerZoneAccess } from "@/lib/rbac";
 import type { ServiceName } from "@/types/persona";
 import { useDeptLabelOpt } from "@/lib/labels";
 import { ThemeSwitcher } from "./ThemeSwitcher";
@@ -72,6 +73,9 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   const { persona } = usePersona();
   const auth = useAuthOptional();
   const location = useLocation();
+  // Хук обязан вызываться до любого условного return (rules-of-hooks): иначе
+  // при смене роли в рамках сессии счётчик хуков разъезжается.
+  const deptLabel = useDeptLabelOpt(persona.dept_id);
 
   // account_admin живёт целиком в админ-каталоге — для него превращаем левую
   // панель в развёрнутый навигатор по /admin без «Главной» и сервис-чипов.
@@ -93,7 +97,14 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   // Users management lives under /admin/services.users — no separate chip.
   // Config тоже скрыт — кнопка «Администрирование» внизу уже ведёт на /admin.
   // account_admin сюда не доходит: для него выше рендерится AdminOnlyPanel.
-  const chips: ServiceChip[] = persona.accessible_services
+  const serviceList = [...persona.accessible_services];
+  // Worker (server_worker) — часть server-зоны: показываем его всем, у кого
+  // реально есть доступ (dep_admin + server.*-роли), даже если backend не
+  // положил `worker` в accessible_services. account_admin сюда не доходит.
+  if (hasServerZoneAccess(persona) && !serviceList.includes("worker")) {
+    serviceList.push("worker");
+  }
+  const chips: ServiceChip[] = serviceList
     .filter((s) => s !== "auth" && s !== "config")
     .map((s) => SERVICE_CATALOG[s])
     .filter(Boolean);
@@ -102,7 +113,6 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
     location.pathname === to ||
     (to !== "/home" && location.pathname.startsWith(to + "/"));
 
-  const deptLabel = useDeptLabelOpt(persona.dept_id);
   const roleLine = persona.platform_role
     ? persona.platform_role + (deptLabel ? ` · ${deptLabel}` : "")
     : Object.keys(persona.service_roles).join(", ") +

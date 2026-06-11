@@ -7,8 +7,72 @@ response shape'ы для endpoint'а.
 """
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class TaskRead(BaseModel):
+    """Карточка одной worker-task'и для list/detail чтения.
+
+    Row живёт в `dev_server_worker.tasks` (см. `server_worker/src/models/
+    task.py`); server_service читает её через cross-DB engine из
+    `worker_client`. Имена полей здесь — стабильный API-контракт UI, поэтому
+    кое-где отличаются от колонок таблицы:
+
+    * `kind` ← колонка `task_kind`;
+    * `server_id` ← `target_server_id`;
+    * `account_id` ← `target_resource_id` (secondary target — server_account
+      id у password/provision-задач);
+    * `created_at` ← `enqueued_at` (момент постановки);
+    * `started_at` / `finished_at` ← `started_at` / `completed_at`;
+    * `retry_count` ← `attempt`.
+
+    `department_id` в самой таблице нет — он резолвится server_service'ом из
+    `server.department_id` по `server_id`. Для инфра-задач без `server_id`
+    (scheduler/heartbeat/sweep/cleanup) остаётся `None`.
+
+    `result` в листинге усекается до summary (`_summarize_result`), в detail
+    отдаётся целиком.
+    """
+
+    id: str = Field(description="task_id (PK в dev_server_worker.tasks).")
+    kind: str = Field(description="task_kind — taskiq-label (`power.on`, `inventory.sync`, ...).")
+    status: str = Field(
+        description="queued / running / succeeded / failed / cancelled.",
+    )
+    server_id: str | None = Field(
+        default=None,
+        description="target_server_id. None у инфра-задач без конкретного сервера.",
+    )
+    account_id: str | None = Field(
+        default=None,
+        description="target_resource_id — secondary target (server_account id и т.п.).",
+    )
+    department_id: str | None = Field(
+        default=None,
+        description=(
+            "Отдел задачи, резолвится из server.department_id по server_id. "
+            "None для инфра-задач без сервера."
+        ),
+    )
+    created_at: datetime = Field(description="enqueued_at — момент постановки задачи.")
+    started_at: datetime | None = Field(
+        default=None, description="Момент старта исполнения (None пока queued).",
+    )
+    finished_at: datetime | None = Field(
+        default=None, description="Момент финала (completed_at), None пока не терминальна.",
+    )
+    retry_count: int = Field(description="attempt — номер текущей попытки (0 на первой).")
+    last_error: str | None = Field(
+        default=None, description="Текст последней ошибки (для detail / DLQ-фильтра failed).",
+    )
+    result: Any | None = Field(
+        default=None,
+        description=(
+            "JSONB-результат. В листинге — усечённое summary, в detail — полностью."
+        ),
+    )
 
 
 class TaskCancelRequest(BaseModel):

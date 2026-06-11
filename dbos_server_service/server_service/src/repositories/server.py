@@ -120,6 +120,38 @@ async def get_many_by_ids(
     return {srv.id: srv for srv in rows}
 
 
+async def list_ids_in_departments(
+    db: AsyncSession,
+    department_ids: list[str],
+) -> list[str]:
+    """SELECT id всех серверов перечисленных отделов — без подгрузки самих row'ов.
+
+    Нужно для dept-scope'а task-листинга: собрать множество видимых caller'у
+    server_id'ов и отдать его в cross-DB `worker_client.list_tasks` как фильтр
+    `target_server_id IN (...)`. Пустой `department_ids` → пусто.
+    """
+    if not department_ids:
+        return []
+    stmt = select(Server.id).where(Server.department_id.in_(department_ids))
+    return list((await db.execute(stmt)).scalars())
+
+
+async def department_map_for_ids(
+    db: AsyncSession,
+    server_ids: list[str],
+) -> dict[str, str]:
+    """`{server_id: department_id}` для набора серверов одним SELECT'ом.
+
+    Используется при сборке `TaskRead`, чтобы проставить `department_id`
+    задачи из `server.department_id` без N+1 на каждую строку листинга.
+    Несуществующие/чужие id просто отсутствуют в результате.
+    """
+    if not server_ids:
+        return {}
+    stmt = select(Server.id, Server.department_id).where(Server.id.in_(server_ids))
+    return {row[0]: row[1] for row in (await db.execute(stmt)).all()}
+
+
 async def get_by_hostname(db: AsyncSession, hostname: str) -> Server | None:
     """SELECT по hostname (UNIQUE). Используется опционально под дедупликацию."""
     stmt = select(Server).where(Server.hostname == hostname)

@@ -1,0 +1,406 @@
+"""Tests for GET /api/server/v1/tasks and GET /api/server/v1/tasks/{id}.
+
+`worker_client.list_tasks` / `worker_client.get_task` мочатся через
+monkeypatch — cross-DB read из dev_server_worker.tasks не задействуем, на
+стороне server_service проверяем permission -> dept-scope -> visibility ->
+TaskRead-маппинг -> X-Total-Count.
+
+Серверы (с реальными department_id) создаются через `make_server` в server_db,
+чтобы dept-scope (`server_repo.list_ids_in_departments` /
+`department_map_for_ids`) работал по настоящим row'ам.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from tests._helpers import assert_error, auth_hdr as _hdr
+
+BASE = "/api/server/v1"
+
+
+def _row(
+    *,
+    id: str,
+    kind: str = "power.on",
+    status: str = "succeeded",
+    target_server_id: str | None = None,
+    target_resource_id: str | None = None,
+    attempt: int = 0,
+    last_error: str | None = None,
+    result=None,
+):
+    """БД-row task'и (имена колонок dev_server_worker.tasks)."""
+    from datetime import datetime, timezone
+
+    now = datetime(2026, 6, 12, tzinfo=timezone.utc)
+    return {
+        "id": id,
+        "task_kind": kind,
+        "status": status,
+        "target_server_id": target_server_id,
+        "target_resource_id": target_resource_id,
+        "attempt": attempt,
+        "last_error": last_error,
+        "result": result,
+        "enqueued_at": now,
+        "started_at": None,
+        "completed_at": None,
+    }
+
+
+@pytest.fixture
+def fake_worker_read(monkeypatch):
+    """Перехватывает `worker_client.list_tasks` / `get_task`.
+
+    Тест кладёт в `state["rows"]` список БД-row'ов (через `_row`). Фейковый
+    `list_tasks` применяет тот же фильтр-контракт, что и реальный
+    (status/kind/server_ids/include_infra + limit/offset), и возвращает
+    `(page, total)`. `get_task` ищет по id.
+    """
+    state: dict = {"rows": []}
+
+    async def fake_list(*, status=None, task_kind=None, server_ids=None,
+                        include_infra=False, limit, offset):
+        rows = list(state["rows"])
+        if status is not None:
+            rows = [r for r in rows if r["status"] == status]
+        if task_kind is not None:
+            rows = [r for r in rows if r["task_kind"] == task_kind]
+        if server_ids is not None:
+            allowed = set(server_ids)
+
+            def visible(r):
+                sid = r["target_server_id"]
+                if sid is None:
+                    return include_infra
+                return sid in allowed
+
+            rows = [r for r in rows if visible(r)]
+        total = len(rows)
+        return rows[offset:offset + limit], total
+
+    async def fake_get(task_id_value):
+        for r in state["rows"]:
+            if r["id"] == task_id_value:
+                return r
+        return None
+
+    from src.services import worker_client
+    monkeypatch.setattr(worker_client, "list_tasks", fake_list)
+    monkeypatch.setattr(worker_client, "get_task", fake_get)
+    return state
+
+
+# ── List ─────────────────────────────────────────────────────────────────────
+
+class TestTaskListHappy:
+    async def test_admin_lists_own_dept_tasks(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="tsk_1", target_server_id=srv.id, status="succeeded"),
+            _row(id="tsk_2", target_server_id=srv.id, status="failed",
+                 last_error="boom"),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["X-Total-Count"] == "2"
+        body = resp.json()
+        assert {t["id"] for t in body} == {"tsk_1", "tsk_2"}
+        t1 = next(t for t in body if t["id"] == "tsk_1")
+        assert t1["kind"] == "power.on"
+        assert t1["server_id"] == srv.id
+        assert t1["department_id"] == "dep_a"
+        assert "created_at" in t1
+        assert t1["retry_count"] == 0
+
+    async def test_filter_status(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="ok1", target_server_id=srv.id, status="succeeded"),
+            _row(id="fail1", target_server_id=srv.id, status="failed"),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks?status=failed", headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200
+        assert resp.headers["X-Total-Count"] == "1"
+        body = resp.json()
+        assert [t["id"] for t in body] == ["fail1"]
+
+    async def test_filter_kind(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="p1", target_server_id=srv.id, kind="power.on"),
+            _row(id="i1", target_server_id=srv.id, kind="inventory.sync"),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks?kind=inventory.sync", headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200
+        assert [t["id"] for t in resp.json()] == ["i1"]
+
+    async def test_filter_server_id(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv1 = await make_server(department_id="dep_a")
+        srv2 = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="s1", target_server_id=srv1.id),
+            _row(id="s2", target_server_id=srv2.id),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks?server_id={srv1.id}", headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200
+        assert [t["id"] for t in resp.json()] == ["s1"]
+
+    async def test_filter_server_id_cross_dept_empty(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        """server_id чужого отдела → пустой результат (enumeration-guard)."""
+        srv_b = await make_server(department_id="dep_b")
+        fake_worker_read["rows"] = [
+            _row(id="x1", target_server_id=srv_b.id),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks?server_id={srv_b.id}", headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200
+        assert resp.headers["X-Total-Count"] == "0"
+        assert resp.json() == []
+
+    async def test_pagination_total_count(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id=f"t{i}", target_server_id=srv.id) for i in range(5)
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks?limit=2&offset=0", headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200
+        assert resp.headers["X-Total-Count"] == "5"
+        assert len(resp.json()) == 2
+
+    async def test_result_summarized_in_list(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(
+                id="pkg",
+                target_server_id=srv.id,
+                kind="installed_packages.list",
+                result={"packages": [{"name": "vim"}, {"name": "git"}]},
+            ),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200
+        t = resp.json()[0]
+        # Список усечён до summary с _count, а не полный массив пакетов.
+        assert t["result"] == {"packages": {"_count": 2}}
+
+
+class TestTaskListInfraVisibility:
+    async def test_admin_role_sees_infra_tasks(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="srv_task", target_server_id=srv.id),
+            _row(id="infra", target_server_id=None, kind="system.heartbeat"),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200
+        ids = {t["id"] for t in resp.json()}
+        assert ids == {"srv_task", "infra"}
+        infra = next(t for t in resp.json() if t["id"] == "infra")
+        assert infra["server_id"] is None
+        assert infra["department_id"] is None
+
+    async def test_operator_sees_infra_tasks(
+        self, client, operator_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="srv_task", target_server_id=srv.id),
+            _row(id="infra", target_server_id=None, kind="system.heartbeat"),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(operator_token_a))
+        assert resp.status_code == 200
+        assert {t["id"] for t in resp.json()} == {"srv_task", "infra"}
+
+    async def test_reader_does_not_see_infra_tasks(
+        self, client, reader_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="srv_task", target_server_id=srv.id),
+            _row(id="infra", target_server_id=None, kind="system.heartbeat"),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(reader_token_a))
+        assert resp.status_code == 200
+        assert {t["id"] for t in resp.json()} == {"srv_task"}
+
+    async def test_dep_admin_does_not_see_infra_tasks(
+        self, client, admin_token, make_server, fake_worker_read,
+    ):
+        """department_admin (platform-роль) видит серверные, но не инфра-задачи."""
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(id="srv_task", target_server_id=srv.id),
+            _row(id="infra", target_server_id=None, kind="system.heartbeat"),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(admin_token))
+        assert resp.status_code == 200
+        assert {t["id"] for t in resp.json()} == {"srv_task"}
+
+
+class TestTaskListDeptScope:
+    async def test_cross_dept_server_tasks_hidden(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv_a = await make_server(department_id="dep_a")
+        srv_b = await make_server(department_id="dep_b")
+        fake_worker_read["rows"] = [
+            _row(id="mine", target_server_id=srv_a.id),
+            _row(id="theirs", target_server_id=srv_b.id),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200
+        assert resp.headers["X-Total-Count"] == "1"
+        assert {t["id"] for t in resp.json()} == {"mine"}
+
+
+class TestTaskListRbac:
+    async def test_account_admin_blocked(
+        self, client, account_admin_token, fake_worker_read,
+    ):
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(account_admin_token))
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+
+    async def test_loging_admin_blocked(
+        self, client, loging_admin_token, fake_worker_read,
+    ):
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(loging_admin_token))
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+
+    async def test_no_role_denied(
+        self, client, no_role_token_a, fake_worker_read,
+    ):
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(no_role_token_a))
+        assert_error(resp, 403, "PERMISSION_DENIED")
+
+    async def test_reader_allowed_read_only(
+        self, client, reader_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [_row(id="t", target_server_id=srv.id)]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(reader_token_a))
+        assert resp.status_code == 200, resp.text
+        assert [t["id"] for t in resp.json()] == ["t"]
+
+    async def test_no_token_401(self, client, fake_worker_read):
+        resp = await client.get(f"{BASE}/tasks")
+        assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
+
+
+# ── Detail ───────────────────────────────────────────────────────────────────
+
+class TestTaskGetHappy:
+    async def test_get_full_result_and_error(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [
+            _row(
+                id="tsk_detail",
+                target_server_id=srv.id,
+                status="failed",
+                last_error="ssh timeout",
+                result={"packages": [{"name": "vim"}, {"name": "git"}]},
+            ),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks/tsk_detail", headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["id"] == "tsk_detail"
+        assert body["last_error"] == "ssh timeout"
+        assert body["department_id"] == "dep_a"
+        # detail отдаёт полный result, не summary
+        assert body["result"] == {"packages": [{"name": "vim"}, {"name": "git"}]}
+
+    async def test_reader_can_get(
+        self, client, reader_token_a, make_server, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a")
+        fake_worker_read["rows"] = [_row(id="r", target_server_id=srv.id)]
+        resp = await client.get(f"{BASE}/tasks/r", headers=_hdr(reader_token_a))
+        assert resp.status_code == 200, resp.text
+
+
+class TestTaskGetNotFound:
+    async def test_missing_task_404(
+        self, client, admin_role_token_a, fake_worker_read,
+    ):
+        resp = await client.get(
+            f"{BASE}/tasks/tsk_nope", headers=_hdr(admin_role_token_a),
+        )
+        assert_error(resp, 404, "TASK_NOT_FOUND")
+
+    async def test_cross_dept_task_masked_404(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        srv_b = await make_server(department_id="dep_b")
+        fake_worker_read["rows"] = [_row(id="x", target_server_id=srv_b.id)]
+        resp = await client.get(f"{BASE}/tasks/x", headers=_hdr(admin_role_token_a))
+        assert_error(resp, 404, "TASK_NOT_FOUND")
+
+    async def test_infra_task_hidden_from_reader_404(
+        self, client, reader_token_a, fake_worker_read,
+    ):
+        fake_worker_read["rows"] = [
+            _row(id="infra", target_server_id=None, kind="system.heartbeat"),
+        ]
+        resp = await client.get(f"{BASE}/tasks/infra", headers=_hdr(reader_token_a))
+        assert_error(resp, 404, "TASK_NOT_FOUND")
+
+    async def test_infra_task_visible_to_admin_role(
+        self, client, admin_role_token_a, fake_worker_read,
+    ):
+        fake_worker_read["rows"] = [
+            _row(id="infra", target_server_id=None, kind="system.heartbeat"),
+        ]
+        resp = await client.get(
+            f"{BASE}/tasks/infra", headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["server_id"] is None
+
+
+class TestTaskGetRbac:
+    async def test_account_admin_blocked(
+        self, client, account_admin_token, fake_worker_read,
+    ):
+        resp = await client.get(
+            f"{BASE}/tasks/anything", headers=_hdr(account_admin_token),
+        )
+        assert_error(resp, 403, "PLATFORM_ADMIN_BUSINESS_DATA_DENIED")
+
+    async def test_no_role_denied(
+        self, client, no_role_token_a, fake_worker_read,
+    ):
+        resp = await client.get(
+            f"{BASE}/tasks/anything", headers=_hdr(no_role_token_a),
+        )
+        assert_error(resp, 403, "PERMISSION_DENIED")

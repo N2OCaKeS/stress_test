@@ -40,6 +40,20 @@ export function isServerZoneBlocked(persona: Persona): boolean {
   );
 }
 
+/**
+ * True если персона реально имеет доступ к server-зоне (servers / worker).
+ * Это dep_admin своего отдела и любой носитель server.* роли. account_admin /
+ * logging_admin отрезаны backend'ом (`isServerZoneBlocked`), поэтому здесь
+ * исключены явно. Используется для гейта чипов /server и /worker в навигации,
+ * чтобы не показывать заведомо отбойный (403) пункт.
+ */
+export function hasServerZoneAccess(persona: Persona): boolean {
+  if (isServerZoneBlocked(persona)) return false;
+  if (persona.platform_role === "dep_admin") return true;
+  const role = persona.service_roles?.server;
+  return role === "admin" || role === "operator" || role === "reader";
+}
+
 /** True if persona has any logging-only role (view-only on aux services). */
 export function isLoggingOnly(persona: Persona): boolean {
   return (

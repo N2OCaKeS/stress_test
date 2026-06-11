@@ -538,6 +538,72 @@ export interface UsersInventoryResult {
   status: string;
 }
 
+/**
+ * Статус worker-task'и (`tasks.status`).
+ *
+ * `queued`/`running` — нетерминальные (cancelable); `succeeded`/`failed`/
+ * `cancelled` — терминальные. Хвост `string` оставлен на случай, если backend
+ * добавит промежуточный статус (например `retrying`), чтобы не валить типы.
+ */
+export type TaskStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | (string & {});
+
+/**
+ * Вид задачи (`tasks.kind`). Перечислены частые kind'ы для иконок/фильтра;
+ * хвост `string` держит каталог открытым (backend может добавить новый kind).
+ */
+export type TaskKind =
+  | "power.on"
+  | "power.off"
+  | "power.reboot"
+  | "power.status"
+  | "installed_packages.list"
+  | "inventory.sync"
+  | "users.inventory"
+  | "server.prepare"
+  | "account.provision"
+  | "account.deprovision"
+  | "account.update_on_host"
+  | "account.rotate_password"
+  | "ipmi.rotate_password"
+  | (string & {});
+
+/**
+ * Карточка worker-task'и (`TaskRead` от server_service).
+ *
+ * `result`/`last_error` приходят полными только из `GET /tasks/{id}`; в
+ * list-выдаче backend может их усекать/опускать. `result` — произвольный
+ * JSON-объект (для installed_packages — `{packages: [...]}`).
+ */
+export interface TaskRead {
+  id: string;
+  kind: TaskKind;
+  status: TaskStatus;
+  server_id?: string | null;
+  account_id?: string | null;
+  department_id?: string | null;
+  created_at: Iso8601;
+  started_at?: Iso8601 | null;
+  finished_at?: Iso8601 | null;
+  retry_count: number;
+  last_error?: string | null;
+  result?: Record<string, unknown> | null;
+}
+
+/** Параметры фильтрации `GET /tasks`. */
+export interface ListTasksQuery {
+  status?: TaskStatus | "";
+  kind?: TaskKind | "";
+  server_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
 /** Тело `POST /tasks/{task_id}/cancel` — опциональная причина отмены. */
 export interface TaskCancelRequest {
   reason?: string | null;

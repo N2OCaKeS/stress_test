@@ -1,29 +1,102 @@
-import { usePersona } from "@/contexts/PersonaContext";
-import { useMockMode } from "@/api/auth/useQuery";
-import { NotWiredPlaceholder } from "@/pages/Placeholder";
-import { WorkerDlqAccountAdmin } from "./WorkerDlqAccountAdmin";
-import { WorkerDlqDepAdmin } from "./WorkerDlqDepAdmin";
-
 /**
- * Persona-aware Worker DLQ dispatcher.
- * In live mode server_worker is not wired to UI yet — show a placeholder.
+ * Страница /worker/dlq — упавшие worker-task'и (DLQ).
+ *
+ * Та же раскладка, что и /worker, но список зафиксирован на `status=failed`
+ * (отдельного DLQ-endpoint'а нет — DLQ = `GET /tasks?status=failed`). Фокус —
+ * на `last_error` в детали. Retry-from-DLQ backend пока не поддерживает —
+ * показываем disabled-кнопку с пояснением; cancel остаётся доступным, если
+ * задача всё ещё cancelable (на практике failed-row терминальна, кнопка
+ * скрыта, но gate переиспользуется честно).
  */
+import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { RotateCcw } from "lucide-react";
+import { Shell } from "@/components/shell/Shell";
+import { usePersona } from "@/contexts/PersonaContext";
+import { isServerZoneBlocked } from "@/lib/rbac";
+import {
+  TaskListAside,
+  TaskDetail,
+  EmptyDetail,
+  BlockedDetail,
+  canCancelTask,
+  useTaskList,
+} from "./workerLive";
+
 export function WorkerDlq() {
   const { persona } = usePersona();
-  const mockMode = useMockMode();
-  if (!mockMode) {
+  const [params, setParams] = useSearchParams();
+  const selectedId = params.get("id");
+
+  const zoneBlocked = isServerZoneBlocked(persona);
+
+  const [search, setSearch] = useState("");
+  const [kindFilter, setKindFilter] = useState("");
+
+  const list = useTaskList(
+    { status: "failed", kind: kindFilter },
+    { enabled: !zoneBlocked, fixedStatus: "failed" },
+  );
+
+  function selectId(id: string | null) {
+    const next = new URLSearchParams(params);
+    if (id) next.set("id", id);
+    else next.delete("id");
+    setParams(next, { replace: true });
+  }
+
+  if (zoneBlocked) {
     return (
-      <NotWiredPlaceholder
-        breadcrumb="server_worker / dlq"
-        service="server_worker (DLQ)"
-        endpoints={[
-          "GET  /worker/v1/dlq",
-          "POST /worker/v1/dlq/{id}/requeue",
-          "POST /worker/v1/dlq/{id}/discard",
-        ]}
-      />
+      <Shell breadcrumb="server_worker / dlq">
+        <BlockedDetail />
+      </Shell>
     );
   }
-  if (persona.platform_role === "account_admin") return <WorkerDlqAccountAdmin />;
-  return <WorkerDlqDepAdmin />;
+
+  const aside = (
+    <TaskListAside
+      tasks={list.tasks}
+      total={list.total}
+      loading={list.loading}
+      error={list.error}
+      selectedId={selectedId}
+      onSelect={selectId}
+      onRetry={list.refetch}
+      search={search}
+      onSearch={setSearch}
+      statusFilter="failed"
+      onStatusFilter={() => {}}
+      kindFilter={kindFilter}
+      onKindFilter={setKindFilter}
+      hideStatusFilter
+      onLoadMore={list.loadMore}
+      loadingMore={list.loadingMore}
+    />
+  );
+
+  return (
+    <Shell breadcrumb="server_worker / dlq" middle={aside}>
+      {selectedId ? (
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
+          <div className="absolute top-5 right-5 z-10">
+            <button
+              className="btn flex items-center gap-1"
+              disabled
+              title="retry-from-DLQ не реализован (нет backend-поддержки)"
+            >
+              <RotateCcw className="w-4 h-4" /> Retry
+            </button>
+          </div>
+          <TaskDetail
+            key={selectedId}
+            taskId={selectedId}
+            canCancel={canCancelTask(persona)}
+            onChanged={list.refetch}
+          />
+        </div>
+      ) : (
+        <EmptyDetail note="Выберите упавшую задачу слева — в детали будет last_error." />
+      )}
+    </Shell>
+  );
 }

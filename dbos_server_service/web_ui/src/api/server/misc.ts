@@ -10,12 +10,15 @@
  *   server_service/src/api/v1/endpoints/tasks.py
  */
 
-import { apiPost } from "@/api/client";
+import { apiGet, apiPost } from "@/api/client";
+import { listWithTotal, type PaginatedList } from "@/api/auth/users";
 import type {
   InstalledPackagesRequest,
   InstalledPackagesResult,
+  ListTasksQuery,
   TaskCancelRequest,
   TaskCancelResult,
+  TaskRead,
   UsersInventoryResult,
 } from "@/api/server/types";
 
@@ -76,6 +79,40 @@ export function usersInventory(
     undefined,
     { query: opts.account_id ? { account_id: opts.account_id } : {} },
   );
+}
+
+// ── tasks list / detail ─────────────────────────────────────────────────────
+
+/**
+ * `GET /api/server/v1/tasks` — страница worker-task'ей с фильтрами.
+ *
+ * Backend отдаёт голый `TaskRead[]` плюс `X-Total-Count` в заголовке —
+ * протаскиваем оба через `listWithTotal` (как list-эндпоинты auth_service),
+ * чтобы UI мог показать «N из M» и баннер усечения.
+ *
+ * Скоуп выдачи определяет backend по роли: server.admin/operator/reader — по
+ * матрице, dep_admin — задачи серверов своего отдела, account_admin/
+ * logging_admin — 403 (server-зона им закрыта целиком).
+ */
+export function listTasks(
+  query: ListTasksQuery = {},
+): Promise<PaginatedList<TaskRead>> {
+  const { status, kind, server_id, limit = 50, offset = 0 } = query;
+  return listWithTotal<TaskRead>("/server/v1/tasks", {
+    status: status || undefined,
+    kind: kind || undefined,
+    server_id: server_id || undefined,
+    limit,
+    offset,
+  });
+}
+
+/**
+ * `GET /api/server/v1/tasks/{task_id}` — полная карточка task'и с `result` и
+ * `last_error`. 404 `TASK_NOT_FOUND`, если row нет или вне scope'а.
+ */
+export function getTask(taskId: string): Promise<TaskRead> {
+  return apiGet<TaskRead>(`/server/v1/tasks/${taskId}`);
 }
 
 // ── tasks/cancel ────────────────────────────────────────────────────────────

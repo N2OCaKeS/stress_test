@@ -122,6 +122,7 @@ SERVICE_EVENTS = [
     # Mid-run cancel сам по себе фиксируется не здесь, а worker'ом — он пишет
     # audit с action=<task_kind>, status=failure, details.reason=cancelled_midrun.
     {"action": "task.cancelled", "description": "Worker task cancelled by operator (status set to CANCELLED in dev_server_worker.tasks; running task finishes current stage)", "default_severity": "WARNING"},
+    {"action": "task.view", "description": "Worker task history read (list GET /tasks or detail GET /tasks/{id}); emitted on denied access (no view grant)", "default_severity": "INFO"},
     # Worker-emitted runner/lifecycle и handler-финальные action'ы. Описаны
     # подробно в `server_worker/AUDIT_EVENTS.md`; здесь регистрируются под
     # тем же сервисом, чтобы оператор/SIEM находили их через registry API

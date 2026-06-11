@@ -37,7 +37,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Body, Depends, Path
+from fastapi import APIRouter, Body, Depends, Path, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import Action, EntityType, PlatformRole
@@ -49,9 +49,10 @@ from src.core.exceptions import (
 )
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
-from src.schemas.task import TaskCancelRequest, TaskCancelResponse
+from src.schemas.task import TaskCancelRequest, TaskCancelResponse, TaskRead
 from src.services import audit_service, permissions, worker_client
 from src.services import server as server_svc
+from src.services import tasks as tasks_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,81 @@ _SYSTEM_TASK_KINDS = frozenset({
 })
 
 router = APIRouter(prefix="/tasks")
+
+
+@router.get(
+    "",
+    response_model=list[TaskRead],
+    summary="Список worker-task'ов, видимых вызывающему",
+    description=(
+        "Возвращает страницу task'ов из `dev_server_worker.tasks`, "
+        "отсортированных по времени постановки (`enqueued_at DESC`). Тело — "
+        "`list[TaskRead]`, общее число под фильтром — в заголовке "
+        "`X-Total-Count`.\n\n"
+        "Фильтры: `status` (queued/running/succeeded/failed/cancelled — "
+        "`failed` = DLQ-вьюха в UI), `kind` (task_kind), `server_id`. "
+        "Пагинация: `limit` (1..200, default 50) + `offset`.\n\n"
+        "Доступ: `(task, view)`. Caller видит только задачи серверов своего "
+        "отдела; инфра-задачи без сервера видны только service-роли "
+        "`admin`/`operator`. Platform-админам "
+        "(`account_admin`/`loging_admin`) вход запрещён middleware'ом — 403 "
+        "PLATFORM_ADMIN_BUSINESS_DATA_DENIED."
+    ),
+    responses={
+        200: {"description": "Страница task'ов; `X-Total-Count` в заголовке."},
+        403: {"description": "Нет роли с `view` на task, либо platform-админ заблокирован."},
+    },
+)
+async def list_tasks_endpoint(
+    identity: CurrentUserIdentity,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    status: str | None = Query(default=None, description="Фильтр по статусу задачи."),
+    kind: str | None = Query(default=None, description="Фильтр по task_kind."),
+    server_id: str | None = Query(default=None, description="Фильтр по target_server_id."),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> list[TaskRead]:
+    with emit_denied_on_authz_error(
+        "task.view",
+        target_type="task",
+        identity=identity,
+    ):
+        items, total = await tasks_svc.list_tasks(
+            db, identity,
+            status=status, kind=kind, server_id=server_id,
+            limit=limit, offset=offset,
+        )
+    response.headers["X-Total-Count"] = str(total)
+    return items
+
+
+@router.get(
+    "/{task_id}",
+    response_model=TaskRead,
+    summary="Деталь одной worker-task'и (полный result/last_error)",
+    description=(
+        "Возвращает `TaskRead` с полным `result` и `last_error`. Доступ — "
+        "`(task, view)` + dept-visibility (чужой отдел маскируется под 404). "
+        "Инфра-задача без сервера видна только service-роли `admin`/`operator`."
+    ),
+    responses={
+        403: {"description": "Нет роли с `view` на task, либо platform-админ заблокирован."},
+        404: {"description": "Task не найдена (нет row либо cross-dept / невидимый сервер)."},
+    },
+)
+async def get_task_endpoint(
+    identity: CurrentUserIdentity,
+    task_id: str = Path(..., min_length=1, max_length=64),
+    db: AsyncSession = Depends(get_db),
+) -> TaskRead:
+    with emit_denied_on_authz_error(
+        "task.view",
+        target_id=task_id,
+        target_type="task",
+        identity=identity,
+    ):
+        return await tasks_svc.get_task(db, identity, task_id)
 
 
 @router.post(

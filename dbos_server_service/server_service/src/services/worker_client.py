@@ -450,6 +450,140 @@ async def _fetch_task_status_and_meta(task_id_value: str) -> dict | None:
         }
 
 
+# Колонки таблицы `dev_server_worker.tasks`, которые отдаёт read. Имена
+# здесь — как в БД; маппинг в API-поля (`task_kind`→`kind` и т.д.) делает
+# endpoint при сборке `TaskRead`. `payload` сознательно не тащим: там может
+# быть ссылка на Redis-stash кред, а в карточку задачи он не нужен.
+_TASK_READ_COLUMNS = (
+    "id, task_kind, status, target_server_id, target_resource_id, "
+    "attempt, last_error, result, enqueued_at, started_at, "
+    "completed_at, created_by"
+)
+
+
+def _row_to_task_dict(row) -> dict:
+    """Кортеж SELECT'а `_TASK_READ_COLUMNS` → dict с именами колонок БД."""
+    return {
+        "id": row[0],
+        "task_kind": row[1],
+        "status": row[2],
+        "target_server_id": row[3],
+        "target_resource_id": row[4],
+        "attempt": row[5],
+        "last_error": row[6],
+        "result": row[7],
+        "enqueued_at": row[8],
+        "started_at": row[9],
+        "completed_at": row[10],
+        "created_by": row[11],
+    }
+
+
+async def get_task(task_id_value: str) -> dict | None:
+    """Полная строка task'и из dev_server_worker.tasks для detail-вьюхи.
+
+    Возвращает dict с ключами-именами колонок БД (включая полный `result`
+    и `last_error`) либо None, если row нет. Visibility/permission решает
+    endpoint — здесь чистый read по PK.
+    """
+    session_factory = _engine_factory()
+    async with session_factory() as session:
+        row = (
+            await session.execute(
+                text(f"SELECT {_TASK_READ_COLUMNS} FROM tasks WHERE id = :id"),
+                {"id": task_id_value},
+            )
+        ).first()
+        if row is None:
+            return None
+        return _row_to_task_dict(row)
+
+
+async def list_tasks(
+    *,
+    status: str | None = None,
+    task_kind: str | None = None,
+    server_ids: list[str] | None = None,
+    include_infra: bool = False,
+    limit: int,
+    offset: int,
+) -> tuple[list[dict], int]:
+    """Страница task'ов из dev_server_worker.tasks + total под тем же фильтром.
+
+    Dept-scope резолвится на стороне endpoint'а и приходит сюда уже как
+    `server_ids` — множество видимых caller'у серверов. Семантика:
+
+    * `server_ids is None` → ограничения по серверу нет (вызывающий уже решил,
+      что caller видит всё — на сегодня такого пути нет, оставлено под будущие
+      cluster-wide роли).
+    * `server_ids == []` и `include_infra=False` → пусто (нечего показывать).
+    * `server_ids` непустой → `target_server_id IN (...)`; при `include_infra`
+      дополнительно подмешиваются строки с `target_server_id IS NULL`
+      (инфра-задачи без сервера — видны только admin/operator-роли).
+
+    `result` тащим целиком и усекаем в summary уже на стороне endpoint'а —
+    отдельный «лёгкий» SELECT без JSONB не делаем, чтобы не плодить вторую
+    форму запроса; усечение дешевле, чем второй round-trip.
+
+    Сортировка — `enqueued_at DESC` (свежие сверху, индекс
+    `ix_tasks_status_enqueued`). total — COUNT под идентичным WHERE, для
+    `X-Total-Count`.
+    """
+    where_parts: list[str] = []
+    params: dict = {}
+
+    if status is not None:
+        where_parts.append("status = :status")
+        params["status"] = status
+    if task_kind is not None:
+        where_parts.append("task_kind = :task_kind")
+        params["task_kind"] = task_kind
+
+    # Dept-scope по серверу. `IN (...)` собирается из именованных bind'ов, чтобы
+    # не клеить идентификаторы в SQL строкой. Пустой список серверов без
+    # include_infra означает «caller видит 0 задач» — выходим коротко.
+    if server_ids is not None:
+        if server_ids:
+            placeholders = []
+            for idx, sid in enumerate(server_ids):
+                key = f"sid_{idx}"
+                params[key] = sid
+                placeholders.append(f":{key}")
+            in_clause = "target_server_id IN (" + ", ".join(placeholders) + ")"
+            if include_infra:
+                where_parts.append(f"({in_clause} OR target_server_id IS NULL)")
+            else:
+                where_parts.append(in_clause)
+        elif include_infra:
+            where_parts.append("target_server_id IS NULL")
+        else:
+            return [], 0
+
+    where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    session_factory = _engine_factory()
+    async with session_factory() as session:
+        total = int(
+            (
+                await session.execute(
+                    text(f"SELECT COUNT(*) FROM tasks{where_sql}"), params,
+                )
+            ).scalar_one()
+        )
+        if total == 0:
+            return [], total
+        rows = (
+            await session.execute(
+                text(
+                    f"SELECT {_TASK_READ_COLUMNS} FROM tasks{where_sql} "
+                    "ORDER BY enqueued_at DESC, id DESC LIMIT :limit OFFSET :offset"
+                ),
+                {**params, "limit": limit, "offset": offset},
+            )
+        ).all()
+        return [_row_to_task_dict(r) for r in rows], total
+
+
 async def cancel_task(
     *,
     task_id_value: str,

@@ -1,0 +1,977 @@
+/**
+ * Accounts-вкладка карточки сервера.
+ *
+ * Слева — список `server_account`'ов, привязанных к этому серверу
+ * (`listAccounts({server_id})`), справа — side-panel с деталями выбранного:
+ *  - metadata (login / scope / source / sudo / groups / timestamps);
+ *  - actions: edit, delete, unbind, rotate (sync / worker), provision /
+ *    update_on_host / deprovision на текущем сервере;
+ *  - + Создать аккаунт — форма `createAccount({server_ids:[serverId]})`.
+ *
+ * Backend источник: `server_service/src/api/v1/endpoints/server_accounts.py`
+ * и worker-dispatch секции `/server-accounts/{id}/{provision|update_on_host|
+ * deprovision|rotate|rotate_password|servers}`.
+ */
+import { useCallback, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  Edit3,
+  KeyRound,
+  Plus,
+  Power,
+  RotateCw,
+  Trash2,
+  Unlink,
+  User,
+} from "lucide-react";
+import { usePersona } from "@/contexts/PersonaContext";
+import { useToast } from "@/contexts/ToastContext";
+import { useQuery } from "@/api/auth/useQuery";
+import { ApiError } from "@/api/client";
+import * as accountsApi from "@/api/server/accounts";
+import type {
+  Server,
+  ServerAccount,
+  ServerAccountCreateRequest,
+  ServerAccountUpdateRequest,
+} from "@/api/server/types";
+
+interface Props {
+  serverId: string;
+  server?: Server;
+}
+
+function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
+  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
+  if (e instanceof Error) return e.message;
+  return fallback;
+}
+
+function fmtTs(ts: string | null | undefined): string {
+  if (!ts) return "—";
+  return ts.replace("T", " ").slice(0, 16);
+}
+
+/** Тонкая полоска scope/source — для row и detail. */
+type Scope = "personal" | "shared" | "service";
+
+/**
+ * Backend не отдаёт явный scope в `ServerAccount`: модель построена вокруг
+ * `linked_user_id` (есть → персональный аккаунт), `source` и `has_sudo`.
+ * UI-уровень сводит эти признаки к простому badge.
+ */
+function deriveScope(a: ServerAccount): Scope {
+  if (a.linked_user_id) return "personal";
+  if (a.source === "discovered") return "shared";
+  return "service";
+}
+
+function scopeBadgeKind(scope: Scope): "ok" | "warn" | "" {
+  if (scope === "personal") return "ok";
+  if (scope === "service") return "warn";
+  return "";
+}
+
+/**
+ * Provision-state badge — производный признак: есть ли строка connector'а на
+ * текущем сервере (учётка в `server_ids` => provisioned), плюс пометка
+ * managed/discovered. Discovered без пароля помечается отдельно — для UX
+ * (без него provision не уедет без `force_password`).
+ */
+function provisionBadge(
+  a: ServerAccount,
+  serverId: string,
+): { label: string; kind: "ok" | "warn" | "danger" | "" } {
+  const linked = a.server_ids.includes(serverId);
+  if (!linked) return { label: "unlinked", kind: "danger" };
+  if (a.source === "discovered" && !a.password_rotated_at) {
+    return { label: "discovered", kind: "warn" };
+  }
+  return { label: "linked", kind: "ok" };
+}
+
+export function AccountsTab({ serverId, server }: Props) {
+  const { persona } = usePersona();
+  const toast = useToast();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  // На RBAC уровне UI:
+  //  - server.operator / server.admin / account_admin / dep_admin → provision,
+  //    rotate, unbind, deprovision;
+  //  - server.admin / account_admin → create/edit/delete учётки.
+  // Финальные 403 всё равно приходят с backend'а — это первичный визуальный
+  // gate, без двойной проверки прав.
+  const isPlatformAdmin = persona.platform_role === "account_admin";
+  const isDepAdmin = persona.platform_role === "dep_admin";
+  const serverRole = persona.service_roles.server;
+  const canOperate =
+    isPlatformAdmin ||
+    isDepAdmin ||
+    serverRole === "admin" ||
+    serverRole === "operator";
+  const canManage = isPlatformAdmin || isDepAdmin || serverRole === "admin";
+
+  const listQ = useQuery(
+    () => accountsApi.listAccounts({ server_id: serverId, limit: 200 }),
+    [serverId, refreshTick],
+  );
+
+  const items: ServerAccount[] = useMemo(() => {
+    if (!listQ.data) return [];
+    return listQ.data.items;
+  }, [listQ.data]);
+
+  const selected = useMemo(
+    () => (selectedId ? items.find((a) => a.id === selectedId) ?? null : null),
+    [items, selectedId],
+  );
+
+  const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
+
+  function handleSelect(id: string) {
+    setCreating(false);
+    setSelectedId(id);
+  }
+
+  function handleStartCreate() {
+    setSelectedId(null);
+    setCreating(true);
+  }
+
+  return (
+    <div className="flex-1 min-w-0 flex overflow-hidden">
+      {/* ─── Список аккаунтов ─────────────────────────────────────── */}
+      <section className="w-[340px] shrink-0 border-r border-token surface flex flex-col min-h-0">
+        <div className="border-b border-token px-3 py-2 shrink-0 flex items-center justify-between">
+          <div className="text-xs uppercase text-dim">
+            Аккаунты · {items.length}
+          </div>
+          {listQ.loading && <span className="text-[11px] text-dim">…</span>}
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-2 px-2 flex flex-col gap-0.5">
+          {listQ.error && (
+            <div className="alert-danger m-2 text-xs">
+              {apiErrMsg(listQ.error, "Список не загрузился")}
+              <button
+                className="btn btn-sm ml-2"
+                onClick={() => listQ.refetch()}
+              >
+                Повторить
+              </button>
+            </div>
+          )}
+          {!listQ.loading && !listQ.error && items.length === 0 && (
+            <div className="px-3 py-6 text-xs text-dim text-center">
+              На сервере нет аккаунтов.
+            </div>
+          )}
+          {items.map((a) => (
+            <AccountRow
+              key={a.id}
+              account={a}
+              serverId={serverId}
+              active={selectedId === a.id}
+              onSelect={() => handleSelect(a.id)}
+            />
+          ))}
+        </div>
+
+        {canManage && (
+          <div className="border-t border-token p-3 shrink-0">
+            <button
+              className="btn btn-primary w-full flex items-center justify-center gap-2"
+              onClick={handleStartCreate}
+            >
+              <Plus className="w-4 h-4" /> Создать аккаунт
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* ─── Side-panel ───────────────────────────────────────────── */}
+      <section className="flex-1 min-w-0 overflow-y-auto p-5">
+        {creating ? (
+          <AccountCreateForm
+            serverId={serverId}
+            serverHostname={server?.hostname ?? serverId}
+            onCancel={() => setCreating(false)}
+            onCreated={(a) => {
+              setCreating(false);
+              setSelectedId(a.id);
+              toast.success(`Аккаунт ${a.login} создан`);
+              refresh();
+            }}
+            onError={(e) => toast.error(apiErrMsg(e, "Не удалось создать"))}
+          />
+        ) : selected ? (
+          <AccountDetail
+            key={selected.id}
+            account={selected}
+            serverId={serverId}
+            canOperate={canOperate}
+            canManage={canManage}
+            onChanged={refresh}
+            onClosed={() => setSelectedId(null)}
+          />
+        ) : (
+          <div className="empty-card max-w-md mx-auto text-center mt-10">
+            <User className="w-10 h-10 mx-auto text-dim mb-3" />
+            <div className="text-sm text-dim">
+              Выберите аккаунт слева, чтобы посмотреть детали и действия.
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Список — одна строка
+// ───────────────────────────────────────────────────────────────────────────
+
+function AccountRow({
+  account,
+  serverId,
+  active,
+  onSelect,
+}: {
+  account: ServerAccount;
+  serverId: string;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const scope = deriveScope(account);
+  const prov = provisionBadge(account, serverId);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`cred-row text-left ${active ? "active" : ""}`}
+    >
+      <div className="flex items-center gap-2">
+        <User
+          className={`w-4 h-4 ${active ? "text-accent" : "text-dim"}`}
+        />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm truncate mono">{account.login}</div>
+          <div className="text-[11px] text-dim truncate">
+            rotated: {fmtTs(account.password_rotated_at)}
+          </div>
+        </div>
+        <span className={`badge${scopeBadgeKind(scope) ? ` badge-${scopeBadgeKind(scope)}` : ""}`}>
+          {scope}
+        </span>
+        <span className={`badge${prov.kind ? ` badge-${prov.kind}` : ""}`}>
+          {prov.label}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Detail
+// ───────────────────────────────────────────────────────────────────────────
+
+function StatRow({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-3 py-1 text-sm">
+      <span className="text-xs text-dim w-44 shrink-0">{k}</span>
+      <span className="flex-1 min-w-0 break-words">{v}</span>
+    </div>
+  );
+}
+
+function AccountDetail({
+  account,
+  serverId,
+  canOperate,
+  canManage,
+  onChanged,
+  onClosed,
+}: {
+  account: ServerAccount;
+  serverId: string;
+  canOperate: boolean;
+  canManage: boolean;
+  onChanged: () => void;
+  onClosed: () => void;
+}) {
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const scope = deriveScope(account);
+  const prov = provisionBadge(account, serverId);
+  const linked = account.server_ids.includes(serverId);
+  // Discovered-аккаунт без сохранённого пароля — backend отбивает provision
+  // ошибкой ACCOUNT_HAS_NO_PASSWORD. Кнопка остаётся доступной с подсказкой,
+  // фактическая ошибка приходит уже сверху.
+  const provisionDisabledReason =
+    !canOperate
+      ? "Нет прав на provision"
+      : !linked
+        ? "Сначала привяжите аккаунт к этому серверу"
+        : null;
+
+  const run = useCallback(
+    async (fn: () => Promise<unknown>, ok: string) => {
+      setErr(null);
+      setPending(true);
+      try {
+        await fn();
+        toast.success(ok);
+        onChanged();
+      } catch (e) {
+        const msg = apiErrMsg(e);
+        setErr(msg);
+        toast.error(msg);
+      } finally {
+        setPending(false);
+      }
+    },
+    [onChanged, toast],
+  );
+
+  if (editing) {
+    return (
+      <AccountEditForm
+        account={account}
+        onCancel={() => setEditing(false)}
+        onSaved={() => {
+          setEditing(false);
+          toast.success("Аккаунт обновлён");
+          onChanged();
+        }}
+        onError={(e) => toast.error(apiErrMsg(e, "Сохранение не удалось"))}
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4 max-w-3xl">
+      {/* ── Header ── */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h3 className="font-semibold flex items-center gap-2 mono">
+            <User className="w-4 h-4 text-accent" /> {account.login}
+            <span
+              className={`badge${scopeBadgeKind(scope) ? ` badge-${scopeBadgeKind(scope)}` : ""}`}
+            >
+              {scope}
+            </span>
+            <span className={`badge${prov.kind ? ` badge-${prov.kind}` : ""}`}>
+              {prov.label}
+            </span>
+            {!account.is_active && <span className="badge badge-warn">inactive</span>}
+          </h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            {canManage && (
+              <button
+                className="btn flex items-center gap-1"
+                onClick={() => setEditing(true)}
+                disabled={pending}
+              >
+                <Edit3 className="w-4 h-4" /> Edit
+              </button>
+            )}
+            <button
+              className="btn"
+              onClick={onClosed}
+              type="button"
+              title="Закрыть"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        {err && <div className="alert-danger mb-2 text-sm">{err}</div>}
+
+        <div className="text-xs uppercase text-dim mb-2">Профиль</div>
+        <StatRow k="account_id" v={<span className="mono">{account.id}</span>} />
+        <StatRow k="login" v={<span className="mono">{account.login}</span>} />
+        <StatRow k="scope" v={scope} />
+        <StatRow k="source" v={account.source} />
+        <StatRow k="has_sudo" v={account.has_sudo ? "yes" : "no"} />
+        <StatRow
+          k="unix_groups"
+          v={
+            account.unix_groups.length === 0 ? (
+              <span className="text-dim italic">—</span>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {account.unix_groups.map((g) => (
+                  <span key={g} className="badge mono">
+                    {g}
+                  </span>
+                ))}
+              </div>
+            )
+          }
+        />
+        <StatRow
+          k="shell"
+          v={
+            account.shell ? (
+              <span className="mono">{account.shell}</span>
+            ) : (
+              <span className="text-dim italic">—</span>
+            )
+          }
+        />
+        <StatRow
+          k="home_dir"
+          v={
+            account.home_dir ? (
+              <span className="mono">{account.home_dir}</span>
+            ) : (
+              <span className="text-dim italic">—</span>
+            )
+          }
+        />
+        <StatRow
+          k="linked_user_id"
+          v={
+            account.linked_user_id ? (
+              <span className="mono">{account.linked_user_id}</span>
+            ) : (
+              <span className="text-dim italic">—</span>
+            )
+          }
+        />
+        <StatRow
+          k="server_ids"
+          v={
+            <span className="text-xs text-dim">
+              {account.server_ids.length} сервер(ов){" "}
+              {linked ? "(включая этот)" : "(этот не в списке)"}
+            </span>
+          }
+        />
+        <StatRow k="created_at" v={<span className="mono">{fmtTs(account.created_at)}</span>} />
+        <StatRow k="updated_at" v={<span className="mono">{fmtTs(account.updated_at)}</span>} />
+        <StatRow
+          k="password_rotated_at"
+          v={<span className="mono">{fmtTs(account.password_rotated_at)}</span>}
+        />
+        <StatRow
+          k="created_by"
+          v={
+            account.created_by ? (
+              <span className="mono">{account.created_by}</span>
+            ) : (
+              <span className="text-dim italic">system</span>
+            )
+          }
+        />
+      </div>
+
+      {/* ── Provision на этом сервере ── */}
+      <div className="card">
+        <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
+          <Power className="w-3 h-3" /> Provision на сервере
+        </div>
+        <div className="text-xs text-dim mb-3">
+          Запускает worker-таск (`useradd` / `usermod` / `userdel`) только на
+          текущем сервере. Полная отвязка делается через Unbind ниже.
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="btn flex items-center gap-1"
+            disabled={pending || !!provisionDisabledReason}
+            title={provisionDisabledReason ?? "useradd на боксе"}
+            onClick={() =>
+              run(
+                () => accountsApi.provisionOnHost(serverId, account.id),
+                "Provision-task поставлен в очередь",
+              )
+            }
+          >
+            <Power className="w-4 h-4" /> Provision
+          </button>
+          <button
+            className="btn flex items-center gap-1"
+            disabled={pending || !canOperate || !linked}
+            title={
+              !canOperate
+                ? "Нет прав"
+                : !linked
+                  ? "Аккаунт не привязан к этому серверу"
+                  : "usermod синхронизирует атрибуты"
+            }
+            onClick={() =>
+              run(
+                () => accountsApi.updateOnHost(serverId, account.id),
+                "Update-on-host-task поставлен в очередь",
+              )
+            }
+          >
+            <RotateCw className="w-4 h-4" /> Update on host
+          </button>
+          <button
+            className="btn btn-danger flex items-center gap-1"
+            disabled={pending || !canOperate || !linked}
+            title={
+              !canOperate
+                ? "Нет прав"
+                : !linked
+                  ? "Аккаунт не привязан к этому серверу"
+                  : "userdel — оставит запись связки до Unbind"
+            }
+            onClick={() => {
+              if (
+                typeof window !== "undefined" &&
+                !window.confirm(
+                  `Удалить OS-пользователя ${account.login} с этого сервера?`,
+                )
+              )
+                return;
+              run(
+                () => accountsApi.deprovisionOnHost(serverId, account.id),
+                "Deprovision-task поставлен в очередь",
+              );
+            }}
+          >
+            <Trash2 className="w-4 h-4" /> Deprovision
+          </button>
+        </div>
+      </div>
+
+      {/* ── Rotate password ── */}
+      <div className="card">
+        <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
+          <KeyRound className="w-3 h-3" /> Rotate password
+        </div>
+        <div className="text-xs text-dim mb-3">
+          Sync — генерирует новый пароль в БД, на боксы не уезжает. Worker —
+          ставит SSH-task на все или только на этот сервер. Plaintext клиенту
+          не возвращается.
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="btn flex items-center gap-1"
+            disabled={pending || !canOperate}
+            title={canOperate ? "Только БД" : "Нет прав"}
+            onClick={() =>
+              run(
+                () => accountsApi.rotateAccountUserInitiated(account.id),
+                "Пароль ротирован в БД",
+              )
+            }
+          >
+            <KeyRound className="w-4 h-4" /> Rotate (sync, БД)
+          </button>
+          <button
+            className="btn flex items-center gap-1"
+            disabled={pending || !canOperate || !linked}
+            title={
+              !canOperate
+                ? "Нет прав"
+                : !linked
+                  ? "Аккаунт не привязан к этому серверу"
+                  : "Worker: SSH chpasswd на этом сервере"
+            }
+            onClick={() =>
+              run(
+                () =>
+                  accountsApi.rotateAccountWorker(account.id, {
+                    server_id: serverId,
+                  }),
+                "Worker-rotate (single) поставлен в очередь",
+              )
+            }
+          >
+            <RotateCw className="w-4 h-4" /> Worker: этот сервер
+          </button>
+          <button
+            className="btn flex items-center gap-1"
+            disabled={pending || !canOperate}
+            title={canOperate ? "Worker: на все привязанные серверы" : "Нет прав"}
+            onClick={() => {
+              if (
+                typeof window !== "undefined" &&
+                !window.confirm(
+                  `Запустить worker-rotate на все ${account.server_ids.length} серверов?`,
+                )
+              )
+                return;
+              run(
+                () => accountsApi.rotateAccountWorker(account.id),
+                "Worker-rotate (all) поставлен в очередь",
+              );
+            }}
+          >
+            <RotateCw className="w-4 h-4" /> Worker: все
+          </button>
+        </div>
+      </div>
+
+      {/* ── Danger zone ── */}
+      <div className="card" style={{ borderColor: "rgba(244,135,113,0.3)" }}>
+        <div className="text-xs uppercase text-danger mb-2 flex items-center gap-2">
+          <AlertTriangle className="w-3 h-3" /> Danger zone
+        </div>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-sm flex-1 min-w-[200px]">
+              <div className="font-medium">Отвязать от этого сервера</div>
+              <div className="text-xs text-dim">
+                Снимает связку аккаунт ↔ сервер. OS-юзер на боксе не удаляется
+                (для этого Deprovision). Последний сервер отвязать нельзя.
+              </div>
+            </div>
+            <button
+              className="btn btn-danger flex items-center gap-1"
+              disabled={pending || !canOperate || !linked}
+              title={
+                !canOperate
+                  ? "Нет прав"
+                  : !linked
+                    ? "Аккаунт не привязан к этому серверу"
+                    : undefined
+              }
+              onClick={() => {
+                if (
+                  typeof window !== "undefined" &&
+                  !window.confirm(
+                    `Отвязать аккаунт ${account.login} от этого сервера?`,
+                  )
+                )
+                  return;
+                run(
+                  () => accountsApi.unbindAccountServer(account.id, serverId),
+                  "Аккаунт отвязан от сервера",
+                );
+              }}
+            >
+              <Unlink className="w-4 h-4" /> Unbind
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 flex-wrap border-t border-token pt-3">
+            <div className="text-sm flex-1 min-w-[200px]">
+              <div className="font-medium">Удалить аккаунт</div>
+              <div className="text-xs text-dim">
+                Hard-delete во всех серверах. OS-аккаунт на боксах не сносится;
+                для этого сначала Deprovision на каждом.
+              </div>
+            </div>
+            <button
+              className="btn btn-danger flex items-center gap-1"
+              disabled={pending || !canManage}
+              title={canManage ? undefined : "Нет прав на удаление"}
+              onClick={() => {
+                if (typeof window === "undefined") return;
+                const reason = window.prompt(
+                  `Причина удаления аккаунта ${account.login}:`,
+                  "",
+                );
+                if (reason === null) return;
+                if (!reason.trim()) {
+                  toast.warn("Причина обязательна");
+                  return;
+                }
+                if (
+                  !window.confirm(
+                    `Удалить аккаунт ${account.login}? Операция необратима.`,
+                  )
+                )
+                  return;
+                run(async () => {
+                  await accountsApi.deleteAccount(account.id, {
+                    reason: reason.trim(),
+                  });
+                  onClosed();
+                }, `Аккаунт ${account.login} удалён`);
+              }}
+            >
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Forms
+// ───────────────────────────────────────────────────────────────────────────
+
+function AccountCreateForm({
+  serverId,
+  serverHostname,
+  onCancel,
+  onCreated,
+  onError,
+}: {
+  serverId: string;
+  serverHostname: string;
+  onCancel: () => void;
+  onCreated: (a: ServerAccount) => void;
+  onError: (e: unknown) => void;
+}) {
+  const [login, setLogin] = useState("");
+  const [password, setPassword] = useState("");
+  const [scope, setScope] = useState<Scope>("service");
+  const [hasSudo, setHasSudo] = useState(false);
+  const [groups, setGroups] = useState("");
+  const [shell, setShell] = useState("");
+  const [homeDir, setHomeDir] = useState("");
+  const [pending, setPending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (pending) return;
+    if (!login.trim()) return;
+    setErr(null);
+    setPending(true);
+    try {
+      const body: ServerAccountCreateRequest = {
+        server_ids: [serverId],
+        login: login.trim(),
+        password: password.trim() || null,
+        has_sudo: hasSudo,
+        unix_groups: groups
+          .split(",")
+          .map((g) => g.trim())
+          .filter(Boolean),
+        shell: shell.trim() || null,
+        home_dir: homeDir.trim() || null,
+      };
+      // Scope — derived field, не отправляется в backend; кладём его
+      // отметку через linked_user_id только в режиме `personal` (поле
+      // на форме пока не вводится — оставим backend дефолт).
+      const created = await accountsApi.createAccount(body);
+      onCreated(created);
+    } catch (e) {
+      const msg = apiErrMsg(e, "Создание не удалось");
+      setErr(msg);
+      onError(e);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="card max-w-2xl">
+      <h3 className="font-semibold mb-3 flex items-center gap-2 mono">
+        <Plus className="w-4 h-4 text-accent" /> Новый аккаунт на{" "}
+        {serverHostname}
+      </h3>
+      {err && <div className="alert-danger mb-2 text-sm">{err}</div>}
+      <form onSubmit={submit} className="flex flex-col gap-3">
+        <FormRow label="login *">
+          <input
+            className="input mono"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            required
+            placeholder="dbos-svc"
+          />
+        </FormRow>
+        <FormRow
+          label="password"
+          hint="оставьте пустым — backend сгенерирует случайный"
+        >
+          <input
+            className="input mono"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="—"
+            autoComplete="new-password"
+          />
+        </FormRow>
+        <FormRow label="scope" hint="визуальный признак (UI)">
+          <select
+            className="input"
+            value={scope}
+            onChange={(e) => setScope(e.target.value as Scope)}
+          >
+            <option value="service">service</option>
+            <option value="shared">shared</option>
+            <option value="personal">personal</option>
+          </select>
+        </FormRow>
+        <FormRow label="sudo">
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={hasSudo}
+              onChange={(e) => setHasSudo(e.target.checked)}
+            />
+            <span>выдать sudo</span>
+          </label>
+        </FormRow>
+        <FormRow label="unix_groups" hint="csv: docker, wheel">
+          <input
+            className="input mono"
+            value={groups}
+            onChange={(e) => setGroups(e.target.value)}
+            placeholder="docker, wheel"
+          />
+        </FormRow>
+        <FormRow label="shell">
+          <input
+            className="input mono"
+            value={shell}
+            onChange={(e) => setShell(e.target.value)}
+            placeholder="/bin/bash"
+          />
+        </FormRow>
+        <FormRow label="home_dir">
+          <input
+            className="input mono"
+            value={homeDir}
+            onChange={(e) => setHomeDir(e.target.value)}
+            placeholder="/home/dbos-svc"
+          />
+        </FormRow>
+        <div className="mt-3 flex gap-2 justify-end">
+          <button type="button" className="btn" onClick={onCancel}>
+            Отмена
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={pending || !login.trim()}
+          >
+            {pending ? "Создаём…" : "Создать"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function AccountEditForm({
+  account,
+  onCancel,
+  onSaved,
+  onError,
+}: {
+  account: ServerAccount;
+  onCancel: () => void;
+  onSaved: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [hasSudo, setHasSudo] = useState(account.has_sudo);
+  const [groups, setGroups] = useState(account.unix_groups.join(", "));
+  const [shell, setShell] = useState(account.shell ?? "");
+  const [homeDir, setHomeDir] = useState(account.home_dir ?? "");
+  const [linkedUserId, setLinkedUserId] = useState(account.linked_user_id ?? "");
+  const [pending, setPending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (pending) return;
+    setErr(null);
+    setPending(true);
+    try {
+      const body: ServerAccountUpdateRequest = {
+        has_sudo: hasSudo,
+        unix_groups: groups
+          .split(",")
+          .map((g) => g.trim())
+          .filter(Boolean),
+        shell: shell.trim() || null,
+        home_dir: homeDir.trim() || null,
+        linked_user_id: linkedUserId.trim() || null,
+      };
+      await accountsApi.updateAccount(account.id, body);
+      onSaved();
+    } catch (e) {
+      const msg = apiErrMsg(e, "Сохранение не удалось");
+      setErr(msg);
+      onError(e);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="card max-w-2xl">
+      <h3 className="font-semibold mb-3 flex items-center gap-2 mono">
+        <Edit3 className="w-4 h-4 text-accent" /> Edit · {account.login}
+      </h3>
+      {err && <div className="alert-danger mb-2 text-sm">{err}</div>}
+      <form onSubmit={submit} className="flex flex-col gap-3">
+        <FormRow label="sudo">
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={hasSudo}
+              onChange={(e) => setHasSudo(e.target.checked)}
+            />
+            <span>has_sudo</span>
+          </label>
+        </FormRow>
+        <FormRow label="unix_groups" hint="csv">
+          <input
+            className="input mono"
+            value={groups}
+            onChange={(e) => setGroups(e.target.value)}
+          />
+        </FormRow>
+        <FormRow label="shell">
+          <input
+            className="input mono"
+            value={shell}
+            onChange={(e) => setShell(e.target.value)}
+          />
+        </FormRow>
+        <FormRow label="home_dir">
+          <input
+            className="input mono"
+            value={homeDir}
+            onChange={(e) => setHomeDir(e.target.value)}
+          />
+        </FormRow>
+        <FormRow label="linked_user_id" hint="auth_service user id или пусто">
+          <input
+            className="input mono"
+            value={linkedUserId}
+            onChange={(e) => setLinkedUserId(e.target.value)}
+          />
+        </FormRow>
+        <div className="mt-3 flex gap-2 justify-end">
+          <button type="button" className="btn" onClick={onCancel}>
+            Отмена
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={pending}>
+            {pending ? "Сохраняем…" : "Сохранить"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function FormRow({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-dim text-xs">
+        {label}
+        {hint && <span className="ml-2 italic">{hint}</span>}
+      </span>
+      {children}
+    </label>
+  );
+}

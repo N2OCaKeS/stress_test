@@ -60,6 +60,14 @@ export function App() {
               }
             />
             <Route
+              path="/servers"
+              element={
+                <RouteGuard service="server">
+                  <Server />
+                </RouteGuard>
+              }
+            />
+            <Route
               path="/users"
               element={
                 <RouteGuard service="auth">

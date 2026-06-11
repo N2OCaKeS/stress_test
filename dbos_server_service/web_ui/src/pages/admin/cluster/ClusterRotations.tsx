@@ -2,11 +2,12 @@ import { RotateCw, ShieldAlert } from "lucide-react";
 import { ROTATIONS } from "@/mocks/cluster";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useMockMode } from "@/api/auth/useQuery";
-import { isReadOnlyForCluster } from "@/lib/rbac";
+import { canMutateCluster, isReadOnlyForCluster } from "@/lib/rbac";
 
 export function ClusterRotations() {
   const { persona } = usePersona();
   const readonly = isReadOnlyForCluster(persona);
+  const canMutate = canMutateCluster(persona);
   const mockMode = useMockMode();
   return (
     <div className="space-y-4 max-w-3xl">
@@ -47,7 +48,7 @@ export function ClusterRotations() {
                       next: {r.next} · ok: {r.last}
                     </div>
                   </div>
-                  {!readonly && <button className="btn">Trigger</button>}
+                  {canMutate && <button className="btn">Trigger</button>}
                 </div>
               ))}
             </div>

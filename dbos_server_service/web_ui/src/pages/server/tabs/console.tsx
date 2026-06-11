@@ -20,7 +20,7 @@ import { AlertCircle, Lock, Terminal as TerminalIcon } from "lucide-react";
 import { listAccounts } from "@/api/server/accounts";
 import { useQuery } from "@/api/auth/useQuery";
 import { usePersona } from "@/contexts/PersonaContext";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
@@ -31,12 +31,6 @@ import type {
 interface Props {
   serverId: string;
   server?: Server;
-}
-
-function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return fallback;
 }
 
 /**

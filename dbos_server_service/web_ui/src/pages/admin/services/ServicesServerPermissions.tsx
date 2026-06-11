@@ -16,7 +16,7 @@ import {
   deletePermission,
 } from "@/api/server/permissions";
 import { listDepartments } from "@/api/auth/departments";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import type {
   ActionName,
   EntityType,
@@ -344,7 +344,7 @@ function PermissionCellModal({
       });
       onSaved();
     } catch (e) {
-      setErr(formatErr(e));
+      setErr(apiErrMsg(e));
     } finally {
       setPending(false);
     }
@@ -366,7 +366,7 @@ function PermissionCellModal({
       });
       onSaved();
     } catch (e) {
-      setErr(formatErr(e));
+      setErr(apiErrMsg(e));
     } finally {
       setPending(false);
     }
@@ -474,10 +474,4 @@ function PermissionCellModal({
       </div>
     </div>
   );
-}
-
-function formatErr(e: unknown): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return String(e);
 }

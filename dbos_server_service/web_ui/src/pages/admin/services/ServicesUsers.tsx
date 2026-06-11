@@ -19,7 +19,6 @@ import { InlineEditor, FormRow, useInlineState } from "./_inline";
 import { UserBackendView } from "./_servicesUsersView";
 import {
   createUser,
-  forcePasswordChange,
   listUsers,
   updateUser,
 } from "@/api/auth/users";
@@ -555,18 +554,18 @@ function UserForm({
     setErr(null);
     try {
       if (mode === "new") {
+        // must_change_password=true прямо в create-body — временный пароль не
+        // должен остаться постоянным (форма обещает «юзер сменит при первом
+        // входе»). Передаём атомарно, без отдельного вызова.
         const body = {
           username,
           password,
           email: email || undefined,
           department_id: dept || null,
           platform_role: (platformRole || null) as PlatformRole,
+          must_change_password: true,
         };
-        const created = await createUser(body);
-        // backend UserCreate не принимает must_change_password — поднимаем флаг
-        // отдельным вызовом, чтобы временный пароль не остался постоянным
-        // (форма обещает «юзер сменит при первом входе»).
-        await forcePasswordChange(created.id);
+        await createUser(body);
       } else if (initial) {
         const body: {
           email?: string;

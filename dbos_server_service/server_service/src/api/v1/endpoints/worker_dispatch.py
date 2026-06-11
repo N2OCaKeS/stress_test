@@ -1944,13 +1944,13 @@ async def account_deprovision_dispatch(
     summary="Ротация IPMI-пароля через worker (Redfish apply + storage)",
     status_code=202,
     description=(
-        "Публикует задачу `ipmi.rotate_password`. **Внимание:** worker-handler "
-        "сейчас raise'ит `NotImplementedError` ДО любого вызова в iDRAC — "
-        "storage round-trip ещё не построен, и без него ротация привела бы "
-        "к смене пароля на BMC без сохранения нового ciphertext (out-of-band "
-        "доступ был бы потерян навсегда). Endpoint всё равно поднимает таску, "
-        "worker `_runner` корректно mark_failed + audit failure. Включение — "
-        "после появления storage endpoint'а."
+        "Публикует задачу `ipmi.rotate_password`. Worker заходит на BMC старым "
+        "паролем, генерит новый, применяет его (Redfish PATCH / ipmitool), "
+        "под новым паролем делает read-only verify (доказательство, что BMC "
+        "принял пароль), и только после verify шлёт ciphertext в "
+        "`/internal/.../credentials_rotated` (storage round-trip). Verify не "
+        "прошёл — storage не коммитится, задача FAILED, оператор разбирается "
+        "по audit'у."
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
@@ -1978,7 +1978,7 @@ async def ipmi_rotate_password_dispatch(
     скрыт за 404.
 
     Связано: `server_worker/src/tasks/passwords.py::ipmi_rotate_password`
-    (DISABLED — см. SAFETY GUARD).
+    (verify-then-submit: BMC apply → read-only verify → storage round-trip).
     """
     audit_action = "ipmi_controller.rotate_dispatch"
 

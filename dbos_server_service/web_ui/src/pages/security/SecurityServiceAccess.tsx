@@ -8,6 +8,8 @@ import {
 import type { ServiceName } from "@/api/auth/types";
 import { useToast } from "@/contexts/ToastContext";
 import { useDeptLabel } from "@/lib/labels";
+import { ServiceKeyFields } from "./ServiceKeyFields";
+import { useServiceKey } from "./useServiceKey";
 
 const KNOWN_SERVICES: ServiceName[] = [
   "auth_service",
@@ -24,6 +26,7 @@ export function SecurityServiceAccess() {
   const [service, setService] = useState<ServiceName>("config_service");
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<ServiceAccessResponse | null>(null);
+  const svc = useServiceKey();
   const toast = useToast();
 
   const submit = async () => {
@@ -31,16 +34,26 @@ export function SecurityServiceAccess() {
       toast.warn("Введите subject_token");
       return;
     }
+    if (!svc.serviceKey.trim()) {
+      toast.warn("Введите SERVICE_API_KEY");
+      return;
+    }
     setPending(true);
     setResult(null);
     try {
-      const r = await checkServiceAccess({
-        subject_token: token.trim(),
-        service_name: service,
-      });
+      const r = await checkServiceAccess(
+        {
+          subject_token: token.trim(),
+          service_name: service,
+        },
+        {
+          serviceKey: svc.serviceKey.trim(),
+          serviceIdentity: svc.serviceIdentity.trim() || undefined,
+        },
+      );
       setResult(r);
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
+      if (e instanceof ApiError) toast.error(`${e.errorCode}: ${e.message}`);
       else toast.error("Ошибка проверки access");
     } finally {
       setPending(false);
@@ -56,6 +69,9 @@ export function SecurityServiceAccess() {
         <div className="text-xs text-dim mb-3">
           Тонкая обёртка над introspect: возвращает только `allowed` для
           конкретного целевого сервиса и связанные `service_roles`.
+        </div>
+        <div className="mb-3">
+          <ServiceKeyFields svc={svc} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm md:col-span-2">

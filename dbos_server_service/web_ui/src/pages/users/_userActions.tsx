@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { X, UserCog, ShieldCheck, Copy, AlertTriangle, RefreshCw } from "lucide-react";
 import { ApiError } from "@/api/client";
-import { createUser, forcePasswordChange, updateUser } from "@/api/auth/users";
+import { createUser, updateUser } from "@/api/auth/users";
 import { createGroup } from "@/api/auth/groups";
 import { createBot, issueBotToken } from "@/api/auth/bots";
 import type {
@@ -127,17 +127,17 @@ export function CreateUserForm({
     setBusy(true);
     setErr(null);
     try {
-      const created = await createUser({
+      // must_change_password=true прямо в create-body — выданный admin'ом
+      // временный пароль не должен остаться постоянным (форма обещает «сменит
+      // при первом входе»). Передаём атомарно, без отдельного вызова.
+      await createUser({
         username,
         password,
         email: email || undefined,
         department_id: dept || null,
         platform_role: (platformRole || null) as PlatformRole,
+        must_change_password: true,
       });
-      // backend UserCreate не принимает must_change_password — поднимаем флаг
-      // отдельным вызовом, чтобы выданный admin'ом временный пароль не остался
-      // постоянным (форма обещает «сменит при первом входе»).
-      await forcePasswordChange(created.id);
       onSuccess();
     } catch (e) {
       setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));

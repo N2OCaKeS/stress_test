@@ -48,6 +48,16 @@ export function isReadOnlyForCluster(persona: Persona): boolean {
 }
 
 /**
+ * Положительная форма `isReadOnlyForCluster`: можно ли персоне нажимать
+ * mutation-кнопки в /admin-кластере (Trigger / backup / TLS-renew / migration).
+ * Бэк всё равно проверит права и вернёт 403; helper нужен, чтобы не показывать
+ * заведомо запрещённую кнопку и не считать `!readonly` на каждой странице.
+ */
+export function canMutateCluster(persona: Persona): boolean {
+  return !isReadOnlyForCluster(persona);
+}
+
+/**
  * True if persona is a service-level admin spanning >1 service. This is
  * a fact about service_roles (≥ 2 admin grants), not a platform role.
  */

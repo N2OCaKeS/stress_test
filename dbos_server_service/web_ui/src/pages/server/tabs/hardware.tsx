@@ -20,12 +20,14 @@ import { FormRow, StatRow } from "@/pages/admin/services/_inline";
 interface Props {
   serverId: string;
   server?: Server;
+  /** Поднимает свежий объект в ServerDetail, чтобы header и соседние
+   * вкладки обновились после PATCH без перезагрузки страницы. */
+  onServerUpdated?: (next: Server) => void;
 }
 
-export function HardwareTab({ server }: Props) {
+export function HardwareTab({ server, onServerUpdated }: Props) {
   const [editing, setEditing] = useState(false);
-  const [current, setCurrent] = useState<Server | undefined>(server);
-  const view = current ?? server;
+  const view = server;
   const { persona } = usePersona();
 
   if (!view) {
@@ -42,7 +44,7 @@ export function HardwareTab({ server }: Props) {
         initial={view}
         onCancel={() => setEditing(false)}
         onSaved={(next) => {
-          setCurrent(next);
+          onServerUpdated?.(next);
           setEditing(false);
         }}
       />

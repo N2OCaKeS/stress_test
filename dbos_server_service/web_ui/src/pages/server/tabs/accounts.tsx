@@ -27,7 +27,7 @@ import {
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import * as accountsApi from "@/api/server/accounts";
 import type {
   Server,
@@ -39,12 +39,6 @@ import type {
 interface Props {
   serverId: string;
   server?: Server;
-}
-
-function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return fallback;
 }
 
 function fmtTs(ts: string | null | undefined): string {

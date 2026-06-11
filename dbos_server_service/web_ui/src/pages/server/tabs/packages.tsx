@@ -17,7 +17,7 @@ import { Package, RefreshCw, AlertCircle } from "lucide-react";
 import { installedPackagesProbe } from "@/api/server/misc";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import { isDepAdmin, isPlatformWideAdmin } from "@/lib/rbac";
 import type { Server } from "@/api/server/types";
 
@@ -30,12 +30,6 @@ interface PackageRow {
   name: string;
   version: string;
   arch?: string | null;
-}
-
-function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return fallback;
 }
 
 function canProbe(

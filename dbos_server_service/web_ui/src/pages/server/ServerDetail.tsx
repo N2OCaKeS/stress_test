@@ -6,7 +6,7 @@
  * по одному файлу-заглушке на вкладку из `./tabs/`. Заглушки заполняют
  * параллельно C2..C9 — здесь только маршрутизация вкладок и общий header.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Server as ServerIcon } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { useQuery } from "@/api/auth/useQuery";
@@ -80,6 +80,15 @@ export function ServerDetail({ serverId }: ServerDetailProps) {
   const [tab, setTab] = useState<TabId>("overview");
   const q = useQuery<Server>(() => getServer(serverId), [serverId]);
 
+  // Локальная копия карточки: переключение вкладок не перемонтирует
+  // ServerDetail, поэтому мутации внутри табов (PATCH overview/hardware)
+  // должны подняться сюда, чтобы header и соседние вкладки увидели свежий
+  // объект без перезагрузки. Сидируется из query, обновляется через колбэк.
+  const [server, setServer] = useState<Server | undefined>(q.data);
+  useEffect(() => {
+    setServer(q.data);
+  }, [q.data]);
+
   if (q.loading) {
     return (
       <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
@@ -104,10 +113,10 @@ export function ServerDetail({ serverId }: ServerDetailProps) {
     );
   }
 
-  const server = q.data;
+  const current = server ?? q.data;
   return (
     <section className="flex-1 min-w-0 overflow-hidden flex flex-col">
-      <ServerHeader server={server} />
+      <ServerHeader server={current} />
       <Tabs
         active={tab}
         onChange={(id) => setTab(id as TabId)}
@@ -115,24 +124,32 @@ export function ServerDetail({ serverId }: ServerDetailProps) {
       />
       <div className="flex-1 min-h-0 overflow-y-auto">
         {tab === "overview" && (
-          <OverviewTab serverId={server.id} server={server} />
+          <OverviewTab
+            serverId={current.id}
+            server={current}
+            onServerUpdated={setServer}
+          />
         )}
         {tab === "hardware" && (
-          <HardwareTab serverId={server.id} server={server} />
+          <HardwareTab
+            serverId={current.id}
+            server={current}
+            onServerUpdated={setServer}
+          />
         )}
-        {tab === "ipmi" && <IpmiTab serverId={server.id} server={server} />}
+        {tab === "ipmi" && <IpmiTab serverId={current.id} server={current} />}
         {tab === "accounts" && (
-          <AccountsTab serverId={server.id} server={server} />
+          <AccountsTab serverId={current.id} server={current} />
         )}
         {tab === "console" && (
-          <ConsoleTab serverId={server.id} server={server} />
+          <ConsoleTab serverId={current.id} server={current} />
         )}
-        {tab === "drift" && <DriftTab serverId={server.id} server={server} />}
+        {tab === "drift" && <DriftTab serverId={current.id} server={current} />}
         {tab === "packages" && (
-          <PackagesTab serverId={server.id} server={server} />
+          <PackagesTab serverId={current.id} server={current} />
         )}
         {tab === "manage" && (
-          <ManageTab serverId={server.id} server={server} />
+          <ManageTab serverId={current.id} server={current} />
         )}
       </div>
     </section>

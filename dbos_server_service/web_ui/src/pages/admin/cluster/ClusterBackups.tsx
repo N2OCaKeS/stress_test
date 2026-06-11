@@ -2,11 +2,12 @@ import { Archive, CloudUpload, ShieldAlert } from "lucide-react";
 import { BACKUPS } from "@/mocks/cluster";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useMockMode } from "@/api/auth/useQuery";
-import { isReadOnlyForCluster } from "@/lib/rbac";
+import { canMutateCluster, isReadOnlyForCluster } from "@/lib/rbac";
 
 export function ClusterBackups() {
   const { persona } = usePersona();
   const readonly = isReadOnlyForCluster(persona);
+  const canMutate = canMutateCluster(persona);
   const mockMode = useMockMode();
   return (
     <div className="space-y-4 max-w-3xl">
@@ -50,7 +51,7 @@ export function ClusterBackups() {
               </div>
             ))}
           </div>
-          {!readonly && (
+          {canMutate && (
             <button className="btn mt-3 w-full flex items-center justify-center gap-1">
               <CloudUpload className="w-3.5 h-3.5" /> Запустить manual backup
             </button>

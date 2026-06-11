@@ -384,8 +384,9 @@ async def get_controller(
     summary="Обновить IPMI-контроллер (без пароля)",
     description=(
         "Частичное обновление: `kind` / `endpoint_url` / `username`. "
-        "Смена пароля — через `POST /credentials/rotate` (отдельный "
-        "CRITICAL audit-event)."
+        "Смена пароля — через `POST /ipmi-controllers/{id}/rotate` "
+        "(worker dispatch с BMC-apply и verify; отдельный CRITICAL "
+        "audit-event)."
     ),
     responses={
         403: {"description": "Нет `update`."},

@@ -31,7 +31,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import {
   deleteIpmi,
   dispatchPowerStatus,
@@ -97,12 +97,6 @@ function ipmiCaps(persona: Persona, serverDeptId: string | null): IpmiCaps {
     admin: false,
     reason: "нужна роль server.operator+ для power и server.admin+ для edit/rotate",
   };
-}
-
-function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return fallback;
 }
 
 function fmtTs(ts: string | null | undefined): string {

@@ -10,12 +10,19 @@
  * этих блоков (в отличие от mock-порта) здесь нет.
  */
 import { useState } from "react";
-import { Archive, AlertCircle, Save, Trash2, Clock } from "lucide-react";
+import {
+  Archive,
+  AlertCircle,
+  Save,
+  Trash2,
+  Clock,
+  ShieldAlert,
+} from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import {
   disableRetention,
   getRetention,
@@ -32,18 +39,18 @@ const SEVERITIES: Severity[] = [
   "CRITICAL",
 ];
 
-function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return fallback;
-}
-
 export function LogRetentionLive() {
   const { persona } = usePersona();
   const toast = useToast();
+  // Весь `/retention` (вкл. GET) закрыт router-level `require_admin` на
+  // `loging_admin`. `loging_reader` доходит сюда по nav, но даже чтение
+  // отдаёт 403 — поэтому не дёргаем API и показываем заглушку.
   const canWrite = persona.platform_role === "logging_admin";
 
-  const policyQ = useQuery(() => getRetention(), []);
+  const policyQ = useQuery(
+    () => (canWrite ? getRetention() : Promise.resolve(null)),
+    [canWrite],
+  );
   const policy = policyQ.data ?? null;
 
   const [retainDays, setRetainDays] = useState("");
@@ -112,6 +119,26 @@ export function LogRetentionLive() {
   function toggleSeverity(s: Severity) {
     setSeverityFilter((cur) =>
       cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s],
+    );
+  }
+
+  if (!canWrite) {
+    return (
+      <Shell breadcrumb="loging_service / retention">
+        <main className="flex-1 min-w-0 overflow-hidden flex items-center justify-center">
+          <div className="empty-card max-w-md text-center">
+            <ShieldAlert className="w-10 h-10 mx-auto text-dim mb-3" />
+            <div className="text-sm">
+              Управление retention-политикой доступно только роли{" "}
+              <span className="mono">loging_admin</span>.
+            </div>
+            <div className="text-xs text-dim mt-2">
+              Backend закрывает весь раздел retention (включая просмотр) для
+              остальных ролей.
+            </div>
+          </div>
+        </main>
+      </Shell>
     );
   }
 
@@ -185,12 +212,7 @@ export function LogRetentionLive() {
                 <div className="stat-label flex items-center gap-2">
                   <Save className="w-3 h-3" /> Задать политику
                 </div>
-                {!canWrite ? (
-                  <div className="text-sm text-dim mt-3">
-                    Управление retention доступно только loging_admin.
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3 mt-3">
+                <div className="flex flex-col gap-3 mt-3">
                     <label className="flex flex-col gap-1 text-sm">
                       <span className="text-dim text-xs">
                         retain_days * (30…3650)
@@ -264,7 +286,6 @@ export function LogRetentionLive() {
                       )}
                     </div>
                   </div>
-                )}
               </div>
             </section>
           )}

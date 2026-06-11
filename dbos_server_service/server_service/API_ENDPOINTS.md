@@ -125,6 +125,8 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `INVALID_ACTION_FOR_ENTITY` | 422 | grant на неподходящую (entity, action) пару |
 | `UNKNOWN_ENTITY_TYPE` | 422 | неизвестный entity_type в `/permissions/{type}` |
 | `WEAK_PASSWORD` | 422 | пароль не прошёл политику |
+| `ACCOUNT_REQUIRED` | 422 | inventory.sync / users.inventory на неуправляемый сервер без привязанных аккаунтов |
+| `ACCOUNT_NOT_LINKED` | 422 | переданный `account_id` не привязан к серверу (inventory-dispatch) |
 | `RATE_LIMIT_EXCEEDED` | 429 | per-IP или global rate-limit пробит |
 | `MASS_ROTATION_TOO_LARGE` | 413 | batch превысил `MASS_ROTATION_MAX_SERVERS` |
 | `WORKER_UNREACHABLE` | 503 | dispatch_task: cross-DB engine не отвечает |
@@ -337,7 +339,7 @@ Errors: `PERMISSION_DENIED` (403), `NO_IPMI_CONTROLLER` (404).
 
 ### `POST /servers/{server_id}/ipmi/credentials/rotate` (legacy)
 
-Auth: Bearer + `(ipmi_controller, *, rotate_credentials)`. **User-facing вызов отбивается 410 GONE**: endpoint писал ciphertext без apply/verify на BMC, что могло убить out-of-band доступ. Каноничный путь — `POST /ipmi-controllers/{id}/rotate` (worker dispatch). Bot-токен оставлен как fallback для legacy worker'ов до миграции на internal callback.
+Auth: Bearer + `(ipmi_controller, *, rotate_credentials)`. **Любой вызов отбивается 410 GONE** (включая bot/worker_bot — fallback'а нет): endpoint писал ciphertext без apply/verify на BMC, что могло убить out-of-band доступ. Каноничный путь — `POST /ipmi-controllers/{id}/rotate` (worker dispatch с BMC apply + verify); ciphertext сохраняется только через internal callback `POST /internal/ipmi-controllers/{id}/credentials_rotated`.
 
 Errors: `PERMISSION_DENIED` (403), `NO_IPMI_CONTROLLER` (404), `IPMI_ROTATE_USER_FACING_DEPRECATED` (410), `RATE_LIMIT_EXCEEDED` (429).
 
@@ -361,7 +363,7 @@ Errors: симметрично power.on (+ требует IPMI-row).
 
 ### `POST /ipmi-controllers/{controller_id}/rotate` (worker dispatch)
 
-Auth: Bearer + `(ipmi_controller, *, rotate_credentials)`. **Worker сейчас raise'ит `NotImplementedError`** — storage round-trip не реализован; задача mark_failed + audit failure.
+Auth: Bearer + `(ipmi_controller, *, rotate_credentials)`. Worker заходит на BMC старым паролем, генерит новый, применяет (Redfish PATCH / ipmitool), под новым паролем делает read-only verify и только после verify шлёт ciphertext в `/internal/ipmi-controllers/{id}/credentials_rotated` (storage round-trip, проверка свежести `verified_at`). Verify не прошёл — storage не коммитится, задача FAILED.
 
 Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `NO_IPMI_CONTROLLER` (404), `SERVER_DECOMMISSIONED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `RATE_LIMIT_EXCEEDED` (429), `WORKER_UNREACHABLE` (503).
 
@@ -385,13 +387,17 @@ Errors: `INVALID_PATTERN` / `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED
 
 Auth: Bearer + `(server, *, inventory_trigger)`. SSH-сбор hardware-facts (lscpu/lsblk/os-release). Worker postsна `/internal/.../inventory`.
 
-Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `WORKER_UNREACHABLE` (503).
+Query: `account_id?` — аккаунт сервера, под которым worker зайдёт по SSH (self-сессия по паролю). Для управляемого сервера (`is_managed`) игнорируется — вход по ключу под `management_user`. Не передан на неуправляемом — server_service берёт дефолтный привязанный аккаунт (первый с сохранённым паролем, иначе первый привязанный). Привязок нет — `422 ACCOUNT_REQUIRED`; переданный `account_id` не привязан к серверу — `422 ACCOUNT_NOT_LINKED`. Резолв — `worker_dispatch.resolve_inventory_account_id`.
+
+Errors: `IDEMPOTENCY_KEY_TOO_LONG` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_DECOMMISSIONED` / `TASK_IDEMPOTENT_CONFLICT` / `IDEMPOTENCY_KEY_REUSE_CONFLICT` (409), `ACCOUNT_REQUIRED` / `ACCOUNT_NOT_LINKED` (422), `WORKER_UNREACHABLE` (503).
 
 ### `POST /servers/{server_id}/users/inventory` (worker dispatch)
 
 Auth: Bearer + `(server, *, inventory_trigger)`. **То же** право, что у hardware-инвентаризации — отдельного `users_inventory_trigger` НЕТ. Worker читает `getent passwd` / sudoers, постит на `/internal/.../users/inventory`, server_service reconcile'ит с `server_accounts`.
 
-Errors: симметрично inventory.sync.
+Query: `account_id?` — симметрично `inventory/sync` (self-сессия на неуправляемом сервере, иначе дефолтный привязанный аккаунт; managed → вход по ключу).
+
+Errors: симметрично inventory.sync, включая `ACCOUNT_REQUIRED` / `ACCOUNT_NOT_LINKED` (422).
 
 ### `POST /servers/{server_id}/prepare` (worker dispatch)
 

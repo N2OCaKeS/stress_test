@@ -2,8 +2,10 @@
  * Live-управление правилами аудита loging_service.
  *
  * Список правил слева, карточка/форма справа. CRUD идёт в loging_service
- * через `@/api/loging/rules`. Доступ к записи — `loging_admin` или
- * `account_admin`; остальным форма скрыта (backend всё равно отдаёт 403).
+ * через `@/api/loging/rules`. Весь раздел правил — только `loging_admin`:
+ * backend закрывает и чтение (`GET /rules`), и запись одной dependency
+ * `require_admin`. `loging_reader` / `account_admin` получают 403 даже на
+ * список, поэтому таким ролям показываем заглушку и не дёргаем API.
  *
  * Контракт формы повторяет валидацию backend'а:
  *   - `effect` обязателен;
@@ -11,18 +13,27 @@
  *   - `match_*` опциональны (пусто = «любое»).
  */
 import { useState } from "react";
-import { Filter, Plus, Trash2, Edit3, AlertCircle, ArrowLeft } from "lucide-react";
+import {
+  Filter,
+  Plus,
+  Trash2,
+  Edit3,
+  AlertCircle,
+  ArrowLeft,
+  ShieldAlert,
+} from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import {
   createRule,
   deleteRule,
   listRules,
   updateRule,
 } from "@/api/loging/rules";
+import { listServiceEvents } from "@/api/loging/services";
 import type {
   Rule,
   RuleCreateRequest,
@@ -41,23 +52,22 @@ const SEVERITIES: Severity[] = [
 ];
 const STATUSES = ["success", "failure", "denied", "warning"] as const;
 
-function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return fallback;
-}
-
 export function LogRulesLive() {
   const { persona } = usePersona();
   const toast = useToast();
-  const canWrite =
-    persona.platform_role === "logging_admin" ||
-    persona.platform_role === "account_admin";
+  // Backend `/rules` (вкл. GET-список) закрыт `require_admin` строго на
+  // `loging_admin`. `account_admin` и `loging_reader` ловят 403 даже на
+  // чтение — для них вместо API-ошибки показываем явную заглушку.
+  const isAdmin = persona.platform_role === "logging_admin";
+  const canWrite = isAdmin;
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<"view" | "new" | "edit">("view");
 
-  const rulesQ = useQuery(() => listRules({ limit: 200 }), []);
+  const rulesQ = useQuery(
+    () => (isAdmin ? listRules({ limit: 200 }) : Promise.resolve(null)),
+    [isAdmin],
+  );
   const rules = rulesQ.data?.items ?? [];
   const selected = rules.find((r) => r.id === selectedId) ?? null;
 
@@ -178,6 +188,26 @@ export function LogRulesLive() {
       )}
     </aside>
   );
+
+  if (!isAdmin) {
+    return (
+      <Shell breadcrumb="loging_service / rules">
+        <section className="flex-1 min-w-0 overflow-hidden flex items-center justify-center">
+          <div className="empty-card max-w-md text-center">
+            <ShieldAlert className="w-10 h-10 mx-auto text-dim mb-3" />
+            <div className="text-sm">
+              Управление правилами аудита доступно только роли{" "}
+              <span className="mono">loging_admin</span>.
+            </div>
+            <div className="text-xs text-dim mt-2">
+              Просмотр и редактирование правил закрыты для loging_reader и
+              account_admin на стороне backend.
+            </div>
+          </div>
+        </section>
+      </Shell>
+    );
+  }
 
   return (
     <Shell breadcrumb="loging_service / rules" middle={aside}>
@@ -323,6 +353,20 @@ function RuleForm({
   const [priority, setPriority] = useState(String(rule?.priority ?? 100));
   const [matchService, setMatchService] = useState(rule?.match_service ?? "");
   const [matchAction, setMatchAction] = useState(rule?.match_action ?? "");
+
+  // Каталог зарегистрированных action'ов выбранного сервиса — подсказка для
+  // `match_action`, чтобы не вбивать имя руками (точное `match_action`
+  // валидируется backend'ом по реестру `service_events`). Грузим только когда
+  // указан конкретный сервис; пусто = «любой» → каталога нет.
+  const svc = matchService.trim();
+  const actionsQ = useQuery(
+    () =>
+      svc
+        ? listServiceEvents(svc, { limit: 200 })
+        : Promise.resolve(null),
+    [svc],
+  );
+  const actionOptions = actionsQ.data?.items ?? [];
   const [matchStatus, setMatchStatus] = useState(rule?.match_status ?? "");
   const [matchSeverity, setMatchSeverity] = useState(rule?.match_severity ?? "");
   const [effect, setEffect] = useState<RuleEffect>(
@@ -409,7 +453,22 @@ function RuleForm({
                 value={matchAction}
                 onChange={(e) => setMatchAction(e.target.value)}
                 placeholder="user.*"
+                list={actionOptions.length ? "rule-action-catalog" : undefined}
               />
+              {actionOptions.length > 0 && (
+                <datalist id="rule-action-catalog">
+                  {actionOptions.map((a) => (
+                    <option key={a.action} value={a.action}>
+                      {a.default_severity ?? ""}
+                    </option>
+                  ))}
+                </datalist>
+              )}
+              {svc && actionsQ.data && actionOptions.length === 0 && (
+                <span className="text-[11px] text-dim mt-0.5">
+                  Для «{svc}» нет зарегистрированных action'ов — используйте glob.
+                </span>
+              )}
             </Field>
             <Field label="match_status">
               <select

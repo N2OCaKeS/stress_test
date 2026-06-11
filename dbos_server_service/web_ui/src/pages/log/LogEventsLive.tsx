@@ -14,7 +14,7 @@ import { Search, AlertCircle, ShieldAlert, User, Filter, Cog } from "lucide-reac
 import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import { listEvents } from "@/api/loging/events";
 import { listServices } from "@/api/loging/services";
 import type {
@@ -51,12 +51,6 @@ const SEV_LABEL: Record<string, string> = {
 function sevClass(severity: string): string {
   if (severity === "DEBUG" || severity === "TRACE") return "sev-INFO";
   return `sev-${severity}`;
-}
-
-function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return fallback;
 }
 
 function fmtTime(iso: string): string {

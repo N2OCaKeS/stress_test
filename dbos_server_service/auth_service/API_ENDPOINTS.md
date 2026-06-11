@@ -191,7 +191,9 @@ Auth: AnyAdmin. Body:
 
 **`loging_reader` без `department_id` создаётся успешно** — `LOGING_READER` входит в `user_service._platform_admins` рядом с `account_admin` и `loging_admin`, поэтому auth_service не требует от него `department_id`. Политика «dept-scoped read» сейчас живёт только на стороне `loging_service`: на первом же GET аудита без `department_id` он отдаст `403 NO_DEPARTMENT`. Для глобального read-only по аудиту используется `platform_role=loging_admin` или `platform_role=account_admin`.
 
-Errors: `USER_ALREADY_EXISTS` (409), `DEPARTMENT_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin создаёт в чужом отделе, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin пытается выдать `platform_role`.
+Опциональный `must_change_password` (bool) в body: по умолчанию (`null`) новый юзер обязан сменить пароль при первом входе. Явный `false` снимает force-change — но передать его может только `account_admin`; `department_admin` с `false` получает `403 CANNOT_BYPASS_PASSWORD_CHANGE`. Когда account_admin создаёт юзера с `false`, в audit `user.create` пишется `details.must_change_password_bypass=true`.
+
+Errors: `USER_ALREADY_EXISTS` (409), `DEPARTMENT_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin создаёт в чужом отделе, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin пытается выдать `platform_role`, `CANNOT_BYPASS_PASSWORD_CHANGE` (403) — не-account_admin прислал `must_change_password=false`.
 
 ### `PATCH /users/{user_id}`
 
@@ -891,6 +893,7 @@ Auth: public. Response: JWKS (RS256).
 - `USER_CONTEXT_REQUIRED` (403) — m2m identity (`actor_type=oauth_client`) на user-facing endpoint'е.
 - `STATUS_CHANGE_REQUIRES_ACCOUNT_ADMIN` (403) — не-account_admin меняет `status` ↔ `BANNED` через PATCH.
 - `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin выдаёт `platform_role`.
+- `CANNOT_BYPASS_PASSWORD_CHANGE` (403) — не-account_admin создаёт юзера с `must_change_password=false`.
 - `ACTOR_VANISHED` (401) — actor-юзер удалён между JWT-выдачей и вызовом.
 
 ### Service-to-service auth

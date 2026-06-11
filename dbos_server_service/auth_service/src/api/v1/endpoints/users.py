@@ -511,6 +511,8 @@ async def create_user(
           в чужом отделе.
         * `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin пытается
           выдать `platform_role`.
+        * `CANNOT_BYPASS_PASSWORD_CHANGE` (403) — не-account_admin прислал
+          `must_change_password=false` (force-change может снять только account_admin).
         * `MISSING_REQUIRED_FIELD` (400) — `department_id` опущен для обычного
           юзера (не платформенного админа).
     """
@@ -524,6 +526,7 @@ async def create_user(
         email=body.email,
         platform_role=body.platform_role,
         initial_roles=body.initial_roles,
+        must_change_password=body.must_change_password,
         request_id=getattr(request.state, "request_id", None),
     )
 

@@ -1,8 +1,9 @@
 /**
  * Thin wrappers для loging_service `/rules` (CRUD правил аудита).
  *
- * Backend под `/api/logging/v1/rules`. Доступ — `loging_admin` или
- * `account_admin` (read и write одной dependency на бэке).
+ * Backend под `/api/logging/v1/rules`. Доступ — только `loging_admin`:
+ * и чтение (`GET /rules`), и запись закрыты одной dependency `require_admin`.
+ * `loging_reader` и `account_admin` получают 403 даже на список.
  *
  * Source of truth: loging_service/src/api/v1/endpoints/rules.py
  */

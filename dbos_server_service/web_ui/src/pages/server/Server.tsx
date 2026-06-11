@@ -21,7 +21,7 @@ import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import {
   createServer,
   deleteServer,
@@ -55,12 +55,6 @@ const STATUS_KIND: Record<ServerStatus, "ok" | "warn" | "danger" | ""> = {
 
 type SortMode = "name" | "dept" | "status";
 type GroupMode = "none" | "department";
-
-function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return fallback;
-}
 
 export function Server() {
   const { persona } = usePersona();

@@ -3,11 +3,14 @@ import { ScanSearch } from "lucide-react";
 import { ApiError } from "@/api/client";
 import { introspect, type IntrospectResponse } from "@/api/auth/authorization";
 import { useToast } from "@/contexts/ToastContext";
+import { ServiceKeyFields } from "./ServiceKeyFields";
+import { useServiceKey } from "./useServiceKey";
 
 export function SecurityIntrospect() {
   const [token, setToken] = useState("");
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<IntrospectResponse | null>(null);
+  const svc = useServiceKey();
   const toast = useToast();
 
   const submit = async () => {
@@ -15,13 +18,23 @@ export function SecurityIntrospect() {
       toast.warn("Введите токен");
       return;
     }
+    if (!svc.serviceKey.trim()) {
+      toast.warn("Введите SERVICE_API_KEY");
+      return;
+    }
     setPending(true);
     setResult(null);
     try {
-      const r = await introspect({ token: token.trim() });
+      const r = await introspect(
+        { token: token.trim() },
+        {
+          serviceKey: svc.serviceKey.trim(),
+          serviceIdentity: svc.serviceIdentity.trim() || undefined,
+        },
+      );
       setResult(r);
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
+      if (e instanceof ApiError) toast.error(`${e.errorCode}: ${e.message}`);
       else toast.error("Ошибка introspect");
     } finally {
       setPending(false);
@@ -39,7 +52,8 @@ export function SecurityIntrospect() {
           Возвращает identity и effective `allowed_services` / `service_roles`,
           вычисленные из БД (а не из JWT payload).
         </div>
-        <label className="flex flex-col gap-1 text-sm">
+        <ServiceKeyFields svc={svc} />
+        <label className="flex flex-col gap-1 text-sm mt-3">
           <span className="text-dim text-xs">token</span>
           <textarea
             className="input mono"

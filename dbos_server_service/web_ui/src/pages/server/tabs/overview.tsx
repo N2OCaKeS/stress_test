@@ -7,11 +7,9 @@
  * os_version_id) для account_admin'а и dep_admin'а своего dept'а.
  *
  * Источник данных: prop `server: Server` (грузит ServerDetail). После PATCH
- * вызываем `onSaved()` снаружи нельзя — у нас нет колбэка; вместо этого делаем
- * локальный optimistic state и просим юзера обновить страницу при коллизиях.
- * Сейчас просто скрываем форму обратно — родительский useQuery refetch'ить
- * сервер мы здесь не умеем (нет хука), но Tabs не размонтируются, так что
- * локально показываем свежий объект из ответа PATCH'а.
+ * поднимаем свежий объект через `onServerUpdated(next)` — ServerDetail держит
+ * карточку в своём state, так что header и соседние вкладки обновляются без
+ * перезагрузки страницы.
  */
 import { useMemo, useState } from "react";
 import { Pencil } from "lucide-react";
@@ -32,12 +30,14 @@ import { FormRow, StatRow } from "@/pages/admin/services/_inline";
 interface Props {
   serverId: string;
   server?: Server;
+  /** Поднимает свежий объект в ServerDetail, чтобы header и соседние
+   * вкладки обновились после PATCH без перезагрузки страницы. */
+  onServerUpdated?: (next: Server) => void;
 }
 
-export function OverviewTab({ server }: Props) {
+export function OverviewTab({ server, onServerUpdated }: Props) {
   const [editing, setEditing] = useState(false);
-  const [current, setCurrent] = useState<Server | undefined>(server);
-  const view = current ?? server;
+  const view = server;
   const { persona } = usePersona();
 
   if (!view) {
@@ -54,7 +54,7 @@ export function OverviewTab({ server }: Props) {
         initial={view}
         onCancel={() => setEditing(false)}
         onSaved={(next) => {
-          setCurrent(next);
+          onServerUpdated?.(next);
           setEditing(false);
         }}
       />

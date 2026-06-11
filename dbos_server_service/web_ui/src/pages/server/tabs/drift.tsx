@@ -18,7 +18,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import { getServerDrift, inventorySync } from "@/api/server/servers";
 import { listAccounts } from "@/api/server/accounts";
 import type {
@@ -39,12 +39,6 @@ const DRIFT_KIND_LABEL: Record<string, string> = {
   attributes: "attributes",
   missing_on_box: "missing on box",
 };
-
-function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return fallback;
-}
 
 function formatDt(iso: string): string {
   try {

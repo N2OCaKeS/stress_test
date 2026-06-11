@@ -2,8 +2,12 @@
 
 Используется `GET /servers/{id}/drift` — собирает событие
 `server_account.drift_detected` из loging и отдаёт сводку. Запросы идут
-через ту же `LOGING_SERVICE_API_KEY` shared-secret, что и POST events;
-loging принимает service-to-service identity ровно как на write-канале.
+через ту же `LOGING_SERVICE_API_KEY` shared-secret, что и POST events,
+и тем же `X-Service-Identity: server_service` header'ом — на internal
+read-канал loging (`/internal/events`), который аутентифицирует
+service-to-service identity ровно как write-канал. Публичный `GET /events`
+требует user-bearer с ролью `loging_admin`/`loging_reader` и сюда не
+подходит.
 
 Если loging недоступен или API-key пуст — поднимаем `ServiceUnavailableError`,
 endpoint отдаст 503 (читать историю без upstream нельзя).
@@ -51,10 +55,10 @@ async def fetch_drift_events(
     * `truncated` — True, если loging вернул ровно `_DRIFT_PAGE_LIMIT` записей;
       возможны более старые drift'ы за окном, клиент должен сузить `since`.
 
-    На стороне loging фильтра по `target_id` нет (см. `loging_service/api/v1/
-    endpoints/events.py::list_events`), поэтому фильтруем по `target_id ==
-    server_id` локально после fetch'а. Это compromise до расширения GET /events
-    в loging (см. TODO).
+    Фильтр по `target_id == server_id` уходит на сторону loging
+    (internal `/internal/events` поддерживает query-параметр `target_id`),
+    плюс дублируется локально после fetch'а как защита от случайного
+    расширения выборки.
 
     Сетевые сбои → `ServiceUnavailableError(LOGING_SERVICE_UNAVAILABLE)`.
     """
@@ -67,14 +71,15 @@ async def fetch_drift_events(
             message="loging_service URL or API key is not configured",
         )
 
-    events_path = "/api/logging/v1/events"
+    events_path = "/api/logging/v1/internal/events"
     params = {
         "action": "server_account.drift_detected",
+        "target_id": server_id,
         "from_time": since.isoformat(),
         "limit": _DRIFT_PAGE_LIMIT,
         "include_total": False,
     }
-    headers = bearer_header(api_key)
+    headers = {**bearer_header(api_key), "X-Service-Identity": "server_service"}
 
     pooled = http_clients.loging_read_client
     try:
@@ -133,7 +138,8 @@ async def fetch_drift_events(
 
     body = resp.json() or {}
     items = body.get("items", []) or []
-    # Локальный фильтр по target_id — loging пока не поддерживает.
+    # loging уже отфильтровал по target_id (query-параметр в params),
+    # но повторяем локально как защиту от расширения выборки.
     filtered = [
         item for item in items
         if item.get("target_id") == server_id

@@ -157,6 +157,10 @@ export interface UserCreateRequest {
   email?: string;
   department_id?: string | null;
   platform_role?: PlatformRole;
+  // Требовать смену пароля при первом входе. Опущено / true — дефолт backend'а
+  // (force-change). false снимает force-change и доступен только account_admin'у
+  // (иначе backend вернёт CANNOT_BYPASS_PASSWORD_CHANGE).
+  must_change_password?: boolean;
   initial_roles?: Array<{
     service_name: ServiceName;
     roles: string[];

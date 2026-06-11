@@ -200,6 +200,7 @@ async def create_user(
     email: str | None = None,
     platform_role: str | None = None,
     initial_roles: list | None = None,
+    must_change_password: bool | None = None,
     request_id: str | None = None,
 ) -> UserResponse:
     """Создать юзера + опционально выдать initial_roles в одной транзакции."""
@@ -239,6 +240,18 @@ async def create_user(
     if await user_repo.exists_username(username):
         raise ConflictError(error_code="USER_ALREADY_EXISTS", message=f"Username '{username}' is already taken")
 
+    # Дефолт — форсировать смену пароля: admin задаёт временный пароль, юзер
+    # обязан сменить его на свой при первом входе. Явный False снимает force-change,
+    # но обойти его может только account_admin — иначе dep_admin создавал бы
+    # юзеров с известным ему постоянным паролем (бэкдор в свой отдел).
+    must_change_bypass = must_change_password is False
+    if must_change_bypass and actor_role != PlatformRole.ACCOUNT_ADMIN:
+        raise AuthorizationError(
+            error_code="CANNOT_BYPASS_PASSWORD_CHANGE",
+            message="Only account_admin can create a user without forced password change",
+        )
+    effective_must_change = True if must_change_password is None else must_change_password
+
     # `must_change_password=True`: dep_admin/account_admin создал юзера с
     # временным паролем (видимым в audit details — sanitizer заменит на
     # <PASSWORD>). До первой самостоятельной смены через POST /users/me/password
@@ -250,7 +263,7 @@ async def create_user(
         email=email,
         platform_role=platform_role,
         created_by=actor_id,
-        must_change_password=True,
+        must_change_password=effective_must_change,
     )
 
     if initial_roles:
@@ -295,6 +308,8 @@ async def create_user(
             "department_id": department_id,
             "department_name": dept.name if dept else None,
             "platform_role": platform_role,
+            "must_change_password": effective_must_change,
+            "must_change_password_bypass": must_change_bypass,
             "initial_roles": [
                 {
                     "service_name": a.service_name if hasattr(a, "service_name") else a["service_name"],

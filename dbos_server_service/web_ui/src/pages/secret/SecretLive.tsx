@@ -8,7 +8,7 @@
  * Mock-режим (`VITE_USE_MOCK_AUTH=true`) обслуживают SecretAccountAdmin /
  * SecretDepAdmin — диспетчеризация в Secret.tsx.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Search,
@@ -20,12 +20,17 @@ import {
   Copy,
   Trash2,
   RotateCcw,
+  Pencil,
+  ArrowRightLeft,
+  ShieldPlus,
+  Building2,
+  X,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import {
   createCredential,
   deleteCredential,
@@ -33,13 +38,21 @@ import {
   listCredentials,
   recoverCredential,
   revealCredential,
+  transferCredential,
+  updateCredential,
 } from "@/api/secret/credentials";
-import { listRoleAcls } from "@/api/secret/roleAcls";
-import { listDeptGrants } from "@/api/secret/deptGrants";
+import { addRoleAcl, listRoleAcls, revokeRoleAcl } from "@/api/secret/roleAcls";
+import {
+  addDeptGrant,
+  listDeptGrants,
+  revokeDeptGrant,
+} from "@/api/secret/deptGrants";
 import type {
   Credential,
   CredentialCreateRequest,
   CredentialScope,
+  CredentialUpdateRequest,
+  TransferRequest,
 } from "@/api/secret/types";
 
 const SCOPE_LABEL: Record<CredentialScope, string> = {
@@ -53,12 +66,6 @@ const STATUS_KIND: Record<string, "ok" | "danger"> = {
   blocked: "danger",
 };
 
-function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
-  if (e instanceof Error) return e.message;
-  return fallback;
-}
-
 export function SecretLive() {
   const { persona } = usePersona();
   const toast = useToast();
@@ -71,15 +78,30 @@ export function SecretLive() {
   const [filterScope, setFilterScope] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
 
+  const PAGE_SIZE = 50;
   const listQ = useQuery(
     () =>
       listCredentials({
-        limit: 200,
+        limit: PAGE_SIZE,
         scope: filterScope || undefined,
         status: filterStatus || undefined,
       }),
     [filterScope, filterStatus],
   );
+
+  // Аккумулятор для cursor «load more»: первая страница приходит из listQ,
+  // последующие — дозагружаем по next_cursor и добавляем сюда. Сбрасываем,
+  // когда меняются фильтры (новый набор данных).
+  const [extraItems, setExtraItems] = useState<
+    Array<Credential & { status?: string }>
+  >([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  useEffect(() => {
+    setExtraItems([]);
+    setCursor(listQ.data?.next_cursor ?? null);
+  }, [listQ.data]);
 
   const canManage =
     persona.platform_role === "account_admin" ||
@@ -89,9 +111,38 @@ export function SecretLive() {
 
   // Список может прийти как полный (CredentialList) или guest-урезанный
   // (CredentialGuestList). Поля name/id/service/scope есть в обоих shape'ах —
-  // их и показываем в aside.
+  // их и показываем в aside. Guest-shape не несёт owner_user_id/status —
+  // по их отсутствию и распознаём read-only режим без reveal-доступа.
   const rawItems = listQ.data?.items ?? [];
-  const items = rawItems as Array<Credential & { status?: string }>;
+  const firstRow = rawItems[0] as (Credential & { status?: string }) | undefined;
+  const isGuestList =
+    rawItems.length > 0 && firstRow !== undefined && !("owner_user_id" in firstRow);
+  const items = [
+    ...(rawItems as Array<Credential & { status?: string }>),
+    ...extraItems,
+  ];
+
+  async function handleLoadMore() {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await listCredentials({
+        limit: PAGE_SIZE,
+        scope: filterScope || undefined,
+        status: filterStatus || undefined,
+        cursor,
+      });
+      setExtraItems((prev) => [
+        ...prev,
+        ...(page.items as Array<Credential & { status?: string }>),
+      ]);
+      setCursor(page.next_cursor ?? null);
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось догрузить список"));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -230,6 +281,17 @@ export function SecretLive() {
             />
           ))}
         </div>
+        {!listQ.loading && !listQ.error && cursor && !search.trim() && (
+          <div className="px-3 pt-2">
+            <button
+              className="btn btn-ghost w-full text-xs"
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "Загрузка…" : "Загрузить ещё"}
+            </button>
+          </div>
+        )}
       </div>
 
       {canManage && (
@@ -257,6 +319,7 @@ export function SecretLive() {
         <DetailPane
           credId={selectedId}
           canManage={canManage}
+          isGuest={isGuestList}
           onDelete={handleDelete}
           onChanged={() => listQ.refetch()}
         />
@@ -337,11 +400,13 @@ function EmptyPane({
 function DetailPane({
   credId,
   canManage,
+  isGuest,
   onDelete,
   onChanged,
 }: {
   credId: string;
   canManage: boolean;
+  isGuest: boolean;
   onDelete: (c: Credential) => void;
   onChanged: () => void;
 }) {
@@ -350,16 +415,44 @@ function DetailPane({
   const cred = credQ.data;
 
   const isCross = cred?.scope === "cross_department";
-  const aclQ = useQuery(() => listRoleAcls(credId), [credId]);
+  // Guest без reveal-доступа не нагружаем ACL/grant-листингами (бэк всё равно
+  // отобьёт 403), показываем только метаданные.
+  const aclQ = useQuery(() => listRoleAcls(credId), [credId], {
+    enabled: !isGuest,
+  });
   const grantsQ = useQuery(() => listDeptGrants(credId), [credId], {
-    enabled: isCross,
+    enabled: isCross && !isGuest,
   });
 
   const [revealed, setRevealed] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
+  // Throttle-countdown: 429 кладёт retry_after_seconds, гасим Reveal на это
+  // окно и тикаем секундами для UX.
+  const [throttleUntil, setThrottleUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Модалки управления.
+  const [editing, setEditing] = useState(false);
+  const [transferring, setTransferring] = useState(false);
+  const [addingAcl, setAddingAcl] = useState(false);
+  const [addingGrant, setAddingGrant] = useState(false);
+
+  useEffect(() => {
+    if (throttleUntil <= 0) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [throttleUntil]);
+
+  // Сбрасываем reveal/throttle при переходе на другую креду.
+  useEffect(() => {
+    setRevealed(null);
+    setThrottleUntil(0);
+  }, [credId]);
+
+  const throttleLeft = Math.max(0, Math.ceil((throttleUntil - now) / 1000));
 
   async function handleReveal() {
-    if (revealing) return;
+    if (revealing || throttleLeft > 0) return;
     setRevealing(true);
     try {
       const res = await revealCredential(credId);
@@ -372,11 +465,14 @@ function DetailPane({
       }
       setRevealed(plain);
     } catch (e) {
-      const msg =
-        e instanceof ApiError && e.status === 429
-          ? `Throttled: повторите через ${e.retryAfter ?? "несколько"} сек`
-          : apiErrMsg(e, "Reveal не удался");
-      toast.error(msg);
+      if (e instanceof ApiError && e.status === 429) {
+        const secs = e.retryAfter ?? 300;
+        setThrottleUntil(Date.now() + secs * 1000);
+        setNow(Date.now());
+        toast.error(`Throttled: повторите через ${secs} сек`);
+      } else {
+        toast.error(apiErrMsg(e, "Reveal не удался"));
+      }
     } finally {
       setRevealing(false);
     }
@@ -390,6 +486,86 @@ function DetailPane({
       onChanged();
     } catch (e) {
       toast.error(apiErrMsg(e, "Recover не удался"));
+    }
+  }
+
+  async function handleEditSubmit(body: CredentialUpdateRequest) {
+    try {
+      await updateCredential(credId, body);
+      toast.success("Credential обновлён");
+      setEditing(false);
+      setRevealed(null);
+      credQ.refetch();
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Обновление не удалось"));
+    }
+  }
+
+  async function handleTransferSubmit(body: TransferRequest) {
+    try {
+      await transferCredential(credId, body);
+      toast.success("Ownership передан, credential разблокирован");
+      setTransferring(false);
+      credQ.refetch();
+      onChanged();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Transfer не удался"));
+    }
+  }
+
+  async function handleAclAdd(body: {
+    dept_id: string;
+    role_name: string;
+    can_read: boolean;
+    can_write: boolean;
+  }) {
+    try {
+      await addRoleAcl(credId, body);
+      toast.success("RoleACL выдан");
+      setAddingAcl(false);
+      aclQ.refetch();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Выдача ACL не удалась"));
+    }
+  }
+
+  async function handleAclRevoke(aclId: string) {
+    if (typeof window !== "undefined" && !window.confirm("Снять этот RoleACL?"))
+      return;
+    try {
+      await revokeRoleAcl(credId, aclId);
+      toast.success("RoleACL снят");
+      aclQ.refetch();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Снятие ACL не удалось"));
+    }
+  }
+
+  async function handleGrantAdd(recipientDeptId: string) {
+    try {
+      await addDeptGrant(credId, { recipient_dept_id: recipientDeptId });
+      toast.success("DeptGrant выдан");
+      setAddingGrant(false);
+      grantsQ.refetch();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Выдача grant'а не удалась"));
+    }
+  }
+
+  async function handleGrantRevoke(grantId: string) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Снять DeptGrant? Это каскадно снимет RoleACL recipient-dep'а.")
+    )
+      return;
+    try {
+      await revokeDeptGrant(credId, grantId);
+      toast.success("DeptGrant снят");
+      grantsQ.refetch();
+      aclQ.refetch();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Снятие grant'а не удалось"));
     }
   }
 
@@ -464,10 +640,28 @@ function DetailPane({
         </div>
         {canManage && (
           <div className="flex items-center gap-2 shrink-0">
-            {blocked && (
-              <button className="btn" onClick={handleRecover} title="Recover">
-                <RotateCcw className="w-4 h-4 inline-block" /> Recover
+            {!blocked && (
+              <button
+                className="btn"
+                onClick={() => setEditing(true)}
+                title="Редактировать"
+              >
+                <Pencil className="w-4 h-4 inline-block" /> Edit
               </button>
+            )}
+            {blocked && (
+              <>
+                <button className="btn" onClick={handleRecover} title="Recover">
+                  <RotateCcw className="w-4 h-4 inline-block" /> Recover
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setTransferring(true)}
+                  title="Transfer ownership"
+                >
+                  <ArrowRightLeft className="w-4 h-4 inline-block" /> Transfer
+                </button>
+              </>
             )}
             <button
               className="btn btn-danger"
@@ -487,24 +681,40 @@ function DetailPane({
             <div className="text-xs uppercase tracking-wider text-dim">
               Значение
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-warn">reveal: 5-min throttle</span>
-              <button
-                className="btn"
-                onClick={handleReveal}
-                disabled={revealing || blocked}
-              >
-                <Eye className="w-4 h-4 inline-block" />{" "}
-                <span>{revealing ? "…" : "Reveal"}</span>
-              </button>
-              <button
-                className="btn"
-                onClick={handleCopy}
-                disabled={!revealed}
-              >
-                <Copy className="w-4 h-4 inline-block" />
-              </button>
-            </div>
+            {isGuest ? (
+              <span className="text-[11px] text-dim">
+                guest: reveal недоступен
+              </span>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-warn">
+                  {throttleLeft > 0
+                    ? `throttle: ${throttleLeft}с`
+                    : "reveal: 5-min throttle"}
+                </span>
+                <button
+                  className="btn"
+                  onClick={handleReveal}
+                  disabled={revealing || blocked || throttleLeft > 0}
+                >
+                  <Eye className="w-4 h-4 inline-block" />{" "}
+                  <span>
+                    {revealing
+                      ? "…"
+                      : throttleLeft > 0
+                      ? `${throttleLeft}с`
+                      : "Reveal"}
+                  </span>
+                </button>
+                <button
+                  className="btn"
+                  onClick={handleCopy}
+                  disabled={!revealed}
+                >
+                  <Copy className="w-4 h-4 inline-block" />
+                </button>
+              </div>
+            )}
           </div>
           <div
             className={`mono text-lg p-3 surface-2 rounded border border-token ${
@@ -514,7 +724,9 @@ function DetailPane({
             {revealed ?? "••••••••••••••••••••••••••"}
           </div>
           <div className="text-xs text-dim mt-2">
-            Reveal эмитит CRITICAL audit-событие и гейтится 5-минутным throttle.
+            {isGuest
+              ? "Guest видит метаданные; reveal закрыт — запросите доступ у dep_admin."
+              : "Reveal эмитит CRITICAL audit-событие и гейтится 5-минутным throttle."}
           </div>
         </div>
 
@@ -545,41 +757,74 @@ function DetailPane({
         </div>
 
         {/* Access — RoleACL */}
-        <div className="surface border border-token rounded-lg p-4">
-          <div className="text-xs uppercase tracking-wider text-dim mb-3">
-            RoleACL ({aclQ.data?.items.length ?? 0})
-          </div>
-          {aclQ.loading && <div className="text-xs text-dim">Загрузка…</div>}
-          {aclQ.error && (
-            <div className="text-xs text-danger">
-              {apiErrMsg(aclQ.error, "ACL не загрузился")}
-            </div>
-          )}
-          {!aclQ.loading && !aclQ.error && (
-            <div className="text-sm flex flex-col gap-1">
-              {(aclQ.data?.items ?? []).length === 0 && (
-                <div className="text-xs text-dim">Нет выданных ACL.</div>
+        {!isGuest && (
+          <div className="surface border border-token rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs uppercase tracking-wider text-dim">
+                RoleACL ({aclQ.data?.items.length ?? 0})
+              </div>
+              {canManage && (
+                <button
+                  className="btn btn-ghost text-xs flex items-center gap-1"
+                  onClick={() => setAddingAcl(true)}
+                >
+                  <ShieldPlus className="w-3.5 h-3.5" /> Выдать
+                </button>
               )}
-              {(aclQ.data?.items ?? []).map((a) => (
-                <div key={a.id} className="stat-row">
-                  <span className="text-dim">
-                    {a.dept_id} / {a.role_name}
-                  </span>
-                  <span className="mono text-xs">
-                    {a.can_read ? "r" : "-"}
-                    {a.can_write ? "w" : "-"}
-                  </span>
-                </div>
-              ))}
             </div>
-          )}
-        </div>
+            {aclQ.loading && <div className="text-xs text-dim">Загрузка…</div>}
+            {aclQ.error && (
+              <div className="text-xs text-danger">
+                {apiErrMsg(aclQ.error, "ACL не загрузился")}
+              </div>
+            )}
+            {!aclQ.loading && !aclQ.error && (
+              <div className="text-sm flex flex-col gap-1">
+                {(aclQ.data?.items ?? []).length === 0 && (
+                  <div className="text-xs text-dim">Нет выданных ACL.</div>
+                )}
+                {(aclQ.data?.items ?? []).map((a) => (
+                  <div key={a.id} className="stat-row items-center">
+                    <span className="text-dim">
+                      {a.dept_id} / {a.role_name}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="mono text-xs">
+                        {a.can_read ? "r" : "-"}
+                        {a.can_write ? "w" : "-"}
+                      </span>
+                      {canManage && (
+                        <button
+                          className="btn btn-ghost p-1"
+                          title="Снять ACL"
+                          onClick={() => handleAclRevoke(a.id)}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Dept grants — только cross_department */}
-        {isCross && (
+        {isCross && !isGuest && (
           <div className="surface border border-token rounded-lg p-4 col-span-2">
-            <div className="text-xs uppercase tracking-wider text-dim mb-3">
-              Dept grants ({grantsQ.data?.items.length ?? 0})
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs uppercase tracking-wider text-dim">
+                Dept grants ({grantsQ.data?.items.length ?? 0})
+              </div>
+              {canManage && (
+                <button
+                  className="btn btn-ghost text-xs flex items-center gap-1"
+                  onClick={() => setAddingGrant(true)}
+                >
+                  <Building2 className="w-3.5 h-3.5" /> Выдать grant
+                </button>
+              )}
             </div>
             {grantsQ.loading && (
               <div className="text-xs text-dim">Загрузка…</div>
@@ -595,9 +840,20 @@ function DetailPane({
                   <div className="text-xs text-dim">Нет выданных grant'ов.</div>
                 )}
                 {(grantsQ.data?.items ?? []).map((g) => (
-                  <div key={g.id} className="stat-row">
+                  <div key={g.id} className="stat-row items-center">
                     <span className="text-dim">{g.recipient_dept_id}</span>
-                    <span className="mono text-xs">{g.granted_at}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="mono text-xs">{g.granted_at}</span>
+                      {canManage && (
+                        <button
+                          className="btn btn-ghost p-1"
+                          title="Снять grant"
+                          onClick={() => handleGrantRevoke(g.id)}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -605,6 +861,34 @@ function DetailPane({
           </div>
         )}
       </div>
+
+      {editing && cred && (
+        <EditModal
+          cred={cred}
+          onClose={() => setEditing(false)}
+          onSubmit={handleEditSubmit}
+        />
+      )}
+      {transferring && cred && (
+        <TransferModal
+          scope={cred.scope}
+          onClose={() => setTransferring(false)}
+          onSubmit={handleTransferSubmit}
+        />
+      )}
+      {addingAcl && (
+        <AclModal
+          isCross={isCross}
+          onClose={() => setAddingAcl(false)}
+          onSubmit={handleAclAdd}
+        />
+      )}
+      {addingGrant && (
+        <GrantModal
+          onClose={() => setAddingGrant(false)}
+          onSubmit={handleGrantAdd}
+        />
+      )}
     </section>
   );
 }
@@ -773,5 +1057,341 @@ function CreatePane({
         </form>
       </div>
     </section>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Модалки управления
+
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-content"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header flex items-center justify-between">
+          <div className="text-sm font-semibold">{title}</div>
+          <button className="btn btn-ghost p-1" onClick={onClose} aria-label="Закрыть">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function EditModal({
+  cred,
+  onClose,
+  onSubmit,
+}: {
+  cred: Credential;
+  onClose: () => void;
+  onSubmit: (body: CredentialUpdateRequest) => void | Promise<void>;
+}) {
+  const [name, setName] = useState(cred.name);
+  const [login, setLogin] = useState(cred.login ?? "");
+  const [secret, setSecret] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    // Шлём только реально изменённые поля. Пустой secret = не перешифровывать.
+    const body: CredentialUpdateRequest = {};
+    if (name.trim() && name.trim() !== cred.name) body.name = name.trim();
+    if (login.trim() !== (cred.login ?? "")) body.login = login.trim() || null;
+    if (secret) body.secret = secret;
+    if (Object.keys(body).length === 0) {
+      onClose();
+      return;
+    }
+    setSubmitting(true);
+    Promise.resolve(onSubmit(body)).finally(() => setSubmitting(false));
+  }
+
+  return (
+    <ModalShell title={`Редактировать ${cred.name}`} onClose={onClose}>
+      <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">name</span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={64}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">login</span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            maxLength={4096}
+            placeholder="пусто = очистить login"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">new secret (re-encrypt)</span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1 mono"
+            type="password"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            maxLength={8192}
+            placeholder="пусто = оставить текущий секрет"
+          />
+        </label>
+        <div className="flex items-center gap-2 mt-1">
+          <button type="submit" className="btn btn-primary" disabled={submitting}>
+            {submitting ? "Сохраняем…" : "Сохранить"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function TransferModal({
+  scope,
+  onClose,
+  onSubmit,
+}: {
+  scope: CredentialScope;
+  onClose: () => void;
+  onSubmit: (body: TransferRequest) => void | Promise<void>;
+}) {
+  // personal → новый owner-user; department/cross_department → новый owner-dept.
+  const isPersonal = scope === "personal";
+  const [target, setTarget] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const valid = target.trim() && reason.trim();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting || !valid) return;
+    const body: TransferRequest = isPersonal
+      ? { new_owner_user_id: target.trim(), reason: reason.trim() }
+      : { new_owner_dept_id: target.trim(), reason: reason.trim() };
+    setSubmitting(true);
+    Promise.resolve(onSubmit(body)).finally(() => setSubmitting(false));
+  }
+
+  return (
+    <ModalShell title="Transfer ownership" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
+        <div className="text-xs text-dim">
+          Transfer допустим только для заблокированной кред'ы и снимает блокировку.
+          Гейтится admin secret_service владеющего dept'а.
+        </div>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">
+            {isPersonal ? "new_owner_user_id *" : "new_owner_dept_id *"}
+          </span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1"
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            maxLength={64}
+            required
+            placeholder={isPersonal ? "usr_…" : "dept id"}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">reason * (попадёт в audit)</span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={256}
+            required
+          />
+        </label>
+        <div className="flex items-center gap-2 mt-1">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={submitting || !valid}
+          >
+            {submitting ? "Передаём…" : "Передать"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function AclModal({
+  isCross,
+  onClose,
+  onSubmit,
+}: {
+  isCross: boolean;
+  onClose: () => void;
+  onSubmit: (body: {
+    dept_id: string;
+    role_name: string;
+    can_read: boolean;
+    can_write: boolean;
+  }) => void | Promise<void>;
+}) {
+  const [deptId, setDeptId] = useState("");
+  const [roleName, setRoleName] = useState("reader");
+  const [canRead, setCanRead] = useState(true);
+  const [canWrite, setCanWrite] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const valid = deptId.trim() && roleName.trim() && (canRead || canWrite);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting || !valid) return;
+    setSubmitting(true);
+    Promise.resolve(
+      onSubmit({
+        dept_id: deptId.trim(),
+        role_name: roleName.trim(),
+        can_read: canRead,
+        can_write: canWrite,
+      }),
+    ).finally(() => setSubmitting(false));
+  }
+
+  return (
+    <ModalShell title="Выдать RoleACL" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
+        {isCross && (
+          <div className="text-xs text-warn">
+            Cross-dept recipient требует заранее выданного DeptGrant — иначе backend
+            отбивает (DEPT_GRANT_REQUIRED).
+          </div>
+        )}
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">dept_id *</span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1"
+            value={deptId}
+            onChange={(e) => setDeptId(e.target.value)}
+            maxLength={64}
+            required
+            placeholder="dept id"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">role_name *</span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1"
+            value={roleName}
+            onChange={(e) => setRoleName(e.target.value)}
+            maxLength={64}
+            required
+            placeholder="reader / operator / …"
+          />
+        </label>
+        <div className="flex items-center gap-4 text-sm">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={canRead}
+              onChange={(e) => setCanRead(e.target.checked)}
+            />
+            <span className="text-dim text-xs">can_read</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={canWrite}
+              onChange={(e) => setCanWrite(e.target.checked)}
+            />
+            <span className="text-dim text-xs">can_write</span>
+          </label>
+        </div>
+        <div className="flex items-center gap-2 mt-1">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={submitting || !valid}
+          >
+            {submitting ? "Выдаём…" : "Выдать"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function GrantModal({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (recipientDeptId: string) => void | Promise<void>;
+}) {
+  const [deptId, setDeptId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting || !deptId.trim()) return;
+    setSubmitting(true);
+    Promise.resolve(onSubmit(deptId.trim())).finally(() => setSubmitting(false));
+  }
+
+  return (
+    <ModalShell title="Выдать DeptGrant" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
+        <div className="text-xs text-dim">
+          DeptGrant даёт recipient-dep'у право получать RoleACL на эту cross-dept
+          креду. Снятие grant'а каскадно снимает RoleACL recipient-dep'а.
+        </div>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">recipient_dept_id *</span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1"
+            value={deptId}
+            onChange={(e) => setDeptId(e.target.value)}
+            maxLength={64}
+            required
+            placeholder="dept id"
+          />
+        </label>
+        <div className="flex items-center gap-2 mt-1">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={submitting || !deptId.trim()}
+          >
+            {submitting ? "Выдаём…" : "Выдать"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </ModalShell>
   );
 }

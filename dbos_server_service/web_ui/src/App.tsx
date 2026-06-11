@@ -25,6 +25,7 @@ import { Worker } from "@/pages/worker/Worker";
 import { WorkerDlq } from "@/pages/worker/WorkerDlq";
 import { Patterns } from "@/pages/patterns/Patterns";
 import { RouteGuard } from "@/components/RouteGuard";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export function App() {
   return (
@@ -34,6 +35,7 @@ export function App() {
           <PersonaProvider>
             <ToastProvider>
               <LabelsProvider>
+              <ErrorBoundary>
               <Routes>
             <Route
               path="/"
@@ -206,6 +208,7 @@ export function App() {
             <Route path="/404" element={<NotFound />} />
             <Route path="*" element={<Navigate to="/404" replace />} />
               </Routes>
+              </ErrorBoundary>
               </LabelsProvider>
             </ToastProvider>
           </PersonaProvider>

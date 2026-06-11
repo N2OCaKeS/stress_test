@@ -48,6 +48,15 @@ class UserCreate(BaseModel):
         default=None,
         description="Service-роли, которые сразу выдать новому юзеру.",
     )
+    # None — взять дефолт сервиса (True для admin-creates: юзер обязан сменить
+    # выданный временный пароль на первом входе). Явный False обходит force-change
+    # и доступен только account_admin'у; dep_admin с False получает 403
+    # CANNOT_BYPASS_PASSWORD_CHANGE. Передаём поле прямо в create-body, чтобы UI
+    # не делал второй (не атомарный) вызов force-password-change после создания.
+    must_change_password: bool | None = Field(
+        default=None,
+        description="Требовать смену пароля при первом входе. None — дефолт (True). False разрешён только account_admin.",
+    )
 
     @field_validator("password")
     @classmethod

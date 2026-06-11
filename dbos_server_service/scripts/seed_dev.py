@@ -27,9 +27,9 @@ LOG_URL     = os.environ.get("LOG_URL", "http://localhost:8001")
 SERVER_URL  = os.environ.get("SERVER_URL", "http://localhost:8002")
 SECRET_URL  = os.environ.get("SECRET_URL", "http://localhost:8003")
 ADMIN_USER  = "admin"
-ADMIN_PASS  = "1234"
+ADMIN_PASS  = "AdminPass1234!"
 LOG_API_KEY = "dev-logging-api-key"
-DEV_PASS    = "1234"
+DEV_PASS    = "DevPass1234!"
 
 WIDTH = 60
 
@@ -290,8 +290,7 @@ def main() -> None:
         {"service_name": "secret_service",
          "description": "Безопасное хранение токенов и учётных данных для внешних систем (Jira, Confluence, Git и т.п.)"},
     ]:
-        s, b = post(auth, "/api/auth/v1/services", svc)
-        must(s, b, svc["service_name"])
+        _post_idempotent(auth, "/api/auth/v1/services", svc, svc["service_name"])
 
     # ── Отдел НТ ─────────────────────────────────────────────────────────────
     # Department-доступ к сервисам должен быть выдан ДО создания ролей —
@@ -300,13 +299,36 @@ def main() -> None:
     section("Отдел НТ")
     s, b = post(auth, "/api/auth/v1/departments",
                 {"name": "НТ — Нагрузочное тестирование"})
-    dept = must(s, b, "отдел НТ")
-    dept_id = dept["department_id"]
+    if s in (200, 201):
+        ok("отдел НТ")
+        dept_id = b["department_id"]
+    elif s == 409:
+        ok("отдел НТ (уже есть)")
+        # ищем существующий отдел через list
+        depts = httpx.get(
+            f"{AUTH_URL}/api/auth/v1/departments",
+            headers={"Authorization": auth.headers["Authorization"]},
+            timeout=5,
+        ).json()
+        dept_id = None
+        for d in depts if isinstance(depts, list) else depts.get("items", []):
+            if d.get("name") == "НТ — Нагрузочное тестирование":
+                dept_id = d.get("id") or d.get("department_id")
+                break
+        if not dept_id:
+            fail("не удалось найти dept_id для НТ")
+            sys.exit(1)
+    else:
+        fail(f"отдел НТ: {b}")
+        sys.exit(1)
 
     for svc_name in ["config_service", "server_service", "loging_service", "secret_service"]:
-        s, b = post(auth, f"/api/auth/v1/departments/{dept_id}/services",
-                    {"service_name": svc_name})
-        must(s, b, f"НТ → доступ к {svc_name}")
+        _post_idempotent(
+            auth,
+            f"/api/auth/v1/departments/{dept_id}/services",
+            {"service_name": svc_name},
+            f"НТ → доступ к {svc_name}",
+        )
 
     # ── Роли сервисов (per-department) ────────────────────────────────────────
     # `admin` создаётся как is_system при выдаче доступа департаменту — здесь
@@ -341,9 +363,12 @@ def main() -> None:
         ],
     }.items():
         for role_name, desc in roles:
-            s, b = post(auth, f"/api/auth/v1/departments/{dept_id}/services/{svc_name}/roles",
-                        {"role_name": role_name, "description": desc})
-            must(s, b, f"{svc_name}:{role_name}")
+            _post_idempotent(
+                auth,
+                f"/api/auth/v1/departments/{dept_id}/services/{svc_name}/roles",
+                {"role_name": role_name, "description": desc},
+                f"{svc_name}:{role_name}",
+            )
 
     # ── Пользователи ─────────────────────────────────────────────────────────
     section("Пользователи")
@@ -391,8 +416,30 @@ def main() -> None:
     for u in users:
         label = u.pop("_label")
         s, b = post(auth, "/api/auth/v1/users", u)
-        must(s, b, label)
-        created_users[u["username"]] = b.get("user_id")
+        if s in (200, 201):
+            ok(label)
+            created_users[u["username"]] = b.get("user_id")
+        elif s == 409:
+            ok(f"{label} (уже есть)")
+            # достанем user_id через список — для роль-операций ниже
+            try:
+                users_list = httpx.get(
+                    f"{AUTH_URL}/api/auth/v1/users",
+                    headers={"Authorization": auth.headers["Authorization"]},
+                    params={"username": u["username"]},
+                    timeout=5,
+                ).json()
+                items = users_list.get("items") if isinstance(users_list, dict) else users_list
+                for it in items or []:
+                    if it.get("username") == u["username"]:
+                        created_users[u["username"]] = it.get("user_id") or it.get("id")
+                        break
+            except Exception:
+                pass
+        else:
+            fail(f"{label}: {b}")
+            # validation/enum-ошибки не валим скрипт целиком — продолжаем со следующего юзера
+            continue
 
     # ── Роль loging.reader для nt_senior ─────────────────────────────────────
     section("Роли в loging_service")

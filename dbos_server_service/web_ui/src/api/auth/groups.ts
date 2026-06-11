@@ -70,7 +70,11 @@ export function listGroupsByDepartment(
   departmentId: string,
   params: PaginationParams = {},
 ): Promise<Group[]> {
-  return apiGet<Group[]>(`/auth/v1/groups/department/${departmentId}`, {
+  // Backend `/groups` сам сужает выдачу до отдела для department_admin
+  // (см. group_service.list_groups). Параметр departmentId здесь декларативный
+  // — нужен для cache-keys в useQuery, отдельного эндпоинта не существует.
+  void departmentId;
+  return apiGet<Group[]>("/auth/v1/groups", {
     query: {
       limit: params.limit ?? null,
       offset: params.offset ?? null,

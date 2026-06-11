@@ -55,6 +55,32 @@ class GroupRepository:
             .where(UserGroup.is_active.is_(True))
         ) or 0
 
+    async def list_active_by_department(
+        self, department_id: str, limit: int | None = None, offset: int = 0
+    ) -> list[UserGroup]:
+        stmt = (
+            select(UserGroup)
+            .where(
+                UserGroup.is_active.is_(True),
+                UserGroup.department_id == department_id,
+            )
+            .order_by(UserGroup.created_at, UserGroup.id)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit).offset(offset)
+        result = await self._db.scalars(stmt)
+        return list(result)
+
+    async def count_active_by_department(self, department_id: str) -> int:
+        return await self._db.scalar(
+            select(func.count())
+            .select_from(UserGroup)
+            .where(
+                UserGroup.is_active.is_(True),
+                UserGroup.department_id == department_id,
+            )
+        ) or 0
+
     async def list_active_by_ids(self, group_ids: list[str]) -> list[UserGroup]:
         """Batch-выборка активных групп по id. Stale/soft-deleted отбрасываются."""
         if not group_ids:

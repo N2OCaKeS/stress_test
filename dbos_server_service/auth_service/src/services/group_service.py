@@ -83,15 +83,26 @@ def _grp_response(grp) -> GroupResponse:
 async def list_groups(
     db: AsyncSession, identity: IdentityContext, pagination: PaginationParams | None = None, request_id=None
 ) -> tuple[list[GroupResponse], int]:
-    """Список активных групп (страница). account_admin only.
+    """Список активных групп (страница).
+
+    account_admin видит все. department_admin — только группы своего отдела.
+    Остальные роли — 403 ROLE_REQUIRED.
 
     Возвращает `(страница, total)` — `total` идёт в `X-Total-Count`.
     """
-    _require_admin(identity)
     pagination = pagination or PaginationParams()
     repo = GroupRepository(db)
-    groups = await repo.list_active(limit=pagination.limit, offset=pagination.offset)
-    total = await repo.count_active()
+    if identity.platform_role == PlatformRole.ACCOUNT_ADMIN:
+        groups = await repo.list_active(limit=pagination.limit, offset=pagination.offset)
+        total = await repo.count_active()
+    elif identity.platform_role == PlatformRole.DEPARTMENT_ADMIN and identity.department_id:
+        dept_id = identity.department_id
+        groups = await repo.list_active_by_department(
+            dept_id, limit=pagination.limit, offset=pagination.offset
+        )
+        total = await repo.count_active_by_department(dept_id)
+    else:
+        raise AuthorizationError(error_code="ROLE_REQUIRED", message="Admin role required")
     return [_grp_response(g) for g in groups], total
 
 

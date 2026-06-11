@@ -5,8 +5,10 @@
 `constants.ENTITY_ACTIONS[task]`; этот seed подкатывает дефолтные гранты по
 тому же образцу, что и a8d2b7c1e394 для `(task, cancel)`.
 
-* reader/operator/admin — получают: чтение истории task'ов доступно всем
-  трём системным ролям (reader — read-only, operator/admin — плюс cancel).
+* reader/operator/admin — получают `(task, view)`: чтение истории task'ов
+  доступно всем трём системным ролям. Гранта `(task, cancel)` этот seed не
+  трогает — cancel выдан отдельной миграцией a8d2b7c1e394 и только admin'у
+  (reader/operator его НЕ получают).
 * worker_bot — НЕ получает: воркер сам ничего не листает, он только мутирует
   свои row'ы.
 

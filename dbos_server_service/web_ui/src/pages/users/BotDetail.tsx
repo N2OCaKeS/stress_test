@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Bot as BotIcon,
   KeyRound,
-  ShieldCheck,
   Cog,
   ListTree,
   GitCompareArrows,
@@ -36,6 +35,7 @@ import * as botsApi from "@/api/auth/bots";
 import { ApiError } from "@/api/client";
 import type { BotTokenCreateResponse } from "@/api/auth/types";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import { BotRoleAssign } from "./_botRoleAssign";
 
 export function BotDetail() {
   const { id } = useParams<{ id: string }>();
@@ -663,6 +663,27 @@ function BotLiveData({
                   className="btn flex items-center gap-1"
                   disabled={!caps.manageRoles || pending}
                   title={caps.manageRoles ? undefined : caps.reason}
+                  onClick={() => {
+                    const next = window.prompt(
+                      "allowed_services (csv):",
+                      live.allowed_services.join(","),
+                    );
+                    if (next === null) return;
+                    const list = next
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    run(() =>
+                      botsApi.patchBot(botId, { allowed_services: list }),
+                    );
+                  }}
+                >
+                  <Edit3 className="w-4 h-4" /> Edit allowed_services
+                </button>
+                <button
+                  className="btn flex items-center gap-1"
+                  disabled={!caps.manageRoles || pending}
+                  title={caps.manageRoles ? undefined : caps.reason}
                   onClick={() =>
                     run(() =>
                       live.status === "active"
@@ -950,8 +971,14 @@ function BotLiveData({
                 </tbody>
               </table>
             )}
-            <BotRoleAssignRow
+            <BotRoleAssign
+              departmentId={live?.department_id ?? null}
+              allowedServices={live?.allowed_services ?? []}
+              alreadyAssigned={
+                new Set((rolesQ.data ?? []).map((r) => r.service_name))
+              }
               disabled={!caps.manageRoles || pending}
+              reason={caps.manageRoles ? undefined : caps.reason}
               onAssign={(service, list) =>
                 run(() =>
                   botsApi.assignBotRoles(botId, {
@@ -965,48 +992,6 @@ function BotLiveData({
         </div>
       )}
     </Section>
-  );
-}
-
-function BotRoleAssignRow({
-  disabled,
-  onAssign,
-}: {
-  disabled: boolean;
-  onAssign: (service: string, roles: string[]) => void;
-}) {
-  const [service, setService] = useState("");
-  const [rolesCsv, setRolesCsv] = useState("");
-  return (
-    <div className="flex gap-2 mt-2 flex-wrap">
-      <input
-        className="input"
-        placeholder="service_name"
-        value={service}
-        onChange={(e) => setService(e.target.value)}
-      />
-      <input
-        className="input flex-1"
-        placeholder="roles csv"
-        value={rolesCsv}
-        onChange={(e) => setRolesCsv(e.target.value)}
-      />
-      <button
-        className="btn btn-primary flex items-center gap-1"
-        disabled={disabled || !service.trim()}
-        onClick={() => {
-          const list = rolesCsv
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-          onAssign(service.trim(), list);
-          setService("");
-          setRolesCsv("");
-        }}
-      >
-        <ShieldCheck className="w-4 h-4" /> Assign (replace)
-      </button>
-    </div>
   );
 }
 

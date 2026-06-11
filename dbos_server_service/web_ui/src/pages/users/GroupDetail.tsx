@@ -12,6 +12,9 @@ import {
   KeyRound,
   Edit3,
   Plug,
+  Search,
+  X,
+  Save,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { USERS, userById } from "@/mocks/auth";
@@ -33,8 +36,10 @@ import {
 } from "./permissionGraph";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as groupsApi from "@/api/auth/groups";
+import * as usersApi from "@/api/auth/users";
 import { ApiError } from "@/api/client";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import type { Group, User } from "@/api/auth/types";
 
 export function GroupDetail() {
   const { id } = useParams<{ id: string }>();
@@ -436,11 +441,14 @@ function GroupLiveData({
     { enabled: !mock },
   );
 
-  const [addMemberId, setAddMemberId] = useState("");
   const [addBotId, setAddBotId] = useState("");
   const [addService, setAddService] = useState("");
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [selectedAddUserIds, setSelectedAddUserIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   const refetchAll = useCallback(() => {
     detail.refetch();
@@ -516,7 +524,7 @@ function GroupLiveData({
           {actionErr && <div className="alert-danger">{actionErr}</div>}
 
           {/* Group meta + edit/delete */}
-          {detail.data && (
+          {detail.data && !editingMeta && (
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <div className="text-xs text-dim">name</div>
@@ -539,16 +547,7 @@ function GroupLiveData({
                   className="btn flex items-center gap-1"
                   disabled={!caps.edit || pending}
                   title={caps.edit ? "Изменить display_name / description" : caps.reason}
-                  onClick={() => {
-                    const next = window.prompt(
-                      "Новый display_name:",
-                      detail.data?.display_name ?? "",
-                    );
-                    if (next === null) return;
-                    run(() =>
-                      groupsApi.patchGroup(groupId, { display_name: next }),
-                    );
-                  }}
+                  onClick={() => setEditingMeta(true)}
                 >
                   <Edit3 className="w-4 h-4" /> Изменить
                 </button>
@@ -575,6 +574,18 @@ function GroupLiveData({
                 </button>
               </div>
             </div>
+          )}
+
+          {detail.data && editingMeta && (
+            <GroupMetaEditForm
+              group={detail.data}
+              disabled={pending}
+              onCancel={() => setEditingMeta(false)}
+              onSubmit={async (body) => {
+                await run(() => groupsApi.patchGroup(groupId, body));
+                setEditingMeta(false);
+              }}
+            />
           )}
 
           {/* Members live */}
@@ -612,26 +623,27 @@ function GroupLiveData({
                 ))}
               </ul>
             )}
-            <div className="flex gap-2 mt-2">
-              <input
-                className="input"
-                placeholder="user_id"
-                value={addMemberId}
-                onChange={(e) => setAddMemberId(e.target.value)}
+            {detail.data && caps.manageMembers && (
+              <MemberPicker
+                deptId={detail.data.department_id}
+                existingIds={new Set((members.data ?? []).map((m) => m.user_id))}
+                selected={selectedAddUserIds}
+                onChange={setSelectedAddUserIds}
+                disabled={pending}
+                onAdd={async () => {
+                  const ids = Array.from(selectedAddUserIds);
+                  if (ids.length === 0) return;
+                  await run(async () => {
+                    // backend не имеет bulk endpoint'а — добавляем по одному;
+                    // ошибки прорываются вверх через первый rejected.
+                    for (const uid of ids) {
+                      await groupsApi.addGroupMember(groupId, uid);
+                    }
+                  });
+                  setSelectedAddUserIds(new Set());
+                }}
               />
-              <button
-                className="btn btn-primary flex items-center gap-1"
-                disabled={!caps.manageMembers || pending || !addMemberId.trim()}
-                onClick={() =>
-                  run(async () => {
-                    await groupsApi.addGroupMember(groupId, addMemberId.trim());
-                    setAddMemberId("");
-                  })
-                }
-              >
-                <UserPlus className="w-4 h-4" /> Добавить
-              </button>
-            </div>
+            )}
           </div>
 
           {/* Bots live */}
@@ -872,4 +884,248 @@ function GroupHeaderDept({ deptId }: { deptId: string | null | undefined }) {
 function ServiceInline({ name }: { name: string }) {
   const label = useServiceLabel(name);
   return <span>{label}</span>;
+}
+
+/**
+ * Inline edit form for group display_name / description. Submits PATCH через
+ * родительский run() — ошибки и refetch уже на нём.
+ */
+function GroupMetaEditForm({
+  group,
+  disabled,
+  onSubmit,
+  onCancel,
+}: {
+  group: Group;
+  disabled: boolean;
+  onSubmit: (body: { display_name?: string; description?: string }) => Promise<void> | void;
+  onCancel: () => void;
+}) {
+  const [displayName, setDisplayName] = useState(group.display_name ?? "");
+  const [description, setDescription] = useState(group.description ?? "");
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-xs uppercase text-dim">Edit · {group.name}</div>
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-xs text-dim">display_name</span>
+        <input
+          className="input"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-xs text-dim">description</span>
+        <textarea
+          className="input"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </label>
+      <div className="text-xs text-dim">
+        name и department_id не редактируются.
+      </div>
+      <div className="flex gap-2">
+        <button
+          className="btn btn-primary flex items-center gap-1"
+          disabled={disabled}
+          onClick={() =>
+            void onSubmit({
+              display_name: displayName.trim() || undefined,
+              description: description.trim() || undefined,
+            })
+          }
+        >
+          <Save className="w-4 h-4" /> Сохранить
+        </button>
+        <button className="btn" disabled={disabled} onClick={onCancel}>
+          Отмена
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Searchable multi-select для добавления участников группы. Подтягивает юзеров
+ * того же отдела (правило backend: members обязаны принадлежать dept группы)
+ * и исключает уже состоящих в группе.
+ */
+function MemberPicker({
+  deptId,
+  existingIds,
+  selected,
+  onChange,
+  disabled,
+  onAdd,
+}: {
+  deptId: string;
+  existingIds: Set<string>;
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+  disabled: boolean;
+  onAdd: () => void | Promise<void>;
+}) {
+  const usersQ = useQuery(
+    () => usersApi.listUsersByDepartment(deptId, { limit: 200 }),
+    [deptId],
+  );
+  const [filter, setFilter] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const candidates: User[] = useMemo(
+    () => (usersQ.data?.items ?? []).filter((u) => !existingIds.has(u.id)),
+    [usersQ.data, existingIds],
+  );
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return candidates;
+    return candidates.filter((u) =>
+      `${u.username} ${u.email ?? ""} ${u.id}`.toLowerCase().includes(q),
+    );
+  }, [filter, candidates]);
+
+  const selectedItems = useMemo(
+    () => candidates.filter((u) => selected.has(u.id)),
+    [candidates, selected],
+  );
+
+  const toggle = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onChange(next);
+  };
+  const removeChip = (id: string) => {
+    const next = new Set(selected);
+    next.delete(id);
+    onChange(next);
+  };
+
+  return (
+    <div className="flex flex-col gap-2 mt-3 border-t border-token pt-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase text-dim flex items-center gap-1">
+          <UserPlus className="w-3 h-3" /> Добавить участников
+          <span className="text-dim">
+            ({selected.size}/{candidates.length})
+          </span>
+        </div>
+        {selected.size > 0 && (
+          <button
+            type="button"
+            className="text-[11px] text-dim hover:text-accent"
+            onClick={() => onChange(new Set())}
+          >
+            очистить
+          </button>
+        )}
+      </div>
+
+      {selectedItems.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {selectedItems.map((u) => (
+            <span
+              key={u.id}
+              className="chip-small flex items-center gap-1"
+              title={u.id}
+            >
+              <span className="truncate max-w-[14rem]">{u.username}</span>
+              <button
+                type="button"
+                className="text-dim hover:text-danger"
+                onClick={() => removeChip(u.id)}
+                aria-label={`Убрать ${u.username}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="relative">
+        <div className="flex items-center gap-1">
+          <Search className="w-3.5 h-3.5 text-dim absolute left-2 pointer-events-none" />
+          <input
+            className="input w-full pl-7"
+            placeholder="Поиск по username / email / id…"
+            value={filter}
+            onFocus={() => setOpen(true)}
+            onChange={(e) => {
+              setFilter(e.target.value);
+              setOpen(true);
+            }}
+            onBlur={() => {
+              window.setTimeout(() => setOpen(false), 150);
+            }}
+          />
+        </div>
+
+        {open && (
+          <div className="absolute z-10 left-0 right-0 mt-1 card max-h-56 overflow-auto p-1">
+            {usersQ.loading ? (
+              <div className="text-xs text-dim p-2">Загрузка…</div>
+            ) : usersQ.error ? (
+              <div className="alert-danger text-xs m-1">
+                {usersQ.error instanceof ApiError
+                  ? `${usersQ.error.errorCode}: ${usersQ.error.message}`
+                  : usersQ.error.message}
+              </div>
+            ) : candidates.length === 0 ? (
+              <div className="text-xs text-dim p-2 italic">
+                Нет доступных юзеров для добавления (все уже в группе или нет
+                пользователей в отделе).
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="text-xs text-dim p-2 italic">
+                Ничего не найдено по «{filter}».
+              </div>
+            ) : (
+              filtered.map((u) => {
+                const isSelected = selected.has(u.id);
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    className={`cred-row text-left w-full ${isSelected ? "active" : ""}`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      toggle(u.id);
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        readOnly
+                        checked={isSelected}
+                        className="pointer-events-none"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm truncate">{u.username}</div>
+                        <div className="text-[11px] text-dim truncate mono">
+                          {u.email ?? u.id}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <button
+          className="btn btn-primary flex items-center gap-1"
+          disabled={disabled || selected.size === 0}
+          onClick={() => void onAdd()}
+        >
+          <UserPlus className="w-4 h-4" /> Добавить выделенных ({selected.size})
+        </button>
+      </div>
+    </div>
+  );
 }

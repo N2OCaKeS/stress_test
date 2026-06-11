@@ -23,7 +23,6 @@ import { ApiError } from "@/api/client";
 import type {
   Bot as BotResource,
   BotTokenCreateResponse,
-  ServiceName,
 } from "@/api/auth/types";
 import {
   botMutationCaps,
@@ -33,6 +32,7 @@ import {
   isSecretAdmin,
 } from "@/lib/rbac";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import { BotRoleAssign } from "@/pages/users/_botRoleAssign";
 
 export function ServicesBots() {
   const mock = useMockMode();
@@ -703,8 +703,12 @@ function BotLiveView({
         )}
 
         {canEdit && (
-          <RoleAssignRow
+          <BotRoleAssign
+            departmentId={bot.department_id ?? null}
+            allowedServices={bot.allowed_services}
+            alreadyAssigned={new Set(roles.map((r) => r.service_name))}
             disabled={!caps.manageRoles || pending}
+            reason={caps.manageRoles ? undefined : caps.reason}
             onAssign={(service, list) =>
               run(() =>
                 botsApi.assignBotRoles(bot.id, {
@@ -774,48 +778,6 @@ function BotLiveView({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function RoleAssignRow({
-  disabled,
-  onAssign,
-}: {
-  disabled: boolean;
-  onAssign: (service: ServiceName, roles: string[]) => void;
-}) {
-  const [service, setService] = useState("");
-  const [rolesCsv, setRolesCsv] = useState("");
-  return (
-    <div className="flex gap-2 mt-3 flex-wrap">
-      <input
-        className="input mono"
-        placeholder="service_name"
-        value={service}
-        onChange={(e) => setService(e.target.value)}
-      />
-      <input
-        className="input flex-1 mono"
-        placeholder="roles csv (replace)"
-        value={rolesCsv}
-        onChange={(e) => setRolesCsv(e.target.value)}
-      />
-      <button
-        className="btn btn-primary flex items-center gap-1"
-        disabled={disabled || !service.trim()}
-        onClick={() => {
-          const list = rolesCsv
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-          onAssign(service.trim() as ServiceName, list);
-          setService("");
-          setRolesCsv("");
-        }}
-      >
-        <ShieldCheck className="w-4 h-4" /> Assign
-      </button>
     </div>
   );
 }

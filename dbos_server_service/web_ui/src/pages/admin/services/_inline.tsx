@@ -119,6 +119,8 @@ export interface InlineEditorProps<T> {
   emptyHint?: string;
   /** Optional list-header row (count / filter, etc.). */
   listHeader?: ReactNode;
+  /** Optional list-footer row (pagination, "load more", etc.). */
+  listFooter?: ReactNode;
   /** Width of the left list pane (Tailwind class fragment). */
   listWidth?: string;
 }
@@ -181,6 +183,7 @@ export function InlineEditor<T>({
   readonlyNote,
   emptyHint,
   listHeader,
+  listFooter,
   listWidth = "w-[300px]",
 }: InlineEditorProps<T>) {
   const { id, mode: rawMode, select, startCreate, close } = useInlineState();
@@ -253,6 +256,11 @@ export function InlineEditor<T>({
               );
             })}
           </div>
+          {listFooter && (
+            <div className="px-3 py-2 border-t border-token shrink-0">
+              {listFooter}
+            </div>
+          )}
         </aside>
 
         {/* Detail pane */}

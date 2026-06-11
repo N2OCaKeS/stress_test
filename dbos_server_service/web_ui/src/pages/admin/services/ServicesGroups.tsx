@@ -101,6 +101,8 @@ function groupsGroupKeyOf(
   }
 }
 
+const GROUPS_PAGE_SIZE = 200;
+
 function ServicesGroupsLive() {
   const { persona } = usePersona();
   const isAccountAdmin = persona.platform_role === "account_admin";
@@ -118,21 +120,70 @@ function ServicesGroupsLive() {
   const [groupBy, setGroupBy] = useState<GroupsGroupKey>("none");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
+  // Pagination — accumulated pages держим тут, чтобы «Загрузить ещё» работало
+  // append-style. Reset при смене listFn (dep_admin/account_admin) и при bump.
+  const [accum, setAccum] = useState<Group[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadMoreErr, setLoadMoreErr] = useState<string | null>(null);
+
   // dep_admin видит только свой отдел; account_admin — все группы.
   const listFn = useMemo(() => {
-    if (isAccountAdmin) return () => groupsApi.listGroups({ limit: 200 });
+    if (isAccountAdmin) {
+      return (off: number) =>
+        groupsApi.listGroups({ limit: GROUPS_PAGE_SIZE, offset: off });
+    }
     if (isDepAdmin && persona.dept_id) {
       const deptId = persona.dept_id;
-      return () => groupsApi.listGroupsByDepartment(deptId, { limit: 200 });
+      return (off: number) =>
+        groupsApi.listGroupsByDepartment(deptId, {
+          limit: GROUPS_PAGE_SIZE,
+          offset: off,
+        });
     }
     // На случай logging_admin / нестандартной роли — пусто, кнопка «Создать» скрыта.
-    return () => Promise.resolve<Group[]>([]);
+    return (_off: number) => Promise.resolve<Group[]>([]);
   }, [isAccountAdmin, isDepAdmin, persona.dept_id]);
 
-  const listQ = useQuery(listFn, [refreshTick, listFn]);
+  // Первая страница: используем useQuery — он же обрабатывает loading/error.
+  // Сбрасываем accum при смене listFn / refreshTick.
+  const listQ = useQuery(() => listFn(0), [refreshTick, listFn]);
+
+  useEffect(() => {
+    if (listQ.data) {
+      setAccum(listQ.data);
+      setOffset(listQ.data.length);
+      setHasMore(listQ.data.length >= GROUPS_PAGE_SIZE);
+      setLoadMoreErr(null);
+    }
+  }, [listQ.data]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    setLoadMoreErr(null);
+    try {
+      const next = await listFn(offset);
+      setAccum((prev) => [...prev, ...next]);
+      setOffset((prev) => prev + next.length);
+      setHasMore(next.length >= GROUPS_PAGE_SIZE);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setLoadMoreErr(`${e.errorCode}: ${e.message}`);
+      } else if (e instanceof Error) {
+        setLoadMoreErr(e.message);
+      } else {
+        setLoadMoreErr(String(e));
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, listFn, loadingMore, offset]);
+
   const deptsQ = useQuery(() => listDepartments(), []);
 
-  const rawItems = listQ.data ?? [];
+  const rawItems = accum;
   const depts = deptsQ.data ?? [];
   const deptById = useMemo(() => {
     const m = new Map<string, Department>();
@@ -247,6 +298,29 @@ function ServicesGroupsLive() {
         !canCreate ? "Просмотр без права изменения — нет admin-роли." : undefined
       }
       emptyHint="Выберите группу слева, чтобы увидеть участников, сервисы и роли."
+      listFooter={
+        <div className="flex flex-col gap-1 text-[11px]">
+          {loadMoreErr && (
+            <div className="alert-danger text-[11px]">{loadMoreErr}</div>
+          )}
+          {hasMore ? (
+            <button
+              className="btn btn-sm w-full"
+              disabled={loadingMore}
+              onClick={() => void loadMore()}
+              title={`показано ${rawItems.length}, грузить следующие ${GROUPS_PAGE_SIZE}`}
+            >
+              {loadingMore
+                ? "Загрузка…"
+                : `Загрузить ещё (${GROUPS_PAGE_SIZE})`}
+            </button>
+          ) : (
+            rawItems.length > 0 && (
+              <div className="text-dim text-center">все · {rawItems.length}</div>
+            )
+          )}
+        </div>
+      }
       listHeader={
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           <label className="flex items-center gap-1">

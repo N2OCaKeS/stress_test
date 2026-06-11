@@ -62,7 +62,12 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_logging
       SERVICE_API_KEYS: '{"auth_service":"audit_auth_service_dev_key","server_service":"audit_server_service_dev_key","config_service":"audit_config_service_dev_key","server_worker":"audit_server_worker_dev_key","secret_service":"audit_secret_service_dev_key"}'
-      INTROSPECT_SERVICE_API_KEY: dev-logging-introspect-key
+      # Outbound bearer для вызова auth_service /introspect — должен
+      # совпадать с auth_service.SERVICE_API_KEY (legacy single-shared
+      # key, ниже под auth_service'ом). Раньше тут стоял отдельный
+      # `dev-logging-introspect-key` и любой user-bearer ловил 401 при
+      # попытке loging'а резолвить identity caller'а.
+      INTROSPECT_SERVICE_API_KEY: dev-introspect-api-key
       AUTH_SERVICE_URL: http://auth_service:8000
       LOGGING_ADMIN_USERNAME: admin
       LOGGING_ADMIN_PASSWORD: "1234"
@@ -174,6 +179,11 @@ services:
     init: true
     environment:
       DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server_worker
+      # Worker сам читает dispatch_outbox у server_service'а и публикует
+      # его в redis taskiq-очередь (см. `src/tasks/dispatch_outbox.py`).
+      # Без этого env publisher_loop no-op'ит и все таски залипают
+      # в `tasks.status='queued'` без выезда на исполнителя.
+      SERVER_SERVICE_DATABASE_URL: postgresql+psycopg://app_user:app_password@postgres:5432/dev_server
       REDIS_URL: redis://:${REDIS_PASSWORD:-dev-redis-password}@redis:6379/0
       SERVER_SERVICE_URL: http://server_service:8002
       AUTH_SERVICE_URL: http://auth_service:8000

@@ -67,7 +67,13 @@ export function SecurityTokens() {
     setLoading(true);
     try {
       const list = await listMyTokens();
-      setItems(list);
+      const now = Date.now();
+      const active = list.filter(
+        (t) =>
+          !t.revoked_at &&
+          (!t.expires_at || new Date(t.expires_at).getTime() > now),
+      );
+      setItems(active);
     } catch (e) {
       if (e instanceof ApiError) toast.error(e.message);
       else toast.error("Не удалось загрузить токены");

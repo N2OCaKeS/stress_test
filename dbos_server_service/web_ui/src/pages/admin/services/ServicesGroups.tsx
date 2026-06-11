@@ -9,9 +9,11 @@ import {
   Layers,
   Bot,
   User as UserIcon,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
-import { useLabelsInvalidate } from "@/lib/labels";
+import { useLabelsInvalidate, useLabelMaps } from "@/lib/labels";
 import { InlineEditor, FormRow, StatRow, useInlineState } from "./_inline";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as groupsApi from "@/api/auth/groups";
@@ -54,6 +56,51 @@ export function ServicesGroups() {
   return <ServicesGroupsLive />;
 }
 
+type GroupsSortKey =
+  | "name_asc"
+  | "name_desc"
+  | "dept"
+  | "created_desc"
+  | "created_asc";
+type GroupsGroupKey = "none" | "department";
+
+function sortGroupsBy(items: Group[], key: GroupsSortKey, deptLabels: Map<string, string>): Group[] {
+  const arr = [...items];
+  const nameOf = (g: Group) => (g.display_name || g.name).toLowerCase();
+  const deptOf = (g: Group) =>
+    (deptLabels.get(g.department_id) ?? g.department_id).toLowerCase();
+  switch (key) {
+    case "name_asc":
+      return arr.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+    case "name_desc":
+      return arr.sort((a, b) => nameOf(b).localeCompare(nameOf(a)));
+    case "dept":
+      return arr.sort((a, b) => {
+        const c = deptOf(a).localeCompare(deptOf(b));
+        if (c !== 0) return c;
+        return nameOf(a).localeCompare(nameOf(b));
+      });
+    case "created_desc":
+      return arr.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+    case "created_asc":
+      return arr.sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+  }
+}
+
+function groupsGroupKeyOf(
+  g: Group,
+  by: GroupsGroupKey,
+  deptLabels: Map<string, string>,
+): string {
+  switch (by) {
+    case "department":
+      if (!g.department_id) return "— без отдела —";
+      return deptLabels.get(g.department_id) ?? g.department_id;
+    default:
+      return "";
+  }
+}
+
 function ServicesGroupsLive() {
   const { persona } = usePersona();
   const isAccountAdmin = persona.platform_role === "account_admin";
@@ -66,6 +113,10 @@ function ServicesGroupsLive() {
     setRefreshTick((t) => t + 1);
     void invalidateLabels("groups");
   }, [invalidateLabels]);
+
+  const [sortKey, setSortKey] = useState<GroupsSortKey>("name_asc");
+  const [groupBy, setGroupBy] = useState<GroupsGroupKey>("none");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   // dep_admin видит только свой отдел; account_admin — все группы.
   const listFn = useMemo(() => {
@@ -81,13 +132,74 @@ function ServicesGroupsLive() {
   const listQ = useQuery(listFn, [refreshTick, listFn]);
   const deptsQ = useQuery(() => listDepartments(), []);
 
-  const items = listQ.data ?? [];
+  const rawItems = listQ.data ?? [];
   const depts = deptsQ.data ?? [];
   const deptById = useMemo(() => {
     const m = new Map<string, Department>();
     for (const d of depts) m.set(d.id, d);
     return m;
   }, [depts]);
+
+  // Labels из LabelsProvider предпочитаем как источник display_name —
+  // при изменении/создании отдела карта обновляется централизованно.
+  const labelMaps = useLabelMaps();
+  const deptLabels = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const d of depts) m.set(d.id, d.display_name || d.name);
+    // Перекрываем тем, что есть в глобальной карте — она же используется на
+    // соседних страницах и точно свежее после invalidate('depts').
+    for (const [k, v] of labelMaps.depts) m.set(k, v);
+    return m;
+  }, [depts, labelMaps.depts]);
+
+  const sorted = useMemo(
+    () => sortGroupsBy(rawItems, sortKey, deptLabels),
+    [rawItems, sortKey, deptLabels],
+  );
+
+  // Группировка: считаем порядок секций и для каждого элемента — является ли он
+  // первым в своей группе (тогда renderRow вставит заголовок). Свёрнутая
+  // группа оставляет в потоке один скрытый элемент-«якорь» только ради
+  // заголовка, чтобы header не пропал из списка.
+  const { items, firstInGroup, groupSizes } = useMemo(() => {
+    if (groupBy === "none") {
+      return {
+        items: sorted,
+        firstInGroup: new Map<string, string>(),
+        groupSizes: new Map<string, number>(),
+      };
+    }
+    const buckets = new Map<string, Group[]>();
+    const order: string[] = [];
+    for (const g of sorted) {
+      const k = groupsGroupKeyOf(g, groupBy, deptLabels);
+      if (!buckets.has(k)) {
+        buckets.set(k, []);
+        order.push(k);
+      }
+      buckets.get(k)!.push(g);
+    }
+    order.sort((a, b) => a.localeCompare(b));
+    const flat: Group[] = [];
+    const first = new Map<string, string>();
+    const sizes = new Map<string, number>();
+    for (const k of order) {
+      const arr = buckets.get(k) ?? [];
+      sizes.set(k, arr.length);
+      if (arr.length === 0) continue;
+      first.set(arr[0].id, k);
+      if (collapsed[k]) {
+        flat.push(arr[0]);
+        continue;
+      }
+      for (const g of arr) flat.push(g);
+    }
+    return { items: flat, firstInGroup: first, groupSizes: sizes };
+  }, [sorted, groupBy, deptLabels, collapsed]);
+
+  function toggleGroup(k: string) {
+    setCollapsed((cur) => ({ ...cur, [k]: !cur[k] }));
+  }
 
   // dep_admin может редактировать только свою группу. account_admin — любую.
   const canEditGroup = useCallback(
@@ -127,7 +239,7 @@ function ServicesGroupsLive() {
     <InlineEditor
       title="Группы · auth_service"
       icon={UsersRound}
-      hint={`live · ${items.length} групп`}
+      hint={`live · ${rawItems.length} групп`}
       items={items}
       getId={(g) => g.id}
       canEdit={canCreate}
@@ -135,25 +247,77 @@ function ServicesGroupsLive() {
         !canCreate ? "Просмотр без права изменения — нет admin-роли." : undefined
       }
       emptyHint="Выберите группу слева, чтобы увидеть участников, сервисы и роли."
+      listHeader={
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <label className="flex items-center gap-1">
+            <span className="text-dim">сорт.</span>
+            <select
+              className="input input-sm"
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as GroupsSortKey)}
+            >
+              <option value="name_asc">name ↑</option>
+              <option value="name_desc">name ↓</option>
+              <option value="dept">по отделу</option>
+              <option value="created_desc">создан ↓</option>
+              <option value="created_asc">создан ↑</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="text-dim">группа</span>
+            <select
+              className="input input-sm"
+              value={groupBy}
+              onChange={(e) => setGroupBy(e.target.value as GroupsGroupKey)}
+            >
+              <option value="none">—</option>
+              <option value="department">по отделу</option>
+            </select>
+          </label>
+        </div>
+      }
       renderRow={({ item, active, onSelect }) => {
         const dept = deptById.get(item.department_id);
+        const groupHeaderKey = firstInGroup.get(item.id);
+        const isGroupCollapsed =
+          groupHeaderKey !== undefined && collapsed[groupHeaderKey];
         return (
-          <button
-            className={`cred-row text-left ${active ? "active" : ""}`}
-            onClick={onSelect}
-          >
-            <div className="flex items-center gap-2">
-              <UsersRound className="w-4 h-4 text-dim" />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm truncate">
-                  {item.display_name ?? item.name}
+          <>
+            {groupHeaderKey !== undefined && (
+              <button
+                className="w-full text-left px-2 py-1 text-[11px] uppercase tracking-wider text-dim flex items-center gap-1 hover:text-accent"
+                onClick={() => toggleGroup(groupHeaderKey)}
+              >
+                {collapsed[groupHeaderKey] ? (
+                  <ChevronRight className="w-3 h-3" />
+                ) : (
+                  <ChevronDown className="w-3 h-3" />
+                )}
+                <span>{groupHeaderKey}</span>
+                <span className="text-dim">
+                  · {groupSizes.get(groupHeaderKey) ?? 0} групп
+                </span>
+              </button>
+            )}
+            {isGroupCollapsed ? null : (
+              <button
+                className={`cred-row text-left ${active ? "active" : ""}`}
+                onClick={onSelect}
+              >
+                <div className="flex items-center gap-2">
+                  <UsersRound className="w-4 h-4 text-dim" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm truncate">
+                      {item.display_name ?? item.name}
+                    </div>
+                    <div className="text-[11px] text-dim truncate mono">
+                      {item.name} · {dept?.display_name ?? item.department_id}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-[11px] text-dim truncate mono">
-                  {item.name} · {dept?.display_name ?? item.department_id}
-                </div>
-              </div>
-            </div>
-          </button>
+              </button>
+            )}
+          </>
         );
       }}
       renderDetail={(g, { editing, onClose }) => {

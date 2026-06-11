@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   KeyRound,
   Mail,
@@ -388,7 +388,14 @@ function TokensCard({ mockMode }: { mockMode: boolean }) {
     }
   }
 
-  const items = q.data ?? [];
+  const items = useMemo(() => {
+    const now = Date.now();
+    return (q.data ?? []).filter(
+      (t) =>
+        !t.revoked_at &&
+        (!t.expires_at || new Date(t.expires_at).getTime() > now),
+    );
+  }, [q.data]);
 
   return (
     <div className="flex flex-col gap-4">

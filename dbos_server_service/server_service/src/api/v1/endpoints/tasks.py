@@ -130,7 +130,7 @@ async def list_tasks_endpoint(
     kind: str | None = Query(default=None, description="Фильтр по task_kind."),
     server_id: str | None = Query(default=None, description="Фильтр по target_server_id."),
     limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=100_000),
 ) -> list[TaskRead]:
     with emit_denied_on_authz_error(
         "task.view",

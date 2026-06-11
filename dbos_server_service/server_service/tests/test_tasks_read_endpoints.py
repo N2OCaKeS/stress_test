@@ -190,6 +190,14 @@ class TestTaskListHappy:
         assert resp.headers["X-Total-Count"] == "5"
         assert len(resp.json()) == 2
 
+    async def test_offset_over_max_rejected(
+        self, client, admin_role_token_a, fake_worker_read,
+    ):
+        resp = await client.get(
+            f"{BASE}/tasks?offset=100001", headers=_hdr(admin_role_token_a),
+        )
+        assert resp.status_code == 422
+
     async def test_result_summarized_in_list(
         self, client, admin_role_token_a, make_server, fake_worker_read,
     ):

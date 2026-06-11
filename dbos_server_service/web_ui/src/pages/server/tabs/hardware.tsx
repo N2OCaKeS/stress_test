@@ -12,7 +12,7 @@ import { useState } from "react";
 import { Cpu, HardDrive, MemoryStick, Network, Pencil } from "lucide-react";
 import type { Server, ServerUpdateRequest } from "@/api/server/types";
 import { updateServer } from "@/api/server/servers";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import { usePersona } from "@/contexts/PersonaContext";
 import { isDepAdmin } from "@/lib/rbac";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
@@ -340,9 +340,7 @@ function HardwareEditForm({
       const next = await updateServer(initial.id, body);
       onSaved(next);
     } catch (e) {
-      if (e instanceof ApiError) setErr(`${e.errorCode}: ${e.message}`);
-      else if (e instanceof Error) setErr(e.message);
-      else setErr(String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setPending(false);
     }

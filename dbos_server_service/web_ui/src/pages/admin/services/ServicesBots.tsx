@@ -19,7 +19,7 @@ import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as botsApi from "@/api/auth/bots";
 import { listDepartments } from "@/api/auth/departments";
 import type { Department } from "@/api/auth/types";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import type {
   Bot as BotResource,
   BotTokenCreateResponse,
@@ -32,6 +32,7 @@ import {
   isSecretAdmin,
 } from "@/lib/rbac";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import { formatMskDate, formatMskShort, mskDateOffset } from "@/lib/datetime";
 import { BotRoleAssign } from "@/pages/users/_botRoleAssign";
 
 export function ServicesBots() {
@@ -214,9 +215,7 @@ function BotLiveView({
         await fn();
         refetchAll();
       } catch (e) {
-        if (e instanceof ApiError) setErr(`${e.errorCode}: ${e.message}`);
-        else if (e instanceof Error) setErr(e.message);
-        else setErr(String(e));
+        setErr(apiErrMsg(e));
       } finally {
         setPending(false);
       }
@@ -371,12 +370,12 @@ function BotLiveView({
         />
         <StatRow
           k="created_at"
-          v={<span className="mono">{bot.created_at.replace("T", " ").slice(0, 16)}</span>}
+          v={<span className="mono">{formatMskShort(bot.created_at)}</span>}
         />
         {bot.updated_at && (
           <StatRow
             k="updated_at"
-            v={<span className="mono">{bot.updated_at.replace("T", " ").slice(0, 16)}</span>}
+            v={<span className="mono">{formatMskShort(bot.updated_at)}</span>}
           />
         )}
         <StatRow
@@ -394,7 +393,7 @@ function BotLiveView({
             k="last_token_created"
             v={
               <span className="mono">
-                {lastTokenCreated.replace("T", " ").slice(0, 16)}
+                {formatMskShort(lastTokenCreated)}
               </span>
             }
           />
@@ -404,7 +403,7 @@ function BotLiveView({
             k="last_token_used"
             v={
               <span className="mono">
-                {lastTokenUsed.replace("T", " ").slice(0, 16)}
+                {formatMskShort(lastTokenUsed)}
               </span>
             }
           />
@@ -497,7 +496,7 @@ function BotLiveView({
               k="created_at"
               v={
                 <span className="mono">
-                  {activeTokens[0].created_at.replace("T", " ").slice(0, 16)}
+                  {formatMskShort(activeTokens[0].created_at)}
                 </span>
               }
             />
@@ -505,9 +504,7 @@ function BotLiveView({
               k="expires_at"
               v={
                 <span className="mono">
-                  {activeTokens[0].expires_at
-                    ? activeTokens[0].expires_at.replace("T", " ").slice(0, 16)
-                    : "—"}
+                  {formatMskShort(activeTokens[0].expires_at)}
                 </span>
               }
             />
@@ -515,9 +512,7 @@ function BotLiveView({
               k="last_used_at"
               v={
                 <span className="mono">
-                  {activeTokens[0].last_used_at
-                    ? activeTokens[0].last_used_at.replace("T", " ").slice(0, 16)
-                    : "—"}
+                  {formatMskShort(activeTokens[0].last_used_at)}
                 </span>
               }
             />
@@ -605,13 +600,13 @@ function BotLiveView({
                   <tr key={t.token_id} className="border-t border-token">
                     <td className="py-2">{t.name}</td>
                     <td className="text-xs text-dim mono">
-                      {t.created_at.slice(0, 10)}
+                      {formatMskDate(t.created_at)}
                     </td>
                     <td className="text-xs text-dim mono">
-                      {t.expires_at ? t.expires_at.slice(0, 10) : "—"}
+                      {formatMskDate(t.expires_at)}
                     </td>
                     <td className="text-xs text-dim mono">
-                      {t.last_used_at ? t.last_used_at.slice(0, 10) : "—"}
+                      {formatMskDate(t.last_used_at)}
                     </td>
                     <td className="text-right">
                       <button
@@ -825,9 +820,7 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
       });
       setIssued(tok);
     } catch (e) {
-      if (e instanceof ApiError) setErr(`${e.errorCode}: ${e.message}`);
-      else if (e instanceof Error) setErr(e.message);
-      else setErr(String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setPending(false);
     }
@@ -981,9 +974,7 @@ function BotEditForm({
       });
       onDone();
     } catch (e) {
-      if (e instanceof ApiError) setErr(`${e.errorCode}: ${e.message}`);
-      else if (e instanceof Error) setErr(e.message);
-      else setErr(String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setPending(false);
     }
@@ -1073,7 +1064,7 @@ function ServicesBotsMock() {
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate mono">{item.name}</div>
               <div className="text-[11px] text-dim truncate">
-                {item.owner_dept} · last {item.last_used.slice(0, 10)}
+                {item.owner_dept} · last {formatMskDate(item.last_used)}
               </div>
             </div>
             <span
@@ -1143,8 +1134,8 @@ function MockBotView({
       <StatRow k="bot_id" v={<span className="mono">{bot.id}</span>} />
       <StatRow k="owner_dept" v={bot.owner_dept} />
       <StatRow k="created_by" v={<span className="mono">{bot.created_by}</span>} />
-      <StatRow k="created_at" v={<span className="mono">{bot.created_at.slice(0, 10)}</span>} />
-      <StatRow k="last_used" v={<span className="mono">{bot.last_used}</span>} />
+      <StatRow k="created_at" v={<span className="mono">{formatMskDate(bot.created_at)}</span>} />
+      <StatRow k="last_used" v={<span className="mono">{formatMskShort(bot.last_used)}</span>} />
       <StatRow
         k="initial_spec"
         v={
@@ -1238,15 +1229,11 @@ function MockBotForm({
  * `core/constants.MAX_TOKEN_TTL_DAYS`). Default = +90 дней.
  */
 function tokenExpiresBounds(): { min: string; max: string; default: string } {
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const today = new Date();
-  const min = new Date(today);
-  min.setDate(min.getDate() + 1);
-  const max = new Date(today);
-  max.setDate(max.getDate() + 180);
-  const def = new Date(today);
-  def.setDate(def.getDate() + 90);
-  return { min: fmt(min), max: fmt(max), default: fmt(def) };
+  return {
+    min: mskDateOffset(1),
+    max: mskDateOffset(180),
+    default: mskDateOffset(90),
+  };
 }
 
 function RowDeptLabel({ deptId }: { deptId: string | null | undefined }) {

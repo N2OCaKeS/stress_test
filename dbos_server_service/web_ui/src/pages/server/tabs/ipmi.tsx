@@ -58,6 +58,7 @@ import type {
 import { usePersona } from "@/contexts/PersonaContext";
 import type { Persona } from "@/types/persona";
 import { useToast } from "@/contexts/ToastContext";
+import { formatMskShort } from "@/lib/datetime";
 
 interface Props {
   serverId: string;
@@ -100,13 +101,7 @@ function ipmiCaps(persona: Persona, serverDeptId: string | null): IpmiCaps {
   };
 }
 
-function fmtTs(ts: string | null | undefined): string {
-  if (!ts) return "—";
-  // Backend отдаёт ISO-8601 UTC; рендерим в локальном tz пользователя.
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return ts;
-  return d.toLocaleString();
-}
+const fmtTs = formatMskShort;
 
 const KIND_LABEL: Record<IpmiKind, string> = {
   idrac: "iDRAC",

@@ -21,7 +21,7 @@
 import { useState } from "react";
 import { Loader2, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import {
   createServiceRole,
   deleteServiceRole,
@@ -168,7 +168,7 @@ function RoleRow({
       onDeleted();
     } catch (e) {
       const msg =
-        e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e);
+        apiErrMsg(e);
       toast.error(msg);
     } finally {
       setBusy(false);
@@ -267,7 +267,7 @@ function RoleForm({
       onDone();
     } catch (e) {
       const msg =
-        e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e);
+        apiErrMsg(e);
       setErr(msg);
       toast.error(msg);
     } finally {

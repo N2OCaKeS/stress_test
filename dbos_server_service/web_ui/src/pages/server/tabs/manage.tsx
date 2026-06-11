@@ -14,7 +14,7 @@
  * gate'ятся через `@/lib/rbac` хелперы. Backend перепроверит права —
  * client-side фильтр прячет только лишнее.
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Play,
   RefreshCw,
@@ -36,6 +36,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
 import { apiErrMsg } from "@/api/client";
+import { formatMskShort } from "@/lib/datetime";
 import { isDepAdmin } from "@/lib/rbac";
 import {
   clearBusy,
@@ -65,6 +66,7 @@ import type {
 interface Props {
   serverId: string;
   server?: Server;
+  onServerUpdated?: (next: Server) => void;
 }
 
 function utf8ToB64(s: string): string {
@@ -116,12 +118,28 @@ function filterAccessibleAccounts(
   return [];
 }
 
-export function ManageTab({ server }: Props) {
+export function ManageTab({ server, onServerUpdated }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
   const [busy, setBusyLocal] = useState<string | null>(null);
   const [current, setCurrent] = useState<Server | undefined>(server);
+  // Когда родитель прислал свежий объект (мутация в соседней вкладке) —
+  // подхватываем его, чтобы не залипнуть на устаревшей локальной копии.
+  useEffect(() => {
+    setCurrent(server);
+  }, [server]);
   const view = current ?? server;
+
+  // Любая lifecycle/busy-мутация возвращает обновлённый Server: правим
+  // локальную копию и поднимаем наверх, чтобы header ServerDetail и соседние
+  // вкладки увидели новый busy/status без перезагрузки.
+  const applyServer = useCallback(
+    (next: Server) => {
+      setCurrent(next);
+      onServerUpdated?.(next);
+    },
+    [onServerUpdated],
+  );
 
   const allowBasic = canManageBasic(persona, view);
   // os_version CRUD и server:delete — только admin-плоскость (dep_admin своего
@@ -220,7 +238,7 @@ export function ManageTab({ server }: Props) {
               os_version_id: id.trim() ? id.trim() : null,
             }),
           );
-          if (next) setCurrent(next);
+          if (next) applyServer(next);
         }}
         onUsersInventory={async () => {
           if (!view) return;
@@ -239,13 +257,13 @@ export function ManageTab({ server }: Props) {
           const next = await run("busy_set", () =>
             setBusy(view.id, { reason }),
           );
-          if (next) setCurrent(next);
+          if (next) applyServer(next);
         }}
         onClearBusy={async () => {
           if (!view) return;
           if (!window.confirm("Снять busy-захват с сервера?")) return;
           const next = await run("busy_clear", () => clearBusy(view.id));
-          if (next) setCurrent(next);
+          if (next) applyServer(next);
         }}
       />
 
@@ -445,7 +463,7 @@ function BusyCard({
             )}
             {server.busy_since && (
               <div className="text-dim text-[11px] mt-1">
-                с <span className="mono">{server.busy_since}</span>
+                с <span className="mono">{formatMskShort(server.busy_since)}</span>
               </div>
             )}
           </div>

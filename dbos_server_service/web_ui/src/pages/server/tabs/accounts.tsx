@@ -28,6 +28,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
+import { formatMskShort } from "@/lib/datetime";
 import * as accountsApi from "@/api/server/accounts";
 import type {
   Server,
@@ -41,10 +42,7 @@ interface Props {
   server?: Server;
 }
 
-function fmtTs(ts: string | null | undefined): string {
-  if (!ts) return "—";
-  return ts.replace("T", " ").slice(0, 16);
-}
+const fmtTs = formatMskShort;
 
 /** Тонкая полоска scope/source — для row и detail. */
 type Scope = "personal" | "shared" | "service";

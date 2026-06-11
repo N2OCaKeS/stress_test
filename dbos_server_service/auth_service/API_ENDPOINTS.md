@@ -272,7 +272,7 @@ Errors: `SESSION_NOT_FOUND` (404) — сессия не найдена, чужа
 
 ### `POST /users/{user_id}/ban`
 
-Auth: `account_admin`. Body:
+Auth: AnyAdmin. `account_admin` — любой target; `department_admin` — только юзер своего отдела (иначе `403 DEPT_MISMATCH`), платформенного юзера DA забанить не может. Body:
 
 ```json
 { "ban_type": "permanent|temporary", "reason": "...", "expires_at": "ISO-8601 или null" }
@@ -280,11 +280,11 @@ Auth: `account_admin`. Body:
 
 `temporary` требует `expires_at` в будущем. `permanent` — `expires_at` запрещён. Ban снимает все активные сессии + PAT + bot-токены owned-ботов.
 
-Errors: `USER_NOT_FOUND` (404), 422 — cross-field инварианты.
+Errors: `USER_NOT_FOUND` (404), `CANNOT_BAN_SELF` (422), `DEPT_MISMATCH` (403) — DA по чужому/платформенному юзеру, 422 — cross-field инварианты (`expires_at` в прошлом, permanent с `expires_at`, temporary без `expires_at`).
 
 ### `POST /users/{user_id}/unban`
 
-Auth: `account_admin`. Errors: `USER_NOT_FOUND` (404), `BAN_NOT_FOUND` (404).
+Auth: AnyAdmin. Симметрично ban-у: `account_admin` — любой, `department_admin` — только свой отдел. Errors: `USER_NOT_FOUND` (404), `BAN_NOT_FOUND` (404), `DEPT_MISMATCH` (403) — DA по чужому/платформенному юзеру.
 
 ### `DELETE /users/{user_id}`
 
@@ -933,6 +933,8 @@ Auth: public. Response: JWKS (RS256).
 - `USER_INACTIVE` (409) — выдать роль выключенному юзеру.
 - `USER_DEPARTMENT_MISMATCH` (403) — попытка назначить service-роль юзеру чужого отдела (cross-dept boundary).
 - `USER_BANNED_OR_INACTIVE` (401) — попытка использовать токен забаненного юзера в introspect.
+- `CANNOT_BAN_SELF` (422) — забанить себя нельзя.
+- `DEPT_MISMATCH` (403) — DA дёргает ban/unban по юзеру чужого/платформенного отдела (target вне его scope).
 - `BAN_ALREADY_ACTIVE` (409), `BAN_NOT_FOUND` (404).
 
 ### Groups

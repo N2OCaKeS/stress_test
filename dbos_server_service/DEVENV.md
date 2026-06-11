@@ -1,19 +1,19 @@
 # Dev Environment
 
-Запуск: `make dev` — пересоздаёт БД с нуля и наполняет данными.
-Остановка: `make dev-stop`
+Запуск: `make seed` — чистая БД + миграции + сид (`scripts/seed_dev.py`), стек должен быть поднят (`make up`).
+Остановка стека: `make down` (volumes сохранятся) / `make down-v` (с volumes).
 
 ## Учётные данные
 
-**Все пароли: `1234`**
+**Все пароли: `1234`** (у всех `must_change_password=false`).
 
-| Логин          | Пароль | Роль             | Доступ                                       |
-| -------------- | ------ | ---------------- | -------------------------------------------- |
-| `admin`        | `1234` | account_admin    | Полный доступ к auth_service                 |
-| `loging_admin` | `1234` | loging_admin     | Управление loging_service (правила, события) |
-| `nt_admin`     | `1234` | department_admin | Администратор отдела НТ                      |
-| `nt_developer` | `1234` | пользователь     | Отдел НТ                                     |
-| `nt_viewer`    | `1234` | пользователь     | Отдел НТ                                     |
+| Логин            | Пароль | Роль             | Доступ                                            |
+| ---------------- | ------ | ---------------- | ------------------------------------------------- |
+| `admin`          | `1234` | account_admin    | Глобальный администратор платформы                |
+| `loging_admin1`  | `1234` | loging_admin     | Управление loging_service (правила, retention)    |
+| `dep_admin1`     | `1234` | department_admin | Администратор отдела НТ + `admin` на всех сервисах |
+| `loging_reader1` | `1234` | loging_reader    | Чтение аудит-событий по всем департаментам        |
+| `user1`          | `1234` | regular          | Отдел НТ                                           |
 
 ## Сервисы
 
@@ -22,34 +22,31 @@
 | auth_service   | http://localhost:8000 | http://localhost:8000/docs |
 | loging_service | http://localhost:8001 | http://localhost:8001/docs |
 | server_service | http://localhost:8002 | http://localhost:8002/docs |
+| secret_service | http://localhost:8003 | http://localhost:8003/docs |
 | server_worker  | taskiq worker (без HTTP), `redis://localhost:6379/0` | — |
 
 ## Swagger UI — вход
 
 **auth_service** `/docs` → Authorize → OAuth2Password → `admin` / `1234`
 
-**loging_service** `/docs` → Authorize → OAuth2Password → `loging_admin` / `1234`
+**loging_service** `/docs` → Authorize → OAuth2Password → `loging_admin1` / `1234`
 
-**server_service** `/docs` → Authorize → Bearer JWT (получить через auth_service `/login`)
+**server_service** / **secret_service** `/docs` → Authorize → Bearer JWT (получить через auth_service `/login`)
 
 ## Платформа
 
-| Объект  | Данные                                        |
-| ------- | --------------------------------------------- |
-| Отдел   | НТ — Нагрузочное тестирование                 |
-| Сервисы | config_service, server_service, loging_service |
-| Роли    | reader, operator, admin (для каждого сервиса); worker_bot (least-privilege на server_service) |
-| Бот     | nt-deploy-bot (отдел НТ)                      |
+| Объект   | Данные                                                                                    |
+| -------- | ----------------------------------------------------------------------------------------- |
+| Отдел    | НТ — Нагрузочное тестирование (`dep_admin1`, `user1`)                                      |
+| Сервисы  | auth_service, server_service, loging_service, secret_service (доступ отдела ко всем 4)     |
+| Роли     | `admin` (системная, на каждом сервисе); `worker_bot` (least-privilege на server_service)   |
+| Сервер   | test-server-01 → контейнер `test_server` (ssh `:2222`), OS `openssh-server-latest`         |
+| OS-аккаунт | `tester` / `tester1234` на test-server-01 (sudo, пароль AES-GCM-зашифрован)              |
+| Бот      | `worker_bot_nt` (отдел НТ, роль `worker_bot`, PAT в `.dev/.worker_pat`)                    |
+| Секреты  | `dev_jira_token`, `dev_postgres_password` (dept НТ), `dev_loadgen_secret` (personal user1) |
 
-## Правила логирования (активные)
-
-| Правило                  | Эффект                         | Приоритет      |
-| ------------------------ | ------------------------------ | -------------- |
-| escalate-all-denied      | denied → CRITICAL              | 900            |
-| escalate-auth-failures   | auth failure → CRITICAL        | 800            |
-| escalate-user-bans       | user.ban → CRITICAL            | 700            |
-| escalate-password-resets | user.password_reset → CRITICAL | 700            |
-| suppress-health-checks   | http.client_error → SUPPRESS   | 50 (выключено) |
+После seed'а перезапусти worker, чтобы он подхватил свежий PAT:
+`docker compose -f docker-compose.dev.yml restart server_worker`.
 
 ## Тесты
 

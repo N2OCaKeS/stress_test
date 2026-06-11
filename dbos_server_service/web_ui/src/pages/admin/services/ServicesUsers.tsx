@@ -24,7 +24,7 @@ import {
 } from "@/api/auth/users";
 import { listDepartments } from "@/api/auth/departments";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import type {
   Department,
   PlatformRole,
@@ -585,7 +585,7 @@ function UserForm({
       }
       onDone();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy(false);
     }

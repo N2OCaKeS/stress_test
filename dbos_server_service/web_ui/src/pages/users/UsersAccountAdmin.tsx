@@ -39,8 +39,9 @@ import { listBots } from "@/api/auth/bots";
 import { listGroups } from "@/api/auth/groups";
 import { listDepartments } from "@/api/auth/departments";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { useDeptLabel } from "@/lib/labels";
-import { ApiError } from "@/api/client";
+import { useDeptLabel, useLabelsInvalidate } from "@/lib/labels";
+import { formatMskDate, formatMskShort } from "@/lib/datetime";
+import { apiErrMsg } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
 import { userMutationCaps, groupMutationCaps, botMutationCaps, personaDeptId } from "@/lib/rbac";
@@ -170,7 +171,7 @@ function apiToRow(u: ApiUser): UserRow {
         }
       : undefined,
     dept: u.department_name ?? u.department_id ?? "—",
-    lastSeen: (u.updated_at ?? u.created_at ?? "").slice(0, 10),
+    lastSeen: formatMskDate(u.updated_at ?? u.created_at),
     status: { label: u.status.toLowerCase(), kind: statusKind },
     isCog: !!u.platform_role,
   };
@@ -200,6 +201,7 @@ export function UsersAccountAdmin() {
   const mockMode = useMockMode();
   const toast = useToast();
   const { persona } = usePersona();
+  const invalidateLabels = useLabelsInvalidate();
 
   // API-backed list (skipped in mock mode). When enabled, the left aside
   // renders flat groups by dept built from the API response.
@@ -312,7 +314,7 @@ export function UsersAccountAdmin() {
       toast.success(`${label}: OK`);
       apiUsersQ.refetch();
     } catch (e) {
-      const msg = e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e);
+      const msg = apiErrMsg(e);
       toast.error(`${label}: ${msg}`);
     } finally {
       setBusy(null);
@@ -557,7 +559,7 @@ export function UsersAccountAdmin() {
                         <Bot className="w-4 h-4 text-dim" />
                         <div className="flex-1 min-w-0">
                           <div className="text-sm truncate mono">{b.name}</div>
-                          <div className="text-[11px] text-dim">{b.owner_dept} · {b.last_used.slice(0, 10)}</div>
+                          <div className="text-[11px] text-dim">{b.owner_dept} · {formatMskDate(b.last_used)}</div>
                         </div>
                         <span className={`badge badge-${b.token_status === "active" ? "ok" : b.token_status === "rotated" ? "warn" : "danger"}`}>
                           {b.token_status}
@@ -664,7 +666,7 @@ export function UsersAccountAdmin() {
                 <>
                   <span>·</span>
                   <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> {targetUser.updated_at.slice(0, 16)}
+                    <Clock className="w-3 h-3" /> {formatMskShort(targetUser.updated_at)}
                   </span>
                 </>
               )}
@@ -894,9 +896,9 @@ export function UsersAccountAdmin() {
                         <td className="py-2 text-xs text-dim truncate max-w-[280px]">
                           {s.user_agent ?? "—"}
                         </td>
-                        <td className="text-dim text-xs">{s.created_at.slice(0, 16)}</td>
+                        <td className="text-dim text-xs">{formatMskShort(s.created_at)}</td>
                         <td className="text-dim text-xs">
-                          {s.last_used_at ? s.last_used_at.slice(0, 16) : "—"}
+                          {formatMskShort(s.last_used_at)}
                         </td>
                         <td>
                           <button
@@ -1008,7 +1010,7 @@ export function UsersAccountAdmin() {
                             {b.status}
                           </span>
                         </td>
-                        <td className="text-dim text-xs">{b.created_at.slice(0, 10)}</td>
+                        <td className="text-dim text-xs">{formatMskDate(b.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1067,6 +1069,8 @@ export function UsersAccountAdmin() {
                 toast.info("mock: create group");
               } else {
                 toast.success("Группа создана");
+                apiGroupsQ.refetch();
+                void invalidateLabels("groups");
               }
             }}
           />
@@ -1085,6 +1089,7 @@ export function UsersAccountAdmin() {
                 toast.info("mock: create bot");
               } else {
                 toast.success("Бот создан");
+                apiBotsQ.refetch();
               }
             }}
           />
@@ -1182,7 +1187,7 @@ function BotAsideRow({ bot }: { bot: ApiBot }) {
       <div className="flex-1 min-w-0">
         <div className="text-sm truncate mono">{bot.name}</div>
         <div className="text-[11px] text-dim">
-          {dept} · {bot.created_at.slice(0, 10)}
+          {dept} · {formatMskDate(bot.created_at)}
         </div>
       </div>
       <span

@@ -20,6 +20,7 @@ import { Shell } from "@/components/shell/Shell";
 import { USERS, userById } from "@/mocks/auth";
 import { usePersona } from "@/contexts/PersonaContext";
 import { groupMutationCaps } from "@/lib/rbac";
+import { formatMskDate } from "@/lib/datetime";
 import {
   GROUPS,
   ROLES,
@@ -273,7 +274,7 @@ export function GroupDetail() {
                             )}
                           </td>
                           <td className="text-xs text-dim">
-                            {g.granted_at.slice(0, 10)}
+                            {formatMskDate(g.granted_at)}
                           </td>
                         </tr>
                       );

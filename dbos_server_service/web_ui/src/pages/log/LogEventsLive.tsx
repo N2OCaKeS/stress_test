@@ -15,6 +15,7 @@ import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
+import { formatMsk, formatMskTime } from "@/lib/datetime";
 import { listEvents } from "@/api/loging/events";
 import { listServices } from "@/api/loging/services";
 import type {
@@ -51,12 +52,6 @@ const SEV_LABEL: Record<string, string> = {
 function sevClass(severity: string): string {
   if (severity === "DEBUG" || severity === "TRACE") return "sev-INFO";
   return `sev-${severity}`;
-}
-
-function fmtTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toISOString().replace("T", " ").replace("Z", "").slice(0, 19);
 }
 
 export function LogEventsLive() {
@@ -191,7 +186,7 @@ export function LogEventsLive() {
               selectedId === row.id ? "active" : ""
             }`}
           >
-            <div className="ev-time">{fmtTime(row.timestamp).slice(11)}</div>
+            <div className="ev-time">{formatMskTime(row.timestamp)}</div>
             <div className="min-w-0">
               <div className="ev-action truncate">{row.action}</div>
               <div className="ev-meta truncate">
@@ -269,7 +264,7 @@ function EventDetailPane({ event }: { event: EventDetail }) {
             {event.request_id && (
               <span className="mono">{event.request_id}</span>
             )}
-            <span className="mono">{fmtTime(event.timestamp)} UTC</span>
+            <span className="mono">{formatMsk(event.timestamp)}</span>
             <span>·</span>
             <span className="mono">{event.id}</span>
           </div>
@@ -304,7 +299,7 @@ function EventDetailPane({ event }: { event: EventDetail }) {
             <DetailRow label="Service" value={event.service} />
             <DetailRow label="Target type" value={event.target_type} />
             <DetailRow label="Target ID" value={event.target_id} mono />
-            <DetailRow label="Received" value={fmtTime(event.received_at)} mono />
+            <DetailRow label="Received" value={formatMsk(event.received_at)} mono />
           </div>
         </div>
 

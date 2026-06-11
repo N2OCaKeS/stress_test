@@ -104,6 +104,14 @@ services:
       # auth_service's own bearer for inbound /introspect (shared cross-service
       # secret; per-service split — отдельная задача, не связанная с audit-ключами).
       SERVICE_API_KEY: dev-introspect-api-key
+      # Outbound lifecycle-callback'и в secret_service: при delete user/dept и
+      # revoke secret_service-access auth шлёт POST /api/secret/v1/internal/
+      # lifecycle/*. Bearer должен совпадать с тем, что secret_service валидирует
+      # на входе (его legacy SERVICE_API_KEY). Без этих трёх env каскад в
+      # secret_service молча не срабатывает (URL пустой → no-op-with-warning).
+      SECRET_SERVICE_URL: http://secret_service:8003
+      SECRET_INTERNAL_API_KEY: dev-introspect-api-key
+      SECRET_SERVICE_TLS_VERIFY: "false"
       INITIAL_ADMIN_USERNAME: admin
       INITIAL_ADMIN_PASSWORD: "1234"
       INITIAL_ADMIN_EMAIL: admin@example.com

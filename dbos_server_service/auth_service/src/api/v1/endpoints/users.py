@@ -748,7 +748,7 @@ async def force_password_change_user(
     "/{user_id}/ban",
     response_model=OkResponse,
     summary="Забанить юзера",
-    description="Permanent или temporary. Убивает все сессии + PAT + bot-токены owned-ботов.",
+    description="Permanent или temporary. Убивает все сессии + PAT юзера. Боты отдела (даже созданные им) намеренно не трогаются.",
 )
 async def ban_user(
     user_id: str,
@@ -761,8 +761,9 @@ async def ban_user(
 
     Что делает:
         Создаёт `Ban` (permanent/temporary), revoke'ит все активные сессии
-        юзера + все PAT + bot-токены ботов, которыми он владеет.
-        `temporary` обязательно требует `expires_at` в будущем.
+        юзера + все его PAT. Боты, которыми он владеет, и их токены остаются
+        живыми (бот — отдельная identity отдела). `temporary` обязательно
+        требует `expires_at` в будущем.
 
     Доступ:
         * account_admin — любой target;

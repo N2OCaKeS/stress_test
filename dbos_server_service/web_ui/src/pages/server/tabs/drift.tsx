@@ -19,6 +19,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
 import { apiErrMsg } from "@/api/client";
+import { formatMskShort } from "@/lib/datetime";
 import { getServerDrift, inventorySync } from "@/api/server/servers";
 import { listAccounts } from "@/api/server/accounts";
 import type {
@@ -40,15 +41,7 @@ const DRIFT_KIND_LABEL: Record<string, string> = {
   missing_on_box: "missing on box",
 };
 
-function formatDt(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString();
-  } catch {
-    return iso;
-  }
-}
+const formatDt = formatMskShort;
 
 /**
  * Аккаунты сервера, видимые текущей persona — тот же грубый client-side

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { KeyRound, Plus, Trash2, Copy } from "lucide-react";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import {
   createToken,
   listMyTokens,
@@ -13,6 +13,7 @@ import type {
 } from "@/api/auth/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
+import { formatMskDate, mskDateOffset } from "@/lib/datetime";
 
 const KNOWN_SERVICES: ServiceName[] = [
   "auth_service",
@@ -46,15 +47,11 @@ function resolveAvailableServices(
  * `<input type="date">` тем же диапазоном. Default = +90 дней.
  */
 function tokenExpiresBounds(): { min: string; max: string; default: string } {
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const today = new Date();
-  const min = new Date(today);
-  min.setDate(min.getDate() + 1);
-  const max = new Date(today);
-  max.setDate(max.getDate() + 180);
-  const def = new Date(today);
-  def.setDate(def.getDate() + 90);
-  return { min: fmt(min), max: fmt(max), default: fmt(def) };
+  return {
+    min: mskDateOffset(1),
+    max: mskDateOffset(180),
+    default: mskDateOffset(90),
+  };
 }
 
 export function SecurityTokens() {
@@ -76,8 +73,7 @@ export function SecurityTokens() {
       );
       setItems(active);
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось загрузить токены");
+      toast.error(apiErrMsg(e, "Не удалось загрузить токены"));
     } finally {
       setLoading(false);
     }
@@ -151,8 +147,7 @@ function TokenRow({
       toast.success("Токен отозван");
       await onRevoke();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось отозвать токен");
+      toast.error(apiErrMsg(e, "Не удалось отозвать токен"));
     } finally {
       setPending(false);
     }
@@ -165,7 +160,7 @@ function TokenRow({
         <div className="text-[11px] text-dim mono truncate">{t.token_id}</div>
         <div className="text-[11px] text-dim">
           scope: {t.allowed_services.join(", ")}
-          {t.expires_at && ` · истекает ${t.expires_at}`}
+          {t.expires_at && ` · истекает ${formatMskDate(t.expires_at)}`}
         </div>
       </div>
       <button
@@ -227,8 +222,7 @@ function CreateForm({
       });
       onCreated(resp);
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось создать токен");
+      toast.error(apiErrMsg(e, "Не удалось создать токен"));
     } finally {
       setPending(false);
     }

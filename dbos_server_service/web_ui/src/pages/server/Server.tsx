@@ -538,6 +538,17 @@ function WorkzoneWithActions({
 
 // ───────────────────────────────────────────────────────────────────────────
 
+// Грубая структурная проверка IPv4/IPv6 — ровно чтобы отсечь явный мусор до
+// отправки. Каноникализацию и финальную валидацию делает backend (INET).
+function isLikelyIpAddress(value: string): boolean {
+  const v = value.trim();
+  const ipv4 =
+    /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+  if (ipv4.test(v)) return true;
+  // IPv6: hex-группы и `::`-сжатие; достаточно для отсечения непохожего ввода.
+  return v.includes(":") && /^[0-9a-fA-F:]+$/.test(v) && v.length >= 2;
+}
+
 function CreatePane({
   depts,
   onCancel,
@@ -554,6 +565,13 @@ function CreatePane({
   const [sshPort, setSshPort] = useState<string>("22");
   const [submitting, setSubmitting] = useState(false);
 
+  // backend кладёт ip_address в INET (IPv4Address | IPv6Address) и отбивает
+  // мусор 422 ещё на pydantic; гасим заведомо-битый ввод заранее.
+  const ipError =
+    ipAddress.trim() && !isLikelyIpAddress(ipAddress.trim())
+      ? "Ожидается IPv4 или IPv6 адрес"
+      : null;
+
   // depts может прийти позже — подхватим первый, если ещё не выбран.
   if (!departmentId && depts.length) {
     setDepartmentId(depts[0].id);
@@ -562,7 +580,7 @@ function CreatePane({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;
-    if (!hostname.trim() || !ipAddress.trim() || !departmentId) return;
+    if (!hostname.trim() || !ipAddress.trim() || !departmentId || ipError) return;
     const body: ServerCreateRequest = {
       hostname: hostname.trim(),
       display_name: displayName.trim() || null,
@@ -596,6 +614,7 @@ function CreatePane({
               value={hostname}
               onChange={(e) => setHostname(e.target.value)}
               required
+              maxLength={255}
               placeholder="srv-node-01"
             />
           </label>
@@ -633,6 +652,9 @@ function CreatePane({
               required
               placeholder="10.10.20.11"
             />
+            {ipError && (
+              <span className="text-[11px] text-danger">{ipError}</span>
+            )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">SSH port</span>
@@ -654,7 +676,8 @@ function CreatePane({
                 submitting ||
                 !hostname.trim() ||
                 !ipAddress.trim() ||
-                !departmentId
+                !departmentId ||
+                !!ipError
               }
             >
               {submitting ? "Создаём…" : "Создать"}

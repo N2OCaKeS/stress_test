@@ -33,6 +33,7 @@ import {
 import { Tabs } from "@/components/ui/Tabs";
 import { usePersona } from "@/contexts/PersonaContext";
 import { userMutationCaps } from "@/lib/rbac";
+import { formatMsk, formatMskShort } from "@/lib/datetime";
 import {
   banUser,
   deleteUser,
@@ -52,7 +53,7 @@ import {
 import { addUserToGroup, removeUserFromGroup, listGroups } from "@/api/auth/groups";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import type {
   Group,
   ServiceName,
@@ -132,7 +133,7 @@ export function UserBackendView({
       groupsQ.refetch();
       onChanged?.();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy(null);
     }
@@ -420,11 +421,11 @@ function ProfileTab({
           />
           <StatRow
             k="created_at"
-            v={<span className="mono text-xs">{user.created_at}</span>}
+            v={<span className="mono text-xs">{formatMsk(user.created_at)}</span>}
           />
           <StatRow
             k="updated_at"
-            v={<span className="mono text-xs">{user.updated_at ?? "—"}</span>}
+            v={<span className="mono text-xs">{formatMsk(user.updated_at)}</span>}
           />
         </div>
       </div>
@@ -974,7 +975,7 @@ function SessionsTab({
       setInfo(`Отозвано сессий: ${r.revoked_count}`);
       sessQ.refetch();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy(null);
     }
@@ -993,7 +994,7 @@ function SessionsTab({
       setInfo("Сессия завершена");
       sessQ.refetch();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy(null);
     }
@@ -1219,10 +1220,7 @@ function ModalShell({
   );
 }
 
-function fmtTs(s: string | null | undefined): string {
-  if (!s) return "—";
-  return s.replace("T", " ").slice(0, 16);
-}
+const fmtTs = formatMskShort;
 
 function DeptInline({ deptId }: { deptId: string | null | undefined }) {
   const label = useDeptLabel(deptId);

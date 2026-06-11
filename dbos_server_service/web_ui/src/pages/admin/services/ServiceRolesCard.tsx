@@ -33,6 +33,7 @@ import {
 } from "./_inline";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError } from "@/api/client";
+import { formatMsk } from "@/lib/datetime";
 import { listDepartments } from "@/api/auth/departments";
 import {
   listServiceRoles,
@@ -486,7 +487,7 @@ function LiveRoleView({
       <StatRow k="department" v={<RoleDeptLabel deptId={role.department_id} />} />
       <StatRow k="service" v={<RoleServiceLabel name={role.service_name} />} />
       <StatRow k="is_system" v={role.is_system ? "true" : "false"} />
-      <StatRow k="created_at" v={<span className="mono">{role.created_at}</span>} />
+      <StatRow k="created_at" v={<span className="mono">{formatMsk(role.created_at)}</span>} />
 
       {canEdit && (
         <BulkAssignSection

@@ -21,8 +21,9 @@ import type {
 import { updateServer } from "@/api/server/servers";
 import { listOsVersions } from "@/api/server/osVersions";
 import { useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import { useDeptLabel } from "@/lib/labels";
+import { formatMsk } from "@/lib/datetime";
 import { usePersona } from "@/contexts/PersonaContext";
 import { isDepAdmin } from "@/lib/rbac";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
@@ -142,7 +143,7 @@ function OverviewView({
           k="busy_since"
           v={
             server.busy_since ? (
-              <span className="mono">{server.busy_since}</span>
+              <span className="mono">{formatMsk(server.busy_since)}</span>
             ) : (
               <span className="text-dim">—</span>
             )
@@ -209,7 +210,7 @@ function OverviewView({
           k="os_last_synced_at"
           v={
             server.os_last_synced_at ? (
-              <span className="mono">{server.os_last_synced_at}</span>
+              <span className="mono">{formatMsk(server.os_last_synced_at)}</span>
             ) : (
               <span className="text-dim">—</span>
             )
@@ -221,17 +222,17 @@ function OverviewView({
         <h3 className="font-semibold text-base mb-3">Аудит</h3>
         <StatRow
           k="created_at"
-          v={<span className="mono">{server.created_at}</span>}
+          v={<span className="mono">{formatMsk(server.created_at)}</span>}
         />
         <StatRow
           k="updated_at"
-          v={<span className="mono">{server.updated_at}</span>}
+          v={<span className="mono">{formatMsk(server.updated_at)}</span>}
         />
         <StatRow
           k="prepared_at"
           v={
             server.prepared_at ? (
-              <span className="mono">{server.prepared_at}</span>
+              <span className="mono">{formatMsk(server.prepared_at)}</span>
             ) : (
               <span className="text-dim">—</span>
             )
@@ -241,7 +242,7 @@ function OverviewView({
           k="decommissioned_at"
           v={
             server.decommissioned_at ? (
-              <span className="mono">{server.decommissioned_at}</span>
+              <span className="mono">{formatMsk(server.decommissioned_at)}</span>
             ) : (
               <span className="text-dim">—</span>
             )
@@ -304,9 +305,7 @@ function OverviewEditForm({
       const next = await updateServer(initial.id, body);
       onSaved(next);
     } catch (e) {
-      if (e instanceof ApiError) setErr(`${e.errorCode}: ${e.message}`);
-      else if (e instanceof Error) setErr(e.message);
-      else setErr(String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setPending(false);
     }

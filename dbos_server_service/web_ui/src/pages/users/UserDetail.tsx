@@ -60,8 +60,9 @@ import {
 import { listServices } from "@/api/auth/services";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import { useDeptLabel, useLabelMaps, useServiceLabel } from "@/lib/labels";
+import { formatMskDate, formatMskShort } from "@/lib/datetime";
 import type {
   Group as ApiGroup,
   Service as ApiService,
@@ -177,7 +178,7 @@ export function UserDetail() {
       apiUserQ.refetch();
     } catch (e) {
       setActionErr(
-        e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e),
+        apiErrMsg(e),
       );
     } finally {
       setBusy(null);
@@ -528,7 +529,7 @@ export function UserDetail() {
                           </div>
                           <div className="text-xs text-dim text-right">
                             <div>granted by <GrantedBy id={ra.granted_by} /></div>
-                            <div>{ra.granted_at.slice(0, 10)}</div>
+                            <div>{formatMskDate(ra.granted_at)}</div>
                           </div>
                         </div>
                       );
@@ -687,7 +688,7 @@ export function UserDetail() {
                             <span className="mono">{g.resource_id}</span>
                           </td>
                           <td className="text-xs text-dim"><GrantedBy id={g.granted_by} /></td>
-                          <td className="text-xs text-dim">{g.granted_at.slice(0, 10)}</td>
+                          <td className="text-xs text-dim">{formatMskDate(g.granted_at)}</td>
                           <td className="text-right">
                             <button
                               className="btn btn-sm btn-ghost"
@@ -873,7 +874,7 @@ export function UserDetail() {
                 <tbody>
                   {audit.slice(0, 10).map((a) => (
                     <tr key={a.id} className="border-t border-token">
-                      <td className="py-2 text-xs text-dim mono">{a.ts.replace("T", " ").slice(0, 16)}</td>
+                      <td className="py-2 text-xs text-dim mono">{formatMskShort(a.ts)}</td>
                       <td className="text-xs mono">{a.action}</td>
                       <td className="text-xs mono text-dim">{a.resource}</td>
                       <td>
@@ -1262,7 +1263,7 @@ function UserSessionsTab({
       sessQ.refetch();
     } catch (e) {
       setErr(
-        e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e),
+        apiErrMsg(e),
       );
     } finally {
       setBusy(null);
@@ -1283,7 +1284,7 @@ function UserSessionsTab({
       sessQ.refetch();
     } catch (e) {
       setErr(
-        e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e),
+        apiErrMsg(e),
       );
     } finally {
       setBusy(null);
@@ -1395,12 +1396,7 @@ function UserSessionsTab({
   );
 }
 
-function fmtSessTs(s: string | null | undefined): string {
-  if (!s) return "—";
-  // Совпадает с fmtTs в MyAccount — оставляем локально, чтобы не
-  // протаскивать утилиту через barrel-export.
-  return s.replace("T", " ").slice(0, 16);
-}
+const fmtSessTs = formatMskShort;
 
 // ---------------------------------------------------------------------------
 // Live (API-backed) groups section: per-row remove + open add-group modal.
@@ -1448,7 +1444,7 @@ function UserGroupsLiveSection({
       onChanged();
     } catch (e) {
       onActionError(
-        e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e),
+        apiErrMsg(e),
       );
     } finally {
       setBusy(null);
@@ -1566,7 +1562,7 @@ function AddUserToGroupModal({
       onAdded();
     } catch (e) {
       onError(
-        e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e),
+        apiErrMsg(e),
       );
     } finally {
       setSubmitting(false);
@@ -1788,7 +1784,7 @@ function UserServiceRolesEditor({
       onClose();
     } catch (e) {
       onError(
-        e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e),
+        apiErrMsg(e),
       );
     } finally {
       setSubmitting(false);

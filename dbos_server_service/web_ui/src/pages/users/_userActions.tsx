@@ -1,9 +1,15 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { X, UserCog, ShieldCheck, Copy, AlertTriangle, RefreshCw } from "lucide-react";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
+import { formatMskDate } from "@/lib/datetime";
 import { createUser, updateUser } from "@/api/auth/users";
 import { createGroup } from "@/api/auth/groups";
 import { createBot, issueBotToken } from "@/api/auth/bots";
+import {
+  isValidEmail,
+  validatePassword,
+  validateUsername,
+} from "@/lib/passwordPolicy";
 import type {
   Department,
   PlatformRole,
@@ -112,6 +118,14 @@ export function CreateUserForm({
     setPlatformRole("");
   }
 
+  // Клиентская валидация — зеркало UserCreate-схемы auth_service. Не пускаем
+  // заведомо-422 запросы (username pattern/длина, password-policy, email).
+  const usernameError = username ? validateUsername(username) : null;
+  const passwordError = validatePassword(password);
+  const emailError = email && !isValidEmail(email) ? "Неверный формат email" : null;
+  const formInvalid =
+    !username || !password || !!usernameError || !!passwordError || !!emailError;
+
   function copyPassword() {
     navigator.clipboard?.writeText(password).catch(() => {});
     setCopyHint(true);
@@ -123,7 +137,7 @@ export function CreateUserForm({
       onSuccess();
       return;
     }
-    if (!username || !password) return;
+    if (formInvalid) return;
     setBusy(true);
     setErr(null);
     try {
@@ -140,7 +154,7 @@ export function CreateUserForm({
       });
       onSuccess();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy(false);
     }
@@ -149,12 +163,18 @@ export function CreateUserForm({
   return (
     <div className="flex flex-col gap-3">
       <Field label="username">
-        <input
-          className="input"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          autoFocus
-        />
+        <div>
+          <input
+            className="input w-full"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoFocus
+            maxLength={128}
+          />
+          {usernameError && (
+            <div className="text-[11px] text-danger mt-1">{usernameError}</div>
+          )}
+        </div>
       </Field>
       <Field label="initial password (auto-generated)">
         <div className="flex gap-2 items-center">
@@ -183,18 +203,27 @@ export function CreateUserForm({
             <Copy className="w-4 h-4" />
           </button>
         </div>
-        <div className="text-[11px] text-dim mt-1">
-          {copyHint
-            ? "Скопировано"
-            : "Пользователь обязан сменить пароль при первом входе"}
-        </div>
+        {passwordError ? (
+          <div className="text-[11px] text-danger mt-1">{passwordError}</div>
+        ) : (
+          <div className="text-[11px] text-dim mt-1">
+            {copyHint
+              ? "Скопировано"
+              : "Пользователь обязан сменить пароль при первом входе"}
+          </div>
+        )}
       </Field>
       <Field label="email">
-        <input
-          className="input"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        <div>
+          <input
+            className="input w-full"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          {emailError && (
+            <div className="text-[11px] text-danger mt-1">{emailError}</div>
+          )}
+        </div>
       </Field>
       <Field label="dept">
         <select
@@ -249,7 +278,7 @@ export function CreateUserForm({
         <button
           className="btn btn-primary"
           onClick={submit}
-          disabled={busy || (!mockMode && (!username || !password))}
+          disabled={busy || (!mockMode && formInvalid)}
         >
           {busy ? "..." : "Создать"}
         </button>
@@ -297,7 +326,7 @@ export function EditRolesForm({
       }
       onSuccess();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy(false);
     }
@@ -409,7 +438,7 @@ export function CreateGroupForm({
       });
       onSuccess();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy(false);
     }
@@ -526,7 +555,7 @@ export function CreateBotForm({
         );
       }
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy(false);
     }
@@ -572,7 +601,7 @@ export function CreateBotForm({
         </Field>
         {token.expires_at && (
           <Field label="expires_at">
-            <span className="mono text-xs">{token.expires_at}</span>
+            <span className="mono text-xs">{formatMskDate(token.expires_at)}</span>
           </Field>
         )}
         <div className="flex justify-end mt-2">

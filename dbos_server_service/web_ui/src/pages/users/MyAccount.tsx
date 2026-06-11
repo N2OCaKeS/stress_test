@@ -33,6 +33,7 @@ import { ApiError } from "@/api/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import { formatMskShort, mskDateOffset } from "@/lib/datetime";
 import type {
   Group,
   PATCreateResponse,
@@ -725,15 +726,11 @@ function CreatePatForm({
  * Все три значения — строки `YYYY-MM-DD` (формат для type=date).
  */
 function patExpiresBounds(): { min: string; max: string; default: string } {
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const today = new Date();
-  const min = new Date(today);
-  min.setDate(min.getDate() + 1);
-  const max = new Date(today);
-  max.setDate(max.getDate() + 180);
-  const def = new Date(today);
-  def.setDate(def.getDate() + 90);
-  return { min: fmt(min), max: fmt(max), default: fmt(def) };
+  return {
+    min: mskDateOffset(1),
+    max: mskDateOffset(180),
+    default: mskDateOffset(90),
+  };
 }
 
 /**
@@ -1200,8 +1197,4 @@ function StatRow({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
-function fmtTs(s: string | null | undefined): string {
-  if (!s) return "—";
-  // ISO-8601 → "YYYY-MM-DD HH:MM" (keep it compact, no locale parsing)
-  return s.slice(0, 16).replace("T", " ");
-}
+const fmtTs = formatMskShort;

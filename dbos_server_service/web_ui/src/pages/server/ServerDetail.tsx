@@ -149,7 +149,11 @@ export function ServerDetail({ serverId }: ServerDetailProps) {
           <PackagesTab serverId={current.id} server={current} />
         )}
         {tab === "manage" && (
-          <ManageTab serverId={current.id} server={current} />
+          <ManageTab
+            serverId={current.id}
+            server={current}
+            onServerUpdated={setServer}
+          />
         )}
       </div>
     </section>

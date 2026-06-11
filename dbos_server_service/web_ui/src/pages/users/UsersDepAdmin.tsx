@@ -35,10 +35,11 @@ import { listBots } from "@/api/auth/bots";
 import { listGroups } from "@/api/auth/groups";
 import { listDepartments } from "@/api/auth/departments";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
-import { useDeptLabel } from "@/lib/labels";
+import { useDeptLabel, useLabelsInvalidate } from "@/lib/labels";
+import { formatMskDate, formatMskShort } from "@/lib/datetime";
 import { userMutationCaps, groupMutationCaps, botMutationCaps, personaDeptId } from "@/lib/rbac";
 import type {
   Bot as ApiBot,
@@ -129,6 +130,7 @@ export function UsersDepAdmin() {
 
 function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>["persona"] }) {
   const toast = useToast();
+  const invalidateLabels = useLabelsInvalidate();
   const [tab, setTab] = useState<Tab>("users");
   const [workzoneTab, setWorkzoneTab] = useState<WorkzoneTab>("profile");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -243,7 +245,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
       toast.success(`${label}: OK`);
       usersQ.refetch();
     } catch (e) {
-      const msg = e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e);
+      const msg = apiErrMsg(e);
       toast.error(`${label}: ${msg}`);
     } finally {
       setBusy(null);
@@ -481,7 +483,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                 <>
                   <span>·</span>
                   <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> {targetUser.updated_at.slice(0, 16)}
+                    <Clock className="w-3 h-3" /> {formatMskShort(targetUser.updated_at)}
                   </span>
                 </>
               )}
@@ -649,9 +651,9 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                         <td className="py-2 text-xs text-dim truncate max-w-[280px]">
                           {s.user_agent ?? "—"}
                         </td>
-                        <td className="text-dim text-xs">{s.created_at.slice(0, 16)}</td>
+                        <td className="text-dim text-xs">{formatMskShort(s.created_at)}</td>
                         <td className="text-dim text-xs">
-                          {s.last_used_at ? s.last_used_at.slice(0, 16) : "—"}
+                          {formatMskShort(s.last_used_at)}
                         </td>
                         <td>
                           <button
@@ -721,7 +723,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
                             {b.status}
                           </span>
                         </td>
-                        <td className="text-dim text-xs">{b.created_at.slice(0, 10)}</td>
+                        <td className="text-dim text-xs">{formatMskDate(b.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -775,6 +777,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
               setCreateOpen(false);
               toast.success("Группа создана");
               groupsQ.refetch();
+              void invalidateLabels("groups");
             }}
           />
         </Modal>
@@ -926,7 +929,7 @@ function BotAsideRow({ bot }: { bot: ApiBot }) {
       <div className="flex-1 min-w-0">
         <div className="text-sm truncate mono">{bot.name}</div>
         <div className="text-[11px] text-dim">
-          {dept} · {bot.created_at.slice(0, 10)}
+          {dept} · {formatMskDate(bot.created_at)}
         </div>
       </div>
       <span className={`badge badge-${bot.status === "active" ? "ok" : "warn"}`}>
@@ -1061,7 +1064,7 @@ function UsersDepAdminMock() {
                     <Bot className="w-4 h-4 text-dim" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm truncate mono">{b.name}</div>
-                      <div className="text-[11px] text-dim">{b.last_used.slice(0, 10)}</div>
+                      <div className="text-[11px] text-dim">{formatMskDate(b.last_used)}</div>
                     </div>
                     <span className={`badge badge-${b.token_status === "active" ? "ok" : b.token_status === "rotated" ? "warn" : "danger"}`}>
                       {b.token_status}

@@ -19,9 +19,10 @@ import {
   useInlineState,
 } from "./_inline";
 import { useLabelsInvalidate } from "@/lib/labels";
+import { formatMsk } from "@/lib/datetime";
 import { ServiceRolesInline } from "./_serviceRolesInline";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import {
   createService,
   deleteService,
@@ -189,7 +190,7 @@ function ServiceDetail({
       onChanged();
     } catch (e) {
       const msg =
-        e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e);
+        apiErrMsg(e);
       setErr(msg);
       toast.error(msg);
     } finally {
@@ -221,7 +222,7 @@ function ServiceDetail({
         k="is_active"
         v={svc.is_active === false ? "false" : "true"}
       />
-      <StatRow k="created_at" v={<span className="mono">{svc.created_at}</span>} />
+      <StatRow k="created_at" v={<span className="mono">{formatMsk(svc.created_at)}</span>} />
       {err && <div className="alert-danger mt-3 text-xs">{err}</div>}
 
       {!mockMode && svc.service_name === "loging_service" && (
@@ -376,7 +377,7 @@ function ServiceForm({
       onDone();
     } catch (e) {
       const msg =
-        e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e);
+        apiErrMsg(e);
       setErr(msg);
       toast.error(msg);
     } finally {

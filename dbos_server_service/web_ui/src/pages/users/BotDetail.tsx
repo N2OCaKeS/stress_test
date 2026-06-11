@@ -32,9 +32,10 @@ import {
 } from "./permissionGraph";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as botsApi from "@/api/auth/bots";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import type { BotTokenCreateResponse } from "@/api/auth/types";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import { formatMskDate, formatMskShort, mskDateOffset } from "@/lib/datetime";
 import { BotRoleAssign } from "./_botRoleAssign";
 
 export function BotDetail() {
@@ -163,14 +164,14 @@ export function BotDetail() {
                     <Link to={`/users/${createdByUser.id}`} className="mono hover-bg">{createdByLabel}</Link>
                   ) : (
                     <span className="mono text-dim">{createdByLabel}</span>
-                  )} · {bot!.created_at.slice(0, 10)}</span>
+                  )} · {formatMskDate(bot!.created_at)}</span>
                   <span>·</span>
-                  <span>last used <span className="mono">{bot!.last_used.replace("T", " ").slice(0, 16)}</span></span>
+                  <span>last used <span className="mono">{formatMskShort(bot!.last_used)}</span></span>
                 </>
               ) : liveBot ? (
                 <>
                   <span>·</span>
-                  <span>создан {liveBot.created_at.slice(0, 10)}</span>
+                  <span>создан {formatMskDate(liveBot.created_at)}</span>
                 </>
               ) : null}
             </div>
@@ -217,7 +218,7 @@ export function BotDetail() {
                 ) : (
                   <span className="mono text-dim" title="user removed or unknown">{createdByLabel}</span>
                 )} />
-                <StatRow k="last_used" v={<span className="mono">{bot.last_used}</span>} />
+                <StatRow k="last_used" v={<span className="mono">{formatMskShort(bot.last_used)}</span>} />
               </div>
             </div>
           </Section>
@@ -292,7 +293,7 @@ export function BotDetail() {
                         <span className="mono">{g.resource_id}</span>
                       </td>
                       <td className="text-xs text-dim"><BotGrantedBy id={g.granted_by} /></td>
-                      <td className="text-xs text-dim">{g.granted_at.slice(0, 10)}</td>
+                      <td className="text-xs text-dim">{formatMskDate(g.granted_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -506,13 +507,7 @@ function BotLiveData({
         await fn();
         refetchAll();
       } catch (e) {
-        if (e instanceof ApiError) {
-          setActionErr(`${e.errorCode}: ${e.message}`);
-        } else if (e instanceof Error) {
-          setActionErr(e.message);
-        } else {
-          setActionErr(String(e));
-        }
+        setActionErr(apiErrMsg(e));
       } finally {
         setPending(false);
       }
@@ -794,23 +789,19 @@ function BotLiveData({
                         <tr>
                           <td className="text-xs text-dim pr-3 py-1">created</td>
                           <td className="mono text-xs">
-                            {active[0].created_at.replace("T", " ").slice(0, 16)}
+                            {formatMskShort(active[0].created_at)}
                           </td>
                         </tr>
                         <tr>
                           <td className="text-xs text-dim pr-3 py-1">expires</td>
                           <td className="mono text-xs">
-                            {active[0].expires_at
-                              ? active[0].expires_at.replace("T", " ").slice(0, 16)
-                              : "—"}
+                            {formatMskShort(active[0].expires_at)}
                           </td>
                         </tr>
                         <tr>
                           <td className="text-xs text-dim pr-3 py-1">last used</td>
                           <td className="mono text-xs">
-                            {active[0].last_used_at
-                              ? active[0].last_used_at.replace("T", " ").slice(0, 16)
-                              : "—"}
+                            {formatMskShort(active[0].last_used_at)}
                           </td>
                         </tr>
                       </tbody>
@@ -894,13 +885,13 @@ function BotLiveData({
                           <tr key={t.token_id} className="border-t border-token">
                             <td className="py-2">{t.name}</td>
                             <td className="text-xs text-dim">
-                              {t.created_at.slice(0, 10)}
+                              {formatMskDate(t.created_at)}
                             </td>
                             <td className="text-xs text-dim">
-                              {t.expires_at ? t.expires_at.slice(0, 10) : "—"}
+                              {formatMskDate(t.expires_at)}
                             </td>
                             <td className="text-xs text-dim">
-                              {t.last_used_at ? t.last_used_at.slice(0, 10) : "—"}
+                              {formatMskDate(t.last_used_at)}
                             </td>
                             <td>
                               <button
@@ -1019,15 +1010,11 @@ function StatRow({ k, v }: { k: string; v: React.ReactNode }) {
  * `core/constants.MAX_TOKEN_TTL_DAYS`). Default = +90 дней.
  */
 function tokenExpiresBounds(): { min: string; max: string; default: string } {
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const today = new Date();
-  const min = new Date(today);
-  min.setDate(min.getDate() + 1);
-  const max = new Date(today);
-  max.setDate(max.getDate() + 180);
-  const def = new Date(today);
-  def.setDate(def.getDate() + 90);
-  return { min: fmt(min), max: fmt(max), default: fmt(def) };
+  return {
+    min: mskDateOffset(1),
+    max: mskDateOffset(180),
+    default: mskDateOffset(90),
+  };
 }
 
 function BotGrantedBy({ id }: { id: string }) {

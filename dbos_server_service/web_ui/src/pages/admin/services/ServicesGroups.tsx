@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useLabelsInvalidate, useLabelMaps } from "@/lib/labels";
+import { formatMskDate, formatMskShort } from "@/lib/datetime";
 import { InlineEditor, FormRow, StatRow, useInlineState } from "./_inline";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as groupsApi from "@/api/auth/groups";
@@ -22,7 +23,7 @@ import * as botsApi from "@/api/auth/bots";
 import { listDepartments } from "@/api/auth/departments";
 import { listServices } from "@/api/auth/services";
 import { listServiceRoles } from "@/api/auth/service_roles";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import type {
   Group,
   Department,
@@ -487,9 +488,7 @@ function GroupDetailView({
         await fn();
         refetchAll();
       } catch (e) {
-        if (e instanceof ApiError) setErr(`${e.errorCode}: ${e.message}`);
-        else if (e instanceof Error) setErr(e.message);
-        else setErr(String(e));
+        setErr(apiErrMsg(e));
       } finally {
         setPending(false);
       }
@@ -552,7 +551,7 @@ function GroupDetailView({
           k="created_at"
           v={
             <span className="mono">
-              {group.created_at.replace("T", " ").slice(0, 16)}
+              {formatMskShort(group.created_at)}
             </span>
           }
         />
@@ -720,7 +719,7 @@ function MembersCard({
                   <div className="text-[11px] text-dim mono">{u.user_id}</div>
                 </td>
                 <td className="text-xs text-dim mono">
-                  {u.added_at.slice(0, 10)}
+                  {formatMskDate(u.added_at)}
                 </td>
                 <td className="text-right">
                   <button
@@ -749,7 +748,7 @@ function MembersCard({
                   <div className="text-[11px] text-dim mono">{b.bot_id}</div>
                 </td>
                 <td className="text-xs text-dim mono">
-                  {b.added_at.slice(0, 10)}
+                  {formatMskDate(b.added_at)}
                 </td>
                 <td className="text-right">
                   <button
@@ -894,7 +893,7 @@ function ServicesCard({
                   <ServiceInline name={s.service_name} />
                 </td>
                 <td className="text-xs text-dim mono">
-                  {s.granted_at ? s.granted_at.slice(0, 10) : "—"}
+                  {formatMskDate(s.granted_at)}
                 </td>
                 <td className="text-right">
                   <button
@@ -1237,9 +1236,8 @@ function GroupCreateForm({
         const extra = errs?.length
           ? " · " + errs.map((x) => `${(x.loc ?? []).join(".")}: ${x.msg}`).join("; ")
           : "";
-        setErr(`${e.errorCode}: ${e.message}${extra}`);
-      } else if (e instanceof Error) setErr(e.message);
-      else setErr(String(e));
+        setErr(`${apiErrMsg(e)}${extra}`);
+      } else setErr(apiErrMsg(e));
     } finally {
       setPending(false);
     }
@@ -1320,9 +1318,7 @@ function GroupEditForm({
       });
       onDone();
     } catch (e) {
-      if (e instanceof ApiError) setErr(`${e.errorCode}: ${e.message}`);
-      else if (e instanceof Error) setErr(e.message);
-      else setErr(String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setPending(false);
     }
@@ -1399,9 +1395,7 @@ function DeleteGroupButton({
       select(null);
       onDeleted();
     } catch (e) {
-      if (e instanceof ApiError) setErr(`${e.errorCode}: ${e.message}`);
-      else if (e instanceof Error) setErr(e.message);
-      else setErr(String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setPending(false);
     }

@@ -29,6 +29,7 @@ import {
 import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
+import { formatMsk } from "@/lib/datetime";
 import { useQuery } from "@/api/auth/useQuery";
 import { ApiError, apiErrMsg } from "@/api/client";
 import {
@@ -454,6 +455,10 @@ function DetailPane({
   const [addingAcl, setAddingAcl] = useState(false);
   const [addingGrant, setAddingGrant] = useState(false);
 
+  // Общий гейт для прямых мутаций detail-панели (recover / delete / снятие
+  // ACL и grant) — блокирует двойной клик, пока запрос в полёте.
+  const [acting, setActing] = useState(false);
+
   useEffect(() => {
     if (throttleUntil <= 0) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -496,6 +501,8 @@ function DetailPane({
   }
 
   async function handleRecover() {
+    if (acting) return;
+    setActing(true);
     try {
       await recoverCredential(credId);
       toast.success("Credential разблокирован");
@@ -503,6 +510,8 @@ function DetailPane({
       onChanged();
     } catch (e) {
       toast.error(apiErrMsg(e, "Recover не удался"));
+    } finally {
+      setActing(false);
     }
   }
 
@@ -548,14 +557,18 @@ function DetailPane({
   }
 
   async function handleAclRevoke(aclId: string) {
+    if (acting) return;
     if (typeof window !== "undefined" && !window.confirm("Снять этот RoleACL?"))
       return;
+    setActing(true);
     try {
       await revokeRoleAcl(credId, aclId);
       toast.success("RoleACL снят");
       aclQ.refetch();
     } catch (e) {
       toast.error(apiErrMsg(e, "Снятие ACL не удалось"));
+    } finally {
+      setActing(false);
     }
   }
 
@@ -571,11 +584,13 @@ function DetailPane({
   }
 
   async function handleGrantRevoke(grantId: string) {
+    if (acting) return;
     if (
       typeof window !== "undefined" &&
       !window.confirm("Снять DeptGrant? Это каскадно снимет RoleACL recipient-dep'а.")
     )
       return;
+    setActing(true);
     try {
       await revokeDeptGrant(credId, grantId);
       toast.success("DeptGrant снят");
@@ -583,6 +598,8 @@ function DetailPane({
       aclQ.refetch();
     } catch (e) {
       toast.error(apiErrMsg(e, "Снятие grant'а не удалось"));
+    } finally {
+      setActing(false);
     }
   }
 
@@ -661,6 +678,7 @@ function DetailPane({
               <button
                 className="btn"
                 onClick={() => setEditing(true)}
+                disabled={acting}
                 title="Редактировать"
               >
                 <Pencil className="w-4 h-4 inline-block" /> Edit
@@ -668,12 +686,18 @@ function DetailPane({
             )}
             {blocked && (
               <>
-                <button className="btn" onClick={handleRecover} title="Recover">
+                <button
+                  className="btn"
+                  onClick={handleRecover}
+                  disabled={acting}
+                  title="Recover"
+                >
                   <RotateCcw className="w-4 h-4 inline-block" /> Recover
                 </button>
                 <button
                   className="btn"
                   onClick={() => setTransferring(true)}
+                  disabled={acting}
                   title="Transfer ownership"
                 >
                   <ArrowRightLeft className="w-4 h-4 inline-block" /> Transfer
@@ -683,6 +707,7 @@ function DetailPane({
             <button
               className="btn btn-danger"
               onClick={() => onDelete(cred)}
+              disabled={acting}
               title="Удалить"
             >
               <Trash2 className="w-4 h-4 inline-block" /> Revoke
@@ -756,14 +781,14 @@ function DetailPane({
             <MetaRow label="Owner dept" value={cred.owner_dept_id ?? "—"} />
             <MetaRow label="Owner user" value={cred.owner_user_id ?? "—"} />
             <MetaRow label="Created by" value={cred.created_by} />
-            <MetaRow label="Created" value={cred.created_at} />
-            <MetaRow label="Updated" value={cred.updated_at} />
+            <MetaRow label="Created" value={formatMsk(cred.created_at)} />
+            <MetaRow label="Updated" value={formatMsk(cred.updated_at)} />
             <MetaRow label="visible_to_dept" value={String(cred.visible_to_dept)} />
             <MetaRow label="valid_from" value={cred.valid_from ?? "—"} />
             <MetaRow label="valid_to" value={cred.valid_to ?? "—"} />
             {blocked && (
               <>
-                <MetaRow label="blocked_at" value={cred.blocked_at ?? "—"} />
+                <MetaRow label="blocked_at" value={formatMsk(cred.blocked_at)} />
                 <MetaRow
                   label="blocked_reason"
                   value={cred.blocked_reason ?? "—"}
@@ -814,6 +839,7 @@ function DetailPane({
                         <button
                           className="btn btn-ghost p-1"
                           title="Снять ACL"
+                          disabled={acting}
                           onClick={() => handleAclRevoke(a.id)}
                         >
                           <X className="w-3.5 h-3.5" />
@@ -860,11 +886,12 @@ function DetailPane({
                   <div key={g.id} className="stat-row items-center">
                     <span className="text-dim">{g.recipient_dept_id}</span>
                     <span className="flex items-center gap-2">
-                      <span className="mono text-xs">{g.granted_at}</span>
+                      <span className="mono text-xs">{formatMsk(g.granted_at)}</span>
                       {canManage && (
                         <button
                           className="btn btn-ghost p-1"
                           title="Снять grant"
+                          disabled={acting}
                           onClick={() => handleGrantRevoke(g.id)}
                         >
                           <X className="w-3.5 h-3.5" />

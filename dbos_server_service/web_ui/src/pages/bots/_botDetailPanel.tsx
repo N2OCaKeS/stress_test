@@ -15,10 +15,11 @@ import {
 } from "lucide-react";
 import * as botsApi from "@/api/auth/bots";
 import { useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
 import { usePersona } from "@/contexts/PersonaContext";
 import { botMutationCaps } from "@/lib/rbac";
 import { useServiceLabel } from "@/lib/labels";
+import { formatMskDate, mskDateOffset } from "@/lib/datetime";
 import { BotRoleAssign } from "@/pages/users/_botRoleAssign";
 import type {
   Bot as BotItem,
@@ -88,9 +89,7 @@ export function BotDetailFullPanel({
         await fn();
         refetchAll();
       } catch (e) {
-        if (e instanceof ApiError) setErr(`${e.errorCode}: ${e.message}`);
-        else if (e instanceof Error) setErr(e.message);
-        else setErr(String(e));
+        setErr(apiErrMsg(e));
       } finally {
         setPending(false);
       }
@@ -148,7 +147,7 @@ export function BotDetailFullPanel({
             )}
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" /> создан{" "}
-              {bot.created_at.slice(0, 10)}
+              {formatMskDate(bot.created_at)}
             </span>
           </div>
         </div>
@@ -360,13 +359,13 @@ export function BotDetailFullPanel({
                         </div>
                       </td>
                       <td className="text-xs text-dim mono">
-                        {t.created_at.slice(0, 10)}
+                        {formatMskDate(t.created_at)}
                       </td>
                       <td className="text-xs text-dim mono">
-                        {t.expires_at ? t.expires_at.slice(0, 10) : "—"}
+                        {formatMskDate(t.expires_at)}
                       </td>
                       <td className="text-xs text-dim mono">
-                        {t.last_used_at ? t.last_used_at.slice(0, 10) : "—"}
+                        {formatMskDate(t.last_used_at)}
                       </td>
                       <td>
                         {revoked ? (
@@ -579,13 +578,9 @@ function ServiceInline({ name }: { name: string }) {
 }
 
 function tokenExpBounds(): { min: string; max: string; default: string } {
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const today = new Date();
-  const min = new Date(today);
-  min.setDate(min.getDate() + 1);
-  const max = new Date(today);
-  max.setDate(max.getDate() + 180);
-  const def = new Date(today);
-  def.setDate(def.getDate() + 90);
-  return { min: fmt(min), max: fmt(max), default: fmt(def) };
+  return {
+    min: mskDateOffset(1),
+    max: mskDateOffset(180),
+    default: mskDateOffset(90),
+  };
 }

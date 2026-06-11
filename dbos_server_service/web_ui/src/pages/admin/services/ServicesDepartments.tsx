@@ -37,7 +37,7 @@ import {
 import { listServices } from "@/api/auth/services";
 import { listUsers } from "@/api/auth/users";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { ApiError } from "@/api/client";
+import { apiErrMsg } from "@/api/client";
 import type { Department, Service } from "@/api/auth/types";
 
 type UiDept = {
@@ -264,7 +264,7 @@ function DeptView({
       onChanged();
       close();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy(false);
     }
@@ -399,7 +399,7 @@ function DeptServicesSection({
       refetchGranted();
       setPicker("");
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy((b) => ({ ...b, [serviceName]: false }));
     }
@@ -414,7 +414,7 @@ function DeptServicesSection({
       await revokeServiceAccess(deptId, serviceName);
       refetchGranted();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy((b) => ({ ...b, [serviceName]: false }));
     }
@@ -571,7 +571,7 @@ function DeptForm({
       }
       onDone();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
+      setErr(apiErrMsg(e));
     } finally {
       setBusy(false);
     }

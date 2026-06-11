@@ -5,6 +5,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { CREDENTIALS, type CredentialKind } from "@/mocks/secret";
 import { DEPTS } from "@/mocks/auth";
 import { InlineEditor, FormRow, NotWiredInline, StatRow, useInlineState } from "./_inline";
+import { formatMskDate } from "@/lib/datetime";
 import { useMockMode } from "@/api/auth/useQuery";
 
 // secret_service ещё не подключён к UI — действия ниже остаются заглушками.
@@ -131,8 +132,8 @@ function SecretView({
         </div>
         <div>
           <StatRow k="owner" v={<span className="mono">{cred.owner}</span>} />
-          <StatRow k="created_at" v={<span className="mono">{cred.created_at.slice(0, 10)}</span>} />
-          <StatRow k="expires_at" v={<span className="mono">{cred.expires_at?.slice(0, 10) ?? "—"}</span>} />
+          <StatRow k="created_at" v={<span className="mono">{formatMskDate(cred.created_at)}</span>} />
+          <StatRow k="expires_at" v={<span className="mono">{formatMskDate(cred.expires_at)}</span>} />
           <StatRow k="reveal_24h" v={<span className="mono">{cred.reveal_count_24h}</span>} />
         </div>
       </div>

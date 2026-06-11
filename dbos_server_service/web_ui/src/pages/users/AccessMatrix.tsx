@@ -25,7 +25,9 @@ interface Props {
 }
 
 export function UserAccessMatrices({ userId }: Props) {
-  // FIXME(mock-leak): UserAccessMatrices целиком построена на mocks (USERS/BOTS/ROLES/RESOURCES/USER_ASSIGNMENTS + permissionGraph) — рендерится в UserDetail и в live-режиме.
+  // Построена на mocks (USERS/BOTS/ROLES/RESOURCES/USER_ASSIGNMENTS + permissionGraph).
+  // В UserDetail рендерится только под mockMode-гейтом; в live показывается заглушка
+  // «Скоро» — сводных endpoint'ов в auth_service пока нет.
   const user = USERS.find((u) => u.id === userId);
 
   const effective = useMemo(() => computeEffectiveUser(userId), [userId]);

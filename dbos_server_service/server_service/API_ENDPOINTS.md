@@ -567,6 +567,18 @@ Errors: `SECRETS_MIGRATION_DENIED` (403), `SECRETS_OUTBOX_ROW_NOT_FOUND` (404), 
 
 ---
 
+## Internal — ops runners (`/internal/migration_status`, hidden)
+
+Отдельный канал от worker_bot'а: ops-runner'ы ходят с shared-secret'ом из `SERVER_INBOUND_SERVICE_API_KEYS` под header'ом `X-Service-Identity: <identity>` — без user/department/матрицы прав. Доступ ограничен whitelist'ом identity (`require_internal_caller`). Реализация — `src/api/v1/endpoints/ops.py`.
+
+### `GET /internal/migration_status`
+
+Auth: shared-secret + `X-Service-Identity: rotation_runner`. Read-only сводка по `secrets_reencrypt_outbox` + per-column legacy-residue. Payload идентичен `/internal/secrets/migration_status` (но та защищена worker_bot scope'ом, потому не подходит ops-runner'у). Используется `scripts/k8s/rotate_master_key.sh --auto-finalize` для дожимания `outbox.pending == 0` и `remaining_legacy_total == 0` перед drop'ом старой версии ключа. INFO audit `ops.migration_status_read`.
+
+Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403).
+
+---
+
 ## Уже задокументированный owner-trade-off
 
 - **POST CREATE без Idempotency-Key.** `POST /servers`, `POST /server-accounts`, `POST /servers/{id}/ipmi`, `POST /os-versions` не читают header. Повтор полагается на UNIQUE — `409 *_DUPLICATE`. Owner-decision; внесение header'а здесь — отдельная задача.

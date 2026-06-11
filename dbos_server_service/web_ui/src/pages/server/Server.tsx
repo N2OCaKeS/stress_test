@@ -6,9 +6,7 @@
  * (`@/components/shell/Shell`, `@/components/ui/Tabs`, `@/api/server/servers`).
  *
  * Live-страница без mock-режима: списки и detail тянем напрямую через
- * `server_service`. Mock-вариант остаётся в `ServerAccountAdmin.tsx` /
- * `ServerDepAdmin.tsx` — оба больше не используются App.tsx, но файлы пока
- * сохранены как референс для C2..C9 при заполнении табов.
+ * `server_service`.
  */
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";

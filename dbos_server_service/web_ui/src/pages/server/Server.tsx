@@ -29,6 +29,7 @@ import {
 } from "@/api/server/servers";
 import { listDepartments } from "@/api/auth/departments";
 import { useDeptLabel } from "@/lib/labels";
+import { isServerZoneBlocked } from "@/lib/rbac";
 import type {
   Server,
   ServerCreateRequest,
@@ -64,6 +65,12 @@ export function Server() {
   const selectedId = params.get("id");
   const action = params.get("action"); // "new" | "edit" | null
 
+  // account_admin / logging_admin отрезаны от server_service на уровне
+  // backend-middleware (PLATFORM_ADMIN_BUSINESS_DATA_DENIED) — даже GET-список
+  // им вернёт 403. Не дёргаем API и сразу показываем объяснение вместо
+  // мёртвой страницы с кнопками, которые всё равно отобьются 403.
+  const zoneBlocked = isServerZoneBlocked(persona);
+
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("name");
   const [group, setGroup] = useState<GroupMode>("none");
@@ -80,11 +87,11 @@ export function Server() {
         busy: filterBusy || undefined,
       }),
     [filterDept, filterStatus, filterBusy],
+    { enabled: !zoneBlocked },
   );
   const depsQ = useQuery<Department[]>(() => listDepartments(), []);
 
   const canManage =
-    persona.platform_role === "account_admin" ||
     persona.platform_role === "dep_admin" ||
     persona.service_roles.server === "admin" ||
     persona.service_roles.server === "operator";
@@ -278,6 +285,14 @@ export function Server() {
     </aside>
   );
 
+  if (zoneBlocked) {
+    return (
+      <Shell breadcrumb="server_service / servers">
+        <BlockedPane />
+      </Shell>
+    );
+  }
+
   return (
     <Shell breadcrumb="server_service / servers" middle={aside}>
       {action === "new" && canManage ? (
@@ -444,6 +459,25 @@ function ServerRow({
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+
+function BlockedPane() {
+  return (
+    <section className="flex-1 min-w-0 overflow-hidden flex items-center justify-center">
+      <div className="empty-card max-w-md text-center">
+        <AlertCircle className="w-10 h-10 mx-auto text-warn mb-3" />
+        <div className="text-sm font-medium mb-2">
+          Раздел недоступен для платформенного администратора
+        </div>
+        <div className="text-xs text-dim">
+          server_service отделяет управление платформой от бизнес-данных
+          серверов. Учётка <b>account_admin</b> / <b>logging_admin</b> не имеет
+          доступа к серверам и аккаунтам — работайте под департаментной ролью
+          (dep_admin или server.*).
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function EmptyPane({
   canCreate,

@@ -25,6 +25,21 @@ export function isDepAdmin(persona: Persona): boolean {
   return persona.platform_role === "dep_admin";
 }
 
+/**
+ * True для платформенных ролей, которым server_service отказывает в доступе к
+ * бизнес-данным целиком (`account_admin`, `logging_admin`). Backend режет их
+ * на любом не-public пути 403 `PLATFORM_ADMIN_BUSINESS_DATA_DENIED` (см.
+ * `middleware/platform_admin_guard.py`) — включая GET-список серверов. Такая
+ * персона не может ни читать, ни писать ничего в зоне /server, поэтому UI не
+ * должен показывать ей ни список, ни управляющие кнопки.
+ */
+export function isServerZoneBlocked(persona: Persona): boolean {
+  return (
+    persona.platform_role === "account_admin" ||
+    persona.platform_role === "logging_admin"
+  );
+}
+
 /** True if persona has any logging-only role (view-only on aux services). */
 export function isLoggingOnly(persona: Persona): boolean {
   return (

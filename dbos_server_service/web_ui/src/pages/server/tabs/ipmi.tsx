@@ -17,9 +17,10 @@
  * и только потом server_service шифрует/сохраняет ciphertext. Результат уезжает
  * в `/tasks/{id}`; метаданные credentials подтягиваются после callback'а.
  *
- * RBAC: power-операции — server.operator/admin или account_admin/dep_admin
- * (своего dept); edit/delete/rotate — server.admin / account_admin / dep_admin
- * (своего dept). Источник флагов — `usePersona()` + `persona.service_roles`.
+ * RBAC: power-операции — server.operator/admin или dep_admin (своего dept);
+ * edit/delete/rotate — server.admin или dep_admin (своего dept). account_admin /
+ * logging_admin закрыты от server_service целиком — страница /server для них не
+ * рендерится. Источник флагов — `usePersona()` + `persona.service_roles`.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -76,10 +77,10 @@ function ipmiCaps(persona: Persona, serverDeptId: string | null): IpmiCaps {
   const platform = persona.platform_role;
   const svc = persona.service_roles.server;
 
-  if (platform === "account_admin") {
-    return { power: true, admin: true, reason: "" };
-  }
-  if (platform === "logging_admin" || platform === "logging_reader") {
+  // account_admin / logging_admin отрезаны от server_service на уровне backend —
+  // сюда не доходят (Server.tsx закрывает им весь раздел). logging_reader может
+  // быть обычным сотрудником с server-ролью, поэтому его права считаем по svc.
+  if (platform === "logging_reader" && !svc) {
     return { power: false, admin: false, reason: "logging-роль — только просмотр" };
   }
   // dep_admin своего dept'а — фактически admin для платформенных серверов dept'а.

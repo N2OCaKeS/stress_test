@@ -24,7 +24,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { ApiError } from "@/api/client";
 import { useDeptLabel } from "@/lib/labels";
 import { usePersona } from "@/contexts/PersonaContext";
-import { isDepAdmin, isPlatformWideAdmin } from "@/lib/rbac";
+import { isDepAdmin } from "@/lib/rbac";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
 
 interface Props {
@@ -44,9 +44,13 @@ export function OverviewTab({ server, onServerUpdated }: Props) {
     return <div className="p-5 text-sm text-dim">Нет данных по серверу.</div>;
   }
 
+  // server:update — есть у dep_admin (своего dept), server.admin и server.operator
+  // (по дефолтной матрице прав server_service). account_admin/logging_admin сюда
+  // не доходят — Server.tsx отрезает их раньше.
   const canEdit =
-    isPlatformWideAdmin(persona) ||
-    (isDepAdmin(persona) && persona.dept_id === view.department_id);
+    (isDepAdmin(persona) && persona.dept_id === view.department_id) ||
+    persona.service_roles.server === "admin" ||
+    persona.service_roles.server === "operator";
 
   if (editing && canEdit) {
     return (

@@ -59,7 +59,6 @@ function filterAccessibleAccounts(
   accounts: ServerAccount[],
   persona: ReturnType<typeof usePersona>["persona"],
 ): ServerAccount[] {
-  if (persona.platform_role === "account_admin") return accounts;
   if (persona.service_roles.server === "admin") return accounts;
   if (
     persona.platform_role === "dep_admin" ||
@@ -79,7 +78,6 @@ export function DriftTab({ serverId, server }: Props) {
   const [syncing, setSyncing] = useState(false);
 
   const canSync =
-    persona.platform_role === "account_admin" ||
     persona.platform_role === "dep_admin" ||
     persona.service_roles.server === "admin" ||
     persona.service_roles.server === "operator";

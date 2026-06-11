@@ -8,8 +8,9 @@
  * напоминаем, где смотреть результат. Когда `getTask` подъедет — табличка
  * `name / version / arch` рендерится тут же, скелет уже стоит.
  *
- * RBAC: probe доступен `server.operator`+ и dep_admin'у своего dept'а;
- * `account_admin` — везде. Backend перепроверит ещё раз — клиентский
+ * RBAC: probe доступен `server.operator`+ и dep_admin'у своего dept'а.
+ * account_admin / logging_admin закрыты от server_service целиком — страница
+ * /server для них не рендерится. Backend перепроверит ещё раз — клиентский
  * gate только прячет заведомо лишнюю кнопку.
  */
 import { useState } from "react";
@@ -18,7 +19,7 @@ import { installedPackagesProbe } from "@/api/server/misc";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
-import { isDepAdmin, isPlatformWideAdmin } from "@/lib/rbac";
+import { isDepAdmin } from "@/lib/rbac";
 import type { Server } from "@/api/server/types";
 
 interface Props {
@@ -36,7 +37,6 @@ function canProbe(
   persona: ReturnType<typeof usePersona>["persona"],
   server: Server | undefined,
 ): boolean {
-  if (isPlatformWideAdmin(persona)) return true;
   if (persona.service_roles.server === "admin") return true;
   if (persona.service_roles.server === "operator") return true;
   if (

@@ -41,11 +41,14 @@ interface Props {
  * текущей persona — он отражает ту же логику, что и backend для action
  * `view` (и его деривата для консоли):
  *
- *   - `account_admin` (platform) и `server.admin` — все аккаунты;
+ *   - `server.admin` — все аккаунты;
  *   - `dep_admin` своего dept'а — все аккаунты из его dept'а;
  *   - regular user с `server.operator`/`server.reader` — только аккаунты
  *     его dept'а (cross-dep шаринг через `DeptGrant` пока в UI не виден,
  *     backend сам отрежет при попытке открыть сессию).
+ *
+ * account_admin / logging_admin сюда не попадают — server_service закрыт для
+ * них целиком, страница /server для этих ролей не рендерится.
  *
  * Источник истины при реальной попытке подключения — backend (он сделает
  * полную проверку и вернёт 403, если grant'а нет). Этот фильтр — для UX,
@@ -55,7 +58,6 @@ function filterAccessible(
   accounts: ServerAccount[],
   persona: ReturnType<typeof usePersona>["persona"],
 ): ServerAccount[] {
-  if (persona.platform_role === "account_admin") return accounts;
   if (persona.service_roles.server === "admin") return accounts;
   if (
     persona.platform_role === "dep_admin" ||

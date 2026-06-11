@@ -92,20 +92,18 @@ export function AccountsTab({ serverId, server }: Props) {
   const [refreshTick, setRefreshTick] = useState(0);
 
   // На RBAC уровне UI:
-  //  - server.operator / server.admin / account_admin / dep_admin → provision,
-  //    rotate, unbind, deprovision;
-  //  - server.admin / account_admin → create/edit/delete учётки.
+  //  - server.operator / server.admin / dep_admin → provision, rotate, unbind,
+  //    deprovision;
+  //  - server.admin / dep_admin → create/edit/delete учётки.
+  // account_admin / logging_admin сюда не доходят — server_service отрезает их
+  // 403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED, страница /server для них закрыта.
   // Финальные 403 всё равно приходят с backend'а — это первичный визуальный
   // gate, без двойной проверки прав.
-  const isPlatformAdmin = persona.platform_role === "account_admin";
   const isDepAdmin = persona.platform_role === "dep_admin";
   const serverRole = persona.service_roles.server;
   const canOperate =
-    isPlatformAdmin ||
-    isDepAdmin ||
-    serverRole === "admin" ||
-    serverRole === "operator";
-  const canManage = isPlatformAdmin || isDepAdmin || serverRole === "admin";
+    isDepAdmin || serverRole === "admin" || serverRole === "operator";
+  const canManage = isDepAdmin || serverRole === "admin";
 
   const listQ = useQuery(
     () => accountsApi.listAccounts({ server_id: serverId, limit: 200 }),

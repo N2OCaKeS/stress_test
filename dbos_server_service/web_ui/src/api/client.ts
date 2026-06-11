@@ -23,6 +23,7 @@
  */
 
 import type { ApiErrorPayload, RefreshResponse } from "@/api/auth/types";
+import { humanErrMsg } from "@/api/errorMessages";
 import {
   clearTokens,
   getAccessToken,
@@ -83,9 +84,18 @@ export class ApiError extends Error {
  * Единый форматтер ошибок для toast/alert. `ApiError` отдаёт стабильный
  * `error_code` + сообщение, обычный `Error` — только message, всё прочее —
  * fallback. Заменяет ~десяток локальных копий `apiErrMsg` по страницам.
+ *
+ * Для топовых actionable-кодов (см. `@/api/errorMessages`) показываем
+ * человекочитаемую подсказку «что произошло и что делать», а сырой код —
+ * приглушённым хвостом для саппорта. Незнакомые коды деградируют к прежнему
+ * формату `CODE: message`.
  */
 export function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
-  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
+  if (e instanceof ApiError) {
+    const hint = humanErrMsg(e);
+    if (hint) return `${hint} (${e.errorCode})`;
+    return `${e.errorCode}: ${e.message}`;
+  }
   if (e instanceof Error) return e.message;
   return fallback;
 }

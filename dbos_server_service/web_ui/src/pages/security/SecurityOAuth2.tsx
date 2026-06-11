@@ -182,6 +182,7 @@ function ClientForm({
   const [redirects, setRedirects] = useState("https://app.example.com/callback");
   const [scopes, setScopes] = useState("openid profile");
   const [grants, setGrants] = useState<string[]>(["authorization_code"]);
+  const [isPublic, setIsPublic] = useState(false);
   const [pending, setPending] = useState(false);
   const toast = useToast();
 
@@ -207,6 +208,7 @@ function ClientForm({
           .filter(Boolean),
         allowed_scopes: scopes.split(/\s+/).filter(Boolean),
         grant_types: grants,
+        is_public: isPublic,
       });
       onCreated(r);
     } catch (e) {
@@ -280,6 +282,18 @@ function ClientForm({
             ))}
           </div>
         </div>
+        <label className="flex items-start gap-2 text-sm md:col-span-2">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={isPublic}
+            onChange={(e) => setIsPublic(e.target.checked)}
+          />
+          <span className="text-dim text-xs">
+            is_public — SPA / native-клиент без секрета. Включает обязательный
+            PKCE (S256); client_secret не выдаётся.
+          </span>
+        </label>
       </div>
       <div className="mt-4 flex gap-2 justify-end">
         <button className="btn" onClick={onCancel} disabled={pending}>
@@ -301,7 +315,10 @@ function SecretPanel({
   onClose: () => void;
 }) {
   const toast = useToast();
+  // public-клиент не получает секрет (доказывает identity через PKCE).
+  const isPublic = resp.client_secret == null;
   const copy = async () => {
+    if (!resp.client_secret) return;
     try {
       await navigator.clipboard.writeText(resp.client_secret);
       toast.success("Секрет скопирован");
@@ -313,7 +330,9 @@ function SecretPanel({
     <div className="card border-warn">
       <div className="flex items-center justify-between mb-2">
         <h3 className="font-semibold text-warn">
-          client_secret показывается один раз
+          {isPublic
+            ? "Public-клиент создан"
+            : "client_secret показывается один раз"}
         </h3>
         <button className="btn btn-ghost" onClick={onClose}>
           Скрыть
@@ -322,14 +341,26 @@ function SecretPanel({
       <div className="text-xs text-dim mb-2">
         client_id: <span className="mono">{resp.client_id}</span>
       </div>
-      <div className="mono text-xs break-all border border-token p-2 rounded">
-        {resp.client_secret}
-      </div>
-      <div className="mt-2">
-        <button className="btn btn-primary flex items-center gap-1" onClick={copy}>
-          <Copy className="w-4 h-4" /> Скопировать
-        </button>
-      </div>
+      {isPublic ? (
+        <div className="text-xs text-dim">
+          Секрет не выдаётся — это public-клиент. Identity доказывается PKCE
+          (code_verifier / S256).
+        </div>
+      ) : (
+        <>
+          <div className="mono text-xs break-all border border-token p-2 rounded">
+            {resp.client_secret}
+          </div>
+          <div className="mt-2">
+            <button
+              className="btn btn-primary flex items-center gap-1"
+              onClick={copy}
+            >
+              <Copy className="w-4 h-4" /> Скопировать
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

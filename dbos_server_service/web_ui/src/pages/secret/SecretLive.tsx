@@ -66,6 +66,21 @@ const STATUS_KIND: Record<string, "ok" | "danger"> = {
   blocked: "danger",
 };
 
+/**
+ * `<input type="datetime-local">` отдаёт `YYYY-MM-DDTHH:mm` без зоны. Backend
+ * валидирует окно валидности в UTC и naive-строку трактует как UTC, поэтому
+ * добавляем `:00Z` — иначе локальное время уехало бы на смещение зоны.
+ */
+function localToIso(local: string): string {
+  return local.length === 16 ? `${local}:00Z` : local;
+}
+
+/** ISO-таймстамп → значение для `datetime-local` (`YYYY-MM-DDTHH:mm`, UTC). */
+function isoToLocal(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return iso.slice(0, 16);
+}
+
 export function SecretLive() {
   const { persona } = usePersona();
   const toast = useToast();
@@ -426,8 +441,10 @@ function DetailPane({
 
   const [revealed, setRevealed] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
-  // Throttle-countdown: 429 кладёт retry_after_seconds, гасим Reveal на это
-  // окно и тикаем секундами для UX.
+  // 429-countdown: per-IP rate-limit или actor-lockout кладёт
+  // retry_after_seconds; гасим Reveal на это окно и тикаем секундами для UX.
+  // (5-минутный reveal-throttle сам по себе не 429 — он лишь меняет severity
+  // audit-события, секрет всё равно отдаётся.)
   const [throttleUntil, setThrottleUntil] = useState(0);
   const [now, setNow] = useState(() => Date.now());
 
@@ -689,8 +706,8 @@ function DetailPane({
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-warn">
                   {throttleLeft > 0
-                    ? `throttle: ${throttleLeft}с`
-                    : "reveal: 5-min throttle"}
+                    ? `rate-limited: ${throttleLeft}с`
+                    : "reveal → CRITICAL audit"}
                 </span>
                 <button
                   className="btn"
@@ -726,7 +743,7 @@ function DetailPane({
           <div className="text-xs text-dim mt-2">
             {isGuest
               ? "Guest видит метаданные; reveal закрыт — запросите доступ у dep_admin."
-              : "Reveal эмитит CRITICAL audit-событие и гейтится 5-минутным throttle."}
+              : "Reveal эмитит CRITICAL audit-событие; rate-limit / lockout отвечает 429 с Retry-After."}
           </div>
         </div>
 
@@ -920,14 +937,24 @@ function CreatePane({
   const [secret, setSecret] = useState("");
   const [ownerDeptId, setOwnerDeptId] = useState(defaultDeptId ?? "");
   const [visibleToDept, setVisibleToDept] = useState(false);
+  const [validFrom, setValidFrom] = useState("");
+  const [validTo, setValidTo] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const needsDept = scope === "department" || scope === "cross_department";
+  // valid_to обязан быть в будущем и строго позже valid_from — backend
+  // отбивает 422; гасим submit заранее, чтобы не ловить ошибку формой.
+  const windowInvalid =
+    (validTo !== "" && new Date(validTo).getTime() <= Date.now()) ||
+    (validFrom !== "" &&
+      validTo !== "" &&
+      new Date(validTo).getTime() <= new Date(validFrom).getTime());
   const valid =
     name.trim() &&
     service.trim() &&
     secret.trim() &&
-    (!needsDept || ownerDeptId.trim());
+    (!needsDept || ownerDeptId.trim()) &&
+    !windowInvalid;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -941,6 +968,10 @@ function CreatePane({
       // owner_dept_id обязателен для dept-scope, запрещён для personal.
       owner_dept_id: needsDept ? ownerDeptId.trim() : null,
       visible_to_dept: needsDept ? visibleToDept : false,
+      // datetime-local даёт naive-строку без зоны; backend трактует naive как
+      // UTC. NULL = open-ended с этой стороны.
+      valid_from: validFrom ? localToIso(validFrom) : null,
+      valid_to: validTo ? localToIso(validTo) : null,
     };
     setSubmitting(true);
     Promise.resolve(onSubmit(body)).finally(() => setSubmitting(false));
@@ -1041,6 +1072,31 @@ function CreatePane({
               </span>
             </label>
           )}
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">valid_from (UTC)</span>
+              <input
+                type="datetime-local"
+                className="surface-2 border border-token rounded px-2 py-1"
+                value={validFrom}
+                onChange={(e) => setValidFrom(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-dim text-xs">valid_to (UTC, в будущем)</span>
+              <input
+                type="datetime-local"
+                className="surface-2 border border-token rounded px-2 py-1"
+                value={validTo}
+                onChange={(e) => setValidTo(e.target.value)}
+              />
+            </label>
+          </div>
+          {windowInvalid && (
+            <div className="text-xs text-danger">
+              valid_to должен быть в будущем и строго позже valid_from.
+            </div>
+          )}
 
           <div className="flex items-center gap-2 mt-2">
             <button
@@ -1104,16 +1160,30 @@ function EditModal({
   const [name, setName] = useState(cred.name);
   const [login, setLogin] = useState(cred.login ?? "");
   const [secret, setSecret] = useState("");
+  const [validFrom, setValidFrom] = useState(isoToLocal(cred.valid_from));
+  const [validTo, setValidTo] = useState(isoToLocal(cred.valid_to));
   const [submitting, setSubmitting] = useState(false);
+
+  // backend требует valid_to > valid_from; гасим submit, чтобы не словить 422.
+  const windowInvalid =
+    validFrom !== "" &&
+    validTo !== "" &&
+    new Date(validTo).getTime() <= new Date(validFrom).getTime();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (submitting) return;
+    if (submitting || windowInvalid) return;
     // Шлём только реально изменённые поля. Пустой secret = не перешифровывать.
+    // Очистку окна через PATCH backend намеренно не маппит (NULL не снимает
+    // защиту), поэтому пустое поле = «не трогать», а не «обнулить».
     const body: CredentialUpdateRequest = {};
     if (name.trim() && name.trim() !== cred.name) body.name = name.trim();
     if (login.trim() !== (cred.login ?? "")) body.login = login.trim() || null;
     if (secret) body.secret = secret;
+    if (validFrom && validFrom !== isoToLocal(cred.valid_from))
+      body.valid_from = localToIso(validFrom);
+    if (validTo && validTo !== isoToLocal(cred.valid_to))
+      body.valid_to = localToIso(validTo);
     if (Object.keys(body).length === 0) {
       onClose();
       return;
@@ -1155,8 +1225,37 @@ function EditModal({
             placeholder="пусто = оставить текущий секрет"
           />
         </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">valid_from (UTC)</span>
+            <input
+              type="datetime-local"
+              className="surface-2 border border-token rounded px-2 py-1"
+              value={validFrom}
+              onChange={(e) => setValidFrom(e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">valid_to (UTC)</span>
+            <input
+              type="datetime-local"
+              className="surface-2 border border-token rounded px-2 py-1"
+              value={validTo}
+              onChange={(e) => setValidTo(e.target.value)}
+            />
+          </label>
+        </div>
+        {windowInvalid && (
+          <div className="text-xs text-danger">
+            valid_to должен быть строго позже valid_from.
+          </div>
+        )}
         <div className="flex items-center gap-2 mt-1">
-          <button type="submit" className="btn btn-primary" disabled={submitting}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={submitting || windowInvalid}
+          >
             {submitting ? "Сохраняем…" : "Сохранить"}
           </button>
           <button type="button" className="btn" onClick={onClose}>

@@ -36,7 +36,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
 import { apiErrMsg } from "@/api/client";
-import { isDepAdmin, isPlatformWideAdmin } from "@/lib/rbac";
+import { isDepAdmin } from "@/lib/rbac";
 import {
   clearBusy,
   deleteServer,
@@ -88,7 +88,6 @@ function canManageBasic(
   persona: ReturnType<typeof usePersona>["persona"],
   server: Server | undefined,
 ): boolean {
-  if (isPlatformWideAdmin(persona)) return true;
   if (persona.service_roles.server === "admin") return true;
   if (persona.service_roles.server === "operator") return true;
   if (isDepAdminOfServer(persona, server)) return true;
@@ -105,7 +104,6 @@ function filterAccessibleAccounts(
   accounts: ServerAccount[],
   persona: ReturnType<typeof usePersona>["persona"],
 ): ServerAccount[] {
-  if (persona.platform_role === "account_admin") return accounts;
   if (persona.service_roles.server === "admin") return accounts;
   if (
     persona.platform_role === "dep_admin" ||
@@ -126,8 +124,14 @@ export function ManageTab({ server }: Props) {
   const view = current ?? server;
 
   const allowBasic = canManageBasic(persona, view);
-  const allowOsCatalog = isPlatformWideAdmin(persona);
-  const allowDelete = isPlatformWideAdmin(persona);
+  // os_version CRUD и server:delete — только admin-плоскость (dep_admin своего
+  // dept либо server.admin). operator их не получает по дефолтной матрице.
+  const allowOsCatalog =
+    isDepAdminOfServer(persona, view) ||
+    persona.service_roles.server === "admin";
+  const allowDelete =
+    isDepAdminOfServer(persona, view) ||
+    persona.service_roles.server === "admin";
 
   // Аккаунты сервера — нужны inventory/users SSH-задачам на неуправляемом
   // сервере: worker заходит под self-сессией по паролю аккаунта. Управляемый

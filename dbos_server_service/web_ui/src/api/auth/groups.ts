@@ -15,6 +15,7 @@
  */
 
 import {
+  ApiError,
   apiDelete,
   apiGet,
   apiPatch,
@@ -35,8 +36,9 @@ export interface PaginationParams {
   offset?: number;
 }
 
+// Бэкенд `GroupRoleResponse` отдаёт только `(service_name, roles)` — без
+// `group_id` (он уже в path).
 export interface GroupRoleAssignment {
-  group_id: string;
   service_name: ServiceName;
   roles: string[];
 }
@@ -89,8 +91,27 @@ export function listGroupsByDepartment(
   });
 }
 
-export function getGroup(groupId: string): Promise<Group> {
-  return apiGet<Group>(`/auth/v1/groups/${groupId}`);
+// Бэкенд не отдаёт `GET /groups/{id}` (single-resource роутa нет — только
+// list/create/patch/delete и под-ресурсы members/bots/services/roles).
+// Поэтому достаём группу из листинга `GET /groups`, который уже сужен под
+// scope смотрящего (account_admin — все, department_admin — свой отдел).
+// Листинг страничный: добираем страницами, пока не найдём id или не упрёмся
+// в хвост.
+export async function getGroup(groupId: string): Promise<Group> {
+  const pageSize = 200;
+  let offset = 0;
+  for (;;) {
+    const page = await listGroups({ limit: pageSize, offset });
+    const hit = page.find((g) => g.id === groupId);
+    if (hit) return hit;
+    if (page.length < pageSize) break;
+    offset += page.length;
+  }
+  throw new ApiError(404, {
+    error: "not_found",
+    error_code: "GROUP_NOT_FOUND",
+    message: "Group not found",
+  });
 }
 
 export function createGroup(req: GroupCreateRequest): Promise<Group> {

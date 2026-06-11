@@ -14,7 +14,7 @@ import type { Server, ServerUpdateRequest } from "@/api/server/types";
 import { updateServer } from "@/api/server/servers";
 import { ApiError } from "@/api/client";
 import { usePersona } from "@/contexts/PersonaContext";
-import { isDepAdmin, isPlatformWideAdmin } from "@/lib/rbac";
+import { isDepAdmin } from "@/lib/rbac";
 import { FormRow, StatRow } from "@/pages/admin/services/_inline";
 
 interface Props {
@@ -34,9 +34,12 @@ export function HardwareTab({ server, onServerUpdated }: Props) {
     return <div className="p-5 text-sm text-dim">Нет данных по серверу.</div>;
   }
 
+  // PATCH hardware-полей = server:update; есть у dep_admin своего dept,
+  // server.admin и server.operator. account_admin отрезан в Server.tsx.
   const canEdit =
-    isPlatformWideAdmin(persona) ||
-    (isDepAdmin(persona) && persona.dept_id === view.department_id);
+    (isDepAdmin(persona) && persona.dept_id === view.department_id) ||
+    persona.service_roles.server === "admin" ||
+    persona.service_roles.server === "operator";
 
   if (editing && canEdit) {
     return (

@@ -313,7 +313,8 @@ export interface ServiceRoleBulkAssignRequest {
 export interface PATCreateRequest {
   name: string;
   expires_at?: Iso8601 | null;
-  allowed_services?: ServiceName[];
+  /** Backend requires at least one service (min_length=1). */
+  allowed_services: ServiceName[];
 }
 
 export interface PATCreateResponse {
@@ -368,7 +369,8 @@ export interface BotPatchRequest {
 
 export interface BotTokenCreateRequest {
   name: string;
-  expires_at?: Iso8601 | null;
+  /** Backend requires expiry (≤6 months); no ttl alternative for bots. */
+  expires_at: Iso8601;
 }
 
 export interface BotTokenCreateResponse {
@@ -436,9 +438,10 @@ export interface BotMemberResponse {
 }
 
 export interface GroupServiceAccessResponse {
-  group_id: string;
   service_name: ServiceName;
+  is_active: boolean;
   granted_at: Iso8601;
+  granted_by?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -466,11 +469,13 @@ export interface OAuth2ClientCreateRequest {
   redirect_uris: string[];
   allowed_scopes: string[];
   grant_types: string[];
+  /** Public-клиент (SPA / native) — секрет не выдаётся, обязателен PKCE S256. */
+  is_public?: boolean;
 }
 
 export interface OAuth2ClientCreatedResponse extends OAuth2Client {
-  /** Shown once. */
-  client_secret: string;
+  /** Shown once. `null` у public-клиентов — секрет не выдаётся. */
+  client_secret: string | null;
 }
 
 export interface DockerRegistryConfig {

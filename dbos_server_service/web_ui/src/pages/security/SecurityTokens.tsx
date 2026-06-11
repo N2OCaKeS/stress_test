@@ -25,9 +25,10 @@ const KNOWN_SERVICES: ServiceName[] = [
 ];
 
 /**
- * Returns the list of services the user can scope a PAT to. `account_admin`
- * has empty `allowed_services` on the backend (means "all services"); for the
- * UI we expand that into the full `KNOWN_SERVICES` list so chips render.
+ * Returns the list of services the user can scope a PAT to. A PAT must name at
+ * least one service (backend min_length=1); `account_admin` with an empty
+ * `allowed_services` is expanded into the full `KNOWN_SERVICES` list so chips
+ * render and the operator picks a concrete scope.
  */
 function resolveAvailableServices(
   user: { allowed_services?: ServiceName[]; platform_role?: string | null } | null,

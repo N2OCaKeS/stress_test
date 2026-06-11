@@ -113,7 +113,7 @@ _DEV_ADMIN_EMAIL = admin@example.com
 ##@ Dev: стек в Docker (без devcontainer)
 
 up: ## Поднять dev-стек (postgres + redis + auth :8000 + logging :8001 + server :8002 + worker + secret :8003). Данные сохраняются.
-	@$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service
+	@$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server
 	@echo ""
 	@echo "  auth_service    →  http://localhost:8000/docs    (admin / 1234)"
 	@echo "  loging_service  →  http://localhost:8001/docs    (loging_admin / 1234 после make seed)"
@@ -124,24 +124,10 @@ up: ## Поднять dev-стек (postgres + redis + auth :8000 + logging :800
 	@echo "  Первый запуск: сделай 'make seed' чтобы наполнить БД dev-данными."
 
 up-build: ## Пересобрать образы и поднять dev-стек
-	$(DEV) up -d --wait --build postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service
+	$(DEV) up -d --wait --build postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server
 
-seed: ## Чистая dev-БД, миграции всех сервисов, наполнение dev-данными (auth + logging + server: серверы/аккаунты/IPMI) через seed_dev.py и остановка контейнеров (volume сохраняется)
-	$(DEV) down -v
-	$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service
-	@echo "→ Миграции loging_service..."
-	$(DEV) exec -T loging_service python -m alembic upgrade head
-	@echo "→ Миграции auth_service..."
-	$(DEV) exec -T auth_service python -m alembic upgrade head
-	@echo "→ Миграции server_service..."
-	$(DEV) exec -T server_service python -m alembic upgrade head
-	@echo "→ Миграции server_worker..."
-	$(DEV) exec -T server_worker python -m alembic upgrade head
-	@echo "→ Миграции secret_service..."
-	$(DEV) exec -T secret_service python -m alembic upgrade head
-	@echo "→ Наполнение dev-данными..."
-	$(DEV) run --rm seeder
-	$(DEV) down
+seed: ## Наполнить уже поднятый dev-стек данными напрямую через SQL (admin/loging_admin1/dep_admin1/loging_reader1/user1, пароль 1234)
+	@cd scripts && python3 seed_dev.py
 
 down: ## Остановить dev-стек (данные в томе postgres сохраняются)
 	$(DEV) down

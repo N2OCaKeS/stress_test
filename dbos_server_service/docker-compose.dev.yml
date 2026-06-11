@@ -218,6 +218,23 @@ services:
       server_service:
         condition: service_healthy
 
+  # Тестовый SSH-сервер для проверки server_service / server_worker:
+  # обычный openssh-server (login `tester` / `tester1234`, sudo разрешён).
+  # `make seed` сидит запись `servers` с hostname=test_server — worker может
+  # резолвить контейнер по docker DNS внутри сети; с хоста SSH доступен на
+  # порту 2222.
+  test_server:
+    image: lscr.io/linuxserver/openssh-server:latest
+    environment:
+      USER_NAME: tester
+      USER_PASSWORD: tester1234
+      PASSWORD_ACCESS: "true"
+      SUDO_ACCESS: "true"
+      PUID: "1000"
+      PGID: "1000"
+    ports:
+      - "2222:2222"
+
   secret_postgres:
     image: postgres:16
     environment:
@@ -279,29 +296,6 @@ services:
       interval: 3s
       timeout: 5s
       retries: 30
-
-  # Одноразовый раннер seed_dev.py. Не стартует автоматически (profile=tools).
-  # Запуск:  docker compose -f docker-compose.dev.yml run --rm seeder
-  seeder:
-    profiles: ["tools"]
-    build:
-      context: ./auth_service
-      dockerfile: docker/Dockerfile
-    environment:
-      AUTH_URL: http://auth_service:8000
-      LOG_URL: http://loging_service:8001
-      SERVER_URL: http://server_service:8002
-    volumes:
-      - ./scripts:/scripts:ro
-      - ./.dev:/shared:rw
-    command: ["python", "/scripts/seed_dev.py"]
-    depends_on:
-      auth_service:
-        condition: service_healthy
-      loging_service:
-        condition: service_healthy
-      server_service:
-        condition: service_healthy
 
 volumes:
   dbos_dev_pg:

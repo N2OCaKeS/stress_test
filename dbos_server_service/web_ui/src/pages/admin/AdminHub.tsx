@@ -96,8 +96,15 @@ export function AdminHub() {
   // cluster items keep the centered card layout.
   const fullPane = active?.block === "services";
 
+  // account_admin уже видит каталог админ-разделов в левой панели
+  // (AdminOnlyPanel) — middle с тем же списком стал бы дублем. Скрываем.
+  const isAccountAdmin = persona.platform_role === "account_admin";
+
   return (
-    <Shell breadcrumb={breadcrumb} middle={<AdminMiddle items={items} activeId={active?.id} />}>
+    <Shell
+      breadcrumb={breadcrumb}
+      middle={isAccountAdmin ? undefined : <AdminMiddle items={items} activeId={active?.id} />}
+    >
       {lookup.kind === "none" && (
         <main className="flex-1 overflow-y-auto min-h-0">
           <div className="max-w-5xl mx-auto px-8 py-8">

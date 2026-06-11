@@ -102,6 +102,7 @@ services:
       INITIAL_ADMIN_USERNAME: admin
       INITIAL_ADMIN_PASSWORD: "1234"
       INITIAL_ADMIN_EMAIL: admin@example.com
+      DBOS_BOOTSTRAP_NO_FORCE_CHANGE: "true"
       APP_LOG_LEVEL: INFO
     command: >
       sh -c "python -m alembic upgrade head &&

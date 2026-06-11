@@ -6,6 +6,7 @@ no-op (идемпотентно).
 """
 
 import logging
+import os
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +41,12 @@ async def bootstrap_admin(db: AsyncSession) -> None:
     # Пароль виден оператору в k8s-секрете и сертификатах развёртывания, пока
     # admin не сменит его сам. До первой самостоятельной смены через
     # POST /users/me/password middleware режет доступ ко всем endpoint'ам.
+    # Dev-режим: env `DBOS_BOOTSTRAP_NO_FORCE_CHANGE=true` отключает требование
+    # смены пароля при первом логине. Включён только в docker-compose.dev.yml;
+    # для k8s/prod-манифестов остаётся дефолт True.
+    force_change = (
+        os.environ.get("DBOS_BOOTSTRAP_NO_FORCE_CHANGE", "").lower() != "true"
+    )
     try:
         user = await repo.create(
             username=settings.initial_admin_username,
@@ -48,7 +55,7 @@ async def bootstrap_admin(db: AsyncSession) -> None:
             email=settings.initial_admin_email,
             platform_role=PlatformRole.ACCOUNT_ADMIN,
             created_by="bootstrap",
-            must_change_password=True,
+            must_change_password=force_change,
         )
         await db.commit()
     except IntegrityError:

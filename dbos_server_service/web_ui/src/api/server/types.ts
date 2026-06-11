@@ -1,0 +1,554 @@
+/**
+ * Типы request/response для server_service API.
+ *
+ * Файл расшарен между всеми wrapper'ами раздела `/api/server/*`. Каждый
+ * подраздел держит свою секцию между разделителями. Источник истины —
+ * Pydantic-схемы в `server_service/src/schemas/`.
+ */
+
+// ── shared ──────────────────────────────────────────────────────────────────
+
+/** ISO-8601 UTC timestamp (`2026-06-11T12:34:56Z`). */
+export type Iso8601 = string;
+
+/** Cursor envelope, используемый list-эндпоинтами c keyset-пагинацией. */
+export interface CursorPaginatedResponse<T> {
+  items: T[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+/** Offset envelope, остаётся legacy-форматом для list-эндпоинтов. */
+export interface OffsetPaginatedResponse<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** Стандартный ответ на dispatch worker-task'и (`{task_id, status}`). */
+export interface TaskDispatchResponse {
+  task_id: string;
+  status: string;
+}
+
+/** Body `{reason: string}` — используется для DELETE-операций и busy-захвата. */
+export interface ReasonBody {
+  reason: string;
+}
+
+// ── servers ─────────────────────────────────────────────────────────────────
+
+/** ServerStatus enum (`servers.status`). */
+export type ServerStatus =
+  | "unknown"
+  | "online"
+  | "offline"
+  | "maintenance"
+  | "decommissioned";
+
+/** BusyState enum (`servers.busy_state`). */
+export type BusyState = "free" | "busy" | "testing";
+
+/** PowerState enum (`servers.power_state`). */
+export type PowerState = "on" | "off" | "unknown";
+
+/** IpmiKind enum (`ipmi_controllers.kind`). */
+export type IpmiKind = "idrac" | "ilo" | "ipmi" | "redfish";
+
+/** Спецификация диска в `ServerCreate.storage` / `ServerUpdate.storage`. */
+export interface DiskSpec {
+  slot: string;
+  size_gb: number;
+  model?: string | null;
+  is_system?: boolean;
+}
+
+/** Карточка диска внутри `Server.storage`. */
+export interface DiskResponse {
+  id: string;
+  slot: string;
+  size_gb: number;
+  model: string | null;
+  is_system: boolean;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+}
+
+/** IPMI-блок, вкладываемый в `ServerCreateRequest.ipmi`. */
+export interface ServerIpmiCreate {
+  kind: IpmiKind;
+  endpoint_url: string;
+  username: string;
+  password: string;
+}
+
+/** Карточка сервера (ответ GET/POST/PATCH /servers). */
+export interface Server {
+  id: string;
+  hostname: string;
+  display_name: string | null;
+  ip_address: string;
+  mgmt_ip_address: string | null;
+  ssh_port: number;
+  os_version_id: string | null;
+  os_last_synced_at: Iso8601 | null;
+  department_id: string;
+  status: ServerStatus;
+  power_state: PowerState;
+  busy_state: BusyState;
+  busy_user_id: string | null;
+  busy_since: Iso8601 | null;
+  busy_note: string | null;
+  serial_number: string | null;
+  asset_tag: string | null;
+  location: string | null;
+  cpu_brand: string | null;
+  cpu_model: string | null;
+  cpu_cores: number | null;
+  cpu_threads: number | null;
+  cpu_frequency_ghz: number | null;
+  ram_total_mb: number | null;
+  network_interface_name: string | null;
+  decommissioned_at: Iso8601 | null;
+  is_managed: boolean;
+  management_user: string | null;
+  prepared_at: Iso8601 | null;
+  storage: DiskResponse[];
+  created_at: Iso8601;
+  updated_at: Iso8601;
+  created_by: string | null;
+}
+
+/** Тело POST /servers. */
+export interface ServerCreateRequest {
+  hostname: string;
+  display_name?: string | null;
+  ip_address: string;
+  mgmt_ip_address?: string | null;
+  ssh_port?: number;
+  department_id: string;
+  os_version_id?: string | null;
+  cpu_brand?: string | null;
+  cpu_model?: string | null;
+  cpu_cores?: number | null;
+  cpu_threads?: number | null;
+  cpu_frequency_ghz?: number | null;
+  ram_total_mb?: number | null;
+  network_interface_name?: string | null;
+  serial_number?: string | null;
+  asset_tag?: string | null;
+  location?: string | null;
+  storage?: DiskSpec[];
+  ipmi?: ServerIpmiCreate | null;
+}
+
+/** Тело PATCH /servers/{id}. Все поля опциональны. */
+export interface ServerUpdateRequest {
+  display_name?: string | null;
+  ip_address?: string | null;
+  mgmt_ip_address?: string | null;
+  ssh_port?: number | null;
+  os_version_id?: string | null;
+  cpu_brand?: string | null;
+  cpu_model?: string | null;
+  cpu_cores?: number | null;
+  cpu_threads?: number | null;
+  cpu_frequency_ghz?: number | null;
+  ram_total_mb?: number | null;
+  network_interface_name?: string | null;
+  serial_number?: string | null;
+  asset_tag?: string | null;
+  location?: string | null;
+  storage?: DiskSpec[] | null;
+}
+
+/** Тело POST /servers/{id}/busy — захват сервера. */
+export interface ServerAcquireRequest {
+  lease_until?: Iso8601 | null;
+  purpose?: string | null;
+}
+
+/** Один drift-сигнал из `GET /servers/{id}/drift`. */
+export interface DriftEventItem {
+  login: string;
+  drift_type: "unknown_login" | "attributes" | "missing_on_box" | string;
+  fields: string[] | null;
+  detected_at: Iso8601;
+}
+
+/** Ответ `GET /servers/{id}/drift`. */
+export interface ServerDrift {
+  server_id: string;
+  since: Iso8601;
+  drifts: DriftEventItem[];
+  truncated: boolean;
+}
+
+/** Тело POST /servers/{id}/prepare — bootstrap-креды в base64. */
+export interface ServerPrepareRequest {
+  username_b64: string;
+  password_b64: string;
+}
+
+/** Ответ POST /servers/{id}/prepare. */
+export interface ServerPrepareResponse {
+  task_id: string;
+  status: string;
+}
+
+// ── ipmi ────────────────────────────────────────────────────────────────────
+
+/** Результат последнего probe BMC (`ipmi_controllers.last_status`). */
+export type IpmiProbeStatus = "ok" | "unreachable" | "auth_failed";
+
+/**
+ * Карточка IPMI-контроллера (response `IpmiControllerResponse`).
+ *
+ * `password_b64` — base64(plaintext BMC-пароля). Поле присутствует только
+ * когда вызывающий держит action `view_credentials`; иначе `null`. Сырого
+ * `password_encrypted` в ответе нет никогда.
+ */
+export interface IpmiController {
+  id: string;
+  server_id: string;
+  kind: IpmiKind;
+  endpoint_url: string;
+  username: string;
+  password_rotated_at: Iso8601 | null;
+  password_b64: string | null;
+  last_probed_at: Iso8601 | null;
+  last_status: IpmiProbeStatus | string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+}
+
+/**
+ * Тело POST /servers/{server_id}/ipmi — регистрация BMC.
+ *
+ * `password` — plaintext, шифруется на бэке через `secrets_service.encrypt()`
+ * до записи в БД. Действует политика: минимум 8 символов, буквы и цифры.
+ */
+export interface IpmiCreateRequest {
+  kind: IpmiKind;
+  endpoint_url: string;
+  username: string;
+  password: string;
+}
+
+/**
+ * Тело PATCH /servers/{server_id}/ipmi — частичное обновление BMC.
+ *
+ * Все поля опциональны. `password` через PATCH не меняется — ротация
+ * проходит отдельным потоком через `rotateIpmi`/worker dispatch.
+ */
+export interface IpmiUpdateRequest {
+  kind?: IpmiKind | null;
+  endpoint_url?: string | null;
+  username?: string | null;
+}
+
+/**
+ * Ответ `GET /servers/{server_id}/ipmi/credentials` — метаданные без пароля.
+ *
+ * Plaintext-пароль через этот endpoint не отдаётся ни при каких условиях;
+ * для него есть только internal endpoint под worker'ом.
+ */
+export interface IpmiCredentials {
+  id: string;
+  server_id: string;
+  kind: IpmiKind;
+  endpoint_url: string;
+  username: string;
+  password_rotated_at: Iso8601 | null;
+}
+
+/**
+ * Ответ `GET /servers/{server_id}/ipmi/power` — кэшированный power_state.
+ *
+ * TTL/инвалидации у `power_state` нет: значение перетирается worker'ом при
+ * очередном `power.{on,off,reboot}` callback'е, между обновлениями может
+ * быть сколь угодно устаревшим. Live-опрос — через `dispatchPowerStatus`.
+ */
+export interface PowerStatus {
+  server_id: string;
+  power_state: PowerState;
+  last_probed_at: Iso8601 | null;
+}
+
+// ── server-accounts ─────────────────────────────────────────────────────────
+
+/**
+ * Происхождение аккаунта в БД.
+ *
+ * `managed` — заведён через API, пароль известен сервису и может ротироваться;
+ * `discovered` — найден инвентаризацией бокса, пароля у сервиса может не быть
+ * (поле `password_encrypted` IS NULL), provision требует `force_password=true`.
+ */
+export type ServerAccountSource = "managed" | "discovered";
+
+/** Карточка аккаунта в ответе GET/POST/PATCH /server-accounts. */
+export interface ServerAccount {
+  id: string;
+  server_ids: string[];
+  department_id: string;
+  login: string;
+  source: ServerAccountSource;
+  has_sudo: boolean;
+  unix_groups: string[];
+  linked_user_id: string | null;
+  shell: string | null;
+  home_dir: string | null;
+  is_active: boolean;
+  password_rotated_at: Iso8601 | null;
+  /**
+   * Base64(plaintext) пароля. Присутствует только когда у вызывающего есть
+   * action `view_password`; иначе backend возвращает `null`. Сырого
+   * `password_encrypted` в ответе нет никогда.
+   */
+  password_b64: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+  created_by: string | null;
+}
+
+/** Тело POST /server-accounts. */
+export interface ServerAccountCreateRequest {
+  server_ids: string[];
+  login: string;
+  /** Если не задан — backend сгенерирует `secrets.token_urlsafe(32)`. */
+  password?: string | null;
+  has_sudo?: boolean;
+  unix_groups?: string[];
+  linked_user_id?: string | null;
+  shell?: string | null;
+  home_dir?: string | null;
+}
+
+/**
+ * Тело PATCH /server-accounts/{id}.
+ *
+ * Пароль сюда не входит — для него отдельный `/rotate_password`. Привязка/
+ * отвязка серверов — через `/servers` под-операции. Поля `is_active` тоже
+ * нет: backend держит её для GET, но запрещает менять через PATCH.
+ */
+export interface ServerAccountUpdateRequest {
+  has_sudo?: boolean | null;
+  unix_groups?: string[] | null;
+  linked_user_id?: string | null;
+  shell?: string | null;
+  home_dir?: string | null;
+}
+
+// ── os-versions ─────────────────────────────────────────────────────────────
+
+/**
+ * Карточка OS-версии в каталоге (ответ GET/POST/PATCH /os-versions).
+ *
+ * `id` имеет префикс `osv_`. `repositories` — apt/yum URL'ы, валидируются на
+ * backend'е (http(s), непустой host, до 64 штук).
+ */
+export interface OsVersion {
+  id: string;
+  name: string;
+  description: string | null;
+  repositories: string[];
+  discovered_at: Iso8601;
+  updated_at: Iso8601;
+}
+
+/** Тело POST /os-versions. `name` уникален в каталоге. */
+export interface OsVersionCreateRequest {
+  name: string;
+  description?: string | null;
+  repositories?: string[];
+}
+
+/** Тело PATCH /os-versions/{id}. Все поля опциональны. */
+export interface OsVersionUpdateRequest {
+  name?: string | null;
+  description?: string | null;
+  repositories?: string[] | null;
+}
+
+/**
+ * Тело POST /servers/{server_id}/os-sync — ручная смена `servers.os_version_id`.
+ * `null` сбрасывает версию (например, после переустановки до инвентаризации).
+ */
+export interface ServerOsSyncRequest {
+  os_version_id: string | null;
+}
+
+// ── permissions ─────────────────────────────────────────────────────────────
+
+/**
+ * Типы сущностей матрицы прав. Сводка `ENTITY_ACTIONS` из
+ * `server_service/src/core/constants.py`. Строковый union — backend в любой
+ * момент может расширить (например, `ssh_key`), и мы хотим, чтобы лишний
+ * вариант с сервера не валил типы; `string` хвост держит дверь приоткрытой.
+ */
+export type EntityType =
+  | "server"
+  | "server_account"
+  | "os_version"
+  | "ipmi_controller"
+  | "permission"
+  | "task"
+  | (string & {});
+
+/**
+ * Имя роли. Системные: `guest`/`reader`/`operator`/`admin`. Кастомные
+ * создаются `account_admin`'ом или department-admin'ом и не предопределены —
+ * поэтому хвост `string`. Backend хранит как обычную строку до 64 символов.
+ */
+export type RoleName =
+  | "guest"
+  | "reader"
+  | "operator"
+  | "admin"
+  | (string & {});
+
+/**
+ * Имя действия. Полный whitelist — `Action` enum в
+ * `server_service/src/core/constants.py`; перечислены наиболее часто
+ * используемые, хвост `string` оставлен под рост каталога без правки UI.
+ */
+export type ActionName =
+  | "view"
+  | "create"
+  | "update"
+  | "delete"
+  | "busy_acquire"
+  | "busy_release"
+  | "os_sync"
+  | "power_on"
+  | "power_off"
+  | "power_reboot"
+  | "power_status"
+  | "inventory_trigger"
+  | "inventory_submit"
+  | "prepare_callback"
+  | "view_drift"
+  | "view_password"
+  | "rotate_password"
+  | "grant_sudo"
+  | "provision_on_host"
+  | "view_credentials"
+  | "rotate_credentials"
+  | "permission_grant"
+  | "permission_revoke"
+  | "cancel"
+  | (string & {});
+
+/**
+ * Одна строка матрицы `entity_permissions` (Pydantic `PermissionResponse`).
+ *
+ * `department_id` — scope-дискриминатор: `null` = system-wide grant
+ * (встроенные роли), строка = per-department. `granted_by` — `null` для
+ * seed-данных.
+ */
+export interface PermissionEntry {
+  id: string;
+  entity_type: EntityType;
+  role: RoleName;
+  action: ActionName;
+  department_id: string | null;
+  granted_by: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+  /** Появляется только при `describe=true` (`PermissionDescribedResponse`). */
+  entity_description?: string;
+  /** Появляется только при `describe=true`. */
+  action_description?: string;
+  /** Появляется только при `describe=true`. CRITICAL-аудит при изменении. */
+  sensitive?: boolean;
+}
+
+/** Действие в каталоге (`CatalogAction`). */
+export interface PermissionCatalogAction {
+  action: ActionName;
+  description: string;
+  /** Чувствительное действие — CRITICAL severity в audit. */
+  sensitive: boolean;
+  /** Служебный callback воркера; людям обычно не выдаётся. */
+  worker_only: boolean;
+}
+
+/** Сущность каталога (`CatalogEntity`) — описание и набор её действий. */
+export interface PermissionCatalogItem {
+  entity_type: EntityType;
+  description: string;
+  actions: PermissionCatalogAction[];
+}
+
+/** Envelope для GET /permissions и GET /permissions/{entity_type}. */
+export interface PermissionListResponse {
+  items: PermissionEntry[];
+  total: number;
+  /** True — строки обогащены описаниями (`describe=true`). */
+  described: boolean;
+}
+
+/**
+ * Body PUT /permissions/{entity_type}/{role}/{action}.
+ *
+ * `target_department_id` опционален; caller обязан либо опустить, либо
+ * передать собственный `department_id`, иначе 403 DEPARTMENT_ISOLATION.
+ */
+export interface PermissionGrantRequest {
+  target_department_id?: string | null;
+}
+
+// ── misc ────────────────────────────────────────────────────────────────────
+
+/**
+ * Ответ `POST /servers/{id}/installed-packages` — диспатч SSH-пробы пакетов.
+ *
+ * Endpoint возвращает `task_id` сразу (HTTP 202), фактический список пакетов
+ * собирается worker'ом из `dpkg-query`/`rpm -qa` и пишется в `task.result`.
+ * UI после dispatch'а опрашивает task-row, чтобы получить итоговый
+ * `{packages: [{name, version}, ...]}`.
+ */
+export interface InstalledPackagesResult {
+  task_id: string;
+  status: string;
+}
+
+/**
+ * Тело `POST /servers/{id}/installed-packages` — фильтр-шаблон.
+ *
+ * `pattern` — shell-glob (не regex): `htop`, `linux-image*`, `*-dev`. Default
+ * на стороне backend — `*` (все пакеты). Допустимые символы:
+ * `[A-Za-z0-9._\-+*?\[\]]+`, иначе 400 `INVALID_PATTERN`.
+ */
+export interface InstalledPackagesRequest {
+  pattern?: string;
+}
+
+/**
+ * Ответ `POST /servers/{id}/users/inventory` — диспатч snapshot'а OS-юзеров.
+ *
+ * Endpoint отдаёт `task_id` сразу (HTTP 202). Worker заходит по SSH, читает
+ * `getent passwd` / группы / sudoers, POST'ит результат в
+ * `/internal/servers/{id}/users/inventory`, server_service reconcile'ит его
+ * с `server_accounts`.
+ */
+export interface UsersInventoryResult {
+  task_id: string;
+  status: string;
+}
+
+/** Тело `POST /tasks/{task_id}/cancel` — опциональная причина отмены. */
+export interface TaskCancelRequest {
+  reason?: string | null;
+}
+
+/** Ответ `POST /tasks/{task_id}/cancel` — финальное состояние row. */
+export interface TaskCancelResult {
+  task_id: string;
+  status: string;
+  previous_status: string;
+  cancelled_at: Iso8601;
+  cancelled_by: string | null;
+  cancel_reason: string | null;
+}

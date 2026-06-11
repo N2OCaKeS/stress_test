@@ -109,8 +109,8 @@ export function revealCredential(
  * `POST /credentials/{id}/transfer` — передать ownership заблокированной кред.
  *
  * Ровно одно из `new_owner_user_id` / `new_owner_dept_id` + обязательный
- * `reason` (CRITICAL-операция). Гейтится admin secret_service своего dept'а /
- * account_admin.
+ * `reason` (CRITICAL-операция). Гейтится admin secret_service владеющего
+ * dept'а — account_admin к transfer не подпущен (нет dept-scope).
  */
 export function transferCredential(
   id: string,
@@ -122,8 +122,8 @@ export function transferCredential(
 /**
  * `POST /credentials/{id}/recover` — снять блокировку в окне 30 дней.
  *
- * Тело не требуется. Гейтится admin secret_service своего dept'а /
- * account_admin.
+ * Тело не требуется. Гейтится admin secret_service владеющего dept'а —
+ * account_admin к recover не подпущен (нет dept-scope).
  */
 export function recoverCredential(id: string): Promise<Credential> {
   return apiPost<Credential>(`${BASE}/${id}/recover`);

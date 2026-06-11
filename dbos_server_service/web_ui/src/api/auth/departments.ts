@@ -72,10 +72,8 @@ export function deleteDepartment(
 
 // ── Department ↔ services access ────────────────────────────────────────────
 //
-// Backend (auth_service) предоставляет только POST/DELETE — GET-листинга нет
-// (нельзя узнать, какие сервисы уже привязаны к отделу). UI компенсирует это
-// «опциональным» отображением: имя пишется руками или выбирается из общего
-// списка сервисов, а статус показывается после первого взаимодействия.
+// Backend (auth_service) даёт GET (список привязанных сервисов) + POST/DELETE.
+// `listDepartmentServices` возвращает массив `service_name` активных грантов.
 export function listDepartmentServices(
   departmentId: string,
 ): Promise<string[]> {

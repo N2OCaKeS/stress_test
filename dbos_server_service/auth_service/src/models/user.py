@@ -15,6 +15,10 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     username: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
     email: Mapped[str | None] = mapped_column(String(256), unique=True, nullable=True)
+    # Произвольный human-readable заголовок профиля (ФИО, ник в чате — что
+    # пользователь сам предпочтёт). В отличие от `username` не уникален и не
+    # участвует в логине. Меняется через PATCH /me.
+    display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(1024), nullable=False)
     department_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("departments.id", ondelete="RESTRICT"), nullable=True, index=True

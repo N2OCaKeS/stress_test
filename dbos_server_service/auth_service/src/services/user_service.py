@@ -1033,6 +1033,153 @@ async def change_own_password(
         )
 
 
+_ALLOWED_ME_UPDATE_FIELDS = frozenset({"display_name", "email"})
+
+
+async def patch_me(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    updates: dict,
+    request_id: str | None = None,
+) -> "IdentityContext":
+    """Self-service апдейт собственного профиля юзера.
+
+    Whitelist: только `display_name` и `email`. Любые лишние ключи
+    отбрасываются здесь молча (Pydantic-схема уже их отбила через
+    `extra='forbid'`, но второй фильтр — defence-in-depth, чтобы
+    случайный вызов из легаси-кода с generic-dict'ом не повысил юзеру
+    `platform_role`).
+
+    Пустой словарь после фильтра → `EMPTY_UPDATE` 422. Сам Pydantic
+    бьёт это же на схеме, но здесь повторяем для прямых service-level
+    вызовов (без endpoint'а сверху).
+
+    Возвращает свежий `IdentityContext` (как `/me`), чтобы UI мог
+    переотрисовать профиль без повторного запроса.
+    """
+    user_repo = UserRepository(db)
+    dept_repo = DepartmentRepository(db)
+
+    filtered = {
+        k: v for k, v in updates.items() if k in _ALLOWED_ME_UPDATE_FIELDS
+    }
+    if not filtered:
+        raise DomainValidationError(
+            error_code="EMPTY_UPDATE",
+            message="At least one of display_name or email must be set",
+        )
+
+    user = await user_repo.get_by_id(user_id)
+    if user is None:
+        raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
+
+    await user_repo.update(user, **filtered)
+    await db.commit()
+
+    # Audit `me.updated` (INFO). email маскируем — PII не должна светиться
+    # loging_reader'у в открытом виде. display_name — публичный заголовок
+    # профиля, пишем как есть.
+    audit_changes = dict(filtered)
+    if "email" in audit_changes and audit_changes["email"] is not None:
+        audit_changes["email"] = mask_email(audit_changes["email"])
+    audit_service.emit(
+        "me.updated",
+        user_id,
+        target_id=user_id,
+        target_type="user",
+        details={
+            "username": user.username,
+            "changes": audit_changes,
+            "fields_changed": sorted(filtered.keys()),
+        },
+        request_id=request_id,
+    )
+
+    # Пересобираем IdentityContext через тот же путь, что и `/me`, чтобы
+    # ответ был идентичен последующим GET /me. Это даёт обновлённые
+    # email/display_name + свежие service_roles/allowed_services.
+    from src.services.auth_service import get_identity as _get_identity
+
+    return await _get_identity(db=db, user_id=user_id, request_id=request_id)
+
+
+async def force_password_change(
+    db: AsyncSession,
+    *,
+    actor_id: str,
+    actor_role: str | None,
+    actor_dept_id: str | None,
+    target_user_id: str,
+    request_id: str | None = None,
+) -> None:
+    """Поднять `must_change_password=True` без замены пароля.
+
+    Доступ:
+        * account_admin — любой target;
+        * department_admin — только в своём отделе (проверка через
+          `assert_dept_admin_target_dept`);
+        * иначе — 403 ROLE_REQUIRED ещё на уровне endpoint'а через
+          `AnyAdmin`-guard.
+
+    Сам себе ставить флаг разрешено — полезно, чтобы админ мог проверить
+    flow на своём аккаунте перед массовой рассылкой.
+
+    Side-effects:
+        * `_invalidate_identity_cache(target)` — иначе middleware на
+          следующем запросе target'а увидит закэшированный
+          `must_change_password=False` до истечения TTL и пропустит юзера
+          мимо guard'а. Симметрично `reset_password`.
+        * audit `user.force_password_change` (WARNING) с `target_id`,
+          `target_username`, `actor_role`.
+
+    Активные сессии и PAT НЕ revoke'ятся. Middleware всё равно отрежет
+    их на следующем запросе по флагу в БД; ранний revoke'ил бы доступ
+    в момент, когда юзер ещё может разлогиниться добровольно через
+    `/users/me/password`.
+
+    Errors:
+        * 404 USER_NOT_FOUND — target не существует.
+        * 403 DEPT_MISMATCH — DA пытается дёрнуть юзера чужого отдела.
+        * 403 ACTOR_VANISHED — actor исчез между issue JWT и check'ом.
+    """
+    user_repo = UserRepository(db)
+
+    target = await user_repo.get_by_id(target_user_id)
+    if target is None:
+        raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
+
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN:
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, target.department_id,
+            error_code="DEPT_MISMATCH",
+            message="department_admin can only force password change in own department",
+        )
+
+    # Идемпотентно: если флаг уже True — пишем всё равно (тестам важно
+    # видеть, что флаг точно стоит после успешного 200), но audit пометим
+    # `was_already_set=True`, чтобы SIEM мог фильтровать noop-вызовы.
+    was_already_set = bool(target.must_change_password)
+    await user_repo.update(target, must_change_password=True)
+    await db.commit()
+
+    _invalidate_identity_cache(target_user_id)
+
+    audit_service.emit(
+        "user.force_password_change",
+        actor_id,
+        target_id=target_user_id,
+        target_type="user",
+        details={
+            "target_username": target.username,
+            "actor_role": str(actor_role) if actor_role else "unknown",
+            "actor_dept_id": actor_dept_id,
+            "was_already_set": was_already_set,
+        },
+        request_id=request_id,
+    )
+
+
 async def ban_user(
     db: AsyncSession,
     actor_id: str,

@@ -134,6 +134,8 @@ async def _identity_from_user_jwt(
     return IdentityContext(
         user_id=user.id,
         username=user.username,
+        display_name=user.display_name,
+        email=user.email,
         department_id=user.department_id,
         department_name=dept_name,
         allowed_services=allowed_services,

@@ -12,6 +12,7 @@ import type {
   Group,
   MePasswordChangeRequest,
   MeResponse,
+  MeUpdateRequest,
   SessionListResponse,
   User,
   UserCreateRequest,
@@ -178,22 +179,15 @@ export function resetUserPassword(
   return apiPost<void>(`/auth/v1/users/${userId}/reset-password`, body);
 }
 
-// Backend endpoint `POST /users/{id}/force-password-change` отсутствует в
-// auth_service (см. API_ENDPOINTS.md, Users). Флаг `must_change_password=True`
-// сейчас выставляется только через `POST /users/{id}/reset-password` (там
-// admin задаёт новый пароль и одновременно поднимает флаг).
-// TODO(auth_service): добавить standalone-endpoint, который поднимает
-// `must_change_password=True` без смены пароля, и подключить его сюда.
-// Пока — функция-заглушка: бросает ApiError, чтобы случайный вызов из UI
-// падал предсказуемо вместо runtime 404.
-export function forcePasswordChange(_userId: string): Promise<void> {
-  return Promise.reject(
-    new ApiError(501, {
-      error: "not_implemented",
-      error_code: "NOT_IMPLEMENTED",
-      message:
-        "force-password-change endpoint отсутствует в auth_service; используй reset-password",
-    }),
+// `POST /users/{id}/force-password-change` — standalone-флаг-флип
+// `must_change_password=True` без замены пароля. Admin/dep_admin зовут
+// его, когда хотят, чтобы target сменил пароль на ближайшем входе, не
+// выдавая новый временный пароль самим. После успеха middleware
+// блокирует target'а на всех ручках кроме `/users/me/password`.
+export function forcePasswordChange(userId: string): Promise<void> {
+  return apiPost<void>(
+    `/auth/v1/users/${userId}/force-password-change`,
+    {},
   );
 }
 
@@ -265,17 +259,17 @@ export function getMe(): Promise<MeResponse> {
   return apiGet<MeResponse>("/auth/v1/me");
 }
 
-// auth_service не реализует PATCH /me — профиль читается через GET /me,
-// смена пароля идёт через POST /users/me/password.
-export function updateMe(_body: { email?: string }): Promise<MeResponse> {
-  return Promise.reject(
-    new ApiError(501, {
-      error: "not_implemented",
-      error_code: "NOT_IMPLEMENTED",
-      message:
-        "PATCH /me не реализован в auth_service. Профиль read-only через GET /me.",
-    }),
-  );
+// `PATCH /api/auth/v1/me` — self-service апдейт собственного профиля
+// (display_name / email). Backend whitelist'ит поля через pydantic
+// `extra='forbid'`: попытка передать `platform_role`/`department_id`/
+// `username` отдаст 422 на этапе валидации.
+export function patchMe(body: MeUpdateRequest): Promise<MeResponse> {
+  return apiPatch<MeResponse>("/auth/v1/me", body);
+}
+
+/** @deprecated use `patchMe`. Kept as thin wrapper for legacy call sites. */
+export function updateMe(body: MeUpdateRequest): Promise<MeResponse> {
+  return patchMe(body);
 }
 
 // ---------------------------------------------------------------------------

@@ -55,6 +55,46 @@ class UserCreate(BaseModel):
         return validate_password(value)
 
 
+class MeUpdateRequest(BaseModel):
+    """Тело `PATCH /api/auth/v1/me` — self-service апдейт собственного профиля.
+
+    Whitelist: `display_name` и `email`. Остальные поля (`username`,
+    `platform_role`, `department_id`, `is_banned`, `must_change_password`)
+    намеренно отсутствуют в схеме, а `extra='forbid'` гарантирует, что
+    их нельзя протащить под другим именем — Pydantic вернёт 422 ещё до
+    того, как тело уйдёт в service-слой. Это даёт явное «нельзя руками
+    повысить себе роль через self-management» поведение.
+
+    Минимум одно поле обязательно: пустое тело → 422 EMPTY_UPDATE
+    (см. `model_validator` ниже), чтобы UI не плодил no-op аудит-события.
+    """
+
+    display_name: str | None = Field(
+        default=None,
+        max_length=256,
+        description="Человеческий заголовок профиля (ФИО / ник). Можно очистить, явно передав null.",
+    )
+    email: EmailStr | None = Field(
+        default=None,
+        description="Email пользователя. Можно очистить, явно передав null.",
+    )
+
+    model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def _not_empty(self) -> "MeUpdateRequest":
+        # `model_fields_set` — что юзер реально написал в JSON. Пустое тело
+        # (`{}`) и тело только с пропущенными полями обрабатываем одинаково:
+        # PATCH без полей бесполезен. `PydanticCustomError`, чтобы 422-envelope
+        # сериализовался корректно (см. `BanRequest._expires_at_must_be_in_future`).
+        if not self.model_fields_set:
+            raise PydanticCustomError(
+                "empty_update",
+                "At least one field (display_name or email) must be set",
+            )
+        return self
+
+
 class UserUpdate(BaseModel):
     """Тело `PATCH /users/{user_id}` — частичный апдейт."""
     email: EmailStr | None = Field(default=None)

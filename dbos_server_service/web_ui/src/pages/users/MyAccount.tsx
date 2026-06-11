@@ -19,6 +19,7 @@ import {
   getUserGroups,
   getUserPermissions,
   listMySessions,
+  patchMe,
   revokeAllMySessions,
   revokeMySession,
 } from "@/api/auth/users";
@@ -120,9 +121,50 @@ function ProfileCard({
   mockMode: boolean;
   onSessionsInvalidated?: () => void;
 }) {
-  const { user } = useAuth();
+  const { user, reload: reloadIdentity } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+
+  // PATCH /me — display_name + email. Поля инициализируем из текущего
+  // identity, кнопка «Сохранить» активна только если что-то изменилось.
+  // Backend пускает любого юзера без отдельной admin-роли — это self-service.
+  const [displayName, setDisplayName] = useState<string>(user?.display_name ?? "");
+  const [email, setEmail] = useState<string>(user?.email ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const initialDisplayName = user?.display_name ?? "";
+  const initialEmail = user?.email ?? "";
+  const dirty =
+    displayName !== initialDisplayName || email !== initialEmail;
+
+  async function saveProfile() {
+    if (mockMode) {
+      toast.info("mock: PATCH /me");
+      return;
+    }
+    if (!dirty) return;
+    setSaving(true);
+    try {
+      // Только реально изменённые поля — иначе backend audit пишет noop.
+      const body: { display_name?: string | null; email?: string | null } = {};
+      if (displayName !== initialDisplayName) {
+        body.display_name = displayName.trim() ? displayName.trim() : null;
+      }
+      if (email !== initialEmail) {
+        body.email = email.trim() ? email.trim() : null;
+      }
+      await patchMe(body);
+      toast.success("Профиль обновлён");
+      // reload подтягивает свежий /me в AuthContext — шапка/сайдбар
+      // получают новый display_name без перезагрузки страницы.
+      await reloadIdentity?.();
+    } catch (e) {
+      if (e instanceof ApiError) toast.error(`${e.errorCode}: ${e.message}`);
+      else toast.error("Не удалось обновить профиль");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function revokeOthers() {
     if (mockMode) {
@@ -153,12 +195,45 @@ function ProfileCard({
         <Mail className="w-4 h-4 text-accent" /> Профиль
       </div>
       <div className="text-xs text-dim mb-4">
-        Профиль read-only. Email и department меняет администратор отдела
-        (PATCH /me в auth_service не реализован).
+        display_name и email можно отредактировать самостоятельно.
+        Department, platform_role и username меняет администратор.
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">display_name</span>
+          <input
+            className="input"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="ФИО или ник для UI"
+            maxLength={256}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">email</span>
+          <input
+            className="input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="user@example.com"
+          />
+        </label>
+      </div>
+      <div className="flex justify-end mb-4">
+        <button
+          className="btn btn-primary"
+          onClick={saveProfile}
+          disabled={!dirty || saving}
+        >
+          {saving ? "..." : "Сохранить профиль"}
+        </button>
+      </div>
+
       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
         <StatRow k="username" v={<span className="mono">{user?.username ?? "—"}</span>} />
-        <StatRow k="email" v={<span className="mono">{user?.email ?? "—"}</span>} />
+        <StatRow k="display_name" v={<span>{user?.display_name ?? "—"}</span>} />
         <StatRow k="user_id" v={<span className="mono">{user?.user_id ?? "—"}</span>} />
         <StatRow
           k="department"

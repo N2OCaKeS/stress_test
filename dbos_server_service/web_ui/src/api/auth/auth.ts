@@ -8,12 +8,13 @@
  * cookie прилетает автоматически благодаря path scope /api/auth/v1.
  */
 
-import { apiGet, apiPost } from "@/api/client";
+import { apiGet, apiPatch, apiPost } from "@/api/client";
 import type {
   LoginRequest,
   LoginResponse,
   LogoutResponse,
   MeResponse,
+  MeUpdateRequest,
   RefreshResponse,
 } from "@/api/auth/types";
 
@@ -39,4 +40,13 @@ export function logout(): Promise<LogoutResponse> {
 
 export function getMe(): Promise<MeResponse> {
   return apiGet<MeResponse>("/auth/v1/me");
+}
+
+/**
+ * Self-service апдейт профиля. Whitelist полей (`display_name`, `email`)
+ * закреплён в `MeUpdateRequest`; backend дополнительно отбивает всё лишнее
+ * через pydantic `extra='forbid'`.
+ */
+export function patchMe(body: MeUpdateRequest): Promise<MeResponse> {
+  return apiPatch<MeResponse>("/auth/v1/me", body);
 }

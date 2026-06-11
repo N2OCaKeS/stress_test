@@ -41,21 +41,18 @@ export function BotDetail() {
   const { id } = useParams<{ id: string }>();
   const { persona } = usePersona();
   const mockMode = useMockMode();
-  // В live-режиме определяем бота через listBots; в mock — через статичный BOTS.
-  // У auth_service нет GET /bots/{id}, поэтому здесь общий список с фильтром.
-  const liveBotsQ = useQuery(
-    () => botsApi.listBots({ limit: 200 }),
+  // В live-режиме тянем бота через GET /bots/{id} напрямую; в mock — через
+  // статичный BOTS.
+  const liveBotQ = useQuery(
+    () => botsApi.getBot(id ?? ""),
     [id],
-    { enabled: !mockMode },
+    { enabled: !mockMode && !!id },
   );
   const mockBot = useMemo(
     () => (mockMode ? BOTS.find((b) => b.id === id || b.name === id) : undefined),
     [mockMode, id],
   );
-  const liveBot = useMemo(
-    () => (!mockMode ? (liveBotsQ.data ?? []).find((b) => b.id === id) : undefined),
-    [mockMode, liveBotsQ.data, id],
-  );
+  const liveBot = !mockMode ? liveBotQ.data : undefined;
   const bot = mockBot;
   const ownerDept = mockMode ? bot?.owner_dept ?? null : liveBot?.department_id ?? null;
   const caps = botMutationCaps(persona, ownerDept);
@@ -188,13 +185,13 @@ export function BotDetail() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 grid grid-cols-2 gap-5 auto-rows-min">
-          {!mockMode && liveBotsQ.loading && (
+          {!mockMode && liveBotQ.loading && (
             <div className="col-span-2"><div className="spinner" aria-label="Loading" /></div>
           )}
-          {!mockMode && liveBotsQ.error && (
-            <div className="col-span-2 alert-danger">{liveBotsQ.error.message}</div>
+          {!mockMode && liveBotQ.error && (
+            <div className="col-span-2 alert-danger">{liveBotQ.error.message}</div>
           )}
-          {!mockMode && !liveBotsQ.loading && !liveBotsQ.error && !liveBot && (
+          {!mockMode && !liveBotQ.loading && !liveBotQ.error && !liveBot && (
             <div className="col-span-2 empty-card danger">
               Bot <span className="mono">{id}</span> не найден в auth_service.
             </div>
@@ -445,9 +442,8 @@ function PermRow({ entry, open, onToggle }: { entry: EffectiveEntry; open: boole
 }
 
 /**
- * Live data panel — queries auth_service for the real bot via `listBots`
- * (there is no `GET /bots/{id}` in the API), shows tokens, lists service
- * roles and surfaces the one-time issue/rotate flow.
+ * Live data panel — queries auth_service for the real bot via `GET /bots/{id}`,
+ * shows tokens, lists service roles and surfaces the one-time issue/rotate flow.
  *
  * The new bot-token (`token` field) is returned ONCE by the backend; we
  * hold it in local state, render a copy button and a warning banner, and
@@ -462,10 +458,10 @@ function BotLiveData({
 }) {
   const mock = useMockMode();
 
-  const botList = useQuery(
-    () => botsApi.listBots({ limit: 200 }),
+  const botQ = useQuery(
+    () => botsApi.getBot(botId),
     [botId],
-    { enabled: !mock },
+    { enabled: !mock && !!botId },
   );
   const tokens = useQuery(
     () => botsApi.listBotTokens(botId),
@@ -493,16 +489,13 @@ function BotLiveData({
   const newExpIso = () =>
     new Date(`${newExpires}T23:59:59Z`).toISOString();
 
-  const live = useMemo(
-    () => (botList.data ?? []).find((b) => b.id === botId),
-    [botList.data, botId],
-  );
+  const live = botQ.data;
 
   const refetchAll = useCallback(() => {
-    botList.refetch();
+    botQ.refetch();
     tokens.refetch();
     rolesQ.refetch();
-  }, [botList, tokens, rolesQ]);
+  }, [botQ, tokens, rolesQ]);
 
   const run = useCallback(
     async (fn: () => Promise<unknown>) => {
@@ -537,8 +530,8 @@ function BotLiveData({
 
   if (mock) return null;
 
-  const loading = botList.loading || tokens.loading || rolesQ.loading;
-  const firstErr = [botList.error, tokens.error, rolesQ.error].find(Boolean);
+  const loading = botQ.loading || tokens.loading || rolesQ.loading;
+  const firstErr = [botQ.error, tokens.error, rolesQ.error].find(Boolean);
 
   return (
     <Section

@@ -12,7 +12,11 @@ from src.repositories.oauth_clients import OAuthClientRepository
 from src.repositories.roles import RoleRepository
 from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.services import ServiceRepository
-from src.schemas.departments import DepartmentResponse, ServiceAccessResponse
+from src.schemas.departments import (
+    DepartmentResponse,
+    DepartmentUpdateRequest,
+    ServiceAccessResponse,
+)
 from src.services import audit_service, secret_service_client
 from src.services._cache_invalidation import invalidate_identity_cache as _invalidate_identity_cache
 from src.utils.time import utcnow
@@ -37,7 +41,75 @@ async def create_department(
         request_id=request_id,
         details={"name": name, "display_name": display_name},
     )
-    return DepartmentResponse(department_id=dept.id, name=dept.name, display_name=dept.display_name, is_active=dept.is_active, created_at=dept.created_at)
+    return DepartmentResponse(
+        department_id=dept.id,
+        name=dept.name,
+        display_name=dept.display_name,
+        description=dept.description,
+        is_active=dept.is_active,
+        created_at=dept.created_at,
+    )
+
+
+async def update_department(
+    db: AsyncSession,
+    actor_id: str,
+    actor_username: str | None,
+    dept_id: str,
+    body: DepartmentUpdateRequest,
+    request_id: str | None = None,
+) -> DepartmentResponse:
+    """Точечный апдейт display_name / description.
+
+    `name` (slug) — иммутабельный identity, в схеме его нет вовсе.
+    Guard на роль выполняется на уровне endpoint'а (account_admin); сюда
+    приходит уже отфильтрованный actor. Пустое тело — 422 `EMPTY_UPDATE`
+    (проверка дублируется тут и в endpoint'е — defense in depth).
+    """
+    if body.display_name is None and body.description is None:
+        raise DomainValidationError(
+            error_code="EMPTY_UPDATE",
+            message="At least one of display_name or description must be provided",
+        )
+
+    repo = DepartmentRepository(db)
+    dept = await repo.get_by_id(dept_id)
+    if dept is None:
+        raise NotFoundError(
+            error_code="DEPARTMENT_NOT_FOUND",
+            message=f"Department {dept_id} not found",
+        )
+
+    changes: dict[str, dict[str, str | None]] = {}
+    if body.display_name is not None and body.display_name != dept.display_name:
+        changes["display_name"] = {"old": dept.display_name, "new": body.display_name}
+    if body.description is not None and body.description != dept.description:
+        changes["description"] = {"old": dept.description, "new": body.description}
+
+    dept = await repo.update(
+        dept,
+        display_name=body.display_name,
+        description=body.description,
+    )
+    await db.commit()
+
+    audit_service.emit(
+        "department.updated", actor_id, target_id=dept.id, target_type="department",
+        request_id=request_id,
+        username=actor_username,
+        details={
+            "name": dept.name,
+            "changes": changes,
+        },
+    )
+    return DepartmentResponse(
+        department_id=dept.id,
+        name=dept.name,
+        display_name=dept.display_name,
+        description=dept.description,
+        is_active=dept.is_active,
+        created_at=dept.created_at,
+    )
 
 
 async def list_departments(
@@ -48,7 +120,14 @@ async def list_departments(
     """Все отделы."""
     repo = DepartmentRepository(db)
     result = [
-        DepartmentResponse(department_id=d.id, name=d.name, display_name=d.display_name, is_active=d.is_active, created_at=d.created_at)
+        DepartmentResponse(
+            department_id=d.id,
+            name=d.name,
+            display_name=d.display_name,
+            description=d.description,
+            is_active=d.is_active,
+            created_at=d.created_at,
+        )
         for d in await repo.list_all()
     ]
     audit_service.emit(

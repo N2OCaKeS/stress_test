@@ -46,6 +46,8 @@ SERVICE_EVENTS = [
     {"action": "user.password_reset", "description": "User password reset", "default_severity": "CRITICAL"},
     {"action": "user.self_password_reset", "description": "User changed own password via /users/me/password", "default_severity": "CRITICAL"},
     {"action": "user.must_change_password_cleared", "description": "Force-password-change flag cleared after successful self-reset", "default_severity": "INFO"},
+    {"action": "user.force_password_change", "description": "Admin forced target user to change password on next login (must_change_password=True flipped without password reset)", "default_severity": "WARNING"},
+    {"action": "me.updated", "description": "User self-updated own profile (display_name / email) via PATCH /me", "default_severity": "INFO"},
     {"action": "user.password_change_required_blocked", "description": "Request blocked by middleware because user has must_change_password=True", "default_severity": "INFO"},
     {"action": "user.ban", "description": "User account banned", "default_severity": "CRITICAL"},
     {"action": "user.unban", "description": "User account unbanned", "default_severity": "CRITICAL"},

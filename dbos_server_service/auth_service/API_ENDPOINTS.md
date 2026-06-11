@@ -508,6 +508,12 @@ Auth: AnyAdmin. `account_admin` — все; `department_admin` — только 
 |---|---|---|---|
 | `department_id` | str | `null` | Сузить выборку до указанного отдела. `account_admin` — любой; `department_admin` — только свой (иначе 403). |
 
+### `GET /bots/{bot_id}`
+
+Auth: AnyAdmin. `account_admin` — любого бота; `department_admin` — только своего отдела. Возвращает ту же `BotResponse`, что и list.
+
+Errors: `BOT_NOT_FOUND` (404), `BOT_ACCESS_DENIED` (403) — department_admin читает бота чужого отдела.
+
 ### `PATCH /bots/{bot_id}`
 
 Auth: AnyAdmin. Body (опциональны): `name`, `description`, `status` ("active"|"disabled"), `allowed_services`.

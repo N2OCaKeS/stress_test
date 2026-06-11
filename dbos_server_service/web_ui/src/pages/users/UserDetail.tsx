@@ -320,9 +320,22 @@ export function UserDetail() {
                   ? "Принудить юзера сменить пароль на ближайшем логине"
                   : caps.reason
               }
-              onClick={() =>
-                runAction("force-pwd-change", () => forcePasswordChange(user.id))
-              }
+              onClick={() => {
+                // Confirm: side-effect — на следующем запросе у target'а
+                // полетит 403 PASSWORD_CHANGE_REQUIRED везде, кроме
+                // `/users/me/password`. Дороже отката, чем reset-password,
+                // — пароль не меняем, но саму ручку не идемпотентным
+                // unset-ом не открутить.
+                if (
+                  !window.confirm(
+                    `Принудить ${user.username} сменить пароль при ближайшем входе?\n` +
+                      "Текущий пароль не меняется, но юзер не сможет работать с системой до self-reset'а через /users/me/password.",
+                  )
+                ) {
+                  return;
+                }
+                runAction("force-pwd-change", () => forcePasswordChange(user.id));
+              }}
             >
               <KeyRound className="w-4 h-4" /> Force pwd change
             </button>

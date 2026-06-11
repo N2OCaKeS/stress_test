@@ -10,6 +10,7 @@ import {
   ExternalLink,
   ChevronRight,
   ChevronDown,
+  Edit3,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -84,6 +85,7 @@ export function ServicesDepartments() {
       id: d.id,
       name: d.name,
       display_name: d.display_name,
+      description: d.description ?? undefined,
       user_count: users.filter((u) => u.department_id === d.id).length,
     }));
   }, [mockMode, deptsQ.data, usersQ.data]);
@@ -138,6 +140,8 @@ export function ServicesDepartments() {
               mockMode={mockMode}
               onDone={() => {
                 deptsQ.refetch();
+                usersQ.refetch();
+                void invalidateLabels("depts");
                 onClose();
               }}
               mode="edit"
@@ -231,7 +235,7 @@ function DeptView({
   grantedError: Error | null;
   refetchGranted: () => void;
 }) {
-  const { close } = useInlineState();
+  const { close, startEdit } = useInlineState();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const users = mockMode
@@ -283,10 +287,12 @@ function DeptView({
         </h3>
         {canEdit && (
           <div className="flex items-center gap-2">
-            {/* Кнопка "Edit" отдела скрыта: endpoint
-                `PATCH /departments/{id}` (или PUT) отсутствует в auth_service
-                (есть только create / delete / привязка services). Изменить
-                display_name можно только через delete+create. */}
+            <button
+              className="btn flex items-center gap-1"
+              onClick={() => startEdit(dept.id)}
+            >
+              <Edit3 className="w-4 h-4" /> Edit
+            </button>
             <button
               className="btn btn-danger flex items-center gap-1"
               disabled={deleteDisabled}
@@ -305,6 +311,16 @@ function DeptView({
       <StatRow k="dept_id" v={<span className="mono">{dept.id}</span>} />
       <StatRow k="name" v={dept.name} />
       <StatRow k="display_name" v={dept.display_name} />
+      <StatRow
+        k="description"
+        v={
+          dept.description ? (
+            dept.description
+          ) : (
+            <span className="text-dim italic">—</span>
+          )
+        }
+      />
       <StatRow
         k="users"
         v={
@@ -525,8 +541,15 @@ function DeptForm({
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [displayName, setDisplayName] = useState(initial?.display_name ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const isEdit = mode === "edit";
+  const dirty = isEdit
+    ? displayName !== (initial?.display_name ?? "") ||
+      description !== (initial?.description ?? "")
+    : !!name && !!displayName;
 
   async function submit() {
     if (mockMode) {
@@ -539,9 +562,16 @@ function DeptForm({
       if (mode === "new") {
         await createDepartment({ name, display_name: displayName });
       } else if (initial) {
-        const body: { name?: string; display_name?: string } = {};
-        if (name !== initial.name) body.name = name;
-        if (displayName !== initial.display_name) body.display_name = displayName;
+        // PATCH-семантика: шлём только поля, которые реально поменялись.
+        // Backend бросает 422 EMPTY_UPDATE, если пусто — кнопка-submit
+        // дополнительно гасится через `dirty`-флаг.
+        const body: { display_name?: string; description?: string } = {};
+        if (displayName !== (initial.display_name ?? "")) {
+          body.display_name = displayName;
+        }
+        if (description !== (initial.description ?? "")) {
+          body.description = description;
+        }
         await updateDepartment(initial.id, body);
       }
       onDone();
@@ -559,12 +589,19 @@ function DeptForm({
         {mode === "new" ? "Новый отдел" : `Edit · ${initial?.name}`}
       </h3>
       <div className="flex flex-col gap-3">
-        <FormRow label="name" hint="внутренний идентификатор (slug)">
+        <FormRow
+          label="name"
+          hint={
+            isEdit
+              ? "иммутабельный slug для аудита/логов — не меняется"
+              : "внутренний идентификатор (slug)"
+          }
+        >
           <input
             className="input mono"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            disabled={mode === "edit"}
+            disabled={isEdit}
           />
         </FormRow>
         <FormRow label="display_name">
@@ -572,6 +609,14 @@ function DeptForm({
             className="input"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
+          />
+        </FormRow>
+        <FormRow label="description" hint="пояснение / контакты / организационный смысл">
+          <textarea
+            className="input"
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
           />
         </FormRow>
       </div>
@@ -583,7 +628,7 @@ function DeptForm({
         <button
           className="btn btn-primary"
           onClick={submit}
-          disabled={busy || !name || !displayName}
+          disabled={busy || !displayName || !dirty || (!isEdit && !name)}
         >
           {busy ? "..." : mode === "new" ? "Создать" : "Сохранить"}
         </button>

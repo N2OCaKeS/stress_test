@@ -11,11 +11,31 @@ class DepartmentCreate(BaseModel):
     display_name: str = Field(description="Человеческое название.")
 
 
+class DepartmentUpdateRequest(BaseModel):
+    """Тело `PATCH /departments/{id}`. Оба поля опциональны; пустое тело → 422.
+
+    `name` (slug) — иммутабельный identity для аудита и логов, не правится
+    через update; для смены имени отдел пересоздаётся.
+    """
+    display_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+        description="Человеческое название.",
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=1024,
+        description="Свободно-форматный текст-пояснение для UI-карточки.",
+    )
+
+
 class DepartmentResponse(BaseModel):
     """Отдел в ответе list/get эндпоинтов."""
     department_id: str
     name: str
     display_name: str
+    description: str | None = None
     is_active: bool
     created_at: datetime
 

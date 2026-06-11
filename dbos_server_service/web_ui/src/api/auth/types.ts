@@ -71,6 +71,7 @@ export interface IdentityContext {
   actor_type: ActorType;
   user_id?: string | null;
   username?: string | null;
+  display_name?: string | null;
   email?: string | null;
   department_id?: string | null;
   department_name?: string | null;
@@ -178,6 +179,18 @@ export interface MePasswordChangeRequest {
   new_password: string;
 }
 
+/**
+ * Тело `PATCH /api/auth/v1/me` — self-service апдейт.
+ *
+ * Whitelist: backend принимает только `display_name` и `email`.
+ * `null` — явная очистка поля. Минимум одно поле обязательно: пустое
+ * тело отдаст 422 EMPTY_UPDATE.
+ */
+export interface MeUpdateRequest {
+  display_name?: string | null;
+  email?: string | null;
+}
+
 export interface BanRequest {
   ban_type: "permanent" | "temporary";
   reason: string;
@@ -239,6 +252,7 @@ export interface Department {
   id: string;
   name: string;
   display_name: string;
+  description?: string | null;
   created_at: Iso8601;
   updated_at?: Iso8601;
 }
@@ -246,6 +260,11 @@ export interface Department {
 export interface DepartmentCreateRequest {
   name: string;
   display_name: string;
+}
+
+export interface DepartmentUpdateRequest {
+  display_name?: string;
+  description?: string;
 }
 
 // ---------------------------------------------------------------------------

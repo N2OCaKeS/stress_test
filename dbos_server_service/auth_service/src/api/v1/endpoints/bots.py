@@ -103,6 +103,34 @@ async def list_bots(
     return items
 
 
+@router.get(
+    "/{bot_id}",
+    response_model=BotResponse,
+    summary="Получить бота",
+    description="account_admin видит любого, department_admin — только своего отдела.",
+)
+async def get_bot(
+    bot_id: str,
+    identity: AnyAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> BotResponse:
+    """Прочитать одного бота по id.
+
+    Доступ:
+        account_admin (любой отдел) или department_admin (только свой).
+
+    Возможные ошибки:
+        * `BOT_NOT_FOUND` (404).
+        * `BOT_ACCESS_DENIED` (403) — department_admin попросил чужого.
+    """
+    return await bot_service.get_bot(
+        db=db,
+        actor_role=identity.platform_role,
+        actor_dept_id=identity.department_id,
+        bot_id=bot_id,
+    )
+
+
 @router.patch(
     "/{bot_id}",
     response_model=BotResponse,

@@ -2,8 +2,12 @@
  * Thin wrappers for `/departments/*` endpoints in auth_service.
  */
 
-import { ApiError, apiDelete, apiGet, apiPost } from "@/api/client";
-import type { Department, DepartmentCreateRequest } from "@/api/auth/types";
+import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
+import type {
+  Department,
+  DepartmentCreateRequest,
+  DepartmentUpdateRequest,
+} from "@/api/auth/types";
 
 export interface ServiceAccessResponse {
   department_id: string;
@@ -19,6 +23,7 @@ interface BackendDepartment {
   id?: string;
   name: string;
   display_name: string;
+  description?: string | null;
   is_active?: boolean;
   created_at: string;
   updated_at?: string;
@@ -29,6 +34,7 @@ function normalizeDepartment(d: BackendDepartment): Department {
     id: d.id ?? d.department_id ?? "",
     name: d.name,
     display_name: d.display_name,
+    description: d.description ?? null,
     created_at: d.created_at,
     updated_at: d.updated_at,
   };
@@ -46,24 +52,18 @@ export async function createDepartment(
   return normalizeDepartment(raw);
 }
 
-// Backend endpoint для update отдела (`PATCH /departments/{id}` или
-// `PUT /departments/{id}`) отсутствует в auth_service — в
-// `src/api/v1/endpoints/departments.py` есть только GET-list, POST-create,
-// POST/DELETE для services-связок и DELETE отдела. Поэтому изменить
-// `display_name` через API сейчас нельзя; в UI edit-форма выводит ошибку.
-// TODO(auth_service): добавить endpoint update отдела (минимум display_name).
-export function updateDepartment(
-  _departmentId: string,
-  _body: Partial<DepartmentCreateRequest>,
+// `name` (slug) — иммутабельный identity отдела (используется в audit/logs),
+// апдейтятся только `display_name` и `description`. Пустое тело backend
+// отбивает 422 `EMPTY_UPDATE`.
+export async function updateDepartment(
+  departmentId: string,
+  body: DepartmentUpdateRequest,
 ): Promise<Department> {
-  return Promise.reject(
-    new ApiError(501, {
-      error: "not_implemented",
-      error_code: "NOT_IMPLEMENTED",
-      message:
-        "update department endpoint отсутствует в auth_service; пересоздай отдел через delete+create",
-    }),
+  const raw = await apiPatch<BackendDepartment>(
+    `/auth/v1/departments/${encodeURIComponent(departmentId)}`,
+    body,
   );
+  return normalizeDepartment(raw);
 }
 
 export function deleteDepartment(

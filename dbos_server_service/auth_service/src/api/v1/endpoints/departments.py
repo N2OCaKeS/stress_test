@@ -9,6 +9,7 @@ from src.schemas.common import OkResponse
 from src.schemas.departments import (
     DepartmentCreate,
     DepartmentResponse,
+    DepartmentUpdateRequest,
     GrantServiceAccessRequest,
     HardDeleteDepartmentRequest,
     ServiceAccessResponse,
@@ -67,6 +68,61 @@ async def create_department(
         actor_id=identity.user_id,
         name=body.name,
         display_name=body.display_name,
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+
+@router.patch(
+    "/{department_id}",
+    response_model=DepartmentResponse,
+    summary="Обновить display_name / description отдела",
+    description=(
+        "Точечный апдейт: `display_name` и/или `description`. "
+        "`name` (slug) — иммутабельный identity отдела для аудита и логов, "
+        "через этот endpoint не меняется (схема его не принимает). "
+        "Если оба поля отсутствуют — 422 `EMPTY_UPDATE`."
+    ),
+    responses={
+        404: {"description": "DEPARTMENT_NOT_FOUND — отдела нет."},
+        422: {"description": "EMPTY_UPDATE — оба поля не переданы."},
+        403: {"description": "ROLE_REQUIRED — нужен account_admin."},
+    },
+)
+async def update_department(
+    department_id: str,
+    body: DepartmentUpdateRequest,
+    request: Request,
+    identity: AccountAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> DepartmentResponse:
+    """Обновить редактируемые поля отдела.
+
+    Доступ:
+        Только `account_admin`. `department_admin` сюда не пускается — это
+        соответствует существующей модели (dep_admin рулит ролями и юзерами
+        внутри своего отдела, но не метаданными самого отдела).
+
+    Возможные ошибки:
+        * `DEPARTMENT_NOT_FOUND` (404).
+        * `EMPTY_UPDATE` (422).
+        * `ROLE_REQUIRED` (403).
+
+    Audit:
+        `department.updated` (INFO) с `changes={field: {old, new}}`.
+    """
+    # Guard на пустое тело здесь — чтобы клиент получил 422 ещё до похода в БД.
+    if body.display_name is None and body.description is None:
+        from src.core.exceptions import DomainValidationError
+        raise DomainValidationError(
+            error_code="EMPTY_UPDATE",
+            message="At least one of display_name or description must be provided",
+        )
+    return await department_service.update_department(
+        db=db,
+        actor_id=identity.user_id,
+        actor_username=identity.username,
+        dept_id=department_id,
+        body=body,
         request_id=getattr(request.state, "request_id", None),
     )
 

@@ -14,6 +14,11 @@ class IdentityContext(BaseModel):
 
     user_id: str = Field(description="Уникальный ID юзера или бота")
     username: str = Field(description="Username (для бота — bot name)")
+    display_name: str | None = Field(
+        default=None,
+        description="Человеческий заголовок профиля. None — не задан (показывать username).",
+    )
+    email: str | None = Field(default=None, description="Email юзера. None для ботов/m2m.")
     department_id: str | None = Field(default=None, description="ID отдела. None у account_admin.")
     department_name: str | None = Field(default=None, description="Человеческое название отдела (display_name).")
     allowed_services: list[str] = Field(

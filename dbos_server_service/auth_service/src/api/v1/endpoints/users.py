@@ -689,6 +689,59 @@ async def reset_password(
 
 
 @router.post(
+    "/{user_id}/force-password-change",
+    response_model=OkResponse,
+    summary="Форсировать смену пароля юзеру на ближайшем входе",
+    description=(
+        "Поднимает `must_change_password=True` без замены пароля. "
+        "После этого middleware пускает target'а только на `/users/me/password` "
+        "до тех пор, пока он не сменит пароль через self-service. "
+        "Активные сессии и PAT не revoke'ятся — guard отрежет их на следующем "
+        "запросе по флагу в БД."
+    ),
+    responses={
+        403: {"description": "ROLE_REQUIRED / DEPT_MISMATCH — actor не admin или DA вне отдела target'а."},
+        404: {"description": "USER_NOT_FOUND."},
+    },
+)
+async def force_password_change_user(
+    user_id: str,
+    request: Request,
+    identity: AnyAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Standalone flag-flip `must_change_password=True`.
+
+    Что делает:
+        Ставит `target.must_change_password=True`, сбрасывает identity-cache
+        target'а (иначе guard на других ручках не сработает до TTL'а),
+        пишет audit `user.force_password_change` (WARNING). Самому себе
+        ставить флаг разрешено — полезно, чтобы admin мог проверить flow
+        на своём аккаунте.
+
+    Доступ:
+        * account_admin — любой target;
+        * department_admin — только юзер своего отдела (иначе 403
+          DEPT_MISMATCH);
+        * иначе — 403 ROLE_REQUIRED (отбивается `AnyAdmin`-guard'ом).
+
+    Возможные ошибки:
+        * `USER_NOT_FOUND` (404).
+        * `DEPT_MISMATCH` (403) — DA пытается дёрнуть юзера чужого отдела.
+        * `ACTOR_VANISHED` (403) — actor удалён между issue JWT и check'ом.
+    """
+    await user_service.force_password_change(
+        db=db,
+        actor_id=identity.user_id,
+        actor_role=identity.platform_role,
+        actor_dept_id=identity.department_id,
+        target_user_id=user_id,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return OkResponse()
+
+
+@router.post(
     "/{user_id}/ban",
     response_model=OkResponse,
     summary="Забанить юзера",

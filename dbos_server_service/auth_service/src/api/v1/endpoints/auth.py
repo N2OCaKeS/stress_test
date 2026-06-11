@@ -16,7 +16,8 @@ from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.auth import IdentityContext, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest, RefreshResponse
 from src.schemas.common import HealthResponse, OkResponse, ReadyResponse
-from src.services import auth_service
+from src.schemas.users import MeUpdateRequest
+from src.services import auth_service, user_service
 from src.services.audit_context import extract_client_ip
 
 router = APIRouter()
@@ -363,4 +364,51 @@ async def me(request: Request, identity: CurrentUserIdentity, db: AsyncSession =
         user_id=identity.user_id,
         request_id=getattr(request.state, "request_id", None),
         oauth_scopes=identity.oauth_scopes,
+    )
+
+
+@router.patch(
+    "/me",
+    response_model=IdentityContext,
+    summary="Self-service апдейт своего профиля",
+    description=(
+        "Обновляет собственный профиль: `display_name` и/или `email`. "
+        "Остальные поля (`username`, `platform_role`, `department_id`, "
+        "`is_banned`, `must_change_password`) запрещены — отсутствуют в "
+        "схеме и режутся `extra='forbid'`."
+    ),
+    responses={
+        401: {"description": "Нет Bearer-токена или токен невалидный."},
+        403: {"description": "USER_BANNED — забаненный юзер не может править профиль (через guard)."},
+        422: {"description": "EMPTY_UPDATE — пустое тело без полей; либо лишние поля; либо невалидный email."},
+    },
+)
+async def patch_me(
+    body: MeUpdateRequest,
+    request: Request,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> IdentityContext:
+    """Self-service апдейт `display_name` / `email`.
+
+    Что делает:
+        Записывает разрешённые поля юзера. Whitelist обеспечивается
+        Pydantic-схемой (`extra='forbid'`) и вторым фильтром в
+        `user_service.patch_me` (defence-in-depth). Возвращает свежий
+        IdentityContext — UI может обновить шапку профиля без второго
+        запроса.
+
+    Доступ:
+        Любой залогиненный юзер. m2m отбивается через `require_user_context`
+        в зависимости. Забаненный юзер сюда не доходит — `_identity_from_user_jwt`
+        бьёт 401 USER_BANNED_OR_INACTIVE раньше.
+
+    Audit:
+        `me.updated` (INFO) с изменёнными полями (email маскируется).
+    """
+    return await user_service.patch_me(
+        db=db,
+        user_id=identity.user_id,
+        updates=body.model_dump(exclude_unset=True),
+        request_id=getattr(request.state, "request_id", None),
     )

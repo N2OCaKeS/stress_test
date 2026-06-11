@@ -39,6 +39,26 @@ class DepartmentRepository:
         await self._db.flush()
         return dept
 
+    async def update(
+        self,
+        dept: Department,
+        *,
+        display_name: str | None,
+        description: str | None,
+    ) -> Department:
+        """Точечный апдейт `display_name` и/или `description`.
+
+        Меняем только те поля, для которых передано не-None значение —
+        это позволяет PATCH-семантике отличать «не трогать» от «очистить».
+        """
+        if display_name is not None:
+            dept.display_name = display_name
+        if description is not None:
+            dept.description = description
+        await self._db.flush()
+        await self._db.refresh(dept)
+        return dept
+
     # ── service access ────────────────────────────────────────────────────────
 
     async def get_access(self, dept_id: str, service_name: str) -> DepartmentServiceAccess | None:

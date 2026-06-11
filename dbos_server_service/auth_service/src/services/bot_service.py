@@ -189,6 +189,35 @@ async def list_bots(
     return [_to_response(b) for b in bots], total
 
 
+async def get_bot(
+    db: AsyncSession,
+    *,
+    actor_role: str | None,
+    actor_dept_id: str | None,
+    bot_id: str,
+) -> BotResponse:
+    """Read одного бота по id.
+
+    department_admin видит только ботов своего отдела — иначе 403
+    `BOT_ACCESS_DENIED`. `bot_id` отсутствует → 404 `BOT_NOT_FOUND`.
+    Audit на read не пишем (по соглашению как и для PAT-get, чтобы не
+    зашумлять выборку list-операций).
+    """
+    bot = await BotRepository(db).get_by_id(bot_id)
+    if bot is None:
+        raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
+
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN and actor_dept_id != bot.department_id:
+        # actor_dept_id is None для DEPARTMENT_ADMIN — broken identity,
+        # тоже падаем 403 (None != bot.department_id корректно).
+        raise AuthorizationError(
+            error_code="BOT_ACCESS_DENIED",
+            message="Cannot read bot outside your department",
+        )
+
+    return _to_response(bot)
+
+
 async def update_bot(
     db: AsyncSession,
     actor_id: str,

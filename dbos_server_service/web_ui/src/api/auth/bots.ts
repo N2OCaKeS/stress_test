@@ -1,20 +1,17 @@
 /**
  * `/api/auth/v1/bots` endpoint wrappers.
  *
- * Covers 9 endpoints from API_ENDPOINTS.md "Bots" section:
- *   1. POST   /bots                            createBot
- *   2. GET    /bots                            listBots
- *   3. PATCH  /bots/{id}                       patchBot
- *   4. POST   /bots/{id}/tokens                issueBotToken (one-time token)
- *   5. GET    /bots/{id}/tokens                listBotTokens
- *   6. DELETE /bots/{id}/tokens/{token_id}     revokeBotToken
- *   7. GET    /bots/{id}/roles                 listBotRoles
- *   8. POST   /bots/{id}/roles                 assignBotRoles (replace)
- *   9. DELETE /bots/{id}/roles/{service_name}  revokeBotRoles
- *
- * `GET /bots/{id}` is *not* part of the contract — the backend ships only
- * list + patch + token/role sub-resources. UI flows that need a single bot
- * grab it from `listBots` and filter, or fall back to mocks.
+ * Covers 10 endpoints from API_ENDPOINTS.md "Bots" section:
+ *   1.  POST   /bots                            createBot
+ *   2.  GET    /bots                            listBots
+ *   3.  GET    /bots/{id}                       getBot
+ *   4.  PATCH  /bots/{id}                       patchBot
+ *   5.  POST   /bots/{id}/tokens                issueBotToken (one-time token)
+ *   6.  GET    /bots/{id}/tokens                listBotTokens
+ *   7.  DELETE /bots/{id}/tokens/{token_id}     revokeBotToken
+ *   8.  GET    /bots/{id}/roles                 listBotRoles
+ *   9.  POST   /bots/{id}/roles                 assignBotRoles (replace)
+ *   10. DELETE /bots/{id}/roles/{service_name}  revokeBotRoles
  *
  * Convenience helpers (`enableBot` / `disableBot`) re-use `patchBot` with
  * a fixed `status` so the call-site reads naturally.
@@ -60,6 +57,13 @@ export async function listBots(
     },
   });
   return raw.map(normalizeBot);
+}
+
+export async function getBot(botId: string): Promise<Bot> {
+  const raw = await apiGet<BackendBot>(
+    `/auth/v1/bots/${encodeURIComponent(botId)}`,
+  );
+  return normalizeBot(raw);
 }
 
 export async function createBot(req: BotCreateRequest): Promise<Bot> {

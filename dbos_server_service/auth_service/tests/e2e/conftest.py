@@ -98,7 +98,7 @@ def e2e_dept(e2e_api):
     """Создать тестовый отдел (идемпотентно). Возвращает dict с ключом `department_id`."""
     s, base = e2e_api
     r = s.post(f"{base}/api/auth/v1/departments",
-               json={"name": _E2E_DEPT, "display_name": "E2E Department"})
+               json={"name": _E2E_DEPT})
     assert r.status_code in (201, 409), f"create dept failed: {r.text}"
     if r.status_code == 201:
         return r.json()
@@ -137,7 +137,7 @@ def e2e_service(e2e_api, e2e_dept):
     s, base = e2e_api
     # Создаём (или переиспользуем) платформенный сервис.
     r = s.post(f"{base}/api/auth/v1/services",
-               json={"service_name": _E2E_SERVICE, "display_name": "E2E Service"})
+               json={"service_name": _E2E_SERVICE})
     assert r.status_code in (201, 409), f"create service failed: {r.text}"
     # Выдаём отделу доступ — идемпотентно.
     dept_id = e2e_dept["department_id"]

@@ -129,7 +129,7 @@ async def _identity_from_user_jwt(
     dept_name: str | None = None
     if user.department_id:
         dept = await DepartmentRepository(db).get_by_id(user.department_id)
-        dept_name = dept.display_name if dept else None
+        dept_name = dept.name if dept else None
 
     return IdentityContext(
         user_id=user.id,

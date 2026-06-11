@@ -86,7 +86,6 @@ async def _make_group(db, dept_id: str, name: str) -> UserGroup:
         id=gen_group_id(),
         department_id=dept_id,
         name=name,
-        display_name=name,
         is_active=True,
     )
     db.add(grp)

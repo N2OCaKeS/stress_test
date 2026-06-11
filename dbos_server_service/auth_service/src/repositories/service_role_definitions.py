@@ -62,7 +62,6 @@ class ServiceRoleDefinitionRepository:
         department_id: str,
         service_name: str,
         role_name: str,
-        display_name: str,
         description: str | None,
         created_by: str | None,
         is_system: bool = False,
@@ -72,7 +71,6 @@ class ServiceRoleDefinitionRepository:
             department_id=department_id,
             service_name=service_name,
             role_name=role_name,
-            display_name=display_name,
             description=description,
             is_system=is_system,
             created_by=created_by,
@@ -107,7 +105,6 @@ class ServiceRoleDefinitionRepository:
             department_id=department_id,
             service_name=service_name,
             role_name=SYSTEM_ADMIN_ROLE_NAME,
-            display_name="Admin",
             description="Full administrative access to the service",
             created_by=actor_id,
             is_system=True,
@@ -116,11 +113,8 @@ class ServiceRoleDefinitionRepository:
     async def update(
         self,
         role_def: ServiceRoleDefinition,
-        display_name: str | None = None,
         description: str | None = None,
     ) -> None:
-        if display_name is not None:
-            role_def.display_name = display_name
         if description is not None:
             role_def.description = description
         await self._db.flush()

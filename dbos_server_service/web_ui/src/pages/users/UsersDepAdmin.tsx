@@ -117,7 +117,6 @@ export function UsersDepAdmin() {
     return (deptsQ.data ?? []).map((d) => ({
       id: d.id,
       name: d.name,
-      display_name: d.display_name,
     }));
   }, [mockMode, deptsQ.data]);
 

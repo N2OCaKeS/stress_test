@@ -36,7 +36,6 @@ async def secret_service_registered(db):
     if existing is None:
         svc = PlatformService(
             service_name=SECRET_SERVICE_NAME,
-            display_name="Хранилище секретов",
             is_active=True,
         )
         db.add(svc)

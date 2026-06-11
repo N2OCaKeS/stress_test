@@ -64,7 +64,6 @@ async def create_service(
         db=db,
         actor_id=identity.user_id,
         service_name=body.service_name,
-        display_name=body.display_name,
         description=body.description,
         request_id=getattr(request.state, "request_id", None),
     )

@@ -125,13 +125,13 @@ class TestResetPasswordRequest:
 
 class TestServiceRoleCreate:
     def test_minimal(self):
-        m = ServiceRoleCreate(role_name="custom", display_name="Custom")
+        m = ServiceRoleCreate(role_name="custom")
         assert m.description is None
 
     def test_role_name_admin_currently_allowed(self):
         """Schema не запрещает name='admin' — защита `is_system` живёт в service-слое.
         Если в будущем добавим pattern-валидатор, тест надо обновить."""
-        m = ServiceRoleCreate(role_name="admin", display_name="Trying to override")
+        m = ServiceRoleCreate(role_name="admin")
         assert m.role_name == "admin"
 
 
@@ -140,10 +140,10 @@ class TestServiceRoleCreate:
 class TestGroupCreate:
     def test_requires_department_id(self):
         with pytest.raises(ValidationError):
-            GroupCreate(name="grp", display_name="Group")
+            GroupCreate(name="grp")
 
     def test_minimal_valid(self):
-        m = GroupCreate(department_id="dep_x", name="grp", display_name="Group")
+        m = GroupCreate(department_id="dep_x", name="grp")
         assert m.description is None
 
 

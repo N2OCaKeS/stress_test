@@ -127,7 +127,7 @@ export function BotRoleAssign({
                 className={`flex items-center gap-1 text-xs cursor-pointer px-2 py-1 rounded border ${
                   on ? "border-accent" : "border-token"
                 }`}
-                title={r.description ?? r.display_name}
+                title={r.description ?? r.role_name}
               >
                 <input
                   type="checkbox"

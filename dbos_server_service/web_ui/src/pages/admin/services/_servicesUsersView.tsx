@@ -685,7 +685,9 @@ function RolesEditModal({
               />
               <span className="mono">{r.role_name}</span>
               {r.is_system && <span className="badge badge-warn">system</span>}
-              <span className="text-xs text-dim truncate">{r.display_name}</span>
+              {r.description && (
+                <span className="text-xs text-dim truncate">{r.description}</span>
+              )}
             </label>
           ))}
         </div>
@@ -812,7 +814,7 @@ function GroupsTab({
             {groups.map((g) => (
               <tr key={g.id} className="border-t border-token">
                 <td className="py-2 pr-3 mono text-xs">{g.name}</td>
-                <td className="py-2 pr-3">{g.display_name ?? "—"}</td>
+                <td className="py-2 pr-3">{g.description ?? "—"}</td>
                 <td className="py-2 pr-3 text-xs text-dim">
                   <DeptInline deptId={g.department_id} />
                 </td>

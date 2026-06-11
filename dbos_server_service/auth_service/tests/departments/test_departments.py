@@ -9,20 +9,20 @@ REVOKE_URL = "/api/auth/v1/departments/{dept_id}/services/{svc_name}"
 
 async def test_admin_creates_department(client, admin_token):
     resp = await client.post(CREATE_URL, headers={"Authorization": f"Bearer {admin_token}"},
-                              json={"name": "finance", "display_name": "Finance"})
+                              json={"name": "finance"})
     assert resp.status_code == 201
     assert resp.json()["name"] == "finance"
 
 
 async def test_duplicate_dept_name_returns_409(client, admin_token, dept_a):
     resp = await client.post(CREATE_URL, headers={"Authorization": f"Bearer {admin_token}"},
-                              json={"name": dept_a.name, "display_name": "Dup"})
+                              json={"name": dept_a.name})
     assert resp.status_code == 409
 
 
 async def test_dept_admin_cannot_create_department(client, dept_admin_a_token):
     resp = await client.post(CREATE_URL, headers={"Authorization": f"Bearer {dept_admin_a_token}"},
-                              json={"name": "new_dept", "display_name": "New"})
+                              json={"name": "new_dept"})
     assert resp.status_code == 403
 
 
@@ -166,7 +166,7 @@ async def test_revoke_cascades_group_service_access(
     grp_resp = await client.post(
         GROUPS_URL,
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"department_id": dept_a_with_service.id, "name": "rgrp", "display_name": "rgrp"},
+        json={"department_id": dept_a_with_service.id, "name": "rgrp"},
     )
     assert grp_resp.status_code == 201, grp_resp.text
     group_id = grp_resp.json()["id"]

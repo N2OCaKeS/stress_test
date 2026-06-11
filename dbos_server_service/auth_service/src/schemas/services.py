@@ -14,19 +14,17 @@ _SERVICE_NAME_PATTERN = r"^[a-z][a-z0-9_]+$"
 class ServiceCreate(BaseModel):
     """Тело `POST /services`."""
     service_name: str = Field(
-        description="Машинно-читаемое имя сервиса (`server_service`, `loging_service`, ...).",
+        description="Имя сервиса (`server_service`, `loging_service`, ...).",
         pattern=_SERVICE_NAME_PATTERN,
         min_length=2,
         max_length=64,
     )
-    display_name: str = Field(description="Человеческое название.")
     description: str | None = Field(default=None)
 
 
 class ServiceResponse(BaseModel):
     """Сервис в ответе list/get эндпоинтов."""
     service_name: str
-    display_name: str
     description: str | None
     is_active: bool
     created_at: datetime

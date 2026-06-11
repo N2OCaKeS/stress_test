@@ -124,7 +124,6 @@ class TestCollectBotPermissions:
             id=_new_id("grp_"),
             department_id=dept_a_with_service.id,
             name="bp_grp",
-            display_name="BP Group",
             is_active=True,
         )
         db.add(grp)
@@ -178,7 +177,6 @@ class TestCollectBotPermissions:
             id=_new_id("grp_"),
             department_id=dept_a_with_service.id,
             name="bp_grp2",
-            display_name="BP Group 2",
             is_active=True,
         )
         db.add(grp)
@@ -247,7 +245,6 @@ class TestCollectBotPermissions:
             id=_new_id("grp_"),
             department_id=dept_a_with_service.id,
             name="bp_grp3",
-            display_name="BP Group 3",
             is_active=True,
         )
         db.add(grp)

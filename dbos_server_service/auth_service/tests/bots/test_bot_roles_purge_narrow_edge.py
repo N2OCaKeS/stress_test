@@ -17,7 +17,7 @@ async def _grant_service_to_dept(db, dept_id, service_name):
     svc = await db.get(PlatformService, service_name)
     if svc is None:
         svc = PlatformService(
-            service_name=service_name, display_name=service_name.title(), is_active=True,
+            service_name=service_name, is_active=True,
         )
         db.add(svc)
         await db.flush()
@@ -29,7 +29,7 @@ async def _grant_service_to_dept(db, dept_id, service_name):
         db.add(ServiceRoleDefinition(
             id=service_role_def_id(),
             department_id=dept_id, service_name=service_name,
-            role_name=role, display_name=role.title(),
+            role_name=role,
             is_active=True, is_system=(role == "admin"),
         ))
     await db.flush()

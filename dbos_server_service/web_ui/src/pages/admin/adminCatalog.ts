@@ -472,8 +472,7 @@ function roleItemGroup(svc: Service): string {
 }
 
 function roleItemLabel(svc: Service): string {
-  const display = svc.display_name?.trim();
-  return `Роли · ${display && display.length > 0 ? display : svc.service_name}`;
+  return `Роли · ${svc.service_name}`;
 }
 
 /**

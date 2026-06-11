@@ -82,12 +82,11 @@ async def test_admin_creates_role(client, admin_token, dept_a_with_service, serv
     resp = await client.post(
         _roles_url(dept_a_with_service.id, service_x.service_name),
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"role_name": "custom_role", "display_name": "Custom Role", "description": "A custom role"},
+        json={"role_name": "custom_role", "description": "A custom role"},
     )
     assert resp.status_code == 201
     body = resp.json()
     assert body["role_name"] == "custom_role"
-    assert body["display_name"] == "Custom Role"
     assert body["service_name"] == service_x.service_name
     assert body["department_id"] == dept_a_with_service.id
     assert body["is_system"] is False
@@ -96,9 +95,9 @@ async def test_admin_creates_role(client, admin_token, dept_a_with_service, serv
 async def test_duplicate_role_returns_409(client, admin_token, dept_a_with_service, service_x):
     url = _roles_url(dept_a_with_service.id, service_x.service_name)
     await client.post(url, headers={"Authorization": f"Bearer {admin_token}"},
-                      json={"role_name": "dup_role", "display_name": "Dup"})
+                      json={"role_name": "dup_role"})
     resp = await client.post(url, headers={"Authorization": f"Bearer {admin_token}"},
-                              json={"role_name": "dup_role", "display_name": "Dup"})
+                              json={"role_name": "dup_role"})
     assert resp.status_code == 409
     assert resp.json()["error_code"] == "SERVICE_ROLE_ALREADY_EXISTS"
 
@@ -110,7 +109,7 @@ async def test_same_role_name_allowed_in_different_dept(
     from tests.conftest import _grant_service
     await _grant_service(db, dept_b.id, service_x.service_name)
 
-    body = {"role_name": "shared_name", "display_name": "Shared"}
+    body = {"role_name": "shared_name"}
     a = await client.post(
         _roles_url(dept_a_with_service.id, service_x.service_name),
         headers={"Authorization": f"Bearer {admin_token}"}, json=body,
@@ -128,7 +127,7 @@ async def test_regular_user_cannot_create_role(client, user_a_token, dept_a_with
     resp = await client.post(
         _roles_url(dept_a_with_service.id, service_x.service_name),
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"role_name": "hack_role", "display_name": "Hack"},
+        json={"role_name": "hack_role"},
     )
     assert resp.status_code == 403
 
@@ -145,7 +144,7 @@ async def test_service_admin_can_create_role_in_own_dept(
     resp = await client.post(
         _roles_url(dept_a_with_service.id, service_x.service_name),
         headers={"Authorization": f"Bearer {token}"},
-        json={"role_name": "svc_admin_role", "display_name": "SvcAdmin Role"},
+        json={"role_name": "svc_admin_role"},
     )
     assert resp.status_code == 201
 
@@ -161,7 +160,7 @@ async def test_service_admin_cannot_create_role_in_other_dept(
     resp = await client.post(
         _roles_url(dept_b.id, service_x.service_name),
         headers={"Authorization": f"Bearer {token}"},
-        json={"role_name": "leak_role", "display_name": "Leak"},
+        json={"role_name": "leak_role"},
     )
     assert resp.status_code == 403
     assert resp.json()["error_code"] == "DEPARTMENT_ACCESS_DENIED"
@@ -172,15 +171,14 @@ async def test_service_admin_cannot_create_role_in_other_dept(
 async def test_admin_updates_role(client, admin_token, dept_a_with_service, service_x):
     url = _roles_url(dept_a_with_service.id, service_x.service_name)
     await client.post(url, headers={"Authorization": f"Bearer {admin_token}"},
-                      json={"role_name": "to_update", "display_name": "Old Name"})
+                      json={"role_name": "to_update"})
     resp = await client.patch(
         f"{url}/to_update",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"display_name": "New Name", "description": "Updated desc"},
+        json={"description": "Updated desc"},
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["display_name"] == "New Name"
     assert body["description"] == "Updated desc"
 
 
@@ -188,7 +186,7 @@ async def test_update_nonexistent_role_returns_404(client, admin_token, dept_a_w
     resp = await client.patch(
         f"{_roles_url(dept_a_with_service.id, service_x.service_name)}/ghost_role",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"display_name": "X"},
+        json={"description": "X"},
     )
     assert resp.status_code == 404
     assert resp.json()["error_code"] == "SERVICE_ROLE_NOT_FOUND"
@@ -198,7 +196,7 @@ async def test_system_admin_role_cannot_be_updated(client, admin_token, dept_a_w
     resp = await client.patch(
         f"{_roles_url(dept_a_with_service.id, service_x.service_name)}/admin",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"display_name": "Should not work"},
+        json={"description": "Should not work"},
     )
     assert resp.status_code == 403
     assert resp.json()["error_code"] == "SERVICE_ROLE_SYSTEM_LOCKED"
@@ -209,7 +207,7 @@ async def test_system_admin_role_cannot_be_updated(client, admin_token, dept_a_w
 async def test_admin_deletes_role(client, admin_token, dept_a_with_service, service_x):
     url = _roles_url(dept_a_with_service.id, service_x.service_name)
     await client.post(url, headers={"Authorization": f"Bearer {admin_token}"},
-                      json={"role_name": "to_delete", "display_name": "To Delete"})
+                      json={"role_name": "to_delete"})
     resp = await client.delete(
         f"{url}/to_delete",
         headers={"Authorization": f"Bearer {admin_token}"},
@@ -228,7 +226,7 @@ async def test_delete_nonexistent_role_returns_404(client, admin_token, dept_a_w
 async def test_deleted_role_not_in_list(client, admin_token, dept_a_with_service, service_x):
     url = _roles_url(dept_a_with_service.id, service_x.service_name)
     await client.post(url, headers={"Authorization": f"Bearer {admin_token}"},
-                      json={"role_name": "temp_role", "display_name": "Temp"})
+                      json={"role_name": "temp_role"})
     await client.delete(f"{url}/temp_role",
                         headers={"Authorization": f"Bearer {admin_token}"})
     resp = await client.get(url, headers={"Authorization": f"Bearer {admin_token}"})
@@ -263,7 +261,7 @@ async def test_delete_role_invalidates_bot_identity_cache(
     create_resp = await client.post(
         url,
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"role_name": "bot_role", "display_name": "Bot Role"},
+        json={"role_name": "bot_role"},
     )
     assert create_resp.status_code == 201
 
@@ -309,7 +307,7 @@ async def test_admin_role_seeded_on_department_service_grant(
     create_svc = await client.post(
         SERVICES_URL,
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"service_name": "auto_role_svc", "display_name": "Auto Role Svc"},
+        json={"service_name": "auto_role_svc"},
     )
     assert create_svc.status_code == 201
 

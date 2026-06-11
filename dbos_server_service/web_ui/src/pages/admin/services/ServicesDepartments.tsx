@@ -43,7 +43,6 @@ import type { Department, Service } from "@/api/auth/types";
 type UiDept = {
   id: string;
   name: string;
-  display_name: string;
   description?: string;
   user_count?: number;
 };
@@ -75,7 +74,6 @@ export function ServicesDepartments() {
       return MOCK_DEPTS.map((d) => ({
         id: d.id,
         name: d.name,
-        display_name: d.name,
         description: d.description,
         user_count: d.user_count,
       }));
@@ -84,7 +82,6 @@ export function ServicesDepartments() {
     return (deptsQ.data ?? []).map((d) => ({
       id: d.id,
       name: d.name,
-      display_name: d.display_name,
       description: d.description ?? undefined,
       user_count: users.filter((u) => u.department_id === d.id).length,
     }));
@@ -119,7 +116,7 @@ export function ServicesDepartments() {
           <div className="flex items-center gap-2">
             <Building2 className="w-4 h-4 text-accent" />
             <div className="flex-1 min-w-0">
-              <div className="text-sm truncate">{item.display_name ?? item.name}</div>
+              <div className="text-sm truncate">{item.name}</div>
               <div className="text-[11px] text-dim truncate">
                 {item.description ?? <span className="mono">{item.id}</span>}
               </div>
@@ -256,7 +253,7 @@ function DeptView({
     if (!reason) return;
     if (
       !window.confirm(
-        `Снести ${dept.display_name}? CASCADE уносит группы, ботов и oauth_clients депа.`,
+        `Снести ${dept.name}? CASCADE уносит группы, ботов и oauth_clients депа.`,
       )
     )
       return;
@@ -283,7 +280,7 @@ function DeptView({
     <div className="card max-w-2xl">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold flex items-center gap-2">
-          <Building2 className="w-4 h-4 text-accent" /> {dept.display_name}
+          <Building2 className="w-4 h-4 text-accent" /> {dept.name}
         </h3>
         {canEdit && (
           <div className="flex items-center gap-2">
@@ -310,7 +307,6 @@ function DeptView({
       </div>
       <StatRow k="dept_id" v={<span className="mono">{dept.id}</span>} />
       <StatRow k="name" v={dept.name} />
-      <StatRow k="display_name" v={dept.display_name} />
       <StatRow
         k="description"
         v={
@@ -506,7 +502,7 @@ function DeptServicesSection({
             <option value="">— выбрать сервис —</option>
             {available.map((s) => (
               <option key={s.service_name} value={s.service_name}>
-                {s.service_name} · {s.display_name}
+                {s.service_name}
               </option>
             ))}
           </select>
@@ -540,16 +536,15 @@ function DeptForm({
   mode: "new" | "edit";
 }) {
   const [name, setName] = useState(initial?.name ?? "");
-  const [displayName, setDisplayName] = useState(initial?.display_name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const isEdit = mode === "edit";
   const dirty = isEdit
-    ? displayName !== (initial?.display_name ?? "") ||
+    ? name !== (initial?.name ?? "") ||
       description !== (initial?.description ?? "")
-    : !!name && !!displayName;
+    : !!name;
 
   async function submit() {
     if (mockMode) {
@@ -560,14 +555,14 @@ function DeptForm({
     setErr(null);
     try {
       if (mode === "new") {
-        await createDepartment({ name, display_name: displayName });
+        await createDepartment({ name });
       } else if (initial) {
         // PATCH-семантика: шлём только поля, которые реально поменялись.
         // Backend бросает 422 EMPTY_UPDATE, если пусто — кнопка-submit
         // дополнительно гасится через `dirty`-флаг.
-        const body: { display_name?: string; description?: string } = {};
-        if (displayName !== (initial.display_name ?? "")) {
-          body.display_name = displayName;
+        const body: { name?: string; description?: string } = {};
+        if (name !== (initial.name ?? "")) {
+          body.name = name;
         }
         if (description !== (initial.description ?? "")) {
           body.description = description;
@@ -589,26 +584,11 @@ function DeptForm({
         {mode === "new" ? "Новый отдел" : `Edit · ${initial?.name}`}
       </h3>
       <div className="flex flex-col gap-3">
-        <FormRow
-          label="name"
-          hint={
-            isEdit
-              ? "иммутабельный slug для аудита/логов — не меняется"
-              : "внутренний идентификатор (slug)"
-          }
-        >
-          <input
-            className="input mono"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={isEdit}
-          />
-        </FormRow>
-        <FormRow label="display_name">
+        <FormRow label="name" hint="человеческое имя отдела (уникально)">
           <input
             className="input"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
           />
         </FormRow>
         <FormRow label="description" hint="пояснение / контакты / организационный смысл">
@@ -628,7 +608,7 @@ function DeptForm({
         <button
           className="btn btn-primary"
           onClick={submit}
-          disabled={busy || !displayName || !dirty || (!isEdit && !name)}
+          disabled={busy || !name || !dirty}
         >
           {busy ? "..." : mode === "new" ? "Создать" : "Сохранить"}
         </button>

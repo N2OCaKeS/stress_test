@@ -1553,7 +1553,6 @@ function AddUserToGroupModal({
         const deptLabel = (deptMap.get(g.department_id) ?? g.department_id).toLowerCase();
         return (
           g.name.toLowerCase().includes(f) ||
-          (g.display_name ?? "").toLowerCase().includes(f) ||
           deptLabel.includes(f)
         );
       });
@@ -1618,11 +1617,6 @@ function AddUserToGroupModal({
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium truncate">
                     {g.name}
-                    {g.display_name && (
-                      <span className="text-dim font-normal ml-2">
-                        — {g.display_name}
-                      </span>
-                    )}
                   </div>
                   <div className="text-xs text-dim flex gap-2 mt-0.5">
                     <ModalDeptLabel deptId={g.department_id} />
@@ -1827,7 +1821,7 @@ function UserServiceRolesEditor({
               key={svc.service_name}
               deptId={deptId}
               serviceName={svc.service_name}
-              displayName={svc.display_name ?? svc.service_name}
+              displayName={svc.service_name}
               selected={selection[svc.service_name] ?? new Set<string>()}
               onToggle={(role) => toggle(svc.service_name, role)}
             />

@@ -20,7 +20,7 @@ class IdentityContext(BaseModel):
     )
     email: str | None = Field(default=None, description="Email юзера. None для ботов/m2m.")
     department_id: str | None = Field(default=None, description="ID отдела. None у account_admin.")
-    department_name: str | None = Field(default=None, description="Человеческое название отдела (display_name).")
+    department_name: str | None = Field(default=None, description="Человеческое название отдела (== `Department.name`).")
     allowed_services: list[str] = Field(
         default_factory=list,
         description="Список service_name, к которым у юзера есть effective access (после INTERSECT).",

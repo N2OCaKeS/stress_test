@@ -16,7 +16,7 @@ async def _create_group(client, token, dept_id, name):
     resp = await client.post(
         GROUPS_URL,
         headers={"Authorization": f"Bearer {token}"},
-        json={"department_id": dept_id, "name": name, "display_name": name},
+        json={"department_id": dept_id, "name": name},
     )
     assert resp.status_code == 201, resp.text
     return resp.json()["id"]

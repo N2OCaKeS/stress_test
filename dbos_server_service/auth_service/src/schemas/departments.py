@@ -7,21 +7,16 @@ from pydantic import BaseModel, Field
 
 class DepartmentCreate(BaseModel):
     """Тело `POST /departments`."""
-    name: str = Field(description="Машинно-читаемое имя отдела (уникально).")
-    display_name: str = Field(description="Человеческое название.")
+    name: str = Field(description="Человеческое имя отдела (уникально).")
 
 
 class DepartmentUpdateRequest(BaseModel):
-    """Тело `PATCH /departments/{id}`. Оба поля опциональны; пустое тело → 422.
-
-    `name` (slug) — иммутабельный identity для аудита и логов, не правится
-    через update; для смены имени отдел пересоздаётся.
-    """
-    display_name: str | None = Field(
+    """Тело `PATCH /departments/{id}`. Оба поля опциональны; пустое тело → 422."""
+    name: str | None = Field(
         default=None,
         min_length=1,
-        max_length=256,
-        description="Человеческое название.",
+        max_length=128,
+        description="Человеческое имя отдела (уникально).",
     )
     description: str | None = Field(
         default=None,
@@ -34,7 +29,6 @@ class DepartmentResponse(BaseModel):
     """Отдел в ответе list/get эндпоинтов."""
     department_id: str
     name: str
-    display_name: str
     description: str | None = None
     is_active: bool
     created_at: datetime

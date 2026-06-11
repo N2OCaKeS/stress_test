@@ -272,7 +272,7 @@ function LiveServiceRolesCard({
           >
             {(deptsQ.data ?? []).map((d) => (
               <option key={d.id} value={d.id}>
-                {d.display_name} ({d.id})
+                {d.name} ({d.id})
               </option>
             ))}
             {(deptsQ.data ?? []).length === 0 && (
@@ -342,10 +342,12 @@ function LiveServiceRolesCard({
             <ShieldCheck className="w-4 h-4 text-dim" />
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate mono">{item.role_name}</div>
-              <div className="text-[11px] text-dim truncate">
-                {item.display_name}
-                {item.is_system && " · system"}
-              </div>
+              {(item.description || item.is_system) && (
+                <div className="text-[11px] text-dim truncate">
+                  {item.description}
+                  {item.is_system && " · system"}
+                </div>
+              )}
             </div>
           </div>
         </button>
@@ -407,12 +409,11 @@ function LiveServiceRolesCard({
                 mode="new"
                 pending={pending}
                 onSubmit={async (body) => {
-                  if (!body.role_name || !body.display_name) return;
+                  if (!body.role_name) return;
                   await run(
                     () =>
                       createServiceRole(deptId, backendServiceName, {
                         role_name: body.role_name!,
-                        display_name: body.display_name!,
                         description: body.description,
                       }),
                     "Роль создана",
@@ -481,7 +482,6 @@ function LiveRoleView({
         )}
       </div>
       <StatRow k="role_name" v={<span className="mono">{role.role_name}</span>} />
-      <StatRow k="display_name" v={role.display_name} />
       <StatRow k="description" v={role.description ?? "—"} />
       <StatRow k="department" v={<RoleDeptLabel deptId={role.department_id} />} />
       <StatRow k="service" v={<RoleServiceLabel name={role.service_name} />} />
@@ -555,7 +555,7 @@ function BulkAssignSection({
       Array.from(selectedGroupIds)
         .map((id) => groupById.get(id))
         .filter((g): g is Group => !!g)
-        .map((g) => g.display_name ?? g.name),
+        .map((g) => g.name),
     [selectedGroupIds, groupById],
   );
 
@@ -579,7 +579,7 @@ function BulkAssignSection({
         for (const m of members) set.add(m.user_id);
       } catch (e) {
         const g = groupById.get(gid);
-        const label = g ? (g.display_name ?? g.name) : gid;
+        const label = g ? g.name : gid;
         const msg =
           e instanceof ApiError
             ? `${e.errorCode}: ${e.message}`
@@ -619,7 +619,7 @@ function BulkAssignSection({
     }
     if (resolved.emptyGroups.length > 0) {
       const names = resolved.emptyGroups
-        .map((g) => g.display_name ?? g.name)
+        .map((g) => g.name)
         .join(", ");
       toast.warn(`Пустые группы пропущены: ${names}`);
     }
@@ -675,14 +675,14 @@ function BulkAssignSection({
             : null
         }
         getId={(g) => g.id}
-        getPrimary={(g) => g.display_name ?? g.name}
-        getSecondary={(g) => g.name}
+        getPrimary={(g) => g.name}
+        getSecondary={(g) => g.id}
         searchableText={(g) =>
-          `${g.name} ${g.display_name ?? ""} ${g.id}`.toLowerCase()
+          `${g.name} ${g.id}`.toLowerCase()
         }
         selected={selectedGroupIds}
         onChange={setSelectedGroupIds}
-        placeholder="Поиск по name / display_name…"
+        placeholder="Поиск по имени группы…"
         emptyHint={`Нет групп в этом отделе (${roleDeptId}).`}
       />
 
@@ -921,7 +921,6 @@ function SearchableMultiSelect<T>({
 
 interface RoleFormBody {
   role_name?: string;
-  display_name?: string;
   description?: string;
 }
 
@@ -939,28 +938,24 @@ function LiveRoleForm({
   onCancel: () => void;
 }) {
   const [roleName, setRoleName] = useState(initial?.role_name ?? "");
-  const [displayName, setDisplayName] = useState(initial?.display_name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
 
   const submit = () => {
     if (mode === "new") {
       void onSubmit({
         role_name: roleName.trim(),
-        display_name: displayName.trim(),
         description: description.trim() || undefined,
       });
     } else {
-      // PATCH — отправляем только display_name / description; role_name неизменяем.
+      // PATCH — отправляем только description; role_name неизменяем.
       void onSubmit({
-        display_name: displayName.trim(),
         description: description.trim() || undefined,
       });
     }
   };
 
   const submitDisabled = pending
-    || (mode === "new" && (!roleName.trim() || !displayName.trim()))
-    || (mode === "edit" && !displayName.trim());
+    || (mode === "new" && !roleName.trim());
 
   return (
     <div className="card max-w-2xl">
@@ -978,13 +973,6 @@ function LiveRoleForm({
             value={roleName}
             disabled={mode === "edit"}
             onChange={(e) => setRoleName(e.target.value)}
-          />
-        </FormRow>
-        <FormRow label="display_name">
-          <input
-            className="input"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
           />
         </FormRow>
         <FormRow label="description">

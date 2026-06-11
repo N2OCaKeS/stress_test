@@ -69,7 +69,7 @@ export function BotsAccountAdmin() {
     const list: BotGroup[] = depts
       .map((d) => ({
         deptId: d.id,
-        deptName: deptLabels.get(d.id) ?? d.display_name ?? d.name,
+        deptName: deptLabels.get(d.id) ?? d.name,
         rows: byDept.get(d.id) ?? [],
       }))
       .filter((g) => g.rows.length > 0);
@@ -82,7 +82,7 @@ export function BotsAccountAdmin() {
       if (!byDept.has(d.id)) {
         list.push({
           deptId: d.id,
-          deptName: deptLabels.get(d.id) ?? d.display_name ?? d.name,
+          deptName: deptLabels.get(d.id) ?? d.name,
           rows: [],
         });
       }
@@ -130,7 +130,7 @@ export function BotsAccountAdmin() {
             <select className="surface-2 border border-token rounded px-2 py-0.5">
               <option>все депы</option>
               {(deptsQ.data ?? []).map((d) => (
-                <option key={d.id}>{d.display_name ?? d.name}</option>
+                <option key={d.id}>{d.name}</option>
               ))}
             </select>
             <select className="surface-2 border border-token rounded px-2 py-0.5">

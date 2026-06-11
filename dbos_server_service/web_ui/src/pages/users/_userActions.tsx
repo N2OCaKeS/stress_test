@@ -70,7 +70,7 @@ export function Modal({
   );
 }
 
-type DeptLite = Pick<Department, "id" | "name" | "display_name">;
+type DeptLite = Pick<Department, "id" | "name">;
 
 export function CreateUserForm({
   depts,
@@ -201,7 +201,7 @@ export function CreateUserForm({
           <option value="">— (платформенный)</option>
           {depts.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.display_name || d.name}
+              {d.name}
             </option>
           ))}
         </select>
@@ -334,7 +334,7 @@ export function EditRolesForm({
           <option value="">— (платформенный)</option>
           {depts.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.display_name || d.name}
+              {d.name}
             </option>
           ))}
         </select>
@@ -384,7 +384,6 @@ export function CreateGroupForm({
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [deptId, setDeptId] = useState<string>(defaultDeptId ?? "");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
@@ -402,7 +401,6 @@ export function CreateGroupForm({
       await createGroup({
         department_id: deptId,
         name,
-        display_name: displayName || undefined,
         description: description || undefined,
       });
       onSuccess();
@@ -424,14 +422,6 @@ export function CreateGroupForm({
           placeholder="dba-engineers"
         />
       </Field>
-      <Field label="display_name">
-        <input
-          className="input"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          placeholder="DBA Engineers"
-        />
-      </Field>
       <Field label="dept">
         <select
           className="input"
@@ -441,7 +431,7 @@ export function CreateGroupForm({
           <option value="">— выберите dept —</option>
           {depts.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.display_name || d.name}
+              {d.name}
             </option>
           ))}
         </select>
@@ -604,7 +594,7 @@ export function CreateBotForm({
           <option value="">— выберите dept —</option>
           {depts.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.display_name || d.name}
+              {d.name}
             </option>
           ))}
         </select>

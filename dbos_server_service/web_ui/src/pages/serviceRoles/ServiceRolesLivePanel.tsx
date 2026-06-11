@@ -47,7 +47,6 @@ export function ServiceRolesLivePanel({
 
   // Create-role form
   const [newRoleName, setNewRoleName] = useState("");
-  const [newRoleDisplay, setNewRoleDisplay] = useState("");
   const [newRoleDesc, setNewRoleDesc] = useState("");
 
   // Bulk-assign form (per role)
@@ -146,7 +145,6 @@ export function ServiceRolesLivePanel({
               <thead className="text-left text-dim text-xs uppercase">
                 <tr>
                   <th className="pb-2 pr-3">role_name</th>
-                  <th className="pb-2 pr-3">display_name</th>
                   <th className="pb-2 pr-3">description</th>
                   <th className="pb-2 pr-3">system</th>
                   <th className="pb-2"></th>
@@ -156,7 +154,6 @@ export function ServiceRolesLivePanel({
                 {(rolesQ.data ?? []).map((r) => (
                   <tr key={r.role_name} className="border-t border-token">
                     <td className="py-2 mono text-xs">{r.role_name}</td>
-                    <td className="text-xs">{r.display_name}</td>
                     <td className="text-xs text-dim">{r.description ?? "—"}</td>
                     <td className="text-xs">
                       {r.is_system ? (
@@ -172,12 +169,12 @@ export function ServiceRolesLivePanel({
                         title={
                           r.is_system
                             ? "Системную роль нельзя менять"
-                            : "Изменить display_name"
+                            : "Изменить description"
                         }
                         onClick={() => {
                           const next = window.prompt(
-                            "display_name:",
-                            r.display_name,
+                            "description:",
+                            r.description ?? "",
                           );
                           if (next === null) return;
                           run(() =>
@@ -185,7 +182,7 @@ export function ServiceRolesLivePanel({
                               departmentId,
                               serviceName,
                               r.role_name,
-                              { display_name: next },
+                              { description: next },
                             ),
                           );
                         }}
@@ -225,18 +222,12 @@ export function ServiceRolesLivePanel({
               <div className="text-xs uppercase text-dim mb-2 flex items-center gap-1">
                 <Plus className="w-3 h-3" /> Создать роль в `(dept={departmentId}, svc={serviceName})`
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <input
                   className="input mono"
                   placeholder="role_name"
                   value={newRoleName}
                   onChange={(e) => setNewRoleName(e.target.value)}
-                />
-                <input
-                  className="input"
-                  placeholder="display_name"
-                  value={newRoleDisplay}
-                  onChange={(e) => setNewRoleDisplay(e.target.value)}
                 />
                 <input
                   className="input"
@@ -247,16 +238,14 @@ export function ServiceRolesLivePanel({
               </div>
               <button
                 className="btn btn-primary mt-2 flex items-center gap-1"
-                disabled={pending || !newRoleName.trim() || !newRoleDisplay.trim()}
+                disabled={pending || !newRoleName.trim()}
                 onClick={() =>
                   run(async () => {
                     await srApi.createServiceRole(departmentId, serviceName, {
                       role_name: newRoleName.trim(),
-                      display_name: newRoleDisplay.trim(),
                       description: newRoleDesc.trim() || undefined,
                     });
                     setNewRoleName("");
-                    setNewRoleDisplay("");
                     setNewRoleDesc("");
                   })
                 }

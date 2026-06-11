@@ -62,14 +62,12 @@ export function ServicesCatalog() {
     ? [
         {
           service_name: "auth_service",
-          display_name: "DTQC-EMM auth (mock)",
           description: null,
           is_active: true,
           created_at: "2026-01-01T00:00:00Z",
         },
         {
           service_name: "server_service",
-          display_name: "DTQC-EMM server (mock)",
           description: null,
           is_active: true,
           created_at: "2026-01-01T00:00:00Z",
@@ -114,10 +112,12 @@ export function ServicesCatalog() {
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-accent" />
             <div className="flex-1 min-w-0">
-              <div className="text-sm truncate">{item.display_name}</div>
-              <div className="text-[11px] text-dim truncate mono">
-                {item.service_name}
-              </div>
+              <div className="text-sm truncate mono">{item.service_name}</div>
+              {item.description && (
+                <div className="text-[11px] text-dim truncate">
+                  {item.description}
+                </div>
+              )}
             </div>
             {item.is_active === false && (
               <span className="badge">disabled</span>
@@ -216,7 +216,6 @@ function ServiceDetail({
         )}
       </div>
       <StatRow k="service_name" v={<span className="mono">{svc.service_name}</span>} />
-      <StatRow k="display_name" v={svc.display_name} />
       <StatRow k="description" v={svc.description ?? "—"} />
       <StatRow
         k="is_active"
@@ -321,7 +320,7 @@ function ServiceRolesByDept({
             )
             .map((d) => (
               <option key={d.id} value={d.id}>
-                {d.display_name} ({d.id})
+                {d.name} ({d.id})
               </option>
             ))}
           {(deptsQ.data ?? []).length === 0 && (
@@ -351,14 +350,13 @@ function ServiceForm({
   const { close } = useInlineState();
   const toast = useToast();
   const [serviceName, setServiceName] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function submit() {
-    if (!serviceName.trim() || !displayName.trim()) {
-      toast.warn("service_name и display_name обязательны");
+    if (!serviceName.trim()) {
+      toast.warn("service_name обязателен");
       return;
     }
     if (mockMode) {
@@ -371,7 +369,6 @@ function ServiceForm({
     try {
       const body: ServiceCreateRequest = {
         service_name: serviceName.trim(),
-        display_name: displayName.trim(),
         description: description.trim() || undefined,
       };
       await createService(body);
@@ -405,13 +402,6 @@ function ServiceForm({
             placeholder="config_service"
           />
         </FormRow>
-        <FormRow label="display_name">
-          <input
-            className="input"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-          />
-        </FormRow>
         <FormRow label="description">
           <textarea
             className="input"
@@ -428,7 +418,7 @@ function ServiceForm({
         <button
           className="btn btn-primary"
           onClick={submit}
-          disabled={busy || !serviceName.trim() || !displayName.trim()}
+          disabled={busy || !serviceName.trim()}
         >
           {busy ? "..." : "Создать"}
         </button>

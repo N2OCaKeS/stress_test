@@ -129,7 +129,7 @@ async def create_or_replace_config(
         "docker_registry.configure", actor_id, target_type="docker_registry",
         details={
             "department_id": department_id,
-            "department_name": dept.display_name,
+            "department_name": dept.name,
             "pull_policy": data.pull_policy,
             "pull_user_ids": list(data.pull_user_ids or []),
             "push_user_ids": list(data.push_user_ids or []),

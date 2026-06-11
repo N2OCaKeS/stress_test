@@ -13,8 +13,7 @@
 
   "departments": [
     {
-      "name": "LoadTest",
-      "display_name": "Нагрузочное тестирование"
+      "name": "Нагрузочное тестирование"
     }
   ],
 
@@ -22,14 +21,14 @@
     {
       "username": "mfilippenko",
       "email": "mfilippenko@astralinux.ru",
-      "department_name": "LoadTest",
+      "department_name": "Нагрузочное тестирование",
       "platform_role": "loging_reader",
       "password": "1234"
     },
     {
       "username": "dtimonin",
       "email": "dtimonin@astralinux.ru",
-      "department_name": "LoadTest",
+      "department_name": "Нагрузочное тестирование",
       "platform_role": "department_admin",
       "password": "1234"
     },
@@ -44,9 +43,8 @@
 
   "groups": [
     {
-      "name": "loadtest",
-      "display_name": "Нагрузочное тестирование",
-      "department_name": "LoadTest",
+      "name": "Нагрузочное тестирование",
+      "department_name": "Нагрузочное тестирование",
       "description": "Доступ к серверам и секретам отдела",
       "members": ["mfilippenko", "ivelikanov", "dtimonin"]
     }
@@ -55,43 +53,41 @@
   "bots": [
     {
       "name": "allta_bot",
-      "department_name": "LoadTest",
+      "department_name": "Нагрузочное тестирование",
       "description": "Service account для CI/CD pipeline отдела LoadTest",
       "allowed_services": ["server_service", "secret_service"]
     }
   ],
 
   "department_services": [
-    { "department_name": "LoadTest", "service_name": "server_service" },
-    { "department_name": "LoadTest", "service_name": "secret_service" }
+    { "department_name": "Нагрузочное тестирование", "service_name": "server_service" },
+    { "department_name": "Нагрузочное тестирование", "service_name": "secret_service" }
   ],
 
   "service_roles": [
     {
-      "department_name": "LoadTest",
+      "department_name": "Нагрузочное тестирование",
       "service_name": "server_service",
       "role_name": "reader",
-      "display_name": "Reader",
       "description": "Только просмотр серверов отдела"
     },
     {
-      "department_name": "LoadTest",
+      "department_name": "Нагрузочное тестирование",
       "service_name": "server_service",
       "role_name": "operator",
-      "display_name": "Operator",
       "description": "Развёртывание + power-операции"
     }
   ],
 
   "role_assignments": [
     {
-      "department_name": "LoadTest",
+      "department_name": "Нагрузочное тестирование",
       "service_name": "server_service",
       "role_name": "operator",
       "usernames": ["mfilippenko", "dtimonin", "ivelikanov"]
     },
     {
-      "department_name": "LoadTest",
+      "department_name": "Нагрузочное тестирование",
       "service_name": "server_service",
       "role_name": "reader",
       "usernames": []

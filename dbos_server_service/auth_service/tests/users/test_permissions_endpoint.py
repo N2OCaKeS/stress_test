@@ -39,7 +39,7 @@ URL_TPL = "/api/auth/v1/users/{user_id}/permissions"
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-async def _create_group_via_db(db, department_id, name, display_name=None):
+async def _create_group_via_db(db, department_id, name):
     """Создаёт `UserGroup` напрямую в БД — service_role на группу
     добавляется ниже через `_grant_group_service` / `_assign_group_role`,
     т.к. соответствующие HTTP-endpoint'ы требуют account_admin.
@@ -51,7 +51,6 @@ async def _create_group_via_db(db, department_id, name, display_name=None):
         id=group_id(),
         department_id=department_id,
         name=name,
-        display_name=display_name or name.title(),
         is_active=True,
     )
     db.add(grp)

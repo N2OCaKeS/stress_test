@@ -305,7 +305,6 @@ class UserGroupWithRolesEntry(BaseModel):
 
     group_id: str
     group_name: str
-    display_name: str
     department_id: str
     joined_at: datetime
     service_accesses: list[GroupServiceAccessEntry] = Field(default_factory=list)

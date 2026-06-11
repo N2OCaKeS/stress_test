@@ -26,7 +26,7 @@ async def test_403_error_has_full_envelope(client, user_a_token):
     """403 от AuthorizationError (regular user → admin endpoint) — все поля envelope присутствуют."""
     resp = await client.post(SERVICES_URL,
                               headers={"Authorization": f"Bearer {user_a_token}"},
-                              json={"service_name": "x", "display_name": "X"})
+                              json={"service_name": "x"})
     assert resp.status_code == 403
     body = resp.json()
     assert _ENVELOPE_KEYS.issubset(body.keys())

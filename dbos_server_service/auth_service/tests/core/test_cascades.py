@@ -29,7 +29,7 @@ class TestDepartmentDelete:
         каскадно удаляет связанные группы. Запускаем без user в отделе."""
         grp = UserGroup(
             id=_new_id("grp_"), department_id=dept_a.id,
-            name="cascade_grp", display_name="cg", is_active=True,
+            name="cascade_grp", is_active=True,
         )
         db.add(grp)
         await db.flush()
@@ -90,7 +90,7 @@ class TestUserDeleteCascade:
     async def test_delete_user_removes_group_membership(self, db, user_a, dept_a):
         grp = UserGroup(
             id=_new_id("grp_"), department_id=dept_a.id,
-            name="mem_cascade", display_name="mc", is_active=True,
+            name="mem_cascade", is_active=True,
         )
         db.add(grp)
         await db.flush()

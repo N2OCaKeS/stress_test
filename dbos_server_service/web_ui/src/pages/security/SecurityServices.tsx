@@ -130,9 +130,8 @@ function ServiceRow({
   return (
     <div className="cred-row flex items-center gap-3">
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate">
-          {svc.display_name}{" "}
-          <span className="text-dim mono text-xs">({svc.service_name})</span>
+        <div className="text-sm font-medium truncate mono">
+          {svc.service_name}
         </div>
         {svc.description && (
           <div className="text-[11px] text-dim truncate">{svc.description}</div>
@@ -159,21 +158,19 @@ function CreateForm({
   onCreated: () => void;
 }) {
   const [serviceName, setServiceName] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [pending, setPending] = useState(false);
   const toast = useToast();
 
   const submit = async () => {
-    if (!serviceName.trim() || !displayName.trim()) {
-      toast.warn("service_name и display_name обязательны");
+    if (!serviceName.trim()) {
+      toast.warn("service_name обязателен");
       return;
     }
     setPending(true);
     try {
       await createService({
         service_name: serviceName.trim(),
-        display_name: displayName.trim(),
         description: description.trim() || undefined,
       });
       toast.success("Сервис зарегистрирован");
@@ -197,14 +194,6 @@ function CreateForm({
             value={serviceName}
             onChange={(e) => setServiceName(e.target.value)}
             placeholder="config_service"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">display_name</span>
-          <input
-            className="input"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
           />
         </label>
         <label className="flex flex-col gap-1 text-sm md:col-span-2">

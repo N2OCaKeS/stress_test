@@ -8,14 +8,13 @@ from pydantic import BaseModel, Field
 class GroupCreate(BaseModel):
     """Тело `POST /groups`. Группа всегда привязана к отделу."""
     department_id: str = Field(description="ID отдела, к которому привязываем группу.")
-    name: str = Field(description="Машинно-читаемое имя (уникально внутри отдела).")
-    display_name: str = Field(description="Человеческое название группы.")
+    name: str = Field(description="Человеческое имя группы (уникально внутри отдела).")
     description: str | None = Field(default=None)
 
 
 class GroupUpdate(BaseModel):
-    """Тело `PATCH /groups/{group_id}` — только display_name/description."""
-    display_name: str | None = None
+    """Тело `PATCH /groups/{group_id}` — только name/description."""
+    name: str | None = None
     description: str | None = None
 
 
@@ -24,7 +23,6 @@ class GroupResponse(BaseModel):
     id: str
     department_id: str
     name: str
-    display_name: str
     description: str | None
     is_active: bool
     created_at: datetime
@@ -88,5 +86,4 @@ class UserGroupsResponse(BaseModel):
     """Запись «группа, в которой состоит юзер» — для `GET /users/{id}/groups`."""
     group_id: str
     group_name: str
-    display_name: str
     added_at: datetime

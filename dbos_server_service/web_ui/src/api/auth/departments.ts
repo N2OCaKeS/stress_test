@@ -22,7 +22,6 @@ interface BackendDepartment {
   department_id?: string;
   id?: string;
   name: string;
-  display_name: string;
   description?: string | null;
   is_active?: boolean;
   created_at: string;
@@ -33,7 +32,6 @@ function normalizeDepartment(d: BackendDepartment): Department {
   return {
     id: d.id ?? d.department_id ?? "",
     name: d.name,
-    display_name: d.display_name,
     description: d.description ?? null,
     created_at: d.created_at,
     updated_at: d.updated_at,
@@ -52,8 +50,7 @@ export async function createDepartment(
   return normalizeDepartment(raw);
 }
 
-// `name` (slug) — иммутабельный identity отдела (используется в audit/logs),
-// апдейтятся только `display_name` и `description`. Пустое тело backend
+// PATCH принимает только `name` и/или `description`. Пустое тело backend
 // отбивает 422 `EMPTY_UPDATE`.
 export async function updateDepartment(
   departmentId: string,

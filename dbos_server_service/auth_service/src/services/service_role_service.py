@@ -62,7 +62,6 @@ def _to_response(obj) -> ServiceRoleResponse:
         department_id=obj.department_id,
         service_name=obj.service_name,
         role_name=obj.role_name,
-        display_name=obj.display_name,
         description=obj.description,
         is_active=obj.is_active,
         is_system=obj.is_system,
@@ -117,7 +116,6 @@ async def create_role(
     department_id: str,
     service_name: str,
     role_name: str,
-    display_name: str,
     description: str | None,
     request_id: str | None = None,
 ) -> ServiceRoleResponse:
@@ -139,7 +137,6 @@ async def create_role(
         department_id=department_id,
         service_name=service_name,
         role_name=role_name,
-        display_name=display_name,
         description=description,
         created_by=identity.user_id,
     )
@@ -153,7 +150,6 @@ async def create_role(
             "department_id": department_id,
             "service_name": service_name,
             "role_name": role_name,
-            "display_name": display_name,
             "description": description,
         },
         request_id=request_id,
@@ -167,11 +163,10 @@ async def update_role(
     department_id: str,
     service_name: str,
     role_name: str,
-    display_name: str | None,
     description: str | None,
     request_id: str | None = None,
 ) -> ServiceRoleResponse:
-    """Patch display_name/description. Системные роли (`is_system`) не трогаем."""
+    """Patch description. Системные роли (`is_system`) не трогаем."""
     _check_can_manage(identity, department_id, service_name)
     repo = ServiceRoleDefinitionRepository(db)
     obj = await repo.get(department_id, service_name, role_name)
@@ -188,7 +183,7 @@ async def update_role(
             error_code="SERVICE_ROLE_SYSTEM_LOCKED",
             message=f"Role '{role_name}' is system-managed and cannot be modified",
         )
-    await repo.update(obj, display_name=display_name, description=description)
+    await repo.update(obj, description=description)
     await db.commit()
     audit_service.emit(
         "service_role.update",
@@ -202,7 +197,6 @@ async def update_role(
             "changes": {
                 k: v
                 for k, v in {
-                    "display_name": display_name,
                     "description": description,
                 }.items()
                 if v is not None

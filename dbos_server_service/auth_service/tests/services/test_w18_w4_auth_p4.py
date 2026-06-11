@@ -74,7 +74,6 @@ async def _make_group(db, dept_id: str, name: str = "p4_group") -> UserGroup:
         id=_new_id("grp_"),
         department_id=dept_id,
         name=name,
-        display_name=name.title(),
         description=None,
         is_active=True,
     )

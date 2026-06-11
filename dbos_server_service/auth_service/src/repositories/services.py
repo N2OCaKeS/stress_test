@@ -27,11 +27,10 @@ class ServiceRepository:
         ) is not None
 
     async def create(
-        self, service_name: str, display_name: str, description: str | None
+        self, service_name: str, description: str | None
     ) -> PlatformService:
         svc = PlatformService(
             service_name=service_name,
-            display_name=display_name,
             description=description,
         )
         self._db.add(svc)

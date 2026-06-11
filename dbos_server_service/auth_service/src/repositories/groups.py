@@ -71,7 +71,6 @@ class GroupRepository:
         self,
         department_id: str,
         name: str,
-        display_name: str,
         description: str | None,
         created_by: str | None,
     ) -> UserGroup:
@@ -79,7 +78,6 @@ class GroupRepository:
             id=group_id(),
             department_id=department_id,
             name=name,
-            display_name=display_name,
             description=description,
             created_by=created_by,
         )
@@ -87,9 +85,9 @@ class GroupRepository:
         await self._db.flush()
         return obj
 
-    async def update(self, grp: UserGroup, display_name: str | None = None, description: str | None = None) -> None:
-        if display_name is not None:
-            grp.display_name = display_name
+    async def update(self, grp: UserGroup, name: str | None = None, description: str | None = None) -> None:
+        if name is not None:
+            grp.name = name
         if description is not None:
             grp.description = description
         await self._db.flush()

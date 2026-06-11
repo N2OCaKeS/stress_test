@@ -26,7 +26,6 @@ async def create_department(
     db: AsyncSession,
     actor_id: str,
     name: str,
-    display_name: str,
     request_id: str | None = None,
 ) -> DepartmentResponse:
     """Создать отдел. Уникальность по `name`."""
@@ -34,17 +33,16 @@ async def create_department(
     if await repo.get_by_name(name):
         raise ConflictError(error_code="DEPARTMENT_ALREADY_EXISTS", message=f"Department '{name}' already exists")
 
-    dept = await repo.create(name, display_name)
+    dept = await repo.create(name)
     await db.commit()
     audit_service.emit(
         "department.create", actor_id, target_id=dept.id, target_type="department",
         request_id=request_id,
-        details={"name": name, "display_name": display_name},
+        details={"name": name},
     )
     return DepartmentResponse(
         department_id=dept.id,
         name=dept.name,
-        display_name=dept.display_name,
         description=dept.description,
         is_active=dept.is_active,
         created_at=dept.created_at,
@@ -59,17 +57,17 @@ async def update_department(
     body: DepartmentUpdateRequest,
     request_id: str | None = None,
 ) -> DepartmentResponse:
-    """Точечный апдейт display_name / description.
+    """Точечный апдейт name / description.
 
-    `name` (slug) — иммутабельный identity, в схеме его нет вовсе.
     Guard на роль выполняется на уровне endpoint'а (account_admin); сюда
     приходит уже отфильтрованный actor. Пустое тело — 422 `EMPTY_UPDATE`
-    (проверка дублируется тут и в endpoint'е — defense in depth).
+    (проверка дублируется тут и в endpoint'е — defense in depth). При
+    переименовании проверяем уникальность `name`.
     """
-    if body.display_name is None and body.description is None:
+    if body.name is None and body.description is None:
         raise DomainValidationError(
             error_code="EMPTY_UPDATE",
-            message="At least one of display_name or description must be provided",
+            message="At least one of name or description must be provided",
         )
 
     repo = DepartmentRepository(db)
@@ -80,15 +78,23 @@ async def update_department(
             message=f"Department {dept_id} not found",
         )
 
+    if body.name is not None and body.name != dept.name:
+        existing = await repo.get_by_name(body.name)
+        if existing is not None and existing.id != dept.id:
+            raise ConflictError(
+                error_code="DEPARTMENT_ALREADY_EXISTS",
+                message=f"Department '{body.name}' already exists",
+            )
+
     changes: dict[str, dict[str, str | None]] = {}
-    if body.display_name is not None and body.display_name != dept.display_name:
-        changes["display_name"] = {"old": dept.display_name, "new": body.display_name}
+    if body.name is not None and body.name != dept.name:
+        changes["name"] = {"old": dept.name, "new": body.name}
     if body.description is not None and body.description != dept.description:
         changes["description"] = {"old": dept.description, "new": body.description}
 
     dept = await repo.update(
         dept,
-        display_name=body.display_name,
+        name=body.name,
         description=body.description,
     )
     await db.commit()
@@ -105,7 +111,6 @@ async def update_department(
     return DepartmentResponse(
         department_id=dept.id,
         name=dept.name,
-        display_name=dept.display_name,
         description=dept.description,
         is_active=dept.is_active,
         created_at=dept.created_at,
@@ -123,7 +128,6 @@ async def list_departments(
         DepartmentResponse(
             department_id=d.id,
             name=d.name,
-            display_name=d.display_name,
             description=d.description,
             is_active=d.is_active,
             created_at=d.created_at,
@@ -208,7 +212,7 @@ async def grant_service_access(
     audit_service.emit(
         "department.service_grant", actor_id, target_id=department_id, target_type="department",
         details={
-            "department_name": dept.display_name,
+            "department_name": dept.name,
             "service_name": service_name,
             "reactivated": reactivated,
         },
@@ -395,7 +399,6 @@ async def hard_delete_department(
         await db.flush()
 
     dept_name = dept.name
-    dept_display_name = dept.display_name
 
     await dept_repo.delete(dept)
     await db.commit()
@@ -404,7 +407,6 @@ async def hard_delete_department(
         "department.hard_deleted", actor_id, target_id=department_id, target_type="department",
         details={
             "department_name": dept_name,
-            "department_display_name": dept_display_name,
             "reason": reason,
             "bots_deleted": len(bot_ids),
             "bot_tokens_revoked": bot_tokens_revoked,

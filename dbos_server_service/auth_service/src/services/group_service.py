@@ -71,7 +71,6 @@ def _grp_response(grp) -> GroupResponse:
         id=grp.id,
         department_id=grp.department_id,
         name=grp.name,
-        display_name=grp.display_name,
         description=grp.description,
         is_active=grp.is_active,
         created_at=grp.created_at,
@@ -97,7 +96,7 @@ async def list_groups(
 
 
 async def create_group(
-    db: AsyncSession, identity: IdentityContext, department_id: str, name: str, display_name: str,
+    db: AsyncSession, identity: IdentityContext, department_id: str, name: str,
     description: str | None, request_id=None,
 ) -> GroupResponse:
     """Создать группу внутри отдела.
@@ -130,7 +129,6 @@ async def create_group(
     grp = await repo.create(
         department_id=department_id,
         name=name,
-        display_name=display_name,
         description=description,
         created_by=identity.user_id,
     )
@@ -141,7 +139,6 @@ async def create_group(
         details={
             "department_id": department_id,
             "name": name,
-            "display_name": display_name,
             "description": description,
         },
     )
@@ -150,26 +147,36 @@ async def create_group(
 
 async def update_group(
     db: AsyncSession, identity: IdentityContext, group_id: str,
-    display_name: str | None, description: str | None, request_id=None,
+    name: str | None, description: str | None, request_id=None,
 ) -> GroupResponse:
     """Обновить метаданные группы.
 
     account_admin — любая группа; department_admin — только группы своего отдела
-    (симметрия с `create_group`).
+    (симметрия с `create_group`). При переименовании проверяем уникальность
+    `name` внутри отдела.
     """
     repo = GroupRepository(db)
     grp = await repo.get(group_id)
     if grp is None or not grp.is_active:
         raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
     _require_dept_or_account_admin(identity, grp.department_id)
-    await repo.update(grp, display_name=display_name, description=description)
+
+    if name is not None and name != grp.name:
+        existing = await repo.get_by_name(grp.department_id, name)
+        if existing is not None and existing.id != grp.id:
+            raise ConflictError(
+                error_code="GROUP_ALREADY_EXISTS",
+                message=f"Group '{name}' already exists in department '{grp.department_id}'",
+            )
+
+    await repo.update(grp, name=name, description=description)
     await db.commit()
     audit_service.emit(
         "group.update", identity.user_id, target_id=group_id, target_type="group",
         request_id=request_id,
         details={
             "group_name": grp.name,
-            "changes": {k: v for k, v in {"display_name": display_name, "description": description}.items() if v is not None},
+            "changes": {k: v for k, v in {"name": name, "description": description}.items() if v is not None},
         },
     )
     return _grp_response(grp)
@@ -208,7 +215,7 @@ async def delete_group(db: AsyncSession, identity: IdentityContext, group_id: st
     audit_service.emit(
         "group.delete", identity.user_id, target_id=group_id, target_type="group",
         request_id=request_id,
-        details={"group_name": grp.name, "display_name": grp.display_name},
+        details={"group_name": grp.name},
     )
 
 
@@ -459,7 +466,6 @@ async def list_user_groups(db: AsyncSession, identity: IdentityContext, user_id:
             result.append(UserGroupsResponse(
                 group_id=grp.id,
                 group_name=grp.name,
-                display_name=grp.display_name,
                 added_at=m.added_at,
             ))
     return result

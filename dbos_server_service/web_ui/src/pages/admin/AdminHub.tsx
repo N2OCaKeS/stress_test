@@ -25,28 +25,24 @@ type LookupState =
 const MOCK_SERVICES: Service[] = [
   {
     service_name: "server_service",
-    display_name: "DTQC-EMM server (mock)",
     description: null,
     is_active: true,
     created_at: "2026-01-01T00:00:00Z",
   },
   {
     service_name: "secret_service",
-    display_name: "DTQC-EMM secret (mock)",
     description: null,
     is_active: true,
     created_at: "2026-01-01T00:00:00Z",
   },
   {
     service_name: "loging_service",
-    display_name: "DTQC-EMM loging (mock)",
     description: null,
     is_active: true,
     created_at: "2026-01-01T00:00:00Z",
   },
   {
     service_name: "worker_service",
-    display_name: "DTQC-EMM worker (mock)",
     description: null,
     is_active: true,
     created_at: "2026-01-01T00:00:00Z",

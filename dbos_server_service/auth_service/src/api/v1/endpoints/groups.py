@@ -69,7 +69,7 @@ async def create_group(
         * `DEPARTMENT_NOT_FOUND` (404).
     """
     return await group_service.create_group(
-        db, identity, body.department_id, body.name, body.display_name, body.description,
+        db, identity, body.department_id, body.name, body.description,
         request_id=getattr(request.state, "request_id", None),
     )
 
@@ -83,13 +83,13 @@ async def update_group(
     group_id: str, body: GroupUpdate, request: Request,
     identity: AnyAdmin, db: AsyncSession = Depends(get_db),
 ) -> GroupResponse:
-    """Patch display_name/description группы.
+    """Patch name/description группы.
 
     Доступ:
         account_admin (любая группа) или department_admin (только своего отдела).
     """
     return await group_service.update_group(
-        db, identity, group_id, body.display_name, body.description,
+        db, identity, group_id, body.name, body.description,
         request_id=getattr(request.state, "request_id", None),
     )
 

@@ -237,7 +237,6 @@ async def test_delete_role_invalidates_identity_cache_for_group_members(
         json={
             "department_id": dept_a_with_service.id,
             "name": "drop_role_grp",
-            "display_name": "Drop role",
         },
     )).json()
     group_id = grp["id"]

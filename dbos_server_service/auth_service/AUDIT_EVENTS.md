@@ -81,11 +81,11 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 
 | Action | Default severity | Emitter | Target | Key details |
 |------|------|------|------|------|
-| `department.create` | CRITICAL | `department_service.create_department` | department | `name`, `display_name`. |
+| `department.create` | CRITICAL | `department_service.create_department` | department | `name`. |
 | `department.list` | INFO | `GET /departments` | — | Только account_admin. |
 | `department.service_grant` | CRITICAL | `department_service.grant_service_access` | department | `service_name`. |
 | `department.service_revoke` | CRITICAL | `department_service.revoke_service_access` | department | `service_name`. |
-| `department.hard_deleted` | CRITICAL | `department_service.hard_delete_department` (`DELETE /departments/{id}`) | department | `department_name`, `department_display_name`, `reason` (обязательный), `bots_deleted`, `bot_tokens_revoked`, `oauth_clients_deleted`. CASCADE-FK уносят DepartmentServiceAccess / ServiceRoleDefinition / UserGroup / DepartmentDockerRegistry. Боты и oauth_clients (RESTRICT-FK) сносятся явно до dept-row'а. После commit'а — best-effort `secret_service.notify_dept_deleted`: блокирует cred'ы dept'а и каскадно снимает DeptGrant'ы/RoleACL, где dept — recipient. |
+| `department.hard_deleted` | CRITICAL | `department_service.hard_delete_department` (`DELETE /departments/{id}`) | department | `department_name`, `reason` (обязательный), `bots_deleted`, `bot_tokens_revoked`, `oauth_clients_deleted`. CASCADE-FK уносят DepartmentServiceAccess / ServiceRoleDefinition / UserGroup / DepartmentDockerRegistry. Боты и oauth_clients (RESTRICT-FK) сносятся явно до dept-row'а. После commit'а — best-effort `secret_service.notify_dept_deleted`: блокирует cred'ы dept'а и каскадно снимает DeptGrant'ы/RoleACL, где dept — recipient. |
 
 ## Groups
 
@@ -107,7 +107,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 
 | Action | Default severity | Emitter | Target | Key details |
 |------|------|------|------|------|
-| `service.create` | CRITICAL | `platform_service_service.create_service` | service | `service_name`, `display_name`. |
+| `service.create` | CRITICAL | `platform_service_service.create_service` | service | `service_name`. |
 | `service.delete` | CRITICAL | `platform_service_service.delete_service` | service | `service_name`. |
 | `service.list` | INFO | `GET /services` | — | — |
 | `service.access_check` | INFO | `authorization_service.check_service_access` | service | `service_name`, `allowed`. |
@@ -119,7 +119,7 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | Action | Default severity | Notes |
 |------|------|------|
 | `service_role.create` | INFO | scope `(department_id, service_name, role_name)`. |
-| `service_role.update` | INFO | display_name / description. |
+| `service_role.update` | INFO | description. |
 | `service_role.delete` | CRITICAL | Системные (`is_system=True`) защищены. |
 | `service_role.bulk_assign` | INFO | `user_ids[]`, `service_name`, `role_name`. |
 | `service_role.bulk_revoke` | INFO | `user_ids[]`, `service_name`, `role_name`. |

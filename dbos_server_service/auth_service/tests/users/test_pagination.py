@@ -157,7 +157,7 @@ class TestGroupsPagination:
     async def _make_group(self, client, token, dept_id, name):
         return await client.post(
             GROUPS_URL, headers={"Authorization": f"Bearer {token}"},
-            json={"department_id": dept_id, "name": name, "display_name": name},
+            json={"department_id": dept_id, "name": name},
         )
 
     async def test_limit_and_total(self, client, admin_token, dept_a):

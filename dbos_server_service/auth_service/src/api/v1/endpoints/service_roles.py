@@ -94,7 +94,6 @@ async def create_role(
         department_id=department_id,
         service_name=service_name,
         role_name=body.role_name,
-        display_name=body.display_name,
         description=body.description,
         request_id=getattr(request.state, "request_id", None),
     )
@@ -103,7 +102,7 @@ async def create_role(
 @router.patch(
     "/{role_name}",
     response_model=ServiceRoleResponse,
-    summary="Обновить display_name/description роли",
+    summary="Обновить description роли",
 )
 async def update_role(
     department_id: str,
@@ -114,14 +113,13 @@ async def update_role(
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServiceRoleResponse:
-    """Patch определения роли. Меняются только display_name и description."""
+    """Patch определения роли. Меняется только description."""
     return await service_role_service.update_role(
         db=db,
         identity=identity,
         department_id=department_id,
         service_name=service_name,
         role_name=role_name,
-        display_name=body.display_name,
         description=body.description,
         request_id=getattr(request.state, "request_id", None),
     )

@@ -49,7 +49,6 @@ export interface GroupRoleAssignRequest {
 export interface UserGroupsResponse {
   group_id: string;
   group_name: string;
-  display_name: string | null;
   department_id: string;
   joined_at: string;
 }

@@ -12,8 +12,8 @@ class PlatformService(Base):
     __tablename__ = "platform_services"
 
     # service_name — естественный business key, используется во всех API-URL
+    # и в UI как имя сервиса (отдельного human-readable поля больше нет).
     service_name: Mapped[str] = mapped_column(String(128), primary_key=True)
-    display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

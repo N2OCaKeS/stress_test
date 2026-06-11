@@ -126,7 +126,7 @@ async def create_bot(
         details={
             "name": data.name,
             "department_id": data.department_id,
-            "department_name": dept.display_name,
+            "department_name": dept.name,
             "allowed_services": list(data.allowed_services),
             "description": data.description,
         },

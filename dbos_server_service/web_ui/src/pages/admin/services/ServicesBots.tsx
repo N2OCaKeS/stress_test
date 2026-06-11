@@ -891,7 +891,7 @@ function BotCreateForm({ onDone }: { onDone: () => void }) {
               )}
               {depts.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.display_name ?? d.name}
+                  {d.name}
                 </option>
               ))}
             </select>

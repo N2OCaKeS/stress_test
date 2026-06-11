@@ -63,7 +63,6 @@ async def _make_group(db, department_id, name):
         id=group_id(),
         department_id=department_id,
         name=name,
-        display_name=name.title(),
         is_active=True,
     )
     db.add(grp)

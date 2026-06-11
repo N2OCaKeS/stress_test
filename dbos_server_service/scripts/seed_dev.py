@@ -274,28 +274,24 @@ def main() -> None:
                            headers={"Authorization": f"Bearer {LOG_API_KEY}"}, timeout=10)
 
     # ── Платформенные сервисы ─────────────────────────────────────────────────
-    # display_name держим как `DTQC-EMM <name>` для платформенных компонентов:
-    # auth/loging/server/worker — единый префикс DTQC-EMM (Департамент тестирования
-    # качества и контроля → Enterprise Mgmt Module). Остальные (config/secret)
-    # сохраняют доменные имена. internal `service_name` остаётся business key'ом
-    # и не меняется (URL'ы, audit-события, FK), переименование — только в UI.
+    # `service_name` — единственное имя сервиса; UI показывает его напрямую.
     section("Платформенные сервисы")
     for svc in [
-        {"service_name": "auth_service",    "display_name": "DTQC-EMM auth",
+        {"service_name": "auth_service",
          "description": "Аутентификация, авторизация и управление аккаунтами"},
-        {"service_name": "loging_service",  "display_name": "DTQC-EMM loging",
+        {"service_name": "loging_service",
          "description": "Централизованный сервис аудита. reader-роль даёт доступ к просмотру логов"},
-        {"service_name": "server_service",  "display_name": "DTQC-EMM server",
+        {"service_name": "server_service",
          "description": "Инвентаризация и управление тестовыми серверами"},
-        {"service_name": "server_worker",   "display_name": "DTQC-EMM worker",
+        {"service_name": "server_worker",
          "description": "Фоновые операции по серверам (power, ssh, ipmi) под worker_bot"},
-        {"service_name": "config_service",  "display_name": "Конфигурация",
+        {"service_name": "config_service",
          "description": "Хранение и раздача конфигурации приложений"},
-        {"service_name": "secret_service",  "display_name": "Хранилище секретов",
+        {"service_name": "secret_service",
          "description": "Безопасное хранение токенов и учётных данных для внешних систем (Jira, Confluence, Git и т.п.)"},
     ]:
         s, b = post(auth, "/api/auth/v1/services", svc)
-        must(s, b, f"{svc['service_name']} ({svc['display_name']})")
+        must(s, b, svc["service_name"])
 
     # ── Отдел НТ ─────────────────────────────────────────────────────────────
     # Department-доступ к сервисам должен быть выдан ДО создания ролей —
@@ -303,7 +299,7 @@ def main() -> None:
     # сидится автоматически при grant_access.
     section("Отдел НТ")
     s, b = post(auth, "/api/auth/v1/departments",
-                {"name": "nt", "display_name": "НТ — Нагрузочное тестирование"})
+                {"name": "НТ — Нагрузочное тестирование"})
     dept = must(s, b, "отдел НТ")
     dept_id = dept["department_id"]
 
@@ -324,29 +320,29 @@ def main() -> None:
     section("Роли сервисов (отдел НТ)")
     for svc_name, roles in {
         "config_service": [
-            ("reader",   "Читатель", "Только чтение конфигов"),
-            ("operator", "Оператор", "Чтение + обновление конфигов"),
+            ("reader",   "Только чтение конфигов"),
+            ("operator", "Чтение + обновление конфигов"),
         ],
         "server_service": [
-            ("reader",     "Читатель",     "Просмотр списка серверов"),
-            ("operator",   "Оператор",     "Управление серверами"),
-            ("worker_bot", "Сервисный бот", "Least-privilege для server_worker: доступ к зашифрованным паролям/IPMI-credentials и их ротация. Не имеет power/CRUD/permission_grant."),
+            ("reader",     "Просмотр списка серверов"),
+            ("operator",   "Управление серверами"),
+            ("worker_bot", "Least-privilege для server_worker: доступ к зашифрованным паролям/IPMI-credentials и их ротация. Не имеет power/CRUD/permission_grant."),
         ],
         "loging_service": [
-            ("reader",   "Читатель", "Просмотр логов отдела"),
+            ("reader",   "Просмотр логов отдела"),
         ],
         # secret_service: `admin` сеется автоматически при grant_service_access
         # (через `seed_system_admin` → ServiceRoleDefinitionRepository) с
         # is_system=True. Здесь добавляем только остальные роли.
         "secret_service": [
-            ("guest",    "Гость",    "Просмотр документации сервиса"),
-            ("reader",   "Читатель", "Просмотр кред и reveal с can_read"),
-            ("operator", "Оператор", "Создание/изменение кред в своей зоне"),
+            ("guest",    "Просмотр документации сервиса"),
+            ("reader",   "Просмотр кред и reveal с can_read"),
+            ("operator", "Создание/изменение кред в своей зоне"),
         ],
     }.items():
-        for role_name, display, desc in roles:
+        for role_name, desc in roles:
             s, b = post(auth, f"/api/auth/v1/departments/{dept_id}/services/{svc_name}/roles",
-                        {"role_name": role_name, "display_name": display, "description": desc})
+                        {"role_name": role_name, "description": desc})
             must(s, b, f"{svc_name}:{role_name}")
 
     # ── Пользователи ─────────────────────────────────────────────────────────

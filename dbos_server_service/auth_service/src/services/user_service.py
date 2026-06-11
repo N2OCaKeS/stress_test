@@ -58,7 +58,7 @@ async def get_user(
     """Получить юзера по id.
 
     Что делает:
-        Простой read через UserRepository + Department для display_name.
+        Простой read через UserRepository + Department для human-name отдела.
 
     Доступ:
         Любой админ (`AnyAdmin`) — gate проверяется в эндпоинте. На уровне
@@ -83,7 +83,7 @@ async def get_user(
         if user.department_id
         else None
     )
-    dept_name = dept.display_name if dept else None
+    dept_name = dept.name if dept else None
     return _to_response(user, dept_name)
 
 
@@ -118,7 +118,7 @@ async def list_users(
         include_banned=effective_include_banned,
         status_filter=status_filter,
     )
-    dept_names = {d.id: d.display_name for d in await dept_repo.list_all()}
+    dept_names = {d.id: d.name for d in await dept_repo.list_all()}
     audit_service.emit(
         "user.list", actor_id, status="success", request_id=request_id,
         details={
@@ -186,7 +186,7 @@ async def list_users_by_department(
         },
         request_id=request_id,
     )
-    return [_to_response(u, dept.display_name) for u in users], total
+    return [_to_response(u, dept.name) for u in users], total
 
 
 async def create_user(
@@ -292,7 +292,7 @@ async def create_user(
             "password": password,
             "email": mask_email(email),
             "department_id": department_id,
-            "department_name": dept.display_name if dept else None,
+            "department_name": dept.name if dept else None,
             "platform_role": platform_role,
             "initial_roles": [
                 {
@@ -303,7 +303,7 @@ async def create_user(
             ],
         },
     )
-    return _to_response(user, dept.display_name if dept else None)
+    return _to_response(user, dept.name if dept else None)
 
 
 async def _revoke_sessions_on_block(
@@ -703,7 +703,7 @@ async def update_user(
                 "fields_changed": sorted(filtered.keys()),
             },
         )
-    return _to_response(user, dept.display_name if dept else None)
+    return _to_response(user, dept.name if dept else None)
 
 
 async def assign_roles(
@@ -1747,7 +1747,6 @@ async def get_user_permissions(
             UserGroupWithRolesEntry(
                 group_id=grp.id,
                 group_name=grp.name,
-                display_name=grp.display_name,
                 department_id=grp.department_id,
                 joined_at=m.added_at,
                 service_accesses=sorted(
@@ -1811,7 +1810,7 @@ async def get_user_permissions(
         user_id=target.id,
         username=target.username,
         department_id=target.department_id,
-        department_name=dept.display_name if dept else None,
+        department_name=dept.name if dept else None,
         platform_role=(
             PlatformRole(target.platform_role)
             if target.platform_role

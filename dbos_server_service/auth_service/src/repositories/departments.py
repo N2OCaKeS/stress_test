@@ -33,8 +33,8 @@ class DepartmentRepository:
         result = await self._db.scalars(select(Department).where(Department.is_active.is_(True)))
         return list(result)
 
-    async def create(self, name: str, display_name: str) -> Department:
-        dept = Department(id=department_id(), name=name, display_name=display_name)
+    async def create(self, name: str) -> Department:
+        dept = Department(id=department_id(), name=name)
         self._db.add(dept)
         await self._db.flush()
         return dept
@@ -43,16 +43,16 @@ class DepartmentRepository:
         self,
         dept: Department,
         *,
-        display_name: str | None,
+        name: str | None,
         description: str | None,
     ) -> Department:
-        """Точечный апдейт `display_name` и/или `description`.
+        """Точечный апдейт `name` и/или `description`.
 
         Меняем только те поля, для которых передано не-None значение —
         это позволяет PATCH-семантике отличать «не трогать» от «очистить».
         """
-        if display_name is not None:
-            dept.display_name = display_name
+        if name is not None:
+            dept.name = name
         if description is not None:
             dept.description = description
         await self._db.flush()

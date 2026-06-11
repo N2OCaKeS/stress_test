@@ -124,7 +124,7 @@ async def create_client(
         details={
             "name": data.name,
             "department_id": data.department_id,
-            "department_name": dept.display_name,
+            "department_name": dept.name,
             "redirect_uris": list(data.redirect_uris),
             "allowed_scopes": list(data.allowed_scopes),
             "grant_types": list(data.grant_types),

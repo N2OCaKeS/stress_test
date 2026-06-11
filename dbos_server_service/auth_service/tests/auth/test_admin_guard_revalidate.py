@@ -169,7 +169,7 @@ async def test_revoked_service_role_admin_loses_manage_permission(
     sanity = await client.post(
         roles_url,
         headers={"Authorization": f"Bearer {token}"},
-        json={"role_name": "sanity_role", "display_name": "Sanity"},
+        json={"role_name": "sanity_role"},
     )
     assert sanity.status_code == 201, sanity.text
 
@@ -183,7 +183,7 @@ async def test_revoked_service_role_admin_loses_manage_permission(
     after = await client.post(
         roles_url,
         headers={"Authorization": f"Bearer {token}"},
-        json={"role_name": "after_revoke_role", "display_name": "AfterRevoke"},
+        json={"role_name": "after_revoke_role"},
     )
     assert after.status_code == 403
     assert after.json()["error_code"] == "SERVICE_ROLE_MGMT_FORBIDDEN"

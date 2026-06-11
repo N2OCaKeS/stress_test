@@ -74,7 +74,6 @@ async def test_group_regrant_after_revoke_updates_granted_meta(
         json={
             "department_id": dept_id,
             "name": "regrant_grp",
-            "display_name": "regrant_grp",
         },
     )
     assert grp_resp.status_code == 201, grp_resp.text

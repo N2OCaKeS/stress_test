@@ -127,7 +127,7 @@ export function GroupDetail() {
     );
   }
 
-  const headerName = mockMode ? group!.name : (liveGroupQ.data?.display_name || liveGroupQ.data?.name || id || "—");
+  const headerName = mockMode ? group!.name : (liveGroupQ.data?.name || id || "—");
   const headerDescription = mockMode ? group!.description : (liveGroupQ.data?.description ?? "");
   return (
     <Shell breadcrumb={`auth_service / users / group / ${headerName}`}>
@@ -528,11 +528,7 @@ function GroupLiveData({
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <div className="text-xs text-dim">name</div>
-                <div className="mono">{detail.data.name}</div>
-              </div>
-              <div>
-                <div className="text-xs text-dim">display_name</div>
-                <div>{detail.data.display_name ?? "—"}</div>
+                <div>{detail.data.name}</div>
               </div>
               <div>
                 <div className="text-xs text-dim">department</div>
@@ -546,7 +542,7 @@ function GroupLiveData({
                 <button
                   className="btn flex items-center gap-1"
                   disabled={!caps.edit || pending}
-                  title={caps.edit ? "Изменить display_name / description" : caps.reason}
+                  title={caps.edit ? "Изменить name / description" : caps.reason}
                   onClick={() => setEditingMeta(true)}
                 >
                   <Edit3 className="w-4 h-4" /> Изменить
@@ -887,7 +883,7 @@ function ServiceInline({ name }: { name: string }) {
 }
 
 /**
- * Inline edit form for group display_name / description. Submits PATCH через
+ * Inline edit form for group name / description. Submits PATCH через
  * родительский run() — ошибки и refetch уже на нём.
  */
 function GroupMetaEditForm({
@@ -898,21 +894,21 @@ function GroupMetaEditForm({
 }: {
   group: Group;
   disabled: boolean;
-  onSubmit: (body: { display_name?: string; description?: string }) => Promise<void> | void;
+  onSubmit: (body: { name?: string; description?: string }) => Promise<void> | void;
   onCancel: () => void;
 }) {
-  const [displayName, setDisplayName] = useState(group.display_name ?? "");
+  const [name, setName] = useState(group.name ?? "");
   const [description, setDescription] = useState(group.description ?? "");
 
   return (
     <div className="flex flex-col gap-3">
       <div className="text-xs uppercase text-dim">Edit · {group.name}</div>
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-xs text-dim">display_name</span>
+        <span className="text-xs text-dim">name</span>
         <input
           className="input"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
         />
       </label>
       <label className="flex flex-col gap-1 text-sm">
@@ -924,7 +920,7 @@ function GroupMetaEditForm({
         />
       </label>
       <div className="text-xs text-dim">
-        name и department_id не редактируются.
+        department_id не редактируется.
       </div>
       <div className="flex gap-2">
         <button
@@ -932,7 +928,7 @@ function GroupMetaEditForm({
           disabled={disabled}
           onClick={() =>
             void onSubmit({
-              display_name: displayName.trim() || undefined,
+              name: name.trim() || undefined,
               description: description.trim() || undefined,
             })
           }

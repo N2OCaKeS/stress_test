@@ -234,7 +234,6 @@ export interface UserPermissionsResponse {
   groups: Array<{
     group_id: string;
     group_name: string;
-    display_name: string | null;
     department_id: string;
     joined_at: Iso8601;
     service_accesses: Array<{ service_name: ServiceName }>;
@@ -251,7 +250,6 @@ export interface UserPermissionsResponse {
 export interface Department {
   id: string;
   name: string;
-  display_name: string;
   description?: string | null;
   created_at: Iso8601;
   updated_at?: Iso8601;
@@ -259,11 +257,10 @@ export interface Department {
 
 export interface DepartmentCreateRequest {
   name: string;
-  display_name: string;
 }
 
 export interface DepartmentUpdateRequest {
-  display_name?: string;
+  name?: string;
   description?: string;
 }
 
@@ -273,7 +270,6 @@ export interface DepartmentUpdateRequest {
 
 export interface Service {
   service_name: ServiceName;
-  display_name: string;
   description?: string | null;
   is_active?: boolean;
   created_at: Iso8601;
@@ -281,13 +277,11 @@ export interface Service {
 
 export interface ServiceCreateRequest {
   service_name: ServiceName;
-  display_name: string;
   description?: string;
 }
 
 export interface ServiceRole {
   role_name: string;
-  display_name: string;
   description?: string | null;
   department_id: string;
   service_name: ServiceName;
@@ -297,12 +291,10 @@ export interface ServiceRole {
 
 export interface ServiceRoleCreateRequest {
   role_name: string;
-  display_name: string;
   description?: string;
 }
 
 export interface ServiceRolePatchRequest {
-  display_name?: string;
   description?: string;
 }
 
@@ -411,7 +403,6 @@ export interface Group {
   id: string;
   department_id: string;
   name: string;
-  display_name: string | null;
   description: string | null;
   created_at: Iso8601;
   updated_at?: Iso8601;
@@ -420,12 +411,11 @@ export interface Group {
 export interface GroupCreateRequest {
   department_id: string;
   name: string;
-  display_name?: string;
   description?: string;
 }
 
 export interface GroupPatchRequest {
-  display_name?: string;
+  name?: string;
   description?: string;
 }
 

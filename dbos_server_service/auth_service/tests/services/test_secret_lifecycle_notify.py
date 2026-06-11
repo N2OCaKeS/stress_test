@@ -326,7 +326,6 @@ async def test_revoke_service_access_for_secret_service_triggers_notify(
     # Регистрируем secret_service как платформенный сервис + грант отделу.
     svc = PlatformService(
         service_name="secret_service",
-        display_name="Secret Service",
         is_active=True,
     )
     db.add(svc)
@@ -397,7 +396,6 @@ async def test_revoke_service_access_swallows_notify_exception(
 
     svc = PlatformService(
         service_name="secret_service",
-        display_name="Secret Service",
         is_active=True,
     )
     db.add(svc)

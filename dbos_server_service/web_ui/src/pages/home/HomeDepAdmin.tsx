@@ -166,11 +166,6 @@ export function HomeDepAdmin() {
                     >
                       {g.name}
                     </Link>
-                    {g.display_name && (
-                      <span className="text-xs text-dim truncate">
-                        — {g.display_name}
-                      </span>
-                    )}
                     <span
                       className="text-xs text-dim ml-auto truncate max-w-[160px]"
                       title={g.description ?? ""}

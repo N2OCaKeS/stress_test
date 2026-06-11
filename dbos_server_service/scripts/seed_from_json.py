@@ -113,7 +113,7 @@ def seed_departments(client: httpx.Client, token: str, items: list) -> None:
         status, body = _post(
             client,
             "/api/auth/v1/departments",
-            {"name": d["name"], "display_name": d["display_name"]},
+            {"name": d["name"]},
             token,
         )
         if status in (200, 201):
@@ -158,7 +158,6 @@ def seed_groups(client: httpx.Client, token: str, items: list) -> None:
             {
                 "department_id": dept_id,
                 "name": g["name"],
-                "display_name": g["display_name"],
                 "description": g.get("description"),
             },
             token,
@@ -254,7 +253,6 @@ def seed_service_roles(client: httpx.Client, token: str, items: list) -> None:
         svc = r["service_name"]
         body = {
             "role_name": r["role_name"],
-            "display_name": r.get("display_name") or r["role_name"],
             "description": r.get("description"),
         }
         body = {k: v for k, v in body.items() if v is not None}

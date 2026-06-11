@@ -367,7 +367,6 @@ async def test_delete_service_cascades_group_service_roles_and_access(
     # Сервис + grant.
     svc = PlatformService(
         service_name="cascade_svc",
-        display_name="Cascade",
         is_active=True,
     )
     db.add(svc)
@@ -382,7 +381,6 @@ async def test_delete_service_cascades_group_service_roles_and_access(
         id=_new_id("grp_"),
         department_id=dept_a.id,
         name="g1",
-        display_name="G1",
         is_active=True,
     )
     db.add(grp)
@@ -452,7 +450,6 @@ async def test_delete_secret_service_emits_lifecycle_per_dept(
 
     svc = PlatformService(
         service_name="secret_service",
-        display_name="Secret",
         is_active=True,
     )
     db.add(svc)
@@ -500,7 +497,6 @@ async def test_delete_non_secret_service_does_not_emit_lifecycle(
 
     svc = PlatformService(
         service_name="other_svc",
-        display_name="Other",
         is_active=True,
     )
     db.add(svc)

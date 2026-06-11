@@ -5,27 +5,27 @@ URL = "/api/auth/v1/services"
 
 async def test_admin_creates_service(client, admin_token):
     resp = await client.post(URL, headers={"Authorization": f"Bearer {admin_token}"},
-                              json={"service_name": "new_svc", "display_name": "New Service"})
+                              json={"service_name": "new_svc"})
     assert resp.status_code == 201
     assert resp.json()["service_name"] == "new_svc"
 
 
 async def test_duplicate_service_returns_409(client, admin_token, service_x):
     resp = await client.post(URL, headers={"Authorization": f"Bearer {admin_token}"},
-                              json={"service_name": service_x.service_name, "display_name": "Dup"})
+                              json={"service_name": service_x.service_name})
     assert resp.status_code == 409
     assert resp.json()["error_code"] == "SERVICE_ALREADY_EXISTS"
 
 
 async def test_dept_admin_cannot_create_service(client, dept_admin_a_token):
     resp = await client.post(URL, headers={"Authorization": f"Bearer {dept_admin_a_token}"},
-                              json={"service_name": "hack_svc", "display_name": "Hack"})
+                              json={"service_name": "hack_svc"})
     assert resp.status_code == 403
 
 
 async def test_regular_user_cannot_create_service(client, user_a_token):
     resp = await client.post(URL, headers={"Authorization": f"Bearer {user_a_token}"},
-                              json={"service_name": "hack_svc2", "display_name": "Hack"})
+                              json={"service_name": "hack_svc2"})
     assert resp.status_code == 403
 
 

@@ -14,18 +14,16 @@ _ROLE_NAME_PATTERN = r"^[a-z][a-z0-9_]+$"
 class ServiceRoleCreate(BaseModel):
     """Тело `POST /departments/{dept_id}/services/{service}/roles`."""
     role_name: str = Field(
-        description="Машинно-читаемое имя роли (`admin`, `operator`, `reader`).",
+        description="Имя роли (`admin`, `operator`, `reader`).",
         pattern=_ROLE_NAME_PATTERN,
         min_length=2,
         max_length=64,
     )
-    display_name: str = Field(description="Человеческое название.")
     description: str | None = Field(default=None)
 
 
 class ServiceRoleUpdate(BaseModel):
-    """Тело PATCH — меняются только display_name и description."""
-    display_name: str | None = None
+    """Тело PATCH — меняется только description."""
     description: str | None = None
 
 
@@ -35,7 +33,6 @@ class ServiceRoleResponse(BaseModel):
     department_id: str
     service_name: str
     role_name: str
-    display_name: str
     description: str | None
     is_active: bool
     is_system: bool = Field(description="True для системных ролей (`admin`) — защищены от удаления.")

@@ -4,11 +4,11 @@ GROUPS_URL = "/api/auth/v1/groups"
 USERS_URL = "/api/auth/v1/users"
 
 
-async def _create_group(client, token, department_id, name="test_group", display_name="Test Group"):
+async def _create_group(client, token, department_id, name="test_group"):
     return await client.post(
         GROUPS_URL,
         headers={"Authorization": f"Bearer {token}"},
-        json={"department_id": department_id, "name": name, "display_name": display_name},
+        json={"department_id": department_id, "name": name},
     )
 
 
@@ -73,10 +73,10 @@ async def test_admin_updates_group(client, admin_token, dept_a):
     resp = await client.patch(
         f"{GROUPS_URL}/{group_id}",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"display_name": "Updated Name"},
+        json={"name": "Updated Name"},
     )
     assert resp.status_code == 200
-    assert resp.json()["display_name"] == "Updated Name"
+    assert resp.json()["name"] == "Updated Name"
 
 
 async def test_admin_deletes_group(client, admin_token, dept_a):
@@ -96,10 +96,10 @@ async def test_dept_admin_updates_group_in_own_dept(
     resp = await client.patch(
         f"{GROUPS_URL}/{group_id}",
         headers={"Authorization": f"Bearer {dept_admin_a_token}"},
-        json={"display_name": "DA updated"},
+        json={"name": "DA updated"},
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["display_name"] == "DA updated"
+    assert resp.json()["name"] == "DA updated"
 
 
 async def test_dept_admin_cannot_update_group_in_other_dept(
@@ -112,7 +112,7 @@ async def test_dept_admin_cannot_update_group_in_other_dept(
     resp = await client.patch(
         f"{GROUPS_URL}/{group_id}",
         headers={"Authorization": f"Bearer {dept_admin_a_token}"},
-        json={"display_name": "should_fail"},
+        json={"name": "should_fail"},
     )
     assert resp.status_code == 403, resp.text
     assert resp.json()["error_code"] == "DEPARTMENT_ACCESS_DENIED"
@@ -128,7 +128,7 @@ async def test_regular_user_cannot_update_group(
     resp = await client.patch(
         f"{GROUPS_URL}/{group_id}",
         headers={"Authorization": f"Bearer {user_a_token}"},
-        json={"display_name": "nope"},
+        json={"name": "nope"},
     )
     assert resp.status_code == 403
 

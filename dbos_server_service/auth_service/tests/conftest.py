@@ -278,7 +278,7 @@ async def _make_user(db, username, password, department_id=None, platform_role=N
 
 
 async def _make_dept(db, name):
-    dept = Department(id=_new_id("dep_"), name=name, display_name=name.title(), is_active=True)
+    dept = Department(id=_new_id("dep_"), name=name, is_active=True)
     db.add(dept)
     await db.flush()
     return dept
@@ -298,19 +298,18 @@ async def _make_service(db, name):
             existing.is_active = True
             await db.flush()
         return existing
-    svc = PlatformService(service_name=name, display_name=name.title(), is_active=True)
+    svc = PlatformService(service_name=name, is_active=True)
     db.add(svc)
     await db.flush()
     return svc
 
 
-async def _make_role_def(db, department_id, service_name, role_name, display_name=None, is_system=False):
+async def _make_role_def(db, department_id, service_name, role_name, is_system=False):
     obj = ServiceRoleDefinition(
         id=service_role_def_id(),
         department_id=department_id,
         service_name=service_name,
         role_name=role_name,
-        display_name=display_name or role_name.title(),
         is_active=True,
         is_system=is_system,
     )
@@ -327,7 +326,7 @@ async def _grant_service(db, dept_id, service_name):
         service_name=service_name, is_active=True,
     )
     db.add(access)
-    await _make_role_def(db, dept_id, service_name, "admin", display_name="Admin", is_system=True)
+    await _make_role_def(db, dept_id, service_name, "admin", is_system=True)
     for role_name in _DEFAULT_SERVICE_ROLES:
         await _make_role_def(db, dept_id, service_name, role_name)
     await db.flush()

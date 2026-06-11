@@ -66,7 +66,7 @@ type GroupsGroupKey = "none" | "department";
 
 function sortGroupsBy(items: Group[], key: GroupsSortKey, deptLabels: Map<string, string>): Group[] {
   const arr = [...items];
-  const nameOf = (g: Group) => (g.display_name || g.name).toLowerCase();
+  const nameOf = (g: Group) => g.name.toLowerCase();
   const deptOf = (g: Group) =>
     (deptLabels.get(g.department_id) ?? g.department_id).toLowerCase();
   switch (key) {
@@ -191,12 +191,12 @@ function ServicesGroupsLive() {
     return m;
   }, [depts]);
 
-  // Labels из LabelsProvider предпочитаем как источник display_name —
+  // Labels из LabelsProvider предпочитаем как источник human-readable имён —
   // при изменении/создании отдела карта обновляется централизованно.
   const labelMaps = useLabelMaps();
   const deptLabels = useMemo(() => {
     const m = new Map<string, string>();
-    for (const d of depts) m.set(d.id, d.display_name || d.name);
+    for (const d of depts) m.set(d.id, d.name);
     // Перекрываем тем, что есть в глобальной карте — она же используется на
     // соседних страницах и точно свежее после invalidate('depts').
     for (const [k, v] of labelMaps.depts) m.set(k, v);
@@ -382,10 +382,10 @@ function ServicesGroupsLive() {
                   <UsersRound className="w-4 h-4 text-dim" />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate">
-                      {item.display_name ?? item.name}
+                      {item.name}
                     </div>
                     <div className="text-[11px] text-dim truncate mono">
-                      {item.name} · {dept?.display_name ?? item.department_id}
+                      {dept?.name ?? item.department_id}
                     </div>
                   </div>
                 </div>
@@ -509,8 +509,7 @@ function GroupDetailView({
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="font-semibold flex items-center gap-2">
             <UsersRound className="w-4 h-4 text-accent" />
-            <span>{group.display_name ?? group.name}</span>
-            <span className="badge mono">{group.name}</span>
+            <span>{group.name}</span>
             {!canEdit && (
               <span
                 className="badge badge-warn"
@@ -534,13 +533,12 @@ function GroupDetailView({
 
         <div className="text-xs uppercase text-dim mb-2">Профиль</div>
         <StatRow k="group_id" v={<span className="mono">{group.id}</span>} />
-        <StatRow k="name" v={<span className="mono">{group.name}</span>} />
-        <StatRow k="display_name" v={group.display_name ?? "—"} />
+        <StatRow k="name" v={group.name} />
         <StatRow
           k="department"
           v={
             <span>
-              {dept ? dept.display_name || dept.name : group.department_id}
+              {dept ? dept.name : group.department_id}
             </span>
           }
         />
@@ -933,7 +931,7 @@ function ServicesCard({
             <option value="">— сервис —</option>
             {candidates.map((s) => (
               <option key={s.service_name} value={s.service_name}>
-                {s.display_name} ({s.service_name})
+                {s.service_name}
               </option>
             ))}
           </select>
@@ -1207,7 +1205,6 @@ function GroupCreateForm({
   onDone: () => void;
 }) {
   const [name, setName] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [deptId, setDeptId] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -1230,7 +1227,6 @@ function GroupCreateForm({
     try {
       await groupsApi.createGroup({
         name: name.trim(),
-        display_name: displayName.trim() || name.trim(),
         department_id: deptId,
         description: description.trim() || undefined,
       });
@@ -1256,19 +1252,11 @@ function GroupCreateForm({
       </h3>
       {err && <div className="alert-danger mb-2">{err}</div>}
       <div className="flex flex-col gap-3">
-        <FormRow label="name" hint="латиница / цифры / _ — уникально внутри отдела">
-          <input
-            className="input mono"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="ops-readers"
-          />
-        </FormRow>
-        <FormRow label="display_name">
+        <FormRow label="name" hint="человеческое имя — уникально внутри отдела">
           <input
             className="input"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             placeholder="Операторы (read-only)"
           />
         </FormRow>
@@ -1281,7 +1269,7 @@ function GroupCreateForm({
           >
             {depts.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.display_name} ({d.name})
+                {d.name}
               </option>
             ))}
           </select>
@@ -1317,7 +1305,7 @@ function GroupEditForm({
   initial: Group;
   onDone: () => void;
 }) {
-  const [displayName, setDisplayName] = useState(initial.display_name ?? "");
+  const [name, setName] = useState(initial.name ?? "");
   const [description, setDescription] = useState(initial.description ?? "");
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -1327,7 +1315,7 @@ function GroupEditForm({
     setPending(true);
     try {
       await groupsApi.patchGroup(initial.id, {
-        display_name: displayName.trim() || undefined,
+        name: name.trim() || undefined,
         description: description.trim() || undefined,
       });
       onDone();
@@ -1347,11 +1335,11 @@ function GroupEditForm({
       </h3>
       {err && <div className="alert-danger mb-2">{err}</div>}
       <div className="flex flex-col gap-3">
-        <FormRow label="display_name">
+        <FormRow label="name">
           <input
             className="input"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
           />
         </FormRow>
         <FormRow label="description">
@@ -1362,8 +1350,8 @@ function GroupEditForm({
           />
         </FormRow>
         <div className="text-xs text-dim">
-          name и department_id не редактируются. Чтобы переименовать группу —
-          удалите и создайте новую.
+          department_id не редактируется. Чтобы перенести группу — удалите и
+          создайте новую.
         </div>
       </div>
       <div className="mt-4 flex gap-2 justify-end">

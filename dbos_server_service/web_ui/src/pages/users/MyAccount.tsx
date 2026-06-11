@@ -970,8 +970,7 @@ function GroupsCard({ mockMode }: { mockMode: boolean }) {
             {items.map((g) => (
               <tr key={g.id} className="border-t border-token">
                 <td className="py-2 pr-3">
-                  <div className="font-medium">{g.display_name ?? g.name}</div>
-                  <div className="text-[11px] text-dim mono">{g.name}</div>
+                  <div className="font-medium">{g.name}</div>
                 </td>
                 <td className="text-xs">
                   <DeptCell deptId={g.department_id} />
@@ -1053,7 +1052,7 @@ function PermissionsView({ data }: { data: UserPermissionsResponse }) {
       rows.push({
         service: r.service_name,
         role: r.role_name,
-        source: `группа · ${g.display_name ?? g.group_name}`,
+        source: `группа · ${g.group_name}`,
         assigned: g.joined_at,
       });
     }
@@ -1129,8 +1128,7 @@ function PermissionsView({ data }: { data: UserPermissionsResponse }) {
               {data.groups.map((g) => (
                 <tr key={g.group_id} className="border-t border-token">
                   <td className="py-2 pr-3">
-                    <div className="font-medium">{g.display_name ?? g.group_name}</div>
-                    <div className="text-[11px] text-dim mono">{g.group_name}</div>
+                    <div className="font-medium">{g.group_name}</div>
                   </td>
                   <td className="text-xs">
                     <DeptCell deptId={g.department_id} />

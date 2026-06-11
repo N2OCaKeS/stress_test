@@ -18,7 +18,7 @@ async def _create_group(client, token, department_id, name="users_test_grp"):
     return (await client.post(
         GROUPS_URL,
         headers={"Authorization": f"Bearer {token}"},
-        json={"department_id": department_id, "name": name, "display_name": name},
+        json={"department_id": department_id, "name": name},
     )).json()
 
 

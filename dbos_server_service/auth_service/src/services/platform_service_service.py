@@ -21,7 +21,6 @@ async def create_service(
     db: AsyncSession,
     actor_id: str,
     service_name: str,
-    display_name: str,
     description: str | None,
     request_id: str | None = None,
 ) -> ServiceResponse:
@@ -30,7 +29,7 @@ async def create_service(
     if await repo.exists(service_name):
         raise ConflictError(error_code="SERVICE_ALREADY_EXISTS", message=f"Service '{service_name}' already exists")
 
-    svc = await repo.create(service_name, display_name, description)
+    svc = await repo.create(service_name, description)
     # Role definitions сеются per-(department, service) при выдаче отделу
     # access — здесь заранее ничего не создаём.
     await db.commit()
@@ -39,13 +38,11 @@ async def create_service(
         request_id=request_id,
         details={
             "service_name": service_name,
-            "display_name": display_name,
             "description": description,
         },
     )
     return ServiceResponse(
         service_name=svc.service_name,
-        display_name=svc.display_name,
         description=svc.description,
         is_active=svc.is_active,
         created_at=svc.created_at,
@@ -155,7 +152,6 @@ async def delete_service(
         request_id=request_id,
         details={
             "service_name": service_name,
-            "display_name": svc.display_name,
             "cascade_revoked_department_access": True,
             "cascade_deactivated_roles": True,
             "affected_user_count": len(member_user_ids),
@@ -175,7 +171,6 @@ async def list_services(
     result = [
         ServiceResponse(
             service_name=s.service_name,
-            display_name=s.display_name,
             description=s.description,
             is_active=s.is_active,
             created_at=s.created_at,

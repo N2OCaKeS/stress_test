@@ -232,7 +232,7 @@ async def test_role_def_delete_cascades_to_bot(
     role_url = f"/api/auth/v1/departments/{dept_a_with_service.id}/services/{service_x.service_name}/roles"
     # Make sure we use a non-system role we can delete
     await client.post(role_url, headers={"Authorization": f"Bearer {admin_token}"},
-                      json={"role_name": "ephemeral", "display_name": "Ephemeral"})
+                      json={"role_name": "ephemeral"})
     await client.post(
         f"{BOTS_URL}/{bot['bot_id']}/roles",
         headers={"Authorization": f"Bearer {admin_token}"},

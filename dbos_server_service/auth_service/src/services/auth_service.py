@@ -450,7 +450,7 @@ async def login(
         refresh_token=raw_refresh,
         expires_in=settings.access_token_ttl_minutes * 60,
         identity=_build_identity(
-            user, dept.display_name if dept else None,
+            user, dept.name if dept else None,
             allowed_services, service_roles, groups_summary,
         ),
     )
@@ -661,7 +661,7 @@ async def get_identity(
         },
     )
     return _build_identity(
-        user, dept.display_name if dept else None,
+        user, dept.name if dept else None,
         allowed_services, service_roles, groups_summary,
         oauth_scopes=oauth_scopes,
     )

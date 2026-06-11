@@ -30,7 +30,6 @@ class ServiceRoleDefinition(Base):
         index=True,
     )
     role_name: Mapped[str] = mapped_column(String(64), nullable=False)
-    display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Системные роли (`admin`) сеются автоматически при grant_service_access.

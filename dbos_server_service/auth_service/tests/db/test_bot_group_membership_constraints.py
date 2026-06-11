@@ -20,7 +20,7 @@ from src.utils.ids import _new_id
 
 async def _make_dept(db, name):
     dept = Department(
-        id=_new_id("dep_"), name=name, display_name=name, is_active=True,
+        id=_new_id("dep_"), name=name, is_active=True,
     )
     db.add(dept)
     await db.flush()
@@ -40,7 +40,7 @@ async def _make_bot(db, dept_id, name):
 async def _make_group(db, dept_id, name):
     grp = UserGroup(
         id=_new_id("grp_"), department_id=dept_id,
-        name=name, display_name=name, is_active=True,
+        name=name, is_active=True,
     )
     db.add(grp)
     await db.flush()

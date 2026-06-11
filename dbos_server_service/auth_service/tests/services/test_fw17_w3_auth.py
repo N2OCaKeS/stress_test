@@ -37,11 +37,11 @@ class TestServiceCreatePattern:
     @pytest.mark.parametrize("bad", ["docker.registry", "Foo", "123_svc", "x", "with space", "with-dash"])
     def test_service_name_rejected(self, bad):
         with pytest.raises(Exception):
-            ServiceCreate(service_name=bad, display_name="x")
+            ServiceCreate(service_name=bad)
 
     @pytest.mark.parametrize("ok", ["server_service", "loging_service", "config_service", "x1", "a_b_c"])
     def test_service_name_accepted(self, ok):
-        m = ServiceCreate(service_name=ok, display_name="x")
+        m = ServiceCreate(service_name=ok)
         assert m.service_name == ok
 
 
@@ -49,18 +49,18 @@ class TestServiceRoleCreatePattern:
     @pytest.mark.parametrize("bad", ["admin.rw", "Reader", "1role", " role", "role-name", "r"])
     def test_role_name_rejected(self, bad):
         with pytest.raises(Exception):
-            ServiceRoleCreate(role_name=bad, display_name="x")
+            ServiceRoleCreate(role_name=bad)
 
     @pytest.mark.parametrize("ok", ["admin", "reader", "operator", "guest", "worker_bot", "ro1"])
     def test_role_name_accepted(self, ok):
-        m = ServiceRoleCreate(role_name=ok, display_name="x")
+        m = ServiceRoleCreate(role_name=ok)
         assert m.role_name == ok
 
     def test_seed_dev_role_names_pass(self):
         """Все role_name из scripts/seed_dev.py должны пройти pattern."""
         seed_names = ("reader", "operator", "admin", "worker_bot", "guest")
         for rn in seed_names:
-            m = ServiceRoleCreate(role_name=rn, display_name="x")
+            m = ServiceRoleCreate(role_name=rn)
             assert m.role_name == rn
 
 

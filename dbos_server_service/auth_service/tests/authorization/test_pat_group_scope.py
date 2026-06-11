@@ -68,7 +68,6 @@ async def user_with_group_service(db):
     grp = await group_repo.create(
         department_id=dept.id,
         name="pgs_group",
-        display_name="PGS Group",
         description=None,
         created_by=None,
     )

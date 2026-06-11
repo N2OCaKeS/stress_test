@@ -150,12 +150,11 @@ export function ServicesUsers() {
     [],
     { enabled: !mockMode },
   );
-  const depts: Array<Pick<Department, "id" | "name" | "display_name">> = mockMode
-    ? MOCK_DEPTS.map((d) => ({ id: d.id, name: d.name, display_name: d.name }))
+  const depts: Array<Pick<Department, "id" | "name">> = mockMode
+    ? MOCK_DEPTS.map((d) => ({ id: d.id, name: d.name }))
     : (deptsQ.data ?? []).map((d) => ({
         id: d.id,
         name: d.name,
-        display_name: d.display_name,
       }));
 
   // List users. include_banned всегда true — фильтрация по статусу делается
@@ -194,7 +193,7 @@ export function ServicesUsers() {
 
   const deptLabels = useMemo(() => {
     const m = new Map<string, string>();
-    for (const d of depts) m.set(d.id, d.display_name || d.name);
+    for (const d of depts) m.set(d.id, d.name);
     return m;
   }, [depts]);
 

@@ -324,7 +324,6 @@ export function UsersAccountAdmin() {
     return (apiDeptsQ.data ?? []).map((d) => ({
       id: d.id,
       name: d.name,
-      display_name: d.display_name,
     }));
   }, [mockMode, apiDeptsQ.data]);
 
@@ -393,7 +392,7 @@ export function UsersAccountAdmin() {
       if (dusers.length === 0) continue;
       out.push({
         icon: "building",
-        label: `${d.display_name} · ${dusers.length}`,
+        label: `${d.name} · ${dusers.length}`,
         rows: dusers.map(apiToRow),
       });
     }
@@ -1164,7 +1163,7 @@ function GroupAsideRow({ group }: { group: ApiGroup }) {
       <UsersRound className="w-4 h-4 text-accent" />
       <div className="flex-1 min-w-0">
         <div className="text-sm truncate flex items-center gap-2">
-          <span>{group.display_name || group.name}</span>
+          <span>{group.name}</span>
           <span className="badge">{dept}</span>
         </div>
         <div className="text-[11px] text-dim truncate">

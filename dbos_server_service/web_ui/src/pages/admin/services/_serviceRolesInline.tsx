@@ -10,8 +10,8 @@
  *
  * Бэкенд:
  *   GET    /departments/{dept_id}/services/{svc}/roles
- *   POST   /departments/{dept_id}/services/{svc}/roles          {role_name, display_name, description?}
- *   PATCH  /departments/{dept_id}/services/{svc}/roles/{name}   {display_name?, description?}
+ *   POST   /departments/{dept_id}/services/{svc}/roles          {role_name, description?}
+ *   PATCH  /departments/{dept_id}/services/{svc}/roles/{name}   {description?}
  *   DELETE /departments/{dept_id}/services/{svc}/roles/{name}
  *
  * Системные роли (`is_system=true`) — кнопки edit/delete показываем как
@@ -178,9 +178,11 @@ function RoleRow({
   return (
     <div className="flex items-center gap-2 text-sm py-1 border-b border-dashed border-token last:border-b-0">
       <span className="mono truncate">{role.role_name}</span>
-      <span className="text-dim text-[11px] truncate flex-1">
-        {role.display_name}
-      </span>
+      {role.description && (
+        <span className="text-dim text-[11px] truncate flex-1">
+          {role.description}
+        </span>
+      )}
       {role.is_system ? (
         <span className="badge">system</span>
       ) : (
@@ -231,7 +233,6 @@ function RoleForm({
 }) {
   const toast = useToast();
   const [roleName, setRoleName] = useState(initial?.role_name ?? "");
-  const [displayName, setDisplayName] = useState(initial?.display_name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -241,23 +242,17 @@ function RoleForm({
       toast.warn("role_name обязателен");
       return;
     }
-    if (!displayName.trim()) {
-      toast.warn("display_name обязателен");
-      return;
-    }
     setBusy(true);
     setErr(null);
     try {
       if (mode === "new") {
         await createServiceRole(departmentId, serviceName, {
           role_name: roleName.trim(),
-          display_name: displayName.trim(),
           description: description.trim() || undefined,
         });
         toast.success("Роль создана");
       } else if (initial) {
-        const body: { display_name?: string; description?: string } = {};
-        if (displayName !== initial.display_name) body.display_name = displayName;
+        const body: { description?: string } = {};
         if ((description ?? "") !== (initial.description ?? "")) {
           body.description = description.trim();
         }
@@ -314,14 +309,6 @@ function RoleForm({
           )}
         </label>
         <label className="flex flex-col gap-1 text-xs">
-          <span className="text-dim">display_name</span>
-          <input
-            className="input"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
           <span className="text-dim">description</span>
           <textarea
             className="input"
@@ -340,8 +327,7 @@ function RoleForm({
           onClick={submit}
           disabled={
             busy ||
-            (mode === "new" && !roleName.trim()) ||
-            !displayName.trim()
+            (mode === "new" && !roleName.trim())
           }
         >
           {busy && <Loader2 className="w-3 h-3 animate-spin" />}

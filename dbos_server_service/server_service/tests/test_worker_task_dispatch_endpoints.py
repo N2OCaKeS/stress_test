@@ -201,9 +201,10 @@ class TestInventorySyncDispatch:
     """`inventory.sync` идёт по SSH — IPMI не нужен."""
 
     async def test_operator_dispatches_without_ipmi(
-        self, client, operator_token_a, make_server, captured_dispatch,
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
         srv = await make_server(department_id="dep_a")  # без ipmi
+        acc = await make_account(server_id=srv.id, login="appuser")
         resp = await client.post(
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers=_hdr(operator_token_a),
@@ -220,6 +221,7 @@ class TestInventorySyncDispatch:
             "target_department_id": "dep_a",
             "is_managed": False,
             "management_user": None,
+            "account_id": acc.id,
         }
 
     async def test_reader_cannot_trigger_inventory(
@@ -459,10 +461,11 @@ class TestDispatchAuditOnSuccess:
         assert ev["details"]["department_id"] == "dep_a"
 
     async def test_inventory_sync_success_audit(
-        self, client, operator_token_a, make_server,
+        self, client, operator_token_a, make_server, make_account,
         captured_dispatch, captured_emits,
     ):
         srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="appuser")
         await client.post(
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers=_hdr(operator_token_a),
@@ -526,7 +529,8 @@ class TestDispatchAuditOnWorkerFailure:
     """
 
     async def test_conflict_emits_failure_for_inventory_sync(
-        self, client, operator_token_a, make_server, captured_emits, monkeypatch,
+        self, client, operator_token_a, make_server, make_account,
+        captured_emits, monkeypatch,
     ):
         """Заменил тест conflict-аудита для power.status (тот endpoint больше
         не диспатчит — стал синхронным TCP-пингом). Тестируем тот же контракт
@@ -545,6 +549,7 @@ class TestDispatchAuditOnWorkerFailure:
             boom,
         )
         srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="appuser")
         resp = await client.post(
             f"{BASE}/servers/{srv.id}/inventory/sync",
             headers={**_hdr(operator_token_a), "Idempotency-Key": "is-race"},

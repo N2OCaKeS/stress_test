@@ -3,7 +3,7 @@
  *
  * Покрывает три состояния:
  *   1. У сервера нет IPMI-контроллера (GET → 404 NO_IPMI_CONTROLLER) — форма
- *      регистрации (host/port разнесены, kind, tls_verify, username, password).
+ *      регистрации (host/port разнесены, kind, username, password).
  *   2. Контроллер есть — карточка metadata + блок power + блок credentials +
  *      edit/delete.
  *   3. Loading / network error c retry.
@@ -12,11 +12,10 @@
  * результат уезжает в `/tasks/{id}` и не блокирует UI. PowerStatus читается
  * с auto-refresh раз в 10 сек.
  *
- * ВНИМАНИЕ: worker-handler `ipmi.rotate_password` сейчас raises
- * NotImplementedError ДО обращения к BMC (storage round-trip ещё не построен).
- * Endpoint `/ipmi-controllers/{id}/rotate` всё равно поднимает task'у, worker
- * корректно mark_failed + audit failure, но фактической ротации не происходит.
- * В UI это вынесено в видимый warning-баннер над кнопкой `Rotate IPMI`.
+ * Rotate IPMI дёргает `POST /ipmi-controllers/{id}/rotate` (202 + task_id):
+ * worker генерит новый пароль, применяет на BMC, verify'ит read-only вызовом
+ * и только потом server_service шифрует/сохраняет ciphertext. Результат уезжает
+ * в `/tasks/{id}`; метаданные credentials подтягиваются после callback'а.
  *
  * RBAC: power-операции — server.operator/admin или account_admin/dep_admin
  * (своего dept); edit/delete/rotate — server.admin / account_admin / dep_admin
@@ -227,11 +226,14 @@ export function IpmiTab({ serverId, server }: Props) {
 // ---------------------------------------------------------------------------
 
 function defaultEndpointFor(kind: IpmiKind, host: string, port: string): string {
-  // Для redfish/idrac/ilo принято https://; для ipmitool — формально это
-  // RMCP+ по UDP 623, но в endpoint_url мы кладём всё равно URL-форму
-  // (`ipmi://host:623`), что и хочет backend.
+  // Для redfish/idrac/ilo принято https://. Для ipmitool транспорт — RMCP+
+  // по UDP 623, но endpoint_url всё равно проходит через серверный
+  // validate_safe_endpoint_url, который пропускает только http/https-схемы
+  // (см. utils/url_security.py). Поэтому для ipmitool кладём http:// — этого
+  // достаточно: worker extract_bmc_host отрезает схему и работает с host:port,
+  // а схема ipmi:// отбивалась бы 422 ещё на регистрации.
   if (kind === "ipmi") {
-    return port ? `ipmi://${host}:${port}` : `ipmi://${host}`;
+    return port ? `http://${host}:${port}` : `http://${host}`;
   }
   return port ? `https://${host}:${port}` : `https://${host}`;
 }
@@ -253,7 +255,6 @@ function RegisterPane({
   const [kind, setKind] = useState<IpmiKind>("redfish");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [tlsVerify, setTlsVerify] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -261,10 +262,10 @@ function RegisterPane({
     e.preventDefault();
     setErr(null);
     const endpoint = defaultEndpointFor(kind, host.trim(), port.trim());
-    // tls_verify в схеме контроллера нет — он управляется на стороне worker'а
-    // через config/secret. Здесь поле сохраняется в локальный state, но в
-    // backend body передаются только поля IpmiCreateRequest. Когда схема
-    // обогатится — добавить сюда без изменения формы.
+    // IpmiCreateRequest несёт только kind/endpoint_url/username/password.
+    // TLS-verify в схеме контроллера нет: worker пробует схему и проверку
+    // сертификата на каждом вызове (https-verify → https-no-verify → http →
+    // ipmitool) и не кэширует выбор, поэтому отдельного поля для него нет.
     const body: IpmiCreateRequest = {
       kind,
       endpoint_url: endpoint,
@@ -376,15 +377,11 @@ function RegisterPane({
               disabled={!canRegister}
             />
           </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={tlsVerify}
-              onChange={(e) => setTlsVerify(e.target.checked)}
-              disabled={!canRegister || kind === "ipmi"}
-            />
-            <span>tls_verify (для Redfish/iDRAC/iLO)</span>
-          </label>
+          <p className="text-xs text-dim">
+            TLS-проверка не настраивается здесь: worker сам подбирает транспорт
+            (https с проверкой сертификата → https без проверки → http →
+            ipmitool) на каждом обращении к BMC.
+          </p>
 
           <div className="flex items-center gap-2 mt-2">
             <button
@@ -890,18 +887,13 @@ function CredentialsCard({
         </>
       )}
 
-      <div
-        className="mt-3 rounded border border-token p-3 text-xs"
-        style={{
-          background:
-            "color-mix(in srgb, var(--warn, #c4a000) 14%, transparent)",
-        }}
-      >
-        <b>Внимание:</b> worker-handler <code>ipmi.rotate_password</code> сейчас
-        raises <code>NotImplementedError</code> ДО обращения к BMC — storage
-        round-trip пока не построен. Endpoint поднимает task, worker корректно
-        mark_failed + аудит, но фактической ротации не происходит.
-      </div>
+      <p className="mt-3 text-xs text-dim">
+        Ротация идёт через worker: генерируется новый пароль, применяется на BMC
+        (Redfish PATCH или ipmitool), затем выполняется read-only verify новым
+        паролем и только после этого шифруется и сохраняется. Результат
+        прилетает асинхронно через <code>/tasks/{`{id}`}</code>; метаданные ниже
+        обновятся после успешного callback'а.
+      </p>
 
       {!canRotate && (
         <div className="text-xs text-dim mt-3">

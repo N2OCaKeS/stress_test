@@ -45,6 +45,7 @@ import {
   setBusy,
 } from "@/api/server/servers";
 import { usersInventory } from "@/api/server/misc";
+import { listAccounts } from "@/api/server/accounts";
 import {
   createOsVersion,
   deleteOsVersion,
@@ -54,9 +55,11 @@ import {
 } from "@/api/server/osVersions";
 import { FormRow } from "@/pages/admin/services/_inline";
 import type {
+  CursorPaginatedResponse,
   OffsetPaginatedResponse,
   OsVersion,
   Server,
+  ServerAccount,
 } from "@/api/server/types";
 
 interface Props {
@@ -98,6 +101,29 @@ function canManageBasic(
   return false;
 }
 
+/**
+ * Аккаунты сервера, видимые текущей persona (грубый client-side фильтр —
+ * тот же контракт, что и в `tabs/console.tsx`). Backend перепроверит при
+ * fetch'е пароля; здесь только UX, чтобы picker не показывал заведомо
+ * недоступные строки.
+ */
+function filterAccessibleAccounts(
+  accounts: ServerAccount[],
+  persona: ReturnType<typeof usePersona>["persona"],
+): ServerAccount[] {
+  if (persona.platform_role === "account_admin") return accounts;
+  if (persona.service_roles.server === "admin") return accounts;
+  if (
+    persona.platform_role === "dep_admin" ||
+    persona.service_roles.server === "operator" ||
+    persona.service_roles.server === "reader"
+  ) {
+    if (!persona.dept_id) return [];
+    return accounts.filter((a) => a.department_id === persona.dept_id);
+  }
+  return [];
+}
+
 export function ManageTab({ server }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
@@ -108,6 +134,31 @@ export function ManageTab({ server }: Props) {
   const allowBasic = canManageBasic(persona, view);
   const allowOsCatalog = isPlatformWideAdmin(persona);
   const allowDelete = isPlatformWideAdmin(persona);
+
+  // Аккаунты сервера — нужны inventory/users SSH-задачам на неуправляемом
+  // сервере: worker заходит под self-сессией по паролю аккаунта. Управляемый
+  // сервер ходит по ключу — picker тогда не обязателен (backend сам None'ит).
+  const accountsQ = useQuery(
+    () => listAccounts({ server_id: view!.id, limit: 200 }),
+    [view?.id],
+    { enabled: !!view },
+  );
+  const accounts = useMemo<ServerAccount[]>(() => {
+    const data = accountsQ.data as
+      | OffsetPaginatedResponse<ServerAccount>
+      | CursorPaginatedResponse<ServerAccount>
+      | undefined;
+    return data?.items ?? [];
+  }, [accountsQ.data]);
+  const accessibleAccounts = useMemo(
+    () => filterAccessibleAccounts(accounts, persona),
+    [accounts, persona],
+  );
+  const [accountId, setAccountId] = useState<string>("");
+  // account_id шлём только на неуправляемом сервере; на managed worker идёт
+  // по ключу, передавать пусто.
+  const inventoryAccountId =
+    view && !view.is_managed && accountId ? accountId : undefined;
 
   async function run<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
     if (busy) return null;
@@ -130,6 +181,10 @@ export function ManageTab({ server }: Props) {
         server={view}
         allowed={allowBasic}
         busyLabel={busy}
+        accounts={accessibleAccounts}
+        accountId={accountId}
+        onAccountChange={setAccountId}
+        accountsLoading={accountsQ.loading}
         onPrepare={async () => {
           if (!view) return;
           if (
@@ -151,7 +206,9 @@ export function ManageTab({ server }: Props) {
         }}
         onInventory={async () => {
           if (!view) return;
-          await run("inventory_sync", () => inventorySync(view.id));
+          await run("inventory_sync", () =>
+            inventorySync(view.id, { account_id: inventoryAccountId }),
+          );
         }}
         onOsSync={async () => {
           if (!view) return;
@@ -169,7 +226,9 @@ export function ManageTab({ server }: Props) {
         }}
         onUsersInventory={async () => {
           if (!view) return;
-          await run("users_inventory", () => usersInventory(view.id));
+          await run("users_inventory", () =>
+            usersInventory(view.id, { account_id: inventoryAccountId }),
+          );
         }}
       />
 
@@ -221,6 +280,10 @@ function LifecycleCard({
   server,
   allowed,
   busyLabel,
+  accounts,
+  accountId,
+  onAccountChange,
+  accountsLoading,
   onPrepare,
   onInventory,
   onOsSync,
@@ -229,17 +292,54 @@ function LifecycleCard({
   server: Server | undefined;
   allowed: boolean;
   busyLabel: string | null;
+  accounts: ServerAccount[];
+  accountId: string;
+  onAccountChange: (id: string) => void;
+  accountsLoading: boolean;
   onPrepare: () => Promise<void>;
   onInventory: () => Promise<void>;
   onOsSync: () => Promise<void>;
   onUsersInventory: () => Promise<void>;
 }) {
   const disabled = !allowed || busyLabel !== null || !server;
+  // На managed-сервере inventory идёт по ключу — account picker не нужен.
+  // На неуправляемом worker заходит под аккаунтом по паролю: показываем
+  // селектор. Пусто → backend возьмёт дефолтный привязанный аккаунт.
+  const needsAccount = !!server && !server.is_managed && allowed;
   return (
     <div className="card">
       <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
         <Settings className="w-4 h-4 text-accent" /> Lifecycle
       </h3>
+      {needsAccount && (
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <label className="text-xs text-dim">
+            SSH-аккаунт для inventory
+          </label>
+          <select
+            className="surface-2 border border-token rounded px-2 py-1 text-sm"
+            value={accountId}
+            onChange={(e) => onAccountChange(e.target.value)}
+            disabled={disabled || accountsLoading}
+          >
+            <option value="">— дефолтный аккаунт сервера —</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.login}
+                {a.has_sudo ? " (sudo)" : ""}
+                {a.source === "discovered" ? " · discovered" : ""}
+              </option>
+            ))}
+          </select>
+          <span className="text-[11px] text-dim">
+            {accountsLoading
+              ? "загружаем…"
+              : accounts.length === 0
+                ? "нет привязанных аккаунтов — inventory вернёт 422"
+                : "пусто → первый аккаунт с паролем"}
+          </span>
+        </div>
+      )}
       <div className="flex gap-2 flex-wrap">
         <button
           className="btn btn-primary flex items-center gap-1"

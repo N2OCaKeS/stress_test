@@ -64,6 +64,7 @@ from src.core.exceptions import (
     AppException,
     AuthorizationError,
     ConflictError,
+    DomainValidationError,
     NotFoundError,
     ServiceUnavailableError,
 )
@@ -156,6 +157,52 @@ def _build_account_task_payload(
     return payload
 
 
+async def resolve_inventory_account_id(
+    db: AsyncSession,
+    server,
+    account_id: str | None,
+) -> str | None:
+    """Выбрать аккаунт, под которым worker зайдёт по SSH для inventory-сбора.
+
+    Для inventory.sync / users.inventory worker'у нужен либо вход по ключу под
+    управляющим пользователем (`is_managed`), либо пароль конкретного аккаунта
+    сервера (self-сессия). Без `account_id` worker фоллбэчится на root без
+    пароля → SSH_AUTH_FAILED. Резолвим:
+
+      * `server.is_managed` — аккаунт не нужен, вход по ключу. Возвращаем None.
+      * передан `account_id` — проверяем, что он привязан к этому серверу;
+        если нет — 422 ACCOUNT_NOT_LINKED.
+      * `account_id` не передан — берём дефолтный аккаунт сервера: первый
+        привязанный с сохранённым паролем (`password_encrypted IS NOT NULL`),
+        иначе первый привязанный. Нет ни одного — 422 ACCOUNT_REQUIRED.
+
+    Возвращает `account_id` для payload'а (или None для managed-сервера).
+    """
+    if server.is_managed:
+        return None
+    linked = await account_repo.list_for_server(db, server.id, limit=500)
+    if account_id is not None:
+        if not any(a.id == account_id for a in linked):
+            raise DomainValidationError(
+                error_code="ACCOUNT_NOT_LINKED",
+                message="account_id is not linked to this server",
+            )
+        return account_id
+    if not linked:
+        raise DomainValidationError(
+            error_code="ACCOUNT_REQUIRED",
+            message=(
+                "Server is not managed and has no linked account; bind a "
+                "server_account (or pass account_id) before inventory"
+            ),
+        )
+    with_password = next(
+        (a for a in linked if a.password_encrypted is not None), None
+    )
+    chosen = with_password or linked[0]
+    return chosen.id
+
+
 async def _dispatch_for_server(
     *,
     db: AsyncSession,
@@ -167,6 +214,8 @@ async def _dispatch_for_server(
     task_kind: str,
     require_ipmi: bool,
     extra_payload: dict | None = None,
+    resolve_account: bool = False,
+    account_id: str | None = None,
 ) -> dict:
     """Общая логика server-target dispatch'а (power.status / inventory.sync).
 
@@ -251,6 +300,28 @@ async def _dispatch_for_server(
                 message="Server has no IPMI controller configured (BMC endpoint/credentials missing)",
             )
 
+    # 4.5. Account-резолв для SSH-сбора под self-сессией (inventory.sync).
+    # На неуправляемом сервере worker'у нужен пароль аккаунта; без `account_id`
+    # он фоллбэчится на root без пароля → SSH_AUTH_FAILED. Managed-сервер
+    # резолвится в None (вход по ключу). Нет аккаунта / не привязан → 422.
+    resolved_account_id: str | None = None
+    if resolve_account:
+        try:
+            resolved_account_id = await resolve_inventory_account_id(
+                db, server, account_id,
+            )
+        except DomainValidationError as exc:
+            audit_service.emit(
+                audit_action, target_id=server_id, target_type="server",
+                status="failure", allowed=True,
+                details={
+                    "reason": exc.error_code.lower(),
+                    "task_kind": task_kind,
+                    "department_id": server.department_id,
+                },
+            )
+            raise
+
     # 5. Dispatch + audit.
     idempotency_key = read_idempotency_key(request)
     payload: dict = {
@@ -266,6 +337,10 @@ async def _dispatch_for_server(
         "is_managed": server.is_managed,
         "management_user": server.management_user,
     }
+    # Для неуправляемого сервера кладём account_id — worker по нему запросит
+    # пароль через internal-endpoint и зайдёт под этим аккаунтом, а не root'ом.
+    if resolved_account_id is not None:
+        payload["account_id"] = resolved_account_id
     if extra_payload:
         payload.update(extra_payload)
     try:
@@ -1018,6 +1093,7 @@ async def power_status_dispatch(
         403: {"description": "Нет роли с `inventory_trigger` либо чужой department."},
         404: {"description": "Сервер не найден / чужой dept."},
         409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
+        422: {"description": "ACCOUNT_REQUIRED (неуправляемый сервер без привязанных аккаунтов) / ACCOUNT_NOT_LINKED (account_id не привязан к серверу)."},
         503: {"description": "Worker недоступен."},
     },
 )
@@ -1026,13 +1102,24 @@ async def inventory_sync_dispatch(
     identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    account_id: str | None = Query(
+        default=None,
+        description=(
+            "Аккаунт сервера, под которым worker зайдёт по SSH для сбора "
+            "фактов (self-сессия по паролю). Для управляемого сервера "
+            "игнорируется (вход по ключу). Не передан — server_service берёт "
+            "дефолтный привязанный аккаунт; если привязок нет — 422 "
+            "ACCOUNT_REQUIRED."
+        ),
+    ),
 ) -> ServerTaskDispatchResponse:
     """Ставит `inventory.sync` в очередь worker'а.
 
     Доступ: `(server, *, inventory_trigger)`.
 
     Возможные ошибки: 403 PERMISSION_DENIED, 404 SERVER_NOT_FOUND,
-    409 SERVER_DECOMMISSIONED, 409 TASK_IDEMPOTENT_CONFLICT, 503 WORKER_UNREACHABLE.
+    409 SERVER_DECOMMISSIONED, 409 TASK_IDEMPOTENT_CONFLICT,
+    422 ACCOUNT_REQUIRED / ACCOUNT_NOT_LINKED, 503 WORKER_UNREACHABLE.
 
     Связано: `_dispatch_for_server`, `server_worker/src/tasks/inventory.py`.
     """
@@ -1044,6 +1131,8 @@ async def inventory_sync_dispatch(
         audit_action="server.inventory_sync",
         task_kind="inventory.sync",
         require_ipmi=False,
+        resolve_account=True,
+        account_id=account_id,
     )
     return ServerTaskDispatchResponse(**result)
 

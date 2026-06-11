@@ -70,9 +70,10 @@ class TestServerDispatchPayloadHasSshFields:
         assert p["management_user"] is None
 
     async def test_inventory_sync_payload_ssh_fields(
-        self, client, operator_token_a, make_server, captured_dispatch,
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
         srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="appuser")
         await client.post(
             f"{BASE}/servers/{srv.id}/inventory/sync", headers=_hdr(operator_token_a),
         )

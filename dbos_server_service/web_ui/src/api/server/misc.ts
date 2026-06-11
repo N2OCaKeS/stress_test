@@ -60,11 +60,21 @@ export function installedPackagesProbe(
  * результат в `/internal/servers/{id}/users/inventory`, и server_service
  * reconcile'ит снимок с `server_accounts`.
  *
+ * На неуправляемом сервере worker заходит под аккаунтом сервера (self-сессия
+ * по паролю) — передавай `account_id`. Не передан — backend берёт дефолтный
+ * привязанный аккаунт; привязок нет → 422 `ACCOUNT_REQUIRED`. Управляемый
+ * сервер заходит по ключу, `account_id` игнорируется.
+ *
  * Доступ: `(server, inventory_trigger)`. Cross-dept → 404.
  */
-export function usersInventory(serverId: string): Promise<UsersInventoryResult> {
+export function usersInventory(
+  serverId: string,
+  opts: { account_id?: string } = {},
+): Promise<UsersInventoryResult> {
   return apiPost<UsersInventoryResult>(
     `/server/v1/servers/${serverId}/users/inventory`,
+    undefined,
+    { query: opts.account_id ? { account_id: opts.account_id } : {} },
   );
 }
 

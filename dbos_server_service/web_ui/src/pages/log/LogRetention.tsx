@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { useMockMode } from "@/api/auth/useQuery";
-import { NotWiredPlaceholder } from "@/pages/Placeholder";
+import { LogRetentionLive } from "./LogRetentionLive";
 
 interface AuditRow {
   time: string;
@@ -37,17 +37,7 @@ const AUDIT_ROWS: AuditRow[] = [
 export function LogRetention() {
   const mockMode = useMockMode();
   if (!mockMode) {
-    return (
-      <NotWiredPlaceholder
-        breadcrumb="loging_service / retention"
-        service="loging_service (retention)"
-        endpoints={[
-          "GET   /loging/v1/retention/policy",
-          "PATCH /loging/v1/retention/policy",
-          "POST  /loging/v1/retention/sweep",
-        ]}
-      />
-    );
+    return <LogRetentionLive />;
   }
   return (
     <Shell breadcrumb="loging_service / retention">

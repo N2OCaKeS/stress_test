@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { useMockMode } from "@/api/auth/useQuery";
-import { NotWiredPlaceholder } from "@/pages/Placeholder";
+import { LogRulesLive } from "./LogRulesLive";
 
 interface Rule {
   id: string;
@@ -71,17 +71,7 @@ export function LogRules() {
   const groups = Array.from(new Set(RULES.map((r) => r.group)));
 
   if (!mockMode) {
-    return (
-      <NotWiredPlaceholder
-        breadcrumb="loging_service / rules"
-        service="loging_service (rules)"
-        endpoints={[
-          "GET   /loging/v1/rules",
-          "POST  /loging/v1/rules",
-          "PATCH /loging/v1/rules/{id}",
-        ]}
-      />
-    );
+    return <LogRulesLive />;
   }
 
   return (

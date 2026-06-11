@@ -32,7 +32,8 @@ const BASE = "/server/v1";
  * принимает (UI-фильтр «свой dept / cross-dept admin view»).
  */
 export interface ListAccountsParams {
-  server_id?: string;
+  /** Backend требует обязательно (`Query(...)`) — без него 422. */
+  server_id: string;
   scope?: "department" | "all" | string;
   limit?: number;
   offset?: number;
@@ -51,7 +52,7 @@ export interface ListAccountsParams {
  * по наличию полей.
  */
 export function listAccounts(
-  query: ListAccountsParams = {},
+  query: ListAccountsParams,
 ): Promise<
   OffsetPaginatedResponse<ServerAccount> | CursorPaginatedResponse<ServerAccount>
 > {
@@ -104,13 +105,13 @@ export function updateAccount(
  * Hard-delete аккаунта. Связки уходят каскадом; OS-аккаунт на боксе не
  * удаляется (для этого — отдельный `/deprovision`).
  *
- * Body `{reason}` пишется в audit `server_account.delete`.
+ * Backend `DELETE /server-accounts/{id}` тело не читает — причину удаления
+ * audit пишет из server-side контекста, отдельного `reason`-поля у endpoint'а
+ * нет. Поэтому wrapper тело не шлёт; подтверждение/причина остаются локальной
+ * UX-операцией на стороне UI.
  */
-export function deleteAccount(
-  accountId: string,
-  body: { reason: string },
-): Promise<void> {
-  return apiDelete<void>(`${BASE}/server-accounts/${accountId}`, body);
+export function deleteAccount(accountId: string): Promise<void> {
+  return apiDelete<void>(`${BASE}/server-accounts/${accountId}`);
 }
 
 // ---------------------------------------------------------------------------

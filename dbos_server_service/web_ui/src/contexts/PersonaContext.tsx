@@ -25,7 +25,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Persona, PersonaId, ServiceName, ServiceRole } from "@/types/persona";
+import type {
+  Persona,
+  PersonaId,
+  PlatformRole,
+  ServiceName,
+  ServiceRole,
+} from "@/types/persona";
 import {
   DEFAULT_PERSONA_ID,
   PERSONAS,
@@ -159,16 +165,36 @@ function pickServiceRole(roles: string[] | undefined): ServiceRole | null {
   return null;
 }
 
+/**
+ * Сводит backend-написание platform_role к каноническому UI-набору.
+ * Backend отдаёт `department_admin` и legacy `loging_admin` / `loging_reader`;
+ * UI ждёт `dep_admin` / `logging_admin` / `logging_reader`. Незнакомые значения
+ * (включая обычного юзера без роли) → null.
+ */
+function normalizePlatformRole(raw: string | null | undefined): PlatformRole {
+  switch (raw) {
+    case "account_admin":
+      return "account_admin";
+    case "dep_admin":
+    case "department_admin":
+      return "dep_admin";
+    case "logging_admin":
+    case "loging_admin":
+      return "logging_admin";
+    case "logging_reader":
+    case "loging_reader":
+      return "logging_reader";
+    default:
+      return null;
+  }
+}
+
 function identityToPersona(me: IdentityContext): Persona {
   const username = me.username ?? "unknown";
-  const platformRoleRaw = me.platform_role ?? null;
-  const platformRole =
-    platformRoleRaw === "logging_admin" ||
-    platformRoleRaw === "logging_reader" ||
-    platformRoleRaw === "account_admin" ||
-    platformRoleRaw === "dep_admin"
-      ? platformRoleRaw
-      : null;
+  // Backend emits `department_admin` и legacy-написание `loging_*`; UI оперирует
+  // каноническими `dep_admin` / `logging_*`. Нормализуем на чтении — иначе
+  // dep_admin/logging-роли схлопываются в null и теряют весь RBAC.
+  const platformRole = normalizePlatformRole(me.platform_role ?? null);
 
   const serviceRoles: Partial<Record<ServiceName, ServiceRole>> = {};
   for (const [svc, roles] of Object.entries(me.service_roles ?? {})) {

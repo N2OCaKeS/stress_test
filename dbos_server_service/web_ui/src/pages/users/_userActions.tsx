@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { X, UserCog, ShieldCheck, Copy, AlertTriangle, RefreshCw } from "lucide-react";
 import { ApiError } from "@/api/client";
-import { createUser, updateUser } from "@/api/auth/users";
+import { createUser, forcePasswordChange, updateUser } from "@/api/auth/users";
 import { createGroup } from "@/api/auth/groups";
 import { createBot, issueBotToken } from "@/api/auth/bots";
 import type {
@@ -127,13 +127,17 @@ export function CreateUserForm({
     setBusy(true);
     setErr(null);
     try {
-      await createUser({
+      const created = await createUser({
         username,
         password,
         email: email || undefined,
         department_id: dept || null,
         platform_role: (platformRole || null) as PlatformRole,
       });
+      // backend UserCreate не принимает must_change_password — поднимаем флаг
+      // отдельным вызовом, чтобы выданный admin'ом временный пароль не остался
+      // постоянным (форма обещает «сменит при первом входе»).
+      await forcePasswordChange(created.id);
       onSuccess();
     } catch (e) {
       setErr(e instanceof ApiError ? `${e.errorCode}: ${e.message}` : String(e));
@@ -504,9 +508,15 @@ export function CreateBotForm({
       });
       // Try issuing the initial one-time token. If it fails the bot is still
       // created — surface the error but keep the modal open for the user to
-      // retry via the rotate flow later.
+      // retry via the rotate flow later. expires_at обязателен по политике
+      // (бессрочные bot-токены запрещены, max 6 мес) — берём +90 дней.
       try {
-        const issued = await issueBotToken(bot.id, { name: "initial" });
+        const exp = new Date();
+        exp.setDate(exp.getDate() + 90);
+        const issued = await issueBotToken(bot.id, {
+          name: "initial",
+          expires_at: exp.toISOString(),
+        });
         setToken(issued);
       } catch (te) {
         setErr(

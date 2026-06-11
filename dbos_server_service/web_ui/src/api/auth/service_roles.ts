@@ -72,13 +72,15 @@ export function deleteServiceRole(
   );
 }
 
+// Backend оба bulk-endpoint'а отдают `OkResponse` (`{ok: true}`) — счётчика
+// assigned/revoked в ответе нет.
 export function bulkAssignServiceRole(
   departmentId: string,
   serviceName: ServiceName,
   roleName: string,
   req: ServiceRoleBulkAssignRequest,
-): Promise<{ assigned: number }> {
-  return apiPost<{ assigned: number }>(
+): Promise<{ ok: true }> {
+  return apiPost<{ ok: true }>(
     `${rolesBase(departmentId, serviceName)}/${roleName}/assign`,
     req,
   );
@@ -89,8 +91,8 @@ export function bulkRevokeServiceRole(
   serviceName: ServiceName,
   roleName: string,
   req: ServiceRoleBulkAssignRequest,
-): Promise<{ revoked: number }> {
-  return apiPost<{ revoked: number }>(
+): Promise<{ ok: true }> {
+  return apiPost<{ ok: true }>(
     `${rolesBase(departmentId, serviceName)}/${roleName}/revoke`,
     req,
   );

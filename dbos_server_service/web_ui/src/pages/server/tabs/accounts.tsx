@@ -684,9 +684,7 @@ function AccountDetail({
                 )
                   return;
                 run(async () => {
-                  await accountsApi.deleteAccount(account.id, {
-                    reason: reason.trim(),
-                  });
+                  await accountsApi.deleteAccount(account.id);
                   onClosed();
                 }, `Аккаунт ${account.login} удалён`);
               }}

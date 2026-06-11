@@ -82,9 +82,10 @@ def _events(captured: list[dict], action: str) -> list[dict]:
 
 class TestUsersInventoryTrigger:
     async def test_operator_dispatches(
-        self, client, operator_token_a, make_server, captured_dispatch,
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
         srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id, login="appuser")
         resp = await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )
@@ -101,6 +102,7 @@ class TestUsersInventoryTrigger:
             "ssh_port": srv.ssh_port,
             "is_managed": False,
             "management_user": None,
+            "account_id": acc.id,
         }
 
     async def test_managed_server_propagates_session_hints(
@@ -119,7 +121,7 @@ class TestUsersInventoryTrigger:
         assert payload["management_user"] == "dbos"
 
     async def test_dispatch_payload_includes_host_and_port(
-        self, client, operator_token_a, make_server, captured_dispatch,
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
         # Симметрия с `_dispatch_for_server`: dispatch payload должен нести
         # `host`/`ssh_port`, иначе SSH-клиент воркера фоллбэкается на
@@ -128,6 +130,7 @@ class TestUsersInventoryTrigger:
             department_id="dep_a",
             hostname="srv-with-host.example.local",
         )
+        await make_account(server_id=srv.id, login="appuser")
         resp = await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )
@@ -176,9 +179,11 @@ class TestUsersInventoryTrigger:
         assert captured_dispatch == []
 
     async def test_success_emits_audit(
-        self, client, operator_token_a, make_server, captured_dispatch, captured_emits,
+        self, client, operator_token_a, make_server, make_account,
+        captured_dispatch, captured_emits,
     ):
         srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="appuser")
         await client.post(
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )

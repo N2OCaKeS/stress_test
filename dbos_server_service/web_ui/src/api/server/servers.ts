@@ -116,10 +116,20 @@ export function clearBusy(id: string): Promise<Server> {
 /**
  * `POST /api/server/v1/servers/{id}/inventory/sync` — запустить inventory
  * SSH-задачу через worker. Ответ — `task_id` для последующего трекинга.
+ *
+ * На неуправляемом сервере worker заходит по SSH под аккаунтом сервера
+ * (self-сессия по паролю) — передавай `account_id`. Не передан — backend
+ * берёт дефолтный привязанный аккаунт; привязок нет → 422 `ACCOUNT_REQUIRED`.
+ * Управляемый сервер заходит по ключу, `account_id` игнорируется.
  */
-export function inventorySync(id: string): Promise<TaskDispatchResponse> {
+export function inventorySync(
+  id: string,
+  opts: { account_id?: string } = {},
+): Promise<TaskDispatchResponse> {
   return apiPost<TaskDispatchResponse>(
     `/server/v1/servers/${id}/inventory/sync`,
+    undefined,
+    { query: opts.account_id ? { account_id: opts.account_id } : {} },
   );
 }
 

@@ -79,6 +79,17 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Единый форматтер ошибок для toast/alert. `ApiError` отдаёт стабильный
+ * `error_code` + сообщение, обычный `Error` — только message, всё прочее —
+ * fallback. Заменяет ~десяток локальных копий `apiErrMsg` по страницам.
+ */
+export function apiErrMsg(e: unknown, fallback = "Ошибка"): string {
+  if (e instanceof ApiError) return `${e.errorCode}: ${e.message}`;
+  if (e instanceof Error) return e.message;
+  return fallback;
+}
+
 // ---------------------------------------------------------------------------
 // Sign-out hook
 // ---------------------------------------------------------------------------
@@ -266,6 +277,18 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       return request<T>({ ...opts, skipAuthRetry: true });
     }
     if (!opts.skipSignOut) triggerSignOut();
+  }
+
+  // Повторный запрос после успешного refresh всё равно вернул 401 — токен
+  // отозван / поменялись права на лету. Свежий refresh уже не поможет: рвём
+  // сессию, иначе пользователь застрянет с «битым» access в памяти.
+  if (
+    res.status === 401 &&
+    useAuth &&
+    opts.skipAuthRetry &&
+    !opts.skipSignOut
+  ) {
+    triggerSignOut();
   }
 
   if (!res.ok) {

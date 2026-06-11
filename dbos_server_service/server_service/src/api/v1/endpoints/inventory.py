@@ -8,13 +8,15 @@ Hardware-инвентаризация (`inventory.sync`) живёт в
 `/internal/servers/{id}/inventory` (см. `endpoints/internal.py`).
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.endpoints.worker_dispatch import resolve_inventory_account_id
 from src.core.constants import Action, EntityType, ServerStatus
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
+    DomainValidationError,
     NotFoundError,
     ServiceUnavailableError,
 )
@@ -45,11 +47,13 @@ users_router = APIRouter(prefix="/servers/{server_id}/users")
         "читает `getent passwd` / группы / sudoers, фильтрует системных по "
         "`UID_MIN` из `/etc/login.defs` и POST'ит список обратно в "
         "`/internal/servers/{id}/users/inventory`. server_service reconcile'ит "
-        "его с `server_accounts`. Конкретный `account_id` в payload здесь не "
-        "передаётся: dispatch без аргументов, выбор аккаунта — server-level "
-        "(prepared → management_user; иначе SSH-клиент идёт под дефолтом). "
-        "Право — тот же `inventory_trigger`, что и у hardware-инвентаризации. "
-        "Доступ: `(server, *, inventory_trigger)`."
+        "его с `server_accounts`. Выбор аккаунта: на управляемом сервере "
+        "(`is_managed`) worker заходит по ключу под `management_user`, аккаунт "
+        "не нужен. На неуправляемом — нужен пароль аккаунта (self-сессия): "
+        "передай `account_id` явно либо server_service возьмёт дефолтный "
+        "привязанный аккаунт (первый с сохранённым паролем). Привязок нет — "
+        "422 ACCOUNT_REQUIRED. Право — тот же `inventory_trigger`, что и у "
+        "hardware-инвентаризации. Доступ: `(server, *, inventory_trigger)`."
     ),
     responses={
         202: {"description": "Задача принята, возвращается task_id."},
@@ -57,6 +61,7 @@ users_router = APIRouter(prefix="/servers/{server_id}/users")
         403: {"description": "Нет роли с `inventory_trigger`."},
         404: {"description": "Сервер не найден / чужой dept."},
         409: {"description": "SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT / IDEMPOTENCY_KEY_REUSE_CONFLICT."},
+        422: {"description": "ACCOUNT_REQUIRED (неуправляемый сервер без привязанных аккаунтов) / ACCOUNT_NOT_LINKED (account_id не привязан к серверу)."},
         503: {"description": "Worker недоступен."},
     },
 )
@@ -65,6 +70,15 @@ async def trigger_users_inventory(
     identity: CurrentUserIdentity,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    account_id: str | None = Query(
+        default=None,
+        description=(
+            "Аккаунт сервера, под которым worker зайдёт по SSH (self-сессия "
+            "по паролю). Для управляемого сервера игнорируется (вход по "
+            "ключу). Не передан — server_service берёт дефолтный привязанный "
+            "аккаунт; привязок нет — 422 ACCOUNT_REQUIRED."
+        ),
+    ),
 ) -> ServerTaskDispatchResponse:
     """Dispatch инвентаризации OS-пользователей. Доступ: `(server, *, inventory_trigger)`.
 
@@ -118,6 +132,25 @@ async def trigger_users_inventory(
             error_code="SERVER_DECOMMISSIONED",
             message="Server is decommissioned and cannot be inventoried",
         )
+    # Account-резолв для self-сессии (неуправляемый сервер). Без `account_id`
+    # worker фоллбэчился на root без пароля → SSH_AUTH_FAILED. Managed → None
+    # (вход по ключу). Нет аккаунта / не привязан → 422.
+    try:
+        resolved_account_id = await resolve_inventory_account_id(
+            db, server, account_id,
+        )
+    except DomainValidationError as exc:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": exc.error_code.lower(),
+                "task_kind": "users.inventory",
+                "department_id": server.department_id,
+            },
+        )
+        raise
+
     idempotency_key = read_idempotency_key(request)
     payload = {
         "server_id": server_id,
@@ -133,6 +166,10 @@ async def trigger_users_inventory(
         "is_managed": server.is_managed,
         "management_user": server.management_user,
     }
+    # Неуправляемый сервер — worker запросит пароль аккаунта по account_id и
+    # зайдёт под ним, а не root'ом.
+    if resolved_account_id is not None:
+        payload["account_id"] = resolved_account_id
     try:
         task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
             db=db,

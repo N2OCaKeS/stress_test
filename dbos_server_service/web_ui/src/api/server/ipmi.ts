@@ -177,13 +177,9 @@ export function getIpmiCredentials(
  * Доступ: `(ipmi_controller, *, rotate_credentials)`. Cross-dept controller
  * скрыт за 404 NO_IPMI_CONTROLLER.
  *
- * Worker генерит новый секрет, применяет на BMC, затем ходит во внутренний
- * callback `credentials_rotated`, который проверяет `verified_at` и только
- * после этого шифрует/сохраняет ciphertext (verify-then-store).
- *
- * Внимание: worker-handler сейчас raise'ит NotImplementedError ДО вызова в
- * iDRAC — storage round-trip ещё не построен. Endpoint всё равно поднимает
- * task'у, worker корректно mark_failed + audit failure.
+ * Worker генерит новый секрет, применяет на BMC, делает read-only verify
+ * новым паролем и только после этого шлёт plaintext + `verified_at` в
+ * server_service, который шифрует/сохраняет ciphertext (verify-then-store).
  *
  * Старый user-facing путь `POST /servers/{id}/ipmi/credentials/rotate` снят
  * 410 GONE (писал ciphertext без BMC apply/verify) — wrapper'а под него нет.

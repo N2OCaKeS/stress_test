@@ -14,13 +14,20 @@
  * принять текущее состояние через `inventorySync` (выровняет БД по боксу).
  */
 import { AlertCircle, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
 import { ApiError } from "@/api/client";
 import { getServerDrift, inventorySync } from "@/api/server/servers";
-import type { DriftEventItem, Server } from "@/api/server/types";
+import { listAccounts } from "@/api/server/accounts";
+import type {
+  CursorPaginatedResponse,
+  DriftEventItem,
+  OffsetPaginatedResponse,
+  Server,
+  ServerAccount,
+} from "@/api/server/types";
 
 interface Props {
   serverId: string;
@@ -49,7 +56,29 @@ function formatDt(iso: string): string {
   }
 }
 
-export function DriftTab({ serverId }: Props) {
+/**
+ * Аккаунты сервера, видимые текущей persona — тот же грубый client-side
+ * фильтр, что в `tabs/console.tsx` / `tabs/manage.tsx`. Backend перепроверит
+ * при fetch'е пароля.
+ */
+function filterAccessibleAccounts(
+  accounts: ServerAccount[],
+  persona: ReturnType<typeof usePersona>["persona"],
+): ServerAccount[] {
+  if (persona.platform_role === "account_admin") return accounts;
+  if (persona.service_roles.server === "admin") return accounts;
+  if (
+    persona.platform_role === "dep_admin" ||
+    persona.service_roles.server === "operator" ||
+    persona.service_roles.server === "reader"
+  ) {
+    if (!persona.dept_id) return [];
+    return accounts.filter((a) => a.department_id === persona.dept_id);
+  }
+  return [];
+}
+
+export function DriftTab({ serverId, server }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
   const driftQ = useQuery(() => getServerDrift(serverId), [serverId]);
@@ -61,11 +90,35 @@ export function DriftTab({ serverId }: Props) {
     persona.service_roles.server === "admin" ||
     persona.service_roles.server === "operator";
 
+  // На неуправляемом сервере inventory-sync ходит по SSH под аккаунтом —
+  // подгружаем привязанные аккаунты для picker'а. Managed → по ключу, picker
+  // не нужен (backend сам None'ит account_id).
+  const needsAccount = !!server && !server.is_managed && canSync;
+  const accountsQ = useQuery(
+    () => listAccounts({ server_id: serverId, limit: 200 }),
+    [serverId],
+    { enabled: needsAccount },
+  );
+  const accounts = useMemo<ServerAccount[]>(() => {
+    const data = accountsQ.data as
+      | OffsetPaginatedResponse<ServerAccount>
+      | CursorPaginatedResponse<ServerAccount>
+      | undefined;
+    return data?.items ?? [];
+  }, [accountsQ.data]);
+  const accessibleAccounts = useMemo(
+    () => filterAccessibleAccounts(accounts, persona),
+    [accounts, persona],
+  );
+  const [accountId, setAccountId] = useState<string>("");
+
   async function handleSync() {
     if (syncing) return;
     setSyncing(true);
     try {
-      const res = await inventorySync(serverId);
+      const res = await inventorySync(serverId, {
+        account_id: needsAccount && accountId ? accountId : undefined,
+      });
       toast.success(`Inventory sync запущен (task ${res.task_id})`);
       // Backend пишет результат через worker callback; refetch покажет drift
       // как только воркер закроет таску и пересоберёт сводку.
@@ -101,15 +154,34 @@ export function DriftTab({ serverId }: Props) {
           </div>
         </div>
         {canSync && (
-          <button
-            className="btn btn-primary flex items-center gap-2"
-            onClick={handleSync}
-            disabled={syncing}
-            title="Запустить inventory-sync через worker"
-          >
-            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Запускаем…" : "Sync drift"}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {needsAccount && (
+              <select
+                className="surface-2 border border-token rounded px-2 py-1 text-sm"
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+                disabled={syncing || accountsQ.loading}
+                title="SSH-аккаунт для inventory-sync"
+              >
+                <option value="">— дефолтный аккаунт —</option>
+                {accessibleAccounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.login}
+                    {a.has_sudo ? " (sudo)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              className="btn btn-primary flex items-center gap-2"
+              onClick={handleSync}
+              disabled={syncing}
+              title="Запустить inventory-sync через worker"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Запускаем…" : "Sync drift"}
+            </button>
+          </div>
         )}
       </div>
 

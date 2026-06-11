@@ -1,28 +1,21 @@
 import { usePersona } from "@/contexts/PersonaContext";
 import { useMockMode } from "@/api/auth/useQuery";
-import { NotWiredPlaceholder } from "@/pages/Placeholder";
 import { LogLoggingAdmin } from "./LogLoggingAdmin";
 import { LogLoggingReader } from "./LogLoggingReader";
+import { LogEventsLive } from "./LogEventsLive";
 
 /**
  * Persona-aware Log dispatcher.
- * In live mode loging_service browse UI is not wired yet — show a placeholder.
+ *
+ * Mock-режим показывает дизайн-порты (carol/dave). Live-режим тянет журнал
+ * аудита из loging_service через `LogEventsLive` (read для loging_admin /
+ * loging_reader).
  */
 export function Log() {
   const { persona } = usePersona();
   const mockMode = useMockMode();
   if (!mockMode) {
-    return (
-      <NotWiredPlaceholder
-        breadcrumb="loging_service / events"
-        service="loging_service (browse)"
-        endpoints={[
-          "GET  /loging/v1/events",
-          "GET  /loging/v1/events/{id}",
-          "GET  /loging/v1/facets",
-        ]}
-      />
-    );
+    return <LogEventsLive />;
   }
   if (persona.platform_role === "logging_reader") return <LogLoggingReader />;
   return <LogLoggingAdmin />;

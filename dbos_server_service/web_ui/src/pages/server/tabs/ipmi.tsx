@@ -22,7 +22,7 @@
  * logging_admin закрыты от server_service целиком — страница /server для них не
  * рендерится. Источник флагов — `usePersona()` + `persona.service_roles`.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Edit3,
@@ -632,20 +632,37 @@ function PowerCard({
     "on" | "off" | "reboot" | "status" | null
   >(null);
 
+  // Живёт весь lifecycle компонента: ставится в false при unmount, чтобы ни
+  // polling, ни отложенные через setTimeout перепроверки не дёргали setState
+  // после размонтирования.
+  const aliveRef = useRef(true);
+  const deferRef = useRef<number | null>(null);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      if (deferRef.current !== null) {
+        window.clearTimeout(deferRef.current);
+        deferRef.current = null;
+      }
+    };
+  }, []);
+
   const fetchStatus = useCallback(() => {
     let cancelled = false;
     getPowerStatus(serverId)
       .then((s) => {
-        if (!cancelled) {
+        if (!cancelled && aliveRef.current) {
           setStatus(s);
           setStatusErr(null);
         }
       })
       .catch((e: unknown) => {
-        if (!cancelled) setStatusErr(apiErrMsg(e, "Не удалось получить power"));
+        if (!cancelled && aliveRef.current)
+          setStatusErr(apiErrMsg(e, "Не удалось получить power"));
       })
       .finally(() => {
-        if (!cancelled) setStatusLoading(false);
+        if (!cancelled && aliveRef.current) setStatusLoading(false);
       });
     return () => {
       cancelled = true;
@@ -665,6 +682,17 @@ function PowerCard({
     };
   }, [fetchStatus]);
 
+  // Отложенная перепроверка статуса после power-операции: backend обновит
+  // power_state async через worker-callback, поэтому подёргиваем статус через
+  // секунду. Таймер один на компонент — новый запрос отменяет предыдущий.
+  const scheduleRefresh = useCallback(() => {
+    if (deferRef.current !== null) window.clearTimeout(deferRef.current);
+    deferRef.current = window.setTimeout(() => {
+      deferRef.current = null;
+      if (aliveRef.current) fetchStatus();
+    }, 1000);
+  }, [fetchStatus]);
+
   function runPower(
     kind: "on" | "off" | "reboot",
     fn: (id: string) => Promise<{ task_id: string; status: string }>,
@@ -678,10 +706,12 @@ function PowerCard({
         // backend в этот момент ещё не успел обновить power_state — он
         // прилетит async через callback worker'а. Подёргаем статус через
         // секунду, дальше всё равно поедет polling.
-        window.setTimeout(fetchStatus, 1000);
+        scheduleRefresh();
       })
       .catch((e: unknown) => toast.error(apiErrMsg(e, `Power ${kind} не отправлен`)))
-      .finally(() => setPending(null));
+      .finally(() => {
+        if (aliveRef.current) setPending(null);
+      });
   }
 
   function runDispatchStatus() {
@@ -691,7 +721,9 @@ function PowerCard({
       .catch((e: unknown) =>
         toast.error(apiErrMsg(e, "Не удалось запросить probe")),
       )
-      .finally(() => setPending(null));
+      .finally(() => {
+        if (aliveRef.current) setPending(null);
+      });
   }
 
   const powerLabel = (() => {
@@ -813,6 +845,19 @@ function CredentialsCard({
   const [rotating, setRotating] = useState(false);
   const [tick, setTick] = useState(0);
 
+  const aliveRef = useRef(true);
+  const deferRef = useRef<number | null>(null);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      if (deferRef.current !== null) {
+        window.clearTimeout(deferRef.current);
+        deferRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -844,10 +889,15 @@ function CredentialsCard({
       )
       .catch((e: unknown) => toast.error(apiErrMsg(e, "Ротация не запущена")))
       .finally(() => {
+        if (!aliveRef.current) return;
         setRotating(false);
         // Метаданные credentials.password_rotated_at обновятся после
         // успешного callback'а worker'а; пересмотрим через секунду.
-        window.setTimeout(() => setTick((n) => n + 1), 1000);
+        if (deferRef.current !== null) window.clearTimeout(deferRef.current);
+        deferRef.current = window.setTimeout(() => {
+          deferRef.current = null;
+          if (aliveRef.current) setTick((n) => n + 1);
+        }, 1000);
       });
   }
 

@@ -111,6 +111,11 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
     // accessible_services, но backend режет ему /events и /rules на 403 — чип
     // вёл бы в тупик, поэтому скрываем.
     .filter((s) => s !== "logging" || hasAuditLogAccess(persona))
+    // Servers/Workers тоже гейтим по реальному доступу к server-зоне. У отдела
+    // подключён server_service, поэтому обычный dept-пользователь без server.*
+    // роли получает `server` в accessible_services, но backend отвечает 403 на
+    // список серверов и tasks — чип вёл бы на пустую страницу с ошибкой.
+    .filter((s) => (s !== "server" && s !== "worker") || hasServerZoneAccess(persona))
     .map((s) => SERVICE_CATALOG[s])
     .filter(Boolean)
     .map((chip) => {

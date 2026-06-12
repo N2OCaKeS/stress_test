@@ -426,6 +426,7 @@ function RuleForm({
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
+              maxLength={128}
               placeholder="suppress-healthchecks"
             />
           </Field>
@@ -434,6 +435,7 @@ function RuleForm({
               className="surface-2 border border-token rounded px-2 py-1 w-full"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              maxLength={1024}
               placeholder="опционально"
             />
           </Field>
@@ -444,6 +446,7 @@ function RuleForm({
                 className="surface-2 border border-token rounded px-2 py-1 w-full mono text-sm"
                 value={matchService}
                 onChange={(e) => setMatchService(e.target.value)}
+                maxLength={64}
                 placeholder="auth_service"
               />
             </Field>
@@ -452,6 +455,7 @@ function RuleForm({
                 className="surface-2 border border-token rounded px-2 py-1 w-full mono text-sm"
                 value={matchAction}
                 onChange={(e) => setMatchAction(e.target.value)}
+                maxLength={128}
                 placeholder="user.*"
                 list={actionOptions.length ? "rule-action-catalog" : undefined}
               />

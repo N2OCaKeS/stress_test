@@ -28,6 +28,19 @@ const DEFAULT_SERVICES: ServiceName[] = [
   "worker_service",
 ];
 
+// Зеркало `auth_service/src/schemas/service_roles.py::ServiceRoleCreate.role_name`:
+// lower-snake_case, начинается с буквы, 2..64 символа.
+const ROLE_NAME_RE = /^[a-z][a-z0-9_]+$/;
+
+function validateRoleName(value: string): string | null {
+  if (value.length < 2) return "role_name: минимум 2 символа";
+  if (value.length > 64) return "role_name: максимум 64 символа";
+  if (!ROLE_NAME_RE.test(value)) {
+    return "role_name: только строчные латиница/цифры/`_`, начинается с буквы";
+  }
+  return null;
+}
+
 export function ServiceRolesLivePanel({
   departmentId,
   initialService = "server_service",
@@ -239,16 +252,22 @@ export function ServiceRolesLivePanel({
               <button
                 className="btn btn-primary mt-2 flex items-center gap-1"
                 disabled={pending || !newRoleName.trim()}
-                onClick={() =>
-                  run(async () => {
+                onClick={() => {
+                  const roleName = newRoleName.trim();
+                  const nameErr = validateRoleName(roleName);
+                  if (nameErr) {
+                    setActionErr(nameErr);
+                    return;
+                  }
+                  void run(async () => {
                     await srApi.createServiceRole(departmentId, serviceName, {
-                      role_name: newRoleName.trim(),
+                      role_name: roleName,
                       description: newRoleDesc.trim() || undefined,
                     });
                     setNewRoleName("");
                     setNewRoleDesc("");
-                  })
-                }
+                  });
+                }}
               >
                 <Plus className="w-4 h-4" /> Создать
               </button>

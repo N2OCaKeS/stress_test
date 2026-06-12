@@ -233,6 +233,7 @@ export function LogRetentionLive() {
                         className="surface-2 border border-token rounded px-2 py-1"
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
+                        maxLength={256}
                         placeholder="опционально"
                       />
                     </label>

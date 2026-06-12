@@ -621,6 +621,7 @@ export function CreateBotForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus
+          maxLength={256}
           placeholder="bot-ci-core"
         />
       </Field>

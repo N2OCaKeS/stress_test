@@ -44,6 +44,29 @@ interface Props {
 
 const fmtTs = formatMskShort;
 
+// Зеркало `server_service/src/schemas/server_account.py`:
+//   login — `^[A-Za-z0-9._\-]+$`, 1..128 символов.
+//   unix_groups — POSIX group name `^[a-z_][a-z0-9_-]{0,31}$`.
+const LOGIN_RE = /^[A-Za-z0-9._-]+$/;
+const POSIX_GROUP_RE = /^[a-z_][a-z0-9_-]{0,31}$/;
+
+function validateLogin(value: string): string | null {
+  if (value.length > 128) return "login: максимум 128 символов";
+  if (!LOGIN_RE.test(value)) {
+    return "login: допустимы латиница, цифры и символы . _ -";
+  }
+  return null;
+}
+
+function validateUnixGroups(groups: string[]): string | null {
+  for (const g of groups) {
+    if (!POSIX_GROUP_RE.test(g)) {
+      return `unix_groups: '${g}' не POSIX-имя (строчные, цифры, _ -, до 32 симв.)`;
+    }
+  }
+  return null;
+}
+
 /** Тонкая полоска scope/source — для row и detail. */
 type Scope = "personal" | "shared" | "service";
 
@@ -718,19 +741,27 @@ function AccountCreateForm({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (pending) return;
-    if (!login.trim()) return;
+    const loginValue = login.trim();
+    if (!loginValue) return;
+    const unixGroups = groups
+      .split(",")
+      .map((g) => g.trim())
+      .filter(Boolean);
+    const validationErr =
+      validateLogin(loginValue) ?? validateUnixGroups(unixGroups);
+    if (validationErr) {
+      setErr(validationErr);
+      return;
+    }
     setErr(null);
     setPending(true);
     try {
       const body: ServerAccountCreateRequest = {
         server_ids: [serverId],
-        login: login.trim(),
+        login: loginValue,
         password: password.trim() || null,
         has_sudo: hasSudo,
-        unix_groups: groups
-          .split(",")
-          .map((g) => g.trim())
-          .filter(Boolean),
+        unix_groups: unixGroups,
         shell: shell.trim() || null,
         home_dir: homeDir.trim() || null,
       };
@@ -762,6 +793,7 @@ function AccountCreateForm({
             value={login}
             onChange={(e) => setLogin(e.target.value)}
             required
+            maxLength={128}
             placeholder="dbos-svc"
           />
         </FormRow>
@@ -862,15 +894,21 @@ function AccountEditForm({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (pending) return;
+    const unixGroups = groups
+      .split(",")
+      .map((g) => g.trim())
+      .filter(Boolean);
+    const groupsErr = validateUnixGroups(unixGroups);
+    if (groupsErr) {
+      setErr(groupsErr);
+      return;
+    }
     setErr(null);
     setPending(true);
     try {
       const body: ServerAccountUpdateRequest = {
         has_sudo: hasSudo,
-        unix_groups: groups
-          .split(",")
-          .map((g) => g.trim())
-          .filter(Boolean),
+        unix_groups: unixGroups,
         shell: shell.trim() || null,
         home_dir: homeDir.trim() || null,
         linked_user_id: linkedUserId.trim() || null,

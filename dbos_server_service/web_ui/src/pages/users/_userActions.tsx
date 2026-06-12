@@ -123,8 +123,19 @@ export function CreateUserForm({
   const usernameError = username ? validateUsername(username) : null;
   const passwordError = validatePassword(password);
   const emailError = email && !isValidEmail(email) ? "Неверный формат email" : null;
+  // department_id обязателен для всех, кроме платформенных admin-ролей
+  // (account_admin / loging_admin / loging_reader). Обычный user без отдела
+  // и department_admin без отдела backend отбивает MISSING_REQUIRED_FIELD.
+  const PLATFORM_ADMIN_ROLES = ["account_admin", "loging_admin", "loging_reader"];
+  const needsDept = !PLATFORM_ADMIN_ROLES.includes(platformRole);
+  const deptError = needsDept && !dept ? "Выберите отдел" : null;
   const formInvalid =
-    !username || !password || !!usernameError || !!passwordError || !!emailError;
+    !username ||
+    !password ||
+    !!usernameError ||
+    !!passwordError ||
+    !!emailError ||
+    !!deptError;
 
   function copyPassword() {
     navigator.clipboard?.writeText(password).catch(() => {});
@@ -226,18 +237,26 @@ export function CreateUserForm({
         </div>
       </Field>
       <Field label="dept">
-        <select
-          className="input"
-          value={dept}
-          onChange={(e) => setDept(e.target.value)}
-        >
-          <option value="">— (платформенный)</option>
-          {depts.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+        <div>
+          <select
+            className="input"
+            value={dept}
+            onChange={(e) => setDept(e.target.value)}
+          >
+            <option value="">— (платформенный)</option>
+            {depts.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          {deptError && (
+            <div className="text-[11px] text-danger mt-1">
+              {deptError} — без отдела можно создать только платформенную роль
+              (account_admin / loging_admin / loging_reader).
+            </div>
+          )}
+        </div>
       </Field>
       <Field label="platform_role">
         <select

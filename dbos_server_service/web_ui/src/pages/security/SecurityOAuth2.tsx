@@ -201,9 +201,30 @@ function ClientForm({
       prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g],
     );
 
+  const parsedRedirects = redirects
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  // authorization_code-клиент без registered redirect_uri бесполезен: каждый
+  // /authorize упрётся в REDIRECT_URI_MISMATCH (пустой whitelist ничего не
+  // матчит). Backend такой клиент молча создаёт, поэтому ловим тут.
+  const codeGrantWithoutRedirect =
+    grants.includes("authorization_code") && parsedRedirects.length === 0;
+  const noGrants = grants.length === 0;
+
   const submit = async () => {
     if (!name.trim() || !departmentId.trim()) {
       toast.warn("Имя и department_id обязательны");
+      return;
+    }
+    if (noGrants) {
+      toast.warn("Выберите хотя бы один grant_type");
+      return;
+    }
+    if (codeGrantWithoutRedirect) {
+      toast.warn(
+        "Для grant_type authorization_code нужен хотя бы один redirect_uri",
+      );
       return;
     }
     setPending(true);
@@ -212,10 +233,7 @@ function ClientForm({
         name: name.trim(),
         description: description.trim() || undefined,
         department_id: departmentId.trim(),
-        redirect_uris: redirects
-          .split(/[\n,]/)
-          .map((s) => s.trim())
-          .filter(Boolean),
+        redirect_uris: parsedRedirects,
         allowed_scopes: scopes.split(/\s+/).filter(Boolean),
         grant_types: grants,
         is_public: isPublic,
@@ -291,6 +309,16 @@ function ClientForm({
               </button>
             ))}
           </div>
+          {noGrants && (
+            <span className="text-danger text-xs">
+              нужен хотя бы один grant_type
+            </span>
+          )}
+          {codeGrantWithoutRedirect && (
+            <span className="text-danger text-xs">
+              authorization_code требует redirect_uri
+            </span>
+          )}
         </div>
         <label className="flex items-start gap-2 text-sm md:col-span-2">
           <input
@@ -309,7 +337,11 @@ function ClientForm({
         <button className="btn" onClick={onCancel} disabled={pending}>
           Отмена
         </button>
-        <button className="btn btn-primary" onClick={submit} disabled={pending}>
+        <button
+          className="btn btn-primary"
+          onClick={submit}
+          disabled={pending || noGrants || codeGrantWithoutRedirect}
+        >
           Создать
         </button>
       </div>

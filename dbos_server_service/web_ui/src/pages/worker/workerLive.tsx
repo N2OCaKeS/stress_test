@@ -110,6 +110,9 @@ export interface TaskListProps {
   onKindFilter: (v: string) => void;
   /** Скрыть фильтр статуса (DLQ зафиксирован на failed). */
   hideStatusFilter?: boolean;
+  /** Список сужен до одного сервера (пришли из карточки сервера). */
+  serverScopeId?: string | null;
+  onClearServerScope?: () => void;
   onLoadMore?: () => void;
   loadingMore?: boolean;
 }
@@ -153,6 +156,8 @@ export function TaskListAside({
   kindFilter,
   onKindFilter,
   hideStatusFilter,
+  serverScopeId,
+  onClearServerScope,
   onLoadMore,
   loadingMore,
 }: TaskListProps) {
@@ -206,6 +211,12 @@ export function TaskListAside({
             ))}
           </select>
         </div>
+        {serverScopeId && (
+          <ServerScopeChip
+            serverId={serverScopeId}
+            onClear={onClearServerScope}
+          />
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
@@ -249,6 +260,34 @@ export function TaskListAside({
         )}
       </div>
     </aside>
+  );
+}
+
+function ServerScopeChip({
+  serverId,
+  onClear,
+}: {
+  serverId: string;
+  onClear?: () => void;
+}) {
+  const label = useServerLabel(serverId);
+  return (
+    <div className="mt-2 flex items-center gap-2 text-[11px] surface-2 border border-token rounded px-2 py-1">
+      <ServerIcon className="w-3.5 h-3.5 text-accent shrink-0" />
+      <span className="flex-1 min-w-0 truncate" title={serverId}>
+        только задачи <b className="mono">{label}</b>
+      </span>
+      {onClear && (
+        <button
+          type="button"
+          className="btn btn-ghost flex items-center gap-1 shrink-0"
+          onClick={onClear}
+          title="Показать задачи всего отдела"
+        >
+          <XCircle className="w-3.5 h-3.5" /> все
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -554,11 +593,12 @@ export interface TaskListState {
  * `fixedStatus` (DLQ → `failed`) перетирает фильтр статуса.
  */
 export function useTaskList(
-  query: { status: string; kind: string },
+  query: { status: string; kind: string; serverId?: string },
   opts: { enabled: boolean; fixedStatus?: TaskStatus; limit?: number },
 ): TaskListState {
   const limit = opts.limit ?? 50;
   const effStatus = opts.fixedStatus ?? query.status;
+  const serverId = query.serverId || undefined;
   const [tasks, setTasks] = useState<TaskRead[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(opts.enabled);
@@ -584,6 +624,7 @@ export function useTaskList(
       const q: ListTasksQuery = {
         status: (effStatus || undefined) as ListTasksQuery["status"],
         kind: (query.kind || undefined) as ListTasksQuery["kind"],
+        server_id: serverId,
         limit: take,
         offset: 0,
       };
@@ -604,13 +645,13 @@ export function useTaskList(
           }
         });
     },
-    [opts.enabled, effStatus, query.kind],
+    [opts.enabled, effStatus, query.kind, serverId],
   );
 
   // Сброс окна при смене фильтров.
   useEffect(() => {
     setCount(limit);
-  }, [effStatus, query.kind, limit]);
+  }, [effStatus, query.kind, serverId, limit]);
 
   // Initial + on-filter load.
   useEffect(() => {

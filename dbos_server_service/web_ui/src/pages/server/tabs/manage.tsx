@@ -15,6 +15,7 @@
  * client-side фильтр прячет только лишнее.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Play,
   RefreshCw,
@@ -32,6 +33,7 @@ import {
   Save,
   XCircle,
   ListTree,
+  ListChecks,
   UserCheck,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
@@ -345,9 +347,20 @@ function LifecycleCard({
   const needsAccount = !!server && !server.is_managed && allowed;
   return (
     <div className="card">
-      <h3 className="font-semibold text-base mb-3 flex items-center gap-2">
-        <Settings className="w-4 h-4 text-accent" /> Lifecycle
-      </h3>
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <h3 className="font-semibold text-base flex items-center gap-2">
+          <Settings className="w-4 h-4 text-accent" /> Lifecycle
+        </h3>
+        {server && (
+          <Link
+            to={`/worker?server_id=${encodeURIComponent(server.id)}`}
+            className="btn btn-ghost flex items-center gap-1 text-xs"
+            title="Открыть worker-задачи этого сервера"
+          >
+            <ListChecks className="w-3.5 h-3.5" /> Задачи сервера
+          </Link>
+        )}
+      </div>
       {needsAccount && (
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <label className="text-xs text-dim">

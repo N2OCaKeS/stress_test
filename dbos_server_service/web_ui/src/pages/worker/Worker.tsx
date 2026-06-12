@@ -27,6 +27,10 @@ export function Worker() {
   const { persona } = usePersona();
   const [params, setParams] = useSearchParams();
   const selectedId = params.get("id");
+  // Опциональный scope по серверу: приходит из карточки сервера
+  // (`/worker?server_id=srv_…`), чтобы не терять контекст выбранного сервера
+  // при переходе в раздел задач. Пусто → весь отдел.
+  const serverScope = params.get("server_id");
 
   const zoneBlocked = isServerZoneBlocked(persona);
 
@@ -35,7 +39,7 @@ export function Worker() {
   const [kindFilter, setKindFilter] = useState("");
 
   const list = useTaskList(
-    { status: statusFilter, kind: kindFilter },
+    { status: statusFilter, kind: kindFilter, serverId: serverScope ?? undefined },
     { enabled: !zoneBlocked },
   );
 
@@ -43,6 +47,12 @@ export function Worker() {
     const next = new URLSearchParams(params);
     if (id) next.set("id", id);
     else next.delete("id");
+    setParams(next, { replace: true });
+  }
+
+  function clearServerScope() {
+    const next = new URLSearchParams(params);
+    next.delete("server_id");
     setParams(next, { replace: true });
   }
 
@@ -69,6 +79,8 @@ export function Worker() {
       onStatusFilter={setStatusFilter}
       kindFilter={kindFilter}
       onKindFilter={setKindFilter}
+      serverScopeId={serverScope}
+      onClearServerScope={clearServerScope}
       onLoadMore={list.loadMore}
       loadingMore={list.loadingMore}
     />

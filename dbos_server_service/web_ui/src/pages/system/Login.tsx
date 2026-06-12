@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import {
   AlertCircle,
   Eye,
@@ -22,7 +22,11 @@ const SERVICE_TOOLTIP =
 
 export function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const auth = useAuth();
+  // RouteGuard кладёт сюда исходный путь, когда отбивает гостя на /login.
+  // После успешного входа возвращаем туда, а не безусловно на /home.
+  const from = (location.state as { from?: string } | null)?.from;
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -36,7 +40,8 @@ export function Login() {
     setSubmitting(true);
     try {
       await auth.login({ username, password });
-      navigate("/home");
+      const dest = from && from !== "/login" && from !== "/" ? from : "/home";
+      navigate(dest, { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err);

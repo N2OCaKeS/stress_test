@@ -44,7 +44,14 @@ export function App() {
               }
             />
             <Route path="/login" element={<Login />} />
-            <Route path="/home" element={<Home />} />
+            <Route
+              path="/home"
+              element={
+                <RouteGuard>
+                  <Home />
+                </RouteGuard>
+              }
+            />
             <Route
               path="/secret"
               element={
@@ -188,7 +195,14 @@ export function App() {
               }
             />
             <Route path="/settings" element={<Navigate to="/me" replace />} />
-            <Route path="/me" element={<MyAccount />} />
+            <Route
+              path="/me"
+              element={
+                <RouteGuard>
+                  <MyAccount />
+                </RouteGuard>
+              }
+            />
             <Route
               path="/wizard/create-credential"
               element={

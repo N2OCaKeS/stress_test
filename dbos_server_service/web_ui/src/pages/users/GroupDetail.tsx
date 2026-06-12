@@ -170,7 +170,11 @@ export function GroupDetail() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 grid grid-cols-2 gap-5 auto-rows-min">
-          <GroupLiveData groupId={groupId} caps={caps} />
+          <GroupLiveData
+            groupId={groupId}
+            caps={caps}
+            onMetaChange={liveGroupQ.refetch}
+          />
           {mockMode && group && <>
           {/* Members */}
           <Section icon={<UsersRound className="w-4 h-4" />} title={`Members · ${members.length}`}>
@@ -413,9 +417,11 @@ export function GroupDetail() {
 function GroupLiveData({
   groupId,
   caps,
+  onMetaChange,
 }: {
   groupId: string;
   caps: ReturnType<typeof groupMutationCaps>;
+  onMetaChange?: () => void;
 }) {
   const mock = useMockMode();
 
@@ -458,7 +464,11 @@ function GroupLiveData({
     bots.refetch();
     services.refetch();
     roles.refetch();
-  }, [detail, members, bots, services, roles]);
+    // Шапка страницы и breadcrumb читают группу через отдельный запрос
+    // родителя — после rename / delete его тоже надо перечитать, иначе
+    // заголовок висит со старым именем.
+    onMetaChange?.();
+  }, [detail, members, bots, services, roles, onMetaChange]);
 
   const run = useCallback(
     async (fn: () => Promise<unknown>) => {

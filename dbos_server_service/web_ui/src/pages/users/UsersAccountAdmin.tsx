@@ -276,6 +276,10 @@ export function UsersAccountAdmin() {
     [persona, targetUser?.dept_id],
   );
 
+  // Бампается после действий над юзером — заставляет вкладку сессий перечитать
+  // список, иначе после block/revoke панель показывает уже убитые сессии.
+  const [actionSignal, setActionSignal] = useState(0);
+
   // Sessions for the workzone Sessions tab. Mock mode keeps the static table.
   const sessionsQ = useQuery(
     () => listUserSessions(targetUser!.id),
@@ -307,9 +311,6 @@ export function UsersAccountAdmin() {
   const [busy, setBusy] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editRolesOpen, setEditRolesOpen] = useState(false);
-  // Бампается после действий над юзером — заставляет вкладку сессий перечитать
-  // список, иначе после block/revoke панель показывает уже убитые сессии.
-  const [actionSignal, setActionSignal] = useState(0);
 
   async function runAction(label: string, fn: () => Promise<unknown>) {
     if (mockMode) {

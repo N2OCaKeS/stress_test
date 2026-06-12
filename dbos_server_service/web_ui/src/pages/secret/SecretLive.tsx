@@ -508,6 +508,7 @@ function DetailPane({
     try {
       await recoverCredential(credId);
       toast.success("Credential разблокирован");
+      setRevealed(null);
       credQ.refetch();
       onChanged();
     } catch (e) {
@@ -535,6 +536,9 @@ function DetailPane({
       await transferCredential(credId, body);
       toast.success("Ownership передан, credential разблокирован");
       setTransferring(false);
+      // Владелец сменился — раскрытый plaintext больше не должен висеть
+      // на карточке, маскируем обратно.
+      setRevealed(null);
       credQ.refetch();
       onChanged();
     } catch (e) {

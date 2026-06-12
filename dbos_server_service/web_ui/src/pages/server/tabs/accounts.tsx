@@ -36,6 +36,7 @@ import type {
   ServerAccountCreateRequest,
   ServerAccountUpdateRequest,
 } from "@/api/server/types";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 
 interface Props {
   serverId: string;
@@ -136,6 +137,15 @@ export function AccountsTab({ serverId, server }: Props) {
     return listQ.data.items;
   }, [listQ.data]);
 
+  // Серверная истина по количеству привязанных аккаунтов: страница тянется с
+  // капом limit:200, поэтому счётчик и баннер опираются на `total`, а не на
+  // длину усечённого массива.
+  const total = useMemo(() => {
+    const data = listQ.data;
+    if (data && "total" in data) return data.total;
+    return items.length;
+  }, [listQ.data, items.length]);
+
   const selected = useMemo(
     () => (selectedId ? items.find((a) => a.id === selectedId) ?? null : null),
     [items, selectedId],
@@ -159,7 +169,7 @@ export function AccountsTab({ serverId, server }: Props) {
       <section className="w-[340px] shrink-0 border-r border-token surface flex flex-col min-h-0">
         <div className="border-b border-token px-3 py-2 shrink-0 flex items-center justify-between">
           <div className="text-xs uppercase text-dim">
-            Аккаунты · {items.length}
+            Аккаунты · {total}
           </div>
           {listQ.loading && <span className="text-[11px] text-dim">…</span>}
         </div>
@@ -191,6 +201,12 @@ export function AccountsTab({ serverId, server }: Props) {
             />
           ))}
         </div>
+
+        <TruncationNotice
+          shown={items.length}
+          total={total}
+          className="mx-2 mb-2"
+        />
 
         {canManage && (
           <div className="border-t border-token p-3 shrink-0">

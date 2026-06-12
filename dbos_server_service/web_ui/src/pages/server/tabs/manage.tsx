@@ -55,6 +55,7 @@ import {
   updateOsVersion,
 } from "@/api/server/osVersions";
 import { FormRow } from "@/pages/admin/services/_inline";
+import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
@@ -719,6 +720,8 @@ function OsCatalogBody() {
           </tbody>
         </table>
       </div>
+
+      <TruncationNotice shown={items.length} total={q.data?.total ?? null} />
     </div>
   );
 }

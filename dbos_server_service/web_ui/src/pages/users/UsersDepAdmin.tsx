@@ -157,21 +157,27 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
   const users = usersQ.data?.items ?? [];
 
   // Группы депа — фильтруем общий список по своему отделу.
+  const searchTerm = search.trim().toLowerCase();
   const deptGroups = useMemo(
-    () => (groupsQ.data?.items ?? []).filter((g) => g.department_id === myDept),
-    [groupsQ.data, myDept],
+    () =>
+      (groupsQ.data?.items ?? [])
+        .filter((g) => g.department_id === myDept)
+        .filter((g) => !searchTerm || g.name.toLowerCase().includes(searchTerm)),
+    [groupsQ.data, myDept, searchTerm],
   );
   // Боты депа — фильтруем по department_id.
   const deptBots = useMemo(
-    () => (botsQ.data?.items ?? []).filter((b) => b.department_id === myDept),
-    [botsQ.data, myDept],
+    () =>
+      (botsQ.data?.items ?? [])
+        .filter((b) => b.department_id === myDept)
+        .filter((b) => !searchTerm || b.name.toLowerCase().includes(searchTerm)),
+    [botsQ.data, myDept, searchTerm],
   );
 
   const filteredUsers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return users;
-    return users.filter((u) => u.username.toLowerCase().includes(q));
-  }, [users, search]);
+    if (!searchTerm) return users;
+    return users.filter((u) => u.username.toLowerCase().includes(searchTerm));
+  }, [users, searchTerm]);
 
   // self vs остальные. dep_admin не видит чужие отделы — cross_dep всегда пуст.
   const myRow = useMemo(

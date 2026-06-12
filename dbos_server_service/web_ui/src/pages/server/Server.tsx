@@ -79,15 +79,12 @@ export function Server() {
   const [filterStatus, setFilterStatus] = useState<string>("");
   const [filterBusy, setFilterBusy] = useState<string>("");
 
+  // server_service возвращает серверы своего отдела (изоляция по identity) и
+  // не принимает dept/status/busy как query-фильтры — поэтому тянем страницу
+  // один раз, а отдел/статус/занятость фильтруем по загруженному набору ниже.
   const listQ = useQuery(
-    () =>
-      listServers({
-        limit: 200,
-        department_id: filterDept || undefined,
-        status: filterStatus || undefined,
-        busy: filterBusy || undefined,
-      }),
-    [filterDept, filterStatus, filterBusy],
+    () => listServers({ limit: 200 }),
+    [],
     { enabled: !zoneBlocked },
   );
   const depsQ = useQuery<Department[]>(() => listDepartments(), []);
@@ -103,16 +100,20 @@ export function Server() {
   const serverTotal = listQ.data?.total ?? items.length;
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const matched = term
-      ? items.filter((s) => {
-          return (
-            s.hostname.toLowerCase().includes(term) ||
-            (s.display_name?.toLowerCase().includes(term) ?? false) ||
-            s.ip_address.toLowerCase().includes(term) ||
-            s.id.toLowerCase().includes(term)
-          );
-        })
-      : items;
+    const matched = items.filter((s) => {
+      if (filterDept && s.department_id !== filterDept) return false;
+      if (filterStatus && s.status !== filterStatus) return false;
+      if (filterBusy && s.busy_state !== filterBusy) return false;
+      if (term) {
+        return (
+          s.hostname.toLowerCase().includes(term) ||
+          (s.display_name?.toLowerCase().includes(term) ?? false) ||
+          s.ip_address.toLowerCase().includes(term) ||
+          s.id.toLowerCase().includes(term)
+        );
+      }
+      return true;
+    });
     const sorted = [...matched].sort((a, b) => {
       if (sort === "name")
         return (a.display_name ?? a.hostname).localeCompare(
@@ -123,7 +124,7 @@ export function Server() {
       return 0;
     });
     return sorted;
-  }, [items, search, sort]);
+  }, [items, search, sort, filterDept, filterStatus, filterBusy]);
 
   const grouped = useMemo(() => {
     if (group !== "department") return [{ key: "all", items: filtered }];

@@ -200,6 +200,7 @@ const WORKZONE_TABS: { id: WorkzoneTab; label: string }[] = [
 export function UsersAccountAdmin() {
   const [tab, setTab] = useState<Tab>("users");
   const [workzoneTab, setWorkzoneTab] = useState<WorkzoneTab>("profile");
+  const [search, setSearch] = useState("");
   const mockMode = useMockMode();
   const toast = useToast();
   const { persona } = usePersona();
@@ -382,7 +383,14 @@ export function UsersAccountAdmin() {
 
   const apiGroups = useMemo<UserGroup[]>(() => {
     if (mockMode) return [];
-    const users = apiUsersQ.data?.items ?? [];
+    const term = search.trim().toLowerCase();
+    const users = (apiUsersQ.data?.items ?? []).filter(
+      (u) =>
+        !term ||
+        u.username.toLowerCase().includes(term) ||
+        (u.email?.toLowerCase().includes(term) ?? false) ||
+        u.id.toLowerCase().includes(term),
+    );
     const depts = apiDeptsQ.data ?? [];
     const out: UserGroup[] = [];
     const platform = users.filter((u) => !u.department_id);
@@ -403,7 +411,29 @@ export function UsersAccountAdmin() {
       });
     }
     return out;
-  }, [mockMode, apiUsersQ.data, apiDeptsQ.data]);
+  }, [mockMode, apiUsersQ.data, apiDeptsQ.data, search]);
+
+  // Поиск по загруженным группам/ботам — тот же term, что и для пользователей.
+  const filteredApiGroups = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const rows = apiGroupsQ.data?.items ?? [];
+    if (!term) return rows;
+    return rows.filter(
+      (g) =>
+        g.name.toLowerCase().includes(term) ||
+        g.id.toLowerCase().includes(term),
+    );
+  }, [apiGroupsQ.data, search]);
+  const filteredApiBots = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const rows = apiBotsQ.data?.items ?? [];
+    if (!term) return rows;
+    return rows.filter(
+      (b) =>
+        b.name.toLowerCase().includes(term) ||
+        b.id.toLowerCase().includes(term),
+    );
+  }, [apiBotsQ.data, search]);
 
   const renderGroups = mockMode ? GROUPS_MOCK : apiGroups;
   const usersCount = mockMode
@@ -430,6 +460,8 @@ export function UsersAccountAdmin() {
             <input
               className="bg-transparent outline-none flex-1 text-sm"
               placeholder={`Поиск ${tab === "users" ? "пользователей" : tab === "groups" ? "групп" : "ботов"}...`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="text-[10px] text-dim text-center pt-1">
@@ -552,9 +584,9 @@ export function UsersAccountAdmin() {
                   ? <div className="spinner mx-3" aria-label="Loading" />
                   : apiGroupsQ.error
                     ? <div className="alert-danger text-[11px] mx-3">{apiGroupsQ.error.message}</div>
-                    : (apiGroupsQ.data?.items ?? []).length === 0
+                    : filteredApiGroups.length === 0
                       ? <div className="empty-card text-xs mx-3">Групп нет</div>
-                      : (apiGroupsQ.data?.items ?? []).map((g) => (
+                      : filteredApiGroups.map((g) => (
                           <Link key={g.id} to={`/users/group/${g.id}`} className="cred-row">
                             <GroupAsideRow group={g} />
                           </Link>
@@ -593,9 +625,9 @@ export function UsersAccountAdmin() {
                   ? <div className="spinner mx-3" aria-label="Loading" />
                   : apiBotsQ.error
                     ? <div className="alert-danger text-[11px] mx-3">{apiBotsQ.error.message}</div>
-                    : (apiBotsQ.data?.items ?? []).length === 0
+                    : filteredApiBots.length === 0
                       ? <div className="empty-card text-xs mx-3">Ботов нет</div>
-                      : (apiBotsQ.data?.items ?? []).map((b) => (
+                      : filteredApiBots.map((b) => (
                           <Link key={b.id} to={`/users/bot/${b.id}`} className="cred-row">
                             <BotAsideRow bot={b} />
                           </Link>

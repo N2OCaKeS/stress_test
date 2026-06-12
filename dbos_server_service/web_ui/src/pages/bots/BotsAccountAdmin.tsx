@@ -61,7 +61,23 @@ export function BotsAccountAdmin() {
   );
   const { depts: deptLabels } = useLabelMaps();
 
-  const botItems = useMemo(() => botsQ.data?.items ?? [], [botsQ.data]);
+  const [search, setSearch] = useState("");
+  const [deptFilter, setDeptFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
+  const allBotItems = useMemo(() => botsQ.data?.items ?? [], [botsQ.data]);
+
+  // Поиск и фильтры применяются к уже загруженной странице (limit BOTS_PAGE);
+  // если ботов больше — баннер усечения остаётся честным предупреждением.
+  const botItems = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return allBotItems.filter((b) => {
+      if (term && !b.name.toLowerCase().includes(term)) return false;
+      if (deptFilter && (b.department_id ?? "") !== deptFilter) return false;
+      if (statusFilter && b.status !== statusFilter) return false;
+      return true;
+    });
+  }, [allBotItems, search, deptFilter, statusFilter]);
 
   const groups: BotGroup[] = useMemo(() => {
     const bots = botItems;
@@ -97,9 +113,11 @@ export function BotsAccountAdmin() {
     return list;
   }, [botItems, deptsQ.data, deptLabels]);
 
-  // Показано против total с бэка (X-Total-Count): шапка и баннер усечения.
+  // Баннер усечения сравнивает загруженную страницу (до клиентских фильтров)
+  // с total из X-Total-Count, иначе активный фильтр ложно показывал бы «усечено».
+  const loadedBots = allBotItems.length;
   const shownBots = botItems.length;
-  const totalBots = botsQ.data?.total ?? shownBots;
+  const totalBots = botsQ.data?.total ?? loadedBots;
 
   // Selected bot state — поднимаем сюда, чтобы можно было кликать в списке
   // и видеть детали выбранного бота справа.
@@ -131,27 +149,40 @@ export function BotsAccountAdmin() {
             <input
               className="bg-transparent outline-none flex-1 text-sm"
               placeholder="Поиск ботов..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
             <Filter className="w-3 h-3" />
-            <select className="surface-2 border border-token rounded px-2 py-0.5">
-              <option>все депы</option>
+            <select
+              className="surface-2 border border-token rounded px-2 py-0.5"
+              value={deptFilter}
+              onChange={(e) => setDeptFilter(e.target.value)}
+            >
+              <option value="">все депы</option>
               {(deptsQ.data ?? []).map((d) => (
-                <option key={d.id}>{d.name}</option>
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
               ))}
             </select>
-            <select className="surface-2 border border-token rounded px-2 py-0.5">
-              <option>active</option>
-              <option>disabled</option>
+            <select
+              className="surface-2 border border-token rounded px-2 py-0.5"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">все статусы</option>
+              <option value="active">active</option>
+              <option value="disabled">disabled</option>
             </select>
             <span className="ml-auto">
-              {totalBots > shownBots ? `${shownBots} из ${totalBots}` : totalBots} шт
+              {totalBots > loadedBots ? `${shownBots} из ${totalBots}` : shownBots} шт
             </span>
           </div>
           {!loading && !error && (
             <TruncationNotice
-              shown={shownBots}
+              shown={loadedBots}
               total={totalBots}
               className="mt-2"
             />

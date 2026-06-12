@@ -59,12 +59,28 @@ export function BotsDepAdmin() {
   );
 
   const allBots = useMemo(() => botsQ.data?.items ?? [], [botsQ.data]);
-  const depTotal = botsQ.data?.total ?? allBots.length;
+  const loadedBots = allBots.length;
+  const depTotal = botsQ.data?.total ?? loadedBots;
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
+  // Поиск/статус применяются к загруженной странице; баннер усечения считает
+  // от total до фильтрации.
+  const filteredBots = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return allBots.filter((b) => {
+      if (term && !b.name.toLowerCase().includes(term)) return false;
+      if (statusFilter && b.status !== statusFilter) return false;
+      return true;
+    });
+  }, [allBots, search, statusFilter]);
+
   const myBots = useMemo(
-    () => allBots.filter((b) => b.created_by === myUsername),
-    [allBots, myUsername],
+    () => filteredBots.filter((b) => b.created_by === myUsername),
+    [filteredBots, myUsername],
   );
-  const depBots = allBots;
+  const depBots = filteredBots;
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = useMemo(() => {
@@ -89,17 +105,23 @@ export function BotsDepAdmin() {
             <input
               className="bg-transparent outline-none flex-1 text-sm"
               placeholder="Поиск ботов..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-dim flex-wrap">
             <Filter className="w-3 h-3" />
-            <select className="surface-2 border border-token rounded px-2 py-0.5">
-              <option>все статусы</option>
-              <option>active</option>
-              <option>disabled</option>
+            <select
+              className="surface-2 border border-token rounded px-2 py-0.5"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">все статусы</option>
+              <option value="active">active</option>
+              <option value="disabled">disabled</option>
             </select>
             <span className="ml-auto">
-              {depTotal > depBots.length
+              {depTotal > loadedBots
                 ? `${depBots.length} из ${depTotal}`
                 : depBots.length}{" "}
               шт · {myDeptLabel}
@@ -107,7 +129,7 @@ export function BotsDepAdmin() {
           </div>
           {!botsQ.loading && !botsQ.error && (
             <TruncationNotice
-              shown={depBots.length}
+              shown={loadedBots}
               total={depTotal}
               className="mt-2"
             />

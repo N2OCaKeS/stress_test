@@ -250,6 +250,7 @@ function RegisterPane({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setErr(null);
     const endpoint = defaultEndpointFor(kind, host.trim(), port.trim());
     // IpmiCreateRequest несёт только kind/endpoint_url/username/password.
@@ -533,6 +534,7 @@ function EditCard({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     const body: IpmiUpdateRequest = {};
     if (endpoint !== controller.endpoint_url) body.endpoint_url = endpoint;
     if (username !== controller.username) body.username = username;

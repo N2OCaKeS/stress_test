@@ -34,6 +34,8 @@ export const HUMAN_MESSAGES: Record<string, string> = {
   SERVER_DUPLICATE: "Сервер с такими реквизитами уже заведён.",
   IPMI_DUPLICATE: "IPMI-контроллер с такими реквизитами уже привязан.",
   NAME_DUPLICATE: "Запись с таким именем уже существует.",
+  ACCOUNT_DUPLICATE:
+    "Учётная запись с таким логином уже есть на одном из серверов.",
   DEPT_GRANT_DUPLICATE: "Доступ этому департаменту уже выдан.",
   ROLE_ACL_DUPLICATE: "Правило доступа для этой роли уже существует.",
   PERMISSION_ALREADY_EXISTS: "Такое право уже выдано.",
@@ -98,8 +100,23 @@ export const HUMAN_MESSAGES: Record<string, string> = {
   ACCOUNT_ADMIN_REQUIRED: "Действие доступно только account_admin.",
   DEPT_ADMIN_REQUIRED: "Действие доступно только администратору департамента.",
   SERVICE_ADMIN_REQUIRED: "Нужна роль admin в этом сервисе.",
+  ROLE_REQUIRED: "Недостаточно прав: для этого действия нужна другая роль.",
+  INSUFFICIENT_ROLE: "Недостаточно прав для управления этим сервисом.",
   NO_DEPARTMENT:
     "У роли нет привязки к департаменту — этот scope недоступен.",
+
+  // --- 404 не найдено -------------------------------------------------------
+  USER_NOT_FOUND: "Пользователь не найден.",
+  DEPARTMENT_NOT_FOUND: "Департамент не найден.",
+  GROUP_NOT_FOUND: "Группа не найдена.",
+  BOT_NOT_FOUND: "Бот не найден.",
+  TOKEN_NOT_FOUND: "Токен не найден.",
+  BAN_NOT_FOUND: "Активная блокировка пользователя не найдена.",
+  SERVER_NOT_FOUND: "Сервер не найден.",
+  OS_VERSION_NOT_FOUND: "Версия ОС не найдена.",
+  TASK_NOT_FOUND: "Задача не найдена.",
+  CREDENTIAL_NOT_FOUND: "Секрет не найден.",
+  RULE_NOT_FOUND: "Правило не найдено.",
 
   // --- специфичные подсказки server_account ---------------------------------
   ACCOUNT_REQUIRED:

@@ -67,6 +67,7 @@ interface Props {
   serverId: string;
   server?: Server;
   onServerUpdated?: (next: Server) => void;
+  onDeleted?: () => void;
 }
 
 function utf8ToB64(s: string): string {
@@ -118,7 +119,7 @@ function filterAccessibleAccounts(
   return [];
 }
 
-export function ManageTab({ server, onServerUpdated }: Props) {
+export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
   const [busy, setBusyLocal] = useState<string | null>(null);
@@ -278,9 +279,10 @@ export function ManageTab({ server, onServerUpdated }: Props) {
           allowed={allowDelete}
           busyLabel={busy}
           onDelete={async (reason) => {
-            await run("delete_server", () =>
-              deleteServer(view.id, { reason }),
-            );
+            await run("delete_server", async () => {
+              await deleteServer(view.id, { reason });
+              onDeleted?.();
+            });
           }}
         />
       )}

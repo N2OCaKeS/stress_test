@@ -317,6 +317,10 @@ export function Server() {
           serverId={selectedId}
           servers={items}
           onDelete={handleDelete}
+          onDeleted={() => {
+            selectId(null);
+            listQ.refetch();
+          }}
           canManage={canManage}
         />
       ) : (
@@ -521,11 +525,13 @@ function WorkzoneWithActions({
   serverId,
   servers,
   onDelete,
+  onDeleted,
   canManage,
 }: {
   serverId: string;
   servers: Server[];
   onDelete: (s: Server) => void;
+  onDeleted: () => void;
   canManage: boolean;
 }) {
   const local = servers.find((s) => s.id === serverId);
@@ -542,7 +548,7 @@ function WorkzoneWithActions({
           </button>
         </div>
       )}
-      <ServerDetail serverId={serverId} />
+      <ServerDetail serverId={serverId} onDeleted={onDeleted} />
     </div>
   );
 }

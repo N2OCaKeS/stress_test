@@ -74,9 +74,10 @@ const BUSY_KIND: Record<BusyState, "ok" | "warn" | "danger"> = {
 
 interface ServerDetailProps {
   serverId: string;
+  onDeleted?: () => void;
 }
 
-export function ServerDetail({ serverId }: ServerDetailProps) {
+export function ServerDetail({ serverId, onDeleted }: ServerDetailProps) {
   const [tab, setTab] = useState<TabId>("overview");
   const q = useQuery<Server>(() => getServer(serverId), [serverId]);
 
@@ -153,6 +154,7 @@ export function ServerDetail({ serverId }: ServerDetailProps) {
             serverId={current.id}
             server={current}
             onServerUpdated={setServer}
+            onDeleted={onDeleted}
           />
         )}
       </div>

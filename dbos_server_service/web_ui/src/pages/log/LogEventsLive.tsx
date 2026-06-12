@@ -18,6 +18,7 @@ import { apiErrMsg } from "@/api/client";
 import { formatMsk, formatMskTime } from "@/lib/datetime";
 import { listEvents } from "@/api/loging/events";
 import { listServices } from "@/api/loging/services";
+import { useDeptLabel } from "@/lib/labels";
 import type {
   EventDetail,
   EventStatus,
@@ -247,6 +248,7 @@ export function LogEventsLive() {
 }
 
 function EventDetailPane({ event }: { event: EventDetail }) {
+  const deptLabel = useDeptLabel(event.department_id);
   return (
     <section className="flex-1 overflow-hidden flex flex-col min-w-0">
       <div className="border-b border-token p-5 flex items-start gap-4">
@@ -283,7 +285,11 @@ function EventDetailPane({ event }: { event: EventDetail }) {
             <DetailRow label="Username" value={event.username} />
             <DetailRow label="Actor ID" value={event.actor_id} mono />
             <DetailRow label="Type" value={event.actor_type} />
-            <DetailRow label="Department" value={event.department_id} mono />
+            <DetailRow
+              label="Department"
+              value={event.department_id ? deptLabel : null}
+              mono={!event.department_id || deptLabel === event.department_id}
+            />
             <DetailRow label="Allowed" value={event.allowed ? "yes" : "no"} />
           </div>
         </div>

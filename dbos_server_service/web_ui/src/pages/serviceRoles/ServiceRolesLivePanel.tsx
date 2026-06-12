@@ -18,6 +18,7 @@ import { ShieldCheck, Plus, Trash2, UserPlus, UserMinus } from "lucide-react";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as srApi from "@/api/auth/service_roles";
 import { ApiError } from "@/api/client";
+import { useDeptLabel } from "@/lib/labels";
 import type { ServiceName } from "@/api/auth/types";
 
 const DEFAULT_SERVICES: ServiceName[] = [
@@ -53,6 +54,7 @@ export function ServiceRolesLivePanel({
   scopeNote?: string;
 }) {
   const mock = useMockMode();
+  const deptLabel = useDeptLabel(departmentId);
   const [serviceName, setServiceName] = useState<ServiceName>(initialService);
   const [refreshTick, setRefreshTick] = useState(0);
   const [actionErr, setActionErr] = useState<string | null>(null);
@@ -113,7 +115,10 @@ export function ServiceRolesLivePanel({
     <div className="surface border border-token rounded-lg p-4 m-5">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="text-xs uppercase text-dim flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4" /> Live · каталог ролей `(dept={departmentId})`
+          <ShieldCheck className="w-4 h-4" /> Live · каталог ролей {deptLabel}{" "}
+          {deptLabel !== departmentId && (
+            <span className="mono normal-case">({departmentId})</span>
+          )}
         </div>
         <select
           className="input"

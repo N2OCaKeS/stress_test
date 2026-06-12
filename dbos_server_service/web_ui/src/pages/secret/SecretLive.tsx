@@ -30,6 +30,7 @@ import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { formatMsk } from "@/lib/datetime";
+import { useLabelMaps } from "@/lib/labels";
 import { useQuery } from "@/api/auth/useQuery";
 import { ApiError, apiErrMsg } from "@/api/client";
 import {
@@ -427,6 +428,7 @@ function DetailPane({
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const { depts } = useLabelMaps();
   const credQ = useQuery(() => getCredential(credId), [credId]);
   const cred = credQ.data;
 
@@ -778,7 +780,14 @@ function DetailPane({
             Метаданные
           </div>
           <div className="text-sm">
-            <MetaRow label="Owner dept" value={cred.owner_dept_id ?? "—"} />
+            <MetaRow
+              label="Owner dept"
+              value={
+                cred.owner_dept_id
+                  ? depts.get(cred.owner_dept_id) ?? cred.owner_dept_id
+                  : "—"
+              }
+            />
             <MetaRow label="Owner user" value={cred.owner_user_id ?? "—"} />
             <MetaRow label="Created by" value={cred.created_by} />
             <MetaRow label="Created" value={formatMsk(cred.created_at)} />
@@ -828,7 +837,7 @@ function DetailPane({
                 {(aclQ.data?.items ?? []).map((a) => (
                   <div key={a.id} className="stat-row items-center">
                     <span className="text-dim">
-                      {a.dept_id} / {a.role_name}
+                      {depts.get(a.dept_id) ?? a.dept_id} / {a.role_name}
                     </span>
                     <span className="flex items-center gap-2">
                       <span className="mono text-xs">
@@ -884,7 +893,9 @@ function DetailPane({
                 )}
                 {(grantsQ.data?.items ?? []).map((g) => (
                   <div key={g.id} className="stat-row items-center">
-                    <span className="text-dim">{g.recipient_dept_id}</span>
+                    <span className="text-dim">
+                      {depts.get(g.recipient_dept_id) ?? g.recipient_dept_id}
+                    </span>
                     <span className="flex items-center gap-2">
                       <span className="mono text-xs">{formatMsk(g.granted_at)}</span>
                       {canManage && (

@@ -310,7 +310,7 @@ export function InlineEditor<T>({
             </DetailWrap>
           )}
           {!gated && mode !== "new" && selected && (
-            <DetailWrap onBack={close} title={getId(selected)}>
+            <DetailWrap key={getId(selected)} onBack={close} title={getId(selected)}>
               {renderDetail(selected, { editing: mode === "edit" && canEdit, onClose: close })}
             </DetailWrap>
           )}

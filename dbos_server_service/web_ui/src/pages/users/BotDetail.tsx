@@ -197,7 +197,7 @@ export function BotDetail() {
               Bot <span className="mono">{id}</span> не найден в auth_service.
             </div>
           )}
-          <BotLiveData botId={headerId} caps={caps} />
+          <BotLiveData key={headerId} botId={headerId} caps={caps} />
           {mockMode && bot && <>
           {/* Identification */}
           <Section icon={<BotIcon className="w-4 h-4" />} title="Идентификация" className="col-span-2">

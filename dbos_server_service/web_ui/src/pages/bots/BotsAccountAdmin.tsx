@@ -232,6 +232,7 @@ export function BotsAccountAdmin() {
       <section className="flex-1 overflow-hidden flex flex-col min-w-0">
         {selected ? (
           <BotDetailFullPanel
+            key={selected.id}
             bot={selected}
             deptLabel={
               deptLabels.get(selected.department_id) ??

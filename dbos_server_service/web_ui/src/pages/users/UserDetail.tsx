@@ -579,6 +579,7 @@ export function UserDetail() {
           >
             {!mockMode && showEditRoles && caps.manageRoles && (
               <UserServiceRolesEditor
+                key={user.id}
                 userId={user.id}
                 deptId={user.dept_id}
                 currentRoles={permsQ.data?.service_roles ?? {}}

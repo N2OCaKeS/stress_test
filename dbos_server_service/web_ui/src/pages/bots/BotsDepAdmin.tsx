@@ -182,6 +182,7 @@ export function BotsDepAdmin() {
       <section className="flex-1 overflow-hidden flex flex-col min-w-0">
         {selected ? (
           <BotDetailFullPanel
+            key={selected.id}
             bot={selected}
             deptLabel={myDeptLabel}
             onChanged={() => setRefreshTick((t) => t + 1)}

@@ -68,7 +68,7 @@ def _validate_redirect_uri(uri: str) -> str:
 
 class OAuthClientCreate(BaseModel):
     """Тело `POST /oauth2/clients` — регистрация OAuth2-клиента."""
-    name: str = Field(description="Человекочитаемое имя клиента.")
+    name: str = Field(min_length=1, max_length=128, description="Человекочитаемое имя клиента.")
     description: str | None = Field(default=None)
     department_id: str = Field(description="Отдел, к которому привязываем клиента.")
     redirect_uris: list[str] = Field(
@@ -88,6 +88,14 @@ class OAuthClientCreate(BaseModel):
             "Default False (confidential)."
         ),
     )
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name не может быть пустым")
+        return v
 
     @field_validator("redirect_uris")
     @classmethod

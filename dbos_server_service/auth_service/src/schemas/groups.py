@@ -2,14 +2,22 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class GroupCreate(BaseModel):
     """Тело `POST /groups`. Группа всегда привязана к отделу."""
     department_id: str = Field(description="ID отдела, к которому привязываем группу.")
-    name: str = Field(description="Человеческое имя группы (уникально внутри отдела).")
+    name: str = Field(min_length=1, max_length=128, description="Человеческое имя группы (уникально внутри отдела).")
     description: str | None = Field(default=None)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name не может быть пустым")
+        return v
 
 
 class GroupUpdate(BaseModel):

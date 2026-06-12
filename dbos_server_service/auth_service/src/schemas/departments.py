@@ -2,12 +2,20 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class DepartmentCreate(BaseModel):
     """Тело `POST /departments`."""
-    name: str = Field(description="Человеческое имя отдела (уникально).")
+    name: str = Field(min_length=1, max_length=128, description="Человеческое имя отдела (уникально).")
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name не может быть пустым")
+        return v
 
 
 class DepartmentUpdateRequest(BaseModel):

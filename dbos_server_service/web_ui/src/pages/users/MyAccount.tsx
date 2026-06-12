@@ -455,6 +455,10 @@ function TokensCard({ mockMode }: { mockMode: boolean }) {
     try {
       await revokeToken(t.token_id);
       toast.success("Токен отозван");
+      // Если только что отозвали тот самый токен, чей plaintext ещё висит
+      // в one-shot панели — убираем панель, иначе показываем «живой» секрет
+      // уже мёртвого токена.
+      if (oneShot?.token_id === t.token_id) setOneShot(null);
       q.refetch();
     } catch (e) {
       if (e instanceof ApiError) toast.error(e.message);

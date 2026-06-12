@@ -25,7 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
-import { useDeptLabel } from "@/lib/labels";
+import { useDeptLabel, useServerLabel } from "@/lib/labels";
 import { formatMsk } from "@/lib/datetime";
 import { apiErrMsg } from "@/api/client";
 import { getTask, cancelTask, listTasks } from "@/api/server/misc";
@@ -263,6 +263,7 @@ function TaskRow({
 }) {
   const Icon = kindIcon(task.kind);
   const deptLabel = useDeptLabel(task.department_id ?? null);
+  const serverLabel = useServerLabel(task.server_id ?? null);
   return (
     <button
       type="button"
@@ -275,7 +276,10 @@ function TaskRow({
           <div className="text-sm truncate mono">
             {task.kind}
             {task.server_id && (
-              <span className="text-dim"> → {task.server_id}</span>
+              <span className="text-dim" title={task.server_id}>
+                {" "}
+                → {serverLabel}
+              </span>
             )}
           </div>
           <div className="text-[11px] text-dim flex items-center gap-2 flex-wrap">
@@ -317,6 +321,7 @@ export function TaskDetail({
   const [err, setErr] = useState<unknown>(null);
   const [cancelling, setCancelling] = useState(false);
   const aliveRef = useRef(true);
+  const serverLabel = useServerLabel(task?.server_id ?? null);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -431,9 +436,9 @@ export function TaskDetail({
             {task.server_id && (
               <>
                 <span>·</span>
-                <span>
+                <span title={task.server_id}>
                   <ServerIcon className="w-3 h-3 inline" /> target:{" "}
-                  <b className="mono">{task.server_id}</b>
+                  <b className="mono">{serverLabel}</b>
                 </span>
               </>
             )}

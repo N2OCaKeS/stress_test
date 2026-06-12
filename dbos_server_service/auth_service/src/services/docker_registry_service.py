@@ -125,6 +125,7 @@ async def create_or_replace_config(
         )
 
     await db.commit()
+    await db.refresh(cfg)
     audit_service.emit(
         "docker_registry.configure", actor_id, target_type="docker_registry",
         details={

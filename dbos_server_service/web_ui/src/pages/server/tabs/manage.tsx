@@ -23,6 +23,8 @@ import {
   Trash2,
   Settings,
   AlertTriangle,
+  AlertCircle,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Plus,
@@ -46,6 +48,7 @@ import {
   setBusy,
 } from "@/api/server/servers";
 import { usersInventory } from "@/api/server/misc";
+import { useTaskOutcome, type TrackedTask } from "@/api/server/useTaskOutcome";
 import { listAccounts } from "@/api/server/accounts";
 import {
   createOsVersion,
@@ -124,6 +127,10 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
   const [busy, setBusyLocal] = useState<string | null>(null);
+  // Поллинг исхода lifecycle-задач (prepare / inventory / users-inventory):
+  // worker может закрыть их FAILED (битые bootstrap-креды, недоступный BMC),
+  // и причину надо показать прямо здесь, не гоня юзера в /worker.
+  const taskOutcome = useTaskOutcome();
   const [current, setCurrent] = useState<Server | undefined>(server);
   // Когда родитель прислал свежий объект (мутация в соседней вкладке) —
   // подхватываем его, чтобы не залипнуть на устаревшей локальной копии.
@@ -203,6 +210,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         accountId={accountId}
         onAccountChange={setAccountId}
         accountsLoading={accountsQ.loading}
+        outcome={taskOutcome.tracked}
         onPrepare={async () => {
           if (!view) return;
           if (
@@ -215,18 +223,22 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
           if (!username) return;
           const password = window.prompt("Bootstrap password:");
           if (!password) return;
-          await run("prepare", () =>
+          taskOutcome.reset();
+          const res = await run("prepare", () =>
             prepareServer(view.id, {
               username_b64: utf8ToB64(username),
               password_b64: utf8ToB64(password),
             }),
           );
+          if (res) taskOutcome.track("prepare", res.task_id, res.status);
         }}
         onInventory={async () => {
           if (!view) return;
-          await run("inventory_sync", () =>
+          taskOutcome.reset();
+          const res = await run("inventory_sync", () =>
             inventorySync(view.id, { account_id: inventoryAccountId }),
           );
+          if (res) taskOutcome.track("inventory_sync", res.task_id, res.status);
         }}
         onOsSync={async () => {
           if (!view) return;
@@ -235,6 +247,8 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
             view.os_version_id ?? "",
           );
           if (id === null) return;
+          // os-sync синхронный: backend сразу UPDATE'ит строку и отдаёт Server,
+          // worker-задачи нет — поллить нечего.
           const next = await run("os_sync", () =>
             osSync(view.id, {
               os_version_id: id.trim() ? id.trim() : null,
@@ -244,9 +258,11 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         }}
         onUsersInventory={async () => {
           if (!view) return;
-          await run("users_inventory", () =>
+          taskOutcome.reset();
+          const res = await run("users_inventory", () =>
             usersInventory(view.id, { account_id: inventoryAccountId }),
           );
+          if (res) taskOutcome.track("users_inventory", res.task_id, res.status);
         }}
       />
 
@@ -303,6 +319,7 @@ function LifecycleCard({
   accountId,
   onAccountChange,
   accountsLoading,
+  outcome,
   onPrepare,
   onInventory,
   onOsSync,
@@ -315,6 +332,7 @@ function LifecycleCard({
   accountId: string;
   onAccountChange: (id: string) => void;
   accountsLoading: boolean;
+  outcome: TrackedTask | null;
   onPrepare: () => Promise<void>;
   onInventory: () => Promise<void>;
   onOsSync: () => Promise<void>;
@@ -406,6 +424,44 @@ function LifecycleCard({
         <div className="text-[11px] text-dim italic mt-3">
           Нет прав на lifecycle-операции (нужна роль server.operator+ или
           dep_admin своего департамента).
+        </div>
+      )}
+      {outcome && <LifecycleOutcome outcome={outcome} />}
+    </div>
+  );
+}
+
+// Исход последней задиспатченной lifecycle-задачи: спиннер пока worker её
+// крутит, success/error по завершении. `last_error` показываем как есть —
+// backend кладёт туда уже человекочитаемый текст (SSH_AUTH_FAILED и т.п.).
+function LifecycleOutcome({ outcome }: { outcome: TrackedTask }) {
+  const tone =
+    outcome.status === "succeeded"
+      ? "badge-ok"
+      : outcome.status === "failed"
+        ? "badge-danger"
+        : "badge-warn";
+  return (
+    <div className="mt-3 surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="font-medium">{outcome.label}</span>
+        <span className="mono text-dim">{outcome.taskId}</span>
+        <span className={`badge ${tone}`}>{outcome.status}</span>
+        {outcome.polling && (
+          <span className="flex items-center gap-1 text-dim">
+            <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
+          </span>
+        )}
+      </div>
+      {!outcome.polling && outcome.status === "succeeded" && (
+        <div className="flex items-center gap-1 text-ok">
+          <CheckCircle2 className="w-3.5 h-3.5" /> Задача завершилась успешно.
+        </div>
+      )}
+      {outcome.error && (
+        <div className="flex items-start gap-1.5 text-danger">
+          <AlertCircle className="w-3.5 h-3.5 mt-0.5" />
+          <span className="flex-1">{outcome.error}</span>
         </div>
       )}
     </div>

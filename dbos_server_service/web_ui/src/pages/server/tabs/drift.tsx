@@ -13,14 +13,15 @@
  * WARN-level — норма: drift не перетирает БД, owner сам решает чинить или
  * принять текущее состояние через `inventorySync` (выровняет БД по боксу).
  */
-import { AlertCircle, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { usePersona } from "@/contexts/PersonaContext";
 import { apiErrMsg } from "@/api/client";
 import { formatMskShort } from "@/lib/datetime";
 import { getServerDrift, inventorySync } from "@/api/server/servers";
+import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { listAccounts } from "@/api/server/accounts";
 import type {
   CursorPaginatedResponse,
@@ -69,6 +70,9 @@ export function DriftTab({ serverId, server }: Props) {
   const toast = useToast();
   const driftQ = useQuery(() => getServerDrift(serverId), [serverId]);
   const [syncing, setSyncing] = useState(false);
+  // Поллим исход inventory-sync задачи: если worker закроет её FAILED (битые
+  // креды, недоступный хост) — показываем причину тут, а не только в /worker.
+  const syncOutcome = useTaskOutcome();
 
   const canSync =
     persona.platform_role === "dep_admin" ||
@@ -100,20 +104,31 @@ export function DriftTab({ serverId, server }: Props) {
   async function handleSync() {
     if (syncing) return;
     setSyncing(true);
+    syncOutcome.reset();
     try {
       const res = await inventorySync(serverId, {
         account_id: needsAccount && accountId ? accountId : undefined,
       });
       toast.success(`Inventory sync запущен (task ${res.task_id})`);
-      // Backend пишет результат через worker callback; refetch покажет drift
-      // как только воркер закроет таску и пересоберёт сводку.
-      driftQ.refetch();
+      syncOutcome.track("inventory_sync", res.task_id, res.status);
     } catch (e) {
       toast.error(apiErrMsg(e, "Sync не запустился"));
     } finally {
       setSyncing(false);
     }
   }
+
+  // Drift пересобирается только после того, как worker закроет inventory-таску
+  // и зальёт снимок. Рефетчим сводку ровно один раз на терминальном succeeded.
+  const refetchedForTaskRef = useRef<string | null>(null);
+  const driftRefetch = driftQ.refetch;
+  useEffect(() => {
+    const t = syncOutcome.tracked;
+    if (!t || t.polling || t.status !== "succeeded") return;
+    if (refetchedForTaskRef.current === t.taskId) return;
+    refetchedForTaskRef.current = t.taskId;
+    driftRefetch();
+  }, [syncOutcome.tracked, driftRefetch]);
 
   const drifts = driftQ.data?.drifts ?? [];
 
@@ -169,6 +184,46 @@ export function DriftTab({ serverId, server }: Props) {
           </div>
         )}
       </div>
+
+      {syncOutcome.tracked && (
+        <div className="surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium">inventory sync</span>
+            <span className="mono text-dim">
+              {syncOutcome.tracked.taskId}
+            </span>
+            <span
+              className={`badge ${
+                syncOutcome.tracked.status === "succeeded"
+                  ? "badge-ok"
+                  : syncOutcome.tracked.status === "failed"
+                    ? "badge-danger"
+                    : "badge-warn"
+              }`}
+            >
+              {syncOutcome.tracked.status}
+            </span>
+            {syncOutcome.tracked.polling && (
+              <span className="flex items-center gap-1 text-dim">
+                <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
+              </span>
+            )}
+          </div>
+          {!syncOutcome.tracked.polling &&
+            syncOutcome.tracked.status === "succeeded" && (
+              <div className="flex items-center gap-1 text-ok">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Инвентаризация
+                завершена — сводка обновлена.
+              </div>
+            )}
+          {syncOutcome.tracked.error && (
+            <div className="flex items-start gap-1.5 text-danger">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5" />
+              <span className="flex-1">{syncOutcome.tracked.error}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {driftQ.loading && (
         <div className="text-xs text-dim">Загружаем drift…</div>

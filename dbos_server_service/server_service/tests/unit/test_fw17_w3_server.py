@@ -455,11 +455,16 @@ def test_installed_packages_handler_passes_max_rows(monkeypatch):
     monkeypatch.setattr(ip.worker_client, "dispatch_task_with_hit", fake_dispatch)
 
     # Чтобы не дёргать БД и permissions, подменим всё вокруг.
+    # is_managed=True — resolve_inventory_account_id уходит по key-based ветке
+    # (возвращает None сразу), не дёргая account_repo/БД; на проверку max_rows
+    # это не влияет.
     class _Server:
         hostname = "h"
         ssh_port = 22
         department_id = "dep_a"
         status = "active"
+        is_managed = True
+        management_user = "dbos_sys"
 
     async def fake_get_server(_db, _identity, _id):
         return _Server()

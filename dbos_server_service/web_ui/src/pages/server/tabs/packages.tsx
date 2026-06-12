@@ -12,14 +12,22 @@
  * /server для них не рендерится. Backend перепроверит ещё раз — клиентский
  * gate только прячет заведомо лишнюю кнопку.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Package, RefreshCw, AlertCircle } from "lucide-react";
 import { installedPackagesProbe, getTask } from "@/api/server/misc";
+import { listAccounts } from "@/api/server/accounts";
+import { useQuery } from "@/api/auth/useQuery";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
 import { isDepAdmin } from "@/lib/rbac";
-import type { Server, TaskRead } from "@/api/server/types";
+import type {
+  CursorPaginatedResponse,
+  OffsetPaginatedResponse,
+  Server,
+  ServerAccount,
+  TaskRead,
+} from "@/api/server/types";
 
 const PACKAGES_POLL_MS = 3_000;
 
@@ -75,6 +83,28 @@ function canProbe(
   return false;
 }
 
+/**
+ * Аккаунты сервера, видимые текущей persona (грубый client-side фильтр — тот
+ * же контракт, что в `tabs/manage.tsx` / `tabs/console.tsx`). Backend
+ * перепроверит при fetch'е пароля; здесь только UX, чтобы picker не показывал
+ * заведомо недоступные строки.
+ */
+function filterAccessibleAccounts(
+  accounts: ServerAccount[],
+  persona: ReturnType<typeof usePersona>["persona"],
+): ServerAccount[] {
+  if (persona.service_roles.server === "admin") return accounts;
+  if (
+    persona.platform_role === "dep_admin" ||
+    persona.service_roles.server === "operator" ||
+    persona.service_roles.server === "reader"
+  ) {
+    if (!persona.dept_id) return [];
+    return accounts.filter((a) => a.department_id === persona.dept_id);
+  }
+  return [];
+}
+
 export function PackagesTab({ serverId, server }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
@@ -95,6 +125,28 @@ export function PackagesTab({ serverId, server }: Props) {
   }, []);
 
   const allowed = canProbe(persona, server);
+
+  // Аккаунты сервера — нужны probe'у на неуправляемом сервере: worker заходит
+  // под self-сессией по паролю аккаунта. Управляемый сервер ходит по ключу —
+  // picker тогда не обязателен (backend сам None'ит account_id).
+  const needsAccount = !!server && !server.is_managed && allowed;
+  const accountsQ = useQuery(
+    () => listAccounts({ server_id: serverId, limit: 200 }),
+    [serverId],
+    { enabled: needsAccount },
+  );
+  const accounts = useMemo<ServerAccount[]>(() => {
+    const data = accountsQ.data as
+      | OffsetPaginatedResponse<ServerAccount>
+      | CursorPaginatedResponse<ServerAccount>
+      | undefined;
+    return filterAccessibleAccounts(data?.items ?? [], persona);
+  }, [accountsQ.data, persona]);
+  const [accountId, setAccountId] = useState("");
+  // account_id шлём только на неуправляемом сервере; на managed worker идёт
+  // по ключу, передавать пусто.
+  const probeAccountId =
+    server && !server.is_managed && accountId ? accountId : undefined;
 
   // Поллинг task-row до терминального статуса: тянем result.packages.
   useEffect(() => {
@@ -136,6 +188,7 @@ export function PackagesTab({ serverId, server }: Props) {
       const res = await installedPackagesProbe(
         serverId,
         pattern.trim() ? { pattern: pattern.trim() } : undefined,
+        probeAccountId ? { account_id: probeAccountId } : {},
       );
       if (!aliveRef.current) return;
       setLastTaskId(res.task_id);
@@ -196,6 +249,34 @@ export function PackagesTab({ serverId, server }: Props) {
             пусто → `*` (все пакеты)
           </span>
         </div>
+
+        {needsAccount && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <label className="text-xs text-dim">SSH-аккаунт для probe</label>
+            <select
+              className="surface-2 border border-token rounded px-2 py-1 text-sm"
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              disabled={pending || accountsQ.loading}
+            >
+              <option value="">— дефолтный аккаунт сервера —</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.login}
+                  {a.has_sudo ? " (sudo)" : ""}
+                  {a.source === "discovered" ? " · discovered" : ""}
+                </option>
+              ))}
+            </select>
+            <span className="text-[11px] text-dim">
+              {accountsQ.loading
+                ? "загружаем…"
+                : accounts.length === 0
+                  ? "нет привязанных аккаунтов — probe вернёт 422"
+                  : "пусто → первый аккаунт с паролем"}
+            </span>
+          </div>
+        )}
 
         {!allowed && (
           <div className="mt-3 text-[11px] text-dim italic">

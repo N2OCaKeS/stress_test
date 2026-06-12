@@ -34,6 +34,11 @@ import type {
  *
  * `pattern` — shell glob (`htop`, `linux-image*`, `*-dev`), по умолчанию `*`.
  *
+ * На неуправляемом сервере worker заходит по SSH под аккаунтом сервера
+ * (self-сессия по паролю) — передавай `account_id`. Не передан — backend
+ * берёт дефолтный привязанный аккаунт; привязок нет → 422 `ACCOUNT_REQUIRED`.
+ * Управляемый сервер заходит по ключу, `account_id` игнорируется.
+ *
  * Внимание: на стандартной Astra-коробке dpkg-список — порядка 2-3 тысяч строк,
  * сам worker применяет cap в 10 000 строк. Сама HTTP-проба быстрая (диспатч
  * в taskiq), но фоновая task может выполняться **десятки секунд** —
@@ -42,8 +47,11 @@ import type {
 export function installedPackagesProbe(
   serverId: string,
   body?: InstalledPackagesRequest,
+  opts: { account_id?: string } = {},
 ): Promise<InstalledPackagesResult> {
-  const query = body?.pattern ? { pattern: body.pattern } : {};
+  const query: Record<string, string | undefined> = {};
+  if (body?.pattern) query.pattern = body.pattern;
+  if (opts.account_id) query.account_id = opts.account_id;
   return apiPost<InstalledPackagesResult>(
     `/server/v1/servers/${serverId}/installed-packages`,
     undefined,

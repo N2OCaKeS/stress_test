@@ -82,9 +82,12 @@ def captured_dispatch(monkeypatch):
 
 class TestDispatchSuccess:
     async def test_operator_dispatches_with_pattern(
-        self, client, operator_token_a, make_server, captured_dispatch,
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
         srv = await make_server(department_id="dep_a")
+        # Неуправляемый сервер заходит под аккаунтом по паролю (self-сессия) —
+        # без привязанного аккаунта endpoint вернёт 422 ACCOUNT_REQUIRED.
+        acc = await make_account(server_id=srv.id, login="appuser")
         resp = await client.post(
             _url(srv.id),
             headers=_hdr(operator_token_a),
@@ -105,15 +108,19 @@ class TestDispatchSuccess:
             "pattern": "linux-image*",
             "max_rows": 10000,
             "target_department_id": "dep_a",
+            "is_managed": False,
+            "management_user": None,
+            "account_id": acc.id,
         }
 
     async def test_default_pattern_is_wildcard(
-        self, client, operator_token_a, make_server, captured_dispatch,
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
     ):
         """Без `?pattern=` query — глобальный `*` (все пакеты). Эмулирует
         кейс «empty result possible» — worker может вернуть пустой массив,
         но dispatch'ер на это не смотрит."""
         srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="appuser")
         resp = await client.post(_url(srv.id), headers=_hdr(operator_token_a))
         assert resp.status_code == 202
         assert len(captured_dispatch) == 1
@@ -209,7 +216,7 @@ class TestWorkerSideFailures:
         assert captured_dispatch == []
 
     async def test_worker_unreachable_returns_503(
-        self, client, operator_token_a, make_server, monkeypatch,
+        self, client, operator_token_a, make_server, make_account, monkeypatch,
     ):
         from src.core.exceptions import ServiceUnavailableError
 
@@ -224,6 +231,7 @@ class TestWorkerSideFailures:
             fail_dispatch,
         )
         srv = await make_server(department_id="dep_a")
+        await make_account(server_id=srv.id, login="appuser")
         resp = await client.post(
             _url(srv.id),
             headers=_hdr(operator_token_a),

@@ -12,7 +12,8 @@ import {
 import { Link } from "react-router-dom";
 import { HomeShell } from "./HomeShell";
 import { usePersona } from "@/contexts/PersonaContext";
-import { deptDisplayName, personaDeptId } from "@/lib/rbac";
+import { personaDeptId } from "@/lib/rbac";
+import { useDeptLabel } from "@/lib/labels";
 import { USERS } from "@/mocks/auth";
 import { SERVERS } from "@/mocks/server";
 import { CREDENTIALS } from "@/mocks/secret";
@@ -31,6 +32,9 @@ export function HomeDepAdmin() {
   const { persona } = usePersona();
   const mockMode = useMockMode();
   const myDeptId = personaDeptId(persona);
+  // Имя отдела резолвим через общий кэш меток: dep_admin не видит глобальный
+  // список отделов, но собственный отдел LabelsProvider сидит из identity.
+  const deptName = useDeptLabel(persona.dept_id ?? null);
 
   // Live counts inside dep_admin's scope. server/secret/worker not wired yet.
   const usersQ = useQuery(
@@ -73,7 +77,7 @@ export function HomeDepAdmin() {
         title={<>Привет, {persona.username} 👋</>}
         subtitle={
           persona.dept_id ? (
-            <>Departament <b>{deptDisplayName(persona.dept_id)}</b></>
+            <>Departament <b>{deptName}</b></>
           ) : (
             <>Платформа</>
           )
@@ -218,7 +222,7 @@ export function HomeDepAdmin() {
       subtitle={
         persona.dept_id ? (
           <>
-            Departament <b>{deptDisplayName(persona.dept_id)}</b> · {usersInScope.length}{" "}
+            Departament <b>{deptName}</b> · {usersInScope.length}{" "}
             пользователей · {serversInScope.length} серверов ·{" "}
             {credsInScope.length} доступных credential&apos;ов
           </>

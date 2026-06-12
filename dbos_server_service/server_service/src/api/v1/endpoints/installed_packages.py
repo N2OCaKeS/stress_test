@@ -31,6 +31,7 @@ import re
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.endpoints.worker_dispatch import resolve_inventory_account_id
 from src.core.constants import Action, EntityType, ServerStatus
 from src.core.exceptions import (
     AuthorizationError,
@@ -97,6 +98,15 @@ async def list_installed_packages(
         min_length=1,
         max_length=128,
         description="Shell-glob паттерн (`htop`, `linux-image*`, `*-dev`). По умолчанию `*` — все пакеты.",
+    ),
+    account_id: str | None = Query(
+        default=None,
+        description=(
+            "Аккаунт сервера, под которым worker зайдёт по SSH (self-сессия "
+            "по паролю). Для управляемого сервера игнорируется (вход по "
+            "ключу). Не передан — server_service берёт дефолтный привязанный "
+            "аккаунт; привязок нет — 422 ACCOUNT_REQUIRED."
+        ),
     ),
     db: AsyncSession = Depends(get_db),
 ) -> ServerTaskDispatchResponse:
@@ -165,6 +175,26 @@ async def list_installed_packages(
             message="Server is decommissioned and cannot accept worker operations",
         )
 
+    # Account-резолв для self-сессии (неуправляемый сервер). Без `account_id`
+    # worker фоллбэчился на root без пароля → SSH_AUTH_FAILED. Managed → None
+    # (вход по ключу). Нет аккаунта / не привязан → 422. Тот же резолвер, что у
+    # inventory.sync / users.inventory.
+    try:
+        resolved_account_id = await resolve_inventory_account_id(
+            db, server, account_id,
+        )
+    except DomainValidationError as exc:
+        audit_service.emit(
+            audit_action, target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": exc.error_code.lower(),
+                "task_kind": "installed_packages.list",
+                "department_id": server.department_id,
+            },
+        )
+        raise
+
     # 4. Dispatch + audit.
     idempotency_key = read_idempotency_key(request)
     payload: dict = {
@@ -174,7 +204,15 @@ async def list_installed_packages(
         "pattern": pattern,
         "max_rows": _MAX_INSTALLED_PACKAGES_ROWS,
         "target_department_id": server.department_id,
+        # Подготовленный сервер — вход по ключу под management_user; иначе
+        # worker заходит под дефолтным/переданным аккаунтом по паролю.
+        "is_managed": server.is_managed,
+        "management_user": server.management_user,
     }
+    # Неуправляемый сервер — worker запросит пароль аккаунта по account_id и
+    # зайдёт под ним, а не root'ом.
+    if resolved_account_id is not None:
+        payload["account_id"] = resolved_account_id
     try:
         task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
             db=db,

@@ -793,8 +793,8 @@ function DetailPane({
             <MetaRow label="Created" value={formatMsk(cred.created_at)} />
             <MetaRow label="Updated" value={formatMsk(cred.updated_at)} />
             <MetaRow label="visible_to_dept" value={String(cred.visible_to_dept)} />
-            <MetaRow label="valid_from" value={cred.valid_from ?? "—"} />
-            <MetaRow label="valid_to" value={cred.valid_to ?? "—"} />
+            <MetaRow label="valid_from" value={formatMsk(cred.valid_from)} />
+            <MetaRow label="valid_to" value={formatMsk(cred.valid_to)} />
             {blocked && (
               <>
                 <MetaRow label="blocked_at" value={formatMsk(cred.blocked_at)} />

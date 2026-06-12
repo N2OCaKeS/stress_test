@@ -64,7 +64,7 @@ import { listServiceRoles } from "@/api/auth/service_roles";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { useDeptLabel, useLabelMaps, useServiceLabel } from "@/lib/labels";
-import { formatMskDate, formatMskShort } from "@/lib/datetime";
+import { formatMsk, formatMskDate, formatMskShort } from "@/lib/datetime";
 import type {
   Group as ApiGroup,
   Service as ApiService,
@@ -296,7 +296,7 @@ export function UserDetail() {
               <span>dept: <b>{mockMode ? (dept?.name ?? "— (платформенный)") : (user.dept_id ? <HeaderDeptName deptId={user.dept_id} /> : "— (платформенный)")}</b></span>
               <span>·</span>
               <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3" /> {user.last_login}
+                <Clock className="w-3 h-3" /> {formatMskShort(user.last_login)}
               </span>
             </div>
           </div>
@@ -454,7 +454,7 @@ export function UserDetail() {
                   if (cb) return <Link to={`/users/${cb.id}`} className="mono hover-bg">{cb.username}</Link>;
                   return <span className="mono text-dim" title="user removed or unknown">{user.created_by} (удалён)</span>;
                 })()} />
-                <StatRow k="last_login" v={<span className="mono">{user.last_login}</span>} />
+                <StatRow k="last_login" v={<span className="mono">{formatMsk(user.last_login)}</span>} />
               </div>
             </div>
           </Section>

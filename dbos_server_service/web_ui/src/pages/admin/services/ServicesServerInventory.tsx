@@ -5,6 +5,7 @@ import { SERVERS } from "@/mocks/server";
 import { DEPTS } from "@/mocks/auth";
 import { InlineEditor, FormRow, NotWiredInline, StatRow, useInlineState } from "./_inline";
 import { useMockMode } from "@/api/auth/useQuery";
+import { formatMsk } from "@/lib/datetime";
 
 export function ServicesServerInventory() {
   const mockMode = useMockMode();
@@ -112,7 +113,7 @@ function ServerView({
           <StatRow k="power" v={server.power_state} />
         </div>
       </div>
-      <StatRow k="last_seen" v={<span className="mono">{server.last_seen}</span>} />
+      <StatRow k="last_seen" v={<span className="mono">{formatMsk(server.last_seen)}</span>} />
     </div>
   );
 }

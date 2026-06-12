@@ -47,6 +47,7 @@ export const GLOBAL_CONFIG_ITEMS: GlobalConfigItem[] = [
 ];
 
 export interface ClusterConfigAuditEntry {
+  /** ISO-8601 (UTC); рендерится через formatMsk*. */
   ts: string;
   key: string;
   old_value: string;

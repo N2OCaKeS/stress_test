@@ -10,19 +10,12 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useMockMode } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { isReadOnlyForCluster } from "@/lib/rbac";
+import { formatMskShort } from "@/lib/datetime";
 
 interface PendingEdit {
   key: string;
   old_value: string;
   new_value: string;
-}
-
-function fmtTs(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return (
-    `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
 }
 
 export function ClusterConfig() {
@@ -71,7 +64,7 @@ export function ClusterConfig() {
     // mock keeps state in-memory and pushes audit entry.
     window.setTimeout(() => {
       const entry: ClusterConfigAuditEntry = {
-        ts: fmtTs(new Date()),
+        ts: new Date().toISOString(),
         key: pending.key,
         old_value: pending.old_value,
         new_value: pending.new_value,
@@ -240,7 +233,7 @@ export function ClusterConfig() {
             <tbody>
               {auditTail.map((e, idx) => (
                 <tr key={`${e.ts}-${e.key}-${idx}`}>
-                  <td className="mono text-dim">{e.ts}</td>
+                  <td className="mono text-dim">{formatMskShort(e.ts)}</td>
                   <td className="mono">{e.key}</td>
                   <td className="mono">
                     <span className="text-dim">{e.old_value}</span>

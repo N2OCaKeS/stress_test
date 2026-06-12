@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Copy,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 import {
   generateInitialPassword,
@@ -247,6 +248,10 @@ export function ServicesUsers() {
   }, [sorted, groupBy, deptLabels, collapsed]);
 
   const total = mockMode ? allItems.length : usersQ.data?.total ?? allItems.length;
+  // Сортировка и группировка работают только по загруженной странице. Когда
+  // всего пользователей больше, чем влезло в текущую страницу, «отсортировано
+  // по имени» — это порядок лишь среди показанных строк, а не глобальный.
+  const sortScopeTruncated = !mockMode && total > allItems.length;
 
   const refetchAll = () => {
     usersQ.refetch();
@@ -323,6 +328,16 @@ export function ServicesUsers() {
               </select>
             </label>
           </div>
+          {sortScopeTruncated && (
+            <div className="alert-warn text-[11px]" role="status">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                Сортировка и группировка применены к загруженной странице
+                ({allItems.length} из {total}). Чтобы упорядочить всех —
+                сузьте фильтр или листайте страницы.
+              </span>
+            </div>
+          )}
           {!mockMode && (
             <div className="flex items-center gap-2 text-[11px]">
               <div className="ml-auto flex items-center gap-1">

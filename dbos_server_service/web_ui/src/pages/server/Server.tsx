@@ -98,6 +98,9 @@ export function Server() {
   // `total` — серверная истина (до клиентского поиска): если она больше, чем
   // влезло в страницу (limit:200), показываем баннер усечения.
   const serverTotal = listQ.data?.total ?? items.length;
+  // Сорт/группа/поиск работают по загруженному набору. Если серверов больше,
+  // чем влезло, «по имени» — порядок среди показанных, а не всех.
+  const sortScopeTruncated = items.length < serverTotal;
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     const matched = items.filter((s) => {
@@ -231,6 +234,16 @@ export function Server() {
             <option value="department">по отделу</option>
           </select>
         </div>
+        {sortScopeTruncated && (
+          <div className="mt-2 alert-warn text-[11px]" role="status">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Сортировка и группировка применены к загруженным {items.length}{" "}
+              из {serverTotal} серверов — уточните фильтр, чтобы упорядочить
+              остальные.
+            </span>
+          </div>
+        )}
         <FilterPane
           depts={depsQ.data ?? []}
           dept={filterDept}

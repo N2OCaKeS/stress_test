@@ -324,32 +324,44 @@ function ServicesGroupsLive() {
         </div>
       }
       listHeader={
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <label className="flex items-center gap-1">
-            <span className="text-dim">сорт.</span>
-            <select
-              className="input input-sm"
-              value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as GroupsSortKey)}
-            >
-              <option value="name_asc">name ↑</option>
-              <option value="name_desc">name ↓</option>
-              <option value="dept">по отделу</option>
-              <option value="created_desc">создан ↓</option>
-              <option value="created_asc">создан ↑</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-1">
-            <span className="text-dim">группа</span>
-            <select
-              className="input input-sm"
-              value={groupBy}
-              onChange={(e) => setGroupBy(e.target.value as GroupsGroupKey)}
-            >
-              <option value="none">—</option>
-              <option value="department">по отделу</option>
-            </select>
-          </label>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <label className="flex items-center gap-1">
+              <span className="text-dim">сорт.</span>
+              <select
+                className="input input-sm"
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as GroupsSortKey)}
+              >
+                <option value="name_asc">name ↑</option>
+                <option value="name_desc">name ↓</option>
+                <option value="dept">по отделу</option>
+                <option value="created_desc">создан ↓</option>
+                <option value="created_asc">создан ↑</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1">
+              <span className="text-dim">группа</span>
+              <select
+                className="input input-sm"
+                value={groupBy}
+                onChange={(e) => setGroupBy(e.target.value as GroupsGroupKey)}
+              >
+                <option value="none">—</option>
+                <option value="department">по отделу</option>
+              </select>
+            </label>
+          </div>
+          {hasMore && (
+            <div className="alert-warn text-[11px]" role="status">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                Загружены не все группы ({rawItems.length}). Сортировка и
+                группировка применены к загруженным — дожмите «Загрузить ещё»
+                внизу, чтобы упорядочить весь набор.
+              </span>
+            </div>
+          )}
         </div>
       }
       renderRow={({ item, active, onSelect }) => {

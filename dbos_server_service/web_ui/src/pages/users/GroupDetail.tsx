@@ -631,14 +631,44 @@ function GroupLiveData({
                 onAdd={async () => {
                   const ids = Array.from(selectedAddUserIds);
                   if (ids.length === 0) return;
-                  await run(async () => {
-                    // backend не имеет bulk endpoint'а — добавляем по одному;
-                    // ошибки прорываются вверх через первый rejected.
-                    for (const uid of ids) {
-                      await groupsApi.addGroupMember(groupId, uid);
+                  // backend не имеет bulk endpoint'а — добавляем по одному.
+                  // Один упавший юзер не должен прятать тех, кто реально
+                  // добавился, и не должен срывать остаток списка.
+                  setActionErr(null);
+                  setPending(true);
+                  const failures: string[] = [];
+                  const results = await Promise.allSettled(
+                    ids.map((uid) => groupsApi.addGroupMember(groupId, uid)),
+                  );
+                  results.forEach((res, i) => {
+                    if (res.status === "rejected") {
+                      const e = res.reason;
+                      const reason =
+                        e instanceof ApiError
+                          ? `${e.errorCode}: ${e.message}`
+                          : e instanceof Error
+                            ? e.message
+                            : String(e);
+                      failures.push(`${ids[i]} — ${reason}`);
                     }
                   });
-                  setSelectedAddUserIds(new Set());
+                  setPending(false);
+                  refetchAll();
+                  const added = ids.length - failures.length;
+                  if (failures.length > 0) {
+                    setActionErr(
+                      `Добавлено ${added} из ${ids.length}. ` +
+                        `Не удалось ${failures.length}: ${failures.join("; ")}`,
+                    );
+                    // Оставляем в выборе только упавших, чтобы можно было
+                    // повторить, не теряя реально добавленных.
+                    const failedIds = new Set(
+                      failures.map((f) => f.split(" — ")[0]),
+                    );
+                    setSelectedAddUserIds(failedIds);
+                  } else {
+                    setSelectedAddUserIds(new Set());
+                  }
                 }}
               />
             )}

@@ -1775,6 +1775,9 @@ function UserServiceRolesEditor({
       // Filter to services known to the platform; users.py 422's on unknown
       // service names.
       const known = new Set(services.map((s) => s.service_name));
+      // Каждый сервис — отдельный replace-вызов. Один упавший не должен
+      // прятать те, что применились, и не должен срывать остальные.
+      const targets: string[] = [];
       for (const svc of touched) {
         if (!known.has(svc)) continue;
         const before = new Set(currentRoles[svc] ?? []);
@@ -1786,13 +1789,42 @@ function UserServiceRolesEditor({
         ) {
           continue;
         }
-        await assignUserRoles(userId, {
-          service_name: svc,
-          roles: [...after],
-        });
+        targets.push(svc);
       }
-      onSaved();
-      onClose();
+      if (targets.length === 0) {
+        onSaved();
+        onClose();
+        return;
+      }
+      const results = await Promise.allSettled(
+        targets.map((svc) =>
+          assignUserRoles(userId, {
+            service_name: svc,
+            roles: [...(selection[svc] ?? new Set<string>())],
+          }),
+        ),
+      );
+      const failures = results
+        .map((res, i) =>
+          res.status === "rejected"
+            ? `${targets[i]} — ${apiErrMsg(res.reason)}`
+            : null,
+        )
+        .filter((x): x is string => x !== null);
+      if (failures.length > 0) {
+        const applied = targets.length - failures.length;
+        // Часть изменений уже на сервере — рефетчим свежие данные, затем
+        // показываем итог (onError ставится последним, чтобы пережить
+        // очистку ошибки внутри onSaved).
+        onSaved();
+        onError(
+          `Применено сервисов: ${applied} из ${targets.length}. ` +
+            `Не удалось ${failures.length}: ${failures.join("; ")}`,
+        );
+      } else {
+        onSaved();
+        onClose();
+      }
     } catch (e) {
       onError(
         apiErrMsg(e),

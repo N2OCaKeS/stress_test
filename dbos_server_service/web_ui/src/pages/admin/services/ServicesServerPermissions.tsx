@@ -32,20 +32,26 @@ import type { Department } from "@/api/auth/types";
  * grant'ов), столбцы — действия выбранной сущности. Ячейка показывает
  * эффективное состояние: allow (✓), default (·) или revoked (—).
  *
- * RBAC: только `account_admin`. Реальные мутации в backend'е дополнительно
- * фильтруются middleware (см. wrapper'ы permissions.ts), но UI-страница —
- * единая для всей платформы.
+ * RBAC: матрица — business-data `server_service`. Backend пускает носителя
+ * `(permission, *, view)`: department_admin своего отдела или сервисную роль
+ * `server.admin`. Platform-админы (`account_admin`/`loging_admin`) режутся
+ * middleware'ом 403 PLATFORM_ADMIN_BUSINESS_DATA_DENIED, поэтому им страница
+ * не показывается и здесь.
  */
 export function ServicesServerPermissions() {
   const { persona } = usePersona();
-  if (persona.platform_role !== "account_admin") {
+  const canView =
+    persona.platform_role === "dep_admin" ||
+    persona.service_roles?.server === "admin";
+  if (!canView) {
     return (
       <div className="p-8">
         <div className="alert-danger flex items-center gap-2">
           <AlertTriangle className="w-4 h-4" />
           <span>
-            403 · доступ к матрице разрешений `server_service` есть только у
-            <span className="mono"> account_admin</span>.
+            403 · матрица разрешений `server_service` доступна
+            department_admin своего отдела или роли
+            <span className="mono"> server.admin</span>.
           </span>
         </div>
       </div>

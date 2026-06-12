@@ -267,7 +267,9 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "server",
     content: ServicesServerPermissions,
-    visibleFor: (p) => hasServerServiceAdmin(p),
+    // backend: `(permission, *, view)` — department_admin своего отдела или
+    // server.admin. account_admin / loging_admin режет middleware.
+    visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
   },
 
   // Services block — secret (service-specific pages; roles are dynamic)

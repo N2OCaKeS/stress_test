@@ -120,8 +120,10 @@ export function SecretLive() {
     setCursor(listQ.data?.next_cursor ?? null);
   }, [listQ.data]);
 
+  // account_admin не привязан к департаменту, а secret_service — dept-scoped:
+  // бэкенд отбивает любые операции с кредами 403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT.
+  // Поэтому платформенный админ не получает кнопки управления.
   const canManage =
-    persona.platform_role === "account_admin" ||
     persona.platform_role === "dep_admin" ||
     persona.service_roles.secret === "admin" ||
     persona.service_roles.secret === "operator";

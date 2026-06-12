@@ -107,7 +107,19 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   const chips: ServiceChip[] = serviceList
     .filter((s) => s !== "auth" && s !== "config")
     .map((s) => SERVICE_CATALOG[s])
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((chip) => {
+      // Rules/Retention в loging_service закрыты backend'ом на loging_admin
+      // (require_admin и на чтение). loging_reader доступен только просмотр
+      // событий — не показываем ему подпункты, которые всё равно вернут 403.
+      if (
+        chip.service === "logging" &&
+        persona.platform_role !== "logging_admin"
+      ) {
+        return { ...chip, subItems: undefined };
+      }
+      return chip;
+    });
 
   const isActive = (to: string) =>
     location.pathname === to ||

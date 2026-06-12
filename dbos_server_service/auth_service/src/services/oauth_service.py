@@ -464,6 +464,16 @@ async def exchange_code(
     if auth_code is None:
         raise AuthenticationError(error_code="OAUTH_CODE_INVALID", message="Authorization code is invalid or already used")
 
+    # RFC 6749 §4.1.3: код принадлежит выдавшему клиенту. Без этой проверки
+    # перехваченный код можно обменять, подставив чужой client_id (например
+    # public-клиента без секрета) в обход client-аутентификации. Проверяем до
+    # consume, чтобы чужая попытка не сжигала код легитимного клиента.
+    if auth_code.client_id != client_id:
+        raise AuthenticationError(
+            error_code="INVALID_GRANT",
+            message="Authorization code was not issued to this client",
+        )
+
     if is_expired(auth_code.expires_at):
         raise AuthenticationError(error_code="OAUTH_CODE_EXPIRED", message="Authorization code has expired")
 

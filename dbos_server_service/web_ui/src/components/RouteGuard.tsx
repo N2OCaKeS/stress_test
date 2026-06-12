@@ -3,6 +3,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { USE_MOCK_AUTH, useAuthOptional } from "@/contexts/AuthContext";
+import { hasAuditLogAccess } from "@/lib/rbac";
 import type { ServiceName } from "@/types/persona";
 
 interface Props {
@@ -31,7 +32,16 @@ export function RouteGuard({ service, requireAdmin, children }: Props) {
     !USE_MOCK_AUTH &&
     (!auth || !auth.user);
 
-  const hasService = service ? persona.accessible_services.includes(service) : true;
+  // /log* (service === "logging") гейтится не по accessible_services, а по
+  // platform-роли: backend loging_service пускает к событиям/правилам/retention
+  // только loging_admin/loging_reader. Сервис-роль loging_service.admin (её
+  // несёт dep_admin) кладёт `logging` в accessible_services, но backend всё
+  // равно вернёт 403 — поэтому такой персоне раздел недоступен.
+  const hasService = service
+    ? service === "logging"
+      ? hasAuditLogAccess(persona)
+      : persona.accessible_services.includes(service)
+    : true;
   const adminOk = !requireAdmin || persona.has_admin;
   const denied = !bootstrapPending && !unauthenticated && (!hasService || !adminOk);
 

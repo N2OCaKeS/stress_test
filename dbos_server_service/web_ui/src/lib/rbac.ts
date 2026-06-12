@@ -63,6 +63,22 @@ export function isLoggingOnly(persona: Persona): boolean {
 }
 
 /**
+ * True если персоне реально доступен раздел аудита (`/log*`). loging_service
+ * гейтит чтение событий, правил и retention на platform-роль
+ * (`loging_admin` / `loging_reader`, в каноне UI — `logging_admin` /
+ * `logging_reader`). Сервис-роль `loging_service.admin` у dep_admin сюда не
+ * годится: backend всё равно ответит 403 INSUFFICIENT_ROLE. Поэтому показ чипа
+ * и пропуск через guard идут по platform-роли, а не по `accessible_services`
+ * (туда `logging` может попасть из backend `allowed_services` по сервис-роли).
+ */
+export function hasAuditLogAccess(persona: Persona): boolean {
+  return (
+    persona.platform_role === "logging_admin" ||
+    persona.platform_role === "logging_reader"
+  );
+}
+
+/**
  * True if persona only gets read-only view of cluster admin items
  * (Health / TLS / Rotations / Backups / Migrations / Config / Audit overview).
  *

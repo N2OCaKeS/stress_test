@@ -20,7 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
-import { hasServerZoneAccess } from "@/lib/rbac";
+import { hasServerZoneAccess, hasAuditLogAccess } from "@/lib/rbac";
 import type { ServiceName } from "@/types/persona";
 import { useDeptLabelOpt } from "@/lib/labels";
 import { ThemeSwitcher } from "./ThemeSwitcher";
@@ -106,6 +106,11 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   }
   const chips: ServiceChip[] = serviceList
     .filter((s) => s !== "auth" && s !== "config")
+    // Audit log виден только носителю platform-роли logging_admin/logging_reader.
+    // dep_admin с сервис-ролью loging_service.admin получает `logging` в
+    // accessible_services, но backend режет ему /events и /rules на 403 — чип
+    // вёл бы в тупик, поэтому скрываем.
+    .filter((s) => s !== "logging" || hasAuditLogAccess(persona))
     .map((s) => SERVICE_CATALOG[s])
     .filter(Boolean)
     .map((chip) => {

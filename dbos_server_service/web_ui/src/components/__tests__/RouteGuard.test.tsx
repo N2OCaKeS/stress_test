@@ -58,8 +58,10 @@ describe("RouteGuard — direct-URL RBAC per persona", () => {
     window.localStorage.clear();
   });
 
-  // bob — account_admin: доступ ко всему + admin. server-зона режется уже на
-  // странице (BlockedPane), не на RouteGuard — сюда guard его пускает.
+  // bob — account_admin: доступ ко всему + admin, кроме /log (audit читают
+  // только loging_admin/loging_reader; account_admin'у backend отвечает 403 —
+  // его audit-обзор живёт под /admin → ClusterAuditOverview). server-зона
+  // режется уже на странице (BlockedPane), не на RouteGuard — сюда guard пускает.
   describe("account_admin (bob)", () => {
     it("secret → granted", () => {
       renderGuard("bob", { service: "secret" });
@@ -73,9 +75,9 @@ describe("RouteGuard — direct-URL RBAC per persona", () => {
       renderGuard("bob", { service: "auth" });
       expectGranted();
     });
-    it("logging → granted", () => {
+    it("logging → denied (account_admin не читает audit, видит ClusterAuditOverview под /admin)", () => {
       renderGuard("bob", { service: "logging" });
-      expectGranted();
+      expectDenied();
     });
     it("worker → granted", () => {
       renderGuard("bob", { service: "worker" });

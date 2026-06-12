@@ -57,7 +57,15 @@ export function SecurityOAuth2() {
                 ? "border-accent text-accent"
                 : "border-transparent text-dim"
             }`}
-            onClick={() => setTab(t)}
+            onClick={() => {
+              // одноразовый client_secret не должен пережить уход с вкладки и
+              // потом молча всплыть при возврате
+              if (t !== "clients") {
+                setSecret(null);
+                setCreating(false);
+              }
+              setTab(t);
+            }}
           >
             {t === "clients"
               ? "Клиенты"

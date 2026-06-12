@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Container, FileText, KeyRound, Loader2, RefreshCcw } from "lucide-react";
 import { ApiError } from "@/api/client";
 import {
@@ -52,23 +52,29 @@ function RegistryConfig() {
   const [busyCreate, setBusyCreate] = useState(false);
   const [busyDelete, setBusyDelete] = useState(false);
   const [editing, setEditing] = useState(false);
+  // печатая department_id юзер выпускает пачку загрузок; считаем актуальной
+  // только последнюю, чтобы ответ по старому отделу не перетёр свежий
+  const loadSeq = useRef(0);
 
   const load = useCallback(async (dept: string) => {
     if (!dept) return;
+    const seq = ++loadSeq.current;
     setPending(true);
     setCfg(null);
     setMissing(false);
     try {
       const r = await getRegistry(dept);
+      if (seq !== loadSeq.current) return;
       setCfg(r);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       if (e instanceof ApiError && e.errorCode === "DOCKER_REGISTRY_NOT_CONFIGURED") {
         setMissing(true);
       } else {
         toast.error(errToMessage(e));
       }
     } finally {
-      setPending(false);
+      if (seq === loadSeq.current) setPending(false);
     }
   }, [toast]);
 
@@ -78,6 +84,8 @@ function RegistryConfig() {
 
   const create = async () => {
     if (busyCreate) return;
+    // мутация — авторитетный результат; гасим возможный отстающий load
+    loadSeq.current++;
     setBusyCreate(true);
     try {
       const r = await putRegistry(deptInput, {
@@ -97,6 +105,7 @@ function RegistryConfig() {
 
   const toggle = async () => {
     if (!cfg || busyToggle) return;
+    loadSeq.current++;
     setBusyToggle(true);
     try {
       const r = await patchRegistry(cfg.department_id, {
@@ -114,6 +123,7 @@ function RegistryConfig() {
     if (!cfg || busyDelete) return;
     if (!window.confirm(`Удалить конфиг docker registry для ${cfg.department_id}?`))
       return;
+    loadSeq.current++;
     setBusyDelete(true);
     try {
       await deleteRegistry(cfg.department_id);

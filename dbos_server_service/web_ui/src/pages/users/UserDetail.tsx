@@ -227,6 +227,37 @@ export function UserDetail() {
     return computeDiff(effective, after);
   }, [diffMutation, effective, userId]);
 
+  // В live-режиме apiUserQ держит прежние data при ошибке фетча, поэтому
+  // удалённый/недоступный юзер (404 после delete в соседней вкладке, 403 при
+  // отзыве доступа, протухший deep-link на ?id) иначе остался бы «призраком».
+  // Ошибку проверяем раньше data — показываем «нет доступа / удалён», а не
+  // stale-карточку.
+  if (!mockMode && apiUserQ.error) {
+    const msg =
+      apiUserQ.error instanceof ApiError && apiUserQ.error.status === 403
+        ? "Нет доступа к этому пользователю."
+        : apiUserQ.error instanceof ApiError && apiUserQ.error.status === 404
+          ? "Пользователь не найден — возможно, удалён."
+          : apiErrMsg(apiUserQ.error, "Не удалось загрузить пользователя");
+    return (
+      <Shell breadcrumb="auth_service / users">
+        <section className="flex-1 overflow-y-auto p-8">
+          <div className="empty-card danger">
+            {msg} <span className="mono">{id}</span>
+            <div className="mt-3 flex items-center gap-2">
+              <Link to="/users" className="btn">
+                <ArrowLeft className="w-4 h-4 inline mr-1" /> Вернуться к списку
+              </Link>
+              <button className="btn btn-ghost" onClick={() => apiUserQ.refetch()}>
+                Повторить
+              </button>
+            </div>
+          </div>
+        </section>
+      </Shell>
+    );
+  }
+
   if (!user) {
     return (
       <Shell breadcrumb="auth_service / users">

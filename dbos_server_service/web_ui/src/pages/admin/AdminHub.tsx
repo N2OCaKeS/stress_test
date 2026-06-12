@@ -4,6 +4,7 @@ import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
+import { useLabelMaps } from "@/lib/labels";
 import { listServices } from "@/api/auth/services";
 import type { Service } from "@/api/auth/types";
 import { AdminMiddle } from "./AdminMiddle";
@@ -54,9 +55,19 @@ export function AdminHub() {
   const { itemId } = useParams<{ itemId?: string }>();
   const mockMode = useMockMode();
 
+  // Каталог сервисов на левой панели строится из `GET /services`. Регистрация
+  // или удаление сервиса в workzone (`ServicesCatalog`) дёргает
+  // `invalidateLabels("services")` — пересобираем динамические «Роли · <svc>»
+  // пункты по изменению этой карты, иначе новый сервис виден только после F5.
+  const { services: serviceLabels } = useLabelMaps();
+  const servicesKey = useMemo(
+    () => [...serviceLabels.keys()].sort().join(","),
+    [serviceLabels],
+  );
+
   const servicesQ = useQuery<Service[]>(
     () => listServices(),
-    [],
+    [servicesKey],
     { enabled: !mockMode },
   );
 

@@ -9,6 +9,7 @@ import {
 import type { Service } from "@/api/auth/types";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
+import { useLabelsInvalidate } from "@/lib/labels";
 
 export function SecurityServices() {
   const { persona } = usePersona();
@@ -171,6 +172,7 @@ function CreateForm({
   const [description, setDescription] = useState("");
   const [pending, setPending] = useState(false);
   const toast = useToast();
+  const invalidateLabels = useLabelsInvalidate();
 
   const submit = async () => {
     if (!serviceName.trim()) {
@@ -184,6 +186,7 @@ function CreateForm({
         description: description.trim() || undefined,
       });
       toast.success("Сервис зарегистрирован");
+      void invalidateLabels("services");
       onCreated();
     } catch (e) {
       if (e instanceof ApiError) toast.error(e.message);

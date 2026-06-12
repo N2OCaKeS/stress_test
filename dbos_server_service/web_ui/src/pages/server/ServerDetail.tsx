@@ -178,10 +178,10 @@ function ServerHeader({ server }: { server: Server }) {
           <span
             className={`badge${statusKind ? ` badge-${statusKind}` : ""}`}
           >
-            {STATUS_LABEL[server.status]}
+            {STATUS_LABEL[server.status] ?? server.status}
           </span>
-          <span className={`badge badge-${busyKind}`}>
-            {BUSY_LABEL[server.busy_state]}
+          <span className={`badge${busyKind ? ` badge-${busyKind}` : ""}`}>
+            {BUSY_LABEL[server.busy_state] ?? server.busy_state}
           </span>
           <span className="text-xs text-dim">
             power: <b>{server.power_state}</b>

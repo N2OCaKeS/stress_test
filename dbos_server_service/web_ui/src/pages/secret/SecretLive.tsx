@@ -372,7 +372,7 @@ function CredRow({
           <div className="text-[11px] text-dim flex items-center gap-2">
             <span className="mono truncate">{cred.service}</span>
             <span>·</span>
-            <span>{SCOPE_LABEL[cred.scope]}</span>
+            <span>{SCOPE_LABEL[cred.scope] ?? cred.scope}</span>
           </div>
         </div>
         {cred.status && (
@@ -657,7 +657,7 @@ function DetailPane({
               {cred.status}
             </span>
             <span className="text-xs text-dim">
-              scope: <b>{SCOPE_LABEL[cred.scope]}</b>
+              scope: <b>{SCOPE_LABEL[cred.scope] ?? cred.scope}</b>
             </span>
           </div>
           <div className="text-sm text-dim mt-1 flex items-center gap-3 flex-wrap">

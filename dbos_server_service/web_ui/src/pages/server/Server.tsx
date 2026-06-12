@@ -465,7 +465,7 @@ function ServerRow({
           </div>
         </div>
         <span className={`badge${statusKind ? ` badge-${statusKind}` : ""}`}>
-          {STATUS_LABEL[server.status]}
+          {STATUS_LABEL[server.status] ?? server.status}
         </span>
         <span className={`badge badge-${busyChipKind}`}>{busyChipLabel}</span>
       </div>

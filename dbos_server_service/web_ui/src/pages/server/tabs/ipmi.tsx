@@ -438,7 +438,7 @@ function ControllerPane({
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5" />
             <h3 className="text-base font-semibold">IPMI-контроллер</h3>
-            <span className="badge">{KIND_LABEL[controller.kind]}</span>
+            <span className="badge">{KIND_LABEL[controller.kind] ?? controller.kind}</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -921,7 +921,7 @@ function CredentialsCard({
         <>
           <Meta label="username" value={creds.username} mono />
           <Meta label="endpoint" value={creds.endpoint_url} mono />
-          <Meta label="kind" value={KIND_LABEL[creds.kind]} />
+          <Meta label="kind" value={KIND_LABEL[creds.kind] ?? creds.kind} />
           <Meta
             label="last rotation"
             value={fmtTs(creds.password_rotated_at)}

@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   Edit3,
   KeyRound,
+  Link2,
   Plus,
   Power,
   RotateCw,
@@ -37,6 +38,7 @@ import type {
   ServerAccountUpdateRequest,
 } from "@/api/server/types";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { LinkAccountModal } from "./_linkAccountModal";
 
 interface Props {
   serverId: string;
@@ -111,6 +113,7 @@ export function AccountsTab({ serverId, server }: Props) {
   const toast = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [linking, setLinking] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
   // На RBAC уровне UI:
@@ -209,12 +212,18 @@ export function AccountsTab({ serverId, server }: Props) {
         />
 
         {canManage && (
-          <div className="border-t border-token p-3 shrink-0">
+          <div className="border-t border-token p-3 shrink-0 flex flex-col gap-2">
             <button
               className="btn btn-primary w-full flex items-center justify-center gap-2"
               onClick={handleStartCreate}
             >
               <Plus className="w-4 h-4" /> Создать аккаунт
+            </button>
+            <button
+              className="btn w-full flex items-center justify-center gap-2"
+              onClick={() => setLinking(true)}
+            >
+              <Link2 className="w-4 h-4" /> Привязать существующий
             </button>
           </div>
         )}
@@ -254,6 +263,20 @@ export function AccountsTab({ serverId, server }: Props) {
           </div>
         )}
       </section>
+
+      {linking && (
+        <LinkAccountModal
+          serverId={serverId}
+          serverLabel={server?.display_name ?? server?.hostname ?? serverId}
+          onClose={() => setLinking(false)}
+          onLinked={(a) => {
+            setLinking(false);
+            setSelectedId(a.id);
+            toast.success(`Аккаунт ${a.login} привязан к серверу`);
+            refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

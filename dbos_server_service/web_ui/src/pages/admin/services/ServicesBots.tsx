@@ -189,6 +189,14 @@ function BotLiveView({
     [tokens],
   );
   const roles = rolesQ.data ?? [];
+  const allowedSet = useMemo(
+    () => new Set(bot.allowed_services),
+    [bot.allowed_services],
+  );
+  const orphanRoles = useMemo(
+    () => roles.filter((r) => !allowedSet.has(r.service_name)),
+    [roles, allowedSet],
+  );
 
   // One-time displayed token (issue / rotate) — never persists across navigation.
   const [issued, setIssued] = useState<BotTokenCreateResponse | null>(null);
@@ -655,6 +663,17 @@ function BotLiveView({
         {!rolesQ.loading && roles.length === 0 && (
           <div className="empty-card text-sm">Роли боту не выданы.</div>
         )}
+        {orphanRoles.length > 0 && (
+          <div className="alert-danger mb-2 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-[2px]" />
+            <div className="text-sm">
+              {orphanRoles.length} назнач.{" "}
+              {orphanRoles.map((r) => r.service_name).join(", ")} вне
+              allowed_services — бот эти роли не применит. Верните сервис в
+              allowed_services или отзовите роль.
+            </div>
+          </div>
+        )}
         {roles.length > 0 && (
           <table className="w-full text-sm">
             <thead className="text-left text-dim text-xs uppercase">
@@ -665,13 +684,20 @@ function BotLiveView({
               </tr>
             </thead>
             <tbody>
-              {roles.map((r) => (
+              {roles.map((r) => {
+                const orphan = !allowedSet.has(r.service_name);
+                return (
                 <tr
                   key={r.service_name}
                   className="border-t border-token align-top"
                 >
                   <td className="py-2 text-xs">
                     <ServiceInline name={r.service_name} />
+                    {orphan && (
+                      <span className="badge badge-warn ml-1 text-[10px]">
+                        вне scope
+                      </span>
+                    )}
                   </td>
                   <td className="text-xs">
                     <div className="flex flex-wrap gap-1">
@@ -697,7 +723,8 @@ function BotLiveView({
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}

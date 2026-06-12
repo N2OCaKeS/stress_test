@@ -917,11 +917,29 @@ function BotLiveData({
           })()}
 
           {/* Roles */}
-          <div>
+          {(() => {
+            const allowed = new Set(live?.allowed_services ?? []);
+            const roleRows = rolesQ.data ?? [];
+            const orphanRoles = roleRows.filter(
+              (r) => !allowed.has(r.service_name),
+            );
+            return (
+            <div>
             <div className="text-xs uppercase text-dim mb-2">
-              Service-роли · {(rolesQ.data ?? []).length}
+              Service-роли · {roleRows.length}
             </div>
-            {(rolesQ.data ?? []).length === 0 ? (
+            {orphanRoles.length > 0 && (
+              <div className="alert-danger mb-2 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-[2px]" />
+                <div className="text-sm">
+                  {orphanRoles.length} назнач.{" "}
+                  {orphanRoles.map((r) => r.service_name).join(", ")} вне
+                  allowed_services — бот эти роли не применит. Верните сервис
+                  в allowed_services или отзовите роль.
+                </div>
+              </div>
+            )}
+            {roleRows.length === 0 ? (
               <div className="empty-card">Роли боту не выданы.</div>
             ) : (
               <table className="w-full text-sm">
@@ -933,13 +951,18 @@ function BotLiveData({
                   </tr>
                 </thead>
                 <tbody>
-                  {(rolesQ.data ?? []).map((r) => (
+                  {roleRows.map((r) => (
                     <tr
                       key={r.service_name}
                       className="border-t border-token"
                     >
                       <td className="py-2 text-xs">
                         <ServiceInline name={r.service_name} />
+                        {!allowed.has(r.service_name) && (
+                          <span className="badge badge-warn ml-1 text-[10px]">
+                            вне scope
+                          </span>
+                        )}
                       </td>
                       <td className="text-xs">{r.roles.join(", ")}</td>
                       <td>
@@ -977,7 +1000,9 @@ function BotLiveData({
                 )
               }
             />
-          </div>
+            </div>
+            );
+          })()}
         </div>
       )}
     </Section>

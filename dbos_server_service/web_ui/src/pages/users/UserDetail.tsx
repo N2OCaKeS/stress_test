@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   User as UserIcon,
@@ -112,6 +112,7 @@ function Section({ icon, title, children, className = "" }: SectionProps) {
 
 export function UserDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { persona } = usePersona();
   const mockMode = useMockMode();
 
@@ -165,6 +166,10 @@ export function UserDetail() {
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [actionInfo, setActionInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Бампается после любого header/danger-действия (ban/disable/revoke и т.д.),
+  // чтобы вкладка сессий перечитала список — ban и revoke инвалидируют сессии
+  // на backend, иначе вкладка показывает «живые» сессии, которых уже нет.
+  const [actionSignal, setActionSignal] = useState(0);
   async function runAction(label: string, fn: () => Promise<unknown>) {
     if (mockMode) {
       setActionInfo(`mock: ${label}`);
@@ -178,6 +183,7 @@ export function UserDetail() {
       await fn();
       setActionInfo(`${label}: OK`);
       apiUserQ.refetch();
+      setActionSignal((n) => n + 1);
     } catch (e) {
       setActionErr(
         apiErrMsg(e),
@@ -433,6 +439,7 @@ export function UserDetail() {
             mockMode={mockMode}
             canRevoke={caps.disable}
             canRevokeReason={caps.reason}
+            refreshSignal={actionSignal}
           />
         )}
         {tab === "profile" && (
@@ -561,11 +568,13 @@ export function UserDetail() {
                 {!mockMode && (
                   <button
                     className="btn btn-sm flex items-center gap-1 ml-auto"
-                    disabled={!caps.manageRoles}
+                    disabled={!caps.manageRoles || (!showEditRoles && !permsQ.data)}
                     title={
-                      caps.manageRoles
-                        ? "Открыть форму редактирования ролей по сервисам"
-                        : caps.reason
+                      !caps.manageRoles
+                        ? caps.reason
+                        : !permsQ.data
+                          ? "Текущие роли ещё загружаются"
+                          : "Открыть форму редактирования ролей по сервисам"
                     }
                     onClick={() => setShowEditRoles((v) => !v)}
                   >
@@ -577,7 +586,7 @@ export function UserDetail() {
             }
             className="col-span-2"
           >
-            {!mockMode && showEditRoles && caps.manageRoles && (
+            {!mockMode && showEditRoles && caps.manageRoles && permsQ.data && (
               <UserServiceRolesEditor
                 key={user.id}
                 userId={user.id}
@@ -1004,9 +1013,19 @@ export function UserDetail() {
                   );
                   if (!reason) return;
                   if (!window.confirm(`Снести ${user.username} целиком?`)) return;
-                  runAction("delete", () =>
-                    deleteUser(user.id, { reason }),
-                  );
+                  // После удаления карточки уже нет — уходим к списку, иначе
+                  // деталь висит на 404 со stale-данными снесённого юзера.
+                  if (mockMode) {
+                    setActionInfo("mock: delete");
+                    return;
+                  }
+                  setBusy("delete");
+                  setActionErr(null);
+                  setActionInfo(null);
+                  deleteUser(user.id, { reason })
+                    .then(() => navigate("/users"))
+                    .catch((e) => setActionErr(apiErrMsg(e)))
+                    .finally(() => setBusy(null));
                 }}
               >
                 Delete user
@@ -1234,6 +1253,7 @@ interface UserSessionsTabProps {
   mockMode: boolean;
   canRevoke: boolean;
   canRevokeReason: string;
+  refreshSignal?: number;
 }
 
 function UserSessionsTab({
@@ -1241,10 +1261,11 @@ function UserSessionsTab({
   mockMode,
   canRevoke,
   canRevokeReason,
+  refreshSignal,
 }: UserSessionsTabProps) {
   const sessQ = useQuery<SessionListResponse>(
     () => listUserSessions(userId),
-    [userId],
+    [userId, refreshSignal ?? 0],
     { enabled: !mockMode && !!userId },
   );
   const [busy, setBusy] = useState<string | null>(null);

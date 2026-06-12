@@ -135,6 +135,9 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
   const [busy, setBusy] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editRolesOpen, setEditRolesOpen] = useState(false);
+  // Бампается после действий над юзером — вкладка сессий перечитывает список,
+  // иначе после block/revoke остаются видны уже убитые сессии.
+  const [actionSignal, setActionSignal] = useState(0);
 
   const myDept = useMemo(() => personaDeptId(persona), [persona]);
 
@@ -223,7 +226,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
 
   const sessionsQ = useQuery(
     () => listUserSessions(targetUser!.id),
-    [targetUser?.id, workzoneTab],
+    [targetUser?.id, workzoneTab, actionSignal],
     { enabled: !!targetUser && workzoneTab === "sessions" },
   );
 
@@ -249,6 +252,7 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
       await fn();
       toast.success(`${label}: OK`);
       usersQ.refetch();
+      setActionSignal((n) => n + 1);
     } catch (e) {
       const msg = apiErrMsg(e);
       toast.error(`${label}: ${msg}`);

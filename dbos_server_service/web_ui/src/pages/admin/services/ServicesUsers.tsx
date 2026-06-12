@@ -147,6 +147,10 @@ export function ServicesUsers() {
   const [sortKey, setSortKey] = useState<SortKey>("username_asc");
   const [groupBy, setGroupBy] = useState<GroupKey>("none");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Бампается при каждом refetchAll — пробрасывается в правую панель, чтобы её
+  // user/perms/groups перечитались после правок из формы (смена отдела/роли/
+  // статуса в UserForm иначе оставляет осиротевшие service-роли в детали).
+  const [detailSignal, setDetailSignal] = useState(0);
 
   // Departments — used by forms and labels.
   const deptsQ = useQuery<Department[]>(
@@ -255,6 +259,7 @@ export function ServicesUsers() {
 
   const refetchAll = () => {
     usersQ.refetch();
+    setDetailSignal((n) => n + 1);
   };
 
   function toggleGroup(k: string) {
@@ -452,6 +457,7 @@ export function ServicesUsers() {
             user={u}
             canEdit={canEdit}
             refetchAll={refetchAll}
+            detailSignal={detailSignal}
           />
         );
       }}
@@ -483,10 +489,12 @@ function ServicesUserDetailPane({
   user,
   canEdit,
   refetchAll,
+  detailSignal,
 }: {
   user: UiUser;
   canEdit: boolean;
   refetchAll: () => void;
+  detailSignal: number;
 }) {
   const { startEdit } = useInlineState();
   return (
@@ -494,6 +502,7 @@ function ServicesUserDetailPane({
       userId={user.id}
       fallbackUsername={user.username}
       fallbackDeptId={user.dept_id}
+      refetchListSignal={detailSignal}
       onChanged={refetchAll}
       onStartEdit={canEdit ? () => startEdit(user.id) : undefined}
     />

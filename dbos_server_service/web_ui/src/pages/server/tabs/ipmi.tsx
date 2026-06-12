@@ -8,14 +8,17 @@
  *      edit/delete.
  *   3. Loading / network error c retry.
  *
- * Power-операции возвращают 202 + task_id; здесь это отображается как toast,
- * результат уезжает в `/tasks/{id}` и не блокирует UI. PowerStatus читается
- * с auto-refresh раз в 10 сек.
+ * Power-операции (on/off/reboot) и live-probe возвращают 202 + task_id; UI
+ * поллит исход задачи через `useTaskOutcome` до терминала. На succeeded
+ * рефетчится реальный power_state (не оптимистичный), на failed показывается
+ * причина (битые креды, недоступный BMC). PowerStatus также читается с
+ * auto-refresh раз в 10 сек.
  *
  * Rotate IPMI дёргает `POST /ipmi-controllers/{id}/rotate` (202 + task_id):
  * worker генерит новый пароль, применяет на BMC, verify'ит read-only вызовом
- * и только потом server_service шифрует/сохраняет ciphertext. Результат уезжает
- * в `/tasks/{id}`; метаданные credentials подтягиваются после callback'а.
+ * и только потом server_service шифрует/сохраняет ciphertext. Исход поллится
+ * через `useTaskOutcome`; метаданные credentials перечитываются один раз на
+ * терминальном succeeded.
  *
  * RBAC: power-операции — server.operator/admin или dep_admin (своего dept);
  * edit/delete/rotate — server.admin или dep_admin (своего dept). account_admin /
@@ -25,6 +28,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  CheckCircle2,
   Edit3,
   KeyRound,
   Power,
@@ -33,6 +37,7 @@ import {
   Zap,
 } from "lucide-react";
 import { ApiError, apiErrMsg } from "@/api/client";
+import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import {
   deleteIpmi,
   dispatchPowerStatus,
@@ -634,19 +639,19 @@ function PowerCard({
     "on" | "off" | "reboot" | "status" | null
   >(null);
 
+  // Power-команды и live-probe — worker-задачи (202 + task_id). Поллим исход до
+  // терминала: пока worker не закрыл задачу, оптимистичного «включено» не
+  // показываем, а на failed выводим причину (битые креды, недоступный BMC).
+  const powerOutcome = useTaskOutcome();
+
   // Живёт весь lifecycle компонента: ставится в false при unmount, чтобы ни
   // polling, ни отложенные через setTimeout перепроверки не дёргали setState
   // после размонтирования.
   const aliveRef = useRef(true);
-  const deferRef = useRef<number | null>(null);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
-      if (deferRef.current !== null) {
-        window.clearTimeout(deferRef.current);
-        deferRef.current = null;
-      }
     };
   }, []);
 
@@ -684,16 +689,17 @@ function PowerCard({
     };
   }, [fetchStatus]);
 
-  // Отложенная перепроверка статуса после power-операции: backend обновит
-  // power_state async через worker-callback, поэтому подёргиваем статус через
-  // секунду. Таймер один на компонент — новый запрос отменяет предыдущий.
-  const scheduleRefresh = useCallback(() => {
-    if (deferRef.current !== null) window.clearTimeout(deferRef.current);
-    deferRef.current = window.setTimeout(() => {
-      deferRef.current = null;
-      if (aliveRef.current) fetchStatus();
-    }, 1000);
-  }, [fetchStatus]);
+  // Кэшированный power_state перетирается worker'ом только после того, как он
+  // закроет задачу. Поэтому реальный статус рефетчим ровно один раз на
+  // терминальном succeeded отслеживаемой задачи, а не вслепую через секунду.
+  const refetchedForTaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    const t = powerOutcome.tracked;
+    if (!t || t.polling || t.status !== "succeeded") return;
+    if (refetchedForTaskRef.current === t.taskId) return;
+    refetchedForTaskRef.current = t.taskId;
+    fetchStatus();
+  }, [powerOutcome.tracked, fetchStatus]);
 
   function runPower(
     kind: "on" | "off" | "reboot",
@@ -702,13 +708,14 @@ function PowerCard({
   ) {
     if (confirmMsg && !window.confirm(confirmMsg)) return;
     setPending(kind);
+    powerOutcome.reset();
     fn(serverId)
       .then((r) => {
         toast.success(`Задача ${kind} принята: ${r.task_id}`);
-        // backend в этот момент ещё не успел обновить power_state — он
-        // прилетит async через callback worker'а. Подёргаем статус через
-        // секунду, дальше всё равно поедет polling.
-        scheduleRefresh();
+        // power_state на бэке ещё не обновлён — он прилетит async через
+        // callback worker'а. Поллим исход задачи: на succeeded рефетчим
+        // реальный статус, на failed показываем причину, а не «включено».
+        powerOutcome.track(`power.${kind}`, r.task_id, r.status);
       })
       .catch((e: unknown) => toast.error(apiErrMsg(e, `Power ${kind} не отправлен`)))
       .finally(() => {
@@ -718,8 +725,14 @@ function PowerCard({
 
   function runDispatchStatus() {
     setPending("status");
+    powerOutcome.reset();
     dispatchPowerStatus(serverId)
-      .then((r) => toast.info(`power.status поставлен в очередь: ${r.task_id}`))
+      .then((r) => {
+        toast.info(`power.status поставлен в очередь: ${r.task_id}`);
+        // Live-probe тоже worker-задача: дожидаемся терминала, на succeeded
+        // подтягиваем свежий power_state, на failed — причину недоступности.
+        powerOutcome.track("power.status", r.task_id, r.status);
+      })
       .catch((e: unknown) =>
         toast.error(apiErrMsg(e, "Не удалось запросить probe")),
       )
@@ -760,6 +773,44 @@ function PowerCard({
           </span>
         )}
       </div>
+
+      {powerOutcome.tracked && (
+        <div className="surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1.5 mb-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium">{powerOutcome.tracked.label}</span>
+            <span className="mono text-dim">{powerOutcome.tracked.taskId}</span>
+            <span
+              className={`badge ${
+                powerOutcome.tracked.status === "succeeded"
+                  ? "badge-ok"
+                  : powerOutcome.tracked.status === "failed"
+                    ? "badge-danger"
+                    : "badge-warn"
+              }`}
+            >
+              {powerOutcome.tracked.status}
+            </span>
+            {powerOutcome.tracked.polling && (
+              <span className="flex items-center gap-1 text-dim">
+                <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
+              </span>
+            )}
+          </div>
+          {!powerOutcome.tracked.polling &&
+            powerOutcome.tracked.status === "succeeded" && (
+              <div className="flex items-center gap-1 text-ok">
+                <CheckCircle2 className="w-3.5 h-3.5" /> BMC подтвердил —
+                состояние обновлено.
+              </div>
+            )}
+          {powerOutcome.tracked.error && (
+            <div className="flex items-start gap-1.5 text-danger">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5" />
+              <span className="flex-1">{powerOutcome.tracked.error}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {!canPower && (
         <div className="text-xs text-dim mb-3">
@@ -847,16 +898,16 @@ function CredentialsCard({
   const [rotating, setRotating] = useState(false);
   const [tick, setTick] = useState(0);
 
+  // Ротация — worker-задача с BMC apply/verify, способная упасть (битый BMC,
+  // verify новым паролем не прошёл). Поллим исход: метаданные перечитываем
+  // только на succeeded, на failed показываем причину, а не «готово».
+  const rotateOutcome = useTaskOutcome();
+
   const aliveRef = useRef(true);
-  const deferRef = useRef<number | null>(null);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
-      if (deferRef.current !== null) {
-        window.clearTimeout(deferRef.current);
-        deferRef.current = null;
-      }
     };
   }, []);
 
@@ -879,27 +930,32 @@ function CredentialsCard({
     };
   }, [serverId, tick]);
 
+  // password_rotated_at перетирается только после успешного callback'а
+  // worker'а. Перечитываем метаданные один раз на терминальном succeeded.
+  const refetchedForTaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    const t = rotateOutcome.tracked;
+    if (!t || t.polling || t.status !== "succeeded") return;
+    if (refetchedForTaskRef.current === t.taskId) return;
+    refetchedForTaskRef.current = t.taskId;
+    setTick((n) => n + 1);
+  }, [rotateOutcome.tracked]);
+
   function handleRotate() {
     const ok = window.confirm(
       "Запустить ротацию IPMI-пароля? Новый пароль будет сгенерирован и применён к BMC; старый перестанет работать сразу после успешного callback'а worker'а.",
     );
     if (!ok) return;
     setRotating(true);
+    rotateOutcome.reset();
     rotateIpmi(controllerId)
-      .then((r) =>
-        toast.success(`Ротация поставлена в очередь: ${r.task_id}`),
-      )
+      .then((r) => {
+        toast.success(`Ротация поставлена в очередь: ${r.task_id}`);
+        rotateOutcome.track("ipmi.rotate_password", r.task_id, r.status);
+      })
       .catch((e: unknown) => toast.error(apiErrMsg(e, "Ротация не запущена")))
       .finally(() => {
-        if (!aliveRef.current) return;
-        setRotating(false);
-        // Метаданные credentials.password_rotated_at обновятся после
-        // успешного callback'а worker'а; пересмотрим через секунду.
-        if (deferRef.current !== null) window.clearTimeout(deferRef.current);
-        deferRef.current = window.setTimeout(() => {
-          deferRef.current = null;
-          if (aliveRef.current) setTick((n) => n + 1);
-        }, 1000);
+        if (aliveRef.current) setRotating(false);
       });
   }
 
@@ -929,11 +985,49 @@ function CredentialsCard({
         </>
       )}
 
+      {rotateOutcome.tracked && (
+        <div className="surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1.5 mt-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium">{rotateOutcome.tracked.label}</span>
+            <span className="mono text-dim">{rotateOutcome.tracked.taskId}</span>
+            <span
+              className={`badge ${
+                rotateOutcome.tracked.status === "succeeded"
+                  ? "badge-ok"
+                  : rotateOutcome.tracked.status === "failed"
+                    ? "badge-danger"
+                    : "badge-warn"
+              }`}
+            >
+              {rotateOutcome.tracked.status}
+            </span>
+            {rotateOutcome.tracked.polling && (
+              <span className="flex items-center gap-1 text-dim">
+                <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
+              </span>
+            )}
+          </div>
+          {!rotateOutcome.tracked.polling &&
+            rotateOutcome.tracked.status === "succeeded" && (
+              <div className="flex items-center gap-1 text-ok">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Пароль применён на BMC и
+                сохранён — старый недействителен.
+              </div>
+            )}
+          {rotateOutcome.tracked.error && (
+            <div className="flex items-start gap-1.5 text-danger">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5" />
+              <span className="flex-1">{rotateOutcome.tracked.error}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       <p className="mt-3 text-xs text-dim">
         Ротация идёт через worker: генерируется новый пароль, применяется на BMC
         (Redfish PATCH или ipmitool), затем выполняется read-only verify новым
         паролем и только после этого шифруется и сохраняется. Результат
-        прилетает асинхронно через <code>/tasks/{`{id}`}</code>; метаданные ниже
+        прилетает асинхронно через <code>/tasks/{`{id}`}</code>; метаданные выше
         обновятся после успешного callback'а.
       </p>
 

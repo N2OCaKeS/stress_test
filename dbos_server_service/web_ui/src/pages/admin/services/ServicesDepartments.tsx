@@ -94,6 +94,9 @@ export function ServicesDepartments() {
       icon={Building2}
       hint="департменты — единица изоляции ресурсов"
       items={items}
+      loading={!mockMode && deptsQ.loading}
+      error={!mockMode && deptsQ.error ? deptsQ.error.message : null}
+      onRetry={() => deptsQ.refetch()}
       getId={(d) => d.id}
       canEdit={canEdit}
       readonlyNote={
@@ -102,10 +105,6 @@ export function ServicesDepartments() {
       listHeader={
         !mockMode ? (
           <div className="flex flex-col gap-1">
-            {deptsQ.loading && <div className="spinner" aria-label="Loading" />}
-            {deptsQ.error && (
-              <div className="alert-danger text-[11px]">{deptsQ.error.message}</div>
-            )}
             {/* Счётчик юзеров считается по странице юзеров с капом 200; если
                 всего больше — бейджи могут недосчитывать. Честно сигналим. */}
             <TruncationNotice

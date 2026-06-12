@@ -57,12 +57,14 @@ function tokenExpiresBounds(): { min: string; max: string; default: string } {
 export function SecurityTokens() {
   const [items, setItems] = useState<PersonalAccessToken[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [oneShot, setOneShot] = useState<PATCreateResponse | null>(null);
   const toast = useToast();
 
   const reload = useCallback(async () => {
     setLoading(true);
+    setLoadErr(null);
     try {
       const list = await listMyTokens();
       const now = Date.now();
@@ -73,7 +75,9 @@ export function SecurityTokens() {
       );
       setItems(active);
     } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось загрузить токены"));
+      const msg = apiErrMsg(e, "Не удалось загрузить токены");
+      setLoadErr(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -116,6 +120,13 @@ export function SecurityTokens() {
         </h3>
         {loading ? (
           <div className="text-xs text-dim py-4 text-center">Загрузка…</div>
+        ) : loadErr ? (
+          <div className="alert-danger text-xs flex items-center justify-between gap-2">
+            <span>{loadErr}</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => void reload()}>
+              Повторить
+            </button>
+          </div>
         ) : items.length === 0 ? (
           <div className="text-xs text-dim py-4 text-center">Токенов нет.</div>
         ) : (

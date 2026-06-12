@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Layers, ShieldCheck, Trash2, ExternalLink, Loader2 } from "lucide-react";
+import { Layers, ShieldCheck, Trash2, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   InlineEditor,
@@ -82,28 +82,21 @@ export function ServicesCatalog() {
       icon={Layers}
       hint="каталог сервисов платформы · POST/DELETE — account_admin"
       items={items}
+      loading={!mockMode && servicesQ.loading}
+      error={
+        !mockMode && servicesQ.error
+          ? servicesQ.error instanceof ApiError
+            ? `${servicesQ.error.errorCode}: ${servicesQ.error.message}`
+            : servicesQ.error.message
+          : null
+      }
+      onRetry={() => servicesQ.refetch()}
       getId={(s) => s.service_name}
       canEdit={canEdit}
       readonlyNote={
         canEdit
           ? undefined
           : "Регистрация и удаление сервисов — только account_admin."
-      }
-      listHeader={
-        !mockMode ? (
-          <div className="flex flex-col gap-1">
-            {servicesQ.loading && (
-              <Loader2 className="w-3 h-3 animate-spin text-dim" aria-label="Loading" />
-            )}
-            {servicesQ.error && (
-              <div className="alert-danger text-[11px]">
-                {servicesQ.error instanceof ApiError
-                  ? `${servicesQ.error.errorCode}: ${servicesQ.error.message}`
-                  : servicesQ.error.message}
-              </div>
-            )}
-          </div>
-        ) : null
       }
       renderRow={({ item, active, onSelect }) => (
         <button

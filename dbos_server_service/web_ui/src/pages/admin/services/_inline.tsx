@@ -103,6 +103,19 @@ export interface InlineEditorProps<T> {
   /** Short subtitle/hint shown under the title. */
   hint?: string;
   items: T[];
+  /**
+   * List is still loading. When true, the left pane shows a spinner instead of
+   * the empty-state — otherwise an in-flight fetch reads as «Список пуст.».
+   */
+  loading?: boolean;
+  /**
+   * List failed to load. When set, the left pane shows the error (and optional
+   * retry) instead of the empty-state, so a failed fetch isn't mistaken for «no
+   * items».
+   */
+  error?: string | null;
+  /** Retry handler shown next to `error`. */
+  onRetry?: () => void;
   /** Stable ID accessor. */
   getId: (item: T) => string;
   /** Renders one row in the left list. */
@@ -175,6 +188,9 @@ export function InlineEditor<T>({
   icon: Icon,
   hint,
   items,
+  loading,
+  error,
+  onRetry,
   getId,
   renderRow,
   renderDetail,
@@ -212,7 +228,9 @@ export function InlineEditor<T>({
           <h1 className="text-lg font-semibold leading-tight">{title}</h1>
           {hint && <div className="text-xs text-dim">{hint}</div>}
         </div>
-        <div className="text-xs text-dim mr-2">{items.length} записей</div>
+        <div className="text-xs text-dim mr-2">
+          {loading && items.length === 0 ? "…" : `${items.length} записей`}
+        </div>
         {canEdit && renderCreate && (
           <button
             className="btn btn-primary flex items-center gap-1"
@@ -238,11 +256,24 @@ export function InlineEditor<T>({
             <div className="px-3 py-2 border-b border-token shrink-0">{listHeader}</div>
           )}
           <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-0.5">
-            {items.length === 0 && (
+            {loading && items.length === 0 ? (
+              <div className="text-xs text-dim px-3 py-6 text-center">
+                Загрузка…
+              </div>
+            ) : error ? (
+              <div className="alert-danger text-xs m-1 flex items-center justify-between gap-2">
+                <span>{error}</span>
+                {onRetry && (
+                  <button className="btn btn-ghost btn-sm" onClick={onRetry}>
+                    Повторить
+                  </button>
+                )}
+              </div>
+            ) : items.length === 0 ? (
               <div className="text-xs text-dim px-3 py-6 text-center">
                 Список пуст.
               </div>
-            )}
+            ) : null}
             {items.map((it) => {
               const itemId = getId(it);
               return (

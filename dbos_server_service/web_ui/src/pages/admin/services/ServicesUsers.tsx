@@ -262,6 +262,9 @@ export function ServicesUsers() {
       icon={UsersIcon}
       hint="CRUD аккаунтов, reset password, lockout/ban, revoke sessions"
       items={items}
+      loading={!mockMode && usersQ.loading}
+      error={!mockMode && usersQ.error ? usersQ.error.message : null}
+      onRetry={() => usersQ.refetch()}
       getId={(u) => u.id}
       canEdit={canEdit}
       readonlyNote={!canEdit ? "Просмотр без права изменения" : undefined}
@@ -271,7 +274,9 @@ export function ServicesUsers() {
           <div className="text-[11px] text-dim">
             {mockMode
               ? "mock-режим — данные из src/mocks/auth.ts"
-              : `показано ${items.length} из ${total}`}
+              : usersQ.loading && items.length === 0
+                ? "загрузка…"
+                : `показано ${items.length} из ${total}`}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[11px]">
             <label className="flex items-center gap-1">
@@ -339,14 +344,6 @@ export function ServicesUsers() {
                   →
                 </button>
               </div>
-            </div>
-          )}
-          {!mockMode && usersQ.loading && (
-            <div className="spinner" aria-label="Loading" />
-          )}
-          {!mockMode && usersQ.error && (
-            <div className="alert-danger text-[11px]">
-              {usersQ.error.message}
             </div>
           )}
         </div>

@@ -15,16 +15,19 @@ export function SecurityServices() {
   const canEdit = persona.platform_role === "account_admin";
   const [items, setItems] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const toast = useToast();
 
   const reload = useCallback(async () => {
     setLoading(true);
+    setLoadErr(null);
     try {
       setItems(await listServices());
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось загрузить сервисы");
+      const msg = e instanceof ApiError ? e.message : "Не удалось загрузить сервисы";
+      setLoadErr(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -77,6 +80,13 @@ export function SecurityServices() {
         </h3>
         {loading ? (
           <div className="text-xs text-dim py-4 text-center">Загрузка…</div>
+        ) : loadErr ? (
+          <div className="alert-danger text-xs flex items-center justify-between gap-2">
+            <span>{loadErr}</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => void reload()}>
+              Повторить
+            </button>
+          </div>
         ) : items.length === 0 ? (
           <div className="text-xs text-dim py-4 text-center">Сервисов нет.</div>
         ) : (

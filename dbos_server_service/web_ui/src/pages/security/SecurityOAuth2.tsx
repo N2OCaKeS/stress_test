@@ -21,6 +21,7 @@ const KNOWN_GRANTS = ["authorization_code", "client_credentials"];
 export function SecurityOAuth2() {
   const [items, setItems] = useState<OAuth2Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [secret, setSecret] = useState<OAuth2ClientCreatedResponse | null>(null);
   const [tab, setTab] = useState<"clients" | "authorize" | "token">("clients");
@@ -28,11 +29,13 @@ export function SecurityOAuth2() {
 
   const reload = useCallback(async () => {
     setLoading(true);
+    setLoadErr(null);
     try {
       setItems(await listClients());
     } catch (e) {
-      if (e instanceof ApiError) toast.error(e.message);
-      else toast.error("Не удалось загрузить клиентов");
+      const msg = e instanceof ApiError ? e.message : "Не удалось загрузить клиентов";
+      setLoadErr(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -100,6 +103,13 @@ export function SecurityOAuth2() {
             </h3>
             {loading ? (
               <div className="text-xs text-dim py-4 text-center">Загрузка…</div>
+            ) : loadErr ? (
+              <div className="alert-danger text-xs flex items-center justify-between gap-2">
+                <span>{loadErr}</span>
+                <button className="btn btn-ghost btn-sm" onClick={() => void reload()}>
+                  Повторить
+                </button>
+              </div>
             ) : items.length === 0 ? (
               <div className="text-xs text-dim py-4 text-center">
                 Клиентов нет.

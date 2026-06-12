@@ -22,7 +22,7 @@ import type {
   ServerOsSyncRequest,
 } from "@/api/server/types";
 
-// ── catalog: list / detail / lookup-by-name ────────────────────────────────
+// ── catalog: list ───────────────────────────────────────────────────────────
 
 /** Параметры пагинации списка OS-версий (offset envelope, legacy). */
 export interface ListOsVersionsQuery {
@@ -43,23 +43,6 @@ export function listOsVersions(
   return apiGet<OffsetPaginatedResponse<OsVersion>>("/server/v1/os-versions", {
     query: { ...query },
   });
-}
-
-/** `GET /api/server/v1/os-versions/{id}` — карточка версии по id. */
-export function getOsVersion(id: string): Promise<OsVersion> {
-  return apiGet<OsVersion>(`/server/v1/os-versions/${id}`);
-}
-
-/**
- * `GET /api/server/v1/os-versions/by-name/{name}` — карточка по UNIQUE-имени.
- *
- * Имя ходит через URL path-segment, поэтому caller обязан энкодить его сам
- * если в нём есть `/`. Backend ловит 404 → `OS_VERSION_NOT_FOUND`.
- */
-export function getOsVersionByName(name: string): Promise<OsVersion> {
-  return apiGet<OsVersion>(
-    `/server/v1/os-versions/by-name/${encodeURIComponent(name)}`,
-  );
 }
 
 // ── catalog: create / update / delete ──────────────────────────────────────

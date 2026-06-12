@@ -13,7 +13,7 @@
  * WARN-level — норма: drift не перетирает БД, owner сам решает чинить или
  * принять текущее состояние через `inventorySync` (выровняет БД по боксу).
  */
-import { AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
@@ -22,6 +22,7 @@ import { apiErrMsg } from "@/api/client";
 import { formatMskShort } from "@/lib/datetime";
 import { getServerDrift, inventorySync } from "@/api/server/servers";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
+import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import { listAccounts } from "@/api/server/accounts";
 import type {
   CursorPaginatedResponse,
@@ -186,43 +187,11 @@ export function DriftTab({ serverId, server }: Props) {
       </div>
 
       {syncOutcome.tracked && (
-        <div className="surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1.5">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium">inventory sync</span>
-            <span className="mono text-dim">
-              {syncOutcome.tracked.taskId}
-            </span>
-            <span
-              className={`badge ${
-                syncOutcome.tracked.status === "succeeded"
-                  ? "badge-ok"
-                  : syncOutcome.tracked.status === "failed"
-                    ? "badge-danger"
-                    : "badge-warn"
-              }`}
-            >
-              {syncOutcome.tracked.status}
-            </span>
-            {syncOutcome.tracked.polling && (
-              <span className="flex items-center gap-1 text-dim">
-                <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
-              </span>
-            )}
-          </div>
-          {!syncOutcome.tracked.polling &&
-            syncOutcome.tracked.status === "succeeded" && (
-              <div className="flex items-center gap-1 text-ok">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Инвентаризация
-                завершена — сводка обновлена.
-              </div>
-            )}
-          {syncOutcome.tracked.error && (
-            <div className="flex items-start gap-1.5 text-danger">
-              <AlertCircle className="w-3.5 h-3.5 mt-0.5" />
-              <span className="flex-1">{syncOutcome.tracked.error}</span>
-            </div>
-          )}
-        </div>
+        <TaskOutcomeBanner
+          outcome={syncOutcome.tracked}
+          label="inventory sync"
+          successText="Инвентаризация завершена — сводка обновлена."
+        />
       )}
 
       {driftQ.loading && (

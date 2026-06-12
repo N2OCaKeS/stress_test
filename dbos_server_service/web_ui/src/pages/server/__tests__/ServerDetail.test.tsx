@@ -57,7 +57,6 @@ vi.mock("@/api/server/osVersions", () => ({
 }));
 vi.mock("@/api/server/accounts", () => ({
   listAccounts: vi.fn(() => new Promise(() => {})),
-  getAccount: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock("@/api/server/ipmi", () => ({
   getIpmi: vi.fn(() => new Promise(() => {})),

@@ -24,8 +24,6 @@ import {
   Trash2,
   Settings,
   AlertTriangle,
-  AlertCircle,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Plus,
@@ -61,6 +59,7 @@ import {
 } from "@/api/server/osVersions";
 import { FormRow } from "@/pages/admin/services/_inline";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
@@ -439,44 +438,7 @@ function LifecycleCard({
           dep_admin своего департамента).
         </div>
       )}
-      {outcome && <LifecycleOutcome outcome={outcome} />}
-    </div>
-  );
-}
-
-// Исход последней задиспатченной lifecycle-задачи: спиннер пока worker её
-// крутит, success/error по завершении. `last_error` показываем как есть —
-// backend кладёт туда уже человекочитаемый текст (SSH_AUTH_FAILED и т.п.).
-function LifecycleOutcome({ outcome }: { outcome: TrackedTask }) {
-  const tone =
-    outcome.status === "succeeded"
-      ? "badge-ok"
-      : outcome.status === "failed"
-        ? "badge-danger"
-        : "badge-warn";
-  return (
-    <div className="mt-3 surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1.5">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="font-medium">{outcome.label}</span>
-        <span className="mono text-dim">{outcome.taskId}</span>
-        <span className={`badge ${tone}`}>{outcome.status}</span>
-        {outcome.polling && (
-          <span className="flex items-center gap-1 text-dim">
-            <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
-          </span>
-        )}
-      </div>
-      {!outcome.polling && outcome.status === "succeeded" && (
-        <div className="flex items-center gap-1 text-ok">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Задача завершилась успешно.
-        </div>
-      )}
-      {outcome.error && (
-        <div className="flex items-start gap-1.5 text-danger">
-          <AlertCircle className="w-3.5 h-3.5 mt-0.5" />
-          <span className="flex-1">{outcome.error}</span>
-        </div>
-      )}
+      {outcome && <TaskOutcomeBanner outcome={outcome} className="mt-3" />}
     </div>
   );
 }

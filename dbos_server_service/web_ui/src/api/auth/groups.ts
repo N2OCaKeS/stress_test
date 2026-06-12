@@ -49,20 +49,6 @@ export interface GroupRoleAssignRequest {
   roles: string[];
 }
 
-export interface UserGroupsResponse {
-  group_id: string;
-  group_name: string;
-  /** Backend отдаёт `added_at`; нормализуем в `joined_at` при чтении. */
-  joined_at: string;
-}
-
-/** Сырая форма ответа `GET /users/{id}/groups` от backend'а. */
-interface BackendUserGroup {
-  group_id: string;
-  group_name: string;
-  added_at: string;
-}
-
 // ---------------------------------------------------------------------------
 // List / get / create / patch / delete
 // ---------------------------------------------------------------------------
@@ -254,19 +240,6 @@ export function revokeGroupRoles(
 // ---------------------------------------------------------------------------
 // User-side shortcuts (live in users.py but read like group endpoints)
 // ---------------------------------------------------------------------------
-
-export async function listUserGroups(
-  userId: string,
-): Promise<UserGroupsResponse[]> {
-  const raw = await apiGet<BackendUserGroup[]>(
-    `/auth/v1/users/${userId}/groups`,
-  );
-  return raw.map((g) => ({
-    group_id: g.group_id,
-    group_name: g.group_name,
-    joined_at: g.added_at,
-  }));
-}
 
 export function addUserToGroup(
   userId: string,

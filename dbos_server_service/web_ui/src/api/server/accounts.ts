@@ -70,17 +70,6 @@ export function listAccounts(
   });
 }
 
-/**
- * Карточка аккаунта.
- *
- * Backend возвращает `password_b64` только если у вызывающего есть action
- * `view_password`; иначе поле — `null`. Раскрытие пароля бьёт CRITICAL audit
- * `server_account.password_revealed` и попадает под per-IP+account rate-limit.
- */
-export function getAccount(accountId: string): Promise<ServerAccount> {
-  return apiGet<ServerAccount>(`${BASE}/server-accounts/${accountId}`);
-}
-
 /** Создать аккаунт сразу на нескольких серверах (пароль шифруется at-rest). */
 export function createAccount(
   body: ServerAccountCreateRequest,

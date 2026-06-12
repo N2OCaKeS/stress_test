@@ -309,11 +309,6 @@ export function patchMe(body: MeUpdateRequest): Promise<MeResponse> {
   return apiPatch<MeResponse>("/auth/v1/me", body);
 }
 
-/** @deprecated use `patchMe`. Kept as thin wrapper for legacy call sites. */
-export function updateMe(body: MeUpdateRequest): Promise<MeResponse> {
-  return patchMe(body);
-}
-
 // ---------------------------------------------------------------------------
 // User permissions / groups
 // ---------------------------------------------------------------------------

@@ -97,30 +97,3 @@ export function bulkRevokeServiceRole(
     req,
   );
 }
-
-// ---------------------------------------------------------------------------
-// Convenience: flat search across departments + services. Backend has no
-// global endpoint — the UI iterates known `(department, service)` pairs
-// and concatenates. Callers pass the pair list (`scopes`) and we resolve
-// in parallel.
-// ---------------------------------------------------------------------------
-
-export interface ServiceRoleScope {
-  departmentId: string;
-  serviceName: ServiceName;
-}
-
-export async function listServiceRolesAcross(
-  scopes: ServiceRoleScope[],
-): Promise<Array<{ scope: ServiceRoleScope; roles: ServiceRole[] }>> {
-  const results = await Promise.allSettled(
-    scopes.map(async (scope) => {
-      const roles = await listServiceRoles(
-        scope.departmentId,
-        scope.serviceName,
-      );
-      return { scope, roles };
-    }),
-  );
-  return results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
-}

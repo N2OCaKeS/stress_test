@@ -44,8 +44,8 @@ export interface ListPermissionsQuery {
  * `GET /api/server/v1/permissions` — матрица grants envelope'ом
  * `{items, total, described}`.
  *
- * `entity_type` бэкендом как query-параметр напрямую не парсится — для
- * фильтрации по сущности используй `getPermissionsForEntity` (path-форма).
+ * `entity_type` бэкендом как query-параметр напрямую не парсится — фильтр по
+ * сущности backend принимает только path-формой `/permissions/{entity_type}`.
  * `role` и `describe` уходят как query-params как есть.
  */
 export function listPermissions(
@@ -62,20 +62,6 @@ export function listPermissions(
  */
 export function getPermissionCatalog(): Promise<PermissionCatalogItem[]> {
   return apiGet<PermissionCatalogItem[]>("/server/v1/permissions/catalog");
-}
-
-/**
- * `GET /api/server/v1/permissions/{entity_type}` — grants для одной
- * сущности. Envelope тот же `{items, total, described=false}` (describe-
- * обогащения у этого endpoint'а нет). Неизвестный `entity_type` → 422
- * `UNKNOWN_ENTITY_TYPE`.
- */
-export function getPermissionsForEntity(
-  entityType: EntityType,
-): Promise<PermissionListResponse> {
-  return apiGet<PermissionListResponse>(
-    `/server/v1/permissions/${entityType}`,
-  );
 }
 
 // ── mutate ──────────────────────────────────────────────────────────────────

@@ -25,11 +25,6 @@ export function listRules(
   });
 }
 
-/** `GET /api/logging/v1/rules/{id}`. */
-export function getRule(id: string): Promise<Rule> {
-  return apiGet<Rule>(`/logging/v1/rules/${id}`);
-}
-
 /**
  * `POST /api/logging/v1/rules`.
  *

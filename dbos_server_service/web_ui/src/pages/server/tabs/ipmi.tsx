@@ -28,7 +28,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
-  CheckCircle2,
   Edit3,
   KeyRound,
   Power,
@@ -38,6 +37,7 @@ import {
 } from "lucide-react";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
+import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import {
   deleteIpmi,
   dispatchPowerStatus,
@@ -775,41 +775,11 @@ function PowerCard({
       </div>
 
       {powerOutcome.tracked && (
-        <div className="surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1.5 mb-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium">{powerOutcome.tracked.label}</span>
-            <span className="mono text-dim">{powerOutcome.tracked.taskId}</span>
-            <span
-              className={`badge ${
-                powerOutcome.tracked.status === "succeeded"
-                  ? "badge-ok"
-                  : powerOutcome.tracked.status === "failed"
-                    ? "badge-danger"
-                    : "badge-warn"
-              }`}
-            >
-              {powerOutcome.tracked.status}
-            </span>
-            {powerOutcome.tracked.polling && (
-              <span className="flex items-center gap-1 text-dim">
-                <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
-              </span>
-            )}
-          </div>
-          {!powerOutcome.tracked.polling &&
-            powerOutcome.tracked.status === "succeeded" && (
-              <div className="flex items-center gap-1 text-ok">
-                <CheckCircle2 className="w-3.5 h-3.5" /> BMC подтвердил —
-                состояние обновлено.
-              </div>
-            )}
-          {powerOutcome.tracked.error && (
-            <div className="flex items-start gap-1.5 text-danger">
-              <AlertCircle className="w-3.5 h-3.5 mt-0.5" />
-              <span className="flex-1">{powerOutcome.tracked.error}</span>
-            </div>
-          )}
-        </div>
+        <TaskOutcomeBanner
+          outcome={powerOutcome.tracked}
+          className="mb-3"
+          successText="BMC подтвердил — состояние обновлено."
+        />
       )}
 
       {!canPower && (
@@ -986,41 +956,11 @@ function CredentialsCard({
       )}
 
       {rotateOutcome.tracked && (
-        <div className="surface-2 border border-token rounded p-3 text-xs flex flex-col gap-1.5 mt-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium">{rotateOutcome.tracked.label}</span>
-            <span className="mono text-dim">{rotateOutcome.tracked.taskId}</span>
-            <span
-              className={`badge ${
-                rotateOutcome.tracked.status === "succeeded"
-                  ? "badge-ok"
-                  : rotateOutcome.tracked.status === "failed"
-                    ? "badge-danger"
-                    : "badge-warn"
-              }`}
-            >
-              {rotateOutcome.tracked.status}
-            </span>
-            {rotateOutcome.tracked.polling && (
-              <span className="flex items-center gap-1 text-dim">
-                <RefreshCw className="w-3 h-3 animate-spin" /> ждём worker…
-              </span>
-            )}
-          </div>
-          {!rotateOutcome.tracked.polling &&
-            rotateOutcome.tracked.status === "succeeded" && (
-              <div className="flex items-center gap-1 text-ok">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Пароль применён на BMC и
-                сохранён — старый недействителен.
-              </div>
-            )}
-          {rotateOutcome.tracked.error && (
-            <div className="flex items-start gap-1.5 text-danger">
-              <AlertCircle className="w-3.5 h-3.5 mt-0.5" />
-              <span className="flex-1">{rotateOutcome.tracked.error}</span>
-            </div>
-          )}
-        </div>
+        <TaskOutcomeBanner
+          outcome={rotateOutcome.tracked}
+          className="mt-3"
+          successText="Пароль применён на BMC и сохранён — старый недействителен."
+        />
       )}
 
       <p className="mt-3 text-xs text-dim">

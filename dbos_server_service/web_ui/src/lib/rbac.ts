@@ -26,18 +26,35 @@ export function isDepAdmin(persona: Persona): boolean {
 }
 
 /**
- * True для платформенных ролей, которым server_service отказывает в доступе к
- * бизнес-данным целиком (`account_admin`, `logging_admin`). Backend режет их
- * на любом не-public пути 403 `PLATFORM_ADMIN_BUSINESS_DATA_DENIED` (см.
- * `middleware/platform_admin_guard.py`) — включая GET-список серверов. Такая
- * персона не может ни читать, ни писать ничего в зоне /server, поэтому UI не
- * должен показывать ей ни список, ни управляющие кнопки.
+ * True для платформенных ролей, которым сервисы бизнес-данных отказывают в
+ * доступе целиком: `account_admin`, `logging_admin`, `logging_reader`. У этих
+ * ролей нет департамента, а server/secret/worker — dept-scoped. server_service
+ * режет их 403 `PLATFORM_ADMIN_BUSINESS_DATA_DENIED`, secret_service —
+ * `SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, включая GET-списки. Такая персона не
+ * может ни читать, ни писать ничего в этих зонах — UI не показывает ей ни
+ * список, ни управляющие кнопки.
  */
-export function isServerZoneBlocked(persona: Persona): boolean {
+function isPlatformBusinessDataBlocked(persona: Persona): boolean {
   return (
     persona.platform_role === "account_admin" ||
-    persona.platform_role === "logging_admin"
+    persona.platform_role === "logging_admin" ||
+    persona.platform_role === "logging_reader"
   );
+}
+
+/** Платформенная роль отрезана от server-зоны (servers / worker). */
+export function isServerZoneBlocked(persona: Persona): boolean {
+  return isPlatformBusinessDataBlocked(persona);
+}
+
+/**
+ * Платформенная роль отрезана от secret-зоны. secret_service — dept-scoped,
+ * платформенные роли без департамента получают 403
+ * `SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT` даже на список. Зеркало
+ * `isServerZoneBlocked` для /secret.
+ */
+export function isSecretZoneBlocked(persona: Persona): boolean {
+  return isPlatformBusinessDataBlocked(persona);
 }
 
 /**

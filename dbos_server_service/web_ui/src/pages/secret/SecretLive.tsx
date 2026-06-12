@@ -32,6 +32,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { formatMsk } from "@/lib/datetime";
 import { useLabelMaps } from "@/lib/labels";
 import { useQuery } from "@/api/auth/useQuery";
+import { isSecretZoneBlocked } from "@/lib/rbac";
 import { ApiError, apiErrMsg } from "@/api/client";
 import {
   createCredential,
@@ -91,6 +92,11 @@ export function SecretLive() {
   const selectedId = params.get("id");
   const action = params.get("action"); // "new" | null
 
+  // account_admin / logging_* без департамента отрезаны от secret_service на
+  // уровне backend (SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT) — даже список кред
+  // вернёт 403. Не дёргаем API и показываем объяснение вместо мёртвой страницы.
+  const zoneBlocked = isSecretZoneBlocked(persona);
+
   const [search, setSearch] = useState("");
   const [filterScope, setFilterScope] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
@@ -104,6 +110,7 @@ export function SecretLive() {
         status: filterStatus || undefined,
       }),
     [filterScope, filterStatus],
+    { enabled: !zoneBlocked },
   );
 
   // Аккумулятор для cursor «load more»: первая страница приходит из listQ,
@@ -326,6 +333,14 @@ export function SecretLive() {
     </aside>
   );
 
+  if (zoneBlocked) {
+    return (
+      <Shell breadcrumb="secret_service / credentials">
+        <BlockedPane />
+      </Shell>
+    );
+  }
+
   return (
     <Shell breadcrumb="secret_service / credentials" middle={aside}>
       {action === "new" && canManage ? (
@@ -350,6 +365,25 @@ export function SecretLive() {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+
+function BlockedPane() {
+  return (
+    <section className="flex-1 min-w-0 overflow-hidden flex items-center justify-center">
+      <div className="empty-card max-w-md text-center">
+        <AlertCircle className="w-10 h-10 mx-auto text-warn mb-3" />
+        <div className="text-sm font-medium mb-2">
+          Раздел недоступен для платформенной роли
+        </div>
+        <div className="text-xs text-dim">
+          secret_service — хранилище в рамках департамента. Учётка{" "}
+          <b>account_admin</b> / <b>logging_admin</b> / <b>logging_reader</b> не
+          привязана к департаменту и не имеет доступа к кредам — работайте под
+          департаментной ролью (dep_admin или secret.*).
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function CredRow({
   cred,

@@ -23,9 +23,47 @@ import type {
   IpmiCreateRequest,
   IpmiCredentials,
   IpmiUpdateRequest,
+  OffsetPaginatedResponse,
   PowerStatus,
   TaskDispatchResponse,
 } from "@/api/server/types";
+
+// ---------------------------------------------------------------------------
+// Fleet-wide list: /api/server/v1/ipmi-controllers
+// ---------------------------------------------------------------------------
+
+/** Параметры fleet-листа контроллеров (offset-режим). */
+export interface ListIpmiControllersQuery {
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * Список IPMI-контроллеров всего отдела (а не per-server).
+ *
+ * Backend: `GET /api/server/v1/ipmi-controllers`. JOIN с `servers` скоупит
+ * выдачу по department'у вызывающего (контроллеры наследуют dept сервера).
+ * Доступ: `(ipmi_controller, *, view)` — без него 403. Платформенные роли
+ * (account_admin/logging_*) backend режет 403 на server-зону целиком, поэтому
+ * вызывать этот wrapper для них не нужно (gate на стороне UI).
+ *
+ * Endpoint умеет cursor-пагинацию (`cursor=true`/`after`), но по умолчанию
+ * отдаёт offset-envelope `{items, total, limit, offset}` — здесь поддержан
+ * базовый offset-режим, как у `listServers`.
+ */
+export function listIpmiControllers(
+  query: ListIpmiControllersQuery = {},
+): Promise<OffsetPaginatedResponse<IpmiController>> {
+  return apiGet<OffsetPaginatedResponse<IpmiController>>(
+    "/server/v1/ipmi-controllers",
+    {
+      query: {
+        limit: query.limit,
+        offset: query.offset,
+      },
+    },
+  );
+}
 
 // ---------------------------------------------------------------------------
 // CRUD: /api/server/v1/servers/{server_id}/ipmi

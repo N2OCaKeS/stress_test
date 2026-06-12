@@ -7,6 +7,7 @@ import { LabelsProvider } from "@/lib/labels";
 import { PersonaSelector } from "@/pages/auth/PersonaSelector";
 import { Home } from "@/pages/home/Home";
 import { Server } from "@/pages/server/Server";
+import { IpmiFleet } from "@/pages/server/IpmiFleet";
 import { Secret } from "@/pages/secret/Secret";
 import { Users } from "@/pages/users/Users";
 import { UserDetail } from "@/pages/users/UserDetail";
@@ -73,6 +74,14 @@ export function App() {
               element={
                 <RouteGuard service="server">
                   <Server />
+                </RouteGuard>
+              }
+            />
+            <Route
+              path="/server/ipmi"
+              element={
+                <RouteGuard service="server">
+                  <IpmiFleet />
                 </RouteGuard>
               }
             />

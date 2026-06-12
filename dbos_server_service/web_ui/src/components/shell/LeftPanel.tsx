@@ -5,6 +5,7 @@ import {
   Home,
   Users,
   Server,
+  Cpu,
   LockKeyhole,
   Cog,
   ListChecks,
@@ -37,7 +38,16 @@ interface ServiceChip {
 
 const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
   auth: { service: "auth", to: "/users", icon: Users, label: "Users" },
-  server: { service: "server", to: "/server", icon: Server, label: "Servers" },
+  server: {
+    service: "server",
+    to: "/server",
+    icon: Server,
+    label: "Servers",
+    subItems: [
+      { to: "/server", icon: Server, label: "Servers" },
+      { to: "/server/ipmi", icon: Cpu, label: "IPMI" },
+    ],
+  },
   secret: { service: "secret", to: "/secret", icon: LockKeyhole, label: "Secrets" },
   worker: {
     service: "worker",

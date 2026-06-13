@@ -69,7 +69,10 @@ def _anon_rate_limit_key(request: Request) -> str | None:
 
 @router.get(
     "",
-    response_model=None,
+    response_model=(
+        PaginatedResponse[OsVersionResponse]
+        | CursorPaginatedResponse[OsVersionResponse]
+    ),
     summary="Список OS-версий в каталоге",
     description=(
         "Глобальный каталог OS-версий. Публичный read — без авторизации.\n\n"

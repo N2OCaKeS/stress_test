@@ -90,7 +90,10 @@ async def create_account(
 
 @router.get(
     "",
-    response_model=None,
+    response_model=(
+        PaginatedResponse[ServerAccountResponse]
+        | CursorPaginatedResponse[ServerAccountResponse]
+    ),
     summary="Список аккаунтов, привязанных к серверу",
     description=(
         "Принимает `server_id` query-параметром. Возвращает страницу аккаунтов, "

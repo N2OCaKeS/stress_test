@@ -28,6 +28,30 @@ def captured_emits(monkeypatch):
     return make_emit_capture(monkeypatch)
 
 
+class TestListOpenApiSchema:
+    """`GET /os-versions` должен нести типизированный response-schema, а не
+    пустую `{}` (иначе генераторы клиентов не видят envelope)."""
+
+    def test_list_response_schema_is_typed(self):
+        from src.main import app
+
+        spec = app.openapi()
+        get_op = spec["paths"][BASE]["get"]
+        schema = get_op["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema != {}
+        # Union двух envelope'ов — anyOf из двух $ref.
+        refs = {opt.get("$ref") for opt in schema.get("anyOf", [])}
+        assert any(r and "PaginatedResponse_OsVersionResponse_" in r for r in refs)
+        assert any(r and "CursorPaginatedResponse_OsVersionResponse_" in r for r in refs)
+
+    def test_os_version_schema_fields(self):
+        from src.main import app
+
+        spec = app.openapi()
+        props = spec["components"]["schemas"]["OsVersionResponse"]["properties"]
+        assert {"id", "name", "repositories", "discovered_at"} <= set(props)
+
+
 # ── POST ────────────────────────────────────────────────────────────────────
 
 class TestCreateOsVersion:

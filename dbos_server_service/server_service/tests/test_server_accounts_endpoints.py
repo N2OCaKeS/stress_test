@@ -29,6 +29,35 @@ BASE = "/api/server/v1/server-accounts"
 from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
 
 
+class TestListOpenApiSchema:
+    """`GET /server-accounts` должен нести типизированный response-schema, а не
+    пустую `{}`; при этом plaintext-пароль (`password_b64`) в листинге не светим
+    через схему — он заполняется только в single-GET держателю `view_password`."""
+
+    def test_list_response_schema_is_typed(self):
+        from src.main import app
+
+        spec = app.openapi()
+        get_op = spec["paths"][BASE]["get"]
+        schema = get_op["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema != {}
+        refs = {opt.get("$ref") for opt in schema.get("anyOf", [])}
+        assert any(r and "PaginatedResponse_ServerAccountResponse_" in r for r in refs)
+        assert any(
+            r and "CursorPaginatedResponse_ServerAccountResponse_" in r for r in refs
+        )
+
+    def test_account_schema_hides_raw_secret(self):
+        from src.main import app
+
+        spec = app.openapi()
+        props = spec["components"]["schemas"]["ServerAccountResponse"]["properties"]
+        # Зашифрованный пароль и сырой plaintext в схему не попадают.
+        assert "password" not in props
+        assert "password_encrypted" not in props
+        assert {"id", "login", "server_ids", "department_id"} <= set(props)
+
+
 @pytest.fixture
 def captured_dispatch(monkeypatch):
     """Перехват worker_client.dispatch_task для fan-out'а на PATCH'е."""

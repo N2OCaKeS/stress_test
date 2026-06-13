@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider, USE_MOCK_AUTH } from "@/contexts/AuthContext";
@@ -5,28 +6,84 @@ import { PersonaProvider } from "@/contexts/PersonaContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { LabelsProvider } from "@/lib/labels";
 import { PersonaSelector } from "@/pages/auth/PersonaSelector";
-import { Home } from "@/pages/home/Home";
-import { Server } from "@/pages/server/Server";
-import { IpmiFleet } from "@/pages/server/IpmiFleet";
-import { Secret } from "@/pages/secret/Secret";
-import { Users } from "@/pages/users/Users";
-import { UserDetail } from "@/pages/users/UserDetail";
-import { GroupDetail } from "@/pages/users/GroupDetail";
-import { BotDetail } from "@/pages/users/BotDetail";
-import { Admin } from "@/pages/admin/Admin";
 import { Login } from "@/pages/system/Login";
 import { NotFound } from "@/pages/system/NotFound";
-import { MyAccount } from "@/pages/users/MyAccount";
-import { WizardCreateCredential } from "@/pages/system/WizardCreateCredential";
-import { WizardRotation } from "@/pages/system/WizardRotation";
-import { Log } from "@/pages/log/Log";
-import { LogRules } from "@/pages/log/LogRules";
-import { LogRetention } from "@/pages/log/LogRetention";
-import { Worker } from "@/pages/worker/Worker";
-import { WorkerDlq } from "@/pages/worker/WorkerDlq";
-import { Patterns } from "@/pages/patterns/Patterns";
 import { RouteGuard } from "@/components/RouteGuard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+
+const Home = lazy(() =>
+  import("@/pages/home/Home").then((m) => ({ default: m.Home }))
+);
+const Server = lazy(() =>
+  import("@/pages/server/Server").then((m) => ({ default: m.Server }))
+);
+const IpmiFleet = lazy(() =>
+  import("@/pages/server/IpmiFleet").then((m) => ({ default: m.IpmiFleet }))
+);
+const Secret = lazy(() =>
+  import("@/pages/secret/Secret").then((m) => ({ default: m.Secret }))
+);
+const Users = lazy(() =>
+  import("@/pages/users/Users").then((m) => ({ default: m.Users }))
+);
+const UserDetail = lazy(() =>
+  import("@/pages/users/UserDetail").then((m) => ({ default: m.UserDetail }))
+);
+const GroupDetail = lazy(() =>
+  import("@/pages/users/GroupDetail").then((m) => ({ default: m.GroupDetail }))
+);
+const BotDetail = lazy(() =>
+  import("@/pages/users/BotDetail").then((m) => ({ default: m.BotDetail }))
+);
+const MyAccount = lazy(() =>
+  import("@/pages/users/MyAccount").then((m) => ({ default: m.MyAccount }))
+);
+const Admin = lazy(() =>
+  import("@/pages/admin/Admin").then((m) => ({ default: m.Admin }))
+);
+const WizardCreateCredential = lazy(() =>
+  import("@/pages/system/WizardCreateCredential").then((m) => ({
+    default: m.WizardCreateCredential,
+  }))
+);
+const WizardRotation = lazy(() =>
+  import("@/pages/system/WizardRotation").then((m) => ({
+    default: m.WizardRotation,
+  }))
+);
+const Log = lazy(() =>
+  import("@/pages/log/Log").then((m) => ({ default: m.Log }))
+);
+const LogRules = lazy(() =>
+  import("@/pages/log/LogRules").then((m) => ({ default: m.LogRules }))
+);
+const LogRetention = lazy(() =>
+  import("@/pages/log/LogRetention").then((m) => ({ default: m.LogRetention }))
+);
+const Worker = lazy(() =>
+  import("@/pages/worker/Worker").then((m) => ({ default: m.Worker }))
+);
+const WorkerDlq = lazy(() =>
+  import("@/pages/worker/WorkerDlq").then((m) => ({ default: m.WorkerDlq }))
+);
+const Patterns = lazy(() =>
+  import("@/pages/patterns/Patterns").then((m) => ({ default: m.Patterns }))
+);
+
+function RouteFallback() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100vh",
+      }}
+    >
+      <div className="spinner big" />
+    </div>
+  );
+}
 
 export function App() {
   return (
@@ -37,6 +94,7 @@ export function App() {
             <ToastProvider>
               <LabelsProvider>
               <ErrorBoundary>
+              <Suspense fallback={<RouteFallback />}>
               <Routes>
             <Route
               path="/"
@@ -231,6 +289,7 @@ export function App() {
             <Route path="/404" element={<NotFound />} />
             <Route path="*" element={<Navigate to="/404" replace />} />
               </Routes>
+              </Suspense>
               </ErrorBoundary>
               </LabelsProvider>
             </ToastProvider>

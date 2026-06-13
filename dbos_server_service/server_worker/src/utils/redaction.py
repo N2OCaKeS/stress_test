@@ -108,6 +108,13 @@ _KV_TOKEN_RE = re.compile(
 # ── Bearer <token> ───────────────────────────────────────────────────────────
 _BEARER_RE = re.compile(r"(?i)\bBearer\s+(?P<val>[A-Za-z0-9._\-]+)")
 
+# ── Authorization: Basic <base64(user:pass)> ─────────────────────────────────
+#
+# Basic-схема несёт base64 от `user:pass`. Сегодня HTTP-клиенты заголовки в
+# repr исключения не кладут, но будущий request-debug хук может — правило
+# defence-in-depth, как PEM-блок выше.
+_BASIC_AUTH_RE = re.compile(r"(?i)\bAuthorization:\s*Basic\s+(?P<val>[A-Za-z0-9+/=]+)")
+
 # ── Опаковые токены системы: dbos_pat_..., dbos_bot_..., pat_..., bot_... ────
 #
 # `pat_` / `bot_` без `dbos_` префикса — лишь намёк на токен; маскируем,
@@ -146,6 +153,7 @@ def redact_error_message(msg: str) -> str:
         это номер BMC-порта, его НЕ маскируем.
       * `password=...`, `secret=...`, `token=...` (и др. известные ключи)
       * `Bearer <token>` → `Bearer <TOKEN>`
+      * `Authorization: Basic <base64>` → `Authorization: Basic <CREDENTIALS>`
       * `dbos_pat_*`, `dbos_bot_*`, `pat_*`, `bot_*` → `<TOKEN>`
       * JWT-подобные строки → `<TOKEN>`
       * `password 'hunter2'`, `password "hunter2"` → `password '<PASSWORD>'`
@@ -185,8 +193,9 @@ def redact_error_message(msg: str) -> str:
     result = _KV_SECRET_RE.sub(lambda m: f"{m.group(1)}=<SECRET>", result)
     result = _KV_TOKEN_RE.sub(lambda m: f"{m.group(1)}=<TOKEN>", result)
 
-    # 5. Bearer-токены.
+    # 5. Bearer-токены и Authorization: Basic.
     result = _BEARER_RE.sub("Bearer <TOKEN>", result)
+    result = _BASIC_AUTH_RE.sub("Authorization: Basic <CREDENTIALS>", result)
 
     # 6. JWT — до OPAQUE, потому что pat_-токен может матчить часть JWT иначе.
     result = _JWT_RE.sub("<TOKEN>", result)

@@ -71,8 +71,29 @@ def initialization_freeipa_server():
     cmd("venv/bin/pip3 install python-freeipa requests-gssapi gssapi")
     
     """
+        Удаление 10.177.128.198 из /etc/resolv.conf и /etc/network/interfaces
+    """
+    with open('/etc/resolv.conf', 'r') as file_resolv:
+        resolv_lines = file_resolv.readlines()
+    resolv_lines = [line for line in resolv_lines if 'nameserver 10.177.128.198' not in line]
+    with open('/etc/resolv.conf', 'w') as file_resolv:
+        file_resolv.writelines(resolv_lines)
+
+    file_network = open("/etc/network/interfaces", "r")
+    network_settings = file_network.readlines()
+    file_network.close()
+    for i, line in enumerate(network_settings):
+        if "dns-nameservers" in line:
+            parts = line.split()
+            parts = [p for p in parts if p != '10.177.128.198']
+            network_settings[i] = ' '.join(parts) + '\n'
+    file_network = open("/etc/network/interfaces", "w")
+    file_network.writelines(network_settings)
+    file_network.close()
+
+    """
         Инициализация домена
-    """    
+    """
     # cmd(f"astra-freeipa-server --dogtag -p {DC_PASSWORD} -d {DOMAIN} -y")
     # cmd(f"astra-freeipa-server --ssl -p {DC_PASSWORD} -d {DOMAIN} -y")
     cmd(f'astra-freeipa-server --ssl -p {DC_PASSWORD} -d {DOMAIN} -y --par "--allow-zone-overlap"')

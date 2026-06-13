@@ -1,0 +1,104 @@
+# Prod-раздача web_ui: nginx-контейнер со собранным SPA-бандлом.
+#
+# Образ собирается из web_ui/Dockerfile (multi-stage: vite build → nginx).
+# Security-заголовки и SPA-fallback — в web_ui/nginx.conf. API и /docs
+# Ingress разводит по backend'ам ДО catch-all '/' на этот сервис, поэтому
+# nginx тут не проксирует /api — всё на одном origin (connect-src 'self').
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-ui
+  namespace: dbos
+  labels:
+    app: web-ui
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: web-ui
+  template:
+    metadata:
+      labels:
+        app: web-ui
+    spec:
+      terminationGracePeriodSeconds: 30
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web-ui
+          image: dbos/web-ui:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 8080
+          # nginx-master при readOnlyRootFilesystem пишет pid и temp в эти
+          # пути — отдаём их emptyDir'ами.
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests: { cpu: "10m", memory: "32Mi" }
+            limits:   { cpu: "200m", memory: "128Mi" }
+      volumes:
+        - name: nginx-cache
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: nginx-run
+          emptyDir:
+            sizeLimit: 8Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-ui
+  namespace: dbos
+spec:
+  type: ClusterIP                # внешний доступ — через Ingress (50-ingress.yaml)
+  selector:
+    app: web-ui
+  ports:
+    - port: 8080
+      targetPort: 8080

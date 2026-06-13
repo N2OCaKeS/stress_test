@@ -22,6 +22,7 @@ resources:
   - 80-networkpolicy.yaml    # default-deny ingress + явные allow между подграфами
   - 50-ingress.yaml          # TLS-secret'ы выпускает cert-manager (91/92-*.yaml)
   - 55-swagger-ui.yaml       # общий Swagger UI для трёх сервисов на /docs
+  - 65-web-ui.yaml           # nginx-раздача собранного web_ui (SPA) на catch-all /
   - 100-postgres-backup.yaml # CronJob pg_dump для auth/logging кластеров
   - 101-backup-pvc.yaml      # PV под бэкапы (общий на оба CronJob'а)
   - 102-master-keys-backup.yaml  # CronJob daily backup master-ключей + CA

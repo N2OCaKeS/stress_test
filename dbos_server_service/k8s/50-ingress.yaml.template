@@ -60,6 +60,16 @@ spec:
                 name: dbos-swagger-ui
                 port:
                   number: 8080
+          # Catch-all на статику web_ui. Идёт ПОСЛЕ специфичных /api и /docs:
+          # traefik матчит более длинный префикс первым, так что API и Swagger
+          # не перехватываются этим '/'.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-ui
+                port:
+                  number: 8080
 
 ---
 # Отдельный Ingress на HTTP (80) — редиректит на HTTPS

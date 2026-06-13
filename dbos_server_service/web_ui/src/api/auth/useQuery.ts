@@ -35,9 +35,10 @@ export interface QueryState<T> {
 export function useQuery<T>(
   fn: () => Promise<T>,
   deps: ReadonlyArray<unknown>,
-  opts: { enabled?: boolean } = {},
+  opts: { enabled?: boolean; keepPreviousDataOnError?: boolean } = {},
 ): QueryState<T> {
   const enabled = opts.enabled !== false;
+  const keepPreviousDataOnError = opts.keepPreviousDataOnError === true;
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<ApiError | Error | null>(null);
   const [loading, setLoading] = useState<boolean>(enabled);
@@ -59,6 +60,11 @@ export function useQuery<T>(
       })
       .catch((err: unknown) => {
         if (cancelled) return;
+        // Сбрасываем data, чтобы карточка/деталь не показывала «призрак»
+        // удалённой или ставшей недоступной сущности после 404/403. Списки,
+        // которым нужно пережить транзиентный сбой без блэнка, могут передать
+        // keepPreviousDataOnError.
+        if (!keepPreviousDataOnError) setData(undefined);
         if (err instanceof ApiError || err instanceof Error) setError(err);
         else setError(new Error(String(err)));
       })

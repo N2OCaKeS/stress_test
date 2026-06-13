@@ -10,7 +10,12 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from src.core.config import get_settings
-from src.core.constants import BOT_TOKEN_PREFIX, PAT_PREFIX, TOKEN_PREFIX_LEN
+from src.core.constants import (
+    BOT_TOKEN_PREFIX,
+    OAUTH_REFRESH_TOKEN_PREFIX,
+    PAT_PREFIX,
+    TOKEN_PREFIX_LEN,
+)
 
 # ── Argon2id ──────────────────────────────────────────────────────────────────
 #
@@ -130,6 +135,17 @@ def generate_bot_token() -> tuple[str, str, str]:
     secret = secrets.token_urlsafe(32)
     raw = f"{BOT_TOKEN_PREFIX}{secret}"
     return raw, raw[:TOKEN_PREFIX_LEN], _sha256(raw)
+
+
+def generate_oauth_refresh_token() -> tuple[str, str]:
+    """Сгенерить OAuth refresh-токен. Возвращает `(raw, sha256_hash)`.
+
+    Префикс — `dbos_oauth_rt_`, в БД пишем только hash (как user-session
+    refresh). raw показываем клиенту один раз в token-ответе.
+    """
+    secret = secrets.token_urlsafe(48)
+    raw = f"{OAUTH_REFRESH_TOKEN_PREFIX}{secret}"
+    return raw, _sha256(raw)
 
 
 def hash_opaque_token(raw: str) -> str:

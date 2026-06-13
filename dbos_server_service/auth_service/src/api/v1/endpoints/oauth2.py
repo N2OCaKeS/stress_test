@@ -244,7 +244,7 @@ async def authorize(
     "/token",
     response_model=OAuthTokenResponse,
     summary="OAuth2 token endpoint",
-    description="Обмен authorization code → access_token, либо client_credentials grant.",
+    description="Обмен authorization code → access_token, ротация refresh_token, либо client_credentials grant.",
 )
 async def token(
     body: OAuthTokenRequest,
@@ -254,14 +254,18 @@ async def token(
     """Получить access_token.
 
     Что делает:
-        Поддерживает `authorization_code` (с PKCE) и `client_credentials`
-        (m2m, без user_id). Authorization code разовый (`mark_used` через
-        CAS), reuse отбивается с убийством issued-токена.
+        Поддерживает `authorization_code` (с PKCE), `refresh_token` (ротация
+        OAuth refresh с reuse-detection) и `client_credentials` (m2m, без
+        user_id). Authorization code разовый (`mark_used` через CAS), reuse
+        отбивается с убийством issued-токена. Refresh ротируется атомарно;
+        предъявление старого refresh после ротации гасит всю цепочку клиента.
 
     Возможные ошибки:
         * `INVALID_GRANT` — code не найден/истёк/уже использован.
+        * `REFRESH_TOKEN_INVALID` / `REFRESH_TOKEN_EXPIRED` / `REFRESH_TOKEN_RACE`.
         * `OAUTH_CLIENT_INVALID` (401) — неверный client_id/secret или клиент деактивирован.
-        * `UNSUPPORTED_GRANT_TYPE` — не `authorization_code` и не `client_credentials`.
+        * `GRANT_TYPE_NOT_ALLOWED` (403) — grant не включён у клиента.
+        * `UNSUPPORTED_GRANT_TYPE` — неизвестный grant_type.
     """
     request_id = getattr(request.state, "request_id", None)
     if body.grant_type == "authorization_code":
@@ -273,6 +277,14 @@ async def token(
             redirect_uri=body.redirect_uri or "",
             request_id=request_id,
             code_verifier=body.code_verifier,
+        )
+    if body.grant_type == "refresh_token":
+        return await oauth_service.refresh_token_grant(
+            db=db,
+            client_id=body.client_id or "",
+            client_secret=body.client_secret or "",
+            refresh_token=body.refresh_token or "",
+            request_id=request_id,
         )
     if body.grant_type == "client_credentials":
         return await oauth_service.client_credentials_token(

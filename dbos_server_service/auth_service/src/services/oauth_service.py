@@ -17,9 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.constants import PlatformRole, UserStatus
 from src.core.exceptions import AuthenticationError, AuthorizationError, ConflictError, NotFoundError
-from src.core.security import create_access_token, hash_opaque_token
+from src.core.security import (
+    create_access_token,
+    generate_oauth_refresh_token,
+    hash_opaque_token,
+)
 from src.repositories.departments import DepartmentRepository
 from src.repositories.oauth_clients import OAuthClientRepository, OAuthCodeRepository
+from src.repositories.oauth_refresh_tokens import OAuthRefreshTokenRepository
 from src.repositories.users import UserRepository
 from src.schemas.oauth import (
     OAuthClientCreate,
@@ -423,6 +428,47 @@ async def _verify_client_secret_with_lockout(
     )
 
 
+async def _issue_refresh_token(
+    db: AsyncSession,
+    *,
+    client_id: str,
+    user_id: str,
+    scopes: list[str],
+) -> str:
+    """Создать opaque OAuth refresh-токен, в БД лечь только hash. Вернуть raw.
+
+    Caller отвечает за `db.commit()` — INSERT откатится через `get_db()` иначе.
+    """
+    settings = get_settings()
+    raw_refresh, refresh_hash = generate_oauth_refresh_token()
+    expires = utcnow() + timedelta(days=settings.oauth_refresh_token_ttl_days)
+    refresh_repo = OAuthRefreshTokenRepository(db)
+    await refresh_repo.create(
+        client_id=client_id,
+        user_id=user_id,
+        refresh_token_hash=refresh_hash,
+        scopes=list(scopes),
+        expires_at=expires,
+    )
+    return raw_refresh
+
+
+def _build_oauth_access_token(user_id: str, client_id: str, scopes: list[str], ttl: timedelta) -> str:
+    """OAuth access-JWT с минимальным payload (как в `exchange_code`).
+
+    `oauth_scopes` фиксирует approved scope'ы для INTERSECT на introspect'е.
+    """
+    return create_access_token(
+        payload={
+            "sub": user_id,
+            "actor_type": "user",
+            "oauth_client_id": client_id,
+            "oauth_scopes": list(scopes),
+        },
+        expires_delta=ttl,
+    )
+
+
 async def exchange_code(
     db: AsyncSession,
     client_id: str,
@@ -547,17 +593,17 @@ async def exchange_code(
     # Username/department/platform_role/allowed_services/service_roles
     # пересчитываются introspect'ом из БД на каждый запрос — иначе JWT
     # без подписи (`base64url`) раскрывает PII и привилегии юзера при утечке.
-    access_token = create_access_token(
-        payload={
-            "sub": user.id,
-            "actor_type": "user",
-            "oauth_client_id": client_id,
-            "oauth_scopes": oauth_scopes,
-        },
-        expires_delta=ttl,
-    )
-    # mark_used уже закоммитился выше. Между той точкой и сюда — только
-    # SELECT юзера и чистая выдача JWT (без writes), коммитить нечего.
+    # Refresh (если у клиента есть grant `refresh_token`) выдаём ДО сборки JWT:
+    # его INSERT нужно закоммитить, а между выпиской access-токена и audit'ом
+    # commit'а быть не должно (JWT stateless, в БД не пишется). mark_used-commit
+    # был выше — этот commit покрывает только refresh-строку.
+    raw_refresh: str | None = None
+    if "refresh_token" in client.grant_types:
+        raw_refresh = await _issue_refresh_token(
+            db, client_id=client_id, user_id=user.id, scopes=oauth_scopes
+        )
+        await db.commit()
+    access_token = _build_oauth_access_token(user.id, client_id, oauth_scopes, ttl)
     audit_service.emit(
         "oauth.code_exchanged",
         user.id,
@@ -573,6 +619,7 @@ async def exchange_code(
             "scopes": list(auth_code.scopes),
             "redirect_uri": redirect_uri,
             "ttl_seconds": int(ttl.total_seconds()),
+            "refresh_issued": raw_refresh is not None,
         },
         request_id=request_id,
     )
@@ -580,6 +627,7 @@ async def exchange_code(
         access_token=access_token,
         expires_in=int(ttl.total_seconds()),
         scope=" ".join(auth_code.scopes),
+        refresh_token=raw_refresh,
     )
 
 
@@ -675,4 +723,139 @@ async def client_credentials_token(
         access_token=access_token,
         expires_in=int(ttl.total_seconds()),
         scope=" ".join(effective),
+    )
+
+
+async def refresh_token_grant(
+    db: AsyncSession,
+    client_id: str,
+    client_secret: str,
+    refresh_token: str,
+    request_id: str | None = None,
+) -> OAuthTokenResponse:
+    """`grant_type=refresh_token`: ротация OAuth refresh → новый access + refresh.
+
+    Зеркалит user-сессионный `auth_service.refresh`:
+    * lookup активного refresh по hash (в БД только hash, raw не хранится);
+    * reuse-detection — предъявленный hash в истории ротаций → kill-switch по
+      всей цепочке (client_id, user_id), `REFRESH_TOKEN_INVALID`;
+    * атомарная CAS-ротация: старый refresh инвалидируется, выдаётся новый;
+    * approved scope'ы сохраняются (новый access несёт тот же снапшот);
+    * confidential-клиент аутентифицируется client_secret'ом (lockout как у
+      code-exchange), public — нет (доказан PKCE на исходном /authorize).
+    """
+    client_repo = OAuthClientRepository(db)
+    client = await client_repo.get_by_client_id(client_id)
+    if client is None or not client.is_active:
+        raise AuthenticationError(error_code="OAUTH_CLIENT_INVALID", message="Invalid client credentials")
+
+    if "refresh_token" not in client.grant_types:
+        raise AuthorizationError(
+            error_code="GRANT_TYPE_NOT_ALLOWED",
+            message="refresh_token grant not enabled for this client",
+        )
+
+    if not client.is_public:
+        await _verify_client_secret_with_lockout(db, client_repo, client, client_secret)
+        if client.failed_secret_attempts:
+            await client_repo.reset_failed_attempts(client)
+            await db.commit()
+
+    refresh_repo = OAuthRefreshTokenRepository(db)
+    token_hash = hash_opaque_token(refresh_token)
+    stored = await refresh_repo.get_active_by_token_hash(token_hash)
+
+    if stored is None:
+        # Нет активной записи под этим hash. Если hash лежит в истории какой-то
+        # цепочки — это reuse ротированного refresh: гасим всю цепочку
+        # (client_id, user_id). Иначе — просто неизвестный/revoked токен.
+        rotated = await refresh_repo.find_rotated_by_old_hash(token_hash)
+        if rotated is not None:
+            await refresh_repo.mark_suspicious(rotated)
+            await refresh_repo.revoke_chain(rotated.client_id, rotated.user_id)
+            await db.commit()
+            audit_service.emit(
+                "oauth.refresh_reuse",
+                rotated.user_id,
+                target_id=rotated.client_id,
+                target_type="oauth_client",
+                status="failure",
+                allowed=False,
+                details={"client_id": rotated.client_id, "token_id": rotated.id},
+                request_id=request_id,
+            )
+        raise AuthenticationError(error_code="REFRESH_TOKEN_INVALID", message="Invalid refresh token")
+
+    # Refresh принадлежит предъявившему клиенту (RFC 6749 §6 — refresh привязан
+    # к выдавшему клиенту). Чужой client_id не должен ротировать чужой refresh.
+    if stored.client_id != client_id:
+        raise AuthenticationError(error_code="REFRESH_TOKEN_INVALID", message="Invalid refresh token")
+
+    if is_expired(stored.expires_at):
+        await refresh_repo.revoke(stored)
+        await db.commit()
+        raise AuthenticationError(error_code="REFRESH_TOKEN_EXPIRED", message="Refresh token expired")
+
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(stored.user_id)
+    if user is None:
+        await refresh_repo.revoke(stored)
+        await db.commit()
+        raise AuthenticationError(error_code="OAUTH_USER_NOT_FOUND", message="User no longer exists")
+    if user.status != UserStatus.ACTIVE or not user.is_active:
+        await refresh_repo.revoke(stored)
+        await db.commit()
+        raise AuthenticationError(error_code="OAUTH_USER_INACTIVE", message="User account is not active")
+
+    settings = get_settings()
+    new_raw, new_hash = generate_oauth_refresh_token()
+    new_refresh_expires = utcnow() + timedelta(days=settings.oauth_refresh_token_ttl_days)
+    scopes_snapshot = list(stored.scopes)
+    rotated_ok = await refresh_repo.rotate(stored, new_hash, new_refresh_expires)
+    if not rotated_ok:
+        # CAS-miss: параллельный refresh-обмен уже ротировал эту строку. Benign
+        # race (НЕ reuse): победитель получил свежую пару, этот caller ретраит
+        # новым refresh'ем. Не зовём kill-switch.
+        await db.rollback()
+        audit_service.emit(
+            "oauth.refresh_race",
+            user.id,
+            target_id=client_id,
+            target_type="oauth_client",
+            status="failure",
+            allowed=False,
+            details={"client_id": client_id, "token_id": stored.id},
+            request_id=request_id,
+        )
+        raise AuthenticationError(
+            error_code="REFRESH_TOKEN_RACE",
+            message="Refresh token was rotated by a concurrent request; retry with the new token.",
+        )
+
+    ttl = timedelta(minutes=settings.access_token_ttl_minutes)
+    access_token = _build_oauth_access_token(user.id, client_id, scopes_snapshot, ttl)
+    await db.commit()
+
+    audit_service.emit(
+        "oauth.refresh_token",
+        user.id,
+        target_id=client_id,
+        target_type="oauth_client",
+        status="success",
+        allowed=True,
+        details={
+            "client_id": client_id,
+            "client_name": client.name,
+            "username": user.username,
+            "department_id": user.department_id,
+            "scopes": scopes_snapshot,
+            "ttl_seconds": int(ttl.total_seconds()),
+        },
+        request_id=request_id,
+    )
+    return OAuthTokenResponse(
+        access_token=access_token,
+        expires_in=int(ttl.total_seconds()),
+        scope=" ".join(scopes_snapshot),
+        refresh_token=new_raw,
     )

@@ -217,14 +217,14 @@ class TestRedactionClientSecretByValue:
 
 class TestExchangeCodeNoDoubleCommit:
     async def test_oauth_service_exchange_code_no_explicit_commit_between_jwt_and_audit(self):
-        """Source-check: после `create_access_token` НЕТ `await db.commit()`
-        до `audit_service.emit`. Без точечного intercept'а sqlalchemy-сессии
-        проще всего проверять статически — функция короткая, паттерн
-        однозначный."""
+        """Source-check: после выписки access-токена (`_build_oauth_access_token`)
+        НЕТ `await db.commit()` до `audit_service.emit`. Без точечного intercept'а
+        sqlalchemy-сессии проще всего проверять статически — функция короткая,
+        паттерн однозначный. (Refresh-INSERT коммитится ДО сборки JWT.)"""
         import inspect
         src = inspect.getsource(oauth_service.exchange_code)
-        # Берём срез после `create_access_token(` и до `audit_service.emit(`.
-        i = src.index("create_access_token(")
+        # Берём срез после сборки access-токена и до `audit_service.emit(`.
+        i = src.index("_build_oauth_access_token(")
         j = src.index("audit_service.emit(", i)
         middle = src[i:j]
         assert "db.commit()" not in middle, (

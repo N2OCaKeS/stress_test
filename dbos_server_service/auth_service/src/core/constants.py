@@ -63,6 +63,7 @@ class BotStatus(StrEnum):
 # Префиксы токенов — raw значение показываем один раз, в БД лежит только hash
 PAT_PREFIX = "dbos_pat_"
 BOT_TOKEN_PREFIX = "dbos_bot_"
+OAUTH_REFRESH_TOKEN_PREFIX = "dbos_oauth_rt_"
 
 # Сколько символов raw-токена кладём в `token_prefix`-колонку для быстрого
 # lookup'а до проверки SHA-256 (хватает на `dbos_pat_` / `dbos_bot_` + три

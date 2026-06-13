@@ -171,7 +171,10 @@ Severity-overrides: для `(action, status="failure")` loging_service обыч�
 | `oauth_client.list` | INFO | `GET /oauth2/clients` | — |
 | `oauth_client.delete` | CRITICAL | `oauth_service.delete_client` | `client_id`. |
 | `oauth.authorization_code_issued` | INFO | `oauth_service.issue_authorization_code` | `client_id`, `user_id`, `scope`, наличие PKCE. |
-| `oauth.code_exchanged` | INFO | `oauth_service.exchange_code` | `client_id`, `user_id`. |
+| `oauth.code_exchanged` | INFO | `oauth_service.exchange_code` | `client_id`, `user_id`, `refresh_issued`. |
+| `oauth.refresh_token` | INFO | `oauth_service.refresh_token_grant` | `client_id`, `user_id`, `scopes`. Успешная ротация OAuth refresh. |
+| `oauth.refresh_reuse` | CRITICAL | `oauth_service.refresh_token_grant` | `client_id`, `token_id`. Предъявлен уже ротированный refresh — kill-switch по всей цепочке (client_id, user_id). |
+| `oauth.refresh_race` | WARNING | `oauth_service.refresh_token_grant` | `client_id`, `token_id`. Конкурентная ротация одного refresh (benign race, не reuse). |
 | `oauth.client_credentials_token` | INFO | `oauth_service.client_credentials_token` | `client_id`. |
 | `oauth.pkce_plain_used` | WARNING | `oauth_service.issue_authorization_code` | `client_id`, `user_id`. Confidential client запросил `code_challenge_method=plain` — RFC допускает, но `plain` не защищает от перехвата кода. SIEM-сигнал о потенциально неправильно сконфигурённой интеграции. |
 

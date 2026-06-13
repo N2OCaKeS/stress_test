@@ -56,6 +56,11 @@ def oauth_code_id() -> str:
     return _new_id("oac_")
 
 
+def oauth_refresh_token_id() -> str:
+    """`ort_<hex>` — OAuthRefreshToken."""
+    return _new_id("ort_")
+
+
 def service_role_def_id() -> str:
     """`srd_<hex>` — ServiceRoleDefinition."""
     return _new_id("srd_")

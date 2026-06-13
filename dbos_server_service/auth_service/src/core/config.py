@@ -249,6 +249,10 @@ class Settings(BaseSettings):
 
     # OAuth2
     oauth_code_ttl_seconds: int = Field(default=300, alias="OAUTH_CODE_TTL_SECONDS")
+    # TTL ротируемого OAuth refresh-токена. По умолчанию совпадает с
+    # пользовательским refresh (REFRESH_TOKEN_TTL_DAYS) — третьесторонние app
+    # не должны держать доступ дольше, чем сам юзер живёт в своей сессии.
+    oauth_refresh_token_ttl_days: int = Field(default=14, alias="OAUTH_REFRESH_TOKEN_TTL_DAYS")
 
     # Интеграция с loging_service (опционально — fallback на локальный логгер если не задано)
     logging_service_url: str | None = Field(default=None, alias="LOGGING_SERVICE_URL")

@@ -161,12 +161,28 @@ class OAuthTokenRequest(BaseModel):
         default=None,
         description="PKCE verifier. Обязателен, если code был выдан с code_challenge.",
     )
+    # refresh_token grant: предъявляемый opaque refresh. client_id обязателен
+    # (по нему мы валидируем принадлежность токена клиенту); client_secret —
+    # для confidential, public-клиент его не шлёт.
+    refresh_token: str | None = Field(
+        default=None,
+        description="Opaque refresh-токен (для refresh_token grant).",
+    )
     # client_credentials поля (client_id/secret те же, что выше)
 
 
 class OAuthTokenResponse(BaseModel):
-    """Ответ token-эндпойнта — access_token и метаданные."""
+    """Ответ token-эндпойнта — access_token и метаданные.
+
+    `refresh_token` присутствует только когда клиент имеет grant `refresh_token`
+    (authorization_code-обмен и refresh-ротация). Для client_credentials —
+    `None`: m2m просто берёт новый токен по client_secret, refresh там не нужен.
+    """
     access_token: str
     token_type: str = "Bearer"
     expires_in: int = Field(description="TTL access_token в секундах.")
     scope: str = ""
+    refresh_token: str | None = Field(
+        default=None,
+        description="Opaque refresh-токен (выдаётся клиентам с grant refresh_token).",
+    )

@@ -12,6 +12,7 @@ from src.models.group_service_access import GroupServiceAccess
 from src.models.group_service_role import GroupServiceRole
 from src.models.oauth_authorization_code import OAuthAuthorizationCode
 from src.models.oauth_client import OAuthClient
+from src.models.oauth_refresh_token import OAuthRefreshToken
 from src.models.personal_access_token import PersonalAccessToken
 from src.models.platform_service import PlatformService
 from src.models.service_role_definition import ServiceRoleDefinition
@@ -34,6 +35,7 @@ __all__ = [
     "GroupServiceRole",
     "OAuthAuthorizationCode",
     "OAuthClient",
+    "OAuthRefreshToken",
     "PersonalAccessToken",
     "PlatformService",
     "ServiceRoleDefinition",

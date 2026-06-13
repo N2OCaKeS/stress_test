@@ -85,6 +85,45 @@ export interface ListEventsQuery {
   include_total?: boolean;
 }
 
+/**
+ * Агрегированная статистика по событиям (`GET /events/stats`).
+ *
+ * Backend (`endpoints/events.py::events_stats`) считает счётчики за окно
+ * `[from_time, to_time]` или `window_hours` от now. Нулевые ключи в
+ * `by_severity` / `by_service` отсутствуют — рендер не должен закладываться на
+ * наличие всех уровней. `by_status` всегда несёт обе ветки (`success` /
+ * `failure`), но конкретный ключ может отсутствовать, если за окно его не было.
+ * `truncated` — флаг, что окно упёрлось в внутренний кап выборки.
+ */
+export interface EventStatsResponse {
+  total: number;
+  by_severity: Partial<Record<Severity, number>>;
+  by_service: Record<string, number>;
+  by_status: Partial<Record<EventStatus, number>>;
+  from_time: Iso8601;
+  to_time: Iso8601;
+  truncated: boolean;
+}
+
+/**
+ * Фильтры `GET /events/stats` и `GET /events/export`. Совпадают с
+ * `ListEventsQuery` минус пагинация, плюс `window_hours` (1..8784, дефолт 24
+ * на стороне backend'а). `from_time`/`to_time` имеют приоритет над окном.
+ */
+export interface EventStatsQuery {
+  department_id?: string;
+  service?: string;
+  severity?: Severity;
+  action?: string;
+  actor_id?: string;
+  target_id?: string;
+  status?: EventStatus;
+  request_id?: string;
+  from_time?: Iso8601;
+  to_time?: Iso8601;
+  window_hours?: number;
+}
+
 // ── rules ─────────────────────────────────────────────────────────────────────
 
 /**

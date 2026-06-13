@@ -10,17 +10,28 @@
  * страницами).
  */
 import { useMemo, useState } from "react";
-import { Search, AlertCircle, ShieldAlert, User, Filter, Cog } from "lucide-react";
+import {
+  Search,
+  AlertCircle,
+  AlertTriangle,
+  ShieldAlert,
+  User,
+  Filter,
+  Cog,
+  Download,
+} from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
+import { hasAuditLogAccess } from "@/lib/rbac";
 import { formatMsk, formatMskTime } from "@/lib/datetime";
-import { listEvents } from "@/api/loging/events";
+import { exportEvents, getEventStats } from "@/api/loging/events";
 import { listServices } from "@/api/loging/services";
 import { useDeptLabel } from "@/lib/labels";
 import type {
   EventDetail,
+  EventStatsResponse,
   EventStatus,
   ListEventsQuery,
   Severity,
@@ -55,9 +66,22 @@ function sevClass(severity: string): string {
   return `sev-${severity}`;
 }
 
+/** Порядок и подписи severity-строк в распределении. */
+const SEV_ORDER: Severity[] = [
+  "CRITICAL",
+  "ERROR",
+  "WARNING",
+  "INFO",
+  "DEBUG",
+  "TRACE",
+];
+
+const numFmt = new Intl.NumberFormat("ru-RU");
+
 export function LogEventsLive() {
   const { persona } = usePersona();
   const isReader = persona.platform_role === "logging_reader";
+  const canAudit = hasAuditLogAccess(persona);
 
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState<string>("");
@@ -233,6 +257,8 @@ export function LogEventsLive() {
       )}
       {selected ? (
         <EventDetailPane event={selected} />
+      ) : canAudit ? (
+        <StatsPane />
       ) : (
         <section className="flex-1 min-w-0 overflow-hidden flex items-center justify-center">
           <div className="empty-card max-w-md text-center">
@@ -244,6 +270,203 @@ export function LogEventsLive() {
         </section>
       )}
     </Shell>
+  );
+}
+
+/**
+ * Дефолтная рабочая зона для loging-роли, пока событие не выбрано: сводка
+ * `GET /events/stats` за 24ч (severity-распределение, by_service, by_status)
+ * плюс кнопка экспорта CSV за то же окно. Гейтится снаружи по
+ * `hasAuditLogAccess`, так что 403-на-загрузке здесь не возникает.
+ */
+function StatsPane() {
+  const statsQ = useQuery<EventStatsResponse>(
+    () => getEventStats({ window_hours: 24 }),
+    [],
+  );
+  const [exporting, setExporting] = useState(false);
+  const [notice, setNotice] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(
+    null,
+  );
+
+  async function onExport() {
+    setExporting(true);
+    setNotice(null);
+    try {
+      const res = await exportEvents({ window_hours: 24 });
+      setNotice(
+        res.truncated
+          ? {
+              kind: "warn",
+              text: `Экспорт ${res.filename} скачан, но усечён до 50 000 строк — сузьте окно или фильтр.`,
+            }
+          : { kind: "ok", text: `Экспорт ${res.filename} скачан.` },
+      );
+    } catch (e) {
+      setNotice({ kind: "err", text: apiErrMsg(e, "Экспорт не удался") });
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const stats = statsQ.data;
+
+  return (
+    <section className="flex-1 min-w-0 overflow-y-auto p-5">
+      <div className="max-w-3xl mx-auto space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h1 className="text-xl font-semibold">Сводка аудита · 24ч</h1>
+            {stats && (
+              <div className="text-xs text-dim mt-1">
+                {formatMsk(stats.from_time)} → {formatMsk(stats.to_time)}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm flex items-center gap-1"
+            onClick={onExport}
+            disabled={exporting}
+          >
+            <Download className="w-3.5 h-3.5" />
+            {exporting ? "Экспорт…" : "Экспорт за 24ч"}
+          </button>
+        </div>
+
+        {notice && (
+          <div
+            className={
+              notice.kind === "err"
+                ? "alert alert-danger text-xs"
+                : notice.kind === "warn"
+                  ? "alert-warn text-xs"
+                  : "alert alert-success text-xs"
+            }
+            role="status"
+          >
+            {notice.text}
+          </div>
+        )}
+
+        {statsQ.loading && (
+          <div className="empty-card text-xs text-center">Загрузка статистики…</div>
+        )}
+
+        {statsQ.error && (
+          <div className="alert alert-danger flex items-start gap-2 text-xs">
+            <AlertCircle className="w-4 h-4 mt-0.5" />
+            <div className="flex-1">
+              <div>{apiErrMsg(statsQ.error, "Статистика не загрузилась")}</div>
+              <button className="btn btn-ghost mt-2" onClick={() => statsQ.refetch()}>
+                Повторить
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!statsQ.loading && !statsQ.error && stats && (
+          <StatsBody stats={stats} />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function StatsBody({ stats }: { stats: EventStatsResponse }) {
+  const sevRows = SEV_ORDER.map((s) => ({ sev: s, count: stats.by_severity[s] ?? 0 })).filter(
+    (r) => r.count > 0,
+  );
+  const sevMax = Math.max(1, ...sevRows.map((r) => r.count));
+  const services = Object.entries(stats.by_service).sort((a, b) => b[1] - a[1]);
+  const success = stats.by_status.success ?? 0;
+  const failure = stats.by_status.failure ?? 0;
+
+  if (stats.total === 0) {
+    return (
+      <div className="empty-card text-xs text-center">
+        За окно событий нет.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {stats.truncated && (
+        <div className="alert-warn text-xs" role="status">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span className="flex-1">
+            Выборка усечена — счётчики ниже неполные. Сузьте окно или фильтр.
+          </span>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <div className="stat-label">events / 24h</div>
+            <div className="stat-big">{numFmt.format(stats.total)}</div>
+          </div>
+          <div>
+            <div className="stat-label">success</div>
+            <div className="stat-big">{numFmt.format(success)}</div>
+          </div>
+          <div>
+            <div className="stat-label">failure</div>
+            <div className={`stat-big ${failure > 0 ? "text-danger" : ""}`}>
+              {numFmt.format(failure)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 className="font-semibold mb-3">Severity distribution</h3>
+        {sevRows.length === 0 ? (
+          <div className="text-xs text-dim">Нет данных по severity.</div>
+        ) : (
+          sevRows.map((r) => (
+            <div key={r.sev} className="sev-bar">
+              <div>
+                <span className={`sev ${sevClass(r.sev)}`}>
+                  {SEV_LABEL[r.sev] ?? r.sev}
+                </span>
+              </div>
+              <div className="bar">
+                <span
+                  style={{
+                    width: `${Math.round((r.count / sevMax) * 100)}%`,
+                    background:
+                      r.sev === "CRITICAL" || r.sev === "ERROR"
+                        ? "var(--danger)"
+                        : r.sev === "WARNING"
+                          ? "var(--warn)"
+                          : "var(--accent)",
+                  }}
+                />
+              </div>
+              <div className="text-right mono">{numFmt.format(r.count)}</div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="card">
+        <h3 className="font-semibold mb-3">По сервисам</h3>
+        {services.length === 0 ? (
+          <div className="text-xs text-dim">Нет данных по сервисам.</div>
+        ) : (
+          <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-sm">
+            {services.map(([svc, count]) => (
+              <div key={svc} className="contents">
+                <div className="mono text-dim truncate">{svc}</div>
+                <div className="text-right mono">{numFmt.format(count)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

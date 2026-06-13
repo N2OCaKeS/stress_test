@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AnyAdmin, require_auth_management_scope
+from src.dependencies.auth import AccountAdmin, AnyAdmin, require_auth_management_scope
 from src.dependencies.db import get_db
 from src.utils.pagination import PaginationParams, pagination_params
 from src.schemas.bots import (
@@ -158,6 +158,43 @@ async def update_bot(
         request_id=getattr(request.state, "request_id", None),
         actor_department_id=identity.department_id,
     )
+
+
+@router.delete(
+    "/{bot_id}",
+    response_model=OkResponse,
+    summary="Удалить бота",
+    description="Физическое удаление бота и всех зависимых записей (токены, роли, членства). Только account_admin.",
+)
+async def delete_bot(
+    bot_id: str,
+    request: Request,
+    identity: AnyAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Hard-delete бота.
+
+    Что делает:
+        Физически сносит `BotAccount` вместе с токенами, service-ролями и
+        членствами в группах (каскад). В отличие от PATCH со status=disabled
+        запись не остаётся.
+
+    Доступ:
+        Только account_admin. department_admin удалить бота не может — для
+        отключения у него есть мягкий disable через PATCH.
+
+    Возможные ошибки:
+        * `BOT_NOT_FOUND` (404).
+        * `BOT_DELETE_FORBIDDEN` (403) — actor не account_admin.
+    """
+    await bot_service.delete_bot(
+        db=db,
+        actor_id=identity.user_id,
+        actor_role=identity.platform_role,
+        bot_id=bot_id,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return OkResponse()
 
 
 @router.post(

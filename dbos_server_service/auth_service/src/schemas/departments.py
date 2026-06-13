@@ -40,6 +40,10 @@ class DepartmentResponse(BaseModel):
     description: str | None = None
     is_active: bool
     created_at: datetime
+    user_count: int = Field(
+        default=0,
+        description="Число пользователей, привязанных к отделу (все по department_id, без разбивки по is_active; боты не считаются).",
+    )
 
     model_config = {"from_attributes": True}
 

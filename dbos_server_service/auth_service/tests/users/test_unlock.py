@@ -7,9 +7,21 @@ Lockout (5 неудач → ~15 минут) штатно сбрасываетс�
 """
 
 from src.core.constants import UserStatus
+from src.services.audit_events import SERVICE_EVENTS
 
 LOGIN_URL = "/api/auth/v1/login"
 UNLOCK_URL = "/api/auth/v1/users/{user_id}/unlock"
+
+
+def test_unlock_event_severity_is_critical():
+    """`user.unlock` объявлен в каталоге с severity CRITICAL.
+
+    Снятие brute-force lockout'а админом — security-sensitive действие
+    (открывает повторный вход на атакуемый аккаунт), поэтому идёт в SIEM
+    наравне с ban/unban/password_reset.
+    """
+    ev = next(e for e in SERVICE_EVENTS if e["action"] == "user.unlock")
+    assert ev["default_severity"] == "CRITICAL"
 
 
 async def _login(client, username, password):

@@ -374,7 +374,7 @@ Errors: `USER_NOT_FOUND` (404), `PERMISSION_DENIED` (403).
 
 ### `GET /departments`
 
-Auth: `account_admin`. Response: `list[DepartmentResponse]`.
+Auth: `account_admin`. Response: `list[DepartmentResponse]`. Каждый элемент несёт `user_count` — число привязанных к отделу пользователей (все по `department_id`, без фильтра по `is_active`; боты не считаются), посчитанное одним агрегатным `GROUP BY`.
 
 ### `POST /departments`
 
@@ -527,6 +527,12 @@ Errors: `BOT_NOT_FOUND` (404), `BOT_ACCESS_DENIED` (403) — department_admin ч
 Auth: AnyAdmin. Body (опциональны): `name`, `description`, `status` ("active"|"disabled"), `allowed_services`.
 
 Errors: `BOT_NOT_FOUND` (404), `BOT_UPDATE_FORBIDDEN` (403) — department_admin лезет к боту чужого отдела, `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT` (403) — `allowed_services` содержит сервис, к которому отдел не подключён.
+
+### `DELETE /bots/{bot_id}`
+
+Auth: AccountAdmin (только account_admin). Физическое удаление бота с каскадом зависимых записей (токены, service-роли, членства в группах). В отличие от мягкого disable через PATCH строка не остаётся.
+
+Errors: `BOT_NOT_FOUND` (404), `BOT_DELETE_FORBIDDEN` (403) — actor не account_admin.
 
 ### `POST /bots/{bot_id}/tokens`
 

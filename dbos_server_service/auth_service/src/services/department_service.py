@@ -46,6 +46,7 @@ async def create_department(
         description=dept.description,
         is_active=dept.is_active,
         created_at=dept.created_at,
+        user_count=0,
     )
 
 
@@ -114,6 +115,7 @@ async def update_department(
         description=dept.description,
         is_active=dept.is_active,
         created_at=dept.created_at,
+        user_count=await repo.count_users(dept.id),
     )
 
 
@@ -124,6 +126,9 @@ async def list_departments(
 ) -> list[DepartmentResponse]:
     """Все отделы."""
     repo = DepartmentRepository(db)
+    depts = await repo.list_all()
+    # Один агрегатный GROUP BY на весь список — без N+1 по отделам.
+    counts = await repo.user_counts_by_department()
     result = [
         DepartmentResponse(
             department_id=d.id,
@@ -131,8 +136,9 @@ async def list_departments(
             description=d.description,
             is_active=d.is_active,
             created_at=d.created_at,
+            user_count=counts.get(d.id, 0),
         )
-        for d in await repo.list_all()
+        for d in depts
     ]
     audit_service.emit(
         "department.list", actor_id, status="success", allowed=True,

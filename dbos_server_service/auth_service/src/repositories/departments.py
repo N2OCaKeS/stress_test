@@ -105,6 +105,38 @@ class DepartmentRepository:
         access.revoked_by = revoked_by
         await self._db.flush()
 
+    async def count_users(self, dept_id: str) -> int:
+        """Сколько пользователей привязано к отделу (все, без фильтра по is_active).
+
+        Используется для `user_count` в ответе одиночного отдела. Боты не
+        входят в подсчёт — считаются только записи в `users`.
+        """
+        from sqlalchemy import func
+        from src.models.user import User
+        stmt = (
+            select(func.count())
+            .select_from(User)
+            .where(User.department_id == dept_id)
+        )
+        return await self._db.scalar(stmt) or 0
+
+    async def user_counts_by_department(self) -> dict[str, int]:
+        """Один агрегатный `GROUP BY department_id` — число юзеров на отдел.
+
+        Возвращает map `department_id -> count` по всем пользователям с
+        непустым `department_id` (без фильтра по is_active, без ботов).
+        Отделы без юзеров в map не попадают — caller подставляет 0.
+        """
+        from sqlalchemy import func
+        from src.models.user import User
+        stmt = (
+            select(User.department_id, func.count())
+            .where(User.department_id.is_not(None))
+            .group_by(User.department_id)
+        )
+        rows = await self._db.execute(stmt)
+        return {dept_id: count for dept_id, count in rows.all()}
+
     async def count_active_users(self, dept_id: str) -> int:
         """Сколько активных юзеров живёт в отделе.
 

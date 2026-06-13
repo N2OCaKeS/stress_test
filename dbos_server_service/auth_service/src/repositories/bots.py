@@ -104,6 +104,14 @@ class BotRepository:
         await self._db.flush()
         return bot
 
+    async def delete(self, bot: BotAccount) -> None:
+        """Физическое удаление бота. Зависимые записи (токены, service-роли,
+        членства в группах) уходят каскадом по ``cascade="all, delete-orphan"``
+        из ORM-модели и ``ON DELETE CASCADE`` на FK. last_known_ips — колонка
+        самой строки, исчезает вместе с ней."""
+        await self._db.delete(bot)
+        await self._db.flush()
+
     async def first_by_name_in_department(
         self, department_id: str, name: str
     ) -> BotAccount | None:

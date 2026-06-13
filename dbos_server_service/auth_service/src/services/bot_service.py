@@ -338,6 +338,76 @@ async def update_bot(
     return _to_response(bot)
 
 
+async def delete_bot(
+    db: AsyncSession,
+    actor_id: str,
+    actor_role: str | None,
+    bot_id: str,
+    request_id: str | None = None,
+) -> None:
+    """Физически удалить бота вместе со всеми зависимыми записями.
+
+    Каскадно сносит bot-токены, service-роли и членства в группах (FK с
+    ``ON DELETE CASCADE`` + ORM ``cascade="all, delete-orphan"``); IP-лента
+    (`last_known_ips`) лежит в самой строке и уходит вместе с ней. В отличие
+    от деактивации (`update_bot` со status=disabled) запись не остаётся —
+    orphan'ов не оставляем.
+
+    Доступ:
+        Только account_admin. department_admin физически удалить бота не
+        может — даже своего отдела (мягкое отключение ему по-прежнему
+        доступно через PATCH). Это симметрично hard-delete юзера.
+    """
+    bot_repo = BotRepository(db)
+    bot = await bot_repo.get_by_id(bot_id)
+    if bot is None:
+        raise NotFoundError(error_code="BOT_NOT_FOUND", message="Bot not found")
+
+    if actor_role != PlatformRole.ACCOUNT_ADMIN:
+        audit_service.emit(
+            "bot.delete", actor_id, status="failure", allowed=False,
+            target_id=bot.id, target_type="bot",
+            request_id=request_id,
+            details={
+                "reason": "account_admin_required",
+                "bot_id": bot.id,
+                "bot_department_id": bot.department_id,
+            },
+        )
+        raise AuthorizationError(
+            error_code="BOT_DELETE_FORBIDDEN",
+            message="account_admin required to hard-delete a bot",
+        )
+
+    # Снимаем счётчики до удаления — нужны в audit-detail, чтобы видеть, что
+    # именно унесло каскадом.
+    token_repo = BotTokenRepository(db)
+    role_repo = BotRoleRepository(db)
+    token_count = len(await token_repo.list_for_bot(bot_id))
+    roles_by_svc = await role_repo.get_all_roles(bot_id)
+    role_service_count = len(roles_by_svc)
+
+    bot_name = bot.name
+    bot_department_id = bot.department_id
+
+    await bot_repo.delete(bot)
+    await db.commit()
+    # Симметрично update_bot/assign_bot_roles: bot-identity пока не кэшируется
+    # по bot_id, но держим инвалидацию страховкой на будущий путь.
+    _invalidate_identity_cache(bot_id)
+    audit_service.emit(
+        "bot.delete", actor_id, target_id=bot_id, target_type="bot",
+        request_id=request_id,
+        details={
+            "bot_id": bot_id,
+            "bot_name": bot_name,
+            "department_id": bot_department_id,
+            "tokens_deleted": token_count,
+            "role_services_deleted": role_service_count,
+        },
+    )
+
+
 async def create_bot_token(
     db: AsyncSession,
     actor_id: str,

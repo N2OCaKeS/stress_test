@@ -612,6 +612,24 @@ async def update_user(
                 "request_id": request_id,
             }
 
+    # Инвариант «non-admin обязан иметь отдел» симметрично create_user: при
+    # CREATE он проверяется (user_service.py, MISSING_REQUIRED_FIELD), но PATCH
+    # без этой проверки позволял оставить/сделать юзера без отдела при
+    # non-admin роли (например, очистить department_id или снять платформенную
+    # роль, не задав отдел). Проверяем ИТОГОВОЕ состояние, а не наличие ключа в
+    # патче: берём значение из filtered, если ключ пришёл (включая явный null),
+    # иначе текущее из БД. Патч без обоих ключей (смена email/имени) проверку
+    # не задевает у юзера, у которого отдел уже есть.
+    from src.core.constants import PlatformRole as _PR
+    _platform_admin_roles = {_PR.ACCOUNT_ADMIN, _PR.LOGING_ADMIN, _PR.LOGING_READER}
+    final_role = filtered["platform_role"] if "platform_role" in filtered else user.platform_role
+    final_dept = filtered["department_id"] if "department_id" in filtered else user.department_id
+    if final_role not in _platform_admin_roles and not final_dept:
+        raise DomainValidationError(
+            error_code="MISSING_REQUIRED_FIELD",
+            message="department_id is required for non-admin users",
+        )
+
     # Применяем остаток filtered (email/department_id/platform_role или
     # status=BLOCKED) поверх той же сессии — ban_user/unban_user уже сделали
     # `flush()`, но НЕ `commit()`. SQLAlchemy identity-map отдаёт нам тот же

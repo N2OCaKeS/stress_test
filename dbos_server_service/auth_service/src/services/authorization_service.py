@@ -338,6 +338,10 @@ async def introspect(
             if kept:
                 effective_groups[gname] = kept
         await db.commit()
+        # Имя отдела резолвим так же, как в JWT-ветке — иначе introspect PAT'а
+        # отдаёт department_name=null при заполненном department_id, и UI
+        # показывает пусто там, где для того же юзера через JWT отдел виден.
+        dept = await DepartmentRepository(db).get_by_id(user.department_id) if user.department_id else None
         audit_service.emit(
             "token.introspect",
             user.id,
@@ -363,6 +367,7 @@ async def introspect(
             sub=user.id,
             username=user.username,
             department_id=user.department_id,
+            department_name=dept.name if dept else None,
             platform_role=user.platform_role,
             # `is_banned` симметрично JWT-ветке: `status == BANNED`. Раньше
             # тут было `not user.is_active`, что для BLOCKED-юзера ставило
@@ -457,6 +462,9 @@ async def introspect(
         await track_bot_ip(db, bot, caller_ip, request_id=request_id)
 
         await db.commit()
+        # Имя отдела для бота — симметрично PAT/JWT-веткам, чтобы introspect
+        # бота не отдавал department_name=null при живом department_id.
+        bot_dept = await DepartmentRepository(db).get_by_id(bot.department_id) if bot.department_id else None
         audit_service.emit(
             "token.introspect",
             bot.id,
@@ -481,6 +489,7 @@ async def introspect(
             subject_type=SubjectType.BOT,
             sub=bot.id,
             department_id=bot.department_id,
+            department_name=bot_dept.name if bot_dept else None,
             allowed_services=effective_services,
             service_roles=effective_roles,
         )

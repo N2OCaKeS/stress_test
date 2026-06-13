@@ -69,7 +69,11 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
     Action.PROVISION_ON_HOST: (
         "Callback воркера: результат useradd/usermod/userdel на боксе."
     ),
-    Action.VIEW_CREDENTIALS: "Увидеть пароль или креды BMC в GET-карточке.",
+    Action.VIEW_CREDENTIALS: (
+        "Доступ к credentials BMC: пароль в GET-карточке и метаданные "
+        "controller'а user-facing'ом, плюс расшифрованные creds воркеру "
+        "через internal endpoint."
+    ),
     Action.ROTATE_CREDENTIALS: "Ротация пароля BMC.",
     Action.PERMISSION_GRANT: "Выдать роли действие, добавив строку матрицы.",
     Action.PERMISSION_REVOKE: "Отозвать у роли действие.",

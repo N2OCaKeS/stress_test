@@ -158,7 +158,7 @@ async def get_registry_config(
     "/registry/{department_id}",
     response_model=OkResponse,
     summary="Отключить Docker registry для отдела",
-    description="Удаляет запись `DepartmentDockerRegistry`. Юзеры отдела перестанут получать scoped JWT.",
+    description="Деактивирует конфиг (`is_enabled=False`, запись остаётся). Юзеры отдела перестанут получать scoped JWT.",
 )
 async def disable_registry(
     department_id: str,
@@ -166,7 +166,8 @@ async def disable_registry(
     identity: AnyAdmin,
     db: AsyncSession = Depends(get_db),
 ) -> OkResponse:
-    """Снести Docker registry конфиг отдела."""
+    """Деактивировать Docker registry конфиг отдела (soft, запись остаётся)."""
+    # soft-disable: is_enabled=False, строка DepartmentDockerRegistry остаётся
     await docker_registry_service.delete_config(
         db=db,
         actor_id=identity.user_id,

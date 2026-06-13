@@ -14,7 +14,7 @@ class DockerRegistryConfigCreate(BaseModel):
     pull_policy: str = Field(
         default=PULL_POLICY_ALL,
         pattern="^(all|restricted)$",
-        description='"all" — pull для всех юзеров отдела; "restricted" — только из pull_user_ids.',
+        description='"all" — pull открыт всей платформе и анонимам (не только отделу); "restricted" — только из pull_user_ids.',
     )
     # Обязателен для pull_policy = "restricted"; игнорируется для "all"
     pull_user_ids: list[str] = Field(

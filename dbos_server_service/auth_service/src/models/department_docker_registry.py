@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db.base import Base
 
-PULL_POLICY_ALL = "all"         # все активные члены отдела могут pull
+PULL_POLICY_ALL = "all"         # pull открыт всей платформе и анонимам, не только отделу
 PULL_POLICY_RESTRICTED = "restricted"   # pull разрешён только юзерам из pull_user_ids
 
 
@@ -21,7 +21,8 @@ class DepartmentDockerRegistry(Base):
         String(64), ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True
     )
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # "all" — pull для всех членов отдела; "restricted" — только pull_user_ids
+    # "all" — pull открыт любому аутентифицированному юзеру и анониму;
+    # "restricted" — только юзерам из pull_user_ids
     pull_policy: Mapped[str] = mapped_column(String(32), default=PULL_POLICY_ALL, nullable=False)
     pull_user_ids: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     push_user_ids: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)

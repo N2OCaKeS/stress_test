@@ -51,6 +51,7 @@ SERVICE_EVENTS = [
     {"action": "user.password_change_required_blocked", "description": "Request blocked by middleware because user has must_change_password=True", "default_severity": "INFO"},
     {"action": "user.ban", "description": "User account banned", "default_severity": "CRITICAL"},
     {"action": "user.unban", "description": "User account unbanned", "default_severity": "CRITICAL"},
+    {"action": "user.unlock", "description": "Brute-force lockout cleared by admin (failed_login_attempts + locked_until reset)", "default_severity": "WARNING"},
     {"action": "user.ban_deactivated_via_status_change", "description": "Active ban deactivated as side-effect of PATCH /users/{id}/status", "default_severity": "WARNING"},
     {"action": "user.sessions_revoked_on_block", "description": "User sessions revoked as side-effect of PATCH /users/{id}/status to BLOCKED", "default_severity": "WARNING"},
     {"action": "user.pat_revoked_on_block", "description": "User PATs revoked as side-effect of PATCH /users/{id}/status to BLOCKED", "default_severity": "WARNING"},

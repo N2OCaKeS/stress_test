@@ -1449,6 +1449,62 @@ async def unban_user(
     return None
 
 
+async def unlock_user(
+    db: AsyncSession,
+    actor_id: str,
+    user_id: str,
+    request_id: str | None = None,
+    actor_role: str | None = None,
+    actor_dept_id: str | None = None,
+) -> None:
+    """Снять brute-force lockout с юзера.
+
+    Сбрасывает `failed_login_attempts` и `locked_until` — то же, что делает
+    успешный login или истечение lockout-окна, только по инициативе админа.
+    Idempotent: разлочить незалоченного — no-op (200), не ошибка. Бан и
+    статус не трогаем — это отдельная плоскость (см. `unban_user`).
+
+    Доступ:
+        * account_admin — любой target;
+        * department_admin — только юзер своего отдела (иначе 403
+          DEPT_MISMATCH). Платформенного юзера (без department_id) DA
+          разлочить не может. Симметрично ban/unban.
+    """
+    user_repo = UserRepository(db)
+
+    user = await user_repo.get_by_id(user_id)
+    if user is None:
+        raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
+
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN:
+        await assert_dept_admin_target_dept(
+            user_repo, actor_id, user.department_id,
+            error_code="DEPT_MISMATCH",
+            message="department_admin can only unlock users in own department",
+        )
+
+    was_locked = user.locked_until is not None or user.failed_login_attempts > 0
+    failed_before = user.failed_login_attempts
+
+    await user_repo.reset_failed_attempts(user)
+    await db.commit()
+
+    audit_service.emit(
+        "user.unlock",
+        actor_id,
+        target_id=user_id,
+        target_type="user",
+        details={
+            "target_username": user.username,
+            # `was_locked=False` — no-op разлочка незалоченного. Полезно для
+            # мониторинга: отделяет реальные снятия lockout'а от пустых вызовов.
+            "was_locked": was_locked,
+            "failed_attempts_cleared": failed_before,
+        },
+        request_id=request_id,
+    )
+
+
 async def hard_delete_user(
     db: AsyncSession,
     actor_id: str,

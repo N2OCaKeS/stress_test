@@ -1015,3 +1015,42 @@ async def unban_user(
         actor_dept_id=identity.department_id,
     )
     return OkResponse()
+
+
+@router.post(
+    "/{user_id}/unlock",
+    response_model=OkResponse,
+    summary="Снять brute-force lockout с юзера",
+    description="Сбрасывает счётчик неудачных логинов и lockout-окно. Idempotent: разлочить незалоченного — no-op.",
+)
+async def unlock_user(
+    user_id: str,
+    request: Request,
+    identity: AnyAdmin,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    """Снять lockout по неудачным логинам.
+
+    Что делает:
+        Обнуляет `failed_login_attempts` и `locked_until` — после этого юзер
+        снова может логиниться, не дожидаясь истечения lockout-окна. Бан и
+        статус не затрагиваются (для них есть `/ban` и `/unban`).
+
+    Доступ:
+        * account_admin — любой target;
+        * department_admin — только юзер своего отдела (иначе 403
+          DEPT_MISMATCH). Симметрично ban/unban.
+
+    Возможные ошибки:
+        * `USER_NOT_FOUND` (404).
+        * `DEPT_MISMATCH` (403) — DA по чужому/платформенному юзеру.
+    """
+    await user_service.unlock_user(
+        db=db,
+        actor_id=identity.user_id,
+        user_id=user_id,
+        request_id=getattr(request.state, "request_id", None),
+        actor_role=identity.platform_role,
+        actor_dept_id=identity.department_id,
+    )
+    return OkResponse()

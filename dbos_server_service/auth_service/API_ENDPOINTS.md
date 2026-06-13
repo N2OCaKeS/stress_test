@@ -286,6 +286,12 @@ Errors: `USER_NOT_FOUND` (404), `CANNOT_BAN_SELF` (422), `DEPT_MISMATCH` (403) �
 
 Auth: AnyAdmin. Симметрично ban-у: `account_admin` — любой, `department_admin` — только свой отдел. Errors: `USER_NOT_FOUND` (404), `BAN_NOT_FOUND` (404), `DEPT_MISMATCH` (403) — DA по чужому/платформенному юзеру.
 
+### `POST /users/{user_id}/unlock`
+
+Снимает brute-force lockout: сбрасывает `failed_login_attempts` и `locked_until`. После этого юзер логинится сразу, не дожидаясь истечения 15-минутного окна. Бан и статус не затрагиваются. Idempotent — разлочить незалоченного возвращает 200 (no-op, `details.was_locked=false` в audit).
+
+Auth: AnyAdmin. Симметрично ban/unban: `account_admin` — любой target, `department_admin` — только юзер своего отдела. Errors: `USER_NOT_FOUND` (404), `DEPT_MISMATCH` (403) — DA по чужому/платформенному юзеру.
+
 ### `DELETE /users/{user_id}`
 
 Hard-delete юзера: row в `users` сносится физически. ORM-cascade уносит `Session`, `PersonalAccessToken`, `Ban`, `UserServiceRole`, `UserGroupMembership`. Боты, которых создал этот юзер, НЕ трогаются (бот = dept-owned entity). После commit'а инициируется best-effort `POST /api/secret/v1/internal/lifecycle/user-deleted` на secret_service — он блокирует personal credentials удалённого юзера (`tokens.owner_user_deleted_block`).

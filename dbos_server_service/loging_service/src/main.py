@@ -1272,8 +1272,19 @@ def _action_for_path(method: str, path: str) -> str:
     ):
         return "logging.service_events_browsed"
 
+    # `/events/export` — выгрузка журнала в файл. Отдельный action, чтобы
+    # SOC видел факт массового экспорта аудита (значимое действие) отдельно
+    # от обычного постраничного чтения.
+    if (
+        len(segments) >= 2
+        and segments[-1] == "export"
+        and segments[-2] == "events"
+    ):
+        return "logging.events_exported"
+
     # Голое `/events` (или любое другое окончание на `events`, не под
-    # `/services/{svc}/`) — чтение audit-журнала.
+    # `/services/{svc}/`) — чтение audit-журнала. Сюда же `/events/stats`
+    # (агрегаты) — это то же чтение журнала, отдельный action не нужен.
     if segments and segments[-1] == "events":
         return "logging.events_queried"
 

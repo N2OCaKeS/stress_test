@@ -7,22 +7,31 @@ GET  /events — читают `loging_admin` / `loging_reader`. Обе роли 
               нужен read его отдела — выдать ему отдельную `loging_reader`.
 """
 
+import csv
+import io
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from src.core.config import get_settings
 from src.core.constants import RESERVED_SERVICE_NAMES, Severity
 from src.core.exceptions import AppException, AuthorizationError, DomainValidationError
-from src.core.limits import MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
+from src.core.limits import MAX_EXPORT_ROWS, MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
 from src.dependencies.auth import ReaderIdentity, require_service_token
 from src.dependencies.db import get_db
 from src.schemas.common import ErrorEnvelope
-from src.schemas.events import _IDEMPOTENCY_KEY_PATTERN, EventCreate, EventListResponse, EventResponse
+from src.schemas.events import (
+    _IDEMPOTENCY_KEY_PATTERN,
+    EventCreate,
+    EventListResponse,
+    EventResponse,
+    EventStatsResponse,
+)
 from src.services import event_service
 from src.utils.normalization import normalize_identifier
 
@@ -380,4 +389,253 @@ def list_events(
         offset=offset,
         include_total=include_total,
         identity=identity,
+    )
+
+
+# Дефолтное окно агрегатов/экспорта, когда явные `from`/`to` не заданы.
+_DEFAULT_WINDOW_HOURS = 24
+# Верхняя граница `window_hours` — год. Шире окно по многомиллионному журналу
+# легко уводит aggregate-проходы в statement_timeout; для архивных выборок
+# оператор задаёт явные `from_time`/`to_time`.
+_MAX_WINDOW_HOURS = 24 * 366
+
+# Порядок колонок CSV-экспорта. Совпадает с top-level колонками
+# `EventDetail`; `details` сериализуется как компактный JSON в последней
+# ячейке, чтобы строка оставалась одной CSV-записью.
+_EXPORT_COLUMNS = (
+    "id",
+    "timestamp",
+    "received_at",
+    "service",
+    "action",
+    "actor_id",
+    "actor_type",
+    "username",
+    "department_id",
+    "target_id",
+    "target_type",
+    "status",
+    "allowed",
+    "severity",
+    "request_id",
+    "details",
+)
+
+
+def _resolve_window(
+    from_time: datetime | None,
+    to_time: datetime | None,
+    window_hours: int,
+) -> tuple[datetime, datetime]:
+    """Сводит `from`/`to`/`window_hours` к конкретной паре границ (UTC).
+
+    Если заданы оба `from_time` и `to_time` — берём их (полуоткрытый интервал
+    `[from, to)`, как в `GET /events`). Если задан только один из них — второй
+    достраиваем сдвигом на `window_hours`. Если ни один — окно
+    `[now - window_hours, now]`. Naive datetime трактуем как UTC,
+    симметрично ingest-валидатору.
+    """
+    def _aware(dt: datetime) -> datetime:
+        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+    span = timedelta(hours=window_hours)
+    if from_time is not None and to_time is not None:
+        return _aware(from_time), _aware(to_time)
+    if to_time is not None:
+        to_aware = _aware(to_time)
+        return to_aware - span, to_aware
+    if from_time is not None:
+        from_aware = _aware(from_time)
+        return from_aware, from_aware + span
+    now = datetime.now(timezone.utc)
+    return now - span, now
+
+
+@router.get(
+    "/stats",
+    response_model=EventStatsResponse,
+    summary="Агрегаты audit-журнала за окно",
+    description=(
+        "Возвращает счётчики событий аудита за временное окно, сгруппированные "
+        "по severity, сервису и исходу (status), плюс `total`. Группировку "
+        "делает Postgres (`COUNT(*) ... GROUP BY`) — строки в память не "
+        "тянутся.\n\n"
+        "**Окно:** по умолчанию последние 24 часа. Можно задать явные "
+        "`from_time` / `to_time` (полуоткрытый интервал `[from, to)`) или "
+        "сдвиг `window_hours` (если задан один из краёв — второй достраивается "
+        "сдвигом; если оба `from`/`to` заданы — `window_hours` игнорируется).\n\n"
+        "**Фильтры:** те же, что у `GET /events` (severity / service / action / "
+        "actor_id / target_id / status / department_id / request_id) — сужают "
+        "выборку, по которой считаются агрегаты.\n\n"
+        "**Доступ:** `loging_admin` / `loging_reader` (как `GET /events`)."
+    ),
+    response_description="Агрегаты: total + by_severity + by_service + by_status + границы окна",
+    responses={
+        401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user rate-limit"},
+    },
+)
+@limiter.limit(
+    lambda: get_settings().audit_query_rate_limit,
+    key_func=reader_rate_limit_key,
+)
+def events_stats(
+    request: Request,
+    response: Response,
+    identity: ReaderIdentity,
+    db: Session = Depends(get_db),
+    department_id: str | None = Query(default=None, description="Фильтр по ID отдела"),
+    service: str | None = Query(default=None, description="Фильтр по имени сервиса-источника"),
+    severity: Severity | None = Query(default=None),
+    action: str | None = Query(default=None, description="Фильтр по имени action"),
+    actor_id: str | None = Query(default=None, max_length=48),
+    target_id: str | None = Query(default=None, max_length=48),
+    status_filter: Literal["success", "failure", "denied", "warning"] | None = Query(
+        default=None, alias="status", description="Фильтр по исходу действия",
+    ),
+    request_id: str | None = Query(default=None, max_length=64),
+    from_time: datetime | None = Query(default=None, description="Начало окна (ISO 8601)"),
+    to_time: datetime | None = Query(default=None, description="Конец окна (ISO 8601)"),
+    window_hours: int = Query(
+        default=_DEFAULT_WINDOW_HOURS,
+        ge=1,
+        le=_MAX_WINDOW_HOURS,
+        description="Размер окна в часах, если from/to не заданы оба (дефолт 24).",
+    ),
+) -> EventStatsResponse:
+    if service is not None:
+        service = normalize_identifier(service)
+    if action is not None:
+        action = normalize_identifier(action)
+
+    win_from, win_to = _resolve_window(from_time, to_time, window_hours)
+    return event_service.stats(
+        db,
+        department_id=department_id,
+        service=service,
+        severity=severity,
+        action=action,
+        actor_id=actor_id,
+        target_id=target_id,
+        status=status_filter,
+        request_id=request_id,
+        from_time=win_from,
+        to_time=win_to,
+    )
+
+
+def _csv_value(value) -> str:
+    """Приводит значение колонки к строке для CSV-ячейки.
+
+    `None` → пустая ячейка; bool/datetime → их строковое представление;
+    `details` (dict) сериализуется компактным JSON'ом. Спецсимволы CSV
+    (запятые, кавычки, перевод строки) экранирует сам `csv.writer`. Поля
+    события уже отфильтрованы charset-валидаторами схемы на ingest'е (без
+    CR/LF в action/username/id), так что расщепления строк не происходит.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        import json
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+@router.get(
+    "/export",
+    summary="Экспорт audit-журнала за окно в CSV",
+    description=(
+        "Отдаёт события аудита за окно в виде CSV-файла "
+        "(`Content-Disposition: attachment`). Колонки совпадают с полями "
+        "`GET /events`; `details` сериализуется компактным JSON'ом в последней "
+        "колонке.\n\n"
+        "**Окно и фильтры** — как у `GET /events/stats` (дефолт — последние 24 "
+        "часа; `from`/`to`/`window_hours`; severity/service/action/actor/status/"
+        "department/request_id).\n\n"
+        f"**Лимит:** не более {MAX_EXPORT_ROWS} строк на один экспорт. Если под "
+        "фильтр попало больше, ответ содержит первые строки (по возрастанию "
+        "времени) и заголовок `X-Export-Truncated: true` — сузьте окно или "
+        "фильтр.\n\n"
+        "**Доступ:** `loging_admin` / `loging_reader` (как `GET /events`)."
+    ),
+    response_description="CSV-файл (text/csv) с заголовком и строками событий",
+    responses={
+        200: {
+            "content": {"text/csv": {}},
+            "description": "CSV-файл; `X-Export-Truncated` = true при усечении по cap'у",
+        },
+        401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
+        403: {"model": ErrorEnvelope, "description": "Роль не подходит"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user rate-limit"},
+    },
+)
+@limiter.limit(
+    lambda: get_settings().audit_query_rate_limit,
+    key_func=reader_rate_limit_key,
+)
+def events_export(
+    request: Request,
+    response: Response,
+    identity: ReaderIdentity,
+    db: Session = Depends(get_db),
+    department_id: str | None = Query(default=None, description="Фильтр по ID отдела"),
+    service: str | None = Query(default=None, description="Фильтр по имени сервиса-источника"),
+    severity: Severity | None = Query(default=None),
+    action: str | None = Query(default=None, description="Фильтр по имени action"),
+    actor_id: str | None = Query(default=None, max_length=48),
+    target_id: str | None = Query(default=None, max_length=48),
+    status_filter: Literal["success", "failure", "denied", "warning"] | None = Query(
+        default=None, alias="status", description="Фильтр по исходу действия",
+    ),
+    request_id: str | None = Query(default=None, max_length=64),
+    from_time: datetime | None = Query(default=None, description="Начало окна (ISO 8601)"),
+    to_time: datetime | None = Query(default=None, description="Конец окна (ISO 8601)"),
+    window_hours: int = Query(
+        default=_DEFAULT_WINDOW_HOURS,
+        ge=1,
+        le=_MAX_WINDOW_HOURS,
+        description="Размер окна в часах, если from/to не заданы оба (дефолт 24).",
+    ),
+) -> StreamingResponse:
+    if service is not None:
+        service = normalize_identifier(service)
+    if action is not None:
+        action = normalize_identifier(action)
+
+    win_from, win_to = _resolve_window(from_time, to_time, window_hours)
+    rows, truncated = event_service.export_rows(
+        db,
+        department_id=department_id,
+        service=service,
+        severity=severity,
+        action=action,
+        actor_id=actor_id,
+        target_id=target_id,
+        status=status_filter,
+        request_id=request_id,
+        from_time=win_from,
+        to_time=win_to,
+        limit=MAX_EXPORT_ROWS,
+    )
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(_EXPORT_COLUMNS)
+    for event in rows:
+        writer.writerow([_csv_value(getattr(event, col)) for col in _EXPORT_COLUMNS])
+    body = buffer.getvalue()
+
+    filename = f"audit-export-{win_from:%Y%m%dT%H%M%SZ}-{win_to:%Y%m%dT%H%M%SZ}.csv"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "X-Export-Truncated": "true" if truncated else "false",
+    }
+    # `media_type` без charset — utf-8 подразумевается; StringIO уже unicode.
+    return StreamingResponse(
+        iter([body]),
+        media_type="text/csv; charset=utf-8",
+        headers=headers,
     )

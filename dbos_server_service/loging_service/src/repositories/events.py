@@ -470,6 +470,180 @@ def query(
     return events, total, has_more
 
 
+def _stats_filters(
+    *,
+    department_id: str | None,
+    service: str | None,
+    severity: str | None,
+    action: str | None,
+    actor_id: str | None,
+    target_id: str | None,
+    status: str | None,
+    request_id: str | None,
+    from_time: datetime | None,
+    to_time: datetime | None,
+) -> list:
+    """Собирает WHERE-условия, общие для aggregate-stats и export.
+
+    Зеркалит фильтры `query()`: точное совпадение по колонкам + полуоткрытое
+    временное окно `[from_time, to_time)`. Вынесено отдельно, чтобы stats и
+    export считали по той же выборке, что и постраничный `GET /events`.
+    """
+    filters = []
+    if department_id is not None:
+        filters.append(AuditEvent.department_id == department_id)
+    if service is not None:
+        filters.append(AuditEvent.service == service)
+    if severity is not None:
+        filters.append(AuditEvent.severity == severity)
+    if action is not None:
+        filters.append(AuditEvent.action == action)
+    if actor_id is not None:
+        filters.append(AuditEvent.actor_id == actor_id)
+    if target_id is not None:
+        filters.append(AuditEvent.target_id == target_id)
+    if status is not None:
+        filters.append(AuditEvent.status == status)
+    if request_id is not None:
+        filters.append(AuditEvent.request_id == request_id)
+    if from_time is not None:
+        filters.append(AuditEvent.timestamp >= from_time)
+    if to_time is not None:
+        filters.append(AuditEvent.timestamp < to_time)
+    return filters
+
+
+def aggregate_stats(
+    db: Session,
+    *,
+    department_id: str | None = None,
+    service: str | None = None,
+    severity: str | None = None,
+    action: str | None = None,
+    actor_id: str | None = None,
+    target_id: str | None = None,
+    status: str | None = None,
+    request_id: str | None = None,
+    from_time: datetime | None = None,
+    to_time: datetime | None = None,
+) -> dict:
+    """Считает агрегаты по окну тремя `GROUP BY`-запросами, не таща строки в память.
+
+    Возвращает dict с тремя срезами: `by_severity`, `by_service`, `by_status` —
+    каждый из них `{ключ: count}` — плюс `total`. Группировку делает Postgres
+    (`COUNT(*) ... GROUP BY`), так что на многомиллионном журнале мы гоняем три
+    индексных агрегата вместо материализации page'ей в Python.
+
+    Все три прохода идут под общим `audit_count_statement_timeout_ms`
+    (тот же guard, что у `include_total` в `query()`): широкое окно по
+    распухшему журналу не должно держать pooled-коннект бесконечно. На
+    отмене по `57014` соответствующий срез возвращается пустым, а флаг
+    `timeout` поднимается — caller эмитит его в self-audit details.
+    """
+    settings = get_settings()
+    filters = _stats_filters(
+        department_id=department_id,
+        service=service,
+        severity=severity,
+        action=action,
+        actor_id=actor_id,
+        target_id=target_id,
+        status=status,
+        request_id=request_id,
+        from_time=from_time,
+        to_time=to_time,
+    )
+    timeout_ms = settings.audit_count_statement_timeout_ms
+    timeout_flag = {"hit": False}
+
+    def _grouped(column) -> list[tuple]:
+        stmt = select(column, func.count()).select_from(AuditEvent)
+        for f in filters:
+            stmt = stmt.where(f)
+        stmt = stmt.group_by(column)
+        if timeout_ms > 0:
+            def _on_canceled() -> list:
+                timeout_flag["hit"] = True
+                return []
+
+            return _with_statement_timeout(
+                db,
+                timeout_ms,
+                lambda: list(db.execute(stmt).all()),
+                on_canceled=_on_canceled,
+                canceled_log_msg=(
+                    "audit stats aggregate exceeded statement_timeout=%dms; "
+                    "returning empty group"
+                ),
+            )
+        return list(db.execute(stmt).all())
+
+    by_severity = {row[0]: row[1] for row in _grouped(AuditEvent.severity)}
+    by_service = {row[0]: row[1] for row in _grouped(AuditEvent.service)}
+    by_status = {row[0]: row[1] for row in _grouped(AuditEvent.status)}
+
+    return {
+        "by_severity": by_severity,
+        "by_service": by_service,
+        "by_status": by_status,
+        "total": sum(by_severity.values()),
+        "truncated": timeout_flag["hit"],
+    }
+
+
+def iter_export(
+    db: Session,
+    *,
+    department_id: str | None = None,
+    service: str | None = None,
+    severity: str | None = None,
+    action: str | None = None,
+    actor_id: str | None = None,
+    target_id: str | None = None,
+    status: str | None = None,
+    request_id: str | None = None,
+    from_time: datetime | None = None,
+    to_time: datetime | None = None,
+    limit: int = 50_000,
+):
+    """Достаёт события под фильтр для экспорта (capped, server-side cursor).
+
+    Сортировка `timestamp ASC, id ASC` — экспорт читается человеком сверху
+    вниз по хронологии, в отличие от `GET /events` (DESC, свежие первыми).
+
+    Возвращает `(rows_iterable, truncated)`, где `truncated=True`, если под
+    фильтр попало больше `limit` строк (взяли `limit + 1`, отдали `limit`).
+    Caller проставляет признак усечения в заголовок ответа, чтобы оператор
+    не принял обрезанный экспорт за полный.
+
+    Server-side cursor (`yield_per`) не материализует весь результат в памяти:
+    строки стримятся пачками, что держит RSS константным даже на верхней
+    границе cap'а.
+    """
+    filters = _stats_filters(
+        department_id=department_id,
+        service=service,
+        severity=severity,
+        action=action,
+        actor_id=actor_id,
+        target_id=target_id,
+        status=status,
+        request_id=request_id,
+        from_time=from_time,
+        to_time=to_time,
+    )
+    stmt = select(AuditEvent)
+    for f in filters:
+        stmt = stmt.where(f)
+    stmt = (
+        stmt.order_by(AuditEvent.timestamp.asc(), AuditEvent.id.asc())
+        .limit(limit + 1)
+    )
+    rows = db.execute(stmt).scalars().all()
+    truncated = len(rows) > limit
+    return list(rows[:limit]), truncated
+
+
 def list_services(db: Session, *, department_id: str | None = None) -> list:
     """Агрегат `event_count` / `last_event_at` по каждому сервису.
 

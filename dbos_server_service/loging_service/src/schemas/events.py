@@ -509,6 +509,31 @@ class EventDetail(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class EventStatsResponse(BaseModel):
+    """Агрегаты audit-журнала за временное окно.
+
+    `by_severity` — счётчики по каждому из шести уровней severity; ключи, под
+    которые в окне не попало ни одного события, в map отсутствуют (нулей не
+    подставляем — фронт сам решает, показывать ли отсутствующий уровень нулём).
+    `by_service` — счётчики по имени сервиса-источника. `by_status` — по исходу
+    (`success`/`failure`/`denied`/`warning`). `total` — всего событий под фильтр.
+
+    `from_time` / `to_time` — фактическое окно, по которому считали (UTC),
+    чтобы фронт показал оператору границы агрегата без обратного пересчёта
+    `window_hours`. `truncated` поднимается в True, если хоть один из
+    `GROUP BY`-проходов был отменён по `statement_timeout` — счётчики тогда
+    неполны.
+    """
+
+    total: int
+    by_severity: dict[str, int]
+    by_service: dict[str, int]
+    by_status: dict[str, int]
+    from_time: datetime
+    to_time: datetime
+    truncated: bool = False
+
+
 class EventListResponse(BaseModel):
     """Постраничный список событий аудита.
 

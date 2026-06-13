@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from src.core.exceptions import AppException, ConflictError
 from src.models.audit_event import AuditEvent
 from src.repositories import events as event_repo
-from src.schemas.events import EventCreate, EventListResponse, EventDetail
+from src.schemas.events import EventCreate, EventListResponse, EventDetail, EventStatsResponse
 from src.services import rule_service
 from src.utils.redaction import redact
 
@@ -265,6 +265,77 @@ def query(
         has_more=has_more,
         limit=limit,
         offset=offset,
+    )
+
+
+def stats(
+    db: Session,
+    *,
+    department_id: str | None = None,
+    service: str | None = None,
+    severity: str | None = None,
+    action: str | None = None,
+    actor_id: str | None = None,
+    target_id: str | None = None,
+    status: str | None = None,
+    request_id: str | None = None,
+    from_time: datetime,
+    to_time: datetime,
+) -> EventStatsResponse:
+    """Агрегаты за окно `[from_time, to_time)` — счётчики по severity/service/status."""
+    agg = event_repo.aggregate_stats(
+        db,
+        department_id=department_id,
+        service=service,
+        severity=severity,
+        action=action,
+        actor_id=actor_id,
+        target_id=target_id,
+        status=status,
+        request_id=request_id,
+        from_time=from_time,
+        to_time=to_time,
+    )
+    return EventStatsResponse(
+        total=agg["total"],
+        by_severity=agg["by_severity"],
+        by_service=agg["by_service"],
+        by_status=agg["by_status"],
+        from_time=from_time,
+        to_time=to_time,
+        truncated=agg.get("truncated", False),
+    )
+
+
+def export_rows(
+    db: Session,
+    *,
+    department_id: str | None = None,
+    service: str | None = None,
+    severity: str | None = None,
+    action: str | None = None,
+    actor_id: str | None = None,
+    target_id: str | None = None,
+    status: str | None = None,
+    request_id: str | None = None,
+    from_time: datetime,
+    to_time: datetime,
+    limit: int,
+) -> tuple[list[AuditEvent], bool]:
+    """Строки под фильтр для экспорта; `(rows, truncated)` (см. репозиторий)."""
+    return event_repo.iter_export(
+        db,
+        department_id=department_id,
+        service=service,
+        severity=severity,
+        action=action,
+        actor_id=actor_id,
+        target_id=target_id,
+        status=status,
+        request_id=request_id,
+        from_time=from_time,
+        to_time=to_time,
+        limit=limit,
     )
 
 

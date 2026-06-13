@@ -256,6 +256,7 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     # Обращения к loging_service (все сохраняются без ротации)
     ("logging.events_queried",   "success"): "INFO",
     ("logging.events_queried",   "warning"): "WARNING",
+    ("logging.events_exported",  "success"): "WARNING",
     ("logging.rules_read",       "success"): "INFO",
     ("logging.rules_write",      "success"): "WARNING",
     ("logging.services_read",    "success"): "INFO",

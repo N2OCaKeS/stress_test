@@ -82,6 +82,7 @@ Severity вычисляется автоматически в `src/services/rule
 |---|---|---|---|---|
 | `logging.events_queried` | `success` | INFO | `GET /api/logging/v1/events` — чтение audit-журнала | `audit_event` |
 | `logging.events_queried` | `warning` | WARNING | `GET /api/logging/v1/events` отменён по `statement_timeout` (COUNT/SELECT) — self-audit с timeout-флагами в `details` | `audit_event` |
+| `logging.events_exported` | `success` | WARNING | `GET /api/logging/v1/events/export` — выгрузка журнала в CSV за окно (значимое действие, эмитит HTTP-middleware) | `audit_event` |
 | `logging.rules_read` | `success` | INFO | `GET /api/logging/v1/rules` или `GET /rules/{id}` | `audit_rule` |
 | `logging.rules_write` | `success` | WARNING | `POST/PATCH/DELETE /api/logging/v1/rules*` (поверх `logging_rule.*`) | `audit_rule` |
 | `logging.services_read` | `success` | INFO | `GET /api/logging/v1/services` (список зарегистрированных сервисов) | `service_event` |

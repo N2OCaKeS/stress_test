@@ -118,6 +118,7 @@ function ServiceRow({
 }) {
   const [pending, setPending] = useState(false);
   const toast = useToast();
+  const invalidateLabels = useLabelsInvalidate();
   const onDelete = async () => {
     if (
       !window.confirm(
@@ -129,6 +130,7 @@ function ServiceRow({
     try {
       await deleteService(svc.service_name);
       toast.success("Сервис удалён");
+      void invalidateLabels("services");
       await onChange();
     } catch (e) {
       if (e instanceof ApiError) toast.error(e.message);

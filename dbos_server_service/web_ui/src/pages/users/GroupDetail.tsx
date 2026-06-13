@@ -951,6 +951,7 @@ function GroupMetaEditForm({
 }) {
   const [name, setName] = useState(group.name ?? "");
   const [description, setDescription] = useState(group.description ?? "");
+  const origDescription = group.description ?? "";
 
   return (
     <div className="flex flex-col gap-3">
@@ -978,12 +979,15 @@ function GroupMetaEditForm({
         <button
           className="btn btn-primary flex items-center gap-1"
           disabled={disabled}
-          onClick={() =>
+          onClick={() => {
+            const desc = description.trim();
             void onSubmit({
               name: name.trim() || undefined,
-              description: description.trim() || undefined,
-            })
-          }
+              // backend трактует null/omit как «не трогать», "" как «очистить».
+              // Шлём description только если изменили — пустая строка чистит.
+              description: desc === origDescription ? undefined : desc,
+            });
+          }}
         >
           <Save className="w-4 h-4" /> Сохранить
         </button>

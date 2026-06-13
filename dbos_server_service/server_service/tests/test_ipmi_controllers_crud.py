@@ -244,6 +244,65 @@ class TestListControllers:
         resp = await client.get(LIST, headers=_hdr(no_role_token_a))
         assert_error(resp, 403, "PERMISSION_DENIED")
 
+    async def test_list_returns_typed_envelope(
+        self, client, reader_token_a, make_server, make_ipmi,
+    ):
+        """Offset-режим отдаёт {items, total, limit, offset}, карточка несёт
+        ожидаемые поля контроллера и не светит зашифрованный пароль."""
+        srv = await make_server(department_id="dep_a")
+        await make_ipmi(server_id=srv.id)
+        resp = await client.get(LIST, headers=_hdr(reader_token_a))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert set(body) >= {"items", "total", "limit", "offset"}
+        assert body["total"] == 1
+        item = body["items"][0]
+        assert {"id", "server_id", "kind", "endpoint_url", "username"} <= set(item)
+        assert "password" not in item
+        assert "password_encrypted" not in item
+
+    async def test_list_cursor_returns_typed_envelope(
+        self, client, reader_token_a, make_server, make_ipmi,
+    ):
+        """Cursor-режим отдаёт {items, next_cursor, has_more}."""
+        srv = await make_server(department_id="dep_a")
+        await make_ipmi(server_id=srv.id)
+        resp = await client.get(
+            LIST, headers=_hdr(reader_token_a), params={"cursor": "true"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert set(body) >= {"items", "next_cursor", "has_more"}
+        assert len(body["items"]) == 1
+
+
+# ── OpenAPI-схема list-эндпоинта ──────────────────────────────────────────────
+
+
+class TestListOpenApiSchema:
+    """`GET /ipmi-controllers` должен нести типизированный response-schema,
+    а не пустую `{}` (иначе генераторы клиентов не видят envelope)."""
+
+    def test_list_response_schema_is_typed(self):
+        from src.main import app
+
+        spec = app.openapi()
+        get_op = spec["paths"]["/api/server/v1/ipmi-controllers"]["get"]
+        schema = get_op["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema != {}
+        # Union двух envelope'ов — anyOf из двух $ref.
+        refs = {opt.get("$ref") for opt in schema.get("anyOf", [])}
+        assert any(r and "PaginatedResponse_IpmiControllerResponse_" in r for r in refs)
+        assert any(r and "CursorPaginatedResponse_IpmiControllerResponse_" in r for r in refs)
+
+    def test_controller_schema_hides_encrypted_password(self):
+        from src.main import app
+
+        spec = app.openapi()
+        props = spec["components"]["schemas"]["IpmiControllerResponse"]["properties"]
+        assert "password_encrypted" not in props
+        assert {"id", "server_id", "kind", "endpoint_url", "username"} <= set(props)
+
 
 # ── PATCH /ipmi (update) ─────────────────────────────────────────────────────
 

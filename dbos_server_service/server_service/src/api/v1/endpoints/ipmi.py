@@ -250,7 +250,10 @@ async def _dispatch_power(
 
 @list_router.get(
     "",
-    response_model=None,
+    response_model=(
+        PaginatedResponse[IpmiControllerResponse]
+        | CursorPaginatedResponse[IpmiControllerResponse]
+    ),
     summary="Список IPMI-контроллеров, видимых вызывающему",
     description=(
         "Возвращает страницу IPMI-контроллеров серверов своего отдела. "

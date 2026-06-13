@@ -49,6 +49,20 @@ class TaskRead(BaseModel):
         default=None,
         description="target_resource_id — secondary target (server_account id и т.п.).",
     )
+    server_hostname: str | None = Field(
+        default=None,
+        description=(
+            "Человекочитаемый hostname сервера из `server_id`. None у инфра-"
+            "задач без сервера и если сервер уже удалён."
+        ),
+    )
+    account_login: str | None = Field(
+        default=None,
+        description=(
+            "Логин server_account'а из `account_id`. None если задача без "
+            "аккаунта или аккаунт уже удалён."
+        ),
+    )
     department_id: str | None = Field(
         default=None,
         description=(

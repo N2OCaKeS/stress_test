@@ -152,6 +152,22 @@ async def department_map_for_ids(
     return {row[0]: row[1] for row in (await db.execute(stmt)).all()}
 
 
+async def hostname_map_for_ids(
+    db: AsyncSession,
+    server_ids: list[str],
+) -> dict[str, str]:
+    """`{server_id: hostname}` для набора серверов одним SELECT'ом.
+
+    Нужно для резолва человекочитаемого имени сервера в `TaskRead` без N+1
+    на каждую строку листинга. Несуществующие/удалённые id просто отсутствуют
+    в результате — caller проставляет None.
+    """
+    if not server_ids:
+        return {}
+    stmt = select(Server.id, Server.hostname).where(Server.id.in_(server_ids))
+    return {row[0]: row[1] for row in (await db.execute(stmt)).all()}
+
+
 async def get_by_hostname(db: AsyncSession, hostname: str) -> Server | None:
     """SELECT по hostname (UNIQUE). Используется опционально под дедупликацию."""
     stmt = select(Server).where(Server.hostname == hostname)

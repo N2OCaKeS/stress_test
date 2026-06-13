@@ -16,6 +16,24 @@ async def get_by_id(db: AsyncSession, account_id: str) -> ServerAccount | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def login_map_for_ids(
+    db: AsyncSession,
+    account_ids: list[str],
+) -> dict[str, str]:
+    """`{account_id: login}` для набора аккаунтов одним SELECT'ом.
+
+    Нужно для резолва человекочитаемого логина учётки в `TaskRead` без N+1.
+    Несуществующие/удалённые id просто отсутствуют в результате — caller
+    проставляет None.
+    """
+    if not account_ids:
+        return {}
+    stmt = select(ServerAccount.id, ServerAccount.login).where(
+        ServerAccount.id.in_(account_ids)
+    )
+    return {row[0]: row[1] for row in (await db.execute(stmt)).all()}
+
+
 async def get_for_update(db: AsyncSession, account_id: str) -> ServerAccount | None:
     """SELECT по PK с row-lock'ом на самой строке ServerAccount.
 

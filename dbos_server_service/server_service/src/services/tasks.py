@@ -23,6 +23,7 @@ visibility-обвязка поверх этих read'ов:
 from src.core.constants import Action, EntityType, PlatformRole, ServiceRole
 from src.core.exceptions import NotFoundError
 from src.repositories import server as server_repo
+from src.repositories import server_account as account_repo
 from src.schemas.identity import IdentityContext
 from src.schemas.task import TaskRead
 from src.services import permissions, worker_client
@@ -74,17 +75,34 @@ def _sees_infra_tasks(identity: IdentityContext) -> bool:
     return bool(roles & {ServiceRole.ADMIN, ServiceRole.OPERATOR})
 
 
-def _to_task_read(row: dict, dept_by_server: dict[str, str], *, summarize: bool) -> TaskRead:
-    """Собрать `TaskRead` из БД-row (имена колонок) + резолв department_id."""
+def _to_task_read(
+    row: dict,
+    dept_by_server: dict[str, str],
+    hostname_by_server: dict[str, str],
+    login_by_account: dict[str, str],
+    *,
+    summarize: bool,
+) -> TaskRead:
+    """Собрать `TaskRead` из БД-row (имена колонок) + резолв department_id/имён.
+
+    `hostname_by_server` / `login_by_account` — батч-мапы id→имя, заполненные
+    caller'ом. Отсутствие id в мапе (сущность удалена или id null) даёт None —
+    карточка не падает.
+    """
     server_id = row["target_server_id"]
+    account_id = row["target_resource_id"]
     department_id = dept_by_server.get(server_id) if server_id is not None else None
+    server_hostname = hostname_by_server.get(server_id) if server_id is not None else None
+    account_login = login_by_account.get(account_id) if account_id is not None else None
     result = row["result"]
     return TaskRead(
         id=row["id"],
         kind=row["task_kind"],
         status=row["status"],
         server_id=server_id,
-        account_id=row["target_resource_id"],
+        account_id=account_id,
+        server_hostname=server_hostname,
+        account_login=account_login,
         department_id=department_id,
         created_at=row["enqueued_at"],
         started_at=row["started_at"],
@@ -135,10 +153,19 @@ async def list_tasks(
         limit=limit,
         offset=offset,
     )
-    # department_id резолвим одним батчем по фактическим server_id'ам страницы.
-    page_server_ids = [r["target_server_id"] for r in rows if r["target_server_id"]]
+    # department_id и hostname резолвим одним батчем по уникальным server_id'ам
+    # страницы; login учёток — одним батчем по уникальным account_id'ам. Без N+1.
+    page_server_ids = list({r["target_server_id"] for r in rows if r["target_server_id"]})
+    page_account_ids = list({r["target_resource_id"] for r in rows if r["target_resource_id"]})
     dept_by_server = await server_repo.department_map_for_ids(db, page_server_ids)
-    items = [_to_task_read(r, dept_by_server, summarize=True) for r in rows]
+    hostname_by_server = await server_repo.hostname_map_for_ids(db, page_server_ids)
+    login_by_account = await account_repo.login_map_for_ids(db, page_account_ids)
+    items = [
+        _to_task_read(
+            r, dept_by_server, hostname_by_server, login_by_account, summarize=True,
+        )
+        for r in rows
+    ]
     return items, total
 
 
@@ -165,6 +192,7 @@ async def get_task(
         if not _sees_infra_tasks(identity):
             raise NotFoundError(error_code="TASK_NOT_FOUND", message="Task not found")
         dept_by_server: dict[str, str] = {}
+        hostname_by_server: dict[str, str] = {}
     else:
         dept_by_server = await server_repo.department_map_for_ids(db, [server_id])
         task_dept = dept_by_server.get(server_id)
@@ -172,5 +200,18 @@ async def get_task(
         # светить факт существования задачи на чужом сервере.
         if task_dept is None or task_dept != identity.department_id:
             raise NotFoundError(error_code="TASK_NOT_FOUND", message="Task not found")
+        hostname_by_server = await server_repo.hostname_map_for_ids(db, [server_id])
 
-    return _to_task_read(row, dept_by_server, summarize=False)
+    # Логин учётки резолвим точечно по target_resource_id (если есть). Caller
+    # уже видит саму задачу с этим account_id — раскрытие логина той же
+    # сущности допустимо, доп. кросс-департамент-запросов не делаем.
+    account_id = row["target_resource_id"]
+    login_by_account = (
+        await account_repo.login_map_for_ids(db, [account_id])
+        if account_id is not None
+        else {}
+    )
+
+    return _to_task_read(
+        row, dept_by_server, hostname_by_server, login_by_account, summarize=False,
+    )

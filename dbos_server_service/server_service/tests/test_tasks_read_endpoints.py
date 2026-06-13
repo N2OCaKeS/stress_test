@@ -396,6 +396,102 @@ class TestTaskGetNotFound:
         assert resp.json()["server_id"] is None
 
 
+class TestTaskNameResolution:
+    async def test_list_resolves_hostname_and_login(
+        self, client, admin_role_token_a, make_server, make_account, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a", hostname="test-server-01")
+        acc = await make_account(server_id=srv.id, login="tester")
+        fake_worker_read["rows"] = [
+            _row(
+                id="tsk_named",
+                target_server_id=srv.id,
+                target_resource_id=acc.id,
+            ),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+        t = resp.json()[0]
+        assert t["server_id"] == srv.id
+        assert t["server_hostname"] == "test-server-01"
+        assert t["account_id"] == acc.id
+        assert t["account_login"] == "tester"
+
+    async def test_get_resolves_hostname_and_login(
+        self, client, admin_role_token_a, make_server, make_account, fake_worker_read,
+    ):
+        srv = await make_server(department_id="dep_a", hostname="detail-host")
+        acc = await make_account(server_id=srv.id, login="svc-user")
+        fake_worker_read["rows"] = [
+            _row(id="d1", target_server_id=srv.id, target_resource_id=acc.id),
+        ]
+        resp = await client.get(f"{BASE}/tasks/d1", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["server_hostname"] == "detail-host"
+        assert body["account_login"] == "svc-user"
+
+    async def test_deleted_account_resolves_to_none(
+        self, client, admin_role_token_a, make_server, fake_worker_read,
+    ):
+        """Ссылка на несуществующий account_id → account_login None (graceful)."""
+        srv = await make_server(department_id="dep_a", hostname="ghost-host")
+        fake_worker_read["rows"] = [
+            _row(
+                id="ghost",
+                target_server_id=srv.id,
+                target_resource_id="acc_deadbeef",
+            ),
+        ]
+        resp = await client.get(f"{BASE}/tasks/ghost", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["account_id"] == "acc_deadbeef"
+        assert body["account_login"] is None
+        # hostname резолвится, аккаунт — нет
+        assert body["server_hostname"] == "ghost-host"
+
+    async def test_no_account_no_server_resolve_none(
+        self, client, admin_role_token_a, fake_worker_read,
+    ):
+        """Инфра-задача без сервера/аккаунта → оба резолв-поля None."""
+        fake_worker_read["rows"] = [
+            _row(id="infra", target_server_id=None, kind="system.heartbeat"),
+        ]
+        resp = await client.get(f"{BASE}/tasks/infra", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["server_hostname"] is None
+        assert body["account_login"] is None
+
+    async def test_list_batch_resolves_multiple_without_n1(
+        self, client, admin_role_token_a, make_server, make_account, fake_worker_read,
+    ):
+        """Несколько тасок на одни и те же сущности резолвятся одним батчем.
+
+        Дедупликация по уникальным id (см. `list_tasks`): map строится по
+        множеству, не по каждой строке — без N+1. Проверяем корректность
+        значений на пересекающихся id.
+        """
+        srv1 = await make_server(department_id="dep_a", hostname="host-1")
+        srv2 = await make_server(department_id="dep_a", hostname="host-2")
+        acc = await make_account(server_id=srv1.id, login="shared-login")
+        fake_worker_read["rows"] = [
+            _row(id="a", target_server_id=srv1.id, target_resource_id=acc.id),
+            _row(id="b", target_server_id=srv1.id, target_resource_id=acc.id),
+            _row(id="c", target_server_id=srv2.id),
+        ]
+        resp = await client.get(f"{BASE}/tasks", headers=_hdr(admin_role_token_a))
+        assert resp.status_code == 200, resp.text
+        by_id = {t["id"]: t for t in resp.json()}
+        assert by_id["a"]["server_hostname"] == "host-1"
+        assert by_id["a"]["account_login"] == "shared-login"
+        assert by_id["b"]["server_hostname"] == "host-1"
+        assert by_id["b"]["account_login"] == "shared-login"
+        assert by_id["c"]["server_hostname"] == "host-2"
+        assert by_id["c"]["account_login"] is None
+
+
 class TestTaskGetRbac:
     async def test_account_admin_blocked(
         self, client, account_admin_token, fake_worker_read,

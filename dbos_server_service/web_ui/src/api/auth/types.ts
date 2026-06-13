@@ -263,6 +263,7 @@ export interface Department {
   id: string;
   name: string;
   description?: string | null;
+  user_count: number;
   created_at: Iso8601;
   updated_at?: Iso8601;
 }

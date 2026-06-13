@@ -586,6 +586,8 @@ export interface TaskRead {
   status: TaskStatus;
   server_id?: string | null;
   account_id?: string | null;
+  server_hostname?: string | null;
+  account_login?: string | null;
   department_id?: string | null;
   created_at: Iso8601;
   started_at?: Iso8601 | null;

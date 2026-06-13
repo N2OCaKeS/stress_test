@@ -35,10 +35,8 @@ import {
   updateDepartment,
 } from "@/api/auth/departments";
 import { listServices } from "@/api/auth/services";
-import { listUsers } from "@/api/auth/users";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
-import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import type { Department, Service } from "@/api/auth/types";
 
 type UiDept = {
@@ -64,12 +62,6 @@ export function ServicesDepartments() {
     [],
     { enabled: !mockMode },
   );
-  const usersQ = useQuery(
-    () => listUsers({ limit: 200 }),
-    [],
-    { enabled: !mockMode },
-  );
-
   const items: UiDept[] = useMemo(() => {
     if (mockMode) {
       return MOCK_DEPTS.map((d) => ({
@@ -79,14 +71,15 @@ export function ServicesDepartments() {
         user_count: d.user_count,
       }));
     }
-    const users = usersQ.data?.items ?? [];
+    // user_count приходит уже посчитанным backend'ом (`DepartmentResponse`),
+    // без отдельного запроса юзеров и без ограничения на первые 200.
     return (deptsQ.data ?? []).map((d) => ({
       id: d.id,
       name: d.name,
       description: d.description ?? undefined,
-      user_count: users.filter((u) => u.department_id === d.id).length,
+      user_count: d.user_count,
     }));
-  }, [mockMode, deptsQ.data, usersQ.data]);
+  }, [mockMode, deptsQ.data]);
 
   return (
     <InlineEditor
@@ -102,18 +95,6 @@ export function ServicesDepartments() {
       readonlyNote={
         !canEdit ? "Управление депами — только account_admin / dep_admin" : undefined
       }
-      listHeader={
-        !mockMode ? (
-          <div className="flex flex-col gap-1">
-            {/* Счётчик юзеров считается по странице юзеров с капом 200; если
-                всего больше — бейджи могут недосчитывать. Честно сигналим. */}
-            <TruncationNotice
-              shown={usersQ.data?.items.length ?? 0}
-              total={usersQ.data?.total ?? null}
-            />
-          </div>
-        ) : null
-      }
       renderRow={({ item, active, onSelect }) => (
         <button
           className={`cred-row text-left ${active ? "active" : ""}`}
@@ -127,7 +108,9 @@ export function ServicesDepartments() {
                 {item.description ?? <span className="mono">{item.id}</span>}
               </div>
             </div>
-            <span className="badge">{item.user_count ?? 0}</span>
+            <span className="badge" title="юзеров в отделе">
+              {item.user_count ?? 0} юзеров
+            </span>
           </div>
         </button>
       )}
@@ -143,7 +126,6 @@ export function ServicesDepartments() {
               mockMode={mockMode}
               onDone={() => {
                 deptsQ.refetch();
-                usersQ.refetch();
                 void invalidateLabels("depts");
                 onClose();
               }}
@@ -157,7 +139,6 @@ export function ServicesDepartments() {
             canEdit={detailCanEdit}
             onChanged={() => {
               deptsQ.refetch();
-              usersQ.refetch();
               void invalidateLabels("depts");
             }}
           />

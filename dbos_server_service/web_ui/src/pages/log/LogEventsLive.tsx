@@ -26,7 +26,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { hasAuditLogAccess } from "@/lib/rbac";
 import { formatMsk, formatMskTime } from "@/lib/datetime";
-import { exportEvents, getEventStats } from "@/api/loging/events";
+import { exportEvents, getEventStats, listEvents } from "@/api/loging/events";
 import { listServices } from "@/api/loging/services";
 import { useDeptLabel } from "@/lib/labels";
 import type {

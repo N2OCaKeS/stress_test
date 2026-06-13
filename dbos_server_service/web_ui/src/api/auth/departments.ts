@@ -24,6 +24,7 @@ interface BackendDepartment {
   name: string;
   description?: string | null;
   is_active?: boolean;
+  user_count?: number;
   created_at: string;
   updated_at?: string;
 }
@@ -33,6 +34,7 @@ function normalizeDepartment(d: BackendDepartment): Department {
     id: d.id ?? d.department_id ?? "",
     name: d.name,
     description: d.description ?? null,
+    user_count: d.user_count ?? 0,
     created_at: d.created_at,
     updated_at: d.updated_at,
   };

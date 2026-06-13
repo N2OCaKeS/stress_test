@@ -6,6 +6,7 @@
  *   2.  GET    /bots                            listBots
  *   3.  GET    /bots/{id}                       getBot
  *   4.  PATCH  /bots/{id}                       patchBot
+ *   4a. DELETE /bots/{id}                       deleteBot (account_admin only)
  *   5.  POST   /bots/{id}/tokens                issueBotToken (one-time token)
  *   6.  GET    /bots/{id}/tokens                listBotTokens
  *   7.  DELETE /bots/{id}/tokens/{token_id}     revokeBotToken
@@ -98,6 +99,15 @@ export async function patchBot(
 
 export function disableBot(botId: string): Promise<Bot> {
   return patchBot(botId, { status: "disabled" });
+}
+
+/**
+ * Физическое удаление бота с каскадом токенов / ролей / членств. Доступно
+ * только `account_admin`; для остальных backend отвечает 403, для несуще-
+ * ствующего бота — 404.
+ */
+export function deleteBot(botId: string): Promise<void> {
+  return apiDelete<void>(`/auth/v1/bots/${encodeURIComponent(botId)}`);
 }
 
 export function enableBot(botId: string): Promise<Bot> {

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Bot as BotIcon,
@@ -20,7 +20,7 @@ import { Shell } from "@/components/shell/Shell";
 import { BOTS, BOT_ASSIGNMENTS, ROLES, DIRECT_GRANTS } from "@/mocks/permissions";
 import { DEPTS, userById } from "@/mocks/auth";
 import { usePersona } from "@/contexts/PersonaContext";
-import { botMutationCaps } from "@/lib/rbac";
+import { botMutationCaps, isPlatformWideAdmin } from "@/lib/rbac";
 import {
   computeEffectiveBot,
   computeBotDrift,
@@ -463,6 +463,10 @@ function BotLiveData({
   caps: ReturnType<typeof botMutationCaps>;
 }) {
   const mock = useMockMode();
+  const navigate = useNavigate();
+  const { persona } = usePersona();
+  // Hard-delete доступен только account_admin (backend отвечает 403 остальным).
+  const canHardDelete = isPlatformWideAdmin(persona);
 
   const botQ = useQuery(
     () => botsApi.getBot(botId),
@@ -688,25 +692,51 @@ function BotLiveData({
                   <Power className="w-4 h-4" />
                   {live.status === "active" ? "Disable" : "Enable"}
                 </button>
-                <button
-                  className="btn btn-danger flex items-center gap-1"
-                  disabled={!caps.delete || pending}
-                  title={caps.delete ? undefined : caps.reason}
-                  onClick={() => {
-                    // auth_service не предоставляет DELETE /bots/{id}: бот
-                    // живёт пока существует отдел, а сам бот «гасится» через
-                    // disable (status=disabled) + revoke всех токенов и ролей.
-                    setActionErr(null);
-                    setActionInfo(
-                      "Полное удаление бота не предусмотрено auth_service. " +
-                        "Используйте Disable + revoke всех токенов и service-ролей; " +
-                        "снос вместе с отделом — через DELETE /departments/{id}.",
-                    );
-                  }}
-                >
-                  <Trash2 className="w-4 h-4" /> Delete bot
-                </button>
               </div>
+              {canHardDelete && (
+                <div className="col-span-2 mt-2 pt-3 border-t border-dashed border-token">
+                  <div className="text-[11px] uppercase tracking-wider text-danger mb-2 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> Опасная зона
+                  </div>
+                  <button
+                    className="btn btn-danger-solid flex items-center gap-1"
+                    disabled={pending}
+                    title="Физически удалить бота вместе с токенами и ролями"
+                    onClick={() => {
+                      const typed = window.prompt(
+                        `Это необратимо: удалит бота, все его токены, service-роли и членства.\n` +
+                          `Для подтверждения введите имя бота «${live.name}»:`,
+                      );
+                      if (typed === null) return;
+                      if (typed.trim() !== live.name) {
+                        setActionErr(
+                          "Имя не совпало — удаление отменено.",
+                        );
+                        setActionInfo(null);
+                        return;
+                      }
+                      setActionErr(null);
+                      setActionInfo(null);
+                      setPending(true);
+                      botsApi
+                        .deleteBot(botId)
+                        // Карточки уже нет — уходим к списку, не дёргая refetch
+                        // удалённого бота (иначе 404 на размонтированном экране).
+                        .then(() => navigate("/users"))
+                        .catch((e) => {
+                          setActionErr(apiErrMsg(e));
+                          setPending(false);
+                        });
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4" /> Удалить навсегда
+                  </button>
+                  <span className="text-[11px] text-dim ml-2">
+                    Каскадом уносит токены, роли и членства бота. Действие
+                    логируется в аудит.
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
             <div className="empty-card">

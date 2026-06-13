@@ -167,7 +167,9 @@ export function TaskListAside({
         (t) =>
           t.id.toLowerCase().includes(term) ||
           t.kind.toLowerCase().includes(term) ||
-          (t.server_id?.toLowerCase().includes(term) ?? false),
+          (t.server_id?.toLowerCase().includes(term) ?? false) ||
+          (t.server_hostname?.toLowerCase().includes(term) ?? false) ||
+          (t.account_login?.toLowerCase().includes(term) ?? false),
       )
     : tasks;
 
@@ -303,6 +305,9 @@ function TaskRow({
   const Icon = kindIcon(task.kind);
   const deptLabel = useDeptLabel(task.department_id ?? null);
   const serverLabel = useServerLabel(task.server_id ?? null);
+  // server_hostname приходит уже резолвленным от server_service; если его нет —
+  // падаем на label-резолв по server_id.
+  const serverName = task.server_hostname ?? serverLabel;
   return (
     <button
       type="button"
@@ -317,7 +322,7 @@ function TaskRow({
             {task.server_id && (
               <span className="text-dim" title={task.server_id}>
                 {" "}
-                → {serverLabel}
+                → {serverName}
               </span>
             )}
           </div>
@@ -361,6 +366,7 @@ export function TaskDetail({
   const [cancelling, setCancelling] = useState(false);
   const aliveRef = useRef(true);
   const serverLabel = useServerLabel(task?.server_id ?? null);
+  const serverName = task?.server_hostname ?? serverLabel;
 
   useEffect(() => {
     aliveRef.current = true;
@@ -477,7 +483,7 @@ export function TaskDetail({
                 <span>·</span>
                 <span title={task.server_id}>
                   <ServerIcon className="w-3 h-3 inline" /> target:{" "}
-                  <b className="mono">{serverLabel}</b>
+                  <b className="mono">{serverName}</b>
                 </span>
               </>
             )}
@@ -510,8 +516,21 @@ export function TaskDetail({
           <DetailField label="status" value={task.status} />
           <DetailField label="kind" value={task.kind} mono />
           <DetailField label="retry_count" value={String(task.retry_count)} />
-          <DetailField label="server_id" value={task.server_id ?? "—"} mono />
-          <DetailField label="account_id" value={task.account_id ?? "—"} mono />
+          <DetailField
+            label="server"
+            value={
+              task.server_hostname ??
+              (task.server_id ? serverName : "—")
+            }
+            hint={task.server_hostname ? task.server_id ?? undefined : undefined}
+            mono
+          />
+          <DetailField
+            label="account"
+            value={task.account_login ?? task.account_id ?? "—"}
+            hint={task.account_login ? task.account_id ?? undefined : undefined}
+            mono
+          />
           <DetailField label="department_id" value={task.department_id ?? "—"} mono />
           <DetailField label="created_at" value={formatMsk(task.created_at)} />
           <DetailField label="started_at" value={formatMsk(task.started_at)} />
@@ -549,15 +568,22 @@ function DetailField({
   label,
   value,
   mono,
+  hint,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  hint?: string;
 }) {
   return (
     <div className="flex flex-col gap-0.5 min-w-0">
       <span className="text-[11px] uppercase text-dim">{label}</span>
       <span className={`truncate ${mono ? "mono text-xs" : ""}`}>{value}</span>
+      {hint && (
+        <span className="mono text-[10px] text-dim truncate" title={hint}>
+          {hint}
+        </span>
+      )}
     </div>
   );
 }

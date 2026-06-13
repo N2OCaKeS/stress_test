@@ -545,10 +545,18 @@ async def exchange_code(
             )
 
     # CAS-consume (RFC 6749 §4.1.2 — "authorization code MUST be short-lived
-    # and single-use"). Идёт ПОСЛЕ всех валидаций (PKCE/redirect/expiry),
-    # чтобы legit-клиент с битым verifier'ом не сжёг свой код, и ДО работы по
-    # выписке JWT (role/dept lookup), иначе при гонке winner+loser потратят
-    # CPU зря. Детали — в `OAuthCodeRepository.mark_used`.
+    # and single-use"). Порядок задаёт инвариант повторного обмена:
+    #   * Любая pre-consume проверка (client-owner, expiry, redirect_uri, PKCE)
+    #     рейзит ДО mark_used, commit'а ещё не было → rollback в get_db()
+    #     оставляет used_at = NULL. Тот же код с исправленным запросом
+    #     (например верным verifier'ом) обменивается заново — ошибка verifier'а
+    #     код не сжигает.
+    #   * Успешный mark_used + commit ниже выставляют used_at безвозвратно:
+    #     повторный обмен того же кода (даже с верным verifier/secret) ловит
+    #     `used_at IS NULL`-фильтр в get_by_hash → OAUTH_CODE_INVALID. One-shot.
+    # Consume идёт и ДО работы по выписке JWT (role/dept lookup), иначе при
+    # гонке winner+loser потратят CPU зря. Детали — в
+    # `OAuthCodeRepository.mark_used`.
     if not await code_repo.mark_used(auth_code):
         # Кто-то уже consume'нул этот код параллельно (другой /token-запрос
         # с тем же `code` пришёл первым). Не reuse-attack в строгом смысле —

@@ -30,6 +30,33 @@ BASE = "/api/server/v1/servers"
 
 # ── GET / (list) ─────────────────────────────────────────────────────────────
 
+class TestListOpenApiSchema:
+    """`GET /servers` должен нести типизированный response-schema, а не пустую
+    `{}` (иначе генераторы клиентов не видят envelope)."""
+
+    def test_list_response_schema_is_typed(self):
+        from src.main import app
+
+        spec = app.openapi()
+        get_op = spec["paths"]["/api/server/v1/servers"]["get"]
+        schema = get_op["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema != {}
+        # Union двух envelope'ов — anyOf из двух $ref.
+        refs = {opt.get("$ref") for opt in schema.get("anyOf", [])}
+        assert any(r and "PaginatedResponse_ServerResponse_" in r for r in refs)
+        assert any(r and "CursorPaginatedResponse_ServerResponse_" in r for r in refs)
+
+    def test_server_schema_hides_secrets(self):
+        from src.main import app
+
+        spec = app.openapi()
+        props = spec["components"]["schemas"]["ServerResponse"]["properties"]
+        assert "password" not in props
+        assert "password_b64" not in props
+        assert "password_encrypted" not in props
+        assert {"id", "hostname", "ip_address", "department_id"} <= set(props)
+
+
 class TestListServers:
     async def test_no_token_returns_401(self, client):
         resp = await client.get(BASE)

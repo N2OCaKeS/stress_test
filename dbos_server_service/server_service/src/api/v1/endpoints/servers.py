@@ -23,7 +23,10 @@ router = APIRouter(prefix="/servers")
 
 @router.get(
     "",
-    response_model=None,
+    response_model=(
+        PaginatedResponse[ServerResponse]
+        | CursorPaginatedResponse[ServerResponse]
+    ),
     summary="Список серверов, видимых вызывающему",
     description=(
         "Возвращает страницу серверов своего отдела, упорядоченных по "

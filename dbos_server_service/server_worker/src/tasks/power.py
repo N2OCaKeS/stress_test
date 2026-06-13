@@ -23,13 +23,23 @@ worker-PAT с фактическим dept сервера.
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime, timezone
 
 from src.clients.ipmitool import IpmitoolError
 from src.clients.redfish import RedfishError
+from src.core.constants import STASH_TTL_SECONDS
+from src.core.identifiers import validate_task_id
 from src.main import broker
+from src.services import redis_pool
 from src.services import server_service_client
 from src.services import bmc_circuit_breaker as _breaker
+from src.services.redis_stash_crypto import (
+    aad_for_redis_stash,
+    decrypt_stash,
+    encrypt_stash,
+)
 from src.tasks._bmc_errors import (
     dispatch_get_power_state,
     dispatch_power_action,
@@ -46,6 +56,80 @@ logger = logging.getLogger(__name__)
 # 4 power.* handler'ах; `rebooted` у power.reboot; `previous_power_state`
 # полезен для post-action диагностики.
 AUDIT_SAFE_FIELDS: set[str] = {"power_state", "rebooted", "previous_power_state"}
+
+
+# One-shot marker для reboot'а. Симметрично stash'ам ротации паролей в
+# `tasks/passwords.py`, но проще: хранить нечего, кроме факта «reboot уже
+# выдан на BMC». Зачем guard именно reboot'у: on/off идемпотентны (повторный
+# `On`/`ForceOff` приводит сервер в то же состояние), а вот reboot —
+# деструктивная operation. Durable-retry поднимает `_impl` заново, если
+# предыдущая попытка успела выдать reset на BMC, но упала на последующем
+# `get_power_state` или commit'е терминального статуса. Без guard'а второй
+# reset влетит в сервер, который может ещё грузить ОС после первого — окно
+# для повреждения FS. Маркер ставим сразу после того, как BMC принял reset:
+# повторный заход видит маркер, пропускает reset и идёт сразу к verify.
+#
+# Если упал САМ reset (BMC отбил/недоступен) — маркер не выставлен, retry
+# честно повторяет reset. Guard срабатывает только против повторной выдачи
+# ПОСЛЕ успешного reset'а.
+_REBOOT_ISSUED_KEY_PREFIX = "dbos:power_reboot_issued:"
+
+
+async def _read_reboot_issued(task_id: str) -> bool:
+    """Проверить one-shot-маркер: был ли reset уже выдан на BMC в этой dispatch'е.
+
+    Маркер зашифрован тем же master-key, что и остальные stash'и worker'а
+    (envelope-формат, AAD binding'уется к task_id). Битый/swap-нутый маркер
+    → `AppException(STASH_DECRYPT_*)` из `decrypt_stash` — это лучше тихого
+    fallback'а: оператор увидит явную ошибку, а не молчаливый повторный
+    reboot.
+    """
+    validate_task_id(task_id)
+    client = redis_pool.get_redis()
+    raw = await client.get(_REBOOT_ISSUED_KEY_PREFIX + task_id)
+    if raw is None:
+        return False
+    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    # Расшифровываем, чтобы не принять чужой/битый ключ за валидный маркер.
+    decrypt_stash(text, aad=aad_for_redis_stash(task_id))
+    return True
+
+
+async def _store_reboot_issued(task_id: str) -> None:
+    """Поставить one-shot-маркер сразу после того, как BMC принял reset.
+
+    Кладём с TTL (тем же, что у rotate-stash'ей): покрывает суммарное окно
+    durable back-off'а. По истечении ключ исчезает сам — если к этому
+    моменту dispatch так и не завершилась, новая попытка имеет право
+    повторить reboot (старый reset давно «прожёван», ОС либо загрузилась,
+    либо застряла, и повтор не страшнее ручного reset'а оператором).
+    Value — минимальный JSON с моментом выдачи, для диагностики.
+    """
+    validate_task_id(task_id)
+    client = redis_pool.get_redis()
+    token = encrypt_stash(
+        json.dumps({"issued_at": datetime.now(timezone.utc).isoformat()}),
+        aad=aad_for_redis_stash(task_id),
+    )
+    await client.set(
+        _REBOOT_ISSUED_KEY_PREFIX + task_id,
+        token,
+        ex=STASH_TTL_SECONDS,
+    )
+
+
+async def _delete_reboot_issued(task_id: str) -> None:
+    """Снять one-shot-маркер после успешного завершения reboot'а.
+
+    TTL подстрахует, явный DELETE сокращает окно жизни ключа. Ошибки
+    глушим — посмертный cleanup не должен валить и без того успешную задачу.
+    """
+    validate_task_id(task_id)
+    client = redis_pool.get_redis()
+    try:
+        await client.delete(_REBOOT_ISSUED_KEY_PREFIX + task_id)
+    except Exception:  # noqa: BLE001
+        logger.debug("failed to delete power reboot one-shot marker", exc_info=True)
 
 
 def _normalize_power_state(state: str) -> str:
@@ -174,6 +258,12 @@ async def power_reboot(task_id: str) -> None:
 
     Возвращает: `{power_state, rebooted: True}`.
 
+    One-shot guard: reset выдаётся ровно один раз на dispatch. Маркер в
+    Redis (`_REBOOT_ISSUED_KEY_PREFIX + task_id`) ставится сразу после
+    того, как BMC принял reset; durable-retry, поднявший `_impl` заново
+    после фейла на get_power_state/commit, видит маркер и пропускает
+    повторный reset. on/off такого guard'а не требуют — они идемпотентны.
+
     Возможные ошибки: `CredentialFetchError`, `AppException(BMC_*)`.
 
     Связано с: `server.power_reboot` audit action.
@@ -185,12 +275,24 @@ async def power_reboot(task_id: str) -> None:
         creds = await server_service_client.fetch_ipmi_credentials(server_id, target_dept)
         host = _extract_bmc_host(creds["endpoint_url"])
         await _breaker.check(host)
+
+        # Если предыдущая попытка уже выдала reset на BMC (а упала позже —
+        # на get_power_state или commit'е терминального статуса), повторно
+        # ребутить нельзя: сервер мог ещё грузиться. Пропускаем reset, идём
+        # сразу к verify.
+        already_issued = await _read_reboot_issued(task_id)
+
         client = await _get_bmc(creds)
         try:
             try:
-                await dispatch_power_action(
-                    client, "ForceRestart" if force else "GracefulRestart",
-                )
+                if not already_issued:
+                    await dispatch_power_action(
+                        client, "ForceRestart" if force else "GracefulRestart",
+                    )
+                    # Маркер ставим сразу после того, как BMC принял reset, но
+                    # до get_power_state: если verify/commit упадут и пойдёт
+                    # retry, он увидит маркер и не выдаст второй reset.
+                    await _store_reboot_issued(task_id)
                 state = await dispatch_get_power_state(client)
             except (RedfishError, IpmitoolError, ValueError, RuntimeError) as exc:
                 await _breaker.record_failure(host)
@@ -198,6 +300,10 @@ async def power_reboot(task_id: str) -> None:
             await _breaker.record_success(host)
         finally:
             await _aclose_bmc(client)
+
+        # Дошли до успешного результата — маркер больше не нужен.
+        await _delete_reboot_issued(task_id)
+
         return {
             "power_state": _normalize_power_state(state),
             "rebooted": True,

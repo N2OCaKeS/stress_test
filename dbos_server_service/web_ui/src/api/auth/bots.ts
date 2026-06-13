@@ -74,7 +74,11 @@ export async function listBotsWithTotal(
     offset: params.offset ?? null,
     department_id: params.department_id ?? null,
   });
-  return { items: res.items.map(normalizeBot), total: res.total };
+  return {
+    items: res.items.map(normalizeBot),
+    total: res.total,
+    totalKnown: res.totalKnown,
+  };
 }
 
 export async function getBot(botId: string): Promise<Bot> {

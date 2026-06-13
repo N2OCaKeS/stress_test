@@ -369,6 +369,12 @@ function RuleForm({
   const actionOptions = actionsQ.data?.items ?? [];
   const [matchStatus, setMatchStatus] = useState(rule?.match_status ?? "");
   const [matchSeverity, setMatchSeverity] = useState(rule?.match_severity ?? "");
+  // tri-state: "" = любой, "true" = только allowed, "false" = только denied.
+  const [matchAllowed, setMatchAllowed] = useState(
+    rule?.match_allowed === null || rule?.match_allowed === undefined
+      ? ""
+      : String(rule.match_allowed),
+  );
   const [effect, setEffect] = useState<RuleEffect>(
     (rule?.effect as RuleEffect) ?? "SUPPRESS",
   );
@@ -392,6 +398,7 @@ function RuleForm({
       match_action: matchAction.trim() || null,
       match_status: (matchStatus || null) as RuleCreateRequest["match_status"],
       match_severity: (matchSeverity || null) as Severity | null,
+      match_allowed: matchAllowed === "" ? null : matchAllowed === "true",
       effect,
       // effect_severity допустим ТОЛЬКО при OVERRIDE_SEVERITY — иначе backend
       // вернёт EFFECT_SEVERITY_NOT_ALLOWED. Чистим поле для прочих эффектов.
@@ -500,6 +507,17 @@ function RuleForm({
                     {s}
                   </option>
                 ))}
+              </select>
+            </Field>
+            <Field label="match_allowed">
+              <select
+                className="surface-2 border border-token rounded px-2 py-1 w-full"
+                value={matchAllowed}
+                onChange={(e) => setMatchAllowed(e.target.value)}
+              >
+                <option value="">любой</option>
+                <option value="true">только allowed</option>
+                <option value="false">только denied</option>
               </select>
             </Field>
           </div>

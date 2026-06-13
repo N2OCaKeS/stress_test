@@ -26,6 +26,15 @@ import type {
 export interface PaginatedList<T> {
   items: T[];
   total: number;
+  /**
+   * `false`, если `total` — не реальный счётчик из `X-Total-Count`, а фоллбэк
+   * на `items.length` (заголовок не пришёл либо запрос ушёл по error-пути
+   * `apiGet`, который заголовки не отдаёт). Потребители, которым важна
+   * правда о полном размере (баннер усечения «N из M»), могут отличить
+   * «знаем точно» от «столько загрузили». Отсутствие поля трактуется как
+   * known — обратная совместимость со старыми вызовами.
+   */
+  totalKnown?: boolean;
 }
 
 export interface ListUsersParams {
@@ -63,14 +72,23 @@ export async function listWithTotal<T>(
   });
   if (!res.ok) {
     // Fall back to the shared client for proper error envelope + refresh.
-    // This path is hit when first request fails (401/403/etc.).
+    // Срабатывает на любом не-ok первого fetch'а (401/403/5xx/…). На 4xx/5xx
+    // без восстановления apiGet бросит ApiError — обработку забирает вызывающий.
+    // Если же apiGet вернул данные (например, после успешного refresh на 401),
+    // заголовка X-Total-Count тут уже нет: total — это лишь размер страницы,
+    // помечаем его как неточный.
     const items = await apiGet<T[]>(path, { query });
-    return { items, total: items.length };
+    return { items, total: items.length, totalKnown: false };
   }
   const totalHeader = res.headers.get("X-Total-Count");
+  const parsed = totalHeader ? Number.parseInt(totalHeader, 10) : NaN;
   const items = ((await res.json()) as T[]) ?? [];
-  const total = totalHeader ? Number.parseInt(totalHeader, 10) : items.length;
-  return { items, total: Number.isFinite(total) ? total : items.length };
+  const known = Number.isFinite(parsed);
+  return {
+    items,
+    total: known ? parsed : items.length,
+    totalKnown: known,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +157,11 @@ export async function listUsers(
     include_banned,
     status,
   });
-  return { items: res.items.map(normalizeUser), total: res.total };
+  return {
+    items: res.items.map(normalizeUser),
+    total: res.total,
+    totalKnown: res.totalKnown,
+  };
 }
 
 export async function listUsersByDepartment(
@@ -151,7 +173,11 @@ export async function listUsersByDepartment(
     `/auth/v1/users/department/${departmentId}`,
     { limit, offset, include_banned, status },
   );
-  return { items: res.items.map(normalizeUser), total: res.total };
+  return {
+    items: res.items.map(normalizeUser),
+    total: res.total,
+    totalKnown: res.totalKnown,
+  };
 }
 
 export async function getUser(userId: string): Promise<User> {

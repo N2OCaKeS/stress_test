@@ -240,6 +240,11 @@ export interface BotMutationCaps {
   rotateToken: boolean;
   revokeToken: boolean;
   manageRoles: boolean;
+  /**
+   * Hard-DELETE бота. Только платформенный admin: backend отвечает остальным
+   * 403 BOT_DELETE_FORBIDDEN, поэтому dep_admin своего отдела сюда не входит,
+   * хоть и управляет токенами/ролями.
+   */
   delete: boolean;
   reason: string;
 }
@@ -247,8 +252,8 @@ export interface BotMutationCaps {
 /**
  * RBAC for /users/bot/<id> detail mutations.
  *
- * - account_admin — full.
- * - dep_admin — full if bot.owner_dept matches.
+ * - account_admin — full (включая hard-delete).
+ * - dep_admin — токены + роли для ботов своего отдела, но НЕ hard-delete.
  * - service-only admin (secret.admin etc) — manages bots of own dept
  *   (token + roles).
  * - logging_* — view only.
@@ -271,7 +276,7 @@ export function botMutationCaps(
   }
   const myDept = personaDeptId(persona);
   if (myDept && ownerDept && myDept === ownerDept) {
-    return { rotateToken: true, revokeToken: true, manageRoles: true, delete: true, reason: "" };
+    return { rotateToken: true, revokeToken: true, manageRoles: true, delete: false, reason: "" };
   }
   return {
     rotateToken: false,

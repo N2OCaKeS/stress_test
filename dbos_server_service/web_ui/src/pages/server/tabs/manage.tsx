@@ -60,6 +60,7 @@ import {
 import { FormRow } from "@/pages/admin/services/_inline";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
+import { BootstrapCredsModal } from "./_bootstrapCredsModal";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
@@ -181,6 +182,9 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
     [accounts, persona],
   );
   const [accountId, setAccountId] = useState<string>("");
+  // prepare собирает bootstrap-креды через модалку с masked-полем пароля,
+  // а не через window.prompt (пароль не светится на экране).
+  const [credsModalOpen, setCredsModalOpen] = useState(false);
   // account_id шлём только на неуправляемом сервере; на managed worker идёт
   // по ключу, передавать пусто.
   const inventoryAccountId =
@@ -213,7 +217,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         accountsLoading={accountsQ.loading}
         outcome={taskOutcome.tracked}
         onCancelled={taskOutcome.reset}
-        onPrepare={async () => {
+        onPrepare={() => {
           if (!view) return;
           if (
             !window.confirm(
@@ -221,18 +225,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
             )
           )
             return;
-          const username = window.prompt("Bootstrap username:");
-          if (!username) return;
-          const password = window.prompt("Bootstrap password:");
-          if (!password) return;
-          taskOutcome.reset();
-          const res = await run("prepare", () =>
-            prepareServer(view.id, {
-              username_b64: utf8ToB64(username),
-              password_b64: utf8ToB64(password),
-            }),
-          );
-          if (res) taskOutcome.track("prepare", res.task_id, res.status);
+          setCredsModalOpen(true);
         }}
         onInventory={async () => {
           if (!view) return;
@@ -292,6 +285,24 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
 
       {allowOsCatalog && <OsCatalogCard />}
 
+      {view && credsModalOpen && (
+        <BootstrapCredsModal
+          hostname={view.hostname}
+          onClose={() => setCredsModalOpen(false)}
+          onSubmit={async ({ username, password }) => {
+            taskOutcome.reset();
+            const res = await run("prepare", () =>
+              prepareServer(view.id, {
+                username_b64: utf8ToB64(username),
+                password_b64: utf8ToB64(password),
+              }),
+            );
+            setCredsModalOpen(false);
+            if (res) taskOutcome.track("prepare", res.task_id, res.status);
+          }}
+        />
+      )}
+
       {view && (
         <DangerCard
           server={view}
@@ -337,7 +348,7 @@ function LifecycleCard({
   accountsLoading: boolean;
   outcome: TrackedTask | null;
   onCancelled: () => void;
-  onPrepare: () => Promise<void>;
+  onPrepare: () => void;
   onInventory: () => Promise<void>;
   onOsSync: () => Promise<void>;
   onUsersInventory: () => Promise<void>;

@@ -78,8 +78,13 @@ function RegistryConfig() {
     }
   }, [toast]);
 
+  // Авто-load по вводу отдела — с задержкой, чтобы каждый keystroke не дёргал
+  // backend (и не спамил toast'ами на 403 по недонабранному dept_id).
+  // Reload-кнопка ниже грузит немедленно, минуя debounce.
   useEffect(() => {
-    if (deptInput) void load(deptInput);
+    if (!deptInput) return;
+    const t = setTimeout(() => void load(deptInput), 450);
+    return () => clearTimeout(t);
   }, [deptInput, load]);
 
   const create = async () => {

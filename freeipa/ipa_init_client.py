@@ -39,7 +39,11 @@ def initialization_freeipa_client():
     """
         Костыль для временной замены записей DNS (Чтобы не перезагружая ввести в домен)
     """
+    with open('/etc/resolv.conf', 'r') as file_resolv:
+        resolv_lines = file_resolv.readlines()
+    resolv_lines = [line for line in resolv_lines if 'nameserver 10.177.128.198' not in line]
     with open('/etc/resolv.conf', 'w') as file_resolv:
+        file_resolv.writelines(resolv_lines)
         file_resolv.write(f"nameserver {HOSTS['server']['ip']}\n")
         file_resolv.write(f"search {DOMAIN}\n")
 
@@ -51,11 +55,13 @@ def initialization_freeipa_client():
     network_settings = file_network.readlines()
     file_network.close()
 
-    for line in network_settings[::]:
+    for i, line in enumerate(network_settings):
         if "dns-nameservers" in line:
-            network_settings.remove(line)
-        if "dns-domain" in line:
-            network_settings.remove(line)
+            parts = line.split()
+            parts = [p for p in parts if p != '10.177.128.198']
+            network_settings[i] = ' '.join(parts) + '\n'
+        elif "dns-domain" in line:
+            network_settings[i] = ''
     
     # Запись в /etc/network/interfaces новые параметры dns
     network_settings.append(f"dns-nameservers {HOSTS['server']['ip']}\n")

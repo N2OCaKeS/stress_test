@@ -191,6 +191,7 @@ export function DriftTab({ serverId, server }: Props) {
           outcome={syncOutcome.tracked}
           label="inventory sync"
           successText="Инвентаризация завершена — сводка обновлена."
+          onCancelled={syncOutcome.reset}
         />
       )}
 

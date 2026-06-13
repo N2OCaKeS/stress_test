@@ -87,7 +87,6 @@ export interface AdminItem {
 const isAccountAdmin = (p: Persona) => p.platform_role === "account_admin";
 const isDepAdmin = (p: Persona) => p.platform_role === "dep_admin";
 const isLoggingAdmin = (p: Persona) => p.platform_role === "logging_admin";
-const isLoggingReader = (p: Persona) => p.platform_role === "logging_reader";
 /* Service-role checks — not platform roles, just facts about per-service
  * grants. UI uses them to surface service-scoped admin tools (e.g. secret
  * templates / policies) to whoever has admin on that service. */
@@ -160,10 +159,7 @@ const STATIC_ITEMS: AdminItem[] = [
     group: "Аудит",
     content: ClusterAuditOverview,
     visibleFor: (p) =>
-      isAccountAdmin(p) ||
-      isDepAdmin(p) ||
-      isLoggingAdmin(p) ||
-      isLoggingReader(p),
+      isAccountAdmin(p) || isDepAdmin(p) || isLoggingAdmin(p),
   },
   {
     id: "cluster.config",
@@ -313,10 +309,7 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "loging",
     content: ServicesLogingRules,
-    visibleFor: (p) =>
-      isAccountAdmin(p) ||
-      isLoggingAdmin(p) ||
-      isLoggingReader(p),
+    visibleFor: (p) => isAccountAdmin(p) || isLoggingAdmin(p),
   },
   {
     id: "services.loging.retention",

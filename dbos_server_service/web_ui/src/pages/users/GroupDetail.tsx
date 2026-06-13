@@ -129,8 +129,18 @@ export function GroupDetail() {
     );
   }
 
-  const headerName = mockMode ? group!.name : (liveGroupQ.data?.name || id || "—");
-  const headerDescription = mockMode ? group!.description : (liveGroupQ.data?.description ?? "");
+  // useQuery чистит data на ошибке — после 404/403 не показываем призрак имени
+  // группы в шапке, а явный «нет доступа / не найдена».
+  const headerName = mockMode
+    ? group!.name
+    : liveGroupQ.error
+      ? "нет доступа или не найдена"
+      : (liveGroupQ.data?.name || id || "—");
+  const headerDescription = mockMode
+    ? group!.description
+    : liveGroupQ.error
+      ? ""
+      : (liveGroupQ.data?.description ?? "");
   return (
     <Shell breadcrumb={`auth_service / users / group / ${headerName}`}>
       <section className="flex-1 flex flex-col min-w-0 min-h-0">

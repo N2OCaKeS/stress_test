@@ -779,6 +779,7 @@ function PowerCard({
           outcome={powerOutcome.tracked}
           className="mb-3"
           successText="BMC подтвердил — состояние обновлено."
+          onCancelled={powerOutcome.reset}
         />
       )}
 
@@ -960,6 +961,7 @@ function CredentialsCard({
           outcome={rotateOutcome.tracked}
           className="mt-3"
           successText="Пароль применён на BMC и сохранён — старый недействителен."
+          onCancelled={rotateOutcome.reset}
         />
       )}
 

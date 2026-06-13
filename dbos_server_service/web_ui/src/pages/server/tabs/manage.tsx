@@ -212,6 +212,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         onAccountChange={setAccountId}
         accountsLoading={accountsQ.loading}
         outcome={taskOutcome.tracked}
+        onCancelled={taskOutcome.reset}
         onPrepare={async () => {
           if (!view) return;
           if (
@@ -321,6 +322,7 @@ function LifecycleCard({
   onAccountChange,
   accountsLoading,
   outcome,
+  onCancelled,
   onPrepare,
   onInventory,
   onOsSync,
@@ -334,6 +336,7 @@ function LifecycleCard({
   onAccountChange: (id: string) => void;
   accountsLoading: boolean;
   outcome: TrackedTask | null;
+  onCancelled: () => void;
   onPrepare: () => Promise<void>;
   onInventory: () => Promise<void>;
   onOsSync: () => Promise<void>;
@@ -438,7 +441,13 @@ function LifecycleCard({
           dep_admin своего департамента).
         </div>
       )}
-      {outcome && <TaskOutcomeBanner outcome={outcome} className="mt-3" />}
+      {outcome && (
+        <TaskOutcomeBanner
+          outcome={outcome}
+          className="mt-3"
+          onCancelled={onCancelled}
+        />
+      )}
     </div>
   );
 }

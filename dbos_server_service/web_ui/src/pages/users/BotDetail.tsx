@@ -124,7 +124,12 @@ export function BotDetail() {
     ? (createdByUser ? createdByUser.username : `${bot.created_by} (удалён)`)
     : "";
 
-  const headerName = mockMode ? bot!.name : (liveBot?.name ?? id ?? "—");
+  // useQuery чистит data на ошибке, так что liveBot уже undefined после 404/403
+  // — в шапке не показываем призрак имени, а явный «нет доступа / не найден».
+  const liveHeaderName = liveBotQ.error
+    ? "нет доступа или не найден"
+    : (liveBot?.name ?? id ?? "—");
+  const headerName = mockMode ? bot!.name : liveHeaderName;
   const headerId = mockMode ? bot!.id : (liveBot?.id ?? id ?? "");
   return (
     <Shell breadcrumb={`auth_service / users / bot / ${headerName}`}>

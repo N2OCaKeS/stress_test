@@ -378,7 +378,7 @@ Auth: `account_admin`. Response: `list[DepartmentResponse]`. Каждый эле
 
 ### `POST /departments`
 
-Auth: `account_admin`. Body: `{ "name": "...", "display_name": "..." }`.
+Auth: `account_admin`. Body: `{ "name": "..." }`.
 
 Errors: `DEPARTMENT_ALREADY_EXISTS` (409).
 

@@ -13,6 +13,7 @@ import { useQuery, useMockMode } from "@/api/auth/useQuery";
 import { usePersona } from "@/contexts/PersonaContext";
 import { personaDeptId } from "@/lib/rbac";
 import { useDeptLabel } from "@/lib/labels";
+import { relativeTime } from "@/lib/datetime";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import type { Bot as BotItem } from "@/api/auth/types";
 import { BotDetailFullPanel } from "./_botDetailPanel";
@@ -26,20 +27,6 @@ const BOTS_PAGE = 200;
  * отдела. Cross-dep секция — informational заглушка (по бизнес-правилу
  * dep_admin не видит ботов чужих депов).
  */
-
-function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "—";
-  const diff = Date.now() - t;
-  const min = Math.round(diff / 60_000);
-  if (min < 1) return "только что";
-  if (min < 60) return `${min} мин`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `${h} ч`;
-  const d = Math.round(h / 24);
-  return `${d} дн`;
-}
 
 export function BotsDepAdmin() {
   const mockMode = useMockMode();

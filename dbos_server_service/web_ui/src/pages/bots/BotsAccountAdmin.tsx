@@ -11,6 +11,7 @@ import { listDepartments } from "@/api/auth/departments";
 import { listBotsWithTotal } from "@/api/auth/bots";
 import { useQuery, useMockMode } from "@/api/auth/useQuery";
 import { useLabelMaps } from "@/lib/labels";
+import { relativeTime } from "@/lib/datetime";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import type { Bot as BotItem, Department } from "@/api/auth/types";
 import { BotDetailFullPanel } from "./_botDetailPanel";
@@ -30,20 +31,6 @@ interface BotGroup {
   deptId: string | "no_dept";
   deptName: string;
   rows: BotItem[];
-}
-
-function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "—";
-  const diff = Date.now() - t;
-  const min = Math.round(diff / 60_000);
-  if (min < 1) return "только что";
-  if (min < 60) return `${min} мин`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `${h} ч`;
-  const d = Math.round(h / 24);
-  return `${d} дн`;
 }
 
 export function BotsAccountAdmin() {

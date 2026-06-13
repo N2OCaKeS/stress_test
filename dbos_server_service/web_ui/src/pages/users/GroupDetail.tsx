@@ -21,6 +21,7 @@ import { USERS, userById } from "@/mocks/auth";
 import { usePersona } from "@/contexts/PersonaContext";
 import { groupMutationCaps } from "@/lib/rbac";
 import { formatMskDate } from "@/lib/datetime";
+import { useTimeoutRef } from "@/lib/useTimeoutRef";
 import {
   GROUPS,
   ROLES,
@@ -1025,6 +1026,7 @@ function MemberPicker({
   );
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useState(false);
+  const setCloseTimeout = useTimeoutRef();
 
   const candidates: User[] = useMemo(
     () => (usersQ.data?.items ?? []).filter((u) => !existingIds.has(u.id)),
@@ -1110,7 +1112,7 @@ function MemberPicker({
               setOpen(true);
             }}
             onBlur={() => {
-              window.setTimeout(() => setOpen(false), 150);
+              setCloseTimeout(() => setOpen(false), 150);
             }}
           />
         </div>

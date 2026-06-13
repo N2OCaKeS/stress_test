@@ -553,6 +553,13 @@ export type TaskStatus =
   | "cancelled"
   | (string & {});
 
+/** Задача в терминальном статусе (succeeded/failed/cancelled) — поллить больше нечего. */
+export function isTerminalTaskStatus(status: string): boolean {
+  return (
+    status === "succeeded" || status === "failed" || status === "cancelled"
+  );
+}
+
 /**
  * Вид задачи (`tasks.kind`). Перечислены частые kind'ы для иконок/фильтра;
  * хвост `string` держит каталог открытым (backend может добавить новый kind).

@@ -16,14 +16,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getTask } from "@/api/server/misc";
 import { apiErrMsg } from "@/api/client";
 import type { TaskRead } from "@/api/server/types";
+import { isTerminalTaskStatus } from "@/api/server/types";
+
+export { isTerminalTaskStatus };
 
 const DEFAULT_POLL_MS = 3_000;
-
-export function isTerminalTaskStatus(status: string): boolean {
-  return (
-    status === "succeeded" || status === "failed" || status === "cancelled"
-  );
-}
 
 /** Что показывает вкладка по одной отслеживаемой задаче. */
 export interface TrackedTask {

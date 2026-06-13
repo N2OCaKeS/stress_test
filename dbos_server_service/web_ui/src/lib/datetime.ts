@@ -130,3 +130,22 @@ export function mskDateOffset(days = 0): string {
   base.setUTCDate(base.getUTCDate() + days);
   return base.toISOString().slice(0, 10);
 }
+
+/**
+ * Грубое «сколько прошло» относительно сейчас: «только что» / «N мин» /
+ * «N ч» / «N дн». Для компактных колонок (последняя активность бота), где
+ * точная дата не нужна. Пустой/битый ввод → «—».
+ */
+export function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const diff = Date.now() - t;
+  const min = Math.round(diff / 60_000);
+  if (min < 1) return "только что";
+  if (min < 60) return `${min} мин`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} ч`;
+  const d = Math.round(h / 24);
+  return `${d} дн`;
+}

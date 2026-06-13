@@ -28,6 +28,7 @@ import {
 import { listDepartments } from "@/api/auth/departments";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
+import { useTimeoutRef } from "@/lib/useTimeoutRef";
 import type {
   Department,
   PlatformRole,
@@ -543,6 +544,7 @@ function UserForm({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [copyHint, setCopyHint] = useState(false);
+  const setCopyHintTimeout = useTimeoutRef();
 
   // Когда выбран отдел, доступна только department_admin. Платформенные роли
   // (account_admin / loging_admin / loging_reader) требуют отсутствия dept,
@@ -566,7 +568,7 @@ function UserForm({
   function copyPassword() {
     navigator.clipboard?.writeText(password).catch(() => {});
     setCopyHint(true);
-    setTimeout(() => setCopyHint(false), 1500);
+    setCopyHintTimeout(() => setCopyHint(false), 1500);
   }
 
   async function submit() {

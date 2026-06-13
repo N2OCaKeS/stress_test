@@ -57,6 +57,7 @@ import type {
 } from "@/api/auth/types";
 import { personaDeptId, isPlatformWideAdmin, isDepAdmin } from "@/lib/rbac";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import { useTimeoutRef } from "@/lib/useTimeoutRef";
 
 /**
  * Mock-режим: какие фиктивные ролевые наборы и какие persona-id'шники имеют
@@ -797,6 +798,7 @@ function SearchableMultiSelect<T>({
 }) {
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useState(false);
+  const setCloseTimeout = useTimeoutRef();
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -882,7 +884,7 @@ function SearchableMultiSelect<T>({
             }}
             onBlur={() => {
               // delay so item-click registers
-              window.setTimeout(() => setOpen(false), 150);
+              setCloseTimeout(() => setOpen(false), 150);
             }}
           />
         </div>

@@ -46,6 +46,7 @@ import {
   getUserPermissions,
   listUserSessions,
   normalizeUserStatus,
+  userStatusBadgeKind,
   resetUserPassword,
   revokeUserAllSessions,
   revokeUserSessionById,
@@ -316,7 +317,7 @@ export function UserDetail() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-semibold truncate">{user.username}</h1>
-              <span className={`badge badge-${user.status === "active" ? "ok" : user.status === "blocked" ? "warn" : "danger"}`}>
+              <span className={`badge badge-${userStatusBadgeKind(user.status)}`}>
                 {user.status}
               </span>
               {user.platform_role && (
@@ -485,7 +486,7 @@ export function UserDetail() {
                 <StatRow k="dept" v={mockMode ? <span>{dept?.name ?? "— (платформенный)"}</span> : (user.dept_id ? <HeaderDeptName deptId={user.dept_id} /> : <span>— (платформенный)</span>)} />
               </div>
               <div>
-                <StatRow k="status" v={<span className={`badge badge-${user.status === "active" ? "ok" : user.status === "blocked" ? "warn" : "danger"}`}>{user.status}</span>} />
+                <StatRow k="status" v={<span className={`badge badge-${userStatusBadgeKind(user.status)}`}>{user.status}</span>} />
                 <StatRow k="created_by" v={(() => {
                   if (!user.created_by) return <span className="mono">system</span>;
                   const cb = userById(user.created_by);

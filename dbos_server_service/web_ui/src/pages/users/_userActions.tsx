@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { X, UserCog, ShieldCheck, Copy, AlertTriangle, RefreshCw } from "lucide-react";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { formatMskDate } from "@/lib/datetime";
+import { useTimeoutRef } from "@/lib/useTimeoutRef";
 import { createUser, updateUser } from "@/api/auth/users";
 import { createGroup } from "@/api/auth/groups";
 import { createBot, issueBotToken } from "@/api/auth/bots";
@@ -97,6 +98,7 @@ export function CreateUserForm({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [copyHint, setCopyHint] = useState(false);
+  const setCopyHintTimeout = useTimeoutRef();
 
   // Platform roles available depend on whether a department is picked:
   // account_admin and loging_admin/loging_reader are platform-wide and do not
@@ -140,7 +142,7 @@ export function CreateUserForm({
   function copyPassword() {
     navigator.clipboard?.writeText(password).catch(() => {});
     setCopyHint(true);
-    setTimeout(() => setCopyHint(false), 1500);
+    setCopyHintTimeout(() => setCopyHint(false), 1500);
   }
 
   async function submit() {
@@ -537,6 +539,7 @@ export function CreateBotForm({
   const [err, setErr] = useState<string | null>(null);
   const [token, setToken] = useState<BotTokenCreateResponse | null>(null);
   const [copied, setCopied] = useState(false);
+  const setCopiedTimeout = useTimeoutRef();
 
   async function submit() {
     if (mockMode) {
@@ -585,7 +588,7 @@ export function CreateBotForm({
     try {
       await navigator.clipboard.writeText(token.token);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      setCopiedTimeout(() => setCopied(false), 1500);
     } catch {
       // clipboard API can be unavailable in some browsers/contexts
     }

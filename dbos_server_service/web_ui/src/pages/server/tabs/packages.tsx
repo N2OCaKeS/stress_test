@@ -21,6 +21,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
 import { isDepAdmin } from "@/lib/rbac";
+import { isTerminalTaskStatus } from "@/api/server/types";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
@@ -30,12 +31,6 @@ import type {
 } from "@/api/server/types";
 
 const PACKAGES_POLL_MS = 3_000;
-
-function isTerminal(status: string): boolean {
-  return (
-    status === "succeeded" || status === "failed" || status === "cancelled"
-  );
-}
 
 /** Достаёт `packages` из произвольного `task.result` (best-effort). */
 function extractPackages(result: TaskRead["result"]): PackageRow[] {
@@ -157,7 +152,7 @@ export function PackagesTab({ serverId, server }: Props) {
         .then((t) => {
           if (stopped || !aliveRef.current) return;
           setLastStatus(t.status);
-          if (isTerminal(t.status)) {
+          if (isTerminalTaskStatus(t.status)) {
             setPolling(false);
             setPackages(extractPackages(t.result));
             if (t.status === "failed") {

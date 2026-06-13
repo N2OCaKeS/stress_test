@@ -14,6 +14,7 @@ import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { hasAuditLogAccess, isReadOnlyForCluster } from "@/lib/rbac";
 import { formatMsk } from "@/lib/datetime";
+import { useTimeoutRef } from "@/lib/useTimeoutRef";
 import { exportEvents, getEventStats } from "@/api/loging/events";
 import type { EventStatsResponse, Severity } from "@/api/loging/types";
 
@@ -44,10 +45,11 @@ export function ClusterAuditOverview() {
 
   const canAudit = hasAuditLogAccess(persona);
   const [mockToast, setMockToast] = useState<string | null>(null);
+  const setMockToastTimeout = useTimeoutRef();
 
   const triggerMockExport = () => {
     setMockToast("Экспорт за 24ч начался — файл придёт в /log/exports");
-    window.setTimeout(() => setMockToast(null), 3500);
+    setMockToastTimeout(() => setMockToast(null), 3500);
   };
 
   return (

@@ -68,6 +68,51 @@ async def test_admin_lists_groups(client, admin_token, dept_a):
     assert "listed_group" in names
 
 
+# ── Single-resource GET ───────────────────────────────────────────────────────
+
+async def test_admin_gets_single_group(client, admin_token, dept_a):
+    group_id = (await _create_group(client, admin_token, dept_a.id, name="single_get_grp")).json()["id"]
+    resp = await client.get(f"{GROUPS_URL}/{group_id}",
+                            headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == group_id
+    assert body["name"] == "single_get_grp"
+    assert body["department_id"] == dept_a.id
+
+
+async def test_get_nonexistent_group_returns_404(client, admin_token):
+    resp = await client.get(f"{GROUPS_URL}/grp_does_not_exist",
+                            headers={"Authorization": f"Bearer {admin_token}"})
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "GROUP_NOT_FOUND"
+
+
+async def test_dept_admin_gets_own_dept_group(client, admin_token, dept_admin_a_token, dept_a):
+    group_id = (await _create_group(client, admin_token, dept_a.id, name="da_single_get")).json()["id"]
+    resp = await client.get(f"{GROUPS_URL}/{group_id}",
+                            headers={"Authorization": f"Bearer {dept_admin_a_token}"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["id"] == group_id
+
+
+async def test_dept_admin_cannot_get_other_dept_group(
+    client, admin_token, dept_admin_a_token, dept_b,
+):
+    group_id = (await _create_group(client, admin_token, dept_b.id, name="da_cross_get")).json()["id"]
+    resp = await client.get(f"{GROUPS_URL}/{group_id}",
+                            headers={"Authorization": f"Bearer {dept_admin_a_token}"})
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "DEPARTMENT_ACCESS_DENIED"
+
+
+async def test_regular_user_cannot_get_group(client, admin_token, user_a_token, dept_a):
+    group_id = (await _create_group(client, admin_token, dept_a.id, name="user_no_get")).json()["id"]
+    resp = await client.get(f"{GROUPS_URL}/{group_id}",
+                            headers={"Authorization": f"Bearer {user_a_token}"})
+    assert resp.status_code == 403
+
+
 async def test_admin_updates_group(client, admin_token, dept_a):
     group_id = (await _create_group(client, admin_token, dept_a.id, name="to_update")).json()["id"]
     resp = await client.patch(
@@ -450,6 +495,20 @@ async def test_dept_admin_view_nonexistent_user_groups_returns_404(
     resp = await client.get(
         f"{USERS_URL}/usr_ghost_does_not_exist/groups",
         headers={"Authorization": f"Bearer {dept_admin_a_token}"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error_code"] == "USER_NOT_FOUND"
+
+
+async def test_account_admin_view_nonexistent_user_groups_returns_404(
+    client, admin_token,
+):
+    """account_admin'у несуществующий юзер тоже отдаёт USER_NOT_FOUND, а не
+    `200 []` — симметрия с detail-путём `GET /users/{id}`.
+    """
+    resp = await client.get(
+        f"{USERS_URL}/usr_ghost_account_admin/groups",
+        headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert resp.status_code == 404
     assert resp.json()["error_code"] == "USER_NOT_FOUND"

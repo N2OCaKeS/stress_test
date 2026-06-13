@@ -106,6 +106,23 @@ async def list_groups(
     return [_grp_response(g) for g in groups], total
 
 
+async def get_group(
+    db: AsyncSession, identity: IdentityContext, group_id: str, request_id=None
+) -> GroupResponse:
+    """Одиночная группа по id.
+
+    account_admin — любая группа; department_admin — только своего отдела
+    (GET-симметрия с list_members/list_group_services). Lookup группы — ДО
+    guard'а, чтобы 404 чужой группы не отличался от 403 по статус-коду.
+    """
+    repo = GroupRepository(db)
+    grp = await repo.get(group_id)
+    if grp is None or not grp.is_active:
+        raise NotFoundError(error_code="GROUP_NOT_FOUND", message="Group not found")
+    _require_dept_or_account_admin(identity, grp.department_id)
+    return _grp_response(grp)
+
+
 async def create_group(
     db: AsyncSession, identity: IdentityContext, department_id: str, name: str,
     description: str | None, request_id=None,
@@ -463,6 +480,13 @@ async def list_user_groups(db: AsyncSession, identity: IdentityContext, user_id:
         # Обычный юзер видит только свои группы.
         if identity.user_id != user_id:
             raise AuthorizationError(error_code="ROLE_REQUIRED", message="Cannot view other user's groups")
+
+    # Симметрия с detail-путём (`GET /users/{id}` → 404): для несуществующего
+    # юзера отдаём 404, а не `200 []`. Под dept_admin'ом для чужого отдела
+    # проверка выше уже отсекла (404/403), так что лишнего лукапа нет.
+    user_repo = UserRepository(db)
+    if await user_repo.get_by_id(user_id) is None:
+        raise NotFoundError(error_code="USER_NOT_FOUND", message="User not found")
 
     repo = GroupRepository(db)
     memberships = await repo.list_user_groups(user_id)

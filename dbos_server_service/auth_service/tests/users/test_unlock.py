@@ -6,7 +6,6 @@ Lockout (5 неудач → ~15 минут) штатно сбрасываетс�
 свой отдел (иначе 403 DEPT_MISMATCH), обычный юзер — 403 ROLE_REQUIRED.
 """
 
-from src.core.constants import UserStatus
 from src.services.audit_events import SERVICE_EVENTS
 
 LOGIN_URL = "/api/auth/v1/login"

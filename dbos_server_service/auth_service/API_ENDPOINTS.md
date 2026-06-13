@@ -315,7 +315,7 @@ Errors:
 
 ### `GET /users/{user_id}/groups`
 
-Auth: Bearer. `account_admin` — любой; `department_admin` — только свой отдел (cross-dept → 404); regular — только self.
+Auth: Bearer. `account_admin` — любой; `department_admin` — только свой отдел (cross-dept → 404); regular — только self. Несуществующий `user_id` → `USER_NOT_FOUND` (404) — симметрия с detail-путём, а не `200 []`.
 
 Response: `list[UserGroupsResponse]`.
 
@@ -588,14 +588,18 @@ Auth: Bearer. `account_admin` — все; `department_admin` / regular — то�
 Auth: Bearer (account_admin или department_admin своего отдела). Body:
 
 ```json
-{ "department_id": "dep_xyz", "name": "devs", "display_name": "Devs", "description": "..." }
+{ "department_id": "dep_xyz", "name": "devs", "description": "..." }
 ```
 
 Errors: `GROUP_ALREADY_EXISTS` (409) — имя занято в отделе; `DEPARTMENT_ACCESS_DENIED` (403) — cross-dept у department_admin; `DEPARTMENT_NOT_FOUND` (404).
 
+### `GET /groups/{group_id}`
+
+Auth: Bearer. `account_admin` — любая группа; `department_admin` — только своего отдела. Errors: `GROUP_NOT_FOUND` (404), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin лезет в чужой отдел, `ROLE_REQUIRED` (403).
+
 ### `PATCH /groups/{group_id}`
 
-Auth: Bearer (admin своего отдела). Body: `display_name`, `description` (опциональны).
+Auth: Bearer (admin своего отдела). Body: `name`, `description` (опциональны).
 
 ### `DELETE /groups/{group_id}`
 

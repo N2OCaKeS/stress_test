@@ -74,6 +74,29 @@ async def create_group(
     )
 
 
+@groups_router.get(
+    "/{group_id}",
+    response_model=GroupResponse,
+    summary="Получить группу",
+    description="account_admin — любая группа. department_admin — только своего отдела.",
+)
+async def get_group(
+    group_id: str, request: Request, identity: CurrentUserIdentity, db: AsyncSession = Depends(get_db),
+) -> GroupResponse:
+    """Одиночная группа по id.
+
+    Доступ:
+        account_admin (любая группа) или department_admin (только своего отдела).
+
+    Возможные ошибки:
+        * `GROUP_NOT_FOUND` (404).
+    """
+    return await group_service.get_group(
+        db, identity, group_id,
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+
 @groups_router.patch(
     "/{group_id}",
     response_model=GroupResponse,

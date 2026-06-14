@@ -112,14 +112,15 @@ _DEV_ADMIN_EMAIL = admin@example.com
 
 ##@ Dev: стек в Docker (без devcontainer)
 
-up: ## Поднять dev-стек (postgres + redis + auth :8000 + logging :8001 + server :8002 + worker + secret :8003). Данные сохраняются.
-	@$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server
+up: ## Поднять dev-стек (postgres + redis + auth :8000 + logging :8001 + server :8002 + worker + secret :8003 + web_ui :5173). Данные сохраняются.
+	@$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server web_ui
 	@echo ""
 	@echo "  auth_service    →  http://localhost:8000/docs    (admin / 1234)"
 	@echo "  loging_service  →  http://localhost:8001/docs    (loging_admin / 1234 после make seed)"
 	@echo "  server_service  →  http://localhost:8002/docs"
 	@echo "  secret_service  →  http://localhost:8003/docs"
 	@echo "  server_worker   →  taskiq worker (no HTTP), redis://localhost:6379/0"
+	@echo "  web_ui          →  http://localhost:5173            (vite dev, proxy → backend)"
 	@echo ""
 	@echo "  Первый запуск: сделай 'make seed' чтобы наполнить БД dev-данными."
 

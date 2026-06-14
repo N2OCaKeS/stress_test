@@ -316,7 +316,44 @@ services:
       timeout: 5s
       retries: 30
 
+  web_ui:
+    image: node:22-alpine
+    init: true
+    working_dir: /app
+    environment:
+      # vite dev-сервер проксирует /api/* на backend по compose-именам сервисов
+      # (см. proxy в vite.config.ts; дефолты там — localhost для запуска вне compose).
+      VITE_AUTH_PROXY_TARGET: http://auth_service:8000
+      VITE_LOGGING_PROXY_TARGET: http://loging_service:8001
+      VITE_SERVER_PROXY_TARGET: http://server_service:8002
+      VITE_SECRET_PROXY_TARGET: http://secret_service:8003
+    command: >
+      sh -c "npm ci && exec npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ./web_ui:/app
+      # node_modules — в named volume: npm ci ставит linux/musl-бинарники
+      # (esbuild) в контейнере, не затирая host-овые и не утекая на host.
+      - web_ui_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      auth_service:
+        condition: service_healthy
+      loging_service:
+        condition: service_healthy
+      server_service:
+        condition: service_healthy
+      secret_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5173/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 120s
+
 volumes:
   dbos_dev_pg:
+  web_ui_node_modules:
   dbos_dev_redis:
   dbos_dev_secret_pg:

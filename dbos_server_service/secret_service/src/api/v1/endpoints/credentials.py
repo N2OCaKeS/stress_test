@@ -9,7 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.core.exceptions import BadRequestError
 from src.core.limiter import limiter
-from src.dependencies.auth import CurrentIdentity, require_user_context
+from src.dependencies.auth import (
+    CurrentIdentity,
+    require_transfer_recover_context,
+    require_user_context,
+)
 from src.dependencies.db import get_db
 from src.models import Credential
 from src.schemas.common import OkResponse
@@ -220,7 +224,7 @@ async def transfer_credential(
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> CredentialRead:
-    require_user_context(identity)
+    require_transfer_recover_context(identity)
     cred = await credential_service.transfer(db, identity, cred_id, payload)
     return _to_read(cred)
 
@@ -237,7 +241,7 @@ async def recover_credential(
     identity: CurrentIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> CredentialRead:
-    require_user_context(identity)
+    require_transfer_recover_context(identity)
     cred = await credential_service.recover(db, identity, cred_id)
     return _to_read(cred)
 

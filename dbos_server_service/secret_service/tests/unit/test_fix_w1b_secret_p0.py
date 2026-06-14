@@ -1,4 +1,4 @@
-"""Fixes: P0 — failure emits, lazy re-encrypt commit, account_admin отрезан.
+"""Fixes: P0 — failure emits, lazy re-encrypt commit, account_admin emergency transfer/recover.
 
 Покрытие:
 
@@ -11,7 +11,8 @@
   при close-сессии). Тест использует реальную AsyncSession БЕЗ
   SAVEPOINT-обёртки, чтобы убедиться: после `reveal()` строка действительно
   лежит под новой версией.
-* `recover` для account_admin отбит как 403 (dead-code branch удалён).
+* `transfer`/`recover` для account_admin — emergency-override (проходит для
+  cred'ов с удалённым отделом-владельцем); обычный CRUD/reveal ему закрыт.
 """
 
 from __future__ import annotations
@@ -215,8 +216,8 @@ async def test_transfer_emits_failure_on_denied_not_owner_admin(adb) -> None:
 
 
 @pytest.mark.asyncio
-async def test_transfer_account_admin_is_now_403(adb) -> None:
-    """account_admin больше не может transfer (dead-code удалён)."""
+async def test_transfer_account_admin_emergency_allowed(adb) -> None:
+    """account_admin может emergency-transfer cred'а с удалённым отделом-владельцем."""
     cred = await cred_repo.create(
         adb,
         id="cred_aa_tr0000000000000000001",
@@ -237,21 +238,22 @@ async def test_transfer_account_admin_is_now_403(adb) -> None:
     aa = _account_admin()
     patcher, emitted = _capture_emits(credential_service)
     with patcher:
-        with pytest.raises(AuthorizationError):
-            await credential_service.transfer(
-                adb, aa, cred.id,
-                TransferRequest(new_owner_dept_id="dep_new00000000000000000000001", reason="dissolved"),
-            )
-    failures = _failures(emitted, "tokens.transfer_ownership")
-    assert len(failures) == 1
+        await credential_service.transfer(
+            adb, aa, cred.id,
+            TransferRequest(new_owner_dept_id="dep_new00000000000000000000001", reason="dissolved"),
+        )
+    # emergency-transfer проходит: failure-эмитов нет, владелец переназначен
+    assert _failures(emitted, "tokens.transfer_ownership") == []
+    refreshed = await cred_repo.get_by_id(adb, cred.id)
+    assert refreshed.owner_dept_id == "dep_new00000000000000000000001"
 
 
-# ── tokens.recover / failure (account_admin denied) ────────────────────────
+# ── tokens.recover (account_admin emergency override) ───────────────────────
 
 
 @pytest.mark.asyncio
-async def test_recover_account_admin_is_now_403(adb) -> None:
-    """account_admin не может recover (dead-code удалён)."""
+async def test_recover_account_admin_emergency_allowed(adb) -> None:
+    """account_admin может emergency-recover blocked-cred."""
     cred = await cred_repo.create(
         adb,
         id="cred_aa_rc0000000000000000001",
@@ -272,10 +274,11 @@ async def test_recover_account_admin_is_now_403(adb) -> None:
     aa = _account_admin()
     patcher, emitted = _capture_emits(credential_service)
     with patcher:
-        with pytest.raises(AuthorizationError):
-            await credential_service.recover(adb, aa, cred.id)
-    failures = _failures(emitted, "tokens.recover")
-    assert len(failures) == 1
+        await credential_service.recover(adb, aa, cred.id)
+    # emergency-recover проходит: failure-эмитов нет, cred разблокирован
+    assert _failures(emitted, "tokens.recover") == []
+    refreshed = await cred_repo.get_by_id(adb, cred.id)
+    assert refreshed.status == "active"
 
 
 # ── tokens.delete / failure ────────────────────────────────────────────────

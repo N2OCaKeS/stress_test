@@ -50,7 +50,7 @@ SERVICE_EVENTS = [
     {"action": "tokens.owner_dept_deleted_block", "description": "Credential auto-blocked because owner department was deleted (grace window starts)", "default_severity": "WARNING"},
     # Ownership recovery
     {"action": "tokens.transfer_ownership", "description": "Credential ownership transferred (secret_service admin of owning department, or account_admin for cross-dep transfer after owner_dept deletion)", "default_severity": "CRITICAL"},
-    {"action": "tokens.recover", "description": "Blocked credential recovered (status returned to active within 30-day window)", "default_severity": "WARNING"},
+    {"action": "tokens.recover", "description": "Blocked credential recovered (status returned to active within 30-day window) by secret_service admin of owning department, or account_admin as emergency override after owner_dept deletion", "default_severity": "WARNING"},
     # Authorization
     {"action": "tokens.access_denied", "description": "Reader/operator attempted action without permission (no RoleACL or wrong scope)", "default_severity": "INFO"},
     {"action": "tokens.lockout_triggered", "description": "Per-actor lockout activated after repeated denied access attempts (brute-force defense)", "default_severity": "WARNING"},

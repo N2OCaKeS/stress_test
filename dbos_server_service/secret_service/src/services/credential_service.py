@@ -924,11 +924,16 @@ async def transfer(
 ) -> Credential:
     """Transfer ownership. Только для blocked-кред.
 
-    Допустимо ТОЛЬКО для admin secret_service'а владеющего dept'а — роль
-    per-(dept, service), cross-dept привилегий не даёт. account_admin
-    транслировать не может: платформенный админ не имеет доступа к
-    содержимому секретов; владельца восстанавливает dept-уровень или
-    lifecycle_service по факту delete_user/delete_dept.
+    Два пути входа:
+
+    * admin secret_service'а владеющего dept'а — штатный путь. Роль
+      per-(dept, service), cross-dept привилегий не даёт.
+    * account_admin — emergency-override. Нужен, когда владеющий отдел удалён
+      и живого service-admin'а у него уже нет: иначе blocked-кред'а ушла бы в
+      hard-delete по sweep'у. Платформенный админ переназначает владельца на
+      указанный в теле `new_owner_user_id`/`new_owner_dept_id` (ровно один, как
+      и в штатном пути). Это узкий путь именно для transfer/recover — обычный
+      CRUD/reveal для account_admin остаётся закрыт.
 
     FOR UPDATE на cred: два параллельных transfer'а на одну креду читают одну
     и ту же blocked-строку и оба пишут разный owner — без локa последний
@@ -937,6 +942,7 @@ async def transfer(
     IntegrityError на partial UNIQUE — переводим в 409 NAME_DUPLICATE; иначе
     aborted-state соединения роняет endpoint 500'кой.
     """
+    is_account_admin_override = False
     try:
         cred = await repo.get_by_id_for_update(db, cred_id)
         if cred is None:
@@ -945,10 +951,14 @@ async def transfer(
                 message="Credential not found",
             )
 
-        if not _is_service_admin_for(identity, cred):
+        if _is_service_admin_for(identity, cred):
+            pass
+        elif _is_account_admin(identity):
+            is_account_admin_override = True
+        else:
             raise AuthorizationError(
                 error_code="CREDENTIAL_ACCESS_DENIED",
-                message="Only secret_service admin of the owning department can transfer ownership",
+                message="Only secret_service admin of the owning department or account_admin can transfer ownership",
             )
 
         if cred.status != "blocked":
@@ -1012,6 +1022,8 @@ async def transfer(
             "new_owner_user_id": cred.owner_user_id,
             "new_owner_dept_id": cred.owner_dept_id,
             "reason": payload.reason,
+            "actor_role": "account_admin" if is_account_admin_override else "service_admin",
+            "emergency_override": is_account_admin_override,
         },
     )
     return cred
@@ -1022,14 +1034,19 @@ async def recover(
 ) -> Credential:
     """Recover blocked-кред. Окно — 30 дней с момента блокировки.
 
-    Допустимо ТОЛЬКО для admin secret_service'а владеющего dept'а
-    (per-(dept, service) роль, cross-dept привилегий не даёт).
-    account_admin к recover не подпущен — платформенному админу не положен
-    доступ к содержимому секретов.
+    Два пути входа, как у transfer:
+
+    * admin secret_service'а владеющего dept'а — штатный путь (per-(dept,
+      service) роль, cross-dept привилегий не даёт);
+    * account_admin — emergency-override для кред'ы с удалённым владеющим
+      отделом, у которого нет живого service-admin'а. Снимает блокировку в
+      пределах recover-окна. Узкий путь: обычный CRUD/reveal для account_admin
+      остаётся закрыт.
 
     FOR UPDATE + try/except IntegrityError — симметрия с transfer; параллельный
     recover/transfer на одну креду не должен ронять 500.
     """
+    is_account_admin_override = False
     try:
         cred = await repo.get_by_id_for_update(db, cred_id)
         if cred is None:
@@ -1037,10 +1054,14 @@ async def recover(
                 error_code="CREDENTIAL_NOT_FOUND",
                 message="Credential not found",
             )
-        if not _is_service_admin_for(identity, cred):
+        if _is_service_admin_for(identity, cred):
+            pass
+        elif _is_account_admin(identity):
+            is_account_admin_override = True
+        else:
             raise AuthorizationError(
                 error_code="CREDENTIAL_ACCESS_DENIED",
-                message="Only secret_service admin of the owning department can recover credential",
+                message="Only secret_service admin of the owning department or account_admin can recover credential",
             )
         if cred.status != "blocked":
             raise DomainValidationError(
@@ -1081,6 +1102,11 @@ async def recover(
         "tokens.recover",
         target_id=cred.id,
         target_type="credential",
-        details={"scope": cred.scope, "service": cred.service},
+        details={
+            "scope": cred.scope,
+            "service": cred.service,
+            "actor_role": "account_admin" if is_account_admin_override else "service_admin",
+            "emergency_override": is_account_admin_override,
+        },
     )
     return cred

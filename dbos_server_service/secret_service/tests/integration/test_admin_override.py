@@ -182,13 +182,12 @@ async def test_service_admin_cannot_delete_cred_in_other_dept(
     assert get_resp.status_code in (403, 404)
 
 
-async def test_account_admin_cannot_transfer_cross_dep_cred(
+async def test_account_admin_can_emergency_transfer_cross_dep_cred(
     client, identity_factory, mock_logging_service,
 ):
-    """account_admin к transfer не подпущен: платформенный админ не имеет
-    доступа к содержимому секретов. После delete owner_dep'а восстановление
-    идёт через admin secret_service'а другого dept'а (если он был recipient'ом)
-    либо через lifecycle/sweep."""
+    """account_admin может emergency-transfer cred'а, чей отдел-владелец удалён:
+    обычный CRUD/reveal ему по-прежнему закрыт, но узкий transfer/recover-путь
+    открыт как аварийное восстановление shared cross-dep данных."""
     owner_admin = identity_factory(
         user_id="usr_owner_admin",
         department_id="dep_owner_t",
@@ -232,15 +231,12 @@ async def test_account_admin_cannot_transfer_cross_dep_cred(
         headers=auth_header(account_admin),
         json={"new_owner_dept_id": "dep_new_owner", "reason": "owner dept dissolved"},
     )
-    assert transfer.status_code == 403, transfer.text
-    assert transfer.json()["error_code"] == "CREDENTIAL_ACCESS_DENIED"
+    assert transfer.status_code == 200, transfer.text
+    assert transfer.json()["owner_dept_id"] == "dep_new_owner"
 
-    # success-варианта transfer'а быть не должно; failure-вариант — должен
-    # (P0-7: на denied access audit обязан получить tokens.transfer_ownership/failure).
+    # emergency-override: transfer прошёл, audit-событие — success (с пометкой
+    # actor_role=account_admin / emergency_override).
     transfer_events = mock_logging_service.by_action("tokens.transfer_ownership")
-    assert all(e["status"] == "failure" for e in transfer_events), (
-        f"unexpected success transfer event: {transfer_events}"
-    )
-    assert any(e["status"] == "failure" for e in transfer_events), (
-        f"missing failure event for denied transfer: {transfer_events}"
+    assert any(e["status"] == "success" for e in transfer_events), (
+        f"missing success transfer event: {transfer_events}"
     )

@@ -132,9 +132,9 @@ Cross-dep transfer удалённого owner_dept'а (когда `cred.owner_de
 
 ### Account admin (платформенный)
 
-`account_admin` (account-level admin в auth_service) — платформенный админ. По текущей политике (см. Memory `project-dbos-secrets-scope`) он **не имеет доступа к содержимому секретов**: gated от всех user-facing `/credentials/...` через `require_user_context` (`SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, т.к. у него `department_id=null` и нет secret-service-access), и в `access_service` не получает ни read, ни delete/recover/transfer.
+`account_admin` (account-level admin в auth_service) — платформенный админ. По текущей политике (см. Memory `project-dbos-secrets-scope`) он **не имеет доступа к содержимому секретов** в штатном flow: gated от всех user-facing `/credentials/...` (list/get/create/update/delete/reveal) через `require_user_context` (`SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, т.к. у него `department_id=null` и нет secret-service-access), и в `access_service` не получает ни read, ни delete.
 
-> **Расхождение doc↔код:** `/credentials/{id}/transfer` и `/recover` гейтятся строго на `_is_service_admin_for` (admin secret_service владеющего dep'а), account_admin внутрь не пускается. Сценарий «удалённый владеющий dep» (см. Lifecycle ниже) формально остаётся без рабочего пути восстановления через API — у удалённого dep'а нет живого service-admin'а. Lifecycle-docstrings и STATUS пока описывают старую интенцию (account_admin transfer); код её не реализует.
+**Исключение — emergency transfer/recover.** Ровно две операции, `/credentials/{id}/transfer` и `/credentials/{id}/recover`, доступны account_admin'у как аварийный override. Без него blocked-кред'а с удалённым владеющим отделом (у которого больше нет живого service-admin'а) была бы невосстановима и ушла бы в hard-delete по 30-дневному sweep'у. Эти эндпоинты идут через `require_transfer_recover_context` (пропускает account_admin несмотря на отсутствие dep-service-access), а в `credential_service.transfer`/`.recover` есть отдельная ветка `_is_account_admin`. Узость гарантируется тем, что остальные `/credentials/...` остаются за `require_user_context` — emergency-путь НЕ открывает account_admin'у обычный CRUD/reveal. Audit таких операций несёт `actor_role: "account_admin"` + `emergency_override: true`.
 
 ## Lifecycle
 
@@ -153,7 +153,7 @@ Cross-dep transfer удалённого owner_dept'а (когда `cred.owner_de
 | Сценарий | Действие |
 |---|---|
 | `revoke department_service_access(secret_service, dep_a)` | Cascade: все `DeptGrant` выданные dep_a И все `RoleACL` для recipient=dep_a — сразу `deleted`. Аудит `tokens.dept_revoke_cascade` CRITICAL. |
-| `delete_dept(dep_a)`, где dep_a — owner | Cred → `status=blocked`, UI: `"contact platform admin"`. После 30 дней — hard delete по sweep'у. **Интенция:** account_admin переназначает владельца в окне 30 дней; **по факту** `transfer` гейтится на service-admin владеющего dep'а и account_admin внутрь не пускает — рабочего API-пути для этого случая сейчас нет (см. §«Account admin»). |
+| `delete_dept(dep_a)`, где dep_a — owner | Cred → `status=blocked`, UI: `"contact platform admin"`. account_admin в окне 30 дней переназначает владельца через `POST /credentials/{id}/transfer` (emergency-override, см. §«Account admin») либо снимает блокировку через `/recover`. По истечении окна — hard delete по sweep'у. |
 | `delete_dept(dep_b)`, где dep_b — recipient cross_dep | Cascade: `DeptGrant(cred, dep_b)` + все `RoleACL(cred, dep_b)` — сразу `deleted`. Аудит `tokens.dept_recipient_cascade` CRITICAL. |
 
 #### Granter deleted
@@ -174,8 +174,8 @@ URL prefix: `/api/secret/v1/`.
 | `PATCH` | `/credentials/{id}` | owner / dep_admin / admin secret_service (per scope, own dept) | Изменить `name`, `login`, `secret_b64`. `secret_b64` — base64(plaintext); декод → повторно шифрует. |
 | `DELETE` | `/credentials/{id}` | owner / dep_admin / admin secret_service (own dept) | Удалить. Если `scope=personal` и удаляет НЕ owner → требуется `reason` (admin override). Ответ — `200 OkResponse = { ok: true }`. |
 | `POST` | `/credentials/{id}/reveal` | reader+can_read | Возвращает `{login, secret_b64}`. Эмитит audit CRITICAL/INFO (throttle). |
-| `POST` | `/credentials/{id}/transfer` | admin secret_service владеющего dept'а | `{new_owner_user_id? \| new_owner_dept_id?, reason}` (ровно один owner + обязательный `reason`). Только для blocked creds. account_admin НЕ допущен (нет secret-access у платформенного админа). |
-| `POST` | `/credentials/{id}/recover` | admin secret_service владеющего dept'а | Снять `status=blocked`. Только в окне 30 дней. account_admin НЕ допущен. |
+| `POST` | `/credentials/{id}/transfer` | admin secret_service владеющего dept'а / account_admin (emergency) | `{new_owner_user_id? \| new_owner_dept_id?, reason}` (ровно один owner + обязательный `reason`). Только для blocked creds. account_admin допущен как аварийный override (в т.ч. для кред'ы с удалённым владеющим отделом). |
+| `POST` | `/credentials/{id}/recover` | admin secret_service владеющего dept'а / account_admin (emergency) | Снять `status=blocked`. Только в окне 30 дней. account_admin допущен как аварийный override. |
 
 ### RoleACL CRUD
 

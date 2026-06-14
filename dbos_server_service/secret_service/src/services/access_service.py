@@ -21,9 +21,12 @@
      - admin secret_service'а — read-only любую креду СВОЕГО dept'а
        (cross-dept привилегий у этой роли нет).
 
-account_admin (платформенная роль) намеренно НЕ имеет доступа к содержимому
-секретов: не может читать, удалять, recover'ить и трансферить cred'ы — это
-зона ответственности dept-уровня (см. Memory: project-dbos-secrets-scope).
+account_admin (платформенная роль) в этой матрице НЕ получает доступа: ни
+read, ни reveal/write/delete — это зона ответственности dept-уровня (см.
+Memory: project-dbos-secrets-scope). Исключение лежит ВНЕ check_access:
+emergency transfer/recover для кред'ы с удалённым владеющим отделом
+проверяется напрямую в `credential_service` (ветка `_is_account_admin`), а не
+здесь — это аварийный override восстановления, не обычный доступ к содержимому.
 
 Все ветки возвращают конкретный reason: `owner_match`, `acl_read`,
 `acl_write`, `dept_admin`, `service_admin`, `blocked`,
@@ -294,9 +297,10 @@ async def check_access(
         # admin secret_service'а своего dept'а может читать blocked кред для аудита.
         if action == "read" and _is_service_admin_for(identity, cred):
             return True, "admin_override"
-        # Recover (manage_status) — только admin secret_service'а своего dept'а.
-        # account_admin не пускаем: платформенный админ не имеет доступа к
-        # содержимому секретов.
+        # manage_status на blocked-кред'е через check_access — только admin
+        # secret_service'а своего dept'а. account_admin тут не пускаем. Его
+        # emergency transfer/recover идёт мимо check_access, прямой веткой в
+        # credential_service, и этой матрицы не касается.
         if action == "manage_status":
             if _is_service_admin_for(identity, cred):
                 return True, "service_admin"

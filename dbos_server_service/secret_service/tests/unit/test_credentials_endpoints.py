@@ -633,5 +633,146 @@ async def test_recover_requires_admin(http_client, adb):
     assert resp.status_code == 403
 
 
+@pytest.mark.asyncio
+async def test_account_admin_transfer_dept_cred_with_deleted_owner_dept(http_client, adb):
+    """Emergency path: владеющий отдел удалён, живого service-admin'а нет.
+    account_admin переназначает владельца на новый отдел → 200 + new owner."""
+    cred = await cred_repo.create(
+        adb,
+        id="cred_aa01",
+        name="aa1",
+        service="jira",
+        scope="department",
+        owner_user_id=None,
+        owner_dept_id="dep_deleted0000000000000000001",
+        login=None,
+        secret_encrypted="v2$nonce$ct",
+        status="blocked",
+        blocked_reason="owner_dept_deleted",
+        created_by="usr_orig00000000000000000000001",
+    )
+    await adb.commit()
+    # account_admin: нет department_id, нет secret-service access.
+    _set_identity(
+        _identity(
+            user_id="usr_acctadmin000000000000000001",
+            department_id=None,
+            roles=[],
+            platform_role="account_admin",
+        )
+    )
+    resp = await http_client.post(
+        f"/api/secret/v1/credentials/{cred.id}/transfer",
+        json={"new_owner_dept_id": "dep_new00000000000000000000001", "reason": "owner dept deleted"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["owner_dept_id"] == "dep_new00000000000000000000001"
+    assert body["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_account_admin_recover_blocked_cred(http_client, adb):
+    from datetime import datetime, timezone
+    cred = await cred_repo.create(
+        adb,
+        id="cred_aa02",
+        name="aa2",
+        service="jira",
+        scope="department",
+        owner_user_id=None,
+        owner_dept_id="dep_deleted0000000000000000002",
+        login=None,
+        secret_encrypted="v2$nonce$ct",
+        status="blocked",
+        blocked_reason="owner_dept_deleted",
+        created_by="usr_orig00000000000000000000001",
+    )
+    cred.blocked_at = datetime.now(timezone.utc)
+    await adb.commit()
+    _set_identity(
+        _identity(
+            user_id="usr_acctadmin000000000000000001",
+            department_id=None,
+            roles=[],
+            platform_role="account_admin",
+        )
+    )
+    resp = await http_client.post(f"/api/secret/v1/credentials/{cred.id}/recover")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_foreign_dept_admin_cannot_transfer(http_client, adb):
+    """department_admin чужого отдела (не account_admin, не service-admin
+    владеющего dep'а) — по-прежнему отбивается."""
+    cred = await cred_repo.create(
+        adb,
+        id="cred_aa03",
+        name="aa3",
+        service="jira",
+        scope="department",
+        owner_user_id=None,
+        owner_dept_id="dep_owner00000000000000000000a",
+        login=None,
+        secret_encrypted="v2$nonce$ct",
+        status="blocked",
+        blocked_reason="owner_dept_deleted",
+        created_by="usr_orig00000000000000000000001",
+    )
+    await adb.commit()
+    # Чужой dep_admin: есть secret-access, но dept != owner_dept и роль не admin
+    # secret_service владеющего dep'а.
+    _set_identity(
+        _identity(
+            user_id="usr_otherdep00000000000000000001",
+            department_id="dep_other00000000000000000000b",
+            roles=["operator"],
+            platform_role="department_admin",
+        )
+    )
+    resp = await http_client.post(
+        f"/api/secret/v1/credentials/{cred.id}/transfer",
+        json={"new_owner_dept_id": "dep_new00000000000000000000001", "reason": "trying"},
+    )
+    assert resp.status_code in (403, 404)
+
+
+@pytest.mark.asyncio
+async def test_owning_dept_service_admin_can_still_transfer(http_client, adb):
+    """Штатный путь не ослаблен: service-admin владеющего dep'а по-прежнему
+    делает transfer."""
+    cred = await cred_repo.create(
+        adb,
+        id="cred_aa04",
+        name="aa4",
+        service="jira",
+        scope="department",
+        owner_user_id=None,
+        owner_dept_id="dep_ownadmin0000000000000000001",
+        login=None,
+        secret_encrypted="v2$nonce$ct",
+        status="blocked",
+        blocked_reason="owner_dept_deleted",
+        created_by="usr_orig00000000000000000000001",
+    )
+    await adb.commit()
+    _set_identity(
+        _identity(
+            user_id="usr_ownadmin00000000000000000001",
+            department_id="dep_ownadmin0000000000000000001",
+            roles=["admin"],
+        )
+    )
+    resp = await http_client.post(
+        f"/api/secret/v1/credentials/{cred.id}/transfer",
+        json={"new_owner_dept_id": "dep_new00000000000000000000001", "reason": "moving"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["owner_dept_id"] == "dep_new00000000000000000000001"
+    assert resp.json()["status"] == "active"
+
+
 # Make grants_repo/acls_repo imports used (linter-guard for fixtures).
 _ = (grants_repo, acls_repo)

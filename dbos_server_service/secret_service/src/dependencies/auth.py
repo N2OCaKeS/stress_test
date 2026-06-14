@@ -53,6 +53,7 @@ __all__ = [
     "require_account_admin",
     "require_dept_admin_for",
     "require_service_admin",
+    "require_transfer_recover_context",
     "require_user_context",
 ]
 
@@ -343,6 +344,27 @@ def require_user_context(identity: Identity) -> Identity:
             message=f"Department has no access to {SERVICE_NAME}",
         )
     return identity
+
+
+def require_transfer_recover_context(identity: Identity) -> Identity:
+    """Endpoint-guard для `/transfer` и `/recover` — два разных пути входа.
+
+    Штатный путь: пользователь/бот отдела с доступом к secret_service. Гейт на
+    конкретную роль (admin владеющего dep'а) живёт ниже, в
+    `credential_service` — здесь только отсекаем чужой сервис и oauth-client'ов
+    тем же `require_user_context`.
+
+    Emergency-путь: `account_admin`. У платформенного админа `department_id=null`
+    и нет department-service-access, поэтому обычный `require_user_context` его
+    отбил бы 403'кой. Это единственная точка, где account_admin пропускается во
+    внутрь credentials-эндпоинтов — нужна для восстановления кред'ы, чей
+    владеющий отдел удалён (живого service-admin'а у такого отдела нет). Узость
+    важна: account_admin проходит ТОЛЬКО transfer/recover, обычный CRUD/reveal
+    остаётся за `require_user_context` и для него закрыт.
+    """
+    if identity.platform_role == "account_admin":
+        return identity
+    return require_user_context(identity)
 
 
 def require_account_admin(identity: Identity) -> Identity:

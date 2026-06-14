@@ -168,7 +168,7 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 
 Передать ownership заблокированной кред'ы. Только для blocked кред.
 
-**Auth:** Bearer admin secret_service'а владеющего dept'а (per-(dept, service) роль). account_admin и dep_admin доступа НЕ имеют: эндпоинт проходит `require_user_context` (нужен `secret_service` в `allowed_services` отдела), а внутри `credential_service.transfer` гейт строго на `_is_service_admin_for` — admin того же dept'а, что владеет кред'ой. У account_admin (`department_id=null`) нет service-access → `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`. Восстановление при удалённом owner-dept'е идёт через lifecycle_service, не через этот эндпоинт.
+**Auth:** Два пути входа. (1) Штатный — Bearer admin secret_service'а владеющего dept'а (per-(dept, service) роль): проходит endpoint-guard `require_transfer_recover_context` (для не-account_admin он делегирует `require_user_context` — нужен `secret_service` в `allowed_services` отдела), а внутри `credential_service.transfer` гейт `_is_service_admin_for` — admin того же dept'а, что владеет кред'ой. dep_admin чужого отдела по-прежнему отбивается `403 CREDENTIAL_ACCESS_DENIED`. (2) Emergency — Bearer account_admin: `require_transfer_recover_context` пропускает его несмотря на `department_id=null` и отсутствие dep-service-access, а ветка `_is_account_admin` в `credential_service.transfer` переназначает владельца. Нужен для кред'ы с удалённым владеющим отделом (у которого нет живого service-admin'а). Узкий путь: обычный CRUD/reveal account_admin'у недоступен. Audit несёт `actor_role` + `emergency_override`.
 **Body (`TransferRequest`):** ровно одно из owner-полей + обязательный `reason`:
 
 ```json
@@ -182,16 +182,16 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 `reason` (1..256 chars) обязателен — transfer считается CRITICAL-операцией; без него `422 VALIDATION_ERROR`. Ровно одно из `new_owner_user_id` / `new_owner_dept_id` (оба или ни одного → `422 VALIDATION_ERROR`). `personal` cred → `new_owner_user_id`, `department`/`cross_department` → `new_owner_dept_id`.
 
 **Response 200:** `CredentialRead` (со снятым `status=blocked`).
-**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT` (нет secret-access у dep'а / account_admin без dep'а), `403 CREDENTIAL_ACCESS_DENIED` (не admin secret_service владеющего dept'а), `404 CREDENTIAL_NOT_FOUND`, `409 NAME_DUPLICATE` (active-дубль по target), `422 CREDENTIAL_NOT_BLOCKED`, `422 INVALID_TRANSFER_TARGET` (несоответствие scope), `422 VALIDATION_ERROR` (нет `reason` / не ровно один owner).
+**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT` (нет secret-access у dep'а; account_admin сюда не попадает — он проходит guard), `403 CREDENTIAL_ACCESS_DENIED` (не admin secret_service владеющего dept'а и не account_admin), `404 CREDENTIAL_NOT_FOUND`, `409 NAME_DUPLICATE` (active-дубль по target), `422 CREDENTIAL_NOT_BLOCKED`, `422 INVALID_TRANSFER_TARGET` (несоответствие scope), `422 VALIDATION_ERROR` (нет `reason` / не ровно один owner).
 
 ### POST /credentials/{cred_id}/recover
 
 Снять `status=blocked` в окне `BLOCKED_RETENTION_DAYS` (default 30 дней от `blocked_at`).
 
-**Auth:** Bearer admin secret_service'а владеющего dep'а (per-(dept, service) роль). account_admin НЕ допущен: проходит `require_user_context` (нужен secret-access у отдела), а гейт в `credential_service.recover` — строго `_is_service_admin_for`.
+**Auth:** Те же два пути, что у `/transfer`. Штатный — admin secret_service'а владеющего dep'а (`require_transfer_recover_context` → `require_user_context`, гейт `_is_service_admin_for`). Emergency — account_admin (guard пропускает, ветка `_is_account_admin` в `credential_service.recover` снимает блокировку в окне). Узкий путь — обычный CRUD/reveal account_admin'у недоступен. Audit `tokens.recover` несёт `actor_role` + `emergency_override`.
 **Body:** пусто.
 **Response 200:** `CredentialRead`.
-**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED` (не admin secret_service владеющего dept'а), `404 CREDENTIAL_NOT_FOUND`, `409 NAME_DUPLICATE` (active-дубль), `422 CREDENTIAL_NOT_BLOCKED`, `422 RECOVER_WINDOW_EXPIRED`.
+**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT` (account_admin сюда не попадает), `403 CREDENTIAL_ACCESS_DENIED` (не admin secret_service владеющего dept'а и не account_admin), `404 CREDENTIAL_NOT_FOUND`, `409 NAME_DUPLICATE` (active-дубль), `422 CREDENTIAL_NOT_BLOCKED`, `422 RECOVER_WINDOW_EXPIRED`.
 
 ## RoleACL
 

@@ -2,7 +2,7 @@
 
 > **Версия сервиса:** `0.1.0` (см. `pyproject.toml`, OpenAPI `version` в `src/main.py`).
 > **Базовый префикс:** `/api/auth/v1`.
-> **Всего endpoints:** **78** (auth 7, users 16, departments 4, services 3, service_roles 6, tokens 3, bots 9, groups 16, authorization 2, oauth2 5, docker 7).
+> **Всего endpoints:** **82** (auth 7, users 20, departments 4, services 3, service_roles 6, tokens 3, bots 9, groups 16, authorization 2, oauth2 5, docker 7).
 > **Статус реализации:** production-ready (test-count'ы — `../TEST_COVERAGE.md`).
 > **Аудит-события:** перечислены в `AUDIT_EVENTS.md`.
 
@@ -177,7 +177,7 @@ Auth: AnyAdmin. Body:
 ```json
 {
   "username": "ivanov",
-  "password": "<min 4 chars>",
+  "password": "<min 12 chars, буквы + цифры>",
   "email": "...",
   "department_id": "dep_xyz",
   "platform_role": "account_admin|department_admin|loging_admin|loging_reader|null",
@@ -213,18 +213,26 @@ Errors: `USER_NOT_FOUND` (404), `USER_INACTIVE` (409) — нельзя выда�
 
 ### `POST /users/{user_id}/reset-password`
 
-Auth: AnyAdmin. `account_admin` — любой юзер; `department_admin` — только свой отдел. Body: `{ "new_password": "<min 8>" }`.
+Auth: AnyAdmin. `account_admin` — любой юзер; `department_admin` — только свой отдел. Body: `{ "new_password": "<min 12, буквы + цифры>" }`.
 
 Admin-вариант — для смены чужого пароля. Для self-reset используется `POST /users/me/password` (требует подтверждения старого пароля).
 
 Errors: `USER_NOT_FOUND` (404), `USER_RESET_PASSWORD_FORBIDDEN` (403) — department_admin лезет в чужой отдел, `ACTOR_VANISHED` (401) — actor-юзер удалён между JWT-выдачей и вызовом.
+
+### `POST /users/{user_id}/force-password-change`
+
+Auth: AnyAdmin. Поднимает `must_change_password=True` без замены пароля — target пускается только на `/users/me/password` до самостоятельной смены. Сессии и PAT не revoke'ятся (guard отрежет их на следующем запросе по флагу в БД). Себе ставить флаг разрешено. Response: `{ "ok": true }`. Audit `user.force_password_change` (WARNING).
+
+`account_admin` — любой target; `department_admin` — только юзер своего отдела.
+
+Errors: `USER_NOT_FOUND` (404), `DEPT_MISMATCH` (403) — DA по чужому юзеру, `ROLE_REQUIRED` (403), `ACTOR_VANISHED` (403).
 
 ### `POST /users/me/password`
 
 Auth: Bearer (user-context, m2m отбивается). Body:
 
 ```json
-{ "old_password": "...", "new_password": "<min 8, буквы + цифры>" }
+{ "old_password": "...", "new_password": "<min 12, буквы + цифры>" }
 ```
 
 Self-reset пароля с обязательным подтверждением `old_password`. После успеха — revoke всех активных сессий юзера (включая текущую), PAT остаются валидными. Audit `user.self_password_reset` (CRITICAL) с `caller_is_admin` в details для SIEM-фильтра по admin-self-reset'ам.
@@ -269,6 +277,24 @@ Auth: Bearer (user-context). Body:
 Auth: Bearer (user-context). Целевой revoke одной своей сессии. Response: `{"revoked_count": 1}`. Audit `user.session_revoked_one` (WARNING).
 
 Errors: `SESSION_NOT_FOUND` (404) — сессия не найдена, чужая или уже revoked (намеренно не отличаем, чтобы не было session-id-oracle между юзерами).
+
+### `GET /users/{user_id}/sessions`
+
+Auth: AnyAdmin. Admin-view активных сессий чужого юзера (`SessionsListResponse`). `account_admin` — любой; `department_admin` — только свой отдел. `is_current` всегда `false` (admin вызывает не из target-сессии). Audit `user.sessions_admin_listed` (INFO).
+
+Errors: `USER_NOT_FOUND` (404), `DEPARTMENT_ACCESS_DENIED` (403) — DA cross-department.
+
+### `POST /users/{user_id}/sessions/revoke`
+
+Auth: AnyAdmin. Logout-all для чужого юзера: сносит все его активные refresh-сессии. PAT и bot-токены не трогаются. Body отсутствует (`except_current` для admin-revoke бессмысленен). Response: `{ "revoked_count": N }`. Audit `user.sessions_admin_revoked_all` (CRITICAL).
+
+Errors: `USER_NOT_FOUND` (404), `DEPARTMENT_ACCESS_DENIED` (403) — DA cross-department.
+
+### `DELETE /users/{user_id}/sessions/{session_id}`
+
+Auth: AnyAdmin. Целевой revoke одной сессии чужого юзера. Response: `{ "revoked_count": 1 }`. Audit `user.session_admin_revoked_one` (WARNING).
+
+Errors: `USER_NOT_FOUND` (404), `DEPARTMENT_ACCESS_DENIED` (403) — DA cross-department, `SESSION_NOT_FOUND` (404) — сессия не принадлежит `user_id`, неактивна или уже revoked (намеренно не различаем — session-id-oracle).
 
 ### `POST /users/{user_id}/ban`
 
@@ -352,7 +378,6 @@ Response (`UserPermissionsResponse`):
     {
       "group_id": "grp_a",
       "group_name": "devs",
-      "display_name": "Devs",
       "department_id": "dep_xyz",
       "joined_at": "...",
       "service_accesses": [{ "service_name": "config_service" }],
@@ -404,7 +429,7 @@ Body:
 
 `reason` обязателен (min 1, max 256 символов).
 
-Audit: `department.hard_deleted` (CRITICAL) с `department_name`, `department_display_name`, `reason`, `bots_deleted`, `bot_tokens_revoked`, `oauth_clients_deleted`.
+Audit: `department.hard_deleted` (CRITICAL) с `department_name`, `reason`, `bots_deleted`, `bot_tokens_revoked`, `oauth_clients_deleted`.
 
 Errors:
 - `DEPARTMENT_NOT_FOUND` (404).
@@ -419,7 +444,7 @@ Errors:
 
 Auth: `account_admin`.
 
-`POST` body: `{ "service_name": "...", "display_name": "...", "description": "..." }`. После создания автоматически появляется системная роль `admin` (`is_system=True`).
+`POST` body: `{ "service_name": "...", "description": "..." }`. После создания автоматически появляется системная роль `admin` (`is_system=True`).
 
 Errors: `SERVICE_ALREADY_EXISTS` (409) на create, `SERVICE_NOT_FOUND` (404) на delete. На delete сервис не валится с 409 — каскадно деактивирует все `DepartmentServiceAccess`, `UserServiceRole`, `BotServiceRole` и `ServiceRoleDefinition` (audit `service.delete`, details `cascade_revoked_department_access=true`, `cascade_deactivated_roles=true`, `affected_bot_count`).
 
@@ -433,9 +458,9 @@ Errors: `SERVICE_ALREADY_EXISTS` (409) на create, `SERVICE_NOT_FOUND` (404) н
 
 Auth: Bearer. `account_admin` / `department_admin` своего отдела / юзер с access к сервису.
 
-`POST` body: `{ "role_name": "...", "display_name": "...", "description": "..." }`.
+`POST` body: `{ "role_name": "...", "description": "..." }`.
 
-`PATCH` body: `{ "display_name": "...", "description": "..." }` (опциональны).
+`PATCH` body: `{ "description": "..." }` (опционально).
 
 Errors:
 - `SERVICE_ROLE_ALREADY_EXISTS` (409) — уже есть в scope.

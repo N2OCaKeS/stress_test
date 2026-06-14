@@ -885,7 +885,7 @@ async def add_user_to_group(
 
     Возможные ошибки:
         * `GROUP_NOT_FOUND` / `USER_NOT_FOUND` (404).
-        * `GROUP_DEPARTMENT_MISMATCH` (400) — юзер и группа в разных отделах.
+        * `GROUP_DEPARTMENT_MISMATCH` (403) — юзер и группа в разных отделах.
     """
     await group_service.add_member(
         db=db,

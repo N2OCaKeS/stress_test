@@ -125,7 +125,7 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 | `valid_to` | datetime \| null | нет | UTC. Если задано — `reveal` после → `410 SECRET_EXPIRED`. Должен быть строго в будущем; `valid_to > valid_from`. |
 
 **Response 201:** `CredentialRead`.
-**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED` (нет права на create в данном scope/dep'е), `409 NAME_DUPLICATE`, `422 VALIDATION_ERROR` (несовместимость scope/owner_dept_id), `422 PLAINTEXT_TOO_LARGE`, `422 ENCRYPT_INPUT_INVALID`.
+**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED` (нет права на create в данном scope/dep'е), `409 NAME_DUPLICATE`, `422 VALIDATION_ERROR` (несовместимость scope/owner_dept_id; битый base64 / не-UTF-8 / пустой или >8192 символов после декода — ловит pydantic-валидатор), `422 PLAINTEXT_TOO_LARGE` (>8192 байт — service-layer guard для multibyte-UTF-8 в пределах char-лимита), `422 ENCRYPT_INPUT_INVALID`.
 
 ### GET /credentials/{cred_id}
 
@@ -146,9 +146,9 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 
 ### DELETE /credentials/{cred_id}
 
-Удалить credential. Admin override (не-owner через admin secret_service своего dept'а или account_admin) требует `reason`.
+Удалить credential. Admin override (не-owner через admin secret_service своего dept'а) требует `reason`. account_admin к delete НЕ допущен — управление содержимым секретов остаётся на dept-уровне.
 
-**Auth:** Bearer (owner / dep_admin / admin secret_service своего dept'а / account_admin).
+**Auth:** Bearer (owner / dep_admin / admin secret_service своего dept'а).
 **Body (`AdminDeleteRequest`, optional):** `{ "reason": "..." }` (1..256 chars). Обязателен для admin override, иначе `422 ADMIN_OVERRIDE_REASON_REQUIRED`.
 **Response 200:** `OkResponse = { ok: true }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `422 ADMIN_OVERRIDE_REASON_REQUIRED`.
@@ -166,30 +166,32 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 
 ### POST /credentials/{cred_id}/transfer
 
-Передать ownership заблокированной кред'ы. Только для blocked кред с grants.
+Передать ownership заблокированной кред'ы. Только для blocked кред.
 
-**Auth:** Bearer admin secret_service'а владеющего dep'а (personal cred → новый user из числа grantees) или account_admin (cross_dep cred с удалённым owner_dept → новый dep).
-**Body (`TransferRequest`):** ровно одно поле:
+**Auth:** Bearer admin secret_service'а владеющего dept'а (per-(dept, service) роль). account_admin и dep_admin доступа НЕ имеют: эндпоинт проходит `require_user_context` (нужен `secret_service` в `allowed_services` отдела), а внутри `credential_service.transfer` гейт строго на `_is_service_admin_for` — admin того же dept'а, что владеет кред'ой. У account_admin (`department_id=null`) нет service-access → `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`. Восстановление при удалённом owner-dept'е идёт через lifecycle_service, не через этот эндпоинт.
+**Body (`TransferRequest`):** ровно одно из owner-полей + обязательный `reason`:
 
 ```json
-{ "new_owner_user_id": "usr_..." }
+{ "new_owner_user_id": "usr_...", "reason": "..." }
 ```
 или
 ```json
-{ "new_owner_dept_id": "dep_..." }
+{ "new_owner_dept_id": "dep_...", "reason": "..." }
 ```
 
+`reason` (1..256 chars) обязателен — transfer считается CRITICAL-операцией; без него `422 VALIDATION_ERROR`. Ровно одно из `new_owner_user_id` / `new_owner_dept_id` (оба или ни одного → `422 VALIDATION_ERROR`). `personal` cred → `new_owner_user_id`, `department`/`cross_department` → `new_owner_dept_id`.
+
 **Response 200:** `CredentialRead` (со снятым `status=blocked`).
-**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED` (admin не своего dept'а, нет account_admin), `404 CREDENTIAL_NOT_FOUND`, `422 CREDENTIAL_NOT_BLOCKED`, `422 INVALID_TRANSFER_TARGET` (несоответствие scope или target не подходит).
+**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT` (нет secret-access у dep'а / account_admin без dep'а), `403 CREDENTIAL_ACCESS_DENIED` (не admin secret_service владеющего dept'а), `404 CREDENTIAL_NOT_FOUND`, `409 NAME_DUPLICATE` (active-дубль по target), `422 CREDENTIAL_NOT_BLOCKED`, `422 INVALID_TRANSFER_TARGET` (несоответствие scope), `422 VALIDATION_ERROR` (нет `reason` / не ровно один owner).
 
 ### POST /credentials/{cred_id}/recover
 
 Снять `status=blocked` в окне `BLOCKED_RETENTION_DAYS` (default 30 дней от `blocked_at`).
 
-**Auth:** Bearer admin secret_service'а владеющего dep'а / account_admin.
+**Auth:** Bearer admin secret_service'а владеющего dep'а (per-(dept, service) роль). account_admin НЕ допущен: проходит `require_user_context` (нужен secret-access у отдела), а гейт в `credential_service.recover` — строго `_is_service_admin_for`.
 **Body:** пусто.
 **Response 200:** `CredentialRead`.
-**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `422 CREDENTIAL_NOT_BLOCKED`, `422 RECOVER_WINDOW_EXPIRED`.
+**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED` (не admin secret_service владеющего dept'а), `404 CREDENTIAL_NOT_FOUND`, `409 NAME_DUPLICATE` (active-дубль), `422 CREDENTIAL_NOT_BLOCKED`, `422 RECOVER_WINDOW_EXPIRED`.
 
 ## RoleACL
 
@@ -199,22 +201,24 @@ ACL даёт читать (`can_read`) или менять (`can_write`) creds �
 
 Выдать `RoleACL`.
 
-**Auth:**
-- `personal` cred: только owner (выдаёт в своём департаменте).
-- `department` cred: dep_admin владеющего dep'а.
-- `cross_department` cred: dep_admin recipient'а, **сначала** должен существовать `DeptGrant(cred_id, recipient_dept_id)`.
+**Auth:** owner-side выдача гейтится платформенной ролью `department_admin` (не service-роль `admin` — та даёт только read-override). Носитель `department_admin` владеющего dep'а проходит scope-проверку как `dept_admin`.
+- `personal` cred: только owner (выдаёт в своём департаменте; `dept_id` должен равняться dept'у владельца, иначе `422 PERSONAL_ACL_OWNER_DEPT_ONLY`).
+- `department` cred: `department_admin` владеющего dep'а.
+- `cross_department` cred: `department_admin` recipient'а, **сначала** должен существовать `DeptGrant(cred_id, recipient_dept_id)`.
 
 **Body (`RoleACLCreate`):**
 
 | Поле | Тип | Обязательное |
 |---|---|---|
 | `dept_id` | str | да (1..64) |
-| `role_name` | str | да (1..64), из `auth.service_role_definitions` |
+| `role_name` | str | да (1..64). **Не валидируется** против каталога `auth.service_role_definitions` — принимается любая строка; несуществующая роль просто никогда не сматчит actor'а при access-check. |
 | `can_read` | bool | default `false` |
 | `can_write` | bool | default `false` |
 
 **Response 201:** `RoleACLRead` (с `id`, `granted_by_user_id`, `granted_at`).
-**Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 ROLE_ACL_DUPLICATE`, `422 DEPT_GRANT_REQUIRED`.
+**Error codes:** `401 UNAUTHORIZED`, `403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 ROLE_ACL_DUPLICATE`, `422 DEPT_GRANT_REQUIRED`, `422 PERSONAL_ACL_OWNER_DEPT_ONLY`.
+
+> **Порядок проверок:** `grant_acl` сначала проходит `load_for_action` (visibility/access-check). Recipient dep_admin БЕЗ `DeptGrant` не видит cross-dep креду вовсе → отдаётся `404 CREDENTIAL_NOT_FOUND` (visibility-miss маскируется в 404, info-leak protection), а не `422 DEPT_GRANT_REQUIRED`. `422 DEPT_GRANT_REQUIRED` срабатывает позже — когда actor уже имеет доступ к кред'е, но пытается выдать ACL на ещё один dept без `DeptGrant` для него.
 
 ### GET /credentials/{cred_id}/acl
 
@@ -228,7 +232,7 @@ ACL даёт читать (`can_read`) или менять (`can_write`) creds �
 
 Revoke `RoleACL`.
 
-**Auth:** Bearer (owner / dep_admin / admin secret_service владеющего dep'а).
+**Auth:** Bearer (owner для personal / `department_admin` соответствующей стороны — owner-dep или recipient-dep). Гейт — action `grant_acl`; service-роль `admin` сюда НЕ проходит (она даёт только read-override).
 **Response 200:** `OkResponse = { ok: true }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `404 ROLE_ACL_NOT_FOUND`.
 
@@ -240,7 +244,7 @@ Revoke `RoleACL`.
 
 Выдать `DeptGrant`.
 
-**Auth:** Bearer (owner dep_admin / admin secret_service владеющего dep'а).
+**Auth:** Bearer `department_admin` владеющего dep'а. Service-роль `admin` secret_service'а сюда НЕ проходит — `grant_dept` гейтится в `access_service` только на платформенный `department_admin` (роль `admin` даёт лишь read-override). Bot без user-identity на personal/чужие cred'ы не допускается.
 **Body (`DeptGrantCreate`):** `{ "recipient_dept_id": "dep_..." }` (1..64 chars).
 **Response 201:** `DeptGrantRead`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 DEPT_GRANT_DUPLICATE`, `422 DEPT_GRANT_NOT_APPLICABLE` (cred не `cross_department`), `422 DEPT_GRANT_RECIPIENT_IS_OWNER`.
@@ -257,7 +261,7 @@ Revoke `RoleACL`.
 
 Revoke `DeptGrant`. Каскадно сносит все `RoleACL(cred_id, dept_id=recipient_dept_id)`.
 
-**Auth:** Bearer (owner dep_admin / admin secret_service владеющего dep'а).
+**Auth:** Bearer `department_admin` владеющего dep'а (как и выдача; `grant_dept` гейт — только `department_admin`, не service-роль `admin`).
 **Response 200:** `OkResponse = { ok: true }`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `404 DEPT_GRANT_NOT_FOUND`.
 
@@ -315,7 +319,8 @@ Cascade revoke `DeptGrant`'ов и `RoleACL`'ей где dep — recipient. Св
 | `CREDENTIAL_NOT_BLOCKED` | 422 | `transfer` / `recover` вызван для active cred'ы. |
 | `NAME_DUPLICATE` | 409 | UNIQUE collision `(owner, service, name)` среди active. |
 | `ADMIN_OVERRIDE_REASON_REQUIRED` | 422 | Admin override без `reason` в body. |
-| `DEPT_GRANT_REQUIRED` | 422 | Создание ACL для cross_dep recipient без существующего `DeptGrant`. |
+| `DEPT_GRANT_REQUIRED` | 422 | Создание ACL для cross_dep на dept без существующего `DeptGrant` — но только когда actor УЖЕ видит креду. Recipient без `DeptGrant` не видит её вовсе → получает `404 CREDENTIAL_NOT_FOUND` (visibility-miss маскируется в 404) РАНЬШЕ этой проверки. |
+| `PERSONAL_ACL_OWNER_DEPT_ONLY` | 422 | ACL на personal-креду выдаётся с `dept_id != ` dept владельца. |
 | `DEPT_GRANT_DUPLICATE` | 409 | UNIQUE collision `(cred_id, recipient_dept_id)`. |
 | `DEPT_GRANT_NOT_APPLICABLE` | 422 | `DeptGrant` для не-cross_department кред'ы. |
 | `DEPT_GRANT_RECIPIENT_IS_OWNER` | 422 | `recipient_dept_id == owner_dept_id`. |

@@ -172,7 +172,7 @@ async def add_member(
         account_admin или department_admin своего отдела.
 
     Возможные ошибки:
-        * `GROUP_DEPARTMENT_MISMATCH` (400) — юзер из другого отдела.
+        * `GROUP_DEPARTMENT_MISMATCH` (403) — юзер из другого отдела.
     """
     return await group_service.add_member(db, identity, group_id, body.user_id,
                                           request_id=getattr(request.state, "request_id", None))
@@ -229,7 +229,7 @@ async def add_bot_member(
         account_admin или department_admin своего отдела.
 
     Возможные ошибки:
-        * `GROUP_DEPARTMENT_MISMATCH` (400) — бот из другого отдела.
+        * `GROUP_DEPARTMENT_MISMATCH` (403) — бот из другого отдела.
     """
     return await group_service.add_bot_member(db, identity, group_id, body.bot_id,
                                              request_id=getattr(request.state, "request_id", None))

@@ -34,6 +34,8 @@
 
 - `X-Request-ID` — корелляционный ID (генерируется middleware если не передан, charset `[A-Za-z0-9_.-]{1,64}`).
 - `Retry-After` — на 429.
+- `X-Export-Truncated` — `true`/`false` на `GET /events/export`: `true`, если под фильтр попало больше `MAX_EXPORT_ROWS` строк и ответ усечён.
+- `Content-Disposition` — `attachment; filename="audit-export-<from>-<to>.csv"` на `GET /events/export`.
 - Security headers (HSTS опционально, X-Frame-Options, CSP, Permissions-Policy) проставляет `SecurityHeadersMiddleware`.
 
 ### Пагинация
@@ -46,7 +48,7 @@
 |---|---|---|---|
 | Ingest | `INGEST_RATE_LIMIT` | `100/minute` per X-Service-Identity | `POST /events` |
 | Register events | `REGISTER_EVENTS_RATE_LIMIT` | `100/minute` per X-Service-Identity | `POST /services/{service}/events` |
-| Audit query | `AUDIT_QUERY_RATE_LIMIT` | `100/minute` per IP | `GET /events`, `GET /rules`, `GET /rules/{id}`, `GET /services`, `GET /services/{service}/events`, `GET /retention` |
+| Audit query | `AUDIT_QUERY_RATE_LIMIT` | `100/minute` per user (`sub` из introspect, fallback на IP) | `GET /events`, `GET /events/stats`, `GET /events/export`, `GET /rules`, `GET /rules/{id}`, `GET /services`, `GET /services/{service}/events`, `GET /retention` |
 
 Write-эндпоинты `/rules` (POST/PATCH/DELETE) и `/retention` (PUT/DELETE) **без** rate-limit — by-design: admin-операции выполняются вручную, утечка admin-токена детектится не RL'ом, а audit-каналом.
 
@@ -131,8 +133,16 @@ Write-эндпоинты `/rules` (POST/PATCH/DELETE) и `/retention` (PUT/DELET
 | Method | URL | Auth | Response | Возможные `error_code` |
 |---|---|---|---|---|
 | GET | `/events` | `loging_admin` / `loging_reader` | `EventListResponse` (items+`has_more`+`limit`+`offset`+nullable `total`) | `MISSING_TOKEN`, `INVALID_TOKEN`, `USER_BANNED`, `INSUFFICIENT_ROLE`, `AUTH_SERVICE_NOT_CONFIGURED`, `AUTH_SERVICE_TIMEOUT`, `AUTH_SERVICE_UNREACHABLE`, `AUTH_SERVICE_ERROR`, `INTROSPECT_KEY_NOT_CONFIGURED`, `INTROSPECT_NOT_INITIALIZED`, `RATE_LIMIT_EXCEEDED` |
+| GET | `/events/stats` | `loging_admin` / `loging_reader` | `EventStatsResponse` (`total`+`by_severity`+`by_service`+`by_status`+границы окна) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
+| GET | `/events/export` | `loging_admin` / `loging_reader` | `text/csv` (заголовок + строки событий; `X-Export-Truncated` при усечении) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
 | GET | `/services` | `loging_admin` / `loging_reader` | `ServiceListResponse` (items+`has_more=False`+`limit=null`+`offset=null`) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
 | GET | `/services/{service}/events` | `loging_admin` / `loging_reader` | `ServiceEventsResponse` (items+`has_more`+`limit`+`offset`) | те же 401/403/503 + `RATE_LIMIT_EXCEEDED` |
+
+**Окно у `GET /events` vs `GET /events/stats` / `GET /events/export`.** `GET /events` принимает диапазон только через query-параметры `from_time`/`to_time` (полуоткрытый `[from_time, to_time)`); параметра `window_hours` у него нет — переданный `window_hours` молча игнорируется. `GET /events/stats` и `GET /events/export` принимают `from_time`/`to_time` **и** `window_hours` (часы, дефолт 24, диапазон `1..24*366`): если заданы оба края `from_time`/`to_time`, `window_hours` игнорируется; если задан один край — второй достраивается сдвигом на `window_hours`; если не задан ни один — окно `[now - window_hours, now]`. Naive datetime трактуется как UTC.
+
+**Фильтры `stats` / `export`** — те же, что у `GET /events` (`department_id`, `service`, `severity`, `action`, `actor_id`, `target_id`, `status`, `request_id`), сужают выборку под агрегаты/экспорт.
+
+**CSV-экспорт.** `GET /events/export` отдаёт CSV (`Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment`). Колонки совпадают с полями события, `details` сериализуется компактным JSON'ом в последней колонке. Не более `MAX_EXPORT_ROWS` (= 50000) строк на экспорт; при превышении ответ содержит первые строки и заголовок `X-Export-Truncated: true` — сузьте окно или фильтр.
 
 ### Rules
 

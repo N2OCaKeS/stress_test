@@ -109,7 +109,10 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 | `ACCOUNT_NOT_FOUND` | 404 | server_account visibility |
 | `NO_IPMI_CONTROLLER` | 404 | BMC не зарегистрирован у сервера |
 | `TASK_NOT_FOUND` | 404 | cancel неизвестной/cross-dept task'и |
+| `OS_VERSION_NOT_FOUND` | 404 | get/update/delete неизвестной os-версии |
 | `SERVER_DUPLICATE` / `IPMI_DUPLICATE` | 409 | UNIQUE на create |
+| `OS_VERSION_DUPLICATE` | 409 | UNIQUE(name) на create/update os-версии |
+| `OS_VERSION_IN_USE` | 409 | delete os-версии, на которую ссылается сервер (FK RESTRICT) |
 | `SERVER_DECOMMISSIONED` | 409 | dispatch-операция на списанный сервер |
 | `TASK_IDEMPOTENT_CONFLICT` | 409 | гонка двух POST с одним Idempotency-Key |
 | `IDEMPOTENCY_KEY_REUSE_CONFLICT` | 409 | один Idempotency-Key на разные target_resource_id |
@@ -167,7 +170,7 @@ Errors: `INVALID_CURSOR` (400), `PERMISSION_DENIED` (403), `SERVICE_ACCESS_DENIE
 
 ### `POST /servers`
 
-Auth: Bearer + `(server, *, create)`. Body: `ServerCreate` (hostname, ip_address, serial_number, department_id, status, optional storage / ipmi).
+Auth: Bearer + `(server, *, create)`. Body: `ServerCreate` (hostname, ip_address, serial_number, department_id, optional storage / ipmi). `status` в теле нет — стартует `unknown`.
 
 `Idempotency-Key` НЕ читается — owner-decision (повтор → `409 SERVER_DUPLICATE`).
 
@@ -215,7 +218,7 @@ Auth: Bearer + `(server, *, os_sync)`. Прямое выставление `os_v
 
 Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `INVALID_OS_VERSION` (422).
 
-### `GET /servers/{server_id}/power` (ipmi)
+### `GET /servers/{server_id}/ipmi/power` (ipmi)
 
 Auth: Bearer + `(server, *, view)`. Кэшированный `power_state` без BMC probe.
 
@@ -419,31 +422,31 @@ Auth: public. Cursor / offset пагинация. INFO audit `os_version.list_an
 
 Auth: public. Карточка по UNIQUE-имени.
 
-Errors: `404`.
+Errors: `OS_VERSION_NOT_FOUND` (404).
 
 ### `POST /os-versions`
 
 Auth: Bearer + `(os_version, *, create)`. Body: `OsVersionCreate`.
 
-Errors: `PERMISSION_DENIED` (403), `409` UNIQUE(name).
+Errors: `PERMISSION_DENIED` (403), `OS_VERSION_DUPLICATE` (409).
 
 ### `GET /os-versions/{os_version_id}`
 
 Auth: public. Карточка по id.
 
-Errors: `404`.
+Errors: `OS_VERSION_NOT_FOUND` (404).
 
 ### `PATCH /os-versions/{os_version_id}`
 
 Auth: Bearer + `(os_version, *, update)`.
 
-Errors: `PERMISSION_DENIED` (403), `404`, `409` UNIQUE(name).
+Errors: `PERMISSION_DENIED` (403), `OS_VERSION_NOT_FOUND` (404), `OS_VERSION_DUPLICATE` (409).
 
 ### `DELETE /os-versions/{os_version_id}`
 
 Auth: Bearer + `(os_version, *, delete)`. FK ondelete=RESTRICT — на использование сервером `409 OS_VERSION_IN_USE`.
 
-Errors: `PERMISSION_DENIED` (403), `404`, `OS_VERSION_IN_USE` (409).
+Errors: `PERMISSION_DENIED` (403), `OS_VERSION_NOT_FOUND` (404), `OS_VERSION_IN_USE` (409).
 
 ---
 

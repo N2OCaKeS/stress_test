@@ -48,7 +48,7 @@
 | `id` | `str` | NO | `acl_…` |
 | `cred_id` | `str` | NO | FK → `credentials.id` |
 | `dept_id` | `str` | NO | В каком департаменте действует разрешение. |
-| `role_name` | `str(64)` | NO | Имя роли из `auth.service_role_definitions` (per-department каталог). |
+| `role_name` | `str(64)` | NO | Имя роли (по смыслу — из per-department каталога `auth.service_role_definitions`). **На входе НЕ валидируется** против каталога: принимается любая строка 1..64. Несуществующая роль просто не сматчит actor'а при access-check (мёртвый ACL). |
 | `can_read` | `bool` | NO | Право на reveal. |
 | `can_write` | `bool` | NO | Право на update/delete (только для `scope=department` и `cross_department`). |
 | `granted_by_user_id` | `str` | NO | `usr_…`/`bot_…` (immutable, не cascade'ится при удалении granter'а). |
@@ -132,7 +132,9 @@ Cross-dep transfer удалённого owner_dept'а (когда `cred.owner_de
 
 ### Account admin (платформенный)
 
-`account_admin` (account-level admin в auth_service) — нужен только для случая **удалённого владеющего dep'а** в cross_department-credах. Он переназначает владельца на другой dep. До переназначения cred находится в `status=blocked` и `GET` возвращает `410 GONE` с message `"contact platform admin"`.
+`account_admin` (account-level admin в auth_service) — платформенный админ. По текущей политике (см. Memory `project-dbos-secrets-scope`) он **не имеет доступа к содержимому секретов**: gated от всех user-facing `/credentials/...` через `require_user_context` (`SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT`, т.к. у него `department_id=null` и нет secret-service-access), и в `access_service` не получает ни read, ни delete/recover/transfer.
+
+> **Расхождение doc↔код:** `/credentials/{id}/transfer` и `/recover` гейтятся строго на `_is_service_admin_for` (admin secret_service владеющего dep'а), account_admin внутрь не пускается. Сценарий «удалённый владеющий dep» (см. Lifecycle ниже) формально остаётся без рабочего пути восстановления через API — у удалённого dep'а нет живого service-admin'а. Lifecycle-docstrings и STATUS пока описывают старую интенцию (account_admin transfer); код её не реализует.
 
 ## Lifecycle
 
@@ -151,7 +153,7 @@ Cross-dep transfer удалённого owner_dept'а (когда `cred.owner_de
 | Сценарий | Действие |
 |---|---|
 | `revoke department_service_access(secret_service, dep_a)` | Cascade: все `DeptGrant` выданные dep_a И все `RoleACL` для recipient=dep_a — сразу `deleted`. Аудит `tokens.dept_revoke_cascade` CRITICAL. |
-| `delete_dept(dep_a)`, где dep_a — owner | Cred → `status=blocked`. `account_admin` в окне 30 дней может **transfer ownership** другому dep. После 30 дней — hard delete. UI: `"contact platform admin"`. |
+| `delete_dept(dep_a)`, где dep_a — owner | Cred → `status=blocked`, UI: `"contact platform admin"`. После 30 дней — hard delete по sweep'у. **Интенция:** account_admin переназначает владельца в окне 30 дней; **по факту** `transfer` гейтится на service-admin владеющего dep'а и account_admin внутрь не пускает — рабочего API-пути для этого случая сейчас нет (см. §«Account admin»). |
 | `delete_dept(dep_b)`, где dep_b — recipient cross_dep | Cascade: `DeptGrant(cred, dep_b)` + все `RoleACL(cred, dep_b)` — сразу `deleted`. Аудит `tokens.dept_recipient_cascade` CRITICAL. |
 
 #### Granter deleted
@@ -172,8 +174,8 @@ URL prefix: `/api/secret/v1/`.
 | `PATCH` | `/credentials/{id}` | owner / dep_admin / admin secret_service (per scope, own dept) | Изменить `name`, `login`, `secret_b64`. `secret_b64` — base64(plaintext); декод → повторно шифрует. |
 | `DELETE` | `/credentials/{id}` | owner / dep_admin / admin secret_service (own dept) | Удалить. Если `scope=personal` и удаляет НЕ owner → требуется `reason` (admin override). Ответ — `200 OkResponse = { ok: true }`. |
 | `POST` | `/credentials/{id}/reveal` | reader+can_read | Возвращает `{login, secret_b64}`. Эмитит audit CRITICAL/INFO (throttle). |
-| `POST` | `/credentials/{id}/transfer` | admin secret_service своего dept'а / account_admin | `{new_owner_user_id?, new_owner_dept_id?}`. Только для blocked creds с grants. |
-| `POST` | `/credentials/{id}/recover` | admin secret_service своего dept'а / account_admin | Снять `status=blocked`. Только в окне 30 дней. |
+| `POST` | `/credentials/{id}/transfer` | admin secret_service владеющего dept'а | `{new_owner_user_id? \| new_owner_dept_id?, reason}` (ровно один owner + обязательный `reason`). Только для blocked creds. account_admin НЕ допущен (нет secret-access у платформенного админа). |
+| `POST` | `/credentials/{id}/recover` | admin secret_service владеющего dept'а | Снять `status=blocked`. Только в окне 30 дней. account_admin НЕ допущен. |
 
 ### RoleACL CRUD
 
@@ -187,9 +189,9 @@ URL prefix: `/api/secret/v1/`.
 
 | Метод | Path | Доступ | Описание |
 |---|---|---|---|
-| `POST` | `/credentials/{id}/dept-grants` | owner dep_admin / admin secret_service владеющего dep'а | `{recipient_dept_id}`. |
-| `DELETE` | `/credentials/{id}/dept-grants/{grant_id}` | owner dep_admin / admin secret_service владеющего dep'а | Revoke. Cascade'ит `RoleACL(cred_id, dept_id=recipient_dept_id)`. Ответ — `200 OkResponse = { ok: true }`. |
-| `GET` | `/credentials/{id}/dept-grants` | owner dep_admin / recipient dep_admin / admin secret_service владеющего dep'а | Список. |
+| `POST` | `/credentials/{id}/dept-grants` | `department_admin` владеющего dep'а | `{recipient_dept_id}`. Гейт `grant_dept` — только `department_admin`, service-роль `admin` НЕ проходит (даёт лишь read-override). |
+| `DELETE` | `/credentials/{id}/dept-grants/{grant_id}` | `department_admin` владеющего dep'а | Revoke. Cascade'ит `RoleACL(cred_id, dept_id=recipient_dept_id)`. Ответ — `200 OkResponse = { ok: true }`. |
+| `GET` | `/credentials/{id}/dept-grants` | owner/recipient `department_admin` / admin secret_service владеющего dep'а (read-override) | Список. |
 
 ### Error codes
 

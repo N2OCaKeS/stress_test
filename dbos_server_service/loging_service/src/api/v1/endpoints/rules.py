@@ -31,7 +31,7 @@ from src.services import event_service, rule_service
 
 router = APIRouter()
 
-# Charset path-параметра `rule_id` — opaque `rul_<hex>` идентификаторы
+# Charset path-параметра `rule_id` — opaque `rl_<hex>` идентификаторы
 # (см. `utils/ids.py`). Без bound'а pydantic пропускает unbounded string,
 # она уходит WHERE id=$1 — Postgres переварит, но 422 был бы дешевле и не
 # раздувал бы logs/metrics. Charset симметричен `EventCreate._id_charset`.
@@ -111,19 +111,20 @@ def _audit(db: Session, identity: dict, action: str, details: dict) -> None:
         "`department_admin` и service-роли в `loging_service` сюда не пускаются — "
         "правила глобальны и leak их состояния (SUPPRESS/OVERRIDE-политики) "
         "раскрывает топологию мониторинга.\n\n"
-        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README).\n\n"
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-user, fallback на IP; см. README).\n\n"
         "**Связано:** `POST /rules` — создать правило; `GET /services/{svc}/events` — "
         "список action'ов, доступных для `match_action`."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
         403: {"model": ErrorEnvelope, "description": "Роль не подходит (`INSUFFICIENT_ROLE`)"},
-        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user rate-limit (fallback на IP)"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
 )
-# Read-канал rules чейнится в тот же per-IP bucket, что и GET /events
-# (`audit_query_rate_limit`). Без лимита admin-JWT мог бы крутить
+# Read-канал rules чейнится в тот же per-user bucket, что и GET /events
+# (`audit_query_rate_limit`, ключ — `sub` из introspect, fallback на IP).
+# Без лимита admin-JWT мог бы крутить
 # постраничный листинг с большим offset'ом и держать пул коннектов.
 @limiter.limit(
     lambda: get_settings().audit_query_rate_limit,
@@ -153,13 +154,13 @@ def list_rules(
     summary="Получить правило по ID",
     description=(
         "**Доступ:** только `loging_admin`.\n\n"
-        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-IP, см. README)."
+        "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-user, fallback на IP; см. README)."
     ),
     responses={
         401: {"model": ErrorEnvelope, "description": "Нет/неверный токен"},
         403: {"model": ErrorEnvelope, "description": "Роль не подходит (`INSUFFICIENT_ROLE`)"},
         404: {"model": ErrorEnvelope, "description": "`RULE_NOT_FOUND` — правила с таким ID нет"},
-        429: {"model": ErrorEnvelope, "description": "Превышен per-IP rate-limit"},
+        429: {"model": ErrorEnvelope, "description": "Превышен per-user rate-limit (fallback на IP)"},
         503: {"model": ErrorEnvelope, "description": "auth_service недоступен (introspect)"},
     },
 )
@@ -175,7 +176,7 @@ def get_rule(
         min_length=1,
         max_length=48,
         pattern=_RULE_ID_PATTERN,
-        description="ID правила (opaque `rul_<hex>`-токен)",
+        description="ID правила (opaque `rl_<hex>`-токен)",
     ),
     db: Session = Depends(get_db),
 ) -> RuleResponse:
@@ -292,7 +293,7 @@ def update_rule(
         min_length=1,
         max_length=48,
         pattern=_RULE_ID_PATTERN,
-        description="ID правила (opaque `rul_<hex>`-токен)",
+        description="ID правила (opaque `rl_<hex>`-токен)",
     ),
     db: Session = Depends(get_db),
 ) -> RuleResponse:
@@ -367,7 +368,7 @@ def delete_rule(
         min_length=1,
         max_length=48,
         pattern=_RULE_ID_PATTERN,
-        description="ID правила (opaque `rul_<hex>`-токен)",
+        description="ID правила (opaque `rl_<hex>`-токен)",
     ),
     db: Session = Depends(get_db),
 ) -> None:

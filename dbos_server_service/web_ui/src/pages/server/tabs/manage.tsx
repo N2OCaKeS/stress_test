@@ -60,6 +60,7 @@ import {
 import { FormRow } from "@/pages/admin/services/_inline";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
+import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 import { BootstrapCredsModal } from "./_bootstrapCredsModal";
 import type {
   CursorPaginatedResponse,
@@ -101,28 +102,6 @@ function canManageBasic(
   if (persona.service_roles.server === "operator") return true;
   if (isDepAdminOfServer(persona, server)) return true;
   return false;
-}
-
-/**
- * Аккаунты сервера, видимые текущей persona (грубый client-side фильтр —
- * тот же контракт, что и в `tabs/console.tsx`). Backend перепроверит при
- * fetch'е пароля; здесь только UX, чтобы picker не показывал заведомо
- * недоступные строки.
- */
-function filterAccessibleAccounts(
-  accounts: ServerAccount[],
-  persona: ReturnType<typeof usePersona>["persona"],
-): ServerAccount[] {
-  if (persona.service_roles.server === "admin") return accounts;
-  if (
-    persona.platform_role === "dep_admin" ||
-    persona.service_roles.server === "operator" ||
-    persona.service_roles.server === "reader"
-  ) {
-    if (!persona.dept_id) return [];
-    return accounts.filter((a) => a.department_id === persona.dept_id);
-  }
-  return [];
 }
 
 export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {

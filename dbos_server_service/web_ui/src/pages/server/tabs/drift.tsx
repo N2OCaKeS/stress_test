@@ -23,6 +23,7 @@ import { formatMskShort } from "@/lib/datetime";
 import { getServerDrift, inventorySync } from "@/api/server/servers";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
+import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 import { listAccounts } from "@/api/server/accounts";
 import type {
   CursorPaginatedResponse,
@@ -44,27 +45,6 @@ const DRIFT_KIND_LABEL: Record<string, string> = {
 };
 
 const formatDt = formatMskShort;
-
-/**
- * Аккаунты сервера, видимые текущей persona — тот же грубый client-side
- * фильтр, что в `tabs/console.tsx` / `tabs/manage.tsx`. Backend перепроверит
- * при fetch'е пароля.
- */
-function filterAccessibleAccounts(
-  accounts: ServerAccount[],
-  persona: ReturnType<typeof usePersona>["persona"],
-): ServerAccount[] {
-  if (persona.service_roles.server === "admin") return accounts;
-  if (
-    persona.platform_role === "dep_admin" ||
-    persona.service_roles.server === "operator" ||
-    persona.service_roles.server === "reader"
-  ) {
-    if (!persona.dept_id) return [];
-    return accounts.filter((a) => a.department_id === persona.dept_id);
-  }
-  return [];
-}
 
 export function DriftTab({ serverId, server }: Props) {
   const { persona } = usePersona();

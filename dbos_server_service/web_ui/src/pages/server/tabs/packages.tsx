@@ -29,6 +29,7 @@ import type {
   ServerAccount,
   TaskRead,
 } from "@/api/server/types";
+import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 
 const PACKAGES_POLL_MS = 3_000;
 
@@ -76,28 +77,6 @@ function canProbe(
     return true;
   }
   return false;
-}
-
-/**
- * Аккаунты сервера, видимые текущей persona (грубый client-side фильтр — тот
- * же контракт, что в `tabs/manage.tsx` / `tabs/console.tsx`). Backend
- * перепроверит при fetch'е пароля; здесь только UX, чтобы picker не показывал
- * заведомо недоступные строки.
- */
-function filterAccessibleAccounts(
-  accounts: ServerAccount[],
-  persona: ReturnType<typeof usePersona>["persona"],
-): ServerAccount[] {
-  if (persona.service_roles.server === "admin") return accounts;
-  if (
-    persona.platform_role === "dep_admin" ||
-    persona.service_roles.server === "operator" ||
-    persona.service_roles.server === "reader"
-  ) {
-    if (!persona.dept_id) return [];
-    return accounts.filter((a) => a.department_id === persona.dept_id);
-  }
-  return [];
 }
 
 export function PackagesTab({ serverId, server }: Props) {

@@ -112,17 +112,29 @@ _DEV_ADMIN_EMAIL = admin@example.com
 
 ##@ Dev: стек в Docker (без devcontainer)
 
-up: ## Поднять dev-стек (postgres + redis + auth :8000 + logging :8001 + server :8002 + worker + secret :8003 + web_ui :5173). Данные сохраняются.
+up: ## Поднять dev-стек С НУЛЯ: стереть тома + поднять + наполнить seed'ом. Каждый запуск — чистая БД с корректными dev-данными.
+	@echo "→ Очистка томов (полный сброс данных)..."
+	@$(DEV) down -v --remove-orphans 2>/dev/null || true
+	@echo "→ Поднятие стека..."
 	@$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server web_ui
+	@echo "→ Наполнение dev-данными (seed)..."
+	@$(MAKE) --no-print-directory seed
+	@echo "→ Перезапуск server_worker (подхватить свежий worker_bot PAT из seed)..."
+	@$(DEV) restart server_worker >/dev/null 2>&1 || true
 	@echo ""
 	@echo "  auth_service    →  http://localhost:8000/docs    (admin / 1234)"
-	@echo "  loging_service  →  http://localhost:8001/docs    (loging_admin / 1234 после make seed)"
+	@echo "  loging_service  →  http://localhost:8001/docs    (loging_admin1 / 1234)"
 	@echo "  server_service  →  http://localhost:8002/docs"
 	@echo "  secret_service  →  http://localhost:8003/docs"
 	@echo "  server_worker   →  taskiq worker (no HTTP), redis://localhost:6379/0"
 	@echo "  web_ui          →  http://localhost:5173            (vite dev, proxy → backend)"
 	@echo ""
-	@echo "  Первый запуск: сделай 'make seed' чтобы наполнить БД dev-данными."
+	@echo "  Стек поднят с чистой БД + dev-данными. test-server-01 / tester / tester1234."
+
+up-keep: ## Поднять dev-стек БЕЗ сброса (данные в томах сохраняются; seed вручную при необходимости).
+	@$(DEV) up -d --wait postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server web_ui
+	@echo ""
+	@echo "  Стек поднят, данные сохранены. Наполнить/обновить: make seed"
 
 up-build: ## Пересобрать образы и поднять dev-стек
 	$(DEV) up -d --wait --build postgres secret_postgres redis loging_service auth_service server_service server_worker secret_service test_server

@@ -8,15 +8,27 @@ import {
   AUTH_FLOWS,
   SERVER_SECTIONS,
   SERVER_FLOWS,
+  SECRET_SECTIONS,
+  SECRET_FLOWS,
 } from "./examples";
 import type { ApiSection, ApiFlow } from "./examples";
 
-type ServiceKey = "auth" | "server";
+type ServiceKey = "auth" | "server" | "secret";
 
 const SERVICE_TABS: { key: ServiceKey; label: string }[] = [
   { key: "auth", label: "auth_service" },
   { key: "server", label: "server_service" },
+  { key: "secret", label: "secret_service" },
 ];
+
+const SERVICE_DATA: Record<
+  ServiceKey,
+  { sections: ApiSection[]; flows: ApiFlow[] }
+> = {
+  auth: { sections: AUTH_SECTIONS, flows: AUTH_FLOWS },
+  server: { sections: SERVER_SECTIONS, flows: SERVER_FLOWS },
+  secret: { sections: SECRET_SECTIONS, flows: SECRET_FLOWS },
+};
 
 function ServiceContent({
   service,
@@ -154,19 +166,11 @@ export function WikiExamples() {
               ))}
             </div>
 
-            {activeService === "auth" ? (
-              <ServiceContent
-                service="auth"
-                sections={AUTH_SECTIONS}
-                flows={AUTH_FLOWS}
-              />
-            ) : (
-              <ServiceContent
-                service="server"
-                sections={SERVER_SECTIONS}
-                flows={SERVER_FLOWS}
-              />
-            )}
+            <ServiceContent
+              service={activeService}
+              sections={SERVICE_DATA[activeService].sections}
+              flows={SERVICE_DATA[activeService].flows}
+            />
           </div>
         </main>
       </SnippetContext.Provider>

@@ -71,6 +71,7 @@ from src.core.exceptions import (
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.dependencies.idempotency import read_idempotency_key
+from src.api.v1.endpoints._dispatch import dispatch_server_ssh_task
 from src.repositories import ipmi_controller as ipmi_repo
 from src.repositories import server_account as account_repo
 from src.schemas.server import (
@@ -322,73 +323,16 @@ async def _dispatch_for_server(
             )
             raise
 
-    # 5. Dispatch + audit.
-    idempotency_key = read_idempotency_key(request)
-    payload: dict = {
-        "server_id": server_id,
-        "target_department_id": server.department_id,
-        # SSH-эндпоинт: воркеру негде взять hostname/port, отправляем явно.
-        # ssh_client._extract_host читает `host`, fallback на server_id (UUID)
-        # сломал бы DNS-резолв на dev-стендах.
-        "host": server.hostname,
-        "ssh_port": server.ssh_port,
-        # На подготовленном сервере worker заходит под управляющим пользователем
-        # по ключу с sudo; inventory.sync собирает факты под ним вместо self-сессии.
-        "is_managed": server.is_managed,
-        "management_user": server.management_user,
-    }
-    # Для неуправляемого сервера кладём account_id — worker по нему запросит
-    # пароль через internal-endpoint и зайдёт под этим аккаунтом, а не root'ом.
-    if resolved_account_id is not None:
-        payload["account_id"] = resolved_account_id
-    if extra_payload:
-        payload.update(extra_payload)
-    try:
-        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
-            db=db,
-            task_kind=task_kind,
-            target_server_id=server_id,
-            payload=payload,
-            created_by=identity.user_id,
-            request_id=getattr(request.state, "request_id", None),
-            # Резолвнутый аккаунт (явный или дефолтный) кладём не только в
-            # payload, но и в колонку task-row — иначе по строке задачи не
-            # видно, под какой учёткой worker реально ходил по SSH.
-            target_resource_id=resolved_account_id,
-            idempotency_key=idempotency_key,
-        )
-        await db.commit()
-    except ConflictError:
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={
-                "reason": "idempotent_conflict",
-                "task_kind": task_kind,
-                "department_id": server.department_id,
-            },
-        )
-        raise
-    except ServiceUnavailableError:
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={
-                "reason": "worker_unreachable",
-                "task_kind": task_kind,
-                "department_id": server.department_id,
-            },
-        )
-        raise
-    audit_service.emit(
-        audit_action, target_id=server_id, target_type="server",
-        status="success", allowed=True,
-        details={
-            "task_id": task_id,
-            "task_kind": task_kind,
-            "department_id": server.department_id,
-            "idempotent_hit": idempotent_hit,
-        },
+    # 5. Dispatch + audit — общая обвязка в `_dispatch.dispatch_server_ssh_task`
+    # (базовый payload + dispatch с target_resource_id + ConflictError/
+    # ServiceUnavailableError-audit + commit + success-audit).
+    task_id, _ = await dispatch_server_ssh_task(
+        db=db, identity=identity, request=request,
+        server=server,
+        task_kind=task_kind,
+        audit_action=audit_action,
+        resolved_account_id=resolved_account_id,
+        extra_payload=extra_payload,
     )
     return {"task_id": task_id, "status": "queued"}
 

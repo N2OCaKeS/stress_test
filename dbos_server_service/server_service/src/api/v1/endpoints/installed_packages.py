@@ -31,6 +31,7 @@ import re
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.endpoints._dispatch import dispatch_server_ssh_task
 from src.api.v1.endpoints.worker_dispatch import resolve_inventory_account_id
 from src.core.constants import Action, EntityType, ServerStatus
 from src.core.exceptions import (
@@ -38,13 +39,11 @@ from src.core.exceptions import (
     ConflictError,
     DomainValidationError,
     NotFoundError,
-    ServiceUnavailableError,
 )
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
-from src.dependencies.idempotency import read_idempotency_key
 from src.schemas.server import ServerTaskDispatchResponse
-from src.services import audit_service, permissions, worker_client
+from src.services import audit_service, permissions
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
 
@@ -195,69 +194,20 @@ async def list_installed_packages(
         )
         raise
 
-    # 4. Dispatch + audit.
-    idempotency_key = read_idempotency_key(request)
-    payload: dict = {
-        "server_id": server_id,
-        "host": server.hostname,
-        "ssh_port": server.ssh_port,
-        "pattern": pattern,
-        "max_rows": _MAX_INSTALLED_PACKAGES_ROWS,
-        "target_department_id": server.department_id,
-        # Подготовленный сервер — вход по ключу под management_user; иначе
-        # worker заходит под дефолтным/переданным аккаунтом по паролю.
-        "is_managed": server.is_managed,
-        "management_user": server.management_user,
-    }
-    # Неуправляемый сервер — worker запросит пароль аккаунта по account_id и
-    # зайдёт под ним, а не root'ом.
-    if resolved_account_id is not None:
-        payload["account_id"] = resolved_account_id
-    try:
-        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
-            db=db,
-            task_kind="installed_packages.list",
-            target_server_id=server_id,
-            payload=payload,
-            created_by=identity.user_id,
-            request_id=getattr(request.state, "request_id", None),
-            # Резолвнутый аккаунт (явный или дефолтный) пишем и в колонку
-            # task-row, чтобы по строке задачи было видно учётку SSH-сессии.
-            target_resource_id=resolved_account_id,
-            idempotency_key=idempotency_key,
-        )
-        await db.commit()
-    except ConflictError:
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={
-                "reason": "idempotent_conflict",
-                "task_kind": "installed_packages.list",
-                "department_id": server.department_id,
-            },
-        )
-        raise
-    except ServiceUnavailableError:
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={
-                "reason": "worker_unreachable",
-                "task_kind": "installed_packages.list",
-                "department_id": server.department_id,
-            },
-        )
-        raise
-    audit_service.emit(
-        audit_action, target_id=server_id, target_type="server",
-        status="success", allowed=True,
-        details={
-            "task_id": task_id,
-            "task_kind": "installed_packages.list",
+    # 4. Dispatch + audit — общая обвязка в `_dispatch.dispatch_server_ssh_task`
+    # (базовый SSH-payload + dispatch с target_resource_id + ConflictError/
+    # ServiceUnavailableError-audit + commit + success-audit). `pattern`/
+    # `max_rows` едут доп-payload'ом, `pattern` дублируется в success-details.
+    task_id, _ = await dispatch_server_ssh_task(
+        db=db, identity=identity, request=request,
+        server=server,
+        task_kind="installed_packages.list",
+        audit_action=audit_action,
+        resolved_account_id=resolved_account_id,
+        extra_payload={
             "pattern": pattern,
-            "department_id": server.department_id,
-            "idempotent_hit": idempotent_hit,
+            "max_rows": _MAX_INSTALLED_PACKAGES_ROWS,
         },
+        success_extra_details={"pattern": pattern},
     )
     return ServerTaskDispatchResponse(task_id=task_id, status="queued")

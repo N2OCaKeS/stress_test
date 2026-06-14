@@ -56,8 +56,9 @@ def stub_dispatch(monkeypatch):
     for path in (
         "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
         "src.api.v1.endpoints.ipmi.worker_client.dispatch_task",
-        "src.api.v1.endpoints.installed_packages.worker_client.dispatch_task",
-        "src.api.v1.endpoints.inventory.worker_client.dispatch_task",
+        # installed_packages / users.inventory диспатчат через общую обвязку
+        # `endpoints/_dispatch.py`.
+        "src.api.v1.endpoints._dispatch.worker_client.dispatch_task",
     ):
         try:
             monkeypatch.setattr(path, fake_dispatch)
@@ -66,8 +67,7 @@ def stub_dispatch(monkeypatch):
     for path in (
         "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
         "src.api.v1.endpoints.ipmi.worker_client.dispatch_task_with_hit",
-        "src.api.v1.endpoints.installed_packages.worker_client.dispatch_task_with_hit",
-        "src.api.v1.endpoints.inventory.worker_client.dispatch_task_with_hit",
+        "src.api.v1.endpoints._dispatch.worker_client.dispatch_task_with_hit",
     ):
         try:
             monkeypatch.setattr(path, fake_dispatch_with_hit)

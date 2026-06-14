@@ -41,9 +41,12 @@ def captured_dispatch(monkeypatch):
                         fake_dispatch)
     monkeypatch.setattr("src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
                         fake_dispatch_with_hit)
-    monkeypatch.setattr("src.api.v1.endpoints.installed_packages.worker_client.dispatch_task",
+    # installed_packages / users.inventory диспатчат через общую обвязку
+    # `endpoints/_dispatch.py`; патчим её `worker_client` (тот же модуль-объект,
+    # главный патч `wm` выше уже накрывает вызов).
+    monkeypatch.setattr("src.api.v1.endpoints._dispatch.worker_client.dispatch_task",
                         fake_dispatch)
-    monkeypatch.setattr("src.api.v1.endpoints.installed_packages.worker_client.dispatch_task_with_hit",
+    monkeypatch.setattr("src.api.v1.endpoints._dispatch.worker_client.dispatch_task_with_hit",
                         fake_dispatch_with_hit)
     return calls
 

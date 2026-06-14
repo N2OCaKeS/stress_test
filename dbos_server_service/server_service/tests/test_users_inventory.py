@@ -53,11 +53,14 @@ def captured_dispatch(monkeypatch):
         kwargs["return_hit"] = True
         return await fake_dispatch(**kwargs)
 
+    # Сам dispatch живёт в общей обвязке `endpoints/_dispatch.py`
+    # (`dispatch_server_ssh_task`); патчим shared `worker_client` через её
+    # ссылку — она тот же модуль-объект, что и в endpoint'е.
     monkeypatch.setattr(
-        "src.api.v1.endpoints.inventory.worker_client.dispatch_task", fake_dispatch,
+        "src.api.v1.endpoints._dispatch.worker_client.dispatch_task", fake_dispatch,
     )
     monkeypatch.setattr(
-        "src.api.v1.endpoints.inventory.worker_client.dispatch_task_with_hit",
+        "src.api.v1.endpoints._dispatch.worker_client.dispatch_task_with_hit",
         fake_dispatch_with_hit,
     )
     return calls

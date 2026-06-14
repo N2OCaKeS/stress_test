@@ -445,6 +445,7 @@ def test_installed_packages_module_has_max_rows():
 def test_installed_packages_handler_passes_max_rows(monkeypatch):
     """Endpoint кладёт max_rows в worker payload."""
     from src.api.v1.endpoints import installed_packages as ip
+    from src.api.v1.endpoints import _dispatch as disp
 
     captured: dict = {}
 
@@ -452,13 +453,14 @@ def test_installed_packages_handler_passes_max_rows(monkeypatch):
         captured.update(kwargs)
         return ("tsk_fake", False)
 
-    monkeypatch.setattr(ip.worker_client, "dispatch_task_with_hit", fake_dispatch)
+    monkeypatch.setattr(disp.worker_client, "dispatch_task_with_hit", fake_dispatch)
 
     # Чтобы не дёргать БД и permissions, подменим всё вокруг.
     # is_managed=True — resolve_inventory_account_id уходит по key-based ветке
     # (возвращает None сразу), не дёргая account_repo/БД; на проверку max_rows
     # это не влияет.
     class _Server:
+        id = "srv_1"
         hostname = "h"
         ssh_port = 22
         department_id = "dep_a"
@@ -475,6 +477,7 @@ def test_installed_packages_handler_passes_max_rows(monkeypatch):
     monkeypatch.setattr(ip.server_svc, "get_server", fake_get_server)
     monkeypatch.setattr(ip.permissions, "require_action", fake_require)
     monkeypatch.setattr(ip, "audit_service", type("S", (), {"emit": lambda *a, **k: None})())
+    monkeypatch.setattr(disp, "audit_service", type("S", (), {"emit": lambda *a, **k: None})())
 
     # Skip decommissioned-gate с ServerStatus.DECOMMISSIONED — у нас "active".
     class _Req:

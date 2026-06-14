@@ -11,6 +11,7 @@ Hardware-инвентаризация (`inventory.sync`) живёт в
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.endpoints._dispatch import dispatch_server_ssh_task
 from src.api.v1.endpoints.worker_dispatch import resolve_inventory_account_id
 from src.core.constants import Action, EntityType, ServerStatus
 from src.core.exceptions import (
@@ -18,13 +19,11 @@ from src.core.exceptions import (
     ConflictError,
     DomainValidationError,
     NotFoundError,
-    ServiceUnavailableError,
 )
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
-from src.dependencies.idempotency import read_idempotency_key
 from src.schemas.server import ServerTaskDispatchResponse
-from src.services import audit_service, permissions, worker_client
+from src.services import audit_service, permissions
 from src.services import server as server_svc
 from src.services.audit_helpers import emit_denied_on_authz_error
 
@@ -151,69 +150,15 @@ async def trigger_users_inventory(
         )
         raise
 
-    idempotency_key = read_idempotency_key(request)
-    payload = {
-        "server_id": server_id,
-        "target_department_id": server.department_id,
-        # Адресация по SSH: ключи `host`/`ssh_port` читает воркер в
-        # `ssh_client._extract_host` / `_extract_port`; без них fallback на
-        # `server_id` (UUID) — попытка SSH в UUID-как-имя, а не в реальный
-        # FQDN/IP. Симметрия с `_dispatch_for_server` в worker_dispatch.py.
-        "host": server.hostname,
-        "ssh_port": server.ssh_port,
-        # Подготовленный сервер инвентаризируется под управляющим пользователем
-        # по ключу; иначе — под дефолтным/переданным аккаунтом.
-        "is_managed": server.is_managed,
-        "management_user": server.management_user,
-    }
-    # Неуправляемый сервер — worker запросит пароль аккаунта по account_id и
-    # зайдёт под ним, а не root'ом.
-    if resolved_account_id is not None:
-        payload["account_id"] = resolved_account_id
-    try:
-        task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
-            db=db,
-            task_kind="users.inventory",
-            target_server_id=server_id,
-            payload=payload,
-            created_by=identity.user_id,
-            request_id=getattr(request.state, "request_id", None),
-            # Резолвнутый аккаунт (явный или дефолтный) пишем и в колонку
-            # task-row, чтобы по строке задачи было видно учётку SSH-сессии.
-            target_resource_id=resolved_account_id,
-            idempotency_key=idempotency_key,
-        )
-        await db.commit()
-    except ConflictError:
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={
-                "reason": "idempotent_conflict",
-                "task_kind": "users.inventory",
-                "department_id": server.department_id,
-            },
-        )
-        raise
-    except ServiceUnavailableError:
-        audit_service.emit(
-            audit_action, target_id=server_id, target_type="server",
-            status="failure", allowed=True,
-            details={
-                "reason": "worker_unreachable",
-                "task_kind": "users.inventory",
-                "department_id": server.department_id,
-            },
-        )
-        raise
-    audit_service.emit(
-        audit_action, target_id=server_id, target_type="server",
-        status="success", allowed=True,
-        details={
-            "task_id": task_id,
-            "task_kind": "users.inventory",
-            "department_id": server.department_id,
-            "idempotent_hit": idempotent_hit,
-        },
+    # Dispatch + audit — общая обвязка в `_dispatch.dispatch_server_ssh_task`
+    # (базовый SSH-payload + dispatch с target_resource_id + ConflictError/
+    # ServiceUnavailableError-audit + commit + success-audit). Резолвнутый
+    # аккаунт (явный или дефолтный) кладётся и в payload, и в колонку task-row.
+    task_id, _ = await dispatch_server_ssh_task(
+        db=db, identity=identity, request=request,
+        server=server,
+        task_kind="users.inventory",
+        audit_action=audit_action,
+        resolved_account_id=resolved_account_id,
     )
     return ServerTaskDispatchResponse(task_id=task_id, status="queued")

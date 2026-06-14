@@ -49,6 +49,117 @@ class TestParser:
         assert {p["version"] for p in out} == {"5.10.0-1", "5.10.0-2"}
 
 
+class TestApkParser:
+    def test_simple_name_version_rel(self):
+        out = installed_packages._parse_packages("bash-5.2.15-r0\n", "apk")
+        assert out == [{"name": "bash", "version": "5.2.15-r0"}]
+
+    def test_name_with_dashes(self):
+        """Имя с дефисами сохраняется — rsplit с maxsplit=2 режет только версию."""
+        out = installed_packages._parse_packages("py3-pip-23.1-r0\n", "apk")
+        assert out == [{"name": "py3-pip", "version": "23.1-r0"}]
+
+    def test_fallback_no_revision(self):
+        """Строка без `-r<rel>` — fallback на rsplit один раз."""
+        out = installed_packages._parse_packages("musl-1.2.4\n", "apk")
+        assert out == [{"name": "musl", "version": "1.2.4"}]
+
+    def test_fallback_single_token(self):
+        """Строка без дефисов — вся уходит в name с пустой version."""
+        out = installed_packages._parse_packages("busybox\n", "apk")
+        assert out == [{"name": "busybox", "version": ""}]
+
+    def test_multiline_and_skips_empty(self):
+        stdout = "\nbash-5.2.15-r0\n  \npy3-pip-23.1-r0\n"
+        out = installed_packages._parse_packages(stdout, "apk")
+        assert out == [
+            {"name": "bash", "version": "5.2.15-r0"},
+            {"name": "py3-pip", "version": "23.1-r0"},
+        ]
+
+
+class TestApkPatternFilter:
+    def test_filters_by_glob(self):
+        pkgs = [
+            {"name": "bash", "version": "5.2.15-r0"},
+            {"name": "busybox", "version": "1.36.1-r0"},
+            {"name": "py3-pip", "version": "23.1-r0"},
+        ]
+        out = installed_packages._filter_by_pattern(pkgs, "py3*")
+        assert out == [{"name": "py3-pip", "version": "23.1-r0"}]
+
+    def test_star_returns_all(self):
+        pkgs = [{"name": "bash", "version": "5.2.15-r0"}]
+        assert installed_packages._filter_by_pattern(pkgs, "*") == pkgs
+
+    def test_empty_pattern_returns_all(self):
+        pkgs = [{"name": "bash", "version": "5.2.15-r0"}]
+        assert installed_packages._filter_by_pattern(pkgs, "") == pkgs
+
+    def test_case_sensitive(self):
+        pkgs = [{"name": "bash", "version": "5.2.15-r0"}]
+        assert installed_packages._filter_by_pattern(pkgs, "BASH") == []
+
+
+class TestPacmanParser:
+    def test_name_version_columns(self):
+        """pacman -Q отдаёт `name version`, разбирается как dpkg."""
+        stdout = "bash 5.2.015-1\nlinux 6.6.1.arch1-1\n"
+        out = installed_packages._parse_packages(stdout, "pacman")
+        assert out == [
+            {"name": "bash", "version": "5.2.015-1"},
+            {"name": "linux", "version": "6.6.1.arch1-1"},
+        ]
+
+    def test_name_with_dashes(self):
+        stdout = "python-pip 23.1-1\n"
+        out = installed_packages._parse_packages(stdout, "pacman")
+        assert out == [{"name": "python-pip", "version": "23.1-1"}]
+
+    def test_skips_malformed(self):
+        stdout = "\nbash 5.2.015-1\nbadline\n"
+        out = installed_packages._parse_packages(stdout, "pacman")
+        assert out == [{"name": "bash", "version": "5.2.015-1"}]
+
+
+class TestPortageParser:
+    def test_strips_category_and_splits_version(self):
+        out = installed_packages._parse_packages("app-shells/bash-5.2_p15\n", "portage")
+        assert out == [{"name": "bash", "version": "5.2_p15"}]
+
+    def test_revision_suffix(self):
+        out = installed_packages._parse_packages("dev-python/pip-23.1-r1\n", "portage")
+        assert out == [{"name": "pip", "version": "23.1-r1"}]
+
+    def test_name_with_dashes(self):
+        """Имя с дефисами — non-greedy match режет по первому дефису перед цифрой."""
+        out = installed_packages._parse_packages("dev-libs/libfoo-bar-1.2\n", "portage")
+        assert out == [{"name": "libfoo-bar", "version": "1.2"}]
+
+    def test_no_version_keeps_basename(self):
+        out = installed_packages._parse_packages("virtual/jdk\n", "portage")
+        assert out == [{"name": "jdk", "version": ""}]
+
+
+class TestXbpsParser:
+    def test_state_token_stripped(self):
+        out = installed_packages._parse_packages(
+            "ii bash-5.2.015_1   GNU Bourne Again Shell\n", "xbps",
+        )
+        assert out == [{"name": "bash", "version": "5.2.015_1"}]
+
+    def test_name_with_dashes(self):
+        out = installed_packages._parse_packages(
+            "ii python3-pip-23.1_1   pip for python3\n", "xbps",
+        )
+        assert out == [{"name": "python3-pip", "version": "23.1_1"}]
+
+    def test_skips_short_lines(self):
+        stdout = "ii\nii bash-5.2.015_1  desc\n"
+        out = installed_packages._parse_packages(stdout, "xbps")
+        assert out == [{"name": "bash", "version": "5.2.015_1"}]
+
+
 # ── _build_command ──────────────────────────────────────────────────────────
 
 
@@ -63,11 +174,38 @@ class TestBuildCommand:
         assert "rpm -qa" in cmd
         assert "'htop'" in cmd
 
+    def test_apk_command_no_pattern_in_shell(self):
+        """apk не глоббит — команда листит всё, pattern в shell не уходит."""
+        cmd = installed_packages._build_command("apk", "py3*")
+        assert "apk info -v" in cmd
+        # Pattern не подставляется в shell-команду для apk.
+        assert "py3" not in cmd
+        assert "'" not in cmd
+
     def test_unknown_manager_raises(self):
         from src.clients.ssh import SshError
         with pytest.raises(SshError) as exc:
-            installed_packages._build_command("apk", "htop")
+            installed_packages._build_command("nix", "htop")
         assert exc.value.error_code == "NO_PACKAGE_MANAGER"
+
+    def test_pacman_command_no_pattern_in_shell(self):
+        """pacman не глоббит — листим всё, pattern в shell не уходит."""
+        cmd = installed_packages._build_command("pacman", "py3*")
+        assert "pacman -Q" in cmd
+        assert "py3" not in cmd
+        assert "'" not in cmd
+
+    def test_portage_command_no_pattern_in_shell(self):
+        cmd = installed_packages._build_command("portage", "bash*")
+        assert "qlist -Iv" in cmd
+        assert "bash" not in cmd
+        assert "'" not in cmd
+
+    def test_xbps_command_no_pattern_in_shell(self):
+        cmd = installed_packages._build_command("xbps", "bash*")
+        assert "xbps-query -l" in cmd
+        assert "bash" not in cmd
+        assert "'" not in cmd
 
 
 class TestPatternValidation:
@@ -224,6 +362,181 @@ class TestInstalledPackagesTask:
         assert t.status == TaskStatus.SUCCEEDED
         assert t.result["count"] == 0
         assert t.result["packages"] == []
+
+    async def test_detect_apk_when_no_dpkg_rpm(self, monkeypatch):
+        """dpkg-query и rpm нет, `command -v apk` rc=0 → detect возвращает 'apk'."""
+        fake = _FakeSshClient(host="alpine1.example")
+        fake.set_response("command -v dpkg-query", 1, "")
+        fake.set_response("command -v rpm", 1, "")
+        fake.set_response("command -v apk", 0, "/sbin/apk\n")
+        pm = await installed_packages._detect_package_manager(fake)
+        assert pm == "apk"
+
+    async def test_success_apk(self, make_task, fetch_task, captured_audit, monkeypatch):
+        """Alpine: нет dpkg/rpm, есть apk → `apk info -v`, парсинг + фильтр py3*."""
+        fake = _FakeSshClient(host="alpine1.example")
+        fake.set_response("command -v dpkg-query", 1, "")
+        fake.set_response("command -v rpm", 1, "")
+        fake.set_response("command -v apk", 0, "/sbin/apk\n")
+        fake.set_response(
+            "apk info -v", 0, "bash-5.2.15-r0\nbusybox-1.36.1-r0\npy3-pip-23.1-r0\n",
+        )
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv_alpine",
+            payload={
+                "server_id": "srv_alpine",
+                "pattern": "py3*",
+                "ssh_host": "alpine1.example",
+            },
+        )
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["package_manager"] == "apk"
+        # Фильтр py3* оставил один пакет из трёх.
+        assert t.result["count"] == 1
+        assert t.result["packages"] == [{"name": "py3-pip", "version": "23.1-r0"}]
+        # apk info -v выполнялся без pattern в shell.
+        assert any("apk info -v" in c for c in fake.commands)
+        assert not any("py3" in c for c in fake.commands)
+        # Audit-счётчик package_manager корректно несёт 'apk'.
+        details = captured_audit[0]["details"].get("result", {})
+        assert details.get("package_manager") == "apk"
+        assert "packages" not in details
+
+    async def test_detect_pacman_when_no_dpkg_rpm_apk(self):
+        fake = _FakeSshClient(host="arch1.example")
+        fake.set_response("command -v dpkg-query", 1, "")
+        fake.set_response("command -v rpm", 1, "")
+        fake.set_response("command -v apk", 1, "")
+        fake.set_response("command -v pacman", 0, "/usr/bin/pacman\n")
+        pm = await installed_packages._detect_package_manager(fake)
+        assert pm == "pacman"
+
+    async def test_detect_portage_via_qlist(self):
+        fake = _FakeSshClient(host="gentoo1.example")
+        fake.set_response("command -v dpkg-query", 1, "")
+        fake.set_response("command -v rpm", 1, "")
+        fake.set_response("command -v apk", 1, "")
+        fake.set_response("command -v pacman", 1, "")
+        fake.set_response("command -v qlist", 0, "/usr/bin/qlist\n")
+        pm = await installed_packages._detect_package_manager(fake)
+        assert pm == "portage"
+
+    async def test_detect_xbps(self):
+        fake = _FakeSshClient(host="void1.example")
+        fake.set_response("command -v dpkg-query", 1, "")
+        fake.set_response("command -v rpm", 1, "")
+        fake.set_response("command -v apk", 1, "")
+        fake.set_response("command -v pacman", 1, "")
+        fake.set_response("command -v qlist", 1, "")
+        fake.set_response("command -v xbps-query", 0, "/usr/bin/xbps-query\n")
+        pm = await installed_packages._detect_package_manager(fake)
+        assert pm == "xbps"
+
+    async def test_success_pacman(self, make_task, fetch_task, captured_audit, monkeypatch):
+        """Arch: detect pacman → `pacman -Q`, парсинг + фильтр py3*."""
+        fake = _FakeSshClient(host="arch1.example")
+        fake.set_response("command -v dpkg-query", 1, "")
+        fake.set_response("command -v rpm", 1, "")
+        fake.set_response("command -v apk", 1, "")
+        fake.set_response("command -v pacman", 0, "/usr/bin/pacman\n")
+        fake.set_response(
+            "pacman -Q", 0, "bash 5.2.015-1\npython-pip 23.1-1\nlinux 6.6.1-1\n",
+        )
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv_arch",
+            payload={
+                "server_id": "srv_arch",
+                "pattern": "python*",
+                "ssh_host": "arch1.example",
+            },
+        )
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["package_manager"] == "pacman"
+        assert t.result["count"] == 1
+        assert t.result["packages"] == [{"name": "python-pip", "version": "23.1-1"}]
+        assert any("pacman -Q" in c for c in fake.commands)
+        assert not any("python" in c for c in fake.commands)
+
+    async def test_success_portage(self, make_task, fetch_task, captured_audit, monkeypatch):
+        """Gentoo: detect portage → `qlist -Iv`, парсинг + фильтр."""
+        fake = _FakeSshClient(host="gentoo1.example")
+        fake.set_response("command -v dpkg-query", 1, "")
+        fake.set_response("command -v rpm", 1, "")
+        fake.set_response("command -v apk", 1, "")
+        fake.set_response("command -v pacman", 1, "")
+        fake.set_response("command -v qlist", 0, "/usr/bin/qlist\n")
+        fake.set_response(
+            "qlist -Iv", 0,
+            "app-shells/bash-5.2_p15\ndev-python/pip-23.1-r1\ndev-libs/libfoo-bar-1.2\n",
+        )
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv_gentoo",
+            payload={
+                "server_id": "srv_gentoo",
+                "pattern": "bash",
+                "ssh_host": "gentoo1.example",
+            },
+        )
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["package_manager"] == "portage"
+        assert t.result["count"] == 1
+        assert t.result["packages"] == [{"name": "bash", "version": "5.2_p15"}]
+        assert any("qlist -Iv" in c for c in fake.commands)
+
+    async def test_success_xbps(self, make_task, fetch_task, captured_audit, monkeypatch):
+        """Void: detect xbps → `xbps-query -l`, парсинг + фильтр."""
+        fake = _FakeSshClient(host="void1.example")
+        fake.set_response("command -v dpkg-query", 1, "")
+        fake.set_response("command -v rpm", 1, "")
+        fake.set_response("command -v apk", 1, "")
+        fake.set_response("command -v pacman", 1, "")
+        fake.set_response("command -v qlist", 1, "")
+        fake.set_response("command -v xbps-query", 0, "/usr/bin/xbps-query\n")
+        fake.set_response(
+            "xbps-query -l", 0,
+            "ii bash-5.2.015_1   GNU Bourne Again Shell\n"
+            "ii python3-pip-23.1_1   pip for python3\n",
+        )
+        _patch_build_session(monkeypatch, fake)
+
+        tid = await make_task(
+            task_kind="installed_packages.list",
+            target_server_id="srv_void",
+            payload={
+                "server_id": "srv_void",
+                "pattern": "python3*",
+                "ssh_host": "void1.example",
+            },
+        )
+        await installed_packages.installed_packages_list.original_func(tid)
+
+        t = await fetch_task(tid)
+        assert t.status == TaskStatus.SUCCEEDED
+        assert t.result["package_manager"] == "xbps"
+        assert t.result["count"] == 1
+        assert t.result["packages"] == [{"name": "python3-pip", "version": "23.1_1"}]
+        assert any("xbps-query -l" in c for c in fake.commands)
+        details = captured_audit[0]["details"].get("result", {})
+        assert details.get("package_manager") == "xbps"
+        assert "packages" not in details
 
     async def test_no_package_manager_fails_task(
         self, make_task, fetch_task, captured_audit, monkeypatch,

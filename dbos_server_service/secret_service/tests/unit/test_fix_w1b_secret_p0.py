@@ -45,6 +45,7 @@ from src.services import (
     role_acl_service,
     secrets_service,
 )
+from tests._helpers import b64
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -120,7 +121,7 @@ async def test_create_emits_failure_on_name_duplicate(adb) -> None:
         name="dup_test",
         service="jira",
         scope="personal",
-        secret="x",
+        secret_b64=b64("x"),
     )
     patcher, emitted = _capture_emits(credential_service)
     with patcher:
@@ -145,7 +146,7 @@ async def test_create_emits_failure_on_cross_dep_denied(adb) -> None:
         name="xdep_test",
         service="jira",
         scope="department",
-        secret="x",
+        secret_b64=b64("x"),
         owner_dept_id="dep_other00000000000000000001",
     )
     patcher, emitted = _capture_emits(credential_service)

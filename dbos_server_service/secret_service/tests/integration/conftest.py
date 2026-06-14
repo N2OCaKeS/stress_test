@@ -21,6 +21,7 @@ loging_service audit) полностью замоканы — для них в �
 
 from __future__ import annotations
 
+import base64
 import os
 import subprocess
 import uuid
@@ -356,7 +357,7 @@ async def cred_factory(db):
             service=service,
             scope=scope,  # type: ignore[arg-type]
             login=login,
-            secret=secret,
+            secret_b64=base64.b64encode(secret.encode()).decode(),
             owner_dept_id=owner_dept_id if scope != "personal" else None,
         )
         return await credential_service.create(db, identity, payload)

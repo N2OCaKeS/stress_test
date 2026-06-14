@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from tests.integration.conftest import auth_header
+from tests._helpers import b64
 
 BASE = "/api/secret/v1"
 INTERNAL_KEY = "internal-test-key"
@@ -58,7 +59,7 @@ async def test_request_id_propagated_in_audit_emit(
     resp = await client.post(
         f"{BASE}/credentials",
         headers={**auth_header(owner), "X-Request-ID": "req_custom_test_id"},
-        json={"name": "req_id_test", "service": "jira", "scope": "personal", "secret": "x"},
+        json={"name": "req_id_test", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
     )
     assert resp.status_code == 201
 
@@ -83,7 +84,7 @@ async def test_secret_not_leaked_to_audit_details(
             "service": "jira",
             "scope": "personal",
             "login": "secret-login-do-not-leak",
-            "secret": "supersecret-do-not-leak",
+            "secret_b64": b64("supersecret-do-not-leak"),
         },
     )
     assert resp.status_code == 201
@@ -111,7 +112,7 @@ async def test_full_workflow_covers_many_audit_actions(
     # create
     c = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "workflow_t", "service": "jira", "scope": "personal", "secret": "x"},
+        json={"name": "workflow_t", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
     )
     assert c.status_code == 201
     cred_id = c.json()["id"]
@@ -172,7 +173,7 @@ async def test_access_denied_emits_audit(client, identity_factory, mock_logging_
             "name": "denied_audit_t",
             "service": "git",
             "scope": "cross_department",
-            "secret": "x",
+            "secret_b64": b64("x"),
             "owner_dept_id": "dep_owner_dd",
         },
     )

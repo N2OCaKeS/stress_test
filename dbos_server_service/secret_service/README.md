@@ -167,9 +167,9 @@ URL prefix: `/api/secret/v1/`.
 | Метод | Path | Доступ | Описание |
 |---|---|---|---|
 | `GET` | `/credentials` | reader (per scope) | Список с пагинацией (`limit`/`cursor`). `secret_encrypted` НЕ отдаётся, только метаданные. |
-| `POST` | `/credentials` | operator+ | Создать. Body: `{name, service, scope, login?, secret, owner_dept_id?}`. Header `Idempotency-Key` поддерживается. UNIQUE `(owner, service, name)` → `409 NAME_DUPLICATE`. |
+| `POST` | `/credentials` | operator+ | Создать. Body: `{name, service, scope, login?, secret_b64, owner_dept_id?}`. `secret_b64` — base64(plaintext), клиент кодирует `base64.b64encode(plaintext)` (декод → plaintext 1..8192 chars). Header `Idempotency-Key` поддерживается. UNIQUE `(owner, service, name)` → `409 NAME_DUPLICATE`. |
 | `GET` | `/credentials/{id}` | reader (per scope) | Метаданные. Без secret. |
-| `PATCH` | `/credentials/{id}` | owner / dep_admin / admin secret_service (per scope, own dept) | Изменить `name`, `login`, `secret`. На `secret` — повторно шифрует. |
+| `PATCH` | `/credentials/{id}` | owner / dep_admin / admin secret_service (per scope, own dept) | Изменить `name`, `login`, `secret_b64`. `secret_b64` — base64(plaintext); декод → повторно шифрует. |
 | `DELETE` | `/credentials/{id}` | owner / dep_admin / admin secret_service (own dept) | Удалить. Если `scope=personal` и удаляет НЕ owner → требуется `reason` (admin override). Ответ — `200 OkResponse = { ok: true }`. |
 | `POST` | `/credentials/{id}/reveal` | reader+can_read | Возвращает `{login, secret_b64}`. Эмитит audit CRITICAL/INFO (throttle). |
 | `POST` | `/credentials/{id}/transfer` | admin secret_service своего dept'а / account_admin | `{new_owner_user_id?, new_owner_dept_id?}`. Только для blocked creds с grants. |

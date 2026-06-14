@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from tests.integration.conftest import auth_header
+from tests._helpers import b64
 
 BASE = "/api/secret/v1"
 INTERNAL_KEY = "internal-test-key"
@@ -40,7 +41,7 @@ async def test_user_deleted_cascade_mix_of_blocked_and_deleted(
     # cred_with_acl
     c1 = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "with_acl", "service": "jira", "scope": "personal", "secret": "s1"},
+        json={"name": "with_acl", "service": "jira", "scope": "personal", "secret_b64": b64("s1")},
     )
     assert c1.status_code == 201
     cred_with_acl_id = c1.json()["id"]
@@ -54,7 +55,7 @@ async def test_user_deleted_cascade_mix_of_blocked_and_deleted(
     # cred_no_acl
     c2 = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "no_acl", "service": "jira", "scope": "personal", "secret": "s2"},
+        json={"name": "no_acl", "service": "jira", "scope": "personal", "secret_b64": b64("s2")},
     )
     assert c2.status_code == 201
     cred_no_acl_id = c2.json()["id"]
@@ -114,7 +115,7 @@ async def test_dept_deleted_as_owner_blocks_creds(
             "name": "dept_cred",
             "service": "jira",
             "scope": "department",
-            "secret": "dept-secret",
+            "secret_b64": b64("dept-secret"),
             "owner_dept_id": "dep_x",
         },
     )
@@ -162,7 +163,7 @@ async def test_dept_deleted_as_recipient_cascades_grants(
             "name": "x_dep_cred",
             "service": "git",
             "scope": "cross_department",
-            "secret": "x",
+            "secret_b64": b64("x"),
             "owner_dept_id": "dep_owner",
         },
     )
@@ -219,7 +220,7 @@ async def test_dept_service_access_revoked_cascade(
             "name": "revoke_target",
             "service": "git",
             "scope": "cross_department",
-            "secret": "x",
+            "secret_b64": b64("x"),
             "owner_dept_id": "dep_owner2",
         },
     )

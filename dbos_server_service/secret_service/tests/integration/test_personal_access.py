@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from tests.integration.conftest import auth_header
+from tests._helpers import b64
 
 BASE = "/api/secret/v1"
 
@@ -33,7 +34,7 @@ async def _create_personal_for(client, identity_factory, *, user_id, dept_id):
             "service": "jira",
             "scope": "personal",
             "login": "alice",
-            "secret": "alice-secret",
+            "secret_b64": b64("alice-secret"),
         },
     )
     assert resp.status_code == 201, resp.text

@@ -23,6 +23,7 @@ from src.dependencies.db import get_db
 from src.main import app
 from src.repositories import credentials as cred_repo
 from src.services import reveal_throttle
+from tests._helpers import b64
 
 
 OWNER_ID = "usr_valid000000000000000000000001"
@@ -93,7 +94,7 @@ async def test_create_valid_from_in_future_returns_201(http_client):
         "service": "jira",
         "scope": "personal",
         "login": "alice",
-        "secret": "supersecret",
+        "secret_b64": b64("supersecret"),
         "valid_from": _iso(future),
         "valid_to": _iso(far_future),
     }
@@ -111,7 +112,7 @@ async def test_create_valid_to_in_past_rejected_422(http_client):
         "name": "already_expired",
         "service": "jira",
         "scope": "personal",
-        "secret": "s",
+        "secret_b64": b64("s"),
         "valid_to": _iso(past),
     }
     resp = await http_client.post("/api/secret/v1/credentials", json=payload)
@@ -126,7 +127,7 @@ async def test_create_valid_from_after_valid_to_rejected_422(http_client):
         "name": "inverted_window",
         "service": "jira",
         "scope": "personal",
-        "secret": "s",
+        "secret_b64": b64("s"),
         "valid_from": _iso(later),
         "valid_to": _iso(earlier),
     }
@@ -147,7 +148,7 @@ async def test_reveal_before_valid_from_returns_410_not_yet_valid(http_client):
             "name": "nyv",
             "service": "jira",
             "scope": "personal",
-            "secret": "s",
+            "secret_b64": b64("s"),
             "valid_from": _iso(future),
             "valid_to": _iso(far_future),
         },
@@ -170,7 +171,7 @@ async def test_reveal_within_validity_window_returns_200(http_client):
             "name": "in_window",
             "service": "jira",
             "scope": "personal",
-            "secret": "my-token",
+            "secret_b64": b64("my-token"),
             "valid_to": _iso(far_future),
         },
     )

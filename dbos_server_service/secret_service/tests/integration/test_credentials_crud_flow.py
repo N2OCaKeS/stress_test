@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from tests.integration.conftest import auth_header
+from tests._helpers import b64
 
 BASE = "/api/secret/v1"
 
@@ -37,7 +38,7 @@ async def test_personal_credential_full_lifecycle(
             "service": "jira",
             "scope": "personal",
             "login": "alice",
-            "secret": "alice-secret-v1",
+            "secret_b64": b64("alice-secret-v1"),
         },
     )
     assert create.status_code == 201, create.text
@@ -58,7 +59,7 @@ async def test_personal_credential_full_lifecycle(
     patch = await client.patch(
         f"{BASE}/credentials/{cred_id}",
         headers=auth_header(owner),
-        json={"login": "alice@new", "secret": "alice-secret-v2"},
+        json={"login": "alice@new", "secret_b64": b64("alice-secret-v2")},
     )
     assert patch.status_code == 200
     assert patch.json()["login"] == "alice@new"
@@ -94,7 +95,7 @@ async def test_department_credential_lifecycle_by_dep_admin(
             "name": "dept_jira_bot",
             "service": "jira",
             "scope": "department",
-            "secret": "dept-shared-secret",
+            "secret_b64": b64("dept-shared-secret"),
             "owner_dept_id": "dep_a",
         },
     )
@@ -132,7 +133,7 @@ async def test_cross_dep_creation_invisible_to_unrelated_dept_returns_404(
             "name": "shared_mirror",
             "service": "git",
             "scope": "cross_department",
-            "secret": "mirror-secret",
+            "secret_b64": b64("mirror-secret"),
             "owner_dept_id": "dep_b",
         },
     )
@@ -164,7 +165,7 @@ async def test_create_duplicate_name_409(client, identity_factory):
         "name": "duped",
         "service": "jira",
         "scope": "personal",
-        "secret": "x",
+        "secret_b64": b64("x"),
     }
     first = await client.post(f"{BASE}/credentials", headers=auth_header(owner), json=payload)
     assert first.status_code == 201

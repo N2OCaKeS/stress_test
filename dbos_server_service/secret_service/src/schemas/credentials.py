@@ -5,7 +5,26 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
+
+from src.core.b64 import decode_b64
+
+# Максимум plaintext-секрета после декода (символы). base64 раздувает на ~4/3,
+# поэтому сырое поле допускаем шире — точную границу даёт проверка plaintext.
+_SECRET_MAX_PLAINTEXT = 8192
+_SECRET_B64_MAX = 16384
+
+
+def _decode_secret_field(value: str) -> str:
+    """base64 → plaintext с проверкой длины 1..8192 по раскодированному."""
+    plaintext = decode_b64(value, "secret_b64")
+    if len(plaintext) < 1:
+        raise ValueError("secret_b64 decodes to an empty secret")
+    if len(plaintext) > _SECRET_MAX_PLAINTEXT:
+        raise ValueError(
+            f"decoded secret exceeds {_SECRET_MAX_PLAINTEXT} characters"
+        )
+    return plaintext
 
 
 def _now_utc() -> datetime:
@@ -39,7 +58,11 @@ class CredentialCreate(BaseModel):
     service: str = Field(min_length=1, max_length=64)
     scope: Literal["personal", "department", "cross_department"]
     login: str | None = Field(default=None, max_length=4096)
-    secret: str = Field(min_length=1, max_length=8192)
+    secret_b64: str = Field(
+        min_length=1,
+        max_length=_SECRET_B64_MAX,
+        description="base64(plaintext-secret); клиент кодирует base64.b64encode(plaintext). Декодированный секрет — 1..8192 символов UTF-8.",
+    )
     owner_dept_id: str | None = Field(default=None, max_length=64)
     visible_to_dept: bool = False
     # Окно валидности секрета (UTC). NULL = open-ended с этой стороны.
@@ -47,6 +70,18 @@ class CredentialCreate(BaseModel):
     # в будущем — создавать уже-expired кред'у нельзя (зачем?).
     valid_from: datetime | None = None
     valid_to: datetime | None = None
+
+    _secret: str = PrivateAttr()
+
+    @property
+    def secret(self) -> str:
+        """Раскодированный plaintext-секрет (декод происходит один раз)."""
+        return self._secret
+
+    @model_validator(mode="after")
+    def _decode_secret(self) -> "CredentialCreate":
+        self._secret = _decode_secret_field(self.secret_b64)
+        return self
 
     @model_validator(mode="after")
     def _check_owner_dept_for_dept_scope(self) -> "CredentialCreate":
@@ -81,9 +116,27 @@ class CredentialUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=64)
     login: str | None = Field(default=None, max_length=4096)
-    secret: str | None = Field(default=None, min_length=1, max_length=8192)
+    secret_b64: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=_SECRET_B64_MAX,
+        description="base64(plaintext-secret) или None (не менять). Декодированный секрет — 1..8192 символов UTF-8.",
+    )
     valid_from: datetime | None = None
     valid_to: datetime | None = None
+
+    _secret: str | None = PrivateAttr(default=None)
+
+    @property
+    def secret(self) -> str | None:
+        """Раскодированный plaintext-секрет либо None (декод один раз)."""
+        return self._secret
+
+    @model_validator(mode="after")
+    def _decode_secret(self) -> "CredentialUpdate":
+        if self.secret_b64 is not None:
+            self._secret = _decode_secret_field(self.secret_b64)
+        return self
 
     @model_validator(mode="after")
     def _check_validity_window(self) -> "CredentialUpdate":

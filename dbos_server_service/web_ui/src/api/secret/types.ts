@@ -55,7 +55,10 @@ export interface CredentialGuest {
   visible_to_dept: boolean;
 }
 
-/** `CredentialCreate` — тело `POST /credentials`. */
+/**
+ * `CredentialCreate` — что UI собирает в форме. `secret` тут plaintext;
+ * api-слой кодирует его в `secret_b64` перед отправкой (см. `credentials.ts`).
+ */
 export interface CredentialCreateRequest {
   name: string;
   service: string;
@@ -71,13 +74,29 @@ export interface CredentialCreateRequest {
   valid_to?: string | null;
 }
 
-/** `CredentialUpdate` — тело `PATCH /credentials/{id}` (partial). */
+/**
+ * `CredentialUpdate` — что UI собирает в форме (partial). `secret` plaintext;
+ * если поле отсутствует — секрет не перешифровывается.
+ */
 export interface CredentialUpdateRequest {
   name?: string | null;
   login?: string | null;
   secret?: string | null;
   valid_from?: string | null;
   valid_to?: string | null;
+}
+
+/** Wire-тело `POST /credentials` — `secret` уже закодирован в `secret_b64`. */
+export interface CredentialCreateWire
+  extends Omit<CredentialCreateRequest, "secret"> {
+  /** base64(plaintext). */
+  secret_b64: string;
+}
+
+/** Wire-тело `PATCH /credentials/{id}` — `secret` → `secret_b64` (опционально). */
+export interface CredentialUpdateWire
+  extends Omit<CredentialUpdateRequest, "secret"> {
+  secret_b64?: string;
 }
 
 /** `CredentialRevealResponse`. `secret_b64` = base64(plaintext). */

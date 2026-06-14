@@ -14,6 +14,7 @@ from __future__ import annotations
 import pytest
 
 from tests.integration.conftest import auth_header
+from tests._helpers import b64
 
 BASE = "/api/secret/v1"
 INTERNAL_KEY = "internal-test-key"
@@ -64,7 +65,7 @@ async def test_credential_blocked_410(
     )
     cred = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "block_me", "service": "jira", "scope": "personal", "secret": "x"},
+        json={"name": "block_me", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
     )
     cred_id = cred.json()["id"]
     # ACL — чтобы lifecycle блокировал, а не удалял.
@@ -109,7 +110,7 @@ async def test_name_duplicate_409(client, identity_factory):
         "name": "duped_name",
         "service": "jira",
         "scope": "personal",
-        "secret": "x",
+        "secret_b64": b64("x"),
     }
     first = await client.post(f"{BASE}/credentials", headers=auth_header(owner), json=payload)
     assert first.status_code == 201
@@ -133,7 +134,7 @@ async def test_credential_access_denied_403(client, identity_factory):
             "name": "denied_target",
             "service": "git",
             "scope": "cross_department",
-            "secret": "x",
+            "secret_b64": b64("x"),
             "owner_dept_id": "dep_owner_403",
         },
     )
@@ -166,7 +167,7 @@ async def test_admin_override_reason_required_422(client, identity_factory):
     )
     cred = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "reason_target", "service": "jira", "scope": "personal", "secret": "x"},
+        json={"name": "reason_target", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
     )
     cred_id = cred.json()["id"]
 
@@ -196,7 +197,7 @@ async def test_dept_grant_required_422(client, identity_factory):
             "name": "acl_no_grant",
             "service": "git",
             "scope": "cross_department",
-            "secret": "x",
+            "secret_b64": b64("x"),
             "owner_dept_id": "dep_owner_g",
         },
     )

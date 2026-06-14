@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from tests.integration.conftest import auth_header
+from tests._helpers import b64
 
 BASE = "/api/secret/v1"
 
@@ -36,7 +37,7 @@ async def test_cross_dep_full_flow_with_cascade_revoke(
             "name": "git_mirror",
             "service": "git",
             "scope": "cross_department",
-            "secret": "mirror-secret",
+            "secret_b64": b64("mirror-secret"),
             "owner_dept_id": "dep_b",
         },
     )

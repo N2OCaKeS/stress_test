@@ -119,7 +119,7 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 | `service` | str | да | 1..64 chars, имя внешнего сервиса (`jira`, `confluence`, ...). |
 | `scope` | enum | да | `personal` / `department` / `cross_department`. |
 | `login` | str \| null | нет | До 4096 chars; null допустим для токен-only кред. |
-| `secret` | str | да | 1..8192 chars plaintext, шифруется. |
+| `secret_b64` | str | да | base64(plaintext); клиент кодирует `base64.b64encode(plaintext)`. Декодированный plaintext — 1..8192 chars UTF-8, шифруется. Битый base64 / не-UTF-8 → `422`. |
 | `owner_dept_id` | str \| null | для `department`/`cross_department` | Игнорируется для `personal` (owner = текущий user). |
 | `valid_from` | datetime \| null | нет | UTC. Если задано — `reveal` до этого момента → `410 SECRET_NOT_YET_VALID`. |
 | `valid_to` | datetime \| null | нет | UTC. Если задано — `reveal` после → `410 SECRET_EXPIRED`. Должен быть строго в будущем; `valid_to > valid_from`. |
@@ -137,10 +137,10 @@ audit-counter best-effort. См. README §Healthcheck для семантики 
 
 ### PATCH /credentials/{cred_id}
 
-Изменить `name` / `login` / `secret`. На `secret` — повторно шифрует.
+Изменить `name` / `login` / `secret_b64`. На `secret_b64` — декод base64 → повторно шифрует.
 
 **Auth:** Bearer (owner / dep_admin / admin secret_service своего dept'а — per scope).
-**Body (`CredentialUpdate`):** все поля optional, partial update. Размеры — те же, что в create. Дополнительно `valid_from` / `valid_to` (datetime UTC) — позволяет admin'у продлить срок действия. NULL через PATCH не сбрасывает значение (если поле опущено — не трогаем); чтобы убрать окно — пересоздать креду.
+**Body (`CredentialUpdate`):** все поля optional, partial update. `secret_b64` — base64(plaintext), как в create (опущен или null → секрет не меняется). Размеры — те же, что в create. Дополнительно `valid_from` / `valid_to` (datetime UTC) — позволяет admin'у продлить срок действия. NULL через PATCH не сбрасывает значение (если поле опущено — не трогаем); чтобы убрать окно — пересоздать креду.
 **Response 200:** `CredentialRead`.
 **Error codes:** `401 UNAUTHORIZED`, `403 CREDENTIAL_ACCESS_DENIED`, `404 CREDENTIAL_NOT_FOUND`, `409 NAME_DUPLICATE`, `410 CREDENTIAL_BLOCKED`, `422 VALIDATION_ERROR`.
 

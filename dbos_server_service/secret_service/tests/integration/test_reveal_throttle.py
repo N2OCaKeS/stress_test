@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from tests.integration.conftest import auth_header
+from tests._helpers import b64
 
 BASE = "/api/secret/v1"
 
@@ -30,7 +31,7 @@ async def _make_cred(client, identity_factory) -> tuple[str, str]:
             "name": "throttle_target",
             "service": "jira",
             "scope": "personal",
-            "secret": "throttle-secret",
+            "secret_b64": b64("throttle-secret"),
         },
     )
     assert resp.status_code == 201, resp.text

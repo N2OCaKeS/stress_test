@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 
 from tests.integration.conftest import auth_header
+from tests._helpers import b64
 
 BASE = "/api/secret/v1"
 INTERNAL_KEY = "internal-test-key"
@@ -32,7 +33,7 @@ async def test_service_admin_delete_without_reason_422(
     )
     cred = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "to_be_overridden", "service": "jira", "scope": "personal", "secret": "x"},
+        json={"name": "to_be_overridden", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
     )
     cred_id = cred.json()["id"]
 
@@ -60,7 +61,7 @@ async def test_service_admin_delete_with_reason_succeeds_critical(
     )
     cred = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "override_target", "service": "jira", "scope": "personal", "secret": "x"},
+        json={"name": "override_target", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
     )
     cred_id = cred.json()["id"]
 
@@ -96,7 +97,7 @@ async def test_service_admin_can_read_blocked_for_audit(
     )
     cred = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "to_block", "service": "jira", "scope": "personal", "secret": "x"},
+        json={"name": "to_block", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
     )
     cred_id = cred.json()["id"]
     # Выдаём ACL, чтобы lifecycle блокировал, а не удалял.
@@ -150,7 +151,7 @@ async def test_service_admin_cannot_delete_cred_in_other_dept(
     )
     cred = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "off_limits", "service": "jira", "scope": "personal", "secret": "x"},
+        json={"name": "off_limits", "service": "jira", "scope": "personal", "secret_b64": b64("x")},
     )
     cred_id = cred.json()["id"]
 
@@ -200,7 +201,7 @@ async def test_account_admin_cannot_transfer_cross_dep_cred(
             "name": "transfer_target",
             "service": "git",
             "scope": "cross_department",
-            "secret": "x",
+            "secret_b64": b64("x"),
             "owner_dept_id": "dep_owner_t",
         },
     )

@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import text
 
 from tests.integration.conftest import auth_header
+from tests._helpers import b64
 
 BASE = "/api/secret/v1"
 
@@ -28,11 +29,11 @@ async def test_aad_swap_attack_decrypt_fails(
 
     c1 = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "aad_a", "service": "jira", "scope": "personal", "secret": "secret-a"},
+        json={"name": "aad_a", "service": "jira", "scope": "personal", "secret_b64": b64("secret-a")},
     )
     c2 = await client.post(
         f"{BASE}/credentials", headers=auth_header(owner),
-        json={"name": "aad_b", "service": "jira", "scope": "personal", "secret": "secret-b"},
+        json={"name": "aad_b", "service": "jira", "scope": "personal", "secret_b64": b64("secret-b")},
     )
     assert c1.status_code == 201
     assert c2.status_code == 201

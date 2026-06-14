@@ -15,13 +15,16 @@ import type {
   AdminDeleteRequest,
   Credential,
   CredentialCreateRequest,
+  CredentialCreateWire,
   CredentialGuestList,
   CredentialList,
   CredentialRevealResponse,
   CredentialUpdateRequest,
+  CredentialUpdateWire,
   OkResponse,
   TransferRequest,
 } from "@/api/secret/types";
+import { toBase64 } from "@/lib/base64";
 
 const BASE = "/secret/v1/credentials";
 
@@ -65,19 +68,31 @@ export function getCredential(id: string): Promise<Credential> {
  * `POST /credentials` — создать креду (секрет шифруется at-rest, plaintext
  * наружу не возвращается). `scope`/`secret`/`name`/`service` обязательны;
  * `owner_dept_id` обязателен для department/cross_department scope.
+ *
+ * Caller передаёт plaintext в `secret`; на провод уходит `secret_b64`.
  */
 export function createCredential(
   body: CredentialCreateRequest,
 ): Promise<Credential> {
-  return apiPost<Credential>(BASE, body);
+  const { secret, ...rest } = body;
+  const wire: CredentialCreateWire = { ...rest, secret_b64: toBase64(secret) };
+  return apiPost<Credential>(BASE, wire);
 }
 
-/** `PATCH /credentials/{id}` — partial-обновление name/login/secret/validity. */
+/**
+ * `PATCH /credentials/{id}` — partial-обновление name/login/secret/validity.
+ *
+ * `secret` (plaintext) кодируется в `secret_b64`. Если поле опущено — секрет
+ * не перешифровывается и на провод не уходит.
+ */
 export function updateCredential(
   id: string,
   body: CredentialUpdateRequest,
 ): Promise<Credential> {
-  return apiPatch<Credential>(`${BASE}/${id}`, body);
+  const { secret, ...rest } = body;
+  const wire: CredentialUpdateWire = { ...rest };
+  if (secret != null && secret !== "") wire.secret_b64 = toBase64(secret);
+  return apiPatch<Credential>(`${BASE}/${id}`, wire);
 }
 
 /**

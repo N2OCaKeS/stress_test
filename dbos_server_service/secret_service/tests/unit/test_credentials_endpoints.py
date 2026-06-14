@@ -17,6 +17,7 @@ from src.repositories import credentials as cred_repo
 from src.repositories import dept_grants as grants_repo
 from src.repositories import role_acls as acls_repo
 from src.services import reveal_throttle
+from tests._helpers import b64
 
 
 OWNER_ID = "usr_owner000000000000000000000001"
@@ -84,7 +85,7 @@ async def test_create_personal_credential_ok(http_client):
         "service": "jira",
         "scope": "personal",
         "login": "alice",
-        "secret": "supersecret-value",
+        "secret_b64": b64("supersecret-value"),
     }
     resp = await http_client.post("/api/secret/v1/credentials", json=payload)
     assert resp.status_code == 201, resp.text
@@ -104,7 +105,7 @@ async def test_create_department_credential_ok(http_client):
         "name": "dep_bot_jira",
         "service": "jira",
         "scope": "department",
-        "secret": "dept-secret",
+        "secret_b64": b64("dept-secret"),
         "owner_dept_id": OWNER_DEPT,
     }
     resp = await http_client.post("/api/secret/v1/credentials", json=payload)
@@ -119,7 +120,7 @@ async def test_create_personal_with_owner_dept_id_rejected(http_client):
         "name": "x",
         "service": "jira",
         "scope": "personal",
-        "secret": "s",
+        "secret_b64": b64("s"),
         "owner_dept_id": "dep_unknown",
     }
     resp = await http_client.post("/api/secret/v1/credentials", json=payload)
@@ -132,7 +133,7 @@ async def test_create_department_without_owner_dept_id_rejected(http_client):
         "name": "x",
         "service": "jira",
         "scope": "department",
-        "secret": "s",
+        "secret_b64": b64("s"),
     }
     resp = await http_client.post("/api/secret/v1/credentials", json=payload)
     assert resp.status_code == 422
@@ -144,7 +145,7 @@ async def test_create_duplicate_name_returns_409(http_client):
         "name": "uniq",
         "service": "jira",
         "scope": "personal",
-        "secret": "s1",
+        "secret_b64": b64("s1"),
     }
     r1 = await http_client.post("/api/secret/v1/credentials", json=payload)
     assert r1.status_code == 201
@@ -160,10 +161,57 @@ async def test_create_personal_by_bot_denied(http_client):
         "name": "x",
         "service": "jira",
         "scope": "personal",
-        "secret": "s",
+        "secret_b64": b64("s"),
     }
     resp = await http_client.post("/api/secret/v1/credentials", json=payload)
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_invalid_base64_secret_returns_422(http_client):
+    payload = {
+        "name": "badb64",
+        "service": "jira",
+        "scope": "personal",
+        "secret_b64": "not base64!!!",
+    }
+    resp = await http_client.post("/api/secret/v1/credentials", json=payload)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_secret_decoding_to_too_long_returns_422(http_client):
+    payload = {
+        "name": "toolong",
+        "service": "jira",
+        "scope": "personal",
+        "secret_b64": b64("x" * 8193),
+    }
+    resp = await http_client.post("/api/secret/v1/credentials", json=payload)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_then_reveal_roundtrip(http_client):
+    plaintext = "rt-token-значение"
+    create_resp = await http_client.post(
+        "/api/secret/v1/credentials",
+        json={
+            "name": "roundtrip",
+            "service": "jira",
+            "scope": "personal",
+            "secret_b64": b64(plaintext),
+        },
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    cred_id = create_resp.json()["id"]
+    reveal_resp = await http_client.post(
+        f"/api/secret/v1/credentials/{cred_id}/reveal"
+    )
+    assert reveal_resp.status_code == 200, reveal_resp.text
+    import base64
+    decoded = base64.b64decode(reveal_resp.json()["secret_b64"]).decode("utf-8")
+    assert decoded == plaintext
 
 
 # ── GET / LIST ─────────────────────────────────────────────────────────────
@@ -178,7 +226,7 @@ async def test_get_credential_returns_metadata(http_client):
             "service": "jira",
             "scope": "personal",
             "login": "alice",
-            "secret": "topsecret",
+            "secret_b64": b64("topsecret"),
         },
     )
     cred_id = create_resp.json()["id"]
@@ -230,7 +278,7 @@ async def test_list_credentials_returns_personal_creds(http_client):
                 "name": f"n{i}",
                 "service": "jira",
                 "scope": "personal",
-                "secret": "s",
+                "secret_b64": b64("s"),
             },
         )
     resp = await http_client.get("/api/secret/v1/credentials")
@@ -246,7 +294,7 @@ async def test_list_credentials_returns_personal_creds(http_client):
 async def test_update_credential_name(http_client):
     create_resp = await http_client.post(
         "/api/secret/v1/credentials",
-        json={"name": "old", "service": "jira", "scope": "personal", "secret": "s"},
+        json={"name": "old", "service": "jira", "scope": "personal", "secret_b64": b64("s")},
     )
     cred_id = create_resp.json()["id"]
     resp = await http_client.patch(
@@ -260,14 +308,14 @@ async def test_update_credential_name(http_client):
 async def test_update_secret_reencrypts(http_client, adb):
     create_resp = await http_client.post(
         "/api/secret/v1/credentials",
-        json={"name": "n", "service": "jira", "scope": "personal", "secret": "old"},
+        json={"name": "n", "service": "jira", "scope": "personal", "secret_b64": b64("old")},
     )
     cred_id = create_resp.json()["id"]
     cred_before = await cred_repo.get_by_id(adb, cred_id)
     old_ct = cred_before.secret_encrypted
 
     resp = await http_client.patch(
-        f"/api/secret/v1/credentials/{cred_id}", json={"secret": "newvalue"}
+        f"/api/secret/v1/credentials/{cred_id}", json={"secret_b64": b64("newvalue")}
     )
     assert resp.status_code == 200
 
@@ -288,7 +336,7 @@ async def test_update_by_non_owner_denied(http_client):
     # Создаём cred от owner_id
     create_resp = await http_client.post(
         "/api/secret/v1/credentials",
-        json={"name": "n", "service": "jira", "scope": "personal", "secret": "s"},
+        json={"name": "n", "service": "jira", "scope": "personal", "secret_b64": b64("s")},
     )
     cred_id = create_resp.json()["id"]
 
@@ -310,7 +358,7 @@ async def test_update_by_non_owner_denied(http_client):
 async def test_delete_credential_by_owner(http_client):
     create_resp = await http_client.post(
         "/api/secret/v1/credentials",
-        json={"name": "n", "service": "jira", "scope": "personal", "secret": "s"},
+        json={"name": "n", "service": "jira", "scope": "personal", "secret_b64": b64("s")},
     )
     cred_id = create_resp.json()["id"]
     resp = await http_client.delete(f"/api/secret/v1/credentials/{cred_id}")
@@ -322,7 +370,7 @@ async def test_delete_credential_by_owner(http_client):
 async def test_admin_override_delete_requires_reason(http_client):
     create_resp = await http_client.post(
         "/api/secret/v1/credentials",
-        json={"name": "n", "service": "jira", "scope": "personal", "secret": "s"},
+        json={"name": "n", "service": "jira", "scope": "personal", "secret_b64": b64("s")},
     )
     cred_id = create_resp.json()["id"]
 
@@ -343,7 +391,7 @@ async def test_admin_override_delete_requires_reason(http_client):
 async def test_admin_override_delete_with_reason_ok(http_client):
     create_resp = await http_client.post(
         "/api/secret/v1/credentials",
-        json={"name": "n", "service": "jira", "scope": "personal", "secret": "s"},
+        json={"name": "n", "service": "jira", "scope": "personal", "secret_b64": b64("s")},
     )
     cred_id = create_resp.json()["id"]
 
@@ -378,7 +426,7 @@ async def test_reveal_returns_b64(http_client):
             "service": "jira",
             "scope": "personal",
             "login": "alice",
-            "secret": "my-token",
+            "secret_b64": b64("my-token"),
         },
     )
     cred_id = create_resp.json()["id"]
@@ -422,7 +470,7 @@ async def test_reveal_not_found(http_client):
 async def test_reveal_by_non_owner_denied(http_client):
     create_resp = await http_client.post(
         "/api/secret/v1/credentials",
-        json={"name": "n", "service": "jira", "scope": "personal", "secret": "s"},
+        json={"name": "n", "service": "jira", "scope": "personal", "secret_b64": b64("s")},
     )
     cred_id = create_resp.json()["id"]
     _set_identity(_identity(user_id="usr_other00000000000000000000001", roles=["reader"]))

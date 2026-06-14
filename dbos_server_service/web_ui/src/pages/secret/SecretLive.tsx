@@ -29,6 +29,7 @@ import {
 import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
+import { fromBase64 } from "@/lib/base64";
 import { formatMsk } from "@/lib/datetime";
 import { useLabelMaps } from "@/lib/labels";
 import { useQuery } from "@/api/auth/useQuery";
@@ -519,7 +520,7 @@ function DetailPane({
       // secret_b64 — base64(plaintext); декодируем для показа.
       let plain = res.secret_b64;
       try {
-        plain = atob(res.secret_b64);
+        plain = fromBase64(res.secret_b64);
       } catch {
         // если не валидный base64 — показываем как есть
       }

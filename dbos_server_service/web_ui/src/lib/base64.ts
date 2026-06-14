@@ -11,3 +11,17 @@ export function toBase64(s: string): string {
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin);
 }
+
+/**
+ * Парный к `toBase64` UTF-8-safe декодер для reveal-показа секретов.
+ *
+ * Голый `atob` отдаёт строку из byte-значений, и не-ASCII (кириллица, emoji)
+ * рассыпается в мусор. Поэтому сначала собираем байты по char-кодам, а потом
+ * собираем обратно UTF-8 через `TextDecoder`.
+ */
+export function fromBase64(b64: string): string {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}

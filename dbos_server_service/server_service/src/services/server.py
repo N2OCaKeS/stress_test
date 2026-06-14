@@ -154,7 +154,7 @@ async def _insert_ipmi(
     """
     controller_id = ipmi_controller_id()
     encrypted = secrets_service.encrypt(
-        spec.password,
+        spec.password(),
         aad=secrets_service.aad_for_ipmi_credential(controller_id),
     )
     return await ipmi_repo.create(db, {

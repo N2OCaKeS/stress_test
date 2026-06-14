@@ -1,10 +1,11 @@
 """Pydantic-схемы для эндпоинтов /server-accounts.
 
 Аккаунт может быть привязан сразу к нескольким серверам (`server_ids`).
-Пароль — общий на все привязанные серверы. На write принимаем `password`
-опционально (если не задан — генерим серверной стороной). В GET-карточке
-`password_b64` отдаётся только держателю action `view_password`; для
-остальных поле остаётся `None`.
+Пароль — общий на все привязанные серверы. На write принимаем `password_b64`
+опционально (если не задан — генерим серверной стороной) — клиент кодирует
+plaintext через `base64.b64encode`, симметрично с reveal-картой, где пароль
+отдаётся в `password_b64`. В GET-карточке `password_b64` отдаётся только
+держателю action `view_password`; для остальных поле остаётся `None`.
 """
 
 import re
@@ -12,6 +13,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.core.b64 import decode_b64
 from src.core.password_policy import validate_password
 
 # POSIX group name: начинается с lowercase / underscore, дальше цифры / `-`,
@@ -57,13 +59,14 @@ class ServerAccountCreate(BaseModel):
             "в audit details и в `chpasswd` payload."
         ),
     )
-    password: str | None = Field(
+    password_b64: str | None = Field(
         default=None,
         max_length=512,
         description=(
-            "Plaintext пароля. Если не передан — сервер сгенерирует "
-            "`secrets.token_urlsafe(32)`. При ручном вводе действует "
-            "политика: минимум 8 символов, буквы и цифры."
+            "Пароль в base64 (`base64.b64encode(plaintext)`). Если не передан "
+            "— сервер сгенерирует `secrets.token_urlsafe(32)`. Декодируется на "
+            "приёме; к раскодированному plaintext применяется политика: "
+            "минимум 8 символов, буквы и цифры. Битый base64 → 422."
         ),
     )
     has_sudo: bool = Field(
@@ -101,17 +104,29 @@ class ServerAccountCreate(BaseModel):
                 out.append(sid)
         return out
 
-    @field_validator("password")
+    @field_validator("password_b64")
     @classmethod
-    def _check_password_policy(cls, value: str | None) -> str | None:
+    def _check_password_b64(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return validate_password(value)
+        # Политика проверяется по РАСКОДИРОВАННОМУ паролю, не по base64-строке.
+        validate_password(decode_b64(value, "password_b64"))
+        return value
 
     @field_validator("unix_groups")
     @classmethod
     def _check_unix_groups(cls, value: list[str]) -> list[str]:
         return _validate_unix_groups(value)
+
+    def password(self) -> str | None:
+        """Раскодированный plaintext пароля (или `None`, если не передан).
+
+        Валидность base64 и политика уже проверены валидатором — здесь только
+        повторный декод для сервис-слоя.
+        """
+        if self.password_b64 is None:
+            return None
+        return decode_b64(self.password_b64, "password_b64")
 
 
 class ServerAccountUpdate(BaseModel):
@@ -217,28 +232,38 @@ class ServerAccountResponse(BaseModel):
 class ServerAccountRotateRequest(BaseModel):
     """Тело POST /server-accounts/{id}/rotate_password.
 
-    `password` опционален: если передан — проходит политику (минимум 8
-    символов, буквы и цифры) и используется как новый пароль; если нет —
+    `password_b64` опционален: если передан — `base64.b64encode(plaintext)`,
+    декодируется на приёме, к plaintext применяется политика (минимум 8
+    символов, буквы и цифры) и он используется как новый пароль; если нет —
     сервер генерирует `secrets.token_urlsafe(32)`. Plaintext в ответ не
     возвращается ни в одном случае.
     """
 
-    password: str | None = Field(
+    password_b64: str | None = Field(
         default=None,
         max_length=512,
         description=(
-            "Plaintext нового пароля. Если пуст — сервер сгенерирует "
-            "случайный. При ручном вводе действует политика: минимум 8 "
-            "символов, буквы и цифры."
+            "Новый пароль в base64 (`base64.b64encode(plaintext)`). Если пуст "
+            "— сервер сгенерирует случайный. Декодируется на приёме; к "
+            "раскодированному plaintext применяется политика: минимум 8 "
+            "символов, буквы и цифры. Битый base64 → 422."
         ),
     )
 
-    @field_validator("password")
+    @field_validator("password_b64")
     @classmethod
-    def _check_password_policy(cls, value: str | None) -> str | None:
+    def _check_password_b64(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return validate_password(value)
+        # Политика — по раскодированному plaintext, не по base64-строке.
+        validate_password(decode_b64(value, "password_b64"))
+        return value
+
+    def password(self) -> str | None:
+        """Раскодированный plaintext нового пароля (или `None`)."""
+        if self.password_b64 is None:
+            return None
+        return decode_b64(self.password_b64, "password_b64")
 
 
 class ServerAccountRotateResponse(BaseModel):

@@ -50,10 +50,10 @@ import {
   registerIpmi,
   rotateIpmi,
   updateIpmi,
+  type IpmiRegisterInput,
 } from "@/api/server/ipmi";
 import type {
   IpmiController,
-  IpmiCreateRequest,
   IpmiCredentials,
   IpmiKind,
   IpmiUpdateRequest,
@@ -258,11 +258,12 @@ function RegisterPane({
     if (submitting) return;
     setErr(null);
     const endpoint = defaultEndpointFor(kind, host.trim(), port.trim());
-    // IpmiCreateRequest несёт только kind/endpoint_url/username/password.
+    // Форма несёт только kind/endpoint_url/username/password (plaintext);
+    // base64-кодирование в password_b64 делает wrapper registerIpmi.
     // TLS-verify в схеме контроллера нет: worker пробует схему и проверку
     // сертификата на каждом вызове (https-verify → https-no-verify → http →
     // ipmitool) и не кэширует выбор, поэтому отдельного поля для него нет.
-    const body: IpmiCreateRequest = {
+    const body: IpmiRegisterInput = {
       kind,
       endpoint_url: endpoint,
       username: username.trim(),

@@ -233,7 +233,7 @@ Errors: `INVALID_CURSOR` (400), `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (4
 
 ### `POST /server-accounts`
 
-Auth: Bearer + `(server_account, *, create)` (+ `grant_sudo` при `has_sudo=true`). Body: логин, `server_ids` (≥1), опциональный пароль (иначе `secrets.token_urlsafe(32)`), sudo/групп/shell/home_dir.
+Auth: Bearer + `(server_account, *, create)` (+ `grant_sudo` при `has_sudo=true`). Body: логин, `server_ids` (≥1), опциональный `password_b64` (`base64.b64encode(plaintext)`, иначе `secrets.token_urlsafe(32)`; политика проверяется по декодированному plaintext), sudo/групп/shell/home_dir.
 
 `Idempotency-Key` НЕ читается — owner-decision.
 
@@ -271,7 +271,7 @@ Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404).
 
 ### `POST /server-accounts/{account_id}/rotate_password`
 
-Auth: Bearer + `(server_account, *, rotate_password)`. Body: опц. `password` (иначе `secrets.token_urlsafe(32)`). Меняет только ciphertext в БД, без SSH-apply. Plaintext НЕ возвращается. CRITICAL audit.
+Auth: Bearer + `(server_account, *, rotate_password)`. Body: опц. `password_b64` (`base64.b64encode(plaintext)`, иначе `secrets.token_urlsafe(32)`; политика по декодированному plaintext). Меняет только ciphertext в БД, без SSH-apply. Plaintext НЕ возвращается. CRITICAL audit.
 
 Errors: `PERMISSION_DENIED` (403), `ACCOUNT_NOT_FOUND` (404), `WEAK_PASSWORD` (422), `RATE_LIMIT_EXCEEDED` (429).
 
@@ -315,7 +315,7 @@ Errors: `INVALID_CURSOR` (400), `PERMISSION_DENIED` (403).
 
 ### `POST /servers/{server_id}/ipmi`
 
-Auth: Bearer + `(ipmi_controller, *, create)`. Body: `IpmiControllerCreate` (kind, endpoint_url, username, password). Пароль шифруется через `secrets_service.encrypt()`. UNIQUE(server_id) — 1:1.
+Auth: Bearer + `(ipmi_controller, *, create)`. Body: `IpmiControllerCreate` (kind, endpoint_url, username, `password_b64` = `base64.b64encode(plaintext)`). Пароль декодируется, проходит политику по plaintext и шифруется через `secrets_service.encrypt()`. UNIQUE(server_id) — 1:1.
 
 Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `IPMI_DUPLICATE` (409).
 

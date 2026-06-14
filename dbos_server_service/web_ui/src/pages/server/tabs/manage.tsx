@@ -40,6 +40,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { apiErrMsg } from "@/api/client";
 import { formatMskShort } from "@/lib/datetime";
 import { isDepAdmin } from "@/lib/rbac";
+import { toBase64 } from "@/lib/base64";
 import {
   clearBusy,
   deleteServer,
@@ -75,14 +76,6 @@ interface Props {
   server?: Server;
   onServerUpdated?: (next: Server) => void;
   onDeleted?: () => void;
-}
-
-function utf8ToB64(s: string): string {
-  // unicode-safe base64 для bootstrap-кред (на бэке symmetric base64-decoded).
-  const bytes = new TextEncoder().encode(s);
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin);
 }
 
 function isDepAdminOfServer(
@@ -272,8 +265,8 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
             taskOutcome.reset();
             const res = await run("prepare", () =>
               prepareServer(view.id, {
-                username_b64: utf8ToB64(username),
-                password_b64: utf8ToB64(password),
+                username_b64: toBase64(username),
+                password_b64: toBase64(password),
               }),
             );
             setCredsModalOpen(false);

@@ -150,7 +150,7 @@ async def create_controller(
 
     controller_id = new_id()
     encrypted = secrets_service.encrypt(
-        payload.password,
+        payload.password(),
         aad=secrets_service.aad_for_ipmi_credential(controller_id),
     )
     data = {

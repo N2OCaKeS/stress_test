@@ -75,12 +75,15 @@ export interface DiskResponse {
   updated_at: Iso8601;
 }
 
-/** IPMI-блок, вкладываемый в `ServerCreateRequest.ipmi`. */
+/**
+ * IPMI-блок, вкладываемый в `ServerCreateRequest.ipmi`. `password_b64` —
+ * base64(plaintext); бэкенд декодирует и шифрует at-rest.
+ */
 export interface ServerIpmiCreate {
   kind: IpmiKind;
   endpoint_url: string;
   username: string;
-  password: string;
+  password_b64: string;
 }
 
 /** Карточка сервера (ответ GET/POST/PATCH /servers). */
@@ -226,14 +229,15 @@ export interface IpmiController {
 /**
  * Тело POST /servers/{server_id}/ipmi — регистрация BMC.
  *
- * `password` — plaintext, шифруется на бэке через `secrets_service.encrypt()`
- * до записи в БД. Действует политика: минимум 8 символов, буквы и цифры.
+ * `password_b64` — base64(plaintext); бэкенд декодирует и шифрует через
+ * `secrets_service.encrypt()` до записи в БД. Действует политика на plaintext:
+ * минимум 8 символов, буквы и цифры.
  */
 export interface IpmiCreateRequest {
   kind: IpmiKind;
   endpoint_url: string;
   username: string;
-  password: string;
+  password_b64: string;
 }
 
 /**
@@ -316,8 +320,11 @@ export interface ServerAccount {
 export interface ServerAccountCreateRequest {
   server_ids: string[];
   login: string;
-  /** Если не задан — backend сгенерирует `secrets.token_urlsafe(32)`. */
-  password?: string | null;
+  /**
+   * base64(plaintext). Если не задан — backend сгенерирует
+   * `secrets.token_urlsafe(32)`.
+   */
+  password_b64?: string | null;
   has_sudo?: boolean;
   unix_groups?: string[];
   linked_user_id?: string | null;

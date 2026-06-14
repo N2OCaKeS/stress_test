@@ -10,6 +10,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.core.b64 import decode_b64
 from src.core.constants import IpmiKind
 from src.core.password_policy import validate_password
 from src.utils.url_security import validate_safe_endpoint_url
@@ -27,24 +28,31 @@ class IpmiControllerCreate(BaseModel):
         ..., min_length=1, max_length=128,
         description="Логин IPMI/iDRAC/iLO-аккаунта.",
     )
-    password: str = Field(
+    password_b64: str = Field(
         ..., max_length=512,
         description=(
-            "Plaintext пароля. Шифруется через `secrets_service.encrypt()` ДО "
-            "записи в БД, в ответе не возвращается. Действует политика: "
-            "минимум 8 символов, буквы и цифры."
+            "Пароль BMC в base64 (`base64.b64encode(plaintext)`). Декодируется "
+            "на приёме; к plaintext применяется политика (минимум 8 символов, "
+            "буквы и цифры), затем он шифруется через `secrets_service.encrypt()` "
+            "ДО записи в БД и в ответе не возвращается. Битый base64 → 422."
         ),
     )
 
-    @field_validator("password")
+    @field_validator("password_b64")
     @classmethod
-    def _check_password_policy(cls, value: str) -> str:
-        return validate_password(value)
+    def _check_password_b64(cls, value: str) -> str:
+        # Политика — по раскодированному plaintext, не по base64-строке.
+        validate_password(decode_b64(value, "password_b64"))
+        return value
 
     @field_validator("endpoint_url")
     @classmethod
     def _check_endpoint_url(cls, value: str) -> str:
         return validate_safe_endpoint_url(value, field_name="endpoint_url")
+
+    def password(self) -> str:
+        """Раскодированный plaintext BMC-пароля (валидность уже проверена)."""
+        return decode_b64(self.password_b64, "password_b64")
 
 
 class IpmiControllerUpdate(BaseModel):
@@ -113,27 +121,30 @@ class IpmiControllerResponse(BaseModel):
 class IpmiCredentialsRotateRequest(BaseModel):
     """Тело POST /servers/{server_id}/ipmi/credentials/rotate.
 
-    `password` опционален: если не передан — server_service сгенерирует
-    новый секрет (`secrets.token_urlsafe(32)`) и сохранит. Plaintext в ответ
-    не возвращается ни в одном случае.
+    Endpoint снят (410 GONE) — body больше нигде не декодируется и не
+    применяется, схема оставлена ради OpenAPI-описания снятого маршрута.
+    `password_b64` опционален: формат — `base64.b64encode(plaintext)`,
+    симметрично остальным write-входам.
     """
 
-    password: str | None = Field(
+    password_b64: str | None = Field(
         default=None, max_length=512,
         description=(
-            "Plaintext нового пароля (например, callback от worker'а после "
-            "успешного применения через Redfish/IPMI-tool). Если пуст — "
-            "сервер сгенерирует случайный. При ручном вводе действует "
-            "политика: минимум 8 символов, буквы и цифры."
+            "Новый пароль в base64 (`base64.b64encode(plaintext)`). Если пуст "
+            "— сервер сгенерировал бы случайный. Декодируется на приёме; к "
+            "раскодированному plaintext применяется политика: минимум 8 "
+            "символов, буквы и цифры. Битый base64 → 422."
         ),
     )
 
-    @field_validator("password")
+    @field_validator("password_b64")
     @classmethod
-    def _check_password_policy(cls, value: str | None) -> str | None:
+    def _check_password_b64(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return validate_password(value)
+        # Политика — по раскодированному plaintext, не по base64-строке.
+        validate_password(decode_b64(value, "password_b64"))
+        return value
 
 
 class IpmiCredentialsRotateResponse(BaseModel):

@@ -66,10 +66,11 @@ def _to_response(obj: ServerAccount, password_b64: str | None = None) -> ServerA
     description=(
         "Заводит OS-аккаунт и привязывает его к списку серверов `server_ids` "
         "(≥1, все в одном department'е). Пароль общий на все серверы — либо "
-        "передаётся в body, либо генерируется сервером "
-        "(`secrets.token_urlsafe(32)`). В любом случае шифруется через "
-        "`secrets_service.encrypt()` и в ответ не возвращается. `has_sudo=True` "
-        "требует action `grant_sudo`."
+        "передаётся в body как `password_b64` (`base64.b64encode(plaintext)`), "
+        "либо генерируется сервером (`secrets.token_urlsafe(32)`). Если "
+        "передан — декодируется и проходит политику по plaintext; в любом "
+        "случае шифруется через `secrets_service.encrypt()` и в ответ не "
+        "возвращается. `has_sudo=True` требует action `grant_sudo`."
     ),
     responses={
         201: {"description": "Аккаунт создан."},
@@ -309,8 +310,9 @@ async def delete_account(
     response_model=ServerAccountRotateResponse,
     summary="Ротация общего пароля (user-initiated, без SSH-apply)",
     description=(
-        "Принимает опциональный `password` в body. Если передан — проходит "
-        "политику (минимум 8 символов, буквы и цифры) и сохраняется; если "
+        "Принимает опциональный `password_b64` (`base64.b64encode(plaintext)`) "
+        "в body. Если передан — декодируется, проходит политику по plaintext "
+        "(минимум 8 символов, буквы и цифры) и сохраняется; если "
         "нет — генерит новый через `secrets.token_urlsafe(32)`. Меняет только "
         "общий ciphertext в БД (без apply'я на серверы). Apply на конкретный "
         "сервер или на все привязанные — через worker-dispatch `/rotate`. "
@@ -333,7 +335,7 @@ async def rotate_password(
     db: AsyncSession = Depends(get_db),
 ) -> ServerAccountRotateResponse:
     """Rotate-эндпоинт. Доступ: `(server_account, *, rotate_password)`. Аудит — CRITICAL."""
-    new_password = body.password if body is not None else None
+    new_password = body.password() if body is not None else None
     obj = await svc.rotate_password(db, identity, account_id, new_password)
     return ServerAccountRotateResponse(
         id=obj.id,

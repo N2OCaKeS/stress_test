@@ -1,34 +1,15 @@
 """Pydantic-схемы запроса/ответа для эндпоинтов /servers."""
 
-import base64
-import binascii
 from datetime import datetime
 from ipaddress import IPv4Address, IPv6Address
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from src.core.b64 import decode_b64 as _decode_b64
 from src.core.password_policy import validate_strong_password
 from src.schemas.disk import DiskResponse, DiskSpec
 from src.schemas.ipmi_controller import IpmiControllerCreate
 from src.utils.url_security import validate_safe_hostname
-
-
-def _decode_b64(value: str, field_name: str) -> str:
-    """Декодировать base64-строку в UTF-8. Битый вход → ValueError (→ 422).
-
-    Симметрия с reveal-картой аккаунта/IPMI, где plaintext отдаётся в
-    `password_b64` через `base64.b64encode`. Здесь обратное направление:
-    клиент шлёт креды в base64, мы декодируем на стороне server_service и
-    прокидываем plaintext воркеру через internal-канал.
-    """
-    try:
-        raw = base64.b64decode(value, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise ValueError(f"{field_name} is not valid base64") from exc
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ValueError(f"{field_name} does not decode to UTF-8") from exc
 
 
 class ServerIpmiCreate(IpmiControllerCreate):

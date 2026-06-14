@@ -34,7 +34,6 @@ import * as accountsApi from "@/api/server/accounts";
 import type {
   Server,
   ServerAccount,
-  ServerAccountCreateRequest,
   ServerAccountUpdateRequest,
 } from "@/api/server/types";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
@@ -795,7 +794,7 @@ function AccountCreateForm({
     setErr(null);
     setPending(true);
     try {
-      const body: ServerAccountCreateRequest = {
+      const body: accountsApi.ServerAccountCreateInput = {
         server_ids: [serverId],
         login: loginValue,
         password: password.trim() || null,

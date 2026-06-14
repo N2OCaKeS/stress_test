@@ -17,7 +17,13 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Any
+
+
+def b64(plaintext: str) -> str:
+    """`base64.b64encode(plaintext)` — write-эндпоинты принимают пароли так."""
+    return base64.b64encode(plaintext.encode("utf-8")).decode("ascii")
 
 
 def auth_hdr(token: str, dept: str | None = None) -> dict[str, str]:

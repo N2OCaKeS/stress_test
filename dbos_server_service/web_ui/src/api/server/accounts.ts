@@ -18,6 +18,7 @@ import type {
   ServerAccountCreateRequest,
   ServerAccountUpdateRequest,
 } from "@/api/server/types";
+import { toBase64 } from "@/lib/base64";
 
 const BASE = "/server/v1";
 
@@ -70,10 +71,25 @@ export function listAccounts(
   });
 }
 
+/**
+ * Вход `createAccount` с plaintext-паролем. Кодирование в `password_b64`
+ * делает сам wrapper — формы передают сюда сырой пароль.
+ */
+export type ServerAccountCreateInput = Omit<
+  ServerAccountCreateRequest,
+  "password_b64"
+> & {
+  /** Plaintext; пусто/`null` — backend сгенерирует пароль сам. */
+  password?: string | null;
+};
+
 /** Создать аккаунт сразу на нескольких серверах (пароль шифруется at-rest). */
 export function createAccount(
-  body: ServerAccountCreateRequest,
+  input: ServerAccountCreateInput,
 ): Promise<ServerAccount> {
+  const { password, ...rest } = input;
+  const body: ServerAccountCreateRequest = { ...rest };
+  if (password) body.password_b64 = toBase64(password);
   return apiPost<ServerAccount>(`${BASE}/server-accounts`, body);
 }
 
@@ -126,9 +142,11 @@ export function rotateAccountUserInitiated(
   accountId: string,
   body: { password?: string | null } = {},
 ): Promise<ServerAccountRotateResponse> {
+  const wire: { password_b64?: string } = {};
+  if (body.password) wire.password_b64 = toBase64(body.password);
   return apiPost<ServerAccountRotateResponse>(
     `${BASE}/server-accounts/${accountId}/rotate_password`,
-    body,
+    wire,
   );
 }
 

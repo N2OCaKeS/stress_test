@@ -430,7 +430,8 @@ async def create_account(
             )
             raise
 
-    plaintext = payload.password if payload.password is not None else _generate_password()
+    provided = payload.password()
+    plaintext = provided if provided is not None else _generate_password()
     account_id = new_id()
     encrypted = secrets_service.encrypt(
         plaintext,

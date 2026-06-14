@@ -81,10 +81,12 @@ class TestInventoryUserItemUnixGroups:
 
 class TestServerAccountUnixGroups:
     def _base_create(self, **over) -> dict:
+        import base64
+
         return {
             "server_ids": ["srv_1"],
             "login": "ops",
-            "password": "Strong1Pass",
+            "password_b64": base64.b64encode(b"Strong1Pass").decode("ascii"),
             **over,
         }
 

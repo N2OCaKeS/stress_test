@@ -27,6 +27,7 @@ import type {
   PowerStatus,
   TaskDispatchResponse,
 } from "@/api/server/types";
+import { toBase64 } from "@/lib/base64";
 
 // ---------------------------------------------------------------------------
 // Fleet-wide list: /api/server/v1/ipmi-controllers
@@ -76,14 +77,22 @@ export function listIpmiControllers(
  * Доступ: `(ipmi_controller, *, create)`. Повторная регистрация для того же
  * сервера → 409 IPMI_DUPLICATE (UNIQUE на server_id).
  */
+/**
+ * Вход `registerIpmi` с plaintext-паролем. Кодирование в `password_b64`
+ * делает сам wrapper — форма передаёт сырой пароль.
+ */
+export type IpmiRegisterInput = Omit<IpmiCreateRequest, "password_b64"> & {
+  /** Plaintext BMC-пароля. */
+  password: string;
+};
+
 export function registerIpmi(
   serverId: string,
-  body: IpmiCreateRequest,
+  input: IpmiRegisterInput,
 ): Promise<IpmiController> {
-  return apiPost<IpmiController>(
-    `/server/v1/servers/${serverId}/ipmi`,
-    body,
-  );
+  const { password, ...rest } = input;
+  const body: IpmiCreateRequest = { ...rest, password_b64: toBase64(password) };
+  return apiPost<IpmiController>(`/server/v1/servers/${serverId}/ipmi`, body);
 }
 
 /**

@@ -26,7 +26,7 @@ import pytest
 BASE = "/api/server/v1/server-accounts"
 
 
-from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr, b64  # noqa: E402
 
 
 class TestListOpenApiSchema:
@@ -108,7 +108,7 @@ class TestCreateAccount:
             json={
                 "server_ids": [srv.id],
                 "login": "root",
-                "password": "s3cret-explicit",
+                "password_b64": b64("s3cret-explicit"),
             },
         )
         assert resp.status_code == 201
@@ -119,6 +119,30 @@ class TestCreateAccount:
         assert "password" not in body
         assert "password_encrypted" not in body
         assert "s3cret-explicit" not in resp.text
+
+    async def test_create_then_reveal_round_trips_password(
+        self, client, admin_role_token_a, make_server,
+    ):
+        """password_b64 на create → reveal через GET декодится в исходный plaintext."""
+        import base64
+
+        srv = await make_server(department_id="dep_a")
+        plaintext = "round-trip-pwd-9"
+        create = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json={
+                "server_ids": [srv.id],
+                "login": "root",
+                "password_b64": b64(plaintext),
+            },
+        )
+        assert create.status_code == 201, create.text
+        account_id = create.json()["id"]
+        get = await client.get(f"{BASE}/{account_id}", headers=_hdr(admin_role_token_a))
+        assert get.status_code == 200
+        revealed = get.json()["password_b64"]
+        assert base64.b64decode(revealed).decode("utf-8") == plaintext
 
     async def test_operator_creates_with_generated_password(
         self, client, operator_token_a, make_server, db,
@@ -712,7 +736,7 @@ class TestRotatePassword:
         resp = await client.post(
             f"{BASE}/{acc.id}/rotate_password",
             headers=_hdr(operator_token_a),
-            json={"password": "manual-rotate-7"},
+            json={"password_b64": b64("manual-rotate-7")},
         )
         assert resp.status_code == 200
         assert "manual-rotate-7" not in resp.text
@@ -769,7 +793,18 @@ class TestPasswordPolicy:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_ids": [srv.id], "login": "root", "password": bad_password},
+            json={"server_ids": [srv.id], "login": "root", "password_b64": b64(bad_password)},
+        )
+        assert_error(resp, 422, "VALIDATION_ERROR")
+
+    async def test_create_rejects_broken_base64(
+        self, client, admin_token, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_token),
+            json={"server_ids": [srv.id], "login": "root", "password_b64": "!!!notb64!!!"},
         )
         assert_error(resp, 422, "VALIDATION_ERROR")
 
@@ -780,7 +815,7 @@ class TestPasswordPolicy:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_ids": [srv.id], "login": "root", "password": "valid-pass-9"},
+            json={"server_ids": [srv.id], "login": "root", "password_b64": b64("valid-pass-9")},
         )
         assert resp.status_code == 201
 
@@ -809,7 +844,19 @@ class TestPasswordPolicy:
         resp = await client.post(
             f"{BASE}/{acc.id}/rotate_password",
             headers=_hdr(operator_token_a),
-            json={"password": bad_password},
+            json={"password_b64": b64(bad_password)},
+        )
+        assert_error(resp, 422, "VALIDATION_ERROR")
+
+    async def test_rotate_rejects_broken_base64(
+        self, client, operator_token_a, make_server, make_account,
+    ):
+        srv = await make_server(department_id="dep_a")
+        acc = await make_account(server_id=srv.id)
+        resp = await client.post(
+            f"{BASE}/{acc.id}/rotate_password",
+            headers=_hdr(operator_token_a),
+            json={"password_b64": "!!!notb64!!!"},
         )
         assert_error(resp, 422, "VALIDATION_ERROR")
 
@@ -1109,7 +1156,7 @@ class TestMultiServerCreate:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_ids": [srv1.id, srv2.id], "login": "shared", "password": "shared-pwd-9"},
+            json={"server_ids": [srv1.id, srv2.id], "login": "shared", "password_b64": b64("shared-pwd-9")},
         )
         assert resp.status_code == 201
         body = resp.json()
@@ -1126,7 +1173,7 @@ class TestMultiServerCreate:
         resp = await client.post(
             BASE,
             headers=_hdr(admin_token),
-            json={"server_ids": [srv.id, srv.id], "login": "dd", "password": "valid-pass-9"},
+            json={"server_ids": [srv.id, srv.id], "login": "dd", "password_b64": b64("valid-pass-9")},
         )
         assert resp.status_code == 201
         assert resp.json()["server_ids"] == [srv.id]

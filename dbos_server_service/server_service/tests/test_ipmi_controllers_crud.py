@@ -27,7 +27,7 @@ BASE = "/api/server/v1/servers"
 LIST = "/api/server/v1/ipmi_controllers"
 
 
-from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr, b64  # noqa: E402
 
 
 # ── POST /ipmi (create) ──────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ class TestCreateController:
                 "kind": "idrac",
                 "endpoint_url": "https://idrac.example.com",
                 "username": "ipmi_admin",
-                "password": "plain-secret-pw1",
+                "password_b64": b64("plain-secret-pw1"),
             },
         )
         assert resp.status_code == 201
@@ -66,7 +66,7 @@ class TestCreateController:
                 "kind": "redfish",
                 "endpoint_url": "https://redfish.example.com",
                 "username": "u",
-                "password": "bmc-pass-1",
+                "password_b64": b64("bmc-pass-1"),
             },
         )
         assert resp.status_code == 201
@@ -85,7 +85,7 @@ class TestCreateController:
                 "kind": "ilo",
                 "endpoint_url": "https://ilo.example.com",
                 "username": "u",
-                "password": "rotated-plain-pwd-123",
+                "password_b64": b64("rotated-plain-pwd-123"),
             },
         )
         row = (
@@ -111,7 +111,7 @@ class TestCreateController:
                 "kind": "ipmi",
                 "endpoint_url": "https://x",
                 "username": "u",
-                "password": "bmc-pass-1",
+                "password_b64": b64("bmc-pass-1"),
             },
         )
         assert_error(resp, 403, "PERMISSION_DENIED")
@@ -125,7 +125,7 @@ class TestCreateController:
                 "kind": "ipmi",
                 "endpoint_url": "https://x",
                 "username": "u",
-                "password": "bmc-pass-1",
+                "password_b64": b64("bmc-pass-1"),
             },
         )
         assert_error(resp, 403, "PERMISSION_DENIED")
@@ -139,7 +139,7 @@ class TestCreateController:
                 "kind": "idrac",
                 "endpoint_url": "https://x",
                 "username": "u",
-                "password": "bmc-pass-1",
+                "password_b64": b64("bmc-pass-1"),
             },
         )
         assert_error(resp, 404, "SERVER_NOT_FOUND")
@@ -154,7 +154,7 @@ class TestCreateController:
                 "kind": "redfish",
                 "endpoint_url": "https://other.example.com",
                 "username": "another",
-                "password": "bmc-pass-1",
+                "password_b64": b64("bmc-pass-1"),
             },
         )
         assert_error(resp, 409, "IPMI_DUPLICATE")
@@ -163,7 +163,7 @@ class TestCreateController:
         srv = await make_server(department_id="dep_a")
         resp = await client.post(
             f"{BASE}/{srv.id}/ipmi",
-            json={"kind": "idrac", "endpoint_url": "https://x", "username": "u", "password": "bmc-pass-1"},
+            json={"kind": "idrac", "endpoint_url": "https://x", "username": "u", "password_b64": b64("bmc-pass-1")},
         )
         assert_error(resp, 401, "ACCESS_TOKEN_MISSING")
 
@@ -550,7 +550,7 @@ class TestPasswordPolicy:
                 "kind": "idrac",
                 "endpoint_url": "https://idrac.example.com",
                 "username": "u",
-                "password": bad_password,
+                "password_b64": b64(bad_password),
             },
         )
         assert_error(resp, 422, "VALIDATION_ERROR")
@@ -566,10 +566,55 @@ class TestPasswordPolicy:
                 "kind": "idrac",
                 "endpoint_url": "https://idrac.example.com",
                 "username": "u",
-                "password": "valid-pass-9",
+                "password_b64": b64("valid-pass-9"),
             },
         )
         assert resp.status_code == 201
+
+    @pytest.mark.parametrize(
+        "bad_b64",
+        ["!!!notb64!!!", "aGVsbG8", "z===="],
+        ids=["non_b64_chars", "bad_padding", "garbage"],
+    )
+    async def test_create_rejects_broken_base64(
+        self, client, admin_token, make_server, bad_b64,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/ipmi",
+            headers=_hdr(admin_token),
+            json={
+                "kind": "idrac",
+                "endpoint_url": "https://idrac.example.com",
+                "username": "u",
+                "password_b64": bad_b64,
+            },
+        )
+        assert_error(resp, 422, "VALIDATION_ERROR")
+
+    async def test_create_then_reveal_round_trips_password(
+        self, client, admin_role_token_a, make_server, db,
+    ):
+        """password_b64 на create → reveal через GET декодится в исходный plaintext."""
+        import base64
+
+        srv = await make_server(department_id="dep_a")
+        plaintext = "bmc-round-trip-9"
+        create = await client.post(
+            f"{BASE}/{srv.id}/ipmi",
+            headers=_hdr(admin_role_token_a),
+            json={
+                "kind": "idrac",
+                "endpoint_url": "https://idrac.example.com",
+                "username": "u",
+                "password_b64": b64(plaintext),
+            },
+        )
+        assert create.status_code == 201, create.text
+        get = await client.get(f"{BASE}/{srv.id}/ipmi", headers=_hdr(admin_role_token_a))
+        assert get.status_code == 200
+        revealed = get.json()["password_b64"]
+        assert base64.b64decode(revealed).decode("utf-8") == plaintext
 
     # Парольная политика на rotate-route больше не применяется: endpoint снят
     # (410 GONE для любого caller'а), `IpmiCredentialsRotateRequest` тут не
@@ -607,7 +652,7 @@ class TestAuditEmission:
                 "kind": "idrac",
                 "endpoint_url": "https://x",
                 "username": "u",
-                "password": "bmc-pass-1",
+                "password_b64": b64("bmc-pass-1"),
             },
         )
         assert resp.status_code == 201
@@ -634,7 +679,7 @@ class TestAuditEmission:
                 "kind": "idrac",
                 "endpoint_url": "https://x",
                 "username": "u",
-                "password": "bmc-pass-1",
+                "password_b64": b64("bmc-pass-1"),
             },
         )
         assert_error(resp, 403, "PERMISSION_DENIED")

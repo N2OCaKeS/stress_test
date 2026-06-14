@@ -17,7 +17,7 @@ import pytest
 
 from src.services import secrets_service
 
-from tests._helpers import assert_error, auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr, b64
 
 BASE = "/api/server/v1/servers"
 
@@ -38,7 +38,7 @@ def _ipmi_block(**overrides):
         "kind": "idrac",
         "endpoint_url": "https://idrac.example.com",
         "username": "ipmi_admin",
-        "password": "bmc-secret-pw1",
+        "password_b64": b64("bmc-secret-pw1"),
     }
     data.update(overrides)
     return data
@@ -71,7 +71,7 @@ class TestCreateServerWithIpmi:
         resp = await client.post(
             BASE, headers=_hdr(admin_token),
             json=_payload(hostname="ipmi-enc", ip_address="10.20.20.23",
-                          ipmi=_ipmi_block(password="super-secret-bmc-987")),
+                          ipmi=_ipmi_block(password_b64=b64("super-secret-bmc-987"))),
         )
         assert resp.status_code == 201
         srv_id = resp.json()["id"]
@@ -123,11 +123,12 @@ class TestAtomicity:
     @pytest.mark.parametrize(
         "bad_ipmi",
         [
-            {"endpoint_url": "https://x", "username": "u", "password": "p"},  # нет kind
-            {"kind": "idrac", "username": "u", "password": "p"},  # нет endpoint_url
-            {"kind": "idrac", "endpoint_url": "https://x", "password": "p"},  # нет username
-            {"kind": "idrac", "endpoint_url": "https://x", "username": "u"},  # нет password
-            {"kind": "bogus", "endpoint_url": "https://x", "username": "u", "password": "p"},  # битый kind
+            {"endpoint_url": "https://x", "username": "u", "password_b64": b64("valid-pass-9")},  # нет kind
+            {"kind": "idrac", "username": "u", "password_b64": b64("valid-pass-9")},  # нет endpoint_url
+            {"kind": "idrac", "endpoint_url": "https://x", "password_b64": b64("valid-pass-9")},  # нет username
+            {"kind": "idrac", "endpoint_url": "https://x", "username": "u"},  # нет password_b64
+            {"kind": "idrac", "endpoint_url": "https://x", "username": "u", "password_b64": "!!!notb64!!!"},  # битый base64
+            {"kind": "bogus", "endpoint_url": "https://x", "username": "u", "password_b64": b64("valid-pass-9")},  # битый kind
         ],
     )
     async def test_invalid_ipmi_block_rejects_server_and_controller(

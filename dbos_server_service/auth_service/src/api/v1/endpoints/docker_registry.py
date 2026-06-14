@@ -204,8 +204,14 @@ async def docker_token(
 
     Варианты auth (через Basic):
         * `username:password` — обычные кредлы юзера;
-        * `username:dbos_pat_…` — PAT как пароль;
-        * `botname:dbos_bot_…` — bot-токен как пароль.
+        * `botname:dbos_bot_…` — bot-токен как пароль (штатный путь для
+          docker-канала).
+
+    Штатно выписанный PAT для docker-канала непригоден: `POST /tokens`
+    требует непустой `allowed_services`, а `docker_registry` в каталоге
+    сервисов отдела отсутствует — попасть в scope ему нечем. На запрос с
+    таким PAT issuer вернёт 403 `PAT_SCOPE_DENIES_DOCKER`. Боты обходят
+    это: у них `allowed_services=[]` (нет сужения).
 
     Анонимный pull:
         Если `Authorization` не прислан и scope состоит только из

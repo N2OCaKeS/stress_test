@@ -142,8 +142,8 @@ export function ForcePasswordChangeModal() {
               <div className="text-[11px] text-dim mt-3 flex items-start gap-1">
                 <KeyRound className="w-3 h-3 mt-0.5 shrink-0" />
                 <span>
-                  После смены все активные сессии будут отозваны — кроме
-                  текущей.
+                  После смены все активные сессии будут отозваны, включая
+                  текущую. Модалка сразу переподнимет вход с новым паролем.
                 </span>
               </div>
             </div>

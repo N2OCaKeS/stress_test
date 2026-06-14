@@ -2,8 +2,11 @@
  * Thin wrappers для `server_service` `/os-versions/*` endpoints + ручной
  * `os-sync` на стороне сервера.
  *
- * Каталог OS-версий глобальный, без dept-привязки. Read-эндпоинты публичные
- * (без авторизации, лимитированы per-IP), CRUD — под action-матрицей
+ * Каталог OS-версий глобальный, без dept-привязки. Read доступен ролям с
+ * доступом к server-зоне (запрос идёт с Bearer как и везде); платформенные
+ * business-data-denied роли (account_admin / loging_admin) получат 403
+ * `PLATFORM_ADMIN_BUSINESS_DATA_DENIED`, а loging_reader без server в
+ * allowed_services — 200. CRUD — под action-матрицей
  * (`os_version, *, create|update|delete`). `osSync` живёт под `/servers/`,
  * но логически относится к каталогу — поэтому собран в одном модуле.
  *
@@ -35,7 +38,8 @@ export interface ListOsVersionsQuery {
  *
  * Backend поддерживает и cursor-режим (`cursor=true`/`after=<token>`,
  * меняется envelope), но wrapper остаётся в offset-семантике как остальные
- * list-методы раздела. Read публичный — auth не обязателен.
+ * list-методы раздела. Запрос идёт с Bearer; доступ — у ролей server-зоны,
+ * платформенным business-data-denied ролям backend вернёт 403.
  */
 export function listOsVersions(
   query: ListOsVersionsQuery = {},

@@ -51,6 +51,7 @@ export const INVENTORY_TASKS: ApiSection = {
         "404 SERVER_NOT_FOUND, 409 SERVER_DECOMMISSIONED / " +
         "TASK_IDEMPOTENT_CONFLICT, 422 ACCOUNT_REQUIRED / ACCOUNT_NOT_LINKED, " +
         "503 WORKER_UNREACHABLE.",
+      asyncTask: true,
     },
     {
       id: "users-inventory",
@@ -85,6 +86,7 @@ export const INVENTORY_TASKS: ApiSection = {
         "Reconcile с server_accounts делает server_service по callback'у " +
         "worker'а. Errors совпадают с inventory.sync (включая 422 " +
         "ACCOUNT_REQUIRED / ACCOUNT_NOT_LINKED).",
+      asyncTask: true,
     },
     {
       id: "installed-packages",
@@ -124,6 +126,7 @@ export const INVENTORY_TASKS: ApiSection = {
         "400 INVALID_PATTERN, 403 PERMISSION_DENIED, 404 SERVER_NOT_FOUND, " +
         "409 SERVER_DECOMMISSIONED / TASK_IDEMPOTENT_CONFLICT, 503 " +
         "WORKER_UNREACHABLE.",
+      asyncTask: true,
     },
     {
       id: "tasks-list",

@@ -18,7 +18,7 @@ export function FlowExample({ flow }: { flow: ApiFlow }) {
             <div className="flex-1 min-w-0 flex flex-col gap-2">
               <div className="font-medium text-sm">{step.title}</div>
               <p className="text-sm text-dim">{step.description}</p>
-              <CodeExample curl={step.curl} python={step.python} />
+              <CodeExample curl={step.curl} python={step.python} flowStep />
             </div>
           </li>
         ))}

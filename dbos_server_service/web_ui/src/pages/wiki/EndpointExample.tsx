@@ -34,7 +34,7 @@ export function EndpointExample({ example }: { example: ApiExample }) {
 
       <p className="text-sm text-dim">{example.description}</p>
 
-      <CodeExample curl={example.curl} python={example.python} />
+      <CodeExample example={example} />
 
       {example.notes && (
         <div className="text-xs text-dim border-l-2 border-token pl-3">

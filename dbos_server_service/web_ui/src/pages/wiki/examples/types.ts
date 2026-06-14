@@ -10,6 +10,9 @@ export interface ApiExample {
   curl: string;
   python: string;
   notes?: string;
+  // Endpoint отвечает 202 с {task_id} — результат забирается поллингом
+  // GET /api/server/v1/tasks/{id} до терминального статуса.
+  asyncTask?: boolean;
 }
 
 export interface ApiSection {

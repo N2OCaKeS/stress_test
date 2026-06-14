@@ -72,3 +72,12 @@ class TestListOpenApiSchema:
             "responses"
         ]["200"]["content"]
         assert "text/csv" in content
+
+    def test_export_has_no_phantom_json(self):
+        """У CSV-экспорта в 200 не должно быть фантомного `application/json`."""
+        spec = app.openapi()
+        content = spec["paths"]["/api/logging/v1/events/export"]["get"][
+            "responses"
+        ]["200"]["content"]
+        assert "application/json" not in content
+        assert set(content) == {"text/csv"}

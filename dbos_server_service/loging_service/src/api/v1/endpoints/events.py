@@ -546,6 +546,7 @@ def _csv_value(value) -> str:
 
 @router.get(
     "/export",
+    response_class=StreamingResponse,
     summary="Экспорт audit-журнала за окно в CSV",
     description=(
         "Отдаёт события аудита за окно в виде CSV-файла "

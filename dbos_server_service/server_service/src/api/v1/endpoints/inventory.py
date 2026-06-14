@@ -178,6 +178,9 @@ async def trigger_users_inventory(
             payload=payload,
             created_by=identity.user_id,
             request_id=getattr(request.state, "request_id", None),
+            # Резолвнутый аккаунт (явный или дефолтный) пишем и в колонку
+            # task-row, чтобы по строке задачи было видно учётку SSH-сессии.
+            target_resource_id=resolved_account_id,
             idempotency_key=idempotency_key,
         )
         await db.commit()

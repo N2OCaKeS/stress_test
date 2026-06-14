@@ -351,6 +351,10 @@ async def _dispatch_for_server(
             payload=payload,
             created_by=identity.user_id,
             request_id=getattr(request.state, "request_id", None),
+            # Резолвнутый аккаунт (явный или дефолтный) кладём не только в
+            # payload, но и в колонку task-row — иначе по строке задачи не
+            # видно, под какой учёткой worker реально ходил по SSH.
+            target_resource_id=resolved_account_id,
             idempotency_key=idempotency_key,
         )
         await db.commit()

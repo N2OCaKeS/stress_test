@@ -101,6 +101,8 @@ class TestDispatchSuccess:
         call = captured_dispatch[0]
         assert call["task_kind"] == "installed_packages.list"
         assert call["target_server_id"] == srv.id
+        # Дефолт-резолв аккаунта пишется не только в payload, но и в колонку.
+        assert call["target_resource_id"] == acc.id
         assert call["payload"] == {
             "server_id": srv.id,
             "host": srv.hostname,
@@ -112,6 +114,38 @@ class TestDispatchSuccess:
             "management_user": None,
             "account_id": acc.id,
         }
+
+    async def test_explicit_account_persisted_on_task_row(
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+    ):
+        """Явный account_id попадает и в payload, и в колонку task-row."""
+        srv = await make_server(department_id="dep_a")
+        primary = await make_account(server_id=srv.id, login="appuser")
+        other = await make_account(server_id=srv.id, login="otheruser")
+        resp = await client.post(
+            _url(srv.id),
+            headers=_hdr(operator_token_a),
+            params={"account_id": other.id},
+        )
+        assert resp.status_code == 202, resp.text
+        call = captured_dispatch[0]
+        assert call["target_resource_id"] == other.id
+        assert call["payload"]["account_id"] == other.id
+        assert other.id != primary.id
+
+    async def test_managed_server_leaves_account_null(
+        self, client, operator_token_a, make_server, captured_dispatch, db,
+    ):
+        """Managed-сервер ходит по ключу — аккаунта нет, колонка остаётся null."""
+        srv = await make_server(department_id="dep_a")
+        srv.is_managed = True
+        srv.management_user = "dbos"
+        await db.flush()
+        resp = await client.post(_url(srv.id), headers=_hdr(operator_token_a))
+        assert resp.status_code == 202, resp.text
+        call = captured_dispatch[0]
+        assert call["target_resource_id"] is None
+        assert "account_id" not in call["payload"]
 
     async def test_default_pattern_is_wildcard(
         self, client, operator_token_a, make_server, make_account, captured_dispatch,

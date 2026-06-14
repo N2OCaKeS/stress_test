@@ -41,6 +41,7 @@ def captured_dispatch(monkeypatch):
             "task_kind": task_kind,
             "target_server_id": target_server_id,
             "payload": payload,
+            "target_resource_id": target_resource_id,
             "idempotency_key": idempotency_key,
         })
         new_id = f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
@@ -95,6 +96,8 @@ class TestUsersInventoryTrigger:
         assert body["status"] == "queued"
         assert len(captured_dispatch) == 1
         assert captured_dispatch[0]["task_kind"] == "users.inventory"
+        # Дефолт-резолв аккаунта пишется не только в payload, но и в колонку.
+        assert captured_dispatch[0]["target_resource_id"] == acc.id
         assert captured_dispatch[0]["payload"] == {
             "server_id": srv.id,
             "target_department_id": "dep_a",
@@ -104,6 +107,23 @@ class TestUsersInventoryTrigger:
             "management_user": None,
             "account_id": acc.id,
         }
+
+    async def test_explicit_account_persisted_on_task_row(
+        self, client, operator_token_a, make_server, make_account, captured_dispatch,
+    ):
+        """Явный account_id попадает и в payload, и в колонку task-row."""
+        srv = await make_server(department_id="dep_a")
+        primary = await make_account(server_id=srv.id, login="appuser")
+        other = await make_account(server_id=srv.id, login="otheruser")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/users/inventory?account_id={other.id}",
+            headers=_hdr(operator_token_a),
+        )
+        assert resp.status_code == 202, resp.text
+        call = captured_dispatch[0]
+        assert call["target_resource_id"] == other.id
+        assert call["payload"]["account_id"] == other.id
+        assert other.id != primary.id
 
     async def test_managed_server_propagates_session_hints(
         self, client, operator_token_a, make_server, captured_dispatch, db,
@@ -116,9 +136,12 @@ class TestUsersInventoryTrigger:
             f"{BASE}/{srv.id}/users/inventory", headers=_hdr(operator_token_a),
         )
         assert resp.status_code == 202, resp.text
-        payload = captured_dispatch[0]["payload"]
+        call = captured_dispatch[0]
+        payload = call["payload"]
         assert payload["is_managed"] is True
         assert payload["management_user"] == "dbos"
+        # Managed-сервер — вход по ключу, аккаунта нет → колонка null.
+        assert call["target_resource_id"] is None
 
     async def test_dispatch_payload_includes_host_and_port(
         self, client, operator_token_a, make_server, make_account, captured_dispatch,

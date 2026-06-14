@@ -32,9 +32,9 @@ import {
   isPlatformWideAdmin,
   isSecretAdmin,
 } from "@/lib/rbac";
-import { useDeptLabel, useServiceLabel } from "@/lib/labels";
+import { useDeptLabel } from "@/lib/labels";
 import { formatMskDate, formatMskShort, mskDateOffset } from "@/lib/datetime";
-import { BotRoleAssign } from "@/pages/users/_botRoleAssign";
+import { BotRolesPanel } from "@/components/bot/BotRolesPanel";
 
 export function ServicesBots() {
   const mock = useMockMode();
@@ -189,14 +189,6 @@ function BotLiveView({
     [tokens],
   );
   const roles = rolesQ.data ?? [];
-  const allowedSet = useMemo(
-    () => new Set(bot.allowed_services),
-    [bot.allowed_services],
-  );
-  const orphanRoles = useMemo(
-    () => roles.filter((r) => !allowedSet.has(r.service_name)),
-    [roles, allowedSet],
-  );
 
   // One-time displayed token (issue / rotate) — never persists across navigation.
   const [issued, setIssued] = useState<BotTokenCreateResponse | null>(null);
@@ -652,100 +644,28 @@ function BotLiveView({
           {rolesQ.loading && <span className="text-xs text-dim">…</span>}
         </div>
 
-        {rolesQ.error && (
-          <div className="alert-danger mb-2">
-            {rolesQ.error instanceof ApiError
-              ? `${rolesQ.error.errorCode}: ${rolesQ.error.message}`
-              : rolesQ.error.message}
-          </div>
-        )}
-
-        {!rolesQ.loading && roles.length === 0 && (
-          <div className="empty-card text-sm">Роли боту не выданы.</div>
-        )}
-        {orphanRoles.length > 0 && (
-          <div className="alert-danger mb-2 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 mt-[2px]" />
-            <div className="text-sm">
-              {orphanRoles.length} назнач.{" "}
-              {orphanRoles.map((r) => r.service_name).join(", ")} вне
-              allowed_services — бот эти роли не применит. Верните сервис в
-              allowed_services или отзовите роль.
-            </div>
-          </div>
-        )}
-        {roles.length > 0 && (
-          <table className="w-full text-sm">
-            <thead className="text-left text-dim text-xs uppercase">
-              <tr>
-                <th className="pb-2 pr-3">service</th>
-                <th className="pb-2 pr-3">roles</th>
-                <th className="pb-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {roles.map((r) => {
-                const orphan = !allowedSet.has(r.service_name);
-                return (
-                <tr
-                  key={r.service_name}
-                  className="border-t border-token align-top"
-                >
-                  <td className="py-2 text-xs">
-                    <ServiceInline name={r.service_name} />
-                    {orphan && (
-                      <span className="badge badge-warn ml-1 text-[10px]">
-                        вне scope
-                      </span>
-                    )}
-                  </td>
-                  <td className="text-xs">
-                    <div className="flex flex-wrap gap-1">
-                      {r.roles.map((role) => (
-                        <span key={role} className="badge badge-accent">
-                          {role}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="text-right">
-                    <button
-                      className="btn btn-sm btn-danger"
-                      disabled={!caps.manageRoles || pending}
-                      title={caps.manageRoles ? undefined : caps.reason}
-                      onClick={() =>
-                        run(() =>
-                          botsApi.revokeBotRoles(bot.id, r.service_name),
-                        )
-                      }
-                    >
-                      revoke
-                    </button>
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-
-        {canEdit && (
-          <BotRoleAssign
-            departmentId={bot.department_id ?? null}
-            allowedServices={bot.allowed_services}
-            alreadyAssigned={new Set(roles.map((r) => r.service_name))}
-            disabled={!caps.manageRoles || pending}
-            reason={caps.manageRoles ? undefined : caps.reason}
-            onAssign={(service, list) =>
-              run(() =>
-                botsApi.assignBotRoles(bot.id, {
-                  service_name: service,
-                  roles: list,
-                }),
-              )
-            }
-          />
-        )}
+        <BotRolesPanel
+          roles={roles}
+          allowedServices={bot.allowed_services}
+          departmentId={bot.department_id ?? null}
+          loading={rolesQ.loading}
+          error={rolesQ.error}
+          canEdit={canEdit}
+          canManage={caps.manageRoles}
+          reason={caps.reason}
+          pending={pending}
+          onRevoke={(service) =>
+            run(() => botsApi.revokeBotRoles(bot.id, service))
+          }
+          onAssign={(service, list) =>
+            run(() =>
+              botsApi.assignBotRoles(bot.id, {
+                service_name: service,
+                roles: list,
+              }),
+            )
+          }
+        />
       </div>
 
       {/* ============== Danger zone ============== */}
@@ -1285,7 +1205,3 @@ function BotDeptLabel({
   return <span>{apiLabel}</span>;
 }
 
-function ServiceInline({ name }: { name: string }) {
-  const label = useServiceLabel(name);
-  return <span>{label}</span>;
-}

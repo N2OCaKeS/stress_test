@@ -172,14 +172,37 @@ class TestBotRoleAssignRequest:
 
 class TestOAuthClientCreate:
     def test_grant_types_default(self):
-        m = OAuthClientCreate(name="app", department_id="dep_a")
+        m = OAuthClientCreate(
+            name="app",
+            department_id="dep_a",
+            redirect_uris=["https://app.example.com/cb"],
+        )
         assert m.grant_types == ["authorization_code"]
 
-    def test_empty_grant_types_schema_valid(self):
-        """Schema-level — пустой grant_types допустим (см. test_bot_create_edge).
-        Фиксируем поведение."""
-        m = OAuthClientCreate(name="app", department_id="dep_a", grant_types=[])
-        assert m.grant_types == []
+    def test_empty_grant_types_rejected(self):
+        """Пустой grant_types бесполезен — схема отбивает явный `[]`."""
+        with pytest.raises(ValidationError):
+            OAuthClientCreate(name="app", department_id="dep_a", grant_types=[])
+
+    def test_authorization_code_without_redirect_rejected(self):
+        """authorization_code-flow требует redirect_uri — без него отказ."""
+        with pytest.raises(ValidationError):
+            OAuthClientCreate(
+                name="app",
+                department_id="dep_a",
+                grant_types=["authorization_code"],
+                redirect_uris=[],
+            )
+
+    def test_client_credentials_without_redirect_ok(self):
+        """client_credentials не требует redirect_uri — остаётся валидным."""
+        m = OAuthClientCreate(
+            name="app",
+            department_id="dep_a",
+            grant_types=["client_credentials"],
+            redirect_uris=[],
+        )
+        assert m.grant_types == ["client_credentials"]
 
 
 class TestOAuthTokenRequest:

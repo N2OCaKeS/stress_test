@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
 
@@ -107,6 +107,27 @@ class OAuthClientCreate(BaseModel):
         атакующего раньше проходил pydantic как есть.
         """
         return [_validate_redirect_uri(u) for u in value]
+
+    @model_validator(mode="after")
+    def _validate_grant_consistency(self) -> "OAuthClientCreate":
+        """Кросс-полевые инварианты конфигурации клиента.
+
+        Пустой `grant_types` (явный `[]`) создаёт бесполезного клиента — ни
+        один flow для него не доступен. authorization_code без redirect_uris
+        тоже мёртв: некуда вернуть код, /authorize отобьёт REDIRECT_URI_MISMATCH.
+        Раньше эти случаи проходили схему и отсекались только в UI.
+        """
+        if not self.grant_types:
+            raise PydanticCustomError(
+                "grant_types_empty",
+                "grant_types must not be empty",
+            )
+        if "authorization_code" in self.grant_types and not self.redirect_uris:
+            raise PydanticCustomError(
+                "redirect_uris_required",
+                "redirect_uris required for authorization_code grant",
+            )
+        return self
 
 
 class OAuthClientResponse(BaseModel):

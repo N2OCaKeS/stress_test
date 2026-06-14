@@ -3,8 +3,7 @@
 * Бот не должен получать роли в сервисе, который деактивирован на уровне
   `PlatformService.is_active=False`, даже если у департамента всё ещё есть
   активная запись в `department_service_access`.
-* OAuth2 клиент с `grant_types=[]` — текущая реализация не валидирует пустой
-  список (фиксируем как известный пробел/баг).
+* OAuth2 клиент с `grant_types=[]` — схема отбивает пустой список (422).
 """
 
 from sqlalchemy import update
@@ -67,10 +66,9 @@ class TestBotInactiveService:
 # ── create_client: empty grant_types ─────────────────────────────────────────
 
 class TestOAuthClientEmptyGrantTypes:
-    async def test_empty_grant_types_currently_allowed(self, client, admin_token, dept_a):
-        """Текущая реализация принимает `grant_types=[]` без явной валидации.
-        Тест фиксирует поведение — если добавится `min_length=1` в схеме,
-        здесь должен быть 422 и тест надо обновить."""
+    async def test_empty_grant_types_rejected(self, client, admin_token, dept_a):
+        """Клиент с пустыми grant_types бесполезен — ни authorize, ни
+        client_credentials не пройдут. Схема отбивает явный `[]` как 422."""
         resp = await client.post(
             CLIENTS_URL,
             headers={"Authorization": f"Bearer {admin_token}"},
@@ -82,9 +80,8 @@ class TestOAuthClientEmptyGrantTypes:
                 "grant_types": [],
             },
         )
-        assert resp.status_code == 201
-        # Однако клиент с пустыми grant_types бесполезен — ни authorize,
-        # ни client_credentials не пройдут (см. тесты в test_clients.py).
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error_code"] == "VALIDATION_ERROR"
 
     async def test_invalid_grant_type_rejected_by_schema(self, client, admin_token, dept_a):
         """Контракт: схема ограничивает grant_types литералами

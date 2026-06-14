@@ -68,6 +68,66 @@ async def test_nonexistent_dept_returns_404(client, admin_token):
     assert resp.status_code == 404
 
 
+async def test_empty_grant_types_returns_422(client, admin_token, dept_a):
+    """Явный пустой grant_types — бесполезный клиент, схема отбивает."""
+    resp = await client.post(
+        CLIENTS_URL,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "department_id": dept_a.id,
+            "name": "empty_grants_app",
+            "grant_types": [],
+            "redirect_uris": [],
+            "allowed_scopes": [],
+        },
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error_code"] == "VALIDATION_ERROR"
+
+
+async def test_authorization_code_without_redirect_returns_422(client, admin_token, dept_a):
+    """authorization_code-flow требует redirect_uri — без него отказ."""
+    resp = await client.post(
+        CLIENTS_URL,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "department_id": dept_a.id,
+            "name": "no_redirect_app",
+            "grant_types": ["authorization_code"],
+            "redirect_uris": [],
+            "allowed_scopes": [],
+        },
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error_code"] == "VALIDATION_ERROR"
+
+
+async def test_authorization_code_with_redirect_returns_201(client, admin_token, dept_a):
+    """Happy-path authorization_code: redirect_uri задан — создаётся."""
+    resp = await _create_client(
+        client, admin_token, dept_a.id, name="authcode_ok_app",
+        grant_types=["authorization_code"],
+        redirect_uris=["https://app.example.com/callback"],
+    )
+    assert resp.status_code == 201, resp.text
+
+
+async def test_client_credentials_without_redirect_returns_201(client, admin_token, dept_a):
+    """Happy-path client_credentials: redirect_uri не нужен — создаётся."""
+    resp = await client.post(
+        CLIENTS_URL,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "department_id": dept_a.id,
+            "name": "cc_no_redirect_app",
+            "grant_types": ["client_credentials"],
+            "redirect_uris": [],
+            "allowed_scopes": [],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+
 # ── List clients ──────────────────────────────────────────────────────────────
 
 async def test_admin_lists_clients_by_department(client, admin_token, dept_a, dept_b):

@@ -10,15 +10,18 @@ import {
   SERVER_FLOWS,
   SECRET_SECTIONS,
   SECRET_FLOWS,
+  LOGING_SECTIONS,
+  LOGING_FLOWS,
 } from "./examples";
 import type { ApiSection, ApiFlow } from "./examples";
 
-type ServiceKey = "auth" | "server" | "secret";
+type ServiceKey = "auth" | "server" | "secret" | "loging";
 
 const SERVICE_TABS: { key: ServiceKey; label: string }[] = [
   { key: "auth", label: "auth_service" },
   { key: "server", label: "server_service" },
   { key: "secret", label: "secret_service" },
+  { key: "loging", label: "loging_service" },
 ];
 
 const SERVICE_DATA: Record<
@@ -28,6 +31,7 @@ const SERVICE_DATA: Record<
   auth: { sections: AUTH_SECTIONS, flows: AUTH_FLOWS },
   server: { sections: SERVER_SECTIONS, flows: SERVER_FLOWS },
   secret: { sections: SECRET_SECTIONS, flows: SECRET_FLOWS },
+  loging: { sections: LOGING_SECTIONS, flows: LOGING_FLOWS },
 };
 
 function ServiceContent({

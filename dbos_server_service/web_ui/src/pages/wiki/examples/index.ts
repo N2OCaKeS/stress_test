@@ -19,6 +19,11 @@ import { ROLE_ACL } from "./secret/03_role_acl";
 import { DEPT_GRANT } from "./secret/04_dept_grant";
 import { INTERNAL } from "./secret/05_internal";
 import { SECRET_FLOWS as SECRET_FLOWS_DATA } from "./secret/flows";
+import { EVENTS } from "./loging/01_events";
+import { EXPORT } from "./loging/02_export";
+import { RULES_RETENTION } from "./loging/03_rules_retention";
+import { SERVICES_LOG } from "./loging/04_services";
+import { LOGING_FLOWS as LOGING_FLOWS_DATA } from "./loging/flows";
 
 export const AUTH_SECTIONS: ApiSection[] = [
   BASICS,
@@ -51,5 +56,14 @@ export const SECRET_SECTIONS: ApiSection[] = [
 ];
 
 export const SECRET_FLOWS: ApiFlow[] = SECRET_FLOWS_DATA;
+
+export const LOGING_SECTIONS: ApiSection[] = [
+  EVENTS,
+  EXPORT,
+  RULES_RETENTION,
+  SERVICES_LOG,
+];
+
+export const LOGING_FLOWS: ApiFlow[] = LOGING_FLOWS_DATA;
 
 export type { ApiSection, ApiFlow } from "./types";

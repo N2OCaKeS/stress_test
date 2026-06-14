@@ -21,6 +21,7 @@ import { listAccounts } from "@/api/server/accounts";
 import { useQuery } from "@/api/auth/useQuery";
 import { usePersona } from "@/contexts/PersonaContext";
 import { apiErrMsg } from "@/api/client";
+import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 import type {
   CursorPaginatedResponse,
   OffsetPaginatedResponse,
@@ -31,43 +32,6 @@ import type {
 interface Props {
   serverId: string;
   server?: Server;
-}
-
-/**
- * Аккаунты, которые юзеру разрешено читать (= можно открыть SSH-сессию).
- *
- * RBAC в server_service action-based; чтобы не дёргать `/permissions` на
- * каждый аккаунт, мы делаем грубый, но честный клиент-side фильтр поверх
- * текущей persona — он отражает ту же логику, что и backend для action
- * `view` (и его деривата для консоли):
- *
- *   - `server.admin` — все аккаунты;
- *   - `dep_admin` своего dept'а — все аккаунты из его dept'а;
- *   - regular user с `server.operator`/`server.reader` — только аккаунты
- *     его dept'а (cross-dep шаринг через `DeptGrant` пока в UI не виден,
- *     backend сам отрежет при попытке открыть сессию).
- *
- * account_admin / logging_admin сюда не попадают — server_service закрыт для
- * них целиком, страница /server для этих ролей не рендерится.
- *
- * Источник истины при реальной попытке подключения — backend (он сделает
- * полную проверку и вернёт 403, если grant'а нет). Этот фильтр — для UX,
- * чтобы юзер не видел в picker'е заведомо недоступные строки.
- */
-function filterAccessible(
-  accounts: ServerAccount[],
-  persona: ReturnType<typeof usePersona>["persona"],
-): ServerAccount[] {
-  if (persona.service_roles.server === "admin") return accounts;
-  if (
-    persona.platform_role === "dep_admin" ||
-    persona.service_roles.server === "operator" ||
-    persona.service_roles.server === "reader"
-  ) {
-    if (!persona.dept_id) return [];
-    return accounts.filter((a) => a.department_id === persona.dept_id);
-  }
-  return [];
 }
 
 export function ConsoleTab({ serverId, server }: Props) {
@@ -86,7 +50,7 @@ export function ConsoleTab({ serverId, server }: Props) {
   }, [accountsQ.data]);
 
   const accessible = useMemo(
-    () => filterAccessible(accounts, persona),
+    () => filterAccessibleAccounts(accounts, persona),
     [accounts, persona],
   );
 

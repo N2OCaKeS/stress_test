@@ -69,6 +69,9 @@ const WorkerDlq = lazy(() =>
 const Patterns = lazy(() =>
   import("@/pages/patterns/Patterns").then((m) => ({ default: m.Patterns }))
 );
+const WikiExamples = lazy(() =>
+  import("@/pages/wiki/WikiExamples").then((m) => ({ default: m.WikiExamples }))
+);
 
 function RouteFallback() {
   return (
@@ -216,6 +219,14 @@ export function App() {
               }
             />
             <Route path="/patterns" element={<Patterns />} />
+            <Route
+              path="/wiki"
+              element={
+                <RouteGuard>
+                  <WikiExamples />
+                </RouteGuard>
+              }
+            />
             <Route path="/security" element={<Navigate to="/admin" replace />} />
             <Route
               path="/security/tokens"

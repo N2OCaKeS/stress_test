@@ -6,6 +6,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ShieldCheck,
+  BookOpen,
 } from "lucide-react";
 import { useAuthOptional } from "@/contexts/AuthContext";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -188,6 +189,16 @@ export function AdminOnlyPanel({ width, collapsed, onToggleCollapsed }: AdminOnl
       </nav>
 
       <div className="mt-auto shrink-0 flex flex-col">
+        <div className="p-2 border-t border-token">
+          <Link
+            to="/wiki"
+            title={collapsed ? "Wiki — примеры API" : undefined}
+            className={`chip ${isActive("/wiki") ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
+          >
+            <BookOpen className="w-5 h-5 text-accent shrink-0" />
+            {!collapsed && <div className="flex-1 text-sm">Wiki</div>}
+          </Link>
+        </div>
         <div className="p-2 border-t border-token flex flex-col gap-2">
           <Link
             to="/me"

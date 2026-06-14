@@ -18,6 +18,7 @@ import {
   UserCog,
   PanelLeftClose,
   PanelLeftOpen,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -165,6 +166,14 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
         >
           <Home className="w-5 h-5 text-accent shrink-0" />
           {!collapsed && <div className="flex-1 text-sm">Главная</div>}
+        </Link>
+        <Link
+          to="/wiki"
+          title={collapsed ? "Wiki — примеры API" : undefined}
+          className={`chip ${isActive("/wiki") ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
+        >
+          <BookOpen className="w-5 h-5 text-accent shrink-0" />
+          {!collapsed && <div className="flex-1 text-sm">Wiki</div>}
         </Link>
       </nav>
 

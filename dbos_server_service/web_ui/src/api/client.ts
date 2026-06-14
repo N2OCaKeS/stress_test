@@ -219,23 +219,55 @@ function parseRetryAfter(
  */
 let refreshInFlight: Promise<boolean> | null = null;
 
+// Бэкофф при 429 на /refresh. Per-IP rate-limit бьёт по серии быстрых
+// hard-reload'ов — это не провал авторизации, поэтому короткий повтор вместо
+// немедленного sign-out. Бюджет держим маленьким, чтобы не зависнуть на
+// bootstrap'е, если бэк реально лежит под лимитом.
+const REFRESH_MAX_RETRIES = 2;
+const REFRESH_BACKOFF_CAP_MS = 3000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Из `Retry-After` (секунды) считаем паузу, но не больше потолка; если заголовка
+// нет — экспоненциальный дефолт по номеру попытки, тоже под cap'ом.
+function refreshBackoffMs(retryAfterSeconds: number | undefined, attempt: number): number {
+  if (retryAfterSeconds !== undefined && retryAfterSeconds >= 0) {
+    return Math.min(retryAfterSeconds * 1000, REFRESH_BACKOFF_CAP_MS);
+  }
+  const fallback = 500 * 2 ** attempt;
+  return Math.min(fallback, REFRESH_BACKOFF_CAP_MS);
+}
+
 async function performRefresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
     try {
-      const res = await request<RefreshResponse>({
-        path: "/auth/v1/refresh",
-        method: "POST",
-        body: {},
-        auth: false,
-        skipAuthRetry: true,
-        skipSignOut: true,
-      });
-      setAccessToken(res.access_token);
-      return true;
-    } catch {
-      return false;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const res = await request<RefreshResponse>({
+            path: "/auth/v1/refresh",
+            method: "POST",
+            body: {},
+            auth: false,
+            skipAuthRetry: true,
+            skipSignOut: true,
+          });
+          setAccessToken(res.access_token);
+          return true;
+        } catch (e) {
+          // 429 — только лимит частоты, не отзыв сессии. Ждём Retry-After и
+          // повторяем, пока не кончится бюджет попыток. 401/422 и прочие
+          // (включая benign REFRESH_TOKEN_RACE, который приходит как 401) —
+          // не retryable, валимся сразу в sign-out-ветку вызывающего.
+          const retryable =
+            e instanceof ApiError && e.status === 429 && attempt < REFRESH_MAX_RETRIES;
+          if (!retryable) return false;
+          await sleep(refreshBackoffMs(e instanceof ApiError ? e.retryAfter : undefined, attempt));
+        }
+      }
     } finally {
       refreshInFlight = null;
     }

@@ -15,7 +15,7 @@ import { AUDIT_EVENTS } from "@/mocks/log";
 import { useMockMode } from "@/api/auth/useQuery";
 
 /**
- * Port of home-logging_admin.html (carol).
+ * Logging-admin Home.
  * Audit-channel admin: live feed + rules + retention.
  */
 export function HomeLoggingAdmin() {

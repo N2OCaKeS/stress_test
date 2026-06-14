@@ -20,7 +20,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { personaDeptId } from "@/lib/rbac";
 
 /**
- * Port of service_roles-account_admin.html (bob).
+ * Account-admin service-roles screen (static; not yet wired to live data).
  * Middle: 20 roles grouped by service. Workzone: devops (custom · Ядро DBOS).
  */
 interface RoleRow {

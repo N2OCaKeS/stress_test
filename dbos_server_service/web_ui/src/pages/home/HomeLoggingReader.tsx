@@ -6,7 +6,7 @@ import { AUDIT_EVENTS } from "@/mocks/log";
 import { useMockMode } from "@/api/auth/useQuery";
 
 /**
- * Port of home-logging_reader.html (dave).
+ * Logging-reader Home.
  * Read-only audit view: feed + search, no rules / retention / export.
  */
 export function HomeLoggingReader() {

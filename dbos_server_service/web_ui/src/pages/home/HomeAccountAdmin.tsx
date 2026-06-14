@@ -23,7 +23,7 @@ import { listGroups } from "@/api/auth/groups";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 
 /**
- * Port of home-account_admin.html (bob).
+ * Account-admin Home.
  * Platform-wide view: depts, users, servers, creds aggregated.
  */
 export function HomeAccountAdmin() {

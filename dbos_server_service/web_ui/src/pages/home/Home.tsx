@@ -6,7 +6,7 @@ import { HomeLoggingReader } from "./HomeLoggingReader";
 
 /**
  * Persona-aware Home dispatcher.
- * Each platform role owns a tailored Home variant ported from mockups/home-<role>.html.
+ * Each platform role owns a tailored Home variant.
  */
 export function Home() {
   const { persona } = usePersona();

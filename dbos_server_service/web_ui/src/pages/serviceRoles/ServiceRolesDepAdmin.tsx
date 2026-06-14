@@ -6,7 +6,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { personaDeptId } from "@/lib/rbac";
 
 /**
- * Port of service_roles-dep_admin.html (alice).
+ * Dep-admin service-roles screen (static; not yet wired to live data).
  * Middle: 8 roles — system × 4 + custom × 4 (Ядро DBOS).
  * Workzone: auditor (loging_service · Ядро DBOS).
  */

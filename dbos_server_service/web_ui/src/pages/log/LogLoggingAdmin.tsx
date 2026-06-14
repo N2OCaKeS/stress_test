@@ -26,7 +26,7 @@ import {
 } from "./logShared";
 
 /**
- * Port of log-logging_admin.html (carol).
+ * Logging-admin log view.
  * Workzone shows secret.master_key_rotated CRITICAL event with admin actions.
  */
 export function LogLoggingAdmin() {

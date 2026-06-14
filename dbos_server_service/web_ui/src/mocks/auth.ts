@@ -13,7 +13,7 @@ export interface MockUser {
   email: string;
   dept_id: string | null;
   platform_role: string | null;
-  status: "active" | "blocked" | "pending";
+  status: "active" | "blocked" | "banned" | "pending";
   last_login: string;
   is_bot: boolean;
   created_by: string | null;

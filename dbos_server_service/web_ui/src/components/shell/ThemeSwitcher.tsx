@@ -3,8 +3,8 @@ import type { ThemeName } from "@/types/persona";
 
 /**
  * Native <select> for theme. Radix Select is available for richer pickers
- * but the top-bar lives in a 32px slot; a native select matches the mockup
- * exactly and adds no popover surface.
+ * but the top-bar lives in a 32px slot; a native select fits that slot and
+ * adds no popover surface.
  */
 export function ThemeSwitcher() {
   const { theme, setTheme } = useTheme();

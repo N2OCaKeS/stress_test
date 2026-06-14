@@ -64,9 +64,9 @@ import {
 } from "./_userActions";
 
 /**
- * Port of users-account_admin.html (bob).
- * Middle: users grouped by dept (платформенные + 3 депа + гости).
- * Workzone: profile of carol (selected) with identification, roles, sessions, PATs.
+ * Account-admin Users screen.
+ * Middle: users grouped by dept (платформенные + депы + гости).
+ * Workzone: selected user's profile — identification, roles, sessions, PATs.
  */
 type RowKind = "ok" | "warn" | "danger";
 

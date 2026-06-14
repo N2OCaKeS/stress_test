@@ -12,7 +12,7 @@ import { Shell } from "@/components/shell/Shell";
 import { LogMiddle } from "./LogLoggingAdmin";
 
 /**
- * Port of log-logging_reader.html (dave).
+ * Logging-reader log view.
  * Read-only banner + simplified workzone (only Export JSON action).
  */
 export function LogLoggingReader() {

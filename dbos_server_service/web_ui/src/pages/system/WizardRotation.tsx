@@ -12,8 +12,8 @@ import { Link } from "react-router-dom";
 import { ThemeSwitcher } from "@/components/shell/ThemeSwitcher";
 
 /**
- * Port of mockups/wizard-rotation.html.
- * 5-step rotation wizard, all steps visible. Step 1 done, step 2 in-progress.
+ * Master-key rotation wizard. 5 steps, all visible at once for demo
+ * (step 1 done, step 2 in-progress); not yet wired to an interactive flow.
  */
 export function WizardRotation() {
   return (

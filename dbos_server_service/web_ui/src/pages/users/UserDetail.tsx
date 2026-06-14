@@ -151,10 +151,7 @@ export function UserDetail() {
         email: u.email ?? "",
         dept_id: u.department_id,
         platform_role: u.platform_role ?? null,
-        status: normalizeUserStatus(u.status) as
-          | "active"
-          | "blocked"
-          | "pending",
+        status: normalizeUserStatus(u.status),
         last_login: u.updated_at ?? u.created_at,
         is_bot: false,
         created_by: null,

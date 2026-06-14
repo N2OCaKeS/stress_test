@@ -25,7 +25,7 @@ import { listBots } from "@/api/auth/bots";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 
 /**
- * Port of home-dep_admin.html (alice).
+ * Department-admin Home.
  * Welcome → Quick tiles → Stats → 2-column bottom row → Tip footer.
  */
 export function HomeDepAdmin() {

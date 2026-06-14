@@ -15,8 +15,8 @@ import { Link } from "react-router-dom";
 import { ThemeSwitcher } from "@/components/shell/ThemeSwitcher";
 
 /**
- * Port of mockups/wizard-create-credential.html.
- * 4-step wizard, all steps shown side-by-side for demo (step 1 active).
+ * Credential-creation wizard. 4-step layout, all steps shown side-by-side
+ * for demo (step 1 active); not yet wired to an interactive flow.
  */
 export function WizardCreateCredential() {
   return (

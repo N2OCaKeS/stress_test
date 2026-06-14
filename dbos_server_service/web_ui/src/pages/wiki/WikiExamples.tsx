@@ -3,13 +3,95 @@ import { Shell } from "@/components/shell/Shell";
 import { SnippetContext } from "./snippet";
 import { EndpointExample } from "./EndpointExample";
 import { FlowExample } from "./FlowExample";
-import { AUTH_SECTIONS, AUTH_FLOWS } from "./examples";
+import {
+  AUTH_SECTIONS,
+  AUTH_FLOWS,
+  SERVER_SECTIONS,
+  SERVER_FLOWS,
+} from "./examples";
+import type { ApiSection, ApiFlow } from "./examples";
+
+type ServiceKey = "auth" | "server";
+
+const SERVICE_TABS: { key: ServiceKey; label: string }[] = [
+  { key: "auth", label: "auth_service" },
+  { key: "server", label: "server_service" },
+];
+
+function ServiceContent({
+  service,
+  sections,
+  flows,
+}: {
+  service: ServiceKey;
+  sections: ApiSection[];
+  flows: ApiFlow[];
+}) {
+  const flowsAnchor = `flows-${service}`;
+  return (
+    <>
+      <nav className="card flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        {sections.map((s) => (
+          <a
+            key={s.id}
+            href={`#${s.id}`}
+            className="text-accent hover:underline"
+          >
+            {s.title}
+          </a>
+        ))}
+        {flows.length > 0 && (
+          <a href={`#${flowsAnchor}`} className="text-accent hover:underline">
+            Сценарии
+          </a>
+        )}
+      </nav>
+
+      {sections.map((section) => (
+        <section
+          key={section.id}
+          id={section.id}
+          className="flex flex-col gap-3 scroll-mt-16"
+        >
+          <div>
+            <h2 className="text-lg font-semibold">{section.title}</h2>
+            {section.description && (
+              <p className="text-sm text-dim">{section.description}</p>
+            )}
+          </div>
+          {section.examples.length === 0 ? (
+            <div className="text-sm text-dim italic">
+              Примеры скоро появятся.
+            </div>
+          ) : (
+            section.examples.map((ex) => (
+              <EndpointExample key={ex.id} example={ex} />
+            ))
+          )}
+        </section>
+      ))}
+
+      {flows.length > 0 && (
+        <section
+          id={flowsAnchor}
+          className="flex flex-col gap-3 scroll-mt-16"
+        >
+          <h2 className="text-lg font-semibold">Сценарии</h2>
+          {flows.map((flow) => (
+            <FlowExample key={flow.id} flow={flow} />
+          ))}
+        </section>
+      )}
+    </>
+  );
+}
 
 export function WikiExamples() {
   const [baseUrl, setBaseUrl] = useState(
     typeof window !== "undefined" ? window.location.origin : ""
   );
   const [token, setToken] = useState("");
+  const [activeService, setActiveService] = useState<ServiceKey>("auth");
 
   return (
     <Shell breadcrumb="Главная / Wiki — примеры API">
@@ -56,54 +138,34 @@ export function WikiExamples() {
               </div>
             </div>
 
-            <nav className="card flex flex-wrap gap-x-4 gap-y-1 text-sm">
-              {AUTH_SECTIONS.map((s) => (
-                <a
-                  key={s.id}
-                  href={`#${s.id}`}
-                  className="text-accent hover:underline"
+            <div className="flex gap-2">
+              {SERVICE_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={
+                    "btn text-sm " +
+                    (activeService === tab.key ? "btn-primary" : "btn-ghost")
+                  }
+                  onClick={() => setActiveService(tab.key)}
                 >
-                  {s.title}
-                </a>
+                  {tab.label}
+                </button>
               ))}
-              {AUTH_FLOWS.length > 0 && (
-                <a href="#flows" className="text-accent hover:underline">
-                  Сценарии
-                </a>
-              )}
-            </nav>
+            </div>
 
-            {AUTH_SECTIONS.map((section) => (
-              <section
-                key={section.id}
-                id={section.id}
-                className="flex flex-col gap-3 scroll-mt-16"
-              >
-                <div>
-                  <h2 className="text-lg font-semibold">{section.title}</h2>
-                  {section.description && (
-                    <p className="text-sm text-dim">{section.description}</p>
-                  )}
-                </div>
-                {section.examples.length === 0 ? (
-                  <div className="text-sm text-dim italic">
-                    Примеры скоро появятся.
-                  </div>
-                ) : (
-                  section.examples.map((ex) => (
-                    <EndpointExample key={ex.id} example={ex} />
-                  ))
-                )}
-              </section>
-            ))}
-
-            {AUTH_FLOWS.length > 0 && (
-              <section id="flows" className="flex flex-col gap-3 scroll-mt-16">
-                <h2 className="text-lg font-semibold">Сценарии</h2>
-                {AUTH_FLOWS.map((flow) => (
-                  <FlowExample key={flow.id} flow={flow} />
-                ))}
-              </section>
+            {activeService === "auth" ? (
+              <ServiceContent
+                service="auth"
+                sections={AUTH_SECTIONS}
+                flows={AUTH_FLOWS}
+              />
+            ) : (
+              <ServiceContent
+                service="server"
+                sections={SERVER_SECTIONS}
+                flows={SERVER_FLOWS}
+              />
             )}
           </div>
         </main>

@@ -26,7 +26,12 @@ class BotCreate(BaseModel):
 
 
 class BotUpdate(BaseModel):
-    """Тело `PATCH /bots/{bot_id}` — частичный апдейт."""
+    """Тело `PATCH /bots/{bot_id}` — частичный апдейт.
+
+    Активность бота меняется через `status` ("active"/"disabled"); `is_active`
+    тут отдельным полем не принимается (схема permissive — лишний ключ молча
+    игнорируется, апдейт пройдёт как no-op).
+    """
     name: str | None = None
     description: str | None = None
     status: Literal["active", "disabled"] | None = Field(

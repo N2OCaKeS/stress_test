@@ -9,7 +9,7 @@
 ## Общие правила
 
 - Все эндпоинты только по HTTPS в prod (TLS-guard middleware).
-- Access token короткоживущий (default 10 мин), refresh ротируется.
+- Access token короткоживущий (default 10 мин, `ACCESS_TOKEN_TTL_MINUTES`; в dev-стеке переопределён на 60), refresh ротируется.
 - PAT и bot-токены показываются один раз при создании, в БД — только хэш.
 - Все значимые события идут в loging_service (см. `AUDIT_EVENTS.md`).
 - Service-to-service endpoints (`/authorization/*`) закрыты `SERVICE_API_KEY` + опциональный `X-Service-Identity`.
@@ -525,6 +525,8 @@ Errors: `BOT_NOT_FOUND` (404), `BOT_ACCESS_DENIED` (403) — department_admin ч
 ### `PATCH /bots/{bot_id}`
 
 Auth: AnyAdmin. Body (опциональны): `name`, `description`, `status` ("active"|"disabled"), `allowed_services`.
+
+Активностью бота управляет только `status`: `"disabled"` — мягко отключить, `"active"` — включить обратно (производный `is_active` пишется автоматически от `status`). Поля `is_active` в теле нет — оно тихо игнорируется (схема не запрещает лишние ключи), так что `{"is_active": false}` вернёт 200 без изменений. Для деактивации/активации шли `status`.
 
 Errors: `BOT_NOT_FOUND` (404), `BOT_UPDATE_FORBIDDEN` (403) — department_admin лезет к боту чужого отдела, `SERVICE_NOT_ALLOWED_FOR_DEPARTMENT` (403) — `allowed_services` содержит сервис, к которому отдел не подключён.
 

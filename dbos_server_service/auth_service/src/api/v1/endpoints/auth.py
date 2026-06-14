@@ -215,6 +215,8 @@ async def login(
     Что делает:
         Проверяет пароль через Argon2id, выдаёт пару access JWT + refresh
         (opaque). На 5 неудачных подряд лочит аккаунт на 15 минут.
+        Access-токен живёт 10 мин по умолчанию (`ACCESS_TOKEN_TTL_MINUTES`);
+        в dev-стеке переопределён на 60 для удобства.
 
     Доступ:
         Публичный. Любой неаутентифицированный клиент.
@@ -303,7 +305,7 @@ async def refresh(
     "/logout",
     response_model=OkResponse,
     summary="Logout — отозвать refresh",
-    description="Инвалидирует переданный refresh. Access живёт до истечения TTL — короткий, ~10 мин.",
+    description="Инвалидирует переданный refresh. Access живёт до истечения TTL — короткий, 10 мин по умолчанию (в dev-стеке переопределён на 60).",
 )
 async def logout(
     body: LogoutRequest,

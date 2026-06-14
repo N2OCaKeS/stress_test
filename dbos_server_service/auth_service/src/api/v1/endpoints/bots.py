@@ -148,6 +148,11 @@ async def update_bot(
 
     Доступ:
         account_admin (любой) или department_admin (только в своём отделе).
+
+    Активность:
+        Деактивация/активация идёт через `status` ("disabled"/"active").
+        `is_active` в теле не принимается — лишний ключ молча отбрасывается,
+        запрос вернёт 200 без изменений.
     """
     return await bot_service.update_bot(
         db=db,

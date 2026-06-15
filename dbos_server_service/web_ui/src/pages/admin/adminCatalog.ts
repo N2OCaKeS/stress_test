@@ -54,6 +54,7 @@ import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
 import { ServicesWorkerInventory } from "./services/ServicesWorkerInventory";
 import { ServicesWorkerDlq } from "./services/ServicesWorkerDlq";
 import { ServicesWorkerCron } from "./services/ServicesWorkerCron";
+import { ServicesEncryptionRotation } from "./services/ServicesEncryptionRotation";
 import { ServiceRolesCard } from "./services/ServiceRolesCard";
 
 import { SecurityTokens } from "../security/SecurityTokens";
@@ -129,6 +130,16 @@ const STATIC_ITEMS: AdminItem[] = [
     group: "Безопасность",
     content: ClusterRotations,
     visibleFor: (p) => isAccountAdmin(p) || hasSecretServiceAdmin(p),
+  },
+  {
+    id: "cluster.encryption_rotation",
+    label: "Ротация ключей шифрования",
+    hint: "server · secret keystore",
+    icon: KeyRound,
+    block: "cluster",
+    group: "Безопасность",
+    content: ServicesEncryptionRotation,
+    visibleFor: (p) => isAccountAdmin(p),
   },
   {
     id: "cluster.backups",

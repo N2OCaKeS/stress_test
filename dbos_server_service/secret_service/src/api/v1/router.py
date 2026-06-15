@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from src.api.v1.endpoints.admin_encryption import router as admin_encryption_router
 from src.api.v1.endpoints.credentials import router as credentials_router
 from src.api.v1.endpoints.dept_grants import router as dept_grants_router
 from src.api.v1.endpoints.health import router as health_router
@@ -20,3 +21,6 @@ router.include_router(dept_grants_router)
 router.include_router(internal_router)
 router.include_router(internal_ops_router)
 router.include_router(secrets_migration_router)
+# Admin-эндпоинты ротации ключей шифрования для account_admin (инфраструктура,
+# не бизнес-данные). Гейт — require_account_admin на endpoint-уровне.
+router.include_router(admin_encryption_router)

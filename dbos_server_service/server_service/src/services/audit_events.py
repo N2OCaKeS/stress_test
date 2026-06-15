@@ -70,6 +70,11 @@ SERVICE_EVENTS = [
     {"action": "ops.migration_status_read", "description": "Rotation-runner прочитал /internal/migration_status (shared-secret канал); фиксируем кто и когда смотрел на legacy-residue перед drop'ом старого ключа", "default_severity": "INFO"},
     {"action": "ops.encryption_rotate", "description": "Rotation-runner ввёл новую версию мастер-ключа активной через keystore и засидил reencrypt-outbox (рантайм-ротация без простоя)", "default_severity": "CRITICAL"},
     {"action": "ops.encryption_retire", "description": "Rotation-runner убрал старую версию мастер-ключа из keystore после полной ре-шифрации (0 строк на версии)", "default_severity": "CRITICAL"},
+    # account_admin инициирует ротацию из UI (платформенный канал) — отдельные
+    # action-name'ы от ops-runner'ских, чтобы SIEM различал «человек из UI» и
+    # «автоматический s2s-runner».
+    {"action": "encryption.admin_rotate", "description": "account_admin ввёл новую версию мастер-ключа активной через UI (admin /admin/encryption/rotate); keystore-bump + reencrypt-outbox seed", "default_severity": "CRITICAL"},
+    {"action": "encryption.admin_retire", "description": "account_admin убрал старую версию мастер-ключа из keystore через UI (admin /admin/encryption/retire) после полной ре-шифрации", "default_severity": "CRITICAL"},
     # Server accounts — CRUD (user-facing)
     {"action": "server_account.create", "description": "Server account created", "default_severity": "CRITICAL"},
     {"action": "server_account.view", "description": "Server account viewed", "default_severity": "INFO"},

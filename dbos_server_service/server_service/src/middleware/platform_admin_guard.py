@@ -138,6 +138,29 @@ _DOCS_PATHS: frozenset[str] = frozenset({
 # по префиксу здесь — это именно UI-ресурсы.
 _DOCS_PREFIXES: tuple[str, ...] = ("/docs/", "/redoc/")
 
+# Инфраструктурные admin-эндпоинты ротации ключей шифрования. Это явное
+# исключение из business-data-блока: account_admin (платформенный владелец)
+# инициирует ротацию мастер-ключа из UI, а ручки не возвращают бизнес-данные
+# серверов/аккаунтов — только статус ротации и версии ключа. Сама проверка
+# роли (только account_admin) живёт в `require_account_admin` на endpoint-уровне;
+# guard лишь не отбивает запрос на middleware-слое. Префикс точный — вложенные
+# `/admin/encryption/...` пути роутятся только сюда.
+_ADMIN_ENCRYPTION_PREFIX = "/api/server/v1/admin/encryption"
+
+
+def _is_admin_encryption_path(path: str) -> bool:
+    """True для инфраструктурных ручек ротации ключа (`/admin/encryption/*`).
+
+    Эти эндпоинты доступны `account_admin`'у по дизайну (ключи шифрования —
+    не бизнес-данные). Точная проверка роли — в `require_account_admin`;
+    middleware их просто не блокирует. Матч по префиксу + границе сегмента,
+    чтобы посторонний путь с тем же началом (например
+    `/api/server/v1/admin/encryptionXYZ`) случайно не проскочил.
+    """
+    return path == _ADMIN_ENCRYPTION_PREFIX or path.startswith(
+        _ADMIN_ENCRYPTION_PREFIX + "/"
+    )
+
 
 def _is_public_path(path: str) -> bool:
     """True для путей, которые middleware пропускает без проверки токена.
@@ -156,6 +179,7 @@ def _is_public_path(path: str) -> bool:
         path in HEALTH_PATHS
         or path in _DOCS_PATHS
         or path.startswith(_DOCS_PREFIXES)
+        or _is_admin_encryption_path(path)
     )
 
 

@@ -16,6 +16,7 @@ User-facing endpoints, требующие user identity, защищены гар
 
 from fastapi import APIRouter
 
+from src.api.v1.endpoints.admin_encryption import router as admin_encryption_router
 from src.api.v1.endpoints.console import router as console_router
 from src.api.v1.endpoints.health import router as health_router
 from src.api.v1.endpoints.ipmi import list_router as ipmi_list_router
@@ -71,3 +72,6 @@ router.include_router(secrets_migration_router)
 # Ops — отдельный s2s-канал под shared-secret (X-Service-Identity), для
 # rotation_runner и подобных. Тоже скрыт из OpenAPI.
 router.include_router(ops_router)
+# Admin-эндпоинты ротации ключей шифрования для account_admin. Инфраструктура,
+# не бизнес-данные — явное исключение из platform_admin_guard business-блока.
+router.include_router(admin_encryption_router)

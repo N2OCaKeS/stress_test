@@ -1,23 +1,35 @@
 /**
- * Console-вкладка карточки сервера.
+ * Console-вкладка карточки сервера — интерактивный терминал поверх xterm.js.
  *
- * UX: picker аккаунтов, на которые у текущего юзера есть read-grant, и
- * placeholder для SSH-сессии. Backend WebSocket-эндпоинта для консоли
- * (`WS /api/server/v1/servers/{id}/console`) пока нет — терминала не рисуем,
- * показываем заметку с описанием контракта, который нужен бэку.
+ * Соединение: WebSocket на `/api/server/v1/servers/{id}/console/ws`. Токен
+ * передаётся subprotocol'ом `bearer.<token>` (см. `@/api/server/console`),
+ * потому что браузерный WS не шлёт заголовков. После connect бэк сам поднимает
+ * PTY и шлёт `ready`; ввод терминала уходит ws.send(text), вывод приходит
+ * binary-кадрами и пишется в xterm как есть.
  *
- * Когда бэкенд появится, обмен ожидается JSON-фреймами:
- *   client → server: `{type:'input', data:string}` | `{type:'resize', cols, rows}`
- *   server → client: `{type:'output', data:string}` | `{type:'info', ...}` | `{type:'error', data}`
- *
- * Терминал хочется через `xterm.js` (`@xterm/xterm` + `@xterm/addon-fit` +
- * `@xterm/addon-web-links`), но эти пакеты в `web_ui/package.json` пока не
- * подключены — поставить отдельной волной. Образец интеграции —
- * `dev_allta_app_demo:new_allta_app/frontend/src/components/ConsoleTab.tsx`.
+ * Гейтинг: вкладка показывает picker аккаунтов (как и раньше — для UX-выбора,
+ * под кем заходить), но подключение разрешено только для managed-сервера
+ * (`is_managed`), не decommissioned. Близкие причины отказа бэка маппятся на
+ * понятный баннер по close-коду.
  */
-import { useMemo, useState } from "react";
-import { AlertCircle, Lock, Terminal as TerminalIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import "@xterm/xterm/css/xterm.css";
+import {
+  AlertCircle,
+  Lock,
+  Plug,
+  PlugZap,
+  Terminal as TerminalIcon,
+} from "lucide-react";
 import { listAccounts } from "@/api/server/accounts";
+import {
+  consoleWsProtocols,
+  consoleWsUrl,
+  describeConsoleClose,
+  type ConsoleCloseInfo,
+} from "@/api/server/console";
 import { useQuery } from "@/api/auth/useQuery";
 import { usePersona } from "@/contexts/PersonaContext";
 import { apiErrMsg } from "@/api/client";
@@ -33,6 +45,8 @@ interface Props {
   serverId: string;
   server?: Server;
 }
+
+type ConnState = "idle" | "connecting" | "open" | "closed";
 
 export function ConsoleTab({ serverId, server }: Props) {
   const { persona } = usePersona();
@@ -57,6 +71,17 @@ export function ConsoleTab({ serverId, server }: Props) {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const selectedAccount =
     accessible.find((a) => a.id === selectedAccountId) ?? null;
+
+  // Подключаться можно только к управляемому (prepared) и не списанному
+  // серверу — иначе бэк закроет 4409. Гейтим заранее и подсказываем про
+  // Prepare, чтобы не ловить close-код вслепую.
+  const decommissioned = server?.status === "decommissioned";
+  const prepared = !!server?.is_managed;
+  const gateReason = decommissioned
+    ? "Сервер списан (decommissioned)."
+    : !prepared
+      ? "Сервер не подготовлен."
+      : "";
 
   return (
     <div className="p-5 flex flex-col gap-4 max-w-7xl">
@@ -129,67 +154,232 @@ export function ConsoleTab({ serverId, server }: Props) {
         </label>
       )}
 
-      <ConsolePlaceholder
-        serverId={serverId}
-        account={selectedAccount}
-        ready={accessible.length > 0}
-      />
+      {accessible.length > 0 && gateReason && (
+        <div className="alert flex items-start gap-2">
+          <Lock className="w-4 h-4 mt-0.5 text-dim" />
+          <div className="flex-1 text-xs text-dim">
+            {gateReason}{" "}
+            {!prepared && !decommissioned && (
+              <>
+                Консоль ходит по управляющему доступу — сначала выполните
+                Prepare на вкладке «Управление».
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {accessible.length > 0 && !gateReason && (
+        <ConsoleSession serverId={serverId} account={selectedAccount} />
+      )}
     </div>
   );
 }
 
+function StatusBadge({ state }: { state: ConnState }) {
+  const map: Record<ConnState, { label: string; cls: string }> = {
+    idle: { label: "Не подключено", cls: "text-dim" },
+    connecting: { label: "Подключение…", cls: "text-accent" },
+    open: { label: "Подключено", cls: "text-green-500" },
+    closed: { label: "Отключено", cls: "text-dim" },
+  };
+  const { label, cls } = map[state];
+  return <span className={`text-xs ${cls}`}>{label}</span>;
+}
+
 /**
- * Заглушка терминала.
- *
- * Backend SSH-консоль ещё не реализована: в `server_service/src/api/v1/`
- * нет WebSocket-роутов и `/servers/{id}/console`. До появления контракта
- * мы не пытаемся открыть WebSocket — иначе любой клик по «Подключиться»
- * упрётся в 404/426 и собьёт UX. Когда endpoint появится, заменим этот
- * блок на интеграцию с `xterm.js` (см. шапку файла).
+ * Живой терминал. xterm монтируется один раз в контейнер; WebSocket
+ * открывается по «Подключить» и dispose'ится по «Отключить» / unmount.
  */
-function ConsolePlaceholder({
+function ConsoleSession({
   serverId,
   account,
-  ready,
 }: {
   serverId: string;
   account: ServerAccount | null;
-  ready: boolean;
 }) {
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const inputDisposeRef = useRef<(() => void) | null>(null);
+
+  const [state, setState] = useState<ConnState>("idle");
+  const [closeInfo, setCloseInfo] = useState<ConsoleCloseInfo | null>(null);
+
+  // Монтируем терминал один раз и держим до unmount. fit на ресайз окна.
+  useEffect(() => {
+    if (!mountRef.current) return;
+    const term = new Terminal({
+      convertEol: true,
+      cursorBlink: true,
+      fontFamily:
+        "'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace",
+      fontSize: 13,
+      theme: { background: "#1e1e1e" },
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(mountRef.current);
+    try {
+      fit.fit();
+    } catch {
+      // контейнер ещё без размеров — fit'нём на первом ресайзе
+    }
+    termRef.current = term;
+    fitRef.current = fit;
+
+    const onResize = () => {
+      try {
+        fit.fit();
+      } catch {
+        // терминал мог быть уже dispose'нут
+      }
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+      inputDisposeRef.current?.();
+      inputDisposeRef.current = null;
+      wsRef.current?.close(1000, "unmount");
+      wsRef.current = null;
+      term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
+    };
+  }, []);
+
+  const disconnect = useCallback(() => {
+    inputDisposeRef.current?.();
+    inputDisposeRef.current = null;
+    const ws = wsRef.current;
+    wsRef.current = null;
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      ws.close(1000, "client_disconnect");
+    }
+    setState("closed");
+  }, []);
+
+  const connect = useCallback(() => {
+    const term = termRef.current;
+    if (!term) return;
+    // Перед новым подключением убираем прошлый сокет/подписку.
+    inputDisposeRef.current?.();
+    inputDisposeRef.current = null;
+    wsRef.current?.close(1000, "reconnect");
+    wsRef.current = null;
+
+    setCloseInfo(null);
+    setState("connecting");
+    term.clear();
+    term.writeln("Подключение к консоли…");
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(consoleWsUrl(serverId), consoleWsProtocols());
+    } catch {
+      setState("closed");
+      setCloseInfo({
+        message: "Не удалось открыть WebSocket-соединение.",
+        normal: false,
+      });
+      return;
+    }
+    ws.binaryType = "arraybuffer";
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setState("open");
+      // Ввод терминала → серверу. xterm отдаёт строку (включая управляющие
+      // последовательности), шлём как текстовый кадр.
+      const sub = term.onData((data) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(data);
+      });
+      inputDisposeRef.current = () => sub.dispose();
+      term.focus();
+    };
+
+    ws.onmessage = (ev) => {
+      const t = termRef.current;
+      if (!t) return;
+      const data = ev.data;
+      if (typeof data === "string") {
+        t.write(data);
+      } else if (data instanceof ArrayBuffer) {
+        t.write(new Uint8Array(data));
+      } else if (data instanceof Blob) {
+        data.arrayBuffer().then((buf) => {
+          termRef.current?.write(new Uint8Array(buf));
+        });
+      }
+    };
+
+    ws.onclose = (ev) => {
+      if (wsRef.current === ws) wsRef.current = null;
+      inputDisposeRef.current?.();
+      inputDisposeRef.current = null;
+      setState("closed");
+      const info = describeConsoleClose(ev.code, ev.reason);
+      setCloseInfo(info);
+      const t = termRef.current;
+      if (t) t.writeln(`\r\n\x1b[2m— ${info.message}\x1b[0m`);
+    };
+
+    ws.onerror = () => {
+      // Детали придут в onclose (код/причина); здесь только не залипнуть в
+      // «connecting», если соединение упало до open.
+      if (state === "connecting") setState("closed");
+    };
+  }, [serverId, state]);
+
+  const connected = state === "open" || state === "connecting";
+
   return (
-    <div className="surface-2 border border-token rounded p-4 text-xs text-dim flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <Lock className="w-4 h-4" />
-        <span className="text-sm">Backend SSH-консоль ещё не реализована.</span>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        {connected ? (
+          <button className="btn btn-ghost" onClick={disconnect}>
+            <PlugZap className="w-4 h-4" />
+            Отключить
+          </button>
+        ) : (
+          <button
+            className="btn btn-primary"
+            onClick={connect}
+            disabled={!account}
+            title={account ? "Открыть консольную сессию" : "Выберите аккаунт"}
+          >
+            <Plug className="w-4 h-4" />
+            Подключить
+          </button>
+        )}
+        <StatusBadge state={state} />
+        {account && (
+          <span className="text-xs text-dim mono">
+            {account.login}
+            {account.has_sudo ? " (sudo)" : ""}
+          </span>
+        )}
       </div>
-      <div>
-        Когда в <span className="mono">server_service</span> появится endpoint{" "}
-        <span className="mono">WS /api/server/v1/servers/{"{id}"}/console</span>,
-        здесь поднимется xterm.js-сессия с выбранной учёткой. Сейчас вкладка
-        отрабатывает только picker и фильтрацию по правам.
-      </div>
-      <div className="mono text-[11px]">
-        server_id = {serverId}
-        {account ? ` · account = ${account.login} (${account.id})` : ""}
-      </div>
-      <button
-        className="btn btn-primary self-start mt-1"
-        disabled={!ready || !account}
-        onClick={() => {
-          // intentional no-op: backend WS endpoint отсутствует. Когда появится,
-          // заменить на открытие WebSocket к /api/server/v1/servers/{id}/console
-          // с заголовком Authorization и query ?account_id=<...>.
-        }}
-        title={
-          !ready
-            ? "Нет доступных аккаунтов"
-            : !account
-              ? "Выберите аккаунт"
-              : "Backend пока не поддерживает консоль"
-        }
-      >
-        Подключиться
-      </button>
+
+      {closeInfo && !closeInfo.normal && (
+        <div className="alert alert-danger flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5" />
+          <div className="flex-1 text-xs">
+            <div>{closeInfo.message}</div>
+            {closeInfo.hint && (
+              <div className="text-dim mt-1">{closeInfo.hint}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div
+        ref={mountRef}
+        className="border border-token rounded"
+        style={{ height: 480, background: "#1e1e1e", padding: 8 }}
+      />
     </div>
   );
 }

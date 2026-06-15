@@ -62,6 +62,11 @@ SERVICE_EVENTS = [
     {"action": "secrets.reencrypt_process", "description": "Reencrypt-outbox batch processed (decrypt → encrypt under active key)", "default_severity": "INFO"},
     {"action": "secrets.encryption_rotate", "description": "Rotation-runner ввёл новую версию мастер-ключа активной через keystore и засидил reencrypt-outbox (рантайм-ротация без простоя)", "default_severity": "CRITICAL"},
     {"action": "secrets.encryption_retire", "description": "Rotation-runner убрал старую версию мастер-ключа из keystore после полной ре-шифрации (0 строк на версии)", "default_severity": "CRITICAL"},
+    # account_admin инициирует ротацию из UI (платформенный канал) — отдельные
+    # action-name'ы от ops-runner'ских, чтобы SIEM различал «человек из UI» и
+    # «автоматический s2s-runner».
+    {"action": "secrets.admin_encryption_rotate", "description": "account_admin ввёл новую версию мастер-ключа активной через UI (admin /admin/encryption/rotate); keystore-bump + reencrypt-outbox seed", "default_severity": "CRITICAL"},
+    {"action": "secrets.admin_encryption_retire", "description": "account_admin убрал старую версию мастер-ключа из keystore через UI (admin /admin/encryption/retire) после полной ре-шифрации", "default_severity": "CRITICAL"},
 ]
 
 # Дефолтные severity для пары (action, status). loging_service применяет это
@@ -101,6 +106,10 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("secrets.encryption_rotate", "failure"): "CRITICAL",
     ("secrets.encryption_retire", "success"): "CRITICAL",
     ("secrets.encryption_retire", "failure"): "CRITICAL",
+    ("secrets.admin_encryption_rotate", "success"): "CRITICAL",
+    ("secrets.admin_encryption_rotate", "failure"): "CRITICAL",
+    ("secrets.admin_encryption_retire", "success"): "CRITICAL",
+    ("secrets.admin_encryption_retire", "failure"): "CRITICAL",
     # Failure-ось: эскалация вверх. CRUD-операции — ERROR; высоко-чувствительные
     # (reveal / transfer / cross-dep grants) — CRITICAL; служебные — WARNING.
     ("tokens.create", "failure"): "ERROR",

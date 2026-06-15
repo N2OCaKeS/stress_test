@@ -21,7 +21,7 @@ export default defineConfig({
       "/api/auth": { target: AUTH_TARGET, changeOrigin: true },
       "/api/logging": { target: LOGGING_TARGET, changeOrigin: true },
       "/api/loging": { target: LOGGING_TARGET, changeOrigin: true },
-      "/api/server": { target: SERVER_TARGET, changeOrigin: true },
+      "/api/server": { target: SERVER_TARGET, changeOrigin: true, ws: true },
       "/api/secret": { target: SECRET_TARGET, changeOrigin: true },
     },
   },

@@ -48,7 +48,7 @@ import httpx
 from fastapi import Depends, Header, Request
 
 from src.core.config import get_settings
-from src.core.constants import SERVICE_NAME
+from src.core.constants import PlatformRole, SERVICE_NAME
 from src.core.http import bearer_header
 from src.core.exceptions import (
     AuthenticationError,
@@ -61,10 +61,12 @@ from src.services import audit_context
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "AccountAdminIdentity",
     "CurrentIdentity",
     "CurrentUserIdentity",
     "SERVICE_NAME",
     "get_current_identity",
+    "require_account_admin",
     "require_internal_caller",
     "require_user_context",
 ]
@@ -309,6 +311,66 @@ def require_user_context(
 
 
 CurrentUserIdentity = Annotated[IdentityContext, Depends(require_user_context)]
+
+
+# ── Platform admin (encryption-key rotation) ────────────────────────────────
+
+
+async def require_account_admin(request: Request) -> IdentityContext:
+    """Resolve identity и пропустить ТОЛЬКО `account_admin`.
+
+    Отдельный путь от `get_current_identity`: тот требует
+    `server_service in allowed_services`, а у платформенного `account_admin`
+    нет ни департамента, ни department-service-access — обычный business-flow
+    отбил бы его 403 SERVICE_ACCESS_DENIED. Здесь проверяем лишь active +
+    not banned + `platform_role == account_admin`.
+
+    Используется инфраструктурными admin-эндпоинтами ротации ключей шифрования
+    (`/admin/encryption/*`) — они не возвращают бизнес-данные, только статус
+    ротации и версии ключа, поэтому это явное исключение из
+    `platform_admin_guard` business-data-блока. Сам guard пропускает эти пути
+    по allowlist'у (см. `middleware/platform_admin_guard._is_admin_encryption_path`),
+    а здесь — позитивная проверка роли.
+
+    Body introspect'а переиспользуется из `request.state.introspect_body`
+    (его кладёт middleware) — без второго roundtrip'а; на запросах мимо
+    middleware зовём `_introspect` сами.
+    """
+    token = _extract_bearer(request)
+    if token is None:
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_MISSING",
+            message="Missing bearer token",
+        )
+    body = getattr(request.state, "introspect_body", None)
+    if body is None:
+        body = await _introspect(token)
+    if not body.get("active"):
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_INVALID",
+            message="Token is invalid, expired or revoked",
+        )
+    identity = _to_identity(body)
+    if identity.is_banned:
+        raise AuthenticationError(
+            error_code="USER_BANNED",
+            message="User is banned",
+        )
+    if identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
+        raise AuthorizationError(
+            error_code="ACCOUNT_ADMIN_REQUIRED",
+            message="account_admin platform role required",
+        )
+    audit_context.update_context(
+        actor_id=identity.user_id,
+        username=identity.username,
+        department_id=identity.department_id,
+        subject_type=identity.subject_type,
+    )
+    return identity
+
+
+AccountAdminIdentity = Annotated[IdentityContext, Depends(require_account_admin)]
 
 
 # ── Service-to-service (ops endpoints) ──────────────────────────────────────

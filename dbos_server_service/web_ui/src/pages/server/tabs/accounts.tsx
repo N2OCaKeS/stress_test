@@ -34,6 +34,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { fromBase64 } from "@/lib/base64";
 import { formatMskShort } from "@/lib/datetime";
+import { useUserLabel } from "@/lib/labels";
 import * as accountsApi from "@/api/server/accounts";
 import type {
   Server,
@@ -361,6 +362,9 @@ function AccountDetail({
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const linkedUserLabel = useUserLabel(account.linked_user_id);
+  const createdByLabel = useUserLabel(account.created_by);
+
   const scope = deriveScope(account);
   const prov = provisionBadge(account, serverId);
   const linked = account.server_ids.includes(serverId);
@@ -494,7 +498,7 @@ function AccountDetail({
           k="linked_user_id"
           v={
             account.linked_user_id ? (
-              <span className="mono">{account.linked_user_id}</span>
+              <span title={account.linked_user_id}>{linkedUserLabel}</span>
             ) : (
               <span className="text-dim italic">—</span>
             )
@@ -519,7 +523,7 @@ function AccountDetail({
           k="created_by"
           v={
             account.created_by ? (
-              <span className="mono">{account.created_by}</span>
+              <span title={account.created_by}>{createdByLabel}</span>
             ) : (
               <span className="text-dim italic">system</span>
             )

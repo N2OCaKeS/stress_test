@@ -27,7 +27,10 @@ import {
 import { listDepartments } from "@/api/auth/departments";
 import { listGroups } from "@/api/auth/groups";
 import { listServices } from "@/api/auth/services";
+import { getUser } from "@/api/auth/users";
 import { listServers } from "@/api/server/servers";
+import { getAccount } from "@/api/server/accounts";
+import { getCredential } from "@/api/secret/credentials";
 import { USE_MOCK_AUTH, useAuthOptional } from "@/contexts/AuthContext";
 
 type Domain = "depts" | "groups" | "services" | "servers" | "all";
@@ -286,4 +289,109 @@ export function useServerMap() {
     ensureServers();
   }, [ensureServers]);
   return servers;
+}
+
+/**
+ * Ленивый резолвер «один id → имя» для доменов без дешёвого глобального
+ * списка: пользователи (глобальный list гейтится, dep_admin ловит 403),
+ * server_account'ы (list требует обязательный `server_id`, общей выдачи нет)
+ * и credential'ы. В отличие от dept/group/service/server, грузим точечно по
+ * запрошенному id и кэшируем результат.
+ *
+ * Кэш — module-level, общий на всё приложение и не зависит от
+ * `LabelsProvider`: компоненты, которым нужен только id→name, не обязаны
+ * висеть под провайдером. In-flight промисы дедуплицируются, чтобы один и
+ * тот же id не дёргался параллельно из нескольких строк.
+ */
+type IdResolver = (id: string) => Promise<string>;
+
+const resolveUserName: IdResolver = async (id) => {
+  const u = await getUser(id);
+  return u.username || id;
+};
+
+const resolveAccountName: IdResolver = async (id) => {
+  const a = await getAccount(id);
+  return a.login || id;
+};
+
+const resolveCredentialName: IdResolver = async (id) => {
+  const c = await getCredential(id);
+  return c.name || id;
+};
+
+interface LazyLabelDomain {
+  cache: Map<string, string>;
+  inflight: Map<string, Promise<string>>;
+  resolve: IdResolver;
+}
+
+const USER_DOMAIN: LazyLabelDomain = {
+  cache: new Map(),
+  inflight: new Map(),
+  resolve: resolveUserName,
+};
+const ACCOUNT_DOMAIN: LazyLabelDomain = {
+  cache: new Map(),
+  inflight: new Map(),
+  resolve: resolveAccountName,
+};
+const CREDENTIAL_DOMAIN: LazyLabelDomain = {
+  cache: new Map(),
+  inflight: new Map(),
+  resolve: resolveCredentialName,
+};
+
+function useLazyLabel(
+  domain: LazyLabelDomain,
+  id: string | null | undefined,
+): string {
+  const [, force] = useState(0);
+
+  useEffect(() => {
+    if (USE_MOCK_AUTH || !id || domain.cache.has(id)) return;
+    let alive = true;
+    let promise = domain.inflight.get(id);
+    if (!promise) {
+      promise = domain.resolve(id).catch(() => id);
+      domain.inflight.set(id, promise);
+    }
+    void promise.then((name) => {
+      domain.cache.set(id, name);
+      domain.inflight.delete(id);
+      if (alive) force((n) => n + 1);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [domain, id]);
+
+  if (!id) return "—";
+  return domain.cache.get(id) ?? id;
+}
+
+/**
+ * `usr_*` → username. Фоллбэк на id, пока грузится / если пользователь удалён
+ * или недоступен (403). `null`/пусто → "—".
+ */
+export function useUserLabel(userId: string | null | undefined): string {
+  return useLazyLabel(USER_DOMAIN, userId);
+}
+
+/**
+ * `acc_*` (server_account) → login. Фоллбэк на id, пока грузится / если
+ * аккаунт удалён или недоступен. `null`/пусто → "—".
+ */
+export function useAccountLabel(accountId: string | null | undefined): string {
+  return useLazyLabel(ACCOUNT_DOMAIN, accountId);
+}
+
+/**
+ * `cred_*` → имя credential'а. Фоллбэк на id, пока грузится / если креда
+ * удалена или недоступна. `null`/пусто → "—".
+ */
+export function useCredentialLabel(
+  credId: string | null | undefined,
+): string {
+  return useLazyLabel(CREDENTIAL_DOMAIN, credId);
 }

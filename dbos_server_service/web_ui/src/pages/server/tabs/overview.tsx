@@ -22,7 +22,7 @@ import { updateServer } from "@/api/server/servers";
 import { listOsVersions } from "@/api/server/osVersions";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
-import { useDeptLabel } from "@/lib/labels";
+import { useDeptLabel, useUserLabel } from "@/lib/labels";
 import { formatMsk } from "@/lib/datetime";
 import { usePersona } from "@/contexts/PersonaContext";
 import { isDepAdmin } from "@/lib/rbac";
@@ -85,6 +85,7 @@ function OverviewView({
   onEdit: () => void;
 }) {
   const deptLabel = useDeptLabel(server.department_id);
+  const createdByLabel = useUserLabel(server.created_by);
   const name = server.display_name ?? server.hostname;
 
   return (
@@ -252,7 +253,7 @@ function OverviewView({
           k="created_by"
           v={
             server.created_by ? (
-              <span className="mono">{server.created_by}</span>
+              <span title={server.created_by}>{createdByLabel}</span>
             ) : (
               <span className="text-dim">—</span>
             )

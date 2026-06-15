@@ -1,7 +1,8 @@
 /**
  * Live-просмотр журнала аудита loging_service.
  *
- * Список событий слева (фильтры severity / service / status / action +
+ * Список событий слева (фильтры severity / service / status / action,
+ * actor / target / department / request_id / диапазон времени +
  * пагинация через `has_more`), карточка выбранного события справа.
  * Все вызовы идут в `loging_service` через `@/api/loging/events`.
  *
@@ -19,6 +20,8 @@ import {
   Filter,
   Cog,
   Download,
+  X,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -28,9 +31,10 @@ import { hasAuditLogAccess } from "@/lib/rbac";
 import { formatMsk, formatMskTime } from "@/lib/datetime";
 import { exportEvents, getEventStats, listEvents } from "@/api/loging/events";
 import { listServices } from "@/api/loging/services";
-import { useDeptLabel } from "@/lib/labels";
+import { useDeptLabel, useLabelMaps } from "@/lib/labels";
 import type {
   EventDetail,
+  EventStatsQuery,
   EventStatsResponse,
   EventStatus,
   ListEventsQuery,
@@ -38,6 +42,55 @@ import type {
 } from "@/api/loging/types";
 
 const PAGE_SIZE = 100;
+
+/**
+ * Набор фильтров журнала, который страница держит в одном объекте состояния.
+ * `action` редактируется в строке поиска сверху, остальное — в панели фильтров.
+ * Все поля — строки (значение пустого `<input>`/`<select>`); в query они
+ * превращаются в `undefined`, чтобы пустой фильтр не уходил на backend.
+ */
+interface LogFilters {
+  severity: string;
+  service: string;
+  status: string;
+  action: string;
+  actorId: string;
+  targetId: string;
+  departmentId: string;
+  requestId: string;
+  /** `datetime-local` (`YYYY-MM-DDTHH:mm`), трактуется как MSK. */
+  fromTime: string;
+  toTime: string;
+}
+
+const EMPTY_FILTERS: LogFilters = {
+  severity: "",
+  service: "",
+  status: "",
+  action: "",
+  actorId: "",
+  targetId: "",
+  departmentId: "",
+  requestId: "",
+  fromTime: "",
+  toTime: "",
+};
+
+/** Сдвиг MSK относительно UTC в минутах (UTC+3, без переходов). */
+const MSK_OFFSET_MIN = 3 * 60;
+
+/**
+ * Значение `<input type="datetime-local">` (наивное `YYYY-MM-DDTHH:mm` без
+ * зоны) пользователь задаёт в московском времени — весь журнал тоже
+ * показывается в MSK. Переводим его в UTC ISO, вычитая смещение MSK, чтобы
+ * диапазон на backend'е (UTC) совпадал с тем, что видно в списке.
+ */
+function mskLocalToUtcIso(local: string): string | undefined {
+  if (local.length < 16) return undefined;
+  const asUtc = new Date(`${local}:00Z`).getTime();
+  if (Number.isNaN(asUtc)) return undefined;
+  return new Date(asUtc - MSK_OFFSET_MIN * 60_000).toISOString();
+}
 
 const SEVERITIES: Severity[] = [
   "CRITICAL",
@@ -49,6 +102,21 @@ const SEVERITIES: Severity[] = [
 ];
 
 const STATUSES: EventStatus[] = ["success", "failure", "denied", "warning"];
+
+/**
+ * Известные сервисы-источники платформы. `GET /events/services` отдаёт только
+ * те, что уже писали события (GROUP BY service), поэтому свежий/тихий сервис в
+ * дропдауне не появится. Мерджим эти имена с выдачей backend'а, чтобы по
+ * `server_service` / `server_worker` можно было отфильтровать заранее, не дожидаясь
+ * первого их события.
+ */
+const KNOWN_SERVICES = [
+  "auth_service",
+  "loging_service",
+  "server_service",
+  "server_worker",
+  "secret_service",
+];
 
 /** Короткая метка severity для бейджа в списке. */
 const SEV_LABEL: Record<string, string> = {
@@ -83,44 +151,86 @@ export function LogEventsLive() {
   const isReader = persona.platform_role === "logging_reader";
   const canAudit = hasAuditLogAccess(persona);
 
-  const [search, setSearch] = useState("");
-  const [severity, setSeverity] = useState<string>("");
-  const [service, setService] = useState<string>("");
-  const [status, setStatus] = useState<string>("");
+  const [filters, setFilters] = useState<LogFilters>(EMPTY_FILTERS);
+  const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const { depts } = useLabelMaps();
+
+  // Обновление любого фильтра сбрасывает пагинацию — иначе текущий offset мог
+  // бы указывать за пределы новой (более узкой) выборки.
+  function setFilter<K extends keyof LogFilters>(key: K, value: LogFilters[K]) {
+    setPage(0);
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function resetFilters() {
+    setPage(0);
+    setFilters(EMPTY_FILTERS);
+  }
+
   const query: ListEventsQuery = useMemo(
     () => ({
-      severity: (severity || undefined) as Severity | undefined,
-      service: service || undefined,
-      status: (status || undefined) as EventStatus | undefined,
-      action: search.trim() || undefined,
+      severity: (filters.severity || undefined) as Severity | undefined,
+      service: filters.service || undefined,
+      status: (filters.status || undefined) as EventStatus | undefined,
+      action: filters.action.trim() || undefined,
+      actor_id: filters.actorId.trim() || undefined,
+      target_id: filters.targetId.trim() || undefined,
+      department_id: filters.departmentId.trim() || undefined,
+      request_id: filters.requestId.trim() || undefined,
+      from_time: mskLocalToUtcIso(filters.fromTime),
+      to_time: mskLocalToUtcIso(filters.toTime),
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     }),
-    [severity, service, status, search, page],
+    [filters, page],
   );
 
-  const eventsQ = useQuery(() => listEvents(query), [
-    severity,
-    service,
-    status,
-    search,
-    page,
-  ]);
+  // Та же выборка для сводки/экспорта (без пагинации). Если задан явный
+  // диапазон времени — он перекрывает дефолтное окно 24ч на backend'е; иначе
+  // окно остаётся дефолтным и stats считается за последние сутки.
+  const statsQuery: EventStatsQuery = useMemo(() => {
+    const { limit: _l, offset: _o, ...rest } = query;
+    return rest;
+  }, [query]);
+
+  const eventsQ = useQuery(() => listEvents(query), [query]);
   const servicesQ = useQuery(() => listServices(), []);
 
   const items = eventsQ.data?.items ?? [];
   const hasMore = eventsQ.data?.has_more ?? false;
   const selected = items.find((e) => e.id === selectedId) ?? null;
 
-  function resetPageAnd(setter: (v: string) => void) {
-    return (v: string) => {
-      setPage(0);
-      setter(v);
-    };
-  }
+  // Сколько фильтров (кроме поиска по action) сейчас задано — для бейджа на
+  // кнопке панели, чтобы было видно «фильтры активны» при свёрнутой панели.
+  const activeExtra = [
+    filters.severity,
+    filters.service,
+    filters.status,
+    filters.actorId.trim(),
+    filters.targetId.trim(),
+    filters.departmentId.trim(),
+    filters.requestId.trim(),
+    filters.fromTime,
+    filters.toTime,
+  ].filter(Boolean).length;
+  const anyActive = activeExtra > 0 || filters.action.trim().length > 0;
+
+  const deptOptions = useMemo(
+    () =>
+      Array.from(depts.entries()).sort((a, b) => a[1].localeCompare(b[1], "ru")),
+    [depts],
+  );
+
+  // Имена сервисов из выдачи backend'а (только писавшие события) + известные
+  // платформенные сервисы, чтобы по тихому сервису тоже можно было фильтровать.
+  const serviceOptions = useMemo(() => {
+    const set = new Set<string>(KNOWN_SERVICES);
+    for (const s of servicesQ.data?.items ?? []) set.add(s.service);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [servicesQ.data]);
 
   const aside = (
     <aside className="border-r border-token surface flex flex-col min-h-0">
@@ -130,54 +240,147 @@ export function LogEventsLive() {
           <input
             className="bg-transparent outline-none flex-1 text-sm"
             placeholder="Фильтр по action (точное совпадение)…"
-            value={search}
-            onChange={(e) => {
-              setPage(0);
-              setSearch(e.target.value);
-            }}
+            value={filters.action}
+            onChange={(e) => setFilter("action", e.target.value)}
           />
+          <button
+            type="button"
+            className={`btn btn-ghost btn-sm flex items-center gap-1 ${
+              showFilters ? "text-accent" : ""
+            }`}
+            onClick={() => setShowFilters((v) => !v)}
+            title="Фильтры"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            {activeExtra > 0 && (
+              <span className="badge text-[10px]">{activeExtra}</span>
+            )}
+          </button>
         </div>
-        <div className="grid grid-cols-3 gap-1 text-[11px] text-dim">
-          <select
-            className="surface-2 border border-token rounded px-1 py-0.5"
-            value={severity}
-            onChange={(e) => resetPageAnd(setSeverity)(e.target.value)}
-            title="Severity"
-          >
-            <option value="">severity</option>
-            {SEVERITIES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          <select
-            className="surface-2 border border-token rounded px-1 py-0.5"
-            value={service}
-            onChange={(e) => resetPageAnd(setService)(e.target.value)}
-            title="Сервис-источник"
-          >
-            <option value="">сервис</option>
-            {(servicesQ.data?.items ?? []).map((s) => (
-              <option key={s.service} value={s.service}>
-                {s.service}
-              </option>
-            ))}
-          </select>
-          <select
-            className="surface-2 border border-token rounded px-1 py-0.5"
-            value={status}
-            onChange={(e) => resetPageAnd(setStatus)(e.target.value)}
-            title="Статус"
-          >
-            <option value="">статус</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
+
+        {showFilters && (
+          <div className="flex flex-col gap-1.5 text-[11px] text-dim pt-1">
+            <div className="grid grid-cols-3 gap-1">
+              <select
+                className="surface-2 border border-token rounded px-1 py-0.5"
+                value={filters.severity}
+                onChange={(e) => setFilter("severity", e.target.value)}
+                title="Severity"
+              >
+                <option value="">severity</option>
+                {SEVERITIES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="surface-2 border border-token rounded px-1 py-0.5"
+                value={filters.service}
+                onChange={(e) => setFilter("service", e.target.value)}
+                title="Сервис-источник"
+              >
+                <option value="">сервис</option>
+                {serviceOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="surface-2 border border-token rounded px-1 py-0.5"
+                value={filters.status}
+                onChange={(e) => setFilter("status", e.target.value)}
+                title="Статус"
+              >
+                <option value="">статус</option>
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {deptOptions.length > 0 ? (
+              <select
+                className="surface-2 border border-token rounded px-1 py-0.5 w-full"
+                value={filters.departmentId}
+                onChange={(e) => setFilter("departmentId", e.target.value)}
+                title="Отдел (department_id)"
+              >
+                <option value="">отдел (любой)</option>
+                {deptOptions.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              // У loging_admin / loging_reader нет доступа к списку отделов
+              // (он account_admin-only), поэтому карта имён пустая — даём
+              // ручной ввод department_id, иначе фильтр по отделу недоступен.
+              <input
+                className="surface-2 border border-token rounded px-1.5 py-0.5 w-full"
+                placeholder="department_id (dep_…)"
+                value={filters.departmentId}
+                onChange={(e) => setFilter("departmentId", e.target.value)}
+                title="Фильтр по department_id"
+              />
+            )}
+
+            <input
+              className="surface-2 border border-token rounded px-1.5 py-0.5 w-full"
+              placeholder="actor_id (usr_… / bot_… / сервис)"
+              value={filters.actorId}
+              onChange={(e) => setFilter("actorId", e.target.value)}
+              title="Фильтр по actor_id (точное совпадение)"
+            />
+            <input
+              className="surface-2 border border-token rounded px-1.5 py-0.5 w-full"
+              placeholder="target_id (srv_… и т.п.)"
+              value={filters.targetId}
+              onChange={(e) => setFilter("targetId", e.target.value)}
+              title="Фильтр по target_id (точное совпадение)"
+            />
+            <input
+              className="surface-2 border border-token rounded px-1.5 py-0.5 w-full"
+              placeholder="request_id (трассировка)"
+              value={filters.requestId}
+              onChange={(e) => setFilter("requestId", e.target.value)}
+              title="Фильтр по request_id"
+            />
+
+            <div className="grid grid-cols-[auto_1fr] items-center gap-1">
+              <span className="text-dim">с (MSK)</span>
+              <input
+                type="datetime-local"
+                className="surface-2 border border-token rounded px-1 py-0.5 w-full"
+                value={filters.fromTime}
+                onChange={(e) => setFilter("fromTime", e.target.value)}
+                title="Начало диапазона (московское время)"
+              />
+              <span className="text-dim">по (MSK)</span>
+              <input
+                type="datetime-local"
+                className="surface-2 border border-token rounded px-1 py-0.5 w-full"
+                value={filters.toTime}
+                onChange={(e) => setFilter("toTime", e.target.value)}
+                title="Конец диапазона (московское время)"
+              />
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm flex items-center justify-center gap-1 mt-0.5"
+              onClick={resetFilters}
+              disabled={!anyActive}
+            >
+              <X className="w-3.5 h-3.5" />
+              Сбросить фильтры
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -258,7 +461,7 @@ export function LogEventsLive() {
       {selected ? (
         <EventDetailPane event={selected} />
       ) : canAudit ? (
-        <StatsPane />
+        <StatsPane statsQuery={statsQuery} hasFilters={anyActive} />
       ) : (
         <section className="flex-1 min-w-0 overflow-hidden flex items-center justify-center">
           <div className="empty-card max-w-md text-center">
@@ -275,14 +478,23 @@ export function LogEventsLive() {
 
 /**
  * Дефолтная рабочая зона для loging-роли, пока событие не выбрано: сводка
- * `GET /events/stats` за 24ч (severity-распределение, by_service, by_status)
- * плюс кнопка экспорта CSV за то же окно. Гейтится снаружи по
+ * `GET /events/stats` (severity-распределение, by_service, by_status) плюс
+ * кнопка экспорта CSV. Считается по тем же фильтрам, что и список слева:
+ * без явного диапазона времени окно дефолтится на 24ч (backend), с ним —
+ * берётся заданный `from_time`/`to_time`. Гейтится снаружи по
  * `hasAuditLogAccess`, так что 403-на-загрузке здесь не возникает.
  */
-function StatsPane() {
+function StatsPane({
+  statsQuery,
+  hasFilters,
+}: {
+  statsQuery: EventStatsQuery;
+  hasFilters: boolean;
+}) {
+  const hasRange = Boolean(statsQuery.from_time || statsQuery.to_time);
   const statsQ = useQuery<EventStatsResponse>(
-    () => getEventStats({ window_hours: 24 }),
-    [],
+    () => getEventStats(hasRange ? statsQuery : { ...statsQuery, window_hours: 24 }),
+    [statsQuery, hasRange],
   );
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(
@@ -293,7 +505,9 @@ function StatsPane() {
     setExporting(true);
     setNotice(null);
     try {
-      const res = await exportEvents({ window_hours: 24 });
+      const res = await exportEvents(
+        hasRange ? statsQuery : { ...statsQuery, window_hours: 24 },
+      );
       setNotice(
         res.truncated
           ? {
@@ -316,7 +530,14 @@ function StatsPane() {
       <div className="max-w-7xl mx-auto space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h1 className="text-xl font-semibold">Сводка аудита · 24ч</h1>
+            <h1 className="text-xl font-semibold">
+              Сводка аудита{hasRange ? "" : " · 24ч"}
+              {hasFilters && (
+                <span className="text-xs text-dim font-normal ml-2">
+                  (по фильтрам)
+                </span>
+              )}
+            </h1>
             {stats && (
               <div className="text-xs text-dim mt-1">
                 {formatMsk(stats.from_time)} → {formatMsk(stats.to_time)}
@@ -330,7 +551,7 @@ function StatsPane() {
             disabled={exporting}
           >
             <Download className="w-3.5 h-3.5" />
-            {exporting ? "Экспорт…" : "Экспорт за 24ч"}
+            {exporting ? "Экспорт…" : hasRange ? "Экспорт за период" : "Экспорт за 24ч"}
           </button>
         </div>
 

@@ -1,6 +1,7 @@
 /* DBOS theme tokens — 4 themes selected by [data-theme] on <html>. */
 
 html[data-theme="vscode-dark"] {
+  color-scheme: dark;
   --bg: #1e1e1e;
   --bg-soft: #252526;
   --bg-soft-2: #2d2d30;
@@ -27,6 +28,7 @@ html[data-theme="vscode-dark"] {
 }
 
 html[data-theme="vscode-light"] {
+  color-scheme: light;
   --bg: #ffffff;
   --bg-soft: #f3f3f3;
   --bg-soft-2: #ebebeb;
@@ -53,6 +55,7 @@ html[data-theme="vscode-light"] {
 }
 
 html[data-theme="dark-orange"] {
+  color-scheme: dark;
   --bg: #1e1e1e;
   --bg-soft: #252526;
   --bg-soft-2: #2d2d30;
@@ -79,6 +82,7 @@ html[data-theme="dark-orange"] {
 }
 
 html[data-theme="blue"] {
+  color-scheme: dark;
   --bg: #0a1929;
   --bg-soft: #102a43;
   --bg-soft-2: #1b3a5b;
@@ -434,6 +438,16 @@ textarea.input { min-height: 88px; font-family: "JetBrains Mono Variable", "JetB
 .radio-row.checked { border-color: var(--accent); background: var(--bg-soft-2); }
 .theme-swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--border); }
 .checkbox-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+
+/* Нативные чекбоксы/радио/селекты красим в акцент темы и привязываем к
+   color-scheme блока темы. Без этого галочка рисуется браузерным дефолтом
+   (синяя) поверх любой темы — на тёмных темах выглядела как «залипшее»
+   чужеродное выделение, не совпадающее с акцентом. */
+input[type="checkbox"],
+input[type="radio"],
+select {
+  accent-color: var(--accent);
+}
 .pat-row {
   display: grid;
   grid-template-columns: 1fr 130px 90px;

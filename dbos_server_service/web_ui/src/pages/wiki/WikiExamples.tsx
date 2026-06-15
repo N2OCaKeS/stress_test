@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import {
@@ -83,10 +83,10 @@ function FieldInput({
 
 function SettingsPanel() {
   const s = useWikiSettings();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
-    <div className="card flex flex-col gap-3 sticky top-2 z-20">
+    <div className="card flex flex-col gap-3">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -243,8 +243,15 @@ function GlobalLangToggle() {
   );
 }
 
-function CollapsibleSection({ section }: { section: ApiSection }) {
-  const [open, setOpen] = useState(false);
+function CollapsibleSection({
+  section,
+  open,
+  onToggle,
+}: {
+  section: ApiSection;
+  open: boolean;
+  onToggle: () => void;
+}) {
   return (
     <section
       id={section.id}
@@ -252,7 +259,7 @@ function CollapsibleSection({ section }: { section: ApiSection }) {
     >
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={onToggle}
         aria-expanded={open}
         className="flex items-start gap-2 text-left"
       >
@@ -293,41 +300,97 @@ function ServiceContent({
   flows: ApiFlow[];
 }) {
   const flowsAnchor = `flows-${service}`;
+  // Аккордеон: одновременно раскрыта одна секция. Навигация — вкладки-чипы,
+  // клик раскрывает секцию и подскроливает к ней.
+  const [activeId, setActiveId] = useState<string | null>(null);
+  useEffect(() => {
+    setActiveId(null);
+  }, [service]);
+
+  const tabs = [
+    ...sections.map((s) => ({ id: s.id, label: s.title })),
+    ...(flows.length > 0 ? [{ id: flowsAnchor, label: "Сценарии" }] : []),
+  ];
+
+  const openAndScroll = (id: string) => {
+    setActiveId(id);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(id)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+  const toggle = (id: string) =>
+    setActiveId((cur) => (cur === id ? null : id));
+
   return (
     <>
-      <nav className="card flex flex-wrap gap-x-4 gap-y-1 text-sm">
-        {sections.map((s) => (
-          <a
-            key={s.id}
-            href={`#${s.id}`}
-            className="text-accent hover:underline"
+      <nav className="flex flex-wrap gap-2">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={
+              "btn text-xs " +
+              (activeId === t.id ? "btn-primary" : "btn-ghost")
+            }
+            onClick={() => openAndScroll(t.id)}
           >
-            {s.title}
-          </a>
+            {t.label}
+          </button>
         ))}
-        {flows.length > 0 && (
-          <a href={`#${flowsAnchor}`} className="text-accent hover:underline">
-            Сценарии
-          </a>
-        )}
       </nav>
 
       {sections.map((section) => (
-        <CollapsibleSection key={section.id} section={section} />
+        <CollapsibleSection
+          key={section.id}
+          section={section}
+          open={activeId === section.id}
+          onToggle={() => toggle(section.id)}
+        />
       ))}
 
       {flows.length > 0 && (
-        <section
-          id={flowsAnchor}
-          className="flex flex-col gap-3 scroll-mt-16"
-        >
-          <h2 className="text-lg font-semibold">Сценарии</h2>
-          {flows.map((flow) => (
-            <FlowExample key={flow.id} flow={flow} />
-          ))}
-        </section>
+        <CollapsibleFlows
+          anchor={flowsAnchor}
+          flows={flows}
+          open={activeId === flowsAnchor}
+          onToggle={() => toggle(flowsAnchor)}
+        />
       )}
     </>
+  );
+}
+
+function CollapsibleFlows({
+  anchor,
+  flows,
+  open,
+  onToggle,
+}: {
+  anchor: string;
+  flows: ApiFlow[];
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <section id={anchor} className="flex flex-col gap-3 scroll-mt-16">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex items-center gap-2 text-left"
+      >
+        <ChevronRight
+          className={`w-4 h-4 shrink-0 transition-transform ${
+            open ? "rotate-90" : ""
+          }`}
+        />
+        <h2 className="text-lg font-semibold">Сценарии</h2>
+      </button>
+      {open &&
+        flows.map((flow) => <FlowExample key={flow.id} flow={flow} />)}
+    </section>
   );
 }
 

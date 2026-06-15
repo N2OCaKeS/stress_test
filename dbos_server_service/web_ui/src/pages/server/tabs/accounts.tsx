@@ -12,10 +12,13 @@
  * и worker-dispatch секции `/server-accounts/{id}/{provision|update_on_host|
  * deprovision|rotate|rotate_password|servers}`.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Copy,
   Edit3,
+  Eye,
+  EyeOff,
   KeyRound,
   Link2,
   Plus,
@@ -28,7 +31,8 @@ import {
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
-import { apiErrMsg } from "@/api/client";
+import { ApiError, apiErrMsg } from "@/api/client";
+import { fromBase64 } from "@/lib/base64";
 import { formatMskShort } from "@/lib/datetime";
 import * as accountsApi from "@/api/server/accounts";
 import type {
@@ -523,6 +527,9 @@ function AccountDetail({
         />
       </div>
 
+      {/* ── Пароль ── */}
+      <PasswordRevealCard account={account} canReveal={canOperate} />
+
       {/* ── Provision на этом сервере ── */}
       <div className="card">
         <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
@@ -745,6 +752,166 @@ function AccountDetail({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Password reveal
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Reveal-блок пароля аккаунта.
+ *
+ * По умолчанию замаскирован. По клику «показать» дёргает карточку аккаунта
+ * (`getAccount`), декодит `password_b64` → plaintext. Если backend вернул
+ * `password_b64 = null` — это либо нет грантa `view_password`, либо у аккаунта
+ * нет сохранённого пароля (discovered без apply); показываем понятную причину,
+ * а не пустоту. 429 (reveal-rate-limit) гасит кнопку на retry-окно.
+ */
+function PasswordRevealCard({
+  account,
+  canReveal,
+}: {
+  account: ServerAccount;
+  canReveal: boolean;
+}) {
+  const toast = useToast();
+  const [plain, setPlain] = useState<string | null>(null);
+  const [reason, setReason] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  const [throttleUntil, setThrottleUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Сбрасываем раскрытое при смене аккаунта.
+  useEffect(() => {
+    setPlain(null);
+    setReason(null);
+    setThrottleUntil(0);
+  }, [account.id]);
+
+  useEffect(() => {
+    if (throttleUntil <= 0) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [throttleUntil]);
+
+  const throttleLeft = Math.max(0, Math.ceil((throttleUntil - now) / 1000));
+  const shown = plain !== null;
+
+  // Discovered-аккаунт без ротации пароля скорее всего не имеет ciphertext'а в
+  // БД — backend вернёт password_b64=null даже держателю view_password. Это
+  // подсказка ещё до запроса; финальную причину всё равно даёт backend.
+  const likelyNoPassword =
+    account.source === "discovered" && !account.password_rotated_at;
+
+  async function handleReveal() {
+    if (revealing || throttleLeft > 0) return;
+    setRevealing(true);
+    setReason(null);
+    try {
+      const fresh = await accountsApi.getAccount(account.id);
+      if (fresh.password_b64 === null) {
+        setReason(
+          likelyNoPassword
+            ? "У аккаунта нет сохранённого пароля (discovered, без ротации)."
+            : "Пароль скрыт: нет права view_password или пароль отсутствует.",
+        );
+        return;
+      }
+      try {
+        setPlain(fromBase64(fresh.password_b64));
+      } catch {
+        // Невалидный base64 — отдадим как есть, чтобы не терять значение.
+        setPlain(fresh.password_b64);
+      }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        const secs = e.retryAfter ?? 60;
+        setThrottleUntil(Date.now() + secs * 1000);
+        setNow(Date.now());
+        toast.error(`Reveal-лимит: повторите через ${secs} сек`);
+      } else if (e instanceof ApiError && e.status === 403) {
+        setReason("Недостаточно прав: нужен view_password.");
+      } else {
+        toast.error(apiErrMsg(e, "Не удалось получить пароль"));
+      }
+    } finally {
+      setRevealing(false);
+    }
+  }
+
+  function handleHide() {
+    setPlain(null);
+  }
+
+  async function handleCopy() {
+    if (plain === null || typeof navigator === "undefined" || !navigator.clipboard)
+      return;
+    try {
+      await navigator.clipboard.writeText(plain);
+      toast.success("Пароль скопирован");
+    } catch {
+      toast.error("Буфер обмена недоступен");
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="text-xs uppercase text-dim mb-2 flex items-center gap-2">
+        <KeyRound className="w-3 h-3" /> Пароль
+      </div>
+      <div className="text-xs text-dim mb-3">
+        Пароль хранится зашифрованным (AES-256-GCM). Показ требует права
+        view_password, пишет CRITICAL audit и режется reveal-rate-limit'ом.
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <div
+          className={`mono text-sm flex-1 min-w-[200px] break-all ${shown ? "" : "text-dim"}`}
+        >
+          {shown ? plain : "••••••••••••"}
+        </div>
+        {shown ? (
+          <>
+            <button
+              className="btn btn-sm flex items-center gap-1"
+              onClick={handleCopy}
+              type="button"
+            >
+              <Copy className="w-4 h-4" /> Копировать
+            </button>
+            <button
+              className="btn btn-sm flex items-center gap-1"
+              onClick={handleHide}
+              type="button"
+            >
+              <EyeOff className="w-4 h-4" /> Скрыть
+            </button>
+          </>
+        ) : (
+          <button
+            className="btn btn-sm flex items-center gap-1"
+            onClick={handleReveal}
+            disabled={!canReveal || revealing || throttleLeft > 0}
+            title={
+              !canReveal
+                ? "Нужна роль server.operator+ (и грант view_password)"
+                : "Раскрыть пароль (CRITICAL audit)"
+            }
+            type="button"
+          >
+            <Eye className="w-4 h-4" />
+            {revealing
+              ? "Запрашиваем…"
+              : throttleLeft > 0
+                ? `Подождите ${throttleLeft}с`
+                : "Показать"}
+          </button>
+        )}
+      </div>
+
+      {reason && <div className="text-xs text-dim mt-3">{reason}</div>}
     </div>
   );
 }

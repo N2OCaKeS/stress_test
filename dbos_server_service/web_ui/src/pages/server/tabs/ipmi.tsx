@@ -28,7 +28,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  Copy,
   Edit3,
+  Eye,
+  EyeOff,
   KeyRound,
   Power,
   RefreshCw,
@@ -36,6 +39,7 @@ import {
   Zap,
 } from "lucide-react";
 import { ApiError, apiErrMsg } from "@/api/client";
+import { fromBase64 } from "@/lib/base64";
 import { useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import {
@@ -496,6 +500,7 @@ function ControllerPane({
         serverId={serverId}
         controllerId={controller.id}
         canRotate={caps.admin}
+        canReveal={caps.power || caps.admin}
         denyReason={caps.reason}
       />
     </div>
@@ -856,11 +861,13 @@ function CredentialsCard({
   serverId,
   controllerId,
   canRotate,
+  canReveal,
   denyReason,
 }: {
   serverId: string;
   controllerId: string;
   canRotate: boolean;
+  canReveal: boolean;
   denyReason: string;
 }) {
   const toast = useToast();
@@ -869,6 +876,69 @@ function CredentialsCard({
   const [err, setErr] = useState<string | null>(null);
   const [rotating, setRotating] = useState(false);
   const [tick, setTick] = useState(0);
+
+  // Reveal BMC-пароля идёт через карточку контроллера (GET /servers/{id}/ipmi):
+  // держателю view_credentials там приходит password_b64. Метаданные выше тянем
+  // отдельным /credentials (без plaintext) — этот блок дозапрашивает карточку
+  // только по явному клику «показать».
+  const [plain, setPlain] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  const [revealReason, setRevealReason] = useState<string | null>(null);
+  const [throttleUntil, setThrottleUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (throttleUntil <= 0) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [throttleUntil]);
+
+  const throttleLeft = Math.max(0, Math.ceil((throttleUntil - now) / 1000));
+  const passwordShown = plain !== null;
+
+  async function handleReveal() {
+    if (revealing || throttleLeft > 0) return;
+    setRevealing(true);
+    setRevealReason(null);
+    try {
+      const card = await getIpmi(serverId);
+      if (card.password_b64 === null) {
+        setRevealReason(
+          "Пароль скрыт: нет права view_credentials или пароль не задан.",
+        );
+        return;
+      }
+      try {
+        setPlain(fromBase64(card.password_b64));
+      } catch {
+        setPlain(card.password_b64);
+      }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        const secs = e.retryAfter ?? 60;
+        setThrottleUntil(Date.now() + secs * 1000);
+        setNow(Date.now());
+        toast.error(`Reveal-лимит: повторите через ${secs} сек`);
+      } else if (e instanceof ApiError && e.status === 403) {
+        setRevealReason("Недостаточно прав: нужен view_credentials.");
+      } else {
+        toast.error(apiErrMsg(e, "Не удалось получить пароль"));
+      }
+    } finally {
+      setRevealing(false);
+    }
+  }
+
+  async function handleCopy() {
+    if (plain === null || typeof navigator === "undefined" || !navigator.clipboard)
+      return;
+    try {
+      await navigator.clipboard.writeText(plain);
+      toast.success("Пароль скопирован");
+    } catch {
+      toast.error("Буфер обмена недоступен");
+    }
+  }
 
   // Ротация — worker-задача с BMC apply/verify, способная упасть (битый BMC,
   // verify новым паролем не прошёл). Поллим исход: метаданные перечитываем
@@ -911,6 +981,9 @@ function CredentialsCard({
     if (refetchedForTaskRef.current === t.taskId) return;
     refetchedForTaskRef.current = t.taskId;
     setTick((n) => n + 1);
+    // Ротация заменила пароль на BMC — раскрытое старое значение больше не
+    // должно висеть на карточке.
+    setPlain(null);
   }, [rotateOutcome.tracked]);
 
   function handleRotate() {
@@ -954,6 +1027,54 @@ function CredentialsCard({
             label="last rotation"
             value={fmtTs(creds.password_rotated_at)}
           />
+          <div className="flex items-center gap-3 py-1 text-sm flex-wrap">
+            <span className="text-dim text-xs w-28 shrink-0">password</span>
+            <span
+              className={`mono flex-1 min-w-[180px] break-all ${passwordShown ? "" : "text-dim"}`}
+            >
+              {passwordShown ? plain : "••••••••••••"}
+            </span>
+            {passwordShown ? (
+              <>
+                <button
+                  className="btn btn-sm flex items-center gap-1"
+                  onClick={handleCopy}
+                  type="button"
+                >
+                  <Copy className="w-4 h-4" /> Копировать
+                </button>
+                <button
+                  className="btn btn-sm flex items-center gap-1"
+                  onClick={() => setPlain(null)}
+                  type="button"
+                >
+                  <EyeOff className="w-4 h-4" /> Скрыть
+                </button>
+              </>
+            ) : (
+              <button
+                className="btn btn-sm flex items-center gap-1"
+                onClick={handleReveal}
+                disabled={!canReveal || revealing || throttleLeft > 0}
+                title={
+                  canReveal
+                    ? "Раскрыть пароль BMC (CRITICAL audit)"
+                    : "Нужна роль server.operator+ и грант view_credentials"
+                }
+                type="button"
+              >
+                <Eye className="w-4 h-4" />
+                {revealing
+                  ? "Запрашиваем…"
+                  : throttleLeft > 0
+                    ? `Подождите ${throttleLeft}с`
+                    : "Показать"}
+              </button>
+            )}
+          </div>
+          {revealReason && (
+            <div className="text-xs text-dim mt-1">{revealReason}</div>
+          )}
         </>
       )}
 

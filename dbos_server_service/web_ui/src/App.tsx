@@ -1,5 +1,11 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider, USE_MOCK_AUTH } from "@/contexts/AuthContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
@@ -16,9 +22,6 @@ const Home = lazy(() =>
 );
 const Server = lazy(() =>
   import("@/pages/server/Server").then((m) => ({ default: m.Server }))
-);
-const IpmiFleet = lazy(() =>
-  import("@/pages/server/IpmiFleet").then((m) => ({ default: m.IpmiFleet }))
 );
 const Secret = lazy(() =>
   import("@/pages/secret/Secret").then((m) => ({ default: m.Secret }))
@@ -62,6 +65,13 @@ const Patterns = lazy(() =>
 const WikiExamples = lazy(() =>
   import("@/pages/wiki/WikiExamples").then((m) => ({ default: m.WikiExamples }))
 );
+
+// Редирект, сохраняющий query-строку (legacy /worker?server_id=… → новый
+// раздел задач под «Серверами»). Navigate сам по себе query не переносит.
+function RedirectPreservingSearch({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={`${to}${search}`} replace />;
+}
 
 function RouteFallback() {
   return (
@@ -128,11 +138,23 @@ export function App() {
                 </RouteGuard>
               }
             />
+            {/* IPMI-флот как отдельный раздел убран — IPMI живёт во вкладке
+                карточки сервера. Старый маршрут редиректим на список серверов;
+                IpmiFleet больше не монтируется. */}
+            <Route path="/server/ipmi" element={<Navigate to="/server" replace />} />
             <Route
-              path="/server/ipmi"
+              path="/server/tasks"
               element={
                 <RouteGuard service="server">
-                  <IpmiFleet />
+                  <Worker />
+                </RouteGuard>
+              }
+            />
+            <Route
+              path="/server/tasks/dlq"
+              element={
+                <RouteGuard service="server">
+                  <WorkerDlq />
                 </RouteGuard>
               }
             />
@@ -192,21 +214,13 @@ export function App() {
                 </RouteGuard>
               }
             />
-            <Route
-              path="/worker"
-              element={
-                <RouteGuard service="worker">
-                  <Worker />
-                </RouteGuard>
-              }
-            />
+            {/* Задачи переехали под «Серверы» — /worker* редиректим на
+                /server/tasks*, сохраняя query (например ?server_id=… из
+                карточки сервера). */}
+            <Route path="/worker" element={<RedirectPreservingSearch to="/server/tasks" />} />
             <Route
               path="/worker/dlq"
-              element={
-                <RouteGuard service="worker">
-                  <WorkerDlq />
-                </RouteGuard>
-              }
+              element={<RedirectPreservingSearch to="/server/tasks/dlq" />}
             />
             <Route path="/patterns" element={<Patterns />} />
             <Route

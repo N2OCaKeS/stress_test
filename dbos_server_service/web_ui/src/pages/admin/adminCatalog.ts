@@ -12,6 +12,7 @@ import {
   Container,
   Database,
   FileText,
+  HardDrive,
   Inbox,
   KeyRound,
   Layers,
@@ -46,6 +47,7 @@ import { ServicesGroups } from "./services/ServicesGroups";
 import { ServicesPlatformRoles } from "./services/ServicesPlatformRoles";
 import { ServicesServerGroups } from "./services/ServicesServerGroups";
 import { ServicesServerPermissions } from "./services/ServicesServerPermissions";
+import { ServicesOsVersions } from "./services/ServicesOsVersions";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
@@ -264,6 +266,20 @@ const STATIC_ITEMS: AdminItem[] = [
     content: ServicesServerPermissions,
     // backend: `(permission, *, view)` — department_admin своего отдела или
     // server.admin. account_admin / loging_admin режет middleware.
+    visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
+  },
+  {
+    id: "services.server.os_versions",
+    label: "OS-версии",
+    hint: "глобальный каталог версий ОС",
+    icon: HardDrive,
+    block: "services",
+    group: "server",
+    content: ServicesOsVersions,
+    // Каталог глобальный, но CRUD идёт под action-матрицей server_service —
+    // create/update/delete несёт server.admin (и dep_admin в своём отделе).
+    // Platform-роли (account_admin / loging_admin) backend режет на 403, им
+    // пункт не показываем; кнопки управления гейтятся внутри страницы.
     visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
   },
 

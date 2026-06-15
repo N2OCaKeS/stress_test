@@ -1,5 +1,6 @@
 /**
- * Страница /worker — live-список worker-task'ей (server_worker) + деталь.
+ * Раздел «Задачи» под Серверами (/server/tasks) — live-список worker-task'ей
+ * (server_worker) + деталь.
  *
  * Shell + Aside (список с фильтром status/kind, поиском, пагинацией через
  * X-Total-Count) + Workzone (TaskDetail). Список и деталь поллятся каждые ~10с.
@@ -7,7 +8,8 @@
  * account_admin / logging_admin отрезаны от server-зоны backend'ом
  * (`GET /tasks` им вернёт 403) — показываем BlockedDetail вместо мёртвой
  * страницы. dep_admin видит задачи серверов своего отдела; server.*-роли — по
- * матрице. Cancel гейтится по ролям (`canCancelTask`).
+ * матрице, причём reader без admin/operator видит только свои задачи. Cancel
+ * гейтится по ролям (`canCancelTask`).
  */
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -28,8 +30,8 @@ export function Worker() {
   const [params, setParams] = useSearchParams();
   const selectedId = params.get("id");
   // Опциональный scope по серверу: приходит из карточки сервера
-  // (`/worker?server_id=srv_…`), чтобы не терять контекст выбранного сервера
-  // при переходе в раздел задач. Пусто → весь отдел.
+  // (`/server/tasks?server_id=srv_…`), чтобы не терять контекст выбранного
+  // сервера при переходе в раздел задач. Пусто → весь отдел.
   const serverScope = params.get("server_id");
 
   const zoneBlocked = isServerZoneBlocked(persona);

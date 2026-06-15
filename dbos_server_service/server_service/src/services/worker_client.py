@@ -505,6 +505,7 @@ async def list_tasks(
     task_kind: str | None = None,
     server_ids: list[str] | None = None,
     include_infra: bool = False,
+    created_by: str | None = None,
     limit: int,
     offset: int,
 ) -> tuple[list[dict], int]:
@@ -520,6 +521,10 @@ async def list_tasks(
     * `server_ids` непустой → `target_server_id IN (...)`; при `include_infra`
       дополнительно подмешиваются строки с `target_server_id IS NULL`
       (инфра-задачи без сервера — видны только admin/operator-роли).
+
+    `created_by` (если задан) дополнительно сужает выборку до задач, которые
+    поставил сам caller — для непривилегированного reader'а, который видит
+    только свои задачи в рамках своего отдела.
 
     `result` тащим целиком и усекаем в summary уже на стороне endpoint'а —
     отдельный «лёгкий» SELECT без JSONB не делаем, чтобы не плодить вторую
@@ -538,6 +543,9 @@ async def list_tasks(
     if task_kind is not None:
         where_parts.append("task_kind = :task_kind")
         params["task_kind"] = task_kind
+    if created_by is not None:
+        where_parts.append("created_by = :created_by")
+        params["created_by"] = created_by
 
     # Dept-scope по серверу. `IN (...)` собирается из именованных bind'ов, чтобы
     # не клеить идентификаторы в SQL строкой. Пустой список серверов без

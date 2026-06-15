@@ -5,11 +5,9 @@ import {
   Home,
   Users,
   Server,
-  Cpu,
   LockKeyhole,
   Cog,
   ListChecks,
-  Skull,
   ShieldCheck,
   FileText,
   Filter,
@@ -50,20 +48,18 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
     label: "Servers",
     subItems: [
       { to: "/server", icon: Server, label: "Servers" },
-      { to: "/server/ipmi", icon: Cpu, label: "IPMI" },
+      { to: "/server/tasks", icon: ListChecks, label: "Задачи" },
     ],
   },
   secret: { service: "secret", to: "/secret", icon: LockKeyhole, label: "Secrets" },
+  // server_worker — часть server-зоны; задачи живут под «Серверами»
+  // (/server/tasks), отдельного чипа нет. Запись остаётся ради полноты
+  // ServiceName-каталога, в nav не рендерится.
   worker: {
     service: "worker",
-    to: "/worker",
+    to: "/server/tasks",
     icon: Cog,
     label: "Workers",
-    hint: "tasks · dept",
-    subItems: [
-      { to: "/worker", icon: ListChecks, label: "Tasks" },
-      { to: "/worker/dlq", icon: Skull, label: "DLQ" },
-    ],
   },
   logging: {
     service: "logging",
@@ -113,24 +109,21 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   // Config тоже скрыт — кнопка «Администрирование» внизу уже ведёт на /admin.
   // account_admin сюда не доходит: для него выше рендерится AdminOnlyPanel.
   const serviceList = [...persona.accessible_services];
-  // Worker (server_worker) — часть server-зоны: показываем его всем, у кого
-  // реально есть доступ (dep_admin + server.*-роли), даже если backend не
-  // положил `worker` в accessible_services. account_admin сюда не доходит.
-  if (hasServerZoneAccess(persona) && !serviceList.includes("worker")) {
-    serviceList.push("worker");
-  }
   const chips: ServiceChip[] = serviceList
-    .filter((s) => s !== "auth" && s !== "config")
+    // worker — часть server-зоны; задачи под «Серверами» (/server/tasks),
+    // отдельного чипа нет. auth/config тоже без чипа.
+    .filter((s) => s !== "auth" && s !== "config" && s !== "worker")
     // Audit log виден только носителю platform-роли logging_admin/logging_reader.
     // dep_admin с сервис-ролью loging_service.admin получает `logging` в
     // accessible_services, но backend режет ему /events и /rules на 403 — чип
     // вёл бы в тупик, поэтому скрываем.
     .filter((s) => s !== "logging" || hasAuditLogAccess(persona))
-    // Servers/Workers тоже гейтим по реальному доступу к server-зоне. У отдела
-    // подключён server_service, поэтому обычный dept-пользователь без server.*
-    // роли получает `server` в accessible_services, но backend отвечает 403 на
-    // список серверов и tasks — чип вёл бы на пустую страницу с ошибкой.
-    .filter((s) => (s !== "server" && s !== "worker") || hasServerZoneAccess(persona))
+    // Servers тоже гейтим по реальному доступу к server-зоне (вкл. подпункт
+    // «Задачи»). У отдела подключён server_service, поэтому обычный
+    // dept-пользователь без server.* роли получает `server` в
+    // accessible_services, но backend отвечает 403 на список серверов и tasks —
+    // чип вёл бы на пустую страницу с ошибкой.
+    .filter((s) => s !== "server" || hasServerZoneAccess(persona))
     // Secret — dept-scoped: платформенные роли без отдела (account_admin /
     // logging_*) получают 403, чип вёл бы в BlockedPane. Прячем у них.
     .filter((s) => s !== "secret" || hasSecretZoneAccess(persona))

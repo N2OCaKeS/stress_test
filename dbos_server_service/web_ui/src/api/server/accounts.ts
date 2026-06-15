@@ -94,6 +94,20 @@ export function createAccount(
 }
 
 /**
+ * Карточка одного аккаунта (с паролем при наличии `view_password`).
+ *
+ * Backend: `GET /server-accounts/{id}` доступен по `view` или `view_password`.
+ * Держателю `view_password` поле `password_b64` несёт base64(plaintext) —
+ * его надо декодировать (`lib/base64::fromBase64`); иначе `null`. Reveal
+ * пишет CRITICAL audit `server_account.password_revealed` и режется per-IP+
+ * account rate-limit'ом (429 RATE_LIMIT_EXCEEDED). Сломанный ciphertext при
+ * `view_password` → 500 DECRYPT_FAILED.
+ */
+export function getAccount(accountId: string): Promise<ServerAccount> {
+  return apiGet<ServerAccount>(`${BASE}/server-accounts/${accountId}`);
+}
+
+/**
  * Частичный PATCH аккаунта — без пароля и привязок.
  *
  * При изменении OS-управляемых атрибутов (`has_sudo`/`unix_groups`/`shell`)

@@ -112,8 +112,9 @@ router = APIRouter(prefix="/tasks")
         "`failed` = DLQ-вьюха в UI), `kind` (task_kind), `server_id`. "
         "Пагинация: `limit` (1..200, default 50) + `offset`.\n\n"
         "Доступ: `(task, view)`. Caller видит только задачи серверов своего "
-        "отдела; инфра-задачи без сервера видны только service-роли "
-        "`admin`/`operator`. Platform-админам "
+        "отдела; reader без роли `admin`/`operator` (и не department_admin) "
+        "видит только свои задачи (`created_by`). Инфра-задачи без сервера "
+        "видны только service-роли `admin`/`operator`. Platform-админам "
         "(`account_admin`/`loging_admin`) вход запрещён middleware'ом — 403 "
         "PLATFORM_ADMIN_BUSINESS_DATA_DENIED."
     ),
@@ -153,6 +154,8 @@ async def list_tasks_endpoint(
     description=(
         "Возвращает `TaskRead` с полным `result` и `last_error`. Доступ — "
         "`(task, view)` + dept-visibility (чужой отдел маскируется под 404). "
+        "Reader без роли `admin`/`operator` видит только свои задачи — чужая "
+        "задача того же отдела маскируется под 404. "
         "Инфра-задача без сервера видна только service-роли `admin`/`operator`."
     ),
     responses={

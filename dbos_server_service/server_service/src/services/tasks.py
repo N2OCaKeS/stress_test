@@ -11,6 +11,11 @@ visibility-обвязка поверх этих read'ов:
 * dept-scope — caller видит только задачи своих серверов
   (`server.department_id == caller.department_id`). Cross-dept задача
   отсутствует в листинге и маскируется под 404 в detail.
+* per-user scope — внутри отдела привилегированный caller (service-роль
+  `admin`/`operator` или `department_admin`) видит ВСЕ задачи отдела; обычный
+  reader (или носитель кастомной роли без admin/operator) видит ТОЛЬКО свои
+  задачи (`created_by == caller.user_id`). Чужая задача того же отдела для
+  reader'а отсутствует в листинге и маскируется под 404 в detail.
 * инфра-задачи без `target_server_id` (scheduler/heartbeat/sweep/cleanup)
   видны только service-роли `admin`/`operator`; `department_admin`
   (platform-роль) и `reader` их не видят — у них в карточке нет владельца,
@@ -75,6 +80,21 @@ def _sees_infra_tasks(identity: IdentityContext) -> bool:
     return bool(roles & {ServiceRole.ADMIN, ServiceRole.OPERATOR})
 
 
+def _sees_all_dept_tasks(identity: IdentityContext) -> bool:
+    """True, если caller видит все задачи отдела, а не только свои.
+
+    Привилегированный просмотр — у `department_admin` (platform-роль своего
+    отдела) и у носителя service-роли `admin`/`operator`. Обычный `reader`
+    (и любая кастомная роль с `view`, но без admin/operator) ограничен своими
+    задачами — отбор по `created_by` делает list/get. Platform-admin'ы до сюда
+    не доходят (middleware), отдельно их не учитываем.
+    """
+    if identity.platform_role == PlatformRole.DEPARTMENT_ADMIN:
+        return True
+    roles = set(identity.roles_for_service("server_service"))
+    return bool(roles & {ServiceRole.ADMIN, ServiceRole.OPERATOR})
+
+
 def _to_task_read(
     row: dict,
     dept_by_server: dict[str, str],
@@ -128,11 +148,17 @@ async def list_tasks(
     Permission `(task, view)`. Dept-scope: собираем server_id'ы отдела caller'а
     и фильтруем задачи по ним (cross-DB `IN`). `server_id`-фильтр сужает до
     одного сервера — но только если он входит в видимый набор (чужой/несущест-
-    вующий → пустой результат, без утечки факта существования).
+    вующий → пустой результат, без утечки факта существования). Поверх отдела
+    непривилегированный reader видит только свои задачи (`created_by`).
     """
     await permissions.require_action(db, identity, EntityType.TASK, Action.VIEW)
     if identity.department_id is None:
         return [], 0
+
+    # Reader без admin/operator-роли (и не dept-admin) видит только то, что
+    # поставил сам. Привилегированный caller — все задачи отдела.
+    own_only = not _sees_all_dept_tasks(identity)
+    created_by = identity.user_id if own_only else None
 
     allowed_ids = await server_repo.list_ids_in_departments(db, [identity.department_id])
     if server_id is not None:
@@ -150,6 +176,7 @@ async def list_tasks(
         task_kind=kind,
         server_ids=scoped_ids,
         include_infra=include_infra,
+        created_by=created_by,
         limit=limit,
         offset=offset,
     )
@@ -179,11 +206,19 @@ async def get_task(
     Permission `(task, view)`. Visibility: задача чужого отдела (или с
     `server_id`, которого caller не видит) маскируется под 404 TASK_NOT_FOUND.
     Инфра-задача без сервера видна только тем, кто проходит `_sees_infra_tasks`.
+    Непривилегированный reader дополнительно видит только свои задачи: чужую
+    задачу того же отдела маскируем под 404.
     """
     await permissions.require_action(db, identity, EntityType.TASK, Action.VIEW)
 
     row = await worker_client.get_task(task_id)
     if row is None:
+        raise NotFoundError(error_code="TASK_NOT_FOUND", message="Task not found")
+
+    own_only = not _sees_all_dept_tasks(identity)
+    if own_only and row.get("created_by") != identity.user_id:
+        # Reader видит только свои задачи — чужую того же отдела маскируем под
+        # 404, симметрично dept-isolation, чтобы не светить факт её наличия.
         raise NotFoundError(error_code="TASK_NOT_FOUND", message="Task not found")
 
     server_id = row["target_server_id"]

@@ -41,16 +41,6 @@ const MyAccount = lazy(() =>
 const Admin = lazy(() =>
   import("@/pages/admin/Admin").then((m) => ({ default: m.Admin }))
 );
-const WizardCreateCredential = lazy(() =>
-  import("@/pages/system/WizardCreateCredential").then((m) => ({
-    default: m.WizardCreateCredential,
-  }))
-);
-const WizardRotation = lazy(() =>
-  import("@/pages/system/WizardRotation").then((m) => ({
-    default: m.WizardRotation,
-  }))
-);
 const Log = lazy(() =>
   import("@/pages/log/Log").then((m) => ({ default: m.Log }))
 );
@@ -278,22 +268,6 @@ export function App() {
               element={
                 <RouteGuard>
                   <MyAccount />
-                </RouteGuard>
-              }
-            />
-            <Route
-              path="/wizard/create-credential"
-              element={
-                <RouteGuard service="secret">
-                  <WizardCreateCredential />
-                </RouteGuard>
-              }
-            />
-            <Route
-              path="/wizard/rotation"
-              element={
-                <RouteGuard service="secret">
-                  <WizardRotation />
                 </RouteGuard>
               }
             />

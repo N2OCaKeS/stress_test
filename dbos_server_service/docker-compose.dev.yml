@@ -206,6 +206,16 @@ services:
       # STASH_DECRYPT_FAILED и все provision/prepare таски FAILED.
       REDIS_STASH_ENCRYPTION_KEY: dev-redis-stash-encryption-key-do-not-use-in-prod
       REDIS_STASH_ENCRYPTION_KEY_VERSION: "1"
+      # Управляющая SSH-пара для server.prepare. Пара генерится на хосте
+      # (`make dev-mgmt-key`, идемпотентно, каталог .dev-secrets/). Публичный
+      # ключ приходит из .env (SSH_MANAGEMENT_PUBLIC_KEY=ssh-ed25519 AAAA...),
+      # его worker выкатывает в authorized_keys управляющего пользователя
+      # (SSH_MANAGEMENT_USER, дефолт dbos). Приватный ключ смонтирован файлом
+      # ниже — на него переключаются managed-сессии после prepare. Без обоих
+      # prepare падает в SSH_INVALID_ARG («public key is empty»).
+      SSH_MANAGEMENT_USER: dbos
+      SSH_MANAGEMENT_PUBLIC_KEY: ${SSH_MANAGEMENT_PUBLIC_KEY:-}
+      SSH_MANAGEMENT_PRIVATE_KEY_PATH: /secrets/dbos_management
       WORKER_LOG_LEVEL: INFO
     # If WORKER_BOT_TOKEN is not provided via env but a PAT file is mounted
     # (written by `make seed`), source it before starting taskiq. Seeder
@@ -227,6 +237,9 @@ services:
       - ./server_worker/src:/app/src
       - ./server_worker/alembic.ini:/app/alembic.ini:ro
       - ./.dev:/shared:ro
+      # Управляющий приватный ключ для prepare/managed-сессий. Каталог и пара
+      # генерятся `make dev-mgmt-key`; примонтирован read-only.
+      - ./.dev-secrets:/secrets:ro
     depends_on:
       postgres:
         condition: service_healthy

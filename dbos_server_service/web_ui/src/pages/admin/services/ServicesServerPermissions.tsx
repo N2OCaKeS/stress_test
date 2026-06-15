@@ -5,6 +5,8 @@ import {
   Lock,
   Bot,
   Loader2,
+  Plus,
+  X,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -15,6 +17,7 @@ import {
   setPermission,
   deletePermission,
 } from "@/api/server/permissions";
+import { createServiceRole } from "@/api/auth/service_roles";
 import { apiErrMsg } from "@/api/client";
 import { personaDeptId } from "@/lib/rbac";
 import type {
@@ -28,14 +31,15 @@ import type {
 
 /**
  * Матрица разрешений `server_service`. Группируется по сущности
- * (`entity_type`); внутри — таблица роли × действия, каждая ячейка — тоггл,
+ * (`entity_type`); внутри — таблица роли × действия, каждая ячейка — чекбокс,
  * клик по которому мгновенно выдаёт/отзывает grant через PUT/DELETE. Правка
- * оптимистична: ячейка перекрашивается сразу, при ошибке backend'а откат +
- * тост.
+ * оптимистична: галка ставится сразу, при ошибке backend'а откат + тост.
  *
  * Строки `admin` и `guest` залочены: admin держит полный доступ, guest —
- * базовый, их правила менять нельзя. Редактируются `reader`, `operator` и
- * кастомные роли отдела.
+ * базовый, их правила менять нельзя (чекбокс disabled). Редактируются
+ * `reader`, `operator` и кастомные роли отдела. Кастомную роль можно завести
+ * прямо здесь кнопкой «+ Новая роль» — она создаётся в каталоге
+ * `(dept, server_service)` auth-сервиса и тут же появляется строкой матрицы.
  *
  * RBAC: матрица — business-data `server_service`. Backend пускает носителя
  * `(permission, *, view/grant/revoke)`: department_admin своего отдела или
@@ -70,6 +74,9 @@ const LOCKED_ROLES: Record<string, string> = {
   guest: "guest — базовая роль, правила не редактируются",
 };
 
+// Системные роли каталога — их нельзя дублировать кастомной.
+const SYSTEM_ROLES: RoleName[] = ["guest", "reader", "operator", "admin"];
+
 // Порядок системных ролей в таблице; кастомные идут после по алфавиту.
 const SYSTEM_ROLE_ORDER: RoleName[] = ["guest", "reader", "operator", "admin"];
 
@@ -103,6 +110,9 @@ function ServicesServerPermissionsLive() {
   const [optimistic, setOptimistic] = useState<Record<string, boolean>>({});
   // Какие ячейки сейчас в полёте — чтобы рисовать спиннер и блокировать клик.
   const [saving, setSaving] = useState<Record<string, CellStatus>>({});
+  // Кастомные роли, созданные в этой сессии: показываем строкой сразу, ещё до
+  // того как появится первый grant (без грантов backend их в матрице не вернёт).
+  const [localRoles, setLocalRoles] = useState<RoleName[]>([]);
 
   // Индекс серверных grant'ов по (entity, role, action).
   const serverIndex = useMemo(() => {
@@ -123,19 +133,27 @@ function ServicesServerPermissionsLive() {
     [optimistic, serverIndex],
   );
 
-  // Роли таблицы для конкретной сущности: системные всегда + любые кастомные
-  // из существующих grant'ов этой сущности.
+  // Все кастомные роли отдела: из существующих grant'ов + созданные локально.
+  const customRoles = useMemo(() => {
+    const set = new Set<RoleName>();
+    for (const g of grants) {
+      if (!SYSTEM_ROLES.includes(g.role)) set.add(g.role);
+    }
+    for (const r of localRoles) set.add(r);
+    return set;
+  }, [grants, localRoles]);
+
+  // Роли таблицы для конкретной сущности: системные всегда + все кастомные
+  // отдела (даже без grant'ов на эту сущность — пустую строчку видно).
   const rolesFor = useCallback(
-    (entity: EntityType): RoleName[] => {
+    (_entity: EntityType): RoleName[] => {
       const set = new Set<RoleName>(SYSTEM_ROLE_ORDER);
-      for (const g of grants) {
-        if (g.entity_type === entity) set.add(g.role);
-      }
+      for (const r of customRoles) set.add(r);
       return Array.from(set).sort((a, b) =>
         roleSortKey(a).localeCompare(roleSortKey(b)),
       );
     },
-    [grants],
+    [customRoles],
   );
 
   const toggleCell = useCallback(
@@ -197,6 +215,54 @@ function ServicesServerPermissionsLive() {
     [bump, isAllowed, myDept, saving, toast],
   );
 
+  // Скопировать все grant'ы базовой роли в новую (best-effort, по каталогу).
+  const copyGrantsFromBase = useCallback(
+    async (base: RoleName, target: RoleName) => {
+      for (const entity of catalog) {
+        for (const a of entity.actions) {
+          if (a.worker_only) continue;
+          if (!isAllowed(entity.entity_type, base, a.action)) continue;
+          try {
+            await setPermission(
+              entity.entity_type,
+              target,
+              a.action as ActionName,
+              { target_department_id: myDept || undefined },
+            );
+          } catch {
+            // Частичный сбой копирования не должен валить создание роли —
+            // расхождение видно в матрице, пользователь доставит вручную.
+          }
+        }
+      }
+    },
+    [catalog, isAllowed, myDept],
+  );
+
+  const onRoleCreated = useCallback(
+    async (roleName: RoleName, base: RoleName | null) => {
+      setLocalRoles((rs) => (rs.includes(roleName) ? rs : [...rs, roleName]));
+      if (base) {
+        await copyGrantsFromBase(base, roleName);
+      }
+      bump();
+    },
+    [bump, copyGrantsFromBase],
+  );
+
+  // Имена ролей, уже занятые (системные + существующие/локальные кастомные).
+  const existingRoleNames = useMemo(() => {
+    const set = new Set<string>(SYSTEM_ROLES);
+    for (const r of customRoles) set.add(r);
+    return set;
+  }, [customRoles]);
+
+  // Все роли для выбора «на основе» в форме создания.
+  const baseRoleChoices = useMemo(
+    () => rolesFor("server" as EntityType),
+    [rolesFor],
+  );
+
   if (catalogQ.loading || grantsQ.loading) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
@@ -239,20 +305,12 @@ function ServicesServerPermissionsLive() {
           </span>
         </div>
         <p className="text-xs text-dim leading-relaxed">
-          Клик по ячейке мгновенно выдаёт или отзывает действие для роли.
+          Клик по чекбоксу мгновенно выдаёт или отзывает действие для роли.
           Строки <span className="mono">admin</span> и{" "}
           <span className="mono">guest</span> залочены. Изменения пишутся в
           рамках вашего отдела (<span className="mono">{myDept ?? "—"}</span>).
         </p>
         <div className="mt-3 pt-3 border-t border-token text-[11px] text-dim flex items-center gap-4 flex-wrap">
-          <span className="flex items-center gap-1">
-            <span className="inline-block w-7 h-4 rounded-full bg-[var(--accent)]" />{" "}
-            allow
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block w-7 h-4 rounded-full border border-token" />{" "}
-            default (нет grant'а)
-          </span>
           <span className="flex items-center gap-1">
             <Lock className="w-3 h-3" /> роль залочена
           </span>
@@ -264,6 +322,13 @@ function ServicesServerPermissionsLive() {
             <Bot className="w-3 h-3" /> worker_only — людям не выдаётся
           </span>
         </div>
+
+        <NewRoleForm
+          departmentId={myDept}
+          existingNames={existingRoleNames}
+          baseRoles={baseRoleChoices}
+          onCreated={onRoleCreated}
+        />
       </div>
 
       {catalog.length === 0 ? (
@@ -282,6 +347,143 @@ function ServicesServerPermissionsLive() {
           />
         ))
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// New custom role
+// ---------------------------------------------------------------------------
+
+function NewRoleForm({
+  departmentId,
+  existingNames,
+  baseRoles,
+  onCreated,
+}: {
+  departmentId: string | null;
+  existingNames: Set<string>;
+  baseRoles: RoleName[];
+  onCreated: (roleName: RoleName, base: RoleName | null) => void | Promise<void>;
+}) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [base, setBase] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function reset() {
+    setName("");
+    setBase("");
+    setOpen(false);
+  }
+
+  async function submit() {
+    const roleName = name.trim();
+    if (!roleName) {
+      toast.warn("Имя роли обязательно");
+      return;
+    }
+    if (existingNames.has(roleName)) {
+      toast.error(`Роль ${roleName} уже существует`);
+      return;
+    }
+    if (!departmentId) {
+      toast.error("Не определён отдел — создать роль нельзя");
+      return;
+    }
+    setBusy(true);
+    try {
+      await createServiceRole(departmentId, "server_service", {
+        role_name: roleName,
+        description: base ? `на основе ${base}` : undefined,
+      });
+      toast.success(`Роль ${roleName} создана`);
+      await onCreated(roleName, base || null);
+      reset();
+    } catch (e) {
+      toast.error(apiErrMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="mt-3 pt-3 border-t border-token">
+        <button
+          className="btn btn-ghost text-xs flex items-center gap-1"
+          onClick={() => setOpen(true)}
+        >
+          <Plus className="w-3 h-3" /> Новая роль
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-token">
+      <div className="p-3 border border-token rounded">
+        <div className="text-sm font-semibold mb-2 flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-accent" />
+            Новая роль · server_service
+          </span>
+          <button
+            className="btn btn-ghost text-xs flex items-center gap-1"
+            onClick={reset}
+            disabled={busy}
+          >
+            <X className="w-3 h-3" /> закрыть
+          </button>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-dim">имя роли</span>
+            <input
+              className="input mono"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="server_restarter"
+              disabled={busy}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submit();
+              }}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-dim">на основе (опционально)</span>
+            <select
+              className="input"
+              value={base}
+              onChange={(e) => setBase(e.target.value)}
+              disabled={busy}
+            >
+              <option value="">— с нуля —</option>
+              {baseRoles.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="btn btn-primary flex items-center gap-1"
+            onClick={submit}
+            disabled={busy || !name.trim()}
+          >
+            {busy && <Loader2 className="w-3 h-3 animate-spin" />}
+            Создать
+          </button>
+        </div>
+        <p className="text-[10px] text-dim mt-2 leading-relaxed">
+          Роль создаётся в каталоге <span className="mono">(отдел, server_service)</span>.
+          С базовой ролью её grant'ы копируются в новую — дальше правьте
+          чекбоксами. Системные роли{" "}
+          (<span className="mono">guest/reader/operator/admin</span>)
+          дублировать нельзя.
+        </p>
+      </div>
     </div>
   );
 }
@@ -325,15 +527,17 @@ function EntityMatrix({
           У сущности нет действий в каталоге.
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
+        <div className="overflow-auto max-h-[60vh] border border-token rounded">
+          <table className="text-sm border-collapse">
             <thead className="text-left text-dim text-xs uppercase">
               <tr>
-                <th className="pb-2 pr-3 sticky left-0">role</th>
+                <th className="pb-2 pt-2 px-3 sticky left-0 top-0 z-20 bg-[var(--bg-soft)]">
+                  role
+                </th>
                 {entity.actions.map((a) => (
                   <th
                     key={a.action}
-                    className="pb-2 px-2 mono font-normal align-bottom"
+                    className="pb-2 pt-2 px-2 mono font-normal align-bottom sticky top-0 z-10 bg-[var(--bg-soft)]"
                     title={a.description}
                   >
                     <div className="flex items-center gap-1 whitespace-nowrap">
@@ -362,7 +566,7 @@ function EntityMatrix({
                 const locked = role in LOCKED_ROLES;
                 return (
                   <tr key={role} className="border-t border-token">
-                    <td className="py-2 pr-3 mono text-xs sticky left-0">
+                    <td className="py-2 px-3 mono text-xs sticky left-0 z-10 bg-[var(--bg-soft)]">
                       <span
                         className="flex items-center gap-1"
                         title={locked ? LOCKED_ROLES[role] : undefined}
@@ -385,11 +589,11 @@ function EntityMatrix({
                         : a.worker_only
                           ? "worker_only — выдавать людям нельзя"
                           : allowed
-                            ? "Кликни — отозвать"
-                            : "Кликни — выдать";
+                            ? "Снять — отозвать"
+                            : "Поставить — выдать";
                       return (
-                        <td key={a.action} className="py-1.5 px-2">
-                          <PermToggle
+                        <td key={a.action} className="py-1.5 px-2 text-center">
+                          <PermCheckbox
                             allowed={allowed}
                             disabled={disabled}
                             saving={isSaving}
@@ -413,10 +617,10 @@ function EntityMatrix({
 }
 
 // ---------------------------------------------------------------------------
-// Toggle cell
+// Checkbox cell
 // ---------------------------------------------------------------------------
 
-function PermToggle({
+function PermCheckbox({
   allowed,
   disabled,
   saving,
@@ -429,33 +633,27 @@ function PermToggle({
   title: string;
   onClick: () => void;
 }) {
-  const track = [
-    "relative inline-flex items-center w-9 h-5 rounded-full border transition-colors",
-    allowed
-      ? "bg-[var(--accent)] border-[var(--accent)]"
-      : "bg-transparent border-token",
-    disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
-    saving ? "cursor-wait" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const knob = [
-    "inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--bg-soft-2)] shadow transition-transform",
-    allowed ? "translate-x-[18px]" : "translate-x-0.5",
-  ].join(" ");
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={allowed}
-      className={track}
-      disabled={disabled || saving}
-      title={title}
-      onClick={onClick}
-    >
-      <span className={knob}>
-        {saving && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+  if (saving) {
+    return (
+      <span
+        className="inline-flex items-center justify-center w-4 h-4 align-middle"
+        title={title}
+      >
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-dim" />
       </span>
-    </button>
+    );
+  }
+  return (
+    <input
+      type="checkbox"
+      className={[
+        "w-4 h-4 align-middle accent-[var(--accent)]",
+        disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
+      ].join(" ")}
+      checked={allowed}
+      disabled={disabled}
+      title={title}
+      onChange={onClick}
+    />
   );
 }

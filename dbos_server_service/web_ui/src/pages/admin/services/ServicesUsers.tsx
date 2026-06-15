@@ -15,6 +15,8 @@ import {
   validatePassword,
 } from "@/lib/passwordPolicy";
 import { usePersona } from "@/contexts/PersonaContext";
+import { isPlatformWideAdmin } from "@/lib/rbac";
+import { useDeptLabel } from "@/lib/labels";
 import { DEPTS as MOCK_DEPTS, USERS as MOCK_USERS, type MockUser } from "@/mocks/auth";
 import { InlineEditor, FormRow, useInlineState } from "./_inline";
 import { UserBackendView } from "./_servicesUsersView";
@@ -22,6 +24,7 @@ import {
   createUser,
   isUserBanned,
   listUsers,
+  listUsersByDepartment,
   normalizeUserStatus,
   updateUser,
 } from "@/api/auth/users";
@@ -141,6 +144,11 @@ export function ServicesUsers() {
   const canEdit =
     persona.platform_role === "account_admin" ||
     persona.platform_role === "dep_admin";
+  // account_admin видит всех через listUsers (cross-dept). Все остальные
+  // админы (dep_admin, носитель сервис-admin с отделом) ограничены своим
+  // отделом — listUsers им вернёт 403, поэтому зовём listUsersByDepartment.
+  const platformWide = isPlatformWideAdmin(persona);
+  const scopeDeptId = !platformWide ? persona.dept_id : null;
 
   const [limit] = useState(50);
   const [offset, setOffset] = useState(0);
@@ -169,14 +177,18 @@ export function ServicesUsers() {
   // List users. include_banned всегда true — фильтрация по статусу делается
   // отдельным dropdown'ом, при «все» backend должен отдать всех (включая banned).
   const usersQ = useQuery(
-    () =>
-      listUsers({
+    () => {
+      const params = {
         limit,
         offset,
         include_banned: true,
         status: statusFilter || undefined,
-      }),
-    [limit, offset, statusFilter],
+      };
+      return scopeDeptId
+        ? listUsersByDepartment(scopeDeptId, params)
+        : listUsers(params);
+    },
+    [limit, offset, statusFilter, scopeDeptId],
     { enabled: !mockMode },
   );
 
@@ -445,6 +457,7 @@ export function ServicesUsers() {
               initial={u}
               depts={depts}
               canEdit={canEdit}
+              lockedDeptId={scopeDeptId}
               mockMode={mockMode}
               onDone={() => {
                 refetchAll();
@@ -468,6 +481,7 @@ export function ServicesUsers() {
               <UserForm
                 depts={depts}
                 canEdit
+                lockedDeptId={scopeDeptId}
                 mockMode={mockMode}
                 onDone={() => {
                   refetchAll();
@@ -518,6 +532,7 @@ function UserForm({
   initial,
   depts,
   canEdit,
+  lockedDeptId,
   mockMode,
   onDone,
   mode,
@@ -525,6 +540,12 @@ function UserForm({
   initial?: UiUser;
   depts: Array<{ id: string; name: string }>;
   canEdit: boolean;
+  /**
+   * Если задан — отдел залочен на это значение (dep_admin создаёт/правит
+   * только в своём отделе, backend иначе отбивает). Платформенный админ
+   * получает null и свободный выбор отдела.
+   */
+  lockedDeptId: string | null;
   mockMode: boolean;
   onDone: () => void;
   mode: "new" | "edit";
@@ -534,7 +555,10 @@ function UserForm({
     mode === "new" ? generateInitialPassword() : "",
   );
   const [email, setEmail] = useState(initial?.email ?? "");
-  const [dept, setDept] = useState(initial?.dept_id ?? "");
+  const [dept, setDept] = useState(
+    lockedDeptId ?? initial?.dept_id ?? "",
+  );
+  const lockedDeptName = useDeptLabel(lockedDeptId);
   const [platformRole, setPlatformRole] = useState<string>(
     initial?.platform_role ?? "",
   );
@@ -686,19 +710,26 @@ function UserForm({
             </div>
           </FormRow>
         )}
-        <FormRow label="dept">
-          <select
-            className="input"
-            value={dept ?? ""}
-            onChange={(e) => setDept(e.target.value)}
-          >
-            <option value="">— (платформенный)</option>
-            {depts.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+        <FormRow
+          label="dept"
+          hint={lockedDeptId ? "Отдел зафиксирован вашим scope" : undefined}
+        >
+          {lockedDeptId ? (
+            <input className="input" value={lockedDeptName} disabled readOnly />
+          ) : (
+            <select
+              className="input"
+              value={dept ?? ""}
+              onChange={(e) => setDept(e.target.value)}
+            >
+              <option value="">— (платформенный)</option>
+              {depts.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          )}
         </FormRow>
         <FormRow
           label="platform_role"

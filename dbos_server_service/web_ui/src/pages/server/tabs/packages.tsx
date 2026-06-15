@@ -7,19 +7,27 @@
  * поллим task-row каждые ~3с до терминального статуса, дотягиваем
  * `result.packages` и рендерим таблицу `name / version / arch`.
  *
+ * Probe ходит по SSH под управляющим ключом — сервер обязан быть подготовлен
+ * (`is_managed`, через prepare), иначе backend отбивает 409 PREPARE_REQUIRED.
+ * Выбора аккаунта в этом потоке нет: если сервер не подготовлен, вкладка сама
+ * находит sudo-аккаунт сервера, гоняет prepare с его `account_id`, дожидается
+ * завершения и повторяет probe. Пользователь видит прогресс по шагам.
+ *
  * RBAC: probe доступен `server.operator`+ и dep_admin'у своего dept'а.
  * account_admin / logging_admin закрыты от server_service целиком — страница
  * /server для них не рендерится. Backend перепроверит ещё раз — клиентский
- * gate только прячет заведомо лишнюю кнопку.
+ * gate только прячет заведомо лишнюю кнопку. Account-режим prepare на бэке
+ * дополнительно требует `view_password`; если его нет — приходит 403, которую
+ * показываем человекочитаемо.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Package, RefreshCw, AlertCircle } from "lucide-react";
 import { installedPackagesProbe, getTask } from "@/api/server/misc";
+import { getServer, prepareServer } from "@/api/server/servers";
 import { listAccounts } from "@/api/server/accounts";
-import { useQuery } from "@/api/auth/useQuery";
+import { ApiError, apiErrMsg } from "@/api/client";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
-import { apiErrMsg } from "@/api/client";
 import { isDepAdmin } from "@/lib/rbac";
 import { isTerminalTaskStatus } from "@/api/server/types";
 import type {
@@ -32,6 +40,10 @@ import type {
 import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 
 const PACKAGES_POLL_MS = 3_000;
+const PREPARE_POLL_MS = 3_000;
+// Prepare идёт по SSH (bootstrap-цикл), может занять минуты. Не ждём вечно —
+// рвём поллинг с понятным сообщением, чтобы спиннер не висел навсегда.
+const PREPARE_TIMEOUT_MS = 5 * 60_000;
 
 /** Достаёт `packages` из произвольного `task.result` (best-effort). */
 function extractPackages(result: TaskRead["result"]): PackageRow[] {
@@ -55,6 +67,7 @@ function extractPackages(result: TaskRead["result"]): PackageRow[] {
 interface Props {
   serverId: string;
   server?: Server;
+  onServerUpdated?: (next: Server) => void;
 }
 
 interface PackageRow {
@@ -62,6 +75,9 @@ interface PackageRow {
   version: string;
   arch?: string | null;
 }
+
+/** Фаза потока — для прогресс-подписи и блокировки кнопки. */
+type Phase = "idle" | "preparing" | "probing";
 
 function canProbe(
   persona: ReturnType<typeof usePersona>["persona"],
@@ -79,16 +95,32 @@ function canProbe(
   return false;
 }
 
-export function PackagesTab({ serverId, server }: Props) {
+/** SSH-ошибка аутентификации в `last_error` — повод предложить re-prepare. */
+function looksLikeAuthFailure(lastError: string | null | undefined): boolean {
+  if (!lastError) return false;
+  const s = lastError.toLowerCase();
+  return (
+    s.includes("auth") ||
+    s.includes("permission denied") ||
+    s.includes("password") ||
+    s.includes("publickey")
+  );
+}
+
+export function PackagesTab({ server, onServerUpdated }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
   const [pattern, setPattern] = useState("");
-  const [pending, setPending] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [progress, setProgress] = useState<string | null>(null);
   const [lastTaskId, setLastTaskId] = useState<string | null>(null);
   const [lastStatus, setLastStatus] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [packages, setPackages] = useState<PackageRow[]>([]);
   const [polling, setPolling] = useState(false);
+  // Probe на prepared-сервере упал с auth-ошибкой → возможно протух пароль
+  // управляющего пользователя. Предлагаем повторно прогнать prepare.
+  const [offerReprepare, setOfferReprepare] = useState(false);
 
   const aliveRef = useRef(true);
   useEffect(() => {
@@ -98,31 +130,19 @@ export function PackagesTab({ serverId, server }: Props) {
     };
   }, []);
 
-  const allowed = canProbe(persona, server);
+  // Локальная копия сервера: после успешного prepare сервер становится
+  // managed, нам нужен свежий `is_managed` для повторного probe и чтобы
+  // соседние вкладки увидели обновление.
+  const [current, setCurrent] = useState<Server | undefined>(server);
+  useEffect(() => {
+    setCurrent(server);
+  }, [server]);
+  const view = current ?? server;
 
-  // Аккаунты сервера — нужны probe'у на неуправляемом сервере: worker заходит
-  // под self-сессией по паролю аккаунта. Управляемый сервер ходит по ключу —
-  // picker тогда не обязателен (backend сам None'ит account_id).
-  const needsAccount = !!server && !server.is_managed && allowed;
-  const accountsQ = useQuery(
-    () => listAccounts({ server_id: serverId, limit: 200 }),
-    [serverId],
-    { enabled: needsAccount },
-  );
-  const accounts = useMemo<ServerAccount[]>(() => {
-    const data = accountsQ.data as
-      | OffsetPaginatedResponse<ServerAccount>
-      | CursorPaginatedResponse<ServerAccount>
-      | undefined;
-    return filterAccessibleAccounts(data?.items ?? [], persona);
-  }, [accountsQ.data, persona]);
-  const [accountId, setAccountId] = useState("");
-  // account_id шлём только на неуправляемом сервере; на managed worker идёт
-  // по ключу, передавать пусто.
-  const probeAccountId =
-    server && !server.is_managed && accountId ? accountId : undefined;
+  const allowed = canProbe(persona, view);
+  const busy = phase !== "idle";
 
-  // Поллинг task-row до терминального статуса: тянем result.packages.
+  // Поллинг probe-task'и до терминального статуса: тянем result.packages.
   useEffect(() => {
     if (!lastTaskId || !polling) return;
     let stopped = false;
@@ -133,15 +153,22 @@ export function PackagesTab({ serverId, server }: Props) {
           setLastStatus(t.status);
           if (isTerminalTaskStatus(t.status)) {
             setPolling(false);
+            setPhase("idle");
+            setProgress(null);
             setPackages(extractPackages(t.result));
             if (t.status === "failed") {
               setErr(t.last_error ?? "Probe завершился ошибкой");
+              if (looksLikeAuthFailure(t.last_error)) {
+                setOfferReprepare(true);
+              }
             }
           }
         })
         .catch((e: unknown) => {
           if (stopped || !aliveRef.current) return;
           setPolling(false);
+          setPhase("idle");
+          setProgress(null);
           setErr(apiErrMsg(e, "Не удалось прочитать результат задачи"));
         });
     };
@@ -153,30 +180,178 @@ export function PackagesTab({ serverId, server }: Props) {
     };
   }, [lastTaskId, polling]);
 
-  async function handleProbe() {
-    if (pending || !allowed) return;
-    setPending(true);
+  /** Поллит произвольную task'у до терминала; резолвится финальным TaskRead. */
+  function waitForTask(taskId: string, timeoutMs: number): Promise<TaskRead> {
+    return new Promise<TaskRead>((resolve, reject) => {
+      const started = Date.now();
+      const poll = () => {
+        if (!aliveRef.current) {
+          reject(new Error("cancelled"));
+          return;
+        }
+        getTask(taskId)
+          .then((t) => {
+            if (!aliveRef.current) {
+              reject(new Error("cancelled"));
+              return;
+            }
+            if (isTerminalTaskStatus(t.status)) {
+              resolve(t);
+              return;
+            }
+            if (Date.now() - started > timeoutMs) {
+              reject(new Error("timeout"));
+              return;
+            }
+            window.setTimeout(poll, PREPARE_POLL_MS);
+          })
+          .catch(reject);
+      };
+      poll();
+    });
+  }
+
+  /**
+   * Находит sudo-аккаунт сервера для account-режима prepare. Берёт первый
+   * доступный текущей persona аккаунт с `has_sudo`. Возвращает `null`, если
+   * подходящего нет.
+   */
+  async function findSudoAccount(srv: Server): Promise<ServerAccount | null> {
+    const data = (await listAccounts({ server_id: srv.id, limit: 200 })) as
+      | OffsetPaginatedResponse<ServerAccount>
+      | CursorPaginatedResponse<ServerAccount>;
+    const accessible = filterAccessibleAccounts(data.items ?? [], persona);
+    return accessible.find((a) => a.has_sudo && a.is_active) ?? null;
+  }
+
+  /**
+   * Авто-prepare: ищет sudo-аккаунт, ставит prepare с его account_id, ждёт
+   * завершения и возвращает свежий (managed) сервер. Бросает Error с готовым
+   * человекочитаемым сообщением — caller покажет его в alert'е.
+   */
+  async function autoPrepare(srv: Server): Promise<Server> {
+    setProgress("Сервер не подготовлен — ищу sudo-аккаунт для prepare…");
+    const account = await findSudoAccount(srv);
+    if (!account) {
+      throw new Error(
+        "На сервере нет привязанного sudo-аккаунта для prepare. " +
+          "Заведите аккаунт с sudo во вкладке «Аккаунты» или подготовьте " +
+          "сервер вручную во вкладке «Управление».",
+      );
+    }
+
+    setProgress(
+      `Запускаю prepare под аккаунтом ${account.login} (sudo)…`,
+    );
+    let dispatched;
+    try {
+      dispatched = await prepareServer(srv.id, { account_id: account.id });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        throw new Error(
+          "Недостаточно прав для prepare в account-режиме " +
+            "(нужно право на чтение пароля аккаунта). Обратитесь к " +
+            "администратору департамента.",
+        );
+      }
+      throw new Error(apiErrMsg(e, "Не удалось запустить prepare"));
+    }
+
+    setProgress("Идёт prepare сервера… (обычно занимает до пары минут)");
+    let task: TaskRead;
+    try {
+      task = await waitForTask(dispatched.task_id, PREPARE_TIMEOUT_MS);
+    } catch (e) {
+      if (e instanceof Error && e.message === "timeout") {
+        throw new Error(
+          "Prepare идёт дольше обычного. Проверьте статус задачи во " +
+            "вкладке «Управление» и повторите получение пакетов позже.",
+        );
+      }
+      throw new Error(apiErrMsg(e, "Не удалось дождаться prepare"));
+    }
+    if (task.status !== "succeeded") {
+      throw new Error(
+        task.last_error ??
+          "Prepare завершился неуспешно. Проверьте bootstrap-креды аккаунта.",
+      );
+    }
+
+    // Сервер помечается managed worker-callback'ом; перечитываем карточку,
+    // чтобы получить актуальный is_managed и поднять его наверх.
+    setProgress("Prepare завершён — обновляю карточку сервера…");
+    const refreshed = await getServer(srv.id);
+    setCurrent(refreshed);
+    onServerUpdated?.(refreshed);
+    return refreshed;
+  }
+
+  /** Диспатчит probe и включает поллинг result'а. */
+  async function dispatchProbe(srv: Server): Promise<void> {
+    setProgress("Получаю список пакетов…");
+    const res = await installedPackagesProbe(
+      srv.id,
+      pattern.trim() ? { pattern: pattern.trim() } : undefined,
+    );
+    if (!aliveRef.current) return;
+    setLastTaskId(res.task_id);
+    setLastStatus(res.status);
+    setPhase("probing");
+    setPolling(true);
+    toast.success(`Probe запущен (task ${res.task_id})`);
+  }
+
+  async function handleProbe(forcePrepare = false) {
+    if (busy || !allowed || !view) return;
     setErr(null);
     setPackages([]);
+    setOfferReprepare(false);
+    setLastTaskId(null);
+    setLastStatus(null);
+
     try {
-      const res = await installedPackagesProbe(
-        serverId,
-        pattern.trim() ? { pattern: pattern.trim() } : undefined,
-        probeAccountId ? { account_id: probeAccountId } : {},
-      );
-      if (!aliveRef.current) return;
-      setLastTaskId(res.task_id);
-      setLastStatus(res.status);
-      setPolling(true);
-      toast.success(`Probe запущен (task ${res.task_id})`);
+      let srv = view;
+      // Не подготовлен (или принудительное re-prepare после auth-сбоя) —
+      // сперва прогоняем prepare.
+      if (!srv.is_managed || forcePrepare) {
+        setPhase("preparing");
+        srv = await autoPrepare(srv);
+      }
+
+      try {
+        setPhase("probing");
+        await dispatchProbe(srv);
+      } catch (e) {
+        // Гонка: думали managed, а backend отбил PREPARE_REQUIRED. Один раз
+        // авто-prepare'имся и повторяем probe.
+        if (
+          !forcePrepare &&
+          e instanceof ApiError &&
+          e.errorCode === "PREPARE_REQUIRED"
+        ) {
+          setPhase("preparing");
+          const prepared = await autoPrepare(srv);
+          setPhase("probing");
+          await dispatchProbe(prepared);
+        } else {
+          throw e;
+        }
+      }
     } catch (e) {
-      const msg = apiErrMsg(e, "Probe не запустился");
-      if (aliveRef.current) setErr(msg);
+      if (!aliveRef.current) return;
+      const msg = e instanceof Error ? e.message : apiErrMsg(e, "Не удалось получить пакеты");
+      setErr(msg);
       toast.error(msg);
-    } finally {
-      if (aliveRef.current) setPending(false);
+      setPhase("idle");
+      setProgress(null);
     }
   }
+
+  const buttonLabel = useMemo(() => {
+    if (phase === "preparing") return "Готовим сервер…";
+    if (phase === "probing") return "Получаем пакеты…";
+    return "Получить пакеты";
+  }, [phase]);
 
   return (
     <div className="p-5 flex flex-col gap-4">
@@ -189,22 +364,20 @@ export function PackagesTab({ serverId, server }: Props) {
             </div>
             <div className="text-xs text-dim">
               Live SSH-probe через worker: `dpkg-query` / `rpm -qa` по
-              shell-glob'у. Сама проба обычно идёт <b>десятки секунд</b> —
-              endpoint отдаёт <span className="mono">task_id</span> сразу,
-              реальный список появится в результатах задачи.
+              shell-glob'у. Если сервер ещё не подготовлен, prepare запустится
+              автоматически под sudo-аккаунтом сервера. Сама проба обычно идёт{" "}
+              <b>десятки секунд</b> — список появится после закрытия задачи.
             </div>
           </div>
           {allowed && (
             <button
               className="btn btn-primary flex items-center gap-2"
-              onClick={handleProbe}
-              disabled={pending}
-              title="Запустить probe установленных пакетов"
+              onClick={() => handleProbe(false)}
+              disabled={busy || !view}
+              title="Получить список установленных пакетов"
             >
-              <RefreshCw
-                className={`w-4 h-4 ${pending ? "animate-spin" : ""}`}
-              />
-              {pending ? "Запускаем…" : "Probe installed packages"}
+              <RefreshCw className={`w-4 h-4 ${busy ? "animate-spin" : ""}`} />
+              {buttonLabel}
             </button>
           )}
         </div>
@@ -217,40 +390,12 @@ export function PackagesTab({ serverId, server }: Props) {
             placeholder="* / linux-image* / *-dev"
             value={pattern}
             onChange={(e) => setPattern(e.target.value)}
-            disabled={pending || !allowed}
+            disabled={busy || !allowed}
           />
           <span className="text-[11px] text-dim">
             пусто → `*` (все пакеты)
           </span>
         </div>
-
-        {needsAccount && (
-          <div className="mt-3 flex items-center gap-2 flex-wrap">
-            <label className="text-xs text-dim">SSH-аккаунт для probe</label>
-            <select
-              className="surface-2 border border-token rounded px-2 py-1 text-sm"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              disabled={pending || accountsQ.loading}
-            >
-              <option value="">— дефолтный аккаунт сервера —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.login}
-                  {a.has_sudo ? " (sudo)" : ""}
-                  {a.source === "discovered" ? " · discovered" : ""}
-                </option>
-              ))}
-            </select>
-            <span className="text-[11px] text-dim">
-              {accountsQ.loading
-                ? "загружаем…"
-                : accounts.length === 0
-                  ? "нет привязанных аккаунтов — probe вернёт 422"
-                  : "пусто → первый аккаунт с паролем"}
-            </span>
-          </div>
-        )}
 
         {!allowed && (
           <div className="mt-3 text-[11px] text-dim italic">
@@ -260,10 +405,29 @@ export function PackagesTab({ serverId, server }: Props) {
         )}
       </div>
 
+      {progress && (
+        <div className="surface-2 border border-token rounded p-3 text-xs flex items-center gap-2">
+          <RefreshCw className="w-4 h-4 animate-spin text-accent" />
+          <span>{progress}</span>
+        </div>
+      )}
+
       {err && (
         <div className="alert alert-danger flex items-start gap-2">
           <AlertCircle className="w-4 h-4 mt-0.5" />
-          <div className="flex-1 text-xs">{err}</div>
+          <div className="flex-1 text-xs">
+            <div>{err}</div>
+            {offerReprepare && allowed && (
+              <button
+                className="btn btn-ghost mt-2 flex items-center gap-1 text-xs"
+                onClick={() => handleProbe(true)}
+                disabled={busy}
+                title="Повторно подготовить сервер и получить пакеты"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Повторить prepare и пакеты
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -319,8 +483,8 @@ export function PackagesTab({ serverId, server }: Props) {
                   colSpan={3}
                   className="px-3 py-4 text-xs text-dim text-center"
                 >
-                  Список пуст. Запусти probe и подожди, пока worker закроет
-                  задачу.
+                  Список пуст. Нажми «Получить пакеты» и подожди, пока worker
+                  закроет задачу.
                 </td>
               </tr>
             ) : (

@@ -241,7 +241,7 @@ class _ConsoleSession:
 
     async def _pump_input(self) -> str:
         """Подписаться на `console:in:<sid>`, писать в PTY, разбирать команды."""
-        client = redis_pool.get_redis()
+        client = redis_pool.get_pubsub_redis()
         pubsub = client.pubsub()
         await pubsub.subscribe(in_channel(self.session_id))
         try:
@@ -447,7 +447,7 @@ async def run_control_listener() -> None:
     while True:
         pubsub = None
         try:
-            client = redis_pool.get_redis()
+            client = redis_pool.get_pubsub_redis()
             pubsub = client.pubsub()
             await pubsub.psubscribe(CTL_PATTERN)
             async for message in pubsub.listen():

@@ -230,6 +230,7 @@ async def test_session_pumps_input_to_pty_and_output_to_redis(monkeypatch):
     in_pubsub = _FakePubSub([in_msg])
     redis = _FakeRedis(in_pubsub)
     monkeypatch.setattr(console_bridge.redis_pool, "get_redis", lambda: redis)
+    monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
 
     session = console_bridge._ConsoleSession(
         session_id="csn_pump", host="h", port=22, management_user="dbos",
@@ -276,6 +277,7 @@ async def test_session_idle_timeout_closes(monkeypatch):
     # in-канал ничего не присылает — висит.
     redis = _FakeRedis(_FakePubSub([]))
     monkeypatch.setattr(console_bridge.redis_pool, "get_redis", lambda: redis)
+    monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
 
     session = console_bridge._ConsoleSession(
         session_id="csn_idle", host="h", port=22, management_user="dbos",
@@ -300,6 +302,7 @@ async def test_session_ssh_error_publishes_error_event(monkeypatch):
     monkeypatch.setattr(console_bridge, "SshClient", lambda **k: _FailingSsh())
     redis = _FakeRedis(_FakePubSub([]))
     monkeypatch.setattr(console_bridge.redis_pool, "get_redis", lambda: redis)
+    monkeypatch.setattr(console_bridge.redis_pool, "get_pubsub_redis", lambda: redis)
 
     session = console_bridge._ConsoleSession(
         session_id="csn_err", host="h", port=22, management_user="dbos",

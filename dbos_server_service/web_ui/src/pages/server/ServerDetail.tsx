@@ -147,7 +147,11 @@ export function ServerDetail({ serverId, onDeleted }: ServerDetailProps) {
         )}
         {tab === "drift" && <DriftTab serverId={current.id} server={current} />}
         {tab === "packages" && (
-          <PackagesTab serverId={current.id} server={current} />
+          <PackagesTab
+            serverId={current.id}
+            server={current}
+            onServerUpdated={setServer}
+          />
         )}
         {tab === "manage" && (
           <ManageTab

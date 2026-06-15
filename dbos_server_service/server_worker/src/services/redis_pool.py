@@ -55,6 +55,26 @@ _SOCKET_TIMEOUT_SECONDS = 5.0
 _SOCKET_CONNECT_TIMEOUT_SECONDS = 3.0
 
 _client: Optional[aioredis.Redis] = None
+_pubsub_client: Optional[aioredis.Redis] = None
+
+
+def get_pubsub_redis() -> aioredis.Redis:
+    """Отдельный клиент для долгоживущих pub/sub-листенеров.
+
+    У основного клиента стоит `socket_timeout` под обычные команды, но
+    `pubsub.listen()` на простаивающем канале упёрся бы в этот таймаут и
+    сыпал бы ложными ошибками с переподпиской. Здесь read-таймаут снят,
+    чтобы listen блокировался сколько нужно; connect-таймаут оставляем.
+    """
+    global _pubsub_client
+    if _pubsub_client is None:
+        settings = get_settings()
+        _pubsub_client = aioredis.from_url(
+            settings.redis_url,
+            socket_timeout=None,
+            socket_connect_timeout=_SOCKET_CONNECT_TIMEOUT_SECONDS,
+        )
+    return _pubsub_client
 
 
 def get_redis() -> aioredis.Redis:
@@ -83,16 +103,20 @@ async def aclose() -> None:
     `get_redis()` поднимет новый pool (нужно для тестов и рестарта
     broker'а внутри одного процесса).
     """
-    global _client
-    if _client is None:
-        return
-    try:
-        await _client.aclose()
-    except Exception as exc:  # noqa: BLE001 — shutdown best-effort
-        logger.warning(
-            "redis_pool: failed to close singleton: %s",
-            redact_error_message(f"{type(exc).__name__}: {exc}"),
-        )
+    global _client, _pubsub_client
+    for attr in ("_client", "_pubsub_client"):
+        cli = globals()[attr]
+        if cli is None:
+            continue
+        try:
+            await cli.aclose()
+        except Exception as exc:  # noqa: BLE001 — shutdown best-effort
+            logger.warning(
+                "redis_pool: failed to close %s: %s",
+                attr,
+                redact_error_message(f"{type(exc).__name__}: {exc}"),
+            )
+        globals()[attr] = None
     _client = None
 
 

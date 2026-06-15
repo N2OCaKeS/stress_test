@@ -1,6 +1,9 @@
 # Dev runtime (PID-файлы и логи make dev)
 .dev/
 
+# Dev-стек: управляющая SSH-пара для prepare (генерится Makefile'ом, ssh-keygen)
+.dev-secrets/
+
 # Python
 __pycache__/
 *.py[cod]

@@ -332,11 +332,13 @@ def seed_server(dept_id: str, created_by: str, os_version_id: str | None) -> str
     with conn(PG_HOST, PG_PORT, "dev_server") as c, c.cursor() as cur:
         cur.execute("DELETE FROM servers WHERE hostname=%s", (TEST_SERVER_HOSTNAME,))
         # is_managed=false осознанно. Управляющий пользователь + ключ
-        # выкатываются только через `prepare`-flow, у worker'а в dev-стеке
-        # ssh_management_private_key_path не настроен — managed-сессия упала
-        # бы в SSH_MANAGEMENT_KEY_MISSING. Под `false` worker заходит самим
-        # аккаунтом по паролю (см. `_account_helpers.resolve_ssh_creds`), что
-        # как раз сценарий tester/tester1234 на test_server'е.
+        # выкатываются на сервер только через `prepare`-flow; до него worker
+        # заходит самим аккаунтом по паролю (см.
+        # `_account_helpers.resolve_ssh_creds`) — это сценарий
+        # tester/tester1234 на test_server'е. Сама управляющая пара в dev-стеке
+        # теперь настроена (`make dev-mgmt-key` генерит .dev-secrets/, pubkey в
+        # .env, privkey смонтирован воркеру), так что prepare поднимет сервер в
+        # managed-режим штатно — стартовое состояние оставляем неуправляемым.
         cur.execute(
             "INSERT INTO servers "
             "(id, hostname, display_name, ip_address, ssh_port, os_version_id, "

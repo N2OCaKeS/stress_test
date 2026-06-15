@@ -48,6 +48,7 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
     label: "Servers",
     subItems: [
       { to: "/server", icon: Server, label: "Servers" },
+      { to: "/server/users", icon: Users, label: "Пользователи" },
       { to: "/server/tasks", icon: ListChecks, label: "Задачи" },
     ],
   },

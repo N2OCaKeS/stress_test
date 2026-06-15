@@ -105,35 +105,6 @@ export const SERVER_GROUPS: ServerGroup[] = [
   { id: "ops-monitoring", name: "ops-monitoring", dept: "ops", size: 4, note: "Prometheus + Grafana" },
 ];
 
-export interface SecretPolicy {
-  id: string;
-  name: string;
-  scope: "global" | "per-secret";
-  rotation_period: string;
-  note: string;
-}
-
-export const SECRET_POLICIES: SecretPolicy[] = [
-  { id: "policy-global-db", name: "db-password / global", scope: "global", rotation_period: "30d", note: "все БД-секреты" },
-  { id: "policy-global-token", name: "api-token / global", scope: "global", rotation_period: "90d", note: "все API-токены" },
-  { id: "policy-pg-master", name: "prod-postgres-master", scope: "per-secret", rotation_period: "14d", note: "override / критичный" },
-  { id: "policy-ipmi", name: "ipmi-pass / global", scope: "global", rotation_period: "180d", note: "IPMI / низкий риск" },
-];
-
-export interface SecretTemplate {
-  id: string;
-  name: string;
-  fields: string[];
-  validator: string;
-}
-
-export const SECRET_TEMPLATES: SecretTemplate[] = [
-  { id: "tpl-db-password", name: "db-password", fields: ["host", "port", "username", "password"], validator: "psql -c 'select 1'" },
-  { id: "tpl-api-token", name: "api-token", fields: ["token", "scope"], validator: "GET /me 200" },
-  { id: "tpl-ipmi", name: "ipmi-pass", fields: ["bmc_ip", "username", "password"], validator: "ipmitool chassis status" },
-  { id: "tpl-ssh-key", name: "ssh-key", fields: ["private_key", "public_key", "passphrase"], validator: "ssh -i KEY user@host echo 1" },
-];
-
 export interface ServiceRoleDef {
   id: string;
   name: string;

@@ -15,7 +15,6 @@ import {
   Inbox,
   KeyRound,
   Layers,
-  LayoutTemplate,
   LockOpen,
   RotateCw,
   ScanSearch,
@@ -47,9 +46,7 @@ import { ServicesGroups } from "./services/ServicesGroups";
 import { ServicesPlatformRoles } from "./services/ServicesPlatformRoles";
 import { ServicesServerGroups } from "./services/ServicesServerGroups";
 import { ServicesServerPermissions } from "./services/ServicesServerPermissions";
-import { ServicesSecretSecrets } from "./services/ServicesSecretSecrets";
-import { ServicesSecretPolicies } from "./services/ServicesSecretPolicies";
-import { ServicesSecretTemplates } from "./services/ServicesSecretTemplates";
+import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
 import { ServicesWorkerInventory } from "./services/ServicesWorkerInventory";
@@ -268,36 +265,15 @@ const STATIC_ITEMS: AdminItem[] = [
     visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
   },
 
-  // Services block — secret (service-specific pages; roles are dynamic)
+  // Services block — secret (per-credential admin lives on /secret; см. ServicesSecretAccess)
   {
-    id: "services.secret.secrets",
-    label: "Секреты",
-    hint: "secret_service",
-    icon: KeyRound,
+    id: "services.secret.access",
+    label: "Доступ к секретам",
+    hint: "Role-ACL / Dept-Grant per-credential",
+    icon: ShieldCheck,
     block: "services",
     group: "secret",
-    content: ServicesSecretSecrets,
-    visibleFor: (p) =>
-      isAccountAdmin(p) ||
-      isDepAdmin(p) ||
-      hasSecretServiceAdmin(p),
-  },
-  {
-    id: "services.secret.policies",
-    label: "Политики ротации",
-    icon: RotateCw,
-    block: "services",
-    group: "secret",
-    content: ServicesSecretPolicies,
-    visibleFor: (p) => isAccountAdmin(p) || hasSecretServiceAdmin(p),
-  },
-  {
-    id: "services.secret.templates",
-    label: "Шаблоны секретов",
-    icon: LayoutTemplate,
-    block: "services",
-    group: "secret",
-    content: ServicesSecretTemplates,
+    content: ServicesSecretAccess,
     visibleFor: (p) => isAccountAdmin(p) || hasSecretServiceAdmin(p),
   },
 

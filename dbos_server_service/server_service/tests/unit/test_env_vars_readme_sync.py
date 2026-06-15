@@ -96,7 +96,7 @@ class TestSettingsFieldsInReadme:
     # Известные drift'ы, зафиксированные на момент введения теста (baseline).
     # При исчезновении в README поле должно перейти в основной assert —
     # то есть запись здесь означает «известный gap, документации не хватает,
-    # фиксить отдельной волной».
+    # дополнить отдельно».
     _BASELINE_DRIFT: frozenset[str] = frozenset()
 
     def test_every_settings_field_is_documented(self):

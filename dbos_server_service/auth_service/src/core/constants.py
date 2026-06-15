@@ -21,8 +21,8 @@ class PlatformRole(StrEnum):
     ACCOUNT_ADMIN = "account_admin"
     DEPARTMENT_ADMIN = "department_admin"
     LOGING_ADMIN = "loging_admin"
-    # Read-only роль для loging_service — тест test_p2_identity_ban_cache.py
-    # парам-итерирует все значения enum'а, бизнес-логика рулится через guard'ы.
+    # Read-only роль для loging_service — параметризованный тест проходит по
+    # всем значениям enum'а, бизнес-логика рулится через guard'ы.
     LOGING_READER = "loging_reader"
 
 

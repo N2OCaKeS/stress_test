@@ -349,7 +349,7 @@ def query(
     `count_timeout` / `query_timeout` (True, если соответствующий statement
     был отменён по `statement_timeout`). Caller использует эти флаги для
     эмиссии warning self-audit'а (`logging.events_queried` со статусом
-    `warning`) — иначе timeout-волна с одного reader-JWT остаётся невидимой
+    `warning`) — иначе серия timeout'ов с одного reader-JWT остаётся невидимой
     для SOC. Репозиторий сам аудит не пишет: слой выше владеет
     transaction-boundary и outbox'ом.
     """

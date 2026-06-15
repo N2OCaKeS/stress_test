@@ -16,7 +16,7 @@
 
 3. **Реальные periodic task'и** — `worker.heartbeat` пишет в
    `worker_heartbeats`, `secrets.reencrypt_lazy` зарегистрирована как
-   stub. Scheduler-wiring уже покрыт в `test_p1_retry_and_shutdown.py`.
+   stub. Scheduler-wiring уже покрыт отдельным тестом retry/shutdown.
 
 Все тесты — против реальной PostgreSQL, без моков БД.
 """

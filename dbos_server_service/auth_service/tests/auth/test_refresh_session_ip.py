@@ -3,8 +3,6 @@
 До фикса `auth_service.refresh` принимал `ip_address`/`user_agent` из endpoint'а
 но `session_repo.rotate` их игнорировал (не включал в UPDATE). В результате
 сессия хранила IP входа и никогда не обновлялась при ротации.
-
-GAP-8/9 из аудита F23-C.
 """
 
 from sqlalchemy import select

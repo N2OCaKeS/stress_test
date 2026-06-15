@@ -43,8 +43,7 @@ os.environ.setdefault("SERVICE_API_KEY", "pytest-service-api-key-shared-secret")
 # identity-cache disabled по умолчанию в тестах. Существующие тесты
 # (`test_admin_guard_revalidate.py`) мутируют User-state прямым SQL'ом мимо
 # service-level invalidate-хуков, поэтому TTL>0 ломал бы их. Тесты,
-# проверяющие сам кэш (`test_p2_identity_ban_cache.py`), поднимают TTL через
-# `monkeypatch` внутри теста.
+# проверяющие сам кэш, поднимают TTL через `monkeypatch` внутри теста.
 os.environ.setdefault("IDENTITY_CACHE_TTL_SECONDS", "0")
 
 # ── Импорты приложения (после установки переменных окружения) ────────────────

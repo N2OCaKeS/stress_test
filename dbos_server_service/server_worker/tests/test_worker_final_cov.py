@@ -511,8 +511,8 @@ class TestDrainPreDrainStatusCapturedBefore:
 
 class TestFilterResultForAuditSentinels:
     """Покрываем sentinel'ы `no_whitelist` и `result_not_dict` ещё раз —
-    тесты в test_cov_worker_w16.py их уже трогают, но локально удобнее
-    держать вместе с остальными w55-coverage'ями.
+    тесты в test_ipmi_stash_and_redaction_coverage.py их уже трогают, но
+    локально удобнее держать вместе с остальными coverage-кейсами.
     """
 
     def test_no_whitelist_with_dict_result(self):

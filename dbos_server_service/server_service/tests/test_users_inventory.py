@@ -566,7 +566,7 @@ class TestUsersInventoryReconcile:
         каталоге — заводит запись + поднимает WARNING-аудит
         `os_version.create` с `reason=auto_from_inventory`. SOC видит, кто
         загрязнил каталог. Имена вне whitelist'а покрыты отдельным тестом
-        в `test_w21_w1_os_whitelist.py` (там запись НЕ создаётся и эмитится
+        в `test_os_whitelist.py` (там запись НЕ создаётся и эмитится
         `os.unknown_observed`)."""
         srv = await make_server(department_id=dept_a)
         payload = {

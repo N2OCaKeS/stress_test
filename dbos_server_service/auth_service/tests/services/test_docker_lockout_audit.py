@@ -1,4 +1,4 @@
-"""GAP-17: docker.token_issued failure reason=account_locked — аудит при bot lockout.
+"""docker.token_issued failure reason=account_locked — аудит при bot lockout.
 
 Тест проверяет, что при `ACCOUNT_TEMPORARILY_LOCKED` на `/docker/token`
 `docker_registry_service` эмитит `docker.token_issued` с `status="failure"`,

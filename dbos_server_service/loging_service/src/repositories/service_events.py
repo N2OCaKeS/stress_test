@@ -170,7 +170,7 @@ def action_is_registered(db: Session, match_action: str) -> bool:
     исполняется. Единственный call-site — `_validate_match_action` в
     `endpoints/rules.py` — сам срезает glob'ы (`"*" in match_action: return`)
     ДО вызова сюда. Ветка оставлена ради существующего покрытия в
-    `tests/test_w18_w3_loging_p3.py` и `tests/test_services.py:523`: тесты
+    `tests/test_action_glob_request_id_dedup.py` и `tests/test_services.py:523`: тесты
     дёргают `action_is_registered` напрямую, в том числе с glob-аргументом,
     и фиксируют контракт LIKE-фильтр + python-postcheck. Если когда-нибудь
     rules-endpoint снимет gate и начнёт передавать glob — реализация уже

@@ -68,7 +68,7 @@ def _capture_audit(monkeypatch) -> list[dict]:
     return captured
 
 
-# ── GAP-10: push_denied / pull_denied audit shape ────────────────────────────
+# ── push_denied / pull_denied audit shape ────────────────────────────
 
 class TestDeniedAuditShape:
     async def test_push_permission_denied_emits_audit_with_scope(
@@ -136,7 +136,7 @@ class TestDeniedAuditShape:
         assert ev["details"]["reason"] == "PULL_PERMISSION_DENIED"
 
 
-# ── GAP-11: anonymous pull on restricted registry — silent omit ───────────────
+# ── anonymous pull on restricted registry — silent omit ───────────────
 
 class TestAnonymousRestricted:
     async def test_anonymous_pull_on_restricted_silently_omitted(
@@ -165,7 +165,7 @@ class TestAnonymousRestricted:
         assert pull_denied == [], pull_denied
 
 
-# ── GAP-13: _resolve_registry → REGISTRY_NOT_FOUND ───────────────────────────
+# ── _resolve_registry → REGISTRY_NOT_FOUND ───────────────────────────
 
 class TestResolveRegistryNotFound:
     async def test_push_to_nonexistent_registry_emits_registry_not_found(
@@ -195,7 +195,7 @@ class TestResolveRegistryNotFound:
         assert ev["details"]["registry_name"] == "ghost_registry_xyz"
 
 
-# ── GAP-16: empty scope (docker login без последующего pull/push) ──────────
+# ── empty scope (docker login без последующего pull/push) ──────────
 
 class TestEmptyScopeBehavior:
     async def test_anonymous_empty_scope_returns_401(
@@ -228,7 +228,7 @@ class TestEmptyScopeBehavior:
         assert payload["sub"] == user_a.id
 
 
-# ── GAP-17: subject_type='bot_token' в failure-audit ─────────────────────────
+# ── subject_type='bot_token' в failure-audit ─────────────────────────
 
 
 class TestAuthFailureAuditSubjectType:

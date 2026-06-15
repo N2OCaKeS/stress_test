@@ -91,7 +91,7 @@ class TestOutboxHappyPath:
     ):
         # Чтобы зафиксировать terminal-failure (status=FAILED), создаём
         # task с max_attempts=1. Семантика «failure → pending для retry»
-        # покрыта в test_p1_retry_and_shutdown.py::TestRetryOnFailure.
+        # покрыта отдельным тестом retry/shutdown.
         from sqlalchemy import update
 
         from src.models import Task

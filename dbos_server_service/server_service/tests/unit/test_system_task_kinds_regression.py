@@ -1,6 +1,6 @@
 """Жёсткий regression-якорь по `_SYSTEM_TASK_KINDS`.
 
-Существующий `test_cov_server_w12.test_system_task_kinds_set_contents`
+Существующий `test_ipmi_rotate_gone_and_permission_canon.test_system_task_kinds_set_contents`
 проверяет содержимое через `in` — пропускает кейс «случайно дописали в set
 пользовательский task_kind» или «убрали один из системных». Тут — точное
 равенство по содержимому + тип `frozenset`, чтобы любая правка set'а явно

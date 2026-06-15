@@ -1440,10 +1440,10 @@ def _emit_audit(
     Production hot-path сейчас идёт через `_emit_audit_envelope` после того,
     как `audit_access` middleware кладёт событие в outbox или (без outbox'а)
     в `to_thread(_emit_audit_envelope, envelope)`. Этот helper нужен тестам
-    `test_middleware.py` / `test_batch2.py` / `test_p4_cleanups.py` — они
+    `test_middleware.py` / `test_batch2.py` / `test_pool_timeout_limiter_cleanups.py` — они
     проверяют инварианты self-audit (счётчик ошибок, defence-in-depth обход
     SUPPRESS, actor_type fallback) с positional-аргументной сигнатурой, и
-    переписывать их одной волной слишком шумно. Поэтому функция просто
+    переписывать их скопом слишком шумно. Поэтому функция просто
     собирает envelope через тот же `make_envelope` и вызывает
     `_emit_audit_envelope` — DRY со sync-fallback'ом outbox'а.
 

@@ -39,7 +39,7 @@ IDEMPOTENCY_KEY_CONFLICT, чтобы новые retry'и не маскирова
 NULL-hash row под legitimate replay.
 
 Тесты:
-  * `test_loging_fw11_w3.py::TestLegacyNullHashCleanup` — миграция
+  * `test_rule_cache_actor_types_redact_cleanups.py::TestLegacyNullHashCleanup` — миграция
     удаляет row'и > 30 дней и оставляет младшие нетронутыми.
 """
 from typing import Sequence, Union

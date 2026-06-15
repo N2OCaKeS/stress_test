@@ -107,7 +107,7 @@ class TestRunTaskHappy:
 # `attempt < max_attempts`, и terminal `mark_failed` только при исчерпании
 # попыток. Чтобы существующие тесты фиксировали именно terminal failed,
 # передаём `max_attempts=1` через фикстуру `make_task`. Тесты на
-# retry-семантику — в `test_p1_retry_and_shutdown.py::TestRetryOnFailure`.
+# retry-семантика покрыта отдельным тестом retry/shutdown.
 # `_schedule_retry` мокается на no-op чтобы не утекать background-task'и
 # в тесты.
 
@@ -130,7 +130,7 @@ class TestRunTaskFailure:
         self, make_task, fetch_task, captured_audit, _no_retry_schedule,
     ):
         # max_attempts=1 → первая ошибка сразу terminal FAILED (retry-семантика
-        # покрыта отдельно в test_p1_retry_and_shutdown.py).
+        # покрыта отдельным тестом retry/shutdown).
         tid = await _make_task_with_max_attempts(make_task, max_attempts=1)
 
         async def boom(_):

@@ -253,7 +253,7 @@ class TestPatchIntegrityErrorWithoutName:
         """Регрессия: легитимный rename-конфликт продолжает быть 409.
 
         Симметрично с `create_rule` — pgcode `23505` + наличие `payload.name`
-        мапим в 409. Голый `orig=None` после fw11 уходит в 500, чтобы не врать
+        мапим в 409. Голый `orig=None` уходит в 500, чтобы не врать
         SOC'у про конфликт имён при неизвестной причине IntegrityError'а.
         """
         from sqlalchemy.exc import IntegrityError

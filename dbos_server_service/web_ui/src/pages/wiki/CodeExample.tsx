@@ -35,8 +35,10 @@ export function CodeExample({
   flowStep = false,
 }: CodeExampleProps) {
   const settings = useWikiSettings();
-  // Локальный язык инициализируется глобальным, дальше переключается независимо.
-  const [lang, setLang] = useState<CodeLang>(settings.lang);
+  // По умолчанию следуем глобальному языку (смена глобального меняет и уже
+  // открытые примеры). Локальный выбор переопределяет только этот пример.
+  const [override, setOverride] = useState<CodeLang | null>(null);
+  const lang = override ?? settings.lang;
 
   const raw = lang === "curl" ? curl ?? "" : python ?? "";
 
@@ -69,7 +71,7 @@ export function CodeExample({
           <button
             key={t.key}
             type="button"
-            onClick={() => setLang(t.key)}
+            onClick={() => setOverride(t.key)}
             className={`btn ${lang === t.key ? "btn-primary" : "btn-ghost"} text-xs`}
           >
             {t.label}

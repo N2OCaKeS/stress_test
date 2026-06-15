@@ -42,10 +42,11 @@ import { listGroupsWithTotal } from "@/api/auth/groups";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { listDepartments } from "@/api/auth/departments";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
-import { useDeptLabel, useLabelsInvalidate } from "@/lib/labels";
+import { useDeptLabel, useUserLabel, useLabelsInvalidate } from "@/lib/labels";
 import { formatMskDate, formatMskShort } from "@/lib/datetime";
 import { apiErrMsg } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { userMutationCaps, groupMutationCaps, botMutationCaps, personaDeptId } from "@/lib/rbac";
 import type {
@@ -203,6 +204,7 @@ export function UsersAccountAdmin() {
   const [search, setSearch] = useState("");
   const mockMode = useMockMode();
   const toast = useToast();
+  const confirm = useConfirm();
   const { persona } = usePersona();
   const invalidateLabels = useLabelsInvalidate();
 
@@ -341,34 +343,46 @@ export function UsersAccountAdmin() {
 
   const tgtLabel = targetUser ? targetUser.username : "пользователь";
 
-  function handleResetPassword() {
+  async function handleResetPassword() {
     if (!targetUser) return;
-    const pwd = window.prompt(`Новый пароль для ${tgtLabel} (min 12, буквы + цифры):`);
-    if (!pwd) return;
+    const { ok, reason: pwd } = await confirm.prompt({
+      title: "Сброс пароля",
+      message: `Новый пароль для ${tgtLabel} (min 12, буквы + цифры):`,
+      reason: true,
+      reasonSecret: true,
+      reasonRequired: true,
+      confirmLabel: "Сбросить",
+    });
+    if (!ok || !pwd) return;
     runAction("reset-password", () =>
       resetUserPassword(targetUser.id, { new_password: pwd }),
     );
   }
 
-  function handleBlock() {
+  async function handleBlock() {
     if (!targetUser) return;
-    if (!window.confirm(`Заблокировать ${tgtLabel}?`)) return;
+    if (!(await confirm.confirm({ message: `Заблокировать ${tgtLabel}?`, danger: true, confirmLabel: "Заблокировать" }))) return;
     runAction("disable", () => disableUser(targetUser.id));
   }
 
-  function handleRevokeSessions() {
+  async function handleRevokeSessions() {
     if (!targetUser) return;
-    if (!window.confirm(`Revoke all sessions для ${tgtLabel}?`)) return;
+    if (!(await confirm.confirm({ message: `Revoke all sessions для ${tgtLabel}?`, danger: true, confirmLabel: "Завершить сессии" }))) return;
     runAction("revoke-sessions", () => revokeUserSessions(targetUser.id));
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!targetUser) return;
-    const reason = window.prompt(
-      `Hard-delete ${tgtLabel}: укажи причину (Q3 reorg / left / ...):`,
-    );
-    if (!reason) return;
-    if (!window.confirm(`Снести ${tgtLabel} целиком?`)) return;
+    const { ok, reason } = await confirm.prompt({
+      title: "Hard-delete пользователя",
+      message: `Hard-delete ${tgtLabel}: укажи причину (Q3 reorg / left / ...):`,
+      reason: true,
+      reasonRequired: true,
+      reasonPlaceholder: "Причина",
+      danger: true,
+      confirmLabel: `Снести ${tgtLabel} целиком`,
+    });
+    if (!ok || !reason) return;
     runAction("delete", () => deleteUser(targetUser.id, { reason }));
   }
 
@@ -810,16 +824,12 @@ export function UsersAccountAdmin() {
                     <StatRow k="ID" v={<span className="mono">{targetUser.id}</span>} />
                     <StatRow
                       k="dept_id"
-                      v={
-                        <span className="mono text-dim">
-                          {targetUser.dept_id ?? "— (платформенный)"}
-                        </span>
-                      }
+                      v={<DeptName id={targetUser.dept_id} />}
                     />
                   </div>
                   <div>
                     <StatRow k="created_at" v={targetUser.created_at ?? "—"} />
-                    <StatRow k="created_by" v={<span className="mono">{targetUser.created_by ?? "—"}</span>} />
+                    <StatRow k="created_by" v={<CreatedByName id={targetUser.created_by} />} />
                     <StatRow
                       k="status"
                       v={
@@ -1191,6 +1201,26 @@ function StatRow({ k, v }: { k: string; v: React.ReactNode }) {
       <span className="text-dim">{k}</span>
       <span>{v}</span>
     </div>
+  );
+}
+
+function DeptName({ id }: { id: string | null | undefined }) {
+  const name = useDeptLabel(id);
+  if (!id) return <span className="mono text-dim">— (платформенный)</span>;
+  return (
+    <span className="mono text-dim" title={id}>
+      {name}
+    </span>
+  );
+}
+
+function CreatedByName({ id }: { id: string | null | undefined }) {
+  const name = useUserLabel(id);
+  if (!id) return <span className="mono">—</span>;
+  return (
+    <span className="mono" title={id}>
+      {name}
+    </span>
   );
 }
 

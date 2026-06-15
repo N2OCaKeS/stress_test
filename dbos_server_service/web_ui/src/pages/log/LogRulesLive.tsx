@@ -23,6 +23,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
@@ -55,6 +56,7 @@ const STATUSES = ["success", "failure", "denied", "warning"] as const;
 export function LogRulesLive() {
   const { persona } = usePersona();
   const toast = useToast();
+  const { confirm } = useConfirm();
   // Backend `/rules` (вкл. GET-список) закрыт `require_admin` строго на
   // `loging_admin`. `account_admin` и `loging_reader` ловят 403 даже на
   // чтение — для них вместо API-ошибки показываем явную заглушку.
@@ -93,10 +95,13 @@ export function LogRulesLive() {
   }
 
   async function handleDelete(rule: Rule) {
-    if (typeof window !== "undefined") {
-      const ok = window.confirm(`Удалить правило "${rule.name}"?`);
-      if (!ok) return;
-    }
+    const ok = await confirm({
+      title: "Удалить правило",
+      message: `Удалить правило "${rule.name}"?`,
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteRule(rule.id);
       toast.success(`Правило ${rule.name} удалено`);

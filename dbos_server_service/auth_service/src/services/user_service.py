@@ -190,6 +190,64 @@ async def list_users_by_department(
     return [_to_response(u, dept.name) for u in users], total
 
 
+async def resolve_username(
+    db: AsyncSession,
+    identity: IdentityContext,
+    username: str,
+    request_id: str | None = None,
+) -> "UserResolveResponse":
+    """Точечный username → user_id lookup в рамках видимого scope.
+
+    Зачем:
+        Обычному юзеру нужно адресовать grant personal-секрета конкретному
+        человеку, но списки юзеров ему недоступны (`list_users` —
+        account_admin, `list_users_by_department` — AnyAdmin). Этот lookup
+        отдаёт ровно один id по точному username, не открывая enumeration.
+
+    Scope доступа:
+        * account_admin — любой отдел (cross-dept by design);
+        * department_admin — только свой отдел;
+        * обычный юзер — только свой отдел.
+
+        Юзер не из своего отдела (для не-account_admin) трактуется как
+        несуществующий: 404 `USER_NOT_FOUND` — не палим, в каком отделе
+        живёт чужой username и существует ли он вообще.
+
+    Возвращает:
+        `UserResolveResponse` (user_id / username / department_id) — без
+        чувствительных полей.
+
+    Возможные ошибки:
+        * `USER_NOT_FOUND` (404) — нет такого username в видимом scope.
+    """
+    from src.schemas.users import UserResolveResponse
+
+    user_repo = UserRepository(db)
+    target = await user_repo.get_by_username(username)
+
+    not_found = NotFoundError(
+        error_code="USER_NOT_FOUND",
+        message="User not found",
+    )
+
+    if target is None:
+        raise not_found
+
+    if identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
+        # Для всех, кроме account_admin, видимость ограничена своим отделом.
+        # Чужой отдел отдаём как 404, чтобы не было cross-dept enumeration
+        # (зеркало dept-guard'а в `list_user_groups`/`list_users_by_department`,
+        # но без 403 — здесь даже факт существования чужого юзера скрыт).
+        if identity.department_id is None or target.department_id != identity.department_id:
+            raise not_found
+
+    return UserResolveResponse(
+        user_id=target.id,
+        username=target.username,
+        department_id=target.department_id,
+    )
+
+
 async def create_user(
     db: AsyncSession,
     actor_id: str,

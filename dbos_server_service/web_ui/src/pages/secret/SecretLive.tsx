@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { fromBase64 } from "@/lib/base64";
@@ -56,7 +57,7 @@ import {
   listUserAcls,
   revokeUserAcl,
 } from "@/api/secret/userAcls";
-import { listUsersByDepartment } from "@/api/auth/users";
+import { listUsersByDepartment, resolveUser } from "@/api/auth/users";
 import type {
   Credential,
   CredentialCreateRequest,
@@ -94,6 +95,7 @@ function isoToLocal(iso: string | null | undefined): string {
 export function SecretLive() {
   const { persona } = usePersona();
   const toast = useToast();
+  const { prompt } = useConfirm();
   const [params, setParams] = useSearchParams();
 
   const selectedId = params.get("id");
@@ -229,16 +231,15 @@ export function SecretLive() {
   }
 
   async function handleDelete(cred: Credential) {
-    if (typeof window === "undefined") return;
-    const reason = window.prompt(
-      `Причина удаления "${cred.name}" (обязательна для admin-override):`,
-      "",
-    );
-    if (reason === null) return;
-    const confirmed = window.confirm(
-      `Удалить credential ${cred.name}? Операция необратима.`,
-    );
-    if (!confirmed) return;
+    const { ok, reason } = await prompt({
+      title: "Удалить credential",
+      message: `Удалить credential ${cred.name}? Операция необратима.`,
+      reason: true,
+      reasonLabel: "Причина (обязательна для admin-override)",
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteCredential(cred.id, {
         reason: reason.trim() || undefined,
@@ -488,9 +489,12 @@ function DetailPane({
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const { confirm } = useConfirm();
   const { depts } = useLabelMaps();
   const credQ = useQuery(() => getCredential(credId), [credId]);
   const cred = credQ.data;
+  const ownerUserName = useUserLabel(cred?.owner_user_id);
+  const createdByName = useUserLabel(cred?.created_by);
 
   const isCross = cred?.scope === "cross_department";
   const isPersonal = cred?.scope === "personal";
@@ -635,7 +639,7 @@ function DetailPane({
 
   async function handleAclRevoke(aclId: string) {
     if (acting) return;
-    if (typeof window !== "undefined" && !window.confirm("Снять этот RoleACL?"))
+    if (!(await confirm({ message: "Снять этот RoleACL?", danger: true })))
       return;
     setActing(true);
     try {
@@ -667,8 +671,10 @@ function DetailPane({
   async function handleUserAclRevoke(aclId: string) {
     if (acting) return;
     if (
-      typeof window !== "undefined" &&
-      !window.confirm("Снять доступ этого пользователя?")
+      !(await confirm({
+        message: "Снять доступ этого пользователя?",
+        danger: true,
+      }))
     )
       return;
     setActing(true);
@@ -697,8 +703,11 @@ function DetailPane({
   async function handleGrantRevoke(grantId: string) {
     if (acting) return;
     if (
-      typeof window !== "undefined" &&
-      !window.confirm("Снять DeptGrant? Это каскадно снимет RoleACL recipient-dep'а.")
+      !(await confirm({
+        message:
+          "Снять DeptGrant? Это каскадно снимет RoleACL recipient-dep'а.",
+        danger: true,
+      }))
     )
       return;
     setActing(true);
@@ -897,8 +906,16 @@ function DetailPane({
                   : "—"
               }
             />
-            <MetaRow label="Owner user" value={cred.owner_user_id ?? "—"} />
-            <MetaRow label="Created by" value={cred.created_by} />
+            <MetaRow
+              label="Owner user"
+              value={cred.owner_user_id ? ownerUserName : "—"}
+              title={cred.owner_user_id ?? undefined}
+            />
+            <MetaRow
+              label="Created by"
+              value={createdByName}
+              title={cred.created_by}
+            />
             <MetaRow label="Created" value={formatMsk(cred.created_at)} />
             <MetaRow label="Updated" value={formatMsk(cred.updated_at)} />
             <MetaRow label="visible_to_dept" value={String(cred.visible_to_dept)} />
@@ -1109,11 +1126,24 @@ function DetailPane({
   );
 }
 
-function MetaRow({ label, value }: { label: string; value: string }) {
+function MetaRow({
+  label,
+  value,
+  title,
+}: {
+  label: string;
+  value: string;
+  title?: string;
+}) {
   return (
     <div className="stat-row">
       <span className="text-dim">{label}</span>
-      <span className="mono text-xs truncate max-w-[60%]">{value}</span>
+      <span
+        className="mono text-xs truncate max-w-[60%]"
+        title={title ?? undefined}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -1835,11 +1865,11 @@ function UserAclRow({
 /**
  * Выдача user-ACL: ввод по username с резолвом в `usr_*`.
  *
- * Резолв доступен только когда есть список пользователей отдела
- * (`listUsersByDepartment` гейтится dep_admin/account_admin своим отделом).
- * Для владельца personal-кред'ы (обычный юзер) глобального и департаментного
- * списка нет — backend не отдаёт регулярному юзеру резолв username→id, поэтому
- * принимаем сырой `usr_*` id с подсказкой.
+ * Резолв идёт двумя путями. Если есть список пользователей отдела
+ * (`listUsersByDepartment`, гейтится dep_admin/account_admin своим отделом) —
+ * сопоставляем username по нему локально и подсказываем datalist'ом. Для
+ * владельца personal-кред'ы (обычный юзер) списка нет — резолвим точечно через
+ * `GET /users/resolve` (виден свой отдел). Сырой `usr_*` id тоже принимаем.
  */
 function UserAclModal({
   actorDeptId,
@@ -1859,80 +1889,87 @@ function UserAclModal({
     [actorDeptId],
     { enabled: !!actorDeptId },
   );
-  const canResolve = !!actorDeptId && (usersQ.data?.items.length ?? 0) > 0;
+  const hasDeptList = !!actorDeptId && (usersQ.data?.items.length ?? 0) > 0;
 
   const [input, setInput] = useState("");
   const [canRead, setCanRead] = useState(true);
   const [canWrite, setCanWrite] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [resolveErr, setResolveErr] = useState<string | null>(null);
 
-  // Резолвим username → usr_*; если ввели сам id (usr_…) — пропускаем как есть.
-  function resolveUserId(): string | null {
+  const valid = input.trim() && (canRead || canWrite);
+
+  // username → usr_*: сырой id пропускаем как есть; иначе сперва ищем в
+  // dept-списке (если он есть), затем точечно дёргаем /users/resolve.
+  async function resolveUserId(): Promise<string | null> {
     const raw = input.trim();
     if (!raw) return null;
     if (raw.startsWith("usr_")) return raw;
     const match = usersQ.data?.items.find(
       (u) => u.username.toLowerCase() === raw.toLowerCase(),
     );
-    return match?.id ?? null;
+    if (match) return match.id;
+    try {
+      const r = await resolveUser(raw);
+      return r.user_id;
+    } catch {
+      return null;
+    }
   }
 
-  const valid = input.trim() && (canRead || canWrite);
-
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting || !valid) return;
-    const userId = resolveUserId();
+    setSubmitting(true);
+    setResolveErr(null);
+    const userId = await resolveUserId();
     if (!userId) {
-      // username не нашёлся в списке отдела и это не сырой usr_*-id.
+      setResolveErr(
+        "Пользователь не найден в вашем отделе. Можно ввести id (usr_…) напрямую.",
+      );
+      setSubmitting(false);
       return;
     }
-    setSubmitting(true);
-    Promise.resolve(
-      onSubmit({ user_id: userId, can_read: canRead, can_write: canWrite }),
-    ).finally(() => setSubmitting(false));
+    try {
+      await Promise.resolve(
+        onSubmit({ user_id: userId, can_read: canRead, can_write: canWrite }),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
-
-  const resolveFailed =
-    input.trim() !== "" &&
-    !input.trim().startsWith("usr_") &&
-    canResolve &&
-    resolveUserId() === null;
 
   return (
     <ModalShell title="Выдать доступ пользователю" onClose={onClose}>
       <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
         <div className="text-xs text-dim">
           Доступ выдаётся конкретному пользователю в дополнение к ролевым ACL.
-          {canResolve
-            ? " Введите username — он будет сопоставлен с id."
-            : " Введите id пользователя (usr_…) — резолв по username недоступен."}
+          Введите username — он будет сопоставлен с id (виден ваш отдел). Сырой
+          id (usr_…) тоже принимается.
         </div>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">
-            {canResolve ? "username *" : "user id (usr_…) *"}
-          </span>
+          <span className="text-dim text-xs">username *</span>
           <input
             className="surface-2 border border-token rounded px-2 py-1"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              setResolveErr(null);
+            }}
             maxLength={64}
             required
-            list={canResolve ? "secret-useracl-users" : undefined}
-            placeholder={canResolve ? "username" : "usr_…"}
+            list={hasDeptList ? "secret-useracl-users" : undefined}
+            placeholder="username или usr_…"
           />
-          {canResolve && (
+          {hasDeptList && (
             <datalist id="secret-useracl-users">
               {(usersQ.data?.items ?? []).map((u) => (
                 <option key={u.id} value={u.username} />
               ))}
             </datalist>
           )}
-          {resolveFailed && (
-            <span className="text-[11px] text-danger">
-              Пользователь с таким username не найден в вашем отделе. Можно
-              ввести id (usr_…) напрямую.
-            </span>
+          {resolveErr && (
+            <span className="text-[11px] text-danger">{resolveErr}</span>
           )}
         </label>
         <div className="flex items-center gap-4 text-sm">

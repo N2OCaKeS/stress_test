@@ -31,6 +31,7 @@ import {
   ListTree,
 } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { userMutationCaps } from "@/lib/rbac";
 import { formatMsk, formatMskShort } from "@/lib/datetime";
@@ -95,6 +96,7 @@ export function UserBackendView({
 }: Props) {
   const { persona } = usePersona();
   const mockMode = useMockMode();
+  const confirm = useConfirm();
 
   const userQ = useQuery<ApiUser>(
     () => getUser(userId),
@@ -216,11 +218,16 @@ export function UserBackendView({
               className="btn flex items-center gap-1"
               disabled={!caps.edit || busy !== null}
               title={caps.edit ? undefined : caps.reason}
-              onClick={() => {
-                const pwd = window.prompt(
-                  "Новый пароль (min 12, буквы + цифры):",
-                );
-                if (!pwd) return;
+              onClick={async () => {
+                const { ok, reason: pwd } = await confirm.prompt({
+                  title: "Сброс пароля",
+                  message: "Новый пароль (min 12, буквы + цифры):",
+                  reason: true,
+                  reasonSecret: true,
+                  reasonRequired: true,
+                  confirmLabel: "Сбросить",
+                });
+                if (!ok || !pwd) return;
                 run("reset-password", () =>
                   resetUserPassword(u.id, { new_password: pwd }),
                 );
@@ -481,6 +488,7 @@ function RolesTab({
   run: (label: string, fn: () => Promise<unknown>) => Promise<void>;
   busy: string | null;
 }) {
+  const confirm = useConfirm();
   const [editor, setEditor] = useState<ServiceName | null>(null);
 
   if (loading && !perms) return <div className="spinner" aria-label="Loading" />;
@@ -586,11 +594,17 @@ function RolesTab({
           className="btn btn-sm flex items-center gap-1"
           disabled={!canManage}
           title={canManage ? "Добавить роль в другом сервисе" : capsReason}
-          onClick={() => {
-            const name = window.prompt(
-              "service_name (auth_service / secret_service / server_service / worker_service / loging_service / config_service / docker_registry):",
-            );
-            if (!name) return;
+          onClick={async () => {
+            const { ok, reason: name } = await confirm.prompt({
+              title: "Назначить роль в другом сервисе",
+              message:
+                "service_name (auth_service / secret_service / server_service / worker_service / loging_service / config_service / docker_registry):",
+              reason: true,
+              reasonLabel: "service_name",
+              reasonRequired: true,
+              confirmLabel: "Открыть",
+            });
+            if (!ok || !name) return;
             setEditor(name as ServiceName);
           }}
         >
@@ -780,6 +794,7 @@ function GroupsTab({
   run: (label: string, fn: () => Promise<unknown>) => Promise<void>;
   busy: string | null;
 }) {
+  const confirm = useConfirm();
   const [adding, setAdding] = useState(false);
 
   if (loading) return <div className="spinner" aria-label="Loading" />;
@@ -827,9 +842,13 @@ function GroupsTab({
                     className="btn btn-sm btn-danger"
                     disabled={!canManage || busy !== null}
                     title={canManage ? "Убрать из группы" : capsReason}
-                    onClick={() => {
+                    onClick={async () => {
                       if (
-                        !window.confirm(`Убрать пользователя из ${g.name}?`)
+                        !(await confirm.confirm({
+                          message: `Убрать пользователя из ${g.name}?`,
+                          danger: true,
+                          confirmLabel: "Убрать",
+                        }))
                       )
                         return;
                       run("remove-from-group", () =>
@@ -967,6 +986,7 @@ function SessionsTab({
     [userId],
     { enabled: !mockMode && !!userId },
   );
+  const confirm = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -976,7 +996,14 @@ function SessionsTab({
       setInfo("mock: revoke all");
       return;
     }
-    if (!window.confirm("Завершить ВСЕ сессии этого пользователя?")) return;
+    if (
+      !(await confirm.confirm({
+        message: "Завершить ВСЕ сессии этого пользователя?",
+        danger: true,
+        confirmLabel: "Завершить сессии",
+      }))
+    )
+      return;
     setBusy("all");
     setErr(null);
     setInfo(null);
@@ -1118,6 +1145,7 @@ function DangerTab({
   busy: string | null;
   mockMode: boolean;
 }) {
+  const confirm = useConfirm();
   return (
     <div className="card flex flex-col gap-3">
       <div className="text-sm font-semibold flex items-center gap-2 text-danger">
@@ -1129,15 +1157,17 @@ function DangerTab({
             className="btn btn-danger flex items-center gap-1"
             disabled={!caps.disable || busy !== null}
             title={caps.disable ? undefined : caps.reason}
-            onClick={() => {
-              if (
-                !window.confirm(
-                  `Забанить пользователя ${user.username}? Действие необратимо; для отмены нужен Unban.`,
-                )
-              )
-                return;
-              const reason = window.prompt("Причина бана:");
-              if (!reason) return;
+            onClick={async () => {
+              const { ok, reason } = await confirm.prompt({
+                title: "Бан пользователя",
+                message: `Забанить пользователя ${user.username}? Действие необратимо; для отмены нужен Unban.`,
+                reason: true,
+                reasonLabel: "Причина бана",
+                reasonRequired: true,
+                danger: true,
+                confirmLabel: "Забанить",
+              });
+              if (!ok || !reason) return;
               run("ban", () =>
                 banUser(user.id, { ban_type: "permanent", reason }),
               );
@@ -1150,9 +1180,12 @@ function DangerTab({
             className="btn flex items-center gap-1"
             disabled={!caps.disable || busy !== null}
             title={caps.disable ? undefined : caps.reason}
-            onClick={() => {
+            onClick={async () => {
               if (
-                !window.confirm(`Разбанить пользователя ${user.username}?`)
+                !(await confirm.confirm({
+                  message: `Разбанить пользователя ${user.username}?`,
+                  confirmLabel: "Разбанить",
+                }))
               )
                 return;
               run("unban", () => unbanUser(user.id));
@@ -1165,17 +1198,17 @@ function DangerTab({
           className="btn btn-danger-solid flex items-center gap-1"
           disabled={!caps.delete || busy !== null}
           title={caps.delete ? undefined : caps.reason}
-          onClick={() => {
-            if (
-              !window.confirm(
-                `Удалить пользователя ${user.username} полностью? Действие необратимо: исчезнут сессии, PAT-токены, привязки к группам.`,
-              )
-            )
-              return;
-            const reason = window.prompt(
-              "Причина удаления (Q3 reorg / left / ...):",
-            );
-            if (!reason) return;
+          onClick={async () => {
+            const { ok, reason } = await confirm.prompt({
+              title: "Удаление пользователя",
+              message: `Удалить пользователя ${user.username} полностью? Действие необратимо: исчезнут сессии, PAT-токены, привязки к группам.`,
+              reason: true,
+              reasonLabel: "Причина удаления (Q3 reorg / left / ...)",
+              reasonRequired: true,
+              danger: true,
+              confirmLabel: "Удалить пользователя",
+            });
+            if (!ok || !reason) return;
             run("delete", () => deleteUser(user.id, { reason }));
           }}
         >

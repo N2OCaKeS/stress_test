@@ -30,6 +30,7 @@ import {
 } from "@/api/auth/service_roles";
 import type { ServiceName, ServiceRole } from "@/api/auth/types";
 import { useToast } from "@/contexts/ToastContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 type Mode = "list" | "create" | { kind: "edit"; role: ServiceRole };
 
@@ -156,11 +157,19 @@ function RoleRow({
   serviceName: ServiceName;
 }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const locked = role.is_system;
 
   async function onDelete() {
-    if (!window.confirm(`Удалить роль ${role.role_name}?`)) return;
+    if (
+      !(await confirm.confirm({
+        message: `Удалить роль ${role.role_name}?`,
+        danger: true,
+        confirmLabel: "Удалить",
+      }))
+    )
+      return;
     setBusy(true);
     try {
       await deleteServiceRole(departmentId, serviceName, role.role_name);

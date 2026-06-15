@@ -36,6 +36,7 @@ import type {
 } from "@/api/auth/types";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { isDepAdmin, isPlatformWideAdmin, personaDeptId } from "@/lib/rbac";
 
 // Backend service_name → admin item route segment. Идентификатор
@@ -161,6 +162,7 @@ function ServiceDetail({
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -170,9 +172,11 @@ function ServiceDetail({
       return;
     }
     if (
-      !window.confirm(
-        `Удалить сервис «${svc.service_name}»? CASCADE уносит dept-access и роли.`,
-      )
+      !(await confirm.confirm({
+        message: `Удалить сервис «${svc.service_name}»? CASCADE уносит dept-access и роли.`,
+        danger: true,
+        confirmLabel: "Удалить",
+      }))
     )
       return;
     setBusy(true);

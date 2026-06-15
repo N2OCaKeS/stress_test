@@ -40,6 +40,7 @@ import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useDeptLabel, useLabelsInvalidate } from "@/lib/labels";
 import { formatMskDate, formatMskShort } from "@/lib/datetime";
@@ -127,6 +128,7 @@ export function UsersDepAdmin() {
 
 function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>["persona"] }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const invalidateLabels = useLabelsInvalidate();
   const [tab, setTab] = useState<Tab>("users");
   const [workzoneTab, setWorkzoneTab] = useState<WorkzoneTab>("profile");
@@ -263,24 +265,31 @@ function UsersDepAdminLive({ persona }: { persona: ReturnType<typeof usePersona>
 
   const tgtLabel = targetUser ? targetUser.username : "пользователь";
 
-  function handleResetPassword() {
+  async function handleResetPassword() {
     if (!targetUser) return;
-    const pwd = window.prompt(`Новый пароль для ${tgtLabel} (min 12, буквы + цифры):`);
-    if (!pwd) return;
+    const { ok, reason: pwd } = await confirm.prompt({
+      title: "Сброс пароля",
+      message: `Новый пароль для ${tgtLabel} (min 12, буквы + цифры):`,
+      reason: true,
+      reasonSecret: true,
+      reasonRequired: true,
+      confirmLabel: "Сбросить",
+    });
+    if (!ok || !pwd) return;
     runAction("reset-password", () =>
       resetUserPassword(targetUser.id, { new_password: pwd }),
     );
   }
 
-  function handleBlock() {
+  async function handleBlock() {
     if (!targetUser || isSelfTarget) return;
-    if (!window.confirm(`Заблокировать ${tgtLabel}?`)) return;
+    if (!(await confirm.confirm({ message: `Заблокировать ${tgtLabel}?`, danger: true, confirmLabel: "Заблокировать" }))) return;
     runAction("disable", () => disableUser(targetUser.id));
   }
 
-  function handleRevokeSessions() {
+  async function handleRevokeSessions() {
     if (!targetUser) return;
-    if (!window.confirm(`Revoke all sessions для ${tgtLabel}?`)) return;
+    if (!(await confirm.confirm({ message: `Revoke all sessions для ${tgtLabel}?`, danger: true, confirmLabel: "Завершить сессии" }))) return;
     runAction("revoke-sessions", () => revokeUserSessions(targetUser.id));
   }
 

@@ -49,6 +49,7 @@ import {
   listGroupMembers,
 } from "@/api/auth/groups";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import type {
   Department,
   Group,
@@ -183,6 +184,7 @@ function LiveServiceRolesCard({
 }) {
   const { persona } = usePersona();
   const toast = useToast();
+  const confirm = useConfirm();
   const backendServiceName = serviceName;
 
   const platformAdmin = isPlatformWideAdmin(persona);
@@ -380,7 +382,14 @@ function LiveServiceRolesCard({
             pending={pending}
             canEdit={canEdit}
             onDelete={async () => {
-              if (!window.confirm(`Удалить роль ${r.role_name}?`)) return;
+              if (
+                !(await confirm.confirm({
+                  message: `Удалить роль ${r.role_name}?`,
+                  danger: true,
+                  confirmLabel: "Удалить",
+                }))
+              )
+                return;
               await run(
                 () => deleteServiceRole(deptId, backendServiceName, r.role_name),
                 "Роль удалена",

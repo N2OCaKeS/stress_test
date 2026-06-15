@@ -5,6 +5,17 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 
+// Диалоговый провайдер монтируется в App.tsx; в smoke-рендере страницы он не
+// нужен — мокаем хук no-op'ом, чтобы не тащить Radix-портал в jsdom.
+vi.mock("@/components/ui/ConfirmDialog", () => ({
+  useConfirm: () => ({
+    confirm: vi.fn(async () => false),
+    prompt: vi.fn(async () => ({ ok: false, reason: "" })),
+    alert: vi.fn(async () => {}),
+  }),
+  ConfirmProvider: ({ children }: { children: unknown }) => children,
+}));
+
 // Сетевые вызовы страницы списка моки́м — нам важен только smoke-рендер
 // (заголовок панели, плейсхолдер поиска, loading state списка).
 vi.mock("@/api/server/servers", () => ({

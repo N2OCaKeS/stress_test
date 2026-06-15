@@ -20,6 +20,7 @@ import type {
   UserPatchRequest,
   UserPermissionsResponse,
   UserResetPasswordRequest,
+  UserResolveResponse,
   UserStatus,
 } from "@/api/auth/types";
 
@@ -183,6 +184,17 @@ export async function listUsersByDepartment(
 export async function getUser(userId: string): Promise<User> {
   const raw = await apiGet<BackendUser>(`/auth/v1/users/${userId}`);
   return normalizeUser(raw);
+}
+
+/**
+ * Точечный резолв username → id в видимом scope (свой отдел; account_admin —
+ * cross-dept). Для адресации шаринга, когда списки юзеров недоступны.
+ * Чужой/несуществующий username → 404 USER_NOT_FOUND (без enumeration).
+ */
+export function resolveUser(username: string): Promise<UserResolveResponse> {
+  return apiGet<UserResolveResponse>("/auth/v1/users/resolve", {
+    query: { username },
+  });
 }
 
 export async function createUser(body: UserCreateRequest): Promise<User> {

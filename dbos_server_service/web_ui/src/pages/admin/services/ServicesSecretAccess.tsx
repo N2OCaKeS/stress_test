@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { isSecretZoneBlocked } from "@/lib/rbac";
@@ -317,6 +318,7 @@ function AccessPanel({
   });
   const userAclQ = useQuery(() => listUserAcls(credId), [credId]);
 
+  const confirm = useConfirm();
   const [acting, setActing] = useState(false);
   const [addingAcl, setAddingAcl] = useState(false);
   const [addingGrant, setAddingGrant] = useState(false);
@@ -340,7 +342,13 @@ function AccessPanel({
 
   async function handleAclRevoke(aclId: string) {
     if (acting) return;
-    if (typeof window !== "undefined" && !window.confirm("Снять этот RoleACL?"))
+    if (
+      !(await confirm.confirm({
+        message: "Снять этот RoleACL?",
+        danger: true,
+        confirmLabel: "Снять",
+      }))
+    )
       return;
     setActing(true);
     try {
@@ -368,10 +376,12 @@ function AccessPanel({
   async function handleGrantRevoke(grantId: string) {
     if (acting) return;
     if (
-      typeof window !== "undefined" &&
-      !window.confirm(
-        "Снять DeptGrant? Это каскадно снимет RoleACL recipient-отдела.",
-      )
+      !(await confirm.confirm({
+        message:
+          "Снять DeptGrant? Это каскадно снимет RoleACL recipient-отдела.",
+        danger: true,
+        confirmLabel: "Снять",
+      }))
     )
       return;
     setActing(true);
@@ -405,8 +415,11 @@ function AccessPanel({
   async function handleUserAclRevoke(aclId: string) {
     if (acting) return;
     if (
-      typeof window !== "undefined" &&
-      !window.confirm("Снять доступ этого пользователя?")
+      !(await confirm.confirm({
+        message: "Снять доступ этого пользователя?",
+        danger: true,
+        confirmLabel: "Снять",
+      }))
     )
       return;
     setActing(true);

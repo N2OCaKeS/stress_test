@@ -16,6 +16,7 @@ import { Link } from "react-router-dom";
 import { usePersona } from "@/contexts/PersonaContext";
 import { isPlatformWideAdmin, isDepAdmin, personaDeptId } from "@/lib/rbac";
 import { useLabelsInvalidate } from "@/lib/labels";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { DEPTS as MOCK_DEPTS, USERS as MOCK_USERS } from "@/mocks/auth";
 import {
   InlineEditor,
@@ -220,6 +221,7 @@ function DeptView({
   refetchGranted: () => void;
 }) {
   const { close, startEdit } = useInlineState();
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const users = mockMode
@@ -234,16 +236,16 @@ function DeptView({
       return;
     }
     if (hasUsers) return;
-    const reason = window.prompt(
-      "Hard-delete отдела. Укажи причину (Q3 reorg / closed / ...):",
-    );
-    if (!reason) return;
-    if (
-      !window.confirm(
-        `Снести ${dept.name}? CASCADE уносит группы, ботов и oauth_clients депа.`,
-      )
-    )
-      return;
+    const { ok, reason } = await confirm.prompt({
+      title: "Hard-delete отдела",
+      message: `Снести ${dept.name}? CASCADE уносит группы, ботов и oauth_clients депа. Укажи причину (Q3 reorg / closed / ...):`,
+      reason: true,
+      reasonLabel: "Причина",
+      reasonRequired: true,
+      danger: true,
+      confirmLabel: `Снести ${dept.name}`,
+    });
+    if (!ok || !reason) return;
     setBusy(true);
     setErr(null);
     try {
@@ -371,6 +373,7 @@ function DeptServicesSection({
   refetchGranted: () => void;
 }) {
   const servicesQ = useQuery<Service[]>(() => listServices(), []);
+  const confirm = useConfirm();
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState<string | null>(null);
   const [picker, setPicker] = useState<string>("");
@@ -394,7 +397,14 @@ function DeptServicesSection({
 
   async function revoke(serviceName: string) {
     if (busy[serviceName]) return;
-    if (!window.confirm(`Отозвать access ${serviceName} у отдела?`)) return;
+    if (
+      !(await confirm.confirm({
+        message: `Отозвать access ${serviceName} у отдела?`,
+        danger: true,
+        confirmLabel: "Отозвать",
+      }))
+    )
+      return;
     setBusy((b) => ({ ...b, [serviceName]: true }));
     setErr(null);
     try {

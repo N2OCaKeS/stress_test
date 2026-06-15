@@ -198,10 +198,10 @@ function OverviewView({
           }
         />
         <StatRow
-          k="os_version_id"
+          k="os_version"
           v={
             server.os_version_id ? (
-              <span className="mono">{server.os_version_id}</span>
+              <OsVersionName osVersionId={server.os_version_id} />
             ) : (
               <span className="text-dim">не задана</span>
             )
@@ -261,6 +261,20 @@ function OverviewView({
         />
       </div>
     </div>
+  );
+}
+
+/** Резолвит `osv_*` в имя из каталога OS-версий; raw id — в title. */
+function OsVersionName({ osVersionId }: { osVersionId: string }) {
+  const q = useQuery(() => listOsVersions({ limit: 200 }), []);
+  const name = useMemo(
+    () => q.data?.items.find((v) => v.id === osVersionId)?.name,
+    [q.data, osVersionId],
+  );
+  return (
+    <span className="mono" title={osVersionId}>
+      {name ?? osVersionId}
+    </span>
   );
 }
 

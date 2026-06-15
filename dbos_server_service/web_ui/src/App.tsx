@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider, USE_MOCK_AUTH } from "@/contexts/AuthContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
 import { ToastProvider } from "@/contexts/ToastContext";
+import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { LabelsProvider } from "@/lib/labels";
 import { PersonaSelector } from "@/pages/auth/PersonaSelector";
 import { Login } from "@/pages/system/Login";
@@ -96,6 +97,7 @@ export function App() {
           <PersonaProvider>
             <ToastProvider>
               <LabelsProvider>
+              <ConfirmProvider>
               <ErrorBoundary>
               <Suspense fallback={<RouteFallback />}>
               <Routes>
@@ -290,6 +292,7 @@ export function App() {
               </Routes>
               </Suspense>
               </ErrorBoundary>
+              </ConfirmProvider>
               </LabelsProvider>
             </ToastProvider>
           </PersonaProvider>

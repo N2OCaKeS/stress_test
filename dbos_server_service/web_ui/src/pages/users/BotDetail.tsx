@@ -17,6 +17,7 @@ import {
   Edit3,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { BOTS, BOT_ASSIGNMENTS, ROLES, DIRECT_GRANTS } from "@/mocks/permissions";
 import { DEPTS, userById } from "@/mocks/auth";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -464,6 +465,7 @@ function BotLiveData({
 }) {
   const mock = useMockMode();
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const { persona } = usePersona();
   // Hard-delete доступен только account_admin (backend отвечает 403 остальным).
   const canHardDelete = isPlatformWideAdmin(persona);
@@ -643,12 +645,15 @@ function BotLiveData({
                   className="btn flex items-center gap-1"
                   disabled={!caps.manageRoles || pending}
                   title={caps.manageRoles ? undefined : caps.reason}
-                  onClick={() => {
-                    const next = window.prompt(
-                      "Новое description:",
-                      live.description ?? "",
-                    );
-                    if (next === null) return;
+                  onClick={async () => {
+                    const { ok, reason: next } = await confirm.prompt({
+                      title: "Edit description",
+                      message: "Новое description:",
+                      reason: true,
+                      defaultReason: live.description ?? "",
+                      confirmLabel: "Сохранить",
+                    });
+                    if (!ok) return;
                     run(() =>
                       botsApi.patchBot(botId, { description: next }),
                     );
@@ -660,12 +665,15 @@ function BotLiveData({
                   className="btn flex items-center gap-1"
                   disabled={!caps.manageRoles || pending}
                   title={caps.manageRoles ? undefined : caps.reason}
-                  onClick={() => {
-                    const next = window.prompt(
-                      "allowed_services (csv):",
-                      live.allowed_services.join(","),
-                    );
-                    if (next === null) return;
+                  onClick={async () => {
+                    const { ok, reason: next } = await confirm.prompt({
+                      title: "Edit allowed_services",
+                      message: "allowed_services (csv):",
+                      reason: true,
+                      defaultReason: live.allowed_services.join(","),
+                      confirmLabel: "Сохранить",
+                    });
+                    if (!ok) return;
                     const list = next
                       .split(",")
                       .map((s) => s.trim())
@@ -702,12 +710,19 @@ function BotLiveData({
                     className="btn btn-danger-solid flex items-center gap-1"
                     disabled={pending}
                     title="Физически удалить бота вместе с токенами и ролями"
-                    onClick={() => {
-                      const typed = window.prompt(
-                        `Это необратимо: удалит бота, все его токены, service-роли и членства.\n` +
+                    onClick={async () => {
+                      const { ok, reason: typed } = await confirm.prompt({
+                        title: "Удаление бота",
+                        message:
+                          `Это необратимо: удалит бота, все его токены, service-роли и членства.\n` +
                           `Для подтверждения введите имя бота «${live.name}»:`,
-                      );
-                      if (typed === null) return;
+                        reason: true,
+                        reasonLabel: "Имя бота",
+                        reasonPlaceholder: live.name,
+                        danger: true,
+                        confirmLabel: "Удалить бота",
+                      });
+                      if (!ok) return;
                       if (typed.trim() !== live.name) {
                         setActionErr(
                           "Имя не совпало — удаление отменено.",

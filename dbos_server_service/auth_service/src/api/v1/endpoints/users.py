@@ -22,6 +22,7 @@ from src.schemas.users import (
     SessionsListResponse,
     UserCreate,
     UserPermissionsResponse,
+    UserResolveResponse,
     UserResponse,
     UserUpdate,
 )
@@ -474,6 +475,51 @@ async def list_users_by_department(
     )
     response.headers["X-Total-Count"] = str(total)
     return items
+
+
+# `/users/resolve` регистрируется ДО `/{user_id}`-роутов — иначе FastAPI
+# съел бы `resolve` как литеральный user_id и вернул 404 USER_NOT_FOUND.
+@router.get(
+    "/resolve",
+    response_model=UserResolveResponse,
+    summary="Резолв username → user_id (точечный, dept-scoped)",
+    description=(
+        "Точное совпадение username → `{user_id, username, department_id}`. "
+        "Для адресации шаринга personal-секретов конкретному человеку, когда "
+        "списки юзеров недоступны. Обычный юзер и department_admin видят только "
+        "свой отдел; чужой/несуществующий username → 404 (без enumeration). "
+        "account_admin резолвит cross-dept."
+    ),
+    responses={
+        404: {"description": "USER_NOT_FOUND — нет такого username в видимом scope."},
+    },
+)
+async def resolve_user(
+    request: Request,
+    identity: CurrentUserIdentity,
+    username: str = Query(
+        min_length=1,
+        max_length=128,
+        description="Точный username для резолва (без fuzzy-перечисления).",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> UserResolveResponse:
+    """Точечный username → user_id lookup.
+
+    Доступ:
+        Любой залогиненный юзер (user-context). m2m отбивается
+        `require_user_context` (403 USER_CONTEXT_REQUIRED). Видимость scope —
+        свой отдел (account_admin — любой). Чувствительные поля не отдаются.
+
+    Возможные ошибки:
+        * `USER_NOT_FOUND` (404) — нет такого username в видимом scope.
+    """
+    return await user_service.resolve_username(
+        db=db,
+        identity=identity,
+        username=username,
+        request_id=getattr(request.state, "request_id", None),
+    )
 
 
 @router.post(

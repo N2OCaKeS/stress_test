@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AlertTriangle, Edit3, Filter, ShieldAlert, Trash2 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import {
@@ -47,6 +48,7 @@ export function ServicesLogingRules() {
 function LiveRules() {
   const { persona } = usePersona();
   const toast = useToast();
+  const confirm = useConfirm();
   // Весь `/rules` (включая GET-список) закрыт backend'ом строго на
   // `loging_admin`. `account_admin`, доходящий сюда по admin-каталогу, и
   // `loging_reader` ловят 403 даже на чтение — для них не дёргаем API.
@@ -74,10 +76,12 @@ function LiveRules() {
   }
 
   async function handleDelete(rule: Rule) {
-    if (typeof window !== "undefined") {
-      const ok = window.confirm(`Удалить правило "${rule.name}"?`);
-      if (!ok) return;
-    }
+    const ok = await confirm.confirm({
+      message: `Удалить правило "${rule.name}"?`,
+      danger: true,
+      confirmLabel: "Удалить",
+    });
+    if (!ok) return;
     try {
       await deleteRule(rule.id);
       toast.success(`Правило ${rule.name} удалено`);

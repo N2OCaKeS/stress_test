@@ -170,6 +170,22 @@ Auth: AnyAdmin. `account_admin` — любой отдел; `department_admin` �
 
 Errors: `DEPARTMENT_NOT_FOUND` (404), `INVALID_STATUS_FILTER` (422).
 
+### `GET /users/resolve?username=<exact>`
+
+Auth: любой залогиненный юзер (user-context; m2m отбивается `USER_CONTEXT_REQUIRED` 403). Точечный резолв username → user_id для адресации шаринга personal-секретов конкретному человеку, когда списки юзеров недоступны.
+
+Query: `username` (обязателен, 1..128, точное совпадение — без fuzzy-перечисления).
+
+Видимость scope: обычный юзер и `department_admin` — только свой отдел; `account_admin` — cross-dept. Юзер чужого отдела (для не-account_admin) трактуется как несуществующий → 404, чтобы не было cross-dept enumeration.
+
+Response (только не-чувствительные поля):
+
+```json
+{ "user_id": "usr_...", "username": "ivanov", "department_id": "dep_xyz" }
+```
+
+Errors: `USER_NOT_FOUND` (404) — нет такого username в видимом scope; `USER_CONTEXT_REQUIRED` (403) — m2m-токен; 422 — пустой/отсутствующий `username`.
+
 ### `POST /users`
 
 Auth: AnyAdmin. Body:

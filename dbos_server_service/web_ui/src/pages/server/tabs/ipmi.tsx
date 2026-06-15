@@ -64,6 +64,7 @@ import type {
   PowerStatus,
   Server,
 } from "@/api/server/types";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import type { Persona } from "@/types/persona";
 import { useToast } from "@/contexts/ToastContext";
@@ -421,14 +422,19 @@ function ControllerPane({
   onDeleted: () => void;
 }) {
   const toast = useToast();
+  const { confirm } = useConfirm();
   const serverId = controller.server_id;
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  function handleDelete() {
-    const ok = window.confirm(
-      "Удалить IPMI-контроллер? Все power-операции на этом сервере перестанут работать до повторной регистрации.",
-    );
+  async function handleDelete() {
+    const ok = await confirm({
+      title: "Удалить IPMI-контроллер",
+      message:
+        "Удалить IPMI-контроллер? Все power-операции на этом сервере перестанут работать до повторной регистрации.",
+      confirmLabel: "Удалить",
+      danger: true,
+    });
     if (!ok) return;
     setDeleting(true);
     deleteIpmi(serverId)
@@ -638,6 +644,7 @@ function PowerCard({
   caps: IpmiCaps;
 }) {
   const toast = useToast();
+  const { confirm } = useConfirm();
   const [status, setStatus] = useState<PowerStatus | null>(null);
   const [statusErr, setStatusErr] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
@@ -707,12 +714,16 @@ function PowerCard({
     fetchStatus();
   }, [powerOutcome.tracked, fetchStatus]);
 
-  function runPower(
+  async function runPower(
     kind: "on" | "off" | "reboot",
     fn: (id: string) => Promise<{ task_id: string; status: string }>,
     confirmMsg?: string,
   ) {
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    if (
+      confirmMsg &&
+      !(await confirm({ message: confirmMsg, danger: kind !== "on" }))
+    )
+      return;
     setPending(kind);
     powerOutcome.reset();
     fn(serverId)
@@ -871,6 +882,7 @@ function CredentialsCard({
   denyReason: string;
 }) {
   const toast = useToast();
+  const { confirm } = useConfirm();
   const [creds, setCreds] = useState<IpmiCredentials | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -986,10 +998,14 @@ function CredentialsCard({
     setPlain(null);
   }, [rotateOutcome.tracked]);
 
-  function handleRotate() {
-    const ok = window.confirm(
-      "Запустить ротацию IPMI-пароля? Новый пароль будет сгенерирован и применён к BMC; старый перестанет работать сразу после успешного callback'а worker'а.",
-    );
+  async function handleRotate() {
+    const ok = await confirm({
+      title: "Ротация IPMI-пароля",
+      message:
+        "Запустить ротацию IPMI-пароля? Новый пароль будет сгенерирован и применён к BMC; старый перестанет работать сразу после успешного callback'а worker'а.",
+      confirmLabel: "Ротировать",
+      danger: true,
+    });
     if (!ok) return;
     setRotating(true);
     rotateOutcome.reset();

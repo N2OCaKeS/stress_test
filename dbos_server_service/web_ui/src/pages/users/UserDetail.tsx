@@ -60,6 +60,7 @@ import {
   removeUserFromGroup,
 } from "@/api/auth/groups";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { listServices } from "@/api/auth/services";
 import { listServiceRoles } from "@/api/auth/service_roles";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
@@ -114,6 +115,7 @@ function Section({ icon, title, children, className = "" }: SectionProps) {
 export function UserDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const { persona } = usePersona();
   const mockMode = useMockMode();
 
@@ -340,9 +342,16 @@ export function UserDetail() {
               className="btn flex items-center gap-1"
               disabled={!caps.edit || busy !== null}
               title={caps.edit ? undefined : caps.reason}
-              onClick={() => {
-                const pwd = window.prompt("Новый пароль (min 12, буквы + цифры):");
-                if (!pwd) return;
+              onClick={async () => {
+                const { ok, reason: pwd } = await confirm.prompt({
+                  title: "Сброс пароля",
+                  message: "Новый пароль (min 12, буквы + цифры):",
+                  reason: true,
+                  reasonSecret: true,
+                  reasonRequired: true,
+                  confirmLabel: "Сбросить",
+                });
+                if (!ok || !pwd) return;
                 runAction("reset-password", () =>
                   resetUserPassword(user.id, { new_password: pwd }),
                 );
@@ -358,17 +367,19 @@ export function UserDetail() {
                   ? "Принудить юзера сменить пароль на ближайшем логине"
                   : caps.reason
               }
-              onClick={() => {
+              onClick={async () => {
                 // Confirm: side-effect — на следующем запросе у target'а
                 // полетит 403 PASSWORD_CHANGE_REQUIRED везде, кроме
                 // `/users/me/password`. Дороже отката, чем reset-password,
                 // — пароль не меняем, но саму ручку не идемпотентным
                 // unset-ом не открутить.
                 if (
-                  !window.confirm(
-                    `Принудить ${user.username} сменить пароль при ближайшем входе?\n` +
+                  !(await confirm.confirm({
+                    message:
+                      `Принудить ${user.username} сменить пароль при ближайшем входе?\n` +
                       "Текущий пароль не меняется, но юзер не сможет работать с системой до self-reset'а через /users/me/password.",
-                  )
+                    confirmLabel: "Принудить",
+                  }))
                 ) {
                   return;
                 }
@@ -1005,9 +1016,17 @@ export function UserDetail() {
                 className="btn btn-danger flex items-center gap-1"
                 disabled={!caps.disable || busy !== null}
                 title={caps.disable ? undefined : caps.reason}
-                onClick={() => {
-                  const reason = window.prompt("Причина бана:");
-                  if (!reason) return;
+                onClick={async () => {
+                  const { ok, reason } = await confirm.prompt({
+                    title: "Ban (permanent)",
+                    message: `Заблокировать ${user.username} навсегда?`,
+                    reason: true,
+                    reasonLabel: "Причина бана",
+                    reasonRequired: true,
+                    danger: true,
+                    confirmLabel: "Забанить",
+                  });
+                  if (!ok || !reason) return;
                   runAction("ban", () =>
                     banUser(user.id, { ban_type: "permanent", reason }),
                   );
@@ -1027,12 +1046,17 @@ export function UserDetail() {
                 className="btn btn-danger-solid"
                 disabled={!caps.delete || busy !== null}
                 title={caps.delete ? undefined : caps.reason}
-                onClick={() => {
-                  const reason = window.prompt(
-                    "Hard-delete: укажи причину (Q3 reorg / left / ...):",
-                  );
-                  if (!reason) return;
-                  if (!window.confirm(`Снести ${user.username} целиком?`)) return;
+                onClick={async () => {
+                  const { ok, reason } = await confirm.prompt({
+                    title: "Hard-delete пользователя",
+                    message: `Снести ${user.username} целиком? Укажи причину (Q3 reorg / left / ...):`,
+                    reason: true,
+                    reasonLabel: "Причина",
+                    reasonRequired: true,
+                    danger: true,
+                    confirmLabel: `Снести ${user.username}`,
+                  });
+                  if (!ok || !reason) return;
                   // После удаления карточки уже нет — уходим к списку, иначе
                   // деталь висит на 404 со stale-данными снесённого юзера.
                   if (mockMode) {
@@ -1288,6 +1312,7 @@ function UserSessionsTab({
     [userId, refreshSignal ?? 0],
     { enabled: !mockMode && !!userId },
   );
+  const confirm = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -1297,7 +1322,14 @@ function UserSessionsTab({
       setInfo("mock: revoke all");
       return;
     }
-    if (!window.confirm("Завершить ВСЕ сессии этого пользователя?")) return;
+    if (
+      !(await confirm.confirm({
+        message: "Завершить ВСЕ сессии этого пользователя?",
+        danger: true,
+        confirmLabel: "Завершить сессии",
+      }))
+    )
+      return;
     setBusy("all");
     setErr(null);
     setInfo(null);
@@ -1472,12 +1504,17 @@ function UserGroupsLiveSection({
   onActionError,
   onActionInfo,
 }: UserGroupsLiveSectionProps) {
+  const confirm = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
   const list = apiGroups ?? [];
 
   async function handleRemove(groupId: string, groupName: string) {
     if (
-      !window.confirm(`Убрать пользователя из группы «${groupName}»?`)
+      !(await confirm.confirm({
+        message: `Убрать пользователя из группы «${groupName}»?`,
+        confirmLabel: "Убрать",
+        danger: true,
+      }))
     ) {
       return;
     }

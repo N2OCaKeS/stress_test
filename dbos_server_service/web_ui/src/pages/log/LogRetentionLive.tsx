@@ -19,6 +19,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { useQuery } from "@/api/auth/useQuery";
@@ -42,6 +43,7 @@ const SEVERITIES: Severity[] = [
 export function LogRetentionLive() {
   const { persona } = usePersona();
   const toast = useToast();
+  const { confirm } = useConfirm();
   // Весь `/retention` (вкл. GET) закрыт router-level `require_admin` на
   // `loging_admin`. `loging_reader` доходит сюда по nav, но даже чтение
   // отдаёт 403 — поэтому не дёргаем API и показываем заглушку.
@@ -94,12 +96,14 @@ export function LogRetentionLive() {
 
   async function handleDisable() {
     if (busy) return;
-    if (typeof window !== "undefined") {
-      const ok = window.confirm(
+    const ok = await confirm({
+      title: "Отключить ротацию",
+      message:
         "Отключить ротацию? События будут храниться вечно, пока не задать новую политику.",
-      );
-      if (!ok) return;
-    }
+      confirmLabel: "Отключить",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await disableRetention();

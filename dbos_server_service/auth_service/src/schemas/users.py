@@ -135,6 +135,20 @@ class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class UserResolveResponse(BaseModel):
+    """Ответ `GET /users/resolve` — точечный username → id lookup.
+
+    Минимальный набор полей для шаринга personal-секретов конкретному
+    человеку: id, username и отдел. Чувствительные поля (email, статус,
+    platform_role, роли) намеренно не отдаём — обычному юзеру тут хватает
+    только id, чтобы адресовать grant.
+    """
+
+    user_id: str
+    username: str
+    department_id: str | None = None
+
+
 class AssignRolesRequest(BaseModel):
     """Тело `POST /users/{user_id}/roles` — replace-семантика."""
     service_name: str = Field(description="Сервис, для которого выдаём роли.")

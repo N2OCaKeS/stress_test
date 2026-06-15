@@ -33,6 +33,7 @@ import type {
 } from "@/api/auth/types";
 import { useServiceLabel } from "@/lib/labels";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 /**
  * Управление группами `auth_service`: профиль, участники (юзеры + боты),
@@ -873,6 +874,7 @@ function ServicesCard({
   run: (fn: () => Promise<unknown>) => Promise<void>;
 }) {
   const allServicesQ = useQuery(() => listServices(), [], { enabled: canEdit });
+  const confirm = useConfirm();
   const [picker, setPicker] = useState<ServiceName | "">("");
 
   const grantedSet = useMemo(
@@ -928,11 +930,13 @@ function ServicesCard({
                   <button
                     className="btn btn-sm btn-danger"
                     disabled={!canEdit || pending}
-                    onClick={() => {
+                    onClick={async () => {
                       if (
-                        !confirm(
-                          `Отозвать доступ группы «${group.name}» к ${s.service_name}? Все роли в этом сервисе тоже снимутся.`,
-                        )
+                        !(await confirm.confirm({
+                          message: `Отозвать доступ группы «${group.name}» к ${s.service_name}? Все роли в этом сервисе тоже снимутся.`,
+                          danger: true,
+                          confirmLabel: "Отозвать",
+                        }))
                       )
                         return;
                       void run(() =>
@@ -1407,14 +1411,17 @@ function DeleteGroupButton({
   onDeleted: () => void;
 }) {
   const { select } = useInlineState();
+  const confirm = useConfirm();
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   const submit = async () => {
     if (
-      !confirm(
-        `Удалить группу «${groupName}»? Все участники потеряют выданные через эту группу права.`,
-      )
+      !(await confirm.confirm({
+        message: `Удалить группу «${groupName}»? Все участники потеряют выданные через эту группу права.`,
+        danger: true,
+        confirmLabel: "Удалить",
+      }))
     )
       return;
     setErr(null);

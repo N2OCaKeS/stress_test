@@ -33,6 +33,7 @@ import {
   ListTree,
   ListChecks,
   UserCheck,
+  X,
 } from "lucide-react";
 import { useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
@@ -60,6 +61,7 @@ import {
 } from "@/api/server/osVersions";
 import { FormRow } from "@/pages/admin/services/_inline";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
 import { filterAccessibleAccounts } from "@/pages/server/_serverShared";
 import { BootstrapCredsModal } from "./_bootstrapCredsModal";
@@ -100,6 +102,7 @@ function canManageBasic(
 export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
   const { persona } = usePersona();
   const toast = useToast();
+  const { confirm } = useConfirm();
   const [busy, setBusyLocal] = useState<string | null>(null);
   // Поллинг исхода lifecycle-задач (prepare / inventory / users-inventory):
   // worker может закрыть их FAILED (битые bootstrap-креды, недоступный BMC),
@@ -156,6 +159,7 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
   // prepare собирает bootstrap-креды через модалку (выбор аккаунта или ручной
   // ввод с masked-полем пароля), а не через window.prompt.
   const [credsModalOpen, setCredsModalOpen] = useState(false);
+  const [osSyncOpen, setOsSyncOpen] = useState(false);
 
   async function run<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
     if (busy) return null;
@@ -180,12 +184,14 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         busyLabel={busy}
         outcome={taskOutcome.tracked}
         onCancelled={taskOutcome.reset}
-        onPrepare={() => {
+        onPrepare={async () => {
           if (!view) return;
           if (
-            !window.confirm(
-              `Запустить prepare для ${view.hostname}? Действие сбрасывает bootstrap-креды на сервере и инициирует management-цикл.`,
-            )
+            !(await confirm({
+              title: "Запустить prepare",
+              message: `Запустить prepare для ${view.hostname}? Действие сбрасывает bootstrap-креды на сервере и инициирует management-цикл.`,
+              confirmLabel: "Запустить",
+            }))
           )
             return;
           setCredsModalOpen(true);
@@ -198,21 +204,9 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
           );
           if (res) taskOutcome.track("inventory_sync", res.task_id, res.status);
         }}
-        onOsSync={async () => {
+        onOsSync={() => {
           if (!view) return;
-          const id = window.prompt(
-            "os_version_id (`osv_…`) или пусто для сброса:",
-            view.os_version_id ?? "",
-          );
-          if (id === null) return;
-          // os-sync синхронный: backend сразу UPDATE'ит строку и отдаёт Server,
-          // worker-задачи нет — поллить нечего.
-          const next = await run("os_sync", () =>
-            osSync(view.id, {
-              os_version_id: id.trim() ? id.trim() : null,
-            }),
-          );
-          if (next) applyServer(next);
+          setOsSyncOpen(true);
         }}
         onUsersInventory={async () => {
           if (!view) return;
@@ -237,7 +231,8 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
         }}
         onClearBusy={async () => {
           if (!view) return;
-          if (!window.confirm("Снять busy-захват с сервера?")) return;
+          if (!(await confirm({ message: "Снять busy-захват с сервера?" })))
+            return;
           const next = await run("busy_clear", () => clearBusy(view.id));
           if (next) applyServer(next);
         }}
@@ -288,6 +283,113 @@ export function ManageTab({ server, onServerUpdated, onDeleted }: Props) {
           }}
         />
       )}
+
+      {view && osSyncOpen && (
+        <OsSyncModal
+          currentOsVersionId={view.os_version_id ?? ""}
+          onClose={() => setOsSyncOpen(false)}
+          onSubmit={async (osVersionId) => {
+            // os-sync синхронный: backend сразу UPDATE'ит строку и отдаёт
+            // Server, worker-задачи нет — поллить нечего.
+            const next = await run("os_sync", () =>
+              osSync(view.id, { os_version_id: osVersionId || null }),
+            );
+            setOsSyncOpen(false);
+            if (next) applyServer(next);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Привязка сервера к OS-версии из каталога: дропдаун по именам (значение —
+ * `osv_*` id), пустое = сброс привязки. Заменяет ручной ввод сырого id.
+ */
+function OsSyncModal({
+  currentOsVersionId,
+  onClose,
+  onSubmit,
+}: {
+  currentOsVersionId: string;
+  onClose: () => void;
+  onSubmit: (osVersionId: string) => void | Promise<void>;
+}) {
+  const q = useQuery<OffsetPaginatedResponse<OsVersion>>(
+    () => listOsVersions({ limit: 200 }),
+    [],
+  );
+  const items = useMemo(() => q.data?.items ?? [], [q.data]);
+  const [selected, setSelected] = useState(currentOsVersionId);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await Promise.resolve(onSubmit(selected));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-content"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header flex items-center justify-between">
+          <div className="text-sm font-semibold">OS sync</div>
+          <button
+            className="btn btn-ghost p-1"
+            onClick={onClose}
+            aria-label="Закрыть"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
+          <div className="text-xs text-dim">
+            Привязать сервер к OS-версии из каталога. Пусто = сбросить привязку.
+          </div>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">OS version</span>
+            {q.loading ? (
+              <div className="text-xs text-dim">Загрузка каталога…</div>
+            ) : (
+              <select
+                className="input"
+                value={selected}
+                onChange={(e) => setSelected(e.target.value)}
+              >
+                <option value="">— не задана —</option>
+                {items.map((v) => (
+                  <option key={v.id} value={v.id} title={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </label>
+          <div className="flex items-center gap-2 mt-1">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={submitting}
+            >
+              {submitting ? "Сохраняем…" : "Сохранить"}
+            </button>
+            <button type="button" className="btn" onClick={onClose}>
+              Отмена
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -314,7 +416,7 @@ function LifecycleCard({
   onCancelled: () => void;
   onPrepare: () => void;
   onInventory: () => Promise<void>;
-  onOsSync: () => Promise<void>;
+  onOsSync: () => void;
   onUsersInventory: () => Promise<void>;
 }) {
   const disabled = !allowed || busyLabel !== null || !server;
@@ -574,6 +676,7 @@ function OsCatalogCard() {
 
 function OsCatalogBody() {
   const toast = useToast();
+  const { confirm } = useConfirm();
   const q = useQuery<OffsetPaginatedResponse<OsVersion>>(
     () => listOsVersions({ limit: 200 }),
     [],
@@ -586,9 +689,12 @@ function OsCatalogBody() {
 
   async function handleDelete(v: OsVersion) {
     if (
-      !window.confirm(
-        `Удалить ${v.name}? Если хоть один сервер на неё ссылается — backend вернёт 409.`,
-      )
+      !(await confirm({
+        title: "Удалить OS-версию",
+        message: `Удалить ${v.name}? Если хоть один сервер на неё ссылается — backend вернёт 409.`,
+        confirmLabel: "Удалить",
+        danger: true,
+      }))
     )
       return;
     setPendingId(v.id);
@@ -841,6 +947,7 @@ function DangerCard({
   busyLabel: string | null;
   onDelete: (reason: string) => Promise<void>;
 }) {
+  const { prompt } = useConfirm();
   if (!allowed) return null;
   return (
     <div
@@ -859,16 +966,17 @@ function DangerCard({
           className="btn btn-danger flex items-center gap-1"
           disabled={busyLabel !== null}
           onClick={async () => {
-            if (
-              !window.confirm(
-                `Удалить сервер ${server.hostname} полностью? Действие необратимо.`,
-              )
-            )
-              return;
-            const reason = window.prompt(
-              "Причина удаления (decommission / wrong-record / …):",
-            );
-            if (!reason) return;
+            const { ok, reason } = await prompt({
+              title: "Удалить сервер",
+              message: `Удалить сервер ${server.hostname} полностью? Действие необратимо.`,
+              reason: true,
+              reasonLabel: "Причина удаления",
+              reasonPlaceholder: "decommission / wrong-record / …",
+              reasonRequired: true,
+              confirmLabel: "Удалить",
+              danger: true,
+            });
+            if (!ok) return;
             await onDelete(reason);
           }}
         >

@@ -18,6 +18,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -61,6 +62,7 @@ type GroupMode = "none" | "department";
 export function Server() {
   const { persona } = usePersona();
   const toast = useToast();
+  const { prompt } = useConfirm();
   const [params, setParams] = useSearchParams();
 
   const selectedId = params.get("id");
@@ -163,20 +165,16 @@ export function Server() {
   }
 
   async function handleDelete(server: Server) {
-    if (typeof window === "undefined") return;
-    const reason = window.prompt(
-      `Причина удаления "${server.hostname}":`,
-      "",
-    );
-    if (reason === null) return;
-    if (!reason.trim()) {
-      toast.warn("Причина обязательна");
-      return;
-    }
-    const confirmed = window.confirm(
-      `Удалить сервер ${server.hostname}? Операция необратима.`,
-    );
-    if (!confirmed) return;
+    const { ok, reason } = await prompt({
+      title: "Удалить сервер",
+      message: `Удалить сервер ${server.hostname}? Операция необратима.`,
+      reason: true,
+      reasonLabel: "Причина удаления",
+      reasonRequired: true,
+      confirmLabel: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteServer(server.id, { reason: reason.trim() });
       toast.success(`Сервер ${server.hostname} удалён`);

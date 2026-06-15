@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import {
@@ -46,6 +47,7 @@ export function ServicesLogingRetention() {
 function LiveRetention() {
   const { persona } = usePersona();
   const toast = useToast();
+  const confirm = useConfirm();
   // Весь `/retention` (включая GET) закрыт router-level `require_admin` на
   // `loging_admin`. account_admin доходит сюда по admin-каталогу, но даже
   // чтение отдаёт 403 — для него не дёргаем API.
@@ -99,12 +101,13 @@ function LiveRetention() {
 
   async function handleDisable() {
     if (busy) return;
-    if (typeof window !== "undefined") {
-      const ok = window.confirm(
+    const ok = await confirm.confirm({
+      message:
         "Отключить ротацию? События будут храниться вечно, пока не задать новую политику.",
-      );
-      if (!ok) return;
-    }
+      danger: true,
+      confirmLabel: "Отключить",
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await disableRetention();

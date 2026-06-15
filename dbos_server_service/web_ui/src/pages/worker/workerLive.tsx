@@ -25,6 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useDeptLabel, useServerLabel } from "@/lib/labels";
 import { formatMsk } from "@/lib/datetime";
 import { apiErrMsg } from "@/api/client";
@@ -360,6 +361,7 @@ export function TaskDetail({
   canCancel: boolean;
   onChanged?: () => void;
 }) {
+  const { prompt } = useConfirm();
   const [task, setTask] = useState<TaskRead | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<unknown>(null);
@@ -367,6 +369,7 @@ export function TaskDetail({
   const aliveRef = useRef(true);
   const serverLabel = useServerLabel(task?.server_id ?? null);
   const serverName = task?.server_hostname ?? serverLabel;
+  const deptLabel = useDeptLabel(task?.department_id ?? null);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -412,23 +415,27 @@ export function TaskDetail({
 
   async function handleCancel() {
     if (!task || cancelling) return;
-    if (typeof window !== "undefined") {
-      const ok = window.confirm(
-        `Отменить задачу ${task.kind} (${task.id})?`,
+    const { ok, reason } = await prompt({
+      title: "Отменить задачу",
+      message: `Отменить задачу ${task.kind} (${task.id})?`,
+      reason: true,
+      reasonLabel: "Причина отмены (опционально)",
+      confirmLabel: "Отменить задачу",
+      danger: true,
+    });
+    if (!ok) return;
+    setCancelling(true);
+    try {
+      await cancelTask(
+        task.id,
+        reason.trim() ? { reason: reason.trim() } : undefined,
       );
-      if (!ok) return;
-      const reason = window.prompt("Причина отмены (опционально):", "");
-      if (reason === null) return;
-      setCancelling(true);
-      try {
-        await cancelTask(task.id, reason.trim() ? { reason: reason.trim() } : undefined);
-        load(false);
-        onChanged?.();
-      } catch (e) {
-        if (aliveRef.current) setErr(e);
-      } finally {
-        if (aliveRef.current) setCancelling(false);
-      }
+      load(false);
+      onChanged?.();
+    } catch (e) {
+      if (aliveRef.current) setErr(e);
+    } finally {
+      if (aliveRef.current) setCancelling(false);
     }
   }
 
@@ -531,7 +538,12 @@ export function TaskDetail({
             hint={task.account_login ? task.account_id ?? undefined : undefined}
             mono
           />
-          <DetailField label="department_id" value={task.department_id ?? "—"} mono />
+          <DetailField
+            label="department"
+            value={task.department_id ? deptLabel : "—"}
+            hint={task.department_id ?? undefined}
+            mono
+          />
           <DetailField label="created_at" value={formatMsk(task.created_at)} />
           <DetailField label="started_at" value={formatMsk(task.started_at)} />
           <DetailField label="finished_at" value={formatMsk(task.finished_at)} />

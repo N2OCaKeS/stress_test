@@ -19,6 +19,7 @@ import {
   UsersRound as UsersRoundIcon,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Tabs } from "@/components/ui/Tabs";
 import { AccessMatrix } from "./AccessMatrix";
 import { USERS, userById } from "@/mocks/auth";
@@ -463,6 +464,7 @@ function GroupLiveData({
   onMetaChange?: () => void;
 }) {
   const mock = useMockMode();
+  const confirm = useConfirm();
 
   const detail = useQuery(() => groupsApi.getGroup(groupId), [groupId], {
     enabled: !mock,
@@ -606,11 +608,14 @@ function GroupLiveData({
                       ? "Все participants потеряют роли группы"
                       : caps.reason
                   }
-                  onClick={() => {
+                  onClick={async () => {
                     if (
-                      !window.confirm(
-                        "Удалить группу? Участники потеряют унаследованные роли.",
-                      )
+                      !(await confirm.confirm({
+                        message:
+                          "Удалить группу? Участники потеряют унаследованные роли.",
+                        danger: true,
+                        confirmLabel: "Удалить",
+                      }))
                     ) {
                       return;
                     }

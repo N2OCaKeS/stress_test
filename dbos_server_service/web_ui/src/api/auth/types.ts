@@ -182,6 +182,17 @@ export interface UserPatchRequest {
   platform_role?: PlatformRole;
 }
 
+/**
+ * Ответ `GET /users/resolve` — точечный username → id lookup. Только минимум
+ * для адресации шаринга: id, username, отдел. Чувствительные поля бэкенд не
+ * отдаёт.
+ */
+export interface UserResolveResponse {
+  user_id: string;
+  username: string;
+  department_id: string | null;
+}
+
 export interface UserResetPasswordRequest {
   new_password: string;
 }

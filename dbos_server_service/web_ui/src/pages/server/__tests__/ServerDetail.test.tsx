@@ -6,6 +6,17 @@ import { PersonaProvider } from "@/contexts/PersonaContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import type { Server } from "@/api/server/types";
 
+// Диалоговый провайдер монтируется в App.tsx; табам в smoke-рендере он не
+// нужен — мокаем хук no-op'ом, чтобы не тащить Radix-портал в jsdom.
+vi.mock("@/components/ui/ConfirmDialog", () => ({
+  useConfirm: () => ({
+    confirm: vi.fn(async () => false),
+    prompt: vi.fn(async () => ({ ok: false, reason: "" })),
+    alert: vi.fn(async () => {}),
+  }),
+  ConfirmProvider: ({ children }: { children: unknown }) => children,
+}));
+
 const MOCK_SERVER: Server = {
   id: "srv_smoke_1",
   hostname: "smoke-host-01",

@@ -42,6 +42,7 @@ import type {
   ServerAccountUpdateRequest,
 } from "@/api/server/types";
 import { TruncationNotice } from "@/components/ui/TruncationNotice";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { LinkAccountModal } from "./_linkAccountModal";
 
 interface Props {
@@ -358,6 +359,7 @@ function AccountDetail({
   onClosed: () => void;
 }) {
   const toast = useToast();
+  const { confirm, prompt } = useConfirm();
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -586,12 +588,13 @@ function AccountDetail({
                   ? "Аккаунт не привязан к этому серверу"
                   : "userdel — оставит запись связки до Unbind"
             }
-            onClick={() => {
+            onClick={async () => {
               if (
-                typeof window !== "undefined" &&
-                !window.confirm(
-                  `Удалить OS-пользователя ${account.login} с этого сервера?`,
-                )
+                !(await confirm({
+                  message: `Удалить OS-пользователя ${account.login} с этого сервера?`,
+                  confirmLabel: "Deprovision",
+                  danger: true,
+                }))
               )
                 return;
               run(
@@ -655,12 +658,12 @@ function AccountDetail({
             className="btn flex items-center gap-1"
             disabled={pending || !canOperate}
             title={canOperate ? "Worker: на все привязанные серверы" : "Нет прав"}
-            onClick={() => {
+            onClick={async () => {
               if (
-                typeof window !== "undefined" &&
-                !window.confirm(
-                  `Запустить worker-rotate на все ${account.server_ids.length} серверов?`,
-                )
+                !(await confirm({
+                  message: `Запустить worker-rotate на все ${account.server_ids.length} серверов?`,
+                  confirmLabel: "Запустить",
+                }))
               )
                 return;
               run(
@@ -698,12 +701,13 @@ function AccountDetail({
                     ? "Аккаунт не привязан к этому серверу"
                     : undefined
               }
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  typeof window !== "undefined" &&
-                  !window.confirm(
-                    `Отвязать аккаунт ${account.login} от этого сервера?`,
-                  )
+                  !(await confirm({
+                    message: `Отвязать аккаунт ${account.login} от этого сервера?`,
+                    confirmLabel: "Отвязать",
+                    danger: true,
+                  }))
                 )
                   return;
                 run(
@@ -728,23 +732,17 @@ function AccountDetail({
               className="btn btn-danger flex items-center gap-1"
               disabled={pending || !canManage}
               title={canManage ? undefined : "Нет прав на удаление"}
-              onClick={() => {
-                if (typeof window === "undefined") return;
-                const reason = window.prompt(
-                  `Причина удаления аккаунта ${account.login}:`,
-                  "",
-                );
-                if (reason === null) return;
-                if (!reason.trim()) {
-                  toast.warn("Причина обязательна");
-                  return;
-                }
-                if (
-                  !window.confirm(
-                    `Удалить аккаунт ${account.login}? Операция необратима.`,
-                  )
-                )
-                  return;
+              onClick={async () => {
+                const { ok } = await prompt({
+                  title: "Удалить аккаунт",
+                  message: `Удалить аккаунт ${account.login}? Операция необратима.`,
+                  reason: true,
+                  reasonLabel: "Причина удаления",
+                  reasonRequired: true,
+                  confirmLabel: "Удалить",
+                  danger: true,
+                });
+                if (!ok) return;
                 run(async () => {
                   await accountsApi.deleteAccount(account.id);
                   onClosed();

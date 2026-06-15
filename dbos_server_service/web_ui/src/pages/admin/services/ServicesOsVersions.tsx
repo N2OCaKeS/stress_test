@@ -38,6 +38,7 @@ import type {
 } from "@/api/server/types";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 // Управление каталогом несёт server.admin (и dep_admin в своём отделе).
 // Зеркалит гейт ServicesServerPermissions — backend режет platform-роли.
@@ -195,6 +196,7 @@ function OsVersionDetail({
 }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -204,11 +206,14 @@ function OsVersionDetail({
       return;
     }
     if (
-      !window.confirm(
-        `Удалить версию «${version.name}»? Если на неё ссылается хотя бы один ` +
+      !(await confirm.confirm({
+        message:
+          `Удалить версию «${version.name}»? Если на неё ссылается хотя бы один ` +
           `сервер, backend откажет (409 OS_VERSION_IN_USE) — сначала переназначьте ` +
           `версию у таких серверов через os-sync.`,
-      )
+        danger: true,
+        confirmLabel: "Удалить",
+      }))
     )
       return;
     setBusy(true);

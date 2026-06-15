@@ -32,6 +32,7 @@ import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { ApiError } from "@/api/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
 import { formatMskShort, mskDateOffset } from "@/lib/datetime";
 import type {
@@ -438,6 +439,7 @@ const KNOWN_SERVICES: ServiceName[] = [
 
 function TokensCard({ mockMode }: { mockMode: boolean }) {
   const toast = useToast();
+  const { confirm } = useConfirm();
   const q = useQuery<PersonalAccessToken[]>(
     () => listMyTokens(),
     [],
@@ -451,7 +453,14 @@ function TokensCard({ mockMode }: { mockMode: boolean }) {
       toast.info(`mock: revoke ${t.name}`);
       return;
     }
-    if (!window.confirm(`Отозвать PAT «${t.name}»?`)) return;
+    if (
+      !(await confirm({
+        message: `Отозвать PAT «${t.name}»?`,
+        confirmLabel: "Отозвать",
+        danger: true,
+      }))
+    )
+      return;
     try {
       await revokeToken(t.token_id);
       toast.success("Токен отозван");

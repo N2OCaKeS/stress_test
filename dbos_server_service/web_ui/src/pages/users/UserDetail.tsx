@@ -33,7 +33,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { USERS, userById, DEPTS } from "@/mocks/auth";
 import { usePersona } from "@/contexts/PersonaContext";
 import { userMutationCaps } from "@/lib/rbac";
-import { UserAccessMatrices } from "./AccessMatrix";
+import { AccessMatrix } from "./AccessMatrix";
 import {
   assignUserRoles,
   banUser,
@@ -451,16 +451,7 @@ export function UserDetail() {
 
         {/* BODY — scroll only inside selected tab */}
         {tab === "matrix" && (
-          mockMode ? (
-            <UserAccessMatrices userId={user.id} />
-          ) : (
-            <div className="flex-1 overflow-y-auto p-5">
-              <div className="empty-card">
-                Скоро. Матрицы доступа (user/bot × resource, role × service)
-                требуют сводных endpoint'ов в auth_service — пока не реализованы.
-              </div>
-            </div>
-          )
+          <AccessMatrix subject={{ kind: "user", id: user.id }} />
         )}
         {tab === "sessions" && (
           <UserSessionsTab

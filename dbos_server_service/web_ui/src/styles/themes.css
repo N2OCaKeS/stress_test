@@ -916,3 +916,16 @@ html[data-theme="blue"] .gradient-bg {
   min-height: 0;
   overflow-y: auto;
 }
+
+/* Shiki-подсветка в Wiki: pre несёт собственный фон темы, оставляем ему
+   паддинг/скролл, обёртка только обрезает углы и держит кнопку «копировать». */
+.wiki-shiki pre {
+  margin: 0;
+  padding: 12px;
+  padding-right: 3rem;
+  overflow-x: auto;
+  border-radius: inherit;
+}
+.wiki-shiki code {
+  white-space: pre;
+}

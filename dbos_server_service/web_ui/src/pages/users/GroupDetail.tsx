@@ -15,8 +15,12 @@ import {
   Search,
   X,
   Save,
+  Grid2x2,
+  UsersRound as UsersRoundIcon,
 } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { Tabs } from "@/components/ui/Tabs";
+import { AccessMatrix } from "./AccessMatrix";
 import { USERS, userById } from "@/mocks/auth";
 import { usePersona } from "@/contexts/PersonaContext";
 import { groupMutationCaps } from "@/lib/rbac";
@@ -67,6 +71,7 @@ export function GroupDetail() {
   const caps = groupMutationCaps(persona, ownerDept);
 
   const [diffOn, setDiffOn] = useState(false);
+  const [tab, setTab] = useState<"detail" | "graph">("detail");
 
   const groupId = mockMode ? (mockGroup?.id ?? "") : (liveGroupQ.data?.id ?? id ?? "");
   const memberRefs = mockMode ? (GROUP_MEMBERS[groupId] ?? []) : [];
@@ -180,6 +185,28 @@ export function GroupDetail() {
           </div>
         </div>
 
+        <Tabs
+          active={tab}
+          onChange={(id) => setTab(id as "detail" | "graph")}
+          tabs={[
+            {
+              id: "detail",
+              label: "Группа",
+              icon: <UsersRoundIcon className="w-3 h-3" />,
+            },
+            {
+              id: "graph",
+              label: "Граф доступа",
+              icon: <Grid2x2 className="w-3 h-3" />,
+            },
+          ]}
+        />
+
+        {tab === "graph" && (
+          <AccessMatrix subject={{ kind: "group", id: groupId }} />
+        )}
+
+        {tab === "detail" && (
         <div className="flex-1 overflow-y-auto p-5 grid grid-cols-2 gap-5 auto-rows-min">
           <GroupLiveData
             groupId={groupId}
@@ -411,6 +438,7 @@ export function GroupDetail() {
           </Section>
           </>}
         </div>
+        )}
       </section>
     </Shell>
   );

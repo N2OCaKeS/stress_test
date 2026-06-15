@@ -210,7 +210,11 @@ async def update_os_version(
         "os_version.update",
         target_id=obj.id, target_type="os_version",
         status="success", allowed=True,
-        details={"fields": list(changes.keys()), "name": obj.name},
+        details={
+            "fields": list(changes.keys()),
+            "changed_fields": list(changes.keys()),
+            "name": obj.name,
+        },
     )
     return obj
 

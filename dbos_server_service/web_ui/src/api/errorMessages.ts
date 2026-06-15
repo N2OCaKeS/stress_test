@@ -116,7 +116,15 @@ export const HUMAN_MESSAGES: Record<string, string> = {
   OS_VERSION_NOT_FOUND: "Версия ОС не найдена.",
   TASK_NOT_FOUND: "Задача не найдена.",
   CREDENTIAL_NOT_FOUND: "Секрет не найден.",
+  USER_ACL_NOT_FOUND: "Доступ пользователя не найден.",
   RULE_NOT_FOUND: "Правило не найдено.",
+
+  // --- user-ACL шаринга секрета ---------------------------------------------
+  USER_ACL_DUPLICATE: "У этого пользователя уже есть доступ к секрету.",
+  USER_ACL_OWNER_REDUNDANT:
+    "Владелец и так имеет полный доступ — отдельный доступ не нужен.",
+  USER_ACL_SELF_REDUNDANT:
+    "Нельзя выдать доступ самому себе.",
 
   // --- специфичные подсказки server_account ---------------------------------
   ACCOUNT_REQUIRED:

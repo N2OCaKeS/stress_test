@@ -283,16 +283,18 @@ const STATIC_ITEMS: AdminItem[] = [
     visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
   },
 
-  // Services block — secret (per-credential admin lives on /secret; см. ServicesSecretAccess)
+  // Services block — secret. Per-credential RoleACL / DeptGrant / UserACL.
+  // secret_service dept-scoped: account_admin / loging_* без отдела backend
+  // режет 403 SERVICE_NOT_AVAILABLE_FOR_DEPARTMENT — пункт им не показываем.
   {
     id: "services.secret.access",
     label: "Доступ к секретам",
-    hint: "Role-ACL / Dept-Grant per-credential",
+    hint: "Role-ACL / Dept-Grant / User-ACL per-credential",
     icon: ShieldCheck,
     block: "services",
     group: "secret",
     content: ServicesSecretAccess,
-    visibleFor: (p) => isAccountAdmin(p) || hasSecretServiceAdmin(p),
+    visibleFor: (p) => isDepAdmin(p) || hasSecretServiceAdmin(p),
   },
 
   // Services block — loging (service-specific pages; roles are dynamic)

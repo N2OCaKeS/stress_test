@@ -523,10 +523,19 @@ def create_application() -> FastAPI:
         # `request.client.host` (без честного парсинга X-Forwarded-For — это
         # на стороне reverse-proxy), но как минимум разделяет «локальный
         # docker-compose сосед» от внешнего сканера.
+        actor_ip: str | None = None
+        user_agent: str | None = None
         if status_code in (401, 403, 429):
             client_ip = get_remote_address(request)
             if client_ip:
                 details["client_ip"] = client_ip
+                actor_ip = client_ip
+            ua = request.headers.get("User-Agent")
+            if ua:
+                # Скраб control-байтов на схеме (`EventCreate._user_agent_scrub`)
+                # ещё впереди — тут только cap, чтобы не таскать мегабайтный UA
+                # через очередь.
+                user_agent = ua[:512]
 
         envelope = make_envelope(
             action=action,
@@ -536,6 +545,8 @@ def create_application() -> FastAPI:
             emit_status=emit_status,
             allowed=allowed,
             request_id=request_id,
+            actor_ip=actor_ip,
+            user_agent=user_agent,
             details=details,
         )
         outbox = _audit_outbox

@@ -751,6 +751,7 @@ async def update_account(
         status="success", allowed=True,
         details={
             "fields": list(changes.keys()),
+            "changed_fields": list(changes.keys()),
             "department_id": obj.department_id,
         },
     )

@@ -753,7 +753,7 @@ async def update(
         "tokens.update",
         target_id=cred.id,
         target_type="credential",
-        details={"fields": fields_keys},
+        details={"fields": fields_keys, "changed_fields": fields_keys},
     )
     return cred
 

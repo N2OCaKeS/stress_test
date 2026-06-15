@@ -154,6 +154,29 @@ export interface RoleACLList {
   items: RoleACL[];
 }
 
+// ── user ACL ──────────────────────────────────────────────────────────────────
+
+/** `UserACLCreate` — тело `POST /credentials/{id}/user-acl`. */
+export interface UserACLCreateRequest {
+  user_id: string;
+  can_read?: boolean;
+  can_write?: boolean;
+}
+
+export interface UserACL {
+  id: string;
+  cred_id: string;
+  user_id: string;
+  can_read: boolean;
+  can_write: boolean;
+  granted_by_user_id: string;
+  created_at: string;
+}
+
+export interface UserACLList {
+  items: UserACL[];
+}
+
 // ── dept grants ─────────────────────────────────────────────────────────────
 
 /** `DeptGrantCreate` — тело `POST /credentials/{id}/dept-grants`. */

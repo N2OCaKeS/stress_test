@@ -101,9 +101,10 @@ def _validate_request_id(value: str | None) -> None:
 
 
 # Поля, входящие в hash payload'а для idempotency-poisoning защиты.
-# Включены (14 полей; см. tuple ниже): `timestamp`, `service`, `action`,
+# Включены (см. tuple ниже): `timestamp`, `service`, `action`,
 # `actor_id`, `actor_type`, `username`, `department_id`, `target_id`,
-# `target_type`, `status`, `allowed`, `severity`, `details`, `idempotency_key`.
+# `target_type`, `status`, `allowed`, `severity`, `actor_ip`, `user_agent`,
+# `details`, `idempotency_key`.
 # Любая разница в этих полях между двумя POST'ами с одинаковым
 # `idempotency_key` → разный logical event → 409 IDEMPOTENCY_KEY_CONFLICT.
 #
@@ -126,6 +127,8 @@ _HASH_FIELDS: tuple[str, ...] = (
     "status",
     "allowed",
     "severity",
+    "actor_ip",
+    "user_agent",
     "details",
     "idempotency_key",
 )
@@ -189,6 +192,8 @@ def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEv
             allowed=payload.allowed,
             severity=payload.severity,
             request_id=payload.request_id,
+            actor_ip=payload.actor_ip,
+            user_agent=payload.user_agent,
             details=payload.details,
             idempotency_key=None,
         )
@@ -231,6 +236,8 @@ def insert(db: Session, payload: EventCreate, *, commit: bool = True) -> AuditEv
         "allowed": payload.allowed,
         "severity": payload.severity or "INFO",
         "request_id": payload.request_id,
+        "actor_ip": payload.actor_ip,
+        "user_agent": payload.user_agent,
         "details": payload.details,
         "idempotency_key": payload.idempotency_key,
         "idempotency_payload_hash": payload_hash,
@@ -324,6 +331,7 @@ def query(
     severity: str | None = None,
     action: str | None = None,
     actor_id: str | None = None,
+    actor_ip: str | None = None,
     target_id: str | None = None,
     status: str | None = None,
     request_id: str | None = None,
@@ -374,6 +382,8 @@ def query(
     # ответственность caller'а (UI должен дополнять временным окном).
     if actor_id is not None:
         filters.append(AuditEvent.actor_id == actor_id)
+    if actor_ip is not None:
+        filters.append(AuditEvent.actor_ip == actor_ip)
     if target_id is not None:
         filters.append(AuditEvent.target_id == target_id)
     if status is not None:
@@ -477,6 +487,7 @@ def _stats_filters(
     severity: str | None,
     action: str | None,
     actor_id: str | None,
+    actor_ip: str | None,
     target_id: str | None,
     status: str | None,
     request_id: str | None,
@@ -500,6 +511,8 @@ def _stats_filters(
         filters.append(AuditEvent.action == action)
     if actor_id is not None:
         filters.append(AuditEvent.actor_id == actor_id)
+    if actor_ip is not None:
+        filters.append(AuditEvent.actor_ip == actor_ip)
     if target_id is not None:
         filters.append(AuditEvent.target_id == target_id)
     if status is not None:
@@ -521,6 +534,7 @@ def aggregate_stats(
     severity: str | None = None,
     action: str | None = None,
     actor_id: str | None = None,
+    actor_ip: str | None = None,
     target_id: str | None = None,
     status: str | None = None,
     request_id: str | None = None,
@@ -547,6 +561,7 @@ def aggregate_stats(
         severity=severity,
         action=action,
         actor_id=actor_id,
+        actor_ip=actor_ip,
         target_id=target_id,
         status=status,
         request_id=request_id,
@@ -599,6 +614,7 @@ def iter_export(
     severity: str | None = None,
     action: str | None = None,
     actor_id: str | None = None,
+    actor_ip: str | None = None,
     target_id: str | None = None,
     status: str | None = None,
     request_id: str | None = None,
@@ -626,6 +642,7 @@ def iter_export(
         severity=severity,
         action=action,
         actor_id=actor_id,
+        actor_ip=actor_ip,
         target_id=target_id,
         status=status,
         request_id=request_id,

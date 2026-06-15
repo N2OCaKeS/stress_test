@@ -551,7 +551,11 @@ async def update_server(
         target_type="server",
         status="success",
         allowed=True,
-        details={"fields": audit_fields, "department_id": obj.department_id},
+        details={
+            "fields": audit_fields,
+            "changed_fields": audit_fields,
+            "department_id": obj.department_id,
+        },
     )
     return obj
 

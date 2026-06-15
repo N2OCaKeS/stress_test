@@ -402,6 +402,7 @@ async def update_controller(
     await db.refresh(obj)
     audit_details = {
         "fields": list(changes.keys()),
+        "changed_fields": list(changes.keys()),
         "server_id": obj.server_id,
         "department_id": server.department_id,
     }

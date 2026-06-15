@@ -6,8 +6,9 @@
   Явно переданный параметр имеет приоритет.
 - `details` всегда проходит через `redaction.redact()` — пароли, токены, секреты
   и хэши превращаются в типизированные плейсхолдеры (`<PASSWORD>`, `<TOKEN>`, …).
-- Если в контексте есть ip_address/user_agent — они автоматически попадают
-  в details (если уже не указаны явно).
+- Если в контексте есть ip_address/user_agent — они уходят в top-level поля
+  события `actor_ip`/`user_agent`, а также (для обратной совместимости)
+  дублируются в details, если их там ещё нет.
 
 ### Connection pool
 
@@ -316,6 +317,8 @@ def emit(
         "status": status,
         "allowed": allowed,
         "request_id": resolved_request_id,
+        "actor_ip": ctx.ip_address,
+        "user_agent": ctx.user_agent,
         "details": sanitized,
     }
 

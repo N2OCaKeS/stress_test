@@ -183,6 +183,17 @@ class TestIngestStoresAllFields:
         stored = db.get(AuditEvent, r.json()["id"])
         assert stored.request_id == "req_abc123"
 
+    def test_actor_ip_and_user_agent_stored(self, client, auth_headers, db):
+        r = client.post(
+            EVENTS_URL,
+            json=make_event(actor_ip="203.0.113.7", user_agent="curl/8.4.0"),
+            headers=auth_headers,
+        )
+        from src.models.audit_event import AuditEvent
+        stored = db.get(AuditEvent, r.json()["id"])
+        assert stored.actor_ip == "203.0.113.7"
+        assert stored.user_agent == "curl/8.4.0"
+
     def test_null_optional_fields_stored_as_null(self, client, auth_headers, db):
         # Без явных actor_id/username/target_*/request_id — в БД должно быть None
         from datetime import datetime, timezone
@@ -207,3 +218,46 @@ class TestIngestStoresAllFields:
         assert stored.target_type is None
         assert stored.request_id is None
         assert stored.department_id is None
+        assert stored.actor_ip is None
+        assert stored.user_agent is None
+
+
+class TestActorIpUserAgentValidation:
+    def test_actor_ip_rejects_crlf(self, client, auth_headers):
+        r = client.post(
+            EVENTS_URL,
+            json=make_event(actor_ip="1.2.3.4\r\nX-Evil: 1"),
+            headers=auth_headers,
+        )
+        assert r.status_code == 422
+
+    def test_actor_ip_empty_string_normalized_to_null(self, client, auth_headers, db):
+        r = client.post(
+            EVENTS_URL,
+            json=make_event(actor_ip="   "),
+            headers=auth_headers,
+        )
+        from src.models.audit_event import AuditEvent
+        stored = db.get(AuditEvent, r.json()["id"])
+        assert stored.actor_ip is None
+
+    def test_user_agent_control_bytes_scrubbed(self, client, auth_headers, db):
+        r = client.post(
+            EVENTS_URL,
+            json=make_event(user_agent="good\r\nInjected: yes\tTAB"),
+            headers=auth_headers,
+        )
+        from src.models.audit_event import AuditEvent
+        stored = db.get(AuditEvent, r.json()["id"])
+        # CR/LF вырезаны, TAB сохранён (разрешён в скраб-валидаторе).
+        assert "\r" not in stored.user_agent
+        assert "\n" not in stored.user_agent
+        assert stored.user_agent == "goodInjected: yes\tTAB"
+
+    def test_user_agent_max_length_512(self, client, auth_headers):
+        r = client.post(
+            EVENTS_URL,
+            json=make_event(user_agent="A" * 513),
+            headers=auth_headers,
+        )
+        assert r.status_code == 422

@@ -77,6 +77,11 @@ _TARGET_TYPE_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_.]{1,64}$")
 # (значение хранится as-is, а нормализуется только NFKC). Charset покрывает
 # UUID, opaque-токены и batch-id'ы (буквы, цифры, `_`, `-`, `.`).
 _IDEMPOTENCY_KEY_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_\-.]{1,128}$")
+# `actor_ip` — IPv4/IPv6, включая zone-id (`fe80::1%eth0`). Charset узкий:
+# буквы/цифры (под hex-октеты и имя интерфейса в zone-id), `.`, `:`, `%`,
+# `_`, `-`. Главное — отбить CR/LF/whitespace, которые инжектили бы вторую
+# строку в CSV/SIEM-экспорт, как в `username`/`actor_id`.
+_ACTOR_IP_PATTERN: re.Pattern[str] = re.compile(r"^[0-9A-Za-z:.%_\-]{1,64}$")
 
 # Допустимый дрифт timestamp'а ingest-payload'а относительно now() сервера.
 # Окно зависит от `actor_type`: user/bot/anonymous/oauth_client получают
@@ -114,6 +119,13 @@ class EventCreate(BaseModel):
     )
 
     request_id: str | None = Field(default=None, max_length=64)
+
+    # Кто и откуда. Оба опциональны (None по умолчанию), чтобы не ломать
+    # эмиттеры, которые их не шлют. `actor_ip` — IP клиента, `user_agent` —
+    # заголовок User-Agent. Заполняются сервисами из request-контекста.
+    actor_ip: str | None = Field(default=None, max_length=64, description="IP клиента (actor'а)")
+    user_agent: str | None = Field(default=None, max_length=512, description="User-Agent actor'а")
+
     details: dict = Field(
         default_factory=dict,
         description="Технический контекст — без секретов и паролей",
@@ -343,6 +355,44 @@ class EventCreate(BaseModel):
             )
         return v
 
+    @field_validator("actor_ip")
+    @classmethod
+    def _actor_ip_charset(cls, v: str | None) -> str | None:
+        """`actor_ip` рефлектится в audit-export'ы и WHERE-clause GET /events.
+
+        Charset держим узким (hex/`.`/`:`/`%`) — CR/LF тут расщепили бы CSV/SIEM
+        строку, как в `username`/`actor_id`. Пустую строку приводим к None,
+        чтобы сервисы могли слать `""` для «IP не определён» без лишней ветки.
+        """
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if not _ACTOR_IP_PATTERN.match(v):
+            raise ValueError(
+                "actor_ip must match [0-9A-Za-z:.%_-]{1,64} "
+                "(IPv4/IPv6 with optional zone-id, no CR/LF, no whitespace)"
+            )
+        return v
+
+    @field_validator("user_agent")
+    @classmethod
+    def _user_agent_scrub(cls, v: str | None) -> str | None:
+        """`user_agent` — free-form клиентский заголовок; скрабим control-байты.
+
+        UA не из доверенного источника, поэтому charset-whitelist тут не
+        подходит (легитимные UA несут скобки, слэши, точки с запятой). Вместо
+        этого вырезаем CR/LF/NUL и прочие control-символы, которые расщепили бы
+        строку в CSV/SIEM-экспорте, и режем по max_length схемой. Пустую строку
+        приводим к None.
+        """
+        if v is None:
+            return v
+        v = "".join(ch for ch in v if ch == "\t" or ord(ch) >= 0x20)
+        v = v.strip()
+        return v or None
+
     @field_validator("details")
     @classmethod
     def _details_shadow_keys(cls, v: dict) -> dict:
@@ -504,6 +554,8 @@ class EventDetail(BaseModel):
     allowed: bool
     severity: str
     request_id: str | None
+    actor_ip: str | None
+    user_agent: str | None
     details: dict
 
     model_config = {"from_attributes": True}

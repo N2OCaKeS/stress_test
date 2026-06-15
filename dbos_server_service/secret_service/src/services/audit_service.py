@@ -215,6 +215,8 @@ def emit(
         "allowed": allowed,
         "severity": resolved_severity,
         "request_id": resolved_request_id,
+        "actor_ip": ctx.ip_address,
+        "user_agent": ctx.user_agent,
         "details": sanitized,
     }
 

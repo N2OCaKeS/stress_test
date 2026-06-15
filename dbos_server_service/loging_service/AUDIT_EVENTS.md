@@ -28,6 +28,8 @@ Severity вычисляется автоматически в `src/services/rule
 | `allowed` | `bool` | да | Было ли действие разрешено политикой доступа. |
 | `severity` | `Literal["TRACE","DEBUG","INFO","WARNING","ERROR","CRITICAL"] \| None` | нет | Если `None` — берётся из `_DEFAULT_SEVERITY`. |
 | `request_id` | `str` (≤ 64, `^[A-Za-z0-9_\-]+$`) | нет | Корреляция с HTTP-запросом. |
+| `actor_ip` | `str` (≤ 64, `^[0-9A-Za-z:.%_-]+$`) | нет | IP клиента (actor'а). IPv4/IPv6 с опциональным zone-id. Сервисы достают его через `extract_client_ip` (left-most non-trusted из `X-Forwarded-For` за доверенным proxy, иначе `request.client.host`). Пустая строка → `null`. |
+| `user_agent` | `str` (≤ 512) | нет | Заголовок `User-Agent` actor'а. Control-байты (CR/LF/NUL) скрабятся, TAB сохраняется. Пустая строка → `null`. |
 | `idempotency_key` | `str` (≤ 128) | нет | Outbox-retry safe: повторный POST с тем же `(service, idempotency_key)` вернёт 201 с прежним `event_id`. |
 | `details` | `dict` (JSONB) | нет (default `{}`) | Структурированные детали. Размер ≤ 64 KB, глубина ≤ 10. Reserved-keys (`actor_id`, `actor_type`) запрещены на любой глубине — чтобы держатель ingest-ключа не shadow'ил identity actor'а через `details`. NUL-byte в строках банится. Прогоняется через redaction-слой перед записью. |
 

@@ -7,7 +7,8 @@
 - `details` всегда проходит через `redaction.redact()` — пароли, токены,
   секреты и хэши превращаются в типизированные плейсхолдеры
   (`<PASSWORD>`, `<TOKEN>`, …).
-- При наличии в контексте ip_address/user_agent они добавляются в details
+- При наличии в контексте ip_address/user_agent они уходят в top-level поля
+  события `actor_ip`/`user_agent` и (для обратной совместимости) в details
   автоматически (если уже не присутствуют).
 - Best-effort: ошибки httpx не пропагируются вызывающему коду — операция
   основного запроса не должна падать из-за недоступного loging_service.
@@ -240,6 +241,8 @@ def emit(
         "status": status,
         "allowed": allowed,
         "request_id": resolved_request_id,
+        "actor_ip": ctx.ip_address,
+        "user_agent": ctx.user_agent,
         "details": sanitized,
     }
 

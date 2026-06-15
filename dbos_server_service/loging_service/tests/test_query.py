@@ -129,6 +129,40 @@ class TestFilterByAction:
         ).json()["total"] == 0
 
 
+class TestActorIpUserAgent:
+    def test_ingested_ip_ua_returned_in_event(self, client, admin_client, auth_headers):
+        _ingest(
+            client,
+            auth_headers,
+            actor_ip="203.0.113.7",
+            user_agent="curl/8.4.0",
+        )
+        item = admin_client.get("/api/logging/v1/events").json()["items"][0]
+        assert item["actor_ip"] == "203.0.113.7"
+        assert item["user_agent"] == "curl/8.4.0"
+
+    def test_ip_ua_default_none(self, client, admin_client, auth_headers):
+        _ingest(client, auth_headers)
+        item = admin_client.get("/api/logging/v1/events").json()["items"][0]
+        assert item["actor_ip"] is None
+        assert item["user_agent"] is None
+
+    def test_filter_by_actor_ip(self, client, admin_client, auth_headers):
+        _ingest(client, auth_headers, actor_ip="203.0.113.7")
+        _ingest(client, auth_headers, actor_ip="198.51.100.4")
+        body = admin_client.get(
+            "/api/logging/v1/events",
+            params={"actor_ip": "203.0.113.7", "include_total": "true"},
+        ).json()
+        assert body["total"] == 1
+        assert body["items"][0]["actor_ip"] == "203.0.113.7"
+
+    def test_ipv6_accepted(self, client, admin_client, auth_headers):
+        _ingest(client, auth_headers, actor_ip="2001:db8::1")
+        item = admin_client.get("/api/logging/v1/events").json()["items"][0]
+        assert item["actor_ip"] == "2001:db8::1"
+
+
 def _three_points_and_mid(offsets=(-50, -30, -10)):
     """Возвращает (timestamps_to_ingest, фиксированная середина для filter'а).
 

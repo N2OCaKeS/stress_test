@@ -270,8 +270,8 @@ def create_event(
         "`department_admin` к чтению audit'а не допускается (если dep_admin'у "
         "нужно читать журнал — выдай ему отдельную `loging_reader`).\n\n"
         "**Фильтры** (любая комбинация, all-AND): `department_id`, `service`, "
-        "`severity`, `action`, `actor_id`, `target_id`, `status`, `request_id`, "
-        "`from_time`, `to_time`, `limit`, `offset`.\n\n"
+        "`severity`, `action`, `actor_id`, `actor_ip`, `target_id`, `status`, "
+        "`request_id`, `from_time`, `to_time`, `limit`, `offset`.\n\n"
         "Лимит запросов: `AUDIT_QUERY_RATE_LIMIT` (per-user, fallback на IP "
         "если identity не определена; см. README).\n\n"
         "**Возможные ошибки:**\n"
@@ -329,6 +329,11 @@ def list_events(
         max_length=48,
         description="Фильтр по actor_id (точное совпадение)",
     ),
+    actor_ip: str | None = Query(
+        default=None,
+        max_length=64,
+        description="Фильтр по actor_ip (точное совпадение)",
+    ),
     target_id: str | None = Query(
         default=None,
         max_length=48,
@@ -381,6 +386,7 @@ def list_events(
         severity=severity,
         action=action,
         actor_id=actor_id,
+        actor_ip=actor_ip,
         target_id=target_id,
         status=status_filter,
         request_id=request_id,
@@ -419,6 +425,8 @@ _EXPORT_COLUMNS = (
     "allowed",
     "severity",
     "request_id",
+    "actor_ip",
+    "user_agent",
     "details",
 )
 
@@ -491,6 +499,7 @@ def events_stats(
     severity: Severity | None = Query(default=None),
     action: str | None = Query(default=None, description="Фильтр по имени action"),
     actor_id: str | None = Query(default=None, max_length=48),
+    actor_ip: str | None = Query(default=None, max_length=64),
     target_id: str | None = Query(default=None, max_length=48),
     status_filter: Literal["success", "failure", "denied", "warning"] | None = Query(
         default=None, alias="status", description="Фильтр по исходу действия",
@@ -518,6 +527,7 @@ def events_stats(
         severity=severity,
         action=action,
         actor_id=actor_id,
+        actor_ip=actor_ip,
         target_id=target_id,
         status=status_filter,
         request_id=request_id,
@@ -588,6 +598,7 @@ def events_export(
     severity: Severity | None = Query(default=None),
     action: str | None = Query(default=None, description="Фильтр по имени action"),
     actor_id: str | None = Query(default=None, max_length=48),
+    actor_ip: str | None = Query(default=None, max_length=64),
     target_id: str | None = Query(default=None, max_length=48),
     status_filter: Literal["success", "failure", "denied", "warning"] | None = Query(
         default=None, alias="status", description="Фильтр по исходу действия",
@@ -615,6 +626,7 @@ def events_export(
         severity=severity,
         action=action,
         actor_id=actor_id,
+        actor_ip=actor_ip,
         target_id=target_id,
         status=status_filter,
         request_id=request_id,

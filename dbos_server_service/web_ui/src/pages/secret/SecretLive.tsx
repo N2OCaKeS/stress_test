@@ -31,7 +31,7 @@ import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { fromBase64 } from "@/lib/base64";
 import { formatMsk } from "@/lib/datetime";
-import { useLabelMaps } from "@/lib/labels";
+import { useLabelMaps, useUserLabel } from "@/lib/labels";
 import { useQuery } from "@/api/auth/useQuery";
 import { isSecretZoneBlocked } from "@/lib/rbac";
 import { ApiError, apiErrMsg } from "@/api/client";
@@ -51,6 +51,12 @@ import {
   listDeptGrants,
   revokeDeptGrant,
 } from "@/api/secret/deptGrants";
+import {
+  addUserAcl,
+  listUserAcls,
+  revokeUserAcl,
+} from "@/api/secret/userAcls";
+import { listUsersByDepartment } from "@/api/auth/users";
 import type {
   Credential,
   CredentialCreateRequest,
@@ -363,6 +369,9 @@ export function SecretLive() {
           credId={selectedId}
           canManage={canManage}
           isGuest={isGuestList}
+          currentUserId={persona.id}
+          isDepAdmin={persona.platform_role === "dep_admin"}
+          actorDeptId={persona.dept_id}
           onDelete={handleDelete}
           onChanged={() => listQ.refetch()}
         />
@@ -463,12 +472,18 @@ function DetailPane({
   credId,
   canManage,
   isGuest,
+  currentUserId,
+  isDepAdmin,
+  actorDeptId,
   onDelete,
   onChanged,
 }: {
   credId: string;
   canManage: boolean;
   isGuest: boolean;
+  currentUserId: string;
+  isDepAdmin: boolean;
+  actorDeptId: string | null;
   onDelete: (c: Credential) => void;
   onChanged: () => void;
 }) {
@@ -478,10 +493,20 @@ function DetailPane({
   const cred = credQ.data;
 
   const isCross = cred?.scope === "cross_department";
+  const isPersonal = cred?.scope === "personal";
+  // Доступ пользователям видят: владелец personal-кред'ы (свой секрет) и
+  // dep_admin для dept/cross-кред (управляет от имени отдела). Управление
+  // user-ACL гейтит этот же признак.
+  const canManageUserAcl = isPersonal
+    ? cred?.owner_user_id === currentUserId
+    : isDepAdmin;
   // Guest без reveal-доступа не нагружаем ACL/grant-листингами (бэк всё равно
   // отобьёт 403), показываем только метаданные.
   const aclQ = useQuery(() => listRoleAcls(credId), [credId], {
     enabled: !isGuest,
+  });
+  const userAclQ = useQuery(() => listUserAcls(credId), [credId], {
+    enabled: !isGuest && canManageUserAcl,
   });
   const grantsQ = useQuery(() => listDeptGrants(credId), [credId], {
     enabled: isCross && !isGuest,
@@ -500,6 +525,7 @@ function DetailPane({
   const [editing, setEditing] = useState(false);
   const [transferring, setTransferring] = useState(false);
   const [addingAcl, setAddingAcl] = useState(false);
+  const [addingUserAcl, setAddingUserAcl] = useState(false);
   const [addingGrant, setAddingGrant] = useState(false);
 
   // Общий гейт для прямых мутаций detail-панели (recover / delete / снятие
@@ -618,6 +644,40 @@ function DetailPane({
       aclQ.refetch();
     } catch (e) {
       toast.error(apiErrMsg(e, "Снятие ACL не удалось"));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function handleUserAclAdd(body: {
+    user_id: string;
+    can_read: boolean;
+    can_write: boolean;
+  }) {
+    try {
+      await addUserAcl(credId, body);
+      toast.success("Доступ выдан");
+      setAddingUserAcl(false);
+      userAclQ.refetch();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Выдача доступа не удалась"));
+    }
+  }
+
+  async function handleUserAclRevoke(aclId: string) {
+    if (acting) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Снять доступ этого пользователя?")
+    )
+      return;
+    setActing(true);
+    try {
+      await revokeUserAcl(credId, aclId);
+      toast.success("Доступ снят");
+      userAclQ.refetch();
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Снятие доступа не удалось"));
     } finally {
       setActing(false);
     }
@@ -911,6 +971,50 @@ function DetailPane({
           </div>
         )}
 
+        {/* Доступ пользователям — UserACL */}
+        {!isGuest && canManageUserAcl && (
+          <div className="surface border border-token rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs uppercase tracking-wider text-dim">
+                Доступ пользователям ({userAclQ.data?.items.length ?? 0})
+              </div>
+              <button
+                className="btn btn-ghost text-xs flex items-center gap-1"
+                onClick={() => setAddingUserAcl(true)}
+              >
+                <ShieldPlus className="w-3.5 h-3.5" /> Выдать
+              </button>
+            </div>
+            {userAclQ.loading && (
+              <div className="text-xs text-dim">Загрузка…</div>
+            )}
+            {userAclQ.error && (
+              <div className="text-xs text-danger">
+                {apiErrMsg(userAclQ.error, "Список доступа не загрузился")}
+              </div>
+            )}
+            {!userAclQ.loading && !userAclQ.error && (
+              <div className="text-sm flex flex-col gap-1">
+                {(userAclQ.data?.items ?? []).length === 0 && (
+                  <div className="text-xs text-dim">
+                    Нет выданных доступов пользователям.
+                  </div>
+                )}
+                {(userAclQ.data?.items ?? []).map((a) => (
+                  <UserAclRow
+                    key={a.id}
+                    userId={a.user_id}
+                    canRead={a.can_read}
+                    canWrite={a.can_write}
+                    acting={acting}
+                    onRevoke={() => handleUserAclRevoke(a.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Dept grants — только cross_department */}
         {isCross && !isGuest && (
           <div className="surface border border-token rounded-lg p-4 col-span-2">
@@ -983,8 +1087,16 @@ function DetailPane({
       {addingAcl && (
         <AclModal
           isCross={isCross}
+          actorDeptId={actorDeptId}
           onClose={() => setAddingAcl(false)}
           onSubmit={handleAclAdd}
+        />
+      )}
+      {addingUserAcl && (
+        <UserAclModal
+          actorDeptId={isDepAdmin ? actorDeptId : null}
+          onClose={() => setAddingUserAcl(false)}
+          onSubmit={handleUserAclAdd}
         />
       )}
       {addingGrant && (
@@ -1227,6 +1339,61 @@ function CreatePane({
 // ───────────────────────────────────────────────────────────────────────────
 // Модалки управления
 
+/**
+ * Выбор отдела по имени. Если карта отделов непустая — dropdown с именами
+ * (значение запроса — сырой `dep_*` id). Если карта пуста (dep_admin видит
+ * только свой отдел через identity-сид, глобальный список гейтится 403) —
+ * текстовый ввод сырого id с подсказкой.
+ */
+function DeptPicker({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+}) {
+  const { depts } = useLabelMaps();
+  const options = useMemo(
+    () => [...depts.entries()].sort((a, b) => a[1].localeCompare(b[1])),
+    [depts],
+  );
+
+  if (options.length === 0) {
+    return (
+      <input
+        className="surface-2 border border-token rounded px-2 py-1"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={64}
+        required
+        placeholder={placeholder ?? "dep_…"}
+        title={value || undefined}
+      />
+    );
+  }
+
+  return (
+    <select
+      className="surface-2 border border-token rounded px-2 py-1"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      required
+      title={value || undefined}
+    >
+      <option value="" disabled>
+        — выберите отдел —
+      </option>
+      {options.map(([id, name]) => (
+        <option key={id} value={id} title={id}>
+          {name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function ModalShell({
   title,
   onClose,
@@ -1411,16 +1578,24 @@ function TransferModal({
         </div>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">
-            {isPersonal ? "new_owner_user_id *" : "new_owner_dept_id *"}
+            {isPersonal ? "новый владелец-пользователь *" : "новый владелец-отдел *"}
           </span>
-          <input
-            className="surface-2 border border-token rounded px-2 py-1"
-            value={target}
-            onChange={(e) => setTarget(e.target.value)}
-            maxLength={64}
-            required
-            placeholder={isPersonal ? "usr_…" : "dept id"}
-          />
+          {isPersonal ? (
+            <input
+              className="surface-2 border border-token rounded px-2 py-1"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              maxLength={64}
+              required
+              placeholder="usr_…"
+            />
+          ) : (
+            <DeptPicker
+              value={target}
+              onChange={setTarget}
+              placeholder="dep_…"
+            />
+          )}
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">reason * (попадёт в audit)</span>
@@ -1451,10 +1626,12 @@ function TransferModal({
 
 function AclModal({
   isCross,
+  actorDeptId,
   onClose,
   onSubmit,
 }: {
   isCross: boolean;
+  actorDeptId: string | null;
   onClose: () => void;
   onSubmit: (body: {
     dept_id: string;
@@ -1463,7 +1640,12 @@ function AclModal({
     can_write: boolean;
   }) => void | Promise<void>;
 }) {
-  const [deptId, setDeptId] = useState("");
+  const { depts } = useLabelMaps();
+  // personal/department: ACL действует в отделе-владельце = свой отдел актора,
+  // выбор не нужен (залочено). cross_department: dept_id — recipient-отдел,
+  // даём dept-пикер.
+  const lockedDept = !isCross && !!actorDeptId;
+  const [deptId, setDeptId] = useState(lockedDept ? (actorDeptId ?? "") : "");
   const [roleName, setRoleName] = useState("reader");
   const [canRead, setCanRead] = useState(true);
   const [canWrite, setCanWrite] = useState(false);
@@ -1495,15 +1677,27 @@ function AclModal({
           </div>
         )}
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">dept_id *</span>
-          <input
-            className="surface-2 border border-token rounded px-2 py-1"
-            value={deptId}
-            onChange={(e) => setDeptId(e.target.value)}
-            maxLength={64}
-            required
-            placeholder="dept id"
-          />
+          <span className="text-dim text-xs">отдел *</span>
+          {lockedDept ? (
+            <input
+              className="surface-2 border border-token rounded px-2 py-1 text-dim"
+              value={depts.get(deptId) ?? deptId}
+              readOnly
+              disabled
+              title={deptId}
+            />
+          ) : (
+            <DeptPicker
+              value={deptId}
+              onChange={setDeptId}
+              placeholder="dep_…"
+            />
+          )}
+          {lockedDept && (
+            <span className="text-[11px] text-dim">
+              ACL действует в вашем отделе.
+            </span>
+          )}
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">role_name *</span>
@@ -1576,14 +1770,11 @@ function GrantModal({
           креду. Снятие grant'а каскадно снимает RoleACL recipient-dep'а.
         </div>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">recipient_dept_id *</span>
-          <input
-            className="surface-2 border border-token rounded px-2 py-1"
+          <span className="text-dim text-xs">отдел-получатель *</span>
+          <DeptPicker
             value={deptId}
-            onChange={(e) => setDeptId(e.target.value)}
-            maxLength={64}
-            required
-            placeholder="dept id"
+            onChange={setDeptId}
+            placeholder="dep_…"
           />
         </label>
         <div className="flex items-center gap-2 mt-1">
@@ -1591,6 +1782,182 @@ function GrantModal({
             type="submit"
             className="btn btn-primary"
             disabled={submitting || !deptId.trim()}
+          >
+            {submitting ? "Выдаём…" : "Выдать"}
+          </button>
+          <button type="button" className="btn" onClick={onClose}>
+            Отмена
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+/** Строка списка UserACL: резолвит `usr_*` в username хуком (нельзя в .map). */
+function UserAclRow({
+  userId,
+  canRead,
+  canWrite,
+  acting,
+  onRevoke,
+}: {
+  userId: string;
+  canRead: boolean;
+  canWrite: boolean;
+  acting: boolean;
+  onRevoke: () => void;
+}) {
+  const username = useUserLabel(userId);
+  return (
+    <div className="stat-row items-center">
+      <span className="text-dim" title={userId}>
+        {username}
+      </span>
+      <span className="flex items-center gap-2">
+        <span className="mono text-xs">
+          {canRead ? "r" : "-"}
+          {canWrite ? "w" : "-"}
+        </span>
+        <button
+          className="btn btn-ghost p-1"
+          title="Снять доступ"
+          disabled={acting}
+          onClick={onRevoke}
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Выдача user-ACL: ввод по username с резолвом в `usr_*`.
+ *
+ * Резолв доступен только когда есть список пользователей отдела
+ * (`listUsersByDepartment` гейтится dep_admin/account_admin своим отделом).
+ * Для владельца personal-кред'ы (обычный юзер) глобального и департаментного
+ * списка нет — backend не отдаёт регулярному юзеру резолв username→id, поэтому
+ * принимаем сырой `usr_*` id с подсказкой.
+ */
+function UserAclModal({
+  actorDeptId,
+  onClose,
+  onSubmit,
+}: {
+  actorDeptId: string | null;
+  onClose: () => void;
+  onSubmit: (body: {
+    user_id: string;
+    can_read: boolean;
+    can_write: boolean;
+  }) => void | Promise<void>;
+}) {
+  const usersQ = useQuery(
+    () => listUsersByDepartment(actorDeptId as string, { limit: 200 }),
+    [actorDeptId],
+    { enabled: !!actorDeptId },
+  );
+  const canResolve = !!actorDeptId && (usersQ.data?.items.length ?? 0) > 0;
+
+  const [input, setInput] = useState("");
+  const [canRead, setCanRead] = useState(true);
+  const [canWrite, setCanWrite] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Резолвим username → usr_*; если ввели сам id (usr_…) — пропускаем как есть.
+  function resolveUserId(): string | null {
+    const raw = input.trim();
+    if (!raw) return null;
+    if (raw.startsWith("usr_")) return raw;
+    const match = usersQ.data?.items.find(
+      (u) => u.username.toLowerCase() === raw.toLowerCase(),
+    );
+    return match?.id ?? null;
+  }
+
+  const valid = input.trim() && (canRead || canWrite);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting || !valid) return;
+    const userId = resolveUserId();
+    if (!userId) {
+      // username не нашёлся в списке отдела и это не сырой usr_*-id.
+      return;
+    }
+    setSubmitting(true);
+    Promise.resolve(
+      onSubmit({ user_id: userId, can_read: canRead, can_write: canWrite }),
+    ).finally(() => setSubmitting(false));
+  }
+
+  const resolveFailed =
+    input.trim() !== "" &&
+    !input.trim().startsWith("usr_") &&
+    canResolve &&
+    resolveUserId() === null;
+
+  return (
+    <ModalShell title="Выдать доступ пользователю" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
+        <div className="text-xs text-dim">
+          Доступ выдаётся конкретному пользователю в дополнение к ролевым ACL.
+          {canResolve
+            ? " Введите username — он будет сопоставлен с id."
+            : " Введите id пользователя (usr_…) — резолв по username недоступен."}
+        </div>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">
+            {canResolve ? "username *" : "user id (usr_…) *"}
+          </span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            maxLength={64}
+            required
+            list={canResolve ? "secret-useracl-users" : undefined}
+            placeholder={canResolve ? "username" : "usr_…"}
+          />
+          {canResolve && (
+            <datalist id="secret-useracl-users">
+              {(usersQ.data?.items ?? []).map((u) => (
+                <option key={u.id} value={u.username} />
+              ))}
+            </datalist>
+          )}
+          {resolveFailed && (
+            <span className="text-[11px] text-danger">
+              Пользователь с таким username не найден в вашем отделе. Можно
+              ввести id (usr_…) напрямую.
+            </span>
+          )}
+        </label>
+        <div className="flex items-center gap-4 text-sm">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={canRead}
+              onChange={(e) => setCanRead(e.target.checked)}
+            />
+            <span className="text-dim text-xs">can_read</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={canWrite}
+              onChange={(e) => setCanWrite(e.target.checked)}
+            />
+            <span className="text-dim text-xs">can_write</span>
+          </label>
+        </div>
+        <div className="flex items-center gap-2 mt-1">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={submitting || !valid}
           >
             {submitting ? "Выдаём…" : "Выдать"}
           </button>

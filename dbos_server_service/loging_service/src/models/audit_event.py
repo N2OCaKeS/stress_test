@@ -74,6 +74,14 @@ class AuditEvent(Base):
     # Трассировка.
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # Откуда пришёл actor. `actor_ip` — IP клиента (см. extract_client_ip:
+    # left-most non-trusted из X-Forwarded-For за доверенным proxy, иначе
+    # request.client.host). `user_agent` — заголовок User-Agent as-is.
+    # Оба опциональны: старые эмиттеры их не шлют, доменные события без
+    # request-контекста (lifecycle, фоновые задачи) оставляют None.
+    actor_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
     # Free-form технический контекст — без секретов и паролей.
     details: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 

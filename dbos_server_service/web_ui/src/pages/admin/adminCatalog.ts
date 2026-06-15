@@ -250,7 +250,9 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "server",
     content: ServicesServerGroups,
-    visibleFor: (p) => isDepAdmin(p) || hasServerServiceAdmin(p),
+    // Backend для групп серверов ещё не реализован — страница пока заглушка.
+    // Вернём пункт, когда появится соответствующий endpoint в server_service.
+    visibleFor: () => false,
   },
   {
     id: "services.server.permissions",

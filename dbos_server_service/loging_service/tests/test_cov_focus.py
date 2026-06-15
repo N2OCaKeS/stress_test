@@ -603,10 +603,12 @@ class TestRateLimitKeyFunction:
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestReaderAllowlist:
-    """К чтению audit'а допускаются ТОЛЬКО `loging_admin` и `loging_reader`.
+    """К чтению audit'а допускаются `loging_admin`, `loging_reader` и
+    `account_admin`.
 
-    Обе — глобальные read (никакого dept-scope), обе могут не иметь
-    `department_id`. `account_admin` и `department_admin` отбиваются
+    Все три — глобальные read (никакого dept-scope), все могут не иметь
+    `department_id`. `account_admin` ограничен чтением (правила/retention
+    остаются за `loging_admin`). `department_admin` отбивается
     `INSUFFICIENT_ROLE` — если dep_admin'у нужен read его отдела, ему
     отдельно выдаётся платформенная `loging_reader`.
     """
@@ -656,8 +658,8 @@ class TestReaderAllowlist:
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
         assert r.status_code == 200
 
-    def test_account_admin_returns_403_insufficient_role(self, client, mock_introspect):
-        """account_admin к чтению аудита НЕ допускается (owner-decision)."""
+    def test_account_admin_passes_read_only(self, client, mock_introspect):
+        """account_admin получает read-only доступ к чтению событий."""
         EVENTS_URL = "/api/logging/v1/events"
         with mock_introspect(json_body={
             "active": True, "subject_type": "user",
@@ -665,8 +667,7 @@ class TestReaderAllowlist:
             "platform_role": "account_admin", "department_id": None,
         }):
             r = client.get(EVENTS_URL, headers={"Authorization": "Bearer token"})
-        assert r.status_code == 403
-        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+        assert r.status_code == 200
 
 
 # ────────────────────────────────────────────────────────────────────────────

@@ -12,7 +12,12 @@ import {
 import { Link } from "react-router-dom";
 import { HomeShell } from "./HomeShell";
 import { usePersona } from "@/contexts/PersonaContext";
-import { personaDeptId } from "@/lib/rbac";
+import {
+  hasAuditLogAccess,
+  isDepAdmin,
+  isPlatformWideAdmin,
+  personaDeptId,
+} from "@/lib/rbac";
 import { useDeptLabel } from "@/lib/labels";
 import { USERS } from "@/mocks/auth";
 import { SERVERS } from "@/mocks/server";
@@ -23,6 +28,7 @@ import { listUsers, listUsersByDepartment } from "@/api/auth/users";
 import { listGroups, listGroupsByDepartment } from "@/api/auth/groups";
 import { listBots } from "@/api/auth/bots";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
+import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
 
 /**
  * Department-admin Home.
@@ -32,6 +38,12 @@ export function HomeDepAdmin() {
   const { persona } = usePersona();
   const mockMode = useMockMode();
   const myDeptId = personaDeptId(persona);
+  // Этот Home обслуживает и dep_admin, и обычного user'а (default-ветка
+  // диспетчера). Управление группами видно только тем, кто реально управляет
+  // отделом; блок лога — только при доступе к чтению аудита. Обычный user без
+  // platform-роли не должен видеть ни «Группы», ни «Логи».
+  const canManageGroups = isDepAdmin(persona) || isPlatformWideAdmin(persona);
+  const canAudit = hasAuditLogAccess(persona);
   // Имя отдела резолвим через общий кэш меток: dep_admin не видит глобальный
   // список отделов, но собственный отдел LabelsProvider сидит из identity.
   const deptName = useDeptLabel(persona.dept_id ?? null);
@@ -63,7 +75,7 @@ export function HomeDepAdmin() {
         ? listGroupsByDepartment(myDeptId, { limit: 10 })
         : Promise.resolve([]),
     [myDeptId],
-    { enabled: !mockMode && !!myDeptId },
+    { enabled: !mockMode && !!myDeptId && canManageGroups },
   );
 
   if (!mockMode) {
@@ -137,62 +149,56 @@ export function HomeDepAdmin() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Группы моего отдела</h3>
-              <Link to="/users" className="text-xs text-accent">
-                Все →
-              </Link>
-            </div>
-            {!myDeptId ? (
-              <div className="empty-card text-xs">
-                Persona без dept_id — фильтр по отделу неприменим.
+        {(canManageGroups || canAudit) && (
+          <section className="grid gap-4 md:grid-cols-2">
+            {canManageGroups && (
+              <div className="card">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold">Группы моего отдела</h3>
+                  <Link to="/users" className="text-xs text-accent">
+                    Все →
+                  </Link>
+                </div>
+                {!myDeptId ? (
+                  <div className="empty-card text-xs">
+                    Persona без dept_id — фильтр по отделу неприменим.
+                  </div>
+                ) : deptGroupsQ.loading ? (
+                  <div className="text-xs text-dim">Загрузка…</div>
+                ) : deptGroupsQ.error ? (
+                  <div className="alert-danger">{deptGroupsQ.error.message}</div>
+                ) : (deptGroupsQ.data ?? []).length === 0 ? (
+                  <div className="empty-card text-xs">
+                    В отделе пока нет групп.
+                  </div>
+                ) : (
+                  <ul className="text-sm divide-y divide-token">
+                    {(deptGroupsQ.data ?? []).slice(0, 8).map((g) => (
+                      <li
+                        key={g.id}
+                        className="py-1.5 flex items-center gap-2 min-w-0"
+                      >
+                        <Link
+                          to={`/users/group/${g.id}`}
+                          className="font-medium truncate hover-bg"
+                        >
+                          {g.name}
+                        </Link>
+                        <span
+                          className="text-xs text-dim ml-auto truncate max-w-[160px]"
+                          title={g.description ?? ""}
+                        >
+                          {g.description ?? ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-            ) : deptGroupsQ.loading ? (
-              <div className="text-xs text-dim">Загрузка…</div>
-            ) : deptGroupsQ.error ? (
-              <div className="alert-danger">{deptGroupsQ.error.message}</div>
-            ) : (deptGroupsQ.data ?? []).length === 0 ? (
-              <div className="empty-card text-xs">
-                В отделе пока нет групп.
-              </div>
-            ) : (
-              <ul className="text-sm divide-y divide-token">
-                {(deptGroupsQ.data ?? []).slice(0, 8).map((g) => (
-                  <li
-                    key={g.id}
-                    className="py-1.5 flex items-center gap-2 min-w-0"
-                  >
-                    <Link
-                      to={`/users/group/${g.id}`}
-                      className="font-medium truncate hover-bg"
-                    >
-                      {g.name}
-                    </Link>
-                    <span
-                      className="text-xs text-dim ml-auto truncate max-w-[160px]"
-                      title={g.description ?? ""}
-                    >
-                      {g.description ?? ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
             )}
-          </div>
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Активность</h3>
-              <Link to="/log" className="text-xs text-accent">
-                Открыть лог →
-              </Link>
-            </div>
-            <div className="empty-card text-xs">
-              Сводка audit-канала ещё не подключена.
-            </div>
-          </div>
-        </section>
+            {canAudit && <RecentAuditEvents />}
+          </section>
+        )}
       </HomeShell>
     );
   }

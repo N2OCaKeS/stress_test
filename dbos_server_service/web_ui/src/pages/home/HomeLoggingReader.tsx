@@ -4,6 +4,7 @@ import { HomeShell } from "./HomeShell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { AUDIT_EVENTS } from "@/mocks/log";
 import { useMockMode } from "@/api/auth/useQuery";
+import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
 
 /**
  * Logging-reader Home.
@@ -101,19 +102,7 @@ export function HomeLoggingReader() {
               </div>
             </div>
           </div>
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Последние события</h3>
-              <Link to="/log" className="text-xs text-accent">
-                Открыть фид →
-              </Link>
-            </div>
-            <div className="empty-card text-xs">
-              Сводка audit-канала ещё не подключена. Открой
-              <Link to="/log" className="text-accent mx-1">/log</Link>
-              для полной выборки.
-            </div>
-          </div>
+          <RecentAuditEvents />
         </section>
       </HomeShell>
     );

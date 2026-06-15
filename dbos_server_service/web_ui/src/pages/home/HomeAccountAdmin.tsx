@@ -21,6 +21,8 @@ import { listDepartments } from "@/api/auth/departments";
 import { listBots } from "@/api/auth/bots";
 import { listGroups } from "@/api/auth/groups";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
+import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
+import { ServicesHealth } from "./widgets/ServicesHealth";
 
 /**
  * Account-admin Home.
@@ -123,28 +125,8 @@ export function HomeAccountAdmin() {
         </section>
 
         <section className="grid gap-4 md:grid-cols-2">
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Платформенные события</h3>
-              <Link to="/log" className="text-xs text-accent">
-                Открыть лог →
-              </Link>
-            </div>
-            <div className="empty-card text-xs">
-              Сводка по audit-каналу ещё не подключена. Используй
-              <Link to="/log" className="text-accent mx-1">/log</Link>
-              для полной выборки.
-            </div>
-          </div>
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Состояние кластера</h3>
-              <span className="text-xs text-dim">server_service</span>
-            </div>
-            <div className="empty-card text-xs">
-              server_service / server_worker ещё не подключены к UI.
-            </div>
-          </div>
+          <RecentAuditEvents />
+          <ServicesHealth />
         </section>
       </HomeShell>
     );

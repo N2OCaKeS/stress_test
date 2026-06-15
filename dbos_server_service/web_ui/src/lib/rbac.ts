@@ -92,19 +92,32 @@ export function isLoggingOnly(persona: Persona): boolean {
 }
 
 /**
- * True если персоне реально доступен раздел аудита (`/log*`). loging_service
- * гейтит чтение событий, правил и retention на platform-роль
- * (`loging_admin` / `loging_reader`, в каноне UI — `logging_admin` /
- * `logging_reader`). Сервис-роль `loging_service.admin` у dep_admin сюда не
- * годится: backend всё равно ответит 403 INSUFFICIENT_ROLE. Поэтому показ чипа
- * и пропуск через guard идут по platform-роли, а не по `accessible_services`
- * (туда `logging` может попасть из backend `allowed_services` по сервис-роли).
+ * True если персоне доступно чтение журнала аудита (`/log`). loging_service
+ * пускает на read платформенные роли `loging_admin` / `loging_reader` /
+ * `account_admin` (в каноне UI — `logging_admin` / `logging_reader` /
+ * `account_admin`). `account_admin` ограничен чтением: правила и retention
+ * остаются за `logging_admin` (см. `hasAuditMutateAccess`). Сервис-роль
+ * `loging_service.admin` у dep_admin сюда не годится — backend всё равно
+ * ответит 403 INSUFFICIENT_ROLE, поэтому гейтим по platform-роли, а не по
+ * `accessible_services`.
  */
 export function hasAuditLogAccess(persona: Persona): boolean {
   return (
     persona.platform_role === "logging_admin" ||
-    persona.platform_role === "logging_reader"
+    persona.platform_role === "logging_reader" ||
+    persona.platform_role === "account_admin"
   );
+}
+
+/**
+ * True если персона может менять правила severity/suppress и retention
+ * (`/log/rules`, `/log/retention`). Backend (`require_admin`) пускает сюда
+ * только `loging_admin`; `account_admin` и `logging_reader` получат read, но
+ * на mutation — 403. Используется RouteGuard'ом, чтобы read-only роли вообще
+ * не открывали mutation-страницы.
+ */
+export function hasAuditMutateAccess(persona: Persona): boolean {
+  return persona.platform_role === "logging_admin";
 }
 
 /**

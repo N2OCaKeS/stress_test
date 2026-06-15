@@ -179,7 +179,7 @@ export function App() {
             <Route
               path="/log/rules"
               element={
-                <RouteGuard service="logging">
+                <RouteGuard service="logging" logMutation>
                   <LogRules />
                 </RouteGuard>
               }
@@ -187,7 +187,7 @@ export function App() {
             <Route
               path="/log/retention"
               element={
-                <RouteGuard service="logging">
+                <RouteGuard service="logging" logMutation>
                   <LogRetention />
                 </RouteGuard>
               }

@@ -120,7 +120,7 @@ class TestStats:
         assert client.get(STATS_URL).status_code == 401
 
     def test_non_loging_role_forbidden(self, client):
-        ctx = _mock_reader("account_admin")
+        ctx = _mock_reader("department_admin")
         try:
             r = client.get(STATS_URL, headers={"Authorization": "Bearer t"})
         finally:

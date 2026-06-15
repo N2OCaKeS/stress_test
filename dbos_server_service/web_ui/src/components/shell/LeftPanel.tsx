@@ -149,9 +149,25 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
       return chip;
     });
 
-  const isActive = (to: string) =>
+  // Подсвечиваем ровно один пункт — самый специфичный. Иначе при выборе
+  // подкатегории (/log/rules) загорается и родитель (/log), и соседи с общим
+  // префиксом. Собираем все рендеримые ссылки, выбираем ту, чей `to` — самый
+  // длинный матч к текущему пути (точное равенство или префикс `to + "/"`).
+  const navLinks = ["/home", "/wiki", "/me", "/admin"];
+  for (const chip of chips) {
+    navLinks.push(chip.to);
+    for (const s of chip.subItems ?? []) navLinks.push(s.to);
+  }
+  const matches = (to: string) =>
     location.pathname === to ||
     (to !== "/home" && location.pathname.startsWith(to + "/"));
+  let activeTo: string | null = null;
+  for (const to of navLinks) {
+    if (matches(to) && (activeTo === null || to.length > activeTo.length)) {
+      activeTo = to;
+    }
+  }
+  const isActive = (to: string) => to === activeTo;
 
   const roleLine = persona.platform_role
     ? persona.platform_role + (deptLabel ? ` · ${deptLabel}` : "")

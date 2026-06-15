@@ -5,6 +5,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { USE_MOCK_AUTH, useAuthOptional } from "@/contexts/AuthContext";
 import {
   hasAuditLogAccess,
+  hasAuditMutateAccess,
   hasSecretZoneAccess,
   hasServerZoneAccess,
 } from "@/lib/rbac";
@@ -17,11 +18,18 @@ interface Props {
    */
   service?: ServiceName;
   requireAdmin?: boolean; // require has_admin too
+  /**
+   * Логовый mutation-роут (`/log/rules`, `/log/retention`). Гейтится строже
+   * read-канала: только `logging_admin`. `account_admin` / `logging_reader`
+   * читают журнал, но на правила/retention backend ответит 403 — не пускаем
+   * их даже открыть страницу.
+   */
+  logMutation?: boolean;
   children: React.ReactNode;
 }
 
 // reads accessible_services from PersonaContext; backed by auth_service /me
-export function RouteGuard({ service, requireAdmin, children }: Props) {
+export function RouteGuard({ service, requireAdmin, logMutation, children }: Props) {
   const auth = useAuthOptional();
   const { persona } = usePersona();
   const location = useLocation();
@@ -49,7 +57,9 @@ export function RouteGuard({ service, requireAdmin, children }: Props) {
   const hasService = !service
     ? true
     : service === "logging"
-      ? hasAuditLogAccess(persona)
+      ? logMutation
+        ? hasAuditMutateAccess(persona)
+        : hasAuditLogAccess(persona)
       : service === "secret"
         ? hasSecretZoneAccess(persona)
         : service === "server" || service === "worker"

@@ -1,9 +1,10 @@
 """Эндпоинты приёма (ingest) и чтения событий аудита.
 
 POST /events — пишут другие сервисы (SERVICE_API_KEY).
-GET  /events — читают `loging_admin` / `loging_reader`. Обе роли видят журнал
-              cross-dept целиком. `account_admin` / `department_admin` к
-              чтению аудита НЕ допускаются (owner-decision): если dep_admin'у
+GET  /events — читают `loging_admin` / `loging_reader` / `account_admin`. Все
+              три роли видят журнал cross-dept целиком; `account_admin`
+              ограничен чтением (правила/retention остаются за `loging_admin`).
+              `department_admin` к чтению аудита НЕ допускается: если dep_admin'у
               нужен read его отдела — выдать ему отдельную `loging_reader`.
 """
 
@@ -264,10 +265,10 @@ def create_event(
     description=(
         "Постранично отдаёт записанные события аудита. Сортировка по "
         "`timestamp DESC` (свежие первыми).\n\n"
-        "**Доступ:** `loging_admin` или `loging_reader` — обе роли видят "
-        "журнал cross-dept. `account_admin` / `department_admin` к чтению "
-        "audit'а не допускаются (если dep_admin'у нужно читать журнал — "
-        "выдай ему отдельную `loging_reader`).\n\n"
+        "**Доступ:** `loging_admin`, `loging_reader` или `account_admin` — все "
+        "три роли видят журнал cross-dept (`account_admin` только read). "
+        "`department_admin` к чтению audit'а не допускается (если dep_admin'у "
+        "нужно читать журнал — выдай ему отдельную `loging_reader`).\n\n"
         "**Фильтры** (любая комбинация, all-AND): `department_id`, `service`, "
         "`severity`, `action`, `actor_id`, `target_id`, `status`, `request_id`, "
         "`from_time`, `to_time`, `limit`, `offset`.\n\n"

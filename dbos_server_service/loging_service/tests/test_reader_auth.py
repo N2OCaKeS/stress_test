@@ -1,9 +1,10 @@
 """Тесты: require_reader — кто допущен к чтению audit'а.
 
-Owner-decision: к чтению audit'а допускаются только `loging_admin` и
-`loging_reader`. Обе платформенные роли — глобальные (cross-dept).
-`account_admin` / `department_admin` / service-роли в `loging_service`
-все возвращают 403 INSUFFICIENT_ROLE — dep_admin'у нужен явно выданный
+К чтению audit'а допускаются `loging_admin`, `loging_reader` и
+`account_admin` — все три платформенные роли глобальные (cross-dept).
+`account_admin` ограничен чтением (правила/retention остаются за
+`loging_admin`). `department_admin` / service-роли в `loging_service`
+возвращают 403 INSUFFICIENT_ROLE — dep_admin'у нужен явно выданный
 `loging_reader`, чтобы читать журнал своего отдела.
 """
 
@@ -122,21 +123,28 @@ class TestAllowedReaders:
         assert body["items"][0]["department_id"] == "dep_b"
 
 
-# ── deny: account_admin / department_admin / service-роли ─────────────────────
-
-
-class TestDeniedReaders:
-    def test_account_admin_returns_403(self, client):
-        """account_admin к чтению audit'а НЕ допускается (owner-decision)."""
+    def test_account_admin_sees_all_events_cross_dept(self, client, auth_headers):
+        """account_admin получает read-only по всему журналу (cross-dept)."""
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_b")
         p = _mock_identity(client, {"user_id": "u1", "username": "aa",
                                      "platform_role": "account_admin", "department_id": None})
         try:
-            r = client.get(EVENTS_URL, headers={"Authorization": "Bearer t"})
+            r = client.get(
+                EVENTS_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"include_total": "true"},
+            )
         finally:
             p.stop()
-        assert r.status_code == 403
-        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+        assert r.status_code == 200
+        assert r.json()["total"] == 2
 
+
+# ── deny: department_admin / service-роли ─────────────────────────────────────
+
+
+class TestDeniedReaders:
     def test_department_admin_returns_403(self, client):
         """department_admin к чтению audit'а НЕ допускается. Если dep_admin'у
         нужен read его отдела — ему выдаётся отдельная `loging_reader`."""

@@ -136,6 +136,13 @@ export function SecretLive() {
     persona.service_roles.secret === "admin" ||
     persona.service_roles.secret === "operator";
 
+  // Создание personal-секрета backend разрешает любому dept-context user'у:
+  // scope=personal → owner = текущий пользователь. Платформенные роли без
+  // департамента сюда не доходят (zoneBlocked отбивает страницу выше), так что
+  // любой, кто видит этот экран, вправе завести себе хотя бы personal-креду.
+  // dep/cross-scope в форме остаётся за canManage.
+  const canCreate = !zoneBlocked;
+
   // Список может прийти как полный (CredentialList) или guest-урезанный
   // (CredentialGuestList). Поля name/id/service/scope есть в обоих shape'ах —
   // их и показываем в aside. Guest-shape не несёт owner_user_id/status —
@@ -321,7 +328,7 @@ export function SecretLive() {
         )}
       </div>
 
-      {canManage && (
+      {canCreate && (
         <div className="border-t border-token p-3 shrink-0">
           <button
             className="btn btn-primary w-full flex items-center justify-center gap-2"
@@ -344,9 +351,10 @@ export function SecretLive() {
 
   return (
     <Shell breadcrumb="secret_service / credentials" middle={aside}>
-      {action === "new" && canManage ? (
+      {action === "new" && canCreate ? (
         <CreatePane
           defaultDeptId={persona.dept_id}
+          canManage={canManage}
           onCancel={closeAction}
           onSubmit={handleCreate}
         />
@@ -359,7 +367,7 @@ export function SecretLive() {
           onChanged={() => listQ.refetch()}
         />
       ) : (
-        <EmptyPane canCreate={canManage} onCreate={startCreate} />
+        <EmptyPane canCreate={canCreate} onCreate={startCreate} />
       )}
     </Shell>
   );
@@ -1002,25 +1010,35 @@ function MetaRow({ label, value }: { label: string; value: string }) {
 
 function CreatePane({
   defaultDeptId,
+  canManage,
   onCancel,
   onSubmit,
 }: {
   defaultDeptId: string | null;
+  canManage: boolean;
   onCancel: () => void;
   onSubmit: (body: CredentialCreateRequest) => void | Promise<void>;
 }) {
+  const { depts } = useLabelMaps();
   const [name, setName] = useState("");
   const [service, setService] = useState("");
   const [scope, setScope] = useState<CredentialScope>("personal");
   const [login, setLogin] = useState("");
   const [secret, setSecret] = useState("");
-  const [ownerDeptId, setOwnerDeptId] = useState(defaultDeptId ?? "");
   const [visibleToDept, setVisibleToDept] = useState(false);
   const [validFrom, setValidFrom] = useState("");
   const [validTo, setValidTo] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const needsDept = scope === "department" || scope === "cross_department";
+  // Владелец dept/cross-кред'ы — собственный отдел создателя; backend всё равно
+  // приклеит owner к dept'у актора, поэтому позволять вписывать произвольный id
+  // нет смысла. Поле залочено: показываем имя отдела (fallback на id), а в
+  // запрос уходит сам id.
+  const ownerDeptId = defaultDeptId ?? "";
+  const ownerDeptLabel = ownerDeptId
+    ? depts.get(ownerDeptId) ?? ownerDeptId
+    : "";
   // valid_to обязан быть в будущем и строго позже valid_from — backend
   // отбивает 422; гасим submit заранее, чтобы не ловить ошибку формой.
   const windowInvalid =
@@ -1101,21 +1119,31 @@ function CreatePane({
               onChange={(e) => setScope(e.target.value as CredentialScope)}
             >
               <option value="personal">personal</option>
-              <option value="department">department</option>
-              <option value="cross_department">cross_department</option>
+              {canManage && <option value="department">department</option>}
+              {canManage && (
+                <option value="cross_department">cross_department</option>
+              )}
             </select>
+            {!canManage && (
+              <span className="text-[11px] text-dim">
+                department / cross_department доступны dep_admin и
+                secret.operator/admin.
+              </span>
+            )}
           </label>
           {needsDept && (
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-dim text-xs">owner_dept_id *</span>
+              <span className="text-dim text-xs">owner dept</span>
               <input
-                className="surface-2 border border-token rounded px-2 py-1"
-                value={ownerDeptId}
-                onChange={(e) => setOwnerDeptId(e.target.value)}
-                required
-                maxLength={64}
-                placeholder="dept id"
+                className="surface-2 border border-token rounded px-2 py-1 text-dim"
+                value={ownerDeptLabel || "—"}
+                readOnly
+                disabled
+                title={ownerDeptId || undefined}
               />
+              <span className="text-[11px] text-dim">
+                Владелец — ваш отдел; изменить нельзя.
+              </span>
             </label>
           )}
           <label className="flex flex-col gap-1 text-sm">
@@ -1124,6 +1152,7 @@ function CreatePane({
               className="surface-2 border border-token rounded px-2 py-1"
               value={login}
               onChange={(e) => setLogin(e.target.value)}
+              maxLength={4096}
               placeholder="опционально"
             />
           </label>

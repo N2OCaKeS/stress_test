@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, ExternalLink } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import {
   WikiSettingsProvider,
@@ -220,6 +220,44 @@ function SettingsPanel() {
   );
 }
 
+const SWAGGER_LINKS: { label: string; url: string; hint: string }[] = [
+  { label: "auth_service", url: "http://localhost:8000/docs", hint: ":8000" },
+  { label: "loging_service", url: "http://localhost:8001/docs", hint: ":8001" },
+  { label: "server_service", url: "http://localhost:8002/docs", hint: ":8002" },
+  { label: "secret_service", url: "http://localhost:8003/docs", hint: ":8003" },
+];
+
+function SwaggerPanel() {
+  return (
+    <div className="card flex flex-col gap-3">
+      <div>
+        <h2 className="text-lg font-semibold">Swagger / OpenAPI</h2>
+        <p className="text-sm text-dim">
+          Интерактивная спецификация каждого сервиса. Порты — для локального
+          dev-стека (<span className="mono">make up</span>).
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+        {SWAGGER_LINKS.map((s) => (
+          <a
+            key={s.url}
+            href={s.url}
+            target="_blank"
+            rel="noreferrer"
+            className="surface-2 border border-token rounded px-3 py-2 flex items-center justify-between gap-2 text-sm hover-bg transition-colors"
+          >
+            <div className="min-w-0">
+              <div className="truncate">{s.label}</div>
+              <div className="text-[11px] text-dim mono">{s.hint}/docs</div>
+            </div>
+            <ExternalLink className="w-4 h-4 text-dim shrink-0" aria-hidden="true" />
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function GlobalLangToggle() {
   const s = useWikiSettings();
   return (
@@ -409,6 +447,8 @@ function WikiBody() {
             опроса.
           </p>
         </div>
+
+        <SwaggerPanel />
 
         <SettingsPanel />
 

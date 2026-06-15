@@ -15,7 +15,7 @@ import type { ServiceName } from "@/types/persona";
  */
 function renderGuard(
   persona: string,
-  opts: { service?: ServiceName; requireAdmin?: boolean },
+  opts: { service?: ServiceName; requireAdmin?: boolean; logMutation?: boolean },
 ) {
   window.localStorage.setItem("dbos-persona", persona);
   return render(
@@ -30,6 +30,7 @@ function renderGuard(
                   <RouteGuard
                     service={opts.service}
                     requireAdmin={opts.requireAdmin}
+                    logMutation={opts.logMutation}
                   >
                     <div>GRANTED</div>
                   </RouteGuard>
@@ -59,9 +60,10 @@ describe("RouteGuard — direct-URL RBAC per persona", () => {
   });
 
   // bob — account_admin: платформенный админ. Business-data-зоны (server /
-  // worker / secret) и audit-журнал ему закрыты backend'ом, поэтому RouteGuard
-  // теперь редиректит его на /home (раздел не открывается вместо BlockedPane).
-  // Управление платформой — под /admin. auth и requireAdmin — granted.
+  // worker / secret) ему закрыты backend'ом, поэтому RouteGuard редиректит его
+  // на /home. Журнал аудита читается read-only (granted), но mutation правил/
+  // retention (logMutation) закрыт — только logging_admin. Управление
+  // платформой — под /admin. auth и requireAdmin — granted.
   describe("account_admin (bob)", () => {
     it("secret → denied (зона скрыта, redirect вместо BlockedPane)", () => {
       renderGuard("bob", { service: "secret" });
@@ -75,8 +77,12 @@ describe("RouteGuard — direct-URL RBAC per persona", () => {
       renderGuard("bob", { service: "auth" });
       expectGranted();
     });
-    it("logging → denied (account_admin не читает audit, видит ClusterAuditOverview под /admin)", () => {
+    it("logging → granted (account_admin читает журнал read-only)", () => {
       renderGuard("bob", { service: "logging" });
+      expectGranted();
+    });
+    it("logging mutation → denied (правила/retention только logging_admin)", () => {
+      renderGuard("bob", { service: "logging", logMutation: true });
       expectDenied();
     });
     it("worker → denied (redirect)", () => {
@@ -123,6 +129,10 @@ describe("RouteGuard — direct-URL RBAC per persona", () => {
       renderGuard("carol", { service: "logging" });
       expectGranted();
     });
+    it("logging mutation → granted (logging_admin управляет правилами/retention)", () => {
+      renderGuard("carol", { service: "logging", logMutation: true });
+      expectGranted();
+    });
     it("secret → denied", () => {
       renderGuard("carol", { service: "secret" });
       expectDenied();
@@ -150,6 +160,10 @@ describe("RouteGuard — direct-URL RBAC per persona", () => {
     it("logging → granted", () => {
       renderGuard("dave", { service: "logging" });
       expectGranted();
+    });
+    it("logging mutation → denied (logging_reader не управляет правилами/retention)", () => {
+      renderGuard("dave", { service: "logging", logMutation: true });
+      expectDenied();
     });
     it("secret → denied", () => {
       renderGuard("dave", { service: "secret" });

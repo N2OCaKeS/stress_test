@@ -544,9 +544,10 @@ class TestListServicesAccess:
     """`GET /services` отдаёт глобальный GROUP BY service агрегат по
     ``audit_events`` без dept-фильтра. Раньше `loging_reader` /
     `department_admin` / service-role был dept-scoped (видел только агрегат
-    своего dep'а), но owner-decision: к чтению audit'а допускаются ТОЛЬКО
-    `loging_admin` / `loging_reader`, обе — глобальные. `account_admin` /
-    `department_admin` отбиваются `INSUFFICIENT_ROLE` в `require_reader`.
+    своего dep'а). Сейчас к чтению audit'а допускаются `loging_admin` /
+    `loging_reader` / `account_admin`, все — глобальные. `account_admin`
+    ограничен чтением. `department_admin` отбивается `INSUFFICIENT_ROLE`
+    в `require_reader`.
 
     Тесты под прежний scope-фильтр на endpoint'е сняты — фильтр в
     `events_repo.list_services` всё ещё доступен через API репозитория
@@ -608,8 +609,8 @@ class TestListServicesAccess:
         services = {s["service"] for s in body["items"]}
         assert services == {"auth_service", "config_service"}
 
-    def test_account_admin_403(self, client, auth_headers):
-        """`account_admin` к чтению реестра не допускается."""
+    def test_account_admin_sees_all_services(self, client, auth_headers):
+        """`account_admin` получает read-only доступ к реестру сервисов."""
         client.post(EVENTS_URL,
                     headers=auth_headers | {"X-Service-Identity": "auth_service"},
                     json=make_event(service="auth_service", department_id="dep_a"))
@@ -623,8 +624,8 @@ class TestListServicesAccess:
             r = client.get(SERVICES_URL, headers={"Authorization": "Bearer t"})
         finally:
             p.stop()
-        assert r.status_code == 403
-        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+        assert r.status_code == 200
+        assert r.json()["total"] == 1
 
     def test_department_admin_403(self, client, auth_headers):
         """`department_admin` к чтению реестра не допускается."""

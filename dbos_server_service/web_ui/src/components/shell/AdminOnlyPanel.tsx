@@ -7,6 +7,7 @@ import {
   PanelLeftOpen,
   ShieldCheck,
   BookOpen,
+  FileText,
 } from "lucide-react";
 import { useAuthOptional } from "@/contexts/AuthContext";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -189,6 +190,21 @@ export function AdminOnlyPanel({ width, collapsed, onToggleCollapsed }: AdminOnl
       </nav>
 
       <div className="mt-auto shrink-0 flex flex-col">
+        <div className="p-2 border-t border-token">
+          <Link
+            to="/log"
+            title={collapsed ? "Журнал аудита (read-only)" : undefined}
+            className={`chip ${isActive("/log") ? "active" : ""} ${collapsed ? "justify-center" : ""}`}
+          >
+            <FileText className="w-5 h-5 text-accent shrink-0" />
+            {!collapsed && (
+              <div className="flex-1">
+                <div className="text-sm">Журнал</div>
+                <div className="text-[11px] text-dim">аудит · только чтение</div>
+              </div>
+            )}
+          </Link>
+        </div>
         <div className="p-2 border-t border-token">
           <Link
             to="/wiki"

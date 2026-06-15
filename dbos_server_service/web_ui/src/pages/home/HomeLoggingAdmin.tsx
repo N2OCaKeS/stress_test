@@ -13,6 +13,8 @@ import { HomeShell } from "./HomeShell";
 import { usePersona } from "@/contexts/PersonaContext";
 import { AUDIT_EVENTS } from "@/mocks/log";
 import { useMockMode } from "@/api/auth/useQuery";
+import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
+import { ServicesHealth } from "./widgets/ServicesHealth";
 
 /**
  * Logging-admin Home.
@@ -70,26 +72,8 @@ export function HomeLoggingAdmin() {
         </section>
 
         <section className="grid gap-4 md:grid-cols-2">
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Audit overview</h3>
-              <Link to="/log" className="text-xs text-accent">
-                Открыть лог →
-              </Link>
-            </div>
-            <div className="empty-card text-xs">
-              Сводка событий ещё не подключена. Endpoint: GET /audit/summary.
-            </div>
-          </div>
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Live feed</h3>
-              <span className="text-xs text-dim">не подключено</span>
-            </div>
-            <div className="empty-card text-xs">
-              Стрим аудита ещё не подключён к UI.
-            </div>
-          </div>
+          <RecentAuditEvents />
+          <ServicesHealth />
         </section>
       </HomeShell>
     );

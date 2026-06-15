@@ -272,21 +272,29 @@ async def create_user(
             message="department_admin can only create users in their own department",
         )
 
-    # Только account_admin раздаёт платформенные роли. Без этой проверки
-    # department_admin мог бы создать юзера с platform_role=account_admin и
-    # подняться до полного доступа к платформе. Поле приходит уже валидным
-    # enum'ом (PlatformRole), так что достаточно отбить любой не-None у
-    # не-account_admin'а.
-    if actor_role != PlatformRole.ACCOUNT_ADMIN and platform_role is not None:
-        raise AuthorizationError(
-            error_code="PLATFORM_ROLE_ASSIGNMENT_DENIED",
-            message="Only account_admin can assign platform roles",
-        )
+    # Раздача платформенных ролей. account_admin — любую роль в любой отдел.
+    # department_admin — ТОЛЬКО `loging_reader_dep` и ТОЛЬКО в свой отдел
+    # (совпадение с целевым department_id; сам факт «свой отдел» уже отбит
+    # `assert_dept_admin_target_dept` выше для DA-ветки). Любую другую
+    # платформенную роль (account_admin/loging_admin/loging_reader/
+    # department_admin) DA выдать не может — иначе поднял бы себе/чужому
+    # cross-dept привилегии. Поле приходит валидным enum'ом (PlatformRole).
+    if platform_role is not None and actor_role != PlatformRole.ACCOUNT_ADMIN:
+        if not (
+            actor_role == PlatformRole.DEPARTMENT_ADMIN
+            and platform_role == PlatformRole.LOGING_READER_DEP
+        ):
+            raise AuthorizationError(
+                error_code="PLATFORM_ROLE_ASSIGNMENT_DENIED",
+                message="Only account_admin can assign platform roles (department_admin may grant loging_reader_dep within their own department)",
+            )
 
     from src.core.constants import PlatformRole as PR
     # Платформенные роли без привязки к департаменту: account_admin —
     # глобальный админ платформы, loging_admin/loging_reader — централизованное
-    # управление и чтение аудит-событий по всем департаментам.
+    # управление и чтение аудит-событий по всем департаментам. `department_admin`
+    # и `loging_reader_dep` сюда НЕ входят — они dept-scoped и обязаны нести
+    # department_id.
     _platform_admins = {PR.ACCOUNT_ADMIN, PR.LOGING_ADMIN, PR.LOGING_READER}
     if platform_role not in _platform_admins and not department_id:
         raise DomainValidationError(error_code="MISSING_REQUIRED_FIELD", message="department_id is required for non-admin users")
@@ -466,8 +474,20 @@ async def update_user(
         for k, v in updates.items()
         if k in allowed_fields and (v is not None or k in nullable_fields)
     }
-    if actor_role == PlatformRole.DEPARTMENT_ADMIN:
-        filtered.pop("platform_role", None)
+    # platform_role в PATCH'е от department_admin: разрешаем выставить ТОЛЬКО
+    # `loging_reader_dep` (dept-scoped аудит-читатель) и ТОЛЬКО в своём отделе —
+    # `assert_dept_admin_target_dept` выше уже отбил юзера чужого отдела, а
+    # cross-dept transfer-guard ниже не даёт перекинуть его в чужой. Снять роль
+    # (явный null) DA тоже может — это downgrade внутри своего отдела. Любое
+    # другое значение (account_admin/loging_admin/loging_reader/department_admin)
+    # → 403: иначе DA поднял бы себе/чужому cross-dept привилегии.
+    if actor_role == PlatformRole.DEPARTMENT_ADMIN and "platform_role" in filtered:
+        requested_platform_role = filtered["platform_role"]
+        if requested_platform_role not in (None, PlatformRole.LOGING_READER_DEP):
+            raise AuthorizationError(
+                error_code="PLATFORM_ROLE_ASSIGNMENT_DENIED",
+                message="department_admin may only assign loging_reader_dep within their own department",
+            )
 
     # Cross-dept transfer = only account_admin. Guard выше сверял
     # `actor.dept == user.dept` (DA своего отдела может PATCH'ить юзера),

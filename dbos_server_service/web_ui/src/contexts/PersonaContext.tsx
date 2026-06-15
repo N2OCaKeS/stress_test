@@ -184,6 +184,9 @@ function normalizePlatformRole(raw: string | null | undefined): PlatformRole {
     case "logging_reader":
     case "loging_reader":
       return "logging_reader";
+    case "logging_reader_dep":
+    case "loging_reader_dep":
+      return "logging_reader_dep";
     default:
       return null;
   }
@@ -218,6 +221,10 @@ function identityToPersona(me: IdentityContext): Persona {
   ) {
     accessibleSet.add("logging");
     accessibleSet.add("config");
+  } else if (platformRole === "logging_reader_dep") {
+    // Dept-scoped audit reader: backend ограничивает выдачу его отделом, но в UI
+    // ему нужен сам раздел /log. config-чип ему не положен — он не платформенный.
+    accessibleSet.add("logging");
   }
 
   const hasAdmin =

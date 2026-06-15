@@ -53,6 +53,19 @@ export const PERSONAS: Persona[] = [
     has_admin: false,
     tagline: "Read-only доступ к аудит-событиям.",
   },
+  {
+    id: "erin",
+    username: "erin",
+    email: "erin@dbos.local",
+    initials: "ER",
+    display_name: "erin",
+    dept_id: "core",
+    platform_role: "logging_reader_dep",
+    service_roles: {},
+    accessible_services: ["logging"],
+    has_admin: false,
+    tagline: "Read-only аудит своего отдела (dept-scoped).",
+  },
 ];
 
 export const personaById = (id: string): Persona | undefined =>

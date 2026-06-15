@@ -13,10 +13,11 @@ class UserStatus(StrEnum):
 class PlatformRole(StrEnum):
     """Platform-уровень: роли, которые управляет только auth_service.
 
-    `department_admin` — per-dept (всегда вместе с `department_id`), остальные
-    три cross-platform (department_id=NULL допустим). Админство в отдельных
-    сервисах (например `admin` в secret_service) живёт в service_roles, а не
-    в platform_role: оно per-(dept, service) и не даёт cross-dept привилегий.
+    `department_admin` и `loging_reader_dep` — per-dept (всегда вместе с
+    `department_id`), остальные три cross-platform (department_id=NULL
+    допустим). Админство в отдельных сервисах (например `admin` в
+    secret_service) живёт в service_roles, а не в platform_role: оно
+    per-(dept, service) и не даёт cross-dept привилегий.
     """
     ACCOUNT_ADMIN = "account_admin"
     DEPARTMENT_ADMIN = "department_admin"
@@ -24,6 +25,12 @@ class PlatformRole(StrEnum):
     # Read-only роль для loging_service — параметризованный тест проходит по
     # всем значениям enum'а, бизнес-логика рулится через guard'ы.
     LOGING_READER = "loging_reader"
+    # Dept-scoped аудит-читатель: видит события только своего отдела. В отличие
+    # от платформенного `loging_reader` (который параметрически тоже dept-scoped,
+    # но создаётся под account_admin'ом и обязан нести department_id уже на
+    # create) эту роль может выдавать department_admin своим юзерам в своём
+    # отделе. Всегда требует department_id (ведёт себя как department_admin).
+    LOGING_READER_DEP = "loging_reader_dep"
 
 
 class ServiceRole(StrEnum):

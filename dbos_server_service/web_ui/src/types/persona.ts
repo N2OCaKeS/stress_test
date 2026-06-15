@@ -9,6 +9,7 @@ export type PlatformRole =
   | "dep_admin"
   | "logging_admin"
   | "logging_reader"
+  | "logging_reader_dep"
   | null;
 
 export type ServiceName =

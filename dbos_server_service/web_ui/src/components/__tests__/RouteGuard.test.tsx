@@ -178,4 +178,30 @@ describe("RouteGuard — direct-URL RBAC per persona", () => {
       expectDenied();
     });
   });
+
+  // erin — logging_reader_dep: dept-scoped аудит-читатель. Журнал read-only
+  // (granted), правила/retention закрыты (logMutation denied). Прочие зоны и
+  // admin — нет.
+  describe("logging_reader_dep (erin)", () => {
+    it("logging → granted", () => {
+      renderGuard("erin", { service: "logging" });
+      expectGranted();
+    });
+    it("logging mutation → denied (правила/retention только logging_admin)", () => {
+      renderGuard("erin", { service: "logging", logMutation: true });
+      expectDenied();
+    });
+    it("secret → denied", () => {
+      renderGuard("erin", { service: "secret" });
+      expectDenied();
+    });
+    it("server → denied", () => {
+      renderGuard("erin", { service: "server" });
+      expectDenied();
+    });
+    it("requireAdmin → denied (has_admin=false)", () => {
+      renderGuard("erin", { requireAdmin: true });
+      expectDenied();
+    });
+  });
 });

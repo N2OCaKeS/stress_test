@@ -570,16 +570,29 @@ function UserForm({
   const [copyHint, setCopyHint] = useState(false);
   const setCopyHintTimeout = useTimeoutRef();
 
-  // Когда выбран отдел, доступна только department_admin. Платформенные роли
-  // (account_admin / loging_admin / loging_reader) требуют отсутствия dept,
-  // и backend это валидирует на уровне сервиса.
+  // С отделом доступны dept-роли: department_admin и dept-scoped аудит-читатель
+  // (loging_reader_dep). Платформенные роли без отдела (account_admin /
+  // loging_admin) — только при пустом dept; backend валидирует это на сервисе.
+  // dep_admin (lockedDeptId задан) не может выдавать department_admin — только
+  // loging_reader_dep своему сотруднику; остальное за account_admin'ом.
+  const isDepScopedOperator = lockedDeptId !== null;
   const availableRoles = useMemo(() => {
-    if (dept) return [{ value: "department_admin", label: "department_admin" }];
+    if (dept) {
+      const deptScopedReader = {
+        value: "loging_reader_dep",
+        label: "Аудит-читатель отдела (loging_reader_dep)",
+      };
+      if (isDepScopedOperator) return [deptScopedReader];
+      return [
+        { value: "department_admin", label: "department_admin" },
+        deptScopedReader,
+      ];
+    }
     return [
       { value: "account_admin", label: "account_admin" },
       { value: "loging_admin", label: "loging_admin" },
     ];
-  }, [dept]);
+  }, [dept, isDepScopedOperator]);
 
   if (platformRole && !availableRoles.some((r) => r.value === platformRole)) {
     setPlatformRole("");
@@ -735,7 +748,9 @@ function UserForm({
           label="platform_role"
           hint={
             dept
-              ? "С отделом доступна только department_admin"
+              ? isDepScopedOperator
+                ? "Своему отделу — аудит-читатель отдела"
+                : "С отделом — department_admin или аудит-читатель отдела"
               : "Платформенные роли — без отдела"
           }
         >

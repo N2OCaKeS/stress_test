@@ -14,6 +14,8 @@ from src.dependencies import auth as _auth_deps
 from tests.conftest import make_event
 
 EVENTS_URL = "/api/logging/v1/events"
+RULES_URL = "/api/logging/v1/rules"
+RETENTION_URL = "/api/logging/v1/retention"
 
 
 class _IntrospectCtx:
@@ -139,6 +141,92 @@ class TestAllowedReaders:
             p.stop()
         assert r.status_code == 200
         assert r.json()["total"] == 2
+
+
+# ── loging_reader_dep — жёсткий dept-scope ────────────────────────────────────
+
+
+class TestDeptScopedReader:
+    def test_sees_only_own_department(self, client, auth_headers):
+        """loging_reader_dep видит только события своего отдела."""
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_b")
+        p = _mock_identity(client, {"user_id": "u1", "username": "lrd",
+                                     "platform_role": "loging_reader_dep",
+                                     "department_id": "dep_a"})
+        try:
+            r = client.get(
+                EVENTS_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"include_total": "true"},
+            )
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 2
+        assert {item["department_id"] for item in body["items"]} == {"dep_a"}
+
+    def test_cannot_read_other_department_via_query_override(self, client, auth_headers):
+        """Передача чужого department_id перекрывается своим отделом — чужие
+        события НЕ видны."""
+        _ingest(client, auth_headers, department_id="dep_a")
+        _ingest(client, auth_headers, department_id="dep_b")
+        p = _mock_identity(client, {"user_id": "u1", "username": "lrd",
+                                     "platform_role": "loging_reader_dep",
+                                     "department_id": "dep_a"})
+        try:
+            r = client.get(
+                EVENTS_URL,
+                headers={"Authorization": "Bearer t"},
+                params={"department_id": "dep_b", "include_total": "true"},
+            )
+        finally:
+            p.stop()
+        assert r.status_code == 200
+        body = r.json()
+        # Запросил dep_b, но scope форснул dep_a — видит только своё.
+        assert body["total"] == 1
+        assert body["items"][0]["department_id"] == "dep_a"
+
+    def test_no_department_in_identity_returns_403(self, client, auth_headers):
+        """Защитный fail-closed: loging_reader_dep без department_id → 403,
+        а не доступ ко всему журналу."""
+        _ingest(client, auth_headers, department_id="dep_a")
+        p = _mock_identity(client, {"user_id": "u1", "username": "lrd",
+                                     "platform_role": "loging_reader_dep",
+                                     "department_id": None})
+        try:
+            r = client.get(EVENTS_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+
+    def test_rules_returns_403(self, client):
+        """loging_reader_dep не управляет правилами → require_admin отбивает 403."""
+        p = _mock_identity(client, {"user_id": "u1", "username": "lrd",
+                                     "platform_role": "loging_reader_dep",
+                                     "department_id": "dep_a"})
+        try:
+            r = client.get(RULES_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
+
+    def test_retention_returns_403(self, client):
+        """loging_reader_dep не управляет retention → require_admin отбивает 403."""
+        p = _mock_identity(client, {"user_id": "u1", "username": "lrd",
+                                     "platform_role": "loging_reader_dep",
+                                     "department_id": "dep_a"})
+        try:
+            r = client.get(RETENTION_URL, headers={"Authorization": "Bearer t"})
+        finally:
+            p.stop()
+        assert r.status_code == 403
+        assert r.json()["error_code"] == "INSUFFICIENT_ROLE"
 
 
 # ── deny: department_admin / service-роли ─────────────────────────────────────

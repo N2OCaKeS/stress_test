@@ -1,11 +1,15 @@
 """Эндпоинты приёма (ingest) и чтения событий аудита.
 
 POST /events — пишут другие сервисы (SERVICE_API_KEY).
-GET  /events — читают `loging_admin` / `loging_reader` / `account_admin`. Все
-              три роли видят журнал cross-dept целиком; `account_admin`
-              ограничен чтением (правила/retention остаются за `loging_admin`).
-              `department_admin` к чтению аудита НЕ допускается: если dep_admin'у
-              нужен read его отдела — выдать ему отдельную `loging_reader`.
+GET  /events — читают четыре роли. `loging_admin` / `loging_reader` /
+              `account_admin` видят журнал cross-dept целиком (`account_admin`
+              ограничен чтением — правила/retention за `loging_admin`).
+              `loging_reader_dep` — read-only строго своего отдела: для неё
+              `department_id` принудительно перекрывается значением из identity
+              (см. `_scoped_department_id`), переданный query-параметр чужого
+              отдела игнорируется. `department_admin` к чтению аудита НЕ
+              допускается: если dep_admin'у нужен read — выдать ему отдельную
+              `loging_reader` (cross-dept) или `loging_reader_dep` (свой отдел).
 """
 
 import csv
@@ -23,7 +27,11 @@ from src.core.config import get_settings
 from src.core.constants import RESERVED_SERVICE_NAMES, Severity
 from src.core.exceptions import AppException, AuthorizationError, DomainValidationError
 from src.core.limits import MAX_EXPORT_ROWS, MAX_QUERY_LIMIT, MAX_QUERY_OFFSET
-from src.dependencies.auth import ReaderIdentity, require_service_token
+from src.dependencies.auth import (
+    DEPT_SCOPED_READER_ROLE,
+    ReaderIdentity,
+    require_service_token,
+)
 from src.dependencies.db import get_db
 from src.schemas.common import ErrorEnvelope
 from src.schemas.events import (
@@ -89,6 +97,35 @@ def _ingest_rate_limit_key(request: Request) -> str:
         # require_service_token уже нормализовал identity перед stash'ем.
         return f"svc:{advertised}"
     return f"ip:{get_remote_address(request)}"
+
+
+def _scoped_department_id(identity: dict, requested: str | None) -> str | None:
+    """Возвращает `department_id`-фильтр с учётом dept-scope read-роли.
+
+    Для `loging_reader_dep` журнал виден только в рамках своего отдела:
+    переданный query-параметр `department_id` принудительно перекрывается
+    значением из identity, поэтому читатель не может подсмотреть чужой отдел,
+    подставив его id в запрос. Если у такой роли почему-то нет `department_id`
+    в identity (рассогласованный токен / битый introspect) — отбиваем 403, а не
+    отдаём весь журнал: fail-closed.
+
+    Для остальных read-ролей (`loging_admin` / `loging_reader` /
+    `account_admin`) scope не применяется — `department_id` остаётся обычным
+    добровольным фильтром, возможен cross-dept.
+    """
+    if identity.get("platform_role") != DEPT_SCOPED_READER_ROLE:
+        return requested
+    own = identity.get("department_id")
+    if not own:
+        raise AppException(
+            http_status=403,
+            error_code="INSUFFICIENT_ROLE",
+            message=(
+                "loging_reader_dep requires a department_id in identity to scope "
+                "audit reads to its own department"
+            ),
+        )
+    return own
 
 
 @router.post(
@@ -265,10 +302,13 @@ def create_event(
     description=(
         "Постранично отдаёт записанные события аудита. Сортировка по "
         "`timestamp DESC` (свежие первыми).\n\n"
-        "**Доступ:** `loging_admin`, `loging_reader` или `account_admin` — все "
-        "три роли видят журнал cross-dept (`account_admin` только read). "
+        "**Доступ:** `loging_admin`, `loging_reader`, `account_admin` (все три "
+        "видят журнал cross-dept; `account_admin` только read) или "
+        "`loging_reader_dep` (read-only строго своего отдела — переданный "
+        "`department_id` принудительно перекрывается отделом из identity). "
         "`department_admin` к чтению audit'а не допускается (если dep_admin'у "
-        "нужно читать журнал — выдай ему отдельную `loging_reader`).\n\n"
+        "нужно читать журнал — выдай ему `loging_reader` или "
+        "`loging_reader_dep`).\n\n"
         "**Фильтры** (любая комбинация, all-AND): `department_id`, `service`, "
         "`severity`, `action`, `actor_id`, `actor_ip`, `target_id`, `status`, "
         "`request_id`, `from_time`, `to_time`, `limit`, `offset`.\n\n"
@@ -362,10 +402,10 @@ def list_events(
         ),
     ),
 ) -> EventListResponse:
-    # Dept-scope больше не применяется: `require_reader` пропускает только
-    # `loging_admin` / `loging_reader`, обе роли — глобальные. Фильтр
-    # `department_id` — обычный пользовательский query-параметр без
-    # принудительного override'а.
+    # Dept-scope: для `loging_reader_dep` перекрываем `department_id` значением
+    # из identity (читатель не может выйти за свой отдел, подсунув чужой id).
+    # Для остальных read-ролей фильтр остаётся добровольным cross-dept.
+    department_id = _scoped_department_id(identity, department_id)
 
     # Ingest нормализует service/action через `normalize_identifier`
     # (NFKC + invisibles + homoglyph fold + lower), а query до сих пор гнал
@@ -476,7 +516,9 @@ def _resolve_window(
         "**Фильтры:** те же, что у `GET /events` (severity / service / action / "
         "actor_id / target_id / status / department_id / request_id) — сужают "
         "выборку, по которой считаются агрегаты.\n\n"
-        "**Доступ:** `loging_admin` / `loging_reader` (как `GET /events`)."
+        "**Доступ:** как `GET /events` — `loging_admin` / `loging_reader` / "
+        "`account_admin` (cross-dept) или `loging_reader_dep` (только свой "
+        "отдел, `department_id` перекрывается из identity)."
     ),
     response_description="Агрегаты: total + by_severity + by_service + by_status + границы окна",
     responses={
@@ -514,6 +556,7 @@ def events_stats(
         description="Размер окна в часах, если from/to не заданы оба (дефолт 24).",
     ),
 ) -> EventStatsResponse:
+    department_id = _scoped_department_id(identity, department_id)
     if service is not None:
         service = normalize_identifier(service)
     if action is not None:
@@ -571,7 +614,9 @@ def _csv_value(value) -> str:
         "фильтр попало больше, ответ содержит первые строки (по возрастанию "
         "времени) и заголовок `X-Export-Truncated: true` — сузьте окно или "
         "фильтр.\n\n"
-        "**Доступ:** `loging_admin` / `loging_reader` (как `GET /events`)."
+        "**Доступ:** как `GET /events` — `loging_admin` / `loging_reader` / "
+        "`account_admin` (cross-dept) или `loging_reader_dep` (только свой "
+        "отдел, `department_id` перекрывается из identity)."
     ),
     response_description="CSV-файл (text/csv) с заголовком и строками событий",
     responses={
@@ -613,6 +658,7 @@ def events_export(
         description="Размер окна в часах, если from/to не заданы оба (дефолт 24).",
     ),
 ) -> StreamingResponse:
+    department_id = _scoped_department_id(identity, department_id)
     if service is not None:
         service = normalize_identifier(service)
     if action is not None:

@@ -51,7 +51,16 @@ describe("Home dispatcher", () => {
     expect(screen.getByText(/Что доступно/)).toBeInTheDocument();
   });
 
-  // Only the four PlatformRole values from auth_service (account_admin,
-  // dep_admin, logging_admin, logging_reader) get persona-specific Home
-  // variants. Service-level admins fall through to HomeDepAdmin.
+  it("renders HomeLoggingReader for erin (logging_reader_dep)", () => {
+    window.localStorage.setItem("dbos-persona", "erin");
+    renderHome();
+    expect(screen.getByText(/Привет, erin/)).toBeInTheDocument();
+    expect(screen.getByText(/Read-only доступ/)).toBeInTheDocument();
+    expect(screen.getByText(/Что доступно/)).toBeInTheDocument();
+  });
+
+  // Platform roles from auth_service get persona-specific Home variants:
+  // account_admin, dep_admin, logging_admin, logging_reader, and the
+  // dept-scoped logging_reader_dep (reuses the logging-reader Home). Service-
+  // level admins fall through to HomeDepAdmin.
 });

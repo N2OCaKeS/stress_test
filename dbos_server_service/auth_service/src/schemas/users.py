@@ -42,7 +42,7 @@ class UserCreate(BaseModel):
     # guard'ах. Сейчас Pydantic режет невалидные → 422.
     platform_role: PlatformRole | None = Field(
         default=None,
-        description='Platform-роль: одно из значений `PlatformRole` (account_admin / department_admin / loging_admin / loging_reader). None — обычный юзер.',
+        description='Platform-роль: одно из значений `PlatformRole` (account_admin / department_admin / loging_admin / loging_reader / loging_reader_dep). None — обычный юзер. `loging_reader_dep` — dept-scoped, требует department_id.',
     )
     initial_roles: list[InitialRoleAssignment] | None = Field(
         default=None,

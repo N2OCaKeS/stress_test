@@ -196,26 +196,30 @@ Auth: AnyAdmin. Body:
   "password": "<min 12 chars, буквы + цифры>",
   "email": "...",
   "department_id": "dep_xyz",
-  "platform_role": "account_admin|department_admin|loging_admin|loging_reader|null",
+  "platform_role": "account_admin|department_admin|loging_admin|loging_reader|loging_reader_dep|null",
   "initial_roles": [
     { "service_name": "config_service", "roles": ["reader", "operator"] }
   ]
 }
 ```
 
-`department_id` обязателен для всех, кроме `account_admin`. `department_admin` может создавать только в своём отделе и **не** account_admin. Назначать любую `platform_role` может только `account_admin`.
+`department_id` обязателен для всех, кроме `account_admin`/`loging_admin`/`loging_reader` (платформенные без отдела). `department_admin` может создавать только в своём отделе и **не** account_admin. Назначать `platform_role` может `account_admin` (любую, в любой отдел); `department_admin` — **только `loging_reader_dep` и только в свой отдел** (т.е. при `department_id == department_admin.department_id`). Любую другую platform-роль (`account_admin`/`loging_admin`/`loging_reader`/`department_admin`) `department_admin` выдать не может → `403 PLATFORM_ROLE_ASSIGNMENT_DENIED`.
 
 **`loging_reader` без `department_id` создаётся успешно** — `LOGING_READER` входит в `user_service._platform_admins` рядом с `account_admin` и `loging_admin`, поэтому auth_service не требует от него `department_id`. Политика «dept-scoped read» сейчас живёт только на стороне `loging_service`: на первом же GET аудита без `department_id` он отдаст `403 NO_DEPARTMENT`. Для глобального read-only по аудиту используется `platform_role=loging_admin` или `platform_role=account_admin`.
 
+**`loging_reader_dep` — dept-scoped аудит-читатель.** В отличие от платформенного `loging_reader`, эта роль ведёт себя как `department_admin`: **требует `department_id`** (без него — `422 MISSING_REQUIRED_FIELD`). Её может выдавать сам `department_admin` своим юзерам в своём отделе, а `loging_service` заэнфорсит scope по `department_id` из introspect'а (видит события только своего отдела).
+
 Опциональный `must_change_password` (bool) в body: по умолчанию (`null`) новый юзер обязан сменить пароль при первом входе. Явный `false` снимает force-change — но передать его может только `account_admin`; `department_admin` с `false` получает `403 CANNOT_BYPASS_PASSWORD_CHANGE`. Когда account_admin создаёт юзера с `false`, в audit `user.create` пишется `details.must_change_password_bypass=true`.
 
-Errors: `USER_ALREADY_EXISTS` (409), `DEPARTMENT_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin создаёт в чужом отделе, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin пытается выдать `platform_role`, `CANNOT_BYPASS_PASSWORD_CHANGE` (403) — не-account_admin прислал `must_change_password=false`.
+Errors: `USER_ALREADY_EXISTS` (409), `DEPARTMENT_NOT_FOUND` (404), `PERMISSION_DENIED` (403), `DEPARTMENT_ACCESS_DENIED` (403) — department_admin создаёт в чужом отделе, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — caller выдаёт `platform_role` сверх своих прав (не-admin вообще; department_admin — что-либо кроме `loging_reader_dep`), `MISSING_REQUIRED_FIELD` (422) — нет `department_id` у dept-scoped роли (обычный юзер / `department_admin` / `loging_reader_dep`), `CANNOT_BYPASS_PASSWORD_CHANGE` (403) — не-account_admin прислал `must_change_password=false`.
 
 ### `PATCH /users/{user_id}`
 
 Auth: AnyAdmin. Body (все поля опциональны): `email`, `department_id`, `status` (`UserStatus` enum), `platform_role` (`PlatformRole` enum).
 
-Errors: `USER_NOT_FOUND` (404), `USER_UPDATE_FORBIDDEN` (403) — department_admin лезет в чужой отдел или меняет привилегированные поля, `STATUS_CHANGE_REQUIRES_ACCOUNT_ADMIN` (403) — не-account_admin меняет `status` на/с `BANNED`, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — не-account_admin меняет `platform_role`.
+`platform_role` через PATCH: `account_admin` ставит любую; `department_admin` — **только `loging_reader_dep`** (или снимает роль явным `null`) и только юзеру своего отдела. Любая другая роль от `department_admin` → `403 PLATFORM_ROLE_ASSIGNMENT_DENIED`. Итоговое состояние «dept-scoped роль без отдела» (например снять `department_id` у `loging_reader_dep`) → `422 MISSING_REQUIRED_FIELD`.
+
+Errors: `USER_NOT_FOUND` (404), `USER_UPDATE_FORBIDDEN` (403) — department_admin лезет в чужой отдел / cross-dept transfer, `STATUS_CHANGE_REQUIRES_ACCOUNT_ADMIN` (403) — не-account_admin меняет `status` на/с `BANNED`, `PLATFORM_ROLE_ASSIGNMENT_DENIED` (403) — caller меняет `platform_role` сверх своих прав, `MISSING_REQUIRED_FIELD` (422) — dept-scoped роль осталась бы без отдела.
 
 ### `POST /users/{user_id}/roles`
 

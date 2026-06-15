@@ -45,6 +45,8 @@ export type PlatformRole =
   | "logging_admin"
   | "loging_reader"
   | "logging_reader"
+  | "loging_reader_dep"
+  | "logging_reader_dep"
   | null;
 
 export type ActorType = "user" | "bot" | "oauth_client" | "pat";

@@ -619,6 +619,103 @@ async def test_account_admin_can_still_transfer_user_cross_dept(
     assert resp.json()["department_id"] == dept_b.id
 
 
+# ── PATCH platform_role=loging_reader_dep (dept-scoped grant) ─────────────────
+
+
+async def test_dept_admin_can_grant_loging_reader_dep_in_own_dept(
+    client, dept_admin_a_token, user_a, db,
+):
+    """department_admin может поднять юзера своего отдела до loging_reader_dep."""
+    resp = await _patch(
+        client, dept_admin_a_token, user_a.id, {"platform_role": "loging_reader_dep"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["platform_role"] == "loging_reader_dep"
+    await db.refresh(user_a)
+    assert user_a.platform_role == "loging_reader_dep"
+
+
+async def test_dept_admin_cannot_grant_loging_reader_dep_in_other_dept(
+    client, dept_admin_a_token, user_b,
+):
+    """user_b — чужой отдел; dept-guard отбивает раньше platform_role-гейта."""
+    resp = await _patch(
+        client, dept_admin_a_token, user_b.id, {"platform_role": "loging_reader_dep"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "USER_UPDATE_FORBIDDEN"
+
+
+async def test_dept_admin_cannot_grant_department_admin_via_patch(
+    client, dept_admin_a_token, user_a,
+):
+    """department_admin не может поднять юзера до department_admin через PATCH → 403."""
+    resp = await _patch(
+        client, dept_admin_a_token, user_a.id, {"platform_role": "department_admin"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "PLATFORM_ROLE_ASSIGNMENT_DENIED"
+
+
+async def test_dept_admin_cannot_grant_account_admin_via_patch(
+    client, dept_admin_a_token, user_a,
+):
+    """department_admin не может поднять юзера до account_admin через PATCH → 403."""
+    resp = await _patch(
+        client, dept_admin_a_token, user_a.id, {"platform_role": "account_admin"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "PLATFORM_ROLE_ASSIGNMENT_DENIED"
+
+
+async def test_dept_admin_cannot_grant_loging_admin_via_patch(
+    client, dept_admin_a_token, user_a,
+):
+    """department_admin не может поднять юзера до loging_admin через PATCH → 403."""
+    resp = await _patch(
+        client, dept_admin_a_token, user_a.id, {"platform_role": "loging_admin"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == "PLATFORM_ROLE_ASSIGNMENT_DENIED"
+
+
+async def test_account_admin_can_grant_loging_reader_dep_via_patch(
+    client, admin_token, user_a, db,
+):
+    """account_admin может выдать loging_reader_dep через PATCH (любой отдел)."""
+    resp = await _patch(
+        client, admin_token, user_a.id, {"platform_role": "loging_reader_dep"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["platform_role"] == "loging_reader_dep"
+    await db.refresh(user_a)
+    assert user_a.platform_role == "loging_reader_dep"
+
+
+async def test_patch_loging_reader_dep_clearing_dept_returns_422(
+    client, admin_token, dept_a, db,
+):
+    """loging_reader_dep требует department_id: попытка снять отдел через PATCH → 422.
+
+    Создаём loging_reader_dep'а, затем PATCH'им department_id=null. Итоговое
+    состояние «dept-scoped роль без отдела» отбивается MISSING_REQUIRED_FIELD.
+    """
+    create = await client.post(
+        "/api/auth/v1/users",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "username": "patch_dep_reader", "password": "Pass12345678!",
+            "department_id": dept_a.id, "platform_role": "loging_reader_dep",
+        },
+    )
+    assert create.status_code == 201, create.text
+    uid = create.json()["user_id"]
+
+    resp = await _patch(client, admin_token, uid, {"department_id": None})
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error_code"] == "MISSING_REQUIRED_FIELD"
+
+
 # ── PATCH status=blocked: активные сессии гасятся ────────────────────────────
 #
 # До фикса BLOCKED-ветка `update_user` не звала `session_repo.revoke_all_for_user`

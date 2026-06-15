@@ -87,15 +87,29 @@ export function hasServerZoneAccess(persona: Persona): boolean {
 export function isLoggingOnly(persona: Persona): boolean {
   return (
     persona.platform_role === "logging_admin" ||
-    persona.platform_role === "logging_reader"
+    persona.platform_role === "logging_reader" ||
+    persona.platform_role === "logging_reader_dep"
   );
+}
+
+/**
+ * True для department-scoped аудит-читателя (`loging_reader_dep`). В отличие от
+ * платформенного `logging_reader`, эта роль несёт `department_id` и видит логи
+ * только своего отдела (scope энфорсит backend). Прав на правила/retention нет —
+ * только чтение журнала. Используется для лейблов и отделения от глобального
+ * читателя там, где это важно.
+ */
+export function isDeptScopedAuditReader(persona: Persona): boolean {
+  return persona.platform_role === "logging_reader_dep";
 }
 
 /**
  * True если персоне доступно чтение журнала аудита (`/log`). loging_service
  * пускает на read платформенные роли `loging_admin` / `loging_reader` /
- * `account_admin` (в каноне UI — `logging_admin` / `logging_reader` /
- * `account_admin`). `account_admin` ограничен чтением: правила и retention
+ * `loging_reader_dep` / `account_admin` (в каноне UI — `logging_admin` /
+ * `logging_reader` / `logging_reader_dep` / `account_admin`).
+ * `loging_reader_dep` — dept-scoped, видит только свой отдел (scope режет
+ * backend). `account_admin` ограничен чтением: правила и retention
  * остаются за `logging_admin` (см. `hasAuditMutateAccess`). Сервис-роль
  * `loging_service.admin` у dep_admin сюда не годится — backend всё равно
  * ответит 403 INSUFFICIENT_ROLE, поэтому гейтим по platform-роли, а не по
@@ -105,6 +119,7 @@ export function hasAuditLogAccess(persona: Persona): boolean {
   return (
     persona.platform_role === "logging_admin" ||
     persona.platform_role === "logging_reader" ||
+    persona.platform_role === "logging_reader_dep" ||
     persona.platform_role === "account_admin"
   );
 }

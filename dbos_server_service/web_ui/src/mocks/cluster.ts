@@ -143,4 +143,5 @@ export const PLATFORM_ROLES = [
   { id: "dep_admin", description: "Админ одного депа — управляет своими user/server/secret в scope.", assigned: 4, members: ["alice", "—"] },
   { id: "logging_admin", description: "Полный доступ к аудиту, правилам и retention.", assigned: 1, members: ["carol"] },
   { id: "logging_reader", description: "Read-only доступ к аудит-событиям.", assigned: 1, members: ["dave"] },
+  { id: "logging_reader_dep", description: "Read-only аудит своего отдела (dept-scoped). Без правил и retention.", assigned: 0, members: ["—"] },
 ];

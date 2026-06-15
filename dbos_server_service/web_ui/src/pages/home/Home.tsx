@@ -18,6 +18,7 @@ export function Home() {
     case "logging_admin":
       return <HomeLoggingAdmin />;
     case "logging_reader":
+    case "logging_reader_dep":
       return <HomeLoggingReader />;
     default:
       return <HomeDepAdmin />;

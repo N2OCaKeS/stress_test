@@ -7,14 +7,18 @@
                            предъявленному ключу + обязательному
                            `X-Service-Identity` header'у.
   `require_admin`         — `loging_admin` JWT: полный доступ, включая правила.
-  `require_reader`        — read-only: `loging_admin` / `loging_reader` /
-                           `account_admin`. Все три видят весь журнал cross-dept
-                           (dept-scope не применяется). `account_admin` получает
-                           только чтение (events / stats / export / каталог) —
-                           правила и retention остаются за `loging_admin`.
+  `require_reader`        — read-only, четыре роли: `loging_admin` /
+                           `loging_reader` / `account_admin` видят весь журнал
+                           cross-dept (dept-scope не применяется); `loging_reader_dep`
+                           ограничен своим отделом (жёсткий dept-scope —
+                           эндпоинты форсят `department_id` из identity, см.
+                           `events.py`). `account_admin` получает только чтение
+                           (events / stats / export / каталог) — правила и
+                           retention остаются за `loging_admin`.
                            `department_admin` к чтению аудита не допускается:
                            если dep_admin'у нужно читать журнал своего отдела,
-                           ему явно выдаётся платформенная роль `loging_reader`.
+                           ему явно выдаётся платформенная роль `loging_reader`
+                           (cross-dept) или `loging_reader_dep` (только свой отдел).
 
 ### Connection pool
 
@@ -63,13 +67,15 @@ _bearer = HTTPBearer(auto_error=False)
 # конфигурацию и приводил к расхождениям при добавлении нового внутреннего
 # сервиса.
 #
-# Dept-scope для read-роли: НЕТ. К чтению audit'а допускаются `loging_admin`,
-# `loging_reader` и `account_admin` — все три платформенные роли создаются без
-# `department_id` и видят журнал cross-dept целиком. `account_admin` ограничен
-# чтением (mutation правил/retention за `require_admin`). `department_admin`
-# к loging_service не допускается. Историческая dept-scoped семантика снята:
-# ни `_DEPT_SCOPED_ROLES`, ни `identity["_dept_scope"]` больше не нужны —
-# вызывающие эндпоинты репозиториям dept-фильтр не пробрасывают.
+# К чтению audit'а допускаются четыре платформенные роли. `loging_admin`,
+# `loging_reader` и `account_admin` создаются без `department_id` и видят журнал
+# cross-dept целиком; `account_admin` ограничен чтением (mutation правил/retention
+# за `require_admin`). Четвёртая — `loging_reader_dep`: read-only строго в рамках
+# своего отдела. Сам dept-scope она получает не здесь, а в read-эндпоинтах
+# `events.py`, которые при `platform_role == "loging_reader_dep"` принудительно
+# перекрывают query-параметр `department_id` значением из identity (см.
+# `_scoped_department_id`). `department_admin` к loging_service по-прежнему не
+# допускается.
 
 # Module-level pooled client. Инициализируется в `main.lifespan` (startup),
 # закрывается в shutdown. Остаётся `None` вне app-lifecycle — в этом случае
@@ -340,29 +346,44 @@ async def require_admin(
     return identity
 
 
+# Роль с жёстким dept-scope: видит журнал только своего отдела. Read-эндпоинты
+# events.py перекрывают для неё query-параметр `department_id` значением из
+# identity. Остальные read-роли — глобальные (cross-dept).
+DEPT_SCOPED_READER_ROLE = "loging_reader_dep"
+
+_READER_ROLES = ("loging_admin", "loging_reader", "account_admin",
+                 DEPT_SCOPED_READER_ROLE)
+
+
 async def require_reader(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
 ) -> dict:
     """Read-only доступ. Допустимые роли:
 
-      `loging_admin`    — глобальный read (видит все события);
-      `loging_reader`   — глобальный read (видит все события);
-      `account_admin`   — глобальный read-only по всему журналу.
+      `loging_admin`        — глобальный read (видит все события);
+      `loging_reader`       — глобальный read (видит все события);
+      `account_admin`       — глобальный read-only по всему журналу;
+      `loging_reader_dep`   — read-only строго в рамках своего отдела.
+
+    Первые три роли глобальные (cross-dept). `loging_reader_dep` ограничена
+    своим `department_id`: dept-scope энфорсится не здесь, а в read-эндпоинтах
+    `events.py` — они для этой роли принудительно перекрывают переданный
+    query-параметр `department_id` значением из identity, поэтому читатель не
+    может запросить чужой отдел. У `loging_reader_dep` обязан быть
+    `department_id` в identity — отсутствие проверяется в эндпоинтах (403).
 
     `account_admin` пускается только на чтение (events / stats / export /
     каталог сервисов). Управление правилами и retention остаётся за
-    `loging_admin` (`require_admin`) — там `account_admin` получит 403.
-    `department_admin` к чтению audit'а по-прежнему не допускается: если
-    dep_admin'у нужен read журнала, ему выдаётся отдельная платформенная
-    роль `loging_reader` через `auth_service` `POST /users`.
-
-    Dept-scope не применяется: все три допустимые роли — глобальные.
-    Эндпоинты, ранее форсившие `identity["_dept_scope"]`, работают cross-dept.
+    `loging_admin` (`require_admin`) — там `account_admin` и `loging_reader_dep`
+    получат 403. `department_admin` к чтению audit'а по-прежнему не допускается:
+    если dep_admin'у нужен read журнала, ему выдаётся отдельная платформенная
+    роль `loging_reader` (cross-dept) или `loging_reader_dep` (только свой отдел)
+    через `auth_service` `POST /users`.
     """
     identity = await _fetch_identity(credentials, request)
     role = identity.get("platform_role")
-    if role in ("loging_admin", "loging_reader", "account_admin"):
+    if role in _READER_ROLES:
         return identity
 
     raise AppException(
@@ -370,8 +391,9 @@ async def require_reader(
         error_code="INSUFFICIENT_ROLE",
         message=(
             "Access requires platform_role in (loging_admin, loging_reader, "
-            "account_admin). department_admin is not authorised to read the "
-            "loging_service audit trail; assign loging_reader explicitly if needed."
+            "account_admin, loging_reader_dep). department_admin is not "
+            "authorised to read the loging_service audit trail; assign "
+            "loging_reader or loging_reader_dep explicitly if needed."
         ),
     )
 

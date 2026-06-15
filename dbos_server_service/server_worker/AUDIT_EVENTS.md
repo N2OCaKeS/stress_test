@@ -72,8 +72,11 @@ worker'а и владеет бизнес-смыслом операции.
 | `ipmi_controller.password_rotate` | `tasks/passwords.py` | `ipmi_controller` |
 | `bmc.tls_downgrade` | `clients/__init__.py` | `ipmi_controller` |
 | `bmc.endpoint_blocked` | `clients/__init__.py` | `ipmi_controller` |
+| `ssh_console.command` | `services/console_bridge.py` | `server` |
 
 `server_account.users_inventory` — `target_type=server` (а не `server_account`), потому что inventory снимает срез всех ОС-пользователей хоста, а не работает с конкретной учёткой; ключ корреляции в audit'е — `server_id`. Симметрично соседнему `server.inventory_sync` (`tasks/inventory.py`).
+
+`ssh_console.command` — per-команда интерактивной SSH-консоли (PTY-мост, `services/console_bridge.py`). Эмитится НЕ через `_runner.run_task` (console — долгоживущая pub/sub-сессия, а не discrete task), а напрямую через transactional outbox (`enqueue_audit`, `task_id=None`) — тот же at-least-once путь. Worker разбирает ввод по Enter (`\n`/`\r`) и шлёт по событию на строку; `command` маскируется `redact_error_message`. `target_type=server`, `target_id=server_id`, `actor_type=user` (если start-сигнал нёс `actor_id`), `status=failure` + WARNING при ненулевом `exit_status` (если он доступен), иначе `success`/INFO. `details`: `command` (redacted, truncate 1024), `session_id`, `server_id`, опц. `exit_status`. Парные `ssh_console.session_open`/`session_close` эмитит server_service на стороне WS — worker их не дублирует (сырой ввод видит только worker).
 
 `bmc.tls_downgrade` — отдельное worker-level WARNING, эмитится из `_probe_redfish_cascade` при каждом фактическом переходе на менее защищённый канал BMC: `https_verify → https_noverify` (self-signed cert или MITM-подозрение) и `https_verify → http` / `https_noverify → http` (legacy BMC без TLS). Severity всегда `WARNING`, status `success`, `actor_type=service` (явный override в payload — остальные worker-actions полагаются на дефолт `service` из `audit_client.emit`), `target_type=ipmi_controller`, `target_id` совпадает с `details.host`. Поля `details`: `host` (host[:port] BMC), `from` (`https_verify` | `https_noverify`), `to` (`https_noverify` | `http`). Эмит через transactional outbox (`enqueue_audit`); при недоступности outbox event теряется silent — probe-loop не должен крэшить из-за audit'а.
 

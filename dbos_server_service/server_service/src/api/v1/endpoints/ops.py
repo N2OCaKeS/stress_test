@@ -16,13 +16,19 @@
 service-layer `migration_status()`, но под s2s-аутентификацией.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import require_internal_caller
 from src.dependencies.db import get_db
-from src.schemas.secrets_migration import MigrationStatusResponse
+from src.schemas.secrets_migration import (
+    MigrationStatusResponse,
+    RetireKeyResponse,
+    RotateKeyRequest,
+    RotateKeyResponse,
+)
 from src.services import audit_service
+from src.services import key_rotation_service
 from src.services import secrets_migration_service
 
 # Здесь два router'а:
@@ -72,3 +78,86 @@ async def get_migration_status(
         },
     )
     return MigrationStatusResponse(**data)
+
+
+@ops_router.post(
+    "/encryption/rotate",
+    response_model=RotateKeyResponse,
+    responses={
+        200: {"description": "Новая версия активна, reencrypt-outbox засеян."},
+        401: {"description": "SERVICE_IDENTITY_REQUIRED / INVALID_SERVICE_TOKEN."},
+        403: {"description": "SERVICE_IDENTITY_NOT_ALLOWED."},
+        422: {"description": "ROTATE_KEY_INVALID — new_key_b64 не base64/не 32 байта."},
+    },
+)
+async def rotate_encryption_key(
+    payload: RotateKeyRequest,
+    db: AsyncSession = Depends(get_db),
+    caller: str = Depends(require_internal_caller("rotation_runner")),
+) -> RotateKeyResponse:
+    """Рантайм-ротация мастер-ключа без простоя.
+
+    Новый ключ генерит auth_service (`POST /admin/service-keys/generate`),
+    rotation-runner присылает его сюда. Эффект: новая версия становится
+    активной (новые токены сразу под ней), старые токены остаются читаемыми
+    (материал старых версий ещё в keystore), и фоновая ре-шифрация
+    публикуется через reencrypt-outbox. Идемпотентно: повтор с тем же
+    материалом не плодит версию.
+
+    Audit: `ops.encryption_rotate` (CRITICAL).
+    """
+    data = await key_rotation_service.rotate(db, new_key_b64=payload.new_key_b64)
+    audit_service.emit(
+        "ops.encryption_rotate",
+        target_id=None,
+        target_type="secret",
+        status="success",
+        allowed=True,
+        details={
+            "identity": caller,
+            "new_version": data["new_version"],
+            "previous_version": data["previous_version"],
+            "seeded_inserted": data["seeded"]["inserted"],
+            "idempotent": data["idempotent"],
+        },
+    )
+    return RotateKeyResponse(**data)
+
+
+@ops_router.post(
+    "/encryption/retire/{version}",
+    response_model=RetireKeyResponse,
+    responses={
+        200: {"description": "Версия убрана из keystore (или уже отсутствовала)."},
+        401: {"description": "SERVICE_IDENTITY_REQUIRED / INVALID_SERVICE_TOKEN."},
+        403: {"description": "SERVICE_IDENTITY_NOT_ALLOWED."},
+        409: {"description": "KEYSTORE_CANNOT_RETIRE_ACTIVE / KEYSTORE_VERSION_IN_USE."},
+    },
+)
+async def retire_encryption_key(
+    version: int = Path(..., ge=1),
+    db: AsyncSession = Depends(get_db),
+    caller: str = Depends(require_internal_caller("rotation_runner")),
+) -> RetireKeyResponse:
+    """Убрать старую версию мастер-ключа из keystore.
+
+    Разрешено только когда на версии 0 строк (полная ре-шифрация завершена)
+    и она не активна — иначе 409. После retire старый материал больше
+    недоступен, расшифровать токены этой версии станет нельзя.
+
+    Audit: `ops.encryption_retire` (CRITICAL).
+    """
+    data = await key_rotation_service.retire(db, version=version)
+    audit_service.emit(
+        "ops.encryption_retire",
+        target_id=None,
+        target_type="secret",
+        status="success",
+        allowed=True,
+        details={
+            "identity": caller,
+            "version": data["version"],
+            "retired": data["retired"],
+        },
+    )
+    return RetireKeyResponse(**data)

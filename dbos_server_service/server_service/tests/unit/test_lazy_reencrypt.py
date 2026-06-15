@@ -21,7 +21,23 @@ import os
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from src.core.keystore import get_keystore
 from src.services import secrets_service
+
+
+def _rebootstrap_keystore() -> None:
+    """Пересобрать keystore из текущего env после монки-патча ключей.
+
+    KeyStore кэшируется на процесс и держит durable-файл. Тесты, которые
+    выставляют `SERVER_ENCRYPTION_KEY__v<N>` уже ПОСЛЕ того, как keystore
+    засеялся (например, после `make_account`, который шифрует), обязаны
+    пересобрать его — иначе legacy-версия в keystore не появится и decrypt
+    упадёт ENCRYPTION_KEY_MISSING. Сносим файл и чистим lru_cache.
+    """
+    ks_path = os.environ.get("KEYSTORE_PATH")
+    if ks_path and os.path.exists(ks_path):
+        os.remove(ks_path)
+    get_keystore.cache_clear()  # type: ignore[attr-defined]
 
 
 def _craft_legacy_token(plaintext: str, version: int, *, aad: bytes) -> str:
@@ -291,6 +307,10 @@ class TestRevealLazyReencryptIntegration:
             f"SERVER_ENCRYPTION_KEY__v{legacy_version}",
             settings.server_encryption_key,
         )
+        # `make_account` уже засеял keystore (через encrypt) до того, как мы
+        # выставили legacy-версию в env — пересобираем, чтобы reveal-decrypt
+        # нашёл материал v{legacy_version}.
+        _rebootstrap_keystore()
         aad = secrets_service.aad_for_server_account_password(acc.id)
         legacy_blob = _craft_legacy_token("reveal-pwd", legacy_version, aad=aad)
         acc.password_encrypted = legacy_blob

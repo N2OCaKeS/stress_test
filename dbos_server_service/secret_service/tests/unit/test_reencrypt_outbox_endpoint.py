@@ -105,12 +105,18 @@ async def _make_cred(adb, cred_id: str) -> None:
 
 
 def _bump_to_v3(monkeypatch) -> None:
+    from src.core.keystore import get_keystore
+
     monkeypatch.setenv(
         "SECRET_ENCRYPTION_KEY__v2",
         os.environ["SECRET_ENCRYPTION_KEY"],
     )
     monkeypatch.setenv("SECRET_ENCRYPTION_KEY_VERSION", "3")
     get_settings.cache_clear()  # type: ignore[attr-defined]
+    ks_path = os.environ.get("KEYSTORE_PATH")
+    if ks_path and os.path.exists(ks_path):
+        os.remove(ks_path)
+    get_keystore.cache_clear()  # type: ignore[attr-defined]
 
 
 # ── auth ────────────────────────────────────────────────────────────────────

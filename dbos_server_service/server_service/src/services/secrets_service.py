@@ -57,6 +57,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
+from src.core.keystore import get_keystore
 
 logger = logging.getLogger(__name__)
 
@@ -118,21 +119,15 @@ def _derive_key(material: str, version: int) -> bytes:
 
 
 def _key_for_version(version: int) -> bytes:
-    """Достать ключ для указанной версии — текущий или legacy из env."""
-    settings = get_settings()
-    if version == settings.server_encryption_key_version:
-        return _derive_key(settings.server_encryption_key, version)
-    # Старые версии — из `SERVER_ENCRYPTION_KEY__v<N>` env.
-    env_name = f"SERVER_ENCRYPTION_KEY__v{version}"
-    legacy = os.environ.get(env_name)
-    if not legacy:
-        raise AppException(
-            http_status=500,
-            error_code="ENCRYPTION_KEY_MISSING",
-            message=f"No key configured for ciphertext version v{version}",
-            details={"env": env_name},
-        )
-    return _derive_key(legacy, version)
+    """Достать AES-ключ для версии: master-материал из keystore + KDF по версии.
+
+    KeyStore хранит master-материал (то, что раньше лежало в env'е); KDF —
+    HKDF для v2+, legacy SHA-256 для v1 — остаётся здесь и выбирается по
+    версии из wire-префикса. `get_key` поднимает `ENCRYPTION_KEY_MISSING`
+    (500), если для версии нет материала.
+    """
+    material = get_keystore().get_key(version).decode()
+    return _derive_key(material, version)
 
 
 def _b64e(data: bytes) -> str:
@@ -192,8 +187,7 @@ def encrypt(plaintext: str, *, aad: bytes) -> str:
             error_code="ENCRYPT_INPUT_INVALID",
             message="Cannot encrypt None",
         )
-    settings = get_settings()
-    version = settings.server_encryption_key_version
+    version = get_keystore().get_active_version()
     key = _key_for_version(version)
     nonce = os.urandom(_NONCE_BYTES)
     ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode(), aad)
@@ -274,8 +268,7 @@ def decrypt_with_meta(token: str, *, aad: bytes) -> DecryptResult:
             message=f"Internal decrypt error: {type(exc).__name__}",
         ) from exc
 
-    settings = get_settings()
-    active_version = settings.server_encryption_key_version
+    active_version = get_keystore().get_active_version()
     return DecryptResult(
         plaintext=plaintext_bytes.decode("utf-8"),
         source_version=version,

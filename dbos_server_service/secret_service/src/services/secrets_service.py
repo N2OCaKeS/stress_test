@@ -53,6 +53,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from src.core.config import get_settings
 from src.core.exceptions import AppException
+from src.core.keystore import get_keystore
 
 
 @dataclass(frozen=True)
@@ -117,20 +118,15 @@ def _derive_key(material: str, version: int) -> bytes:
 
 
 def _key_for_version(version: int) -> bytes:
-    """Достать ключ для указанной версии — текущий или legacy из env."""
-    settings = get_settings()
-    if version == settings.secret_encryption_key_version:
-        return _derive_key(settings.secret_encryption_key, version)
-    env_name = f"SECRET_ENCRYPTION_KEY__v{version}"
-    legacy = os.environ.get(env_name)
-    if not legacy:
-        raise AppException(
-            http_status=500,
-            error_code="ENCRYPTION_KEY_MISSING",
-            message=f"No key configured for ciphertext version v{version}",
-            details={"env": env_name},
-        )
-    return _derive_key(legacy, version)
+    """Достать AES-ключ для версии: master-материал из keystore + KDF по версии.
+
+    KeyStore хранит master-материал (то, что раньше лежало в env'е); KDF —
+    HKDF для v2+, legacy SHA-256 для v1 — остаётся здесь, выбирается по
+    версии из wire-префикса. `get_key` поднимает `ENCRYPTION_KEY_MISSING`
+    (500), если для версии нет материала.
+    """
+    material = get_keystore().get_key(version).decode()
+    return _derive_key(material, version)
 
 
 def _b64e(data: bytes) -> str:
@@ -181,8 +177,7 @@ def encrypt(plaintext: str, *, aad: bytes) -> str:
             message=f"Plaintext exceeds {_MAX_PLAINTEXT_BYTES} bytes",
             details={"limit": _MAX_PLAINTEXT_BYTES, "got": len(plaintext_bytes)},
         )
-    settings = get_settings()
-    version = settings.secret_encryption_key_version
+    version = get_keystore().get_active_version()
     key = _key_for_version(version)
     nonce = os.urandom(_NONCE_BYTES)
     ciphertext = AESGCM(key).encrypt(nonce, plaintext_bytes, aad)
@@ -246,11 +241,11 @@ def decrypt_with_metadata(token: str, *, aad: bytes) -> DecryptResult:
             message=f"Internal decrypt error: {type(exc).__name__}",
         ) from exc
 
-    active_version = get_settings().secret_encryption_key_version
+    active_version = get_keystore().get_active_version()
     return DecryptResult(
         plaintext=plaintext_bytes.decode("utf-8"),
         source_version=version,
-        needs_reencrypt=version < active_version,
+        needs_reencrypt=version != active_version,
     )
 
 

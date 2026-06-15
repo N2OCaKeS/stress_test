@@ -21,7 +21,24 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pydantic import ValidationError
 
 from src.core.exceptions import AppException
+from src.core.keystore import get_keystore
 from src.services import secrets_service
+
+
+def _reset_keystore_cache() -> None:
+    """Пересобрать keystore из текущего env после монки-патча ключей.
+
+    KeyStore bootstrap'ится из env при первом обращении и кэшируется на
+    процесс, а FileKeyStore вдобавок держит durable-файл. Чтобы новые
+    env-ключи (legacy / bumped / swapped master) подхватились в середине
+    теста, мало сбросить lru_cache — иначе re-bootstrap перечитает старый
+    файл по тому же `KEYSTORE_PATH`. Сносим файл и чистим кэш — следующий
+    `get_keystore()` снова bootstrap'ится из env.
+    """
+    ks_path = os.environ.get("KEYSTORE_PATH")
+    if ks_path and os.path.exists(ks_path):
+        os.remove(ks_path)
+    get_keystore.cache_clear()  # type: ignore[attr-defined]
 
 
 # Фиксированный AAD для тестов, не проверяющих swap-attack семантику —
@@ -175,8 +192,8 @@ class TestKeyVersioning:
         with pytest.raises(AppException) as exc:
             secrets_service.decrypt("v99$AAAA$BBBB", aad=_TEST_AAD)
         assert exc.value.error_code == "ENCRYPTION_KEY_MISSING"
-        # Имя env-переменной должно фигурировать в details — для облегчения операций.
-        assert exc.value.details.get("env") == "SERVER_ENCRYPTION_KEY__v99"
+        # Версия отсутствующего ключа фигурирует в details — для облегчения операций.
+        assert exc.value.details.get("version") == 99
 
     def test_legacy_key_used_when_active_version_bumped(self, monkeypatch):
         """Симуляция ротации: исторический v1-токен всё ещё дешифруется через
@@ -194,11 +211,13 @@ class TestKeyVersioning:
         # Прежний v1 теперь должен читаться из legacy env.
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY__v1", original_v1_key)
         get_settings.cache_clear()  # type: ignore[attr-defined]
+        _reset_keystore_cache()
 
         try:
             assert secrets_service.decrypt(token, aad=_TEST_AAD) == "legacy-payload"
         finally:
             get_settings.cache_clear()  # type: ignore[attr-defined]
+            _reset_keystore_cache()
 
 
 # ── Helpers (base64url without padding) ───────────────────────────────────────
@@ -297,6 +316,7 @@ class TestKDFDispatch:
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY_VERSION", "2")
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY__v1", original_key)
         get_settings.cache_clear()  # type: ignore[attr-defined]
+        _reset_keystore_cache()
         try:
             # Old ciphertext decrypts via legacy SHA-256 path.
             assert secrets_service.decrypt(token_v1, aad=_TEST_AAD) == "historical-secret"
@@ -314,6 +334,7 @@ class TestKDFDispatch:
 
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY_VERSION", "2")
         get_settings.cache_clear()  # type: ignore[attr-defined]
+        _reset_keystore_cache()
         try:
             token = secrets_service.encrypt("payload", aad=_TEST_AAD)
         finally:
@@ -323,12 +344,14 @@ class TestKDFDispatch:
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY", "a-completely-different-master-key-bbb")
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY_VERSION", "2")
         get_settings.cache_clear()  # type: ignore[attr-defined]
+        _reset_keystore_cache()
         try:
             with pytest.raises(AppException) as exc:
                 secrets_service.decrypt(token, aad=_TEST_AAD)
             assert exc.value.error_code == "DECRYPT_FAILED"
         finally:
             get_settings.cache_clear()  # type: ignore[attr-defined]
+            _reset_keystore_cache()
 
 
 # ── Settings validation: SERVER_ENCRYPTION_KEY min_length ─────────────────────

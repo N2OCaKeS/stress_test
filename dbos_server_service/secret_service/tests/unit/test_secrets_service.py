@@ -19,10 +19,25 @@ import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from src.core.exceptions import AppException
+from src.core.keystore import get_keystore
 from src.services import secrets_service
 
 
 _TEST_AAD = secrets_service.aad_for_credential("cred_test_fixed")
+
+
+def _rebootstrap_keystore() -> None:
+    """Пересобрать keystore из текущего env после монки-патча ключей.
+
+    KeyStore кэшируется на процесс и держит durable-файл; чтобы новые
+    env-ключи (bumped active / legacy / dropped master) подхватились
+    в середине теста, сбрасываем кэш и сносим файл — следующий
+    `get_keystore()` снова bootstrap'ится из env.
+    """
+    ks_path = os.environ.get("KEYSTORE_PATH")
+    if ks_path and os.path.exists(ks_path):
+        os.remove(ks_path)
+    get_keystore.cache_clear()  # type: ignore[attr-defined]
 
 
 def _craft_v1_token(plaintext: str, master_key: str, *, aad: bytes) -> str:
@@ -127,7 +142,7 @@ class TestKeyVersionDispatch:
                 "v99$AAAAAAAAAAAAAAAA$BBBBBBBBBBBBBBBB", aad=_TEST_AAD
             )
         assert exc.value.error_code == "ENCRYPTION_KEY_MISSING"
-        assert exc.value.details.get("env") == "SECRET_ENCRYPTION_KEY__v99"
+        assert exc.value.details.get("version") == 99
 
     def test_active_version_bump_writes_new_prefix(self, monkeypatch):
         from src.core.config import get_settings
@@ -146,6 +161,7 @@ class TestKeyVersionDispatch:
             os.environ["SECRET_ENCRYPTION_KEY"],
         )
         get_settings.cache_clear()  # type: ignore[attr-defined]
+        _rebootstrap_keystore()
 
         token_v3 = secrets_service.encrypt("v3-payload", aad=_TEST_AAD)
         assert token_v3.startswith("v3$")
@@ -171,11 +187,12 @@ class TestKeyVersionDispatch:
         )
         monkeypatch.delenv("SECRET_ENCRYPTION_KEY__v2", raising=False)
         get_settings.cache_clear()  # type: ignore[attr-defined]
+        _rebootstrap_keystore()
 
         with pytest.raises(AppException) as exc:
             secrets_service.decrypt(token_v2, aad=_TEST_AAD)
         assert exc.value.error_code == "ENCRYPTION_KEY_MISSING"
-        assert exc.value.details.get("env") == "SECRET_ENCRYPTION_KEY__v2"
+        assert exc.value.details.get("version") == 2
 
 
 # ── Legacy v1 read ────────────────────────────────────────────────────────────
@@ -193,6 +210,7 @@ class TestLegacyV1Read:
 
         monkeypatch.setenv("SECRET_ENCRYPTION_KEY__v1", original_v1_key)
         get_settings.cache_clear()  # type: ignore[attr-defined]
+        _rebootstrap_keystore()
         assert secrets_service.decrypt(token, aad=_TEST_AAD) == "v1-historical"
 
 

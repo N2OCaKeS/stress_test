@@ -303,6 +303,45 @@ class SshClient:
         finally:
             self._conn = None
 
+    # ── Interactive PTY: invoke_shell-style session ──────────────────────
+
+    async def open_pty(
+        self, *, term_type: str = "xterm-256color",
+        term_size: tuple[int, int] = (80, 24),
+    ):
+        """Открыть интерактивную PTY-сессию поверх текущего соединения.
+
+        Возвращает `asyncssh` process с allocated pty (stdin/stdout/stderr —
+        bidirectional streams). Используется console-мостом: ввод
+        клиента пишется в `process.stdin`, вывод читается из
+        `process.stdout`. Сессия должна быть закрыта `process.close()` +
+        `process.wait_closed()` (или через `aclose`), иначе SSH-канал
+        останется открытым.
+
+        `term_type`/`term_size` дают удалённому shell'у разумный TERM,
+        чтобы интерактивные программы (`top`, `vi`) рендерились корректно.
+        """
+        if self._conn is None:
+            raise SshError(
+                error_code="SSH_NOT_CONNECTED",
+                host=self.host,
+                cmd_sanitized="open_pty",
+                message="open_pty() called before connect()",
+            )
+        try:
+            return await self._conn.create_process(
+                term_type=term_type,
+                term_size=term_size,
+                encoding=None,  # bytes in/out — мост не интерпретирует кодировку
+            )
+        except asyncssh.Error as exc:
+            raise SshError(
+                error_code="SSH_PTY_FAILED",
+                host=self.host,
+                cmd_sanitized="open_pty",
+                message=f"failed to open pty: {type(exc).__name__}",
+            ) from exc
+
     # ── Core: run a command ──────────────────────────────────────────────
 
     async def run(

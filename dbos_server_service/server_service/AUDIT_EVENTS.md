@@ -67,6 +67,24 @@ Source-of-truth — `src/services/audit_events.py::SERVICE_EVENTS`.
 
 ---
 
+## Interactive SSH console (WebSocket)
+
+`WS /api/server/v1/servers/{id}/console/ws` — интерактивная PTY-консоль через
+Redis pub/sub мост к worker'у. server_service эмитит session-события на стороне
+WS; per-команда (`ssh_console.command`) эмитит worker (см.
+`server_worker/AUDIT_EVENTS.md`). Доступ: `(server, console)` — sensitive,
+дефолтно admin/operator. Сервер обязан быть `is_managed` (prepared).
+
+| action | default_severity | эмитится при | target_type | детали |
+|---|---|---|---|---|
+| `ssh_console.session_open` | INFO | WS connect → RBAC/visibility/prepared-gate. success → PTY-сессия запрошена у worker'а; denied → нет `console`-права; failure → `not_found_or_cross_dept` / `decommissioned` / `prepare_required` | `server` | success: `session_id`, `department_id`, `management_user`. denied: `reason=permission_denied`. failure: `reason in {not_found_or_cross_dept, decommissioned, prepare_required}`, `department_id` |
+| `ssh_console.session_close` | INFO | WS disconnect / таймаут / ошибка моста — закрытие сессии | `server` | `session_id`, `reason in {client_disconnect, bridge_error, start_failed:*}`, `department_id` |
+
+`ssh_console.command` (worker-emitted, severity INFO / WARNING на ненулевом
+exit) живёт в `server_worker/AUDIT_EVENTS.md` — здесь только session-события.
+
+---
+
 ## Server / IPMI worker callbacks (write-direction internal API)
 
 Worker → server_service эмиты от `/internal/*` endpoint'ов, которые

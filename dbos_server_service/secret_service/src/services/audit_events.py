@@ -60,6 +60,8 @@ SERVICE_EVENTS = [
     # Re-encrypt outbox (proactive key rotation)
     {"action": "secrets.reencrypt_seed", "description": "Reencrypt-outbox seeded with pending rows after master-key rotation", "default_severity": "INFO"},
     {"action": "secrets.reencrypt_process", "description": "Reencrypt-outbox batch processed (decrypt → encrypt under active key)", "default_severity": "INFO"},
+    {"action": "secrets.encryption_rotate", "description": "Rotation-runner ввёл новую версию мастер-ключа активной через keystore и засидил reencrypt-outbox (рантайм-ротация без простоя)", "default_severity": "CRITICAL"},
+    {"action": "secrets.encryption_retire", "description": "Rotation-runner убрал старую версию мастер-ключа из keystore после полной ре-шифрации (0 строк на версии)", "default_severity": "CRITICAL"},
 ]
 
 # Дефолтные severity для пары (action, status). loging_service применяет это
@@ -95,6 +97,10 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("secrets.reencrypt_seed", "success"): "INFO",
     ("secrets.reencrypt_process", "success"): "INFO",
     ("secrets.reencrypt_process", "failure"): "ERROR",
+    ("secrets.encryption_rotate", "success"): "CRITICAL",
+    ("secrets.encryption_rotate", "failure"): "CRITICAL",
+    ("secrets.encryption_retire", "success"): "CRITICAL",
+    ("secrets.encryption_retire", "failure"): "CRITICAL",
     # Failure-ось: эскалация вверх. CRUD-операции — ERROR; высоко-чувствительные
     # (reveal / transfer / cross-dep grants) — CRITICAL; служебные — WARNING.
     ("tokens.create", "failure"): "ERROR",

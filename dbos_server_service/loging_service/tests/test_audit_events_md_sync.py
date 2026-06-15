@@ -47,6 +47,9 @@ _EXTERNAL_TO_DOC = frozenset({
     "pat", "bot", "oauth_client", "oauth", "docker_registry", "docker",
     # server_service / server_worker AUDIT_EVENTS — отдельные файлы.
     "server", "server_account", "ipmi_controller", "installed_packages",
+    # Интерактивная SSH-консоль: session-events эмитит server_service,
+    # per-command — server_worker. Доки живут в их AUDIT_EVENTS.md.
+    "ssh_console",
 })
 
 

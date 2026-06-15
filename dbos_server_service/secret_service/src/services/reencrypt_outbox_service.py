@@ -33,8 +33,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import get_settings
 from src.core.exceptions import AppException
+from src.core.keystore import get_keystore
 from src.models import Credential, ReencryptOutboxEntry
 from src.repositories import credentials as cred_repo
 from src.services import secrets_service
@@ -86,7 +86,7 @@ async def seed_outbox(
     сколько реально INSERT'нулось (с учётом partial-UNIQUE skip'а).
     """
     if target_version is None:
-        target_version = get_settings().secret_encryption_key_version
+        target_version = get_keystore().get_active_version()
 
     active_prefix = f"v{target_version}$%"
 
@@ -245,7 +245,7 @@ async def process_batch(
     if batch_size <= 0:
         return {"processed": 0, "errors": 0, "failed": []}
 
-    active_version = get_settings().secret_encryption_key_version
+    active_version = get_keystore().get_active_version()
 
     pick_stmt = (
         select(ReencryptOutboxEntry)

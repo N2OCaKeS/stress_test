@@ -71,3 +71,13 @@ def dispatch_creds_id() -> str:
     до retention cleanup'а — любой с read к worker-БД видел бы пароль.
     """
     return _new_id("dcd_")
+
+
+def console_session_id() -> str:
+    """`csn_<uuid>` — id интерактивной SSH-консольной сессии.
+
+    Используется как суффикс Redis pub/sub каналов console-моста
+    (`console:ctl:<csn_id>` / `console:in:` / `console:out:`). Worker
+    валидирует его POSIX-набором перед подпиской — `csn_<hex>` проходит.
+    """
+    return _new_id("csn_")

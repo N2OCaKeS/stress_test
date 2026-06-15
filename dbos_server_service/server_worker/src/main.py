@@ -216,6 +216,67 @@ async def _stop_dispatch_outbox_publisher(state: TaskiqState) -> None:
     logger.info("dispatch_outbox publisher loop stopped on worker shutdown")
 
 
+_CONSOLE_LISTENER_TASK_KEY = "console_control_listener_task"
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def _start_console_control_listener(state: TaskiqState) -> None:
+    """Поднять фоновый control-listener интерактивной SSH-консоли.
+
+    Слушает `console:ctl:*` в Redis: `start` поднимает PTY-сессию, `stop`
+    её гасит. Без своего HTTP-сервера worker мостит консоль через pub/sub
+    (см. `services/console_bridge.py`). Loop переживает транзиентные сбои
+    Redis (re-subscribe), стартуем безусловно — без console-трафика он
+    просто простаивает на listen.
+    """
+    from src.services import console_bridge
+
+    task = asyncio.create_task(
+        console_bridge.run_control_listener(),
+        name="console_control_listener",
+    )
+    task.add_done_callback(_on_publisher_exit)
+    state[_CONSOLE_LISTENER_TASK_KEY] = task
+    logger.info("console control listener scheduled on worker startup")
+
+
+@broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
+async def _stop_console_control_listener(state: TaskiqState) -> None:
+    """Остановить console control-listener и дренировать живые сессии."""
+    from src.services import console_bridge
+
+    # Сначала гасим живые PTY-сессии (закрываем SSH-каналы), потом сам loop.
+    try:
+        await console_bridge.drain_sessions(
+            timeout=_settings.worker_shutdown_timeout_seconds,
+        )
+    except Exception as exc:  # noqa: BLE001 — shutdown-хук не должен падать
+        logger.warning(
+            "console session drain raised on shutdown: %s",
+            redact_error_message(f"{type(exc).__name__}: {exc}"),
+        )
+
+    task: asyncio.Task | None = state.get(_CONSOLE_LISTENER_TASK_KEY)
+    if task is None:
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "console control listener raised on shutdown: %s",
+            redact_error_message(f"{type(exc).__name__}: {exc}"),
+        )
+    finally:
+        try:
+            del state[_CONSOLE_LISTENER_TASK_KEY]
+        except KeyError:
+            pass
+    logger.info("console control listener stopped on worker shutdown")
+
+
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def _start_audit_outbox_publisher(state: TaskiqState) -> None:
     """Поднимаем фоновый publisher для transactional audit outbox.

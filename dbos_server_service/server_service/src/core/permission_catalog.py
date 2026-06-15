@@ -56,6 +56,10 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
     Action.POWER_STATUS: "Опросить состояние питания.",
     Action.INVENTORY_TRIGGER: "Запустить инвентаризацию железа и/или ОС-пользователей.",
     Action.INVENTORY_SUBMIT: "Callback воркера с результатом инвентаризации.",
+    Action.CONSOLE: (
+        "Открыть интерактивную SSH-консоль (PTY) к подготовленному серверу "
+        "через WebSocket. Каждая введённая команда логируется в аудит."
+    ),
     Action.VIEW_DRIFT: (
         "Прочитать агрегированную сводку drift'ов аккаунтов на сервере "
         "(события server_account.drift_detected из loging)."
@@ -94,6 +98,9 @@ SENSITIVE_ACTIONS: frozenset[str] = frozenset({
     Action.POWER_ON,
     Action.POWER_OFF,
     Action.POWER_REBOOT,
+    # Живой shell на боксе под управляющим пользователем с sudo — самый
+    # широкий доступ к серверу.
+    Action.CONSOLE,
 })
 
 # Служебные гранты воркера: callback'и через internal endpoint'ы. Людям в норме

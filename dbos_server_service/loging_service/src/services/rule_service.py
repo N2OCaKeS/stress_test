@@ -264,6 +264,15 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("server_account.update_on_host", "success"): "INFO",
     ("server_account.deprovision", "success"): "WARNING",
     ("server_account.drift_detected", "success"): "WARNING",
+    # Интерактивная SSH-консоль — живой shell-доступ к боксу. session-events
+    # INFO (открытие/закрытие фиксируем для трассировки), команда INFO на
+    # success и WARNING на ненулевом exit/denied (worker эмитит явный severity).
+    ("ssh_console.session_open", "success"): "INFO",
+    ("ssh_console.session_open", "failure"): "WARNING",
+    ("ssh_console.session_open", "denied"): "WARNING",
+    ("ssh_console.session_close", "success"): "INFO",
+    ("ssh_console.command", "success"): "INFO",
+    ("ssh_console.command", "failure"): "WARNING",
     # Обращения к loging_service (все сохраняются без ротации)
     ("logging.events_queried",   "success"): "INFO",
     ("logging.events_queried",   "warning"): "WARNING",

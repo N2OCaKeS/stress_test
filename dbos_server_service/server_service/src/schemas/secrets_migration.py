@@ -240,3 +240,59 @@ class OutboxCleanupResponse(BaseModel):
     deleted: int = Field(
         ..., ge=0, description="Сколько done-row'ов удалено в этом проходе."
     )
+
+
+# ── Key rotation ──────────────────────────────────────────────────────────────
+
+
+class RotateKeyRequest(BaseModel):
+    """Тело POST /internal/encryption/rotate."""
+
+    new_key_b64: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Новый master-материал в base64 (32 байта на выходе после"
+            " декодирования). Сгенерить через auth_service"
+            " `POST /admin/service-keys/generate`."
+        ),
+    )
+
+
+class RotateKeyResponse(BaseModel):
+    """Ответ POST /internal/encryption/rotate."""
+
+    new_version: int = Field(
+        ..., ge=1, description="Версия, под которой теперь шифруются новые токены."
+    )
+    previous_version: int = Field(
+        ..., ge=1, description="Версия, бывшая активной до ротации."
+    )
+    seeded: SeedOutboxResponse = Field(
+        ...,
+        description="Результат первичного seed'а reencrypt-outbox после ротации.",
+    )
+    idempotent: bool = Field(
+        ...,
+        description=(
+            "True, если присланный ключ уже был активным — новая версия не"
+            " заведена (повторный вызов rotation-runner'а)."
+        ),
+    )
+
+
+class RetireKeyResponse(BaseModel):
+    """Ответ POST /internal/encryption/retire/{version}."""
+
+    version: int = Field(..., ge=1, description="Версия, которую пытались retire'ить.")
+    retired: bool = Field(
+        ...,
+        description=(
+            "True — версия убрана из keystore; False — её уже не было"
+            " (идемпотентный повтор)."
+        ),
+    )
+    remaining_on_version: int = Field(
+        0, ge=0,
+        description="Сколько строк остаётся на версии (0 — обязательное условие retire).",
+    )

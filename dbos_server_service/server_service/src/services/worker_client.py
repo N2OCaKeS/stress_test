@@ -72,6 +72,67 @@ def dispatch_creds_key(stash_id_value: str) -> str:
     return f"{DISPATCH_CREDS_KEY_PREFIX}{stash_id_value}"
 
 
+# ── Интерактивная SSH-консоль: pub/sub каналы console-моста ──────────────
+# worker не держит HTTP/WS-сервера, поэтому транспорт между клиентским
+# WebSocket'ом и удалённым shell'ом — Redis pub/sub. server_service публикует
+# `start`/`stop` в control-канал и мостит WS на data-каналы; worker слушает
+# `console:ctl:*`, поднимает PTY и отвечает в те же каналы. Префиксы держим
+# в sync с `server_worker/src/services/console_bridge.py`.
+CONSOLE_CTL_CHANNEL_PREFIX = "console:ctl:"
+CONSOLE_IN_CHANNEL_PREFIX = "console:in:"
+CONSOLE_OUT_CHANNEL_PREFIX = "console:out:"
+
+
+def console_ctl_channel(session_id: str) -> str:
+    return f"{CONSOLE_CTL_CHANNEL_PREFIX}{session_id}"
+
+
+def console_in_channel(session_id: str) -> str:
+    return f"{CONSOLE_IN_CHANNEL_PREFIX}{session_id}"
+
+
+def console_out_channel(session_id: str) -> str:
+    return f"{CONSOLE_OUT_CHANNEL_PREFIX}{session_id}"
+
+
+def get_worker_redis() -> "aioredis.Redis":
+    """Вернуть Redis-клиент к worker-брокеру для console pub/sub.
+
+    Переиспользует pooled `_prepare_redis_client` (поднятый в lifespan), иначе
+    строит per-call клиент. Для console-моста (subscribe + длинный listen)
+    caller обязан закрывать per-call клиент сам — поэтому когда пул не поднят,
+    отдаём свежий клиент, владение которым переходит caller'у.
+
+    Незаданный `SERVER_WORKER_REDIS_URL` → `ServiceUnavailableError(
+    WORKER_REDIS_NOT_CONFIGURED)`, как и остальной dispatch.
+    """
+    settings = get_settings()
+    if not settings.server_worker_redis_url:
+        raise ServiceUnavailableError(
+            error_code="WORKER_REDIS_NOT_CONFIGURED",
+            message="SERVER_WORKER_REDIS_URL is not set",
+        )
+    if _prepare_redis_client is not None:
+        return _prepare_redis_client
+    return aioredis.from_url(settings.server_worker_redis_url)
+
+
+async def publish_console_control(session_id: str, message: dict) -> None:
+    """Опубликовать control-сообщение (`start`/`stop`) для console-сессии.
+
+    Сообщение — JSON в `console:ctl:<sid>`. Используется WS-эндпоинтом на
+    connect (start) и disconnect (stop). Pooled клиент не закрываем (общий);
+    при fallback-клиенте закрываем после publish.
+    """
+    client = get_worker_redis()
+    own = client is not _prepare_redis_client
+    try:
+        await client.publish(console_ctl_channel(session_id), json.dumps(message))
+    finally:
+        if own:
+            await client.aclose()
+
+
 # Module-level state. При `uvicorn --workers >1` каждый воркер — отдельный
 # процесс с собственным event loop и своим module-level state (включая lock
 # и `_broker_started`); taskiq устроен так, что каждый воркер имеет свой

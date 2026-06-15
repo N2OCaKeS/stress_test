@@ -68,6 +68,8 @@ SERVICE_EVENTS = [
     {"action": "secrets.migration.skipped", "description": "Outbox-row finalize_done попал на состояние, не требующее повторного апдейта (status_not_processing — закрыта другой ветвью; owner_vanished / owner_ciphertext_changed — owner-row пропал или ротировался параллельно). Идемпотентность сохранена, факт фиксируем для SIEM", "default_severity": "WARNING"},
     # Ops-runner'ы (rotation_runner, …) — отдельный s2s-канал с shared-secret'ом.
     {"action": "ops.migration_status_read", "description": "Rotation-runner прочитал /internal/migration_status (shared-secret канал); фиксируем кто и когда смотрел на legacy-residue перед drop'ом старого ключа", "default_severity": "INFO"},
+    {"action": "ops.encryption_rotate", "description": "Rotation-runner ввёл новую версию мастер-ключа активной через keystore и засидил reencrypt-outbox (рантайм-ротация без простоя)", "default_severity": "CRITICAL"},
+    {"action": "ops.encryption_retire", "description": "Rotation-runner убрал старую версию мастер-ключа из keystore после полной ре-шифрации (0 строк на версии)", "default_severity": "CRITICAL"},
     # Server accounts — CRUD (user-facing)
     {"action": "server_account.create", "description": "Server account created", "default_severity": "CRITICAL"},
     {"action": "server_account.view", "description": "Server account viewed", "default_severity": "INFO"},
@@ -139,6 +141,13 @@ SERVICE_EVENTS = [
     {"action": "server_account.password_rotate", "description": "Worker завершил ротацию пароля сервисной учётки (apply через SSH + callback `submit_rotated_password`); финальная action-name стороны worker'а, dispatch — `server_account.rotate_password_dispatch`", "default_severity": "CRITICAL"},
     {"action": "ipmi_controller.password_rotate", "description": "Worker завершил ротацию IPMI/BMC-пароля (apply + verify + callback `submit_rotated_ipmi_password`); финальная action-name стороны worker'а, dispatch — `ipmi_controller.rotate_dispatch`", "default_severity": "CRITICAL"},
     {"action": "server_account.users_inventory", "description": "Worker завершил OS-user inventory через SSH `getent` и отдал список через callback `submit_users_inventory`; target_type=server (срез хоста, не конкретной учётки)", "default_severity": "INFO"},
+    # Интерактивная SSH-консоль (WebSocket-мост). `session_open`/`session_close`
+    # эмитит server_service на connect/disconnect WS; `command` — worker на
+    # каждую введённую строку (Enter) в PTY. Категория `ssh_console` отдельная
+    # для UI-фильтрации живого shell-доступа.
+    {"action": "ssh_console.session_open", "description": "Пользователь открыл интерактивную SSH-консоль к серверу (WebSocket подключился, PTY-сессия запрошена у worker'а). target_type=server", "default_severity": "INFO"},
+    {"action": "ssh_console.session_close", "description": "Интерактивная SSH-консоль закрыта (WS disconnect / таймаут бездействия / ошибка PTY). details несут reason. target_type=server", "default_severity": "INFO"},
+    {"action": "ssh_console.command", "description": "Команда, введённая в интерактивной SSH-консоли (одна строка по Enter); эмитится worker'ом на PTY-мосте. details: command (redacted), session_id, server_id. WARNING при ненулевом exit-коде, если он доступен. target_type=server", "default_severity": "INFO"},
 ]
 
 

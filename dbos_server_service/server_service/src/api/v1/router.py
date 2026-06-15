@@ -16,6 +16,7 @@ User-facing endpoints, требующие user identity, защищены гар
 
 from fastapi import APIRouter
 
+from src.api.v1.endpoints.console import router as console_router
 from src.api.v1.endpoints.health import router as health_router
 from src.api.v1.endpoints.ipmi import list_router as ipmi_list_router
 from src.api.v1.endpoints.ipmi import list_router_legacy as ipmi_list_router_legacy
@@ -61,6 +62,9 @@ router.include_router(tasks_router, tags=["tasks"])
 router.include_router(worker_dispatch_servers_router, tags=["servers"])
 router.include_router(worker_dispatch_accounts_router, tags=["server-accounts"])
 router.include_router(worker_dispatch_ipmi_router, tags=["ipmi-controllers"])
+# Интерактивная SSH-консоль (WebSocket-мост к worker'у через Redis pub/sub).
+# WS /servers/{id}/console/ws — RBAC (server, console) + prepared-gate.
+router.include_router(console_router, tags=["console"])
 # Internal — без tags, include_in_schema=False (скрыт из публичного OpenAPI).
 router.include_router(internal_router)
 router.include_router(secrets_migration_router)

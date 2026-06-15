@@ -139,6 +139,12 @@ class Action(StrEnum):
     POWER_STATUS = "power_status"
     INVENTORY_TRIGGER = "inventory_trigger"
     INVENTORY_SUBMIT = "inventory_submit"
+    # Интерактивная SSH-консоль к серверу через WebSocket-мост. Право даёт
+    # открыть PTY-сессию под управляющим пользователем DBOS на подготовленном
+    # сервере; каждая введённая команда логируется в loging как
+    # `ssh_console.command`. Чувствительное (живой root-доступ к боксу) —
+    # дефолтно только admin/operator.
+    CONSOLE = "console"
     # Read aggregated drift-summary по серверу — обращается в loging за
     # событиями `server_account.drift_detected`. Право узкое: даёт смотреть
     # факт расхождения без полного доступа к accounts.
@@ -183,6 +189,8 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.INVENTORY_TRIGGER, Action.INVENTORY_SUBMIT,
         # worker_bot подтверждает завершение бутстрапа управления — callback-only.
         Action.PREPARE_CALLBACK,
+        # Интерактивная SSH-консоль (WebSocket-мост).
+        Action.CONSOLE,
         # Чтение drift-сводки по серверу (агрегация event'ов из loging).
         Action.VIEW_DRIFT,
     }),

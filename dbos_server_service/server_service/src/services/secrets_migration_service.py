@@ -40,6 +40,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
+from src.core.keystore import get_keystore
 from src.models import IpmiController, ReencryptOutboxEntry, ServerAccount
 from src.services import audit_service, metrics, secrets_service
 
@@ -205,7 +206,7 @@ async def status(db: AsyncSession) -> dict:
       чтобы caller'у с lazy-страницы не лезть в nested-объект.
     """
     settings = get_settings()
-    active = settings.server_encryption_key_version
+    active = get_keystore().get_active_version()
     by_version = await _count_by_version(db)
     total = await _total(db)
     remaining = sum(c for v, c in by_version.items() if v != active)
@@ -316,8 +317,7 @@ async def seed_outbox(db: AsyncSession, limit: int | None = None) -> dict:
     Возвращает: `{inserted, scanned, active_version}`. `scanned` — сколько
     кандидатов попало в SELECT (после фильтра по версии).
     """
-    settings = get_settings()
-    active = settings.server_encryption_key_version
+    active = get_keystore().get_active_version()
 
     inserted = 0
 
@@ -732,8 +732,7 @@ async def reencrypt_batch(db: AsyncSession, limit: int) -> dict:
     Endpoint читает `failed_rows` через `.get(..., [])`, так что несовместимости
     нет.
     """
-    settings = get_settings()
-    active = settings.server_encryption_key_version
+    active = get_keystore().get_active_version()
 
     if limit <= 0:
         return {"processed": 0, "errors": 0}

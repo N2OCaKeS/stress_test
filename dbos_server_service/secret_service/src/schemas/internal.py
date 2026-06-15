@@ -118,3 +118,32 @@ class ReencryptOutboxStatus(BaseModel):
     done: int
     error: int
     total: int
+
+
+class RotateKeyRequest(BaseModel):
+    """Тело POST /internal/encryption/rotate."""
+
+    new_key_b64: str = Field(
+        min_length=1,
+        description=(
+            "Новый master-материал в base64 (32 байта после декодирования). "
+            "Сгенерить через auth_service `POST /admin/service-keys/generate`."
+        ),
+    )
+
+
+class RotateKeyResponse(BaseModel):
+    """Ответ POST /internal/encryption/rotate."""
+
+    new_version: int
+    previous_version: int
+    seeded: ReencryptOutboxSeedResponse
+    idempotent: bool
+
+
+class RetireKeyResponse(BaseModel):
+    """Ответ POST /internal/encryption/retire/{version}."""
+
+    version: int
+    retired: bool
+    remaining_on_version: int = 0

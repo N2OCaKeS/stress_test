@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Body, Depends, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import get_settings
 from src.core.exceptions import AppException
+from src.core.keystore import get_keystore
 from src.dependencies.db import get_db
 from src.dependencies.internal_auth import (
     require_caller_identity,
@@ -27,9 +27,16 @@ from src.schemas.internal import (
     DeptServiceAccessRevokedEvent,
     LifecycleSummary,
     MigrationStatus,
+    RetireKeyResponse,
+    RotateKeyResponse,
     UserDeletedEvent,
 )
-from src.services import lifecycle_service, migration_status_service
+from src.services import (
+    audit_service,
+    key_rotation_service,
+    lifecycle_service,
+    migration_status_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -164,5 +171,92 @@ async def migration_status(
     дропать `SECRET_ENCRYPTION_KEY__v<N>` из env'а можно только когда
     `remaining_legacy == 0`.
     """
-    active_version = get_settings().secret_encryption_key_version
+    active_version = get_keystore().get_active_version()
     return await migration_status_service.compute(db, active_version=active_version)
+
+
+@ops_router.post(
+    "/encryption/rotate",
+    response_model=RotateKeyResponse,
+    responses={
+        200: {"description": "Новая версия активна, reencrypt-outbox засеян."},
+        401: {"description": "INTERNAL_AUTH_REQUIRED — bearer отсутствует / не совпал."},
+        400: {"description": "ROTATE_KEY_INVALID — new_key_b64 не base64/не 32 байта."},
+    },
+)
+async def rotate_encryption_key(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    new_key_b64: str = Body(
+        embed=True,
+        min_length=1,
+        description=(
+            "Новый master-материал в base64 (32 байта). Сгенерить через"
+            " auth_service `POST /admin/service-keys/generate`."
+        ),
+    ),
+) -> RotateKeyResponse:
+    """Рантайм-ротация мастер-ключа secret_service без простоя.
+
+    Новая версия становится активной (новые токены сразу под ней), старые
+    токены остаются читаемыми (материал старых версий ещё в keystore),
+    фоновая ре-шифрация публикуется через reencrypt-outbox. Идемпотентно:
+    повтор с тем же материалом не плодит версию.
+
+    Audit: `secrets.encryption_rotate` (CRITICAL).
+    """
+    data = await key_rotation_service.rotate(db, new_key_b64=new_key_b64)
+    caller = getattr(request.state, "caller", None)
+    audit_service.emit(
+        "secrets.encryption_rotate",
+        target_id=None,
+        target_type="secret",
+        status="success",
+        allowed=True,
+        details={
+            "caller": caller,
+            "new_version": data["new_version"],
+            "previous_version": data["previous_version"],
+            "seeded_inserted": data["seeded"]["inserted"],
+            "idempotent": data["idempotent"],
+        },
+    )
+    return RotateKeyResponse(**data)
+
+
+@ops_router.post(
+    "/encryption/retire/{version}",
+    response_model=RetireKeyResponse,
+    responses={
+        200: {"description": "Версия убрана из keystore (или уже отсутствовала)."},
+        401: {"description": "INTERNAL_AUTH_REQUIRED."},
+        409: {"description": "KEYSTORE_CANNOT_RETIRE_ACTIVE / KEYSTORE_VERSION_IN_USE."},
+    },
+)
+async def retire_encryption_key(
+    request: Request,
+    version: int = Path(..., ge=1),
+    db: AsyncSession = Depends(get_db),
+) -> RetireKeyResponse:
+    """Убрать старую версию мастер-ключа из keystore.
+
+    Разрешено только когда на версии 0 строк (полная ре-шифрация завершена)
+    и она не активна — иначе 409.
+
+    Audit: `secrets.encryption_retire` (CRITICAL).
+    """
+    data = await key_rotation_service.retire(db, version=version)
+    caller = getattr(request.state, "caller", None)
+    audit_service.emit(
+        "secrets.encryption_retire",
+        target_id=None,
+        target_type="secret",
+        status="success",
+        allowed=True,
+        details={
+            "caller": caller,
+            "version": data["version"],
+            "retired": data["retired"],
+        },
+    )
+    return RetireKeyResponse(**data)

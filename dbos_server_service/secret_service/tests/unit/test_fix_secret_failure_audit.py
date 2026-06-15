@@ -474,6 +474,7 @@ async def test_reveal_lazy_reencrypt_actually_commits(real_session_factory, monk
 
     # Bump активной версии до v3 (legacy v2 остаётся доступной для decrypt'а).
     from src.core.config import get_settings
+    from src.core.keystore import get_keystore
 
     monkeypatch.setenv(
         "SECRET_ENCRYPTION_KEY__v2",
@@ -481,6 +482,10 @@ async def test_reveal_lazy_reencrypt_actually_commits(real_session_factory, monk
     )
     monkeypatch.setenv("SECRET_ENCRYPTION_KEY_VERSION", "3")
     get_settings.cache_clear()  # type: ignore[attr-defined]
+    _ks_path = os.environ.get("KEYSTORE_PATH")
+    if _ks_path and os.path.exists(_ks_path):
+        os.remove(_ks_path)
+    get_keystore.cache_clear()  # type: ignore[attr-defined]
 
     # Session #2 — reveal'им через сервис (он сам коммитит CAS-UPDATE).
     identity = Identity(

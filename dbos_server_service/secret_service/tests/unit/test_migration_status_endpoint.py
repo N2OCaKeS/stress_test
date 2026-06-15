@@ -146,6 +146,12 @@ async def test_migration_status_counts_versions(http_client, adb, monkeypatch):
     )
     monkeypatch.setenv("SECRET_ENCRYPTION_KEY_VERSION", "3")
     get_settings.cache_clear()
+    from src.core.keystore import get_keystore as _get_keystore
+
+    _ks_path = _os.environ.get("KEYSTORE_PATH")
+    if _ks_path and _os.path.exists(_ks_path):
+        _os.remove(_ks_path)
+    _get_keystore.cache_clear()  # type: ignore[attr-defined]
 
     # 1 строка под v3.
     await _make_cred(adb, "cred_mig_v3_0", secrets_service.encrypt("x", aad=aad))

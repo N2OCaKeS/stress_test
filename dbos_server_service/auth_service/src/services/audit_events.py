@@ -65,6 +65,8 @@ SERVICE_EVENTS = [
     {"action": "user.sessions_admin_revoked_all", "description": "Admin revoked all sessions of another user (POST /users/{id}/sessions/revoke)", "default_severity": "CRITICAL"},
     {"action": "user.session_admin_revoked_one", "description": "Admin revoked one session of another user (DELETE /users/{id}/sessions/{sid})", "default_severity": "WARNING"},
     {"action": "user.hard_deleted", "description": "User row hard-deleted (cascade revoke + secret_service notify)", "default_severity": "CRITICAL"},
+    # Service encryption keys (generator for runtime key rotation in server/secret services)
+    {"action": "service_key.generate", "description": "account_admin generated a fresh AES-256 master key (base64) for distribution to a service keystore rotation; auth_service does not store it", "default_severity": "CRITICAL"},
     # Departments
     {"action": "department.create", "description": "New department created", "default_severity": "CRITICAL"},
     {"action": "department.updated", "description": "Department metadata updated (PATCH /departments/{id})", "default_severity": "INFO"},

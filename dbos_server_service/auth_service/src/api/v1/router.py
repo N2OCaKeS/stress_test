@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from src.api.v1.endpoints.admin import router as admin_router
 from src.api.v1.endpoints.auth import router as auth_router
 from src.api.v1.endpoints.authorization import router as authorization_router
 from src.api.v1.endpoints.bots import router as bots_router
@@ -26,3 +27,4 @@ router.include_router(bots_router, tags=["bots"])
 router.include_router(authorization_router, tags=["authorization"])
 router.include_router(oauth2_router, tags=["oauth2"])
 router.include_router(docker_router, tags=["docker-registry"])
+router.include_router(admin_router, tags=["admin"])

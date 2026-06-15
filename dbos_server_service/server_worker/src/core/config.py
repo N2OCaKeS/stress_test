@@ -597,6 +597,39 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Interactive SSH console (WebSocket bridge) ───────────────────────
+    # Долгоживущая PTY-сессия: server_service публикует `start` на
+    # `console:ctl:<sid>`, worker открывает SSH invoke_shell под управляющим
+    # ключом и мостит ввод/вывод через Redis pub/sub. Сессия закрывается по
+    # `stop`-сигналу, WS-disconnect'у либо таймауту бездействия.
+    console_idle_timeout_seconds: float = Field(
+        default=900.0,
+        gt=0,
+        description=(
+            "Idle timeout for an interactive SSH console PTY session. If no "
+            "input arrives from the client within this window, the worker "
+            "tears the session down and emits ssh_console.session_close with "
+            "reason=idle_timeout."
+        ),
+    )
+    console_max_session_seconds: float = Field(
+        default=3600.0,
+        gt=0,
+        description=(
+            "Hard cap on a single console session lifetime regardless of "
+            "activity. Bounds resource usage of a forgotten open terminal."
+        ),
+    )
+    console_max_command_length: int = Field(
+        default=8192,
+        ge=1,
+        description=(
+            "Max bytes of a single console command line buffered before an "
+            "Enter; longer input is force-flushed (audited, truncated) to "
+            "bound memory of the line accumulator."
+        ),
+    )
+
     # ── Background master-key rotation ───────────────────────────────────
     # Periodic task `secrets.reencrypt_lazy` зовёт server_service
     # `/internal/secrets/migration_status` + `/reencrypt_batch`. Активна

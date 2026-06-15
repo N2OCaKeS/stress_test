@@ -37,6 +37,24 @@ os.environ.setdefault("APP_ENV", "test")
 
 
 @pytest.fixture(autouse=True)
+def _reset_keystore(monkeypatch, tmp_path):
+    """Свежий FileKeyStore на каждый тест.
+
+    KeyStore bootstrap'ится из env при первом обращении и кэшируется на
+    процесс (`@lru_cache`). Указываем уникальный `KEYSTORE_PATH` в tmp и
+    чистим кэш — каждый тест поднимает keystore из текущего env. Тесты,
+    мутирующие ключи в середине, дополнительно зовут `get_keystore.cache_clear()`.
+    """
+    from src.core import keystore as keystore_mod
+
+    monkeypatch.setenv("KEYSTORE_BACKEND", "file")
+    monkeypatch.setenv("KEYSTORE_PATH", str(tmp_path / "secret_keystore.json"))
+    keystore_mod.get_keystore.cache_clear()
+    yield
+    keystore_mod.get_keystore.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _mock_db_connect(monkeypatch):
     """Подменяет `engine` в health-эндпоинте на объект с заглушенным `.connect()`.
 

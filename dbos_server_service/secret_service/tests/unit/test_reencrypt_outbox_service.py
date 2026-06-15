@@ -21,9 +21,18 @@ import pytest
 from sqlalchemy import text
 
 from src.core.config import get_settings
+from src.core.keystore import get_keystore
 from src.models import ReencryptOutboxEntry
 from src.repositories import credentials as repo
 from src.services import reencrypt_outbox_service, secrets_service
+
+
+def _rebootstrap_keystore() -> None:
+    """Пересобрать keystore из текущего env после bump'а версии/ключей."""
+    ks_path = os.environ.get("KEYSTORE_PATH")
+    if ks_path and os.path.exists(ks_path):
+        os.remove(ks_path)
+    get_keystore.cache_clear()  # type: ignore[attr-defined]
 
 
 @pytest.fixture(autouse=True)
@@ -48,6 +57,7 @@ def _bump_to_v3(monkeypatch) -> None:
     )
     monkeypatch.setenv("SECRET_ENCRYPTION_KEY_VERSION", "3")
     get_settings.cache_clear()  # type: ignore[attr-defined]
+    _rebootstrap_keystore()
 
 
 async def _make_cred(adb, cred_id: str, *, blob: str | None = None) -> None:
@@ -209,6 +219,7 @@ async def test_process_records_error_for_missing_legacy_key(adb, monkeypatch):
     monkeypatch.setenv("SECRET_ENCRYPTION_KEY_VERSION", "3")
     monkeypatch.delenv("SECRET_ENCRYPTION_KEY__v2", raising=False)
     get_settings.cache_clear()  # type: ignore[attr-defined]
+    _rebootstrap_keystore()
 
     await reencrypt_outbox_service.seed_outbox(adb)
 
@@ -253,6 +264,7 @@ async def test_seed_then_process_then_seed_again(adb, monkeypatch):
     )
     monkeypatch.setenv("SECRET_ENCRYPTION_KEY_VERSION", "4")
     get_settings.cache_clear()  # type: ignore[attr-defined]
+    _rebootstrap_keystore()
 
     seed_2 = await reencrypt_outbox_service.seed_outbox(adb)
     assert seed_2["inserted"] == 1

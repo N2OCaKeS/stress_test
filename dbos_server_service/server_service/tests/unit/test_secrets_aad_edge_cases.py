@@ -20,7 +20,21 @@ import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from src.core.exceptions import AppException
+from src.core.keystore import get_keystore
 from src.services import secrets_service
+
+
+def _rebootstrap_keystore() -> None:
+    """Пересобрать keystore из текущего env после монки-патча ключей.
+
+    KeyStore кэшируется на процесс и держит durable-файл; чтобы swap/bump
+    мастера подхватился в середине теста, сносим файл и чистим lru_cache —
+    следующий `get_keystore()` снова bootstrap'ится из env.
+    """
+    ks_path = os.environ.get("KEYSTORE_PATH")
+    if ks_path and os.path.exists(ks_path):
+        os.remove(ks_path)
+    get_keystore.cache_clear()  # type: ignore[attr-defined]
 
 
 class TestAadHelperFormat:
@@ -66,6 +80,7 @@ class TestKeyVersionMismatchErrors:
         from src.core.config import get_settings
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY_VERSION", "2")
         get_settings.cache_clear()
+        _rebootstrap_keystore()
         try:
             # Строим v1 токен вручную через legacy KDF с тем же master-ключом,
             # что в env (get_settings().server_encryption_key). После cache_clear
@@ -76,11 +91,13 @@ class TestKeyVersionMismatchErrors:
             token = f"v1${secrets_service._b64e(nonce)}${secrets_service._b64e(ct)}"
             with pytest.raises(AppException) as exc:
                 secrets_service.decrypt(token, aad=b"aad")
-            # v1 из env не загружен → ENCRYPTION_KEY_MISSING
+            # v1 в keystore не засеялся (env без SERVER_ENCRYPTION_KEY__v1) →
+            # ENCRYPTION_KEY_MISSING; details несут номер отсутствующей версии.
             assert exc.value.error_code == "ENCRYPTION_KEY_MISSING"
-            assert "SERVER_ENCRYPTION_KEY__v1" in str(exc.value.details)
+            assert exc.value.details.get("version") == 1
         finally:
             get_settings.cache_clear()
+            _rebootstrap_keystore()
 
     def test_nonexistent_version_identifier_raises_key_missing(self, monkeypatch):
         """Токен vN, где N — какой-то несуществующий номер, и env не задан."""
@@ -102,21 +119,26 @@ class TestKeyVersionMismatchErrors:
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY", "old-master-key-for-v2-encrypt-aaaa")
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY_VERSION", "2")
         get_settings.cache_clear()
+        _rebootstrap_keystore()
         try:
             token = secrets_service.encrypt("sensitive-value", aad=b"row-id")
         finally:
             get_settings.cache_clear()
 
-        # Меняем master при той же active version = 2
+        # Меняем master при той же active version = 2. Без re-bootstrap'а
+        # keystore держал бы старый материал на процесс — пересобираем его,
+        # чтобы decrypt пошёл уже под новым (неправильным для токена) ключом.
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY", "completely-different-master-key-bbbb")
         monkeypatch.setenv("SERVER_ENCRYPTION_KEY_VERSION", "2")
         get_settings.cache_clear()
+        _rebootstrap_keystore()
         try:
             with pytest.raises(AppException) as exc:
                 secrets_service.decrypt(token, aad=b"row-id")
             assert exc.value.error_code == "DECRYPT_FAILED"
         finally:
             get_settings.cache_clear()
+            _rebootstrap_keystore()
 
 
 class TestCrossKeyVersionIsolation:

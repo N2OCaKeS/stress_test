@@ -22,7 +22,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
-import { hasServerZoneAccess, hasAuditLogAccess } from "@/lib/rbac";
+import {
+  hasServerZoneAccess,
+  hasAuditLogAccess,
+  hasSecretZoneAccess,
+} from "@/lib/rbac";
 import type { ServiceName } from "@/types/persona";
 import { useDeptLabelOpt } from "@/lib/labels";
 import { ThemeSwitcher } from "./ThemeSwitcher";
@@ -127,6 +131,9 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
     // роли получает `server` в accessible_services, но backend отвечает 403 на
     // список серверов и tasks — чип вёл бы на пустую страницу с ошибкой.
     .filter((s) => (s !== "server" && s !== "worker") || hasServerZoneAccess(persona))
+    // Secret — dept-scoped: платформенные роли без отдела (account_admin /
+    // logging_*) получают 403, чип вёл бы в BlockedPane. Прячем у них.
+    .filter((s) => s !== "secret" || hasSecretZoneAccess(persona))
     .map((s) => SERVICE_CATALOG[s])
     .filter(Boolean)
     .map((chip) => {

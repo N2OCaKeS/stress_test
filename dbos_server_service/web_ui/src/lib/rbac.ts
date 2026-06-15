@@ -58,6 +58,18 @@ export function isSecretZoneBlocked(persona: Persona): boolean {
 }
 
 /**
+ * True если персоне реально доступна secret-зона (`/secret`). Платформенные
+ * роли без департамента отрезаны (`isSecretZoneBlocked`), у остальных доступ
+ * есть, если отдел подключён к secret_service (`accessible_services`). Обычный
+ * dept-юзер видит свои personal-креды. Используется для гейта чипа /secret и
+ * пропуска через RouteGuard — чтобы не показывать заведомо отбойный раздел.
+ */
+export function hasSecretZoneAccess(persona: Persona): boolean {
+  if (isSecretZoneBlocked(persona)) return false;
+  return persona.accessible_services.includes("secret");
+}
+
+/**
  * True если персона реально имеет доступ к server-зоне (servers / worker).
  * Это dep_admin своего отдела и любой носитель server.* роли. account_admin /
  * logging_admin отрезаны backend'ом (`isServerZoneBlocked`), поэтому здесь

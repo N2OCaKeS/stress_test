@@ -3,7 +3,11 @@ import { Navigate, useLocation } from "react-router-dom";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { USE_MOCK_AUTH, useAuthOptional } from "@/contexts/AuthContext";
-import { hasAuditLogAccess } from "@/lib/rbac";
+import {
+  hasAuditLogAccess,
+  hasSecretZoneAccess,
+  hasServerZoneAccess,
+} from "@/lib/rbac";
 import type { ServiceName } from "@/types/persona";
 
 interface Props {
@@ -37,11 +41,20 @@ export function RouteGuard({ service, requireAdmin, children }: Props) {
   // только loging_admin/loging_reader. Сервис-роль loging_service.admin (её
   // несёт dep_admin) кладёт `logging` в accessible_services, но backend всё
   // равно вернёт 403 — поэтому такой персоне раздел недоступен.
-  const hasService = service
-    ? service === "logging"
+  // Зонные сервисы гейтим теми же хелперами, что и nav-чипы, чтобы у роли без
+  // реального доступа раздел не просто упирался в BlockedPane, а вообще не
+  // открывался (redirect на /home). logging — по platform-роли; server/worker
+  // и secret — по zone-access (отсекает business-data-denied платформенные роли
+  // вроде account_admin, которым backend всё равно ответит 403).
+  const hasService = !service
+    ? true
+    : service === "logging"
       ? hasAuditLogAccess(persona)
-      : persona.accessible_services.includes(service)
-    : true;
+      : service === "secret"
+        ? hasSecretZoneAccess(persona)
+        : service === "server" || service === "worker"
+          ? hasServerZoneAccess(persona)
+          : persona.accessible_services.includes(service);
   const adminOk = !requireAdmin || persona.has_admin;
   const denied = !bootstrapPending && !unauthenticated && (!hasService || !adminOk);
 

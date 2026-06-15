@@ -515,7 +515,7 @@ function GroupDetailView({
   const roles = rolesQ.data ?? [];
 
   return (
-    <div className="flex flex-col gap-4 max-w-3xl">
+    <div className="flex flex-col gap-4 max-w-5xl">
       {/* ============== Header / profile ============== */}
       <div className="card">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">

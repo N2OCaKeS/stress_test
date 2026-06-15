@@ -186,7 +186,7 @@ export function AdminHub() {
       )}
       {active && Content && !fullPane && (
         <main className="flex-1 overflow-y-auto min-h-0">
-          <div className="max-w-5xl mx-auto px-8 py-8">
+          <div className="max-w-7xl mx-auto px-8 py-8">
             <section>
               <div className="mb-6">
                 <div className="text-3xl font-bold mb-1">{active.label}</div>

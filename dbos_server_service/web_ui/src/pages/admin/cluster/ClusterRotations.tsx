@@ -10,7 +10,7 @@ export function ClusterRotations() {
   const canMutate = canMutateCluster(persona);
   const mockMode = useMockMode();
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="space-y-4 max-w-7xl">
       {readonly && (
         <div className="readonly-bar">
           <ShieldAlert className="w-3.5 h-3.5" />

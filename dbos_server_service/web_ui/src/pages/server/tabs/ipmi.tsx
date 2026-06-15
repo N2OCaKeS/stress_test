@@ -437,7 +437,7 @@ function ControllerPane({
   }
 
   return (
-    <div className="p-5 flex flex-col gap-4 max-w-3xl">
+    <div className="p-5 flex flex-col gap-4 max-w-5xl">
       {/* metadata */}
       <div className="card">
         <div className="flex items-start justify-between gap-3 mb-3">

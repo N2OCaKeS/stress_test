@@ -53,7 +53,7 @@ export function ClusterAuditOverview() {
   };
 
   return (
-    <div className="space-y-4 max-w-3xl relative">
+    <div className="space-y-4 max-w-7xl relative">
       {mockMode && mockToast && (
         <div className="toast toast-success absolute top-2 right-2 z-30">
           <span className="text-sm font-medium">{mockToast}</span>

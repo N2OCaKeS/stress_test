@@ -162,7 +162,7 @@ export function IpmiFleet() {
           )}
 
           {!listQ.loading && listQ.error == null && filtered.length > 0 && (
-            <div className="flex flex-col gap-1.5 max-w-4xl">
+            <div className="flex flex-col gap-1.5 max-w-7xl">
               {filtered.map((c) => (
                 <ControllerRow key={c.id} controller={c} />
               ))}
@@ -173,7 +173,7 @@ export function IpmiFleet() {
             <TruncationNotice
               shown={items.length}
               total={total}
-              className="mt-3 max-w-4xl"
+              className="mt-3 max-w-7xl"
             />
           )}
         </div>
